@@ -17,11 +17,10 @@
 import { localArchive } from '@inixiative/archive/remote';
 import { DECISION_PROVIDER, MODEL_REGISTRY, mainThreadLab } from '@inixiative/foundry-core';
 import { existsSync, mkdirSync } from 'fs';
-import { basename } from 'path';
+import { resolve } from 'path';
 import { archiveStatus } from './archives/local';
 import { runArchiveSetup } from './archives/setup';
 import { mainThreadRequirement, subscriptionWorker } from './models/registry';
-import { RUNTIME_OUTPUT_FILES, writeComposed, writeFileRef } from './prompts/composer';
 import {
   defaultInstallationName,
   defaultKingdomUrl,
@@ -41,7 +40,6 @@ import {
   type FoundryConfig,
   foundryConfigDir,
   type LayerSettingsConfig,
-  type ProjectPrompts,
   type ProjectSettingsConfig,
   starterConfig,
 } from './viewer/config';
@@ -151,18 +149,6 @@ async function firstTimeSetup(): Promise<FoundryConfig> {
     await writeEnvLocal('', '', port);
   }
 
-  // --- Project identity prompts ---
-  console.log('\n  ── Project Identity ──\n');
-  console.log('  This is the base description every AI model sees first.');
-  console.log('  It gets composed into CLAUDE.md, .cursorrules, etc.\n');
-
-  const projectName = await ask('Project name', basename(process.cwd()));
-  const projectDesc = await ask('One-line description');
-
-  if (projectName || projectDesc) {
-    await setupPrompts(projectName, projectDesc);
-  }
-
   // --- Opportunistic docs-layer scan ---
   // If the repo has a docs/ directory worth indexing, offer to wire it up now.
   // Silent no-op when the corpus is missing or too small.
@@ -210,14 +196,12 @@ async function configureLoop(config: FoundryConfig) {
   let running = true;
   while (running) {
     const c = counts();
-    const hasPrompts = Object.values(config.projects).some((p) => p.prompts);
     const docsStatus = config.sources['docs-src'] ? 'configured' : 'not scanned';
     const paired = config.kingdomIntegrations?.length ?? 0;
     const archive = await archiveStatus(localArchive());
     const archiveSummary = `${archive.reachable ? 'Archive running' : archive.configured ? 'Archive not answering' : 'no Archive'}, ${paired ? `${paired} Kingdom${paired === 1 ? '' : 's'} paired` : 'Kingdom not paired'}`;
     const idx = await choose('What would you like to configure?', [
       `Provider & defaults  (${config.defaults.provider} / ${config.defaults.model})`,
-      `Prompts              (${hasPrompts ? 'configured' : 'not set up'})`,
       `Scan project docs    (${docsStatus})`,
       `Agents               (${c.agents} configured)`,
       `Layers               (${c.layers} configured)`,
@@ -235,33 +219,30 @@ async function configureLoop(config: FoundryConfig) {
         await configureDefaults(config);
         break;
       case 1:
-        await configurePrompts(config);
-        break;
-      case 2:
         await configureDocsLayer(config);
         break;
-      case 3:
+      case 2:
         await configureSection(config, 'agents', agentEditor);
         break;
-      case 4:
+      case 3:
         await configureSection(config, 'layers', layerEditor);
         break;
-      case 5:
+      case 4:
         await configureSection(config, 'sources', sourceEditor);
         break;
-      case 6:
+      case 5:
         await configureSection(config, 'projects', projectEditor);
         break;
-      case 7:
+      case 6:
         await configureArchives(config);
         break;
-      case 8:
+      case 7:
         await checkAgentClis(config);
         break;
-      case 9:
+      case 8:
         await configureLegacyDefaults(config);
         break;
-      case 10: {
+      case 9: {
         if (await confirm('Replace config with starter defaults?', false)) {
           const providerId = config.defaults.provider as ProviderId;
           const model = config.defaults.model;
@@ -271,7 +252,7 @@ async function configureLoop(config: FoundryConfig) {
         }
         break;
       }
-      case 11:
+      case 10:
         running = false;
         break;
     }
@@ -564,7 +545,7 @@ const agentEditor: ItemEditor<AgentSettingsConfig> = {
           .join('\n') + '\n';
 
       mkdirSync(`${FOUNDRY_DIR}/agents`, { recursive: true });
-      await writeFileRef(process.cwd(), descPath, descContent);
+      await Bun.write(resolve(process.cwd(), descPath), descContent);
       description = descPath;
       console.log(`  Wrote ${descPath}`);
     }
@@ -694,7 +675,7 @@ const layerEditor: ItemEditor<LayerSettingsConfig> = {
           .join('\n') + '\n';
 
       mkdirSync(`${FOUNDRY_DIR}/layers`, { recursive: true });
-      await writeFileRef(process.cwd(), descPath, descContent);
+      await Bun.write(resolve(process.cwd(), descPath), descContent);
       description = descPath;
       console.log(`  Wrote ${descPath}`);
     }
@@ -907,132 +888,6 @@ async function pickProvider(
   const model = await ask('Default model', provider.defaultModel);
 
   return { providerId: provider.id, apiKey, model };
-}
-
-// ---------------------------------------------------------------------------
-// Prompts setup
-// ---------------------------------------------------------------------------
-
-const AVAILABLE_RUNTIMES = [
-  { id: 'claude', label: 'Claude Code (CLAUDE.md)', file: 'CLAUDE.md' },
-  { id: 'cursor', label: 'Cursor (.cursorrules)', file: '.cursorrules' },
-  { id: 'codex', label: 'Codex (CODEX.md)', file: 'CODEX.md' },
-] as const;
-
-async function setupPrompts(projectName: string, projectDesc: string): Promise<ProjectPrompts> {
-  mkdirSync(`${FOUNDRY_DIR}/prompts`, { recursive: true });
-
-  // Write common identity file
-  const commonContent = [`# ${projectName}`, '', projectDesc ? `${projectDesc}\n` : '']
-    .filter(Boolean)
-    .join('\n');
-
-  await writeFileRef(process.cwd(), '.foundry/prompts/common.md', commonContent);
-  console.log('  Wrote .foundry/prompts/common.md');
-
-  const prompts: ProjectPrompts = {
-    common: '.foundry/prompts/common.md',
-  };
-
-  // Ask which runtimes to generate for
-  console.log('\n  Which AI tools do you use? (generates their config files)\n');
-  const overrides: Record<string, string> = {};
-
-  for (const rt of AVAILABLE_RUNTIMES) {
-    const exists = existsSync(rt.file);
-    const hint = exists ? ' (file exists, will be managed by Foundry)' : '';
-    if (await confirm(`  ${rt.label}${hint}?`)) {
-      const overridePath = `.foundry/prompts/${rt.id}.md`;
-
-      // Create a minimal override file
-      const overrideContent = `# ${rt.label} — additional instructions\n\n`;
-      if (!existsSync(overridePath)) {
-        await writeFileRef(process.cwd(), overridePath, overrideContent);
-        console.log(`  Wrote ${overridePath}`);
-      }
-      overrides[rt.id] = overridePath;
-    }
-  }
-
-  if (Object.keys(overrides).length > 0) {
-    prompts.overrides = overrides;
-  }
-
-  // Compose only the runtimes the user chose: answering no writes nothing for that runtime.
-  const written = await writeComposed(process.cwd(), prompts, Object.keys(overrides));
-  for (const [rt] of written) {
-    console.log(`  Composed ${RUNTIME_OUTPUT_FILES[rt]} from prompts`);
-  }
-
-  return prompts;
-}
-
-// ---------------------------------------------------------------------------
-// Prompts editor (for configure loop)
-// ---------------------------------------------------------------------------
-
-async function configurePrompts(config: FoundryConfig) {
-  // Find first project with prompts, or the first project
-  const projects = Object.values(config.projects);
-  if (projects.length === 0) {
-    console.log('\n  No projects configured. Add a project first.\n');
-    return;
-  }
-
-  const project = projects[0];
-  const projectPath = project.path || process.cwd();
-
-  console.log(`\n  ── Prompts (${project.label || project.id}) ──\n`);
-
-  if (!project.prompts) {
-    console.log('  No prompts configured for this project.');
-    if (await confirm('  Set up prompts now?')) {
-      const name = await ask('Project name', project.label || basename(projectPath));
-      const desc = await ask('One-line description', project.description || '');
-      project.prompts = await setupPrompts(name, desc);
-    }
-    return;
-  }
-
-  console.log(`    Common:    ${project.prompts.common}`);
-  if (project.prompts.overrides) {
-    for (const [rt, path] of Object.entries(project.prompts.overrides)) {
-      console.log(`    ${rt}:${' '.repeat(Math.max(1, 9 - rt.length))}${path}`);
-    }
-  }
-
-  const options = ['Add runtime override', 'Recompose output files', 'Back'];
-  const idx = await choose('', options);
-
-  if (idx === 0) {
-    // Add a new runtime override
-    const available = AVAILABLE_RUNTIMES.filter((rt) => !project.prompts?.overrides?.[rt.id]);
-    if (available.length === 0) {
-      console.log('  All runtimes already configured.');
-      return;
-    }
-    const rtIdx = await choose(
-      'Which runtime?',
-      available.map((rt) => rt.label),
-    );
-    const rt = available[rtIdx];
-    const overridePath = `.foundry/prompts/${rt.id}.md`;
-    if (!existsSync(overridePath)) {
-      await writeFileRef(projectPath, overridePath, `# ${rt.label} — additional instructions\n\n`);
-    }
-    if (!project.prompts.overrides) project.prompts.overrides = {};
-    project.prompts.overrides[rt.id] = overridePath;
-    console.log(`  Added ${rt.id} override: ${overridePath}`);
-  } else if (idx === 1) {
-    const written = await writeComposed(
-      projectPath,
-      project.prompts,
-      Object.keys(project.prompts.overrides ?? {}),
-    );
-    for (const [rt] of written) {
-      console.log(`  Composed ${RUNTIME_OUTPUT_FILES[rt]}`);
-    }
-  }
 }
 
 // ---------------------------------------------------------------------------

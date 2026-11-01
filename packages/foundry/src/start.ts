@@ -270,25 +270,6 @@ console.log(
 );
 
 // ---------------------------------------------------------------------------
-// Compose project identity files (CLAUDE.md, .cursorrules, etc.)
-// ---------------------------------------------------------------------------
-
-import { RUNTIME_OUTPUT_FILES, writeComposed } from './prompts/composer';
-
-for (const project of Object.values(config.projects)) {
-  if (!project.prompts || !project.path) continue;
-  try {
-    const written = await writeComposed(project.path, project.prompts);
-    if (written.size > 0) {
-      const files = [...written.keys()].map((rt) => RUNTIME_OUTPUT_FILES[rt]).join(', ');
-      console.log(`Composed identity files for ${project.label || project.id}: ${files}`);
-    }
-  } catch (err) {
-    console.warn(`Failed to compose prompts for ${project.label || project.id}:`, err);
-  }
-}
-
-// ---------------------------------------------------------------------------
 // Create LLM provider
 // ---------------------------------------------------------------------------
 
