@@ -12,6 +12,7 @@ import type {
   InterventionLog,
   LLMProvider,
   Thread,
+  ThreadMachine,
   ThreadPlan,
   ThreadSetup,
   TokenTracker,
@@ -27,6 +28,7 @@ import { registerArchiveRoutes } from '../archives/routes';
 import { ThreadContextTracker } from '../archives/thread-context';
 import { CompositionAuditor } from '../audit/compositions';
 import { ConversationService } from '../conversations/service';
+import { readLocalDevice } from '../devices/local-inventory';
 import { feedbackRoots } from '../feedback/apply';
 import { MAIN_ROLE } from '../feedback/routing';
 import { FeedbackService } from '../feedback/service';
@@ -34,6 +36,7 @@ import { classifyCorrection, matchExisting } from '../feedback/sharpen';
 import { ImageAttachmentStore } from '../persistence/image-attachments';
 import { KnowledgePersistence } from '../persistence/knowledge-persistence';
 import { LocalSessionStore } from '../persistence/local-session-store';
+import { installationNameOf } from '../providers/kingdom-cli';
 import { KingdomHolders } from '../providers/kingdom-holder';
 import {
   KingdomInstallationConnections,
@@ -268,10 +271,28 @@ export function createViewer(config: ViewerConfig) {
     config.localStore === undefined
       ? new LocalSessionStore(join(config.configDir ?? '.foundry', 'sessions.sqlite'))
       : config.localStore;
+  // This machine: the local device identity, and the Foundry's name once settings are read.
+  let installationName: string | undefined;
+  const machine = (): ThreadMachine | undefined => {
+    let device: ReturnType<typeof readLocalDevice> = null;
+    try {
+      device = readLocalDevice(config.deviceIdentityPath);
+    } catch {
+      return undefined;
+    }
+    return device
+      ? {
+          deviceId: device.id,
+          deviceName: device.name,
+          ...(installationName ? { installationName } : {}),
+        }
+      : undefined;
+  };
   const directory = new ViewerThreadDirectory(
     harness.thread,
     config.projectRegistry,
     config.threadFactory,
+    machine,
   );
   const kingdomLost = () => !kingdom.authorized;
   const revoke = () =>
@@ -441,6 +462,19 @@ export function createViewer(config: ViewerConfig) {
     : undefined;
   if (!localStore) for (const thread of directory.all()) void threadContext.refresh(thread.id);
   const configStore = config.configStore ?? new ConfigStore(config.configDir ?? '.foundry');
+  void configStore
+    .load()
+    .then((loaded) => {
+      installationName = installationNameOf(loaded);
+      // Threads stamped before settings were read get this Foundry's name on their own machine.
+      for (const thread of directory.all()) {
+        const here = thread.meta.machine;
+        if (!here || here.installationName || here.deviceId !== machine()?.deviceId) continue;
+        thread.meta.machine = { ...here, installationName };
+        threadChanged(thread);
+      }
+    })
+    .catch(() => {});
   // Raw middleware rows age out once reduced (`journal.rawMiddlewareDays`, default 30).
   if (localStore) {
     const prune = () => {

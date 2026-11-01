@@ -78,6 +78,13 @@ export interface ThreadPlan {
   readonly updatedAt: number;
 }
 
+/** Where a thread runs: the Foundry device it was recorded on, and that Foundry's name then. */
+export interface ThreadMachine {
+  readonly deviceId: string;
+  readonly deviceName: string;
+  readonly installationName?: string;
+}
+
 /**
  * A thread snoozed by its person: quiet until `until` (ISO), then cleared. `condition` names what
  * the time was resolved from (`quota-reset`: when the reached usage window resets). A snooze never
@@ -162,6 +169,8 @@ export interface ThreadMeta {
 
   /** The agent's plan for the thread's work (`set_plan`, the Plan view): what, why, and how. */
   plan?: ThreadPlan;
+  /** The machine (Foundry device identity, `~/.foundry/device.json`) the thread runs on. */
+  machine?: ThreadMachine;
 
   /** Put out of mind until a time (or a condition, resolved to its time); status is untouched. */
   snooze?: ThreadSnooze;

@@ -410,6 +410,7 @@ export {
   type ThreadConfig,
   type ThreadContext,
   type ThreadFork,
+  type ThreadMachine,
   type ThreadMeta,
   type ThreadName,
   type ThreadPlan,
