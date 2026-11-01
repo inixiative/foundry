@@ -29,6 +29,7 @@ import {
 import { failurePresentation } from './inspector-data.js';
 import { html, useEffect, useRef, useState } from './lib.js';
 import { liveExecutionStatus, liveThreadStatus, liveWorkLabel, workLog } from './live-state.js';
+import { StatusIcon } from './status-icons.js';
 import {
   activeThreadId,
   allThreads,
@@ -49,6 +50,7 @@ import {
   stopTurn,
   threadContextTokens,
   threadData,
+  threadStatusOf,
   threadUsage,
   tokenUsage,
 } from './store.js';
@@ -180,7 +182,6 @@ function ContextBar() {
 
   const title = threadName(data);
   const titleSource = data.title?.source || null;
-  const status = liveThreadStatus(messages.value) || meta.status || 'idle';
   const place = threadPlace(meta);
 
   // Stacked bar: segment-per-warm-layer, sized against context window so empty space = remaining budget.
@@ -200,7 +201,7 @@ function ContextBar() {
   return html`
     <div class="context-bar">
       <div class="context-bar-head">
-        <span class="context-bar-status context-bar-status--${status}" title=${status}></span>
+        <${StatusIcon} state=${threadStatusOf(data.threadId, liveThreadStatus(messages.value))} />
         <span class="context-bar-title ${isUnnamed(data) ? 'context-bar-title--unnamed' : ''}" data-name-source=${titleSource || ''}
           title=${`${data.threadId}${titleSource ? ` · ${nameSourceLabel[titleSource]}` : ''}`}>${title}</span>
         ${titleSource === 'agent' ? html`<span class="context-bar-name-source" title="Named by agent; set a name in the thread details to override">auto</span>` : null}

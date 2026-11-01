@@ -10,6 +10,7 @@
 
 import { FeedbackStrip, feedbackIn } from './feedback.js';
 import { html, useState } from './lib.js';
+import { StatusIcon } from './status-icons.js';
 import {
   activePanel,
   activeProjectId,
@@ -21,6 +22,7 @@ import {
   forgeMasterOpen,
   projects,
   promptCounts,
+  prompts,
   selectScope,
   selectThread,
   worktrees,
@@ -32,6 +34,7 @@ import {
   threadName,
   threadPlace,
 } from './thread-labels.js';
+import { categoryOf, threadState } from './thread-status.js';
 
 // ---------------------------------------------------------------------------
 // Active/inactive classification
@@ -60,23 +63,6 @@ function InactiveFold({ count, label, defaultOpen = false, children }) {
       ${open ? html`<div class="inactive-fold-body">${children}</div>` : null}
     </div>
   `;
-}
-
-// ---------------------------------------------------------------------------
-// Status dot
-// ---------------------------------------------------------------------------
-
-function StatusDot({ status }) {
-  const colors = {
-    active: 'var(--st-working)',
-    idle: 'var(--st-idle)',
-    waiting: 'var(--st-attention)',
-    archived: 'var(--st-archived)',
-    completed: 'var(--st-archived)',
-    done: 'var(--st-archived)',
-  };
-  const color = colors[status] || 'var(--st-archived)';
-  return html`<span class="tree-status-dot" style="background: ${color}" title=${status}></span>`;
 }
 
 // ---------------------------------------------------------------------------
@@ -144,6 +130,15 @@ function ThreadActions({ thread }) {
 // Thread node — shows metadata (model, temp, agent count, layers)
 // ---------------------------------------------------------------------------
 
+/** A row's status: its own fields, its pending prompts, and whether a child (a subagent) is working. */
+function nodeState(node) {
+  const childrenWorking = (node.children || []).some((c) => categoryOf(nodeState(c)) === 'working');
+  return threadState(node, {
+    prompts: prompts.value.filter((p) => p.threadId === node.id),
+    childrenWorking,
+  });
+}
+
 function ThreadNode({ thread, depth = 0, selectedId, onSelect, inactive = false }) {
   const [expanded, setExpanded] = useState(!inactive);
   const isSelected = selectedId === thread.id;
@@ -171,7 +166,7 @@ function ThreadNode({ thread, depth = 0, selectedId, onSelect, inactive = false 
         `
             : html`<span class="tree-caret-spacer"></span>`
         }
-        <${StatusDot} status=${thread.status} />
+        <${StatusIcon} state=${nodeState(thread)} />
         <span class="tree-text">
           <span class="tree-label ${thread.unnamed ? 'tree-label--unnamed' : ''}" data-name-source=${thread.nameSource || ''}
             title=${`${thread.id}${thread.nameSource ? ` · ${nameSourceLabel[thread.nameSource]}` : ''}`}>${thread.name}</span>
@@ -364,6 +359,7 @@ export function ThreadList() {
         cwd: t.meta?.cwd || null,
         parentThreadId: t.meta?.parentThreadId || null,
         conversation: t.conversation || null,
+        lastTurn: t.lastTurn || null,
         children: [],
       },
     ]),

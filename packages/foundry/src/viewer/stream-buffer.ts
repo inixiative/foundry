@@ -59,6 +59,8 @@ export type TurnAppend =
 export interface TurnSink {
   active(threadId: string): boolean;
   publish(threadId: string, payload: TurnAppend): void;
+  /** A turn's status or identity changed, whether or not its thread's stream is open (the thread lists). */
+  turnChanged?(threadId: string): void;
 }
 /** Bounded live projection, separate from the original journal. No native capacity decisions. */
 export class StreamBuffer {
@@ -345,6 +347,7 @@ export class StreamBufferRegistry {
   private _buffers = new Map<string, StreamBuffer>();
   constructor(private sink?: TurnSink) {}
   private publish(b: StreamBuffer, change: TurnChange) {
+    if (change.kind === 'turn') this.sink?.turnChanged?.(b.threadId);
     if (!this.sink?.active(b.threadId)) return;
     const payload: TurnAppend =
       change.kind === 'turn'

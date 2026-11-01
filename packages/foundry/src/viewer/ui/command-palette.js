@@ -11,6 +11,7 @@
 import { allBindings } from './hotkeys.js';
 import { html, useEffect, useRef, useState } from './lib.js';
 import { analyticsPath, navigate, settingsPath } from './route.js';
+import { StatusLegend } from './status-icons.js';
 import {
   commandPaletteOpen,
   executeAction,
@@ -159,6 +160,10 @@ export function HelpOverlay() {
           </div>
         `,
         )}
+        <div class="help-group">
+          <div class="help-category">Status</div>
+          <${StatusLegend} />
+        </div>
         <div class="help-footer">Press <kbd>?</kbd> or <kbd>Esc</kbd> to close</div>
       </div>
     </div>
