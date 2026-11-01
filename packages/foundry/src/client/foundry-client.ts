@@ -13,6 +13,8 @@ import type { threadToJSON } from '../viewer/http-helpers';
 export interface ThreadLaunchView {
   threadId: string;
   provider: string;
+  /** The subscription worker the thread runs on; fixed once its first turn starts. */
+  worker: string;
   permissionMode: string | null;
   model: string;
   modelOverride: string | null;
@@ -23,7 +25,11 @@ export interface ThreadLaunchView {
     permissionModes: readonly string[];
     models: Array<{ id: string; label: string }>;
     efforts: readonly string[];
+    /** The workers a thread here may run on: its project's default and each other one with a login. */
+    workers: Array<{ id: string; label: string; default: boolean }>;
   };
+  /** Executor models pinned in settings that this thread's worker does not run. */
+  setAside: Array<{ agent: string; model: string }>;
 }
 
 /** Where a local client reaches the daemon: its loopback origin and, while a tunnel is active, the bearer. */
@@ -127,6 +133,8 @@ export class FoundryClient {
     projectId?: string;
     tags?: string[];
     name?: string;
+    /** The subscription worker; the project's default when absent. */
+    worker?: string;
   }): Promise<ThreadJSON> {
     return this.request('POST', '/api/threads', body);
   }
@@ -137,7 +145,13 @@ export class FoundryClient {
 
   updateThread(
     threadId: string,
-    body: { worktreePath?: string | null; branch?: string | null; name?: string | null },
+    body: {
+      worktreePath?: string | null;
+      branch?: string | null;
+      name?: string | null;
+      /** Before the thread's first turn only (409 after). */
+      worker?: string;
+    },
   ): Promise<ThreadJSON> {
     return this.request('PATCH', `/api/threads/${encodeURIComponent(threadId)}`, body);
   }

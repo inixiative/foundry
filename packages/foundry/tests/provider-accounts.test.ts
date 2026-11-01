@@ -62,7 +62,8 @@ test('subscription mode reports the main-thread and decision profiles where they
     ready: true,
     uses: ['main thread'],
   });
-  expect(accounts.codex).toMatchObject({ source: 'login', uses: ['decisions'] });
+  // Codex is on with a login: a thread may run on it, beside its decisions.
+  expect(accounts.codex).toMatchObject({ source: 'login', uses: ['main thread', 'decisions'] });
   expect(accounts.anthropic).toMatchObject({
     source: 'none',
     detail: 'ANTHROPIC_API_KEY',
@@ -77,7 +78,8 @@ test('by default the Claude login runs both the main thread and the decisions', 
     providerAccounts(config, { which: onPath, environment: {} }).map((a) => [a.provider, a]),
   );
   expect(accounts['claude-code']!.uses).toEqual(['main thread', 'decisions']);
-  expect(accounts.codex!.uses).toEqual([]);
+  // Codex is on: any thread may choose it as its worker.
+  expect(accounts.codex!.uses).toEqual(['main thread']);
 });
 
 test('API providers report their variable by name, never its value', () => {

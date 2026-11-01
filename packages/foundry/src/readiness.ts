@@ -24,6 +24,7 @@ import { providerApiKey } from './providers/openai-compatible';
 import { prefilterInstalled } from './providers/prefilter-model';
 import { assertProfile } from './providers/private-profile';
 import {
+  defaultWorkers,
   resolveSubscriptionPolicy,
   SUBSCRIPTION_DECISIONS,
   type SubscriptionResolution,
@@ -290,15 +291,26 @@ export async function inspectReadiness(
     );
   // Subscription mode inspects the effective routing startup would construct.
   config = subscription?.config ?? saved;
-  for (const source of subscription ? [subscription.worker, subscription.decision] : []) {
+  // A default worker's login and the decision login must be usable; another worker's only offers it.
+  const required = new Set(defaultWorkers(saved).values());
+  for (const [source, needed] of subscription
+    ? [
+        ...Object.entries(subscription.workers).map(
+          ([worker, login]) => [login!, required.has(worker)] as const,
+        ),
+        [subscription.decision, true] as const,
+      ]
+    : []) {
     try {
       assertProfile(source.profileDirectory, source.runtime);
     } catch {
       issue(
-        'error',
+        needed ? 'error' : 'warning',
         source.runtime,
         'subscription-profile-unavailable',
-        `Log in with the ${source.runtime} CLI; its profile must be an owned directory with private credential files.`,
+        needed
+          ? `Log in with the ${source.runtime} CLI; its profile must be an owned directory with private credential files.`
+          : `Threads cannot choose the ${source.runtime} worker until you log in with its CLI.`,
       );
     }
   }
@@ -315,13 +327,14 @@ export async function inspectReadiness(
       issue('error', scope, 'provider-disabled', 'A requested provider is absent or disabled.');
     if (
       id !== config.defaults.provider &&
+      !(subscription && Object.hasOwn(subscription.workers, id)) &&
       !(!subscription && id === decisionProvider && providerEnabled(config, id))
     )
       issue(
         'error',
         scope,
         'provider-not-constructed',
-        'Production startup constructs the default provider and the configured decision provider. This requested provider needs an explicit runtime integration.',
+        'Production startup constructs every usable subscription worker, the default provider and the configured decision provider. This requested provider needs an explicit runtime integration.',
       );
     const provider = MODEL_REGISTRY[id];
     if (!provider) {
@@ -489,7 +502,15 @@ export async function inspectReadiness(
   ]);
   for (const source of config.nativeAuthentication ?? []) {
     if (!selectedNative.has(source.id)) continue;
-    if (source.runtime !== (config.defaults.provider === 'codex' ? 'codex' : 'claude'))
+    // A login serves the workers of its runtime; one no worker in use runs on is a mismatch.
+    if (
+      ![...required].some(
+        (worker) => (worker === 'codex' ? 'codex' : 'claude') === source.runtime,
+      ) &&
+      !(
+        subscription && Object.values(subscription.workers).some((login) => login?.id === source.id)
+      )
+    )
       issue(
         'error',
         source.id,

@@ -352,7 +352,8 @@ export function createViewer(config: ViewerConfig) {
         ? undefined
         : (rootThreadId, turn) => {
             const root = directory.get(rootThreadId);
-            if (!root) return;
+            // Only a thread whose worker holds its Wardens in-session; the others' are primed.
+            if (!root || !config.threadSetup?.applies(rootThreadId)) return;
             void root.signals
               .emit({
                 id: newId('sig-subturn'),
@@ -376,7 +377,7 @@ export function createViewer(config: ViewerConfig) {
         ? undefined
         : (rootThreadId, call) => {
             const root = directory.get(rootThreadId);
-            if (!root) return;
+            if (!root || !config.threadSetup?.applies(rootThreadId)) return;
             void root.signals
               .emit({
                 id: newId('sig-tool'),

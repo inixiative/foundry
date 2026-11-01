@@ -5,6 +5,7 @@
  */
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { registryModel, SUBSCRIPTION_WORKER_MODELS } from '@inixiative/foundry-core';
 import {
   type ChorusLayerRegions,
   type ChorusRegion,
@@ -1144,4 +1145,46 @@ export function resolveProjectView(
   resolved.layers = Object.fromEntries(layers.map((layer) => [layer.id, layer.config]));
 
   return { config: resolved, layers, agents: [...agents.values()], chorus };
+}
+
+/** An executor's pinned model the thread's worker does not run: it gives way to the worker's default. */
+export interface SetAsideModel {
+  agent: string;
+  model: string;
+}
+
+/**
+ * A thread's view: its project's view (or the global config), on the thread's own worker. A thread on
+ * its project's default worker sees the project view unchanged. On another worker, the default
+ * provider and model become that worker's, executors run on it, and an executor's pinned model is
+ * kept only when the worker runs it (`setAside` names the rest).
+ */
+export function resolveThreadView(
+  config: FoundryConfig,
+  meta: { projectId?: string; worker?: string },
+): { config: FoundryConfig; setAside: SetAsideModel[] } {
+  const view =
+    (meta.projectId ? resolveProjectView(config, meta.projectId)?.config : undefined) ?? config;
+  const worker = meta.worker;
+  if (!worker || worker === view.defaults.provider) return { config: view, setAside: [] };
+  const model = SUBSCRIPTION_WORKER_MODELS[worker as keyof typeof SUBSCRIPTION_WORKER_MODELS];
+  if (!model)
+    throw Error(`${worker} is not a subscription worker; a thread runs on claude-code or codex`);
+  const prior = view.defaults.provider;
+  const setAside: SetAsideModel[] = [];
+  const agents = Object.fromEntries(
+    Object.entries(view.agents).map(([id, agent]) => {
+      if (agent.kind !== 'executor' || (agent.provider !== undefined && agent.provider !== prior))
+        return [id, agent];
+      const { provider: _provider, model: pinned, ...rest } = agent;
+      if (pinned === undefined || registryModel(worker, pinned))
+        return [id, { ...rest, ...(pinned ? { model: pinned } : {}) }];
+      setAside.push({ agent: id, model: pinned });
+      return [id, rest];
+    }),
+  ) as FoundryConfig['agents'];
+  return {
+    config: { ...view, defaults: { ...view.defaults, provider: worker, model }, agents },
+    setAside,
+  };
 }

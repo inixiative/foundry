@@ -15,7 +15,7 @@ import {
 } from './default-profiles';
 import type { NativeAuthenticationSource } from './native-authentication';
 import { assertProfile } from './private-profile';
-import { resolveSubscriptionPolicy } from './subscription-policy';
+import { defaultWorkers, resolveSubscriptionPolicy } from './subscription-policy';
 
 /** Where a provider's account comes from. Never carries a secret: an API key is reported by its variable name. */
 export interface ProviderAccount {
@@ -47,6 +47,11 @@ export function providerAccounts(config: FoundryConfig, inputs: Inputs = {}): Pr
     policyIssue = error instanceof Error ? error.message : String(error);
   }
   const apiTokens = config.apiTokens === true;
+  // Main threads run on every project's default worker, and on any usable worker a thread chooses.
+  const mainWorkers = new Set([
+    ...defaultWorkers(config).values(),
+    ...Object.keys(subscription?.workers ?? {}),
+  ]);
 
   const ids = inputs.all
     ? Object.keys(MODEL_REGISTRY).filter(vendorOfProvider)
@@ -55,7 +60,7 @@ export function providerAccounts(config: FoundryConfig, inputs: Inputs = {}): Pr
     .map((id) => ({ id, baseUrl: providerBaseUrl(config, id) }))
     .map((provider): ProviderAccount => {
       const info = MODEL_REGISTRY[provider.id];
-      const main = config.defaults.provider === provider.id;
+      const main = mainWorkers.has(provider.id);
       if (subscriptionWorker(provider.id)) {
         const runtime = SUBSCRIPTION_WORKERS[provider.id];
         const decides = subscription?.decision.runtime === runtime;
@@ -66,8 +71,10 @@ export function providerAccounts(config: FoundryConfig, inputs: Inputs = {}): Pr
         if (!apiTokens) {
           // The main thread and the decision roles can sit on different profiles of one runtime; check each in use.
           const profiles = [
-            ...(subscription?.worker.runtime === runtime ? [subscription.worker] : []),
-            ...(decides && subscription && subscription.decision !== subscription.worker
+            ...(subscription?.workers[provider.id] ? [subscription.workers[provider.id]!] : []),
+            ...(decides &&
+            subscription &&
+            subscription.decision.id !== subscription.workers[provider.id]?.id
               ? [subscription.decision]
               : []),
           ];

@@ -65,6 +65,11 @@ export function harnessName(provider) {
 }
 
 /** A project's label by id; Global for none. */
+/** A thread's worker, as its row's tag reads it. */
+export function workerLabel(worker) {
+  return { 'claude-code': 'Claude', codex: 'Codex' }[worker] ?? worker;
+}
+
 export function projectLabel(projectId) {
   if (!projectId) return 'Global';
   return projects.value.find((p) => p.id === projectId)?.label || projectId;

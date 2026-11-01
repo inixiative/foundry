@@ -14,7 +14,7 @@ import type {
 import { MODEL_REGISTRY, newId, Thread, threadTitle, timeFromId } from '@inixiative/foundry-core';
 import type { Hono } from 'hono';
 import type { ProjectRegistry } from '../../agents/project';
-import type { ThreadFactory } from '../../agents/thread-factory';
+import { type ThreadFactory, WorkerRefusedError } from '../../agents/thread-factory';
 import type { ThreadNamer } from '../../agents/thread-namer';
 import type { ArchiveCapture } from '../../archives/capture';
 import type { ThreadContextTracker } from '../../archives/thread-context';
@@ -22,7 +22,7 @@ import { type FeedbackService, localOperator } from '../../feedback/service';
 import type { FeedbackAbout } from '../../feedback/types';
 import { byAttention, feedbackView, newestFirst } from '../../feedback/view';
 import { branchCommits, listWorktrees } from '../../git';
-import { registryForViewer, subscriptionWorker } from '../../models/registry';
+import { registryForViewer, SUBSCRIPTION_WORKERS, subscriptionWorker } from '../../models/registry';
 import {
   IMAGE_MAX_BYTES,
   ImageAttachmentError,
@@ -42,6 +42,7 @@ import {
 import type { RunningTasks } from '../../turns/running-tasks';
 import { type ThreadSetupHost, TurnService } from '../../turns/turn-service';
 import type { ConfigStore } from '../config';
+import { resolveThreadView } from '../config-resolve';
 import type { ViewerStreams } from '../data-streams';
 import { threadToJSON, traceToJSON, validateId } from '../http-helpers';
 import { projectConcepts, threadAtlas } from '../thread-atlas';
@@ -81,6 +82,8 @@ export interface RuntimeRoutesDeps {
   /** Images sent with messages (`POST /api/attachments/images`, then `images: [id]` on a send). */
   images?: ImageAttachmentStore;
 }
+
+type SubscriptionWorkerId = keyof typeof SUBSCRIPTION_WORKERS;
 
 /** Opaque history cursor: base64url of {t: threadId, s: oldest seq of the issued page}. */
 function encodeHistoryCursor(threadId: string, seq: number): string {
@@ -663,21 +666,32 @@ export function registerRuntimeRoutes(app: Hono, deps: RuntimeRoutesDeps): { tur
   // native binding.
   const launchView = (thread: Thread) => {
     const launch = threadLaunch.get(thread.id);
-    const settings = deps.configStore.config;
-    const projectDefaults = thread.meta.projectId
-      ? settings.projects[thread.meta.projectId]?.defaults
-      : undefined;
-    const provider = projectDefaults?.provider ?? settings.defaults.provider;
-    const configuredModel = projectDefaults?.model ?? settings.defaults.model;
+    const { config: view, setAside } = resolveThreadView(deps.configStore.config, thread.meta);
+    const provider = view.defaults.provider;
+    const configuredModel = view.defaults.model;
+    const projectId = thread.meta.projectId;
+    const fallback = threadFactory?.defaultWorker(projectId) ?? provider;
+    // The workers a thread here may start on: the default, and each other one it has a login for.
+    const workers = [...new Set([fallback, ...Object.keys(SUBSCRIPTION_WORKERS)])]
+      .filter((worker) => worker === fallback || !threadFactory?.workerRefusal(projectId, worker))
+      .filter((worker) => worker === fallback || subscriptionWorker(worker))
+      .map((worker) => ({
+        id: worker,
+        label: MODEL_REGISTRY[worker]?.label ?? worker,
+        default: worker === fallback,
+      }));
     return {
       threadId: thread.id,
       provider,
+      worker: thread.meta.worker ?? provider,
       permissionMode: launch.permissionMode ?? null,
       model: launch.model ?? configuredModel,
       modelOverride: launch.model ?? null,
       effort: launch.effort ?? null,
       mcpServers: describeMcpServers(launch.mcpServers),
       revision: launch.revision,
+      /** Executor models pinned in settings that this thread's worker does not run. */
+      setAside,
       options: {
         permissionModes: PERMISSION_MODES,
         models: (MODEL_REGISTRY[provider]?.models ?? []).map((model) => ({
@@ -685,6 +699,7 @@ export function registerRuntimeRoutes(app: Hono, deps: RuntimeRoutesDeps): { tur
           label: model.label,
         })),
         efforts: EFFORT_LEVELS,
+        workers,
       },
     };
   };
@@ -796,6 +811,9 @@ export function registerRuntimeRoutes(app: Hono, deps: RuntimeRoutesDeps): { tur
     const branch = typeof body.branch === 'string' ? body.branch : undefined;
     const parentThreadId =
       typeof body.parentThreadId === 'string' ? body.parentThreadId : undefined;
+    if (body.worker !== undefined && typeof body.worker !== 'string')
+      return c.json({ error: 'worker must be a string' }, 400);
+    const worker = body.worker as string | undefined;
 
     // Resolve ownership before building anything: an unknown project or a
     // live duplicate id must not leave an unreachable thread and runtime.
@@ -812,15 +830,22 @@ export function registerRuntimeRoutes(app: Hono, deps: RuntimeRoutesDeps): { tur
 
     let thread: Thread;
     if (threadFactory) {
-      thread = threadFactory.create(id, {
-        description,
-        tags,
-        cwd,
-        branch,
-        parentThreadId,
-        projectId: project?.id,
-      });
+      try {
+        thread = threadFactory.create(id, {
+          description,
+          tags,
+          cwd,
+          branch,
+          parentThreadId,
+          projectId: project?.id,
+          ...(worker ? { worker } : {}),
+        });
+      } catch (error) {
+        if (error instanceof WorkerRefusedError) return c.json({ error: error.message }, 400);
+        throw error;
+      }
     } else {
+      if (worker) return c.json({ error: 'choosing a worker needs the thread factory' }, 400);
       // No factory: still never share the main thread's stack or agent
       // instances, and rebind scope-aware sources (memory) to the new thread
       // so main's private captures never reach it.
@@ -856,8 +881,36 @@ export function registerRuntimeRoutes(app: Hono, deps: RuntimeRoutesDeps): { tur
     const id = c.req.param('id');
     const body = await c.req.json<Record<string, unknown>>();
 
-    const thread = directory.get(id);
+    let thread = directory.get(id);
     if (!thread) return c.json({ error: 'thread not found' }, 404);
+
+    // A thread's worker is chosen before its first turn (an ACP host that cannot send it on create);
+    // after that it is fixed. The thread is rebuilt on the new worker.
+    if (body.worker !== undefined && body.worker !== thread.meta.worker) {
+      if (typeof body.worker !== 'string') return c.json({ error: 'worker must be a string' }, 400);
+      if (!threadFactory || !thread.meta.worker)
+        return c.json({ error: 'choosing a worker needs the thread factory' }, 400);
+      if (thread === harness.thread)
+        return c.json({ error: "the main thread runs on its project's default worker" }, 409);
+      if (
+        thread.disposed ||
+        thread.meta.status === 'active' ||
+        turns.hasTurns(id) ||
+        (localStore?.recentTurnIds(id, 1).length ?? 0) > 0
+      )
+        return c.json(
+          { error: `the thread has started on ${thread.meta.worker}; its worker is fixed` },
+          409,
+        );
+      const refusal = threadFactory.workerRefusal(thread.meta.projectId, body.worker);
+      if (refusal) return c.json({ error: refusal }, 400);
+      await deps.threadSetup?.release?.(id);
+      thread = directory.rebuild(id, { ...structuredClone(thread.meta), worker: body.worker });
+      // A model chosen for the old worker is not carried to the new one.
+      const chosen = threadLaunch.get(id).model;
+      if (chosen && workerModelRequirement(body.worker as SubscriptionWorkerId, chosen))
+        threadLaunch.update(id, { model: null });
+    }
 
     // Update worktree assignment
     const priorCwd = thread.meta.cwd;
@@ -1011,6 +1064,7 @@ export function registerRuntimeRoutes(app: Hono, deps: RuntimeRoutesDeps): { tur
       branch: sourceThread?.meta.branch,
       parentThreadId: sourceThread?.id,
       projectId: sourceThread.meta.projectId,
+      ...(sourceThread.meta.worker ? { worker: sourceThread.meta.worker } : {}),
     };
 
     let newThread: Thread;

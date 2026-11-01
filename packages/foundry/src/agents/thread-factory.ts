@@ -41,13 +41,12 @@ import { type NativeToolJournal, nativeBridgeSource } from '../mcp/native-bridge
 import { type CompositionSlot, MAIN_ROLE } from '../prompts/instruction-settings';
 import { compositionSource } from '../prompts/instruction-stack';
 import { DECISION_DEADLINE_MS } from '../providers/decision-budget';
-import type { SessionAdapter } from '../providers/session-adapter';
 import {
   type AgentSettingsConfig,
   DEFAULT_EXECUTOR_ID,
   type FoundryConfig,
 } from '../viewer/config';
-import { resolveProjectView } from '../viewer/config-resolve';
+import { resolveProjectView, resolveThreadView } from '../viewer/config-resolve';
 import { configuredExperts } from './configured-experts';
 import { createNativeToolProjector } from './native-tool-projection';
 import { auxiliarySessionId, type ThreadRuntimeManager } from './thread-runtime';
@@ -287,6 +286,9 @@ export function atlasRootOf(
 // ThreadFactory — lightweight thread creation from shared project state
 // ---------------------------------------------------------------------------
 
+/** A thread's worker is refused (no login, vendor off, apiTokens): the reason is the message. */
+export class WorkerRefusedError extends Error {}
+
 export interface ThreadFactoryDeps {
   /** Saved snapshot for project-specific construction through the same builders.
    * Settings edits arrive through `reconfigure`. */
@@ -306,12 +308,10 @@ export interface ThreadFactoryDeps {
    */
   agents: Map<string, BaseAgent>;
   /**
-   * Optional session adapter (e.g. ClaudeCodeSessionAdapter) for creating
-   * long-lived HarnessSessions per thread. Made available on the factory
-   * so viewer routes and future session-aware executors can resolve it
-   * without reaching into start.ts.
+   * Why a thread cannot run on a worker in its project's view, or undefined when it can
+   * (`threadWorkerRequirement`). Asked on every create, restore and reopen.
    */
-  sessionAdapter?: SessionAdapter;
+  workerRequirement?: (view: FoundryConfig, worker: string) => string | undefined;
   /**
    * Optional per-thread runtime manager. When present, every created thread
    * is wired (Librarian, Cartographer, Wardens, orchestrator, event bridges)
@@ -331,7 +331,7 @@ export interface ThreadFactoryDeps {
 export class ThreadFactory {
   private _stack: ContextStack;
   private _agents: Map<string, BaseAgent>;
-  private _sessionAdapter?: SessionAdapter;
+  private _workerRequirement?: ThreadFactoryDeps['workerRequirement'];
   private _runtime?: ThreadRuntimeManager;
   private _nativeTools?: ToolRegistry;
   private _configuration?: ThreadFactoryDeps['configuration'];
@@ -339,7 +339,7 @@ export class ThreadFactory {
   constructor(deps: ThreadFactoryDeps) {
     this._stack = deps.stack;
     this._agents = deps.agents;
-    this._sessionAdapter = deps.sessionAdapter;
+    this._workerRequirement = deps.workerRequirement;
     this._runtime = deps.runtime;
     this._nativeTools = deps.nativeTools;
     if (deps.configuration)
@@ -347,11 +347,6 @@ export class ThreadFactory {
         ...deps.configuration,
         config: structuredClone(deps.configuration.config),
       };
-  }
-
-  /** The runtime session adapter, if one was configured. */
-  get sessionAdapter(): SessionAdapter | undefined {
-    return this._sessionAdapter;
   }
 
   /** The per-thread runtime manager, if one was configured. */
@@ -372,16 +367,6 @@ export class ThreadFactory {
   }
 
   /**
-   * Attach a session adapter after construction. The adapter typically needs
-   * access to a thread's signal bus, which doesn't exist until a thread is
-   * created — so the factory often has to be built first, then retrofitted
-   * with the adapter once the main thread's signals are available.
-   */
-  attachSessionAdapter(adapter: SessionAdapter): void {
-    this._sessionAdapter = adapter;
-  }
-
-  /**
    * Settings changed. New threads build from `config`. Live threads swap edited layer sources and
    * thread agents now, and take Cartographer and Warden instructions on their next turn. Returns
    * what only a new thread picks up.
@@ -393,10 +378,7 @@ export class ThreadFactory {
     const changed = (a: unknown, b: unknown) => JSON.stringify(a) !== JSON.stringify(b);
     // Build every thread's layers and agents first: a failure changes nothing.
     const plans = [...(this._runtime?.runtimes.values() ?? [])].map(({ thread }) => {
-      const view = (c: FoundryConfig) =>
-        (thread.meta.projectId
-          ? resolveProjectView(c, thread.meta.projectId)?.config
-          : undefined) ?? c;
+      const view = (c: FoundryConfig) => resolveThreadView(c, thread.meta).config;
       const before = view(previous),
         after = view(config);
       return {
@@ -472,6 +454,22 @@ export class ThreadFactory {
     return [...deferred, ...(this._runtime?.reconfigure(config) ?? [])];
   }
 
+  /** The worker a new thread in this project (or the global scope) runs on unless another is chosen. */
+  defaultWorker(projectId?: string): string | undefined {
+    const base = this._configuration?.config;
+    if (!base) return undefined;
+    return ((projectId ? resolveProjectView(base, projectId)?.config : undefined) ?? base).defaults
+      .provider;
+  }
+
+  /** Why a thread in this project (or the global scope) cannot run on `worker`, or undefined when it can. */
+  workerRefusal(projectId: string | undefined, worker: string): string | undefined {
+    const base = this._configuration?.config;
+    if (!base) return undefined;
+    const view = (projectId ? resolveProjectView(base, projectId)?.config : undefined) ?? base;
+    return this._workerRequirement?.(view, worker);
+  }
+
   /** Whether `create` would build a thread for this project (a disabled project's are refused). */
   canCreate(projectId: string): boolean {
     return this._configuration?.config.projects[projectId]?.enabled !== false;
@@ -497,15 +495,22 @@ export class ThreadFactory {
     const base = this._configuration;
     if (opts?.projectId && base?.config.projects[opts.projectId]?.enabled === false)
       throw Error('Cannot construct a thread for a disabled project');
+    const projectView =
+      base &&
+      ((opts?.projectId ? resolveProjectView(base.config, opts.projectId)?.config : undefined) ||
+        base.config);
+    // A new thread runs on its project's default worker unless one is chosen; a stored one keeps its own.
+    const worker = opts?.worker ?? projectView?.defaults.provider;
+    const refusal =
+      projectView && worker ? this._workerRequirement?.(projectView, worker) : undefined;
+    if (refusal) throw new WorkerRefusedError(refusal);
     const config =
-      (base &&
-        (opts?.projectId ? resolveProjectView(base.config, opts.projectId)?.config : undefined)) ||
-      base?.config;
+      base && resolveThreadView(base.config, { projectId: opts?.projectId, worker }).config;
     const template =
       config && base ? new ContextStack(buildLayers(config, base.layers)) : this._stack;
     const agents = config && base ? buildAgents(config, template, base.agents) : this._agents;
     const stack = template.clone(scope);
-    thread = new Thread(id, stack, opts);
+    thread = new Thread(id, stack, { ...opts, ...(worker ? { worker } : {}) });
 
     for (const agent of agents.values()) {
       thread.register(agent.withStack(stack));

@@ -5,7 +5,7 @@
  */
 import { Database, type Statement } from 'bun:sqlite';
 import { createHash } from 'node:crypto';
-import { mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import {
   computeHash,
@@ -1373,11 +1373,38 @@ export class LocalSessionStore {
     const existing = this.query('SELECT meta FROM session_threads WHERE id=?').get(thread.id) as {
       meta: string;
     } | null;
-    if (existing && JSON.parse(existing.meta).projectId !== thread.meta.projectId)
+    const prior = existing ? (JSON.parse(existing.meta) as ThreadMeta) : undefined;
+    if (prior && prior.projectId !== thread.meta.projectId)
       throw new Error(`Thread journal owner cannot change: ${thread.id}`);
+    // A thread's worker is never changed silently: only before its first turn, when no native session holds it.
+    if (prior?.worker !== undefined && prior.worker !== thread.meta.worker) {
+      if (thread.meta.worker === undefined)
+        throw new Error(`Thread worker cannot be removed: ${thread.id}`);
+      if (this.query('SELECT 1 FROM session_turns WHERE thread_id=? LIMIT 1').get(thread.id))
+        throw new Error(
+          `Thread worker cannot change after its first turn: ${thread.id} runs on ${prior.worker}`,
+        );
+    }
     this.query(
       'INSERT INTO session_threads(id, meta) VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET meta=excluded.meta',
     ).run(thread.id, JSON.stringify(thread.meta));
+  }
+
+  /** A stored thread's worker, read before the store is opened (the daemon's main thread keeps its own). */
+  static storedWorker(path: string, threadId: string): string | undefined {
+    if (path === ':memory:' || !existsSync(path)) return undefined;
+    let db: Database | undefined;
+    try {
+      db = new Database(path);
+      const row = db.query('SELECT meta FROM session_threads WHERE id=?').get(threadId) as {
+        meta: string;
+      } | null;
+      return row ? (JSON.parse(row.meta) as ThreadMeta).worker : undefined;
+    } catch {
+      return undefined;
+    } finally {
+      db?.close();
+    }
   }
 
   threads(): Array<{ id: string; meta: ThreadMeta }> {

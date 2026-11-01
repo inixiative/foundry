@@ -59,7 +59,7 @@ export class ViewerThreadDirectory {
    * is rebuilt the way a restart restores it (`factory.create` with its stored meta), with the same
    * id, journal and native binding, and replaces the archived object. Returns the live thread, the
    * thread itself when it isn't archived, or undefined when it can't be reopened (unknown, an
-   * observed subagent's record, no factory, or a project that is gone).
+   * observed subagent's record, no factory, a project that is gone, or a worker it can no longer run on).
    */
   reopen(id: string): Thread | undefined {
     const archived = this.get(id);
@@ -68,11 +68,24 @@ export class ViewerThreadDirectory {
     const meta: ThreadMeta = structuredClone(archived.meta);
     meta.status = 'waiting';
     delete meta.archivedAt;
+    return this.rebuild(id, meta);
+  }
+
+  /**
+   * Build a thread again from its meta, in place of a disposed object (a reopen) or of a live one that
+   * has never run a turn (its worker changed: FEAT-007). Its runtime, agents and stack are rebuilt
+   * for `meta.worker`; the id, journal and project stay.
+   */
+  rebuild(id: string, meta: ThreadMeta): Thread {
+    if (!this.factory) throw Error('Rebuilding a thread needs the thread factory');
+    const current = this.get(id);
+    if (current === this.main) throw Error("The main thread's worker is its project's default");
+    current?.dispose();
     const project = meta.projectId ? this.projects?.get(meta.projectId) : undefined;
     const thread = this.factory.create(id, meta);
     Object.assign(thread.meta, meta);
     if (project) project.replaceThread(thread);
-    // Restore lists project threads here too: the archived object goes wherever it was.
+    // Restore lists project threads here too: the old object goes wherever it was.
     if (!project || this.threads.has(id)) this.threads.set(id, thread);
     return thread;
   }
@@ -88,7 +101,10 @@ export class ViewerThreadDirectory {
       thread.meta.status === 'archived' &&
       !thread.meta.spawn?.observed &&
       !!this.factory &&
-      (!thread.meta.projectId || (!!project && this.factory.canCreate(thread.meta.projectId)))
+      (!thread.meta.projectId || (!!project && this.factory.canCreate(thread.meta.projectId))) &&
+      (thread.meta.worker
+        ? !this.factory.workerRefusal(thread.meta.projectId, thread.meta.worker)
+        : this.factory.defaultWorker(thread.meta.projectId) === undefined)
     );
   }
 
@@ -137,9 +153,32 @@ export class ViewerThreadDirectory {
         );
         continue;
       }
+      // Every record names its worker; one without is never given a default (run the stamping script).
+      if (
+        !record.meta.worker &&
+        !record.meta.spawn?.observed &&
+        this.factory?.defaultWorker(record.meta.projectId) !== undefined
+      ) {
+        warnings.push(`Stored thread ${record.id} retained on disk: its record names no worker`);
+        continue;
+      }
+      if (thread && thread.meta.worker !== record.meta.worker) {
+        warnings.push(
+          `Stored thread ${record.id} retained on disk: it ran on ${record.meta.worker}, not ${thread.meta.worker}`,
+        );
+        continue;
+      }
       if (!thread) {
         if (record.meta.spawn?.observed) thread = this.observedThread(record);
-        else if (this.factory) thread = this.factory.create(record.id, record.meta);
+        else if (this.factory)
+          try {
+            thread = this.factory.create(record.id, record.meta);
+          } catch (error) {
+            warnings.push(
+              `Stored thread ${record.id} retained on disk: ${(error as Error).message}`,
+            );
+            continue;
+          }
         else {
           const stack = this.main.stack.clone({
             threadId: record.id,

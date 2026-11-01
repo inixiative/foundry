@@ -365,6 +365,7 @@ export {
   registryModel,
   resolveDecisionModel,
   SUBSCRIPTION_DECISION_MODELS,
+  SUBSCRIPTION_WORKER_MODELS,
   vendorModeProvider,
   vendorOfProvider,
 } from './model-registry';

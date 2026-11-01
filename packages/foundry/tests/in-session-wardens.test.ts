@@ -75,6 +75,7 @@ test('a turn waits queued while its thread sets up its Wardens; setup streams on
         for (const l of listeners) l(threadId, setup('ready', 3));
       },
       pending: () => !ready,
+      applies: () => true,
       onSetup: (listener) => {
         listeners.push(listener);
       },

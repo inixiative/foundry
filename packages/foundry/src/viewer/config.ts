@@ -971,7 +971,7 @@ function validateProjectCapacity(config: FoundryConfig, project: ProjectSettings
       `Project ${project.id} uses Kingdom capacity: set kingdomCapacity { kingdom, signetId, projectId? }`,
     );
   selectKingdomIntegration(config.kingdomIntegrations, capacity.kingdom);
-  if (!['claude-code', 'codex'].includes(config.defaults.provider))
+  if (!['claude-code', 'codex'].includes(project.defaults?.provider ?? config.defaults.provider))
     throw Error('Kingdom capacity requires a native runtime provider');
 }
 

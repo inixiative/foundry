@@ -49,7 +49,7 @@ import {
   type WardenPrefilter,
 } from '../providers/warden-prefilter';
 import type { FoundryConfig } from '../viewer/config';
-import { resolveProjectView } from '../viewer/config-resolve';
+import { resolveThreadView } from '../viewer/config-resolve';
 import { Cartographer, DEFAULT_ROUTE_INSTRUCTIONS } from './cartographer';
 import {
   CHORUS_RECEPTION,
@@ -398,11 +398,11 @@ export interface ThreadRuntimeDeps {
   /** Persistence subscribers (file memory, postgres, muninn) attached to every thread's bus with that thread as owner. */
   signalSinks?: SignalSink[];
   /**
-   * Native session adapter. Its lifecycle signals for the central session are
-   * bound to the thread bus; auxiliary sessions are bound to a side bus and
-   * re-emitted with an `auxiliary_` prefix so they never invalidate the ledger.
+   * Native session adapters, one per worker. A thread's worker's lifecycle signals for its central
+   * session are bound to the thread bus; auxiliary sessions are bound to a side bus and re-emitted
+   * with an `auxiliary_` prefix so they never invalidate the ledger.
    */
-  sessionAdapter?: SessionAdapter;
+  sessionAdapters?: ReadonlyMap<string, SessionAdapter>;
   /**
    * The conversation wrapper (docs/reference/CONVERSATIONS.md §4.1): a conversation thread is always
    * wrapped, and the member notes admitted since the owner last spoke ride the agent's next turn, whoever opened it.
@@ -725,11 +725,7 @@ export class ThreadRuntimeManager {
     }
 
     const config = structuredClone(
-      configuration ??
-        (thread.meta.projectId
-          ? resolveProjectView(this._deps.config, thread.meta.projectId)?.config
-          : undefined) ??
-        this._deps.config,
+      configuration ?? resolveThreadView(this._deps.config, thread.meta).config,
     );
     // All mappings, provider selections and generated-layer collisions are
     // checked before Librarian, middleware, subscriptions or layers attach.
@@ -814,11 +810,8 @@ export class ThreadRuntimeManager {
     this._deps = { ...this._deps, config };
     const deferred: string[] = [];
     for (const runtime of this._runtimes.values()) {
-      const projectId = runtime.thread.meta.projectId;
-      const view = structuredClone(
-        (projectId ? resolveProjectView(config, projectId)?.config : undefined) ?? config,
-      );
       try {
+        const view = structuredClone(resolveThreadView(config, runtime.thread.meta).config);
         const domains = resolveThreadDomains(
           view,
           new Map(
@@ -1816,7 +1809,7 @@ class ThreadRuntimeImpl implements ThreadRuntime {
     // ledger. Auxiliary sessions bind to a side bus whose signals are
     // re-emitted with an `auxiliary_` prefix: visible in thread-state and
     // activity, but never mistaken for central compaction.
-    const adapter = deps.sessionAdapter;
+    const adapter = thread.meta.worker ? deps.sessionAdapters?.get(thread.meta.worker) : undefined;
     if (adapter?.bindSignals) {
       this._unsubs.push(adapter.bindSignals(thread.id, signals));
       const auxBus = new SignalBus();

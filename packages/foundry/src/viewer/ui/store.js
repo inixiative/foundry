@@ -1419,13 +1419,13 @@ export async function deleteProject(id) {
 }
 
 /** Create a thread in the active scope and select it, so the next send goes to it. */
-export async function createThread({ name, description, tags, worktreePath, branch } = {}) {
+export async function createThread({ name, description, tags, worktreePath, branch, worker } = {}) {
   try {
     const projectId = activeProjectId.value || undefined;
     const res = await authFetch('/api/threads', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectId, name, description, tags, worktreePath, branch }),
+      body: JSON.stringify({ projectId, name, description, tags, worktreePath, branch, worker }),
     });
     if (res.ok) {
       const created = await res.json();

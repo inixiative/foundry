@@ -3,12 +3,14 @@
  * @kind constant
  * @partOf feature:wardens
  */
+
 import {
   ClaudeInSessionDecisions,
   type InSessionSetup,
   type PrimedEvent,
   type PrimeSpec,
 } from '@inixiative/agent-session';
+import type { NativeBridgeSource, ThreadSetup } from '@inixiative/foundry-core';
 
 /**
  * Base instructions for a Warden held inside the thread's own Claude Code process
@@ -33,6 +35,8 @@ export interface InSessionWardensConfig {
   onSetup?: (threadId: string, setup: InSessionSetup) => void;
   onEvent?: (event: PrimedEvent) => void;
 }
+
+import type { ThreadSetupHost } from '../turns/turn-service';
 
 type Roster = ReadonlyArray<{ spec: PrimeSpec; standby: string }>;
 
@@ -129,4 +133,45 @@ export class InSessionWardens {
     this._rosters.clear();
     await Promise.all(hosts.map((h) => h.close()));
   }
+}
+
+/**
+ * The thread setup host for `claude-in-session`: a Claude Code thread opens its session ahead of its
+ * first turn and holds its Wardens in it. A thread on another worker has no setup step and uses
+ * primed Wardens (the decision host's path when no host serves it).
+ */
+export function inSessionThreadSetup(options: {
+  wardens: InSessionWardens;
+  /** The Claude Code worker's provider. */
+  provider: {
+    open(threadId: string, opts: { cwd?: string; bridge?: NativeBridgeSource }): Promise<void>;
+  };
+  worker: (threadId: string) => string | undefined;
+  onSetup: (listener: (threadId: string, setup: ThreadSetup) => void) => void;
+}): ThreadSetupHost & {
+  onSetup(listener: (threadId: string, setup: ThreadSetup) => void): void;
+} {
+  const { wardens, provider } = options;
+  /** Threads whose session was opened ahead of a turn. */
+  const opened = new Set<string>();
+  const applies = (threadId: string) => options.worker(threadId) === 'claude-code';
+  return {
+    applies,
+    open: async (threadId, opts) => {
+      if (!applies(threadId)) return;
+      opened.add(threadId);
+      await provider.open(threadId, opts);
+      await wardens.ready(threadId);
+    },
+    // Setting up: a host is starting, or the thread's session has not been opened yet.
+    pending: (threadId) =>
+      applies(threadId) &&
+      (wardens.setup(threadId)?.status === 'starting' ||
+        (!wardens.attached(threadId) && !opened.has(threadId))),
+    release: async (threadId) => {
+      opened.delete(threadId);
+      await wardens.release(threadId);
+    },
+    onSetup: options.onSetup,
+  };
 }

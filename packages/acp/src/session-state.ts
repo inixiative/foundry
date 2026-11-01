@@ -71,6 +71,15 @@ export function configOptions(view: ThreadLaunchView): SessionConfigOption[] {
       options: models,
     },
     {
+      id: 'worker',
+      name: 'Worker',
+      // Not a model: hosts pick their model selector by the `model` category.
+      category: '_worker',
+      type: 'select',
+      currentValue: view.worker,
+      options: view.options.workers.map((worker) => ({ value: worker.id, name: worker.label })),
+    },
+    {
       id: 'effort',
       name: 'Effort',
       category: 'thought_level',
