@@ -17,6 +17,7 @@ import { ParticipantsPanel } from './conversation-members.js';
 import { Inspector, inspection, ThreadDetail } from './detail-drawer.js';
 import { feedbackIn, ThreadFeedback } from './feedback.js';
 import { html } from './lib.js';
+import { ProcessInspector, Running } from './running.js';
 import {
   activeThreadId,
   authFetch,
@@ -217,6 +218,18 @@ export function RightPanel({ onSpanSelect }) {
       })}
     </div>`;
 
+  if (inspectTarget.value?.kind === 'process')
+    return html`<div class="right-panel detail-drawer">
+      <header class="rp-band">
+        <div class="rp-band-row">
+          <button class="rp-back" onClick=${closeInspector}>← ${TAB_LABELS[tab]}</button>
+          <span class="rp-eyebrow">Inspector</span>
+        </div>
+        <h2 class="rp-title">Process output</h2>
+      </header>
+      <div class="rp-frame"><${ProcessInspector} target=${inspectTarget.value} /></div>
+    </div>`;
+
   if (target)
     return html`<div class="right-panel detail-drawer">
       <header class="rp-band">
@@ -269,5 +282,6 @@ export function RightPanel({ onSpanSelect }) {
     <div class="rp-frame" role="tabpanel">
       <${TabBody} tab=${tab} threadId=${threadId} />
     </div>
+    <${Running} threadId=${threadId} />
   </div>`;
 }

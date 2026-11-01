@@ -1,0 +1,116 @@
+/* Running, pinned at the bottom of the right panel (running.js). */
+.running {
+  border-top: 1px solid hsl(var(--border));
+  padding: 8px 12px 10px;
+  display: grid;
+  gap: 4px;
+  max-height: 34vh;
+  overflow: auto;
+  flex: none;
+}
+.running-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.running-head b {
+  font: 600 11px var(--font-mono, monospace);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: hsl(var(--muted-foreground));
+}
+.running-head span,
+.running-none {
+  font-size: 12px;
+  color: hsl(var(--muted-foreground));
+}
+.running-row {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  padding: 4px 2px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.running-row:hover {
+  background: hsl(var(--muted) / 0.5);
+}
+.running-kind {
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  background: hsl(var(--app-primary) / 0.25);
+}
+.running-row.s-passed .running-kind {
+  background: hsl(205 70% 70% / 0.3);
+}
+.running-row.s-stopped .running-kind,
+.running-row.s-killed .running-kind {
+  background: hsl(var(--muted));
+}
+.running-row.s-failed .running-kind {
+  background: hsl(7 100% 74% / 0.3);
+}
+.running-label {
+  display: grid;
+  min-width: 0;
+}
+.running-label b {
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.running-label code {
+  font: 11px var(--font-mono, monospace);
+  color: hsl(var(--muted-foreground));
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.running-state {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+}
+.running-state i {
+  font-style: normal;
+  font-size: 11.5px;
+  color: hsl(var(--muted-foreground));
+  white-space: nowrap;
+}
+.running-state button {
+  background: none;
+  border: 1px solid hsl(var(--border));
+  border-radius: 6px;
+  color: hsl(var(--muted-foreground));
+  font-size: 11.5px;
+  padding: 1px 7px;
+  cursor: pointer;
+}
+.running-state button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.process-inspector {
+  display: grid;
+  gap: 8px;
+  padding: 4px 2px;
+}
+.process-output {
+  margin: 0;
+  padding: 10px;
+  border-radius: 8px;
+  background: hsl(var(--muted) / 0.6);
+  font-size: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 70vh;
+  overflow: auto;
+}

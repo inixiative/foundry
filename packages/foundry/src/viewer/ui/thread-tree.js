@@ -24,6 +24,7 @@ import {
   projects,
   promptCounts,
   prompts,
+  railExpanded,
   renameThread,
   selectScope,
   selectThread,
@@ -171,7 +172,8 @@ const descendants = (node) =>
 
 export function ThreadNode({ thread, depth = 0, selectedId, onSelect, inactive = false }) {
   // Two levels show (a thread and its subagents); deeper subagents fold until asked for.
-  const [expanded, setExpanded] = useState(!inactive && depth < VISIBLE_DEPTH);
+  const [open, setExpanded] = useState(!inactive && depth < VISIBLE_DEPTH);
+  const expanded = open || railExpanded.value.has(thread.id);
   const isSelected = selectedId === thread.id;
   const children = thread.children || [];
   const activeChildren = children.filter(isActiveThread);
@@ -214,6 +216,10 @@ export function ThreadNode({ thread, depth = 0, selectedId, onSelect, inactive =
               ? html`<span class="tree-caret" title=${expanded ? 'Fold subagents' : 'Show subagents'}
                   onClick=${(e) => {
                     e.stopPropagation();
+                    if (expanded)
+                      railExpanded.value = new Set(
+                        [...railExpanded.value].filter((id) => id !== thread.id),
+                      );
                     setExpanded(!expanded);
                   }}>${expanded ? '▾' : '▸'}</span>`
               : null
