@@ -54,7 +54,7 @@ export const allThreads = signal([]); // all threads (multi-thread support)
 export const activeThreadId = signal(null); // selected thread ID (null = first/default)
 export const liveEvents = signal([]);
 /** The centre's tab: conversation (Thread) | plan | work | graph (Loop). */
-export const CENTER_PANELS = ['conversation', 'plan', 'work', 'graph'];
+export const CENTER_PANELS = ['conversation', 'plan', 'graph'];
 export const activePanel = signal('conversation');
 export const commandPaletteOpen = signal(false);
 export const helpOpen = signal(false);
@@ -84,7 +84,9 @@ export const detailDrawerOpen = signal(true); // right panel collapsed state
 /** What the detail drawer inspects besides a trace: `{ kind: 'layer', id }` or null. */
 export const inspectTarget = signal(null);
 /** The right panel's tab: context | participants | permissions | heralds | feedback. (Pointers live in Loop.) */
-export const RIGHT_TABS = ['context', 'participants', 'permissions', 'heralds', 'feedback'];
+export const RIGHT_TABS = ['work', 'context', 'participants', 'permissions', 'heralds', 'feedback'];
+/** The right panel widened (for Work's diffs and file lists). */
+export const rightWide = signal(false);
 export const rightTab = signal('context');
 /** The left rail: 'open' (every open thread, Yours over Shared) or 'projects' (the projects, then a scope's threads). */
 export const railView = signal('open');

@@ -182,9 +182,10 @@ test('Plan shows the about and the checklist, a step opens its turn; Work shows 
       'turn 2 focused',
     );
 
-    // Work (key 3): four sections; the file the turn wrote and the branch's commit.
-    await page.keyboard.press('3');
-    const work = page.locator('.work');
+    // Work lives in the right panel (its first tab): four sections; the file the turn wrote and the commit.
+    expect(await page.locator('.center-view', { hasText: 'Work' }).count()).toBe(0);
+    await page.locator('.rp-tab', { hasText: 'Work' }).click();
+    const work = page.locator('.right-panel .work');
     for (const title of ['File changes', 'Commits', 'Artifacts', 'Signets'])
       await work.locator('.rp-section-title', { hasText: title }).waitFor();
     await work.locator('.work-file', { hasText: 'src/checkout/retry.ts' }).waitFor();
@@ -192,6 +193,11 @@ test('Plan shows the about and the checklist, a step opens its turn; Work shows 
     await work
       .locator('.work-section', { hasText: 'No Signet is in use on this thread.' })
       .waitFor();
+    // Wide gives the panel room for diffs; Narrow puts it back.
+    await page.locator('.rp-wide').click();
+    await page.locator('.panels--right-wide').waitFor();
+    await page.locator('.rp-wide').click();
+    expect(await page.locator('.panels--right-wide').count()).toBe(0);
     expect(errors).toEqual([]);
   } finally {
     const failures = await releaseAll(cleanup);
