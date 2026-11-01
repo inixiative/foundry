@@ -149,6 +149,8 @@ export interface FoundryConfig {
 
   /** This Foundry's installation name: what Kingdom pairing names it. Default "Foundry on <host>". */
   installationName?: string;
+  /** The message box: one box with a destination label (Thread · /btw · /aside), or a box per open view. */
+  messageBox?: { separateViews?: boolean };
 
   /**
    * Global agent templates (keyed by agent ID).
@@ -986,6 +988,14 @@ export function validateConfig(config: FoundryConfig): void {
       config.installationName.length > 120)
   )
     throw Error('installationName must be 1 to 120 characters');
+  if (
+    config.messageBox !== undefined &&
+    (typeof config.messageBox !== 'object' ||
+      config.messageBox === null ||
+      (config.messageBox.separateViews !== undefined &&
+        typeof config.messageBox.separateViews !== 'boolean'))
+  )
+    throw Error('messageBox.separateViews must be true or false');
   refuseHandNamedWardens(config);
   validateAgentKinds('global', config.agents ?? {});
   assertMainThreadLabs(config);
@@ -1302,6 +1312,10 @@ export class ConfigStore {
         next.defaults = { ...next.defaults, ...patch } as FoundryConfig['defaults'];
       } else if (section === 'vendors') {
         next.vendors = patchVendorSettings(next.vendors, patch);
+      } else if (section === 'messageBox') {
+        if (typeof patch.separateViews === 'boolean')
+          next.messageBox = { ...next.messageBox, separateViews: patch.separateViews };
+        else if (patch.separateViews === null) delete next.messageBox;
       } else if (section === 'profile') {
         // A name, or null to fall back to the default ("Foundry on <host>").
         if (typeof patch.installationName === 'string')
