@@ -32,7 +32,11 @@ const temporary = async () => {
 
 const setupToken = `sk-ant-oat01-${'a'.repeat(40)}`;
 
-async function kingdomWithLogin(runtime: 'claude' | 'codex', userClaudeDirectory?: string) {
+async function kingdomWithLogin(
+  runtime: 'claude' | 'codex',
+  userClaudeDirectory?: string,
+  userCodexDirectory?: string,
+) {
   const directory = await temporary();
   const owner = `OrganizationUser:${crypto.randomUUID()}:${crypto.randomUUID()}:`;
   const bindingId = crypto.randomUUID(),
@@ -85,6 +89,7 @@ async function kingdomWithLogin(runtime: 'claude' | 'codex', userClaudeDirectory
       effort: 'high',
     }),
     ...(userClaudeDirectory ? { userClaudeDirectory } : {}),
+    ...(userCodexDirectory ? { userCodexDirectory } : {}),
   });
   return {
     directory,
@@ -167,6 +172,35 @@ test('a pool main thread loads the user’s own setup into the login’s home, u
   );
   expect(existsSync(join(home, 'commands'))).toBe(true);
   launch.release();
+});
+
+test('a pool Codex main thread runs on its own home with the user’s allowlisted setup', async () => {
+  const user = await mkdtemp(join(tmpdir(), 'kingdom-user-codex-'));
+  cleanups.push(() => rm(user, { recursive: true, force: true }));
+  await mkdir(join(user, 'skills'));
+  await Bun.write(
+    join(user, 'config.toml'),
+    'model_provider = "evil"\n[mcp_servers.repl]\ncommand = "/bin/repl"\n',
+  );
+  const { directory, auth, loginId } = await kingdomWithLogin('codex', undefined, user);
+  const main = await auth.prepare('thread-1', 'codex');
+  const child = main.launch(['codex', 'app-server'], {}, { sources: 'user', cwd: directory });
+  const home = join(directory, 'subscriptions', loginId, 'codex-user');
+  expect(child.env.CODEX_HOME).toBe(home);
+  const config = await readFile(join(home, 'config.toml'), 'utf8');
+  expect(config).toContain('cli_auth_credentials_store = "file"');
+  expect(config).toContain('mcp_servers');
+  expect(config).not.toContain('evil');
+  expect(existsSync(join(home, 'skills'))).toBe(true);
+  expect(existsSync(join(home, 'auth.json'))).toBe(true);
+  main.release();
+  // The last holder takes the login's tokens with it.
+  expect(existsSync(join(home, 'auth.json'))).toBe(false);
+  const plain = await auth.prepare('thread-2', 'codex');
+  expect(plain.launch(['codex', 'app-server'], {}).env.CODEX_HOME).toBe(
+    join(directory, 'subscriptions', loginId, 'codex'),
+  );
+  plain.release();
 });
 
 test('limit readings from the native session go back to Kingdom for the run', async () => {

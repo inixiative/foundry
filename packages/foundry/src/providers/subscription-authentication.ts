@@ -64,7 +64,10 @@ export class SubscriptionAuthentication extends NativeAuthentication {
     const configDirectory = this.workerSource.profileDirectory;
     // Codex launch overrides are already limited to sandbox, approval and effort by the native binding.
     if (runtime === 'codex')
-      return { ...launch, launch: (argv, env) => launch.launch(argv, nativeTextEnvironment(env)) };
+      return {
+        ...launch,
+        launch: (argv, env, harness) => launch.launch(argv, nativeTextEnvironment(env), harness),
+      };
     return {
       ...launch,
       launch(argv, env, harness) {

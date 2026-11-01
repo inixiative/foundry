@@ -194,7 +194,16 @@ export function shareUserSetup(home: string, userDirectory: string): void {
     } catch {
       /* Nothing to remove. */
     }
-  for (const name of USER_FOLDERS) {
+  linkUserFolders(home, userDirectory, USER_FOLDERS);
+}
+
+/**
+ * Links `names` in a Foundry-owned home to the user's own folders. A real folder found where a link
+ * goes is moved aside, kept, not deleted; links are swapped by rename, so another thread on the
+ * home never sees a gap.
+ */
+function linkUserFolders(home: string, userDirectory: string, names: readonly string[]): void {
+  for (const name of names) {
     const link = join(home, name);
     const target = join(userDirectory, name);
     let current: ReturnType<typeof lstatSync> | undefined;
@@ -215,4 +224,137 @@ export function shareUserSetup(home: string, userDirectory: string): void {
     symlinkSync(target, temporary);
     renameSync(temporary, link);
   }
+}
+
+/**
+ * The parts of a user's Codex `config.toml` a Foundry main thread takes (CORE-003), by allowlist:
+ * their MCP servers, plugins and marketplaces, skills, tools, hooks, notify, shell policy and
+ * display settings. Never their model, provider, profiles, base URLs, login settings, project
+ * trust or memories, so nothing in it can move the thread off the subscription login, and
+ * AGENTS.md and memories stay with Foundry's composition. Not `features` either: flags there turn
+ * on memories, faster paid tiers, other identities and auth storage (codex 0.162.1). A denylist
+ * could be bypassed by quoting or dotted keys; an allowlist over the parsed table cannot.
+ */
+const CODEX_USER_KEYS = [
+  'mcp_servers',
+  'plugins',
+  'marketplaces',
+  'skills',
+  'tools',
+  'hooks',
+  'notify',
+  'shell_environment_policy',
+  'sandbox_workspace_write',
+  'model_reasoning_summary',
+  'model_verbosity',
+  'hide_agent_reasoning',
+  'show_raw_agent_reasoning',
+  'file_opener',
+] as const;
+
+/**
+ * Env an MCP server must not get from the user's config: it would point the server at the user's
+ * own Codex home and login (the ChatGPT app's `node_repl` sets `CODEX_HOME=~/.codex`), so a pool
+ * run's tools would bill the user's personal login.
+ */
+const MCP_LOGIN_ENV = /^(CODEX_|OPENAI_|ANTHROPIC_|CLAUDE_CONFIG_DIR$|CLAUDE_CODE_OAUTH_TOKEN$)/;
+
+function withoutLoginEnv(servers: unknown): unknown {
+  if (!servers || typeof servers !== 'object' || Array.isArray(servers)) return servers;
+  return Object.fromEntries(
+    Object.entries(servers).map(([name, server]) => {
+      const env = (server as { env?: unknown } | null)?.env;
+      if (!env || typeof env !== 'object' || Array.isArray(env)) return [name, server];
+      return [
+        name,
+        {
+          ...(server as Record<string, unknown>),
+          env: Object.fromEntries(Object.entries(env).filter(([key]) => !MCP_LOGIN_ENV.test(key))),
+        },
+      ];
+    }),
+  );
+}
+
+/** Codex folders shared from the user's home: their skills, execpolicy rules and prompts. */
+const CODEX_USER_FOLDERS = ['skills', 'rules', 'prompts'] as const;
+
+const tomlKey = (key: string) => (/^[A-Za-z0-9_-]+$/.test(key) ? key : JSON.stringify(key));
+
+function tomlValue(value: unknown): string {
+  if (typeof value === 'string') return JSON.stringify(value);
+  if (typeof value === 'number') {
+    if (Number.isNaN(value)) return 'nan';
+    if (!Number.isFinite(value)) return value > 0 ? 'inf' : '-inf';
+    return String(value);
+  }
+  if (typeof value === 'boolean') return String(value);
+  if (Array.isArray(value)) return `[${value.map(tomlValue).join(', ')}]`;
+  if (value && typeof value === 'object')
+    return `{ ${Object.entries(value)
+      .map(([key, inner]) => `${tomlKey(key)} = ${tomlValue(inner)}`)
+      .join(', ')} }`;
+  throw Error('Unsupported value in Codex config.toml');
+}
+
+/** One `key = value` line, kept only when it reads back as the same value (a TOML date doesn't). */
+function tomlLine(key: string, value: unknown): string | undefined {
+  try {
+    const line = `${key} = ${tomlValue(value)}\n`;
+    const back = (Bun.TOML.parse(line) as Record<string, unknown>)[key];
+    return Bun.deepEquals(back, value) ? line : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Tables whose entries stand alone: one entry that can't be written back drops only itself. */
+const CODEX_PER_ENTRY = new Set<string>(['mcp_servers', 'plugins', 'marketplaces']);
+
+/**
+ * The allowlisted part of the user's Codex config.toml, as TOML lines; empty when there is none.
+ * A value that can't be written back unchanged (a TOML date, `-0`) is left out, never written
+ * altered: one MCP server, plugin or marketplace entry at a time, any other key whole. Each drop,
+ * and a config Bun can't read, is reported through `warn`.
+ */
+export function codexUserConfig(
+  userDirectory: string,
+  warn: (message: string) => void = console.warn,
+): string {
+  const file = join(userDirectory, 'config.toml');
+  let text: string;
+  try {
+    text = readFileSync(file, 'utf8');
+  } catch {
+    return ''; // No config: nothing to take.
+  }
+  let parsed: Record<string, unknown>;
+  try {
+    parsed = Bun.TOML.parse(text) as Record<string, unknown>;
+  } catch (error) {
+    warn(`[Codex] ${file} could not be read (${(error as Error).message}); none of it is loaded`);
+    return '';
+  }
+  const lines: string[] = [];
+  for (const key of CODEX_USER_KEYS) {
+    if (!(key in parsed)) continue;
+    let value = key === 'mcp_servers' ? withoutLoginEnv(parsed[key]) : parsed[key];
+    if (CODEX_PER_ENTRY.has(key) && value && typeof value === 'object' && !Array.isArray(value))
+      value = Object.fromEntries(
+        Object.entries(value).filter(([name, entry]) => {
+          if (tomlLine('entry', entry)) return true;
+          warn(`[Codex] ${key}.${name} in ${file} can't be carried over unchanged; left out`);
+          return false;
+        }),
+      );
+    const line = tomlLine(key, value);
+    if (line) lines.push(line);
+    else warn(`[Codex] ${key} in ${file} can't be carried over unchanged; left out`);
+  }
+  return lines.join('');
+}
+
+/** A Foundry-owned CODEX_HOME for a main thread: the user's skills, rules and prompts by link. */
+export function shareCodexUserSetup(home: string, userDirectory: string): void {
+  linkUserFolders(home, userDirectory, CODEX_USER_FOLDERS);
 }

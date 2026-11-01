@@ -1,6 +1,6 @@
 # CORE-003: Main threads load the harness's own settings, commands and skills
 
-**Status**: 🔨 Built for Claude (2026-11-01, Aron: "let's start with that and see if there are any problems with it"). Codex not yet.
+**Status**: 🔨 Built for Claude (#223) and Codex (2026-11-01, Aron: "let's build Codex").
 **Assignee**: TBD
 **Priority**: Medium
 **Created**: 2026-11-01

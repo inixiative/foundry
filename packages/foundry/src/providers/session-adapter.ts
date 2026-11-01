@@ -902,6 +902,8 @@ export interface CodexSessionAdapterConfig {
    * consumers can treat native runtimes uniformly.
    */
   signals?: SignalBus;
+  /** Whether a main thread takes the user's own Codex setup (CORE-003), by its working directory. */
+  harnessSettings?: (cwd: string) => HarnessSettingSources | undefined;
 }
 
 export class CodexSessionAdapter implements SessionAdapter {
@@ -919,7 +921,10 @@ export class CodexSessionAdapter implements SessionAdapter {
   private _defaults: CodexSessionAdapterConfig['defaults'];
   private _signals: ThreadSignalBindings;
 
+  private _harnessSettings?: CodexSessionAdapterConfig['harnessSettings'];
+
   constructor(config: CodexSessionAdapterConfig) {
+    this._harnessSettings = config.harnessSettings;
     this._appConfig = deepFreeze(structuredClone(config.appServerConfig ?? {}));
     if (
       config.authentication &&
@@ -962,6 +967,10 @@ export class CodexSessionAdapter implements SessionAdapter {
     }
     const auth = await this._authentication?.prepare(opts.threadId, 'codex');
     const bindingId = auth?.bindingId ?? opts.threadId;
+    // A main thread is the user's own Codex: their MCP servers, plugins, skills and rules.
+    const sources = !opts.threadId.includes(':aux:')
+      ? this._harnessSettings?.(opts.cwd)
+      : undefined;
     const existing = await this._store.load(bindingId, this.runtime);
 
     let ownedExit: Promise<number> | undefined;
@@ -998,7 +1007,11 @@ export class CodexSessionAdapter implements SessionAdapter {
         if (spawned)
           throw Error('New native process requires new owned adapter construction and preflight');
         opts.nativeBridge?.check();
-        const launch = auth?.launch(cmd, options.env);
+        const launch = auth?.launch(
+          cmd,
+          options.env,
+          sources ? { sources, cwd: opts.cwd } : undefined,
+        );
         let child: ReturnType<typeof defaultSpawn>;
         try {
           child = defaultSpawn(launch?.argv ?? cmd, {

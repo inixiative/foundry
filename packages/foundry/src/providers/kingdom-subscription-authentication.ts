@@ -11,7 +11,9 @@ import { writePrivateFile } from '../client/private-file';
 import { defaultProfileDirectory } from './default-profiles';
 import {
   claudeSettingsFiles,
+  codexUserConfig,
   type HarnessSettingsLaunch,
+  shareCodexUserSetup,
   shareUserSetup,
   subscriptionSettingsGuard,
 } from './harness-settings';
@@ -83,6 +85,8 @@ export class KingdomSubscriptionAuthentication implements NativeAuthenticationPr
       warn?: (message: string) => void;
       /** The user's own Claude home shared into each login's home; default ~/.claude. */
       userClaudeDirectory?: string;
+      /** The user's own Codex home whose setup a main thread takes; default ~/.codex. */
+      userCodexDirectory?: string;
     },
   ) {
     if (!isAbsolute(options.directory)) throw Error('Kingdom profile directory must be absolute');
@@ -138,7 +142,8 @@ export class KingdomSubscriptionAuthentication implements NativeAuthenticationPr
     if (released.runtime !== runtime || released.integrationId !== run.envelope.integrationId)
       throw Error('Kingdom released a different login');
     const bindingId = this.bindingFor(threadId, run);
-    const home = join(this.options.directory, released.integrationId, runtime);
+    const baseHome = join(this.options.directory, released.integrationId, runtime);
+    let home = baseHome;
     let active = false,
       ended = false;
     const check = () => {
@@ -158,6 +163,8 @@ export class KingdomSubscriptionAuthentication implements NativeAuthenticationPr
       ) => {
         check();
         if (active) throw Error('Authentication launch already owns a process');
+        // A Codex main thread with the user's own setup runs on its own home beside the plain one.
+        if (runtime === 'codex' && harness) home = `${baseHome}-user`;
         const env = withoutCompetingCredentials(inherited);
         mkdirSync(home, { recursive: true, mode: 0o700 });
         assertPrivateProfile(home);
@@ -178,7 +185,15 @@ export class KingdomSubscriptionAuthentication implements NativeAuthenticationPr
           } else launchArgs = [...launchArgs, '--setting-sources', ''];
         } else {
           assertCodexLaunchArguments(argv);
-          this.writeCodexLogin(home, released);
+          const userCodex = this.options.userCodexDirectory ?? defaultProfileDirectory('codex');
+          this.writeCodexLogin(
+            home,
+            released,
+            harness
+              ? CODEX_HOME_CONFIG + codexUserConfig(userCodex, this.options.warn)
+              : CODEX_HOME_CONFIG,
+          );
+          if (harness) shareCodexUserSetup(home, userCodex);
           env.CODEX_HOME = home;
         }
         active = true;
@@ -213,10 +228,10 @@ export class KingdomSubscriptionAuthentication implements NativeAuthenticationPr
   }
   /** Codex reads its ChatGPT login from CODEX_HOME. It gets the access and id tokens only: with no
    * refresh token it cannot become a second refresher of the login Kingdom refreshes. */
-  private writeCodexLogin(home: string, released: KingdomSubscriptionRelease) {
+  private writeCodexLogin(home: string, released: KingdomSubscriptionRelease, config: string) {
     if (!released.idToken || !released.accountId)
       throw Error('Kingdom released a ChatGPT login without its account; log in again');
-    writePrivateFile(join(home, 'config.toml'), CODEX_HOME_CONFIG);
+    writePrivateFile(join(home, 'config.toml'), config);
     writePrivateFile(
       join(home, 'auth.json'),
       JSON.stringify({

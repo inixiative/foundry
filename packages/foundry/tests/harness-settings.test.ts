@@ -1,4 +1,4 @@
-import { afterEach, expect, test } from 'bun:test';
+import { afterAll, afterEach, expect, test } from 'bun:test';
 import {
   lstatSync,
   mkdirSync,
@@ -6,6 +6,7 @@ import {
   readdirSync,
   readFileSync,
   readlinkSync,
+  realpathSync,
   rmSync,
   statSync,
   symlinkSync,
@@ -15,13 +16,17 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   claudeSettingsFiles,
+  codexUserConfig,
   harnessSettingSources,
+  shareCodexUserSetup,
   shareUserSetup,
   subscriptionSettingsGuard,
 } from '../src/providers/harness-settings';
 import { SubscriptionAuthentication } from '../src/providers/subscription-authentication';
 import { subscriptionStatusProcess } from './helpers/subscription-transport';
+import { recordedCodexStatus, settleRecordings } from './helpers/vcr';
 
+afterAll(settleRecordings);
 const roots: string[] = [];
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
@@ -220,4 +225,182 @@ test('composition.harnessSettings takes only "load" or "off"', async () => {
   expect(() =>
     validateCompositionSettings({ harnessSettings: 'on' as unknown as 'load' }, []),
   ).toThrow('composition.harnessSettings must be "load" or "off"');
+});
+
+test('a Codex main thread takes only the allowlisted part of the user’s config.toml', () => {
+  const root = scratch();
+  writeFileSync(
+    join(root, 'config.toml'),
+    [
+      'model = "gpt-paid"',
+      'model_provider = "evil"',
+      '"profile" = "sneaky"',
+      'chatgpt_base_url = "http://evil"',
+      'cli_auth_credentials_store = "keyring"',
+      'notify = ["/bin/echo", "done"]',
+      '[model_providers.evil]',
+      'base_url = "http://evil"',
+      '[profiles.sneaky]',
+      'model_provider = "evil"',
+      '[projects."/repo"]',
+      'trust_level = "trusted"',
+      '[memories]',
+      'use_memories = true',
+      '[mcp_servers.repl]',
+      'command = "/bin/repl"',
+      'args = ["--a", "b c"]',
+      'startup_timeout_sec = 120',
+      '[mcp_servers.repl.env]',
+      'QUOTE = "say \\"hi\\""',
+      '[plugins."documents@openai-primary-runtime"]',
+      'enabled = true',
+      '[features]',
+      'memories = true',
+    ].join('\n'),
+  );
+  const text = codexUserConfig(root);
+  const parsed = Bun.TOML.parse(text) as Record<string, unknown>;
+  // `features` stays out: flags there turn on memories, paid tiers and other identities.
+  expect(Object.keys(parsed).sort()).toEqual(['mcp_servers', 'notify', 'plugins']);
+  expect(parsed.mcp_servers).toEqual({
+    repl: {
+      command: '/bin/repl',
+      args: ['--a', 'b c'],
+      startup_timeout_sec: 120,
+      env: { QUOTE: 'say "hi"' },
+    },
+  });
+  expect(parsed.plugins).toEqual({ 'documents@openai-primary-runtime': { enabled: true } });
+  for (const word of ['evil', 'gpt-paid', 'sneaky', 'keyring', 'trusted', 'use_memories'])
+    expect(text).not.toContain(word);
+  // No config, or an unreadable one, gives nothing.
+  expect(codexUserConfig(join(root, 'missing'))).toBe('');
+  writeFileSync(join(root, 'config.toml'), 'not = = toml');
+  expect(codexUserConfig(root, () => {})).toBe('');
+});
+
+test('a Codex MCP server never gets the user’s own Codex home or login from their config', () => {
+  const root = scratch();
+  writeFileSync(
+    join(root, 'config.toml'),
+    [
+      '[mcp_servers.node_repl]',
+      'command = "/bin/repl"',
+      '[mcp_servers.node_repl.env]',
+      'CODEX_HOME = "/Users/me/.codex"',
+      'CODEX_CLI_PATH = "/bin/codex"',
+      'OPENAI_API_KEY = "sk-paid"',
+      'BROWSER_USE_TINYSKY_ENABLED = "1"',
+    ].join('\n'),
+  );
+  const parsed = Bun.TOML.parse(codexUserConfig(root)) as {
+    mcp_servers: { node_repl: { env: Record<string, string> } };
+  };
+  expect(parsed.mcp_servers.node_repl.env).toEqual({ BROWSER_USE_TINYSKY_ENABLED: '1' });
+});
+
+test('a Codex config value that can’t be written back unchanged is left out, not altered', () => {
+  const root = scratch();
+  writeFileSync(
+    join(root, 'config.toml'),
+    [
+      '[tools]',
+      'limit = inf',
+      'floor = -inf',
+      'odd = nan',
+      '[hooks]',
+      'when = 1979-05-27T07:32:00Z',
+      '[skills]',
+      'enabled = true',
+    ].join('\n'),
+  );
+  const text = codexUserConfig(root);
+  const parsed = Bun.TOML.parse(text) as Record<string, Record<string, unknown>>;
+  expect(parsed.tools!.limit).toBe(Number.POSITIVE_INFINITY);
+  expect(parsed.tools!.floor).toBe(Number.NEGATIVE_INFINITY);
+  expect(Number.isNaN(parsed.tools!.odd)).toBe(true);
+  expect(parsed.skills).toEqual({ enabled: true });
+  // Bun reads a TOML date as a Temporal value that can't be written back, so `hooks` is
+  // dropped whole rather than rewritten.
+  expect(parsed.hooks).toBeUndefined();
+});
+
+test('one Codex MCP server that can’t be carried over drops only itself, with a warning', () => {
+  const root = scratch();
+  writeFileSync(
+    join(root, 'config.toml'),
+    [
+      '[mcp_servers.good]',
+      'command = "/bin/good"',
+      '[mcp_servers.dated]',
+      'command = "/bin/dated"',
+      'since = 1979-05-27T07:32:00Z',
+    ].join('\n'),
+  );
+  const warnings: string[] = [];
+  const parsed = Bun.TOML.parse(codexUserConfig(root, (m) => warnings.push(m))) as {
+    mcp_servers: Record<string, unknown>;
+  };
+  expect(Object.keys(parsed.mcp_servers)).toEqual(['good']);
+  expect(warnings).toHaveLength(1);
+  expect(warnings[0]).toContain('mcp_servers.dated');
+  // A config Bun can't read loads nothing, and says so.
+  writeFileSync(join(root, 'config.toml'), 'big = 99999999999999999999');
+  warnings.length = 0;
+  expect(codexUserConfig(root, (m) => warnings.push(m))).toBe('');
+  expect(warnings).toHaveLength(1);
+});
+
+test('a Codex home gets the user’s skills, rules and prompts by link', () => {
+  const root = scratch();
+  const user = join(root, 'codex');
+  const home = join(root, 'home');
+  mkdirSync(join(user, 'skills'), { recursive: true });
+  mkdirSync(join(user, 'rules'));
+  mkdirSync(home, { mode: 0o700 });
+  shareCodexUserSetup(home, user);
+  expect(readlinkSync(join(home, 'skills'))).toBe(join(user, 'skills'));
+  expect(readlinkSync(join(home, 'rules'))).toBe(join(user, 'rules'));
+  expect(() => lstatSync(join(home, 'prompts'))).toThrow();
+  // Never the user's AGENTS.md, memories or sessions.
+  for (const name of ['AGENTS.md', 'memories', 'sessions'])
+    expect(() => lstatSync(join(home, name))).toThrow();
+});
+
+test('a Codex main thread on the subscription runs on its own home with the user’s setup; others on the plain one', async () => {
+  const root = scratch();
+  const profile = join(root, 'codex-profile');
+  mkdirSync(join(profile, 'skills'), { recursive: true, mode: 0o700 });
+  writeFileSync(join(profile, 'auth.json'), '{}', { mode: 0o600 });
+  writeFileSync(
+    join(profile, 'config.toml'),
+    'model_provider = "evil"\n[mcp_servers.repl]\ncommand = "/bin/repl"\n',
+    { mode: 0o600 },
+  );
+  const auth = new SubscriptionAuthentication(
+    root,
+    {
+      id: crypto.randomUUID(),
+      integrationId: crypto.randomUUID(),
+      runtime: 'codex',
+      mode: 'native-profile',
+      profileDirectory: profile,
+    },
+    recordedCodexStatus(['chatgpt']).statusSpawn,
+  );
+  const main = await auth.prepare('main', 'codex');
+  const launched = main.launch(['codex', 'app-server'], {}, { sources: 'user', cwd: root });
+  const userHome = launched.env.CODEX_HOME!;
+  main.release();
+  const plain = await auth.prepare('decision', 'codex');
+  const plainHome = plain.launch(['codex', 'app-server'], {}).env.CODEX_HOME!;
+  plain.release();
+  expect(userHome).toBe(`${plainHome}-user`);
+  const userConfig = readFileSync(join(userHome, 'config.toml'), 'utf8');
+  expect(userConfig).toContain('cli_auth_credentials_store = "file"');
+  expect(userConfig).toContain('mcp_servers');
+  expect(userConfig).not.toContain('evil');
+  expect(readlinkSync(join(userHome, 'skills'))).toBe(join(realpathSync(profile), 'skills'));
+  expect(readFileSync(join(plainHome, 'config.toml'), 'utf8')).not.toContain('mcp_servers');
+  expect(() => lstatSync(join(plainHome, 'skills'))).toThrow();
 });
