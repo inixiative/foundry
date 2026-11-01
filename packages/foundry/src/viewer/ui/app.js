@@ -10,13 +10,13 @@
  */
 
 import { AnalyticsPage } from './analytics.js';
-import { Board } from './board.js';
+import { Board, IncomingCard } from './board.js';
 import { CommandPalette, HelpOverlay } from './command-palette.js';
 import { Conversation } from './conversation.js';
 import { FeedbackInbox } from './feedback.js';
 import { GlossReview } from './gloss.js';
 import { initHotkeys, registerDefaults } from './hotkeys.js';
-import { html, render, useEffect, useState } from './lib.js';
+import { html, render, useEffect, useRef, useState } from './lib.js';
 import { NavRail } from './nav-rail.js';
 import { RightPanel } from './right-panel.js';
 import { analyticsPath, navigate, onLink, route, settingsPath } from './route.js';
@@ -90,14 +90,43 @@ function BoardButton() {
     }}>Board${waiting ? html`<span class="board-button-count">${waiting}</span>` : null}</button>`;
 }
 
-/** Requests to join waiting in Kingdom: a separate mark from the board count, since none is accepted yet. */
+/**
+ * Requests to join, waiting in Kingdom: a separate mark from the Board count, since none is accepted
+ * yet. It opens a popover under itself (outside click or Esc closes it); the Board keeps its band.
+ */
 function IncomingIndicator() {
-  const count = incoming.value.length;
-  if (!count) return null;
-  return html`<button class="incoming-indicator" title=${`${count} request${count === 1 ? '' : 's'} to join, not yet accepted`}
-    onClick=${() => {
-      boardOpen.value = true;
-    }}>Incoming <span class="incoming-indicator-count">${count}</span></button>`;
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!open) return;
+    const outside = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+    };
+    const escape = (e) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('mousedown', outside);
+    document.addEventListener('keydown', escape);
+    return () => {
+      document.removeEventListener('mousedown', outside);
+      document.removeEventListener('keydown', escape);
+    };
+  }, [open]);
+  const requests = incoming.value;
+  if (!requests.length) return null;
+  const count = requests.length;
+  return html`<div class="incoming-anchor" ref=${ref}>
+    <button class="incoming-indicator" aria-expanded=${open} aria-haspopup="dialog"
+      title=${`${count} request${count === 1 ? '' : 's'} to join, not yet accepted`}
+      onClick=${() => setOpen(!open)}>Incoming <span class="incoming-indicator-count">${count}</span></button>
+    ${
+      open
+        ? html`<div class="incoming-popover" role="dialog" aria-label="Incoming requests">
+            ${requests.map((r) => html`<${IncomingCard} key=${r.id} request=${r} />`)}
+          </div>`
+        : null
+    }
+  </div>`;
 }
 
 function Header() {

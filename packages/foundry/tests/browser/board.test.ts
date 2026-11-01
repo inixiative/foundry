@@ -118,7 +118,13 @@ test('the board: a pending approval is answered from its card, filters narrow it
     );
     await page.goto(`http://127.0.0.1:${server.port}/#thread=docs-1`);
     await page.locator('.context-bar-title', { hasText: 'Rewrite the setup guide' }).waitFor();
-    await page.locator('.incoming-indicator', { hasText: '1' }).waitFor();
+    // The top-bar mark opens a popover under itself; Esc closes it and nothing else moves.
+    await page.locator('.incoming-indicator', { hasText: '1' }).click();
+    const popover = page.locator('.incoming-popover');
+    expect(await popover.locator('.incoming-card').innerText()).toContain("Sam's agent");
+    expect(await page.locator('.board').count()).toBe(0);
+    await page.keyboard.press('Escape');
+    await until(async () => (await popover.count()) === 0, 'popover closed');
     await page.keyboard.press('b');
     const incomingCard = page.locator('.board-incoming .incoming-card');
     await incomingCard.waitFor();

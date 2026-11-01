@@ -59,3 +59,12 @@ export function threadState(thread, context = {}) {
 
 /** The colour category of a state: red, orange, green, yellow, blue, neutral, charcoal. */
 export const categoryOf = (state) => STATES[state]?.cat ?? 'idle';
+
+/**
+ * The thread a row nests under: only a subagent nests (it carries `meta.spawn`, set where the
+ * executor spawned it). A thread a person started from another one ("start another thread",
+ * fork) keeps `parentThreadId` for Plan's link but lists flat.
+ */
+export function subagentParentOf(meta) {
+  return meta?.spawn && meta.parentThreadId ? meta.parentThreadId : null;
+}

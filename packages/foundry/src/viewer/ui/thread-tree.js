@@ -28,7 +28,7 @@ import {
   worktrees,
 } from './store.js';
 import { isUnnamed, nameSourceLabel, threadName, threadPlace } from './thread-labels.js';
-import { categoryOf, threadState } from './thread-status.js';
+import { categoryOf, subagentParentOf, threadState } from './thread-status.js';
 
 // ---------------------------------------------------------------------------
 // Active/inactive classification
@@ -144,7 +144,7 @@ export function threadTree(threads) {
         meta: t.meta || {},
         branch: threadPlace(t.meta).branch,
         cwd: t.meta?.cwd || null,
-        parentThreadId: t.meta?.parentThreadId || null,
+        parentThreadId: subagentParentOf(t.meta),
         conversation: t.conversation || null,
         lastTurn: t.lastTurn || null,
         children: [],

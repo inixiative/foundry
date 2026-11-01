@@ -35,7 +35,7 @@ import {
   selectThread,
 } from './store.js';
 import { threadName } from './thread-labels.js';
-import { categoryOf, threadState } from './thread-status.js';
+import { categoryOf, subagentParentOf, threadState } from './thread-status.js';
 
 const COLUMNS = [
   { cat: 'problem', title: 'Problems' },
@@ -150,7 +150,7 @@ export function Board() {
   const [filter, setFilter] = useState('all');
   const threads = allThreads.value.filter(OPEN).filter((t) => matches(filter, t));
   const placed = threads.map((t) => {
-    const children = allThreads.value.filter((c) => c.meta?.parentThreadId === t.threadId);
+    const children = allThreads.value.filter((c) => subagentParentOf(c.meta) === t.threadId);
     const state = threadState(t, {
       prompts: prompts.value.filter((p) => p.threadId === t.threadId),
       childrenWorking: children.some(
