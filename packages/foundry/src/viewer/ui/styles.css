@@ -7929,7 +7929,17 @@ a.thread-ref:hover {
 .thread-views--3 {
   grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr);
 }
-/* The /thread · /btw · /aside control is the centre's switcher (band-tabs); its segments toggle. */
+/* The /thread · /btw · /aside control is the centre's switcher (band-tabs), one size smaller; its
+   segments toggle. */
+.thread-segments.band-tabs {
+  padding: 2px;
+  border-radius: 8px;
+}
+.thread-segments .center-view {
+  padding: 2px 9px;
+  border-radius: 6px;
+  font-size: 11.5px;
+}
 .thread-segment {
   display: inline-flex;
   align-items: center;
