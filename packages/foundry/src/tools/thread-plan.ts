@@ -1,7 +1,7 @@
 /**
  * @atlas
- * @kind tool
- * @partOf feature:threads
+ * @kind adapter
+ * @partOf feature:threads, primitive:tools
  */
 import type {
   ApiRequest,
