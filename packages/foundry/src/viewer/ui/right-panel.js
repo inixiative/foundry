@@ -17,6 +17,7 @@ import { ParticipantsPanel } from './conversation-members.js';
 import { Inspector, inspection, ThreadDetail } from './detail-drawer.js';
 import { feedbackIn, ThreadFeedback } from './feedback.js';
 import { html } from './lib.js';
+import { Running } from './running.js';
 import {
   activeThreadId,
   authFetch,
@@ -269,5 +270,6 @@ export function RightPanel({ onSpanSelect }) {
     <div class="rp-frame" role="tabpanel">
       <${TabBody} tab=${tab} threadId=${threadId} />
     </div>
+    <${Running} threadId=${threadId} />
   </div>`;
 }

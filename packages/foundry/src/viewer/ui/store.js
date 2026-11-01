@@ -107,6 +107,8 @@ export function openProjectHome(projectId) {
 }
 /** One turn open in the centre's turn view ({ threadId, turnId }), or null. */
 export const turnViewTarget = signal(null);
+/** Threads the rail shows expanded (their subagents listed), asked for from outside the row. */
+export const railExpanded = signal(new Set());
 /** What's typed in the open thread's message box: it goes with a waiting card's answer. */
 export const composerNote = signal('');
 /**
