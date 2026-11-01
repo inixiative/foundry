@@ -7,9 +7,9 @@
   align-items: center;
   justify-content: center;
   gap: 6px;
-  border: 1px solid #45454c;
-  background: #252529;
-  color: #eeeeef;
+  border: 1px solid var(--line-strong);
+  background: var(--surface2);
+  color: var(--text);
   border-radius: 4px;
   min-height: 30px;
   padding: 4px 10px;
@@ -22,7 +22,7 @@
   cursor: default;
 }
 .gloss-settings {
-  color: #e2e2e6;
+  color: var(--text);
   max-width: 860px;
 }
 .gloss-settings h2,
@@ -42,7 +42,7 @@
   margin: 20px 0;
 }
 .gloss-status dt {
-  color: #aaaab3;
+  color: var(--text-dim);
 }
 .gloss-status dd {
   margin: 0;
@@ -62,9 +62,9 @@
 .gloss-settings select,
 .gloss-controls select,
 .gloss-controls input {
-  background: #242429;
-  color: #efeff2;
-  border: 1px solid #505059;
+  background: var(--surface2);
+  color: var(--text);
+  border: 1px solid var(--line-strong);
   border-radius: 4px;
   min-height: 32px;
   padding: 5px 8px;
@@ -72,7 +72,7 @@
   font: inherit;
 }
 .gloss-confirm {
-  border: 1px solid #bca463;
+  border: 1px solid var(--warn);
   padding: 12px;
   border-radius: 4px;
 }
@@ -91,8 +91,8 @@
   position: fixed;
   inset: 0;
   z-index: 1000;
-  background: #19191d;
-  color: #e7e7ea;
+  background: var(--surface);
+  color: var(--text);
   display: flex;
   flex-direction: column;
   font-size: 13px;
@@ -110,14 +110,14 @@
   align-items: center;
   gap: 10px;
   padding: 10px 16px;
-  border-bottom: 1px solid #393940;
+  border-bottom: 1px solid var(--line);
   flex-shrink: 0;
 }
 .gloss-toolbar h2 {
   margin: 0;
 }
 .gloss-revision {
-  color: #a9b9b2;
+  color: var(--text-dim);
   margin-right: auto;
   font-size: 12px;
 }
@@ -132,7 +132,7 @@
   flex-wrap: wrap;
   gap: 12px;
   padding: 12px 16px;
-  border-bottom: 1px solid #393940;
+  border-bottom: 1px solid var(--line);
 }
 .gloss-controls form {
   display: flex;
@@ -166,7 +166,7 @@
 .gloss-code {
   overflow: auto;
   padding: 12px 0;
-  background: #1d1d21;
+  background: var(--surface);
   min-width: 0;
 }
 .gloss-line-block {
@@ -187,18 +187,18 @@
 }
 .gloss-code-line code {
   white-space: pre;
-  color: #dedee5;
+  color: var(--text);
   background: transparent;
   padding: 0;
   font: inherit;
 }
 .gloss-selected {
-  background: #293b35;
+  background: var(--accent-dim);
 }
 .gloss-line-number {
   flex: 0 0 48px;
   text-align: right;
-  color: #9797a3;
+  color: var(--text-dim);
   padding-right: 12px;
   user-select: none;
 }
@@ -212,7 +212,7 @@
 .gloss-marker {
   border: 0;
   background: transparent;
-  color: #7eddb2;
+  color: var(--accent);
   padding: 3px;
   width: 24px;
   height: 24px;
@@ -221,7 +221,7 @@
   cursor: pointer;
 }
 .gloss-margin {
-  border-left: 1px solid #393940;
+  border-left: 1px solid var(--line);
   overflow: auto;
   min-width: 0;
 }
@@ -236,11 +236,11 @@
   overflow-wrap: anywhere;
 }
 .gloss-advisory {
-  color: #d2b875;
+  color: var(--warn);
   font-size: 11px;
 }
 .gloss-freshness {
-  color: #a7a7b0;
+  color: var(--text-dim);
   font-size: 11px;
   line-height: 1.6;
   margin-top: 12px;
@@ -248,7 +248,7 @@
 .gloss-freshness strong {
   display: block;
   font-weight: normal;
-  color: #d2b875;
+  color: var(--warn);
 }
 .gloss-prose {
   font:
@@ -272,7 +272,7 @@
 .gloss-line-block > .gloss-note {
   width: min(660px, calc(100vw - 100px));
   margin: 6px 0 12px 76px;
-  border-left: 2px solid #649e85;
+  border-left: 2px solid var(--accent);
 }
 .gloss-hover {
   position: absolute;
@@ -281,8 +281,8 @@
   width: min(420px, calc(100vw - 100px));
   z-index: 2;
   padding: 12px;
-  background: #303036;
-  border: 1px solid #77777e;
+  background: var(--hover);
+  border: 1px solid var(--text-dimmer);
   border-radius: 4px;
   pointer-events: none;
 }
@@ -294,16 +294,16 @@
 }
 .gloss-empty {
   padding: 24px;
-  color: #a7a7b0;
+  color: var(--text-dim);
 }
 .gloss-error {
   padding: 12px;
-  color: #ffb5b5;
+  color: var(--err);
   overflow-wrap: anywhere;
 }
 .gloss-review :focus-visible,
 .gloss-settings :focus-visible {
-  outline: 2px solid #83cbb5;
+  outline: 2px solid var(--ok);
   outline-offset: 2px;
 }
 @media (max-width: 700px) {
@@ -342,7 +342,7 @@
   }
   .gloss-margin {
     border-left: 0;
-    border-top: 1px solid #393940;
+    border-top: 1px solid var(--line);
   }
   .gloss-controls {
     gap: 8px;

@@ -31,9 +31,9 @@ import {
 import { ThreadList } from './thread-tree.js';
 
 const STATUS_COLORS = {
-  active: '#4ade80',
-  idle: '#6c9eff',
-  archived: '#555',
+  active: 'var(--st-working)',
+  idle: 'var(--st-idle)',
+  archived: 'var(--st-archived)',
 };
 
 /** Focus (and select) an input once its modal opens. */
@@ -199,7 +199,7 @@ function RenameProjectModal({ project, onDone }) {
 // ---------------------------------------------------------------------------
 
 function ProjectItem({ project, isActive, onSelect, onRename }) {
-  const statusColor = STATUS_COLORS[project.status] || '#555';
+  const statusColor = STATUS_COLORS[project.status] || 'var(--st-archived)';
   const archived = project.status === 'archived';
   const [menuOpen, setMenuOpen] = useState(false);
   useEffect(() => {
@@ -273,7 +273,7 @@ function CollapsedStrip({ onExpand }) {
           <span
             key=${p.id}
             class="proj-collapsed-dot ${p.id === active ? 'active' : ''}"
-            style="background: ${STATUS_COLORS[p.status] || '#555'}"
+            style="background: ${STATUS_COLORS[p.status] || 'var(--st-archived)'}"
             title=${p.label}
           ></span>
         `,

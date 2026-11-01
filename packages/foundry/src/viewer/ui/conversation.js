@@ -85,7 +85,7 @@ function TokenBar() {
 
   const { percentage, warning, exceeded, limitCost, usedCost } = usage;
   const budgetPct = Math.min(percentage * 100, 100);
-  const budgetColor = exceeded ? '#f87171' : warning ? '#facc15' : '#4ade80';
+  const budgetColor = exceeded ? 'var(--err)' : warning ? 'var(--warn)' : 'var(--ok)';
   const barClass = exceeded ? 'token-bar--exceeded' : warning ? 'token-bar--warning' : '';
   const cost =
     used.cost > 0
@@ -512,7 +512,7 @@ function MessageActions({ index, onFeedback }) {
 function BrowserStorageWarning({ msg }) {
   const notice = browserStorageNotice(msg);
   return notice
-    ? html`<div class="chat-storage-warning" role="status" style="color: var(--warn, #facc15); margin: 8px 0;">${notice}</div>`
+    ? html`<div class="chat-storage-warning" role="status" style="color: var(--warn); margin: 8px 0;">${notice}</div>`
     : null;
 }
 

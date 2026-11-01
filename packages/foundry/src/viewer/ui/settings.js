@@ -212,7 +212,7 @@ function SourceContentEditor({ uri }) {
       `
           : error
             ? html`
-        <div style="padding: 12px; color: var(--error); font-size: 12px;">${error}</div>
+        <div style="padding: 12px; color: var(--err); font-size: 12px;">${error}</div>
       `
             : html`
         <textarea

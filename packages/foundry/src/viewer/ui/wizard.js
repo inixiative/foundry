@@ -202,7 +202,7 @@ function ExecutorModelStep({ providers, provider, selected, onSelect, onNext, on
   const prov = providers.find((p) => p.id === provider);
   if (!prov) return null;
 
-  const tierColors = { fast: '#4ade80', standard: '#6c9eff', powerful: '#c084fc' };
+  const tierColors = { fast: 'var(--ok)', standard: 'var(--shared)', powerful: 'var(--accent)' };
 
   return html`
     <div class="wizard-step">
@@ -262,7 +262,7 @@ function ClassifierModelStep({
   const prov = providers.find((p) => p.id === provider);
   if (!prov) return null;
 
-  const tierColors = { fast: '#4ade80', standard: '#6c9eff', powerful: '#c084fc' };
+  const tierColors = { fast: 'var(--ok)', standard: 'var(--shared)', powerful: 'var(--accent)' };
   const availableProviders = providers.filter((p) => enabledProviders.includes(p.id));
 
   return html`

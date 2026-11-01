@@ -68,14 +68,14 @@ function InactiveFold({ count, label, defaultOpen = false, children }) {
 
 function StatusDot({ status }) {
   const colors = {
-    active: '#4ade80',
-    idle: '#6c9eff',
-    waiting: '#facc15',
-    archived: '#555',
-    completed: '#555',
-    done: '#555',
+    active: 'var(--st-working)',
+    idle: 'var(--st-idle)',
+    waiting: 'var(--st-attention)',
+    archived: 'var(--st-archived)',
+    completed: 'var(--st-archived)',
+    done: 'var(--st-archived)',
   };
-  const color = colors[status] || '#555';
+  const color = colors[status] || 'var(--st-archived)';
   return html`<span class="tree-status-dot" style="background: ${color}" title=${status}></span>`;
 }
 
@@ -292,7 +292,7 @@ function ForgeMasterThread() {
   return html`
     <div class="tree-node selected" title="Forge Master: the persistent thread about this Foundry">
       <span class="tree-caret-spacer"></span>
-      <span class="tree-status-dot" style="background: #6c9eff"></span>
+      <span class="tree-status-dot" style="background: var(--st-idle)"></span>
       <span class="tree-text"><span class="tree-label">Forge Master</span></span>
     </div>
   `;
