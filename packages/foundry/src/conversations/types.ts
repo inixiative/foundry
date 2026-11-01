@@ -168,6 +168,10 @@ export interface LocalMemberRecord {
   joinedAt: string;
   /** It hears the log from here on (the host journal seq when it joined). */
   fromSeq: number;
+  /** The host journal seq the mirror has read through (readable or not), so no pass re-reads it. */
+  mirroredSeq?: number;
+  /** The newest mirrored host seq a wake covered: it is woken again only for something newer. */
+  wokenSeq?: number;
 }
 
 /**
@@ -325,7 +329,6 @@ export const memberKey = (member: ConversationMember) => `${member.kind}:${membe
 export type ConversationPhase =
   | 'shared-entry'
   | 'shared-entry-delivered'
-  | 'shared-entry-woke'
   | 'conversation-control'
   | 'member-post'
   | 'member-post-withdrawn'

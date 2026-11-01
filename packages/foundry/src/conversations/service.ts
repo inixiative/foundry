@@ -160,6 +160,10 @@ export class ConversationService implements ConversationWrapper {
   private readonly open = new Map<string, OpenHeld>();
   /** A raised hand's open prompt, by `<threadId>:<member kind>:<member id>` (§4.8). */
   private readonly hands = new Map<string, OpenHeld>();
+  /** Member thread → the threads it is a local member of; rebuilt lazily, dropped on a join or leave. */
+  private memberIndex: Map<string, string[]> | null = null;
+  /** Hosts whose controls wait on an owner confirmation, by `<threadId>:<what>` (one prompt each). */
+  private readonly confirming = new Set<string>();
   /** Which Signets the previous snapshot listed (null until one listed them). */
   private listed: Set<string> | null = null;
   private readonly unsubscribe: (() => void) | undefined;
@@ -835,6 +839,7 @@ export class ConversationService implements ConversationWrapper {
     });
     this.settleHands(threadId);
     this.deps.changed?.(threadId);
+    this.pump(threadId);
   }
 
   /** The owner gives the conch to a member, or takes it back (null: the host holds it). */
@@ -868,6 +873,7 @@ export class ConversationService implements ConversationWrapper {
       this.save(thread, record);
     });
     this.deps.changed?.(threadId);
+    this.pump(threadId);
   }
 
   /** The owner pauses the conversation: members are refused until a resume. */
@@ -1219,6 +1225,7 @@ export class ConversationService implements ConversationWrapper {
         by: 'owner',
       });
     });
+    this.memberIndex = null;
     this.deps.changed?.(host.id);
     this.deps.changed?.(member.id);
   }
@@ -1244,6 +1251,7 @@ export class ConversationService implements ConversationWrapper {
         by: 'owner',
       });
     });
+    this.memberIndex = null;
     this.settleHands(host.id);
     this.deps.changed?.(host.id);
     this.deps.changed?.(memberThreadId);
@@ -1315,7 +1323,7 @@ export class ConversationService implements ConversationWrapper {
     // A listening agent speaks only to answer what it was asked (a send to it).
     if (
       this.voice(record, this.settings(host, record), memberKey(me)) === 'listening' &&
-      !(options.inReplyTo && this.sendTo(host.id, options.inReplyTo, me))
+      !(options.inReplyTo && this.sendNamed(host.id, options.inReplyTo, me))
     )
       throw Error(
         `You are listening in ${hostName(host)}; the owner can let you speak. You may still answer something sent to you (inReplyTo).`,
@@ -1378,9 +1386,14 @@ export class ConversationService implements ConversationWrapper {
 
   /** The threads this one is a local member of. */
   hostsOf(memberThreadId: string): string[] {
-    return this.deps.store
-      .conversationThreads()
-      .filter((id) => id !== memberThreadId && !!this.localOf(this.record(id), memberThreadId));
+    if (!this.memberIndex) {
+      const index = new Map<string, string[]>();
+      for (const host of this.deps.store.conversationThreads())
+        for (const local of this.record(host).locals ?? [])
+          index.set(local.threadId, [...(index.get(local.threadId) ?? []), host]);
+      this.memberIndex = index;
+    }
+    return this.memberIndex.get(memberThreadId) ?? [];
   }
 
   private localOf(
@@ -1414,15 +1427,6 @@ export class ConversationService implements ConversationWrapper {
     );
   }
 
-  /** Whether a send in this thread (by its journal seq) was addressed to this member. */
-  private sendTo(threadId: string, seqText: string, me: ConversationMember): boolean {
-    const seq = Number(seqText);
-    if (!Number.isInteger(seq) || seq < 1) return false;
-    const [row] = this.deps.store.journalEntries(threadId, { after: seq - 1, limit: 1 });
-    const entry = row && row.seq === seq ? threadEntryOf(row) : null;
-    return entry?.kind === 'send' && sameMember(entry.member, me);
-  }
-
   /** Whether `from` reaches `to` through local memberships (a join that would close a cycle). */
   private reaches(from: string, to: string, seen = new Set<string>()): boolean {
     if (from === to) return true;
@@ -1451,14 +1455,13 @@ export class ConversationService implements ConversationWrapper {
     if (!record?.locals?.length) return;
     const host = this.deps.thread(hostThreadId);
     if (!host) return;
+    const now = this.deps.store.journalSeq(host.id);
+    let moved = false;
     for (const local of record.locals) {
       const member = this.deps.thread(local.threadId);
-      if (!member) continue;
+      const after = Math.max(local.fromSeq, local.mirroredSeq ?? 0);
+      if (!member || after >= now) continue;
       const me: ConversationMember = { kind: 'local', id: local.threadId };
-      const mirrored = this.deps.store
-        .phasesOf(member.id, 'shared-entry', { key: 'hostThreadId', value: host.id })
-        .map((row) => (row.record as unknown as SharedEntryRecord).hostSeq);
-      const after = Math.max(local.fromSeq, ...mirrored);
       const raw = this.deps.store.journalEntries(host.id, { after, limit: 10_000 });
       const rows: SharedEntryRecord[] = [];
       for (const row of raw)
@@ -1476,29 +1479,33 @@ export class ConversationService implements ConversationWrapper {
                   ? String((row.record as unknown as MemberPostRecord).displayName ?? 'a member')
                   : addressed
                     ? 'the host agent, to you'
-                    : `the host agent, to ${this.memberName(host.id, entry.member)}`,
+                    : `the host agent, to ${quotedName(this.memberName(host.id, entry.member))}`,
             kind: entry.kind === 'owner' ? 'owner' : entry.kind === 'post' ? 'post' : 'send',
             addressed,
             text: entry.text,
           });
         }
-      if (rows.length) {
-        this.deps.store.transaction(() => {
-          for (const entry of rows)
-            this.deps.store.appendPhase(member, {
-              id: newId('phase'),
-              phase: 'shared-entry',
-              turnId: null,
-              dispatchId: null,
-              record: entry as unknown as Record<string, unknown>,
-            });
-        });
-        this.deps.changed?.(member.id);
-      }
-      // Every pass, not only one that wrote rows: a wake refused earlier (the host's own turn held
-      // the live slot) is taken up when the host's journal next moves.
-      this.wake(host.id, member.id);
+      // The cursor moves past every row read, readable or not, so a long unreadable run never
+      // stalls it (the same rule as `pump`).
+      local.mirroredSeq = raw.length ? raw.at(-1)!.seq : now;
+      moved = true;
+      if (!rows.length) continue;
+      this.deps.store.transaction(() => {
+        for (const entry of rows)
+          this.deps.store.appendPhase(member, {
+            id: newId('phase'),
+            phase: 'shared-entry',
+            turnId: null,
+            dispatchId: null,
+            record: entry as unknown as Record<string, unknown>,
+          });
+      });
+      this.deps.changed?.(member.id);
     }
+    if (moved) this.save(host, record);
+    // Every pass, not only one that wrote rows: a wake refused earlier (the host's own turn held
+    // the live slot, the floor, a pause) is taken up when the host next moves.
+    for (const local of record.locals) this.wake(host.id, local.threadId);
   }
 
   /** Mirrored entries not yet delivered to a turn of this member thread, oldest first. */
@@ -1525,22 +1532,17 @@ export class ConversationService implements ConversationWrapper {
     const host = this.deps.thread(hostThreadId);
     const member = this.deps.thread(memberThreadId);
     if (!turns || !host || !member || member.disposed || this.closedReason(host)) return;
-    if (this.deps.store.openTurn(member.id)) return;
+    const record = this.record(host.id);
+    const local = this.localOf(record, member.id);
     // Only what arrived since it was last woken for this thread: a wake never repeats itself, even
     // when a turn didn't take the notes in (stopped, failed, an unwrapped runtime).
-    const woken = Math.max(
-      0,
-      ...this.deps.store
-        .phasesOf(member.id, 'shared-entry-woke', { key: 'hostThreadId', value: host.id })
-        .map((row) => Number(row.record.hostSeq)),
-    );
+    const woken = Math.max(local?.fromSeq ?? 0, local?.wokenSeq ?? 0);
+    if (!local || (local.mirroredSeq ?? 0) <= woken) return;
+    if (this.deps.store.openTurn(member.id)) return;
     const heard = this.unheard(member.id).filter(
       (entry) => entry.hostThreadId === host.id && entry.hostSeq > woken,
     );
     if (!heard.length) return;
-    const record = this.record(host.id);
-    const local = this.localOf(record, member.id);
-    if (!local) return;
     const settings = this.settings(host, record);
     const me: ConversationMember = { kind: 'local', id: member.id };
     if (this.paused(host.id, record) || this.depth(host.id, record) + 1 > settings.maxAgentTurns)
@@ -1551,8 +1553,7 @@ export class ConversationService implements ConversationWrapper {
       if (local.lens.delivery !== 'turn') return;
       const floor = this.floorState(host);
       if (floor.mode === 'speak-when-spoken-to') return;
-      if (floor.mode === 'conch' && !sameMember(floor.holder, me) && !local.lens.floor.mayTake)
-        return;
+      if (floor.mode === 'conch' && !sameMember(floor.holder, me)) return;
     }
     const last = heard.at(-1)!.hostSeq;
     const accepted = turns.accept({
@@ -1569,13 +1570,12 @@ export class ConversationService implements ConversationWrapper {
       this.deps.log?.(`[Conversations] local member not woken: ${String(accepted.body.error)}`);
       return;
     }
-    this.deps.store.appendPhase(member, {
-      id: newId('phase'),
-      phase: 'shared-entry-woke',
-      turnId: accepted.turnId,
-      dispatchId: null,
-      record: { hostThreadId: host.id, hostSeq: last },
-    });
+    const latest = this.record(host.id);
+    const marked = this.localOf(latest, member.id);
+    if (marked) {
+      marked.wokenSeq = last;
+      this.save(host, latest);
+    }
   }
 
   /**
@@ -1613,6 +1613,10 @@ export class ConversationService implements ConversationWrapper {
     const queue = this.deps.queue;
     if (!queue)
       throw Error('No owner prompt is available to confirm this; ask the owner to say it');
+    // One open confirmation per thread and change: an agent can't stack them.
+    const key = `${thread.id}:${what}`;
+    if (this.confirming.has(key)) return;
+    this.confirming.add(key);
     void queue
       .prompt({
         kind: 'choice',
@@ -1628,7 +1632,8 @@ export class ConversationService implements ConversationWrapper {
       })
       .catch((error: unknown) =>
         this.deps.log?.(`[Conversations] control not applied: ${(error as Error).message}`),
-      );
+      )
+      .finally(() => this.confirming.delete(key));
   }
 
   /** A control row on the host thread: who changed what, shown in the view and reversible. */
@@ -1691,11 +1696,16 @@ export class ConversationService implements ConversationWrapper {
     inReplyTo: string,
     me: ConversationMember,
   ): ThreadEntry['commission'] {
-    const seq = Number(inReplyTo);
+    return this.sendNamed(threadId, inReplyTo, me)?.commission;
+  }
+
+  /** The send a reply names (by its journal seq), when it was addressed to this member. */
+  private sendNamed(threadId: string, seqText: string, me: ConversationMember) {
+    const seq = Number(seqText);
     if (!Number.isInteger(seq) || seq < 1) return undefined;
     const [row] = this.deps.store.journalEntries(threadId, { after: seq - 1, limit: 1 });
     const entry = row && row.seq === seq ? threadEntryOf(row) : null;
-    return entry?.kind === 'send' && sameMember(entry.member, me) ? entry.commission : undefined;
+    return entry?.kind === 'send' && sameMember(entry.member, me) ? entry : undefined;
   }
 
   /** Where members' reads start (§4.9, B3). A thread read before its share was marked starts now. */
