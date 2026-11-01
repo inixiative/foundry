@@ -14,7 +14,7 @@ import type {
   ThreadContext,
   ThreadReference,
 } from '@inixiative/foundry-core';
-import { checkoutPlace, gitContext, recreateWorktree } from '../git';
+import { checkoutPlace, gitContext, recreateWorktree, squashMergedInto } from '../git';
 
 const PER_KIND = 3;
 
@@ -69,6 +69,9 @@ export class ThreadContextTracker {
       git?: Git;
       place?: Place;
       recreate?: Recreate;
+      merged?: typeof squashMergedInto;
+      /** A thread's branch was first seen squash-merged into `into` (the setting decides what follows). */
+      onMerged?: (thread: Thread, into: string) => void;
     },
   ) {}
 
@@ -121,8 +124,15 @@ export class ThreadContextTracker {
         ])
       : [{}, undefined];
     const repository = provenanceReferences({ repository: git.remote })[0]?.ref;
+    // A linked worktree's branch, once squash-merged into the default branch, stays merged.
+    const known = prior?.branch === git.branch ? prior?.checkout?.merged : undefined;
+    const into =
+      place && !place.main && git.branch && !known
+        ? await (this.options.merged ?? squashMergedInto)(cwd!, git.branch).catch(() => undefined)
+        : undefined;
+    const merged = known ?? (into ? { into, at: Date.now() } : undefined);
     const checkout: ThreadCheckout = place
-      ? { ...place, state: 'live' }
+      ? { ...place, ...(merged ? { merged } : {}), state: 'live' }
       : { mode: 'none', main: false, state: 'live' };
     const next = {
       ...(repository ? { repository } : {}),
@@ -131,7 +141,8 @@ export class ThreadContextTracker {
       checkout,
       references: this.references.get(threadId) ?? prior?.references ?? [],
     };
-    return this.publish(thread, next);
+    this.publish(thread, next);
+    if (into) this.options.onMerged?.(thread, into);
   }
 
   /**

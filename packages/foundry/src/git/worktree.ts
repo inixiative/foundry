@@ -229,6 +229,54 @@ export async function checkoutPlace(cwd: string): Promise<CheckoutPlace | undefi
 }
 
 /**
+ * The default branch `branch` was squash-merged into, by tree equality (CLAUDE.md § Merging: patch
+ * counts lie after squash): the branch has commits the base lacks, and merging it into the base
+ * changes nothing. Reads the local remote-tracking refs as last fetched; never fetches.
+ */
+export async function squashMergedInto(cwd: string, branch: string): Promise<string | undefined> {
+  const base = await git(['rev-parse', '--abbrev-ref', 'origin/HEAD'], cwd).catch(() => '');
+  if (!base || base === `origin/${branch}`) return undefined;
+  const ahead = Number(
+    await git(['rev-list', '--count', `${base}..${branch}`], cwd).catch(() => '0'),
+  );
+  if (!(ahead > 0)) return undefined;
+  const [merged, baseTree] = await Promise.all([
+    git(['merge-tree', '--write-tree', base, branch], cwd).catch(() => ''),
+    git(['rev-parse', `${base}^{tree}`], cwd).catch(() => ''),
+  ]);
+  return merged && baseTree && merged.split('\n')[0] === baseTree
+    ? base.replace(/^origin\//, '')
+    : undefined;
+}
+
+/**
+ * Release a worktree with the repository's worktree mode (FEAT-003 "destroy"): template runs
+ * `bun run worktree:destroy <name>` (frees its slot), classic `git worktree remove <path>`. Never
+ * `--force`: both refuse a dirty worktree, and the refusal is returned.
+ */
+export async function releaseWorktree(place: {
+  mode: WorktreeMode;
+  root: string;
+  path: string;
+}): Promise<{ released: true } | { error: string }> {
+  const command =
+    place.mode === 'template'
+      ? ['bun', 'run', 'worktree:destroy', place.path.split(sep).pop() ?? '']
+      : ['git', 'worktree', 'remove', place.path];
+  const proc = Bun.spawn(command, { cwd: place.root, stdout: 'pipe', stderr: 'pipe' });
+  const [out, err, code] = await Promise.all([
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
+    proc.exited,
+  ]);
+  return code === 0
+    ? { released: true }
+    : {
+        error: `${command.slice(0, 3).join(' ')} refused (exit ${code}): ${`${err}\n${out}`.trim().slice(-600)}`,
+      };
+}
+
+/**
  * Create a worktree again on an existing branch with the repository's worktree mode (FEAT-003
  * "recreate"): template runs `bun run worktree:create <branch>` (a fresh slot and setup, at
  * `<root>/.worktrees/<branch with / as ->`); classic runs `git worktree add <path> <branch>`.
