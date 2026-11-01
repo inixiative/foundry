@@ -47,11 +47,9 @@ export function providerAccounts(config: FoundryConfig, inputs: Inputs = {}): Pr
     policyIssue = error instanceof Error ? error.message : String(error);
   }
   const apiTokens = config.apiTokens === true;
-  // Main threads run on every project's default worker, and on any usable worker a thread chooses.
-  const mainWorkers = new Set([
-    ...defaultWorkers(config).values(),
-    ...Object.keys(subscription?.workers ?? {}),
-  ]);
+  // Main threads run on every project's default worker, and on another worker a thread chooses
+  // when its login is here.
+  const defaults = new Set(defaultWorkers(config).values());
 
   const ids = inputs.all
     ? Object.keys(MODEL_REGISTRY).filter(vendorOfProvider)
@@ -60,7 +58,11 @@ export function providerAccounts(config: FoundryConfig, inputs: Inputs = {}): Pr
     .map((id) => ({ id, baseUrl: providerBaseUrl(config, id) }))
     .map((provider): ProviderAccount => {
       const info = MODEL_REGISTRY[provider.id];
-      const main = mainWorkers.has(provider.id);
+      const login = subscriptionWorker(provider.id)
+        ? subscription?.workers[provider.id]
+        : undefined;
+      const main =
+        defaults.has(provider.id) || (!!login && nativeAccount(provider.id, login, which).ready);
       if (subscriptionWorker(provider.id)) {
         const runtime = SUBSCRIPTION_WORKERS[provider.id];
         const decides = subscription?.decision.runtime === runtime;

@@ -289,6 +289,18 @@ export function atlasRootOf(
 /** A thread's worker is refused (no login, vendor off, apiTokens): the reason is the message. */
 export class WorkerRefusedError extends Error {}
 
+/** The daemon's main thread, on the worker it last ran on; refused with its fix when it cannot run there now. */
+export function createMainThread(factory: ThreadFactory, opts: ThreadConfig): Thread {
+  try {
+    return factory.create('main', opts);
+  } catch (error) {
+    if (!(error instanceof WorkerRefusedError) || !opts.worker) throw error;
+    throw new WorkerRefusedError(
+      `The main thread runs on ${opts.worker} and cannot start: ${error.message}. Make ${opts.worker} usable again (its vendor's subscription mode on, its CLI logged in) and restart Foundry`,
+    );
+  }
+}
+
 export interface ThreadFactoryDeps {
   /** Saved snapshot for project-specific construction through the same builders.
    * Settings edits arrive through `reconfigure`. */
@@ -311,7 +323,11 @@ export interface ThreadFactoryDeps {
    * Why a thread cannot run on a worker in its project's view, or undefined when it can
    * (`threadWorkerRequirement`). Asked on every create, restore and reopen.
    */
-  workerRequirement?: (view: FoundryConfig, worker: string) => string | undefined;
+  workerRequirement?: (
+    view: FoundryConfig,
+    worker: string,
+    projectId: string | undefined,
+  ) => string | undefined;
   /**
    * Optional per-thread runtime manager. When present, every created thread
    * is wired (Librarian, Cartographer, Wardens, orchestrator, event bridges)
@@ -467,7 +483,7 @@ export class ThreadFactory {
     const base = this._configuration?.config;
     if (!base) return undefined;
     const view = (projectId ? resolveProjectView(base, projectId)?.config : undefined) ?? base;
-    return this._workerRequirement?.(view, worker);
+    return this._workerRequirement?.(view, worker, projectId);
   }
 
   /** Whether `create` would build a thread for this project (a disabled project's are refused). */
@@ -502,7 +518,9 @@ export class ThreadFactory {
     // A new thread runs on its project's default worker unless one is chosen; a stored one keeps its own.
     const worker = opts?.worker ?? projectView?.defaults.provider;
     const refusal =
-      projectView && worker ? this._workerRequirement?.(projectView, worker) : undefined;
+      projectView && worker
+        ? this._workerRequirement?.(projectView, worker, opts?.projectId)
+        : undefined;
     if (refusal) throw new WorkerRefusedError(refusal);
     const config =
       base && resolveThreadView(base.config, { projectId: opts?.projectId, worker }).config;

@@ -183,6 +183,13 @@ function checksum(text: string): string {
 }
 class StaleKnowledge extends Error {}
 
+/** The stamping script for thread records written before FEAT-007 (a throwaway, run once). */
+export const STAMP_WORKERS_SCRIPT =
+  '/private/tmp/claude-501/-Users-arongreenspan-code-inixiative/57d9d393-402f-4dca-919f-f5528c2155fe/scratchpad/stamp-workers.ts';
+
+const unstampedRecord = (threadId: string) =>
+  `Stored thread ${threadId} names no worker: stop Foundry and stamp its records with \`bun ${STAMP_WORKERS_SCRIPT} --foundry-dir <.foundry> --write\``;
+
 /** Local turn journal. A completed response and its artifact commit together. */
 export class LocalSessionStore {
   private readonly db: Database;
@@ -1376,6 +1383,14 @@ export class LocalSessionStore {
     const prior = existing ? (JSON.parse(existing.meta) as ThreadMeta) : undefined;
     if (prior && prior.projectId !== thread.meta.projectId)
       throw new Error(`Thread journal owner cannot change: ${thread.id}`);
+    // A record from before workers were stored is stamped by the one-off script, never by a save.
+    if (
+      prior &&
+      prior.worker === undefined &&
+      thread.meta.worker !== undefined &&
+      !prior.spawn?.observed
+    )
+      throw new Error(unstampedRecord(thread.id));
     // A thread's worker is never changed silently: only before its first turn, when no native session holds it.
     if (prior?.worker !== undefined && prior.worker !== thread.meta.worker) {
       if (thread.meta.worker === undefined)
@@ -1390,20 +1405,27 @@ export class LocalSessionStore {
     ).run(thread.id, JSON.stringify(thread.meta));
   }
 
-  /** A stored thread's worker, read before the store is opened (the daemon's main thread keeps its own). */
+  /**
+   * A stored thread's worker, read before the store is opened (the daemon's main thread keeps its
+   * own). Undefined when there is no record; a record without a worker is refused, never defaulted.
+   */
   static storedWorker(path: string, threadId: string): string | undefined {
     if (path === ':memory:' || !existsSync(path)) return undefined;
-    let db: Database | undefined;
+    const db = new Database(path, { readonly: true });
     try {
-      db = new Database(path);
+      const table = db
+        .query("SELECT 1 FROM sqlite_master WHERE type='table' AND name='session_threads'")
+        .get();
+      if (!table) return undefined;
       const row = db.query('SELECT meta FROM session_threads WHERE id=?').get(threadId) as {
         meta: string;
       } | null;
-      return row ? (JSON.parse(row.meta) as ThreadMeta).worker : undefined;
-    } catch {
-      return undefined;
+      if (!row) return undefined;
+      const worker = (JSON.parse(row.meta) as ThreadMeta).worker;
+      if (!worker) throw new Error(unstampedRecord(threadId));
+      return worker;
     } finally {
-      db?.close();
+      db.close();
     }
   }
 

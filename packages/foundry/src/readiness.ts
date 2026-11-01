@@ -291,26 +291,25 @@ export async function inspectReadiness(
     );
   // Subscription mode inspects the effective routing startup would construct.
   config = subscription?.config ?? saved;
-  // A default worker's login and the decision login must be usable; another worker's only offers it.
-  const required = new Set(defaultWorkers(saved).values());
-  for (const [source, needed] of subscription
+  // A default worker's login (for threads run on this machine) and the decision login must be
+  // usable. Another worker without a login is simply not offered.
+  const required = new Set(defaultWorkers(saved, { onThisMachine: true }).values());
+  for (const source of subscription
     ? [
-        ...Object.entries(subscription.workers).map(
-          ([worker, login]) => [login!, required.has(worker)] as const,
+        ...Object.entries(subscription.workers).flatMap(([worker, login]) =>
+          required.has(worker) ? [login!] : [],
         ),
-        [subscription.decision, true] as const,
+        subscription.decision,
       ]
     : []) {
     try {
       assertProfile(source.profileDirectory, source.runtime);
     } catch {
       issue(
-        needed ? 'error' : 'warning',
+        'error',
         source.runtime,
         'subscription-profile-unavailable',
-        needed
-          ? `Log in with the ${source.runtime} CLI; its profile must be an owned directory with private credential files.`
-          : `Threads cannot choose the ${source.runtime} worker until you log in with its CLI.`,
+        `Log in with the ${source.runtime} CLI; its profile must be an owned directory with private credential files.`,
       );
     }
   }

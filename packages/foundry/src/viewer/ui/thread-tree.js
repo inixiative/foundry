@@ -40,12 +40,12 @@ import {
   worktrees,
 } from './store.js';
 import {
+  harnessName,
   isUnnamed,
   nameSourceLabel,
   projectLabel,
   threadName,
   threadPlace,
-  workerLabel,
 } from './thread-labels.js';
 import { CLOSED_STATUSES, categoryOf, subagentParentOf, threadState } from './thread-status.js';
 
@@ -232,7 +232,7 @@ export function ThreadNode({ thread, depth = 0, selectedId, onSelect, inactive =
           <${ThreadActions} thread=${thread} />
         </div>
         <div class="tree-row tree-row--meta">
-          <span class="row-project" title=${thread.meta.worker ? `Runs on ${thread.meta.worker}` : null}>${projectLabel(thread.meta.projectId)}${thread.meta.worker ? ` · ${workerLabel(thread.meta.worker)}` : ''}</span>
+          <span class="row-project" title=${thread.meta.worker ? `Runs on ${thread.meta.worker}` : null}>${projectLabel(thread.meta.projectId)}${thread.meta.worker ? ` · ${harnessName(thread.meta.worker) ?? thread.meta.worker}` : ''}</span>
           <${StatusIcon} state=${nodeState(thread)} />
           ${isDangerous(thread.permissionMode) ? html`<span class="row-dangerous" title="Dangerous: every permission check is skipped">Dangerous</span>` : null}
           ${

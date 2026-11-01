@@ -102,15 +102,8 @@ test("a Codex source is the Codex worker's login; the named Claude source stays 
     'claude-code': { id: f.worker.id },
     codex: { id: codex.id },
   });
-  // Naming the Codex source never moves the Claude worker to ~/.claude: Claude takes its configured login.
+  // Naming the Codex source leaves two Claude sources unnamed: ambiguous, refused, never ~/.claude.
   f.c.defaults.nativeAuthenticationId = codex.id;
-  expect(resolveSubscriptionPolicy(f.c)!.workers).toMatchObject({
-    'claude-code': { id: f.worker.id },
-    codex: { id: codex.id },
-  });
-  // Several logins of one runtime, none named for it, is ambiguous and refused.
-  const second = { ...f.worker, id: crypto.randomUUID(), integrationId: crypto.randomUUID() };
-  f.c.nativeAuthentication!.push(second);
   expect(() => resolveSubscriptionPolicy(f.c)).toThrow('Several claude logins are configured');
 });
 
@@ -472,14 +465,14 @@ test('Codex is a subscription main thread: GPT-6 Astra on the Codex login, no AP
   f.decision.profileDirectory = f.worker.profileDirectory;
   expect(() => resolveSubscriptionPolicy(f.c)).not.toThrow();
   // A worker runs only on a login of its own runtime: the named Claude source is the Claude
-  // worker's, and the Codex worker takes the one Codex source, never the Claude one.
+  // worker's. The only Codex source is the decision login, so the Codex worker takes its default
+  // profile, never the Claude one.
   f.worker.runtime = 'claude';
-  expect(resolveSubscriptionPolicy(f.c)).toMatchObject({
-    workers: {
-      codex: { id: f.decision.id, runtime: 'codex' },
-      'claude-code': { id: f.worker.id, runtime: 'claude' },
-    },
-  });
+  const resolved = resolveSubscriptionPolicy(f.c)!;
+  expect(resolved.workers['claude-code']).toMatchObject({ id: f.worker.id, runtime: 'claude' });
+  expect(resolved.workers.codex).toMatchObject({ runtime: 'codex' });
+  expect(resolved.workers.codex!.id).not.toBe(f.decision.id);
+  expect(resolved.workers.codex!.id).not.toBe(f.worker.id);
 });
 
 test("a fresh Codex main thread defaults to the user's own ~/.codex login; decisions stay on Claude unless set", () => {

@@ -8,6 +8,8 @@ import { mkdirSync, unlinkSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
 import { kingdomUrl } from '@inixiative/signet';
 import { writePrivateFile } from '../client/private-file';
+import type { FoundryConfig } from '../viewer/config';
+import { resolveThreadView } from '../viewer/config-resolve';
 import { defaultProfileDirectory } from './default-profiles';
 import {
   claudeSettingsFiles,
@@ -23,6 +25,7 @@ import {
   type KingdomRunEnvelope,
   type KingdomSubscriptionRelease,
 } from './kingdom-client';
+import { heldSignetFile, selectKingdomIntegration } from './kingdom-installation-connection';
 import {
   assertCodexLaunchArguments,
   type NativeAuthenticationLaunch,
@@ -285,4 +288,50 @@ export class ProjectCapacityAuthentication implements NativeAuthenticationProvid
       release: () => {},
     });
   }
+}
+
+/**
+ * The capacity routing every worker's authentication shares: a thread of a Kingdom-capacity project
+ * runs on the project's pool, on every worker, with its own worker's model and effort; any other
+ * thread keeps `local`. One Kingdom client serves every worker (it is keyed by runtime and thread).
+ */
+export function projectCapacity(options: {
+  foundryDir: string;
+  config: () => FoundryConfig;
+  /** A thread's record (its project and worker); an auxiliary session's is its thread's. */
+  meta: (threadId: string) => { projectId?: string; worker?: string } | undefined;
+  /** Test seam: the Signet credential file this Foundry holds for a Kingdom. */
+  credentialFile?: (url: string, signetId: string) => Promise<string>;
+}): (local: NativeAuthenticationProvider | undefined) => NativeAuthenticationProvider {
+  const metaOf = (threadId: string) => options.meta(threadId.split(':aux:')[0]!);
+  const projectOf = (threadId: string) => {
+    const id = metaOf(threadId)?.projectId;
+    return id ? options.config().projects[id] : undefined;
+  };
+  const kingdom = new KingdomSubscriptionAuthentication({
+    directory: join(options.foundryDir, 'kingdom', 'subscriptions'),
+    capacity: async (threadId) => {
+      const capacity = projectOf(threadId)?.kingdomCapacity;
+      if (!capacity) throw Error('This project has no Kingdom capacity configured');
+      const config = options.config();
+      const { url } = selectKingdomIntegration(config.kingdomIntegrations, capacity.kingdom);
+      const view = resolveThreadView(config, metaOf(threadId) ?? {}).config;
+      return {
+        url,
+        credentialFile: await (
+          options.credentialFile ??
+          ((at, signetId) => heldSignetFile(options.foundryDir, at, signetId))
+        )(url, capacity.signetId),
+        ...(capacity.projectId ? { projectId: capacity.projectId } : {}),
+        model: view.defaults.model,
+        effort: view.defaults.codexEffort ?? 'default',
+      };
+    },
+  });
+  return (local) =>
+    new ProjectCapacityAuthentication({
+      local,
+      usesKingdom: (threadId) => projectOf(threadId)?.capacity === 'kingdom',
+      kingdom,
+    });
 }

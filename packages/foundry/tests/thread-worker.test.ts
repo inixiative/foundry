@@ -10,11 +10,12 @@ import {
   Harness,
   InterventionLog,
   type LLMProvider,
+  type NativeEvidence,
   type ThreadMeta,
 } from '@inixiative/foundry-core';
 import { ProjectRegistry } from '../src/agents/project';
-import { ThreadFactory, WorkerRefusedError } from '../src/agents/thread-factory';
-import { LocalSessionStore } from '../src/persistence/local-session-store';
+import { createMainThread, ThreadFactory, WorkerRefusedError } from '../src/agents/thread-factory';
+import { LocalSessionStore, STAMP_WORKERS_SCRIPT } from '../src/persistence/local-session-store';
 import { InSessionWardens, inSessionThreadSetup } from '../src/providers/in-session-wardens';
 import {
   resolveSubscriptionPolicy,
@@ -26,10 +27,12 @@ import {
   defaultAgents,
   defaultConfig,
   type FoundryConfig,
+  validateConfig,
 } from '../src/viewer/config';
 import { resolveThreadView } from '../src/viewer/config-resolve';
 import { createViewer } from '../src/viewer/server';
 import { ViewerThreadDirectory } from '../src/viewer/thread-directory';
+import { until } from './helpers/live-watch-fixture';
 
 /**
  * FEAT-007: a project has a default subscription worker, and any thread may run on another worker
@@ -102,7 +105,8 @@ function fixture() {
         layers: { sourceResolver: () => null },
         agents: { provider: claude.provider, providers },
       },
-      workerRequirement: (view, worker) => threadWorkerRequirement(resolved, view, worker),
+      workerRequirement: (view, worker, projectId) =>
+        threadWorkerRequirement(resolved, view, worker, projectId),
     });
   return { root, saved, resolution, claude, codex, factory };
 }
@@ -268,7 +272,10 @@ test('under claude-in-session only Claude Code threads set up; Codex threads nev
 });
 
 /** The viewer over a configured factory, as the daemon serves it. */
-async function viewer() {
+async function viewer(
+  extra: Partial<Parameters<typeof createViewer>[0]> = {},
+  mainWorker?: string,
+) {
   const f = fixture();
   const dir = temporary('thread-worker-viewer-');
   const store = new ConfigStore(dir);
@@ -276,7 +283,10 @@ async function viewer() {
   const factory = f.factory();
   const registry = new ProjectRegistry();
   registry.loadFromConfigs(f.resolution.config.projects);
-  const main = factory.create('main', { projectId: 'claude' });
+  const main = factory.create('main', {
+    projectId: 'claude',
+    ...(mainWorker ? { worker: mainWorker } : {}),
+  });
   registry.get('claude')!.addThread(main);
   const harness = new Harness(main);
   harness.setDefaultExecutor('executor');
@@ -288,6 +298,7 @@ async function viewer() {
     configStore: store,
     threadFactory: factory,
     projectRegistry: registry,
+    ...extra,
   });
   cleanup.push(async () => {
     await served.analyticsReady.catch(() => {});
@@ -301,7 +312,7 @@ async function viewer() {
     });
     return { status: response.status, body: (await response.json()) as Record<string, unknown> };
   };
-  return { f, served, call, factory };
+  return { f, served, call, factory, main };
 }
 
 test('POST /api/threads takes a worker; a refused one is a 400 with the reason', async () => {
@@ -340,8 +351,8 @@ test("PATCH /api/threads/:id changes the worker only before the thread's first t
   expect((await call('PATCH', '/api/threads/main', { worker: 'codex' })).status).toBe(409);
 });
 
-test('a Codex local member joins a Claude host', async () => {
-  const { call } = await viewer();
+test('a Codex local member joins a Claude host and runs its turns on Codex', async () => {
+  const { call, served, f } = await viewer();
   const member = await call('POST', '/api/threads', {
     id: 'codex-member',
     projectId: 'claude',
@@ -353,10 +364,176 @@ test('a Codex local member joins a Claude host', async () => {
     displayName: 'Codex',
   });
   expect(joined.status).toBe(200);
+  // A send to it wakes it: its turn runs on the Codex worker's provider and model.
+  expect(served.conversations!.send('main', 'Codex', 'Codex, take a look')).toBe('Sent to Codex.');
+  await until(() => f.codex.models.length === 1, 'the Codex member woken');
+  expect(f.codex.models).toEqual(['gpt-6-astra']);
+  expect(f.claude.models).toEqual([]);
 });
 
-/** The config the fixture saves validates as settings would. */
 test('the fixture is a valid saved configuration', () => {
   const config: FoundryConfig = fixture().saved;
+  expect(() => validateConfig(config)).not.toThrow();
   expect(config.projects.codex?.defaults?.provider).toBe('codex');
+});
+
+test('main keeps its stored worker; a stored main record without one stops startup with the stamping command', () => {
+  const dir = temporary('thread-worker-main-');
+  const path = join(dir, 'sessions.sqlite');
+  expect(LocalSessionStore.storedWorker(path, 'main')).toBeUndefined();
+  const record = (worker?: string) => ({
+    id: 'main',
+    meta: {
+      description: '',
+      tags: [],
+      status: 'idle',
+      createdAt: 1,
+      lastActiveAt: 1,
+      ...(worker ? { worker } : {}),
+    } as ThreadMeta,
+  });
+  let store = new LocalSessionStore(path);
+  store.saveThread(record());
+  // A save never stamps an unstamped record: the live main on the current default would clobber it.
+  expect(() => store.saveThread(record('claude-code'))).toThrow(STAMP_WORKERS_SCRIPT);
+  store.close();
+  expect(() => LocalSessionStore.storedWorker(path, 'main')).toThrow(STAMP_WORKERS_SCRIPT);
+  rmSync(path, { force: true });
+  store = new LocalSessionStore(path);
+  store.saveThread(record('codex'));
+  store.close();
+  expect(LocalSessionStore.storedWorker(path, 'main')).toBe('codex');
+});
+
+test('main on a worker it can no longer run on is refused, naming the main thread, its worker and the fix', () => {
+  const f = fixture();
+  const noCodex: SubscriptionResolution = {
+    ...f.resolution,
+    workers: { 'claude-code': f.resolution.workers['claude-code']! },
+  };
+  expect(() =>
+    createMainThread(f.factory(noCodex), { projectId: 'claude', worker: 'codex' }),
+  ).toThrow(/The main thread runs on codex and cannot start: .*Make codex usable again/);
+});
+
+test("a Kingdom project's default worker needs no login on this machine; its threads may run on it", () => {
+  const root = temporary('thread-worker-kingdom-');
+  mkdirSync(join(root, '.claude'), { mode: 0o755 });
+  const home = process.env.HOME;
+  process.env.HOME = root;
+  try {
+    const c = defaultConfig();
+    c.projects = {
+      pooled: {
+        id: 'pooled',
+        path: root,
+        tags: [],
+        capacity: 'kingdom',
+        defaults: { provider: 'codex', model: 'gpt-6-astra' },
+      },
+    };
+    const resolved = resolveSubscriptionPolicy(c, { startup: true, cwd: root })!;
+    expect(resolved.workers.codex).toBeUndefined();
+    expect(resolved.offered).toContain('codex');
+    const view = resolveThreadView(resolved.config, { projectId: 'pooled' }).config;
+    expect(threadWorkerRequirement(resolved, view, 'codex', 'pooled')).toBeUndefined();
+    // A thread run on this machine still needs the login.
+    expect(threadWorkerRequirement(resolved, resolved.config, 'codex')).toContain(
+      'has no usable login',
+    );
+  } finally {
+    process.env.HOME = home;
+  }
+});
+
+test("a fork carries its source's worker", async () => {
+  const { call } = await viewer({ localStore: null });
+  const source = await call('POST', '/api/threads', { projectId: 'claude', worker: 'codex' });
+  const fork = await call('POST', `/api/threads/${source.body.threadId}/fork`, { copyCount: 1 });
+  expect(fork.status).toBe(201);
+  expect((fork.body.meta as ThreadMeta).worker).toBe('codex');
+});
+
+for (const worker of ['claude-code', 'codex'] as const)
+  test(`under claude-in-session, a ${worker} thread's subagent ${worker === 'codex' ? 'sends no in-session guard signal' : 'is guarded in-session'}; the child carries its worker`, async () => {
+    let sink!: (threadId: string, evidence: NativeEvidence) => void;
+    const { served, main } = await viewer(
+      {
+        subagentSources: [
+          {
+            observeSubagents(observe) {
+              sink = observe;
+              return () => {};
+            },
+          },
+        ],
+        threadSetup: {
+          applies: (threadId) => served.directory.get(threadId)?.meta.worker === 'claude-code',
+          open: async () => {},
+          pending: () => false,
+          onSetup: () => {},
+        },
+      },
+      worker,
+    );
+    const observed: string[] = [];
+    main.signals.on('tool_observation', async () => {
+      observed.push('tool');
+    });
+    served.localStore!.beginTurn(main, 'turn-1', 'Explore');
+    const base = { schema: 1 as const, nativeOutcome: 'unknown' as const };
+    sink('main', {
+      ...base,
+      kind: 'subagent',
+      subagent: { phase: 'started', taskId: 'task-1', toolUseId: 'toolu_spawn', prompt: 'Look' },
+    });
+    sink('main', {
+      ...base,
+      kind: 'tool_use',
+      parentToolUseId: 'toolu_spawn',
+      callId: 'toolu_w',
+      toolName: 'Write',
+      toolInput: { file_path: 'a.ts' },
+    });
+    sink('main', {
+      ...base,
+      kind: 'tool_result',
+      parentToolUseId: 'toolu_spawn',
+      callId: 'toolu_w',
+      toolOutput: 'written',
+      toolError: false,
+    });
+    await Bun.sleep(20);
+    expect(observed).toEqual(worker === 'codex' ? [] : ['tool']);
+    const child = served.directory.all().find((t) => t.meta.parentThreadId === 'main')!;
+    expect(child.meta.worker).toBe(worker);
+  });
+
+test('a turn sent while a worker change closes the old in-session host lands on the rebuilt thread', async () => {
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const { call, served, f } = await viewer({
+    threadSetup: {
+      applies: () => false,
+      open: async () => {},
+      pending: () => false,
+      release: () => gate,
+      onSetup: () => {},
+    },
+  });
+  const created = await call('POST', '/api/threads', { projectId: 'claude' });
+  const id = created.body.threadId as string;
+  const patch = call('PATCH', `/api/threads/${id}`, { worker: 'codex' });
+  await until(() => served.directory.get(id)?.meta.worker === 'codex', 'rebuilt on codex');
+  // The old host is still closing: a turn sent now runs on the live, rebuilt thread.
+  const sent = await call('POST', '/api/messages', { threadId: id, message: 'hello' });
+  expect(sent.status).toBe(200);
+  expect(f.codex.models).toEqual(['gpt-6-astra']);
+  release();
+  expect((await patch).status).toBe(200);
+  const thread = served.directory.get(id)!;
+  expect(thread.disposed).toBe(false);
+  expect(thread.meta.worker).toBe('codex');
 });

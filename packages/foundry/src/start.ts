@@ -18,14 +18,7 @@ import { createDecisionProvider } from './providers/decision-provider';
 import { harnessSettingSources } from './providers/harness-settings';
 import { InSessionWardens, inSessionThreadSetup } from './providers/in-session-wardens';
 import { KingdomAuthentication } from './providers/kingdom-authentication';
-import {
-  heldSignetFile,
-  selectKingdomIntegration,
-} from './providers/kingdom-installation-connection';
-import {
-  KingdomSubscriptionAuthentication,
-  ProjectCapacityAuthentication,
-} from './providers/kingdom-subscription-authentication';
+import { projectCapacity } from './providers/kingdom-subscription-authentication';
 import {
   NativeAuthentication,
   type NativeAuthenticationProvider,
@@ -35,6 +28,7 @@ import { SubscriptionAuthentication } from './providers/subscription-authenticat
 import {
   resolveSubscriptionPolicy,
   threadWorkerRequirement,
+  workerDefaultModel,
 } from './providers/subscription-policy';
 
 /**
@@ -72,7 +66,7 @@ import {
 } from './agents';
 import { resolveLearningSettings } from './agents/learning-config';
 import { describeChorus } from './agents/region-roster';
-import { atlasRootOf, configureHarness } from './agents/thread-factory';
+import { atlasRootOf, configureHarness, createMainThread } from './agents/thread-factory';
 import type { StageEffort } from './classify';
 import { acpLaunchPath, newAcpCapability, removeAcpLaunch, writeAcpLaunch } from './client/launch';
 import type { ConversationService } from './conversations/service';
@@ -117,7 +111,7 @@ import {
   foundryConfigDir,
   starterConfig,
 } from './viewer/config';
-import { resolveProjectView, resolveThreadView } from './viewer/config-resolve';
+import { resolveProjectView } from './viewer/config-resolve';
 import { startViewer } from './viewer/server';
 
 // ---------------------------------------------------------------------------
@@ -196,8 +190,6 @@ if (subscription) {
         ', ',
       )}, decisions ${subscription.decision.runtime} ${subscription.policy.model} (${subscription.decision.profileDirectory}); no API providers`,
   );
-  for (const [worker, reason] of Object.entries(subscription.unavailable))
-    console.log(`Worker ${worker} not offered to threads: ${reason}`);
   if (subscription.rerouted.length)
     console.log(`Decision roles use subscription decisions: ${subscription.rerouted.join(', ')}`);
 }
@@ -320,46 +312,26 @@ let threadMeta: ((threadId: string) => ThreadMeta | undefined) | undefined;
 let liveConfig = config;
 // One binding store for every worker: it is keyed by runtime.
 const sessionStore = new FileExternalSessionStore(join(FOUNDRY_DIR, 'sessions.json'));
-// One Kingdom pool client for every worker: it is keyed by runtime and thread.
-let kingdomSubscriptions: KingdomSubscriptionAuthentication | undefined;
+// Kingdom-capacity projects run their threads, on every worker, on a login Kingdom releases from the
+// project's pool, never on this machine's; every other thread keeps the machine's own login. Applies
+// to projects set to kingdom at startup.
+const projectCapacityAuthentication = Object.values(config.projects ?? {}).some(
+  (project) => project.capacity === 'kingdom',
+)
+  ? projectCapacity({
+      foundryDir: FOUNDRY_DIR,
+      config: () => liveConfig,
+      meta: (threadId) => threadMeta?.(threadId),
+    })
+  : (local: NativeAuthenticationProvider | undefined) => local;
 
-/** Kingdom-capacity projects run their threads, on every worker, on a login Kingdom releases from the
- * project's pool, never on this machine's; every other thread keeps the machine's own login. Applies
- * to projects set to kingdom at startup. */
-function projectCapacityAuthentication(
-  config: FoundryConfig,
-  local: NativeAuthenticationProvider | undefined,
-): NativeAuthenticationProvider | undefined {
-  if (!Object.values(config.projects ?? {}).some((project) => project.capacity === 'kingdom'))
-    return local;
-  const metaOf = (threadId: string) => threadMeta?.(threadId.split(':aux:')[0]!);
-  const projectOf = (threadId: string) => {
-    const id = metaOf(threadId)?.projectId;
-    return id ? liveConfig.projects[id] : undefined;
-  };
-  kingdomSubscriptions ??= new KingdomSubscriptionAuthentication({
-    directory: join(FOUNDRY_DIR, 'kingdom', 'subscriptions'),
-    capacity: async (threadId) => {
-      const capacity = projectOf(threadId)?.kingdomCapacity;
-      if (!capacity) throw Error('This project has no Kingdom capacity configured');
-      const { url } = selectKingdomIntegration(liveConfig.kingdomIntegrations, capacity.kingdom);
-      // The thread's own worker's model and effort.
-      const view = resolveThreadView(liveConfig, metaOf(threadId) ?? {}).config;
-      return {
-        url,
-        credentialFile: await heldSignetFile(FOUNDRY_DIR, url, capacity.signetId),
-        ...(capacity.projectId ? { projectId: capacity.projectId } : {}),
-        model: view.defaults.model,
-        effort: view.defaults.codexEffort ?? 'default',
-      };
-    },
-  });
-  return new ProjectCapacityAuthentication({
-    local,
-    usesKingdom: (threadId) => projectOf(threadId)?.capacity === 'kingdom',
-    kingdom: kingdomSubscriptions,
-  });
-}
+/** Local authentication for a worker with no login here: only Kingdom-capacity threads may use it. */
+const noLocalLogin = (worker: string): NativeAuthenticationProvider => ({
+  bindingId: (threadId) => threadId,
+  prepare: async () => {
+    throw Error(`The ${worker} worker has no login on this machine; no other login is used`);
+  },
+});
 
 /** One worker's provider and session adapter. Building it spawns nothing: processes start per thread. */
 function createProvider(
@@ -370,26 +342,29 @@ function createProvider(
   sessionAdapter?: SessionAdapter;
 } {
   const login = subscription?.workers[providerId as keyof typeof subscription.workers];
-  if (subscription && !login) throw Error(`The ${providerId} worker has no usable login`);
+  // Each worker's adapter starts on its own default model: the global model only on the global worker.
+  const defaultModel = workerDefaultModel(config, providerId);
   const authentication = login
     ? new SubscriptionAuthentication(join(FOUNDRY_DIR, 'runtime-profiles'), login)
-    : config.defaults.kingdomOwnerKey ||
-        Object.keys(config.kingdomInferenceAssignments ?? {}).length
-      ? new KingdomAuthentication({
-          directory: join(FOUNDRY_DIR, 'kingdom'),
-          sources: config.kingdomInference ?? [],
-          defaultOwnerKey: config.defaults.kingdomOwnerKey,
-          assignments: config.kingdomInferenceAssignments,
-        })
-      : config.defaults.nativeAuthenticationId ||
-          Object.keys(config.nativeAuthenticationSelections ?? {}).length
-        ? new NativeAuthentication({
-            directory: join(FOUNDRY_DIR, 'runtime-profiles'),
-            sources: config.nativeAuthentication ?? [],
-            defaultSourceId: config.defaults.nativeAuthenticationId,
+    : subscription
+      ? noLocalLogin(providerId)
+      : config.defaults.kingdomOwnerKey ||
+          Object.keys(config.kingdomInferenceAssignments ?? {}).length
+        ? new KingdomAuthentication({
+            directory: join(FOUNDRY_DIR, 'kingdom'),
+            sources: config.kingdomInference ?? [],
+            defaultOwnerKey: config.defaults.kingdomOwnerKey,
+            assignments: config.kingdomInferenceAssignments,
           })
-        : undefined;
-  const routed = projectCapacityAuthentication(config, authentication);
+        : config.defaults.nativeAuthenticationId ||
+            Object.keys(config.nativeAuthenticationSelections ?? {}).length
+          ? new NativeAuthentication({
+              directory: join(FOUNDRY_DIR, 'runtime-profiles'),
+              sources: config.nativeAuthentication ?? [],
+              defaultSourceId: config.defaults.nativeAuthenticationId,
+            })
+          : undefined;
+  const routed = projectCapacityAuthentication(authentication);
   if (routed && !['claude-code', 'codex'].includes(providerId))
     throw Error('Native authentication requires a native runtime provider');
   if (authentication instanceof NativeAuthentication)
@@ -449,7 +424,7 @@ function createProvider(
         ...(inSession ? { inSession } : {}),
         harnessSettings,
         defaults: {
-          model: config.defaults.model,
+          model: defaultModel,
           ...(suppressInstructions ? { env: { ...CLAUDE_HARNESS_INSTRUCTIONS_OFF } } : {}),
           ...subscriptionSpawn,
         },
@@ -459,7 +434,7 @@ function createProvider(
         provider: new SessionBackedProvider({
           id: 'claude-code',
           adapter: sessionAdapter,
-          defaultModel: config.defaults.model,
+          defaultModel: defaultModel,
           ...hostSettings,
         }),
       };
@@ -471,7 +446,7 @@ function createProvider(
         authentication: routed,
         ...(suppressInstructions ? { appServerConfig: CODEX_HARNESS_INSTRUCTIONS_OFF } : {}),
         defaults: {
-          model: config.defaults.model,
+          model: defaultModel,
           effort: config.defaults.codexEffort,
           ...subscriptionSpawn,
         },
@@ -481,7 +456,7 @@ function createProvider(
         provider: new SessionBackedProvider({
           id: 'codex',
           adapter: sessionAdapter,
-          defaultModel: config.defaults.model,
+          defaultModel: defaultModel,
           ...hostSettings,
         }),
       };
@@ -546,7 +521,7 @@ function createProvider(
 
 // Every usable worker is built now (subscription mode); with apiTokens, only the default provider.
 const workers = new Map(
-  (subscription ? Object.keys(subscription.workers) : [config.defaults.provider]).map(
+  (subscription ? subscription.offered : [config.defaults.provider]).map(
     (id) => [id, createProvider(config, id)] as const,
   ),
 );
@@ -725,13 +700,8 @@ const factory = new ThreadFactory({
     },
   },
   // A thread's worker: a subscription worker with its vendor on and a login (or, with apiTokens, the default).
-  workerRequirement: (view, worker) => {
-    const refusal = threadWorkerRequirement(subscription, view, worker);
-    if (refusal) return refusal;
-    return workers.has(worker) || !subscription
-      ? undefined
-      : `The ${worker} worker was not started with Foundry; restart Foundry`;
-  },
+  workerRequirement: (view, worker, projectId) =>
+    threadWorkerRequirement(subscription, view, worker, projectId),
 });
 
 // Settings edits reach live threads on their next turn; decision providers stay as started.
@@ -751,9 +721,10 @@ configStore.watch();
 const mainProjectId = Object.values(config.projects ?? {}).find(
   (project) => project.enabled !== false,
 )?.id;
-// Main keeps the worker it ran on: a later change of the project's default is never applied to it silently.
+// Main keeps the worker it ran on: a later change of the project's default is never applied to it
+// silently, and a stored record without one is refused, not given the current default.
 const mainWorker = LocalSessionStore.storedWorker(join(FOUNDRY_DIR, 'sessions.sqlite'), 'main');
-const thread = factory.create('main', {
+const thread = createMainThread(factory, {
   description: 'Main conversation thread',
   ...(mainProjectId ? { projectId: mainProjectId } : {}),
   ...(mainWorker ? { worker: mainWorker } : {}),

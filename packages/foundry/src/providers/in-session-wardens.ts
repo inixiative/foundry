@@ -3,7 +3,6 @@
  * @kind constant
  * @partOf feature:wardens
  */
-
 import {
   ClaudeInSessionDecisions,
   type InSessionSetup,
@@ -11,6 +10,7 @@ import {
   type PrimeSpec,
 } from '@inixiative/agent-session';
 import type { NativeBridgeSource, ThreadSetup } from '@inixiative/foundry-core';
+import type { ThreadSetupHost } from '../turns/turn-service';
 
 /**
  * Base instructions for a Warden held inside the thread's own Claude Code process
@@ -35,8 +35,6 @@ export interface InSessionWardensConfig {
   onSetup?: (threadId: string, setup: InSessionSetup) => void;
   onEvent?: (event: PrimedEvent) => void;
 }
-
-import type { ThreadSetupHost } from '../turns/turn-service';
 
 type Roster = ReadonlyArray<{ spec: PrimeSpec; standby: string }>;
 

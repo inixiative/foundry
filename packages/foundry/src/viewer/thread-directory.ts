@@ -80,9 +80,22 @@ export class ViewerThreadDirectory {
     if (!this.factory) throw Error('Rebuilding a thread needs the thread factory');
     const current = this.get(id);
     if (current === this.main) throw Error("The main thread's worker is its project's default");
+    const previous = current ? structuredClone(current.meta) : undefined;
+    const live = current && !current.disposed;
     current?.dispose();
     const project = meta.projectId ? this.projects?.get(meta.projectId) : undefined;
-    const thread = this.factory.create(id, meta);
+    let thread: Thread;
+    try {
+      thread = this.factory.create(id, meta);
+    } catch (error) {
+      // Never leave a live thread disposed with nothing in its place: it comes back as it was.
+      if (!live || !previous) throw error;
+      const restored = this.factory.create(id, previous);
+      Object.assign(restored.meta, previous);
+      if (project) project.replaceThread(restored);
+      if (!project || this.threads.has(id)) this.threads.set(id, restored);
+      throw error;
+    }
     Object.assign(thread.meta, meta);
     if (project) project.replaceThread(thread);
     // Restore lists project threads here too: the old object goes wherever it was.

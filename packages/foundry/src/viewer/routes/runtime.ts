@@ -904,12 +904,18 @@ export function registerRuntimeRoutes(app: Hono, deps: RuntimeRoutesDeps): { tur
         );
       const refusal = threadFactory.workerRefusal(thread.meta.projectId, body.worker);
       if (refusal) return c.json({ error: refusal }, 400);
-      await deps.threadSetup?.release?.(id);
-      thread = directory.rebuild(id, { ...structuredClone(thread.meta), worker: body.worker });
+      // Checked and rebuilt with no await between, so no turn lands on the old thread meanwhile.
+      try {
+        thread = directory.rebuild(id, { ...structuredClone(thread.meta), worker: body.worker });
+      } catch (error) {
+        return c.json({ error: (error as Error).message }, 409);
+      }
       // A model chosen for the old worker is not carried to the new one.
       const chosen = threadLaunch.get(id).model;
       if (chosen && workerModelRequirement(body.worker as SubscriptionWorkerId, chosen))
         threadLaunch.update(id, { model: null });
+      // The old worker's in-session host goes; the rebuilt thread is already the live one.
+      await deps.threadSetup?.release?.(id);
     }
 
     // Update worktree assignment
