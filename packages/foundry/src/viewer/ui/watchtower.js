@@ -10,7 +10,9 @@
  * branch, linked PRs, shared conversation); nothing records "aligned", so that column stays empty.
  */
 
-import { html, useState } from './lib.js';
+import { FilterChips, passesChips } from './filter-chips.js';
+import { html, useEffect, useState } from './lib.js';
+import { settingsConfig } from './settings.js';
 import { allThreads, projects, prompts, selectThread, watchtowerOpen } from './store.js';
 import { threadName } from './thread-labels.js';
 import { categoryOf, subagentParentOf, threadState } from './thread-status.js';
@@ -22,14 +24,14 @@ export const STAGES = [
   ['planned', 'Planned'],
   ['progress', 'In progress'],
   ['review', 'Review · QA'],
-  ['landed', 'Landed'],
+  ['blocked', 'Blocked'],
 ];
 const LANDED = new Set(['archived', 'completed', 'done']);
 
-/** A thread's stage, from what it records. */
+/** A thread's stage, from what it records; work that can't proceed is Blocked whatever its stage. */
 export function stageOf(thread, category) {
   const meta = thread.meta ?? {};
-  if (LANDED.has(meta.status)) return 'landed';
+  if (category === 'problem') return 'blocked';
   const refs = meta.context?.references ?? [];
   if (refs.some((r) => r.integration === 'github')) return 'review';
   if (category === 'working' || meta.context?.branch || meta.branch) return 'progress';
@@ -38,9 +40,19 @@ export function stageOf(thread, category) {
   return 'idea';
 }
 
-function Card({ item }) {
-  const { thread, sources, people, blocked } = item;
-  return html`<button type="button" class="wt-card ${blocked ? 'is-blocked' : ''}" title=${threadName(thread)}
+const SCOPES = [
+  [
+    'everyone',
+    'Everyone',
+    'What everyone is working on and talking about, by stage, so nobody duplicates it',
+  ],
+  ['mine', 'Involves me', "Work you're on, on any machine"],
+  ['here', 'This Mac', 'Work running on this machine'],
+];
+
+function Card({ item, machine }) {
+  const { thread, sources, people } = item;
+  return html`<button type="button" class="wt-card ${item.mine ? 'is-mine' : ''} ${item.stage === 'blocked' ? 'is-blocked' : ''}" title=${threadName(thread)}
     onClick=${() => {
       watchtowerOpen.value = false;
       selectThread(thread.threadId);
@@ -52,22 +64,28 @@ function Card({ item }) {
         ([k, n]) =>
           html`<span key=${k} class="wt-src s-${k}">${k === 'github' ? 'GitHub' : k === 'linear' ? 'Linear' : 'Sessions'} ${n}</span>`,
       )}</span>
-    <span class="wt-who">${people.map((p) => html`<span key=${p} class=${p === 'You' ? 'is-me' : ''}>${p}</span>`)}<i>you're on it</i></span>
-    ${blocked ? html`<span class="wt-blocked">Blocked · can't proceed</span>` : null}
+    <span class="wt-who">${people.filter((p) => p !== 'You').map((p) => html`<span key=${p}>${p}</span>`)}
+      ${item.mine ? html`<span class="wt-you is-here">You · ${machine}</span>` : null}</span>
   </button>`;
 }
 
 export function Watchtower() {
-  const [kingdom, setKingdom] = useState('');
-  const [project, setProject] = useState('');
-  const [mine, setMine] = useState(false);
+  const [scope, setScope] = useState('everyone');
+  const [chips, setChips] = useState({});
+  const machine = settingsConfig.value?.installationName ?? 'this Mac';
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key !== 'Escape' || e.target.closest?.('input, textarea, select, [contenteditable]'))
+        return;
+      watchtowerOpen.value = false;
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, []);
   const label = (id) => (id ? (projects.value.find((p) => p.id === id)?.label ?? id) : 'Global');
-  const laneOf = (id) => {
-    const p = projects.value.find((x) => x.id === id);
-    return p?.tags?.[0] ?? 'This Foundry';
-  };
-  const items = allThreads.value
-    .filter((t) => !subagentParentOf(t.meta))
+  const kingdomOf = (id) => projects.value.find((x) => x.id === id)?.tags?.[0] ?? 'This Foundry';
+  const all = allThreads.value
+    .filter((t) => !subagentParentOf(t.meta) && !LANDED.has(t.meta?.status))
     .map((thread) => {
       const subagents = allThreads.value.filter(
         (c) => subagentParentOf(c.meta) === thread.threadId,
@@ -78,60 +96,102 @@ export function Watchtower() {
           (c) => categoryOf(threadState(c, { prompts: [] })) === 'working',
         ),
       });
-      const category = categoryOf(state);
       const refs = thread.meta?.context?.references ?? [];
       const members = thread.conversation?.members ?? 0;
       return {
         thread,
-        stage: stageOf(thread, category),
-        lane: `${laneOf(thread.meta?.projectId)} › ${label(thread.meta?.projectId)}`,
-        kingdom: laneOf(thread.meta?.projectId),
+        stage: stageOf(thread, categoryOf(state)),
+        kingdom: kingdomOf(thread.meta?.projectId),
         projectId: thread.meta?.projectId ?? '',
+        lane: `${kingdomOf(thread.meta?.projectId)} › ${label(thread.meta?.projectId)}`,
         sources: {
           linear: refs.filter((r) => r.integration === 'linear').length,
           github: refs.filter((r) => r.integration === 'github').length,
           sessions: 1 + subagents.length,
         },
         people: members ? ['You', `+${members}`] : ['You'],
-        blocked: category === 'problem',
+        // Every listed thread runs on this machine and is yours: the list has no other machine's threads yet.
+        mine: true,
+        device: machine,
       };
-    })
-    .filter((i) => !kingdom || i.kingdom === kingdom)
-    .filter((i) => !project || i.projectId === project)
-    // Every thread here is yours (Heralds would add teammates' work): Involves me keeps them all.
-    .filter(() => !mine || true);
+    });
+  const valuesOf = {
+    kingdom: (i) => i.kingdom,
+    project: (i) => i.projectId,
+    people: (i) => i.people.filter((p) => !p.startsWith('+')),
+    device: (i) => i.device,
+  };
+  const inScope = all.filter(
+    (i) => scope === 'everyone' || (scope === 'mine' ? i.mine : i.device === machine),
+  );
+  const items = inScope.filter((i) => passesChips(chips, valuesOf, i));
+  const count = (group, value) =>
+    inScope.filter((i) => [valuesOf[group](i)].flat().includes(value)).length;
+  const options = (group, values) =>
+    [...new Set(values)].map((v) => ({
+      value: v,
+      label: group === 'project' ? label(v) : v,
+      count: count(group, v),
+    }));
+  const groups = [
+    {
+      id: 'kingdom',
+      label: 'Kingdom',
+      options: options(
+        'kingdom',
+        inScope.map((i) => i.kingdom),
+      ),
+    },
+    {
+      id: 'project',
+      label: 'Project',
+      options: options(
+        'project',
+        inScope.map((i) => i.projectId),
+      ),
+    },
+    { id: 'people', label: 'People', options: options('people', inScope.flatMap(valuesOf.people)) },
+    {
+      id: 'device',
+      label: 'Device',
+      options: options(
+        'device',
+        inScope.map((i) => i.device),
+      ),
+    },
+  ];
   const lanes = [...new Set(items.map((i) => i.lane))].sort();
-  const kingdoms = [...new Set(projects.value.map((p) => p.tags?.[0] ?? 'This Foundry'))];
+  const subtitle = SCOPES.find(([id]) => id === scope)[2];
 
   return html`<section class="watchtower" aria-label="Watchtower">
     <header class="wt-head">
       <h2>Watchtower</h2><span class="wt-chip" title="A proposal: the name isn't decided">working name</span>
-      <span class="wt-meta">What everyone is working on and talking about, by stage, so nobody duplicates it</span>
+      <span class="wt-meta">${subtitle}</span>
     </header>
     <div class="wt-filters">
-      <span class="wt-label">Show</span>
-      <button type="button" aria-pressed=${!kingdom && !project} onClick=${() => {
-        setKingdom('');
-        setProject('');
-      }}>Everything</button>
-      <select class="settings-input" value=${kingdom} onChange=${(e) => setKingdom(e.target.value)}>
-        <option value="">Kingdom…</option>${kingdoms.map((k) => html`<option key=${k} value=${k}>${k}</option>`)}
-      </select>
-      <select class="settings-input" value=${project} onChange=${(e) => setProject(e.target.value)}>
-        <option value="">Project…</option>${projects.value.map((p) => html`<option key=${p.id} value=${p.id}>${p.label}</option>`)}
-      </select>
-      <button type="button" aria-pressed=${mine} onClick=${() => setMine(!mine)}>Involves me</button>
+      <div class="wt-scope" role="tablist" aria-label="Whose work">
+        ${SCOPES.map(
+          ([
+            id,
+            title,
+          ]) => html`<button key=${id} type="button" role="tab" aria-selected=${scope === id}
+          onClick=${() => setScope(id)}>${title}</button>`,
+        )}
+      </div>
+      <${FilterChips} groups=${groups} selected=${chips} onChange=${setChips} />
     </div>
-    <p class="wt-note">Mapped from this Foundry's threads. Slack, Linear and teammates' sessions arrive with the Heralds (not built); a stage is read from the thread (status, plan, branch, linked PR), and nothing marks a thread Aligned yet. Lanes use the project's first tag until projects record their Kingdom.</p>
+    <p class="wt-note">Mapped from this Foundry's threads, all running on ${machine}: threads on your other machines, and Slack, Linear and teammates' work, arrive with the Heralds (not built). A stage is read from the thread (status, plan, branch, linked PR); nothing marks a thread Aligned yet. Lanes use the project's first tag until projects record their Kingdom.</p>
     <div class="wt-grid" style=${`grid-template-columns: 170px repeat(${STAGES.length}, minmax(150px, 1fr))`}>
-      <div class="wt-th"></div>${STAGES.map(([id, title]) => html`<div key=${id} class="wt-th">${title}</div>`)}
+      <div class="wt-th"></div>${STAGES.map(([id, title]) => html`<div key=${id} class="wt-th ${id === 'blocked' ? 'is-blocked' : ''}">${title}</div>`)}
       ${lanes.map(
         (lane) =>
           html`<div key=${lane} class="wt-lane">${lane}</div>${STAGES.map(
             ([id]) =>
               html`<div key=${`${lane}:${id}`} class="wt-cell">${items
                 .filter((i) => i.lane === lane && i.stage === id)
-                .map((i) => html`<${Card} key=${i.thread.threadId} item=${i} />`)}</div>`,
+                .map(
+                  (i) => html`<${Card} key=${i.thread.threadId} item=${i} machine=${machine} />`,
+                )}</div>`,
           )}`,
       )}
     </div>

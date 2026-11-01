@@ -1,0 +1,67 @@
+/* Filter chips (filter-chips.js), shared by the Board and the Watchtower. */
+.filter-chips {
+  display: grid;
+  gap: 6px;
+}
+.filter-chips-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.filter-chips-spacer {
+  flex: 1;
+}
+.filter-chip,
+.filter-chip-clear,
+.filter-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid hsl(var(--border));
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: 12.5px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.filter-chip.is-on,
+.filter-chip[aria-expanded="true"] {
+  border-color: hsl(var(--app-primary) / 0.6);
+}
+.filter-chip-count,
+.filter-option-count {
+  font: 10.5px var(--font-mono, monospace);
+  padding: 0 5px;
+  border-radius: 999px;
+  background: hsl(var(--muted));
+}
+.filter-chip.is-on .filter-chip-count {
+  background: hsl(var(--app-primary) / 0.35);
+}
+.filter-chip-caret {
+  font-size: 10px;
+  color: hsl(var(--muted-foreground));
+}
+.filter-chip-clear {
+  border-style: dashed;
+  color: hsl(var(--muted-foreground));
+}
+.filter-chip-options {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 6px 8px;
+  border-radius: 10px;
+  background: hsl(var(--muted) / 0.45);
+}
+.filter-option[aria-pressed="true"] {
+  background: hsl(var(--app-primary) / 0.25);
+  border-color: hsl(var(--app-primary) / 0.6);
+}
+.filter-option-none {
+  font-size: 12px;
+  color: hsl(var(--muted-foreground));
+}

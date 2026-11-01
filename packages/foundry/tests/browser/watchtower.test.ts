@@ -61,8 +61,15 @@ test('h opens the Watchtower: every stage is a column, a thread is a card, a car
       'Planned',
       'In progress',
       'Review · QA',
-      'Landed',
+      'Blocked',
     ]);
+
+    // The scope switch names whose work is shown; Esc leaves.
+    await tower.getByRole('tab', { name: 'Involves me' }).click();
+    expect(await tower.locator('.wt-meta').innerText()).toBe("Work you're on, on any machine");
+    await page.keyboard.press('Escape');
+    await page.waitForFunction(() => !location.hash.includes('view=watch'));
+    await page.keyboard.press('h');
 
     await page.reload();
     await tower.waitFor();
