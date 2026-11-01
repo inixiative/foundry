@@ -173,6 +173,74 @@ describe('the three-way arms, on stub providers', () => {
   });
 });
 
+describe('carrying stage 1 from an earlier run', () => {
+  const carryRun = async (
+    earlier: Awaited<ReturnType<typeof arm>>['answers'],
+    carryWhy?: boolean,
+  ) => {
+    const config = runOf({ stages: ARMS.B });
+    const { haiku, sonnet, calls } = hosts();
+    const byCell = new Map(earlier.map((a) => [`${a.probeId}|${a.domain}`, a]));
+    const run = await runCharterEval({
+      probes: [
+        ...PROBES,
+        { id: 'unseen', kind: 'negative', ctx: 'x', moment: '', ask: 'Rename a file.' },
+      ],
+      wardensFor: () => [LOCKS],
+      warden: haiku,
+      stages: config.stages,
+      stageProviders: [haiku, sonnet],
+      charters: config.charters,
+      triggers: ['user-message'],
+      carry: (probeId, domain) => byCell.get(`${probeId}|${domain}`),
+      ...(carryWhy === undefined ? {} : { carryWhy }),
+    });
+    return { ...run, calls };
+  };
+
+  test('asks only stage 2, on the cells stage 1 escalated, carrying its reading and why', async () => {
+    const live = await arm(ARMS.B);
+    const earlier = live.answers;
+    const { answers, calls } = await carryRun(earlier);
+    expect(calls.some((c) => c.host === 'claude-haiku-5-5')).toBe(false);
+    const stage2 = calls.filter((c) => c.host === 'claude-sonnet-5-5');
+    expect(stage2).toHaveLength(2);
+    // Stage 2 gets byte for byte what it got live: system and user messages, and its session.
+    const sorted = (cs: typeof calls) =>
+      cs
+        .filter((c) => c.host === 'claude-sonnet-5-5')
+        .map((c) => JSON.stringify([c.messages, c.threadId]))
+        .sort();
+    expect(sorted(calls)).toEqual(sorted(live.calls));
+    const vague = stage2.find((c) => text(c.messages).includes('nightly thing'))!;
+    expect(text(vague.messages)).toContain(
+      'Stage 1 (claude-haiku-5-5) was unsure this moment is in your region: "safer" may mean no overlap',
+    );
+    const byId = Object.fromEntries(answers.map((a) => [a.probeId, a]));
+    // Stage 1's trace is the earlier run's, unchanged; stage 2 is fresh.
+    expect(byId.vague!.stages).toEqual([
+      earlier.find((a) => a.probeId === 'vague')!.stages![0]!,
+      expect.objectContaining({ stage: 1, model: 'claude-sonnet-5-5' }),
+    ]);
+    // A cell stage 1 did not escalate keeps its earlier row, unasked.
+    expect(byId.none).toEqual(earlier.find((a) => a.probeId === 'none')!);
+    // A cell the earlier run never asked is an error, never a fresh stage 1.
+    expect(byId.unseen).toMatchObject({ error: 'no earlier stage 1 to carry' });
+  });
+
+  test('carryWhy false hands stage 2 the outcome without stage 1’s why', async () => {
+    const earlier = (await arm(ARMS.B)).answers;
+    const { calls } = await carryRun(earlier, false);
+    const vague = calls.find(
+      (c) => c.host === 'claude-sonnet-5-5' && text(c.messages).includes('nightly thing'),
+    )!;
+    expect(text(vague.messages)).toContain(
+      'Stage 1 (claude-haiku-5-5) was unsure this moment is in your region.',
+    );
+    expect(text(vague.messages)).not.toContain('may mean no overlap');
+  });
+});
+
 describe('a grouped recogniser', () => {
   const GROUP: EvalWarden = {
     domain: 'g01-locks',
