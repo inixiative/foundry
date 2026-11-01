@@ -19,6 +19,7 @@ That agent is a second voice in the shared thread (Aron, Q8: "it's just a bridge
 
 - **Where the thread lives:** in the joiner's **shared** zone, carrying the sidecar's per-turn layer ("shared with Aron's agent; you see what was said, not Aron's tools or context").
 - **Depth:** its own `maxAgentTurns` bounds its agent's answers to the feed.
+- **The floor is the host's** (planning doc §4.8). The sidecar runs no floor of its own, and the host's `admit` refuses an out-of-turn `kingdom_post`. The sidecar mirrors the host's floor state into its roster's floor line. **New:** the conch lives on the host's conversation record, not in the journal, so the host must stream floor state to members, either as a floor entry in the feed or as a field on the stream's snapshot. Decide which here.
 - **Locally:** for Aron's own Codex, the same path runs in-process.
 - **No chat:** people with no agent don't get one. They stay in Slack and are answered there (BOARD-003).
 - **Who can be a member:** a party on Foundry ACP gets the sidecar from its local Foundry daemon. An ACP client on its own is never a member.
