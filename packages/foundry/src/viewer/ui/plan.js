@@ -77,6 +77,33 @@ function Step({ step, turnLabel }) {
   </li>`;
 }
 
+/** The technical plan's decisions, as chips. */
+const DECISIONS = {
+  reuse: ['Reuse', 'uses what exists as is'],
+  extend: ['Extend', 'adds to an existing system'],
+  new: ['New system', 'nothing fits; the reason says why'],
+  combine: ['Combine', 'merges with other work'],
+  refactor: ['Refactor', 'moves old code onto it'],
+  migrate: ['Migrate after', 'a data change once this lands'],
+  none: ['None', 'nothing to do'],
+};
+const MARK = { done: '✓', doing: '◐', you: '!' };
+
+function PlanItem({ item, status }) {
+  return html`<li class="plan-item">
+    ${status ? html`<span class="plan-box s-${status}" title=${status === 'you' ? 'needs you' : status}>${MARK[status] ?? ''}</span>` : html`<span class="plan-dot"></span>`}
+    <div><b>${item.text}</b>${item.detail ? html`<small>${item.detail}</small>` : null}</div>
+  </li>`;
+}
+
+/** One section of the what and why; "not recorded yet" until the agent records it. */
+function PlanSection({ title, sub, items }) {
+  return html`<section class="plan-section" aria-label=${title}>
+    <header class="plan-section-head"><h3>${title}</h3><small>${sub}</small></header>
+    ${items?.length ? html`<ul class="plan-items">${items.map((it, i) => html`<${PlanItem} key=${i} item=${it} />`)}</ul>` : html`<div class="rp-dim">Not recorded yet.</div>`}
+  </section>`;
+}
+
 export function Plan() {
   const data = threadData.value;
   const threadId = activeThreadId.value;
@@ -103,6 +130,8 @@ export function Plan() {
     }));
   const checklist = buildChecklist({ turns, children, needsYou: waiting.length > 0 });
   const { done, total } = progress(checklist);
+  // The plan's what and why, once the agent records it on the thread (see PlanSection).
+  const recorded = meta.plan ?? {};
 
   return html`<article class="plan">
     <section class="plan-about" aria-label="About">
@@ -140,20 +169,26 @@ export function Plan() {
       </div>
     </section>
 
-    <section class="plan-checklist" aria-label="Plan">
+    <p class="plan-intro">The plan is what you want and why.
+      <button type="button" class="rp-link" onClick=${() => {
+        activePanel.value = 'graph';
+      }}>The Loop is how it’s being done →</button></p>
+
+    <section class="plan-section plan-checklist" aria-label="Your outcomes">
       <header class="plan-section-head">
-        <h3>Plan</h3>
+        <h3>Your outcomes</h3><small>what done looks like</small>
         ${total ? html`<span class="rp-dim">${done} of ${total} done</span>` : null}
       </header>
       ${
-        checklist.goals.length
-          ? checklist.goals.map(
-              (g) => html`<div key=${g.source} class="plan-goal">
-                ${g.goal ? html`<div class="plan-goal-text">${g.goal}</div>` : null}
-                <ul class="plan-steps">${g.steps.map((s) => html`<${Step} key=${s.text} step=${s} turnLabel=${turnLabel} />`)}</ul>
-              </div>`,
-            )
-          : html`<div class="rp-dim">The agent hasn’t recorded a plan on this thread’s recent turns.</div>`
+        recorded.outcomes?.length
+          ? html`<ul class="plan-items">${recorded.outcomes.map((o, i) => html`<${PlanItem} key=${i} item=${o} status=${o.status} />`)}</ul>`
+          : checklist.goals.length
+            ? checklist.goals.map(
+                (g) => html`<div key=${g.source} class="plan-goal">
+                  <ul class="plan-steps">${g.steps.map((s) => html`<${Step} key=${s.text} step=${s} turnLabel=${turnLabel} />`)}</ul>
+                </div>`,
+              )
+            : html`<div class="rp-dim">The agent hasn’t recorded its steps on this thread’s recent turns.</div>`
       }
       ${
         checklist.loose.length
@@ -163,9 +198,31 @@ export function Plan() {
             </div>`
           : null
       }
-      <div class="plan-decisions rp-dim">
-        Decisions join this list when the running thread summary is built; until then they are in the turns.
-      </div>
+    </section>
+
+    <${PlanSection} title="Pain and friction" sub="what this removes" items=${recorded.pains} />
+    <${PlanSection} title="Strategy" sub="how we’ll get there"
+      items=${recorded.strategy?.length ? recorded.strategy : checklist.goals.filter((g) => g.goal).map((g) => ({ text: g.goal }))} />
+    <${PlanSection} title="Reasons" sub="why this way, and not the alternatives" items=${recorded.reasons} />
+
+    <section class="plan-section" aria-label="Technical plan">
+      <header class="plan-section-head"><h3>Technical plan</h3><small>for each concern: the system it uses, and the decision</small></header>
+      ${
+        recorded.technical?.length
+          ? html`<div class="plan-tech">${recorded.technical.map(
+              (r, i) => html`<div key=${i} class="plan-tech-row">
+                <span class="plan-tech-concern">${r.concern}</span>
+                <span class="plan-decision d-${r.decision}" title=${DECISIONS[r.decision]?.[1] ?? ''}>${DECISIONS[r.decision]?.[0] ?? r.decision}</span>
+                <span class="plan-tech-system"><code class="cmd">${r.system}</code>${r.path ? html`<small>${r.path}</small>` : null}</span>
+                <span class="plan-tech-reason">${r.reason}</span>
+              </div>`,
+            )}</div>`
+          : html`<div class="rp-dim">Not recorded yet. Each concern will show its decision (${Object.values(
+              DECISIONS,
+            )
+              .map(([w]) => w)
+              .join(' · ')}), the system it uses and where it lives, and why.</div>`
+      }
     </section>
 
     <section class="plan-lifecycle" aria-label="Where the work stands">
