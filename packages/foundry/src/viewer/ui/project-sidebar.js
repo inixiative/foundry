@@ -317,41 +317,6 @@ export function ProjectSidebar() {
 
   return html`
     <div class="proj-sidebar nav-column">
-      <!-- Pinned scopes -->
-      <div class="proj-defaults nav-pinned">
-        <div
-          class="proj-item proj-global ${!active && !pinned ? 'proj-active' : ''}"
-          onClick=${() => selectScope(null)}
-        >
-          <span class="proj-runtime-icon">*</span>
-          <div class="proj-item-body">
-            <div class="proj-item-label">Global</div>
-            <div class="proj-item-meta"><span>threads outside any project</span></div>
-          </div>
-        </div>
-        <div
-          class="proj-item proj-global ${forge ? 'proj-active' : ''}"
-          onClick=${() => selectScope('forge')}
-        >
-          <span class="proj-runtime-icon">\u2692</span>
-          <div class="proj-item-body">
-            <div class="proj-item-label">Forge Master</div>
-            <div class="proj-item-meta"><span>this Foundry and its settings</span></div>
-          </div>
-        </div>
-        <div
-          class="proj-item proj-global nav-feedback ${inbox ? 'proj-active' : ''}"
-          onClick=${() => selectScope('feedback')}
-        >
-          <span class="proj-runtime-icon">\u25C6</span>
-          <div class="proj-item-body">
-            <div class="proj-item-label">Feedback</div>
-            <div class="proj-item-meta"><span>${openFeedback ? `${openFeedback} open · ` : ''}everything you’ve given</span></div>
-          </div>
-          ${openFeedback ? html`<span class="nav-count" aria-label=${`${openFeedback} open`}>${openFeedback}</span>` : null}
-        </div>
-      </div>
-
       <section class="nav-projects ${listOpen ? '' : 'nav-projects--collapsed'}" aria-label="Projects">
         <div class="proj-sidebar-header">
           <button type="button" class="nav-section-toggle" aria-expanded=${listOpen}
@@ -389,10 +354,44 @@ export function ProjectSidebar() {
             : null
         }
 
-        ${
-          listOpen
-            ? html`
         <div class="proj-list">
+          <div class="proj-defaults nav-pinned" role="group" aria-label="Pinned scopes">
+            <div
+              class="proj-item proj-global ${!active && !pinned ? 'proj-active' : ''}"
+              onClick=${() => selectScope(null)}
+            >
+              <span class="proj-runtime-icon">*</span>
+              <div class="proj-item-body">
+                <div class="proj-item-label">Global</div>
+                <div class="proj-item-meta"><span>threads outside any project</span></div>
+              </div>
+            </div>
+            <div
+              class="proj-item proj-global ${forge ? 'proj-active' : ''}"
+              onClick=${() => selectScope('forge')}
+            >
+              <span class="proj-runtime-icon">\u2692</span>
+              <div class="proj-item-body">
+                <div class="proj-item-label">Forge Master</div>
+                <div class="proj-item-meta"><span>this Foundry and its settings</span></div>
+              </div>
+            </div>
+            <div
+              class="proj-item proj-global nav-feedback ${inbox ? 'proj-active' : ''}"
+              onClick=${() => selectScope('feedback')}
+            >
+              <span class="proj-runtime-icon">\u25C6</span>
+              <div class="proj-item-body">
+                <div class="proj-item-label">Feedback</div>
+                <div class="proj-item-meta"><span>${openFeedback ? `${openFeedback} open · ` : ''}everything you’ve given</span></div>
+              </div>
+              ${openFeedback ? html`<span class="nav-count" aria-label=${`${openFeedback} open`}>${openFeedback}</span>` : null}
+            </div>
+          </div>
+          <div class="proj-list-divider" role="separator"></div>
+          ${
+            listOpen
+              ? html`
           ${filtered.map(
             (p) => html`
             <${ProjectItem}
@@ -419,10 +418,10 @@ export function ProjectSidebar() {
           `
               : null
           }
+          `
+              : null
+          }
         </div>
-      `
-            : null
-        }
       </section>
 
       <div class="nav-threads" id="workspace-threads">

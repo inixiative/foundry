@@ -123,6 +123,8 @@ export async function createViewerPreview(port = 0) {
         ...(s.parent ? { parentThreadId: s.parent } : {}),
         ...(s.branch ? { branch: s.branch } : {}),
       });
+      // Seeded children are subagents (only subagents nest in the rail).
+      if (s.parent) thread.meta.spawn = { via: 'native-claude', observed: true };
       if (s.status === 'archived') thread.archive();
       else if (s.status) thread.meta.status = s.status;
       project.addThread(thread);

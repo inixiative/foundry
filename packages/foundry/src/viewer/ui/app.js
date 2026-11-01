@@ -10,13 +10,13 @@
  */
 
 import { AnalyticsPage } from './analytics.js';
-import { Board } from './board.js';
+import { Board, IncomingCard } from './board.js';
 import { CommandPalette, HelpOverlay } from './command-palette.js';
 import { Conversation } from './conversation.js';
 import { FeedbackInbox } from './feedback.js';
 import { GlossReview } from './gloss.js';
 import { initHotkeys, registerDefaults } from './hotkeys.js';
-import { html, render, useEffect, useState } from './lib.js';
+import { html, render, useEffect, useRef, useState } from './lib.js';
 import { NavRail } from './nav-rail.js';
 import { RightPanel } from './right-panel.js';
 import { analyticsPath, navigate, onLink, route, settingsPath } from './route.js';
@@ -37,6 +37,7 @@ import {
   executeAction,
   feedbackInboxOpen,
   forgeMasterOpen,
+  incoming,
   init,
   inspectLayer,
   inspectTarget,
@@ -74,24 +75,6 @@ function PageNav() {
 }
 
 /** The selected scope, centered in the header: a project's name, else Global / Forge Master / Feedback (or Foundry off the workspace). */
-function HeaderScope() {
-  const scope = scopeProjectId();
-  const workspace = route.value.page === 'workspace';
-  const name = scope
-    ? projects.value.find((p) => p.id === scope)?.label || scope
-    : !workspace
-      ? 'Foundry'
-      : forgeMasterOpen.value
-        ? 'Forge Master'
-        : feedbackInboxOpen.value
-          ? 'Feedback'
-          : 'Global';
-  return html`<div class="header-scope" title=${scope ? `Project: ${name}` : name}>
-    ${scope ? html`<span class="header-scope-kind">Project</span>` : null}
-    <span class="header-scope-name">${name}</span>
-  </div>`;
-}
-
 /** The board button, with how many threads wait on you. */
 function BoardButton() {
   // The Needs-you column's size: threads waiting on you (a prompt, a held send, an unread post).
@@ -107,6 +90,45 @@ function BoardButton() {
     }}>Board${waiting ? html`<span class="board-button-count">${waiting}</span>` : null}</button>`;
 }
 
+/**
+ * Requests to join, waiting in Kingdom: a separate mark from the Board count, since none is accepted
+ * yet. It opens a popover under itself (outside click or Esc closes it); the Board keeps its band.
+ */
+function IncomingIndicator() {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!open) return;
+    const outside = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+    };
+    const onEscape = (e) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('mousedown', outside);
+    document.addEventListener('keydown', onEscape);
+    return () => {
+      document.removeEventListener('mousedown', outside);
+      document.removeEventListener('keydown', onEscape);
+    };
+  }, [open]);
+  const requests = incoming.value;
+  if (!requests.length) return null;
+  const count = requests.length;
+  return html`<div class="incoming-anchor" ref=${ref}>
+    <button class="incoming-indicator" aria-expanded=${open} aria-haspopup="dialog"
+      title=${`${count} request${count === 1 ? '' : 's'} to join, not yet accepted`}
+      onClick=${() => setOpen(!open)}>Incoming <span class="incoming-indicator-count">${count}</span></button>
+    ${
+      open
+        ? html`<div class="incoming-popover" role="dialog" aria-label="Incoming requests">
+            ${requests.map((r) => html`<${IncomingCard} key=${r.id} request=${r} />`)}
+          </div>`
+        : null
+    }
+  </div>`;
+}
+
 function Header() {
   const isConnected = connected.value;
   const count = eventCount.value;
@@ -117,9 +139,10 @@ function Header() {
         <span class="header-brand">Foundry<span class="header-brand-dot">.</span></span>
         <${PageNav} />
       </div>
-      <${HeaderScope} />
+      <div class="header-center">
+        ${route.value.page === 'workspace' ? html`<${IncomingIndicator} /><${BoardButton} />` : null}
+      </div>
       <div class="header-right">
-        ${route.value.page === 'workspace' ? html`<${BoardButton} />` : null}
         <a class="action-btn" href=${settingsPath(null, 'kingdom')} onClick=${onLink}>${settingsConfig.value?.kingdomIntegrations?.length ? 'Kingdom' : 'Connect to Kingdom'}</a>
         <span class="status-dot ${isConnected ? 'on' : 'off'}"></span>
         <span class="status-text">${isConnected ? 'connected' : 'reconnecting...'}</span>

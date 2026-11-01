@@ -9,6 +9,7 @@ import { join, resolve } from 'node:path';
 import {
   type HeldSignet,
   type HostedSignet,
+  type HostedSignetRequest,
   holdInstallationSignets,
   type InstallationSnapshot,
   InstallationSocket,
@@ -255,6 +256,10 @@ export class KingdomInstallationConnection {
   /** The Signets issued on this Foundry's integrations at this Kingdom, as of the last snapshot. */
   get hostedSignets(): readonly HostedSignet[] {
     return this.latest?.hostedSignets ?? [];
+  }
+  /** Parties asking to join this Foundry's threads at this Kingdom, as of the last snapshot. */
+  get signetRequests(): readonly HostedSignetRequest[] {
+    return this.latest?.hostedSignetRequests ?? [];
   }
   /** Hosted Signets the latest snapshot couldn't read; everything, until a snapshot arrives. */
   get hostedDropped(): ReadonlySet<string> {

@@ -14,6 +14,9 @@
  * A card shows what the thread is and what it asks, with one-tap answers for its pending prompt. The
  * attention controls of the spec (dismiss, not important, wipe, combine, bring back, take over) need
  * the attention tag on the thread; they appear when a thread carries `meta.attention`.
+ *
+ * Incoming sits apart from the columns: parties asking to join through a Signet. They are requests,
+ * not approvals of the agent's work, and nothing runs until the owner accepts in Kingdom.
  */
 import { html, useState } from './lib.js';
 import { selfChatSending } from './self-chat.js';
@@ -24,6 +27,7 @@ import {
   boardOpen,
   createThread,
   executeAction,
+  incoming,
   projects,
   prompts,
   resolvePrompt,
@@ -31,7 +35,7 @@ import {
   selectThread,
 } from './store.js';
 import { threadName } from './thread-labels.js';
-import { categoryOf, threadState } from './thread-status.js';
+import { categoryOf, subagentParentOf, threadState } from './thread-status.js';
 
 const COLUMNS = [
   { cat: 'problem', title: 'Problems' },
@@ -109,11 +113,44 @@ function ForgeMasterCard() {
   </article>`;
 }
 
+const when = (iso) => (iso ? new Date(iso).toLocaleString() : null);
+
+/** One party asking to join: who, what for, and where to decide (Kingdom). */
+export function IncomingCard({ request }) {
+  const until = request.until ? `until ${when(request.until)}` : 'no end date';
+  const allowance = request.maxRequests ? `${request.maxRequests} requests` : 'unlimited requests';
+  return html`<article class="incoming-card" data-request=${request.id}>
+    <div class="incoming-card-head">
+      <span class="incoming-card-kind">Request</span>
+      <span class="incoming-card-when">${when(request.createdAt)}</span>
+    </div>
+    <p class="incoming-card-who"><strong>${request.requester}</strong> asks to join your threads</p>
+    <p class="incoming-card-what">${request.name}${request.operations.length ? ` · ${request.operations.join(', ')}` : ''}</p>
+    <p class="incoming-card-terms">${request.lifecycle} · ${allowance} · ${until}</p>
+    <p class="incoming-card-note">Nothing runs until you accept it in Kingdom.</p>
+    <div class="board-card-actions">
+      <a class="proj-btn proj-btn-ok" href=${request.reviewUrl} target="_blank" rel="noopener">Review in Kingdom ↗</a>
+    </div>
+  </article>`;
+}
+
+function Incoming() {
+  const requests = incoming.value;
+  if (!requests.length) return null;
+  return html`<section class="board-incoming" aria-label="Incoming requests">
+    <h3 class="board-column-head">Incoming <span class="rail-pane-count">${requests.length}</span>
+      <span class="board-incoming-hint">Requests to join, not yet accepted</span></h3>
+    <div class="board-incoming-list">
+      ${requests.map((r) => html`<${IncomingCard} key=${r.id} request=${r} />`)}
+    </div>
+  </section>`;
+}
+
 export function Board() {
   const [filter, setFilter] = useState('all');
   const threads = allThreads.value.filter(OPEN).filter((t) => matches(filter, t));
   const placed = threads.map((t) => {
-    const children = allThreads.value.filter((c) => c.meta?.parentThreadId === t.threadId);
+    const children = allThreads.value.filter((c) => subagentParentOf(c.meta) === t.threadId);
     const state = threadState(t, {
       prompts: prompts.value.filter((p) => p.threadId === t.threadId),
       childrenWorking: children.some(
@@ -146,6 +183,7 @@ export function Board() {
         ${chip('this', machine)}
       </nav>
     </header>
+    <${Incoming} />
     <div class="board-columns">
       ${columns.map((col) => {
         const cards = forge ? [] : placed.filter((p) => p.cat === col.cat);

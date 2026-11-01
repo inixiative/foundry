@@ -8,6 +8,7 @@ import { z } from 'zod';
 import { defaultKingdomUrl, installationNameOf } from '../../providers/kingdom-cli';
 import type { KingdomHolders } from '../../providers/kingdom-holder';
 import {
+  type KingdomInstallationConnection,
   type KingdomInstallationConnections,
   kingdomIntegrationId,
   overallStatus,
@@ -20,6 +21,36 @@ import {
   withdrawKingdomRegistration,
 } from '../../providers/kingdom-pairing';
 import type { ConfigStore } from '../config';
+
+/** Pending, unexpired Signet requests across every paired Kingdom, newest first. */
+export function incomingRequests(
+  connections: readonly Pick<KingdomInstallationConnection, 'url' | 'signetRequests'>[],
+  now = Date.now(),
+) {
+  return connections
+    .flatMap((connection) =>
+      connection.signetRequests
+        .filter((request) => request.status === 'sent')
+        .filter((request) => !request.expiresAt || Date.parse(request.expiresAt) > now)
+        .map((request) => ({
+          id: request.id,
+          kingdomUrl: connection.url,
+          requester: request.requester.displayName,
+          requesterModel: request.requester.sourceModel,
+          createdAt: request.createdAt,
+          expiresAt: request.expiresAt,
+          name: request.terms.name,
+          lifecycle: request.terms.lifecycle,
+          maxRequests: request.terms.maxRequests,
+          until: request.terms.expiresAt,
+          operations: [
+            ...new Set(request.terms.resources.flatMap((resource) => resource.operations)),
+          ],
+          reviewUrl: request.reviewUrl,
+        })),
+    )
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
 
 const pairSchema = kingdomPairInputSchema.extend({ replace: z.string().optional() }).strict();
 const disconnectSchema = z.object({ id: z.string().min(1) }).strict();
@@ -103,6 +134,11 @@ export function registerKingdomRoutes(
     return next();
   });
   app.get('/api/kingdom/status', async (c) => c.json(await status()));
+  // Incoming: parties asking to join this Foundry's threads. Nothing runs until the owner accepts in
+  // Kingdom (the request's reviewUrl); Foundry only shows them, read from the Installation snapshot.
+  app.get('/api/kingdom/incoming', (c) =>
+    c.json({ requests: incomingRequests(connections.all()) }),
+  );
   app.post('/api/kingdom/pair', async (c) => {
     if (pairing) return c.json({ error: 'Already pairing; cancel pending pairing first.' }, 409);
     const body = await c.req.json().catch(() => null);

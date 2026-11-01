@@ -92,9 +92,49 @@ test('the board: a pending approval is answered from its card, filters narrow it
     const errors: string[] = [];
     page.on('pageerror', (e: Error) => errors.push(e.message));
 
+    // A request to join sits apart from the columns, as Incoming: not accepted, decided in Kingdom.
+    await page.route('**/api/kingdom/incoming', (route: { fulfill: (r: object) => unknown }) =>
+      route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          requests: [
+            {
+              id: 'req-1',
+              kingdomUrl: 'https://kingdom.example',
+              requester: "Sam's agent",
+              requesterModel: 'Integration',
+              createdAt: '2026-11-01T10:00:00.000Z',
+              expiresAt: null,
+              name: 'Review the checkout thread',
+              lifecycle: 'task',
+              maxRequests: 50,
+              until: null,
+              operations: ['thread.read'],
+              reviewUrl: 'https://kingdom.example/dashboard?integration=i&signetRequest=req-1',
+            },
+          ],
+        }),
+      }),
+    );
     await page.goto(`http://127.0.0.1:${server.port}/#thread=docs-1`);
     await page.locator('.context-bar-title', { hasText: 'Rewrite the setup guide' }).waitFor();
+    // The top-bar mark opens a popover under itself; Esc closes it and nothing else moves.
+    await page.locator('.incoming-indicator', { hasText: '1' }).click();
+    const popover = page.locator('.incoming-popover');
+    expect(await popover.locator('.incoming-card').innerText()).toContain("Sam's agent");
+    expect(await page.locator('.board').count()).toBe(0);
+    await page.keyboard.press('Escape');
+    await until(async () => (await popover.count()) === 0, 'popover closed');
     await page.keyboard.press('b');
+    const incomingCard = page.locator('.board-incoming .incoming-card');
+    await incomingCard.waitFor();
+    expect(await incomingCard.innerText()).toContain("Sam's agent asks to join your threads");
+    expect(await incomingCard.innerText()).toContain(
+      'Nothing runs until you accept it in Kingdom.',
+    );
+    expect(
+      await incomingCard.locator('a', { hasText: 'Review in Kingdom' }).getAttribute('href'),
+    ).toBe('https://kingdom.example/dashboard?integration=i&signetRequest=req-1');
     const needs = page.locator('.board-column--attention');
     const working = page.locator('.board-column--working');
     await needs.locator('.board-card', { hasText: 'Checkout errors since 2:02' }).waitFor();

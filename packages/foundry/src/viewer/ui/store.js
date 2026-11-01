@@ -1168,6 +1168,23 @@ export async function loadWorktrees() {
   }
 }
 
+/**
+ * Incoming: parties asking to join this Foundry's threads through a Signet (Kingdom's pending
+ * requests). Not prompts: nothing runs until the owner accepts in Kingdom.
+ */
+export const incoming = signal([]);
+
+export async function loadIncoming() {
+  try {
+    const res = await authFetch('/api/kingdom/incoming');
+    if (!res.ok) return;
+    const data = await res.json();
+    incoming.value = Array.isArray(data.requests) ? data.requests : [];
+  } catch {
+    /* silent — no Kingdom paired, or the daemon is restarting */
+  }
+}
+
 export async function loadProjects() {
   try {
     const res = await authFetch('/api/projects');
@@ -1903,11 +1920,13 @@ export function init() {
   loadProjects();
   loadWorktrees();
   loadTokenUsage();
+  loadIncoming();
   // Polling for state that has no data stream
   setInterval(loadTraces, 15000);
   setInterval(loadDefinitions, 30000);
   setInterval(loadProjects, 30000);
   setInterval(loadWorktrees, 30000);
+  setInterval(loadIncoming, 30000);
   setInterval(loadTokenUsage, 10000); // token usage updates after each message + periodic
 
   // A thread opened before the list arrived reads its launch settings once it is listed.
