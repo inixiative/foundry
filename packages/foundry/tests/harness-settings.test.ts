@@ -93,6 +93,8 @@ test('the guard blanks every credential a loaded file sets, and the core ones al
     'ANTHROPIC_BEDROCK_BASE_URL',
     'ANTHROPIC_FOUNDRY_API_KEY',
     'ANTHROPIC_CUSTOM_HEADERS',
+    'ANTHROPIC_FEDERATION_RULE_ID',
+    'ANTHROPIC_ORGANIZATION_ID',
     'CLAUDE_CODE_USE_BEDROCK',
     'CLAUDE_CODE_USE_VERTEX',
     'CLAUDE_CODE_USE_FOUNDRY',
@@ -145,15 +147,20 @@ test('a Foundry-owned login home gets the user’s setup: settings copied privat
   rmSync(join(user, 'settings.json'));
   shareUserSetup(home, user);
   expect(() => lstatSync(copy)).toThrow();
-  // Claude makes its own plugins/ in a fresh home: it is moved aside, kept, and the link goes in.
-  mkdirSync(join(home, 'plugins', 'store'), { recursive: true });
-  writeFileSync(join(home, 'plugins', 'store', 'cache.json'), '{}');
-  mkdirSync(join(user, 'plugins'));
+  // A real folder where a link goes is moved aside, kept, and the link goes in.
+  mkdirSync(join(home, 'agents', 'store'), { recursive: true });
+  writeFileSync(join(home, 'agents', 'store', 'cache.json'), '{}');
+  mkdirSync(join(user, 'agents'));
   shareUserSetup(home, user);
-  expect(readlinkSync(join(home, 'plugins'))).toBe(join(user, 'plugins'));
-  const kept = readdirSync(home).filter((name) => name.startsWith('plugins.before-foundry-'));
+  expect(readlinkSync(join(home, 'agents'))).toBe(join(user, 'agents'));
+  const kept = readdirSync(home).filter((name) => name.startsWith('agents.before-foundry-'));
   expect(kept).toHaveLength(1);
   expect(readFileSync(join(home, kept[0]!, 'store', 'cache.json'), 'utf8')).toBe('{}');
+  // Claude's own plugin state stays its own: plugins are never linked.
+  mkdirSync(join(user, 'plugins'));
+  mkdirSync(join(home, 'plugins'));
+  shareUserSetup(home, user);
+  expect(lstatSync(join(home, 'plugins')).isSymbolicLink()).toBe(false);
   // No temporary links are left behind.
   expect(readdirSync(home).filter((name) => name.startsWith('.'))).toEqual([]);
 });

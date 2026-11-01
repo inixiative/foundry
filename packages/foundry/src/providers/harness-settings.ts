@@ -73,6 +73,7 @@ const ALWAYS_BLANK_ENV = [
   'ANTHROPIC_BEDROCK_MANTLE_BASE_URL',
   'ANTHROPIC_CONFIG_DIR',
   'ANTHROPIC_CUSTOM_HEADERS',
+  'ANTHROPIC_FEDERATION_RULE_ID',
   'ANTHROPIC_FOUNDRY_API_KEY',
   'ANTHROPIC_FOUNDRY_AUTH_TOKEN',
   'ANTHROPIC_FOUNDRY_BASE_URL',
@@ -83,10 +84,14 @@ const ALWAYS_BLANK_ENV = [
   'ANTHROPIC_GOOGLE_CLOUD_WORKSPACE_ID',
   'ANTHROPIC_IDENTITY_TOKEN',
   'ANTHROPIC_IDENTITY_TOKEN_FILE',
+  'ANTHROPIC_ORGANIZATION_ID',
   'ANTHROPIC_PROFILE',
+  'ANTHROPIC_SERVICE_ACCOUNT_ID',
   'ANTHROPIC_UNIX_SOCKET',
   'ANTHROPIC_VERTEX_BASE_URL',
   'ANTHROPIC_VERTEX_PROJECT_ID',
+  'ANTHROPIC_WORKSPACE_ID',
+  'CLAUDE_CODE_FEDERATION_CACHE_DIR',
   'CLAUDE_CODE_USE_ANTHROPIC_AWS',
   'CLAUDE_CODE_USE_ANTHROPIC_GOOGLE_CLOUD',
   'CLAUDE_CODE_USE_BEDROCK',
@@ -158,16 +163,17 @@ export function subscriptionSettingsGuard(files: readonly string[]): string {
 }
 
 /** The user's own folders, reached from a Foundry-owned home. */
-const USER_FOLDERS = ['commands', 'skills', 'agents', 'plugins', 'output-styles'] as const;
+// Not plugins: every Claude on the login writes its own plugin state there, so a link would
+// let pool sessions rewrite the user's installed plugins. The user's plugins are not shared yet.
+const USER_FOLDERS = ['commands', 'skills', 'agents', 'output-styles'] as const;
 
 /**
  * A Kingdom pool login runs on a Foundry-owned CLAUDE_CONFIG_DIR, so `user` would read an empty
  * home. Give it the user's own setup: their settings.json as a private copy (the profile check
  * refuses a linked settings file; the guard blanks its credentials) and their folders by link.
- * Claude makes its own `plugins/` in a fresh home; a real folder found there is moved aside, kept,
- * not deleted. Links are swapped by rename, so another thread on the login never sees a gap.
+ * A real folder found where a link goes is moved aside, kept, not deleted. Links are swapped by rename, so another thread on the login never sees a gap.
  * Nothing that holds the user's login (`.credentials.json`, the keychain entry) is reachable.
- * User-scope MCP servers (`~/.claude.json`) are not shared.
+ * User-scope MCP servers (`~/.claude.json`) and plugins are not shared.
  */
 export function shareUserSetup(home: string, userDirectory: string): void {
   const settings = join(userDirectory, 'settings.json');

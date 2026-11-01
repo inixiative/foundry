@@ -287,7 +287,7 @@ with no subscription policy is the user's own Claude, which loads everything.
   the core credential variables and every credential or endpoint variable a loaded
   file sets (`providers/harness-settings.ts`). Every provider switch and
   credential or endpoint variable Claude reads (Bedrock, Vertex, Foundry, AWS,
-  Google Cloud, gateway, Mantle, custom headers, unix socket) is blanked whatever
+  Google Cloud, gateway, Mantle, federation, custom headers, unix socket) is blanked whatever
   the files say, because Claude re-reads settings during a session. Proxy and CA
   settings are blanked when a loaded file sets them. Flag settings outrank the
   user's, so the blanks win. A file that sets `CLAUDE_CODE_OAUTH_TOKEN` is
@@ -300,10 +300,12 @@ with no subscription policy is the user's own Claude, which loads everything.
   own Claude.
 - **Kingdom pool logins** run in a Foundry-owned `CLAUDE_CONFIG_DIR`. The user's
   `settings.json` is copied into it (private, rewritten only when it changes) and
-  their `commands`, `skills`, `agents`, `plugins` and `output-styles` folders are
-  linked, swapped in by rename. Claude makes its own `plugins/` in a fresh home;
-  a real folder found there is moved aside (`plugins.before-foundry-<time>`), not
-  deleted. User-scope MCP servers (`~/.claude.json`) are not shared yet.
+  their `commands`, `skills`, `agents` and `output-styles` folders are linked,
+  swapped in by rename; a real folder found where a link goes is moved aside
+  (`<name>.before-foundry-<time>`), not deleted. Plugins are not shared: every
+  Claude on the login writes its own plugin state into `plugins/`, so a link
+  would let pool sessions rewrite the user's. Nor are user-scope MCP servers
+  (`~/.claude.json`).
 - Codex keeps its private `CODEX_HOME`; its prompts and config are not loaded yet.
 
 A settings file that still lists CLAUDE.md as a `markdown` source next to an
