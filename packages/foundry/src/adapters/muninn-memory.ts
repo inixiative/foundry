@@ -180,7 +180,7 @@ export class MuninnMemory {
   async searchMemories(
     query: string,
     opts?: { limit?: number },
-  ): Promise<Array<{ content: string; score?: number; metadata?: any }>> {
+  ): Promise<Array<{ content: string; score?: number; metadata?: Record<string, unknown> }>> {
     const results = await this._activate(query, opts?.limit);
     return results.map((r) => ({
       content: r.content,

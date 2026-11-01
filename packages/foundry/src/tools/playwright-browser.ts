@@ -54,23 +54,25 @@ export interface PlaywrightBrowserConfig {
   contextId?: string;
 }
 
-// Playwright types — declared loosely so we don't force the import
-// at compile time. Playwright is resolved at runtime.
-type PwBrowser = { newContext: (opts?: any) => Promise<any>; close: () => Promise<void> };
-type PwContext = { newPage: () => Promise<any>; close: () => Promise<void> };
-type PwPage = {
-  goto: (url: string, opts?: any) => Promise<any>;
-  title: () => Promise<string>;
-  url: () => string;
-  click: (selector: string, opts?: any) => Promise<void>;
-  fill: (selector: string, value: string, opts?: any) => Promise<void>;
-  selectOption: (selector: string, value: string, opts?: any) => Promise<any>;
-  evaluate: <T>(fn: string | ((...args: any[]) => T), ...args: any[]) => Promise<T>;
-  screenshot: (opts?: any) => Promise<Buffer>;
-  waitForSelector: (selector: string, opts?: any) => Promise<any>;
-  accessibility: { snapshot: (opts?: any) => Promise<any> };
-  close: () => Promise<void>;
-};
+// Playwright is an optional peer: its types only, the module resolved at launch.
+type PwBrowser = import('playwright').Browser;
+type PwContext = import('playwright').BrowserContext;
+type PwPage = import('playwright').Page;
+
+/** The elements of a Playwright ARIA snapshot, in document order. */
+export function ariaElements(aria: string): PageElement[] {
+  const elements: PageElement[] = [];
+  for (const line of aria.split('\n')) {
+    const match = /^\s*- ([a-zA-Z]+)(?: "((?:[^"\\]|\\.)*)")?(?: \[[^\]]*\])*:?(?: (.+))?$/.exec(
+      line,
+    );
+    if (!match) continue;
+    const element: PageElement = { role: match[1]!, name: match[2]?.replace(/\\(.)/g, '$1') ?? '' };
+    if (match[3]) element.value = match[3];
+    elements.push(element);
+  }
+  return elements;
+}
 
 /** Shared browser contexts for session sharing across agents. */
 const sharedContexts = new Map<string, PwContext>();
@@ -109,7 +111,7 @@ export class PlaywrightBrowser implements BrowserTool {
   /** Launch the browser. Must be called before any operations. */
   async launch(): Promise<void> {
     // Dynamic import — Playwright is a peer dep
-    let pw: any;
+    let pw: typeof import('playwright');
     try {
       // Dynamic import — playwright is a peer dependency
       pw = await import('playwright');
@@ -126,7 +128,7 @@ export class PlaywrightBrowser implements BrowserTool {
     if (this._config.contextId && sharedContexts.has(this._config.contextId)) {
       this._context = sharedContexts.get(this._config.contextId)!;
     } else {
-      const contextOpts: any = {
+      const contextOpts: import('playwright').BrowserContextOptions = {
         viewport: this._config.viewport,
       };
       if (this._config.userAgent) {
@@ -199,11 +201,12 @@ export class PlaywrightBrowser implements BrowserTool {
   async snapshot(): Promise<ToolResult<PageSnapshot>> {
     const page = this._ensurePage();
     try {
-      const tree = await page.accessibility.snapshot({ interestingOnly: true });
+      // Playwright removed page.accessibility; its ARIA snapshot is YAML, one `- role "name"` per line.
+      const aria = await page.locator('body').ariaSnapshot();
       const url = page.url();
       const title = await page.title();
 
-      const elements = tree ? this._flattenTree(tree) : [];
+      const elements = ariaElements(aria);
       const summary = `Page snapshot: "${title}" (${url}) — ${elements.length} elements`;
       const estimatedTokens = Math.ceil(summary.length / 4) + elements.length * 10;
 
@@ -335,26 +338,5 @@ export class PlaywrightBrowser implements BrowserTool {
       .replace(/\*/g, '[^/]*')
       .replace(/<<<GLOBSTAR>>>/g, '.*');
     return new RegExp(`^${regex}$`).test(url);
-  }
-
-  private _flattenTree(node: any, depth = 0): PageElement[] {
-    const elements: PageElement[] = [];
-    if (!node) return elements;
-
-    const el: PageElement = {
-      role: node.role || 'unknown',
-      name: node.name || '',
-    };
-    if (node.value) el.value = node.value;
-
-    elements.push(el);
-
-    if (node.children) {
-      for (const child of node.children) {
-        elements.push(...this._flattenTree(child, depth + 1));
-      }
-    }
-
-    return elements;
   }
 }

@@ -93,7 +93,7 @@ export function withNativeBridge(argv: readonly string[], bridge: NativeBridgeLe
         if (
           config &&
           typeof config === 'object' &&
-          Object.hasOwn((config as any).mcpServers ?? {}, bridge.name)
+          Object.hasOwn((config as { mcpServers?: object }).mcpServers ?? {}, bridge.name)
         )
           throw Error('Native bridge server name collision');
       }

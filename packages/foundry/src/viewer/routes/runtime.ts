@@ -1054,7 +1054,7 @@ export function registerRuntimeRoutes(app: Hono, deps: RuntimeRoutesDeps): { tur
     if (db) {
       try {
         const rows = await db.threadMessages(threadId, limit);
-        const msgs = rows.map((r: any) => ({
+        const msgs = rows.map((r) => ({
           actor: r.actor,
           kind: r.kind,
           turnId: r.turnId ?? undefined,

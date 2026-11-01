@@ -114,7 +114,7 @@ export async function createPinoLogger(config?: LoggerConfig): Promise<Logger> {
   return logger;
 }
 
-function createPinoChild(pinoChild: any, scope: string): Logger {
+function createPinoChild(pinoChild: import('pino').Logger, scope: string): Logger {
   function broadcast(lvl: string, args: unknown[]): void {
     const targets = getLogBroadcasts();
     if (targets.length === 0) return;

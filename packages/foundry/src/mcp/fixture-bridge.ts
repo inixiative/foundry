@@ -19,7 +19,11 @@ import {
   type Thread,
 } from '@inixiative/foundry-core';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
+import {
+  CallToolRequestSchema,
+  ListToolsRequestSchema,
+  type Tool,
+} from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 import type { ThreadRuntimeManager } from '../agents/thread-runtime';
 import { assertPrivateProfile } from '../providers/private-profile';
@@ -181,7 +185,7 @@ export function fixtureBridgeSource(options: FixtureBridgeOptions) {
           tools: Object.entries(inputs).map(([name, schema]) => ({
             name,
             description: `Isolated fixture ${name.slice(8)}`,
-            inputSchema: z.toJSONSchema(schema) as any,
+            inputSchema: z.toJSONSchema(schema) as Tool['inputSchema'],
           })),
         }));
         server.server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {

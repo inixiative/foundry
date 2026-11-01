@@ -1473,7 +1473,7 @@ export class FlowOrchestrator {
 
     switch (signal.kind) {
       case 'context_evicted': {
-        const layerId = (signal.content as any)?.layerId;
+        const layerId = (signal.content as { layerId?: string } | undefined)?.layerId;
         if (layerId && this._lastPlan.layers.includes(layerId)) {
           // A layer we injected just got evicted — plan is invalid
           event = {
@@ -1486,7 +1486,7 @@ export class FlowOrchestrator {
       }
       case 'context_loaded': {
         // A layer was loaded — if it's one we wanted but didn't have, routing may improve
-        const layerId = (signal.content as any)?.layerId;
+        const layerId = (signal.content as { layerId?: string } | undefined)?.layerId;
         if (layerId && signal.source !== 'flow-orchestrator') {
           // External rehydration (not our own commit) — check if it matters
           const layer = this._stack.getLayer(layerId);
@@ -1509,7 +1509,7 @@ export class FlowOrchestrator {
           reason: 'compaction',
           affectedLayers: cleared,
           timestamp: Date.now(),
-          source: (signal.content as any)?.source as string | undefined,
+          source: (signal.content as { source?: string } | undefined)?.source,
         };
         break;
       }
