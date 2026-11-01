@@ -130,8 +130,15 @@ test('the composer shows only the open thread’s prompts; approving resolves th
       return body.items.some((item) => item.tags.includes('rule-request'));
     }, 'the rule request is a feedback item');
 
-    await cards.first().getByRole('button', { name: 'Reject' }).click();
-    expect((await other).action).toBe('reject');
+    // With an approval waiting, sending declines it and carries the text as the reason.
+    const box = page.locator('textarea.chat-input');
+    await box.fill('Not until CI is green');
+    await page.locator('.composer-note-hint', { hasText: 'Sending declines' }).waitFor();
+    await box.press('Enter');
+    const declined = await other;
+    expect(declined.action).toBe('reject');
+    expect(declined.note).toBe('Not until CI is green');
+    await until(async () => (await box.inputValue()) === '', 'the box is cleared');
     expect(errors).toEqual([]);
   } finally {
     const failures = await releaseAll(cleanup);

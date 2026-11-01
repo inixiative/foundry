@@ -92,6 +92,8 @@ export const rightTab = signal('context');
 export const railView = signal('open');
 /** The attention board fills the centre (key b). */
 export const boardOpen = signal(false);
+/** Text to put back into the message box (a queued message taken out to edit); the box consumes it. */
+export const composerFill = signal(null);
 /** The Watchtower fills the centre (key h); the board and it are never both open. */
 export const watchtowerOpen = signal(false);
 /** The selected project's home page (or Global's) fills the centre: opened from the Projects list. */
@@ -1107,10 +1109,10 @@ async function _loadTurnDetail(threadId, turnId, traceId, requestId) {
 
 const REJECTING = new Set(['rejected', 'reject', 'not-now', 'dismiss', 'withdraw']);
 
-export async function resolvePrompt(promptId, action, input, { always } = {}) {
+export async function resolvePrompt(promptId, action, input, { always, note: given } = {}) {
   // Text in the message box goes with the answer: a rejected approval carries it in its message to
   // the agent; any other answer posts it to the thread right after, through the normal send.
-  const note = composerNote.peek().trim();
+  const note = (given ?? composerNote.peek()).trim();
   const prompt = prompts.peek().find((p) => p.id === promptId);
   try {
     const res = await fetch(`/api/prompts/${encodeURIComponent(promptId)}/resolve`, {

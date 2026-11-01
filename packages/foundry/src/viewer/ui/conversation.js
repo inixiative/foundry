@@ -36,11 +36,13 @@ import { Modal } from './modal.js';
 import { Plan } from './plan.js';
 import { settingsConfig } from './settings.js';
 import { isDangerous, MODES, ModeIcon, STATES, StatusIcon } from './status-icons.js';
+import { QueuedRows, STEER_NOT_BUILT, turnRunning } from './steering.js';
 import {
   aboutTarget,
   activePanel,
   activeThreadId,
   allThreads,
+  composerFill,
   composerNote,
   contextWindowOf,
   focusTurnId,
@@ -410,6 +412,12 @@ function ChatInput() {
   useEffect(() => {
     composerNote.value = text;
   }, [text]);
+  const fill = composerFill.value;
+  useEffect(() => {
+    if (fill == null) return;
+    setText(fill);
+    composerFill.value = null;
+  }, [fill]);
   const note = composerNote.value;
   useEffect(() => {
     if (note === '' && text !== '') setText('');
@@ -511,6 +519,18 @@ function ChatInput() {
       }
       return;
     }
+    // With an approval waiting, sending declines it and tells the agent why: the text rides the
+    // rejection as its note (the resolve route's note), instead of queueing behind the blocked turn.
+    const waitingApproval = promptsForThread(prompts.peek(), activeThreadId.peek()).find(
+      (p) => p.kind === 'approval',
+    );
+    if (waitingApproval && sent && !ready.length) {
+      stopDictation.current?.();
+      inputHistory.push(sent);
+      historyIdx = -1;
+      if (await resolvePrompt(waitingApproval.id, 'reject', undefined, { note: sent })) setText('');
+      return;
+    }
     stopDictation.current?.();
     if (sent) inputHistory.push(sent);
     historyIdx = -1;
@@ -560,6 +580,7 @@ function ChatInput() {
     <div class="chat-input-bar ${dragging ? 'chat-input-dragging' : ''}"
       onDragOver=${handleDragOver} onDragLeave=${() => setDragging(false)} onDrop=${handleDrop}>
       <div class="chat-input-main">
+        <${QueuedRows} threadId=${activeThreadId.value} />
         ${
           aboutTarget.value
             ? html`<div class="about-row"><span class="about-chip" title="Your message will be tagged to this">About: ${aboutTarget.value.label}<button type="button" aria-label="Remove the tag" onClick=${() => {
@@ -587,11 +608,17 @@ function ChatInput() {
           onPaste=${handlePaste}
           rows="4"
         ></textarea>
-        ${
-          text.trim() && promptsForThread(prompts.value, activeThreadId.value).length
-            ? html`<div class="composer-note-hint">Goes with your answer to the waiting card · or press Send to post it on its own</div>`
-            : null
-        }
+        ${(() => {
+          const waiting = promptsForThread(prompts.value, activeThreadId.value);
+          const approval = waiting.find((p) => p.kind === 'approval');
+          if (text.trim() && approval)
+            return html`<div class="composer-note-hint">Sending declines “${approval.message}” and tells the agent why · or answer the card to send it with your answer</div>`;
+          if (text.trim() && waiting.length)
+            return html`<div class="composer-note-hint">Goes with your answer to the waiting card · or press Send to post it on its own</div>`;
+          if (text.trim() && turnRunning(messages.value))
+            return html`<div class="composer-note-hint composer-note-hint--queue" title=${STEER_NOT_BUILT}>Enter queues it after the running turn · ⌘↵ queues · steering isn’t built yet</div>`;
+          return null;
+        })()}
       </div>
       <input ref=${fileRef} class="composer-file-input" type="file" multiple
         accept=${IMAGE_TYPES.join(',')} hidden

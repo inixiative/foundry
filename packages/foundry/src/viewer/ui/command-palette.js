@@ -188,6 +188,10 @@ const KEY_GROUPS = [
       ['⌥ (hold)', 'Show these shortcuts; every ⌥ shortcut works while typing'],
       ['Tab · ⇧Tab', 'Next / previous message box, and the waiting stack'],
       ['⌥F · ⌥V', 'Attach a file · start voice'],
+      [
+        '↵ · ⌘↵',
+        'Send (steers into a running turn once steering is built; queues today) · queue it',
+      ],
     ],
   ],
 ];
