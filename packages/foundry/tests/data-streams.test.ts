@@ -433,7 +433,10 @@ test('the thread list carries each thread’s newest turn status, with nobody wa
     (frame) => frame.payload?.thread?.lastTurn?.status === 'completed',
     'the list sees the turn complete',
   );
-  expect(done.payload.thread).toMatchObject({ threadId: 'main', lastTurn: { status: 'completed' } });
+  expect(done.payload.thread).toMatchObject({
+    threadId: 'main',
+    lastTurn: { status: 'completed' },
+  });
   expect(f.viewer.socket.streams.isOpen('thread:main')).toBe(false);
 });
 
