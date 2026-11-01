@@ -62,7 +62,7 @@ export function ProfileSection({ onSaved }) {
           : profile.error
             ? html`<p role="alert">The profile could not be read.</p>`
             : html`
-        <label class="settings-field">
+        <label class="settings-field" data-setting="installationName">
           <span class="settings-label">Foundry name</span>
           <input id="installation-name" class="settings-input" maxlength="120" value=${draft}
             onInput=${(e) => setDraft(e.target.value)} />

@@ -175,7 +175,7 @@ export function DevicesSection({ projectIds, kingdomPaired }) {
       <a class="action-btn" href=${settingsPath(null, 'kingdom')} onClick=${onLink}>Pair a Kingdom</a>
     </section>`
     }
-    <section class="settings-card">
+    <section class="settings-card" data-setting="tunnel">
       <div class="settings-card-header"><span class="settings-card-title">This machine</span></div>
       <${LocalDevicePanel} projectIds=${projectIds} />
       <p class="settings-desc">Peers: ${kingdomPaired ? 'none connected yet; other machines appear here once they pair with the same Kingdom.' : 'pair a Kingdom to see your other machines.'}</p>

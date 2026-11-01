@@ -341,7 +341,7 @@ export function ProjectConversations({ projectId }) {
     }
   };
   const from = (field) => html`<span class="settings-desc">from ${LAYER[state.from[field]]}</span>`;
-  return html`<div class="settings-card conversation-settings">
+  return html`<div class="settings-card conversation-settings" data-setting="conversations">
     <div class="settings-card-header">
       <span class="settings-card-title">Conversations</span>
       <span class="settings-desc">How members of this project's conversations take turns.</span>

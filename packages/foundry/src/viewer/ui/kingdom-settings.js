@@ -126,7 +126,7 @@ export function KingdomSettings({ standalone = false }) {
       !state
         ? html`<p>Loading paired Kingdoms…</p>`
         : html`
-      <div class="settings-card">
+      <div class="settings-card" data-setting="kingdomIntegrations">
         <div class="settings-card-header"><span class="settings-card-title">Paired Kingdoms</span></div>
         ${
           integrations.length
