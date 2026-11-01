@@ -182,3 +182,16 @@ test('Codex file changes are checked on every path they touch; a misspelled leve
   expect(await structural).toMatchObject({ behavior: 'deny' });
   void asked;
 });
+
+test('a rejection carries the note the user typed with it to the agent', async () => {
+  const { decide, queue } = gate(undefined, 'default');
+  const asked = decide(bash('permission'));
+  await Bun.sleep(0);
+  const [prompt] = queue.pending();
+  queue.resolve(prompt!.id, 'rejected', { note: 'push only after CI is green' });
+  expect(await asked).toMatchObject({
+    behavior: 'deny',
+    message: 'The user rejected Bash. Their note: push only after CI is green',
+  });
+  expect(queue.get(prompt!.id)?.resolution?.note).toBe('push only after CI is green');
+});

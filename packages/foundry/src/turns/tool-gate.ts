@@ -207,7 +207,7 @@ export function createToolGate(deps: ToolGateDeps): ToolGate {
         behavior: 'deny',
         message:
           resolution.by === 'human'
-            ? `The user rejected ${request.toolName}.`
+            ? `The user rejected ${request.toolName}.${resolution.note ? ` Their note: ${resolution.note}` : ''}`
             : resolution.by === 'timeout'
               ? `No one answered the permission request for ${request.toolName} within ${Math.round((deps.askTimeoutMs ?? ASK_TIMEOUT_MS) / 1000)}s, so it did not run.`
               : `${request.toolName} was not approved (${resolution.by}).`,

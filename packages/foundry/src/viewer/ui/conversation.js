@@ -39,6 +39,7 @@ import {
   activePanel,
   activeThreadId,
   allThreads,
+  composerNote,
   contextWindowOf,
   focusTurnId,
   forkThread,
@@ -398,6 +399,14 @@ function ComposerImage({ image, onRemove }) {
 
 function ChatInput() {
   const [text, setText] = useState('');
+  // Mirror the draft so a waiting card can send it with its answer; a consumed note clears the box.
+  useEffect(() => {
+    composerNote.value = text;
+  }, [text]);
+  const note = composerNote.value;
+  useEffect(() => {
+    if (note === '' && text !== '') setText('');
+  }, [note]);
   const [images, setImages] = useState([]);
   const [dragging, setDragging] = useState(false);
   const inputRef = useRef(null);
@@ -554,6 +563,11 @@ function ChatInput() {
           onPaste=${handlePaste}
           rows="4"
         ></textarea>
+        ${
+          text.trim() && promptsForThread(prompts.value, activeThreadId.value).length
+            ? html`<div class="composer-note-hint">Goes with your answer to the waiting card · or press Send to post it on its own</div>`
+            : null
+        }
       </div>
       <input ref=${fileRef} class="composer-file-input" type="file" multiple
         accept=${IMAGE_TYPES.join(',')} hidden
@@ -1095,7 +1109,7 @@ function ActionPromptCard({ prompt }) {
                 <button class="prompt-btn prompt-btn-approve" disabled=${resolving} onClick=${async () => {
                   await handleAction('approve');
                   setFull(false);
-                }}>Approve</button>
+                }}>${composerNote.value.trim() ? 'Approve + note' : 'Approve'}</button>
               </div>
             <//>`
           : null
@@ -1125,13 +1139,13 @@ function ActionPromptCard({ prompt }) {
             onClick=${() => handleAction(opt.id)}
             disabled=${resolving}
             title=${opt.description || ''}
-          >${opt.label}</button>
+          >${opt.label}${composerNote.value.trim() ? ' + note' : ''}</button>
         `,
               )
             : html`
           <button class="prompt-btn prompt-btn-approve"
             onClick=${() => handleAction('approve')}
-            disabled=${resolving}>Approve</button>
+            disabled=${resolving}>${composerNote.value.trim() ? 'Approve + note' : 'Approve'}</button>
           <button class="prompt-btn prompt-btn-reject"
             onClick=${() => handleAction('reject')}
             disabled=${resolving}>Reject</button>
