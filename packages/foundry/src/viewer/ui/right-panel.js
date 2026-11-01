@@ -20,6 +20,7 @@ import { useFlowStream } from './graph-view.js';
 import { html } from './lib.js';
 import {
   activeThreadId,
+  authFetch,
   boardOpen,
   detailDrawerOpen,
   dismissTraceSelection,
@@ -29,6 +30,7 @@ import {
   rightTab,
   selectedEvent,
   selectedSpanId,
+  showToast,
   threadData,
   threadLaunch,
 } from './store.js';
@@ -125,19 +127,49 @@ function PointersTab({ rows }) {
   </ul>`;
 }
 
+/** Change the thread's model or effort (applies on its next turn: its idle session relaunches). */
+async function setLaunch(threadId, patch) {
+  try {
+    const res = await authFetch(`/api/threads/${encodeURIComponent(threadId)}/launch`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(patch),
+    });
+    const body = await res.json();
+    if (!res.ok) throw Error(body.error ?? res.statusText);
+    threadLaunch.value = body;
+  } catch (error) {
+    showToast(`Could not change it: ${error.message}`, 'error');
+  }
+}
+
 function ContextTab() {
   const launch = threadLaunch.value;
+  const threadId = activeThreadId.value;
   return html`<div class="rp-stack">
     <section class="rp-section">
       <h3 class="rp-section-title">Model</h3>
       ${
         launch
           ? html`<dl class="rp-facts">
-            <dt>Model</dt><dd>${launch.model ?? 'default'}${launch.modelOverride ? '' : html` <span class="rp-dim">(project default)</span>`}</dd>
-            <dt>Effort</dt><dd>${launch.effort ?? html`<span class="rp-dim">harness default</span>`}</dd>
+            <dt>Model</dt><dd>
+              <select class="rp-select" value=${launch.modelOverride ?? ''}
+                onChange=${(e) => setLaunch(threadId, { model: e.target.value || null })}>
+                <option value="">Project default (${launch.model ?? 'default'})</option>
+                ${(launch.options?.models ?? []).map((m) => html`<option key=${m.id} value=${m.id}>${m.label ?? m.id}</option>`)}
+              </select>
+            </dd>
+            <dt>Effort</dt><dd>
+              <select class="rp-select" value=${launch.effort ?? ''}
+                onChange=${(e) => setLaunch(threadId, { effort: e.target.value || null })}>
+                <option value="">Harness default</option>
+                ${(launch.options?.efforts ?? []).map((e) => html`<option key=${e} value=${e}>${e}</option>`)}
+              </select>
+            </dd>
             <dt>Harness</dt><dd>${harnessName(launch.provider) ?? '—'}</dd>
             <dt>Provider</dt><dd class="rp-mono">${launch.provider ?? '—'}</dd>
-          </dl>`
+          </dl>
+          <p class="rp-dim">A change applies on the thread’s next turn.</p>`
           : html`<div class="rp-dim">Reading the thread’s launch settings…</div>`
       }
     </section>
