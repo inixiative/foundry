@@ -36,11 +36,13 @@ import {
   showToast,
   threadData,
   threadLaunch,
+  turnViewTarget,
   vendorName,
   watchtowerOpen,
 } from './store.js';
 import { TabIcon } from './tab-icons.js';
 import { harnessName, ReferenceChips } from './thread-labels.js';
+import { TurnView } from './turn-view.js';
 import { Work } from './work.js';
 
 const TAB_LABELS = {
@@ -211,6 +213,10 @@ export function RightPanel({ onSpanSelect }) {
   // The board and the Watchtower take the width: the panel folds while either is open.
   const open = detailDrawerOpen.value && !boardOpen.value && !watchtowerOpen.value;
   const target = inspection(inspectTarget.value?.kind === 'layer' ? inspectTarget.value.id : null);
+
+  // The turn view opens here, at the panel's widest step; the thread stays in the centre.
+  if (turnViewTarget.value && !boardOpen.value && !watchtowerOpen.value)
+    return html`<div class="right-panel detail-drawer right-panel--turn"><${TurnView} key=${turnViewTarget.value.turnId} /></div>`;
 
   if (!open)
     return rightSize.value === 'hidden' && !boardOpen.value && !watchtowerOpen.value

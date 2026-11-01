@@ -110,12 +110,26 @@ export function openProjectHome(projectId) {
     boardOpen.value = false;
     watchtowerOpen.value = false;
     incomingOpenId.value = null;
-    turnViewTarget.value = null;
     projectHomeOpen.value = true;
   });
 }
-/** One turn open in the centre's turn view ({ threadId, turnId }), or null. */
+/** One turn open in the turn view ({ threadId, turnId }), or null. It opens in the right panel at its
+ * widest step and never replaces the centre; closing returns the panel to the size it had. */
 export const turnViewTarget = signal(null);
+let sizeBeforeTurnView = null;
+
+export function openTurnView(threadId, turnId) {
+  if (!turnViewTarget.peek()) sizeBeforeTurnView = rightSize.peek();
+  rightSize.value = 'wider';
+  turnViewTarget.value = { threadId, turnId };
+}
+
+export function closeTurnView() {
+  if (!turnViewTarget.peek()) return;
+  turnViewTarget.value = null;
+  if (sizeBeforeTurnView) rightSize.value = sizeBeforeTurnView;
+  sizeBeforeTurnView = null;
+}
 /** Threads the rail shows expanded (their subagents listed), asked for from outside the row. */
 export const railExpanded = signal(new Set());
 /** What's typed in the open thread's message box: it goes with a waiting card's answer. */
@@ -1565,7 +1579,7 @@ function selectThreadQuietly(threadId) {
 
 export function selectThread(threadId) {
   compactPanel.value = 'conversation';
-  turnViewTarget.value = null;
+  closeTurnView();
   watchtowerOpen.value = false;
   aboutTarget.value = null;
   incomingOpenId.value = null;

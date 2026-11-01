@@ -240,3 +240,29 @@
 .tv-parts li[data-outcome="held"] {
   color: hsl(var(--muted-foreground));
 }
+/* The turn view in the right panel (AQ): it fills the panel; the thread stays in the centre. */
+.right-panel--turn {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+}
+.right-panel--turn .turn-view {
+  padding: 12px 14px 32px;
+}
+.right-panel--turn .tv-head {
+  flex-wrap: wrap;
+}
+.inspect-link {
+  border: 0;
+  background: none;
+  padding: 0;
+  color: hsl(var(--muted-foreground));
+  font: inherit;
+  font-size: inherit;
+  text-decoration: underline dotted;
+  cursor: pointer;
+}
+.inspect-link:hover {
+  color: hsl(var(--app-primary));
+}

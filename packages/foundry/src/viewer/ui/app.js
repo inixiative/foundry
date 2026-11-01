@@ -62,11 +62,9 @@ import {
   toggleBoard,
   toggleGraphPanel,
   toggleWatchtower,
-  turnViewTarget,
   watchtowerOpen,
 } from './store.js';
 import { categoryOf, threadState } from './thread-status.js';
-import { TurnView } from './turn-view.js';
 import { Watchtower } from './watchtower.js';
 import { checkSetupNeeded, Wizard, wizardOpen } from './wizard.js';
 
@@ -373,19 +371,17 @@ function App() {
                 ? html`<${FeedbackInbox} />`
                 : html`
             ${
-              turnViewTarget.value
-                ? html`<${TurnView} key=${turnViewTarget.value.turnId} />`
-                : incomingOpenId.value && incoming.value.some((r) => r.id === incomingOpenId.value)
-                  ? html`<${RequestView} />`
-                  : watchtowerOpen.value
-                    ? html`<${Watchtower} />`
-                    : boardOpen.value
-                      ? html`<${Board} />`
-                      : projectHomeOpen.value
-                        ? html`<${ProjectHome} key=${activeProjectId.value ?? 'global'} />`
-                        : activePanel.value === 'feedback'
-                          ? html`<${FeedbackInbox} key=${scopeProjectId() ?? 'global'} projectId=${scopeProjectId()} />`
-                          : html`<${Conversation} onSpanSelect=${handleSpanSelect} onLayerClick=${inspectLayer} />`
+              incomingOpenId.value && incoming.value.some((r) => r.id === incomingOpenId.value)
+                ? html`<${RequestView} />`
+                : watchtowerOpen.value
+                  ? html`<${Watchtower} />`
+                  : boardOpen.value
+                    ? html`<${Board} />`
+                    : projectHomeOpen.value
+                      ? html`<${ProjectHome} key=${activeProjectId.value ?? 'global'} />`
+                      : activePanel.value === 'feedback'
+                        ? html`<${FeedbackInbox} key=${scopeProjectId() ?? 'global'} projectId=${scopeProjectId()} />`
+                        : html`<${Conversation} onSpanSelect=${handleSpanSelect} onLayerClick=${inspectLayer} />`
             }
           `
           }
