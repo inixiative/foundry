@@ -71,7 +71,7 @@ test('/thread, /btw and /aside: one control, side by side, and a composer that s
     const browser = await chromium.launch({ headless: true });
     cleanup.unshift(['browser', () => browser.close()]);
     const page = await (
-      await browser.newContext({ viewport: { width: 1440, height: 900 } })
+      await browser.newContext({ viewport: { width: 1700, height: 900 } })
     ).newPage();
     page.setDefaultTimeout(15_000);
     const errors: string[] = [];
@@ -99,6 +99,24 @@ test('/thread, /btw and /aside: one control, side by side, and a composer that s
     await page.reload();
     await page.locator('.thread-views--2').waitFor();
     expect(await seg('/btw').getAttribute('aria-pressed')).toBe('true');
+
+    // Toggling views never moves the side panels.
+    const panelWidth = async () => (await page.locator('.right-panel').boundingBox())?.width ?? 0;
+    const before = await panelWidth();
+    await seg('/aside').click();
+    expect(await panelWidth()).toBe(before);
+    await seg('/aside').click();
+    expect(await panelWidth()).toBe(before);
+
+    // Narrower than 1600: one view at a time; a segment picks which one shows.
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.waitForTimeout(100);
+    expect(await page.locator('.thread-views--columns').count()).toBe(0);
+    await seg('/btw').click();
+    expect(await page.locator('.side-view--btw').isVisible()).toBe(true);
+    expect(await page.locator('.chat-messages').isVisible()).toBe(false);
+    await seg('/thread').click();
+    expect(await page.locator('.chat-messages').isVisible()).toBe(true);
 
     // The views toggle chooses what shows; the composer has no channel picker of its own.
     expect(await page.locator('.channel-tab, .channel-sending').count()).toBe(0);
