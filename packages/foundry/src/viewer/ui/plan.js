@@ -22,6 +22,7 @@ import {
   activePanel,
   activeThreadId,
   allThreads,
+  commentOn,
   createThread,
   executeAction,
   focusTurnId,
@@ -69,6 +70,8 @@ function Step({ step, turnLabel }) {
           ? html`<button class="plan-when" title="Open this turn in Thread" onClick=${() => openTurn(step.when)}>${turnLabel(step.when)}</button>`
           : null
       }
+      <button type="button" class="comment-btn" title="Comment on this step"
+        onClick=${() => commentOn({ kind: 'plan-step', label: `Plan › ${step.text}`, ...(step.when ? { turnId: step.when } : {}) })}>Comment</button>
     </div>
     ${kids && open ? html`<ul class="plan-children">${step.children.map((c) => html`<${ChildNode} key=${c.threadId} child=${c} />`)}</ul>` : null}
   </li>`;

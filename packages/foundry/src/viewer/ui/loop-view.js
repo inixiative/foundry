@@ -14,7 +14,7 @@
 import { GraphPanel, useFlowStream } from './graph-view.js';
 import { html, useState } from './lib.js';
 import { lifecycle } from './lifecycle.js';
-import { activeThreadId, allThreads, focusTurnId, threadData } from './store.js';
+import { activeThreadId, allThreads, commentOn, focusTurnId, threadData } from './store.js';
 
 /** The plan → build → review → land strip. `onOpen` (optional) makes it a link to the Loop tab. */
 export function LifecycleStrip({ turns, meta, onOpen }) {
@@ -63,6 +63,8 @@ function PointerLedger({ rows }) {
       (r) => html`<li key=${r.key} class="rp-pointer">
         <div class="rp-pointer-head">
           <span class="rp-pointer-domain">† ${r.domain}</span>
+          <button type="button" class="comment-btn" title="Comment on this pointer"
+            onClick=${() => commentOn({ kind: 'loop-item', label: `Loop › pointer: ${r.domain}`, turnId: r.turnId })}>Comment</button>
           <button class="rp-link" onClick=${() => {
             focusTurnId.value = r.turnId;
           }} title="Show the turn">turn ›</button>

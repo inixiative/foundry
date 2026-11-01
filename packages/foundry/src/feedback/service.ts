@@ -33,6 +33,7 @@ import {
 } from './sharpen';
 import {
   FEEDBACK_LEVELS,
+  type FeedbackAbout,
   type FeedbackApplyRecord,
   type FeedbackCaptureRecord,
   type FeedbackCategory,
@@ -226,6 +227,7 @@ export class FeedbackService {
       text: string;
       turnId?: string | null;
       messageId?: string;
+      about?: FeedbackAbout;
       tags?: string[];
       author: FeedbackAuthor;
     },
@@ -251,6 +253,7 @@ export class FeedbackService {
       tags: [...new Set((input.tags ?? []).map((tag) => tag.trim()).filter(Boolean))].slice(0, 10),
       author: input.author,
       ...(input.messageId ? { messageId: input.messageId } : {}),
+      ...(input.about ? { about: { kind: input.about.kind, label: clip(input.about.label) } } : {}),
       match: null,
       classifier: null,
     };

@@ -22,6 +22,7 @@ type Item = {
   origin: { threadId: string; turnId: string | null; at: number };
   author?: { name: string; surface: string };
   messageId?: string;
+  about?: { kind: string; label: string };
   tags: string[];
 };
 
@@ -103,6 +104,19 @@ test('/feedback records an explicit item pointing at the last turn, with its pro
     await give(f.thread.id, { text: 'That one.', turnId: 'turn-0', messageId: 'm-1' })
   ).json()) as { item: Item };
   expect(named.item).toMatchObject({ origin: { turnId: 'turn-0' }, messageId: 'm-1' });
+
+  // The message box's About chip names a Plan step (or Loop item): it is recorded as the target.
+  const aimed = (await (
+    await give(f.thread.id, {
+      text: 'Split this step.',
+      turnId: 'turn-0',
+      about: { kind: 'plan-step', label: 'Plan › Write the migration' },
+    })
+  ).json()) as { item: Item };
+  expect(aimed.item).toMatchObject({
+    origin: { turnId: 'turn-0' },
+    about: { kind: 'plan-step', label: 'Plan › Write the migration' },
+  });
 });
 
 test('feedback input is validated; an unknown thread is a 404', async () => {
@@ -110,6 +124,12 @@ test('feedback input is validated; an unknown thread is a 404', async () => {
   expect((await give(f.thread.id, {})).status).toBe(400);
   expect((await give(f.thread.id, { text: '   ' })).status).toBe(400);
   expect((await give(f.thread.id, { text: 'x', tags: [1] })).status).toBe(400);
+  expect((await give(f.thread.id, { text: 'x', about: { kind: 'step', label: 'x' } })).status).toBe(
+    400,
+  );
+  expect(
+    (await give(f.thread.id, { text: 'x', about: { kind: 'plan-step', label: ' ' } })).status,
+  ).toBe(400);
   expect((await give(f.thread.id, { text: 'x'.repeat(4_001) })).status).toBe(400);
   expect((await give('no-such-thread', { text: 'x' })).status).toBe(404);
 });
