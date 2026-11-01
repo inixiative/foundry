@@ -123,7 +123,11 @@ test('a configured layer wraps the thread: the Cartographer routes and thread-st
     for (const layer of thread.stack.layers) await layer.warm?.();
     await h.send({ id: 'm1', payload: 'Add a login endpoint' });
     expect(decisions.some((id) => id.endsWith(':cartographer'))).toBe(true);
-    expect(thread.stack.layers.map((layer) => layer.id)).toEqual(['thread-state', 'rules']);
+    expect(thread.stack.layers.map((layer) => layer.id)).toEqual([
+      'thread-state',
+      'rules',
+      'foundry-tools',
+    ]);
     const system = central[0]!.messages.find((message) => message.role === 'system');
     expect(system?.content).toContain('RULES_TEXT');
   } finally {

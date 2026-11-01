@@ -3,10 +3,12 @@
  * @kind service
  * @partOf primitive:nativeSessions
  */
+
 import { createHash } from 'node:crypto';
 import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type { NativeBridgeLease } from '@inixiative/foundry-core';
 import type { ClientMcpServer } from './thread-launch';
 
@@ -178,6 +180,20 @@ export function withIsolatedFixture(argv: readonly string[], bridge: NativeBridg
     '--settings',
     JSON.stringify({ disableAllHooks: true, disableClaudeAiConnectors: true }),
   ];
+}
+
+/** Foundry's own plugin: skills that teach a thread's agent Foundry's tools (`src/plugin/`). */
+export const FOUNDRY_PLUGIN_DIR = fileURLToPath(new URL('../plugin', import.meta.url));
+
+/**
+ * A main thread's Claude loads Foundry's skills (plan, threads, conversations, context, running) as a
+ * session-only plugin (`--plugin-dir`): nothing is written into the user's home or the repository,
+ * and the user's own skills and commands still load beside them (CORE-003).
+ */
+export function withFoundrySkills(argv: readonly string[]): string[] {
+  return argv.includes('--plugin-dir') && argv.includes(FOUNDRY_PLUGIN_DIR)
+    ? [...argv]
+    : [...argv, '--plugin-dir', FOUNDRY_PLUGIN_DIR];
 }
 
 /**
