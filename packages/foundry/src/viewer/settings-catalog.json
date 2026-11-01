@@ -70,6 +70,11 @@
     "description": "How often the Wardens' guard fires: `per-turn` (default), once over a turn's whole tool activity when the turn's tool activity ends; or `per-call`, on each tool call (Aron, 2026-10-15)."
   },
   {
+    "path": "threadOnMerge",
+    "scope": "foundry",
+    "description": "What a thread becomes when its branch merges (Aron, 2026-11-01): `done` (default; the thread shows done and can take another task) or `auto-archive` (archived, its worktree released per FEAT-003). A project's `threadOnMerge` overrides it."
+  },
+  {
     "path": "composition",
     "scope": "foundry",
     "description": "The composition view: one ladder (CLAUDE.md, AGENTS.md, auto memory, role files) composes the instructions and domain knowledge of every role; see docs/usage-and-context.md."
@@ -498,6 +503,11 @@
     "path": "setupComplete",
     "scope": "foundry",
     "description": "Whether the initial setup wizard has been completed."
+  },
+  {
+    "path": "threadOnMerge",
+    "scope": "project",
+    "description": "This project's `threadOnMerge`, over the Foundry-wide one."
   },
   {
     "path": "gloss",
