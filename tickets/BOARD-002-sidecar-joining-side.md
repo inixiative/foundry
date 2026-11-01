@@ -1,42 +1,44 @@
-# BOARD-002: The sidecar: the joining side's copy of a shared thread
+# BOARD-002: The other side's thread: a bridge, not a chat
 
-**Status**: 🆕 Not Started (built together with BOARD-001 once Aron answers Q0/Q4/Q8)
+**Status**: 🆕 Not Started (built together with BOARD-001)
 **Assignee**: TBD
 **Priority**: High
 **Created**: 2026-10-31
-**Updated**: 2026-10-31
+**Updated**: 2026-11-01
 
 ---
 
 ## Overview
 
-The other party's duplicate thread is F2 of `docs/reference/CONVERSATIONS.md` §4.9, already specced:
+The other party's thread is F2 of `docs/reference/CONVERSATIONS.md` §4.9, already specced:
 - the joining Foundry opens the Kingdom-held stream for each conversation Signet it holds;
 - it feeds each append into a thread of its own;
 - its agent posts back with `kingdom_post`.
 
-Under BOARD-001 that thread becomes a first-class thread in the joiner's **shared** zone. It carries the sidecar's per-turn layer ("everything here came from Aron's shared thread; he may also have private turns you have not seen"). Its own `maxAgentTurns` bounds its agent's answers to the feed. Locally, for Aron's own Codex, the sidecar is a Codex-runtime thread on the same Foundry, linked in-process.
+That agent is a second voice in the shared thread (Aron, Q8: "it's just a bridge to a session, so they can bring their agent to us"). It is not a read-only replica.
 
-A party on Foundry ACP only gets the sidecar from its local Foundry daemon. An ACP client is never a member on its own, because only a Foundry holds the record of what was shared (Aron: "Foundry ACP, at least").
+- **Where the thread lives:** in the joiner's **shared** zone, carrying the sidecar's per-turn layer ("shared with Aron's agent; you see what was said, not Aron's tools or context").
+- **Depth:** its own `maxAgentTurns` bounds its agent's answers to the feed.
+- **Locally:** for Aron's own Codex, the same path runs in-process.
+- **No chat:** people with no agent don't get one. They stay in Slack and are answered there (BOARD-003).
+- **Who can be a member:** a party on Foundry ACP gets the sidecar from its local Foundry daemon. An ACP client on its own is never a member.
 
 ## Built on
 
 | Need | Existing piece |
 |---|---|
-| The joiner's Archive captures the host's shared content; the grant has to say so | CONVERSATIONS §4.8 (the reverse case) |
 | The live stream | Kingdom `accessThread` / `thread.subscribe`; client `InstallationSocket.openThread` (`@inixiative/signet` `src/installationSocket.ts`) |
 | Posting back, held | `kingdom_post` (`pf/tools/kingdom-post.ts`), the one held-outbound mechanism |
-| A thread fed from outside | The post-in point (`admit`) on the joining side. **New:** the host's feed needs a member identity there (`admit` builds its member from a frame's `signetId` today, `service.ts:190`), so the sidecar's own `maxAgentTurns` can bound its agent |
+| A thread fed from outside | The joining side's `admit`. **New:** the host's feed needs a member identity there, because `admit` builds its member from a frame's `signetId` today (`service.ts:190`) |
+| Archive disclosure | The joiner's Archive captures the host's shared content, so the grant says so. CONVERSATIONS §4.8 is the reverse case |
 | One-off read | `thread.read` on `KingdomAccessTool` (`pf/tools/kingdom-access.ts`) |
 
 ## Definition of done
 
-- Sam's Foundry holds a sidecar that contains exactly the shared entries, in order.
-- The sidecar never contains a private entry from either side.
-- The sidecar survives a restart and a Kingdom resync.
+- Sam's Foundry holds a thread with exactly the shared entries, in order, and no tool calls.
+- It survives a restart and a Kingdom resync.
 - Aron's local Codex takes part through the same `admit` and `visibleTo` code.
 
 ## Related
 
-- BOARD-001.
-- Planning doc §4.6.
+- BOARD-001; planning doc §4.7.

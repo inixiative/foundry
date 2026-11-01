@@ -1,42 +1,48 @@
-# BOARD-003: Inbound items arrive as threads already investigating
+# BOARD-003: Inbound items (Slack, Linear, GitHub) arrive as threads already investigating
 
-**Status**: 🆕 Not Started (Kingdom lane first; first source is Aron's Q5)
+**Status**: 🆕 Not Started (Kingdom INTEG-002 and INTEG-003 first)
 **Assignee**: TBD
 **Priority**: High
 **Created**: 2026-10-31
-**Updated**: 2026-10-31
+**Updated**: 2026-11-01
 
 ---
 
 ## Overview
 
-A Slack message, an email or a Linear issue arrives as a thread that is already investigating. The agent has looked into it, matched it to open work, and drafted a response before Aron sees it. Aron (2026-10-31): "Before you even see them, before they pop up on your board, they get contextualized." And: "We need to get integrations and signets to be able to power hooks and inbound items."
+When Aron is **tagged or messaged directly** in Slack, Linear or GitHub, the item arrives as a thread that is already investigating. The agent has looked into it, matched it to open work and drafted a reply before he sees it. The reply goes back where the item came from, as a held draft.
 
-## Split (Aron's D7: Foundry builds nothing that goes through Kingdom)
+Aron:
+- 2026-10-31: "Let's just say you get tagged or a direct message." And: "messages in Slack, whatever, and we'll respond in Slack."
+- 10-24 guide: "Things arrive already in session."
 
-**Kingdom lane** (Kingdom tickets, filed once Aron picks the first source):
-- **Provider receivers.** Kingdom has none today: its provider operations are read-only and on demand. Each receiver follows the Tribe precedent, `apps/api/src/routes/whatsappWebhook.ts`:
-  - a signed route checked with `isValidWebhookSignature`;
-  - the verify handshake;
-  - a body limit;
-  - a schema-checked payload;
-  - an unknown shape is ignored and logged.
+## Split (D7: Foundry builds nothing that goes through Kingdom)
 
-  Each receiver is bound to the owner's integration.
-- **Durable delivery to the paired Foundry.** Use a list on the Installation snapshot, like `hostedSignetRequests`, re-sent by the existing refresh hook. Do not use a bare frame: `sendToInstallationLocal` is fire-and-forget, so an offline Foundry would lose the item. Each item is a pointer only, gated by a Signet the Foundry integration holds on that integration's resources.
-- **A write operation for the round trip.** "Post to Linear and close" needs `issues.comment` / `issues.update`; every catalog operation is read-only today.
+**Kingdom lane:**
+- **INTEG-002**: signed receivers on Tribe's `whatsappWebhook.ts` pattern. The trigger filter runs in Kingdom. Delivery is durable, as `inboundItem` Inquiries on the Installation snapshot.
+- **INTEG-003**: the write operations, Slack message, Linear comment and GitHub comment, all as Signet operations.
 
-**Foundry lane (this ticket).** Prerequisites: G1 (BOARD-005), the first Herald (AGENT-001), and a per-source bound on items per hour plus a capacity check, because each item starts a headless turn on content nobody typed.
-- **Open the thread.** On an event, create a thread in the mapped project, or a global thread, with an opening prompt: investigate, match to open work, draft. Today this takes two calls, `POST /api/threads` (`pf/viewer/routes/runtime.ts:713`) then `/api/messages/send`. Fold them into one internal call that both creates and sends.
-- **Born private.** The thread starts in the private zone in state New.
-- **Matching.** It asks the first Herald (AGENT-001) whether it belongs to an open thread ("This looks familiar: add it to that thread?"). If it does, it becomes a goal on that thread.
-- **Reading the body.** The item's body is read through the existing `access/execute` with the Signet (`pf/tools/kingdom-access.ts`). It is labelled untrusted (BOARD-005).
+**Foundry lane (this ticket).** Prerequisites:
+- G1 (BOARD-005);
+- the first Herald (AGENT-001);
+- a per-source limit on investigating threads open at once. It is new: `subscription-decisions.ts` bounds decision calls, not turns. Items over the limit wait as pending Inquiries.
+
+On each item:
+1. **Match first.** Ask the Herald whether the item belongs to an open thread. If it does, it becomes a goal there.
+2. **Otherwise open a thread, idempotently.** The thread id is derived from the item id (`POST /api/threads` takes `id`, `pf/viewer/routes/runtime.ts:715`). It goes in the mapped project or the global scope, created with its opening prompt in one internal call. Today that takes two calls; the second is `/api/messages/send`.
+3. **Read the body** through `access/execute` with the Signet (`pf/tools/kingdom-access.ts`), using the new read operations (Kingdom INTEG-003: Slack DMs, GitHub issues and PRs, Linear comments), labelled untrusted.
+4. **Mark it for attention** (`meta.attention`) in the "Just in" lane.
+5. **Acknowledge it** by resolving the Inquiry, only after the thread exists, so a crash gives one thread.
+6. **Noise and duplicates.** A rule may file an item as noise with a one-line reason, one tap away. Duplicates join their thread.
+7. **The reply is a held draft.** A Foundry MCP tool runs the Kingdom write operation on the held-outbound pattern (`ActionQueue`). The card offers "Post to Slack" or "Post to Linear and close". Nothing posts unseen. Whether that is what "our MCP" means is Q-E.
 
 ## Open questions
 
-- **Q5.** Which source comes first? The recommendation is Linear: its webhook is signed, it maps to a project, and its round trip is the video's.
-- Mapping an item to a project: by integration resource (repo or Linear team), or by asking?
+- **Q-D.** Is Slack first, then GitHub (by polling notifications) and Linear?
+- **Q-E.** "Our MCP": Foundry's tool backed by a Signet (recommended), or the harness's Slack MCP?
+- **Q-F.** Linear webhooks in a work workspace need its admin.
+- Mapping an item to a project: by integration resource (repo, Linear team), or by asking?
 
 ## Related
 
-- Planning doc §6; VIEWER-001; AGENT-001; BOARD-005 (G1).
+- Planning doc §6; VIEWER-001; AGENT-001; BOARD-005; Kingdom INTEG-002, INTEG-003.
