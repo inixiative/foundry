@@ -3,7 +3,7 @@
  * @kind entrypoint
  * @partOf feature:feedback
  */
-import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
@@ -12,6 +12,7 @@ import {
   type CorrectionClassification,
   SUBSCRIPTION_DECISION_MODELS,
 } from '@inixiative/foundry-core';
+import { writeFileAtomic } from '../client/private-file';
 import { decisionHost, privateDirectory } from '../providers/decision-host';
 import {
   renderReport,
@@ -81,13 +82,11 @@ export function loadCache() {
 /** Written whole to a temporary file and renamed, so an interrupted run never truncates it. */
 export function saveCache(cache: Map<string, CorrectionClassification>) {
   privateDirectory(STATE);
-  const temporary = `${CACHE}.${process.pid}.tmp`;
-  writeFileSync(
-    temporary,
+  writeFileAtomic(
+    CACHE,
     [...cache].map(([key, value]) => JSON.stringify({ key, value })).join('\n'),
-    { mode: 0o600 },
+    0o600,
   );
-  renameSync(temporary, CACHE);
 }
 
 const positive = (value: string | undefined, fallback: number, name: string) => {

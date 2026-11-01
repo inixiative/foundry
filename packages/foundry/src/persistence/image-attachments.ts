@@ -4,9 +4,10 @@
  * @partOf primitive:journal
  */
 import { createHash } from 'node:crypto';
-import { chmod, mkdir, readFile, rename, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { ImageInput, ImageMediaType } from '@inixiative/foundry-core';
+import { writeFileAtomic } from '../client/private-file';
 
 /** Largest image accepted, after any downscale the sender does (the Messages API's own limit). */
 export const IMAGE_MAX_BYTES = 5 * 1024 * 1024;
@@ -67,10 +68,7 @@ export class ImageAttachmentStore {
     const file = join(this.directory, `${hash}.${EXTENSIONS[mediaType]}`);
     if (!(await exists(file))) {
       await mkdir(this.directory, { recursive: true, mode: 0o700 });
-      const partial = `${file}.${process.pid}.${Date.now()}.partial`;
-      await writeFile(partial, bytes, { mode: 0o600 });
-      await chmod(partial, 0o600);
-      await rename(partial, file);
+      writeFileAtomic(file, bytes, 0o600);
     }
     return { id: `img_${hash}`, mediaType, bytes: bytes.byteLength };
   }

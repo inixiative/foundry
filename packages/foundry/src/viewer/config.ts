@@ -1,17 +1,9 @@
-/**
- * @atlas
- * @kind config
- * @partOf feature:viewer, primitive:settings
- */
-import { randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, watch } from 'node:fs';
-import { appendFile, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { basename, join, resolve } from 'node:path';
 import {
   computeHash,
   DECISION_MODEL,
   type Harness,
-  type LLMProvider,
   type MemorySelectionPolicy,
   newId,
   type VersionEntry,
@@ -19,7 +11,6 @@ import {
   validateMemorySelection,
 } from '@inixiative/foundry-core';
 import { configuredExperts } from '../agents/configured-experts';
-import { CORPUS_TIERS, type CorpusTier } from '../agents/corpus-compiler';
 import { isThreadKnowledgeLayerId } from '../agents/domain-librarian';
 import { type LearningSettings, validateLearningSettings } from '../agents/learning-config';
 import { THREAD_STATE_LAYER_ID } from '../agents/librarian';
@@ -75,6 +66,7 @@ import { type PrefilterSettings, validatePrefilterSettings } from '../providers/
 
 const GUARD_MODES: readonly GuardMode[] = ['per-turn', 'per-call'];
 
+import { writeFileAtomic } from '../client/private-file';
 import type { ToolRules } from '../turns/tool-gate';
 import {
   type ResolvedLayerDefinition,
@@ -1424,13 +1416,7 @@ export class ConfigStore {
   private async _commit(candidate: FoundryConfig): Promise<FoundryConfig> {
     validateConfig(candidate);
     const path = join(this._dir, 'settings.json');
-    const temporary = `${path}.${randomUUID()}.tmp`;
-    try {
-      await writeFile(temporary, JSON.stringify(candidate, null, 2), { mode: 0o600, flag: 'wx' });
-      await rename(temporary, path);
-    } finally {
-      await rm(temporary, { force: true });
-    }
+    writeFileAtomic(path, JSON.stringify(candidate, null, 2), 0o600);
     const previous = this._config;
     this._config = candidate;
     this._revision++;
