@@ -24,6 +24,7 @@ import { panelColumns, RestoreTab } from './panel-sizes.js';
 import { ProjectHome } from './project-home.js';
 import { RightPanel } from './right-panel.js';
 import { analyticsPath, navigate, onLink, route, settingsPath } from './route.js';
+import { SearchPage } from './search.js';
 import { SelfChatPane } from './self-chat.js';
 import { loadSettings, SettingsPage, settingsConfig } from './settings.js';
 import {
@@ -49,6 +50,7 @@ import {
   inspectLayer,
   inspectTarget,
   loadTraces,
+  openSearch,
   projectHomeOpen,
   projectPage,
   projectSidebarOpen,
@@ -58,6 +60,7 @@ import {
   resyncStreams,
   rightTab,
   scopeProjectId,
+  searchOpen,
   selectedEvent,
   selectedSpanId,
   toast,
@@ -84,6 +87,13 @@ function PageNav() {
     ${link(settingsPath(scope), 'Settings', page === 'settings')}
     ${link(analyticsPath(scope), 'Analytics', page === 'analytics')}
   </nav>`;
+}
+
+/** Search, beside the pages: icon-only on narrow screens; / opens it too. */
+function SearchButton() {
+  const open = searchOpen.value && route.value.page === 'workspace';
+  return html`<button type="button" class="search-button ${open ? 'is-active' : ''}" title="Search everything (/)" aria-label="Search"
+    onClick=${openSearch}>⌕<span class="search-button-label"> Search</span><kbd>/</kbd></button>`;
 }
 
 /** The selected scope, centered in the header: a project's name, else Global / Forge Master / Feedback (or Foundry off the workspace). */
@@ -169,7 +179,7 @@ function Header() {
     <div class="header">
       <div class="header-left">
         <span class="header-brand">Foundry<span class="header-brand-dot">.</span></span>
-        <${PageNav} />
+        <${PageNav} /><${SearchButton} />
       </div>
       <div class="header-center">
         ${route.value.page === 'workspace' ? html`<${IncomingIndicator} /><${BoardButton} /><${WatchtowerButton} />` : null}
@@ -286,6 +296,10 @@ function App() {
         /* TODO: expand selected */
       },
       escape: () => {
+        if (searchOpen.value) {
+          searchOpen.value = false;
+          return;
+        }
         if (projectHomeOpen.value && projectPage.value === 'knowledge') {
           projectPage.value = 'home';
           return;
@@ -379,17 +393,19 @@ function App() {
             ${
               incomingOpenId.value && incoming.value.some((r) => r.id === incomingOpenId.value)
                 ? html`<${RequestView} />`
-                : watchtowerOpen.value
-                  ? html`<${Watchtower} />`
-                  : boardOpen.value
-                    ? html`<${Board} />`
-                    : projectHomeOpen.value
-                      ? projectPage.value === 'knowledge' && activeProjectId.value
-                        ? html`<${KnowledgePage} key=${activeProjectId.value} />`
-                        : html`<${ProjectHome} key=${activeProjectId.value ?? 'global'} />`
-                      : activePanel.value === 'feedback'
-                        ? html`<${FeedbackInbox} key=${scopeProjectId() ?? 'global'} projectId=${scopeProjectId()} />`
-                        : html`<${Conversation} onSpanSelect=${handleSpanSelect} onLayerClick=${inspectLayer} />`
+                : searchOpen.value
+                  ? html`<${SearchPage} />`
+                  : watchtowerOpen.value
+                    ? html`<${Watchtower} />`
+                    : boardOpen.value
+                      ? html`<${Board} />`
+                      : projectHomeOpen.value
+                        ? projectPage.value === 'knowledge' && activeProjectId.value
+                          ? html`<${KnowledgePage} key=${activeProjectId.value} />`
+                          : html`<${ProjectHome} key=${activeProjectId.value ?? 'global'} />`
+                        : activePanel.value === 'feedback'
+                          ? html`<${FeedbackInbox} key=${scopeProjectId() ?? 'global'} projectId=${scopeProjectId()} />`
+                          : html`<${Conversation} onSpanSelect=${handleSpanSelect} onLayerClick=${inspectLayer} />`
             }
           `
           }

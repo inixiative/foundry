@@ -45,7 +45,7 @@ import { type ThreadSetupHost, TurnService } from '../../turns/turn-service';
 import type { ConfigStore } from '../config';
 import type { ViewerStreams } from '../data-streams';
 import { threadToJSON, traceToJSON, validateId } from '../http-helpers';
-import { threadAtlas } from '../thread-atlas';
+import { projectConcepts, threadAtlas } from '../thread-atlas';
 import { ViewerThreadDirectory } from '../thread-directory';
 import { resolveSnooze, type SnoozeRequest } from '../thread-snooze';
 import { turnTimeline } from '../turn-timeline';
@@ -787,6 +787,12 @@ export function registerRuntimeRoutes(app: Hono, deps: RuntimeRoutesDeps): { tur
       .filter((t) => !t.disposed)
       .map((t) => ({ id: t.id, name: t.meta.name?.text ?? t.meta.description ?? t.id }));
     return c.json(await threadAtlas(localStore, thread.id, project.path, siblings));
+  });
+
+  app.get('/api/projects/:id/atlas', async (c) => {
+    const project = projectRegistry?.all.get(c.req.param('id'));
+    if (!project) return c.json({ error: 'project not found' }, 404);
+    return c.json(await projectConcepts(project.path));
   });
 
   // -- Worktrees (read-only detection of existing git worktrees) --

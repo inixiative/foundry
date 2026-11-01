@@ -75,15 +75,15 @@ test('⌥ shortcuts work while typing; hold ⌥ shows them; Tab stays in the mes
       await page.evaluate(() => document.activeElement?.classList.contains('chat-input')),
     ).toBe(true);
 
-    // Esc leaves; / comes back.
+    // Esc leaves the box; / then opens Search, and Esc comes back with the draft kept.
     await page.keyboard.press('Escape');
     expect(
       await page.evaluate(() => document.activeElement?.classList.contains('chat-input')),
     ).toBe(false);
     await page.keyboard.press('/');
-    expect(
-      await page.evaluate(() => document.activeElement?.classList.contains('chat-input')),
-    ).toBe(true);
+    await page.locator('.search-page input.search-input').waitFor();
+    await page.keyboard.press('Escape');
+    await box.waitFor();
     expect(await box.inputValue()).toBe('hello');
     expect(errors).toEqual([]);
   } finally {

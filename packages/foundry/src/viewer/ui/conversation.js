@@ -430,11 +430,15 @@ function ComposerImage({ image, onRemove }) {
   `;
 }
 
+/** Each thread's unsent draft, kept while another view (Search, the board) replaces the conversation. */
+const drafts = new Map();
+
 function ChatInput() {
-  const [text, setText] = useState('');
+  const [text, setText] = useState(() => drafts.get(activeThreadId.peek()) ?? '');
   // Mirror the draft so a waiting card can send it with its answer; a consumed note clears the box.
   useEffect(() => {
     composerNote.value = text;
+    drafts.set(activeThreadId.peek(), text);
   }, [text]);
   const fill = composerFill.value;
   useEffect(() => {
