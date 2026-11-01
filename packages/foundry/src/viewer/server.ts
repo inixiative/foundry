@@ -428,11 +428,12 @@ export function createViewer(config: ViewerConfig) {
     changed: threadChanged,
   });
   // Archive capture covers every journalled thread at startup and after each turn.
-  if (localStore)
-    registerArchiveRoutes(app, localStore, eventStream, (snapshot) => {
-      void threadContext.observe(snapshot);
-    });
-  else for (const thread of directory.all()) void threadContext.refresh(thread.id);
+  const archiveCapture = localStore
+    ? registerArchiveRoutes(app, localStore, eventStream, (snapshot) => {
+        void threadContext.observe(snapshot);
+      }).capture
+    : undefined;
+  if (!localStore) for (const thread of directory.all()) void threadContext.refresh(thread.id);
   const configStore = config.configStore ?? new ConfigStore(config.configDir ?? '.foundry');
   // Raw middleware rows age out once reduced (`journal.rawMiddlewareDays`, default 30).
   if (localStore) {
@@ -585,6 +586,7 @@ export function createViewer(config: ViewerConfig) {
     projectRegistry: config.projectRegistry,
     namer,
     threadContext,
+    ...(archiveCapture ? { archiveCapture } : {}),
     deviceIdentityPath: config.deviceIdentityPath,
     localStore,
     directory,

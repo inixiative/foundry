@@ -11,6 +11,7 @@ import type { PostgresMemory } from '../../adapters/postgres-memory';
 import type { ProjectRegistry } from '../../agents/project';
 import type { ThreadFactory } from '../../agents/thread-factory';
 import type { ThreadNamer } from '../../agents/thread-namer';
+import type { ArchiveCapture } from '../../archives/capture';
 import type { ThreadContextTracker } from '../../archives/thread-context';
 import { type FeedbackService, localOperator } from '../../feedback/service';
 import type { FeedbackAbout } from '../../feedback/types';
@@ -38,6 +39,7 @@ import type { ConfigStore } from '../config';
 import type { ViewerStreams } from '../data-streams';
 import { threadToJSON, traceToJSON, validateId } from '../http-helpers';
 import { ViewerThreadDirectory } from '../thread-directory';
+import { turnTimeline } from '../turn-timeline';
 
 export interface RuntimeRoutesDeps {
   /** In-session Wardens: a turn waits (queued) while its thread sets up. */
@@ -56,6 +58,8 @@ export interface RuntimeRoutesDeps {
   /** Re-derives a thread's branch/worktree/linked work when its worktree changes. */
   threadContext?: ThreadContextTracker;
   localStore?: LocalSessionStore | null;
+  /** This machine's Archive capture: whether a turn's thread has been captured since the turn ended. */
+  archiveCapture?: ArchiveCapture;
   directory?: ViewerThreadDirectory;
   /** Data streams that carry live turns and thread-list changes to the viewer socket. */
   streams: ViewerStreams;
@@ -104,6 +108,7 @@ export function registerRuntimeRoutes(app: Hono, deps: RuntimeRoutesDeps): { tur
   const namer = deps.namer;
   const threadContext = deps.threadContext;
   const localStore = deps.localStore;
+  const archiveCapture = deps.archiveCapture;
   const directory =
     deps.directory ?? new ViewerThreadDirectory(harness.thread, projectRegistry, threadFactory);
   const streams = deps.streams;
@@ -615,6 +620,29 @@ export function registerRuntimeRoutes(app: Hono, deps: RuntimeRoutesDeps): { tur
     for (const phase of detail.phases)
       artifacts.push({ kind: `phase:${phase.phase}`, id: phase.id });
     return c.json({ ...detail, artifacts });
+  });
+
+  // The turn view: one turn's recorded steps in order (turn-timeline.ts).
+  app.get('/api/threads/:threadId/turns/:turnId/timeline', (c) => {
+    if (!localStore) return c.json({ error: 'history journal unavailable' }, 503);
+    const threadId = c.req.param('threadId'),
+      turnId = c.req.param('turnId');
+    const detail = localStore.turnDetail(threadId, turnId);
+    if (!detail) return c.json({ error: 'turn not found in this thread' }, 404);
+    const earlierAdvice = localStore
+      .phaseHistory(threadId, { limit: 5000 })
+      .filter((row) => row.phase === 'advice' && row.storedAt <= detail.turn.startedAt);
+    const stored = archiveCapture?.stored.get(threadId);
+    const error = archiveCapture?.errors.get(threadId);
+    return c.json(
+      turnTimeline(detail, {
+        earlierAdvice,
+        learning: localStore.learningHistory(threadId, 1000),
+        archive: archiveCapture
+          ? { ...(stored ? { stored } : {}), ...(error ? { error } : {}) }
+          : null,
+      }),
+    );
   });
 
   app.get('/api/threads/:threadId/layers/:layerId', (c) => {
