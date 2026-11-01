@@ -27,13 +27,7 @@ import {
   selectThread,
   worktrees,
 } from './store.js';
-import {
-  isUnnamed,
-  nameSourceLabel,
-  ReferenceChips,
-  threadName,
-  threadPlace,
-} from './thread-labels.js';
+import { isUnnamed, nameSourceLabel, threadName, threadPlace } from './thread-labels.js';
 import { categoryOf, threadState } from './thread-status.js';
 
 // ---------------------------------------------------------------------------
@@ -130,6 +124,44 @@ function ThreadActions({ thread }) {
 // Thread node — shows metadata (model, temp, agent count, layers)
 // ---------------------------------------------------------------------------
 
+/** The project a thread belongs to, by label; Global for none. */
+function projectLabel(projectId) {
+  if (!projectId) return 'Global';
+  return projects.value.find((p) => p.id === projectId)?.label || projectId;
+}
+
+/** Rows for a list of listed threads: children nest under their parent; unread member posts rise. */
+export function threadTree(threads) {
+  const nodeById = new Map(
+    threads.map((t) => [
+      t.threadId,
+      {
+        id: t.threadId,
+        status: t.meta?.status || 'idle',
+        name: threadName(t),
+        unnamed: isUnnamed(t),
+        nameSource: t.title?.source || null,
+        meta: t.meta || {},
+        branch: threadPlace(t.meta).branch,
+        cwd: t.meta?.cwd || null,
+        parentThreadId: t.meta?.parentThreadId || null,
+        conversation: t.conversation || null,
+        lastTurn: t.lastTurn || null,
+        children: [],
+      },
+    ]),
+  );
+  const roots = [];
+  for (const node of nodeById.values()) {
+    const parent = node.parentThreadId ? nodeById.get(node.parentThreadId) : null;
+    if (parent && parent !== node) parent.children.push(node);
+    else roots.push(node);
+  }
+  // A thread with an unread member post rises to the top (a post revived it).
+  roots.sort((a, b) => (b.conversation?.unread ? 1 : 0) - (a.conversation?.unread ? 1 : 0));
+  return roots;
+}
+
 /** A row's status: its own fields, its pending prompts, and whether a child (a subagent) is working. */
 function nodeState(node) {
   const childrenWorking = (node.children || []).some((c) => categoryOf(nodeState(c)) === 'working');
@@ -139,7 +171,7 @@ function nodeState(node) {
   });
 }
 
-function ThreadNode({ thread, depth = 0, selectedId, onSelect, inactive = false }) {
+export function ThreadNode({ thread, depth = 0, selectedId, onSelect, inactive = false }) {
   const [expanded, setExpanded] = useState(!inactive);
   const isSelected = selectedId === thread.id;
   const children = thread.children || [];
@@ -148,7 +180,7 @@ function ThreadNode({ thread, depth = 0, selectedId, onSelect, inactive = false 
   const hasChildren = children.length > 0;
 
   return html`
-    <div style="padding-left: ${depth * 16}px">
+    <div style="padding-left: ${depth * 12}px">
       <div
         class="tree-node ${isSelected ? 'selected' : ''} ${inactive ? 'dimmed' : ''}"
         onClick=${() => onSelect(thread.id)}
@@ -166,35 +198,30 @@ function ThreadNode({ thread, depth = 0, selectedId, onSelect, inactive = false 
         `
             : html`<span class="tree-caret-spacer"></span>`
         }
-        <${StatusIcon} state=${nodeState(thread)} />
-        <span class="tree-text">
+        <span class="row-text" title=${thread.name}>
           <span class="tree-label ${thread.unnamed ? 'tree-label--unnamed' : ''}" data-name-source=${thread.nameSource || ''}
             title=${`${thread.id}${thread.nameSource ? ` · ${nameSourceLabel[thread.nameSource]}` : ''}`}>${thread.name}</span>
-          ${
-            thread.branch || thread.meta.context?.references?.length
-              ? html`<span class="tree-sub">
-            ${thread.branch ? html`<span class="thread-branch-badge" title=${thread.branch}>${thread.branch}</span>` : null}
-            <${ReferenceChips} meta=${thread.meta} cls="thread-meta-tag" />
-          </span>`
-              : null
-          }
+          <span class="row-meta">
+            <${StatusIcon} state=${nodeState(thread)} />
+            <span class="row-project">${projectLabel(thread.meta.projectId)}</span>
+            ${
+              thread.conversation?.unread
+                ? html`<span class="row-count conversation-unread-badge" title="${thread.conversation.unread} unread member post${thread.conversation.unread > 1 ? 's' : ''}">${thread.conversation.unread}</span>`
+                : null
+            }
+            ${
+              thread.conversation?.paused
+                ? html`<span class="row-count conversation-paused-badge" title="Conversation paused">paused</span>`
+                : null
+            }
+            ${(() => {
+              const count = (promptCounts.value || {})[thread.id] || 0;
+              return count > 0
+                ? html`<span class="row-count prompt-badge ${count > 2 ? 'urgent' : ''}" title="${count} pending prompt${count > 1 ? 's' : ''}">${count}</span>`
+                : null;
+            })()}
+          </span>
         </span>
-        ${
-          thread.conversation?.unread
-            ? html`<span class="conversation-unread-badge" title="${thread.conversation.unread} unread member post${thread.conversation.unread > 1 ? 's' : ''}">${thread.conversation.unread}</span>`
-            : null
-        }
-        ${
-          thread.conversation?.paused
-            ? html`<span class="conversation-paused-badge" title="Conversation paused">paused</span>`
-            : null
-        }
-        ${(() => {
-          const count = (promptCounts.value || {})[thread.id] || 0;
-          return count > 0
-            ? html`<span class="prompt-badge ${count > 2 ? 'urgent' : ''}" title="${count} pending prompt${count > 1 ? 's' : ''}">${count}</span>`
-            : null;
-        })()}
         <${ThreadActions} thread=${thread} />
       </div>
 
@@ -345,33 +372,7 @@ export function ThreadList() {
       ? projects.value.find((p) => p.id === activeProject)?.label || activeProject
       : 'Global';
 
-  const nodeById = new Map(
-    allThreads.value.map((t) => [
-      t.threadId,
-      {
-        id: t.threadId,
-        status: t.meta?.status || 'idle',
-        name: threadName(t),
-        unnamed: isUnnamed(t),
-        nameSource: t.title?.source || null,
-        meta: t.meta || {},
-        branch: threadPlace(t.meta).branch,
-        cwd: t.meta?.cwd || null,
-        parentThreadId: t.meta?.parentThreadId || null,
-        conversation: t.conversation || null,
-        lastTurn: t.lastTurn || null,
-        children: [],
-      },
-    ]),
-  );
-  const threadNodes = [];
-  for (const node of nodeById.values()) {
-    const parent = node.parentThreadId ? nodeById.get(node.parentThreadId) : null;
-    if (parent && parent !== node) parent.children.push(node);
-    else threadNodes.push(node);
-  }
-  // A thread with an unread member post rises to the top (a post revived it).
-  threadNodes.sort((a, b) => (b.conversation?.unread ? 1 : 0) - (a.conversation?.unread ? 1 : 0));
+  const threadNodes = threadTree(allThreads.value);
 
   return html`
     <section class="thread-list" aria-label="Threads">

@@ -136,7 +136,8 @@ test('thread names: the agent name shows until a person names the thread; branch
     const ticket = header.locator('a.thread-ref--linear');
     expect(await ticket.innerText()).toBe('ENG-42');
     expect(await ticket.getAttribute('href')).toBe('https://linear.app/inixiative/issue/ENG-42');
-    expect(await page.locator('.tree-node a.thread-ref--github').innerText()).toBe('#60');
+    // Rows carry only the name, status, project and counts; references live in the thread's header.
+    expect(await page.locator('.tree-node a.thread-ref--github').count()).toBe(0);
     await page.screenshot({ path: join(out, '1-agent-name.png') });
 
     if (!(await page.locator('.thread-name-editor').count()))

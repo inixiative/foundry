@@ -30,6 +30,7 @@ import { FLOW_TURNS, type FlowJournal, flowSnapshot, readLearning, readTurn } fr
  *                                  full result carries provider input; everyone else sees the bounded turn
  *   threads             snapshot { projectId: null, threads }     append { thread } | { removed: threadId }
  *   threads:<projectId> snapshot { projectId, threads }           append { thread } | { removed: threadId }
+ *   threads:all         the same, over every thread across projects (the Active rail, the board)
  *   prompts             snapshot { prompts }                      append { prompt }  (status says pending or settled)
  *   events              snapshot { events }  (runtime-wide)       append { event }
  *   events:<threadId>   snapshot { events }  (owned by thread)    append { event }  (plus threadless errors, for toasts)
@@ -142,12 +143,17 @@ export function createViewerStreams(deps: {
     },
   };
 
+  const ALL_THREADS = 'threads:all';
   const threads: StreamFamily = {
     matches: (stream) => stream === 'threads' || suffix(stream, 'threads:') !== null,
-    authorize: (stream) => directory.scope(suffix(stream, 'threads:') ?? undefined) !== undefined,
+    authorize: (stream) =>
+      stream === ALL_THREADS ||
+      directory.scope(suffix(stream, 'threads:') ?? undefined) !== undefined,
     start(stream, append) {
-      const projectId = suffix(stream, 'threads:');
-      const scope = () => directory.scope(projectId ?? undefined) ?? [];
+      // `threads:all` is every thread across projects (the Active rail and the board).
+      const all = stream === ALL_THREADS;
+      const projectId = all ? null : suffix(stream, 'threads:');
+      const scope = () => (all ? directory.all() : (directory.scope(projectId ?? undefined) ?? []));
       // What subscribers already hold, so a change is sent once and an unchanged thread never.
       const sent = new Map<
         string,

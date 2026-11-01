@@ -7119,3 +7119,163 @@ a.thread-ref:hover {
 .context-stats .context-bar-stack {
   margin-top: 8px;
 }
+
+/* ---- Left rail: Active | Projects ---- */
+.nav-rail {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  padding: 10px 4px 10px 10px;
+  gap: 8px;
+}
+.nav-rail .proj-sidebar {
+  flex: 1;
+  min-height: 0;
+}
+.rail-toggle {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  background: var(--surface2);
+  border-radius: 10px;
+  flex-shrink: 0;
+}
+.rail-toggle-btn {
+  flex: 1;
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 12.5px;
+  padding: 5px 8px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.rail-toggle-btn.is-active {
+  color: var(--text);
+  background: var(--surface);
+  box-shadow: var(--frame-shadow);
+}
+.active-rail {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 10px;
+}
+.rail-pane {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  gap: 6px;
+}
+.rail-pane-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin: 0;
+  padding: 0 4px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+.rail-pane:first-child .rail-pane-head span:first-child {
+  color: var(--accent);
+}
+.rail-pane:last-child .rail-pane-head span:first-child {
+  color: var(--shared);
+}
+.rail-frame {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  background: var(--surface);
+  border-radius: 0.75rem;
+  box-shadow: var(--frame-shadow);
+  padding: 4px;
+}
+.rail-empty {
+  color: var(--text-dim);
+  padding: 8px;
+  font-size: 12.5px;
+}
+
+/* Rows: line 1 the name (never wraps), line 2 status · project · counts. No box around an item. */
+.tree-node {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 38px;
+  padding: 3px 6px;
+  border-radius: 8px;
+  border: none;
+  background: none;
+}
+.tree-node:hover {
+  background: hsl(var(--foreground) / 0.04);
+}
+.tree-node.selected {
+  background: hsl(var(--app-primary) / 0.1);
+  box-shadow: none;
+}
+.row-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+  gap: 1px;
+}
+.row-text .tree-label {
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text);
+}
+.row-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 11.5px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+}
+.row-meta .status-icon {
+  width: 12px;
+  height: 12px;
+}
+.row-meta .status-icon .ic {
+  width: 12px;
+  height: 12px;
+}
+.row-project {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.row-count {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: hsl(var(--foreground) / 0.1);
+  color: var(--text);
+  min-width: 0;
+}
+.tree-node .thread-actions {
+  opacity: 0;
+}
+.tree-node:hover .thread-actions,
+.tree-node.selected .thread-actions,
+.tree-node .thread-actions-open {
+  opacity: 1;
+}

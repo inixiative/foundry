@@ -224,7 +224,7 @@ function ProjectItem({ project, isActive, onSelect, onRename }) {
         <div class="proj-item-label">${project.label}</div>
         <div class="proj-item-meta">
           <span class="proj-status-dot" style="background: ${statusColor}"></span>
-          <span>${archived ? 'archived · ' : ''}${project.threadCount || 0} threads</span>
+          <span>${archived ? 'archived · ' : `${project.activeThreadCount ?? 0} open · `}${project.threadCount || 0} threads</span>
           ${(project.tags || []).map((t) => html`<span class="proj-tag" key=${t}>${t}</span>`)}
         </div>
       </div>

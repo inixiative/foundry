@@ -91,6 +91,8 @@ export const RIGHT_TABS = [
   'feedback',
 ];
 export const rightTab = signal('context');
+/** The left rail: 'active' (every open thread, Yours over Shared) or 'projects' (the projects, then a scope's threads). */
+export const railView = signal('active');
 /** The open thread's launch settings (GET /api/threads/:id/launch): provider, model, effort, permission mode. */
 export const threadLaunch = signal(null);
 /** The model registry (GET /api/models), once read: providers and their models with context windows. */
@@ -453,12 +455,20 @@ function settleInitialScope() {
   if (project) activeProjectId.value = project.id;
 }
 
+/** On the Active rail the scope follows the open thread: its project, or Global. */
+function followActiveProject() {
+  if (railView.peek() !== 'active') return;
+  const listed = allThreads.peek().find((t) => t.threadId === activeThreadId.peek());
+  if (listed) activeProjectId.value = listed.meta?.projectId ?? null;
+}
+
 function adoptThreadList(threads) {
   if (threadsStream === 'threads') {
     globalListed = true;
     settleInitialScope();
   }
   allThreads.value = threads;
+  followActiveProject();
   if (!threads.some((thread) => thread.threadId === activeThreadId.value))
     selectThread(threads[0]?.threadId ?? null);
   const active = activeThreadId.value;
@@ -558,7 +568,8 @@ function connectStreams() {
   socket.open('prompts');
   effect(() => {
     const projectId = activeProjectId.value;
-    const next = projectId ? `threads:${projectId}` : 'threads';
+    const next =
+      railView.value === 'active' ? 'threads:all' : projectId ? `threads:${projectId}` : 'threads';
     if (next === threadsStream) return;
     if (threadsStream) socket.close(threadsStream);
     threadsStream = next;
@@ -1430,6 +1441,7 @@ export function selectThread(threadId) {
     messages.value = _threadMessages[threadId] ?? [];
     threadData.value = allThreads.value.find((t) => t.threadId === threadId) ?? null;
   });
+  followActiveProject();
   if (threadId && !_threadMessages[threadId]) _loadThreadMessages(threadId);
   // A cached thread may have received work while inactive (its stream was closed):
   // reconcile it into its own cache only, even if the user switches again before it returns.
@@ -1838,6 +1850,8 @@ function writeHash() {
   if (!projectSidebarOpen.value) params.set('sidebar', '0');
   if (!detailDrawerOpen.value) params.set('detail', '0');
   if (rightTab.value !== 'context') params.set('rtab', rightTab.value);
+  // A project in the hash opens the Projects rail unless the rail is named.
+  if (railView.value !== 'active' || activeProjectId.value) params.set('rail', railView.value);
   const hash = params.toString();
   // Replace silently — no history entry per state change
   history.replaceState(null, '', hash ? `#${hash}` : location.pathname);
@@ -1853,6 +1867,9 @@ function restoreFromHash() {
   if (h.sidebar === '0') projectSidebarOpen.value = false;
   if (h.detail === '0') detailDrawerOpen.value = false;
   if (RIGHT_TABS.includes(h.rtab)) rightTab.value = h.rtab;
+  // A link to a project (and no rail named) opens the Projects rail on it.
+  railView.value =
+    h.rail === 'projects' || (h.rail !== 'active' && h.project) ? 'projects' : 'active';
 }
 
 // ---------------------------------------------------------------------------
@@ -1900,6 +1917,7 @@ export function init() {
     projectSidebarOpen.value;
     detailDrawerOpen.value;
     rightTab.value;
+    railView.value;
     writeHash();
   });
 
