@@ -1,0 +1,117 @@
+import '../helpers/isolate-archive';
+import { expect, test } from 'bun:test';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import {
+  ActionQueue,
+  ContextStack,
+  EventStream,
+  Harness,
+  InterventionLog,
+  Thread,
+  TokenTracker,
+} from '@inixiative/foundry-core';
+import { ProjectRegistry } from '../../src/agents/project';
+import { ConfigStore, defaultAgents, starterConfig } from '../../src/viewer/config';
+import { createViewer } from '../../src/viewer/server';
+import { until } from '../helpers/live-watch-fixture';
+import { type ReleaseStep, releaseAll } from '../helpers/release-all';
+
+const { chromium } = createRequire(import.meta.url)(
+  process.env.FOUNDRY_QA_PLAYWRIGHT ?? 'playwright',
+);
+
+// The Thread tab has three views: the thread, /btw (you and your agent) and asides (people only).
+// Tabs by default; "Side by side" shows them as columns and is remembered in the browser. The
+// composer says where it sends; until asides land, /btw and Aside send nothing and keep the text.
+test('Thread, /btw and Asides: tabs, side by side, and a composer that says where it sends', async () => {
+  const cleanup: ReleaseStep[] = [];
+  const dir = mkdtempSync(join(tmpdir(), 'foundry-views-'));
+  cleanup.push(['dir', () => rmSync(dir, { recursive: true, force: true })]);
+  try {
+    const projects = new ProjectRegistry();
+    const project = projects.register({
+      id: 'shop',
+      label: 'acme-shop',
+      path: join(dir, 'shop'),
+      tags: [],
+      runtime: 'claude-code',
+    });
+    project.addThread(
+      new Thread('shop-1', new ContextStack(), {
+        description: 'Checkout errors since 2:02',
+        projectId: 'shop',
+      }),
+    );
+    const configStore = new ConfigStore(dir);
+    const config = starterConfig('controlled', 'controlled');
+    config.agents = defaultAgents();
+    config.setupComplete = true;
+    await configStore.save(config);
+    const viewer = createViewer({
+      harness: new Harness(new Thread('main', new ContextStack(), { description: 'Global' })),
+      eventStream: new EventStream(),
+      interventions: new InterventionLog(),
+      tokenTracker: new TokenTracker(),
+      configStore,
+      configDir: dir,
+      projectRegistry: projects,
+      actionQueue: new ActionQueue(),
+    });
+    cleanup.unshift(['store', () => viewer.localStore?.close()]);
+    const server = Bun.serve({
+      hostname: '127.0.0.1',
+      port: 0,
+      fetch: viewer.fetch,
+      websocket: viewer.websocket,
+    });
+    cleanup.unshift(['server', () => server.stop(true)]);
+    const browser = await chromium.launch({ headless: true });
+    cleanup.unshift(['browser', () => browser.close()]);
+    const page = await (
+      await browser.newContext({ viewport: { width: 1440, height: 900 } })
+    ).newPage();
+    page.setDefaultTimeout(15_000);
+    const errors: string[] = [];
+    page.on('pageerror', (e: Error) => errors.push(e.message));
+    const url = `http://127.0.0.1:${server.port}/#thread=shop-1`;
+    await page.goto(url);
+    await page.locator('.context-bar-title', { hasText: 'Checkout errors since 2:02' }).waitFor();
+
+    // Tabs: one view at a time.
+    await page.locator('.thread-view-tab', { hasText: '/btw' }).click();
+    await page.locator('.side-view--btw').waitFor();
+    expect(await page.locator('.chat-messages').isHidden()).toBe(true);
+    await page.locator('.thread-view-tab', { hasText: 'Asides' }).click();
+    await page.locator('.side-view--asides').waitFor();
+    await page.locator('.thread-view-tab', { hasText: 'Thread' }).click();
+    await page.locator('.chat-messages').waitFor();
+
+    // Side by side: all three as columns, remembered across a reload.
+    await page.locator('.thread-views-side .switch').click();
+    expect(await page.locator('.thread-views--columns > *').count()).toBe(3);
+    await page.reload();
+    await page.locator('.thread-views--columns').waitFor();
+    expect(await page.locator('.thread-views--columns > *').count()).toBe(3);
+
+    // The composer: Aside needs another person; /btw says who reads it and sends nothing yet.
+    expect(await page.locator('.channel-tab', { hasText: 'Aside' }).isDisabled()).toBe(true);
+    expect(await page.locator('.channel-sending').innerText()).toBe('Sending to the thread');
+    await page.locator('.channel-tab', { hasText: '/btw' }).click();
+    expect(await page.locator('.channel-sending').innerText()).toContain(
+      'your own agent, privately',
+    );
+    await page.locator('textarea.chat-input').fill('Is the retry limit 3 or 5?');
+    await page.locator('textarea.chat-input').press('Enter');
+    await page.locator('.toast', { hasText: 'nothing was sent' }).waitFor();
+    expect(await page.locator('textarea.chat-input').inputValue()).toBe(
+      'Is the retry limit 3 or 5?',
+    );
+    expect(errors).toEqual([]);
+  } finally {
+    const failures = await releaseAll(cleanup);
+    expect(failures).toEqual([]);
+  }
+}, 120_000);
