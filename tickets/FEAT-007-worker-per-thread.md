@@ -1,6 +1,6 @@
 # FEAT-007: Each thread picks its subscription worker
 
-**Status**: ✅ Built (2026-11-01), branch `feat/worker-per-thread`; awaiting review and the one-off stamping of existing records.
+**Status**: ✅ Built and reviewed (2026-11-01), PR #244.
 **Assignee**: inixiative-b9
 **Priority**: High: FEAT-006 (Muse) needs it, and inixiative-da's shared-thread local members need it.
 **Created**: 2026-11-01
@@ -67,7 +67,7 @@ Today `resolveSubscriptionPolicy` takes one worker from `config.defaults.provide
 ## Review changes (adversarial review, 2026-11-01), these override the plan above
 
 1. **Every usable worker's adapter is built at daemon start, not lazily.** Building one spawns nothing; processes start per thread. The viewer subscribes to subagent and task sources once (`viewer/server.ts:404-411`), and the providers map is copied three times (`start.ts:641,646,688`). So use one shared map, passed by reference, and no lazy-start machinery.
-2. **`worker` is required on every thread record.** There is no read-time default: that is a compatibility shim, and it broke resume. If the default went Claude → Codex → Claude, the old Claude binding would be resumed without the Codex-era turns. A one-off throwaway script stamps existing records from the runtime bucket that holds their binding.
+2. **`worker` is required on every thread record.** There is no read-time default: that is a compatibility shim, and it broke resume. If the default went Claude → Codex → Claude, the old Claude binding would be resumed without the Codex-era turns. Existing records are stamped once at startup from the runtime bucket that holds their binding (Aron chose this over a stop-and-stamp script, 2026-11-01: "why not just merge… it auto updates"); an unknown or doubly-bound runtime is left unstamped and refused, never guessed.
 3. **No `kingdomCapacity.workers`; no local fallback.** A Kingdom-capacity project runs every worker on its pool. `resolveRun` already sends the runtime, and Kingdom refuses a pool with no login for it ("No authorized capacity matches"). The thread is refused with that reason and never billed to the machine's login.
 4. **Muse in any project** (Aron, 2026-11-01: "Always personal Archive… Muse may run in any project"). So there is no per-project allowance. Archive's `alwaysPersonal` gate does the enforcing (Archive #47).
 5. **A thread's worker can change only while the thread has no native binding and no open in-session host.** The save check allows exactly that case. A changed worker closes the in-session host.

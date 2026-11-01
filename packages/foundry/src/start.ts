@@ -8,6 +8,7 @@ import { join, resolve } from 'node:path';
 import { resolveDecisionModel } from '@inixiative/foundry-core';
 import { stampFoundryRun } from './archives/run-stamp';
 import { AGENT_CLIS, ensureAgentClisOnPath } from './daemon/agent-clis';
+import { WORKER_SESSION_RUNTIMES } from './models/registry';
 import { providerBaseUrl, providerContextBudget, providerEnabled } from './models/vendors';
 import {
   type DecisionEvents,
@@ -714,8 +715,9 @@ const mainProjectId = Object.values(config.projects ?? {}).find(
 // Records from before FEAT-007 get the worker they ran on, once, before anything reads them.
 const stampedWorkers = LocalSessionStore.stampWorkers(join(FOUNDRY_DIR, 'sessions.sqlite'), {
   bindings: await sessionStore.bindings(),
-  runtimeWorker: new Map(
-    [...sessionAdapters].map(([worker, adapter]) => [adapter.runtime, worker]),
+  // Every runtime a worker can bind, built here or not: a Codex binding stays Codex with Codex off.
+  runtimeWorker: new Map<string, string>(
+    Object.entries(WORKER_SESSION_RUNTIMES).map(([worker, runtime]) => [runtime, worker]),
   ),
   projectDefault: (projectId) =>
     (projectId ? config.projects[projectId]?.defaults?.provider : undefined) ??

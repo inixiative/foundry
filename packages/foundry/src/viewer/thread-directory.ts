@@ -184,7 +184,7 @@ export class ViewerThreadDirectory {
         );
         continue;
       }
-      // Every record names its worker; one without is never given a default (run the stamping script).
+      // Every record names its worker; one startup couldn't stamp is never given a default.
       if (
         !record.meta.worker &&
         !record.meta.spawn?.observed &&

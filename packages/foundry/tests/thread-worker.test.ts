@@ -596,3 +596,49 @@ test('startup gives stored records from before FEAT-007 the worker they ran on, 
   // Once: a second startup stamps nothing.
   expect(LocalSessionStore.stampWorkers(path, sources).stamped).toEqual([]);
 });
+
+test('startup stamping reads every binding shape, and never guesses an unknown runtime or an orphan', () => {
+  const dir = temporary('thread-worker-stamp-shapes-');
+  const path = join(dir, 'sessions.sqlite');
+  const store = new LocalSessionStore(path);
+  const record = (id: string, extra: Partial<ThreadMeta> = {}) => ({
+    id,
+    meta: {
+      description: '',
+      tags: [],
+      status: 'idle',
+      createdAt: 1,
+      lastActiveAt: 1,
+      ...extra,
+    } as ThreadMeta,
+  });
+  for (const id of ['authed', 'aux-only', 'elsewhere']) store.saveThread(record(id));
+  store.saveThread(
+    record('orphan', {
+      parentThreadId: 'gone',
+      spawn: { observed: true } as ThreadMeta['spawn'],
+    }),
+  );
+  store.close();
+  const first = LocalSessionStore.stampWorkers(path, {
+    bindings: {
+      'codex-app-server': { 'authed:auth:source-1:abc123': 'codex-1' },
+      // An auxiliary's own binding, with its profile suffix, never names its thread's worker.
+      'claude-code': { 'aux-only:aux:domain:x:profile:text-only-v1': 'aux' },
+      // A runtime no worker owns: not guessed.
+      'some-new-runtime': { elsewhere: 'x' },
+    },
+    runtimeWorker: new Map([
+      ['claude-code', 'claude-code'],
+      ['codex-app-server', 'codex'],
+    ]),
+    projectDefault: () => 'claude-code',
+  });
+  expect(Object.fromEntries(first.stamped.map(({ id, worker }) => [id, worker]))).toEqual({
+    authed: 'codex',
+    'aux-only': 'claude-code',
+    // Its parent's record is gone: its own bindings (none) and project default decide.
+    orphan: 'claude-code',
+  });
+  expect(first.ambiguous).toEqual(['elsewhere']);
+});

@@ -183,11 +183,11 @@ function checksum(text: string): string {
 }
 class StaleKnowledge extends Error {}
 
-/** A record left without a worker after startup's stamping: its runtime couldn't be told. */
+/** A stored record without a worker: startup's stamping couldn't tell which runtime it ran on. */
 export const UNSTAMPED_RECORD = 'names no worker';
 
 const unstampedRecord = (threadId: string) =>
-  `Stored thread ${threadId} ${UNSTAMPED_RECORD}: its native session is bound under more than one runtime, so Foundry won't guess which it runs on (FEAT-007); set its worker`;
+  `Stored thread ${threadId} ${UNSTAMPED_RECORD}: startup couldn't tell which runtime it ran on (its native session is bound under more than one, or under one no worker owns), so Foundry won't guess (FEAT-007); set its worker in the record`;
 
 /** Local turn journal. A completed response and its artifact commit together. */
 export class LocalSessionStore {
@@ -1382,7 +1382,7 @@ export class LocalSessionStore {
     const prior = existing ? (JSON.parse(existing.meta) as ThreadMeta) : undefined;
     if (prior && prior.projectId !== thread.meta.projectId)
       throw new Error(`Thread journal owner cannot change: ${thread.id}`);
-    // A record from before workers were stored is stamped by the one-off script, never by a save.
+    // A record from before workers were stored is stamped at startup (`stampWorkers`), never by a save.
     if (
       prior &&
       prior.worker === undefined &&
@@ -1405,14 +1405,11 @@ export class LocalSessionStore {
   }
 
   /**
-   * A stored thread's worker, read before the store is opened (the daemon's main thread keeps its
-   * own). Undefined when there is no record; a record without a worker is refused, never defaulted.
-   */
-  /**
    * Gives each stored thread record without a worker the one it ran on, once, before anything reads
    * them: the runtime whose bucket holds the thread's own native binding; an observed subagent its
    * parent's; a thread that never ran natively its project's default, since no native session can
-   * disagree. A thread bound under two runtimes is left as it is, so reading it fails loudly.
+   * disagree. A thread bound under two runtimes, or under one no worker owns, is left as it is, so
+   * reading it fails loudly rather than guessing.
    */
   static stampWorkers(
     path: string,
@@ -1443,8 +1440,7 @@ export class LocalSessionStore {
       const bound = (threadId: string) => {
         const found = new Set<string>();
         for (const [runtime, entries] of Object.entries(sources.bindings)) {
-          const worker = sources.runtimeWorker.get(runtime);
-          if (!worker) continue;
+          const worker = sources.runtimeWorker.get(runtime) ?? `unknown runtime ${runtime}`;
           for (const key of Object.keys(entries))
             if (
               key === threadId ||
@@ -1460,10 +1456,11 @@ export class LocalSessionStore {
         if (meta.worker) return meta.worker;
         if (meta.spawn?.observed && meta.parentThreadId && !seen.has(id)) {
           seen.add(id);
-          return workerOf(meta.parentThreadId, seen);
+          const parent = workerOf(meta.parentThreadId, seen);
+          if (parent) return parent;
         }
         const runtimes = bound(id);
-        if (runtimes.length > 1) return undefined;
+        if (runtimes.length > 1 || runtimes[0]?.startsWith('unknown runtime')) return undefined;
         return runtimes[0] ?? sources.projectDefault(meta.projectId);
       };
       const update = db.query('UPDATE session_threads SET meta=? WHERE id=?');
@@ -1485,6 +1482,10 @@ export class LocalSessionStore {
     }
   }
 
+  /**
+   * A stored thread's worker, read before the store is opened (the daemon's main thread keeps its
+   * own). Undefined when there is no record; a record without a worker is refused, never defaulted.
+   */
   static storedWorker(path: string, threadId: string): string | undefined {
     if (path === ':memory:' || !existsSync(path)) return undefined;
     // A WAL journal closed cleanly has no -shm, and a read-only open can't create one; query only.
