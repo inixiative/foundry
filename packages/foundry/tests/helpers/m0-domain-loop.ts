@@ -1,3 +1,4 @@
+import { tmpdir } from 'node:os';
 import './isolate-archive';
 import { Database } from 'bun:sqlite';
 import { mkdir, mkdtemp } from 'node:fs/promises';
@@ -95,7 +96,9 @@ export interface ScenarioOptions {
 /** No model calls. Production factory, tool loop, HTTP dispatch, runtime and SQLite;
  * only reviewer/central model answers and the finite fixture migration tool are controlled. */
 export async function m0Scenario(options: ScenarioOptions = {}) {
-  const parent = process.env.FOUNDRY_M0_OUTPUT_DIR ?? join(process.cwd(), '.foundry/qa');
+  // The test temp dir, not the checkout: a scenario's projects compose their instruction ladder from
+  // every directory above them, and a checkout may sit under other CLAUDE.md files.
+  const parent = process.env.FOUNDRY_M0_OUTPUT_DIR ?? tmpdir();
   await mkdir(parent, { recursive: true });
   const dir = await mkdtemp(join(parent, 'm0-domain-loop-'));
   const calls: Call[] = [],
