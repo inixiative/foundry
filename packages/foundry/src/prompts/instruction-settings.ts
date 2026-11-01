@@ -9,7 +9,7 @@ import type {
   HierarchySource,
   HierarchySpan,
 } from '@inixiative/foundry-core';
-import { CORPUS_TIERS, type CorpusTier } from '../agents/corpus-compiler';
+import { CORPUS_TIERS, type CorpusTier } from '../agents/corpus-tiers';
 
 /** The two composed slots every role has. Thread knowledge is computed per call, not composed. */
 export const COMPOSITION_SLOTS = ['instructions', 'domainKnowledge'] as const;

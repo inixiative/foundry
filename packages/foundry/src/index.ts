@@ -45,48 +45,29 @@ export {
   // Cartographer (context routing)
   Cartographer,
   type CartographerConfig,
-  type CompiledCorpus,
-  ContradictionDetector,
-  ConvergenceDetector,
-  // Corpus Compiler
-  CorpusCompiler,
-  type CorpusCompilerConfig,
   type CorpusTier,
-  CrossPollinationDetector,
   classificationOverrideRule,
-  type DocState,
   // Domain Librarian (advise + guard pattern)
   DomainLibrarian,
   type DomainLibrarianConfig,
-  DuplicationDetector,
   emitOnPatternRule,
   // Flow Orchestrator (wires the five FLOW.md roles)
   FlowOrchestrator,
   type FlowOrchestratorConfig,
-  type FluidEntry,
-  type FormalDoc,
   fromSettingsConfig,
   type GuardFinding,
   type GuardReport,
   type GuardResult,
-  // Herald
-  Herald,
-  type HeraldConfig,
-  type HeraldPattern,
-  type HeraldRecommendation,
   type InjectionPlan,
   type InvalidationEvent,
   invalidateComposition,
   keywordClassify,
   keywordRoute,
-  type LayerInheritance,
-  type LayerVisibility,
   // Librarian (signal reconciliation)
   Librarian,
   type LibrarianConfig,
   lowConfidenceRule,
   type MapEntry,
-  type PatternDetector,
   // Project
   Project,
   type ProjectConfig,
@@ -94,28 +75,21 @@ export {
   type ProjectStatus,
   type ProjectSummary,
   parseJSON,
-  // Built-in hooks
   type ReactionContext,
   type ReactionRule,
   // Reactive Middleware
   ReactiveMiddleware,
   type ReactiveMiddlewareConfig,
-  ResourceImbalanceDetector,
   type RouteResult,
   resolveAgentOpts,
   rewarmOnAgentRule,
-  // Sessions
-  SessionManager,
   type SourceResolver,
-  type ThreadBlueprint,
   // Thread Factory
   ThreadFactory,
   type ThreadFactoryDeps,
-  type ThreadSnapshot,
   type ThreadState,
   type ToolObservation,
   type TopologyMap,
-  type VisibilityTier,
 } from './agents';
 // Git — worktree detection for thread→branch assignment
 export {

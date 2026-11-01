@@ -46,7 +46,7 @@ export default defineConfig({
     {
       include: [
         `${CORE}/{base-agent,classifier,router,executor,decider,clarifier}.ts`,
-        `${FOUNDRY}/agents/{cartographer,librarian,herald,domain-librarian,planner}.ts`,
+        `${FOUNDRY}/agents/{cartographer,librarian,domain-librarian}.ts`,
       ],
       kind: 'agent',
     },
@@ -111,7 +111,7 @@ export default defineConfig({
 
     // foundry: agents
     {
-      include: `${FOUNDRY}/agents/{flow-orchestrator,cartographer,librarian,herald,workstream-detector,reactive,corpus-compiler,learning-config,configured-experts}.ts`,
+      include: `${FOUNDRY}/agents/{flow-orchestrator,cartographer,librarian,reactive,learning-config,configured-experts}.ts`,
       partOf: 'feature:flow',
     },
     {
@@ -120,7 +120,7 @@ export default defineConfig({
     },
     { include: `${FOUNDRY}/agents/configured-experts.ts`, partOf: 'feature:wardens' },
     {
-      include: `${FOUNDRY}/agents/{thread-runtime,thread-factory,session,thread-namer,project}.ts`,
+      include: `${FOUNDRY}/agents/{thread-runtime,thread-factory,thread-namer,project}.ts`,
       partOf: 'feature:threads',
     },
     {

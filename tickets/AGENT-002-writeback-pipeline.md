@@ -8,6 +8,8 @@
 
 ---
 
+**2026-11-01:** the `CorpusCompiler` class was deleted unwired (Aron: delete); only its tiers survive, in `agents/corpus-tiers.ts`. The pipeline below is a design to build, not code to wire; the deleted class is in git history.
+
 ## Overview
 
 FLOW.md Loop 4 defines a writeback pipeline that feeds learnings from completed threads back into the persistent context layers. This is the basic self-improvement loop — robust eval/scoring lives in Oracle.

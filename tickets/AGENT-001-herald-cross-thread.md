@@ -8,6 +8,8 @@
 
 ---
 
+**2026-11-01:** `agents/herald.ts` (its five detectors), `agents/workstream-detector.ts` and `SessionManager` were deleted unwired (Aron: delete). Build the Herald on `@inixiative/foundry/classify` with region `role: herald` and the live thread directory (`viewer/thread-directory.ts`); the deleted code is in git history (`git log --diff-filter=D -- packages/foundry/src/agents/herald.ts`).
+
 ## Revision 2026-10-31 (attention board): read this first
 
 The body below dates from April and is stale in three ways:

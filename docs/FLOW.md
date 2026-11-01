@@ -103,7 +103,7 @@ These are the agents we've named so far. Each implements one or more roles. The 
 |------|----------|-------|
 | **Context routing** | Cartographer | Reads everything, owns the topology map, routes slices. |
 | **Domain advising** | Wardens (formerly called Domain Librarians): a project's region Wardens, one per concept region (`.foundry/regions`, its chorus enabled). The hand-named Docs/Convention/Security/Architecture/Memory roster was retired 2026-10-17 | Each holds its region's knowledge. Advise mode: "does this moment touch something in my region, and where is it written?" |
-| **Domain advising** (cross-thread) | Herald | Design: watch all threads, detect convergence, divergence, resource conflicts. **Not wired**: the class exists (`agents/herald.ts`) but no runtime constructs it (`viewer/config.ts:301`). |
+| **Domain advising** (cross-thread) | Herald | Design: watch all threads, detect convergence, divergence, resource conflicts. **Not built** (AGENT-001); the earlier unwired class was deleted 2026-11-01. |
 | **Execution** | Artificer (the native Claude Code or Codex session running under the harness) | The real work. Full tool access, capable model. |
 | **Correctness checking** | Wardens (guard mode) | Same agents as advising, different mode. Guard mode, once per turn: "did what the agent did this turn violate anything in my domain?" |
 | **Signal reconciliation** | Librarian (singular — distinct from the plural Wardens) | Sole writer to thread-state. Classifies signals, reconciles, trigger-gates guards, feeds writeback. |
@@ -889,11 +889,11 @@ Every branching point in the system, who decides, and how. (Named Wardens are th
 - **Cartographer** — context routing with keyword fallback. `packages/foundry/src/agents/cartographer.ts`
 
 ### Not built
-- **Herald wiring** — `agents/herald.ts` exists; nothing constructs it at runtime.
+- **Heralds** — not built (AGENT-001).
 - **Programmatic memory guard** — no `guardFn` is supplied, so the memory guard is an LLM call.
 - **Push of critical findings** into a running session.
 - **`Thread.fromSession`** store replay.
-- **Writeback pipeline** — post-execution signal processing into the corpus pipeline (Oracle `docs/VISION.md` §7): map rebuilds, memory entries, convention proposals queued for review. `CorpusCompiler.ingestFromSignalBus` (`agents/corpus-compiler.ts:146`) and `recompileOn` (`agents/domain-librarian.ts:628`) exist with no caller.
+- **Writeback pipeline** — post-execution signal processing into the corpus pipeline (Oracle `docs/VISION.md` §7): map rebuilds, memory entries, convention proposals queued for review. Nothing is built for it (AGENT-002; the unwired CorpusCompiler was deleted 2026-11-01).
 - **Feedback lifecycle, beyond its first slice** — Oracle recurrence and committed rungs (design in Oracle `docs/foundry/FEEDBACK-LOOP.md`; what is built: [FEEDBACK-LOOP.md](FEEDBACK-LOOP.md)). The first slice (capture, tuning, routing, role-file changes, the Feedback view) is built in `packages/foundry/src/feedback/`.
 
 ---
