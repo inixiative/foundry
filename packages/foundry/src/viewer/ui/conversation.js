@@ -70,6 +70,7 @@ import {
   threadUsage,
   tokenUsage,
   turnViewTarget,
+  waitingFor,
 } from './store.js';
 import {
   harnessName,
@@ -1259,8 +1260,7 @@ function ActionPromptCard({ prompt }) {
  * their row counts, so an Approve here can only ever act on the thread being read.
  */
 export function promptsForThread(pending, threadId) {
-  if (!threadId || !Array.isArray(pending)) return [];
-  return pending.filter((p) => p.threadId === threadId);
+  return waitingFor(threadId, pending);
 }
 
 /**

@@ -27,10 +27,10 @@ import {
   executeAction,
   focusTurnId,
   messages,
-  prompts,
   selectThread,
   threadData,
   threadStatusOf,
+  waitingFor,
 } from './store.js';
 import { ReferenceChips, threadName } from './thread-labels.js';
 import { promptState } from './thread-status.js';
@@ -85,7 +85,7 @@ export function Plan() {
   const meta = data.meta || {};
   const state = threadStatusOf(threadId, liveThreadStatus(messages.value));
   const lastAgent = [...messages.value].reverse().find((m) => m.actor === 'agent');
-  const waiting = prompts.value.filter((p) => p.threadId === threadId);
+  const waiting = waitingFor(threadId);
   const parent = meta.parentThreadId
     ? allThreads.value.find((t) => t.threadId === meta.parentThreadId)
     : null;
