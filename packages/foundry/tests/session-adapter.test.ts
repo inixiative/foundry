@@ -1080,3 +1080,46 @@ test('context policy survives fresh sessions, resume and native forks without ex
     resumed.kill();
   }
 });
+
+test('only a main thread asks its launch for the user’s harness settings (CORE-003)', async () => {
+  const seen: Array<{ threadId: string; harness: unknown }> = [];
+  const auth = {
+    bindingId: (threadId: string) => threadId,
+    prepare: async (threadId: string) => ({
+      bindingId: threadId,
+      sourceId: 'source',
+      integrationId: 'integration',
+      mode: 'native-profile' as const,
+      check: () => {},
+      launch: (argv: string[], env: Record<string, string | undefined>, harness?: unknown) => {
+        seen.push({ threadId, harness });
+        return { argv, env };
+      },
+      release: () => {},
+    }),
+  };
+  const asked: string[] = [];
+  const adapter = new ClaudeCodeSessionAdapter({
+    store: new InMemoryExternalSessionStore(),
+    authentication: auth,
+    harnessSettings: (cwd) => {
+      asked.push(cwd);
+      return 'user,project,local';
+    },
+    defaults: { spawn: () => makeFakeProc().proc },
+  });
+  const main = await adapter.createSession({ threadId: 'main', cwd: '/repo' });
+  const aux = await adapter.createSession({ threadId: 'main:aux:domain:x', cwd: '/repo' });
+  const text = await adapter.createSession({ threadId: 'text', cwd: '/repo', tools: false });
+  try {
+    await Promise.all([main.start(), aux.start(), text.start()]);
+    expect(seen).toEqual([
+      { threadId: 'main', harness: { sources: 'user,project,local', cwd: '/repo' } },
+      { threadId: 'main:aux:domain:x', harness: undefined },
+      { threadId: 'text', harness: undefined },
+    ]);
+    expect(asked).toEqual(['/repo']);
+  } finally {
+    for (const session of [main, aux, text]) session.kill();
+  }
+});

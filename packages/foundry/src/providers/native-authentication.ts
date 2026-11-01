@@ -3,6 +3,7 @@
  * @kind service
  * @partOf feature:nativeAuth
  */
+
 import {
   existsSync,
   mkdirSync,
@@ -17,6 +18,7 @@ import { isAbsolute, join } from 'node:path';
 import { sha256Hex } from '@inixiative/foundry-core';
 import { z } from 'zod';
 import { profileEnvironment } from './default-profiles';
+import type { HarnessSettingsLaunch } from './harness-settings';
 import {
   assertPrivateProfile,
   assertProfile,
@@ -98,9 +100,11 @@ export interface NativeAuthenticationLaunch {
   readonly capacityId?: string;
   readonly mode: NativeAuthenticationSource['mode'] | 'kingdom-subscription' | 'local';
   check(): void;
+  /** `harness`: a main thread's Claude loads the user's own settings (CORE-003); absent, none. */
   launch(
     argv: string[],
     env: Record<string, string | undefined>,
+    harness?: HarnessSettingsLaunch,
   ): { argv: string[]; env: Record<string, string | undefined> };
   /** Records the launched native child, so a lock left by a crashed owner can be reclaimed once both are dead. */
   adopt?(pid: number): void;

@@ -4,6 +4,7 @@
  * @partOf feature:nativeAuth
  */
 import { withProfile } from './default-profiles';
+import { claudeSettingsFiles, subscriptionSettingsGuard } from './harness-settings';
 import {
   NativeAuthentication,
   type NativeAuthenticationLaunch,
@@ -60,16 +61,22 @@ export class SubscriptionAuthentication extends NativeAuthentication {
       }
     }
     const launch = await super.prepare(threadId, runtime);
+    const configDirectory = this.workerSource.profileDirectory;
     // Codex launch overrides are already limited to sandbox, approval and effort by the native binding.
     if (runtime === 'codex')
       return { ...launch, launch: (argv, env) => launch.launch(argv, nativeTextEnvironment(env)) };
     return {
       ...launch,
-      launch(argv, env) {
+      launch(argv, env, harness) {
         if (argv.some((arg) => /^(--settings|--setting-sources|--fallback-model)(=|$)/.test(arg)))
           throw Error('Subscription launch override refused');
         const owned = launch.launch(argv, nativeTextEnvironment(env));
-        return { argv: [...owned.argv, '--setting-sources', ''], env: owned.env };
+        if (!harness) return { argv: [...owned.argv, '--setting-sources', ''], env: owned.env };
+        const guard = subscriptionSettingsGuard(claudeSettingsFiles(configDirectory, harness));
+        return {
+          argv: [...owned.argv, '--setting-sources', harness.sources, '--settings', guard],
+          env: owned.env,
+        };
       },
     };
   }
