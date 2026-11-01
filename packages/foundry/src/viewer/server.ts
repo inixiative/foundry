@@ -3,7 +3,7 @@
  * @kind entrypoint
  * @partOf feature:viewer
  */
-import { join } from 'node:path';
+import { dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type {
   ActionQueue,
@@ -711,6 +711,21 @@ export function createViewer(config: ViewerConfig) {
       { 'Content-Type': 'application/javascript' },
     ),
   );
+  // The look is @inixiative/config's shared theme (public.css, agentic.css and the fonts they load),
+  // read from the package at runtime so Foundry and Kingdom never drift apart.
+  const themeDir = dirname(
+    fileURLToPath(import.meta.resolve('@inixiative/config/theme/public.css')),
+  );
+  app.get('/ui/theme/*', (c) => {
+    const file = resolve(themeDir, c.req.path.slice('/ui/theme/'.length));
+    if (!file.startsWith(`${themeDir}${sep}`)) return c.notFound();
+    const body = Bun.file(file);
+    return body
+      .exists()
+      .then((found) =>
+        found ? new Response(body, { headers: { 'Content-Type': body.type } }) : c.notFound(),
+      );
+  });
   app.get('/ui/*', serveStatic({ root: fileURLToPath(new URL('./', import.meta.url)) }));
   app.get(
     '/kingdom',

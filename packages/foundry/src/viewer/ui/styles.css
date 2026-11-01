@@ -1,4 +1,64 @@
-/* Foundry Viewer — Kingdom look (tokens.css) */
+/* Foundry Viewer — Kingdom look. Tokens come from @inixiative/config/theme (public.css + agentic.css, served at /ui/theme/). */
+
+/*
+ * The viewer's working names, resolved from the theme tokens (@inixiative/config/theme). Components use these.
+ * --line / --err replace the old --border / --error, whose names Kingdom's tokens now hold.
+ */
+:root {
+  --bg: hsl(var(--background));
+  --surface: hsl(var(--card));
+  --surface2: hsl(var(--muted));
+  --bg-elev: hsl(var(--popover));
+  --bg-deeper: hsl(206 30% 4%);
+  --hover: hsl(var(--app-accent));
+  --line: hsl(var(--border));
+  --line-strong: hsl(var(--input));
+  --text: hsl(var(--foreground));
+  --text-dim: hsl(var(--muted-foreground));
+  --text-dimmer: hsl(var(--subtle-foreground));
+  --accent: hsl(var(--app-primary));
+  --accent-dim: hsl(var(--app-primary) / 0.14);
+  --accent-ink: hsl(var(--app-primary-foreground));
+  --shared: hsl(var(--app-tertiary));
+  --signet: hsl(var(--app-quaternary));
+  --ok: hsl(var(--status-working));
+  --ok-dim: hsl(var(--status-working) / 0.13);
+  --err: hsl(var(--status-problem));
+  --err-dim: hsl(var(--status-problem) / 0.13);
+  --warn: hsl(var(--warning));
+  --warn-dim: hsl(var(--warning) / 0.13);
+  --red: var(--err);
+  --yellow: var(--warn);
+  --font: var(--font-sans);
+  --mono: var(--font-mono);
+  --display: var(--font-display);
+  --r: var(--radius);
+  --r-sm: 0.5rem;
+  --frame-shadow: inset 0 0 0 1px hsl(var(--border));
+
+  --st-problem: hsl(var(--status-problem));
+  --st-attention: hsl(var(--status-attention));
+  --st-working: hsl(var(--status-working));
+  --st-queued: hsl(var(--status-queued));
+  --st-done: hsl(var(--status-done));
+  --st-idle: hsl(var(--status-idle));
+  --st-archived: hsl(var(--status-archived));
+
+  /* Layer palette: categorical (one hue per context layer), never a status colour. */
+  --layer-0: hsl(211 100% 79%);
+  --layer-1: hsl(170 55% 62%);
+  --layer-2: hsl(45 85% 70%);
+  --layer-3: hsl(262 70% 78%);
+  --layer-4: hsl(195 75% 66%);
+  --layer-5: hsl(330 60% 76%);
+  --layer-6: hsl(95 45% 62%);
+  --layer-7: hsl(28 80% 70%);
+  --layer-8: hsl(230 70% 80%);
+  --layer-9: hsl(150 40% 60%);
+  --layer-10: hsl(300 40% 72%);
+  --layer-11: hsl(15 65% 72%);
+}
+
 /* Three-panel: tree | conversation | detail */
 
 * {
@@ -7,7 +67,7 @@
   padding: 0;
 }
 
-/* Variables live in tokens.css (Kingdom tokens + the viewer's working names). */
+/* The theme tokens come from @inixiative/config/theme; the viewer's working names follow. */
 
 body {
   background: var(--bg);
