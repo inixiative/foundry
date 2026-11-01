@@ -117,7 +117,7 @@ test('thread names: the agent name shows until a person names the thread; branch
     page.on('pageerror', (e: Error) => errors.push(`pageerror: ${e.message}`));
     await page.goto(`http://127.0.0.1:${server.port}/#thread=main`);
 
-    const header = page.locator('.context-bar-head');
+    const header = page.locator('.thread-band');
     const treeLabel = page.locator('.tree-label').first();
     await header
       .locator('.context-bar-title', { hasText: 'Ship self-maintained thread names' })

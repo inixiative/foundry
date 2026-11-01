@@ -12,6 +12,7 @@
  * with a way back to the tabs. Collapsed, it is a strip of the tabs with their counts.
  */
 import { AccessSettings } from './access-settings.js';
+import { ContextStats, TokenBar } from './conversation.js';
 import { ParticipantsPanel } from './conversation-members.js';
 import { Inspector, inspection, ThreadDetail } from './detail-drawer.js';
 import { feedbackIn, ThreadFeedback } from './feedback.js';
@@ -30,6 +31,7 @@ import {
   threadData,
   threadLaunch,
 } from './store.js';
+import { harnessName } from './thread-labels.js';
 
 const TAB_LABELS = {
   context: 'Context',
@@ -39,14 +41,6 @@ const TAB_LABELS = {
   pointers: 'Pointers',
   feedback: 'Feedback',
 };
-
-/** "Claude Code" / "Codex" from a provider id; the id itself otherwise. */
-export function harnessName(provider) {
-  if (!provider) return null;
-  if (/codex/i.test(provider)) return 'Codex';
-  if (/claude|anthropic/i.test(provider)) return 'Claude Code';
-  return provider;
-}
 
 const openFeedback = (threadId) =>
   feedbackIn({ threadId }).filter((item) => item.inbox === 'open').length;
@@ -146,6 +140,8 @@ function ContextTab() {
           : html`<div class="rp-dim">Reading the thread’s launch settings…</div>`
       }
     </section>
+    <${TokenBar} />
+    <${ContextStats} />
     <${ThreadDetail} />
   </div>`;
 }
