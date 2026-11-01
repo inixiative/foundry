@@ -4,9 +4,22 @@
 **Assignee**: TBD
 **Priority**: Medium
 **Created**: 2026-04-09
-**Updated**: 2026-04-09
+**Updated**: 2026-10-31
 
 ---
+
+## Revision 2026-10-31 (attention board): read this first
+
+The body below dates from April and is stale in three ways:
+- It names Gemini Flash. All decision roles are Claude Haiku 5.5 now (2026-10-11).
+- It says `SessionManager` "exists". Production never constructs one.
+- It wires the Herald into the pre-message flow. The chorus is region Wardens only.
+
+Aron (2026-10-31, D1) put thread matching, past work and team overlap on **Heralds**: "Chorus needs to point at rules and docs. Other things would go through heralds… Thread matching is a herald issue." Heralds carry live data; Wardens carry static knowledge (2026-10-17).
+
+**The first Herald is local thread matching**, because inbound needs it (BOARD-003). A new item asks "does this belong to an open thread?", and on yes it becomes a goal there ("This looks familiar: add it to that thread?"). Past-work chips ("Google Pay, added Aug 12") come next, from Archive and the harvest's work links (Oracle `docs/PROSPECTOR-HARVEST.md`). Team overlap ("both changing checkout/payment.ts") crosses machines, so it goes through Kingdom with a Signet and comes last.
+
+Decide whether to adopt `agents/herald.ts`'s detectors or replace them. Whatever is chosen runs through `@inixiative/foundry/classify`, the one classification primitive, with region `role: herald` as its socket. Planning doc: Oracle `docs/foundry/ATTENTION-BOARD.md` §8.
 
 ## Overview
 

@@ -28,3 +28,4 @@ Tickets use the naming convention: `{CATEGORY}-{NUM}-{slug}.md`
 - **INFRA** - Infrastructure, deployment, CI/CD
 - **BUG** - Bug fixes
 - **FEAT** - New features
+- **BOARD** - The attention board (Foundry Version 4): shared threads, inbound items, outside requests
