@@ -2057,6 +2057,14 @@ export class LocalSessionStore {
     };
   }
 
+  /** The thread's recorded tool call with this native call id (newest first), if journalled. */
+  nativeToolUse(threadId: string, callId: string): NativeEvidence | undefined {
+    const row = this.query(
+      "SELECT record FROM session_native WHERE thread_id=? AND json_extract(record,'$.kind')='tool_use' AND json_extract(record,'$.callId')=? ORDER BY seq DESC LIMIT 1",
+    ).get(threadId, callId) as { record: string } | null;
+    return row ? freezeEvidence(JSON.parse(row.record)) : undefined;
+  }
+
   nativeHistory(threadId: string, turnId: string): NativeEvidence[] {
     return (
       this.query(

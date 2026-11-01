@@ -16,6 +16,8 @@ import {
   activeProjectId,
   allThreads,
   createThread,
+  openProjectBoard,
+  openProjectKnowledge,
   projects,
   selectScope,
   selectThread,
@@ -66,6 +68,24 @@ function Chorus({ projectId }) {
     ${chorus.missingDocs?.length ? html`<div class="ph-line is-warn"><i></i>${chorus.missingDocs.length} docs missing</div>` : null}`;
 }
 
+const WORKTREES = {
+  template: 'template mode · slots claim ports, a database and Redis',
+  classic: 'classic mode · plain git worktrees',
+};
+
+function About({ projectId, project }) {
+  const about = useJson(`/api/projects/${encodeURIComponent(projectId)}/about`);
+  if (about === undefined) return html`<div class="ph-meta">Reading the project…</div>`;
+  return html`
+    <p class="ph-desc">${about?.description ?? html`<span class="ph-meta">No description. Add one in the project's settings.</span>`}</p>
+    <dl class="ph-facts">
+      <dt>Hosted</dt><dd>${about?.repository ? (about.repository.integration === 'github' ? html`<a href=${`https://github.com/${about.repository.ref}`} target="_blank" rel="noopener">GitHub · ${about.repository.ref}</a>` : about.repository.ref) : html`<span class="ph-meta">No hosted origin</span>`}</dd>
+      <dt>Worktrees</dt><dd>${about ? WORKTREES[about.worktreeMode] : '—'}</dd>
+      <dt>Kingdom</dt><dd>${about?.kingdoms?.length ? about.kingdoms.join(', ') : html`<span class="ph-meta">Not linked</span>`}</dd>
+      <dt>Path</dt><dd class="mono">${project?.path ?? '—'}</dd>
+    </dl>`;
+}
+
 export function ProjectHome() {
   const projectId = activeProjectId.value;
   const isGlobal = !projectId;
@@ -87,19 +107,33 @@ export function ProjectHome() {
     <header class="ph-head">
       <h2>${title}</h2>
       <span class="ph-meta">${isGlobal ? 'Threads outside any project' : 'Project'}${project?.path ? html` · <span class="mono">${project.path}</span>` : null}</span>
+      ${
+        isGlobal
+          ? null
+          : html`<span class="ph-head-actions">
+              <button type="button" class="proj-btn" onClick=${() => openProjectBoard(projectId)}>Board for this project</button>
+              <button type="button" class="proj-btn is-go" onClick=${() => openProjectKnowledge(projectId)}>Knowledge and chorus</button>
+            </span>`
+      }
     </header>
     <div class="ph-grid">
-      <section class="ph-box ph-threads">
+      ${isGlobal ? null : html`<section class="ph-box ph-about"><h4>About</h4><${About} projectId=${projectId} project=${project} /></section>`}
+      ${
+        isGlobal
+          ? html`<section class="ph-box ph-threads">
         <h4>Threads · ${open.length} open</h4>
         ${open.length ? open.map((t) => html`<${ThreadRow} key=${t.threadId} thread=${t} />`) : html`<div class="ph-meta">Nothing open.</div>`}
         ${inactive.length ? html`<div class="ph-sub">Inactive · ${inactive.length}</div>${inactive.map((t) => html`<${ThreadRow} key=${t.threadId} thread=${t} />`)}` : null}
         ${closed.length ? html`<div class="ph-meta">${closed.length} closed</div>` : null}
         <div class="ph-actions"><button type="button" class="proj-btn" onClick=${() => createThread()}>+ New thread</button></div>
-      </section>
+      </section>`
+          : null
+      }
       ${
         isGlobal
           ? null
           : html`<section class="ph-box"><h4>Chorus</h4><${Chorus} projectId=${projectId} />
+          <button type="button" class="proj-btn ph-link" onClick=${() => openProjectKnowledge(projectId)}>Setup, regions and Wardens →</button>
           <button type="button" class="proj-btn ph-link" onClick=${() => navigate(`/projects/${encodeURIComponent(projectId)}/settings/chorus`)}>Settings › Chorus →</button></section>`
       }
       <section class="ph-box">
@@ -107,12 +141,16 @@ export function ProjectHome() {
         <div class="ph-line"><b>${openFeedback}</b> open · ${feedback.length} in all</div>
         <button type="button" class="proj-btn ph-link" onClick=${() => selectScope('feedback')}>Open the feedback →</button>
       </section>
-      <section class="ph-box">
+      ${
+        isGlobal
+          ? html`<section class="ph-box">
         <h4>Archive</h4>
         <div class="ph-line ${archive && !archive.reachable ? 'is-warn' : ''}"><i></i>${archive === undefined ? 'Checking…' : archive?.reachable ? 'Local Archive running' : 'Local Archive not running'}</div>
         <div class="ph-meta">Sessions here are captured to it; closed threads stay readable there.</div>
         ${archive?.url ? html`<a class="proj-btn ph-link" href=${archive.url} target="_blank" rel="noopener">Open in Archive ↗</a>` : null}
-      </section>
+      </section>`
+          : null
+      }
       ${
         isGlobal
           ? null

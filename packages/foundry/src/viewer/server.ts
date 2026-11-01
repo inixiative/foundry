@@ -40,8 +40,10 @@ import {
   type KingdomIntegration,
   shareViewerCredential,
 } from '../providers/kingdom-installation-connection';
+import type { TaskSink } from '../providers/session-backed';
 import { ThreadLaunchSettings } from '../providers/thread-launch';
 import { kingdomPostDelivery } from '../tools/kingdom-post';
+import { RunningTasks } from '../turns/running-tasks';
 import { SubagentRecorder } from '../turns/subagents';
 import {
   createToolGate,
@@ -134,6 +136,8 @@ export interface ViewerConfig {
   threadSetup?: ThreadSetupHost & {
     onSetup(listener: (threadId: string, setup: ThreadSetup) => void): void;
   };
+  /** Executor providers whose sessions report their background tasks (shells, monitors). */
+  taskSources?: ReadonlyArray<{ observeTasks(sink: TaskSink): () => void }>;
   /** Executor providers whose sessions report their subagents (spec A: observed child threads). */
   subagentSources?: ReadonlyArray<{
     observeSubagents(
@@ -405,6 +409,10 @@ export function createViewer(config: ViewerConfig) {
               );
           },
     });
+    for (const source of config.taskSources ?? [])
+      source.observeTasks((threadId, task, at, stop) =>
+        runningTasks.observe(threadId, task, at, stop),
+      );
     for (const source of config.subagentSources ?? [])
       source.observeSubagents((threadId, evidence) => {
         try {
@@ -425,6 +433,9 @@ export function createViewer(config: ViewerConfig) {
   const namer = config.namingProvider
     ? new ThreadNamer({ provider: config.namingProvider, changed: threadChanged })
     : undefined;
+  const runningTasks = new RunningTasks((threadId, callId) =>
+    localStore?.nativeToolUse(threadId, callId),
+  );
   const threadContext = new ThreadContextTracker({
     thread: (id) => directory.get(id),
     changed: threadChanged,
@@ -589,6 +600,7 @@ export function createViewer(config: ViewerConfig) {
     projectRegistry: config.projectRegistry,
     namer,
     threadContext,
+    runningTasks,
     ...(config.tokenTracker ? { tokenTracker: config.tokenTracker } : {}),
     ...(archiveCapture ? { archiveCapture } : {}),
     deviceIdentityPath: config.deviceIdentityPath,

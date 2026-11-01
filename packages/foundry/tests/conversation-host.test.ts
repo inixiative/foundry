@@ -1221,9 +1221,11 @@ test('a local member hears what was posted, is woken while it speaks, posts back
   ).toContain('New in the conversation "main"');
   const woke = codex.lastTurn()!;
   const heard = h.conversations.deliverNotes(codex.id, woke).map((note) => note.text);
-  expect(heard).toHaveLength(1);
+  // The owner's words, then the host agent's answer to them: it hears the whole conversation.
+  expect(heard).toHaveLength(2);
   expect(heard[0]).toContain('the owner said:\nCodex, what do you think of the plan?');
-  // Delivered once: its next turn doesn't hear it again, and the host agent's answers never reach it.
+  expect(heard[1]).toContain('the host agent answered:\nanswered:');
+  // Delivered once: its next turn doesn't hear it again.
   expect(h.conversations.deliverNotes(codex.id, woke)).toEqual([]);
 
   // Its answer in its own thread stays there; it speaks through post_to_conversation.
@@ -1245,6 +1247,20 @@ test('a local member hears what was posted, is woken while it speaks, posts back
       .map((row) => row.record.text)
       .includes('Looks right to me.'),
   ).toBe(false);
+  // Everyone in the shared thread hears the whole conversation: the host agent's answers included.
+  await until(
+    () =>
+      codex.store
+        .phasesOf(codex.id, 'shared-entry')
+        .some(
+          (row) => row.record.kind === 'agent' && String(row.record.text).startsWith('answered:'),
+        ),
+    'host answer heard',
+  );
+  const answer = codex.store
+    .phasesOf(codex.id, 'shared-entry')
+    .find((row) => row.record.kind === 'agent')!;
+  expect(answer.record.speaker).toBe('the host agent');
 
   // Two speaking agents in talk are bounded like any pair: each post costs two agent turns.
   let refused: Error | undefined;
@@ -1273,9 +1289,11 @@ test('a listening local member hears everything and is never woken, except by so
   );
   await until(() => turns() === 1, 'woken by the send');
   const notes = h.conversations.deliverNotes(codex.id, codex.lastTurn()!).map((n) => n.text);
-  expect(notes).toHaveLength(3);
-  expect(notes[2]).toContain('the host agent, to you');
-  const sendSeq = /entry (\d+)/.exec(notes[2]!)![1]!;
+  // Both owner messages and the host agent's answers to them, then the send.
+  expect(notes).toHaveLength(5);
+  expect(notes.filter((n) => n.includes('the host agent answered:'))).toHaveLength(2);
+  expect(notes[4]).toContain('the host agent, to you');
+  const sendSeq = /entry (\d+)/.exec(notes[4]!)![1]!;
   expect(h.conversations.postFromLocal(codex.id, 'Summary: …', { inReplyTo: sendSeq })).toBe(
     'Posted to main.',
   );
@@ -1380,15 +1398,16 @@ test('a paused conversation wakes no local member; the mirror still records what
   const codex = await withLocal(h);
   h.conversations.pauseByOwner('main');
   await h.ownerSays('thinking while paused');
+  // The owner's words and the host agent's answer.
   await until(
-    () => codex.store.phasesOf(codex.id, 'shared-entry').length === 1,
+    () => codex.store.phasesOf(codex.id, 'shared-entry').length === 2,
     'mirrored while paused',
   );
   expect(codex.store.recentTurnIds(codex.id, 10)).toEqual([]);
   // Mirroring twice (a restart sweep, a second journal event) writes nothing new.
   h.conversations.pump('main');
   h.conversations.raisePending();
-  expect(codex.store.phasesOf(codex.id, 'shared-entry')).toHaveLength(1);
+  expect(codex.store.phasesOf(codex.id, 'shared-entry')).toHaveLength(2);
   // Resumed, it is woken for what it missed.
   h.conversations.resume('main');
   h.conversations.pump('main');

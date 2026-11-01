@@ -29,6 +29,7 @@ import {
 import { ViewerFileAccess } from '../file-access';
 import { FoundrySelfChatStore, type SelfChatFocus } from '../foundry-self-chat';
 import { validateId } from '../http-helpers';
+import { projectAbout } from '../project-about';
 import { SESSION_COOKIE, sessionValue } from '../request-auth';
 import { FoundryTunnel, type TunnelHolder, type TunnelInfo } from '../tunnel';
 import { registerAccessRoutes } from './access';
@@ -399,6 +400,14 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps): void 
     const project = cfg.projects[id];
     if (!project) return c.json({ error: 'not found' }, 404);
     return c.json(project);
+  });
+
+  app.get('/api/projects/:id/about', async (c) => {
+    const id = c.req.param('id');
+    const cfg = await configStore.load();
+    const project = projectRegistry?.get(id)?.summary() ?? cfg.projects[id];
+    if (!project) return c.json({ error: 'not found' }, 404);
+    return c.json(await projectAbout(project, cfg.kingdomAccess ?? []));
   });
 
   app.post('/api/projects', async (c) => {

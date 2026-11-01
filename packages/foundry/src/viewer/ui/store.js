@@ -102,6 +102,26 @@ export const composerFill = signal(null);
 export const watchtowerOpen = signal(false);
 /** The selected project's home page (or Global's) fills the centre: opened from the Projects list. */
 export const projectHomeOpen = signal(false);
+/** Which project page is open: its home, or its Knowledge and chorus page. */
+export const projectPage = signal('home');
+/** The board's filter: 'all', 'project:<id>', 'global', 'forge' or 'this'. */
+export const boardFilter = signal('all');
+
+/** Open the board filtered to one project. */
+export function openProjectBoard(projectId) {
+  batch(() => {
+    boardFilter.value = `project:${projectId}`;
+    projectHomeOpen.value = false;
+    watchtowerOpen.value = false;
+    boardOpen.value = true;
+  });
+}
+
+/** Open a project's Knowledge and chorus page (Esc returns to its home). */
+export function openProjectKnowledge(projectId) {
+  openProjectHome(projectId);
+  projectPage.value = 'knowledge';
+}
 
 /** Open a project's home page (null = Global, threads outside any project). */
 export function openProjectHome(projectId) {
@@ -110,6 +130,7 @@ export function openProjectHome(projectId) {
     boardOpen.value = false;
     watchtowerOpen.value = false;
     incomingOpenId.value = null;
+    projectPage.value = 'home';
     projectHomeOpen.value = true;
   });
 }
@@ -2032,7 +2053,8 @@ function writeHash() {
   if (railView.value !== 'open' || activeProjectId.value) params.set('rail', railView.value);
   if (boardOpen.value) params.set('view', 'board');
   else if (watchtowerOpen.value) params.set('view', 'watch');
-  if (projectHomeOpen.value && !boardOpen.value) params.set('home', '1');
+  if (projectHomeOpen.value && !boardOpen.value)
+    params.set('home', projectPage.value === 'knowledge' ? 'knowledge' : '1');
   const hash = params.toString();
   // Replace silently — no history entry per state change
   history.replaceState(null, '', hash ? `#${hash}` : location.pathname);
@@ -2076,7 +2098,8 @@ function restoreFromHash() {
   if (RIGHT_TABS.includes(h.rtab)) rightTab.value = h.rtab;
   boardOpen.value = h.view === 'board';
   watchtowerOpen.value = h.view === 'watch';
-  projectHomeOpen.value = h.home === '1';
+  projectHomeOpen.value = h.home === '1' || h.home === 'knowledge';
+  projectPage.value = h.home === 'knowledge' ? 'knowledge' : 'home';
   // A link to a project (and no rail named) opens the Projects rail on it.
   railView.value = h.rail === 'projects' || (h.rail !== 'open' && h.project) ? 'projects' : 'open';
 }
@@ -2144,6 +2167,7 @@ export function init() {
     railView.value;
     boardOpen.value;
     projectHomeOpen.value;
+    projectPage.value;
     writeHash();
   });
 

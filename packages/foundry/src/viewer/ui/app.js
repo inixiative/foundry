@@ -17,6 +17,7 @@ import { FeedbackInbox } from './feedback.js';
 import { GlossReview } from './gloss.js';
 import { initHotkeys, registerDefaults } from './hotkeys.js';
 import { RequestView } from './incoming.js';
+import { KnowledgePage } from './knowledge.js';
 import { html, render, useEffect, useRef, useState } from './lib.js';
 import { NavRail } from './nav-rail.js';
 import { panelColumns, RestoreTab } from './panel-sizes.js';
@@ -49,6 +50,7 @@ import {
   inspectTarget,
   loadTraces,
   projectHomeOpen,
+  projectPage,
   projectSidebarOpen,
   projects,
   prompts,
@@ -284,6 +286,10 @@ function App() {
         /* TODO: expand selected */
       },
       escape: () => {
+        if (projectHomeOpen.value && projectPage.value === 'knowledge') {
+          projectPage.value = 'home';
+          return;
+        }
         selectedEvent.value = null;
         inspectTarget.value = null;
         selectedSpanId.value = null;
@@ -378,7 +384,9 @@ function App() {
                   : boardOpen.value
                     ? html`<${Board} />`
                     : projectHomeOpen.value
-                      ? html`<${ProjectHome} key=${activeProjectId.value ?? 'global'} />`
+                      ? projectPage.value === 'knowledge' && activeProjectId.value
+                        ? html`<${KnowledgePage} key=${activeProjectId.value} />`
+                        : html`<${ProjectHome} key=${activeProjectId.value ?? 'global'} />`
                       : activePanel.value === 'feedback'
                         ? html`<${FeedbackInbox} key=${scopeProjectId() ?? 'global'} projectId=${scopeProjectId()} />`
                         : html`<${Conversation} onSpanSelect=${handleSpanSelect} onLayerClick=${inspectLayer} />`

@@ -821,6 +821,8 @@ export class TurnService {
     try {
       if (state.cancelRequested) throw Error(CANCELLED_BEFORE_START);
       state.phase = 'running';
+      // Foundry names an unnamed thread from the first message that names work, as it is sent.
+      if (ownerTyped) this.deps.namer?.messageSent(thread, payload);
       const result = await harness.send(
         { id: turnId, payload },
         {

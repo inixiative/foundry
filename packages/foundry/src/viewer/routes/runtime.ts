@@ -41,6 +41,7 @@ import {
   type ThreadLaunchPatch,
   ThreadLaunchSettings,
 } from '../../providers/thread-launch';
+import type { RunningTasks } from '../../turns/running-tasks';
 import { type ThreadSetupHost, TurnService } from '../../turns/turn-service';
 import type { ConfigStore } from '../config';
 import type { ViewerStreams } from '../data-streams';
@@ -67,6 +68,8 @@ export interface RuntimeRoutesDeps {
   /** Re-derives a thread's branch/worktree/linked work when its worktree changes. */
   threadContext?: ThreadContextTracker;
   localStore?: LocalSessionStore | null;
+  /** Background processes each thread's agent started (`turns/running-tasks.ts`). */
+  runningTasks?: RunningTasks;
   /** Usage window readings: a `quota-reset` snooze resolves to the reached window's reset. */
   tokenTracker?: TokenTracker;
   /** This machine's Archive capture: whether a turn's thread has been captured since the turn ended. */
@@ -993,6 +996,42 @@ export function registerRuntimeRoutes(
     if ('worktreePath' in body || 'branch' in body) void threadContext?.refresh(thread.id);
 
     return c.json(threadToJSON(thread));
+  });
+
+  // -- Running: the thread's background processes and live subagents --
+
+  app.get('/api/threads/:id/running', (c) => {
+    const id = c.req.param('id');
+    if (!directory.get(id)) return c.json({ error: 'thread not found' }, 404);
+    const subagents = directory
+      .all()
+      .filter((t) => t.meta.parentThreadId === id && t.meta.spawn)
+      .map((t) => ({
+        threadId: t.id,
+        title: threadTitle(t.meta)?.text ?? null,
+        agentType: t.meta.spawn?.agentType ?? null,
+        description: t.meta.spawn?.description ?? null,
+        startedAt: timeFromId(t.id) ?? null,
+        // A subagent's thread is active while its run is open (turns/subagents.ts sets idle at its end).
+        state: t.meta.status === 'active' ? 'running' : 'ended',
+      }));
+    return c.json({ processes: deps.runningTasks?.list(id) ?? [], subagents });
+  });
+
+  app.post('/api/threads/:id/running/:taskId/stop', async (c) => {
+    const id = c.req.param('id');
+    if (!directory.get(id)) return c.json({ error: 'thread not found' }, 404);
+    if (!deps.runningTasks) return c.json({ error: 'no task tracking here' }, 503);
+    try {
+      const outcome = await deps.runningTasks.stop(id, c.req.param('taskId'));
+      if (outcome === 'not-found') return c.json({ error: 'no such process on this thread' }, 404);
+      if (outcome === 'ended') return c.json({ error: 'the process already ended' }, 409);
+      if (outcome === 'unsupported')
+        return c.json({ error: "this thread's runtime cannot stop a background task" }, 501);
+      return c.json({ stopping: true }, 202);
+    } catch (error) {
+      return c.json({ error: `stop not acknowledged: ${(error as Error).message}` }, 502);
+    }
   });
 
   // -- Snooze: quiet until a time or a condition's time; the status is untouched (thread-snooze.ts) --

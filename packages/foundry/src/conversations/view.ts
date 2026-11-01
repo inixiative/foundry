@@ -143,6 +143,7 @@ export function capView(
 export function sharedEntryText(entry: SharedEntryRecord): string {
   const where = `In the conversation ${quotedName(entry.hostName)} (entry ${entry.hostSeq})`;
   if (entry.kind === 'owner') return `${where}, the owner said:\n${entry.text}`;
+  if (entry.kind === 'agent') return `${where}, the host agent answered:\n${entry.text}`;
   if (entry.kind === 'send')
     return `${where}, ${entry.speaker}${entry.addressed ? ' (reply with post_to_conversation, inReplyTo ' + entry.hostSeq + ')' : ''}:\n${entry.text}`;
   return `${where}:\n${memberPostReception(entry.speaker, entry.text)}`;

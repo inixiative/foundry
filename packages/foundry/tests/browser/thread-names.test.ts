@@ -22,7 +22,7 @@ const repoRoot = resolve(import.meta.dir, '../../../..');
 const OUTPUT =
   'Opened https://github.com/inixiative/foundry/pull/60 for https://linear.app/inixiative/issue/ENG-42/thread-names';
 
-test('thread names: the agent name shows until a person names the thread; branch, PR and ticket chips link out', async () => {
+test('thread names: the Foundry name shows until a person names the thread; branch, PR and ticket chips link out', async () => {
   const out = resolve(
     repoRoot,
     '.foundry/qa',
@@ -107,8 +107,8 @@ test('thread names: the agent name shows until a person names the thread; branch
     });
     expect(sent.status).toBe(200);
     await until(
-      () => !!thread.meta.agentName && !!thread.meta.context?.references.length,
-      'agent name and linked work',
+      () => !!thread.meta.foundryName && !!thread.meta.context?.references.length,
+      'Foundry name and linked work',
     );
     expect(decisions).toBe(1);
 
@@ -123,7 +123,7 @@ test('thread names: the agent name shows until a person names the thread; branch
       .locator('.context-bar-title', { hasText: 'Ship self-maintained thread names' })
       .waitFor();
     expect(await header.locator('.context-bar-title').getAttribute('data-name-source')).toBe(
-      'agent',
+      'foundry',
     );
     expect(await header.locator('.context-bar-name-source').innerText()).toBe('auto');
     expect(await treeLabel.innerText()).toBe('Ship self-maintained thread names');
@@ -146,7 +146,9 @@ test('thread names: the agent name shows until a person names the thread; branch
     if (!(await page.locator('.thread-name-editor').count()))
       await page.locator('.panel-collapse-strip').click();
     const editor = page.locator('.thread-name-editor');
-    expect(await editor.locator('.thread-name-source').innerText()).toBe('named by agent');
+    expect(await editor.locator('.thread-name-source').innerText()).toBe(
+      'named by Foundry from your message',
+    );
     await editor.locator('.thread-name-input').fill('Aron: names + context');
     await editor.getByRole('button', { name: 'Save' }).click();
     await header.locator('.context-bar-title', { hasText: 'Aron: names + context' }).waitFor();
@@ -156,7 +158,7 @@ test('thread names: the agent name shows until a person names the thread; branch
     expect(await header.locator('.context-bar-name-source').count()).toBe(0);
     await page.locator('.tree-label', { hasText: 'Aron: names + context' }).waitFor();
     expect(await editor.locator('.thread-name-agent').innerText()).toBe(
-      'Agent name: Ship self-maintained thread names',
+      "Foundry's name: Ship self-maintained thread names",
     );
     expect(thread.meta.name?.text).toBe('Aron: names + context');
     await page.screenshot({ path: join(out, '2-human-name.png') });
@@ -171,12 +173,12 @@ test('thread names: the agent name shows until a person names the thread; branch
     expect(decisions).toBe(1);
     expect(await header.locator('.context-bar-title').innerText()).toBe('Aron: names + context');
 
-    await editor.getByRole('button', { name: 'Use agent name' }).click();
+    await editor.getByRole('button', { name: "Use Foundry's name" }).click();
     await header
       .locator('.context-bar-title', { hasText: 'Ship self-maintained thread names' })
       .waitFor();
     expect(await header.locator('.context-bar-title').getAttribute('data-name-source')).toBe(
-      'agent',
+      'foundry',
     );
     expect(thread.meta.name).toBeUndefined();
     await page.screenshot({ path: join(out, '3-agent-name-restored.png') });

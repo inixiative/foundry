@@ -411,6 +411,17 @@ function createProvider(config: FoundryConfig): {
     : {};
   // Foundry's `instructions` source composes CLAUDE.md / AGENTS.md / memory; the harness must not load them again.
   const suppressInstructions = !harnessLoadsInstructions(config);
+  // What a main thread loads of the user's own setup (CORE-003). Read live: a project registered
+  // or the switch flipped applies to the next session.
+  const harnessSettings = (cwd: string) =>
+    configStore.config.composition?.harnessSettings === 'off'
+      ? undefined
+      : harnessSettingSources(
+          cwd,
+          Object.values(configStore.config.projects ?? {})
+            .filter((project) => project.enabled !== false && project.path)
+            .map((project) => project.path!),
+        );
   switch (providerId) {
     case 'claude-code': {
       const sessionAdapter = new ClaudeCodeSessionAdapter({
@@ -418,16 +429,7 @@ function createProvider(config: FoundryConfig): {
         store: sessionStore,
         authentication: routed,
         ...(inSession ? { inSession } : {}),
-        // Read live: a project registered or the switch flipped applies to the next session.
-        harnessSettings: (cwd: string) =>
-          configStore.config.composition?.harnessSettings === 'off'
-            ? undefined
-            : harnessSettingSources(
-                cwd,
-                Object.values(configStore.config.projects ?? {})
-                  .filter((project) => project.enabled !== false && project.path)
-                  .map((project) => project.path!),
-              ),
+        harnessSettings,
         defaults: {
           model: config.defaults.model,
           ...(suppressInstructions ? { env: { ...CLAUDE_HARNESS_INSTRUCTIONS_OFF } } : {}),
@@ -447,6 +449,7 @@ function createProvider(config: FoundryConfig): {
     case 'codex': {
       const sessionAdapter = new CodexSessionAdapter({
         store: sessionStore,
+        harnessSettings,
         authentication: routed,
         ...(suppressInstructions ? { appServerConfig: CODEX_HARNESS_INSTRUCTIONS_OFF } : {}),
         defaults: {
@@ -927,6 +930,7 @@ const viewer = await startViewer({
   threadLaunch,
   // The executor's subagents become observed child threads (docs/THREAD-TREE.md spec A).
   subagentSources: provider instanceof SessionBackedProvider ? [provider] : [],
+  taskSources: provider instanceof SessionBackedProvider ? [provider] : [],
   ...(inSession && provider instanceof SessionBackedProvider
     ? {
         threadSetup: {
