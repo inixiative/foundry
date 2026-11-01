@@ -37,7 +37,9 @@ So commands load without CLAUDE.md, and nothing loads twice.
 1. **Pool launches use a private config directory per login** (`CLAUDE_CONFIG_DIR = home`). `user` settings there are the login's empty home, not `~/.claude`, so the user's own commands, skills and agents wouldn't load even with `user` on. The candidates are: link `~/.claude/{commands,skills,agents}` into the login's home, or pass them with `--plugin-dir` / `--add-dir`. The token must stay in memory, so `~/.claude/settings.json` can't be copied blind (it may hold an `apiKeyHelper` or env).
 2. **The launch guards refuse settings overrides** (`/^(--settings|--setting-sources|--fallback-model)/` in both files). They exist so a subscription launch can't be redirected to an API key. The new launch must keep that guarantee: no `apiKeyHelper`, `ANTHROPIC_API_KEY` or `env` from loaded settings may override the subscription token.
 3. **User hooks run in Foundry threads.** That is what the user expects of their own Claude, and a hook can block a tool call Foundry's gate allowed. That's acceptable, since access follows the host and the user's own setup, but it should be visible in the thread's Context tab.
-4. **Codex** has no equivalent switch in our launch today. Check what `CODEX_HOME` per login drops (prompts, `AGENTS.md`, MCP) before claiming parity.
+4. **Loaded permissions could bypass Foundry's gate.** User settings bring `permissions.allow`, `defaultMode` and `disableAllHooks`. Foundry's tool gate is the SDK's `canUseTool` plus a PreToolUse hook (agent-session `src/claude-agent-sdk-session.ts:182`), and an allow rule skips `canUseTool`. The launch must keep the gate and the guard on every tool call, for example with `--settings` that override `disableAllHooks` and drop allow rules that would bypass `canUseTool`. Without that, Wardens' guard and the journal miss calls.
+5. **What the excludes cover.** The live test checked one project CLAUDE.md. Check `CLAUDE.local.md`, `@path` imports, `.claude/rules/` and the user-level `~/.claude/CLAUDE.md`.
+6. **Codex** has no equivalent switch in our launch today. Check what `CODEX_HOME` per login drops (prompts, `AGENTS.md`, MCP) before claiming parity.
 
 ## Existing machinery to use
 
@@ -52,6 +54,7 @@ So commands load without CLAUDE.md, and nothing loads twice.
 
 - [ ] A pool-launched main thread runs a project command and a user skill. The composed CLAUDE.md content appears once in its context, from Foundry.
 - [ ] A Warden call in the same project loads no user hook, command or CLAUDE.md.
+- [ ] With a user `permissions.allow` rule and `disableAllHooks: true` in loaded settings, every tool call still reaches Foundry's gate and is journalled.
 - [ ] A loaded `apiKeyHelper` or `ANTHROPIC_API_KEY` cannot replace the subscription token; the launch refuses or strips it, with a test.
 - [ ] Over ACP, the host's command list shows Foundry's commands plus the loaded native ones, with no duplicate names.
 
