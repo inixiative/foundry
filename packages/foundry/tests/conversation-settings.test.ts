@@ -33,6 +33,7 @@ test('the cascade: default, then the repository file, then this machine project 
         floor: 'conch',
         maxAgentTurns: 6,
         conch: { holdSeconds: 60, agentMayPass: false },
+        agents: 'drafting',
       },
       floorFrom: 'repository',
     });
@@ -44,6 +45,7 @@ test('the cascade: default, then the repository file, then this machine project 
       floor: 'conch',
       maxAgentTurns: 3,
       conch: { holdSeconds: 60, agentMayPass: true },
+      agents: 'drafting',
     });
     const thread = resolveConversationSettings(
       { path: dir, conversations: { floor: 'talk' } },
@@ -51,6 +53,15 @@ test('the cascade: default, then the repository file, then this machine project 
     );
     expect(thread.floorFrom).toBe('thread');
     expect(thread.settings.floor).toBe('speak-when-spoken-to');
+    // A shared thread defaults to the conch (Aron, 2026-11-01): a layer, below every explicit one.
+    expect(resolveConversationSettings(undefined, undefined, true)).toEqual({
+      settings: { ...DEFAULT_CONVERSATION_SETTINGS, floor: 'conch' },
+      floorFrom: 'shared',
+    });
+    expect(
+      resolveConversationSettings({ path: dir, conversations: { floor: 'talk' } }, undefined, true)
+        .settings.floor,
+    ).toBe('talk');
     expect(readRepositorySettings(dir)?.conversations).toEqual({
       floor: 'conch',
       conch: { holdSeconds: 60 },

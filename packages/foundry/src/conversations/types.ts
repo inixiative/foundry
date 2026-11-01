@@ -30,6 +30,7 @@ export const conversationSettingsSchema = z.strictObject({
       agentMayPass: z.boolean().optional(),
     })
     .optional(),
+  agents: z.enum(['silent', 'drafting']).optional(),
 });
 export type ConversationSettingsInput = z.infer<typeof conversationSettingsSchema>;
 
@@ -48,6 +49,11 @@ export interface ConversationSettings {
   /** Agent turns without the owner before the conversation pauses (§4.4). */
   maxAgentTurns: number;
   conch: { holdSeconds: number; agentMayPass: boolean };
+  /**
+   * `silent`: agents hear the thread but don't speak (posts are notes, sends are refused) until the
+   * leader lets them draft, the "marker" (Aron, 2026-11-01). `drafting`: agents may propose.
+   */
+  agents: 'silent' | 'drafting';
 }
 
 /** Proposals in the design (§10): talk, six agent turns, a five-minute conch the agent can't pass. */
@@ -55,6 +61,17 @@ export const DEFAULT_CONVERSATION_SETTINGS: ConversationSettings = Object.freeze
   floor: 'talk',
   maxAgentTurns: 6,
   conch: Object.freeze({ holdSeconds: 300, agentMayPass: false }),
+  agents: 'drafting',
+});
+
+/**
+ * A shared thread (one with a member) defaults to the conch (Aron, 2026-11-01): outside agents are
+ * present, so one speaker at a time with the host as leader. A layer of the cascade, never a write to
+ * the thread's own floor, so it lifts when the last member leaves.
+ */
+export const SHARED_CONVERSATION_DEFAULTS: ConversationSettings = Object.freeze({
+  ...DEFAULT_CONVERSATION_SETTINGS,
+  floor: 'conch',
 });
 
 /**
@@ -81,6 +98,11 @@ export interface ConversationRecord {
   paused?: { reason: 'depth' | 'owner'; at: string; atSeq: number };
   /** A resume restarts the depth count here (the owner's messages restart it too). */
   resumedAtSeq?: number;
+  /**
+   * Where members' reads start: the journal seq when the thread was first shared, so what the owner
+   * said before the share stays his (review round 4, B3). 0 once the owner shares the history.
+   */
+  sharedFromSeq?: number;
   /** Members asking for the conch, newest last, until it moves. */
   requests: Array<{ member: ConversationMember; displayName: string; at: string }>;
   /** Per-thread overrides, the last step of the cascade. */
@@ -100,6 +122,8 @@ export interface MemberPostRecord {
   displayName: string;
   text: string;
   delivery: 'note' | 'turn';
+  /** Admitted while agents were silent: a person talking, so it costs no agent turn (§4.9). */
+  silent?: boolean;
   /** The Kingdom `AccessExecution` the post arrived under. */
   executionId: string;
   acceptedRevision: number;

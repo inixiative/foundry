@@ -171,7 +171,15 @@ function fixture(opts: { wardens: boolean; joined?: boolean }) {
       serializeTrace(sent.trace),
     );
   };
-  const note = (text: string) =>
+  /**
+   * A shared thread defaults to the conch (Aron, 2026-11-01); these tests are about notes, so the
+   * thread talks, set as its own floor before the first note.
+   */
+  const note = (text: string) => {
+    if (service!.view(thread.id).floorFrom === 'shared') service!.setFloor(thread.id, 'talk');
+    return admitNote(text);
+  };
+  const admitNote = (text: string) =>
     service!.admit({
       type: 'thread.request',
       requestId: crypto.randomUUID(),
@@ -277,7 +285,10 @@ test('the roster is part of the conversation: a member that joins shows with its
   await f.turn('turn_2', 'anyone here?');
   const joined = f.lastSystem();
   expect(joined).toContain('# Conversation members');
-  expect(joined).toContain('Conversation floor: talk.');
+  // A thread with a member is shared, and a shared thread defaults to the conch (Aron, 2026-11-01).
+  expect(joined).toContain(
+    'Conversation floor: conch. Only the member holding the conch posts; when no member holds it, the host (the owner and you) does. Held now by the host.',
+  );
   expect(joined).toContain(`- "JobCo" (${f.member.signetId}, a User)`);
   expect(joined).toContain('  - sees: only its own posts and what you send it');
   expect(joined).toContain("  - its posts arrive: as notes that ride the owner's next message");
@@ -358,9 +369,9 @@ test('the floor rides each turn, the standing roster stays as it was', async () 
   const f = fixture({ wardens: false });
   await f.turn('turn_1', 'hello');
   const before = f.thread.stack.getLayer('conversation-members')!.hash;
-  expect(f.lastSystem()).toContain('Conversation floor: talk.');
+  expect(f.lastSystem()).toContain('Conversation floor: conch.');
   await f.turn('turn_2', 'again');
-  expect(f.lastSystem()).toContain('Conversation floor: talk.');
+  expect(f.lastSystem()).toContain('Conversation floor: conch.');
   expect(f.thread.stack.getLayer('conversation-members')!.hash).toBe(before);
   expect(f.thread.stack.getLayer('conversation-floor')!.perTurn).toBe(true);
 });
@@ -394,6 +405,7 @@ test('an archived thread comes back on a post: rebuilt with its id, journal and 
   });
   closes.push(() => service.dispose());
   const member = f.hostedNow()[0]!;
+  service.setFloor(f.thread.id, 'talk');
   const outcome = service.admit({
     type: 'thread.request',
     requestId: crypto.randomUUID(),
@@ -437,6 +449,7 @@ test('an archived thread that cannot be rebuilt stays closed to posts, and recor
   closes.push(() => service.dispose());
   const before = f.store.journalSeq(f.thread.id);
   const member = f.hostedNow()[0]!;
+  service.setFloor(f.thread.id, 'talk');
   const outcome = service.admit({
     type: 'thread.request',
     requestId: crypto.randomUUID(),

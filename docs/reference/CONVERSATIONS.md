@@ -234,13 +234,14 @@ So a conversation adds **no** structural rule, and a Codex thread runs under exa
 
 ### 4.6 Settings
 
-The existing cascade (`pf/viewer/config-resolve.ts`, `SettingLayer`) resolves, in order: default → repo `.foundry/project.json` → personal project settings → the thread's `conversation.settings`. `readRepositorySettings` gains `conversations`.
+The existing cascade (`pf/viewer/config-resolve.ts`, `SettingLayer`) resolves, in order: default → repo `.foundry/project.json` → personal project settings → the thread's `conversation.settings`. A thread is shared while a listed grant from someone other than its owner selects it (the owner's own remote client, a grant with `prompt.resolve`, doesn't count). A shared thread starts from the shared defaults instead of the default (`SHARED_CONVERSATION_DEFAULTS`: the conch, 2026-11-01), so an explicit `floor` at any layer still wins, and the default lifts when the last such grant goes; then the next snapshot clears the conch state and raised hands it left, and the share mark. The view reports the floor's source as `shared`. `readRepositorySettings` gains `conversations`.
 
 ```ts
 conversations: {
-  floor: 'talk' | 'speak-when-spoken-to' | 'conch';      // default 'talk'
+  floor: 'talk' | 'speak-when-spoken-to' | 'conch';      // default 'talk'; 'conch' once shared
   maxAgentTurns: number;                                 // default 6
   conch: { holdSeconds: number; agentMayPass: boolean }; // 300, false
+  agents: 'silent' | 'drafting';                         // default 'drafting' (§4.10)
 }
 ```
 
@@ -341,7 +342,7 @@ The outbound rule of §4.5 stands, and is reaffirmed.
 
 **F1 as built (2026-10-19).** Code: `pf/conversations/` (the wrapper: `service.ts` is the `ThreadHost`, the post-in point, the read-off point, the floor and held items; `view.ts` the lens; `settings.ts` the cascade), `pf/tools/{conversation,kingdom-post}.ts`, `pf/viewer/routes/conversations.ts`, `pf/viewer/ui/conversation-members.js`. Tests: `tests/conversation-{host,runtime,tools,settings}.test.ts` (the host one drives the real Installation socket from a scripted Kingdom with signet 0.5.1 frames) and `tests/browser/conversation-panel.test.ts`. Where the build settles what this spec left open, or departs from it:
 - **One journal order.** A member reads by `journalSeq`, but a thread's messages and its conversation rows live in two tables with two sequences. The local store (v6) keeps one order across them, `session_journal`: every message, plus the `member-post`, `outbound-held` and `outbound-resolution` rows. It is an index over the journal, not a second store; a v5 store is ordered as its messages were written when it opens. Depth ("since the owner last spoke"), unread posts and `afterSeq` all read this order.
-- **Notes are read from the journal and marked delivered, not rebuilt.** When an owner turn is prepared, every `delivery: 'note'` post written before its message and not yet delivered or withdrawn rides it, and each gets a `member-post-delivered` row naming that turn. Unread is "not yet delivered", so a note whose owner turn never ran (stopped while queued, dropped by a restart) rides the next one instead of reading as consumed. Nothing is held in memory. The Wardens' own chimes on a note stay in memory, as every between-turns chime does today. The `member_post` signal that starts their pass carries ids only: the thread bus reaches the Librarian's thread-state, which must never hold member text, so the runtime reads the labelled post through the wrapper.
+- **Notes are read from the journal and marked delivered, not rebuilt.** When a turn is prepared (any turn of the agent since 2026-11-01, §4.10; before, only an owner's), every `delivery: 'note'` post written before its message and not yet delivered or withdrawn rides it, and each gets a `member-post-delivered` row naming that turn. Unread is "not yet delivered", so a note whose owner turn never ran (stopped while queued, dropped by a restart) rides the next one instead of reading as consumed. Nothing is held in memory. The Wardens' own chimes on a note stay in memory, as every between-turns chime does today. The `member_post` signal that starts their pass carries ids only: the thread bus reaches the Librarian's thread-state, which must never hold member text, so the runtime reads the labelled post through the wrapper.
 - **Depth.** A post that would go past `maxAgentTurns` is refused: a `turn` post costs two (the post and the agent's answer), so with one turn left a `turn` post is refused alone and a note may still take that turn. Reaching the bound pauses the conversation. A depth pause lifts on the owner's next message or a resume; an owner's pause only on a resume.
 - **The conch's hold runs from when it was given** (`expiresAt` = grant + `holdSeconds`); posting doesn't extend it.
 - **A reply names its invitation by the send's `journalSeq`.** Members read only entries, so the invitation a released send creates in `speak-when-spoken-to` has the id `String(journalSeq)` of that send, and `inReplyTo` carries it. One reply consumes it; it never expires.
