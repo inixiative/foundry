@@ -1,0 +1,200 @@
+/* The turn view: one turn as a timeline in the centre (turn-view.js). */
+.turn-view {
+  height: 100%;
+  overflow: auto;
+  padding: 16px 22px 40px;
+  outline: none;
+}
+.tv-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.tv-head h2 {
+  margin: 0;
+  font-size: 1.15rem;
+  white-space: nowrap;
+}
+.tv-input {
+  color: hsl(var(--muted-foreground));
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.tv-spacer {
+  flex: 1;
+}
+.tv-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.tv-filters {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 8px;
+  background: hsl(var(--muted));
+}
+.tv-filter {
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: 12.5px;
+  padding: 3px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.tv-filter.is-on {
+  background: hsl(var(--card));
+}
+.tv-hint {
+  font-size: 12px;
+  color: hsl(var(--muted-foreground));
+}
+.tv-hint kbd {
+  font: 11px var(--font-mono, monospace);
+  padding: 0 4px;
+  margin: 0 1px;
+  border-radius: 4px;
+  background: hsl(var(--muted));
+}
+.tv-steps,
+.tv-steps ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.tv-group {
+  margin-bottom: 14px;
+}
+.tv-group h3 {
+  margin: 0 0 6px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: hsl(var(--muted-foreground));
+}
+.tv-step {
+  border: 1px solid hsl(var(--border));
+  border-radius: 10px;
+  padding: 8px 12px;
+  margin-bottom: 6px;
+  cursor: default;
+}
+.tv-step.is-at {
+  border-color: hsl(var(--app-primary) / 0.7);
+}
+.tv-step-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.tv-step-head b {
+  white-space: nowrap;
+}
+.tv-sub {
+  color: hsl(var(--muted-foreground));
+  font-size: 12.5px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  min-width: 0;
+  flex: 1;
+}
+.tv-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: hsl(var(--app-primary));
+  flex: none;
+}
+.tv-step[data-status="warn"] .tv-dot {
+  background: hsl(38 87% 69%);
+}
+.tv-step[data-status="error"] .tv-dot,
+.tv-step[data-status="fail"] .tv-dot,
+.tv-step[data-status="deny"] .tv-dot {
+  background: hsl(7 100% 74%);
+}
+.tv-step[data-status="idle"] .tv-dot,
+.tv-step[data-status="skip"] .tv-dot {
+  background: hsl(var(--muted-foreground));
+}
+.tv-raw {
+  border: 1px solid hsl(var(--border));
+  background: none;
+  color: hsl(var(--muted-foreground));
+  font-size: 11px;
+  border-radius: 6px;
+  padding: 1px 7px;
+  cursor: pointer;
+}
+.tv-raw[aria-pressed="true"] {
+  color: hsl(var(--app-primary));
+  border-color: hsl(var(--app-primary) / 0.6);
+}
+.tv-dl {
+  margin: 6px 0 0;
+  display: grid;
+  gap: 2px;
+  font-size: 12.5px;
+}
+.tv-dl > div {
+  display: grid;
+  grid-template-columns: 110px 1fr;
+  gap: 8px;
+}
+.tv-dl dt {
+  color: hsl(var(--muted-foreground));
+}
+.tv-dl dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.tv-typed {
+  margin-top: 6px;
+  display: grid;
+  gap: 4px;
+}
+.tv-path {
+  font-size: 12px;
+  color: hsl(var(--muted-foreground));
+}
+.tv-out,
+.tv-cmd,
+.tv-diff {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: hsl(var(--muted) / 0.6);
+  font-size: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 320px;
+  overflow: auto;
+}
+.tv-del {
+  color: hsl(7 100% 74%);
+}
+.tv-add {
+  color: hsl(var(--app-primary));
+}
+.chat-fulltrace-btn {
+  border: 0;
+  background: none;
+  padding: 0 4px;
+  font-size: 11px;
+  color: hsl(var(--muted-foreground));
+  cursor: pointer;
+  text-decoration: underline dotted;
+}
+.chat-fulltrace-btn:hover {
+  color: hsl(var(--app-primary));
+}

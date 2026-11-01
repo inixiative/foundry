@@ -101,9 +101,12 @@ export function openProjectHome(projectId) {
     selectScope(projectId);
     boardOpen.value = false;
     incomingOpenId.value = null;
+    turnViewTarget.value = null;
     projectHomeOpen.value = true;
   });
 }
+/** One turn open in the centre's turn view ({ threadId, turnId }), or null. */
+export const turnViewTarget = signal(null);
 /** What's typed in the open thread's message box: it goes with a waiting card's answer. */
 export const composerNote = signal('');
 /**
@@ -1528,6 +1531,7 @@ function selectThreadQuietly(threadId) {
 
 export function selectThread(threadId) {
   compactPanel.value = 'conversation';
+  turnViewTarget.value = null;
   aboutTarget.value = null;
   incomingOpenId.value = null;
   projectHomeOpen.value = false;
