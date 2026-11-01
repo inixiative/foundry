@@ -92,6 +92,8 @@ export const rightTab = signal('context');
 export const railView = signal('open');
 /** The attention board fills the centre (key b). */
 export const boardOpen = signal(false);
+/** The actions palette by Send (⌥/, or "/" typed into an empty message box). */
+export const actionPaletteOpen = signal(false);
 /** Text to put back into the message box (a queued message taken out to edit); the box consumes it. */
 export const composerFill = signal(null);
 /** The Watchtower fills the centre (key h); the board and it are never both open. */

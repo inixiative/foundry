@@ -8,7 +8,14 @@
  * No dependencies. Supports chords, modifiers, and customizable bindings.
  */
 
-import { boardOpen, commandPaletteOpen, helpOpen, projectSidebarOpen } from './store.js';
+import {
+  actionPaletteOpen,
+  boardOpen,
+  commandPaletteOpen,
+  createThread,
+  helpOpen,
+  projectSidebarOpen,
+} from './store.js';
 
 // ---------------------------------------------------------------------------
 // Hotkey registry
@@ -163,6 +170,10 @@ const ALT_ONLY = {
   k: () => {
     commandPaletteOpen.value = !commandPaletteOpen.value;
   },
+  '/': () => {
+    actionPaletteOpen.value = !actionPaletteOpen.value;
+  },
+  n: () => createThread(),
 };
 
 // The hold-⌥ overlay: what ⌥ does, without leaving the message box.

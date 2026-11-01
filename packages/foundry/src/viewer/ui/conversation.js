@@ -11,6 +11,7 @@
  * Clicking "trace" opens trace details in the right pane (detail drawer).
  */
 
+import { ActionPalette } from './action-palette.js';
 import { HeldPromptCard, useConversationView } from './conversation-members.js';
 import {
   browserStorageNotice,
@@ -39,6 +40,7 @@ import { isDangerous, MODES, ModeIcon, STATES, StatusIcon } from './status-icons
 import { QueuedRows, STEER_NOT_BUILT, turnRunning } from './steering.js';
 import {
   aboutTarget,
+  actionPaletteOpen,
   activePanel,
   activeThreadId,
   allThreads,
@@ -592,8 +594,9 @@ function ChatInput() {
   };
 
   return html`
-    <div class="chat-input-bar ${dragging ? 'chat-input-dragging' : ''}"
+    <div class="chat-input-bar ${dragging ? 'chat-input-dragging' : ''}" style="position: relative"
       onDragOver=${handleDragOver} onDragLeave=${() => setDragging(false)} onDrop=${handleDrop}>
+      <${ActionPalette} onSend=${handleSubmit} />
       <div class="chat-input-main">
         <${QueuedRows} threadId=${activeThreadId.value} />
         ${
@@ -618,7 +621,15 @@ function ChatInput() {
           class="chat-input"
           placeholder=${aboutTarget.value ? `Message the thread about ${aboutTarget.value.label}… (/feedback to record it as feedback on it)` : 'Message the thread… (Enter to send, Shift+Enter for newline; paste or drop images)'}
           value=${text}
-          onInput=${(e) => setText(e.target.value)}
+          onInput=${(e) => {
+            // "/" typed into an empty box opens the actions palette (and goes no further).
+            if (!text && e.target.value === '/') {
+              e.target.value = '';
+              actionPaletteOpen.value = true;
+              return;
+            }
+            setText(e.target.value);
+          }}
           onKeyDown=${handleKeyDown}
           onPaste=${handlePaste}
           rows="4"
@@ -656,6 +667,10 @@ function ChatInput() {
           title=${speakReplies.value ? 'Stop reading replies aloud' : 'Read replies aloud'} aria-pressed=${speakReplies.value}>${speakReplies.value ? '🔊' : '🔈'}</button>`
             : null
         }
+        <button tabindex="-1" type="button" class="composer-actions-btn" title="Actions and routing (⌥/ · or type / in an empty message)"
+          onClick=${() => {
+            actionPaletteOpen.value = !actionPaletteOpen.value;
+          }}>Actions <kbd class="cmd">⌥/</kbd></button>
         <button
           tabindex="-1"
           class="chat-send-btn"
