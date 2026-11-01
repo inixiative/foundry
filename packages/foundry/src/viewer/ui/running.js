@@ -1,4 +1,9 @@
 /**
+ * @atlas
+ * @kind component
+ * @partOf feature:viewer
+ */
+/**
  * Running: what this thread has going right now, pinned at the bottom of the right panel. Today that
  * is its open subagents (child threads). Background processes and scheduled jobs need Foundry's
  * Running record per thread, which isn't built: the flow stream that carries tool calls has one
