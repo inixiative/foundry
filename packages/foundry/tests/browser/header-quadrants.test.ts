@@ -23,10 +23,9 @@ const { chromium } = createRequire(import.meta.url)(
   process.env.FOUNDRY_QA_PLAYWRIGHT ?? 'playwright',
 );
 
-// The thread header has four areas: the thread and how many people are in it (top left), who runs the
-// main thread (bottom left), where it lives (top right: project, worktree, branch, references) and how
-// it runs (bottom right: provider, model, effort, context fill).
-test('the thread header shows its four areas', async () => {
+// The thread header: the name alone on top, then pills grouping each concept (status, your agents,
+// other parties; provider · model · effort, context fill, mode), with project and branch top right.
+test('the thread header shows its name and grouped pills', async () => {
   const cleanup: ReleaseStep[] = [];
   const dir = mkdtempSync(join(tmpdir(), 'foundry-header-'));
   cleanup.push(['dir', () => rmSync(dir, { recursive: true, force: true })]);
@@ -91,17 +90,20 @@ test('the thread header shows its four areas', async () => {
       }),
     );
     await page.goto(`http://127.0.0.1:${server.port}/#thread=shop-1`);
-    const band = page.locator('.thread-band--quad');
+    const band = page.locator('.thread-band--pills');
     await band.locator('.context-bar-title', { hasText: 'Checkout errors since 2:02' }).waitFor();
-    expect(await band.locator('.band-q--tl').innerText()).toContain('1 person');
-    expect(await band.locator('.band-q--bl').innerText()).toContain('Claude Code · your agent');
-    const where = await band.locator('.band-q--tr .band-where').allInnerTexts();
+    // Row 1: the name alone on the left; project and branch on the right.
+    const where = await band.locator('.band-row--top .band-pill').allInnerTexts();
     expect(where[0]).toBe('acme-shop');
     expect(where).toContain('fix/checkout-retry');
-    // Provider · model · effort, named from the model registry.
-    const br = band.locator('.band-q--br');
-    await br.locator('.band-fact', { hasText: 'high' }).waitFor();
-    expect(await br.innerText()).toMatch(/Opus 5\.5.*high/);
+    // Row 2: status, your agents, other parties; then provider · model · effort, named from the registry.
+    const bottom = band.locator('.band-row--bottom');
+    expect(await bottom.locator('.band-status').count()).toBe(1);
+    expect(await bottom.locator('.band-count').first().getAttribute('title')).toContain(
+      'Claude Code · your agent',
+    );
+    await bottom.locator('.band-pill', { hasText: 'high' }).waitFor();
+    expect(await bottom.innerText()).toMatch(/Opus 5\.5.*high/);
     // Nothing spills out of the band at 1280.
     const spill = await band.evaluate((el: Element) => el.scrollWidth - el.clientWidth);
     expect(spill).toBeLessThanOrEqual(1);

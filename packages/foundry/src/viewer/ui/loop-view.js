@@ -12,7 +12,7 @@
  * loop.
  */
 import { GraphPanel, useFlowStream } from './graph-view.js';
-import { html } from './lib.js';
+import { html, useState } from './lib.js';
 import { lifecycle } from './lifecycle.js';
 import { activeThreadId, allThreads, focusTurnId, threadData } from './store.js';
 
@@ -75,10 +75,20 @@ function PointerLedger({ rows }) {
   </ul>`;
 }
 
+/** The pointer ledger, folded by default: it holds the flow stream only while it's open. */
+function Pointers({ threadId }) {
+  const [open, setOpen] = useState(false);
+  const flow = useFlowStream(threadId, open && !!threadId);
+  return html`<section class="loop-pointers">
+    <button type="button" class="rp-section-title loop-pointers-toggle" aria-expanded=${open}
+      onClick=${() => setOpen(!open)}>${open ? '▾' : '▸'} Pointers</button>
+    ${open ? html`<${PointerLedger} rows=${pointerRows(flow)} />` : null}
+  </section>`;
+}
+
 export function LoopView({ onLayerClick }) {
   // From the thread's own fields: the flow stream is held only while a turn graph is shown.
   const data = threadData.value;
-  const flow = useFlowStream(activeThreadId.value, !!activeThreadId.value);
   const last =
     data?.lastTurn ?? allThreads.value.find((t) => t.threadId === activeThreadId.value)?.lastTurn;
   return html`<div class="loop-view">
@@ -86,9 +96,6 @@ export function LoopView({ onLayerClick }) {
       turns=${last ? [{ status: last.status === 'running' ? 'active' : last.status }] : []}
       meta=${data?.meta} />
     <div class="loop-graph"><${GraphPanel} onLayerClick=${onLayerClick} /></div>
-    <section class="loop-pointers">
-      <h3 class="rp-section-title">Pointers</h3>
-      <${PointerLedger} rows=${pointerRows(flow)} />
-    </section>
+    <${Pointers} threadId=${activeThreadId.value} />
   </div>`;
 }

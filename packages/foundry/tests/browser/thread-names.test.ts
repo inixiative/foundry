@@ -130,13 +130,16 @@ test('thread names: the agent name shows until a person names the thread; branch
     expect(await header.locator('.context-bar-chip--branch').innerText()).toBe(
       'feat/thread-names-and-context',
     );
-    const pr = header.locator('a.thread-ref--github');
+    // Linked work lives on the right panel's Context tab.
+    const refs = page.locator('.rp-refs');
+    if (!(await refs.count())) await page.locator('.rp-strip-tab', { hasText: 'Context' }).click();
+    const pr = refs.locator('a.thread-ref--github');
     expect(await pr.innerText()).toBe('#60');
     expect(await pr.getAttribute('href')).toBe('https://github.com/inixiative/foundry/pull/60');
-    const ticket = header.locator('a.thread-ref--linear');
+    const ticket = refs.locator('a.thread-ref--linear');
     expect(await ticket.innerText()).toBe('ENG-42');
     expect(await ticket.getAttribute('href')).toBe('https://linear.app/inixiative/issue/ENG-42');
-    // Rows carry only the name, status, project and counts; references live in the thread's header.
+    // Rows carry only the name, status and counts; references live on the Context tab.
     expect(await page.locator('.tree-node a.thread-ref--github').count()).toBe(0);
     await page.screenshot({ path: join(out, '1-agent-name.png') });
 
