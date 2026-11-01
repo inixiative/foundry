@@ -1,0 +1,65 @@
+# FEAT-003: Worktree lifecycle for agent threads: template or classic mode, released on merge
+
+**Status**: 📝 Proposed (not built). Shape agreed with Aron 2026-11-01.
+**Assignee**: TBD
+**Priority**: Medium
+**Created**: 2026-11-01
+**Updated**: 2026-11-01
+
+---
+
+## Overview
+
+When an agent launches a thread that works on code (FEAT-004), the thread gets its own worktree, and Foundry owns that worktree from setup to cleanup.
+
+A worktree mode is a set of lifecycle actions, and the project's mode says what runs each one:
+
+| Action | Template mode | Classic mode |
+|---|---|---|
+| create (+ set up) | `bun run worktree:create <base> <branch>`, or `worktree:create <branch>` to attach an existing branch | `git worktree add -b <branch> <path> <base>` |
+| destroy (+ tear down) | `bun run worktree:destroy <name>` | `git worktree remove <path>` |
+
+- **The mode is a committed project setting** in `.foundry/` with a detected default: `template` when the repo's `package.json` has `worktree:create`, else `classic`. A project may override any single action with its own command. Paseo's `paseo.json` `worktree.setup`/`worktree.teardown` has the same shape.
+- **Only threads with an agent running get a Foundry-made worktree.** Threads you start in a host keep the host's handling.
+- **Released on merge (Aron, 2026-11-01: "Approved automatically on merge, ideally").** When the thread's branch merges, Foundry archives the thread and runs destroy. The thread then shows a **released** badge. This is a badge, not a status colour, because archived already has its own.
+- **Never lose work.** Before destroy: the worktree has no uncommitted changes, and the branch is merged or pushed. If either check fails, nothing is destroyed. The thread is flagged "worktree not released: unsaved work" and waits for you. No automatic stash (CLAUDE.md: never bare `git stash` in worktrees).
+- **Starting again is "recreate", not "reopen".** The branch survives. A released thread offers one action, recreate, which runs create on the existing branch with a fresh slot and setup. It keeps the same worktree name, so the path is the same. Claude files sessions by directory path, so the conversation resumes. A different path would start a fresh native session.
+
+Aron, 2026-11-01: "Template mode is just a thing that maps to cleaning up things and setting up things… Classic mode should just take those actions." "I think you have to clean up work trees, or else you end up copying way too much code into your computer… If you'd like to start work on it again… you'll have to set up a new work tree."
+
+## Why
+
+- **Template's `create.sh` does more than `git worktree add`.** It allocates a slot (database, ports, buckets) in a registry, and `destroy.sh` releases it. T3 and Paseo create worktrees themselves and then run a setup hook. A host-made worktree in a template project gets no slot, so its ports and database collide with other worktrees. So in template mode Foundry runs `worktree:create` and then launches the host thread *into* that worktree (T3 `workspaceStrategy: 'existing_worktree'`, Paseo `cwd`).
+- **Cleanup is not optional.** Each worktree is a full copy of the code plus a slot's databases.
+- **Merge is the natural end.** Work merged is work done. Archiving then needs no one to remember it.
+
+## Existing machinery to use
+
+| Concern | Primitive |
+|---|---|
+| Finding worktrees, the main checkout, the containing worktree | `packages/foundry/src/git/worktree.ts` (`listWorktrees`, `findByPath`, `findByBranch`, `containingPath`) |
+| A thread's worktree, branch and linked PRs | `ThreadContextTracker` (`packages/foundry/src/archives/thread-context.ts`); thread worktree reassignment (`viewer/routes/runtime.ts:801`) |
+| Thread creation with a worktree | `POST /api/threads` `worktreePath` (`viewer/routes/runtime.ts:734-751`) |
+| Template worktrees and slots | template `scripts/worktree/{create,destroy}.sh` (`bun run worktree:*`) |
+| PR merged state | GitHub read operations through the Kingdom Signet (`pf/tools/kingdom-access.ts`, Kingdom INTEG-003). The same path BOARD-003 uses, never a harness MCP. |
+| "Merged" for a branch without a PR | `git merge-tree --write-tree origin/main <branch>` against `origin/main^{tree}` (CLAUDE.md § Merging: patch counts lie after squash) |
+| Settings | Foundry settings, personal over repo `.foundry/` |
+
+No new worktree store: the thread already records its worktree path and branch.
+
+## Open
+
+- **Template "adopt an existing worktree" mode** (template PR, Aron reviews). It would let `create.sh` set up a worktree a host created, run as Paseo's `worktree.setup` or T3's setup script. Then threads you start straight from a host also get a slot. Not needed for this ticket.
+- **T3 and Paseo cleanup on their own archive.** T3 leaves an `existing_worktree` alone. Paseo's archive may remove its worktrees, so check what it does to a worktree it didn't create before relying on it.
+
+## Acceptance
+
+- [ ] In a template project, a launched thread's worktree is made by `worktree:create`, with a slot in the registry. On merge the thread is archived, `worktree:destroy` runs and the slot is free.
+- [ ] In a classic project, the same flow uses `git worktree add`/`remove`.
+- [ ] A dirty worktree, or one with an unpushed branch, is never destroyed. The thread shows the "unsaved work" flag.
+- [ ] Recreate on a released thread restores the same path on the same branch, and the native session resumes.
+- [ ] A squash-merged branch with no PR is detected as merged by tree equality.
+
+## Related
+
+FEAT-004 (agent-launched threads); Oracle `docs/foundry/reference/SUBAGENTS.md` §0; template `scripts/worktree/`.

@@ -71,14 +71,17 @@ These tickets capture the connections between components that are individually b
 
 ### Backlog — Runner parity (T3 Code / Paseo, 2026-10-31)
 
-Proposed, not built. Source: Oracle `docs/foundry/reference/COMPARISON.md` §0.
+Proposed, not built. Source: Oracle `docs/foundry/reference/COMPARISON.md` §0; delegation in Oracle `SUBAGENTS.md` §0 (Aron 11-01).
 
 | Ticket | Gap | Priority |
 |--------|-----|----------|
-| [CORE-001](./CORE-001-explicit-steer-path.md) | A message mid-turn can only queue; steer exists in agent-session but is never called | Medium |
+| [CORE-001](./CORE-001-explicit-steer-path.md) | Steer toggle, on by default; queued items always steerable (Aron 11-01) | Medium |
 | [CORE-002](./CORE-002-idle-and-dispose-release.md) | Main-thread native sessions live until shutdown; extend the existing guarded release to idle time and dispose | Medium |
 | [FEAT-001](./FEAT-001-acp-session-list.md) | ACP `session/list` missing; hosts can't find past threads | Low |
 | [FEAT-002](./FEAT-002-codex-login-auth-command.md) | Kingdom Codex login written to `auth.json`; hand it over in memory through `auth.command` | Medium |
+| [CORE-003](./CORE-003-native-settings-load-normally.md) | Main threads load the harness's settings, commands and skills; Foundry excludes only the CLAUDE.md it composes | Medium |
+| [FEAT-003](./FEAT-003-worktree-lifecycle.md) | Worktree lifecycle for agent threads: template or classic mode, released on merge | Medium |
+| [FEAT-004](./FEAT-004-delegation-placements.md) | Delegation placements (primary / child / hidden), primary threads launched through the host | Medium |
 
 ---
 
