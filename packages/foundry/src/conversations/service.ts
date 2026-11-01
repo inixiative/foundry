@@ -432,7 +432,7 @@ export class ConversationService implements ConversationWrapper {
         }
         if (action.action === 'release') this.moveConch(record, settings, null, me);
         else {
-          if (action.to.kind === 'local-herald')
+          if (action.to.kind === 'local')
             throw new Refusal('invalid_request', 'The conch passes to a member or to the owner');
           if (action.to.kind === 'signet' && !this.isMember(thread.id, action.to.id))
             throw new Refusal(
