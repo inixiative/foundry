@@ -18,6 +18,10 @@ kanban
     BOARD-003-inbound-items
     BOARD-004-outside-requests
     BOARD-005-g1-untrusted-content
+    CORE-001-explicit-steer-path
+    CORE-002-idle-and-dispose-release
+    FEAT-001-acp-session-list
+    FEAT-002-codex-login-auth-command
   In Progress
   Done
 ```
@@ -50,6 +54,19 @@ These tickets capture the connections between components that are individually b
 | [BOARD-003](./BOARD-003-inbound-items.md) | Slack/Linear/GitHub tags and DMs arrive as threads already investigating; held replies (Kingdom INTEG-002/003 first) | High |
 | [BOARD-004](./BOARD-004-outside-requests.md) | Parties off the machine: requests, standing Signets, teammate sessions that wait for Aron (Kingdom FEAT-023 first) | High |
 | [BOARD-005](./BOARD-005-g1-untrusted-content.md) | G1: content nobody typed is data on every thread | High |
+
+---
+
+### Backlog — Runner parity (T3 Code / Paseo, 2026-10-31)
+
+Proposed, not built. Source: Oracle `docs/foundry/reference/COMPARISON.md` §0.
+
+| Ticket | Gap | Priority |
+|--------|-----|----------|
+| [CORE-001](./CORE-001-explicit-steer-path.md) | A message mid-turn can only queue; steer exists in agent-session but is never called | Medium |
+| [CORE-002](./CORE-002-idle-and-dispose-release.md) | Main-thread native sessions live until shutdown; extend the existing guarded release to idle time and dispose | Medium |
+| [FEAT-001](./FEAT-001-acp-session-list.md) | ACP `session/list` missing; hosts can't find past threads | Low |
+| [FEAT-002](./FEAT-002-codex-login-auth-command.md) | Kingdom Codex login written to `auth.json`; hand it over in memory through `auth.command` | Medium |
 
 ---
 
