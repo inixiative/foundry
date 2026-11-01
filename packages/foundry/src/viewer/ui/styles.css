@@ -8073,3 +8073,40 @@ a.thread-ref:hover {
   color: var(--text-dim);
   font-weight: 400;
 }
+
+/* Settings → About */
+.about-page {
+  display: grid;
+  gap: 16px;
+  max-width: 760px;
+}
+.about-text {
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.6;
+  margin: 8px 0 0;
+}
+.about-text a {
+  color: var(--accent);
+}
+.about-facts {
+  display: grid;
+  grid-template-columns: 96px 1fr;
+  gap: 6px 16px;
+  margin: 16px 0 0;
+  font-size: 13px;
+}
+.about-facts dt {
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.about-facts dd {
+  margin: 0;
+  color: var(--text);
+}
+.about-facts a {
+  color: var(--accent);
+}

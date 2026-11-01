@@ -122,6 +122,16 @@ export function registerRuntimeRoutes(app: Hono, deps: RuntimeRoutesDeps): { tur
     ...(deps.threadSetup ? { threadSetup: deps.threadSetup } : {}),
   });
 
+  /** The installed @inixiative/foundry version (the About page shows it). */
+  let versionRead: Promise<string | null> | null = null;
+  const foundryVersion = () => {
+    versionRead ??= Bun.file(new URL('../../../package.json', import.meta.url))
+      .json()
+      .then((pkg: { version?: unknown }) => (typeof pkg.version === 'string' ? pkg.version : null))
+      .catch(() => null);
+    return versionRead;
+  };
+
   app.get('/api/health', async (c) => {
     const checks: Record<string, { ok: boolean; detail?: string }> = {};
 
@@ -145,7 +155,8 @@ export function registerRuntimeRoutes(app: Hono, deps: RuntimeRoutesDeps): { tur
 
     const allOk = Object.values(checks).every((check) => check.ok);
     // The pid lets a local ACP proxy check it reached the daemon its launch file names.
-    return c.json({ ok: allOk, pid: process.pid, checks }, allOk ? 200 : 503);
+    const version = await foundryVersion();
+    return c.json({ ok: allOk, pid: process.pid, version, checks }, allOk ? 200 : 503);
   });
 
   app.get('/api/models', (c) => {

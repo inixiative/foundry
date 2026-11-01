@@ -12,6 +12,7 @@
  * the operator is looking at.
  */
 
+import { AboutSection } from './about-settings.js';
 import { AccessSettings } from './access-settings.js';
 import { ArchiveSettings, ProjectArchive } from './archive-settings.js';
 import { ProjectConversations } from './conversation-members.js';
@@ -519,6 +520,7 @@ function FoundrySection({ section, config }) {
     label: p.label || id,
   }));
   if (section === 'profile') return html`<${ProfileSection} onSaved=${saved} />`;
+  if (section === 'about') return html`<${AboutSection} />`;
   if (section === 'providers')
     return html`<${ProvidersSection} vendors=${config.vendors} onSaved=${saved} />`;
   if (section === 'kingdom')

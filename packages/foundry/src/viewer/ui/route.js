@@ -28,6 +28,7 @@ export const FOUNDRY_SETTINGS = [
   ['agents', 'Agents', 'Advanced'],
   ['activity', 'Activity', 'Advanced'],
   ['feedback', 'Feedback', 'Advanced'],
+  ['about', 'About'],
 ];
 
 export const PROJECT_SETTINGS = [
