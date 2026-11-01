@@ -14,7 +14,7 @@ import { html, useLayoutEffect, useRef, useState } from './lib.js';
 import { Modal } from './modal.js';
 import { activeThreadId, forkThread, giveFeedback, revertThread, turnViewTarget } from './store.js';
 
-function LoopBuilder({ msg, onClose }) {
+export function LoopBuilder({ msg, onClose }) {
   const [kind, setKind] = useState('repeat');
   const [wrong, setWrong] = useState('');
   const [make, setMake] = useState('A Warden note');
