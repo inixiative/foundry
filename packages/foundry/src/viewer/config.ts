@@ -827,15 +827,6 @@ function validateLayerDefinition(owner: string, id: string, layer: unknown): voi
     );
 }
 
-/**
- * Validators for settings owned by modules outside the framework. A module that augments
- * FoundryConfig registers its check here; nothing in config.ts knows the field.
- */
-const configValidators: ((config: FoundryConfig) => void)[] = [];
-export function registerConfigValidator(validate: (config: FoundryConfig) => void): void {
-  configValidators.push(validate);
-}
-
 /** Every declared agent has a kind something runs; Wardens are domain-advising. */
 function validateAgentKinds(owner: string, agents: Record<string, Partial<AgentSettingsConfig>>) {
   const cartographers = Object.values(agents).filter(
@@ -1022,7 +1013,6 @@ export function validateConfig(config: FoundryConfig): void {
       throw Error(`Project ${project.id} label must be a non-empty string`);
     validateProjectCapacity(config, project);
   }
-  for (const validate of configValidators) validate(config);
   if (config.tunnel && 'password' in config.tunnel)
     throw Error(
       'Inline tunnel passwords are not supported; use the private tunnel-token file and remove tunnel.password from settings',

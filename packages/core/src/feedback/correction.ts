@@ -236,6 +236,7 @@ const SECRET_PATTERNS: ReadonlyArray<readonly [RegExp, string]> = [
   [/eyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/g, '[REDACTED:jwt]'],
   [/\b[a-z]+_(?:live|test|prod|runtime)_[A-Za-z0-9]{16,}/g, '[REDACTED:token]'],
   [/\b(?:npm_|glpat-|hf_)[A-Za-z0-9_-]{20,}/g, '[REDACTED:token]'],
+  [/\bkingdom_(?:run_|refresh_)?[A-Za-z0-9_-]{20,}/g, '[REDACTED:kingdom-token]'],
   [/hooks\.slack\.com\/services\/[A-Za-z0-9/]+/g, '[REDACTED:slack-webhook]'],
   [/\bASIA[A-Z0-9]{16}/g, '[REDACTED:aws-key]'],
   [/\b(Bearer|Basic|DPoP)\s+[A-Za-z0-9._~+/=-]{16,}/g, '$1 [REDACTED:credential]'],

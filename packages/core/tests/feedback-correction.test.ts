@@ -204,6 +204,16 @@ describe('scrubSecrets', () => {
     expect(corrections[0]!.correction).not.toContain('sk-ant');
   });
 
+  test('Kingdom run and refresh tokens are scrubbed', () => {
+    const run = `kingdom_run_${'a'.repeat(43)}`;
+    const refresh = `kingdom_refresh_${'b'.repeat(43)}`;
+    const { text, hits } = scrubSecrets(`run ${run} and refresh ${refresh}`);
+    expect(hits).toBe(2);
+    expect(text).not.toContain(run);
+    expect(text).not.toContain(refresh);
+    expect(text).toContain('[REDACTED:kingdom-token]');
+  });
+
   test('leaves ordinary prose alone', () => {
     expect(scrubSecrets('just ordinary prose about skiing')).toEqual({
       text: 'just ordinary prose about skiing',
