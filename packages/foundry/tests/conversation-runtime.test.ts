@@ -137,6 +137,7 @@ function fixture(opts: { wardens: boolean; joined?: boolean }) {
           view: 'own',
           delivery: 'note',
           outbound: 'review',
+          floor: { mayTake: false },
         },
       },
     ],

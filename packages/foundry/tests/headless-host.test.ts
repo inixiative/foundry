@@ -154,6 +154,7 @@ test('the headless host pairs, admits a member note the Warden weighs in on, and
           view: 'own',
           delivery: 'note',
           outbound: 'review',
+          floor: { mayTake: false },
         },
       },
     ],
