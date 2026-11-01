@@ -1,6 +1,6 @@
 # VIEWER-006: Shared theme from @inixiative/config
 
-**Status**: 🆕 Not Started (decided, ready to build)
+**Status**: ✅ Done (Foundry; Kingdom adoption tracked in the Kingdom PR)
 **Assignee**: TBD
 **Priority**: Medium
 **Created**: 2026-11-01
@@ -53,6 +53,12 @@ Config declares three peers, `@biomejs/biome >=2.5.0`, `tsup >=8.5.0`, `typescri
 ## Also
 
 - Whether the status layer also goes into template's token set (so Tribe and every template app share the status meanings) is a template PR for Aron's review.
+
+## Done (2026-11-01)
+
+- **Config:** `theme/public.css` (light `:root`, `.dark`), `theme/agentic.css`, `theme/fonts/*` + `LICENSES.md`, exported and shipped; a test holds config to no runtime `dependencies` and optional peers (config #10, released as 0.5.163).
+- **Foundry:** `@inixiative/config@^0.5.163` in `packages/foundry` dependencies; `/ui/theme/*` served from the package (path traversal refused); pages load `public.css`, `agentic.css`, then `styles.css`, with `class="dark"`; `ui/tokens.css` and `ui/vendor/fonts/` removed; the viewer's working names and layer palette now head `styles.css`; `viewer-tokens.test.ts` reads the theme from the package.
+- **Install test (0.5.163):** `npm i @inixiative/config` in an empty dir installs 1 package (no peers); `bun add` the same. In a project already on TypeScript 5, `npm i` fails with `ERESOLVE` (config's optional `typescript >=6.0.0` peer is range-checked), as predicted. Global installs of Foundry are unaffected. Not acting on it until a real consumer hits it (fallback in "Known cost" above).
 
 ## Acceptance
 
