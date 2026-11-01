@@ -56,27 +56,34 @@ export function readPrivateJson(path: string, label: string): Record<string, unk
 }
 
 /**
- * Replace a file atomically with private content: a fresh 0600 file beside it, created exclusively
- * and never through a symlink, renamed over the old one.
+ * Replace a file atomically: a fresh file beside it (unique name, created exclusively, never through
+ * a symlink, with `mode`), renamed over the old one; the temporary file never outlives a failure.
+ * Readers see the old content or the new, never a partial write.
  */
-export function writePrivateFile(path: string, content: string): void {
+export function writeFileAtomic(path: string, content: string | Uint8Array, mode: number): void {
   const temporary = `${path}.${process.pid}.${crypto.randomUUID()}.tmp`;
   const fd = openSync(
     temporary,
     constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW,
-    0o600,
+    mode,
   );
   try {
-    writeSync(fd, content);
-  } finally {
-    closeSync(fd);
-  }
-  try {
+    try {
+      if (typeof content === 'string') writeSync(fd, content);
+      else writeSync(fd, content);
+    } finally {
+      closeSync(fd);
+    }
     renameSync(temporary, path);
   } catch (error) {
     rmSync(temporary, { force: true });
     throw error;
   }
+}
+
+/** Replace a file atomically with private (0600) content. */
+export function writePrivateFile(path: string, content: string): void {
+  writeFileAtomic(path, content, 0o600);
 }
 
 /** A private JSON file, its directory created 0700 when missing. */

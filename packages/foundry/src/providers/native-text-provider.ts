@@ -4,7 +4,7 @@
  * @partOf primitive:nativeSessions
  */
 import { createHash } from 'node:crypto';
-import { mkdirSync, renameSync, writeFileSync } from 'node:fs';
+import { mkdirSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
 import {
   type CompletionOpts,
@@ -16,6 +16,7 @@ import {
   sameNativeOwner,
   type TokenCounts,
 } from '@inixiative/foundry-core';
+import { writeFileAtomic } from '../client/private-file';
 import { DECISION_INPUT_CAP } from './decision-budget';
 import { withProfile } from './default-profiles';
 import { NativeAuthentication, type NativeAuthenticationSource } from './native-authentication';
@@ -151,8 +152,8 @@ export function buildNativeTextProvider(
     closed = false;
   const persist = () => {
     try {
-      writeFileSync(
-        `${reportPath}.tmp`,
+      writeFileAtomic(
+        reportPath,
         JSON.stringify(
           {
             schema: 1,
@@ -170,9 +171,8 @@ export function buildNativeTextProvider(
           null,
           2,
         ),
-        { mode: 0o600 },
+        0o600,
       );
-      renameSync(`${reportPath}.tmp`, reportPath);
     } catch (error) {
       closed = true;
       throw error;

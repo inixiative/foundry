@@ -3,10 +3,11 @@
  * @kind schema
  * @partOf integration:typesafe
  */
-import { createHash, randomUUID } from 'node:crypto';
-import { mkdir, readFile, realpath, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { mkdir, readFile, realpath, stat } from 'node:fs/promises';
 import { dirname, isAbsolute, relative, resolve, sep } from 'node:path';
 import { z } from 'zod';
+import { writeFileAtomic } from '../client/private-file';
 import type { TypeSafeShadowCatalog } from '../providers/typesafe-shadow';
 
 const id = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_.:-]{0,79}$/);
@@ -277,16 +278,7 @@ export async function refreshDecisionCatalog(options: {
     sourceRoot: options.sourceRoot,
   });
   await mkdir(dirname(options.outputPath), { recursive: true, mode: 0o700 });
-  const temporary = `${options.outputPath}.${randomUUID()}.tmp`;
-  try {
-    await writeFile(temporary, JSON.stringify(snapshot, null, 2) + '\n', {
-      mode: 0o600,
-      flag: 'wx',
-    });
-    await rename(temporary, options.outputPath);
-  } finally {
-    await rm(temporary, { force: true });
-  }
+  writeFileAtomic(options.outputPath, JSON.stringify(snapshot, null, 2) + '\n', 0o600);
   return snapshot;
 }
 
