@@ -140,7 +140,7 @@ export interface TurnDetail {
 }
 
 export type TurnFlowRecord = Omit<TurnDetail, 'nativeHistory' | 'nativeTools'> & {
-  taskUses: NativeEvidence[];
+  toolUses: NativeEvidence[];
 };
 
 /** Primitives, short primitive lists, and short lists of flat records (layer provenance
@@ -1976,7 +1976,7 @@ export class LocalSessionStore {
         )
       : [];
     const seen = new Set(journalled.map((e) => JSON.stringify(e)));
-    const taskUses = [...journalled, ...inline.filter((e) => !seen.has(JSON.stringify(e)))];
+    const toolUses = [...journalled, ...inline.filter((e) => !seen.has(JSON.stringify(e)))];
     return {
       threadId,
       turnId,
@@ -1985,7 +1985,7 @@ export class LocalSessionStore {
       trace,
       injection,
       phases: this.phaseHistory(threadId, { turnId }),
-      taskUses,
+      toolUses,
     };
   }
 

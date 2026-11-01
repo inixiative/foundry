@@ -14,7 +14,7 @@ import type { ThreadNamer } from '../../agents/thread-namer';
 import type { ThreadContextTracker } from '../../archives/thread-context';
 import { type FeedbackService, localOperator } from '../../feedback/service';
 import { byAttention, feedbackView, newestFirst } from '../../feedback/view';
-import { listWorktrees } from '../../git';
+import { branchCommits, listWorktrees } from '../../git';
 import { MODEL_REGISTRY, registryForViewer, subscriptionWorker } from '../../models/registry';
 import {
   IMAGE_MAX_BYTES,
@@ -692,6 +692,20 @@ export function registerRuntimeRoutes(app: Hono, deps: RuntimeRoutesDeps): { tur
       return c.json({ error: (error as Error).message }, 400);
     }
     return c.json(launchView(thread));
+  });
+
+  // -- A thread's commits: its checkout's branch ahead of the origin's default branch (read-only) --
+
+  app.get('/api/threads/:id/commits', async (c) => {
+    const thread = directory.get(c.req.param('id'));
+    if (!thread) return c.json({ error: 'thread not found' }, 404);
+    const projectId = thread.meta.projectId;
+    const cwd =
+      thread.meta.context?.worktree ??
+      thread.meta.cwd ??
+      (projectId ? projectRegistry?.all.get(projectId)?.path : undefined);
+    if (!cwd) return c.json({ base: null, commits: [] });
+    return c.json(await branchCommits(cwd));
   });
 
   // -- Worktrees (read-only detection of existing git worktrees) --

@@ -16,25 +16,30 @@ import { html } from './lib.js';
 import { lifecycle } from './lifecycle.js';
 import { activeThreadId, allThreads, threadData } from './store.js';
 
+/** The plan → build → review → land strip. `onOpen` (optional) makes it a link to the Loop tab. */
+export function LifecycleStrip({ turns, meta, onOpen }) {
+  const steps = lifecycle(turns, meta);
+  return html`<ol class="lifecycle ${onOpen ? 'lifecycle--link' : ''}" aria-label="Where the work stands"
+    onClick=${onOpen} title=${onOpen ? 'Open the Loop' : undefined}>
+    ${steps.map(
+      (
+        s,
+      ) => html`<li key=${s.id} class="lifecycle-step ${s.done ? 'is-done' : ''} ${s.current ? 'is-current' : ''}">
+        <span class="lifecycle-mark"></span>${s.label}
+      </li>`,
+    )}
+  </ol>`;
+}
+
 export function LoopView({ onLayerClick }) {
   // From the thread's own fields: the flow stream is held only while a turn graph is shown.
   const data = threadData.value;
   const last =
     data?.lastTurn ?? allThreads.value.find((t) => t.threadId === activeThreadId.value)?.lastTurn;
-  const steps = lifecycle(
-    last ? [{ status: last.status === 'running' ? 'active' : last.status }] : [],
-    data?.meta,
-  );
   return html`<div class="loop-view">
-    <ol class="lifecycle" aria-label="Where the work stands">
-      ${steps.map(
-        (
-          s,
-        ) => html`<li key=${s.id} class="lifecycle-step ${s.done ? 'is-done' : ''} ${s.current ? 'is-current' : ''}">
-          <span class="lifecycle-mark"></span>${s.label}
-        </li>`,
-      )}
-    </ol>
+    <${LifecycleStrip}
+      turns=${last ? [{ status: last.status === 'running' ? 'active' : last.status }] : []}
+      meta=${data?.meta} />
     <div class="loop-graph"><${GraphPanel} onLayerClick=${onLayerClick} /></div>
   </div>`;
 }

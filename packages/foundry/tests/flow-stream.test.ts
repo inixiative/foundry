@@ -15,7 +15,7 @@ import {
 import { createViewerStreams } from '../src/viewer/data-streams';
 import { createViewer } from '../src/viewer/server';
 import { ViewerThreadDirectory } from '../src/viewer/thread-directory';
-import { slim, slimTurn, TASK_SOURCES, taskLists } from '../src/viewer/turn-flow';
+import { slim, slimTurn, TASK_SOURCES, taskLists, turnFiles } from '../src/viewer/turn-flow';
 import {
   applyFlowFrame,
   emptyFlow,
@@ -242,6 +242,34 @@ test('flow opens are authorized by thread; a viewer without a journal says so in
   client.disconnect();
 });
 
+test("a turn's files come from its write tools' input, once each, Claude and Codex", () => {
+  const use = (toolName: string, toolInput: Record<string, unknown>) =>
+    ({
+      schema: 1,
+      nativeOutcome: 'unknown',
+      kind: 'tool_use',
+      toolName,
+      toolInput,
+    }) as NativeEvidence;
+  expect(
+    turnFiles([
+      use('Edit', { file_path: 'src/a.ts', old_string: 'x', new_string: 'y' }),
+      use('Read', { file_path: 'src/ignored.ts' }),
+      use('Write', { file_path: 'src/a.ts', content: 'z' }),
+      use('NotebookEdit', { notebook_path: 'nb.ipynb' }),
+      use('apply_patch', {
+        input:
+          '*** Begin Patch\n*** Update File: lib/b.ts\n@@\n-a\n+b\n*** Add File: lib/c.ts\n+c\n*** End Patch',
+      }),
+    ]),
+  ).toEqual([
+    { path: 'src/a.ts', tool: 'Edit' },
+    { path: 'nb.ipynb', tool: 'NotebookEdit' },
+    { path: 'lib/b.ts', tool: 'apply_patch' },
+    { path: 'lib/c.ts', tool: 'apply_patch' },
+  ]);
+});
+
 test("task lists come from the executor's recorded plan tools; the latest list per tool wins", () => {
   const use = (toolName: string, toolInput: Record<string, unknown>, observedAt: number) =>
     ({
@@ -358,7 +386,7 @@ test('slimTurn tolerates a turn with no trace, plan or agent message (accepted, 
     trace: null,
     injection: null,
     phases: [],
-    taskUses: [],
+    toolUses: [],
   });
   expect(turn).toMatchObject({
     status: 'active',
@@ -367,6 +395,7 @@ test('slimTurn tolerates a turn with no trace, plan or agent message (accepted, 
     trace: null,
     spans: [],
     tasks: [],
+    files: [],
     input: { preview: 'hi', chars: 2 },
   });
 });
@@ -399,7 +428,7 @@ function fakeJournal() {
           trace: null,
           injection: null,
           phases: [],
-          taskUses: [],
+          toolUses: [],
         }
       );
     },

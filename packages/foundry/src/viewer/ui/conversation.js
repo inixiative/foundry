@@ -11,7 +11,6 @@
  * Clicking "trace" opens trace details in the right pane (detail drawer).
  */
 
-import { Brief } from './brief.js';
 import { HeldPromptCard } from './conversation-members.js';
 import {
   browserStorageNotice,
@@ -31,6 +30,7 @@ import { failurePresentation } from './inspector-data.js';
 import { html, useEffect, useRef, useState } from './lib.js';
 import { liveExecutionStatus, liveThreadStatus, liveWorkLabel, workLog } from './live-state.js';
 import { LoopView } from './loop-view.js';
+import { Plan } from './plan.js';
 import { StatusIcon } from './status-icons.js';
 import {
   activePanel,
@@ -1047,7 +1047,7 @@ function CacheStatus({ msgList }) {
 /** The centre's tabs, on the band's lower edge. Ids are the store's `activePanel` values. */
 const CENTER_TABS = [
   ['conversation', 'Thread', 1],
-  ['brief', 'Brief', 2],
+  ['plan', 'Plan', 2],
   ['work', 'Work', 3],
   ['graph', 'Loop', 4],
 ];
@@ -1122,8 +1122,8 @@ export function Conversation({ onTraceSelect, onLayerClick }) {
         <${CenterTabs} />
       </header>
       ${
-        view === 'brief'
-          ? html`<div class="center-frame"><${Brief} /></div>`
+        view === 'plan'
+          ? html`<div class="center-frame"><${Plan} /></div>`
           : view === 'work'
             ? html`<div class="center-frame"><${Work} /></div>`
             : view === 'graph'
