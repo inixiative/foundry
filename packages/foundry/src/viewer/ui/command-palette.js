@@ -8,7 +8,6 @@
  * Fuzzy-matches against available commands and recent actions.
  */
 
-import { allBindings } from './hotkeys.js';
 import { html, useEffect, useRef, useState } from './lib.js';
 import { analyticsPath, navigate, settingsPath } from './route.js';
 import { MODES, ModeIcon, StatusLegend } from './status-icons.js';
@@ -162,6 +161,37 @@ const COMPOSER_COMMANDS = [
   ],
 ];
 
+/** The keys worth knowing, curated (Aron, 11-01); every one also works with ⌥ while typing. */
+const KEY_GROUPS = [
+  [
+    'Moving around',
+    [
+      ['T · B', 'Threads · Board'],
+      ['1 · 2 · 3', 'Thread · Plan · Loop'],
+      ['[ · ]', 'Open / fold the left list · the right panel'],
+      ['⌥← · ⌥→', 'Previous · next card in the waiting stack'],
+    ],
+  ],
+  [
+    'Doing things',
+    [
+      ['⌘K', 'Command palette: run any action by name'],
+      ['⌥↵ · ⌥⌫', 'Approve · reject the waiting card (a long command opens first)'],
+      ['/', 'Back to the message box'],
+      ['Esc', 'Leave the message box, close a menu or window'],
+      ['?', 'This window'],
+    ],
+  ],
+  [
+    'While typing',
+    [
+      ['⌥ (hold)', 'Show these shortcuts; every ⌥ shortcut works while typing'],
+      ['Tab · ⇧Tab', 'Next / previous message box, and the waiting stack'],
+      ['⌥F · ⌥V', 'Attach a file · start voice'],
+    ],
+  ],
+];
+
 /**
  * Help: one centred window, two tabs. "Keys & commands" is how you act (the hotkey registry plus the
  * message-box commands); "Statuses & icons" is the map key (status colours and states, permission modes).
@@ -171,7 +201,6 @@ export function HelpOverlay() {
   const isOpen = helpOpen.value;
   if (!isOpen) return null;
 
-  const groups = allBindings();
   const close = () => {
     helpOpen.value = false;
   };
@@ -191,15 +220,15 @@ export function HelpOverlay() {
           ${
             tab === 'keys'
               ? html`
-            ${Object.entries(groups).map(
-              ([category, bindings]) => html`
+            ${KEY_GROUPS.map(
+              ([category, rows]) => html`
               <div key=${category} class="help-group">
                 <div class="help-category">${category}</div>
-                ${bindings.map(
-                  (b) => html`
-                  <div key=${b.key} class="help-row">
-                    <kbd class="help-key">${b.key}</kbd>
-                    <span class="help-desc">${b.description}</span>
+                ${rows.map(
+                  ([k, what]) => html`
+                  <div key=${k} class="help-row">
+                    <kbd class="help-key">${k}</kbd>
+                    <span class="help-desc">${what}</span>
                   </div>
                 `,
                 )}
