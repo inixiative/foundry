@@ -98,19 +98,3 @@
   opacity: 0.5;
   cursor: not-allowed;
 }
-.process-inspector {
-  display: grid;
-  gap: 8px;
-  padding: 4px 2px;
-}
-.process-output {
-  margin: 0;
-  padding: 10px;
-  border-radius: 8px;
-  background: hsl(var(--muted) / 0.6);
-  font-size: 12px;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  max-height: 70vh;
-  overflow: auto;
-}
