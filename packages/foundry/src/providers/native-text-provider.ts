@@ -3,7 +3,6 @@
  * @kind provider
  * @partOf primitive:nativeSessions
  */
-import { createHash } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
 import {
@@ -14,6 +13,7 @@ import {
   type NativeEvidence,
   type NativeOwner,
   sameNativeOwner,
+  sha256Hex,
   type TokenCounts,
 } from '@inixiative/foundry-core';
 import { writeFileAtomic } from '../client/private-file';
@@ -75,7 +75,7 @@ export interface NativeTextCall {
   prime?: 'warm' | 'cold';
 }
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const hash = (value: string) => createHash('sha256').update(value).digest('hex');
+const hash = sha256Hex;
 // Keep ownership/settlement facts, never prompts, model text, tool arguments or raw protocol.
 const evidence = (e: NativeEvidence): NativeEvidence =>
   freezeEvidence({

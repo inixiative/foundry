@@ -3,8 +3,8 @@
  * @kind service
  * @partOf feature:threadTree
  */
-import { createHash } from 'node:crypto';
 import type { EventStream, NativeEvidence, ThreadMeta } from '@inixiative/foundry-core';
+import { sha256Hex } from '@inixiative/foundry-core';
 import type { LocalSessionStore } from '../persistence/local-session-store';
 
 /**
@@ -87,7 +87,7 @@ interface Run {
 }
 
 const TASK_EXCERPT = 2_000;
-const sha = (text: string) => createHash('sha256').update(text).digest('hex');
+const sha = sha256Hex;
 const idOf = (...parts: string[]) => sha(parts.join('\0')).slice(0, 24);
 
 export class SubagentRecorder {

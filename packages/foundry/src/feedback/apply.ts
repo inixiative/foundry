@@ -3,7 +3,6 @@
  * @kind service
  * @partOf feature:feedback
  */
-import { createHash } from 'node:crypto';
 import {
   appendFileSync,
   existsSync,
@@ -14,6 +13,7 @@ import {
 } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join, relative } from 'node:path';
+import { sha256Hex } from '@inixiative/foundry-core';
 import { ruleMarker } from './sharpen';
 import {
   type FeedbackApplyRecord,
@@ -57,7 +57,7 @@ export function roleFilePath(
   }
 }
 
-const sha = (text: string) => createHash('sha256').update(text).digest('hex');
+const sha = sha256Hex;
 const read = (path: string) => (existsSync(path) ? readFileSync(path, 'utf8') : '');
 
 function git(cwd: string, args: string[]): { code: number; out: string } {

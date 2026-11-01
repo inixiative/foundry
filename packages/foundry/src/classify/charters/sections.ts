@@ -11,10 +11,10 @@
 // each of those flags should also have a place for raw language injection." Settings never carry
 // sections: a live project's charters stay Foundry's (Oracle `docs/foundry/CLASSIFY.md`, "charters fixed for now").
 
-import { createHash } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { sha256Hex } from '@inixiative/foundry-core';
 import { ALL_OF_CAVEAT, CHOOSE_ONE_CAVEAT } from '../pointer';
 import type { StageConfig } from '../stages';
 
@@ -184,7 +184,7 @@ export interface AssembledPrompt {
   readonly changed: boolean;
 }
 
-const sha256 = (text: string) => createHash('sha256').update(text).digest('hex');
+const sha256 = sha256Hex;
 const PLACES: readonly SectionPlace[] = ['replace', 'before', 'after'];
 
 /**

@@ -140,6 +140,7 @@ export {
   type SourceSegment,
   type SourceSelectionReport,
   segmentsText,
+  sha256Hex,
   type VersionEntry,
   type VersionLog,
 } from './context-layer';

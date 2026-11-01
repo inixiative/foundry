@@ -3,7 +3,7 @@
  * @kind service
  * @partOf primitive:journal
  */
-import { createHash } from 'node:crypto';
+import { sha256Hex } from '@inixiative/foundry-core';
 
 /**
  * Journal records reference their bulk by hash instead of embedding it. Every Warden's request and
@@ -65,8 +65,7 @@ export const referencedHashes = (json: string): string[] => [
   ...new Set([...json.matchAll(REFERENCE)].map((match) => match[1]!)),
 ];
 
-export const contentHash = (text: string): string =>
-  createHash('sha256').update(text).digest('hex');
+export const contentHash = (text: string): string => sha256Hex(text);
 
 const HASH = /^[0-9a-f]{64}$/;
 

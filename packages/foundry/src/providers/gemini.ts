@@ -14,7 +14,7 @@ import type {
   ToolCall,
   ToolDefinition,
 } from '@inixiative/foundry-core';
-import { splitSystemMessage } from '@inixiative/foundry-core';
+import { newId, splitSystemMessage } from '@inixiative/foundry-core';
 import { HttpCompletionSettlement } from './http-settlement';
 
 export interface GeminiConfig {
@@ -144,7 +144,7 @@ export class GeminiProvider implements LLMProvider {
       }
       if (part.functionCall) {
         toolCalls.push({
-          id: `gemini_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+          id: newId('gemini'),
           name: part.functionCall.name,
           input: part.functionCall.args ?? {},
         });

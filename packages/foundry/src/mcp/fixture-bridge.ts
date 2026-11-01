@@ -3,7 +3,7 @@
  * @kind service
  * @partOf feature:mcpBridge
  */
-import { createHash, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import {
@@ -15,6 +15,7 @@ import {
   type NativeToolEvidence,
   type NativeToolRecord,
   sameNativeOwner,
+  sha256Hex,
   type Thread,
 } from '@inixiative/foundry-core';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -27,7 +28,7 @@ import type { NativeToolJournal } from './native-bridge';
 import type { FoundryMcp, ToolInvocationRecord } from './server';
 import { createLiveBridge } from './transport';
 
-const sha = (text: string) => createHash('sha256').update(text).digest('hex');
+const sha = sha256Hex;
 const path = z
   .string()
   .max(256)

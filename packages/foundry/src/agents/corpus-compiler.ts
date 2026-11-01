@@ -101,10 +101,6 @@ export function visibleTo(tier: CorpusTier, audience: CorpusTier): boolean {
   return VISIBLE_TO[tier].includes(audience);
 }
 
-function generateId(prefix: string): string {
-  return newId(prefix);
-}
-
 // ---------------------------------------------------------------------------
 // CorpusCompiler
 // ---------------------------------------------------------------------------
@@ -179,7 +175,7 @@ export class CorpusCompiler {
     const now = Date.now();
     const formalDoc: FormalDoc = {
       ...doc,
-      id: generateId('doc'),
+      id: newId('doc'),
       version: 1,
       sources: entryIds,
       createdAt: now,
@@ -345,7 +341,7 @@ export class CorpusCompiler {
     );
 
     return {
-      id: generateId('corpus'),
+      id: newId('corpus'),
       version: `${this._compilationCount}.0`,
       contentHash,
       layers,
