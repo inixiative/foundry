@@ -61,10 +61,13 @@ import {
   toast,
   toggleBoard,
   toggleGraphPanel,
+  toggleWatchtower,
   turnViewTarget,
+  watchtowerOpen,
 } from './store.js';
 import { categoryOf, threadState } from './thread-status.js';
 import { TurnView } from './turn-view.js';
+import { Watchtower } from './watchtower.js';
 import { checkSetupNeeded, Wizard, wizardOpen } from './wizard.js';
 
 // ---------------------------------------------------------------------------
@@ -94,9 +97,12 @@ function BoardButton() {
       .map((t) => t.threadId),
   ]).size;
   return html`<button class="board-button ${boardOpen.value ? 'is-active' : ''}" title="The attention board (b)"
-    onClick=${() => {
-      boardOpen.value = !boardOpen.value;
-    }}>Board${waiting ? html`<span class="board-button-count">${waiting}</span>` : null}</button>`;
+    onClick=${toggleBoard}>Board${waiting ? html`<span class="board-button-count">${waiting}</span>` : null}</button>`;
+}
+
+function WatchtowerButton() {
+  return html`<button class="watchtower-button ${watchtowerOpen.value ? 'is-active' : ''}" title="Watchtower: work by stage (h)"
+    onClick=${toggleWatchtower}>Watchtower</button>`;
 }
 
 /**
@@ -166,7 +172,7 @@ function Header() {
         <${PageNav} />
       </div>
       <div class="header-center">
-        ${route.value.page === 'workspace' ? html`<${IncomingIndicator} /><${BoardButton} />` : null}
+        ${route.value.page === 'workspace' ? html`<${IncomingIndicator} /><${BoardButton} /><${WatchtowerButton} />` : null}
       </div>
       <div class="header-right">
         <${KingdomPill} />
@@ -293,6 +299,7 @@ function App() {
       toggleEvents: () => {},
       toggleGraph: toggleGraphPanel,
       toggleBoard,
+      toggleWatchtower,
       toggleRightPanel: () => {
         detailDrawerOpen.value = !detailDrawerOpen.value;
       },
@@ -321,7 +328,7 @@ function App() {
   const inbox = feedbackInboxOpen.value;
   const page = route.value.page;
 
-  const panelClass = `panels panels--proj-${projOpen ? 'open' : 'closed'} panels--detail-${detailOpen ? 'open' : 'closed'}${forge || inbox ? ' panels--forge' : ''}${boardOpen.value ? ' panels--board' : ''}${detailOpen && rightWide.value && rightTab.value === 'work' ? ' panels--right-wide' : ''}`;
+  const panelClass = `panels panels--proj-${projOpen ? 'open' : 'closed'} panels--detail-${detailOpen ? 'open' : 'closed'}${forge || inbox ? ' panels--forge' : ''}${boardOpen.value || watchtowerOpen.value ? ' panels--board' : ''}${detailOpen && rightWide.value && rightTab.value === 'work' ? ' panels--right-wide' : ''}`;
 
   if (page !== 'workspace')
     return html`
@@ -359,13 +366,15 @@ function App() {
                 ? html`<${TurnView} key=${turnViewTarget.value.turnId} />`
                 : incomingOpenId.value && incoming.value.some((r) => r.id === incomingOpenId.value)
                   ? html`<${RequestView} />`
-                  : boardOpen.value
-                    ? html`<${Board} />`
-                    : projectHomeOpen.value
-                      ? html`<${ProjectHome} key=${activeProjectId.value ?? 'global'} />`
-                      : activePanel.value === 'feedback'
-                        ? html`<${FeedbackInbox} key=${scopeProjectId() ?? 'global'} projectId=${scopeProjectId()} />`
-                        : html`<${Conversation} onSpanSelect=${handleSpanSelect} onLayerClick=${inspectLayer} />`
+                  : watchtowerOpen.value
+                    ? html`<${Watchtower} />`
+                    : boardOpen.value
+                      ? html`<${Board} />`
+                      : projectHomeOpen.value
+                        ? html`<${ProjectHome} key=${activeProjectId.value ?? 'global'} />`
+                        : activePanel.value === 'feedback'
+                          ? html`<${FeedbackInbox} key=${scopeProjectId() ?? 'global'} projectId=${scopeProjectId()} />`
+                          : html`<${Conversation} onSpanSelect=${handleSpanSelect} onLayerClick=${inspectLayer} />`
             }
           `
           }

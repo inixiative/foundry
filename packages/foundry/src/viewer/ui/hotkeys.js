@@ -378,6 +378,11 @@ export function registerDefaults(actions) {
     category: 'panels',
     action: actions.toggleBoard,
   });
+  bind('h', {
+    description: 'Watchtower: work by stage',
+    category: 'panels',
+    action: actions.toggleWatchtower,
+  });
   bind('t', {
     description: 'Threads',
     category: 'panels',

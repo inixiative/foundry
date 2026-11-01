@@ -92,6 +92,8 @@ export const rightTab = signal('context');
 export const railView = signal('open');
 /** The attention board fills the centre (key b). */
 export const boardOpen = signal(false);
+/** The Watchtower fills the centre (key h); the board and it are never both open. */
+export const watchtowerOpen = signal(false);
 /** The selected project's home page (or Global's) fills the centre: opened from the Projects list. */
 export const projectHomeOpen = signal(false);
 
@@ -100,6 +102,7 @@ export function openProjectHome(projectId) {
   batch(() => {
     selectScope(projectId);
     boardOpen.value = false;
+    watchtowerOpen.value = false;
     incomingOpenId.value = null;
     turnViewTarget.value = null;
     projectHomeOpen.value = true;
@@ -125,7 +128,14 @@ export function commentOn(target) {
 /** The board is a workspace view: it toggles only there. */
 export function toggleBoard() {
   if (route.peek().page !== 'workspace') return;
+  watchtowerOpen.value = false;
   boardOpen.value = !boardOpen.value;
+}
+
+export function toggleWatchtower() {
+  if (route.peek().page !== 'workspace') return;
+  boardOpen.value = false;
+  watchtowerOpen.value = !watchtowerOpen.value;
 }
 /** The open thread's launch settings (GET /api/threads/:id/launch): provider, model, effort, permission mode. */
 export const threadLaunch = signal(null);
@@ -1524,16 +1534,19 @@ export async function loadLaunch(threadId) {
   }
 }
 
-/** A thread the list chose (not the user): an open project home stays open. */
+/** A thread the list chose (not the user): an open project home or Watchtower stays open. */
 function selectThreadQuietly(threadId) {
   const home = projectHomeOpen.peek();
+  const watch = watchtowerOpen.peek();
   selectThread(threadId);
   projectHomeOpen.value = home;
+  watchtowerOpen.value = watch;
 }
 
 export function selectThread(threadId) {
   compactPanel.value = 'conversation';
   turnViewTarget.value = null;
+  watchtowerOpen.value = false;
   aboutTarget.value = null;
   incomingOpenId.value = null;
   projectHomeOpen.value = false;
@@ -1968,6 +1981,7 @@ function writeHash() {
   // A project in the hash opens the Projects rail unless the rail is named.
   if (railView.value !== 'open' || activeProjectId.value) params.set('rail', railView.value);
   if (boardOpen.value) params.set('view', 'board');
+  else if (watchtowerOpen.value) params.set('view', 'watch');
   if (projectHomeOpen.value && !boardOpen.value) params.set('home', '1');
   const hash = params.toString();
   // Replace silently — no history entry per state change
@@ -2009,6 +2023,7 @@ function restoreFromHash() {
   if (h.detail === '0') detailDrawerOpen.value = false;
   if (RIGHT_TABS.includes(h.rtab)) rightTab.value = h.rtab;
   boardOpen.value = h.view === 'board';
+  watchtowerOpen.value = h.view === 'watch';
   projectHomeOpen.value = h.home === '1';
   // A link to a project (and no rail named) opens the Projects rail on it.
   railView.value = h.rail === 'projects' || (h.rail !== 'open' && h.project) ? 'projects' : 'open';
@@ -2053,7 +2068,10 @@ export function init() {
 
   // Leaving the workspace leaves the board; Settings and Analytics have none.
   effect(() => {
-    if (route.value.page !== 'workspace') boardOpen.value = false;
+    if (route.value.page !== 'workspace') {
+      boardOpen.value = false;
+      watchtowerOpen.value = false;
+    }
   });
 
   // Sync view state → URL hash on any change
