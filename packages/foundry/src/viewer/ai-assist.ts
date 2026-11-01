@@ -4,8 +4,8 @@
  * @partOf feature:viewer
  */
 import type { LLMMessage, LLMProvider, ToolRegistry } from '@inixiative/foundry-core';
+import { MODEL_REGISTRY } from '@inixiative/foundry-core';
 import { toolUseLoop } from '../agents/tool-loop';
-import { MODEL_REGISTRY } from '../models/registry';
 import { enabledProviderIds } from '../models/vendors';
 import type { ReadinessNativeCli } from '../readiness';
 import type { AgentSettingsConfig, FoundryConfig, LayerSettingsConfig } from './config';

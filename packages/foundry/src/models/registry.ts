@@ -5,10 +5,9 @@
  */
 /**
  * The registry itself lives in `@inixiative/foundry-core`, so that consumers
- * depending on core alone can reason about models. Re-exported here so every
- * existing `models/registry` import path keeps working.
+ * depending on core alone can reason about models; import it from there.
  *
- * What stays: the viewer's projection of the table (providers, and the vendors that
+ * What lives here: the viewer's projection of the table (providers, and the vendors that
  * group them into subscription and API modes) and the tier sweep that feeds
  * Foundry's research runs.
  */
@@ -22,37 +21,6 @@ import {
   type ModelTier,
   mainThreadLab,
   vendorModeProvider,
-} from '@inixiative/foundry-core';
-
-export {
-  type CostTier,
-  DECISION_MODEL,
-  DECISION_PROVIDER,
-  type DecisionModelDefaults,
-  type FoundryModelInfo,
-  type FoundryProviderInfo,
-  MAIN_THREAD_LABS,
-  type MainThreadLab,
-  MODEL_CAPABILITIES,
-  MODEL_REGISTRY,
-  MODEL_REGISTRY_UPDATED_AT,
-  type ModelCapability,
-  type ModelLab,
-  type ModelReasoning,
-  type ModelSweepOption,
-  type ModelTier,
-  mainThreadLab,
-  modelCapabilities,
-  modelHasCapability,
-  modelOptionsByCapability,
-  type ProviderCredential,
-  type ProviderType,
-  providersWithCapability,
-  type ReasoningEffort,
-  type RuntimeKind,
-  registryModel,
-  resolveDecisionModel,
-  SUBSCRIPTION_DECISION_MODELS,
 } from '@inixiative/foundry-core';
 
 /** Native harnesses that run a main thread on the user's own subscription login, and the profile each uses. */

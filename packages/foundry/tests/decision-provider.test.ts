@@ -1,7 +1,12 @@
 import { expect, test } from 'bun:test';
-import { DECISION_MODEL, DECISION_PROVIDER, modelHasCapability } from '../src/models/registry';
+import {
+  DECISION_MODEL,
+  DECISION_PROVIDER,
+  modelHasCapability,
+  resolveDecisionModel,
+} from '@inixiative/foundry-core';
 import { AnthropicProvider } from '../src/providers/anthropic';
-import { createDecisionProvider, resolveDecisionModel } from '../src/providers/decision-provider';
+import { createDecisionProvider } from '../src/providers/decision-provider';
 import { OpenAIProvider } from '../src/providers/openai';
 import { defaultConfig } from '../src/viewer/config';
 

@@ -3,9 +3,11 @@
  * @kind route
  * @partOf feature:viewer, primitive:settings
  */
+
+import { registryModel, resolveDecisionModel } from '@inixiative/foundry-core';
 import type { Hono } from 'hono';
 import { z } from 'zod';
-import { registryModel, resolveDecisionModel, subscriptionWorker } from '../../models/registry';
+import { subscriptionWorker } from '../../models/registry';
 import {
   resolveSubscriptionPolicy,
   SUBSCRIPTION_DECISIONS,

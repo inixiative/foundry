@@ -6,16 +6,14 @@
 import { constants } from 'node:fs';
 import { access, stat } from 'node:fs/promises';
 import type { ArchiveClient } from '@inixiative/archive/remote';
-import { computeHash } from '@inixiative/foundry-core';
+import { computeHash, MODEL_REGISTRY, resolveDecisionModel } from '@inixiative/foundry-core';
 import { readPrivateJson, signetCredentialFile, signetCredentialSchema } from '@inixiative/signet';
 import { configuredExperts } from './agents/configured-experts';
 import { regionKey } from './agents/region-roster';
 import { archiveStatus, localArchiveUrl } from './archives/local';
 import { charterFor, deadlineShares, responseProtocol, type StageConfig } from './classify';
 import { ensureAgentClisOnPath, type Install } from './daemon/agent-clis';
-import { MODEL_REGISTRY } from './models/registry';
 import { providerEnabled } from './models/vendors';
-import { resolveDecisionModel } from './providers/decision-provider';
 import {
   type KingdomIntegration,
   kingdomInstallationPaths,

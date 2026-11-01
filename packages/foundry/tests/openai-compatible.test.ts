@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { MODEL_REGISTRY, registryModel } from '../src/models/registry';
+import { MODEL_REGISTRY, registryModel } from '@inixiative/foundry-core';
 import { OpenAIProvider, openAiApiRoot } from '../src/providers/openai';
 import {
   createRegisteredProvider,

@@ -17,6 +17,7 @@ import {
   type ContextSource,
   ContextStack,
   claudemdSource,
+  DECISION_MODEL,
   type Decision,
   type ExecuteMeta,
   Executor,
@@ -37,7 +38,6 @@ import {
 } from '@inixiative/foundry-core';
 import { ArchiveContextSource, archiveContextSchema } from '../archives/context-source';
 import { type NativeToolJournal, nativeBridgeSource } from '../mcp/native-bridge';
-import { DECISION_MODEL } from '../models/registry';
 import { type CompositionSlot, MAIN_ROLE } from '../prompts/instruction-settings';
 import { compositionSource } from '../prompts/instruction-stack';
 import { DECISION_DEADLINE_MS } from '../providers/decision-budget';

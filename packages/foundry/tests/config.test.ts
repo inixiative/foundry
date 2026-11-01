@@ -212,56 +212,12 @@ describe('ConfigStore project resolution', () => {
     expect(system!.fields.prompt.strategy).toBe('inherit');
   });
 
-  test('pre-vendor providers settings load as vendors, keeping each mode and override', async () => {
+  test('a pre-vendor providers settings file is refused by name, not converted', async () => {
     writeFileSync(
       join(dir, 'settings.json'),
-      JSON.stringify({
-        defaults: {
-          provider: 'claude-code',
-          model: 'sonnet',
-        },
-        providers: {
-          'claude-code': {
-            id: 'claude-code',
-            type: 'claude-code',
-            label: 'Old Claude Code label',
-            enabled: false,
-            models: [{ id: 'sonnet', label: 'Sonnet 4.6', tier: 'standard' }],
-          },
-          openai: {
-            id: 'openai',
-            type: 'openai',
-            label: 'OpenAI',
-            enabled: true,
-            baseUrl: 'https://example.test/v1',
-            models: [{ id: 'gpt-5.4', label: 'GPT-5.4', tier: 'powerful' }],
-          },
-        },
-      }),
+      JSON.stringify({ providers: { 'claude-code': { enabled: true } } }),
     );
-
-    const loaded = await store.load();
-
-    expect('providers' in loaded).toBe(false);
-    expect(store.migrations).toEqual(['providers → vendors']);
-    // Claude Code off, the Anthropic API at its registry default (on): one vendor, two modes.
-    expect(loaded.vendors.anthropic).toEqual({
-      enabled: true,
-      subscription: { enabled: false },
-      api: { enabled: true },
-    });
-    expect(providerEnabled(loaded, 'claude-code')).toBe(false);
-    expect(loaded.vendors.openai!.api).toEqual({
-      enabled: true,
-      baseUrl: 'https://example.test/v1',
-    });
-    expect(providerBaseUrl(loaded, 'openai')).toBe('https://example.test/v1');
-    // The file keeps its old shape until the next save, which writes vendors.
-    await store.patch('vendors', { google: { enabled: false } });
-    const saved = JSON.parse(readFileSync(join(dir, 'settings.json'), 'utf8'));
-    expect(saved.providers).toBeUndefined();
-    expect(saved.vendors.openai.api.baseUrl).toBe('https://example.test/v1');
-    expect(saved.vendors.google.enabled).toBe(false);
+    await expect(store.load()).rejects.toThrow('settings key "providers" is now "vendors"');
   });
 });
 
