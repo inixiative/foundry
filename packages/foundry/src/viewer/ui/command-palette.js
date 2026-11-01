@@ -13,7 +13,9 @@ import { html, useEffect, useRef, useState } from './lib.js';
 import { analyticsPath, navigate, settingsPath } from './route.js';
 import { StatusLegend } from './status-icons.js';
 import {
+  boardOpen,
   commandPaletteOpen,
+  createThread,
   executeAction,
   helpOpen,
   scopeProjectId,
@@ -54,7 +56,21 @@ const COMMANDS = [
     icon: '$',
     action: () => navigate(analyticsPath(scopeProjectId())),
   },
-  { id: 'graph', label: 'Toggle graph view', icon: '◇', action: toggleGraphPanel },
+  { id: 'graph', label: 'Loop (the graph)', icon: '◇', action: toggleGraphPanel },
+  {
+    id: 'board',
+    label: 'Open the attention board',
+    icon: '▦',
+    action: () => {
+      boardOpen.value = !boardOpen.value;
+    },
+  },
+  {
+    id: 'new-thread',
+    label: 'New thread in this scope',
+    icon: '+',
+    action: () => createThread({}),
+  },
 ];
 
 export function CommandPalette() {

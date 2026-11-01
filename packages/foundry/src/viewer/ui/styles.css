@@ -7554,3 +7554,18 @@ a.thread-ref:hover {
   background: var(--warn-dim);
   color: var(--warn);
 }
+
+.rp-select {
+  width: 100%;
+  background: var(--surface2);
+  color: var(--text);
+  border: none;
+  border-radius: 8px;
+  padding: 4px 8px;
+  font: inherit;
+  font-size: 12.5px;
+}
+
+.rp-section p.rp-dim {
+  margin: 8px 0 0;
+}
