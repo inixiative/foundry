@@ -45,6 +45,7 @@ import {
   composerFill,
   composerNote,
   contextWindowOf,
+  detailDrawerOpen,
   focusTurnId,
   giveFeedback,
   historyPaging,
@@ -57,6 +58,7 @@ import {
   projects,
   prompts,
   resolvePrompt,
+  rightTab,
   selectedSpanId,
   sendMessage,
   showToast,
@@ -271,10 +273,19 @@ function ContextBar() {
   const peopleCount = view ? external.length : (data.conversation?.members ?? 0);
   const signets = external.filter((m) => m.member.kind === 'signet');
   const harness = harnessName(launch?.provider);
+  // Live subagents are sessions too (child threads whose status is active).
+  const subagents = allThreads.value.filter(
+    (t) => t.meta?.parentThreadId === data.threadId && t.meta?.status === 'active',
+  );
   const agentNames = [
     `${harness ?? 'Agent'} · your agent`,
     ...localAgents.map((m) => m.displayName),
+    ...subagents.map((t) => threadName(t)),
   ];
+  const openParticipants = () => {
+    rightTab.value = 'participants';
+    detailDrawerOpen.value = true;
+  };
   const state = threadStatusOf(data.threadId, liveThreadStatus(messages.value));
   const contextWindow =
     contextWindowOf(launch?.provider, launch?.model) ?? usage?.contextWindow ?? null;
@@ -312,21 +323,24 @@ function ContextBar() {
           <span class="band-pill band-status" data-state=${state}>
             <${StatusIcon} state=${state} still=${true} />${STATES[state]?.label ?? state}
           </span>
-          <span class="band-pill band-count band-pop" tabindex="0" aria-label=${`${agentNames.length} agent session${agentNames.length === 1 ? '' : 's'}`}>
+          <span class="band-pill band-count band-pop" tabindex="0" role="button" onClick=${openParticipants}
+            aria-label=${`${agentNames.length} agent session${agentNames.length === 1 ? '' : 's'} · open Participants`}>
             <span class="band-glyph" aria-hidden="true">🤖</span>${agentNames.length}
             <span class="band-popover" role="tooltip">
               <span class="band-pop-head">Agent sessions · ${agentNames.length}</span>
               <span class="band-pop-row is-primary"><b>${named.model ?? harness ?? 'Your agent'}</b><span>${[named.provider, launch?.effort ? `effort ${launch.effort}` : null].filter(Boolean).join(' · ') || 'your agent'}</span><i>primary</i></span>
               ${localAgents.map((m) => html`<span key=${m.member.id} class="band-pop-row"><b>${m.displayName}</b><span>local member</span><i></i></span>`)}
+              ${subagents.map((t) => html`<span key=${t.threadId} class="band-pop-row"><b>${threadName(t)}</b><span>${t.meta?.spawn?.agentType ?? 'subagent'}</span><i>subagent</i></span>`)}
             </span>
           </span>
-          <span class="band-pill band-count band-pop ${peopleCount ? 'band-chip--shared' : ''}" tabindex="0"
-            aria-label=${`${peopleCount + 1} ${peopleCount ? 'people' : 'person'}`}>
+          <span class="band-pill band-count band-pop ${peopleCount ? 'band-chip--shared' : ''}" tabindex="0" role="button" onClick=${openParticipants}
+            aria-label=${`${peopleCount + 1} ${peopleCount ? 'people' : 'person'} · open Participants`}>
             <span class="band-glyph" aria-hidden="true">👤</span>${peopleCount + 1}
             <span class="band-popover" role="tooltip">
               <span class="band-pop-head">People · ${peopleCount + 1}</span>
-              <span class="band-pop-row is-primary"><b>You</b><span>acting as ${owner ? `your ${owner} membership` : 'your personal account'}</span><i>you</i></span>
+              <span class="band-pop-row is-primary"><b>You</b><span>acting as ${owner ? `your ${owner} membership` : 'your personal account'}</span><i>trusted</i></span>
               ${external.map((m) => html`<span key=${m.member.id} class="band-pop-row"><b>${m.displayName}</b><span>${m.member.kind === 'signet' ? 'joined through a Signet' : m.member.kind}</span><i>${m.trust ?? ''}</i></span>`)}
+              <span class="band-pop-note">Trusted: in your org, or a vendor set up properly through Kingdom. Untrusted: everyone else.</span>
             </span>
           </span>
           ${
