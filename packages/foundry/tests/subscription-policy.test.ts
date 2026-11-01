@@ -15,13 +15,13 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { MAIN_THREAD_LABS, MODEL_REGISTRY, mainThreadLab } from '@inixiative/foundry-core';
-import { routedAgents } from '../src/development-team';
 import { registryForViewer } from '../src/models/registry';
 import { NativeAuthentication } from '../src/providers/native-authentication';
 import { SubscriptionAuthentication } from '../src/providers/subscription-authentication';
 import { resolveSubscriptionPolicy } from '../src/providers/subscription-policy';
 import { defaultConfig, starterConfig, validateConfig } from '../src/viewer/config';
 import { resolveProjectView } from '../src/viewer/config-resolve';
+import { routedAgents } from './helpers/routed-agents';
 import { subscriptionStatusProcess } from './helpers/subscription-transport';
 import { recordedClaudeTransport, recordedCodexStatus, settleRecordings } from './helpers/vcr';
 

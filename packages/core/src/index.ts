@@ -298,16 +298,6 @@ export {
   type PipelineStep,
   type RequestContext,
 } from './harness';
-// Lifecycle Hooks (registry only — built-in hooks in @inixiative/foundry)
-export {
-  type HookContext,
-  type HookHandler,
-  type HookPoint,
-  HookRegistry,
-  type HookResult,
-  type PlanModeConfig,
-  type PlanModeTrigger,
-} from './hooks';
 export {
   type ContextRef,
   type HydrationAdapter,
