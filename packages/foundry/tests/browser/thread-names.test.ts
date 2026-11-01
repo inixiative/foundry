@@ -125,7 +125,14 @@ test('thread names: the Foundry name shows until a person names the thread; bran
     expect(await header.locator('.context-bar-title').getAttribute('data-name-source')).toBe(
       'foundry',
     );
-    expect(await header.locator('.context-bar-name-source').innerText()).toBe('auto');
+    const source = header.locator('.context-bar-name-source');
+    expect(await source.innerText()).toBe('auto · rename');
+    expect(await source.getAttribute('title')).toBe('named by Foundry from your message · rename');
+    // The chip opens rename; closing it changes nothing.
+    await source.click();
+    await page.locator('.rename-modal').waitFor();
+    await page.keyboard.press('Escape');
+    await page.locator('.rename-modal').waitFor({ state: 'detached' });
     expect(await treeLabel.innerText()).toBe('Ship self-maintained thread names');
     expect(await header.locator('.context-bar-chip--branch').innerText()).toBe(
       'feat/thread-names-and-context',

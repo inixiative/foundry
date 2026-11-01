@@ -1512,6 +1512,24 @@ export async function forkThread(messageIndex) {
 }
 
 /** Set a person's name on a thread (a hard override); an empty name hands naming back to the agent. */
+/** Recreate a thread's released worktree from its branch (the project's worktree mode). */
+export async function recreateWorktree(threadId) {
+  try {
+    const res = await authFetch(`/api/threads/${encodeURIComponent(threadId)}/worktree/recreate`, {
+      method: 'POST',
+    });
+    if (res.ok) return true;
+    const { error } = await res.json().catch(() => ({}));
+    toast.value = {
+      message: `Couldn’t recreate the worktree: ${error ?? res.status}`,
+      type: 'error',
+    };
+  } catch (err) {
+    toast.value = { message: `Couldn’t recreate the worktree: ${err.message}`, type: 'error' };
+  }
+  return false;
+}
+
 export async function renameThread(threadId, name) {
   try {
     const res = await authFetch(`/api/threads/${encodeURIComponent(threadId)}`, {

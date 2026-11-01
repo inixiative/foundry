@@ -11,7 +11,15 @@
 import { FeedbackStrip, feedbackIn } from './feedback.js';
 import { html, useLayoutEffect, useRef, useState } from './lib.js';
 import { RenameModal } from './modal.js';
-import { isSnoozed, snooze, snoozedUntil, tomorrowMorning, unsnooze } from './snooze.js';
+import {
+  isSnoozed,
+  snooze,
+  snoozeCondition,
+  snoozedUntil,
+  snoozeUntilQuotaReset,
+  tomorrowMorning,
+  unsnooze,
+} from './snooze.js';
 import { isDangerous, StatusIcon } from './status-icons.js';
 import {
   activePanel,
@@ -95,7 +103,6 @@ function ThreadActions({ thread }) {
     setOpen(false);
     executeAction(kind, thread.id);
   };
-  // A snooze is kept in this browser until Foundry records it on the thread.
   const local = (fn) => (e) => {
     e.stopPropagation();
     setOpen(false);
@@ -119,13 +126,13 @@ function ThreadActions({ thread }) {
         ${!isArchived ? html`<button role="menuitem" onClick=${run('thread:archive')}>Archive</button>` : null}
         ${
           isSnoozed(thread.id)
-            ? html`<button role="menuitem" onClick=${local(() => unsnooze(thread.id))}>Wake it (snoozed until ${new Date(snoozedUntil(thread.id)).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })})</button>`
+            ? html`<button role="menuitem" onClick=${local(() => unsnooze(thread.id))}>Wake it (snoozed until ${snoozeCondition(thread.id) === 'quota-reset' ? 'the quota resets, ' : ''}${new Date(snoozedUntil(thread.id)).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })})</button>`
             : !isArchived
               ? html`<div class="thread-action-group" role="group" aria-label="Snooze">
                   <span class="thread-action-label">Snooze</span>
                   <button role="menuitem" onClick=${local(() => snooze(thread.id, Date.now() + 3_600_000))}>1 hour</button>
                   <button role="menuitem" onClick=${local(() => snooze(thread.id, tomorrowMorning()))}>Until tomorrow</button>
-                  <button role="menuitem" disabled title="Foundry doesn't know when your subscription's window resets yet">Until quota resets · not built</button>
+                  <button role="menuitem" onClick=${local(() => snoozeUntilQuotaReset(thread.id))}>Until quota resets</button>
                   <button role="menuitem" disabled title="Foundry doesn't track CI for a thread yet">Until CI finishes · not built</button>
                 </div>`
               : null

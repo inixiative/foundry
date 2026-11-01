@@ -7,7 +7,8 @@
  * The thread header's worktree pill, beside the branch pill: which checkout the thread works in,
  * from the thread's worktree record (`meta.context.checkout`). Template mode names its slot (its own
  * ports, database and Redis); classic mode names the folder; the main checkout is muted; a worktree
- * released after merge reads "· released" with Recreate, which isn't built yet.
+ * released after merge reads "· released" with Recreate (`POST /api/threads/:id/worktree/recreate`,
+ * the project's own worktree mode run from the thread's branch), then "· recreating" until it's back.
  */
 
 import { html } from './lib.js';
@@ -50,11 +51,17 @@ export function worktreeLabel(checkout) {
     checkout.mode === 'template'
       ? 'Template worktree: its own ports, database and Redis'
       : 'Classic git worktree';
+  if (checkout.state === 'recreating')
+    return {
+      tone: 'released',
+      label: `${name} · recreating`,
+      title: `${checkout.path ?? name}\n${mode}\nRecreating from the thread’s branch`,
+    };
   if (checkout.state === 'released')
     return {
       tone: 'released',
       label: `${name} · released`,
-      title: `${checkout.path ?? name}\n${mode}\nReleased: the worktree was removed after merge`,
+      title: `${checkout.path ?? name}\n${mode}\nReleased: the worktree was removed after merge${checkout.error ? `\nThe last recreate failed: ${checkout.error}` : ''}`,
     };
   return {
     tone: 'live',
@@ -66,12 +73,13 @@ export function worktreeLabel(checkout) {
   };
 }
 
-export function WorktreePill({ checkout }) {
+export function WorktreePill({ checkout, onRecreate }) {
   if (!checkout) return null;
   const { tone, label, title } = worktreeLabel(checkout);
   return html`<span class="band-pill worktree-pill is-${tone}" title=${title}>${FolderIcon()}${label}${
-    tone === 'released'
-      ? html`<button type="button" class="worktree-recreate" disabled title="Recreate (run the mode's create from the branch): not built yet">Recreate</button>`
+    checkout.state === 'released'
+      ? html`<button type="button" class="worktree-recreate" title="Recreate the worktree from the thread’s branch, with the project’s worktree mode"
+          onClick=${onRecreate}>${checkout.error ? 'Retry recreate' : 'Recreate'}</button>`
       : null
   }</span>`;
 }

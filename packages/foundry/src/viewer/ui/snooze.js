@@ -4,52 +4,56 @@
  * @partOf feature:viewer
  */
 /**
- * Snoozes: a thread put out of mind until a time. Foundry doesn't record snoozes on the thread yet
- * (its meta has no field for one), so they live in this browser's storage, keyed by thread id, and
- * the UI says so. `threadState` reads them, so every status (rail, board, Watchtower) agrees.
+ * Snoozes: a thread put out of mind until a time, recorded on the thread (`meta.snooze`) through
+ * `PUT /api/threads/:id/snooze` and cleared with `DELETE`. Foundry ends a snooze itself when its time
+ * passes; the thread's status never changes. `threadState` reads it, so every status (rail, board,
+ * Watchtower) agrees.
  */
 
-import { signal } from './lib.js';
+import { allThreads, authFetch, toast } from './store.js';
+import { snoozeRunning } from './thread-status.js';
 
-const KEY = 'foundry.snoozes';
+const snoozeOf = (threadId) =>
+  allThreads.value.find((t) => t.threadId === threadId)?.meta?.snooze ?? null;
 
-function load() {
+/** Is the thread snoozed right now? */
+export const isSnoozed = (threadId, now = Date.now()) => snoozeRunning(snoozeOf(threadId), now);
+
+/** When the snooze ends (epoch ms), or null. */
+export function snoozedUntil(threadId) {
+  const snooze = snoozeOf(threadId);
+  return snooze ? Date.parse(snooze.until) : null;
+}
+
+/** The snooze's condition, when it was set by one ('quota-reset'). */
+export const snoozeCondition = (threadId) => snoozeOf(threadId)?.condition ?? null;
+
+async function send(threadId, method, body) {
   try {
-    const raw = globalThis.localStorage?.getItem(KEY);
-    return raw ? JSON.parse(raw) : {};
-  } catch {
-    return {};
+    const res = await authFetch(`/api/threads/${encodeURIComponent(threadId)}/snooze`, {
+      method,
+      ...(body
+        ? { headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }
+        : {}),
+    });
+    if (res.ok) return true;
+    const { error } = await res.json().catch(() => ({}));
+    toast.value = { message: `Couldn’t snooze: ${error ?? res.status}`, type: 'error' };
+  } catch (err) {
+    toast.value = { message: `Couldn’t snooze: ${err.message}`, type: 'error' };
   }
+  return false;
 }
 
-/** threadId → epoch ms the snooze ends. */
-export const snoozes = signal(load());
+/** Snooze until a time (epoch ms). */
+export const snooze = (threadId, until) =>
+  send(threadId, 'PUT', { until: new Date(until).toISOString() });
 
-function save(next) {
-  snoozes.value = next;
-  try {
-    globalThis.localStorage?.setItem(KEY, JSON.stringify(next));
-  } catch {
-    // Storage unavailable: the snooze lasts while this tab is open.
-  }
-}
+/** Snooze until the subscription's usage window resets (Foundry finds the reached window). */
+export const snoozeUntilQuotaReset = (threadId) =>
+  send(threadId, 'PUT', { condition: 'quota-reset' });
 
-/** Is the thread snoozed right now? An expired snooze reads as not snoozed. */
-export function isSnoozed(threadId, now = Date.now()) {
-  const until = snoozes.value[threadId];
-  return typeof until === 'number' && until > now;
-}
-
-export const snoozedUntil = (threadId) => snoozes.value[threadId] ?? null;
-
-export function snooze(threadId, until) {
-  save({ ...snoozes.value, [threadId]: until });
-}
-
-export function unsnooze(threadId) {
-  const { [threadId]: _gone, ...rest } = snoozes.value;
-  save(rest);
-}
+export const unsnooze = (threadId) => send(threadId, 'DELETE');
 
 /** Tomorrow at 9:00 local time. */
 export function tomorrowMorning(now = new Date()) {
