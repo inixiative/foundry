@@ -76,6 +76,12 @@ test('the composer shows only the open thread’s prompts; approving resolves th
       agentId: 'worker',
       threadId: 'shop-2',
     });
+    const second = queue.prompt({
+      kind: 'approval',
+      message: 'Allow bunx tsc --noEmit?',
+      agentId: 'worker',
+      threadId: 'shop-2',
+    });
     const server = Bun.serve({
       hostname: '127.0.0.1',
       port: 0,
@@ -100,8 +106,25 @@ test('the composer shows only the open thread’s prompts; approving resolves th
       expect.stringContaining('Allow bun test packages/refunds?'),
     ]);
 
+    // One source: the stack's count, the rail row's badge and Plan's "Needs you" agree.
+    expect(await page.locator('.prompt-stack-pos').innerText()).toBe('1 of 2');
+    const badge = page
+      .locator('.tree-node', { hasText: 'Retry limit for refunds' })
+      .locator('.prompt-badge');
+    expect(await badge.innerText()).toBe('2');
+    await page.getByRole('tab', { name: 'Plan' }).click();
+    expect(await page.locator('.plan-needs li').count()).toBe(2);
+    await page.getByRole('tab', { name: 'Thread' }).click();
+    await cards.first().waitFor();
+
     await cards.first().getByRole('button', { name: 'Approve' }).click();
     expect((await mine).action).toBe('approve');
+    await until(
+      async () => (await badge.innerText().catch(() => '')) === '1',
+      'the badge follows the stack',
+    );
+    await cards.first().getByRole('button', { name: 'Approve' }).click();
+    expect((await second).action).toBe('approve');
     await until(async () => (await cards.count()) === 0, 'the open thread has no prompt left');
     expect(queue.pendingCount('shop-1')).toBe(1);
 

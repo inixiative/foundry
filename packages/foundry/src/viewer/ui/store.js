@@ -174,10 +174,18 @@ export const compactPanel = signal('conversation');
 
 // Action prompts — pending agent→human interactions
 export const prompts = signal([]); // pending ActionPrompt[]
+/** What's waiting on you in one thread: its pending prompts. The one source for the waiting stack,
+ * the rail row's badge and Plan's "Needs you", so the three never disagree. */
+export function waitingFor(threadId, pending = prompts.value) {
+  if (!threadId || !Array.isArray(pending)) return [];
+  return pending.filter((p) => p.threadId === threadId);
+}
+
 export const promptCounts = computed(() => {
-  // { threadId: count }
+  // { threadId: count }, from the same filter as `waitingFor`
   const counts = {};
-  for (const prompt of prompts.value) counts[prompt.threadId] = (counts[prompt.threadId] ?? 0) + 1;
+  for (const id of new Set(prompts.value.map((p) => p.threadId)))
+    counts[id] = waitingFor(id).length;
   return counts;
 });
 
