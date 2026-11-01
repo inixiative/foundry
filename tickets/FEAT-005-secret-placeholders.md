@@ -46,10 +46,26 @@ No new store and no new turn path.
 - Works only for messages that go through Foundry. Typing straight into Claude Code doesn't: Claude Code's `UserPromptSubmit` hook can block a prompt or add context, but can't rewrite it.
 - An agent that writes a value to a file can still read that file. This removes accidental exposure (chat, transcript, Archive), not a determined agent; Signets and the runner are the structural control.
 
+## Part 2: `.private` paths are never read (Aron, 2026-11-01)
+
+"If a file has .private in it, either in its chain or as an append at the end, we just don't read it." `$$` keeps secrets out of messages; `.private` keeps them out of what the agent reads.
+
+**The rule.** A path is private when a segment is named `.private` or ends in `.private`, or a name contains `.private.`: `.private/notes.md`, `keys.private`, `app.private.pem`.
+
+| Where | Existing primitive | Change |
+|---|---|---|
+| Git | `@inixiative/config` `sync`, which already repairs `.gitignore` (`src/lib.ts:818`, adds `/tmp/*`) | Also adds `.private/`, `*.private`, `*.private.*` |
+| Foundry's composer | `secretInstructionPath` (`packages/core/src/adapters/markdown-docs.ts`), which already refuses dotfiles, key files and credential directories | Refuses `.private` paths, so no `@import` pulls one into a session |
+| The agent's own reads | The tool gate (`packages/foundry/src/turns/tool-gate.ts`), the only thing in Foundry that denies a tool call | Denies Read/Edit/Grep on a `.private` path and a shell command naming one |
+| Sessions outside Foundry | Claude Code `permissions.deny` | `Read(**/.private/**)`, `Read(**/*.private)`, `Read(**/*.private.*)`, shipped by config `sync` |
+
+**Limit.** This stops accidental reads. A shell command can still reach a file indirectly (`cat $(ls)`); the structural control stays Signets and the runner.
+
 ## Questions for Aron
 
 1. **Marker.** `$$word` (prefix, ends at whitespace), or `$…$` around the secret (allows spaces, but clashes with `$` in prose and shell)? Proposed: `$$word`.
 2. **Lifetime.** Deleted when the thread is archived, or kept for the thread's whole life including restarts? Proposed: kept across restarts, deleted on archive.
+3. **`.env.local`.** Private too? Agents read `KINGDOM_PROD_TOKEN` from `~/code/inixiative/.env.local` today; making it private moves those tokens into Kingdom, the long-lived-access direction.
 
 ## Acceptance
 
