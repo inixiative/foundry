@@ -33,8 +33,6 @@ const readViews = () => {
 
 /** The views showing, in order; more than one shows them side by side. Never empty. */
 export const openViews = signal(readViews());
-/** Where the composer sends: 'thread' | 'btw' | 'aside'. */
-export const composerChannel = signal('thread');
 
 /** One segment toggles its view; turning the last one off leaves the thread. */
 export function toggleView(id) {
@@ -122,39 +120,4 @@ export function AsidesView({ entries, onPromote }) {
         : html`<p class="side-view-empty">Asides between the people in this thread show here. Arrives with shared-thread asides.</p>`
     }
   </section>`;
-}
-
-const CHANNELS = [
-  ['thread', 'Thread'],
-  ['btw', '/btw'],
-  ['aside', 'Aside'],
-];
-
-/** Who reads what you send on each channel. */
-export function sendingTo(channel, people) {
-  if (channel === 'btw') return 'Sending to your own agent, privately: it never enters the thread';
-  if (channel === 'aside')
-    return 'Sending an aside to the other people in this thread: no agent reads it';
-  return people > 1
-    ? 'Sending to the thread: everyone in it and their agents read it'
-    : 'Sending to the thread';
-}
-
-/** The composer's channel picker and its "Sending to …" line. Aside needs another person in the thread. */
-export function ChannelPicker({ people }) {
-  const channel = composerChannel.value;
-  return html`<div class="channel-picker channel-picker--${channel}">
-    <div class="channel-tabs" role="radiogroup" aria-label="Send to">
-      ${CHANNELS.map(([id, label]) => {
-        const off = id === 'aside' && people < 2;
-        return html`<button key=${id} role="radio" aria-checked=${channel === id} disabled=${off}
-          title=${off ? 'No other people in this thread' : label}
-          class="channel-tab ${channel === id ? 'is-active' : ''}"
-          onClick=${() => {
-            composerChannel.value = id;
-          }}>${label}</button>`;
-      })}
-    </div>
-    <span class="channel-sending" role="status">${sendingTo(channel, people)}</span>
-  </div>`;
 }

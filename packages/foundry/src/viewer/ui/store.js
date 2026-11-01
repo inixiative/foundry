@@ -116,14 +116,15 @@ export function vendorName(provider, registry = modelRegistry.value) {
   const vendor = registry?.vendors?.find((v) =>
     Object.values(v.modes ?? {}).some((m) => m?.provider === provider),
   );
-  return vendor ? vendor.label.replace(/\s*\(.*\)\s*$/, '') : provider;
+  return vendor ? vendor.label.replace(/\s*\(.*\)\s*$/, '') : null;
 }
 
 export function launchLabels(provider, model) {
   const entry = modelRegistry.value?.providers?.find((p) => p.id === provider);
   return {
+    // Only names the registry knows: an unknown provider or model shows nothing, never its raw id.
     provider: vendorName(provider) ?? entry?.label ?? null,
-    model: entry?.models?.find((m) => m.id === model)?.label ?? model ?? null,
+    model: entry ? (entry.models?.find((m) => m.id === model)?.label ?? model ?? null) : null,
   };
 }
 export const compactPanel = signal('conversation');

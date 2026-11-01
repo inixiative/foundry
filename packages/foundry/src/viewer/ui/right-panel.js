@@ -24,6 +24,7 @@ import {
   detailDrawerOpen,
   dismissTraceSelection,
   inspectTarget,
+  launchLabels,
   RIGHT_TABS,
   rightTab,
   selectedEvent,
@@ -53,7 +54,11 @@ function tabFacts(tab, threadId) {
   switch (tab) {
     case 'context':
       return {
-        info: [vendorName(launch?.provider), launch?.model, launch?.effort]
+        info: [
+          launchLabels(launch?.provider, launch?.model).provider,
+          launchLabels(launch?.provider, launch?.model).model,
+          launch?.effort,
+        ]
           .filter(Boolean)
           .join(' · '),
       };
@@ -107,7 +112,7 @@ function ContextTab() {
             <dt>Model</dt><dd>
               <select class="rp-select" value=${launch.modelOverride ?? ''}
                 onChange=${(e) => setLaunch(threadId, { model: e.target.value || null })}>
-                <option value="">Project default (${launch.model ?? 'default'})</option>
+                <option value="">${launchLabels(launch.provider, launch.model).model ? `Project default (${launchLabels(launch.provider, launch.model).model})` : 'Project default'}</option>
                 ${(launch.options?.models ?? []).map((m) => html`<option key=${m.id} value=${m.id}>${m.label ?? m.id}</option>`)}
               </select>
             </dd>
@@ -118,7 +123,7 @@ function ContextTab() {
                 ${(launch.options?.efforts ?? []).map((e) => html`<option key=${e} value=${e}>${e}</option>`)}
               </select>
             </dd>
-            <dt>Provider</dt><dd title=${`Runs through ${harnessName(launch.provider) ?? launch.provider ?? '—'} (${launch.provider ?? '—'})`}>${vendorName(launch.provider) ?? '—'}</dd>
+            <dt>Provider</dt><dd title=${harnessName(launch.provider) ? `Runs through ${harnessName(launch.provider)}` : ''}>${vendorName(launch.provider) ?? '—'}</dd>
           </dl>
           <p class="rp-dim">A change applies on the thread’s next turn.</p>`
           : html`<div class="rp-dim">Reading the thread’s launch settings…</div>`
