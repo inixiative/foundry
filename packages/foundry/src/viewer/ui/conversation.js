@@ -66,6 +66,7 @@ import {
   threadStatusOf,
   threadUsage,
   tokenUsage,
+  turnViewTarget,
 } from './store.js';
 import {
   harnessName,
@@ -915,6 +916,14 @@ function AgentMessage({ msg, index, onTraceClick }) {
               title="Inspect trace in detail panel">
               trace ${msg.trace?.totalDurationMs ? `(${(msg.trace.totalDurationMs / 1000).toFixed(1)}s)` : ''}
             </button>
+            ${
+              msg.turnId
+                ? html`<button class="chat-fulltrace-btn" title="Open this turn as a timeline in the centre"
+              onClick=${() => {
+                turnViewTarget.value = { threadId: activeThreadId.peek(), turnId: msg.turnId };
+              }}>full trace</button>`
+                : null
+            }
           `
               : null
           }
