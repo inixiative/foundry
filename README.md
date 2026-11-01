@@ -67,8 +67,7 @@ OPENAI_API_KEY=sk-...
 GEMINI_API_KEY=AI...
 
 # Optional
-DATABASE_URL=postgresql://...   # Postgres persistence
-REDIS_URL=redis://...           # Redis adapter
+DATABASE_URL=postgresql://...   # Postgres memory tool (optional)
 VIEWER_PORT=4500                # Dashboard port (default: 4500)
 ```
 
@@ -93,7 +92,7 @@ curl -X POST http://localhost:4500/api/messages \
 
 ### Daemon
 
-`bun run daemon:install` runs Foundry as a LaunchAgent. Before boot it starts the docker-compose services your `DATABASE_URL`, `REDIS_URL` and `MUNINN_URL` point at on this machine.
+`bun run daemon:install` runs Foundry as a LaunchAgent. Before boot it starts the docker-compose services your `DATABASE_URL` and `MUNINN_URL` point at on this machine.
 
 The daemon runs a release, not your working checkout: an exported commit with its own install under `.foundry/releases/<sha>`. With `"daemon": { "autoUpdate": "apply" }` in settings, it builds `origin/main` as a candidate (at startup and every `updateCheckSeconds`, default 300) and restarts onto it once no job is running. A candidate that boots becomes stable; one that fails to boot is marked failed, never retried, and the daemon relaunches on stable. `"check"` only logs that `origin/main` moved. Release state is in `.foundry/releases/state.json`.
 

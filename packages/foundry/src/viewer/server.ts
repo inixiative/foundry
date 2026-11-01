@@ -73,13 +73,7 @@ import { registerProfileRoutes } from './routes/profile';
 import { registerRuntimeRoutes } from './routes/runtime';
 import { ViewerThreadDirectory } from './thread-directory';
 import { expireSnoozes } from './thread-snooze';
-import {
-  FoundryTunnel,
-  type TunnelConfig,
-  type TunnelHolder,
-  type TunnelInfo,
-  tunnelAuth,
-} from './tunnel';
+import { FoundryTunnel, type TunnelConfig, type TunnelHolder, tunnelAuth } from './tunnel';
 
 export interface ViewerConfig {
   harness: Harness;
@@ -104,8 +98,6 @@ export interface ViewerConfig {
   analyticsDir?: string;
   /** Project registry (optional — enables multi-project management). */
   projectRegistry?: import('../agents/project').ProjectRegistry;
-  /** PostgresMemory for persistence (optional — enables durable traces/messages/signals). */
-  db?: import('../adapters/postgres-memory').PostgresMemory;
   /** Thread factory for creating new threads with independent instances. */
   threadFactory?: import('../agents/thread-factory').ThreadFactory;
   /** Config store for resolving project configs. */
@@ -575,8 +567,6 @@ export function createViewer(config: ViewerConfig) {
     await next();
   });
 
-  const db = config.db ?? null;
-
   const threadLaunch = config.threadLaunch ?? new ThreadLaunchSettings();
   // Access follows the host: an ACP thread whose host mode is unknown (lost to a daemon restart)
   // asks, never runs at the runtime's full-access default. Viewer threads keep their full access.
@@ -593,7 +583,6 @@ export function createViewer(config: ViewerConfig) {
     harness,
     eventStream,
     interventions,
-    db,
     assistProviderId: config.assistProvider?.id,
     threadFactory: config.threadFactory,
     configStore,
@@ -684,44 +673,6 @@ export function createViewer(config: ViewerConfig) {
     assistTools: config.assistTools,
     threadsChanged: () => streams.threadsChanged(),
   });
-
-  const redisUrl = process.env.REDIS_URL;
-  if (redisUrl) {
-    let boardInitialized = false;
-    const boardApp = new Hono();
-
-    const initBoard = async () => {
-      if (boardInitialized) return;
-      try {
-        const { createBullBoard } = await import('@bull-board/api');
-        const { BullMQAdapter } = await import('@bull-board/api/bullMQAdapter');
-        const { HonoAdapter } = await import('@bull-board/hono');
-        const { Queue } = await import('bullmq');
-        const Redis = (await import('ioredis')).default;
-
-        const boardRedis = new Redis(redisUrl, { maxRetriesPerRequest: null });
-        const boardQueue = new Queue('foundry-jobs', { connection: boardRedis });
-
-        const serverAdapter = new HonoAdapter(serveStatic);
-        createBullBoard({
-          queues: [new BullMQAdapter(boardQueue)],
-          serverAdapter,
-        });
-        serverAdapter.setBasePath('/jobs');
-        boardApp.route('/', serverAdapter.registerPlugin());
-        boardInitialized = true;
-        log.info('[Viewer] BullBoard dashboard initialized at /jobs');
-      } catch (err) {
-        log.warn(`[Viewer] BullBoard unavailable: ${(err as Error).message}`);
-        boardInitialized = true;
-      }
-    };
-
-    app.all('/jobs/*', async (c) => {
-      await initBoard();
-      return boardApp.fetch(c.req.raw);
-    });
-  }
 
   // The browser and offline verifier execute the same import-free proof module.
   app.get('/ui/delivery-evidence.js', async (c) =>

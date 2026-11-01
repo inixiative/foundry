@@ -13,7 +13,6 @@ import type {
 } from '@inixiative/foundry-core';
 import { MODEL_REGISTRY, newId, Thread, threadTitle, timeFromId } from '@inixiative/foundry-core';
 import type { Hono } from 'hono';
-import type { PostgresMemory } from '../../adapters/postgres-memory';
 import type { ProjectRegistry } from '../../agents/project';
 import type { ThreadFactory } from '../../agents/thread-factory';
 import type { ThreadNamer } from '../../agents/thread-namer';
@@ -56,7 +55,6 @@ export interface RuntimeRoutesDeps {
   harness: Harness;
   eventStream: EventStream;
   interventions: InterventionLog;
-  db: PostgresMemory | null;
   assistProviderId?: string;
   threadFactory?: ThreadFactory;
   configStore: ConfigStore;
@@ -109,15 +107,8 @@ function decodeHistoryCursor(cursor: string): { t: string; s: number } | null {
 }
 
 export function registerRuntimeRoutes(app: Hono, deps: RuntimeRoutesDeps): { turns: TurnService } {
-  const {
-    harness,
-    eventStream,
-    interventions,
-    db,
-    assistProviderId,
-    threadFactory,
-    projectRegistry,
-  } = deps;
+  const { harness, eventStream, interventions, assistProviderId, threadFactory, projectRegistry } =
+    deps;
   const namer = deps.namer;
   const threadContext = deps.threadContext;
   const localStore = deps.localStore;
@@ -129,7 +120,6 @@ export function registerRuntimeRoutes(app: Hono, deps: RuntimeRoutesDeps): { tur
   const turns = new TurnService({
     harness,
     eventStream,
-    db,
     threadFactory,
     configStore: deps.configStore,
     deviceIdentityPath: deps.deviceIdentityPath,
@@ -155,18 +145,6 @@ export function registerRuntimeRoutes(app: Hono, deps: RuntimeRoutesDeps): { tur
     const checks: Record<string, { ok: boolean; detail?: string }> = {};
 
     checks.harness = { ok: true, detail: `${harness.thread.agents.size} agents` };
-
-    if (db) {
-      try {
-        await db.prisma.$queryRaw`SELECT 1`;
-        checks.database = { ok: true };
-      } catch (err) {
-        checks.database = {
-          ok: false,
-          detail: err instanceof Error ? err.message : 'unreachable',
-        };
-      }
-    }
 
     if (assistProviderId) {
       checks.provider = { ok: true, detail: assistProviderId };
@@ -346,15 +324,6 @@ export function registerRuntimeRoutes(app: Hono, deps: RuntimeRoutesDeps): { tur
 
     if (localStore) return c.json(localStore.traces(limit).map((trace) => trace.summary ?? trace));
 
-    if (db) {
-      try {
-        const dbTraces = await db.recentTraces(limit);
-        return c.json(dbTraces.map((trace) => trace.summary ?? trace));
-      } catch {
-        // Fall back to in-memory traces.
-      }
-    }
-
     const summaries = turns
       .all()
       .flatMap((scopedHarness) => scopedHarness.traces)
@@ -372,11 +341,6 @@ export function registerRuntimeRoutes(app: Hono, deps: RuntimeRoutesDeps): { tur
       if (trace) return c.json(traceToJSON(trace));
     }
 
-    if (db) {
-      const dbTrace = await db.getTrace(id);
-      if (dbTrace) return c.json(dbTrace);
-    }
-
     return c.json({ error: 'not found' }, 404);
   });
 
@@ -387,11 +351,6 @@ export function registerRuntimeRoutes(app: Hono, deps: RuntimeRoutesDeps): { tur
     for (const scopedHarness of turns.all()) {
       const trace = scopedHarness.getTraceForMessage(messageId);
       if (trace) return c.json(traceToJSON(trace));
-    }
-
-    if (db) {
-      const dbTrace = await db.getTraceByMessage(messageId);
-      if (dbTrace) return c.json(dbTrace);
     }
 
     return c.json({ error: 'not found' }, 404);
@@ -882,14 +841,6 @@ export function registerRuntimeRoutes(app: Hono, deps: RuntimeRoutesDeps): { tur
     streams.threadsChanged(thread.id);
     void threadContext?.refresh(thread.id);
 
-    db?.prisma.threadState
-      .create({
-        data: { id, description, tags, status: 'idle' },
-      })
-      .catch((err: unknown) =>
-        console.warn('[Viewer] background op failed:', (err as Error).message ?? err),
-      );
-
     return c.json(threadToJSON(thread), 201);
   });
 
@@ -1021,21 +972,6 @@ export function registerRuntimeRoutes(app: Hono, deps: RuntimeRoutesDeps): { tur
         501,
       );
 
-    if (db) {
-      const allMsgs = await db.prisma.message.findMany({
-        where: { threadId },
-        orderBy: { id: 'asc' },
-        select: { id: true },
-      });
-
-      if (keepCount < allMsgs.length) {
-        const toDelete = allMsgs.slice(keepCount).map((m: { id: string }) => m.id);
-        await db.prisma.message.deleteMany({
-          where: { id: { in: toDelete } },
-        });
-      }
-    }
-
     return c.json({ ok: true, kept: keepCount });
   });
 
@@ -1105,33 +1041,6 @@ export function registerRuntimeRoutes(app: Hono, deps: RuntimeRoutesDeps): { tur
     directory.add(newThread);
     streams.threadsChanged(newThread.id);
 
-    // Copy messages from DB
-    if (db) {
-      const sourceMsgs = await db.prisma.message.findMany({
-        where: { threadId: sourceThreadId },
-        orderBy: { id: 'asc' },
-        take: copyCount,
-      });
-
-      for (const msg of sourceMsgs) {
-        await db.writeMessage({
-          id: newId('fork'),
-          threadId: forkedThreadId,
-          turnId: msg.turnId ?? undefined,
-          actor: msg.actor,
-          kind: msg.kind,
-          content: msg.content,
-          traceId: msg.traceId ?? undefined,
-        });
-      }
-
-      db.prisma.threadState
-        .create({
-          data: { id: forkedThreadId, description: newOpts.description, tags: [], status: 'idle' },
-        })
-        .catch((err: unknown) => console.warn('[Viewer] background op:', (err as Error).message));
-    }
-
     return c.json(threadToJSON(newThread), 201);
   });
 
@@ -1154,33 +1063,7 @@ export function registerRuntimeRoutes(app: Hono, deps: RuntimeRoutesDeps): { tur
         })),
       });
 
-    if (db) {
-      try {
-        const rows = await db.threadMessages(threadId, limit);
-        const msgs = rows.map((r) => ({
-          actor: r.actor,
-          kind: r.kind,
-          turnId: r.turnId ?? undefined,
-          content: r.content,
-          timestamp: timeFromId(r.id),
-          traceId: r.traceId ?? undefined,
-          meta: r.meta ?? undefined,
-        }));
-        return c.json({ messages: msgs });
-      } catch (err) {
-        // A failed database read is not an empty history; callers must keep their own copy.
-        return c.json(
-          {
-            error: `history unavailable: ${(err as Error).message}`,
-            unavailable: true,
-            messages: [],
-          },
-          503,
-        );
-      }
-    }
-
-    // No DB — return empty (in-memory messages are client-side only)
+    // No journal: in-memory messages are client-side only.
     return c.json({ messages: [] });
   });
 
