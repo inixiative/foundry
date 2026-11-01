@@ -38,6 +38,7 @@ import { LayerBand } from './layer-band.js';
 import { html, useEffect, useState } from './lib.js';
 import { liveThreadStatus } from './live-state.js';
 import { settingsConfig } from './settings.js';
+import { StatusIcon } from './status-icons.js';
 import {
   activeProjectId,
   activeThreadId,
@@ -61,6 +62,7 @@ import {
   showToast,
   submitIntervention,
   threadData,
+  threadStatusOf,
   updateThreadWorktree,
   worktrees,
 } from './store.js';
@@ -1308,7 +1310,7 @@ function ThreadDetail() {
     <div class="detail-content">
       <div class="detail-header">
         <span class="detail-name ${isUnnamed(data) ? 'detail-name--unnamed' : ''}" title=${data.threadId}>${threadName(data)}</span>
-        <span class="detail-status ${liveThreadStatus(messages.value) || meta.status || 'idle'}">${liveThreadStatus(messages.value) || meta.status || 'idle'}</span>
+        <${StatusIcon} state=${threadStatusOf(tid, liveThreadStatus(messages.value))} />
       </div>
 
       <${ThreadNameEditor} key=${tid} threadId=${tid} data=${data} />

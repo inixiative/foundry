@@ -528,14 +528,6 @@ body {
   white-space: nowrap;
 }
 
-.tree-status-dot {
-  display: inline-block;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-
 .tree-meta {
   font-size: 10px;
   color: var(--text-dimmer);
@@ -829,27 +821,6 @@ body {
 }
 .context-bar-setup--degraded {
   color: var(--warn);
-}
-.context-bar-status {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--st-archived);
-  flex-shrink: 0;
-}
-.context-bar-status--active {
-  background: var(--st-working);
-}
-.context-bar-status--idle {
-  background: var(--st-idle);
-}
-.context-bar-status--waiting {
-  background: var(--st-attention);
-}
-.context-bar-status--archived,
-.context-bar-status--completed,
-.context-bar-status--done {
-  background: var(--st-archived);
 }
 .context-bar-title {
   flex-shrink: 0;
@@ -6565,4 +6536,108 @@ a.thread-ref:hover {
   font-size: 10px;
   color: var(--accent);
   margin-bottom: 2px;
+}
+
+/* ---- Status icons (status-icons.js): solid tile in its colour, symbol cut out ---- */
+.status-icon {
+  display: inline-flex;
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+.status-icon .ic {
+  width: 14px;
+  height: 14px;
+  overflow: visible;
+}
+.status-icon .halo {
+  transform-origin: 7px 7px;
+  animation: status-halo 1.8s ease-out infinite;
+}
+.status-icon .eq {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  animation: status-eq 1.1s ease-in-out infinite;
+}
+.status-icon .eq.d2 {
+  animation-delay: 0.18s;
+}
+.status-icon .eq.d3 {
+  animation-delay: 0.36s;
+}
+.status-icon .drop {
+  animation: status-drop 1.6s ease-in-out infinite;
+}
+.status-icon.is-still .halo,
+.status-icon.is-still .eq,
+.status-icon.is-still .drop {
+  animation: none;
+}
+@keyframes status-halo {
+  0% {
+    opacity: 0.85;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.45);
+  }
+}
+@keyframes status-eq {
+  0%,
+  100% {
+    transform: scaleY(1);
+  }
+  50% {
+    transform: scaleY(0.45);
+  }
+}
+@keyframes status-drop {
+  0%,
+  100% {
+    transform: translateY(-0.6px);
+  }
+  50% {
+    transform: translateY(0.8px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .status-icon .halo,
+  .status-icon .eq,
+  .status-icon .drop {
+    animation: none;
+  }
+}
+.status-legend {
+  display: grid;
+  gap: 8px;
+}
+.status-legend-row {
+  display: grid;
+  grid-template-columns: 12px 92px 1fr;
+  gap: 4px 10px;
+  align-items: baseline;
+}
+.status-legend-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+}
+.status-legend-name {
+  font-weight: 600;
+}
+.status-legend-means {
+  color: var(--text-dim);
+}
+.status-legend-states {
+  grid-column: 2 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  color: var(--text-dim);
+}
+.status-legend-state {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
 }

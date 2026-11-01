@@ -419,6 +419,24 @@ test('thread list streams are scoped and send only real changes', async () => {
   ).toEqual(['active']);
 });
 
+test('the thread list carries each thread’s newest turn status, with nobody watching that thread', async () => {
+  const f = fixture();
+  const list = connectStreams(f.viewer);
+  await list.open('threads');
+  expect((await f.send('t1')).status).toBe(202);
+  await list.next(
+    (frame) => frame.payload?.thread?.lastTurn?.status === 'running',
+    'the list sees the turn running',
+  );
+  f.release();
+  const done = await list.next(
+    (frame) => frame.payload?.thread?.lastTurn?.status === 'completed',
+    'the list sees the turn complete',
+  );
+  expect(done.payload.thread).toMatchObject({ threadId: 'main', lastTurn: { status: 'completed' } });
+  expect(f.viewer.socket.streams.isOpen('thread:main')).toBe(false);
+});
+
 test('prompts stream carries pending prompts and their settlement', async () => {
   const queue = new ActionQueue();
   const f = fixture({ actionQueue: queue });

@@ -95,11 +95,28 @@ export function createViewerStreams(deps: {
   const { directory, eventStream, actionQueue, deliverTo } = deps;
   const journal: FlowJournal = deps.journal ?? { store: null };
   const threadSinks = new Map<string, (payload: ThreadAppend) => void>();
+  const threadLists = new Set<(threadId?: string) => void>();
   const turns = new StreamBufferRegistry({
     active: (threadId) => threadSinks.has(threadId),
     publish: (threadId, payload) => threadSinks.get(threadId)?.(payload),
+    turnChanged: (threadId) => {
+      for (const sync of threadLists) sync(threadId);
+    },
   });
-  const threadLists = new Set<(threadId?: string) => void>();
+  /** The newest live turn's status, for the thread's status icon (absent once the buffer is pruned). */
+  const lastTurn = (threadId: string) => {
+    const latest = turns
+      .forThread(threadId)
+      .sort((a, b) => a.startedAt - b.startedAt)
+      .at(-1);
+    return latest
+      ? {
+          status: latest.status,
+          startedAt: latest.startedAt,
+          ...(latest.completedAt !== undefined ? { completedAt: latest.completedAt } : {}),
+        }
+      : undefined;
+  };
 
   const thread: StreamFamily = {
     matches: (stream) => suffix(stream, 'thread:') !== null,
@@ -134,7 +151,10 @@ export function createViewerStreams(deps: {
       // What subscribers already hold, so a change is sent once and an unchanged thread never.
       const sent = new Map<
         string,
-        { text: string; json: ReturnType<typeof threadToJSON> & { conversation?: unknown } }
+        {
+          text: string;
+          json: ReturnType<typeof threadToJSON> & { conversation?: unknown; lastTurn?: unknown };
+        }
       >();
       const sync = (only?: string) => {
         const current = new Map<string, Thread>(scope().map((t) => [t.id, t]));
@@ -145,7 +165,12 @@ export function createViewerStreams(deps: {
             continue;
           }
           const conversation = deps.conversation?.(id);
-          const json = { ...threadToJSON(found), ...(conversation ? { conversation } : {}) },
+          const turn = lastTurn(id);
+          const json = {
+              ...threadToJSON(found),
+              ...(conversation ? { conversation } : {}),
+              ...(turn ? { lastTurn: turn } : {}),
+            },
             text = JSON.stringify(json);
           if (sent.get(id)?.text === text) continue;
           sent.set(id, { text, json });

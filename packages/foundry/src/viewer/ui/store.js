@@ -25,6 +25,7 @@ import { createDataStreamSocket } from './data-stream-socket.js';
 import { batch, computed, effect, signal } from './lib.js';
 import { applyTurnFrame, mergeLiveSnapshot } from './live-state.js';
 import { route } from './route.js';
+import { threadState } from './thread-status.js';
 
 // ---------------------------------------------------------------------------
 // Auth — cookie-based auth handles most cases. authFetch is a fallback
@@ -1863,4 +1864,15 @@ export function init() {
     requestReconcile(active, 0);
     requestKnowledge(active);
   });
+}
+
+/** A thread's status for its icon: the listed thread (lastTurn, conversation) and its pending prompts,
+ * with the open thread's live turns winning while they run (thread-status.js decides). */
+export function threadStatusOf(threadId, live = null) {
+  const listed = allThreads.value.find((t) => t.threadId === threadId);
+  const thread = listed ?? (threadData.value?.threadId === threadId ? threadData.value : null);
+  if (!thread) return 'idle';
+  if (live === 'active') return 'working';
+  if (live === 'unconfirmed') return 'waitother';
+  return threadState(thread, { prompts: prompts.value.filter((p) => p.threadId === threadId) });
 }
