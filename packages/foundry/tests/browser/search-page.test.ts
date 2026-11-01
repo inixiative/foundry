@@ -170,7 +170,20 @@ test('Search: its own page, settings and docs first, preview, open a setting, Es
     await preview.locator('dd', { hasText: 'Set by you' }).waitFor();
     await input.press('Enter');
     await page.waitForURL(/\/settings\/profile$/);
-    await page.locator('.settings-searched', { hasText: 'installationName' }).waitFor();
+    // The field itself is highlighted and scrolled to; no card is needed.
+    await page.locator('[data-setting="installationName"].setting-searched').waitFor();
+    expect(await page.locator('.settings-searched').count()).toBe(0);
+
+    // By meaning, not just name: a described setting matches words from its description.
+    await page.locator('.search-button').click();
+    await input.fill('reasoning effort');
+    await settings.locator('.search-hit', { hasText: 'defaults.codexEffort' }).waitFor();
+    // A setting its section shows no field for opens with the card at the top instead.
+    await input.fill('kingdomInferenceAssignments');
+    await settings.locator('.search-hit').first().waitFor();
+    await input.press('Enter');
+    await page.waitForURL(/\/settings\/kingdom$/);
+    await page.locator('.settings-searched', { hasText: 'kingdomInferenceAssignments' }).waitFor();
 
     // Esc from Search returns where you were: the thread, as it was.
     await page.locator('body').click({ position: { x: 5, y: 5 } });

@@ -22,7 +22,7 @@
   {
     "path": "kingdomInference",
     "scope": "foundry",
-    "description": ""
+    "description": "Kingdom subscription pools this Foundry draws main-thread logins from: one per owner's Signet (URL, credential file, pool selection)."
   },
   {
     "path": "kingdomAccess",
@@ -32,7 +32,7 @@
   {
     "path": "kingdomInferenceAssignments",
     "scope": "foundry",
-    "description": ""
+    "description": "Which Kingdom owner's pool (and spread or selection) a given thread draws its login from, by thread id."
   },
   {
     "path": "nativeAuthenticationSelections",
@@ -82,27 +82,27 @@
   {
     "path": "defaults.provider",
     "scope": "foundry",
-    "description": ""
+    "description": "The provider new threads run on (e.g. `claude-code`, `codex`)."
   },
   {
     "path": "defaults.model",
     "scope": "foundry",
-    "description": ""
+    "description": "The model new threads run on."
   },
   {
     "path": "defaults.nativeAuthenticationId",
     "scope": "foundry",
-    "description": ""
+    "description": "Which local login (a native authentication source) threads use by default."
   },
   {
     "path": "defaults.kingdomOwnerKey",
     "scope": "foundry",
-    "description": ""
+    "description": "Which Kingdom owner's subscription pool threads use by default."
   },
   {
     "path": "defaults.codexEffort",
     "scope": "foundry",
-    "description": ""
+    "description": "Reasoning effort for Codex threads; omitted, Codex's own default."
   },
   {
     "path": "defaults.classifierProvider",
@@ -132,12 +132,12 @@
   {
     "path": "installationIcon.glyph",
     "scope": "foundry",
-    "description": ""
+    "description": "The icon's shape (anvil, bolt, leaf, moon, peak, wave, star, hex)."
   },
   {
     "path": "installationIcon.color",
     "scope": "foundry",
-    "description": ""
+    "description": "The icon's colour: a slot of the theme's categorical palette, 0 to 11."
   },
   {
     "path": "messageBox",
@@ -147,7 +147,7 @@
   {
     "path": "messageBox.separateViews",
     "scope": "foundry",
-    "description": ""
+    "description": "Show a message box per open view (Thread, /btw, /aside) instead of one box with a destination label."
   },
   {
     "path": "agents",
@@ -157,12 +157,12 @@
   {
     "path": "agents.*.id",
     "scope": "foundry",
-    "description": ""
+    "description": "The agent's id: its key in `agents`, and how projects extend or override it."
   },
   {
     "path": "agents.*.kind",
     "scope": "foundry",
-    "description": ""
+    "description": "What the agent does in a turn (executor, classifier, router…)."
   },
   {
     "path": "agents.*.flowRole",
@@ -192,7 +192,7 @@
   {
     "path": "agents.*.model",
     "scope": "foundry",
-    "description": ""
+    "description": "The model this agent runs on; omitted, the global default model."
   },
   {
     "path": "agents.*.temperature",
@@ -332,7 +332,7 @@
   {
     "path": "layers.*.id",
     "scope": "foundry",
-    "description": ""
+    "description": "The layer's id: its key in `layers`, and how projects and agents refer to it."
   },
   {
     "path": "layers.*.domain",
@@ -412,12 +412,12 @@
   {
     "path": "sources.*.id",
     "scope": "foundry",
-    "description": ""
+    "description": "The source's id: its key in `sources`, and how layers name it in `sourceIds`."
   },
   {
     "path": "sources.*.type",
     "scope": "foundry",
-    "description": ""
+    "description": "Where the content comes from: a file, database, URL, markdown, inline text, the Archive, or instruction files."
   },
   {
     "path": "sources.*.slot",
@@ -432,17 +432,17 @@
   {
     "path": "sources.*.archive.projectId",
     "scope": "foundry",
-    "description": ""
+    "description": "The Archive project whose captured sessions are searched."
   },
   {
     "path": "sources.*.archive.budget",
     "scope": "foundry",
-    "description": ""
+    "description": "Most tokens of matching session text taken per search (128 to 16,000; default 2,048)."
   },
   {
     "path": "sources.*.label",
     "scope": "foundry",
-    "description": ""
+    "description": "The source's display name in Settings and the layer view."
   },
   {
     "path": "sources.*.uri",
@@ -507,12 +507,12 @@
   {
     "path": "gloss.enabled",
     "scope": "project",
-    "description": ""
+    "description": "Keep this project's gloss (margin commentary beside the code) maintained."
   },
   {
     "path": "gloss.display",
     "scope": "project",
-    "description": ""
+    "description": "How gloss shows beside the code: in the margin, on hover, or inline."
   },
   {
     "path": "id",
@@ -567,17 +567,17 @@
   {
     "path": "layers.*.sourceIds",
     "scope": "project",
-    "description": ""
+    "description": "Change the layer's data sources for this project: replace the list, or append and remove ids."
   },
   {
     "path": "layers.*.writers",
     "scope": "project",
-    "description": ""
+    "description": "Change which agents may write the layer in this project: replace, or append and remove ids."
   },
   {
     "path": "layers.*.condition",
     "scope": "project",
-    "description": ""
+    "description": "Change or clear (null) when a conditional layer is included in this project."
   },
   {
     "path": "sources",
@@ -587,12 +587,12 @@
   {
     "path": "sources.*.id",
     "scope": "project",
-    "description": ""
+    "description": "The source's id: its key in `sources`, and how layers name it in `sourceIds`."
   },
   {
     "path": "sources.*.type",
     "scope": "project",
-    "description": ""
+    "description": "Where the content comes from: a file, database, URL, markdown, inline text, the Archive, or instruction files."
   },
   {
     "path": "sources.*.slot",
@@ -607,17 +607,17 @@
   {
     "path": "sources.*.archive.projectId",
     "scope": "project",
-    "description": ""
+    "description": "The Archive project whose captured sessions are searched."
   },
   {
     "path": "sources.*.archive.budget",
     "scope": "project",
-    "description": ""
+    "description": "Most tokens of matching session text taken per search (128 to 16,000; default 2,048)."
   },
   {
     "path": "sources.*.label",
     "scope": "project",
-    "description": ""
+    "description": "The source's display name in Settings and the layer view."
   },
   {
     "path": "sources.*.uri",
@@ -667,12 +667,12 @@
   {
     "path": "chorus.regions",
     "scope": "project",
-    "description": ""
+    "description": "The one regions directory the chorus reads (absolute or relative to the project; default `.foundry/regions`)."
   },
   {
     "path": "chorus.layers",
     "scope": "project",
-    "description": ""
+    "description": "Several regions directories in order, a later layer's region replacing an earlier one (e.g. template base, then this project)."
   },
   {
     "path": "chorus.consumed",
@@ -682,7 +682,7 @@
   {
     "path": "chorus.consumed.enabled",
     "scope": "project",
-    "description": ""
+    "description": "Ask the Wardens when a thread takes in a work item (a ticket, spec or issue it read). Off by default."
   },
   {
     "path": "chorus.consumed.tools",
@@ -747,11 +747,11 @@
   {
     "path": "kingdomCapacity.signetId",
     "scope": "project",
-    "description": ""
+    "description": "The Kingdom Signet that grants this project its subscription pool (`subscription.use`)."
   },
   {
     "path": "kingdomCapacity.projectId",
     "scope": "project",
-    "description": ""
+    "description": "The Kingdom project this Foundry project's usage is recorded against."
   }
 ]

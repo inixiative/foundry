@@ -49,6 +49,55 @@ const SOURCE_TEXT = {
   default: 'Default',
 };
 
+/**
+ * The element showing a setting: the `[data-setting]` whose path is the setting's or the longest
+ * prefix of it at a dot (`agents.worker` for `agents.worker.model`), inside the settings body.
+ */
+export function settingAnchor(root, path) {
+  let best = null;
+  for (const el of root.querySelectorAll('[data-setting]')) {
+    const own = el.dataset.setting;
+    if (
+      (own === path || path.startsWith(`${own}.`)) &&
+      own.length > (best?.dataset.setting.length ?? -1)
+    )
+      best = el;
+  }
+  return best;
+}
+
+const ANCHOR_WAIT_MS = 3000;
+
+/** Scroll to and highlight the searched setting's field; 'missed' when the section shows none. */
+function useSettingAnchor(setting, active) {
+  const [state, setState] = useState('looking');
+  useEffect(() => {
+    setState('looking');
+    if (!setting || !active) return;
+    let anchored = null;
+    const started = Date.now();
+    const timer = setInterval(() => {
+      const root = document.querySelector('.settings-body');
+      const el = root && settingAnchor(root, setting.path);
+      if (el) {
+        anchored = el;
+        el.classList.add('setting-searched');
+        el.scrollIntoView({ block: 'center' });
+        setState('found');
+        clearInterval(timer);
+      } else if (Date.now() - started > ANCHOR_WAIT_MS) {
+        setState('missed');
+        clearInterval(timer);
+      }
+    }, 100);
+    return () => {
+      clearInterval(timer);
+      anchored?.classList.remove('setting-searched');
+    };
+  }, [setting, active]);
+  return state;
+}
+
 function SearchedSetting({ setting }) {
   return html`<section class="settings-card settings-searched" aria-label=${`Found: ${setting.path}`}>
     <button type="button" class="settings-searched-close" aria-label="Dismiss" onClick=${() => {
@@ -273,7 +322,7 @@ function SourceEditor({ source, onSave, onDelete, onFocusChange }) {
   const onAnyFocus = () => onFocusChange?.({ kind: 'source', id: draft.id });
 
   return html`
-    <div class="settings-card" onFocusin=${onAnyFocus}>
+    <div class="settings-card" data-setting=${`sources.${draft.id}`} onFocusin=${onAnyFocus}>
       <div class="settings-card-header">
         <span class="settings-card-title">${draft.id}</span>
         <span class="settings-card-kind">${draft.type}</span>
@@ -362,7 +411,7 @@ function ProjectChorus({ projectId }) {
     return html`<div class="settings-empty">The chorus could not be read; check the project's settings.</div>`;
   const total = chorus.regions.reduce((sum, r) => sum + r.bytes, 0);
   return html`
-    <div class="settings-card">
+    <div class="settings-card" data-setting="chorus">
       <div class="settings-card-header">
         <span class="settings-card-title">Chorus</span>
         <span class="settings-desc">${
@@ -588,12 +637,14 @@ function ProjectOverrides({ project }) {
     ${
       groups.length
         ? groups.map(
-            (g) => html`<div key=${g.key} class="override-group" data-override=${g.key}>
+            (
+              g,
+            ) => html`<div key=${g.key} class="override-group" data-override=${g.key} data-setting=${g.key}>
               <h3>${g.label}</h3>
               <p class="settings-desc">${g.desc}</p>
               <dl class="override-list">${g.entries.map(
                 ([k, v]) =>
-                  html`<div key=${k}><dt><code>${k}</code></dt><dd><code>${overrideValue(g.key, v)}</code></dd></div>`,
+                  html`<div key=${k} data-setting=${`${g.key}.${k}`}><dt><code>${k}</code></dt><dd><code>${overrideValue(g.key, v)}</code></dd></div>`,
               )}</dl>
             </div>`,
           )
@@ -682,6 +733,14 @@ export function SettingsPage() {
   const config = settingsConfig.value;
   const { projectId, section } = route.value;
   const focus = selectedFocus.value;
+  const highlight = settingsHighlight.value;
+  const searched =
+    highlight &&
+    highlight.section === section &&
+    (highlight.projectId ?? null) === (projectId ?? null)
+      ? highlight
+      : null;
+  const anchor = useSettingAnchor(searched, !!config);
 
   useEffect(() => {
     if (!config) loadSettings();
@@ -724,13 +783,7 @@ export function SettingsPage() {
           <button class="action-btn settings-chat-view" onClick=${() => setShowChat(!showChat)}>${showChat ? 'Back to settings' : 'Forge Master'}</button>
         </header>
         <div class="settings-body">
-          ${
-            settingsHighlight.value &&
-            settingsHighlight.value.section === section &&
-            (settingsHighlight.value.projectId ?? null) === (projectId ?? null)
-              ? html`<${SearchedSetting} setting=${settingsHighlight.value} />`
-              : null
-          }
+          ${searched && anchor === 'missed' ? html`<${SearchedSetting} setting=${searched} />` : null}
           ${
             projectId
               ? html`<${ProjectSection} section=${section} projectId=${projectId} project=${project} onFocusChange=${onFocusChange} />`

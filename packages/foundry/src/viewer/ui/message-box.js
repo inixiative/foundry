@@ -61,7 +61,7 @@ export function ViewBox({ view, config }) {
 /** Settings › Message box: the one switch, set for you (this machine's settings). */
 export function MessageBoxSection({ config, onSave }) {
   const on = separateViews(config);
-  return html`<section class="settings-card">
+  return html`<section class="settings-card" data-setting="messageBox">
     <h3>Message box</h3>
     <label class="message-box-setting">
       <input type="checkbox" checked=${on} onChange=${(e) => onSave({ separateViews: e.target.checked })} />
