@@ -15,7 +15,6 @@ import {
 } from '@inixiative/signet';
 import type { RequestedResource } from '@inixiative/signet/contracts';
 import { z } from 'zod';
-import { log } from '../logger';
 import type { ConfigStore } from '../viewer/config';
 import { privateTunnelToken } from '../viewer/private-token';
 import { ownerKey } from './kingdom-client';
@@ -170,10 +169,10 @@ export async function pairKingdomIntegration(
       configDir,
       (await store.load()).kingdomIntegrations ?? [],
       input.viewerToken ?? privateTunnelToken(configDir),
-      (message) => log.warn(message),
+      (message) => console.warn(message),
     );
   } catch (error) {
-    log.warn(`[Kingdom] viewer credential not shared: ${(error as Error).message}`);
+    console.warn(`[Kingdom] viewer credential not shared: ${(error as Error).message}`);
   }
   return { id, settings, ownerName: paired.ownerName };
 }

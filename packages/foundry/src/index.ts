@@ -100,8 +100,6 @@ export {
   getCurrentBranch,
   listWorktrees,
 } from './git';
-// Logger
-export { initLogger, type Logger, type LogLevel, log } from './logger';
 // MCP — mid-session bridge (FLOW.md Loop 2)
 export {
   createFoundryMcpServer,
