@@ -102,14 +102,14 @@ function IncomingIndicator() {
     const outside = (e) => {
       if (ref.current && !ref.current.contains(e.target)) setOpen(false);
     };
-    const escape = (e) => {
+    const onEscape = (e) => {
       if (e.key === 'Escape') setOpen(false);
     };
     document.addEventListener('mousedown', outside);
-    document.addEventListener('keydown', escape);
+    document.addEventListener('keydown', onEscape);
     return () => {
       document.removeEventListener('mousedown', outside);
-      document.removeEventListener('keydown', escape);
+      document.removeEventListener('keydown', onEscape);
     };
   }, [open]);
   const requests = incoming.value;
