@@ -48,8 +48,8 @@ export function Modal({ title, onClose, dismissOnBackdrop = true, children, ...p
   `;
 }
 
-/** A small rename window: one field, ✕ Cancel and ✓ Save; Enter saves, Escape cancels. */
-export function RenameModal({ title, value, label = 'Name', onSave, onClose }) {
+/** A small rename window: one field (and any extra content), ✕ Cancel and ✓ Save; Enter saves, Escape cancels. */
+export function RenameModal({ title, value, label = 'Name', onSave, onClose, children }) {
   const [draft, setDraft] = useState(value ?? '');
   const save = async () => {
     const next = draft.trim();
@@ -69,6 +69,7 @@ export function RenameModal({ title, value, label = 'Name', onSave, onClose }) {
           el.select();
         }
       }} />
+    ${children}
     <div class="rename-actions">
       <button type="button" class="action-btn" onClick=${onClose}>✕ Cancel</button>
       <button type="button" class="action-btn primary" onClick=${save}>✓ Save</button>

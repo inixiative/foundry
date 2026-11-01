@@ -92,6 +92,26 @@ import {
  * - Global level: defaults, providers, agents, layers, sources — shared baseline
  * - Project level: each project can inherit global settings or override per-field
  */
+/** The glyphs a machine's icon may use (the viewer draws them). */
+export const MACHINE_GLYPHS = [
+  'anvil',
+  'bolt',
+  'leaf',
+  'moon',
+  'peak',
+  'wave',
+  'star',
+  'hex',
+] as const;
+export type MachineGlyph = (typeof MACHINE_GLYPHS)[number];
+
+const validMachineIcon = (icon: unknown): icon is { glyph: MachineGlyph; color: string } =>
+  !!icon &&
+  typeof icon === 'object' &&
+  Object.keys(icon).every((k) => k === 'glyph' || k === 'color') &&
+  MACHINE_GLYPHS.includes((icon as { glyph: MachineGlyph }).glyph) &&
+  /^#[0-9a-f]{6}$/i.test(String((icon as { color: unknown }).color));
+
 export interface FoundryConfig {
   /** Opt in to API-key providers (paid tokens). Absent or false: subscription-only, and no API provider is constructed. */
   apiTokens?: boolean;
@@ -149,6 +169,8 @@ export interface FoundryConfig {
 
   /** This Foundry's installation name: what Kingdom pairing names it. Default "Foundry on <host>". */
   installationName?: string;
+  /** This machine's icon where machines are shown (Watchtower actors, Watching): a glyph and a colour. */
+  installationIcon?: { glyph: MachineGlyph; color: string };
   /** The message box: one box with a destination label (Thread · /btw · /aside), or a box per open view. */
   messageBox?: { separateViews?: boolean };
 
@@ -988,6 +1010,10 @@ export function validateConfig(config: FoundryConfig): void {
       config.installationName.length > 120)
   )
     throw Error('installationName must be 1 to 120 characters');
+  if (config.installationIcon !== undefined && !validMachineIcon(config.installationIcon))
+    throw Error(
+      `installationIcon must be { glyph: ${MACHINE_GLYPHS.join(' | ')}, color: "#rrggbb" }`,
+    );
   if (
     config.messageBox !== undefined &&
     (typeof config.messageBox !== 'object' ||
@@ -1321,6 +1347,9 @@ export class ConfigStore {
         if (typeof patch.installationName === 'string')
           next.installationName = patch.installationName.trim();
         else if (patch.installationName === null) delete next.installationName;
+        if (patch.installationIcon === null) delete next.installationIcon;
+        else if (patch.installationIcon !== undefined)
+          next.installationIcon = patch.installationIcon as FoundryConfig['installationIcon'];
       } else if (section === 'agents') {
         next.agents = { ...next.agents, ...patch } as FoundryConfig['agents'];
       } else if (section === 'layers') {

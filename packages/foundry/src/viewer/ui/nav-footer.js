@@ -12,6 +12,7 @@
 
 import { capacityByProvider } from './capacity.js';
 import { html, useEffect, useState } from './lib.js';
+import { DeviceIcon, MachineIconPicker, machineIcon, machineProfile } from './machine-icons.js';
 import { RenameModal } from './modal.js';
 import { navigate, settingsPath } from './route.js';
 import {
@@ -47,6 +48,7 @@ function useMachine() {
       getJson('/api/providers/accounts'),
       modelRegistryOnce(),
     ]).then(([profile, tunnel, archive, destinations, accounts, registry]) => {
+      if (profile) machineProfile.value = profile;
       if (live) setMachine({ profile, tunnel, archive, destinations, accounts, registry });
     });
     return () => {
@@ -111,6 +113,7 @@ function MachineName({ profile, onSaved }) {
       if (!res.ok)
         throw Error((await res.json().catch(() => ({}))).error || 'Could not save the name');
       onSaved({ ...profile, installationName: next, custom: true });
+      machineProfile.value = { ...machineProfile.value, installationName: next };
       setDraft(null);
       return true;
     } catch (error) {
@@ -125,9 +128,9 @@ function MachineName({ profile, onSaved }) {
           onSave=${async (next) => {
             setDraft(next);
             return save(next);
-          }} />`
+          }}><${MachineIconPicker} /><//>`
       : null;
-  return html`<span class="nav-footer-device" title="This machine's name">${name}</span>
+  return html`<${DeviceIcon} icon=${machineIcon()} size=${16} title="This machine's icon" /><span class="nav-footer-device" title="This machine's name">${name}</span>
     <button type="button" class="nav-footer-edit" title="Rename this machine" onClick=${() => setDraft(name)}>Edit</button>${modal}`;
 }
 
