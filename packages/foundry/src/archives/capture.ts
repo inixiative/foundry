@@ -280,6 +280,8 @@ export class ArchiveCapture {
   /** This Foundry's name on its claims: one per journal, so two Foundries never share one. */
   private readonly claimant: string;
   readonly errors = new Map<string, string>();
+  /** The last snapshot of each thread the Archive accepted: when it was read from the journal, and its id. */
+  readonly stored = new Map<string, { at: number; archiveId: string }>();
   /** The last claim refusal per session (or `hold`), for diagnosis; capture goes on regardless. */
   readonly claimErrors = new Map<string, string>();
   constructor(
@@ -324,6 +326,7 @@ export class ArchiveCapture {
     const sourceId = await writer?.sourceId().catch(() => undefined);
     for (const threadId of threads) {
       let snapshot: ArchiveSnapshot;
+      const readAt = Date.now();
       try {
         snapshot = captureThread(this.journal, sourceId ?? this.unsentSourceId, threadId);
       } catch {
@@ -346,6 +349,7 @@ export class ArchiveCapture {
         await this.claim(writer, sessions);
         const stored = await writer.capture(snapshot);
         await this.fulfil(writer, sessions, stored.id);
+        this.stored.set(threadId, { at: readAt, archiveId: stored.id });
         this.errors.delete(threadId);
       } catch {
         this.errors.set(
