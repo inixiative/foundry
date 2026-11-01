@@ -1,3 +1,4 @@
+import './helpers/isolate-archive';
 import { afterEach, expect, test } from 'bun:test';
 import type { NativeEvidence, NativeOwner, ThreadMeta } from '@inixiative/foundry-core';
 import { LocalSessionStore } from '../src/persistence/local-session-store';
