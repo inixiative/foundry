@@ -1200,17 +1200,17 @@ export function CreateLayerForm({ onCreated }) {
       <div class="create-form">
         <div class="settings-field">
           <label class="settings-label">ID</label>
-          <input class="settings-input" placeholder="e.g. security-rules"
+          <input aria-label="ID" class="settings-input" placeholder="e.g. security-rules"
             value=${id} onInput=${(e) => setId(e.target.value)} />
         </div>
         <div class="settings-field">
           <label class="settings-label">Prompt</label>
-          <textarea class="settings-input" rows="3" placeholder="What this layer provides..."
+          <textarea aria-label="Prompt" class="settings-input" rows="3" placeholder="What this layer provides..."
             value=${prompt} onInput=${(e) => setPrompt(e.target.value)}></textarea>
         </div>
         <div class="settings-row">
           <div class="settings-field"><label class="settings-label">Staleness (ms)</label>
-            <input class="settings-input small" type="number" min="0"
+            <input aria-label="Staleness (ms)" class="settings-input small" type="number" min="0"
               value=${staleness} onInput=${(e) => setStaleness(e.target.value)} /></div>
         </div>
         <div class="detail-actions" style="margin-top: 12px">
@@ -1253,12 +1253,12 @@ export function CreateAgentForm({ onCreated }) {
       <div class="create-form">
         <div class="settings-field">
           <label class="settings-label">ID</label>
-          <input class="settings-input" placeholder="e.g. code-reviewer"
+          <input aria-label="ID" class="settings-input" placeholder="e.g. code-reviewer"
             value=${id} onInput=${(e) => setId(e.target.value)} />
         </div>
         <div class="settings-field">
           <label class="settings-label">Kind</label>
-          <select class="settings-input" value=${kind} onChange=${(e) => setKind(e.target.value)}>
+          <select aria-label="Kind" class="settings-input" value=${kind} onChange=${(e) => setKind(e.target.value)}>
             <option value="executor">Executor</option>
             <option value="classifier">Classifier</option>
             <option value="router">Router</option>
@@ -1266,12 +1266,12 @@ export function CreateAgentForm({ onCreated }) {
         </div>
         <div class="settings-field">
           <label class="settings-label">System Prompt</label>
-          <textarea class="settings-input" rows="4" placeholder="What this agent does..."
+          <textarea aria-label="System Prompt" class="settings-input" rows="4" placeholder="What this agent does..."
             value=${prompt} onInput=${(e) => setPrompt(e.target.value)}></textarea>
         </div>
         <div class="settings-row">
           <div class="settings-field"><label class="settings-label">Temperature</label>
-            <input class="settings-input small" type="number" step="0.1" min="0" max="2"
+            <input aria-label="Temperature" class="settings-input small" type="number" step="0.1" min="0" max="2"
               value=${temperature} onInput=${(e) => setTemperature(e.target.value)} /></div>
         </div>
         <div class="detail-actions" style="margin-top: 12px">

@@ -35,7 +35,7 @@ import {
 } from './route.js';
 import { ActivitySection, AgentsSection, LayersSection } from './runtime-panels.js';
 import { SelfChatPane } from './self-chat.js';
-import { projects, showToast } from './store.js';
+import { modelRegistry, projects, showToast } from './store.js';
 import { Switch } from './switch.js';
 
 export const settingsConfig = signal(null);
@@ -316,6 +316,14 @@ const kb = (bytes) => `${Math.max(1, Math.round(bytes / 1024))} KB`;
 /** The project's chorus: what runs, its layers in order, and each region with its size and key. */
 function ProjectChorus({ projectId }) {
   const [chorus, setChorus] = useState(undefined);
+  const [decision, setDecision] = useState(null);
+  useEffect(() => {
+    // Stages without a model run on the decision model: name it rather than print "decision".
+    fetch('/api/models/selection')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((body) => setDecision(body?.decision ?? null))
+      .catch(() => setDecision(null));
+  }, []);
   useEffect(() => {
     let live = true;
     setChorus(undefined);
@@ -364,7 +372,7 @@ function ProjectChorus({ projectId }) {
               .join('; ')}.</p>`
           : null
       }
-      ${chorus.roles ? html`<${ChorusStages} roles=${chorus.roles} />` : null}
+      ${chorus.roles ? html`<${ChorusStages} roles=${chorus.roles} decision=${decision} />` : null}
       ${
         chorus.layers.length
           ? html`
@@ -423,7 +431,16 @@ const layerName = (from) =>
       : 'the repository';
 
 /** How each role classifies (classify): its stages in order, where they came from, and their versions. */
-function ChorusStages({ roles }) {
+/** A model's display name from the registry: "Claude Haiku 5.5 · Claude Code". */
+function modelName(choice) {
+  if (!choice) return null;
+  const provider = modelRegistry.value?.providers?.find((p) => p.id === choice.provider);
+  const model = provider?.models?.find((m) => m.id === choice.model);
+  return `${model?.label ?? choice.model} · ${provider?.label ?? choice.provider}`;
+}
+
+function ChorusStages({ roles, decision }) {
+  const decisionName = modelName(decision) ?? 'the decision model';
   const rows = (role) =>
     role.stages.map(
       (s) => html`<tr key=${s.index}>
@@ -431,7 +448,8 @@ function ChorusStages({ roles }) {
         <td>${s.task}${s.pointer && s.pointer.any === false ? html`<div class="settings-desc">no choose-one</div>` : null}</td>
         <td><code>${s.doc}</code></td>
         <td>${s.outcomes}${s.reason !== 'none' ? html`<div class="settings-desc">why: ${s.reason}</div>` : null}</td>
-        <td>${s.model}<div class="settings-desc">${s.effort}</div></td>
+        <td>${s.model === 'decision' ? html`${decisionName}<div class="settings-desc">decision model</div>` : s.model}
+          <div class="settings-desc">${s.effort === 'decision' ? 'decision effort' : `effort ${s.effort}`}</div></td>
         <td>${s.escalate ? s.escalate.join(', ') : '–'}</td>
         <td>${Math.round(s.deadline * 100)}%</td>
         <td><code>${s.charter}</code><div class="settings-desc"><code>${s.protocols.advice}</code> / <code>${s.protocols.guard}</code></div></td>
@@ -461,7 +479,7 @@ function SettingsNav({ projectId, section, projectList }) {
         <a href=${settingsPath(null)} aria-current=${projectId ? undefined : 'page'}
           class="settings-scope-tab ${projectId ? '' : 'active'}" onClick=${onLink}>Foundry</a>
         ${
-          projectList.length
+          projectList.length || projectId
             ? html`<a href=${projectHref} aria-current=${projectId ? 'page' : undefined}
                 class="settings-scope-tab ${projectId ? 'active' : ''}" onClick=${onLink}>Project</a>`
             : html`<span class="settings-scope-tab disabled" title="Add a project first">Project</span>`
@@ -514,6 +532,54 @@ function ComingSoon({ children }) {
   </section>`;
 }
 
+/** What this project sets on top of Foundry's settings, read-only (edit `projects[id]` in settings.json). */
+const OVERRIDE_GROUPS = [
+  ['defaults', 'Defaults', 'Executor and classifier provider and model'],
+  ['toolRules', 'Tool rules', 'Capabilities here override the global ones; protected paths add up'],
+  ['feedback', 'Feedback', 'Each field overrides the global one'],
+  ['prompts', 'Prompts', 'Base identity prompt files'],
+  ['agents', 'Agents', 'Standalone, or extending a global agent'],
+  ['layers', 'Layers', 'Merged over the global layers'],
+];
+
+function overrideEntries(value) {
+  if (!value || typeof value !== 'object') return [];
+  return Object.entries(value).filter(([, v]) => v !== undefined);
+}
+
+function overrideValue(key, value) {
+  if (key === 'agents' && value && typeof value === 'object')
+    return 'extends' in value ? `extends ${value.extends}` : 'standalone';
+  if (value === null || typeof value !== 'object') return String(value);
+  return JSON.stringify(value);
+}
+
+function ProjectOverrides({ project }) {
+  const groups = OVERRIDE_GROUPS.map(([key, label, desc]) => ({
+    key,
+    label,
+    desc,
+    entries: overrideEntries(project[key]),
+  })).filter((g) => g.entries.length);
+  return html`<section class="settings-card project-overrides">
+    <p class="settings-desc">What this project sets on top of Foundry's settings. Everything not listed is inherited. Read-only here: edit <code>projects[${project.id}]</code> in settings.json.</p>
+    ${
+      groups.length
+        ? groups.map(
+            (g) => html`<div key=${g.key} class="override-group" data-override=${g.key}>
+              <h3>${g.label}</h3>
+              <p class="settings-desc">${g.desc}</p>
+              <dl class="override-list">${g.entries.map(
+                ([k, v]) =>
+                  html`<div key=${k}><dt><code>${k}</code></dt><dd><code>${overrideValue(g.key, v)}</code></dd></div>`,
+              )}</dl>
+            </div>`,
+          )
+        : html`<p class="settings-empty">No overrides: this project inherits everything from Foundry settings.</p>`
+    }
+  </section>`;
+}
+
 function FoundrySection({ section, config }) {
   const projectList = Object.entries(config.projects ?? {}).map(([id, p]) => ({
     id,
@@ -549,13 +615,12 @@ function ProjectSection({ section, projectId, project, onFocusChange }) {
   if (section === 'archive')
     return html`<${ProjectArchive} key=${projectId} projectId=${projectId} />`;
   if (section === 'gloss')
-    return html`<${ComingSoon}>Gloss: margin commentary kept beside the code instead of in it, for this project's agents to read. Its controls arrive with the Gloss rollout.</${ComingSoon}>`;
+    return html`<${ComingSoon}>Gloss: margin commentary kept beside the code instead of in it, for this project's agents to read. It arrives with Foundry's code viewer (ticket VIEWER-004).</${ComingSoon}>`;
   if (section === 'chorus')
     return html`<${ProjectChorus} key=${projectId} projectId=${projectId} />`;
   if (section === 'conversations')
     return html`<${ProjectConversations} key=${projectId} projectId=${projectId} />`;
-  if (section === 'overrides')
-    return html`<${ComingSoon}>Overrides: this project's own defaults, agents and layers on top of Foundry's. Until then a project inherits everything from Foundry settings (edit <code>projects[id]</code> in settings.json to override by hand).</${ComingSoon}>`;
+  if (section === 'overrides') return html`<${ProjectOverrides} project=${project} />`;
   if (section === 'sources') {
     const sources = Object.values(project.sources || {});
     return html`
@@ -615,7 +680,7 @@ export function SettingsPage() {
       <${SettingsNav} projectId=${projectId} section=${section} projectList=${projectList} />
       <div class="settings-main">
         <header class="settings-page-header">
-          <span class="settings-breadcrumb">${project ? project.label || projectId : 'Foundry'}</span>
+          <span class="settings-breadcrumb">${projectId ? project?.label || projectId : 'Foundry'}</span>
           <h1 class="settings-title">${label}</h1>
           ${focus ? html`<span class="settings-title-focus">${focus.kind}:${focus.id}</span>` : null}
           <button class="action-btn settings-chat-view" onClick=${() => setShowChat(!showChat)}>${showChat ? 'Back to settings' : 'Forge Master'}</button>

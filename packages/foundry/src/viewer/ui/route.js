@@ -38,11 +38,8 @@ export const PROJECT_SETTINGS = [
   ['archive', 'Archive'],
   ['sources', 'Sources'],
   ['gloss', 'Gloss', null, true],
-  ['overrides', 'Overrides', null, true],
+  ['overrides', 'Overrides', null],
 ];
-
-/** Section addresses that moved: an old link lands on the section that now holds it. */
-const MOVED_SECTIONS = { models: 'providers', tunnel: 'devices', integrations: 'kingdom' };
 
 /** { page: 'workspace' | 'settings' | 'analytics', projectId: string | null, section?: string } */
 export function parseRoute(pathname) {
@@ -57,7 +54,7 @@ export function parseRoute(pathname) {
   if (rest[0] === 'analytics') return { page: 'analytics', projectId };
   if (rest[0] === 'settings') {
     const sections = projectId ? PROJECT_SETTINGS : FOUNDRY_SETTINGS;
-    const asked = projectId ? rest[1] : (MOVED_SECTIONS[rest[1]] ?? rest[1]);
+    const asked = rest[1];
     const section = sections.some(([id]) => id === asked) ? asked : sections[0][0];
     return { page: 'settings', projectId, section };
   }

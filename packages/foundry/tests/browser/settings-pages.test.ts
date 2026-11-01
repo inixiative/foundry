@@ -97,10 +97,14 @@ test('settings and analytics are addressable pages scoped to Foundry or a projec
     await page.getByRole('switch', { name: 'Dev mode' }).uncheck();
     expect(await page.locator('#kingdom-api-url').count()).toBe(0);
 
-    // GitHub and Linear: what is connected, and connecting an account is coming soon.
+    // GitHub and Linear: what is connected; the account lives in Kingdom (pair one to manage it).
     await nav('GitHub').click();
-    await page.locator('.integration-card .coming-soon').waitFor();
-    expect(await page.getByRole('button', { name: 'Connect GitHub' }).isDisabled()).toBe(true);
+    await page
+      .locator('.integration-card', {
+        hasText: 'Pair a Kingdom in Settings → Kingdom to add a GitHub account.',
+      })
+      .waitFor();
+    expect(await page.locator('.integration-card .coming-soon').count()).toBe(0);
 
     // Devices without Kingdom says what peers and the tunnel are for; the tunnel waits for Kingdom.
     await nav('Devices').click();
@@ -113,10 +117,12 @@ test('settings and analytics are addressable pages scoped to Foundry or a projec
     await nav('Layers').click();
     expect(await page.locator('.settings-empty').innerText()).toContain('unwrapped');
 
-    // An old address lands on the section that now holds it.
+    // An unknown section lands on the first one; old addresses have no aliases.
     await page.goto(`${origin}/settings/models`);
+    await page.locator('h1.settings-title', { hasText: 'Profile' }).waitFor();
+    expect(new URL(page.url()).pathname).toBe('/settings/profile');
+    await page.goto(`${origin}/settings/providers`);
     await page.locator('h1.settings-title', { hasText: 'Providers' }).waitFor();
-    expect(new URL(page.url()).pathname).toBe('/settings/providers');
 
     // One row per vendor, the five main labs first; subscription and API are modes of one row.
     const vendors = page.locator('.vendor-row');
@@ -164,11 +170,15 @@ test('settings and analytics are addressable pages scoped to Foundry or a projec
     await page.getByRole('link', { name: 'Project', exact: true }).click();
     expect(new URL(page.url()).pathname).toBe(`/projects/${project.id}/settings/integrations`);
     await page.locator('.settings-breadcrumb', { hasText: 'Scratch' }).waitFor();
-    // Gloss and Overrides are coming soon: marked in the nav, no controls on the page.
-    expect(await page.locator('.settings-section .coming-soon').count()).toBe(2);
+    // Gloss is coming soon (marked in the nav, no controls); Overrides lists what the project sets.
+    expect(await page.locator('.settings-section .coming-soon').count()).toBe(1);
     await nav(/Gloss/).click();
     await page.locator('.coming-soon-card').waitFor();
     expect(await page.locator('.settings-body input, .settings-body button').count()).toBe(0);
+    await nav('Overrides').click();
+    await page
+      .locator('.project-overrides', { hasText: 'Everything not listed is inherited.' })
+      .waitFor();
     await nav('Integrations').click();
 
     await page.getByRole('link', { name: 'Analytics' }).click();
