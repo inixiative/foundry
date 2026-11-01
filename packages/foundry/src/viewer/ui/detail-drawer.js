@@ -1415,16 +1415,16 @@ function ThreadNameEditor({ threadId, data }) {
       <label class="thread-name-label">Name <span class="thread-name-source" data-source=${source || ''}>${source ? nameSourceLabel[source] : 'unnamed'}</span></label>
       <div class="thread-name-row">
         <input class="settings-input thread-name-input" value=${draft} maxLength="200"
-          placeholder=${meta.agentName?.text || 'Name this thread'} onInput=${(e) => setDraft(e.target.value)} />
+          placeholder=${meta.foundryName?.text || 'Name this thread'} onInput=${(e) => setDraft(e.target.value)} />
         <button type="submit" class="action-btn" disabled=${saving || draft.trim() === (meta.name?.text || '')}>Save</button>
         ${
           meta.name
             ? html`<button type="button" class="back-btn" disabled=${saving} onClick=${() => save('')}
-          title=${meta.agentName ? `Show the agent name: ${meta.agentName.text}` : 'Let the agent name this thread'}>Use agent name</button>`
+          title=${meta.foundryName ? `Show Foundry's name: ${meta.foundryName.text}` : 'Let Foundry name this thread'}>Use Foundry's name</button>`
             : null
         }
       </div>
-      ${meta.name && meta.agentName ? html`<div class="thread-name-agent">Agent name: ${meta.agentName.text}</div>` : null}
+      ${meta.name && meta.foundryName ? html`<div class="thread-name-agent">Foundry's name: ${meta.foundryName.text}</div>` : null}
     </form>
   `;
 }

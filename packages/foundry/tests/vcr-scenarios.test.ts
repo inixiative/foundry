@@ -827,7 +827,7 @@ test(
           });
         });
         await decided;
-        const title = thread.meta.agentName?.text ?? '';
+        const title = thread.meta.foundryName?.text ?? '';
         return {
           title,
           short: title.length > 0 && title.split(/\s+/).length <= 8,
