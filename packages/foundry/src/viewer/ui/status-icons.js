@@ -40,6 +40,7 @@ const CUTS = {
   dash: cut('M4.3 7h5.4', 1.9),
   pause: cut('M5.5 4.5v5M8.5 4.5v5', 1.9),
   box: cut('M3.2 5.3h7.6', 1.3) + cut('M5.8 8h2.4', 1.7),
+  clock: cut('M7 3.4a3.6 3.6 0 1 1 0 7.2 3.6 3.6 0 0 1 0-7.2Z', 1.3) + cut('M7 5v2.1l1.4.9', 1.3),
   // Permission modes (context, not status): an M for manual, a plan sheet, a bolt.
   m: cut('M4.2 10V4.2L7 7.6l2.8-3.4V10', 1.6),
   sheet: cut('M4.6 3.6h4.8M4.6 6h4.8M4.6 8.4h3', 1.4) + cut('M4.6 10.6h.01', 1.8),
@@ -109,6 +110,7 @@ export const STATES = {
   done: { cat: 'done', cut: 'check', label: 'Done' },
   idle: { cat: 'idle', cut: 'dash', label: 'Idle' },
   paused: { cat: 'idle', cut: 'pause', label: 'Paused' },
+  snoozed: { cat: 'idle', cut: 'clock', label: 'Snoozed' },
   archived: { cat: 'archived', cut: 'box', label: 'Archived' },
 };
 

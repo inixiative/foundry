@@ -155,7 +155,7 @@ function Incoming() {
   </section>`;
 }
 
-/** Quiet threads: paused, idle or archived. Off the board unless asked for; snoozed joins them once built. */
+/** Quiet threads: paused, idle, snoozed (all neutral) or archived. Off the board unless asked for. */
 const QUIET = new Set(['idle', 'archived']);
 
 export function Board() {

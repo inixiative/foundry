@@ -1,0 +1,19 @@
+/* Snooze in a thread's ⋯ menu (thread-tree.js, snooze.js). */
+.thread-action-group {
+  display: grid;
+  border-top: 1px solid hsl(var(--border));
+  border-bottom: 1px solid hsl(var(--border));
+  margin: 2px 0;
+  padding: 2px 0;
+}
+.thread-action-label {
+  font: 600 10.5px var(--font-mono, monospace);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: hsl(var(--muted-foreground));
+  padding: 4px 10px 2px;
+}
+.thread-action-menu button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

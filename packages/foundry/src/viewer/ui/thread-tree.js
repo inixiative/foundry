@@ -9,8 +9,9 @@
  */
 
 import { FeedbackStrip, feedbackIn } from './feedback.js';
-import { html, useState } from './lib.js';
+import { html, useLayoutEffect, useRef, useState } from './lib.js';
 import { RenameModal } from './modal.js';
+import { isSnoozed, snooze, snoozedUntil, tomorrowMorning, unsnooze } from './snooze.js';
 import { StatusIcon } from './status-icons.js';
 import {
   activePanel,
@@ -73,6 +74,18 @@ function InactiveFold({ count, label, defaultOpen = false, children }) {
 function ThreadActions({ thread }) {
   const [open, setOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
+  const [at, setAt] = useState(null);
+  const trigger = useRef(null);
+  // Fixed to the viewport beside the ⋯ button, so the list's scroll frame never clips the menu.
+  useLayoutEffect(() => {
+    if (!open) return;
+    const r = trigger.current?.getBoundingClientRect();
+    if (r)
+      setAt({
+        left: Math.max(8, Math.min(window.innerWidth - 248, r.right - 240)),
+        top: Math.min(window.innerHeight - 320, r.bottom + 2),
+      });
+  }, [open]);
   const toggle = (e) => {
     e.stopPropagation();
     setOpen((v) => !v);
@@ -82,6 +95,12 @@ function ThreadActions({ thread }) {
     setOpen(false);
     executeAction(kind, thread.id);
   };
+  // A snooze is kept in this browser until Foundry records it on the thread.
+  const local = (fn) => (e) => {
+    e.stopPropagation();
+    setOpen(false);
+    fn();
+  };
 
   const status = thread.status || 'idle';
   const canPause = status === 'active' || status === 'idle';
@@ -90,14 +109,27 @@ function ThreadActions({ thread }) {
 
   return html`
     <div class="thread-actions ${open ? 'thread-actions-open' : ''}">
-      <button class="thread-action-btn thread-action-trigger" onClick=${toggle}
+      <button ref=${trigger} class="thread-action-btn thread-action-trigger" onClick=${toggle}
         title="Thread actions" aria-haspopup="menu" aria-expanded=${open}>⋯</button>
       ${
         open
-          ? html`<div class="thread-action-menu" role="menu" onClick=${(e) => e.stopPropagation()}>
+          ? html`<div class="thread-action-menu" role="menu" style=${at ? `position:fixed;left:${at.left}px;top:${at.top}px;right:auto;min-width:240px` : ''} onClick=${(e) => e.stopPropagation()}>
         ${canPause ? html`<button role="menuitem" onClick=${run('thread:pause')}>Pause</button>` : null}
         ${canResume ? html`<button role="menuitem" onClick=${run('thread:resume')}>Resume</button>` : null}
         ${!isArchived ? html`<button role="menuitem" onClick=${run('thread:archive')}>Archive</button>` : null}
+        ${
+          isSnoozed(thread.id)
+            ? html`<button role="menuitem" onClick=${local(() => unsnooze(thread.id))}>Wake it (snoozed until ${new Date(snoozedUntil(thread.id)).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })})</button>`
+            : !isArchived
+              ? html`<div class="thread-action-group" role="group" aria-label="Snooze">
+                  <span class="thread-action-label">Snooze</span>
+                  <button role="menuitem" onClick=${local(() => snooze(thread.id, Date.now() + 3_600_000))}>1 hour</button>
+                  <button role="menuitem" onClick=${local(() => snooze(thread.id, tomorrowMorning()))}>Until tomorrow</button>
+                  <button role="menuitem" disabled title="Foundry doesn't know when your subscription's window resets yet">Until quota resets · not built</button>
+                  <button role="menuitem" disabled title="Foundry doesn't track CI for a thread yet">Until CI finishes · not built</button>
+                </div>`
+              : null
+        }
         <button role="menuitem" onClick=${run('thread:inspect')}>Inspect</button>
         <button role="menuitem" onClick=${(e) => {
           e.stopPropagation();
