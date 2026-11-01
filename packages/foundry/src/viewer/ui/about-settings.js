@@ -1,0 +1,66 @@
+/**
+ * @atlas
+ * @kind component
+ * @partOf feature:viewer
+ */
+/**
+ * Settings → About: what Foundry is, who helped shape it, its version and licence.
+ */
+
+import { html, useEffect, useState } from './lib.js';
+import { authFetch } from './store.js';
+
+const REPO_URL = 'https://github.com/inixiative/foundry';
+const T3_CODE_URL = 'https://github.com/pingdotgg/t3code';
+const PASEO_URL = 'https://github.com/getpaseo/paseo';
+
+export function AboutSection() {
+  const [version, setVersion] = useState(null);
+  useEffect(() => {
+    authFetch('/api/health')
+      .then((res) => res.json())
+      .then((body) => setVersion(typeof body.version === 'string' ? body.version : null))
+      .catch(() => setVersion(null));
+  }, []);
+
+  return html`
+    <div class="about-page">
+      <section class="settings-card about-card" data-about="what">
+        <div class="settings-card-header"><span class="settings-card-title">About Foundry</span></div>
+        <p class="about-text">
+          Foundry is a local harness for coding agents (Claude Code, Codex). It keeps your agents working the way
+          your project already works: a chorus of small expert agents points the main thread at the rules, docs and
+          code you already have, and every thread is captured, so a correction you give once sticks instead of being
+          repeated.
+        </p>
+        <dl class="about-facts">
+          <dt>Version</dt>
+          <dd class="mono">${version ?? '—'}</dd>
+          <dt>Source</dt>
+          <dd><a href=${REPO_URL} target="_blank" rel="noreferrer">github.com/inixiative/foundry ↗</a></dd>
+          <dt>Licence</dt>
+          <dd>
+            <code>packages/foundry</code> under${' '}
+            <a href=${`${REPO_URL}/blob/main/LICENSE-BSL`} target="_blank" rel="noreferrer">BSL 1.1</a>${' '}
+            (converts to MIT on 2030-04-06); <code>packages/core</code> and <code>packages/acp</code> under${' '}
+            <a href=${`${REPO_URL}/blob/main/LICENSE-MIT`} target="_blank" rel="noreferrer">MIT</a>.
+          </dd>
+        </dl>
+      </section>
+
+      <section class="settings-card about-card" data-about="open-source">
+        <div class="settings-card-header"><span class="settings-card-title">Built on open source</span></div>
+        <p class="about-text">
+          Big thanks to${' '}<a href=${T3_CODE_URL} target="_blank" rel="noreferrer"><strong>T3 Code</strong></a>${' '}
+          (Theo and the Ping team) and <a href=${PASEO_URL} target="_blank" rel="noreferrer"><strong>Paseo</strong></a>,
+          open-source agent runners that helped shape the language Foundry uses and gave us a reference to check our
+          work against. Thank you for working in the open.
+        </p>
+      </section>
+
+      <section class="settings-card about-card" data-about="supporters">
+        <p class="about-text">Thanks to <strong>UserEvidence</strong> for supporting open-source software.</p>
+      </section>
+    </div>
+  `;
+}

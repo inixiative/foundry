@@ -73,6 +73,7 @@ test('settings and analytics are addressable pages scoped to Foundry or a projec
       'Agents',
       'Activity',
       'Feedback',
+      'About',
     ]);
     await page.locator('#installation-name').fill('Studio Foundry');
     await page.getByRole('button', { name: 'Save name' }).click();

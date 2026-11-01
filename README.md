@@ -16,7 +16,9 @@ Foundry runs on your machine. It reaches Kingdom for identity, integrations and 
 
 ## What this is
 
-Foundry is a framework for building agent systems where you control the context, permissions, and routing — not just the prompt.
+Foundry is a local harness for coding agents (Claude Code, Codex). It keeps your agents working the way your project already works: a chorus of small expert agents points the main thread at the rules, docs and code you already have, and every thread is captured, so a correction you give once sticks instead of being repeated.
+
+Under the hood, Foundry is a framework for building agent systems where you control the context, permissions, and routing — not just the prompt.
 
 - **Context layers** — stackable context slices with staleness and caching. Agents see what you decide they should see.
 - **Classify → Route → Execute pipeline** — incoming messages are classified, routed to the right executor with the right context slice, and traced end-to-end.
@@ -174,6 +176,12 @@ The viewer is a Preact-based dashboard served by Hono. No build step — vanilla
 - **Settings**: besides configuration, the Layers, Agents and Activity (runtime events) of the selected thread
 
 Keyboard shortcuts: `1-3` switch panels, `?` help, `s` settings, `a` analytics.
+
+## Acknowledgements
+
+Big thanks to **[T3 Code](https://github.com/pingdotgg/t3code)** (Theo and the Ping team) and **[Paseo](https://github.com/getpaseo/paseo)**, open-source agent runners that helped shape the language Foundry uses and gave us a reference to check our work against. Thank you for working in the open.
+
+Thanks to **UserEvidence** for supporting open-source software.
 
 ## License
 

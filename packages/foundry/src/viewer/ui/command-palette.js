@@ -51,6 +51,12 @@ const COMMANDS = [
     action: () => navigate(settingsPath(scopeProjectId())),
   },
   {
+    id: 'about',
+    label: 'About Foundry',
+    icon: 'i',
+    action: () => navigate(settingsPath(null, 'about')),
+  },
+  {
     id: 'analytics',
     label: 'Open analytics',
     icon: '$',
