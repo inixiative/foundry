@@ -1190,6 +1190,9 @@ export async function loadIncoming() {
     incoming.value = Array.isArray(data.requests) ? data.requests : [];
   } catch {
     /* silent — no Kingdom paired, or the daemon is restarting */
+  }
+}
+
 /** Paired Kingdoms as /api/kingdom/status describes them (owners, holders); null until read. */
 export const kingdomStatus = signal(null);
 
