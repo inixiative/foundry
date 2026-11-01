@@ -1,6 +1,6 @@
 # CORE-004: Fork and rewind on the native primitives, with Foundry's state kept in step
 
-**Status**: 📝 Proposed (not built). Shape agreed with Aron 2026-11-01. Rolling back files is his "we might also try", pending the recommendation below.
+**Status**: 🟡 Portable fork built (2026-11-01, inixiative-da: `forkedFrom` provenance, the journal seed, the viewer route and `fork_thread`; CONVERSATIONS.md §4.11). Native fork, rewind, the ledger cut and file rollback not built. Shape agreed with Aron 2026-11-01. Rolling back files is his "we might also try", pending the recommendation below.
 **Assignee**: TBD
 **Priority**: Medium
 **Created**: 2026-11-01

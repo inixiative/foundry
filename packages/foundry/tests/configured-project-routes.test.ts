@@ -18,6 +18,7 @@ import {
   ThreadFactory,
 } from '../src/agents/thread-factory';
 import { ThreadRuntimeManager } from '../src/agents/thread-runtime';
+import { LocalSessionStore } from '../src/persistence/local-session-store';
 import { ConfigStore, starterConfig } from '../src/viewer/config';
 import { registerRuntimeRoutes } from '../src/viewer/routes/runtime';
 import { withStreams } from './helpers/data-stream';
@@ -123,6 +124,8 @@ for (const operation of ['create', 'fork'] as const) {
           threadFactory: factory,
           projectRegistry: registry,
           configStore: store,
+          // Forking runs on the local session store.
+          localStore: new LocalSessionStore(':memory:'),
         }),
       );
       const response = await app.request(
@@ -131,7 +134,7 @@ for (const operation of ['create', 'fork'] as const) {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify(
-            operation === 'create' ? { id: 'created', projectId: project.id } : { copyCount: 1 },
+            operation === 'create' ? { id: 'created', projectId: project.id } : { atSeq: 0 },
           ),
         },
       );

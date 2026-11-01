@@ -1489,7 +1489,8 @@ export async function forkThread(messageIndex) {
     const res = await authFetch(`/api/threads/${encodeURIComponent(tid)}/fork`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ copyCount: messageIndex + 1 }),
+      // The message itself, not its place on this page: the view holds only the newest page.
+      body: JSON.stringify({ messageId: msgs[messageIndex].id }),
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));

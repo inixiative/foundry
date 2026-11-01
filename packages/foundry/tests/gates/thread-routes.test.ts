@@ -98,7 +98,7 @@ test('G2: fork of an unknown source creates no runtime', async () => {
   const { runtime, post } = setup();
   try {
     const before = runtime.runtimes.size;
-    const response = await post('/api/threads/missing/fork', { copyCount: 1 });
+    const response = await post('/api/threads/missing/fork', { atSeq: 0 });
     expect(response.status).toBe(404);
     expect(runtime.runtimes.size).toBe(before);
   } finally {

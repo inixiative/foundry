@@ -100,6 +100,12 @@ export interface TurnOrigin {
    * for it. The message is Foundry's own line; the entries ride the turn as notes.
    */
   wake?: true;
+  /**
+   * Not a post: the task a fork was made to work on (`member.id` is the source thread). Foundry's
+   * own line, never the owner's message: the fork's seeded history carries other parties' words,
+   * so its first turn must not count as his instruction (`lastOwnerSeq`), and nothing is split off it.
+   */
+  fork?: true;
 }
 
 /** A settled turn's result as the routes and the requesting client receive it. */
@@ -269,7 +275,9 @@ export class TurnService {
     // What the harness runs on: the member's post labelled as data (the Wardens and the executor
     // both read it so); the owner's message as typed.
     const harnessPayload =
-      origin && !origin.wake ? memberPostReception(origin.displayName, payload) : payload;
+      origin && !origin.wake && !origin.fork
+        ? memberPostReception(origin.displayName, payload)
+        : payload;
     const { localStore, streams } = this.deps;
     const turnId = request.turnId ?? newId('turn');
     const threadId = request.threadId;

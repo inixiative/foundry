@@ -277,7 +277,10 @@ console.log(
 const threadLaunch = new ThreadLaunchSettings();
 let toolGateFor: ((threadId: string) => ThreadToolGate) | undefined;
 // The journal a fresh executor session is seeded from; bound once the viewer opens it.
-let journalStore: Pick<LocalSessionStore, 'journalEntries'> | null | undefined;
+let journalStore:
+  | Pick<LocalSessionStore, 'journalEntries' | 'threadMeta' | 'phasesOf'>
+  | null
+  | undefined;
 const hostSettings = {
   launch: threadLaunch,
   // Bound lazily per call: a session created before the viewer exists still fails closed, never open.
