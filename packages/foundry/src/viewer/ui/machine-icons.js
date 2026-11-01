@@ -30,15 +30,39 @@ const paint = (slot) => `--dc:var(--layer-${slot})`;
 
 /** This machine's profile ({ installationName, installationIcon }), once read. */
 export const machineProfile = signal(null);
+/** This machine's Foundry device id (`/api/devices`), to tell its threads from other machines'. */
+export const thisDeviceId = signal(null);
 let reading = null;
 export function loadMachineProfile() {
-  reading ??= authFetch('/api/profile')
-    .then((res) => (res.ok ? res.json() : null))
-    .then((profile) => {
-      if (profile) machineProfile.value = profile;
-    })
-    .catch(() => {});
+  reading ??= Promise.all([
+    authFetch('/api/profile')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((profile) => {
+        if (profile) machineProfile.value = profile;
+      }),
+    authFetch('/api/devices')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((inventory) => {
+        if (inventory?.device?.id) thisDeviceId.value = inventory.device.id;
+      }),
+  ]).catch(() => {});
   return reading;
+}
+
+/** The machine a thread runs on when it isn't this one (`meta.machine`), else null. */
+export function otherMachine(thread) {
+  const machine = thread?.meta?.machine;
+  if (!machine || !thisDeviceId.value || machine.deviceId === thisDeviceId.value) return null;
+  return machine;
+}
+
+const LAPTOP = html`<svg viewBox="0 0 14 14" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="2" y="3" width="10" height="7" rx="1" /><path d="M1 12h12" /></svg>`;
+
+/** The blue badge on a thread that runs on another of your machines; you manage it from here. */
+export function DeviceBadge({ thread }) {
+  const machine = otherMachine(thread);
+  if (!machine) return null;
+  return html`<span class="device-badge" title=${`Runs on ${machine.deviceName}; you manage it from here`}>${LAPTOP}${machine.deviceName}</span>`;
 }
 
 export const machineIcon = (profile = machineProfile.value) =>

@@ -19,6 +19,7 @@ import { initHotkeys, registerDefaults } from './hotkeys.js';
 import { RequestView } from './incoming.js';
 import { KnowledgePage } from './knowledge.js';
 import { html, render, useEffect, useRef, useState } from './lib.js';
+import { loadMachineProfile } from './machine-icons.js';
 import { NavRail } from './nav-rail.js';
 import { panelColumns, RestoreTab } from './panel-sizes.js';
 import { ProjectHome } from './project-home.js';
@@ -342,6 +343,7 @@ function App() {
       },
     });
     initHotkeys();
+    loadMachineProfile();
   }, []);
 
   // Check if first-run wizard is needed
