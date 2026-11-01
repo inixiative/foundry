@@ -5,10 +5,10 @@
  */
 import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
-import { mkdir, rmdir } from 'node:fs/promises';
+import { mkdir } from 'node:fs/promises';
 import { isAbsolute, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { kingdomUrl, readPrivateJson, writePrivateJson } from '@inixiative/signet';
+import { kingdomUrl, readPrivateJson, withHoldLock, writePrivateJson } from '@inixiative/signet';
 import { z } from 'zod';
 import {
   KingdomClient,
@@ -141,9 +141,8 @@ export class KingdomAuthentication {
       createHash('sha256').update(`${runtime}:${threadId}`).digest('hex'),
     );
     await mkdir(directory, { recursive: true, mode: 0o700 });
-    const lock = join(directory, '.binding-lock');
-    await mkdir(lock, { mode: 0o700 });
-    try {
+    // One resolver per binding directory across processes; a crashed holder's lock is reclaimed.
+    await withHoldLock(directory, async () => {
       const bindingFile = join(directory, 'binding.json'),
         credentialFile = join(directory, 'run-credential.json');
       let envelope: z.infer<typeof kingdomEnvelopeSchema>;
@@ -211,8 +210,6 @@ export class KingdomAuthentication {
         ],
       });
       this.bindings.set(`${runtime}:${threadId}`, { fingerprint, manager, envelope });
-    } finally {
-      await rmdir(lock);
-    }
+    });
   }
 }
