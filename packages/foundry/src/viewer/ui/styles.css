@@ -8578,3 +8578,23 @@ a.thread-ref:hover {
   gap: 8px;
   margin: 12px 16px 0;
 }
+
+/* Footer subscriptions: a label, then one row per provider that opens to its subscriptions */
+.nav-footer-label {
+  font: 600 10.5px var(--font-mono);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  margin: 6px 0 2px;
+}
+.nav-footer-provider .nav-footer-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+}
+.nav-footer-provider .nav-footer-count {
+  margin-left: auto;
+  font-size: 11.5px;
+  color: var(--text-dim);
+}
