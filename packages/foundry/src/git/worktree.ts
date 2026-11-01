@@ -160,6 +160,37 @@ export async function gitContext(
   };
 }
 
+export interface BranchCommit {
+  sha: string;
+  short: string;
+  subject: string;
+  author: string;
+  /** Commit time, epoch ms. */
+  at: number;
+}
+
+/**
+ * Commits on the checkout containing `cwd` that its base doesn't have (`base..HEAD`), newest first.
+ * The base is the origin's default branch (`origin/HEAD`), else `main`. Read-only.
+ */
+export async function branchCommits(
+  cwd: string,
+  limit = 50,
+): Promise<{ base: string; commits: BranchCommit[] }> {
+  const base = await git(['rev-parse', '--abbrev-ref', 'origin/HEAD'], cwd).catch(() => 'main');
+  const out = await git(
+    ['log', `--max-count=${limit}`, '--format=%H%x1f%h%x1f%s%x1f%an%x1f%ct', `${base}..HEAD`],
+    cwd,
+  ).catch(() => '');
+  const commits = out
+    ? out.split('\n').map((line) => {
+        const [sha = '', short = '', subject = '', author = '', at = '0'] = line.split('\x1f');
+        return { sha, short, subject, author, at: Number(at) * 1000 };
+      })
+    : [];
+  return { base, commits };
+}
+
 /** Diff stat between two branches (for Herald cross-thread comparison). */
 export async function diffStat(repoRoot: string, base: string, head: string): Promise<string> {
   return git(['diff', `${base}...${head}`, '--stat'], repoRoot);

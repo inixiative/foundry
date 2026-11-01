@@ -26,6 +26,7 @@ import {
   activePanel,
   allThreads,
   boardOpen,
+  CENTER_PANELS,
   compactPanel,
   connected,
   currentTrace,
@@ -209,9 +210,9 @@ function App() {
 
   useEffect(() => {
     registerDefaults({
-      centerTabs: ['Thread', 'Brief', 'Work', 'Loop'],
+      centerTabs: ['Thread', 'Plan', 'Work', 'Loop'],
       showCenterTab: (i) => {
-        activePanel.value = ['conversation', 'brief', 'work', 'graph'][i];
+        activePanel.value = CENTER_PANELS[i];
       },
       nextItem: () => {
         /* TODO: span navigation */

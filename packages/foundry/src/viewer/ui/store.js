@@ -53,7 +53,9 @@ export const threadData = signal(null);
 export const allThreads = signal([]); // all threads (multi-thread support)
 export const activeThreadId = signal(null); // selected thread ID (null = first/default)
 export const liveEvents = signal([]);
-export const activePanel = signal('conversation'); // center panel view: "conversation" | "graph"
+/** The centre's tab: conversation (Thread) | plan | work | graph (Loop). */
+export const CENTER_PANELS = ['conversation', 'plan', 'work', 'graph'];
+export const activePanel = signal('conversation');
 export const commandPaletteOpen = signal(false);
 export const helpOpen = signal(false);
 export const toast = signal(null); // { message, type: "ok"|"error"|"warn", persistent?: boolean }
@@ -1876,7 +1878,7 @@ function restoreFromHash() {
   feedbackInboxOpen.value = h.feedback === '1' && h.forge !== '1';
   if (h.project) activeProjectId.value = h.project;
   if (h.thread) selectThread(h.thread);
-  if (h.panel) activePanel.value = h.panel;
+  if (h.panel && CENTER_PANELS.includes(h.panel)) activePanel.value = h.panel;
   if (h.sidebar === '0') projectSidebarOpen.value = false;
   if (h.detail === '0') detailDrawerOpen.value = false;
   if (RIGHT_TABS.includes(h.rtab)) rightTab.value = h.rtab;

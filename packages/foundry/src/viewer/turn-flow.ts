@@ -3,7 +3,7 @@
  * @kind service
  * @partOf feature:threads, feature:viewer
  */
-import type { NativeEvidence } from '@inixiative/foundry-core';
+import { type NativeEvidence, WRITE_TOOLS } from '@inixiative/foundry-core';
 import type { LearningState, ThreadKnowledgeBundle } from '../agents/thread-runtime';
 import { REDUCED_PHASE } from '../archives/reduced-middleware';
 import type {
@@ -125,6 +125,45 @@ export function taskLists(history: readonly NativeEvidence[]): TaskList[] {
 }
 
 // ---------------------------------------------------------------------------
+// Files a turn wrote: the paths in its write tools' recorded input (core's WRITE_TOOLS).
+// Paths only; the viewer shows no diffs (VIEWER-003 is the diff viewer).
+// ---------------------------------------------------------------------------
+
+export interface TurnFile {
+  path: string;
+  tool: string;
+}
+
+const PATCH_FILE = /^\*\*\* (?:Add|Update|Delete) File: (.+)$/gm;
+
+/** Paths one write tool's input names: Claude's `file_path` / `notebook_path`, Codex `apply_patch` headers. */
+function writtenPaths(input: Record<string, unknown>): string[] {
+  const direct = [input.file_path, input.notebook_path].filter(
+    (value): value is string => typeof value === 'string' && value.length > 0,
+  );
+  const patch = [input.input, input.patch].find((value) => typeof value === 'string') as
+    | string
+    | undefined;
+  const patched = patch ? [...patch.matchAll(PATCH_FILE)].map((m) => m[1]!.trim()) : [];
+  return [...direct, ...patched];
+}
+
+/** Each file a turn's write tools touched, once, in first-touch order. */
+export function turnFiles(history: readonly NativeEvidence[]): TurnFile[] {
+  const seen = new Map<string, TurnFile>();
+  for (const evidence of history) {
+    if (evidence.kind !== 'tool_use' || !evidence.toolName || !evidence.toolInput) continue;
+    if (!WRITE_TOOLS.has(evidence.toolName)) continue;
+    for (const path of writtenPaths(evidence.toolInput as Record<string, unknown>))
+      if (!seen.has(path)) seen.set(path, { path: clip(path, 300), tool: evidence.toolName });
+  }
+  return [...seen.values()].slice(0, MAX_ITEMS);
+}
+
+/** Tool names a turn record reads: the plan tools and the write tools. */
+export const FLOW_TOOL_NAMES: readonly string[] = [...Object.keys(TASK_SOURCES), ...WRITE_TOOLS];
+
+// ---------------------------------------------------------------------------
 // Turn, learning and knowledge projections
 // ---------------------------------------------------------------------------
 
@@ -218,7 +257,8 @@ export function slimTurn(record: TurnFlowRecord) {
       })),
     delivery: isObject(meta.delivery) ? slim(meta.delivery) : null,
     outcome,
-    tasks: taskLists(record.taskUses),
+    tasks: taskLists(record.toolUses),
+    files: turnFiles(record.toolUses),
   };
 }
 export type TurnFlow = ReturnType<typeof slimTurn>;
@@ -241,13 +281,14 @@ export function unreadableTurn(threadId: string, turnId: string, error: unknown)
     delivery: null,
     outcome: {},
     tasks: [],
+    files: [],
   };
 }
 
 /** One turn for the flow stream. */
 export function readTurn(store: LocalSessionStore, threadId: string, turnId: string) {
   try {
-    const record = store.turnFlowRecord(threadId, turnId, Object.keys(TASK_SOURCES));
+    const record = store.turnFlowRecord(threadId, turnId, FLOW_TOOL_NAMES);
     return record ? { turn: slimTurn(record), ok: true } : null;
   } catch (error) {
     return { turn: unreadableTurn(threadId, turnId, error), ok: false };

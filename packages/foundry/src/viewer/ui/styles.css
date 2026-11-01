@@ -7047,29 +7047,29 @@ a.thread-ref:hover {
 .lifecycle-step.is-current .lifecycle-mark {
   background: var(--st-working);
 }
-.brief {
+.plan {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  max-width: 760px;
+  gap: 18px;
+  max-width: 780px;
 }
-.brief-title {
-  font-family: var(--display);
-  font-size: 20px;
-  font-weight: 650;
-  letter-spacing: -0.02em;
-  margin: 0;
+.plan-about {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border);
 }
-.brief-about {
+.plan-desc {
   margin: 0;
   color: var(--text-dim);
 }
-.brief-line {
+.plan-line {
   display: grid;
   grid-template-columns: 110px 1fr;
   gap: 10px;
 }
-.brief-label {
+.plan-label {
   font-family: var(--mono);
   font-size: 10.5px;
   letter-spacing: 0.12em;
@@ -7077,17 +7077,25 @@ a.thread-ref:hover {
   color: var(--text-dim);
   padding-top: 3px;
 }
-.brief-value {
+.plan-value {
   min-width: 0;
 }
-.brief-now,
-.brief-needs,
-.brief-link {
+.plan-now,
+.plan-link {
   display: inline-flex;
   align-items: center;
   gap: 8px;
 }
-.brief-list {
+.plan-link {
+  margin: 0;
+  color: var(--text);
+}
+.plan-refs {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.plan-needs {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -7095,14 +7103,141 @@ a.thread-ref:hover {
   flex-direction: column;
   gap: 6px;
 }
-.brief-link {
+.plan-needs li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.plan-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.plan-section-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.plan-section-head h3 {
+  font-family: var(--display);
+  font-size: 15px;
+  font-weight: 650;
   margin: 0;
+}
+.plan-goal + .plan-goal {
+  margin-top: 12px;
+}
+.plan-goal-text {
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+.plan-steps,
+.plan-children {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.plan-children {
+  margin: 2px 0 6px 40px;
+  padding-left: 10px;
+  border-left: 1px solid var(--border);
+}
+.plan-step-row {
+  display: grid;
+  grid-template-columns: 16px auto 1fr auto;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 6px;
+  border-radius: 6px;
+}
+.plan-step-row:hover {
+  background: var(--surface2);
+}
+.plan-step[data-state="done"] .plan-step-text {
+  color: var(--text-dim);
+}
+.plan-step-text {
+  min-width: 0;
+}
+.plan-caret,
+.plan-when {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--text-dim);
+  cursor: pointer;
+  font: inherit;
+}
+.plan-caret-space {
+  width: 16px;
+}
+.plan-when {
+  font-family: var(--mono);
+  font-size: 11.5px;
+}
+.plan-when:hover,
+.plan-caret:hover {
   color: var(--text);
 }
-.brief-refs {
+.plan-decisions {
+  margin-top: 10px;
+  font-size: 12px;
+}
+.lifecycle--link {
+  cursor: pointer;
+}
+.work-section .rp-link {
+  margin-top: 6px;
+}
+.work-file,
+.work-commit {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
+  align-items: baseline;
+}
+.work-commit {
+  grid-template-columns: auto 1fr auto;
+}
+.work-file-path,
+.work-commit-subject {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.signet-cards {
+  list-style: none;
+  margin: 0;
+  padding: 0;
   display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
+  flex-direction: column;
+  gap: 8px;
+}
+.signet-card {
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+.signet-card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.signet-seal {
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+  background: var(--signet);
+}
+.signet-card-name {
+  font-weight: 600;
 }
 .work-turn {
   display: grid;

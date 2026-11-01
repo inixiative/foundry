@@ -13,7 +13,7 @@
  */
 // A preview must never write to the machine's live Archive: point it at the in-memory fake.
 import '../packages/foundry/tests/helpers/isolate-archive';
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -23,6 +23,7 @@ import {
   Executor,
   Harness,
   InterventionLog,
+  type NativeEvidence,
   Thread,
   TokenTracker,
 } from '../packages/core/src/index';
@@ -104,6 +105,7 @@ export async function createViewerPreview(port = 0) {
   harness.setDefaultExecutor('worker');
   const queue = new ActionQueue();
   const projects = new ProjectRegistry();
+  const seeded = new Map<string, Thread>();
   for (const p of PROJECTS) {
     const path = join(root, p.id);
     mkdirSync(path, { recursive: true });
@@ -124,6 +126,7 @@ export async function createViewerPreview(port = 0) {
       if (s.status === 'archived') thread.archive();
       else if (s.status) thread.meta.status = s.status;
       project.addThread(thread);
+      seeded.set(s.id, thread);
     }
   }
   const configStore = new ConfigStore(join(root, '.foundry'));
@@ -141,6 +144,7 @@ export async function createViewerPreview(port = 0) {
     projectRegistry: projects,
     actionQueue: queue,
   });
+  seedPlanAndWork(viewer, seeded, join(root, 'kingdom'));
   // One thread waits on an approval; one has a member who posted.
   void queue.prompt({
     kind: 'approval',
@@ -180,6 +184,97 @@ export async function createViewerPreview(port = 0) {
       rmSync(root, { recursive: true, force: true });
     },
   };
+}
+
+const git = (cwd: string, ...args: string[]) => {
+  const run = Bun.spawnSync(['git', ...args], {
+    cwd,
+    env: {
+      ...process.env,
+      GIT_AUTHOR_NAME: 'Preview',
+      GIT_AUTHOR_EMAIL: 'preview@example.test',
+      GIT_COMMITTER_NAME: 'Preview',
+      GIT_COMMITTER_EMAIL: 'preview@example.test',
+    },
+  });
+  if (run.exitCode !== 0) throw new Error(run.stderr.toString());
+};
+
+const toolUse = (toolName: string, toolInput: Record<string, unknown>) =>
+  ({
+    schema: 1,
+    nativeOutcome: 'unknown',
+    kind: 'tool_use',
+    toolName,
+    toolInput,
+  }) as NativeEvidence;
+
+/**
+ * The lead Kingdom thread gets a real branch (two commits ahead of main) and two recorded turns
+ * whose plan tool and file writes fill its Plan and Work tabs; its subagent was spawned on turn 1.
+ */
+function seedPlanAndWork(
+  viewer: ReturnType<typeof createViewer>,
+  threads: Map<string, Thread>,
+  repo: string,
+) {
+  const lead = threads.get('k-thread-view');
+  const store = viewer.localStore;
+  if (!lead || !store) return;
+  git(repo, 'init', '-q', '-b', 'main');
+  writeFileSync(join(repo, 'README.md'), 'kingdom\n');
+  git(repo, 'add', '.');
+  git(repo, 'commit', '-q', '-m', 'base');
+  git(repo, 'checkout', '-q', '-b', 'feat/thread-view');
+  for (const [file, message] of [
+    ['grant.ts', 'Split the owner-only condition'],
+    ['grant.test.ts', 'Add the own-asks-thread 403 case'],
+  ] as const) {
+    writeFileSync(join(repo, file), `// ${message}\n`);
+    git(repo, 'add', '.');
+    git(repo, 'commit', '-q', '-m', message);
+  }
+  lead.meta.cwd = repo;
+  const child = threads.get('k-signet-kind');
+  if (child) child.meta.parentTurnId = 'kt-1';
+  const todos = (items: Array<[string, string]>) =>
+    toolUse('TodoWrite', { todos: items.map(([content, status]) => ({ content, status })) });
+  const turns: Array<[string, string, NativeEvidence[]]> = [
+    [
+      'kt-1',
+      'Members should read the whole thread; answering prompts stays owner-only.',
+      [
+        todos([
+          ['Find where the owner-only rule lives', 'in_progress'],
+          ['Split view from prompt.resolve', 'pending'],
+          ['Cover own → thread with a 403 test', 'pending'],
+        ]),
+      ],
+    ],
+    [
+      'kt-2',
+      'Go ahead and split it.',
+      [
+        todos([
+          ['Find where the owner-only rule lives', 'completed'],
+          ['Split view from prompt.resolve', 'completed'],
+          ['Cover own → thread with a 403 test', 'in_progress'],
+        ]),
+        toolUse('Edit', { file_path: 'apps/api/src/validateThreadsGrant.ts' }),
+        toolUse('Write', { file_path: 'apps/api/src/validateThreadsGrant.test.ts' }),
+      ],
+    ],
+  ];
+  turns.forEach(([id, ask, history], i) => {
+    store.beginTurn(lead, id, ask);
+    store.completeTurn(
+      lead,
+      id,
+      'Done.',
+      { nativeHistory: history },
+      { id: `trace-${id}`, messageId: id, startedAt: i + 1, root: {}, summary: {}, spans: [] },
+    );
+  });
 }
 
 if (import.meta.main) {

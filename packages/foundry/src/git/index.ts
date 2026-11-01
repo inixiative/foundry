@@ -1,4 +1,6 @@
 export {
+  type BranchCommit,
+  branchCommits,
   containingPath,
   diffStat,
   findByBranch,
