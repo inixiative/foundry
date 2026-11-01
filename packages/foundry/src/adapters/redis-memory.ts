@@ -11,7 +11,7 @@ import type { ContextRef, ContextSource, HydrationAdapter, Signal } from '@inixi
  */
 export interface RedisClient {
   get(key: string): Promise<string | null>;
-  set(key: string, value: string, ...args: any[]): Promise<any>;
+  set(key: string, value: string, ...args: (string | number)[]): Promise<unknown>;
   del(key: string): Promise<number>;
   keys(pattern: string): Promise<string[]>;
   hset(key: string, field: string, value: string): Promise<number>;
@@ -21,9 +21,9 @@ export interface RedisClient {
   lpush(key: string, ...values: string[]): Promise<number>;
   lrange(key: string, start: number, stop: number): Promise<string[]>;
   publish(channel: string, message: string): Promise<number>;
-  subscribe(channel: string, callback?: any): Promise<any>;
+  subscribe(channel: string, callback?: (...args: unknown[]) => void): Promise<unknown>;
   expire(key: string, seconds: number): Promise<number>;
-  ltrim(key: string, start: number, stop: number): Promise<any>;
+  ltrim(key: string, start: number, stop: number): Promise<unknown>;
   lrem(key: string, count: number, value: string): Promise<number>;
 }
 

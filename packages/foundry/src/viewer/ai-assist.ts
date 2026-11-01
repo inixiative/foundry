@@ -181,7 +181,11 @@ export class AIAssist {
     );
 
     try {
-      const json = this._extractJSON(completion.content);
+      const json = this._extractJSON(completion.content) as {
+        provider?: string;
+        model?: string;
+        temperature?: unknown;
+      };
       return {
         provider: json.provider,
         model: json.model,
@@ -250,11 +254,16 @@ export class AIAssist {
 
   private _parseResponse(content: string, section: string): AssistResponse {
     try {
-      const json = this._extractJSON(content);
+      const json = this._extractJSON(content) as {
+        suggestions?: (Partial<Omit<AISuggestion, 'id' | 'confidence'>> & {
+          confidence?: unknown;
+        })[];
+        explanation?: string;
+      };
       return {
-        suggestions: (json.suggestions || []).map((s: any, i: number) => ({
+        suggestions: (json.suggestions || []).map((s, i) => ({
           id: `suggestion-${i}`,
-          section: s.section || section,
+          section: s.section || (section as AISuggestion['section']),
           target: s.target || '',
           kind: s.kind || 'improve',
           title: s.title || 'Suggestion',
@@ -412,7 +421,7 @@ export class AIAssist {
     return '```json\n' + JSON.stringify(target, null, 2) + '\n```';
   }
 
-  private _extractJSON(content: string): any {
+  private _extractJSON(content: string): unknown {
     // Try direct parse first
     try {
       return JSON.parse(content);

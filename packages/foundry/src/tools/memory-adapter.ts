@@ -65,7 +65,7 @@ export interface RichMemoryBackend extends MemoryBackend {
   searchMemories?(
     query: string,
     opts?: { limit?: number; containerTag?: string },
-  ): Promise<Array<{ content: string; score?: number; metadata?: any }>>;
+  ): Promise<Array<{ content: string; score?: number; metadata?: Record<string, unknown> }>>;
   /** Full-text search with ranking (SqliteMemory FTS5, etc.) */
   searchEntries?(query: string, limit?: number): Promise<MemoryEntry[]>;
 }

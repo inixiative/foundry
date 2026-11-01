@@ -174,11 +174,11 @@ export function lowConfidenceRule(threshold: number = 0.5): ReactionRule {
     id: 'low-confidence',
     description: `Flag results with confidence below ${threshold}`,
     when: (_ctx, result) => {
-      const output = result.output as any;
+      const output = result.output as { confidence?: unknown } | undefined;
       return typeof output?.confidence === 'number' && output.confidence < threshold;
     },
     act: (ctx) => {
-      const output = ctx.result.output as any;
+      const output = ctx.result.output as { confidence: number; reasoning?: string };
       ctx.emit({
         kind: 'info',
         source: `agent:${ctx.dispatch.agentId}`,
@@ -203,7 +203,8 @@ export function classificationOverrideRule(): ReactionRule {
     },
     act: (ctx) => {
       const original = ctx.dispatch.annotations['classifierCategory'];
-      const routed = (ctx.result.output as any)?.value?.destination;
+      const routed = (ctx.result.output as { value?: { destination?: string } } | undefined)?.value
+        ?.destination;
       if (original && routed) {
         ctx.emit({
           kind: 'correction',

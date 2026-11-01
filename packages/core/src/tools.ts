@@ -726,7 +726,7 @@ export class ToolRegistry {
             const api = tool.scoped ? tool.scoped(opts?.scope ?? {}) : tool;
             return await api.request({
               url: input.url as string,
-              method: (input.method as any) ?? 'GET',
+              method: (input.method as ApiRequest['method']) ?? 'GET',
               body: input.body,
               headers: input.headers as Record<string, string>,
             });

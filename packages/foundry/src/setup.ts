@@ -33,12 +33,16 @@ import { describeLegacyItem, findLegacyStarter, removeLegacyStarter } from './se
 import { createTerminalPrompts } from './setup/prompts';
 import { formatPlan, scanRepoDocs } from './setup/scan-docs';
 import {
+  type AgentSettingsConfig,
   ConfigStore,
   configFromSaved,
+  type DataSourceConfig,
   defaultAgents,
   type FoundryConfig,
   foundryConfigDir,
+  type LayerSettingsConfig,
   type ProjectPrompts,
+  type ProjectSettingsConfig,
   starterConfig,
 } from './viewer/config';
 
@@ -156,9 +160,7 @@ async function firstTimeSetup(): Promise<FoundryConfig> {
   const projectDesc = await ask('One-line description');
 
   if (projectName || projectDesc) {
-    const prompts = await setupPrompts(projectName, projectDesc);
-    // Store prompts in config for the project (will be linked to project on project creation)
-    (config as any)._pendingPrompts = prompts;
+    await setupPrompts(projectName, projectDesc);
   }
 
   // --- Opportunistic docs-layer scan ---
@@ -462,7 +464,7 @@ async function configureDefaults(config: FoundryConfig) {
 // Agent editor
 // ---------------------------------------------------------------------------
 
-const agentEditor: ItemEditor<any> = {
+const agentEditor: ItemEditor<AgentSettingsConfig> = {
   label: 'Agents',
   summarize: (id, a) => {
     const layers = (a.visibleLayers?.length || 0) + (a.ownedLayers?.length || 0);
@@ -484,7 +486,7 @@ const agentEditor: ItemEditor<any> = {
       'router — routes to the right agent (cheap model, no tools)',
     ]);
     // No Warden kind: a project's Wardens are generated from its regions, never written here.
-    const kind = ['executor', 'classifier', 'router'][kindIdx];
+    const kind = (['executor', 'classifier', 'router'] as const)[kindIdx]!;
 
     // Role description
     console.log('\n  What does this agent do? (saved as a description file)');
@@ -607,7 +609,7 @@ const agentEditor: ItemEditor<any> = {
 // Layer editor
 // ---------------------------------------------------------------------------
 
-const layerEditor: ItemEditor<any> = {
+const layerEditor: ItemEditor<LayerSettingsConfig> = {
   label: 'Layers',
   summarize: (id, l) => {
     const shape = l.contentShape ? ` [${l.contentShape}]` : '';
@@ -743,7 +745,7 @@ const SOURCE_TYPES = [
   'instructions',
 ] as const;
 
-const sourceEditor: ItemEditor<any> = {
+const sourceEditor: ItemEditor<DataSourceConfig> = {
   label: 'Sources',
   summarize: (id, s) =>
     `${id}  (${s.type}: ${s.uri?.slice(0, 40) || '—'})${s.enabled ? '' : ' [disabled]'}`,
@@ -815,10 +817,9 @@ const sourceEditor: ItemEditor<any> = {
 // Project editor
 // ---------------------------------------------------------------------------
 
-const projectEditor: ItemEditor<any> = {
+const projectEditor: ItemEditor<ProjectSettingsConfig> = {
   label: 'Projects',
-  summarize: (id, p) =>
-    `${id}  (${p.path || '—'}, runtime: ${p.runtime || 'claude-code'})${p.enabled ? '' : ' [disabled]'}`,
+  summarize: (id, p) => `${id}  (${p.path || '—'})${p.enabled ? '' : ' [disabled]'}`,
   async create(_config) {
     const id = await ask('Project ID (e.g. my-api)');
     if (!id) return null;
@@ -826,8 +827,6 @@ const projectEditor: ItemEditor<any> = {
     const path = await ask('Project directory (absolute path)');
     const label = await ask('Label', id);
     const tags = await ask('Tags (comma-separated)', '');
-    const runtimeIdx = await choose('Runtime adapter?', ['claude-code', 'codex', 'cursor']);
-    const runtime = ['claude-code', 'codex', 'cursor'][runtimeIdx];
 
     return [
       id,
@@ -836,7 +835,6 @@ const projectEditor: ItemEditor<any> = {
         path,
         label,
         tags: tags ? tags.split(',').map((t) => t.trim()) : [],
-        runtime,
         enabled: true,
       },
     ];
@@ -845,12 +843,6 @@ const projectEditor: ItemEditor<any> = {
     console.log(`\n  Editing project: ${id}\n`);
     item.path = await ask('Directory', item.path);
     item.label = await ask('Label', item.label);
-    const runtimeIdx = await choose(
-      'Runtime?',
-      ['claude-code', 'codex', 'cursor'],
-      ['claude-code', 'codex', 'cursor'].indexOf(item.runtime) ?? 0,
-    );
-    item.runtime = ['claude-code', 'codex', 'cursor'][runtimeIdx];
     const enabled = await confirm('Enabled?', item.enabled);
     item.enabled = enabled;
     return item;

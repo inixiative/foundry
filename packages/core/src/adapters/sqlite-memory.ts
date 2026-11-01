@@ -76,7 +76,7 @@ export class SqliteMemory {
 
   /** Read by id. */
   get(id: string): SqliteEntry | undefined {
-    const row = this.db.query('SELECT * FROM entries WHERE id = ?').get(id) as any;
+    const row = this.db.query('SELECT * FROM entries WHERE id = ?').get(id) as SqliteRow | null;
     return row ? this._rowToEntry(row) : undefined;
   }
 
@@ -86,7 +86,7 @@ export class SqliteMemory {
       ? this.db.query('SELECT * FROM entries WHERE kind = ? ORDER BY timestamp DESC')
       : this.db.query('SELECT * FROM entries ORDER BY timestamp DESC');
     const rows = kind ? query.all(kind) : query.all();
-    return (rows as any[]).map(this._rowToEntry);
+    return (rows as SqliteRow[]).map(this._rowToEntry);
   }
 
   /** Full-text search. */
@@ -96,7 +96,7 @@ export class SqliteMemory {
         `SELECT entries.* FROM entries_fts JOIN entries ON entries_fts.id = entries.id WHERE entries_fts MATCH ? ORDER BY rank LIMIT ?`,
       )
       .all(query, limit);
-    return (rows as any[]).map(this._rowToEntry);
+    return (rows as SqliteRow[]).map(this._rowToEntry);
   }
 
   /** Delete by id. */
@@ -110,7 +110,7 @@ export class SqliteMemory {
     const query = kind
       ? this.db.query('SELECT COUNT(*) as c FROM entries WHERE kind = ?')
       : this.db.query('SELECT COUNT(*) as c FROM entries');
-    const row = (kind ? query.get(kind) : query.get()) as any;
+    const row = (kind ? query.get(kind) : query.get()) as { c: number };
     return row.c;
   }
 
@@ -120,7 +120,7 @@ export class SqliteMemory {
       ? this.db.query('SELECT * FROM entries WHERE kind = ? ORDER BY timestamp DESC LIMIT ?')
       : this.db.query('SELECT * FROM entries ORDER BY timestamp DESC LIMIT ?');
     const rows = kind ? query.all(kind, limit) : query.all(limit);
-    return (rows as any[]).map(this._rowToEntry);
+    return (rows as SqliteRow[]).map(this._rowToEntry);
   }
 
   /** Create a ContextSource that loads entries as context. */
@@ -173,7 +173,7 @@ export class SqliteMemory {
     this.db.close();
   }
 
-  private _rowToEntry(row: any): SqliteEntry {
+  private _rowToEntry(row: SqliteRow): SqliteEntry {
     return {
       id: row.id,
       kind: row.kind,
@@ -183,6 +183,16 @@ export class SqliteMemory {
       meta: row.meta ? JSON.parse(row.meta) : undefined,
     };
   }
+}
+
+/** A row of the `entries` table as bun:sqlite returns it. */
+interface SqliteRow {
+  id: string;
+  kind: string;
+  content: string;
+  source: string | null;
+  timestamp: number;
+  meta: string | null;
 }
 
 export interface SqliteEntry {

@@ -45,6 +45,7 @@ import { resolveSubscriptionPolicy } from './providers/subscription-policy';
 
 import {
   ContextStack,
+  type MemoryEntry,
   type NativeBridgeSource,
   type SignalBus,
   type ThreadSetup,
@@ -522,8 +523,7 @@ const actionQueue = new ActionQueue();
 // Token tracker
 // ---------------------------------------------------------------------------
 
-const maxCost =
-  parseFloat(process.env.FOUNDRY_MAX_COST || '') || (config as any).budget?.maxCost || 10.0;
+const maxCost = parseFloat(process.env.FOUNDRY_MAX_COST || '') || 10.0;
 const tokenTracker = new TokenTracker({
   budget: { maxCost },
 });
@@ -751,6 +751,22 @@ configureHarness(harness, config);
 
 let pgMemory: PostgresMemory | undefined;
 
+/** An `entries` row as the Postgres memory tool reads it. */
+type PgEntryRow = {
+  id: string;
+  kind: string;
+  content: string;
+  timestamp: Date | null;
+  meta: unknown;
+};
+const pgEntry = (r: PgEntryRow): MemoryEntry => ({
+  id: r.id,
+  kind: r.kind,
+  content: r.content,
+  timestamp: r.timestamp?.getTime() ?? Date.now(),
+  meta: (r.meta ?? undefined) as MemoryEntry['meta'],
+});
+
 if (process.env.DATABASE_URL) {
   try {
     const { PrismaClient } = await import('@prisma/client');
@@ -761,38 +777,11 @@ if (process.env.DATABASE_URL) {
     // Also register as a queryable tool for agents
     const pgTool = MemoryToolAdapter.from('postgres', {
       write: (e) => pgMemory!.writeEntry(e),
-      get: (id) =>
-        pgMemory!.getEntry(id).then((r) =>
-          r
-            ? {
-                id: r.id,
-                kind: r.kind,
-                content: r.content,
-                timestamp: r.timestamp?.getTime?.() ?? Date.now(),
-                meta: r.meta as any,
-              }
-            : undefined,
-        ),
+      get: (id) => pgMemory!.getEntry(id).then((r) => (r ? pgEntry(r) : undefined)),
       search: (q, limit) =>
-        pgMemory!.searchEntries(q, limit).then((rows) =>
-          rows.map((r: any) => ({
-            id: r.id,
-            kind: r.kind,
-            content: r.content,
-            timestamp: r.timestamp?.getTime?.() ?? Date.now(),
-            meta: r.meta,
-          })),
-        ),
+        pgMemory!.searchEntries(q, limit).then((rows) => (rows as PgEntryRow[]).map(pgEntry)),
       recent: (limit, kind) =>
-        pgMemory!.recentEntries(limit, kind).then((rows) =>
-          rows.map((r: any) => ({
-            id: r.id,
-            kind: r.kind,
-            content: r.content,
-            timestamp: r.timestamp?.getTime?.() ?? Date.now(),
-            meta: r.meta,
-          })),
-        ),
+        pgMemory!.recentEntries(limit, kind).then((rows) => rows.map(pgEntry)),
       delete: (id) => pgMemory!.deleteEntry(id),
     });
     tools.register(pgTool, 'Persistent memory — postgres-backed signals, threads, history');

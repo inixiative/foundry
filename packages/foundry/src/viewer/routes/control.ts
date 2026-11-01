@@ -499,7 +499,7 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps): void 
       const next = await configStore.update((draft) => {
         const project = draft.projects[id];
         if (!project) throw Error('project not found');
-        project[section] = { ...project[section], ...body } as any;
+        Object.assign(project, { [section]: { ...project[section], ...body } });
       });
       return c.json({ ok: true, project: next.projects[id] });
     } catch (err) {

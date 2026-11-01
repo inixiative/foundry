@@ -75,7 +75,7 @@ let _logger: Logger = fallbackLogger;
  */
 export const log: Logger = new Proxy({} as Logger, {
   get(_target, prop) {
-    return (_logger as any)[prop];
+    return Reflect.get(_logger, prop);
   },
 });
 

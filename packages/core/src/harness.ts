@@ -517,7 +517,7 @@ export class Harness {
         const layerFilter = this.buildLayerFilter(undefined, undefined, requestedLayers);
         const settled = await Promise.allSettled(
           decisionStages.map(async (stage) => {
-            const span = trace.startDetached(`${stage.role}:${stage.agentId}`, stage.role as any, {
+            const span = trace.startDetached(`${stage.role}:${stage.agentId}`, stage.role, {
               agentId: stage.agentId,
               threadId: this.thread.id,
               input: message.payload,
@@ -643,7 +643,7 @@ export class Harness {
         }
 
         // Trace and dispatch (foreground — blocks pipeline)
-        const stageSpan = trace.start(`${stage.role}:${agentId}`, stage.role as any, {
+        const stageSpan = trace.start(`${stage.role}:${agentId}`, stage.role, {
           agentId,
           threadId: this.thread.id,
           input: message.payload,
