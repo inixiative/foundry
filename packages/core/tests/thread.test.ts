@@ -42,14 +42,14 @@ describe('Thread', () => {
     test("a person's name overrides the agent name, and clearing it shows the agent name again", () => {
       const thread = makeThread();
       expect(threadTitle(thread.meta)).toEqual({ text: 'test thread', source: 'description' });
-      thread.meta.agentName = { text: 'Fix flaky login test', updatedAt: 1 };
-      expect(threadTitle(thread.meta)).toEqual({ text: 'Fix flaky login test', source: 'agent' });
+      thread.meta.foundryName = { text: 'Fix flaky login test', updatedAt: 1 };
+      expect(threadTitle(thread.meta)).toEqual({ text: 'Fix flaky login test', source: 'foundry' });
       thread.rename('  Login work  ');
       expect(thread.meta.name).toMatchObject({ text: 'Login work' });
       expect(threadTitle(thread.meta)).toEqual({ text: 'Login work', source: 'human' });
       thread.rename('');
       expect(thread.meta.name).toBeUndefined();
-      expect(threadTitle(thread.meta)).toEqual({ text: 'Fix flaky login test', source: 'agent' });
+      expect(threadTitle(thread.meta)).toEqual({ text: 'Fix flaky login test', source: 'foundry' });
     });
 
     test('tag adds unique tags', () => {

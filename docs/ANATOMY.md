@@ -98,7 +98,7 @@ One sheet naming every part of Foundry, so people and agents use the same words.
 | Term | What and why | Where | Status |
 |---|---|---|---|
 | chorus | A project's set of Wardens, one per region, all asked at every trigger. Per project because its docs are. Opt-in: `chorus.enabled` in the machine's settings or the repo's `.foundry/project.json`. | `projects[id].chorus`; `pf/agents/region-roster.ts` | off (per project; a repo may commit it on) |
-| chorus layer | One regions directory in a chorus; several layers compose (a later layer's region replaces an earlier one whole), e.g. a template base then a project's delta. | `chorus.layers` | live |
+| chorus layer | One regions directory in a chorus (not Layer 1 / Layer 2, which are classification steps); several layers compose (a later layer's region replaces an earlier one whole), e.g. a template base then a project's delta. | `chorus.layers` | live |
 | Warden | A narrow context router for one region. It answers only "is this moment mine, and where is it written?" with `NO_COMMENT` or a pointer; it never blocks or decides. Fresh each call, never a continuing conversation. Code calls it a domain librarian. | `pf/agents/domain-librarian.ts` (`DomainLibrarian`, kind `domain-librarian`) | live |
 | region | A concept shard of the project's docs and code, sized for one Warden to hold well. | `<project>/.foundry/regions/<region id>/` | live |
 | `region.json` | A region's id, title, routing line, concepts, sources, size and `role` (`warden` default, or `herald`). Holds no stages or charter. | | live |
@@ -110,14 +110,15 @@ One sheet naming every part of Foundry, so people and agents use the same words.
 | recognise charter | The charter for a `recognise` stage: name the regions the moment is in, one `<region id>: <why>` line each. | `RECOGNISE_CHARTER`, `charters/recognise/` | off (no default stage recognises) |
 | charter sections | The charter's named prose files; an eval run may swap them, settings never can. | `pf/classify/charters/sections.ts` | live (eval only) |
 | reception charter | The main thread's counterpart: how to read a chime (verify it, follow the top pointer, pick from a choose-one set, ask before overriding an existing system that the instruction did not acknowledge). Held once as the standing layer `chorus-reception`. | `CHORUS_RECEPTION`, `pf/agents/chorus-reception.ts`; `chorus.reception` | live |
-| stage | One step of a Warden's classification run (at most three): who answers, which region doc it reads, what it may answer, and which outcomes go on. Same code live, in evals and in Oracle. | `StageConfig`, `chorus.wardens.stages` | live (one stage) |
+| stage | One step of a Warden's classification run (at most three): who answers, which region doc it reads, what it may answer, and which outcomes go on. Same code live, in evals and in Oracle. Spoken of and shown as layers (next row). | `StageConfig`, `chorus.wardens.stages` | live (one stage) |
+| Layer 1 / Layer 2 | The names for the chorus's classification stages (Aron, 2026-11-01): Layer 1 is detection (Haiku asks every region "is this mine?"), Layer 2 is the polish (Sonnet confirms Layer 1's yes and picks the primitive). The viewer shows "Layer 1 · recognise" and "Layer 2 · confirm and pick" (#218). Code keeps `stages[0]`, `stages[1]`. | `ChorusLayer`, `pf/viewer/turn-timeline.ts` | Layer 1 live; Layer 2 off |
 | default stage | One `point` stage on `knowledge.md`, `binary`, reason `none`, choose-one on, on the decision model and effort (Haiku 5.5, low). | `DEFAULT_STAGES` | live |
 | task | `recognise` (name the regions) or `point` (name the thing and where). Only a pointing stage's yes reaches the thread. | `StageTask` | live (`point`); `recognise` off |
 | outcomes | `binary` (yes / NO_COMMENT) or `ternary` (adds `unsure`). | `StageOutcomes` | live (`binary`) |
 | reason | `none`, `inline` (the why with every answer) or `followup` ("why?" asked after a yes or unsure). | `StageReason` | live (`none`) |
 | escalate | The outcomes of a non-final stage that go on to the next, carrying their why. | `StageConfig.escalate` | off (single stage) |
 | deadline share | A stage's share of its trigger's deadline. | `StageConfig.deadline` | off (single stage) |
-| two-stage chorus | A cheap model asks every region, and on each yes a stronger model (Sonnet) confirms and picks. Configurable today as two stages; not the default. | `chorus.wardens.stages` | off |
+| two-stage chorus | Layer 1 and Layer 2 together: a cheap model asks every region, and on each yes a stronger model (Sonnet) confirms and picks. Configurable today as two stages; not the default. | `chorus.wardens.stages` | off |
 | phase | What a Warden is doing for its trigger: advice, guard, brief or review. Not a stage: Foundry says "phase" for these and "stage" only for classification steps. | journal phase rows | live |
 | trigger | The moment a Warden is asked. Every trigger runs the same stages and only frames the input. | `TriggerPoint`, `pf/agents/warden-triggers.ts` | see rows below |
 | `user-message` → advice | Every Warden, on every user message. | | live |

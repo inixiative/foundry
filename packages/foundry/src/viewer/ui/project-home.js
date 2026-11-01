@@ -119,7 +119,8 @@ export function ProjectHome() {
           : html`<section class="ph-box"><h4>Links</h4>
           ${project?.path ? html`<div class="ph-line mono">${project.path}</div>` : null}
           <div class="ph-meta">GitHub, Linear and Slack links show here once the project records them.</div></section>
-          <section class="ph-box"><h4>Organisation</h4><div class="ph-meta">${project?.tags?.length ? project.tags.join(' · ') : 'No organisation tags'} · GitHub and Kingdom orgs attached to this project will show here</div></section>`
+          <section class="ph-box"><h4>Organisation</h4><div class="ph-meta">${project?.tags?.length ? project.tags.join(' · ') : 'No organisation tags'} · GitHub and Kingdom orgs attached to this project will show here</div></section>
+          <section class="ph-box coming-soon-card"><h4>Code <span class="coming-soon">Coming soon</span></h4><div class="ph-meta">Browse the project’s code by Atlas concept, with each concept’s gloss and the threads working in it.</div></section>`
       }
     </div>
   </section>`;
