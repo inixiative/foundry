@@ -27,8 +27,6 @@ import type {
 } from '@inixiative/foundry-core';
 import { freezeEvidence, type NativeToolRecord, newId } from '@inixiative/foundry-core';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
-import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 import { isThreadKnowledgeLayerId, threadKnowledgeLayerId } from '../agents/domain-librarian';
 import type { ThreadRuntimeManager } from '../agents/thread-runtime';
@@ -789,21 +787,6 @@ export function createFoundryMcp(config: FoundryMcpConfig): FoundryMcp {
       };
     },
   };
-}
-
-// ---------------------------------------------------------------------------
-// Transport helpers
-// ---------------------------------------------------------------------------
-
-/** Start the MCP server on stdio transport (standalone subprocess mode). */
-export async function startStdioTransport(server: McpServer): Promise<void> {
-  const transport = new StdioServerTransport();
-  await server.connect(transport);
-}
-
-/** Create an SSE transport handler for embedding in an HTTP server. */
-export function createSseTransport(res: import('http').ServerResponse): SSEServerTransport {
-  return new SSEServerTransport('/mcp/messages', res);
 }
 
 // ---------------------------------------------------------------------------

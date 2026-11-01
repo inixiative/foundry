@@ -180,9 +180,6 @@ export interface FoundryConfig {
   /** Every Kingdom integration this Foundry is paired as, once per Kingdom + owner; Signets stay in private files. */
   kingdomIntegrations?: KingdomIntegration[];
 
-  /** MCP server configuration — mid-session bridge for Claude Code. */
-  mcp?: McpSettingsConfig;
-
   /** Whether the initial setup wizard has been completed. */
   setupComplete?: boolean;
 }
@@ -672,24 +669,6 @@ export interface TunnelSettingsConfig {
   provider?: 'localtunnel' | 'cloudflared';
   /** Subdomain hint (localtunnel only, not guaranteed). */
   subdomain?: string;
-}
-
-export interface McpSettingsConfig {
-  /** Whether the MCP server is enabled. */
-  enabled: boolean;
-  /**
-   * Transport mode:
-   * - "stdio": Claude Code spawns `bun run mcp/cli.ts` as a subprocess (default).
-   *   Each Claude Code session gets its own MCP server instance.
-   * - "sse": The viewer embeds the MCP server and exposes `/mcp` endpoints.
-   *   Single server shared across sessions. Requires the viewer to be running.
-   */
-  transport?: 'stdio' | 'sse';
-  /**
-   * Projects where `.mcp.json` has been written for Claude Code auto-discovery.
-   * Keyed by project ID. Value is the absolute path to the `.mcp.json` file.
-   */
-  installedProjects?: Record<string, string>;
 }
 
 // ---------------------------------------------------------------------------
@@ -1330,8 +1309,6 @@ export class ConfigStore {
         next.sources = { ...next.sources, ...patch } as FoundryConfig['sources'];
       } else if (section === 'projects') {
         next.projects = { ...next.projects, ...patch } as FoundryConfig['projects'];
-      } else if (section === 'mcp') {
-        next.mcp = { ...next.mcp, ...patch } as McpSettingsConfig;
       } else if (section === 'learning') {
         next.learning = { ...next.learning, ...patch } as LearningSettings;
       } else if (section === 'composition') {
