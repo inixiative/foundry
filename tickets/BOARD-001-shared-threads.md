@@ -41,6 +41,13 @@ There is no new link record, private mark or held-answer state.
 | The roster says what isn't shared (tool reads, context, `/btw`) and words local members | Extend `memberLines` / `conversationRoster` (`pf/conversations/roster.ts:15-18,53-56`); no new layer |
 | `/btw` on every runtime: the decision call with no tools, over `journalHistory` plus the composed context (so it sees no tool I/O). Stored in its own store beside the thread, never as a journal or phase row; its own Archive unit, routed personal | `textOnly` → `tools: false` (`session-backed.ts:1117`, `pf/providers/decision-host.ts`); ACP `COMMANDS` (`packages/acp/src/agent.ts:92`) |
 
+## The floor (planning doc §4.8)
+
+- **A shared thread defaults to `conch`** (Aron, 2026-11-01): outside agents are present, so one speaker at a time, with the host as leader. Unshared threads keep `talk`. It is applied when a thread gains its first member; a thread override still wins.
+- **`floor()` takes the member key** (`service.ts:387` hard-codes `{kind:'signet'}`), so a local Codex takes turns like Sam.
+- **A raised hand** (`thread.floor {request}`, today only in `record.requests` and the summary, `service.ts:791`) also raises an `ActionQueue` prompt in Needs you. Answering it uses the owner's existing pass.
+- **`/btw` is outside the floor.**
+
 ## First check
 
 Does a private home carry nothing personal: no user hooks (SessionStart `additionalContext`), no personal skills, no user MCP connectors? This is planning doc test 3.
@@ -52,7 +59,7 @@ Does a private home carry nothing personal: no user hooks (SessionStart `additio
 
 ## Definition of done
 
-- The planning doc's §10 tests 1–12 pass. They are built together with BOARD-002, because tests 8–10 need both ends.
+- The planning doc's §10 tests 1–12 and 21–25 pass. They are built together with BOARD-002, because tests 8–10 need both ends.
 - CONVERSATIONS.md is revised to match, and its tests still pass.
 
 ## Related
