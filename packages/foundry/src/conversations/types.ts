@@ -123,10 +123,79 @@ export interface ConversationRecord {
    * said before the share stays his (review round 4, B3). 0 once the owner shares the history.
    */
   sharedFromSeq?: number;
+  /**
+   * Members on this machine (§4.11 point 2): another Foundry thread of the owner's, his Codex or a
+   * second Claude, joined in-process with no Signet. Each one's invite record carries its terms.
+   */
+  locals?: LocalMemberRecord[];
+  /**
+   * Each agent's voice where the owner set it (§4.11 point 1): `host` is the thread's own main
+   * agent, a local member is keyed `local:<threadId>`. Unset: the `agents` default.
+   */
+  voices?: Record<string, Voice>;
   /** Members asking for the conch, newest last, until it moves. */
   requests: Array<{ member: ConversationMember; displayName: string; at: string }>;
   /** Per-thread overrides, the last step of the cascade. */
   settings: ConversationSettingsInput;
+}
+
+/** Speaking may propose and post when the floor allows; listening hears everything, woken by nothing. */
+export type Voice = 'speaking' | 'listening';
+
+/**
+ * A local member's terms, the same ones a Signet's lens names (M4): what it hears of the log, whether
+ * its posts wake the host's agent, and whether it may take the conch. The log it hears is what was
+ * posted: the host agent's own answers stay the host's side (§4.9 point 2, M8).
+ */
+export interface LocalMemberLens {
+  view: 'thread' | 'own';
+  delivery: 'note' | 'turn';
+  floor: { mayTake: boolean };
+}
+
+/** The owner's own agents talk to the host's agent by default: their posts wake it (§4.11 point 2). */
+export const DEFAULT_LOCAL_LENS: LocalMemberLens = Object.freeze({
+  view: 'thread',
+  delivery: 'turn',
+  floor: Object.freeze({ mayTake: false }),
+});
+
+export interface LocalMemberRecord {
+  /** The member's own Foundry thread on this machine. */
+  threadId: string;
+  displayName: string;
+  lens: LocalMemberLens;
+  joinedAt: string;
+  /** It hears the log from here on (the host journal seq when it joined). */
+  fromSeq: number;
+}
+
+/**
+ * The host's log mirrored into a local member's own thread (phase `shared-entry`, CONVERSATIONS.md
+ * §4.10): one row per host entry it may read, keyed by the host's journal seq, never admitted, exempt
+ * from depth and floor. Collected for its agent's next turn by `deliverNotes`.
+ */
+export interface SharedEntryRecord {
+  hostThreadId: string;
+  hostName: string;
+  hostSeq: number;
+  /** Who said it, as the member reads it ("the owner", a member's name, "the host agent"). */
+  speaker: string;
+  kind: 'owner' | 'post' | 'send';
+  /** A send addressed to this member: something it was asked. */
+  addressed: boolean;
+  text: string;
+}
+
+/** A plain-text control the host's agent carried out for the owner (§4.11 point 4), shown and reversible. */
+export interface ConversationControlRecord {
+  action: 'voice' | 'floor' | 'conch' | 'join' | 'leave';
+  /** The agent or member it changed (`host`, or a member's display name). */
+  target?: string;
+  before: string | null;
+  after: string | null;
+  /** `owner`: through the viewer or the owner's own message; `confirmed`: he confirmed the agent's ask. */
+  by: 'owner' | 'confirmed';
 }
 
 export const emptyConversation = (): ConversationRecord => ({
@@ -254,6 +323,10 @@ export const memberKey = (member: ConversationMember) => `${member.kind}:${membe
 
 /** The journal rows a conversation writes on its main thread (the ordered ones: `JOURNAL_ORDERED_PHASES`). */
 export type ConversationPhase =
+  | 'shared-entry'
+  | 'shared-entry-delivered'
+  | 'shared-entry-woke'
+  | 'conversation-control'
   | 'member-post'
   | 'member-post-withdrawn'
   | 'member-post-delivered'

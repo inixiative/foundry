@@ -315,7 +315,7 @@ test('the roster is part of the conversation: a member that joins shows with its
   await f.turn('turn_4', 'still there?');
   const revoked = f.lastSystem();
   expect(revoked).toContain('# Conversation members');
-  expect(revoked).toContain('No outside party holds a grant on this thread now.');
+  expect(revoked).toContain('No member is in this thread now.');
   expect(revoked).not.toContain('JobCo');
   expect(revoked).not.toContain('  - sees:');
 });

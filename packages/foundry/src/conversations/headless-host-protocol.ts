@@ -89,6 +89,7 @@ export const headlessThreadStateSchema = z.strictObject({
       paused: z.boolean(),
       held: z.number(),
       members: z.number(),
+      localMembers: z.number(),
     })
     .nullable(),
   members: z.array(
