@@ -18,6 +18,8 @@
  * Incoming sits apart from the columns: parties asking to join through a Signet. They are requests,
  * not approvals of the agent's work, and nothing runs until the owner accepts in Kingdom.
  */
+
+import { FilterChips, passesChips } from './filter-chips.js';
 import { html, useState } from './lib.js';
 import { selfChatSending } from './self-chat.js';
 import { settingsConfig } from './settings.js';
@@ -35,7 +37,7 @@ import {
   selectScope,
   selectThread,
 } from './store.js';
-import { threadName } from './thread-labels.js';
+import { projectKingdom, threadName } from './thread-labels.js';
 import { categoryOf, isClosedThread, subagentParentOf, threadState } from './thread-status.js';
 
 const COLUMNS = [
@@ -48,13 +50,6 @@ const COLUMNS = [
 const OPEN = (t) => !isClosedThread(t);
 
 /** The board's filter: 'all', 'global', 'forge', 'this', or 'project:<id>'. */
-function matches(filter, thread) {
-  if (filter === 'all' || filter === 'this') return true;
-  if (filter === 'global') return !thread.meta?.projectId;
-  if (filter.startsWith('project:')) return thread.meta?.projectId === filter.slice(8);
-  return false;
-}
-
 function Card({ thread, state }) {
   const pending = prompts.value.filter((p) => p.threadId === thread.threadId);
   const ask = pending[0];
@@ -159,15 +154,21 @@ function Incoming() {
 /** Quiet threads: paused, idle, snoozed (all neutral) or archived. Off the board unless asked for. */
 const QUIET = new Set(['idle', 'archived']);
 
+/** The Project chip's own entry for the Forge Master (it has no threads; it shows its card). */
+const FORGE = '__forge';
+
 export function Board() {
-  const filter = boardFilter.value;
-  const setFilter = (value) => {
-    boardFilter.value = value;
-  };
+  const chips = boardFilter.value;
   const [showQuiet, setShowQuiet] = useState(false);
-  const threads = allThreads.value
-    .filter((t) => showQuiet || OPEN(t))
-    .filter((t) => matches(filter, t));
+  const machine = settingsConfig.value?.installationName ?? 'This Foundry';
+  // Every listed thread runs on this machine: the list has no other machine's threads yet.
+  const valuesOf = {
+    project: (t) => t.meta?.projectId ?? '',
+    kingdom: (t) => projectKingdom(t.meta?.projectId),
+    device: () => machine,
+  };
+  const open = allThreads.value.filter((t) => showQuiet || OPEN(t));
+  const threads = open.filter((t) => passesChips(chips, valuesOf, t));
   const place = (t) => {
     const children = allThreads.value.filter((c) => subagentParentOf(c.meta) === t.threadId);
     const state = threadState(t, {
@@ -179,7 +180,7 @@ export function Board() {
     return { thread: t, state, cat: categoryOf(state) };
   };
   const placed = threads.map(place);
-  const forge = filter === 'forge';
+  const forge = !!chips.project?.has(FORGE);
   const quiet = placed.filter((p) => QUIET.has(p.cat));
   const columns = [
     ...COLUMNS.filter((c) => c.cat !== 'problem' || placed.some((p) => p.cat === 'problem')),
@@ -187,23 +188,40 @@ export function Board() {
   ];
   // Everything quiet across the board (not only this filter), placed exactly as the columns are.
   const quietCount = allThreads.value.filter((t) => QUIET.has(place(t).cat)).length;
-  const machine = settingsConfig.value?.installationName ?? 'This Foundry';
-  const chip = (id, label) =>
-    html`<button key=${id} class="board-filter ${filter === id ? 'is-active' : ''}" onClick=${() => setFilter(id)}>${label}</button>`;
+  const count = (group, value) => open.filter((t) => valuesOf[group](t) === value).length;
+  const option = (group, value, label) => ({ value, label, count: count(group, value) });
+  const live = projects.value.filter((p) => p.status !== 'archived');
+  const groups = [
+    {
+      id: 'project',
+      label: 'Project',
+      options: [
+        ...live.map((p) => option('project', p.id, p.label)),
+        option('project', '', 'Global'),
+        { value: FORGE, label: 'Forge Master' },
+      ],
+    },
+    {
+      id: 'kingdom',
+      label: 'Kingdom',
+      options: [...new Set(open.map(valuesOf.kingdom))].map((k) => option('kingdom', k, k)),
+    },
+    { id: 'device', label: 'Device', options: [option('device', machine, machine)] },
+  ];
 
   return html`<div class="board">
     <header class="board-band">
       <h2 class="board-title">Board</h2>
-      <nav class="board-filters" aria-label="Board filter">
-        ${chip('all', 'Everything')}
-        ${projects.value.filter((p) => p.status !== 'archived').map((p) => chip(`project:${p.id}`, p.label))}
-        ${chip('global', 'Global (maybe)')}
-        ${chip('forge', 'Forge Master')}
-        ${chip('this', machine)}
-      </nav>
-      <button type="button" class="board-quiet-toggle" aria-pressed=${showQuiet} title="Paused, idle and archived threads"
-        onClick=${() => setShowQuiet(!showQuiet)}>${showQuiet ? 'Hide' : 'Show'} quiet · ${quietCount}</button>
+      <span class="board-device-note" title="Threads on your other machines show here with a device badge once Foundry records where each thread runs">Threads on ${machine}</span>
     </header>
+    <div class="board-filter-row">
+      <${FilterChips} groups=${groups} selected=${chips} onChange=${(next) => {
+        boardFilter.value = next;
+      }}>
+        <button type="button" class="board-quiet-toggle" aria-pressed=${showQuiet} title="Paused, idle and archived threads"
+          onClick=${() => setShowQuiet(!showQuiet)}>${showQuiet ? 'Hide' : 'Show'} quiet · ${quietCount}</button>
+      <//>
+    </div>
     <${Incoming} />
     <div class="board-columns">
       ${columns.map((col) => {
