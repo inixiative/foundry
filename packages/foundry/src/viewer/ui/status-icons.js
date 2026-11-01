@@ -113,26 +113,27 @@ export const STATES = {
 };
 
 /**
- * The thread's permission mode, as the host runs it (Claude's ids; Codex maps onto them). Display
- * only: access follows the host. Bypass is the one that's red.
+ * The thread's permission mode, as the host runs it (Claude's ids: default, plan, acceptEdits,
+ * bypassPermissions; Codex maps onto them). Display only: access follows the host. Bypass is not a
+ * mode of its own here: it reads as Auto plus a separate red "Dangerous" (Aron, 2026-11-01).
  */
 export const MODES = {
-  default: { cut: 'm', token: '--st-idle', label: 'Manual: asks before acting' },
-  plan: { cut: 'sheet', token: '--st-idle', label: 'Plan: plans before it edits' },
-  acceptEdits: { cut: 'bolt', token: '--st-idle', label: 'Auto: edits without asking' },
-  bypassPermissions: {
-    cut: 'bang',
-    token: '--st-problem',
-    label: 'Dangerous: every permission check is skipped',
-  },
+  default: { cut: 'm', word: 'Manual', label: 'Manual: asks before each action' },
+  plan: { cut: 'sheet', word: 'Plan', label: 'Plan: plans before it edits anything' },
+  acceptEdits: { cut: 'bolt', word: 'Auto', label: 'Auto: edits without asking' },
+  auto: { cut: 'bolt', word: 'Auto', label: 'Auto: edits without asking' },
+  bypassPermissions: { cut: 'bolt', word: 'Auto', label: 'Auto: edits without asking' },
 };
 
-/** The permission-mode glyph; nothing when the host hasn't said. */
+/** Whether the host skips every permission check (shown as its own red "Dangerous"). */
+export const isDangerous = (mode) => mode === 'bypassPermissions';
+
+/** The permission-mode glyph and its word; nothing when the host hasn't said. */
 export function ModeIcon({ mode }) {
   const m = MODES[mode];
   if (!m) return null;
-  const svg = `<svg class="ic ic-mode" viewBox="0 0 14 14" aria-hidden="true"><path d="${TILE}" fill="var(${m.token})"/>${CUTS[m.cut]}</svg>`;
-  return html`<span class="status-icon mode-icon" role="img" aria-label=${m.label} title=${m.label}
+  const svg = `<svg class="ic ic-mode" viewBox="0 0 14 14" aria-hidden="true"><path d="${TILE}" fill="var(--st-idle)"/>${CUTS[m.cut]}</svg>`;
+  return html`<span class="status-icon mode-icon" role="img" aria-label=${m.label}
     data-mode=${mode} dangerouslySetInnerHTML=${{ __html: svg }}></span>`;
 }
 

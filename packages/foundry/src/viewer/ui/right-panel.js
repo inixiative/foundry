@@ -203,14 +203,12 @@ export function RightPanel({ onSpanSelect }) {
         detailDrawerOpen.value = true;
       }}>‹</button>
       ${RIGHT_TABS.map((t) => {
-        const count = threadId ? tabFacts(t, threadId).count : 0;
         return html`<button key=${t} class="rp-strip-tab" title=${TAB_LABELS[t]} onClick=${() => {
           rightTab.value = t;
           boardOpen.value = false;
           detailDrawerOpen.value = true;
         }}>
           <span class="rp-strip-label">${TAB_LABELS[t]}</span>
-          ${count ? html`<span class="rp-count">${count}</span>` : null}
         </button>`;
       })}
     </div>`;
@@ -250,12 +248,11 @@ export function RightPanel({ onSpanSelect }) {
       ${facts.info ? html`<div class="rp-info">${facts.info}</div>` : null}
       <nav class="rp-tabs" role="tablist" aria-label="Thread reference">
         ${RIGHT_TABS.map((t, i) => {
-          const count = tabFacts(t, threadId).count;
           return html`<button key=${t} role="tab" aria-selected=${t === tab}
             class="rp-tab ${t === tab ? 'is-active' : ''}" title=${`${TAB_LABELS[t]} (${i + 5})`}
             onClick=${() => {
               rightTab.value = t;
-            }}>${TAB_LABELS[t]}${count ? html`<span class="rp-count">${count}</span>` : null}</button>`;
+            }}>${TAB_LABELS[t]}</button>`;
         })}
       </nav>
     </header>

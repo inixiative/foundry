@@ -7952,14 +7952,6 @@ a.thread-ref:hover {
   gap: 12px;
   padding: 0 4px 6px;
 }
-.thread-view-unread {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  padding: 0 5px;
-  border-radius: 999px;
-  background: var(--surface);
-  color: var(--text);
-}
 .thread-views {
   flex: 1;
   min-height: 0;
@@ -8076,51 +8068,6 @@ a.thread-ref:hover {
   cursor: pointer;
 }
 /* The composer always says where it sends; each room has its own label and look. */
-.channel-picker {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 6px;
-  min-width: 0;
-}
-.channel-tabs {
-  display: inline-flex;
-  gap: 2px;
-  flex-shrink: 0;
-}
-.channel-tab {
-  padding: 2px 10px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: transparent;
-  color: var(--text-dim);
-  font: inherit;
-  font-size: 12px;
-  cursor: pointer;
-}
-.channel-tab.is-active {
-  color: var(--text);
-  border-color: var(--text-dim);
-}
-.channel-tab:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-.channel-sending {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 12px;
-  color: var(--text-dim);
-}
-.chat-input-main:has(.channel-picker--btw) .chat-input {
-  border-style: dashed;
-}
-.chat-input-main:has(.channel-picker--aside) .chat-input {
-  border-style: dashed;
-  border-color: hsl(var(--app-tertiary) / 0.7);
-}
 /* A key cap inside a switcher segment keeps its neutral look when the segment is filled. */
 .band-tabs .center-view--active kbd {
   background: var(--surface2);
@@ -8414,4 +8361,70 @@ a.thread-ref:hover {
   margin-left: auto;
   cursor: pointer;
   padding: 0 3px;
+}
+
+/* Selected segments (page nav, workspace switcher, centre and right-panel tabs, thread views, rail
+   toggle, Board button): a soft fill, the accent at ~40% with normal text, never solid lime. */
+.page-nav a[aria-current="page"],
+.band-tabs .center-view--active,
+.thread-segment.center-view--active,
+.rail-toggle-btn.is-active,
+.rp-tab.is-active,
+.board-button.is-active {
+  background: hsl(var(--app-primary) / 0.4);
+  color: var(--text);
+  box-shadow: none;
+}
+
+/* Footer: Edit shows on hover; Kingdoms and Archives as two equal pills. */
+.nav-footer-machine .nav-footer-edit {
+  opacity: 0;
+}
+.nav-footer-machine:hover .nav-footer-edit,
+.nav-footer-edit:focus-visible {
+  opacity: 1;
+}
+.nav-footer-name-edit {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.nav-footer-icon-btn {
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  border-radius: 5px;
+  padding: 0 5px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+}
+.nav-footer-pills {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+.nav-footer-pill {
+  text-align: center;
+  padding: 3px 6px;
+  border-radius: 6px;
+  background: hsl(var(--muted));
+  color: var(--text);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.nav-footer-pill:hover {
+  background: hsl(var(--app-primary) / 0.2);
+}
+.nav-footer-sub-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.band-dangerous {
+  background: hsl(var(--error) / 0.18);
+  color: hsl(var(--error));
+  font-weight: 600;
 }
