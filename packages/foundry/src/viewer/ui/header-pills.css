@@ -11,3 +11,13 @@
   color: hsl(var(--muted-foreground));
   white-space: normal;
 }
+/* "auto · rename": Foundry named the thread; the chip opens rename. */
+button.context-bar-name-source {
+  background: none;
+  font-family: inherit;
+  cursor: pointer;
+}
+button.context-bar-name-source:hover {
+  color: var(--text-dim);
+  border-style: solid;
+}
