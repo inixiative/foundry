@@ -25,7 +25,7 @@ import {
   showToast,
 } from './store.js';
 import { Switch } from './switch.js';
-import { threadName } from './thread-labels.js';
+import { projectLabel, threadName } from './thread-labels.js';
 
 const LEVELS = [
   ['project-personal', 'project (personal)'],
@@ -136,9 +136,6 @@ export function feedbackIn({ projectId, threadId } = {}) {
 }
 
 const openCount = (items) => items.filter((item) => item.inbox === 'open').length;
-
-const projectLabel = (projectId) =>
-  projectId ? projects.value.find((p) => p.id === projectId)?.label || projectId : 'Global';
 
 function threadLabel(threadId) {
   const thread = allThreads.value.find((t) => t.threadId === threadId);

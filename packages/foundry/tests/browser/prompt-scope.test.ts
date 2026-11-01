@@ -67,6 +67,8 @@ test('the composer shows only the open thread’s prompts; approving resolves th
       message: 'Allow git push origin fix/checkout?',
       agentId: 'worker',
       threadId: 'shop-1',
+      capability: 'exec:shell',
+      meta: { toolName: 'Bash', toolInput: { command: 'git push origin fix/checkout' } },
     });
     const mine = queue.prompt({
       kind: 'approval',
@@ -110,6 +112,24 @@ test('the composer shows only the open thread’s prompts; approving resolves th
     expect(await cards.allInnerTexts()).toEqual([
       expect.stringContaining('Allow git push origin fix/checkout?'),
     ]);
+    // The card says what approving does, offers the scopes (two not built), and a rule request.
+    expect(await cards.first().locator('.prompt-risk').innerText()).toBe('Pushes to a remote');
+    const scopes = cards.first().getByLabel('Approve for');
+    expect(await scopes.locator('option').allInnerTexts()).toEqual([
+      'Once',
+      'This thread',
+      'This session · not built',
+      'Always for this project · not built',
+    ]);
+    expect(await scopes.locator('option:disabled').count()).toBe(2);
+    await cards.first().getByRole('button', { name: 'Tired of this? Make a rule' }).click();
+    await until(async () => {
+      const body = (await (await fetch(`http://127.0.0.1:${server.port}/api/feedback`)).json()) as {
+        items: { tags: string[] }[];
+      };
+      return body.items.some((item) => item.tags.includes('rule-request'));
+    }, 'the rule request is a feedback item');
+
     await cards.first().getByRole('button', { name: 'Reject' }).click();
     expect((await other).action).toBe('reject');
     expect(errors).toEqual([]);

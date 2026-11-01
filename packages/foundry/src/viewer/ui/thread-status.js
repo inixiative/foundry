@@ -20,7 +20,12 @@
  */
 import { STATES } from './status-icons.js';
 
-const ARCHIVED = new Set(['archived', 'completed', 'done']);
+/** A thread whose stored status is one of these is closed (archived, completed or done). The one list. */
+export const CLOSED_STATUSES = new Set(['archived', 'completed', 'done']);
+
+/** Is the thread (or a stored status) closed? */
+export const isClosedThread = (thread) =>
+  CLOSED_STATUSES.has(thread?.meta?.status ?? thread?.status ?? '');
 
 /** The orange state a pending prompt stands for. */
 export function promptState(prompt) {
@@ -42,7 +47,7 @@ export function threadState(thread, context = {}) {
   const turn = thread?.lastTurn?.status;
   const conversation = thread?.conversation ?? {};
   const prompts = context.prompts ?? [];
-  if (ARCHIVED.has(meta.status ?? '')) return 'archived';
+  if (CLOSED_STATUSES.has(meta.status ?? '')) return 'archived';
   if (turn === 'failed') return 'error';
   if (prompts.length) return promptState(prompts[0]);
   if ((conversation.held ?? 0) > 0) return 'held';

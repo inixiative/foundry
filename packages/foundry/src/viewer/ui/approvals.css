@@ -1,0 +1,42 @@
+/* Approval cards: the risk line, the scope picker and "make a rule" (conversation.js), and the Undo toast. */
+.prompt-risk {
+  font-size: 12px;
+  color: hsl(38 87% 69%);
+  margin: 2px 0 6px;
+}
+.prompt-scope {
+  width: auto;
+  max-width: 200px;
+  flex: none;
+  font: inherit;
+  font-size: 12px;
+  padding: 2px 6px;
+  border-radius: 6px;
+  border: 1px solid hsl(var(--border));
+  background: hsl(var(--card));
+  color: inherit;
+}
+.prompt-make-rule {
+  margin-left: auto;
+  border: 0;
+  background: none;
+  color: hsl(var(--muted-foreground));
+  font: inherit;
+  font-size: 12px;
+  text-decoration: underline dotted;
+  cursor: pointer;
+}
+.prompt-make-rule:hover {
+  color: hsl(var(--app-primary));
+}
+.toast-undo {
+  margin-left: 10px;
+  border: 1px solid currentColor;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  padding: 1px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+}

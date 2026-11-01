@@ -15,7 +15,7 @@ import { html, useEffect, useState } from './lib.js';
 import { settingsConfig } from './settings.js';
 import { allThreads, projects, prompts, selectThread, watchtowerOpen } from './store.js';
 import { threadName } from './thread-labels.js';
-import { categoryOf, subagentParentOf, threadState } from './thread-status.js';
+import { categoryOf, isClosedThread, subagentParentOf, threadState } from './thread-status.js';
 
 export const STAGES = [
   ['idea', 'Idea · pain · bug'],
@@ -26,7 +26,6 @@ export const STAGES = [
   ['review', 'Review · QA'],
   ['blocked', 'Blocked'],
 ];
-const LANDED = new Set(['archived', 'completed', 'done']);
 
 /** A thread's stage, from what it records; work that can't proceed is Blocked whatever its stage. */
 export function stageOf(thread, category) {
@@ -85,7 +84,7 @@ export function Watchtower() {
   const label = (id) => (id ? (projects.value.find((p) => p.id === id)?.label ?? id) : 'Global');
   const kingdomOf = (id) => projects.value.find((x) => x.id === id)?.tags?.[0] ?? 'This Foundry';
   const all = allThreads.value
-    .filter((t) => !subagentParentOf(t.meta) && !LANDED.has(t.meta?.status))
+    .filter((t) => !subagentParentOf(t.meta) && !isClosedThread(t))
     .map((thread) => {
       const subagents = allThreads.value.filter(
         (c) => subagentParentOf(c.meta) === thread.threadId,

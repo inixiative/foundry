@@ -489,7 +489,7 @@ function LoopUnderlay(graph) {
   </g>`;
 }
 
-function LoopView({ flow, onInspect }) {
+function LearningLoopGraph({ flow, onInspect }) {
   const graph = useMemo(
     () => learningLoop(flow),
     [flow.turns, flow.learning, flow.knowledge, flow.review],
@@ -547,7 +547,7 @@ export function GraphPanel({ onLayerClick }) {
             ? html`<div class="graph-empty">Select a thread to see its turns.</div>`
             : tab === 'turn'
               ? html`<${TurnFlowView} key=${threadId} flow=${flow} onInspect=${inspect} />`
-              : html`<${LoopView} key=${threadId} flow=${flow} onInspect=${inspect} />`
+              : html`<${LearningLoopGraph} key=${threadId} flow=${flow} onInspect=${inspect} />`
       }
     </div>
   </div>`;

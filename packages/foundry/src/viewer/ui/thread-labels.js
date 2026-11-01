@@ -8,6 +8,7 @@
  * The server resolves which name is in effect (`title`: a person's name, else the agent's).
  */
 import { html } from './lib.js';
+import { projects } from './store.js';
 
 /** A thread nothing has named yet: no person's or agent's name and no creation description. */
 export const isUnnamed = (t) => !t?.title?.text && !t?.meta?.description;
@@ -61,4 +62,10 @@ export function harnessName(provider) {
   if (/codex/i.test(provider)) return 'Codex';
   if (/claude|anthropic/i.test(provider)) return 'Claude Code';
   return null;
+}
+
+/** A project's label by id; Global for none. */
+export function projectLabel(projectId) {
+  if (!projectId) return 'Global';
+  return projects.value.find((p) => p.id === projectId)?.label || projectId;
 }

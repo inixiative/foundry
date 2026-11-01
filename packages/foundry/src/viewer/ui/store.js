@@ -1107,7 +1107,7 @@ async function _loadTurnDetail(threadId, turnId, traceId, requestId) {
 
 const REJECTING = new Set(['rejected', 'reject', 'not-now', 'dismiss', 'withdraw']);
 
-export async function resolvePrompt(promptId, action, input) {
+export async function resolvePrompt(promptId, action, input, { always } = {}) {
   // Text in the message box goes with the answer: a rejected approval carries it in its message to
   // the agent; any other answer posts it to the thread right after, through the normal send.
   const note = composerNote.peek().trim();
@@ -1116,7 +1116,12 @@ export async function resolvePrompt(promptId, action, input) {
     const res = await fetch(`/api/prompts/${encodeURIComponent(promptId)}/resolve`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action, input, ...(note ? { note } : {}) }),
+      body: JSON.stringify({
+        action,
+        input,
+        ...(note ? { note } : {}),
+        ...(always ? { always: true } : {}),
+      }),
     });
     if (res.ok) {
       if (note) {
@@ -1859,7 +1864,17 @@ export async function executeAction(kind, target, payload) {
       }),
     });
     const result = await res.json();
-    showToast(result.message, result.ok ? 'ok' : 'error');
+    // A list action (archive) can be undone for 20 s; approvals never offer an undo.
+    const id =
+      kind.startsWith('thread:') && target
+        ? target
+        : (activeThreadId.peek() ?? threadData.peek()?.threadId);
+    if (result.ok && kind === 'thread:archive' && id)
+      showToast(result.message, 'ok', {
+        undo: () => executeAction('thread:unarchive', id),
+        ms: 20000,
+      });
+    else showToast(result.message, result.ok ? 'ok' : 'error');
     return result;
   } catch (err) {
     showToast(`Action failed: ${err.message}`, 'error');
@@ -1924,14 +1939,15 @@ let toastTimer = null;
  *
  * @param {string} message
  * @param {"ok"|"error"|"warn"} type
+ * @param {{ undo?: () => void, ms?: number }} [opts] an Undo button and how long the toast stays
  */
-export function showToast(message, type = 'ok') {
+export function showToast(message, type = 'ok', { undo, ms } = {}) {
   if (toastTimer) clearTimeout(toastTimer);
   toastTimer = null;
   const persistent = type === 'error';
-  toast.value = { message, type, persistent };
+  toast.value = { message, type, persistent, ...(undo ? { undo } : {}) };
   if (!persistent) {
-    const delay = type === 'warn' ? 6000 : 3000;
+    const delay = ms ?? (type === 'warn' ? 6000 : 3000);
     toastTimer = setTimeout(() => {
       toast.value = null;
     }, delay);

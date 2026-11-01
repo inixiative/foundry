@@ -13,6 +13,7 @@ export type ActionKind =
   | 'thread:pause'
   | 'thread:resume'
   | 'thread:archive'
+  | 'thread:unarchive'
   | 'thread:inspect'
   | 'layer:warm'
   | 'layer:invalidate'
@@ -47,6 +48,7 @@ export class ActionHandler {
   private _maxLog = 500;
   private _resolveThread: (id: string) => Thread | undefined;
   private _onThreadChange?: (thread: Thread) => void;
+  private _reopenThread?: (id: string) => boolean;
 
   constructor(opts: {
     harness: Harness;
@@ -54,6 +56,8 @@ export class ActionHandler {
     interventions: InterventionLog;
     resolveThread?: (id: string) => Thread | undefined;
     onThreadChange?: (thread: Thread) => void;
+    /** Bring an archived thread back (the turn service's reopen: rebuilt with its journal and binding). */
+    reopenThread?: (id: string) => boolean;
   }) {
     this._harness = opts.harness;
     this._events = opts.eventStream;
@@ -62,6 +66,7 @@ export class ActionHandler {
       opts.resolveThread ??
       ((id) => (id === opts.harness.thread.id ? opts.harness.thread : undefined));
     this._onThreadChange = opts.onThreadChange;
+    this._reopenThread = opts.reopenThread;
   }
 
   /** Execute an operator action. */
@@ -79,6 +84,15 @@ export class ActionHandler {
       (threadAction ? action.target : undefined) ?? action.threadId ?? this._harness.thread.id;
     const thread = this._resolveThread(threadId);
     if (!thread) return { ok: false, action: action.kind, message: `Thread ${threadId} not found` };
+    // Undoing an archive: the reopen rebuilds the thread and records it open.
+    if (action.kind === 'thread:unarchive') {
+      if (!thread.disposed)
+        return { ok: true, action: action.kind, message: `Thread ${threadId} is open` };
+      const reopened = this._reopenThread?.(threadId) ?? false;
+      return reopened
+        ? { ok: true, action: action.kind, message: `Thread ${threadId} reopened` }
+        : { ok: false, action: action.kind, message: `Thread ${threadId} can't be reopened` };
+    }
     if (thread.disposed && action.kind !== 'thread:inspect' && action.kind !== 'system:snapshot') {
       return {
         ok: false,

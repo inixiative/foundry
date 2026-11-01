@@ -30,17 +30,21 @@ import {
   selectThread,
   worktrees,
 } from './store.js';
-import { isUnnamed, nameSourceLabel, threadName, threadPlace } from './thread-labels.js';
-import { categoryOf, subagentParentOf, threadState } from './thread-status.js';
+import {
+  isUnnamed,
+  nameSourceLabel,
+  projectLabel,
+  threadName,
+  threadPlace,
+} from './thread-labels.js';
+import { CLOSED_STATUSES, categoryOf, subagentParentOf, threadState } from './thread-status.js';
 
 // ---------------------------------------------------------------------------
 // Active/inactive classification
 // ---------------------------------------------------------------------------
 
-const INACTIVE_THREAD_STATES = new Set(['archived', 'completed', 'done']);
-
 function isActiveThread(t) {
-  return !INACTIVE_THREAD_STATES.has(t.status);
+  return !CLOSED_STATUSES.has(t.status);
 }
 
 // ---------------------------------------------------------------------------
@@ -82,7 +86,7 @@ function ThreadActions({ thread }) {
   const status = thread.status || 'idle';
   const canPause = status === 'active' || status === 'idle';
   const canResume = status === 'waiting';
-  const isArchived = INACTIVE_THREAD_STATES.has(status);
+  const isArchived = CLOSED_STATUSES.has(status);
 
   return html`
     <div class="thread-actions ${open ? 'thread-actions-open' : ''}">
@@ -116,12 +120,6 @@ function ThreadActions({ thread }) {
 // ---------------------------------------------------------------------------
 // Thread node — shows metadata (model, temp, agent count, layers)
 // ---------------------------------------------------------------------------
-
-/** The project a thread belongs to, by label; Global for none. */
-function projectLabel(projectId) {
-  if (!projectId) return 'Global';
-  return projects.value.find((p) => p.id === projectId)?.label || projectId;
-}
 
 /** Rows for a list of listed threads: children nest under their parent; unread member posts rise. */
 export function threadTree(threads) {

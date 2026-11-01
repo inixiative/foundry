@@ -16,9 +16,10 @@ import { html } from './lib.js';
 import { NavFooter } from './nav-footer.js';
 import { ProjectSidebar } from './project-sidebar.js';
 import { activeThreadId, allThreads, projectSidebarOpen, railView, selectThread } from './store.js';
+import { isClosedThread } from './thread-status.js';
 import { ThreadNode, threadTree } from './thread-tree.js';
 
-const OPEN = (t) => !['archived', 'completed', 'done'].includes(t.meta?.status ?? 'idle');
+const OPEN = (t) => !isClosedThread(t);
 /** Shared: another party (a Signet member) is in the thread. */
 const isShared = (node) => (node.conversation?.members ?? 0) > 0;
 
