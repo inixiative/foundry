@@ -75,24 +75,6 @@ function PageNav() {
 }
 
 /** The selected scope, centered in the header: a project's name, else Global / Forge Master / Feedback (or Foundry off the workspace). */
-function HeaderScope() {
-  const scope = scopeProjectId();
-  const workspace = route.value.page === 'workspace';
-  const name = scope
-    ? projects.value.find((p) => p.id === scope)?.label || scope
-    : !workspace
-      ? 'Foundry'
-      : forgeMasterOpen.value
-        ? 'Forge Master'
-        : feedbackInboxOpen.value
-          ? 'Feedback'
-          : 'Global';
-  return html`<div class="header-scope" title=${scope ? `Project: ${name}` : name}>
-    ${scope ? html`<span class="header-scope-kind">Project</span>` : null}
-    <span class="header-scope-name">${name}</span>
-  </div>`;
-}
-
 /** The board button, with how many threads wait on you. */
 function BoardButton() {
   // The Needs-you column's size: threads waiting on you (a prompt, a held send, an unread post).
@@ -128,9 +110,10 @@ function Header() {
         <span class="header-brand">Foundry<span class="header-brand-dot">.</span></span>
         <${PageNav} />
       </div>
-      <${HeaderScope} />
-      <div class="header-right">
+      <div class="header-center">
         ${route.value.page === 'workspace' ? html`<${IncomingIndicator} /><${BoardButton} />` : null}
+      </div>
+      <div class="header-right">
         <a class="action-btn" href=${settingsPath(null, 'kingdom')} onClick=${onLink}>${settingsConfig.value?.kingdomIntegrations?.length ? 'Kingdom' : 'Connect to Kingdom'}</a>
         <span class="status-dot ${isConnected ? 'on' : 'off'}"></span>
         <span class="status-text">${isConnected ? 'connected' : 'reconnecting...'}</span>

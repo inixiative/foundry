@@ -51,28 +51,14 @@ body {
   min-width: 0;
 }
 
-/* The selected scope, centered: a project's name reads as the page's subject. */
-.header-scope {
+/* The middle of the top bar: the Board (and Incoming), in the workspace only. The thread header
+   names the thread, project and owner, so the top bar doesn't repeat them. */
+.header-center {
   display: flex;
-  align-items: baseline;
-  gap: 6px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
   min-width: 0;
-  max-width: 40vw;
-}
-.header-scope-kind {
-  font-size: 9px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  color: var(--text-dimmer);
-}
-.header-scope-name {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 /* ---- Logo mark ---- */
@@ -5704,8 +5690,7 @@ a.thread-ref:hover {
 }
 
 @media (max-width: 600px) {
-  .header-title,
-  .header-scope {
+  .header-title {
     display: none;
   }
   .page-nav {

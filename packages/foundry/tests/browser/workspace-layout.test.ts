@@ -136,14 +136,16 @@ test('the left column is navigation: pinned scopes, a scrolling project list, an
     expect(await column.innerText()).not.toMatch(/LAYERS|AGENTS|ACTIVITY/);
     expect(await page.locator('.panel-left').count()).toBe(0);
 
-    // The header centers the selected project's name.
-    const scope = page.locator('.header-scope');
-    expect(await scope.locator('.header-scope-name').innerText()).toBe('Checkout service');
-    expect(await scope.locator('.header-scope-kind').innerText()).toMatch(/project/i);
+    // The top bar's middle holds the Board, centred; it no longer repeats the selected scope, which
+    // the rail's selected row and the thread header already show.
+    expect(await page.locator('.header-scope').count()).toBe(0);
+    expect(await column.locator('.proj-item.proj-active .proj-item-label').innerText()).toBe(
+      'Checkout service',
+    );
     const centered = await page.evaluate(() => {
       const header = document.querySelector('.header')!.getBoundingClientRect();
-      const name = document.querySelector('.header-scope')!.getBoundingClientRect();
-      return Math.abs(name.left + name.width / 2 - (header.left + header.width / 2));
+      const board = document.querySelector('.header-center .board-button')!.getBoundingClientRect();
+      return Math.abs(board.left + board.width / 2 - (header.left + header.width / 2));
     });
     expect(centered).toBeLessThan(2);
 
@@ -153,12 +155,16 @@ test('the left column is navigation: pinned scopes, a scrolling project list, an
     expect(await column.locator('.nav-threads .tree-node').allInnerTexts()).toEqual([
       'Forge Master',
     ]);
-    expect(await page.locator('.header-scope-name').innerText()).toBe('Forge Master');
+    expect(await pinned.filter({ hasText: 'Forge Master' }).getAttribute('class')).toContain(
+      'proj-active',
+    );
 
     // Global lists the unscoped threads.
     await pinned.filter({ hasText: 'Global' }).click();
     await column.locator('.nav-threads .tree-label', { hasText: 'Global work' }).waitFor();
-    expect(await page.locator('.header-scope-name').innerText()).toBe('Global');
+    expect(await pinned.filter({ hasText: 'Global' }).getAttribute('class')).toContain(
+      'proj-active',
+    );
 
     // Layers, Agents and Activity are Settings sections now.
     for (const section of ['Layers', 'Agents', 'Activity']) {

@@ -105,7 +105,9 @@ test('/feedback in the composer, the project strip, the thread marker and the pi
 
     // The pinned inbox: everything, newest first, each linking back to its thread.
     await pinned.filter({ hasText: 'Feedback' }).click();
-    expect(await page.locator('.header-scope-name').innerText()).toBe('Feedback');
+    expect(await pinned.filter({ hasText: 'Feedback' }).getAttribute('class')).toContain(
+      'proj-active',
+    );
     const inbox = page.locator('.feedback-inbox[data-scope="all"]');
     const rows = inbox.locator('.feedback-item');
     await rows.nth(2).waitFor();
@@ -139,7 +141,9 @@ test('/feedback in the composer, the project strip, the thread marker and the pi
     await inbox.getByRole('tab', { name: /Open/ }).click();
     await rows.first().locator('.feedback-source').click();
     await page.locator('.chat-agent[data-turn-id="turn-1"]').waitFor();
-    expect(await page.locator('.header-scope-name').innerText()).not.toBe('Feedback');
+    expect(await pinned.filter({ hasText: 'Feedback' }).getAttribute('class')).not.toContain(
+      'proj-active',
+    );
     expect(page.url()).toContain(`thread=${f.thread.id}`);
 
     // Automatic detection is opt-in: Settings → Advanced → Feedback turns it on.
