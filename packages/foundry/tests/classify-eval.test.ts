@@ -199,11 +199,19 @@ describe('carrying stage 1 from an earlier run', () => {
   };
 
   test('asks only stage 2, on the cells stage 1 escalated, carrying its reading and why', async () => {
-    const earlier = (await arm(ARMS.B)).answers;
+    const live = await arm(ARMS.B);
+    const earlier = live.answers;
     const { answers, calls } = await carryRun(earlier);
     expect(calls.some((c) => c.host === 'claude-haiku-5-5')).toBe(false);
     const stage2 = calls.filter((c) => c.host === 'claude-sonnet-5-5');
     expect(stage2).toHaveLength(2);
+    // Stage 2 gets byte for byte what it got live: system and user messages, and its session.
+    const sorted = (cs: typeof calls) =>
+      cs
+        .filter((c) => c.host === 'claude-sonnet-5-5')
+        .map((c) => JSON.stringify([c.messages, c.threadId]))
+        .sort();
+    expect(sorted(calls)).toEqual(sorted(live.calls));
     const vague = stage2.find((c) => text(c.messages).includes('nightly thing'))!;
     expect(text(vague.messages)).toContain(
       'Stage 1 (claude-haiku-5-5) was unsure this moment is in your region: "safer" may mean no overlap',

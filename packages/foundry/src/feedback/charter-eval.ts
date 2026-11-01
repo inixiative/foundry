@@ -127,6 +127,8 @@ export interface CharterEvalOptions {
    * A test of the later stages with stage 1 held fixed (`--carry <run dir>`): each cell's row from an
    * earlier run of the same stage 1. A cell whose earlier stage 1 escalated runs from stage 2, carrying
    * that reading as live would; any other cell keeps its earlier row, unasked. Ungrouped Wardens only.
+   * One difference from live: when stage 2 falls back, live delivers stage 1's own pointer (a point
+   * stage's yes); here the row records the fallback and stage 1's trace, and a scorer reads it from there.
    */
   readonly carry?: (
     probeId: string,
