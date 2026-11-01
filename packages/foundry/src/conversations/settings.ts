@@ -28,6 +28,7 @@ const merge = (
           agentMayPass: over.conch?.agentMayPass ?? base.conch.agentMayPass,
         },
         agents: over.agents ?? base.agents,
+        commissionHours: over.commissionHours ?? base.commissionHours,
       }
     : base;
 

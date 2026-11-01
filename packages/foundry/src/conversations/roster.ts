@@ -47,12 +47,13 @@ const FLOOR: Record<ConversationSettings['floor'], string> = {
   'speak-when-spoken-to':
     'speak-when-spoken-to. A member posts only in reply to something you sent it with send_to_member; each send invites one reply.',
   conch:
-    'conch. Only the member holding the conch posts; when no member holds it, the host (the owner and you) does.',
+    'conch. Only the member holding the conch posts; when no member holds it, the host (the owner and you) does. A report on a task you asked a member for (a commission) still comes in once.',
 };
 
 const VIEW: Record<ThreadsLens['view'], string> = {
   own: 'only its own posts and what you send it',
-  thread: "the thread's user and assistant messages (never tool calls, Warden notes or context)",
+  thread:
+    "the owner's messages, members' posts and what you send with send_to_member; never your own answers (unless it is the owner's own client), tool calls, Warden notes or context. To tell it anything, use send_to_member",
 };
 
 const DELIVERY: Record<ThreadsLens['delivery'], string> = {

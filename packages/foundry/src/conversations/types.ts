@@ -4,7 +4,12 @@
  * @partOf feature:conversations
  */
 import type { PromptBlock } from '@inixiative/foundry-core';
-import { type ConversationMember, floorModeSchema, threadTextLimit } from '@inixiative/signet';
+import {
+  type ConversationMember,
+  floorModeSchema,
+  type ThreadCommission,
+  threadTextLimit,
+} from '@inixiative/signet';
 import { z } from 'zod';
 
 /**
@@ -31,6 +36,13 @@ export const conversationSettingsSchema = z.strictObject({
     })
     .optional(),
   agents: z.enum(['silent', 'drafting']).optional(),
+  /** How long a commissioned task's report may still enter the thread (§4.9 point 8, M2). */
+  commissionHours: z
+    .number()
+    .int()
+    .min(1)
+    .max(30 * 24)
+    .optional(),
 });
 export type ConversationSettingsInput = z.infer<typeof conversationSettingsSchema>;
 
@@ -54,6 +66,7 @@ export interface ConversationSettings {
    * leader lets them draft, the "marker" (Aron, 2026-11-01). `drafting`: agents may propose.
    */
   agents: 'silent' | 'drafting';
+  commissionHours: number;
 }
 
 /** Proposals in the design (§10): talk, six agent turns, a five-minute conch the agent can't pass. */
@@ -62,6 +75,7 @@ export const DEFAULT_CONVERSATION_SETTINGS: ConversationSettings = Object.freeze
   maxAgentTurns: 6,
   conch: Object.freeze({ holdSeconds: 300, agentMayPass: false }),
   agents: 'drafting',
+  commissionHours: 24,
 });
 
 /**
@@ -86,6 +100,12 @@ export interface Invitation {
   by: ConversationMember;
   standing: boolean;
   expiresAt: string | null;
+  /**
+   * A commissioned task's report (§4.9 point 8): admitted by its reply in every floor mode, the conch
+   * included, until it expires; kept across a mode change. `notify`: the report reaches only the
+   * owner, never the other members.
+   */
+  commission?: ThreadCommission['report'];
 }
 
 /** The wrapper's state, one record per conversation thread. Depth is derived from the journal. */
@@ -130,6 +150,8 @@ export interface MemberPostRecord {
   inReplyTo?: string;
   /** The turn the post opened (`delivery: 'turn'`). */
   turnId?: string;
+  /** A report against a `notify` commission: the owner reads it, the other members never do. */
+  notify?: boolean;
 }
 
 /**
@@ -148,6 +170,12 @@ export interface HeldRecord {
   /** `send`: the member it is addressed to. */
   to?: ConversationMember;
   toName?: string;
+  /**
+   * `send`: it asks the member's agent for work; its person fixed how the report comes back (M1).
+   * `expiresAt` is set when the send is released, not drafted (round 5): a send released at once
+   * carries it here, a reviewed one on its resolution.
+   */
+  commission?: { report: ThreadCommission['report']; expiresAt?: string };
   /** `post`: the access source (a held Signet) and the remote thread. */
   accessId?: string;
   remoteThreadId?: string;
@@ -162,6 +190,7 @@ export interface HeldResolutionRecord {
   kind: HeldRecord['kind'];
   to?: ConversationMember;
   toName?: string;
+  commission?: ThreadCommission;
   action: 'released' | 'withdrawn';
   /** The text that left: as written, or as the owner edited it. */
   text: string;

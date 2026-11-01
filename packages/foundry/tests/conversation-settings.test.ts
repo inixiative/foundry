@@ -34,6 +34,7 @@ test('the cascade: default, then the repository file, then this machine project 
         maxAgentTurns: 6,
         conch: { holdSeconds: 60, agentMayPass: false },
         agents: 'drafting',
+        commissionHours: 24,
       },
       floorFrom: 'repository',
     });
@@ -46,6 +47,7 @@ test('the cascade: default, then the repository file, then this machine project 
       maxAgentTurns: 3,
       conch: { holdSeconds: 60, agentMayPass: true },
       agents: 'drafting',
+      commissionHours: 24,
     });
     const thread = resolveConversationSettings(
       { path: dir, conversations: { floor: 'talk' } },

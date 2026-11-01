@@ -288,7 +288,7 @@ test('the roster is part of the conversation: a member that joins shows with its
   expect(joined).toContain('# Conversation members');
   // A thread with a member is shared, and a shared thread defaults to the conch (Aron, 2026-11-01).
   expect(joined).toContain(
-    'Conversation floor: conch. Only the member holding the conch posts; when no member holds it, the host (the owner and you) does. Held now by the host.',
+    'Conversation floor: conch. Only the member holding the conch posts; when no member holds it, the host (the owner and you) does. A report on a task you asked a member for (a commission) still comes in once. Held now by the host.',
   );
   expect(joined).toContain(`- "JobCo" (${f.member.signetId}, a User)`);
   expect(joined).toContain('  - sees: only its own posts and what you send it');

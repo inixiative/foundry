@@ -502,7 +502,12 @@ test('outbound follows the latest snapshot and falls back to review when the mem
 test('a live view: one subscribe answers the snapshot and its journalSeq; appends follow densely, filtered per member view; nothing is replayed', async () => {
   const h = await host();
   const own = await h.member('Own', { outbound: 'auto' });
-  const remote = await h.member('Owner remote', { view: 'thread' });
+  // The owner's own remote client: a whole-thread grant with prompt.resolve, which Kingdom allows
+  // only to the host's owner, so it reads the host agent's messages too (§4.9, M8).
+  const remote = await h.member('Owner remote', {
+    view: 'thread',
+    operations: ['thread.prompt', 'thread.read', 'thread.floor', 'prompt.resolve'],
+  });
   expect((await h.post(own, 'before the stream')).ok).toBe(true);
   const ownView = await h.subscribe(own);
   const threadView = await h.subscribe(remote);
@@ -1059,4 +1064,113 @@ test('a member whose grant allows it takes the conch; without floor.mayTake, tak
   });
   expect((await h.post(senior, 'I will drive for a bit')).ok).toBe(true);
   expect(await h.post(junior, 'ok')).toMatchObject({ ok: false, refusal: 'floor_denied' });
+});
+
+// Commissions and per-reader views (planning doc §4.9 points 2 and 8; review round 4 M1, M2, M3, M8).
+
+test('a commissioned task invites its report through the conch and survives a mode change', async () => {
+  const h = await host({ floor: 'shared' });
+  const worker = await h.member('Worker');
+  expect(
+    h.conversations.send('main', 'Worker', 'Look into the retry path and report back', 'post'),
+  ).toContain('Held');
+  const held = await h.heldPrompt();
+  expect(held.message).toContain('its report posts to the thread');
+  h.conversations.submitHeld((held.meta!.conversationHeld as { heldId: string }).heldId, 'release');
+  await until(() => !h.queue.pending().length, 'released');
+  const send = (await h.read(worker)).result.entries.find((e: any) => e.kind === 'send');
+  expect(send.commission).toMatchObject({ report: 'post' });
+  // A mode change keeps the commission; an ordinary post under the conch is still refused.
+  expect(
+    (await h.route('/api/threads/main/conversation/floor', { mode: 'speak-when-spoken-to' }))
+      .status,
+  ).toBe(200);
+  expect((await h.route('/api/threads/main/conversation/floor', { mode: 'conch' })).status).toBe(
+    200,
+  );
+  expect(await h.post(worker, 'unasked')).toMatchObject({ ok: false, refusal: 'floor_denied' });
+  expect(
+    (
+      await h.post(worker, 'The retry path double-sends on timeout.', {
+        inReplyTo: String(send.journalSeq),
+      })
+    ).ok,
+  ).toBe(true);
+  // The invitation is consumed: a second report needs a second commission.
+  expect(
+    await h.post(worker, 'and another thing', { inReplyTo: String(send.journalSeq) }),
+  ).toMatchObject({ ok: false, refusal: 'floor_denied' });
+});
+
+test('an ordinary released send under the conch opens no way past it', async () => {
+  const h = await host({ floor: 'shared' });
+  const a = await h.member('A', { outbound: 'auto' });
+  h.conversations.send('main', 'A', 'hello');
+  const send = (await h.read(a)).result.entries.find((e: any) => e.kind === 'send');
+  expect(await h.post(a, 'hi back', { inReplyTo: String(send.journalSeq) })).toMatchObject({
+    ok: false,
+    refusal: 'floor_denied',
+  });
+});
+
+test('a notify report reaches only its author and the owner; the host agent’s messages reach only the owner', async () => {
+  const h = await host();
+  const worker = await h.member('Worker', { view: 'thread', outbound: 'auto' });
+  const watcher = await h.member('Watcher', { view: 'thread' });
+  const me = await h.member('Aron elsewhere', {
+    view: 'thread',
+    operations: ['thread.prompt', 'thread.read', 'thread.floor', 'prompt.resolve'],
+  });
+  await h.ownerSays('kick off');
+  h.conversations.send('main', 'Worker', 'Check the logs and tell me only', 'notify');
+  const send = (await h.read(worker)).result.entries.find((e: any) => e.kind === 'send');
+  expect((await h.post(worker, 'Logs are clean.', { inReplyTo: String(send.journalSeq) })).ok).toBe(
+    true,
+  );
+  const texts = async (s: typeof worker) =>
+    (await h.read(s)).result.entries.map((e: any) => [e.kind, e.text]);
+  expect(await texts(worker)).toContainEqual(['post', 'Logs are clean.']);
+  expect(await texts(watcher)).not.toContainEqual(['post', 'Logs are clean.']);
+  expect(await texts(me)).toContainEqual(['post', 'Logs are clean.']);
+  // The host agent answered "kick off"; only the owner's own client reads that answer.
+  expect((await texts(watcher)).some(([kind]: string[]) => kind === 'agent')).toBe(false);
+  expect((await texts(me)).some(([kind]: string[]) => kind === 'agent')).toBe(true);
+  // The owner's own client is not counted as a party: one member besides it would make two.
+  expect(h.conversations.summary('main')?.members).toBe(2);
+});
+
+test("a commission's window starts at release and expires; a late or repeated notify report never goes public", async () => {
+  const h = await host();
+  const worker = await h.member('Worker', { view: 'thread' });
+  const watcher = await h.member('Watcher', { view: 'thread' });
+  setSystemTime(new Date('2026-11-01T10:00:00Z'));
+  h.conversations.send('main', 'Worker', 'Check quietly', 'notify');
+  const held = await h.heldPrompt();
+  // Released two days after it was drafted: the window starts now, not at the draft.
+  setSystemTime(new Date('2026-11-03T10:00:00Z'));
+  h.conversations.submitHeld((held.meta!.conversationHeld as { heldId: string }).heldId, 'release');
+  await until(() => !h.queue.pending().length, 'released');
+  const send = (await h.read(worker)).result.entries.find((e: any) => e.kind === 'send');
+  expect(send.commission.expiresAt).toBe('2026-11-04T10:00:00.000Z');
+  expect((await h.post(worker, 'quiet result', { inReplyTo: String(send.journalSeq) })).ok).toBe(
+    true,
+  );
+  // Again on the same commission, in talk: refused, not posted in public.
+  expect(await h.post(worker, 'louder', { inReplyTo: String(send.journalSeq) })).toMatchObject({
+    ok: false,
+    refusal: 'not_invited',
+  });
+  const watched = (await h.read(watcher)).result.entries.map((e: any) => e.text);
+  expect(watched).not.toContain('quiet result');
+  expect(watched).not.toContain('louder');
+});
+
+test('silent agents may still commission a task: a person asked for it', async () => {
+  const h = await host();
+  await h.member('Worker');
+  expect((await h.route('/api/threads/main/conversation/agents', { mode: 'silent' })).status).toBe(
+    200,
+  );
+  expect(() => h.conversations.send('main', 'Worker', 'just chatting')).toThrow(/silent/);
+  expect(h.conversations.send('main', 'Worker', 'Please run the suite', 'post')).toContain('Held');
 });
