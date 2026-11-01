@@ -8,10 +8,8 @@ import {
   vendorModeProvider,
   vendorOfProvider,
 } from '@inixiative/foundry-core';
-import { migrationIssues } from '../src/doctor';
 import {
   enabledProviderIds,
-  migrateProviderSettings,
   patchVendorSettings,
   providerContextBudget,
   providerEnabled,
@@ -69,38 +67,6 @@ test('a provider runs only while its vendor and its mode are both on', () => {
   expect(providerEnabled(config, 'not-registered')).toBe(false);
 });
 
-test('pre-vendor providers migrate mode by mode; seeded API roots and unregistered ids drop', () => {
-  const { vendors, dropped } = migrateProviderSettings({
-    'claude-code': { enabled: true, contextBudget: { maxTokens: 400_000 } },
-    anthropic: { enabled: false },
-    codex: { enabled: true },
-    openai: { enabled: false, baseUrl: 'https://api.openai.com/v1' },
-    gemini: { enabled: true },
-    meta: { enabled: true, baseUrl: 'https://proxy.example/v1' },
-    deepseek: { enabled: false },
-    custom: { enabled: true },
-  });
-  expect(dropped).toEqual(['custom']);
-  expect(vendors.anthropic).toEqual({
-    enabled: true,
-    subscription: { enabled: true, contextBudget: { maxTokens: 400_000 } },
-    api: { enabled: false },
-  });
-  // The OpenAI root was the registry's own, seeded into every old file: not an override.
-  expect(vendors.openai).toEqual({
-    enabled: true,
-    subscription: { enabled: true },
-    api: { enabled: false },
-  });
-  expect(vendors.meta).toEqual({
-    enabled: true,
-    api: { enabled: true, baseUrl: 'https://proxy.example/v1' },
-  });
-  expect(vendors.deepseek).toEqual({ enabled: false, api: { enabled: false } });
-  expect(providerContextBudget({ vendors }, 'claude-code')).toEqual({ maxTokens: 400_000 });
-  expect(() => validateVendorSettings(vendors)).not.toThrow();
-});
-
 test('vendor settings refuse unknown vendors, missing modes and a coming-soon subscription', () => {
   const ok = vendorSettingsFromRegistry();
   expect(() => validateVendorSettings(ok)).not.toThrow();
@@ -136,22 +102,4 @@ test('vendor settings refuse unknown vendors, missing modes and a coming-soon su
   expect(() => validateConfig({ ...config, installationName: ' ' })).toThrow(
     'installationName must be 1 to 120 characters',
   );
-});
-
-test('the doctor names a load-time migration and says nothing needs running by hand', async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'foundry-vendors-'));
-  try {
-    writeFileSync(
-      join(dir, 'settings.json'),
-      JSON.stringify({ providers: { anthropic: { enabled: true }, nope: { enabled: true } } }),
-    );
-    const store = new ConfigStore(dir);
-    await store.load();
-    expect(store.migrations).toEqual(['providers → vendors (dropped unregistered nope)']);
-    const [issue] = migrationIssues(store.migrations);
-    expect(issue).toMatchObject({ severity: 'warning', code: 'settings-migrated' });
-    expect(issue!.message).toContain('Nothing to run by hand');
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
 });

@@ -12,7 +12,7 @@ import type {
   LLMProvider,
   LLMStreamEvent,
 } from '@inixiative/foundry-core';
-import { type ModelReasoning, registryModel } from '../models/registry';
+import { type ModelReasoning, registryModel } from '@inixiative/foundry-core';
 import { HttpCompletionSettlement } from './http-settlement';
 
 export interface OpenAIConfig {

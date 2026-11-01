@@ -5,12 +5,14 @@
  */
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { z } from 'zod';
 import {
   MODEL_REGISTRY,
-  mainThreadRequirement,
   registryModel,
   SUBSCRIPTION_DECISION_MODELS,
+} from '@inixiative/foundry-core';
+import { z } from 'zod';
+import {
+  mainThreadRequirement,
   SUBSCRIPTION_WORKERS,
   type SubscriptionWorker,
   subscriptionWorker,

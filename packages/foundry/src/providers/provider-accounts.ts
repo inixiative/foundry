@@ -3,9 +3,9 @@
  * @kind service
  * @partOf feature:nativeAuth
  */
-import { vendorOfProvider } from '@inixiative/foundry-core';
+import { MODEL_REGISTRY, vendorOfProvider } from '@inixiative/foundry-core';
 import { whichOn } from '../daemon/agent-clis';
-import { MODEL_REGISTRY, SUBSCRIPTION_WORKERS, subscriptionWorker } from '../models/registry';
+import { SUBSCRIPTION_WORKERS, subscriptionWorker } from '../models/registry';
 import { enabledProviderIds, providerBaseUrl } from '../models/vendors';
 import type { FoundryConfig } from '../viewer/config';
 import {

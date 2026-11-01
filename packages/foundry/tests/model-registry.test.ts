@@ -7,11 +7,10 @@ import {
   modelCapabilities,
   modelHasCapability,
   modelOptionsByCapability,
-  modelOptionsByTier,
   providersWithCapability,
-  registryForViewer,
   registryModel,
-} from '../src/models/registry';
+} from '@inixiative/foundry-core';
+import { modelOptionsByTier, registryForViewer } from '../src/models/registry';
 import {
   createRegisteredProvider,
   providerApiRoot,
@@ -207,27 +206,7 @@ test("each vendor's own effort field is recorded, not flattened into OpenAI's", 
   expect(registryModel('kimi', 'kimi-k3')!.reasoning!.param).toBe('reasoning_effort');
 });
 
-describe('the registry moved to core without moving any import path', () => {
-  test("the foundry re-export and core's own export are the same table and the same functions", async () => {
-    const core = await import('@inixiative/foundry-core');
-    const foundry = await import('../src/models/registry');
-    expect(foundry.MODEL_REGISTRY).toBe(core.MODEL_REGISTRY);
-    expect(foundry.registryModel).toBe(core.registryModel);
-    expect(foundry.modelHasCapability).toBe(core.modelHasCapability);
-    expect(foundry.modelCapabilities).toBe(core.modelCapabilities);
-    expect(foundry.modelOptionsByCapability).toBe(core.modelOptionsByCapability);
-    expect(foundry.providersWithCapability).toBe(core.providersWithCapability);
-    expect(foundry.resolveDecisionModel).toBe(core.resolveDecisionModel);
-    expect(foundry.DECISION_MODEL).toBe(core.DECISION_MODEL);
-    expect(foundry.DECISION_PROVIDER).toBe(core.DECISION_PROVIDER);
-  });
-
-  test('resolveDecisionModel keeps its old import path on the provider module', async () => {
-    const { resolveDecisionModel } = await import('../src/providers/decision-provider');
-    const core = await import('@inixiative/foundry-core');
-    expect(resolveDecisionModel).toBe(core.resolveDecisionModel);
-  });
-
+describe('the registry lives in core', () => {
   test("the projections that need Foundry's own shapes stayed behind", async () => {
     const core = (await import('@inixiative/foundry-core')) as Record<string, unknown>;
     for (const name of ['providerConfigsFromRegistry', 'registryForViewer', 'modelOptionsByTier'])

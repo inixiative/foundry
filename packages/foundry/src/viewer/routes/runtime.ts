@@ -5,7 +5,7 @@
  */
 import { isAbsolute } from 'node:path';
 import type { EventStream, Harness, InterventionLog, StreamEvent } from '@inixiative/foundry-core';
-import { newId, Thread, threadTitle, timeFromId } from '@inixiative/foundry-core';
+import { MODEL_REGISTRY, newId, Thread, threadTitle, timeFromId } from '@inixiative/foundry-core';
 import type { Hono } from 'hono';
 import type { PostgresMemory } from '../../adapters/postgres-memory';
 import type { ProjectRegistry } from '../../agents/project';
@@ -17,7 +17,7 @@ import { type FeedbackService, localOperator } from '../../feedback/service';
 import type { FeedbackAbout } from '../../feedback/types';
 import { byAttention, feedbackView, newestFirst } from '../../feedback/view';
 import { branchCommits, listWorktrees } from '../../git';
-import { MODEL_REGISTRY, registryForViewer, subscriptionWorker } from '../../models/registry';
+import { registryForViewer, subscriptionWorker } from '../../models/registry';
 import {
   IMAGE_MAX_BYTES,
   ImageAttachmentError,

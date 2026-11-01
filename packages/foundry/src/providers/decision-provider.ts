@@ -9,14 +9,11 @@ import {
   modelHasCapability,
   registryModel,
   resolveDecisionModel,
-} from '../models/registry';
+} from '@inixiative/foundry-core';
 import { providerBaseUrl, providerEnabled } from '../models/vendors';
 import type { FoundryConfig } from '../viewer/config';
 import { AnthropicProvider } from './anthropic';
 import { createRegisteredProvider, providerApiKey } from './openai-compatible';
-
-/** Re-exported: the registry defaults and the resolver now live in core. */
-export { DECISION_MODEL, DECISION_PROVIDER, resolveDecisionModel } from '../models/registry';
 
 export type DecisionDefaults = Pick<FoundryConfig, 'defaults' | 'vendors'>;
 

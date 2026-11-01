@@ -112,7 +112,7 @@ Runtime config lives in `.foundry/settings.json`. A fresh install is one executo
 
 It defines:
 - Default provider/model
-- Vendors (`vendors`): one per vendor (Anthropic, OpenAI, Google, Meta, xAI, ...), each on or off with a subscription mode (a native CLI login: Claude Code, Codex) and an API mode (an API key); a registry provider runs while its vendor and mode are on (`models/vendors.ts`). Pre-vendor `providers` settings migrate on load
+- Vendors (`vendors`): one per vendor (Anthropic, OpenAI, Google, Meta, xAI, ...), each on or off with a subscription mode (a native CLI login: Claude Code, Codex) and an API mode (an API key); a registry provider runs while its vendor and mode are on (`models/vendors.ts`). A saved pre-vendor `providers` key is refused by name; nothing converts it
 - This Foundry's name (`installationName`), which Kingdom pairing uses
 - Agent definitions (id, kind, prompt, provider, model, temperature, visible/owned layers). No Wardens: a `domain-advising`, `domain-librarian` or `decider` agent in `agents` or `projects[id].agents` is refused by name (`refuseHandNamedWardens`), with the fix
 - The composition view (`composition`): the instruction ladder and what each role picks from it

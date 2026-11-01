@@ -15,17 +15,12 @@
  */
 
 import { localArchive } from '@inixiative/archive/remote';
+import { DECISION_PROVIDER, MODEL_REGISTRY, mainThreadLab } from '@inixiative/foundry-core';
 import { existsSync, mkdirSync } from 'fs';
 import { basename } from 'path';
 import { archiveStatus } from './archives/local';
 import { runArchiveSetup } from './archives/setup';
-import {
-  DECISION_PROVIDER,
-  MODEL_REGISTRY,
-  mainThreadLab,
-  mainThreadRequirement,
-  subscriptionWorker,
-} from './models/registry';
+import { mainThreadRequirement, subscriptionWorker } from './models/registry';
 import { RUNTIME_OUTPUT_FILES, writeComposed, writeFileRef } from './prompts/composer';
 import {
   defaultInstallationName,
@@ -84,7 +79,7 @@ function detectKeys(): { id: ProviderId; key: string }[] {
 async function loadConfig(): Promise<FoundryConfig | null> {
   if (!existsSync(CONFIG_PATH)) return null;
   try {
-    return configFromSaved(await Bun.file(CONFIG_PATH).json()).config;
+    return configFromSaved(await Bun.file(CONFIG_PATH).json());
   } catch {
     return null;
   }

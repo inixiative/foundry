@@ -5,6 +5,7 @@
  * @partOf feature:daemon, feature:flow
  */
 import { resolve } from 'node:path';
+import { resolveDecisionModel } from '@inixiative/foundry-core';
 import { stampFoundryRun } from './archives/run-stamp';
 import { AGENT_CLIS, ensureAgentClisOnPath } from './daemon/agent-clis';
 import { providerBaseUrl, providerContextBudget, providerEnabled } from './models/vendors';
@@ -13,7 +14,7 @@ import {
   liveDecisionHosts,
   privateDirectory,
 } from './providers/decision-host';
-import { createDecisionProvider, resolveDecisionModel } from './providers/decision-provider';
+import { createDecisionProvider } from './providers/decision-provider';
 import { InSessionWardens } from './providers/in-session-wardens';
 import { KingdomAuthentication } from './providers/kingdom-authentication';
 import {

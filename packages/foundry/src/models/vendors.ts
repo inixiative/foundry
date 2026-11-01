@@ -7,11 +7,7 @@
  * Vendor settings: one entry per vendor (Anthropic, OpenAI, Google, ...), each with a subscription
  * mode and an API mode, either or both on. The registry's providers stay the transports: a vendor's
  * subscription mode is served by its native CLI provider (claude-code, codex) and its API mode by
- * its API provider (anthropic, openai, gemini, ...), so `providerEnabled` answers for a provider id
- * the way `providers[id].enabled` used to.
- *
- * Settings saved before vendors carry `providers` (one entry per transport); `migrateProviderSettings`
- * turns them into vendors on load, and the next save writes the vendor shape.
+ * its API provider (anthropic, openai, gemini, ...), so `providerEnabled` answers for a provider id.
  */
 
 import {
@@ -41,13 +37,6 @@ export interface VendorSettings {
   api?: VendorApiSettings;
 }
 export type VendorSettingsMap = Record<string, VendorSettings>;
-
-/** What `vendors` replaced: one entry per transport provider. Read only to migrate it. */
-export interface LegacyProviderSettings {
-  enabled?: boolean;
-  baseUrl?: string;
-  contextBudget?: ClaudeContextBudget | false;
-}
 
 type VendorConfig = { vendors?: VendorSettingsMap };
 
@@ -100,43 +89,6 @@ export function mergeVendorSettings(
   }
   for (const [id, own] of Object.entries(saved ?? {})) if (!(id in merged)) merged[id] = own;
   return merged;
-}
-
-/**
- * Pre-vendor `providers` settings as vendors. A mode takes its provider's `enabled`; a vendor is on
- * when any of its modes is. A `baseUrl` equal to the registry's root was a seeded copy, not an
- * override, and is dropped. Providers outside the registry ran nothing and are reported as dropped.
- */
-export function migrateProviderSettings(providers: Record<string, LegacyProviderSettings>): {
-  vendors: VendorSettingsMap;
-  dropped: string[];
-} {
-  const vendors = vendorSettingsFromRegistry();
-  const dropped: string[] = [];
-  for (const [id, saved] of Object.entries(providers)) {
-    const served = vendorOfProvider(id);
-    if (!served) {
-      dropped.push(id);
-      continue;
-    }
-    const vendor = vendors[served.vendor.id]!;
-    if (served.mode === 'subscription') {
-      vendor.subscription = {
-        enabled: saved?.enabled ?? vendor.subscription?.enabled ?? false,
-        ...(saved?.contextBudget !== undefined ? { contextBudget: saved.contextBudget } : {}),
-      };
-    } else {
-      const root = MODEL_REGISTRY[id]?.apiRoot;
-      const baseUrl = saved?.baseUrl?.trim();
-      vendor.api = {
-        enabled: saved?.enabled ?? vendor.api?.enabled ?? false,
-        ...(baseUrl && baseUrl !== root ? { baseUrl } : {}),
-      };
-    }
-  }
-  for (const vendor of Object.values(vendors))
-    vendor.enabled = !!(vendor.subscription?.enabled || vendor.api?.enabled);
-  return { vendors, dropped };
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>

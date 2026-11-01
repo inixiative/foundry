@@ -9,6 +9,7 @@ import { appendFile, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { basename, join, resolve } from 'node:path';
 import {
   computeHash,
+  DECISION_MODEL,
   type Harness,
   type LLMProvider,
   type MemorySelectionPolicy,
@@ -33,9 +34,7 @@ import {
 import { type FeedbackSettings, validateFeedbackSettings } from '../feedback/types';
 import { subscriptionWorker } from '../models/registry';
 import {
-  type LegacyProviderSettings,
   mergeVendorSettings,
-  migrateProviderSettings,
   patchVendorSettings,
   type VendorSettingsMap,
   validateVendorSettings,
@@ -48,7 +47,6 @@ import {
   resolveInstructionLadder,
   validateCompositionSettings,
 } from '../prompts/instruction-settings';
-import { DECISION_MODEL } from '../providers/decision-provider';
 import {
   type KingdomAccessSource,
   validateKingdomAccess,
@@ -147,8 +145,7 @@ export interface FoundryConfig {
 
   /**
    * Vendors (keyed by vendor id: anthropic, openai, google, ...), each with an on/off switch and its
-   * subscription and API modes (models/vendors.ts). Replaces the per-transport `providers` map,
-   * which is migrated on load.
+   * subscription and API modes (models/vendors.ts).
    */
   vendors: VendorSettingsMap;
 
@@ -783,31 +780,17 @@ export function defaultAgents(): Record<string, AgentSettingsConfig> {
 
 /**
  * A saved settings.json as a full configuration: saved fields over the defaults, vendors merged
- * mode by mode. Settings saved before vendors name one provider per transport (`providers`); they
- * load as vendors and the next save writes the vendor shape. A saved `vendors` wins over a stray
- * `providers`. `migrations` names what was converted, for `bun run doctor`.
+ * mode by mode. A saved `providers` key (the shape before vendors) is kept so validation refuses it
+ * by name; nothing converts it.
  */
-export function configFromSaved(raw: unknown): { config: FoundryConfig; migrations: string[] } {
-  const { providers, ...saved } = (raw ?? {}) as Partial<FoundryConfig> & {
-    providers?: Record<string, LegacyProviderSettings>;
-  };
+export function configFromSaved(raw: unknown): FoundryConfig {
+  const saved = (raw ?? {}) as Partial<FoundryConfig>;
   const defaults = defaultConfig();
-  const migrated = providers && !saved.vendors ? migrateProviderSettings(providers) : undefined;
-  const migrations = migrated
-    ? [
-        `providers → vendors${migrated.dropped.length ? ` (dropped unregistered ${migrated.dropped.join(', ')})` : ''}`,
-      ]
-    : providers
-      ? ['providers ignored: vendors is saved']
-      : [];
   return {
-    config: {
-      ...defaults,
-      ...saved,
-      vendors: mergeVendorSettings(defaults.vendors, migrated?.vendors ?? saved.vendors),
-      projects: { ...saved.projects },
-    },
-    migrations,
+    ...defaults,
+    ...saved,
+    vendors: mergeVendorSettings(defaults.vendors, saved.vendors),
+    projects: { ...saved.projects },
   };
 }
 
@@ -1227,7 +1210,6 @@ export class ConfigStore {
   private _queue: Promise<unknown> = Promise.resolve();
   private _listeners = new Set<SettingsListener>();
   private _notified: Promise<void> = Promise.resolve();
-  private _migrations: string[] = [];
 
   constructor(dir: string) {
     this._dir = resolve(dir);
@@ -1239,14 +1221,6 @@ export class ConfigStore {
 
   get directory(): string {
     return this._dir;
-  }
-
-  /**
-   * Shape migrations the last load applied in memory (e.g. `providers → vendors`). The file keeps
-   * its old shape until the next save writes the current one; `bun run doctor` reports them.
-   */
-  get migrations(): readonly string[] {
-    return this._migrations;
   }
 
   /** Increments whenever the committed config changes. */
@@ -1263,8 +1237,7 @@ export class ConfigStore {
         // Merge saved over defaults into a candidate; validate before it becomes live.
         // An invalid persisted policy fails loudly, keeps the last working live
         // configuration, and leaves the file untouched for the operator to repair.
-        const { config: candidate, migrations } = configFromSaved(await file.json());
-        this._migrations = migrations;
+        const candidate = configFromSaved(await file.json());
         try {
           validateConfig(candidate);
         } catch (err) {

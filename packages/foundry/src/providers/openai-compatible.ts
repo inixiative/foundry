@@ -9,7 +9,7 @@ import {
   MODEL_REGISTRY,
   type ModelReasoning,
   registryModel,
-} from '../models/registry';
+} from '@inixiative/foundry-core';
 import { OpenAIProvider, openAiApiRoot } from './openai';
 
 export interface RegisteredProviderConfig {
