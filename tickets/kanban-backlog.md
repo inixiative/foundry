@@ -13,6 +13,11 @@ kanban
     AGENT-001-herald-cross-thread
     AGENT-002-writeback-pipeline
     VIEWER-001-inbox-mode
+    VIEWER-002-code-viewer
+    VIEWER-003-diff-viewer
+    VIEWER-004-gloss-viewer
+    VIEWER-005-heralds-view
+    VIEWER-006-theme-from-config
     BOARD-001-shared-threads
     BOARD-002-sidecar-joining-side
     BOARD-003-inbound-items
@@ -44,6 +49,11 @@ These tickets capture the connections between components that are individually b
 | Ticket | Gap | Priority |
 |--------|-----|----------|
 | [VIEWER-001](./VIEWER-001-inbox-mode.md) | The attention board: default view, three lanes (Needs you, Just in, Running), `meta.attention`, the controls, private and shared zones | High |
+| [VIEWER-002](./VIEWER-002-code-viewer.md) | Code viewer and editor inside Foundry (not a VS Code fork); base for diffs and Gloss | Low |
+| [VIEWER-003](./VIEWER-003-diff-viewer.md) | Per-turn and per-thread diffs, branch-vs-base Compare; GitHub link-out is the interim | Low |
+| [VIEWER-004](./VIEWER-004-gloss-viewer.md) | Gloss in the code viewer; the top-bar button returns with it | Low |
+| [VIEWER-005](./VIEWER-005-heralds-view.md) | A workspace view like the Board: how threads are represented to the Heralds (needs AGENT-001) | Medium |
+| [VIEWER-006](./VIEWER-006-theme-from-config.md) | One theme for Kingdom and Foundry from `@inixiative/config` (`theme/public`, `theme/agentic`) | Medium |
 
 ### Backlog — Attention board (Foundry Version 4)
 

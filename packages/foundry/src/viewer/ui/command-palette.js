@@ -13,13 +13,13 @@ import { html, useEffect, useRef, useState } from './lib.js';
 import { analyticsPath, navigate, settingsPath } from './route.js';
 import { StatusLegend } from './status-icons.js';
 import {
-  boardOpen,
   commandPaletteOpen,
   createThread,
   executeAction,
   helpOpen,
   scopeProjectId,
   showToast,
+  toggleBoard,
   toggleGraphPanel,
 } from './store.js';
 
@@ -61,9 +61,7 @@ const COMMANDS = [
     id: 'board',
     label: 'Open the attention board',
     icon: '▦',
-    action: () => {
-      boardOpen.value = !boardOpen.value;
-    },
+    action: toggleBoard,
   },
   {
     id: 'new-thread',

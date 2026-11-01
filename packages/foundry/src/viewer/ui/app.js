@@ -14,7 +14,7 @@ import { Board } from './board.js';
 import { CommandPalette, HelpOverlay } from './command-palette.js';
 import { Conversation } from './conversation.js';
 import { FeedbackInbox } from './feedback.js';
-import { GlossButton, GlossReview } from './gloss.js';
+import { GlossReview } from './gloss.js';
 import { initHotkeys, registerDefaults } from './hotkeys.js';
 import { html, render, useEffect, useState } from './lib.js';
 import { NavRail } from './nav-rail.js';
@@ -50,6 +50,7 @@ import {
   selectedEvent,
   selectedSpanId,
   toast,
+  toggleBoard,
   toggleGraphPanel,
 } from './store.js';
 import { categoryOf, threadState } from './thread-status.js';
@@ -118,7 +119,6 @@ function Header() {
       <${HeaderScope} />
       <div class="header-right">
         ${route.value.page === 'workspace' ? html`<${BoardButton} />` : null}
-        ${route.value.page === 'workspace' ? html`<${GlossButton} projectId=${scopeProjectId()} />` : null}
         <a class="action-btn" href=${settingsPath(null, 'kingdom')} onClick=${onLink}>${settingsConfig.value?.kingdomIntegrations?.length ? 'Kingdom' : 'Connect to Kingdom'}</a>
         <span class="status-dot ${isConnected ? 'on' : 'off'}"></span>
         <span class="status-text">${isConnected ? 'connected' : 'reconnecting...'}</span>
@@ -243,9 +243,7 @@ function App() {
       toggleLayers: () => {},
       toggleEvents: () => {},
       toggleGraph: toggleGraphPanel,
-      toggleBoard: () => {
-        boardOpen.value = !boardOpen.value;
-      },
+      toggleBoard,
       toggleRightPanel: () => {
         detailDrawerOpen.value = !detailDrawerOpen.value;
       },
