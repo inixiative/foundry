@@ -11,6 +11,8 @@
  *
  *   VIEWER_PORT=3500 bun run scripts/viewer-preview.ts
  */
+// A preview must never write to the machine's live Archive: point it at the in-memory fake.
+import '../packages/foundry/tests/helpers/isolate-archive';
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
