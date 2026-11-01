@@ -24,6 +24,10 @@ import {
   NativeAuthentication,
   type NativeAuthenticationProvider,
 } from './providers/native-authentication';
+import {
+  nativeAuthenticationMode,
+  projectRunsOnKingdom,
+} from './providers/native-authentication-mode';
 import { boundLaunchEnvironment } from './providers/native-text-environment';
 import { SubscriptionAuthentication } from './providers/subscription-authentication';
 import {
@@ -304,8 +308,8 @@ const sessionStore = new FileExternalSessionStore(join(FOUNDRY_DIR, 'sessions.js
 // Kingdom-capacity projects run their threads, on every worker, on a login Kingdom releases from the
 // project's pool, never on this machine's; every other thread keeps the machine's own login. Applies
 // to projects set to kingdom at startup.
-const projectCapacityAuthentication = Object.values(config.projects ?? {}).some(
-  (project) => project.capacity === 'kingdom',
+const projectCapacityAuthentication = Object.keys(config.projects ?? {}).some((id) =>
+  projectRunsOnKingdom(config, id),
 )
   ? projectCapacity({
       foundryDir: FOUNDRY_DIR,
@@ -337,16 +341,14 @@ function createProvider(
     ? new SubscriptionAuthentication(join(FOUNDRY_DIR, 'runtime-profiles'), login)
     : subscription
       ? noLocalLogin(providerId)
-      : config.defaults.kingdomOwnerKey ||
-          Object.keys(config.kingdomInferenceAssignments ?? {}).length
+      : nativeAuthenticationMode(config) === 'kingdom'
         ? new KingdomAuthentication({
             directory: join(FOUNDRY_DIR, 'kingdom'),
             sources: config.kingdomInference ?? [],
             defaultOwnerKey: config.defaults.kingdomOwnerKey,
             assignments: config.kingdomInferenceAssignments,
           })
-        : config.defaults.nativeAuthenticationId ||
-            Object.keys(config.nativeAuthenticationSelections ?? {}).length
+        : nativeAuthenticationMode(config) === 'native-profile'
           ? new NativeAuthentication({
               directory: join(FOUNDRY_DIR, 'runtime-profiles'),
               sources: config.nativeAuthentication ?? [],
