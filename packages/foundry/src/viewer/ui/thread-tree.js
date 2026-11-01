@@ -10,6 +10,7 @@
 
 import { FeedbackStrip, feedbackIn } from './feedback.js';
 import { html, useState } from './lib.js';
+import { RenameModal } from './modal.js';
 import { StatusIcon } from './status-icons.js';
 import {
   activePanel,
@@ -23,6 +24,7 @@ import {
   projects,
   promptCounts,
   prompts,
+  renameThread,
   selectScope,
   selectThread,
   worktrees,
@@ -65,6 +67,7 @@ function InactiveFold({ count, label, defaultOpen = false, children }) {
 
 function ThreadActions({ thread }) {
   const [open, setOpen] = useState(false);
+  const [renaming, setRenaming] = useState(false);
   const toggle = (e) => {
     e.stopPropagation();
     setOpen((v) => !v);
@@ -91,7 +94,18 @@ function ThreadActions({ thread }) {
         ${canResume ? html`<button role="menuitem" onClick=${run('thread:resume')}>Resume</button>` : null}
         ${!isArchived ? html`<button role="menuitem" onClick=${run('thread:archive')}>Archive</button>` : null}
         <button role="menuitem" onClick=${run('thread:inspect')}>Inspect</button>
+        <button role="menuitem" onClick=${(e) => {
+          e.stopPropagation();
+          setOpen(false);
+          setRenaming(true);
+        }}>Rename</button>
       </div>`
+          : null
+      }
+      ${
+        renaming
+          ? html`<${RenameModal} title="Rename thread" label="Thread name" value=${thread.name}
+              onClose=${() => setRenaming(false)} onSave=${(next) => renameThread(thread.id, next)} />`
           : null
       }
     </div>

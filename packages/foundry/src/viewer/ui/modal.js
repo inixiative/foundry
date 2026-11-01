@@ -11,7 +11,7 @@
  *   <${Modal} title="Add project" onClose=${close} class="proj-modal">...<//>
  */
 
-import { html, useLayoutEffect, useRef } from './lib.js';
+import { html, useLayoutEffect, useRef, useState } from './lib.js';
 
 export function Modal({ title, onClose, dismissOnBackdrop = true, children, ...props }) {
   const close = useRef(onClose);
@@ -46,4 +46,32 @@ export function Modal({ title, onClose, dismissOnBackdrop = true, children, ...p
       </div>
     </div>
   `;
+}
+
+/** A small rename window: one field, ✕ Cancel and ✓ Save; Enter saves, Escape cancels. */
+export function RenameModal({ title, value, label = 'Name', onSave, onClose }) {
+  const [draft, setDraft] = useState(value ?? '');
+  const save = async () => {
+    const next = draft.trim();
+    if (!next || next === value) return onClose();
+    if ((await onSave(next)) !== false) onClose();
+  };
+  return html`<${Modal} title=${title} onClose=${onClose} class="rename-modal">
+    <input class="rename-input" aria-label=${label} value=${draft}
+      onInput=${(e) => setDraft(e.target.value)}
+      onKeyDown=${(e) => {
+        if (e.key === 'Enter') save();
+      }}
+      ref=${(el) => {
+        if (el && !el.dataset.focused) {
+          el.dataset.focused = '1';
+          el.focus();
+          el.select();
+        }
+      }} />
+    <div class="rename-actions">
+      <button type="button" class="action-btn" onClick=${onClose}>✕ Cancel</button>
+      <button type="button" class="action-btn primary" onClick=${save}>✓ Save</button>
+    </div>
+  <//>`;
 }
