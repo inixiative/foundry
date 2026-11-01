@@ -8428,3 +8428,27 @@ a.thread-ref:hover {
   color: hsl(var(--error));
   font-weight: 600;
 }
+
+/* Top-bar pills (Incoming, Kingdom): one shape, solid cut-out icon */
+.top-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 30px;
+  padding: 0 12px 0 9px;
+  border-radius: 999px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  text-decoration: none;
+  cursor: pointer;
+}
+.top-pill:hover {
+  border-color: hsl(var(--input));
+}
+.top-pill .pill-glyph {
+  flex: none;
+  color: var(--text-dim);
+}

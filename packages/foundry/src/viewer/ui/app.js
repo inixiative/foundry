@@ -94,6 +94,19 @@ function BoardButton() {
  * Requests to join, waiting in Kingdom: a separate mark from the Board count, since none is accepted
  * yet. It opens a popover under itself (outside click or Esc closes it); the Board keeps its band.
  */
+/** Solid pill icons, the same cut-out family as the status icons. */
+const INCOMING_ICON = html`<svg class="pill-glyph" viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><rect x="1" y="1" width="14" height="14" rx="3.6" fill="currentColor"/><path d="M8 3.6v5.2M5.6 6.6 8 9l2.4-2.4" fill="none" stroke="hsl(var(--background))" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/><path d="M3.6 10.4h2.2l.8 1.4h2.8l.8-1.4h2.2" fill="none" stroke="hsl(var(--background))" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+const KINGDOM_ICON = html`<svg class="pill-glyph" viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><rect x="1" y="1" width="14" height="14" rx="3.6" fill="currentColor"/><path d="M6.6 4.4h5v5" fill="none" stroke="hsl(var(--background))" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/><path d="M11.4 4.6 4.6 11.4" fill="none" stroke="hsl(var(--background))" stroke-width="1.7" stroke-linecap="round"/></svg>`;
+
+/** The Kingdom this Foundry is paired with, opened in a new window; unpaired, the link to pair one. */
+function KingdomPill() {
+  const kingdoms = settingsConfig.value?.kingdomIntegrations ?? [];
+  const url = kingdoms.find((k) => k?.url)?.url;
+  if (!kingdoms.length || !url)
+    return html`<a class="top-pill" href=${settingsPath(null, 'kingdom')} onClick=${onLink}>${KINGDOM_ICON}Connect to Kingdom</a>`;
+  return html`<a class="top-pill" href=${`${new URL(url).origin}/dashboard`} target="_blank" rel="noopener" title="Open Kingdom in a new window">${KINGDOM_ICON}Kingdom</a>`;
+}
+
 function IncomingIndicator() {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
@@ -120,9 +133,9 @@ function IncomingIndicator() {
   return html`<div class="incoming-anchor" ref=${ref} onKeyDown=${(e) => {
     if (e.key === 'Escape') setOpen(false);
   }}>
-    <button class="incoming-indicator" aria-expanded=${open} aria-haspopup="dialog"
+    <button class="incoming-indicator top-pill" aria-expanded=${open} aria-haspopup="dialog"
       title=${`${count} request${count === 1 ? '' : 's'} to join, not yet accepted`}
-      onClick=${() => setOpen(!open)}>Incoming <span class="incoming-indicator-count">${count}</span></button>
+      onClick=${() => setOpen(!open)}>${INCOMING_ICON}Incoming <span class="incoming-indicator-count">${count}</span></button>
     ${
       open
         ? html`<div class="incoming-popover" role="dialog" aria-label="Incoming requests">
@@ -147,11 +160,9 @@ function Header() {
         ${route.value.page === 'workspace' ? html`<${IncomingIndicator} /><${BoardButton} />` : null}
       </div>
       <div class="header-right">
-        <a class="action-btn" href=${settingsPath(null, 'kingdom')} onClick=${onLink}>${settingsConfig.value?.kingdomIntegrations?.length ? 'Kingdom' : 'Connect to Kingdom'}</a>
-        <span class="status-dot ${isConnected ? 'on' : 'off'}"></span>
+        <${KingdomPill} />
+        <span class="status-dot ${isConnected ? 'on' : 'off'}" title=${`${isConnected ? 'Connected' : 'Reconnecting'} · ${count} events`}></span>
         <span class="status-text">${isConnected ? 'connected' : 'reconnecting...'}</span>
-        <span class="status-sep">|</span>
-        <span class="status-text">${count} events</span>
         <span class="status-sep">|</span>
         <kbd class="status-key">Ctrl+K</kbd>
         <span class="status-text dim">commands</span>
