@@ -9,7 +9,7 @@
  * Every status is one solid rounded tile in its category colour with a symbol knocked out of it
  * (Aron, 2026-11-01: "big, thick things, not really outlines, where the images are cut out"; at most
  * three symbols per colour). The words live in the tooltip and the legend, never on the row.
- * Colours come from tokens.css (--status-*). Only needs-you and working move, and both stop under
+ * Colours come from @inixiative/config/theme/agentic.css (--status-*). Only needs-you and working move, and both stop under
  * prefers-reduced-motion.
  */
 import { html } from './lib.js';
