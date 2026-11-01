@@ -1389,6 +1389,27 @@ export class LocalSessionStore {
     ).map((row) => ({ id: row.id, meta: JSON.parse(row.meta) }));
   }
 
+  /** A message's place in its thread's journal (undefined when it isn't that thread's). */
+  messageSeq(threadId: string, messageId: string): number | undefined {
+    const row = this.query(
+      "SELECT seq FROM session_journal WHERE thread_id=? AND source='message' AND ref=?",
+    ).get(threadId, messageId) as { seq: number } | null;
+    return row?.seq;
+  }
+
+  /** The journal row at a seq: what it points at (a message id or a phase row id). */
+  journalRef(
+    threadId: string,
+    seq: number,
+  ): { source: 'message' | 'phase'; ref: string } | undefined {
+    return (
+      (this.query('SELECT source, ref FROM session_journal WHERE thread_id=? AND seq=?').get(
+        threadId,
+        seq,
+      ) as { source: 'message' | 'phase'; ref: string } | null) ?? undefined
+    );
+  }
+
   /** One stored thread's meta (a live or archived thread), or undefined. */
   threadMeta(id: string): ThreadMeta | undefined {
     const row = this.query('SELECT meta FROM session_threads WHERE id=?').get(id) as {

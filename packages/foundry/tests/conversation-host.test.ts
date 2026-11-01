@@ -1403,7 +1403,12 @@ test("forking from the viewer makes a top-level thread that carries the source's
   const h = await host();
   await h.ownerSays('first idea');
   await h.ownerSays('second idea');
-  const response = await h.route('/api/threads/main/fork', { copyCount: 1 });
+  await h.ownerSays('third idea');
+  // By the message itself, never its place on a page of the view.
+  const second = h.viewer
+    .localStore!.messages('main', 20)
+    .find((m) => m.content === 'second idea')!;
+  const response = await h.route('/api/threads/main/fork', { messageId: second.id });
   expect(response.status).toBe(201);
   const forked = (await response.json()) as { threadId: string };
   const store = h.viewer.localStore!;
@@ -1414,7 +1419,18 @@ test("forking from the viewer makes a top-level thread that carries the source's
   const history = journalHistory(store, forked.threadId)!;
   expect(history).toContain('forked from thread main');
   expect(history).toContain('first idea');
-  expect(history).not.toContain('second idea');
+  expect(history).toContain('second idea');
+  expect(history).not.toContain('third idea');
+  // A fork of the fork carries both, with one marker where the source's part ends.
+  const again = await h.route(`/api/threads/${forked.threadId}/fork`, {
+    atSeq: store.journalSeq(forked.threadId),
+  });
+  expect(again.status).toBe(201);
+  const twice = journalHistory(store, ((await again.json()) as { threadId: string }).threadId)!;
+  expect(twice).toContain('second idea');
+  expect(twice.match(/## Forked here/g)).toBeNull();
+  // A message of another thread is not a cut.
+  expect((await h.route('/api/threads/main/fork', { messageId: 'nope' })).status).toBe(400);
 });
 
 test("the agent's fork_thread applies in the owner's own turn and asks him to confirm otherwise; the task opens the fork", async () => {
@@ -1430,7 +1446,7 @@ test("the agent's fork_thread applies in the owner's own turn and asks him to co
   );
   expect(forks()).toEqual([]);
   const ask = h.queue.pending().find((prompt) => prompt.meta?.conversationControl)!;
-  expect(ask.message).toContain('fork this thread to work on: Split the tests out');
+  expect(ask.message).toContain('fork this thread to work on this task:\n\nSplit the tests out');
   h.queue.resolve(ask.id, 'apply', { by: 'human' });
   await until(() => forks().length === 1, 'forked after the owner confirmed');
   const fork = forks()[0]!;
@@ -1439,10 +1455,23 @@ test("the agent's fork_thread applies in the owner's own turn and asks him to co
     () => store.messages(fork.id, 10).some((m) => m.actor === 'user'),
     'task sent to the fork',
   );
-  expect(String(store.messages(fork.id, 10).find((m) => m.actor === 'user')?.content)).toBe(
-    'Split the tests out',
-  );
+  const task = store.messages(fork.id, 10).find((m) => m.actor === 'user')!;
+  expect(String(task.content)).toContain('Split the tests out');
+  // Foundry's line, not the owner's: the seeded history carries other parties' words, so the
+  // fork's first turn never counts as his instruction.
+  expect(task.meta?.origin).toMatchObject({ fork: true, member: { kind: 'local', id: 'main' } });
+  expect(store.lastOwnerSeq(fork.id)).toBe(0);
   expect(journalHistory(store, fork.id)).toContain('we should split the tests out');
+
+  // A long task is shown whole: what he approves is what the fork gets.
+  const long = `Tidy the README.${' filler'.repeat(60)} then delete the tests`;
+  h.conversations.fork('main', { task: long });
+  await until(
+    () => h.queue.pending().some((prompt) => prompt.message.includes('then delete the tests')),
+    'whole task shown',
+  );
+  const longAsk = h.queue.pending().find((prompt) => prompt.message.includes('then delete'))!;
+  h.queue.resolve(longAsk.id, 'decline', { by: 'human' });
 
   // In the owner's own turn it forks at once.
   await h.ownerSends('HOLD fork this into its own thread');

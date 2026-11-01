@@ -74,8 +74,17 @@ function lineageOf(
   journal: LocalSessionStore,
   meta: ThreadMeta,
 ): { lineage: NonNullable<ArchiveSnapshot['lineage']> } | undefined {
-  if (meta.forkedFrom)
-    return { lineage: { kind: 'fork', parentSessionId: meta.forkedFrom.threadId } };
+  if (meta.forkedFrom) {
+    // The cut, as the source's snapshot names that entry (a message by its id, a phase row by `phase:`).
+    const cut = journal.journalRef(meta.forkedFrom.threadId, meta.forkedFrom.journalSeq);
+    return {
+      lineage: {
+        kind: 'fork',
+        parentSessionId: meta.forkedFrom.threadId,
+        ...(cut ? { parentEntryId: cut.source === 'message' ? cut.ref : `phase:${cut.ref}` } : {}),
+      },
+    };
+  }
   if (!meta.parentThreadId) return undefined;
   const parents = new Map(journal.threads().map((t) => [t.id, t.meta.parentThreadId]));
   let root = meta.parentThreadId;

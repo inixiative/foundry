@@ -113,7 +113,7 @@ export function registerRuntimeRoutes(
   turns: TurnService;
   fork: (
     sourceThreadId: string,
-    options: { atSeq: number; name?: string; task?: string },
+    options: { atSeq: number; name?: string; task?: string; confirmed?: boolean },
   ) => { threadId: string; name: string };
 } {
   const {
@@ -829,16 +829,42 @@ export function registerRuntimeRoutes(
     return thread;
   };
 
+  /** A new thread joins its project and the directory, starts, and is saved and announced. */
+  const registerThread = (
+    thread: Thread,
+    project: ReturnType<ProjectRegistry['get']> | undefined,
+  ) => {
+    if (project) project.addThread(thread);
+    directory.add(thread);
+    thread.start();
+    localStore?.saveThread(thread);
+    streams.threadsChanged(thread.id);
+    void threadContext?.refresh(thread.id);
+    db?.prisma.threadState
+      .create({
+        data: {
+          id: thread.id,
+          description: thread.meta.description,
+          tags: thread.meta.tags,
+          status: 'idle',
+        },
+      })
+      .catch((err: unknown) =>
+        console.warn('[Viewer] background op failed:', (err as Error).message ?? err),
+      );
+  };
+
   /**
    * Fork a thread at a point of its journal (CORE-004's portable form; the native fork comes with
    * the runner work): a new top-level thread in the source's project and working directory, with
    * `forkedFrom` provenance and no nesting (Aron, 2026-11-01). Its first session is seeded with the
    * source's conversation through the cut (`turns/journal-history.ts`). A `task` is its first
-   * message, the owner's: the caller has already established that he asked for it.
+   * message: Foundry's line (`TurnOrigin.fork`), never counted as the owner's, because the seeded
+   * history carries other parties' words and the agent wrote the task.
    */
   const forkThread = (
     sourceThreadId: string,
-    options: { atSeq: number; name?: string; task?: string },
+    options: { atSeq: number; name?: string; task?: string; confirmed?: boolean },
   ): { threadId: string; name: string } => {
     if (!localStore) throw Error('Forking needs the local session store');
     const source = directory.get(sourceThreadId);
@@ -859,14 +885,18 @@ export function registerRuntimeRoutes(
     });
     const name = options.name?.slice(0, 200) ?? `Fork of ${sourceName}`;
     thread.rename(name);
-    if (project) project.addThread(thread);
-    directory.add(thread);
-    thread.start();
-    localStore.saveThread(thread);
-    streams.threadsChanged(thread.id);
-    void threadContext?.refresh(thread.id);
+    registerThread(thread, project);
     if (options.task) {
-      const accepted = turns.accept({ threadId: thread.id, payload: options.task });
+      const accepted = turns.accept({
+        threadId: thread.id,
+        payload: `Forked from ${JSON.stringify(sourceName)} to work on this task, which its agent set${options.confirmed ? ' and the owner confirmed' : ' in a turn the owner asked for'}:\n\n${options.task}`,
+        origin: {
+          member: { kind: 'local', id: sourceThreadId },
+          displayName: sourceName,
+          postId: `fork:${id}`,
+          fork: true,
+        },
+      });
       if (!accepted.ok)
         throw Error(
           `Forked into ${id}, but its task was not started: ${String(accepted.body.error)}`,
@@ -925,22 +955,7 @@ export function registerRuntimeRoutes(
     });
 
     if (typeof body.name === 'string') thread.rename(body.name.slice(0, 200));
-    if (project) project.addThread(thread);
-    directory.add(thread);
-
-    thread.start();
-    localStore?.saveThread(thread);
-    streams.threadsChanged(thread.id);
-    void threadContext?.refresh(thread.id);
-
-    db?.prisma.threadState
-      .create({
-        data: { id, description, tags, status: 'idle' },
-      })
-      .catch((err: unknown) =>
-        console.warn('[Viewer] background op failed:', (err as Error).message ?? err),
-      );
-
+    registerThread(thread, project);
     return c.json(threadToJSON(thread), 201);
   });
 
@@ -1059,96 +1074,27 @@ export function registerRuntimeRoutes(
   app.post('/api/threads/:id/fork', async (c) => {
     const sourceThreadId = c.req.param('id');
     const body = await c.req.json<Record<string, unknown>>();
-    const copyCount = typeof body.copyCount === 'number' ? body.copyCount : null;
-
-    if (
-      typeof body.atSeq !== 'number' &&
-      (copyCount == null || !Number.isSafeInteger(copyCount) || copyCount < 1)
-    ) {
-      return c.json({ error: 'copyCount (a positive integer) or atSeq is required' }, 400);
-    }
-
-    const sourceThread = directory.get(sourceThreadId);
-
-    if (!sourceThread) {
+    if (!directory.get(sourceThreadId))
       return c.json({ error: `source thread not found: ${sourceThreadId}` }, 404);
-    }
-    if (localStore) {
-      // `atSeq` is the journal point; `copyCount` (the viewer's "Fork from here") is the Nth message.
-      const atSeq =
-        typeof body.atSeq === 'number'
+    if (!localStore) return c.json({ error: 'Forking needs the local session store' }, 501);
+    // The cut: through a message (the viewer's "Fork from here") or a journal seq.
+    const atSeq =
+      typeof body.messageId === 'string'
+        ? localStore.messageSeq(sourceThreadId, body.messageId)
+        : typeof body.atSeq === 'number'
           ? body.atSeq
-          : localStore
-              .journalEntries(sourceThreadId, { limit: 10_000 })
-              .filter((entry) => entry.source === 'message')[(copyCount ?? 0) - 1]?.seq;
-      if (atSeq === undefined)
-        return c.json({ error: `the thread has fewer than ${copyCount} messages` }, 400);
-      try {
-        const made = forkThread(sourceThreadId, {
-          atSeq,
-          ...(typeof body.name === 'string' ? { name: body.name } : {}),
-        });
-        return c.json(threadToJSON(directory.get(made.threadId)!), 201);
-      } catch (error) {
-        return c.json({ error: (error as Error).message }, 400);
-      }
-    }
-
-    if (copyCount == null) return c.json({ error: 'copyCount is required here' }, 400);
-    const forkedThreadId = newId('thread');
-    const sourceName = threadTitle(sourceThread.meta)?.text ?? sourceThreadId;
-    const newOpts = {
-      description: `Fork of ${sourceName}`,
-      cwd: sourceThread?.meta.cwd,
-      branch: sourceThread?.meta.branch,
-      parentThreadId: sourceThread?.id,
-      projectId: sourceThread.meta.projectId,
-    };
-
-    const newThread = constructThread(forkedThreadId, newOpts);
-
-    // Add to same project as source
-    if (projectRegistry) {
-      for (const [, project] of projectRegistry.all) {
-        if (project.threads.has(sourceThreadId)) {
-          project.addThread(newThread);
-          break;
-        }
-      }
-    }
-
-    newThread.start();
-    directory.add(newThread);
-    streams.threadsChanged(newThread.id);
-
-    // Copy messages from DB
-    if (db) {
-      const sourceMsgs = await db.prisma.message.findMany({
-        where: { threadId: sourceThreadId },
-        orderBy: { id: 'asc' },
-        take: copyCount,
+          : undefined;
+    if (atSeq === undefined)
+      return c.json({ error: 'messageId (a message of this thread) or atSeq is required' }, 400);
+    try {
+      const made = forkThread(sourceThreadId, {
+        atSeq,
+        ...(typeof body.name === 'string' ? { name: body.name } : {}),
       });
-
-      for (const msg of sourceMsgs) {
-        await db.writeMessage({
-          id: newId('fork'),
-          threadId: forkedThreadId,
-          turnId: msg.turnId ?? undefined,
-          actor: msg.actor,
-          kind: msg.kind,
-          content: msg.content,
-          traceId: msg.traceId ?? undefined,
-        });
-      }
-
-      db.prisma.threadState
-        .create({
-          data: { id: forkedThreadId, description: newOpts.description, tags: [], status: 'idle' },
-        })
-        .catch((err: unknown) => console.warn('[Viewer] background op:', (err as Error).message));
+      return c.json(threadToJSON(directory.get(made.threadId)!), 201);
+    } catch (error) {
+      return c.json({ error: (error as Error).message }, 400);
     }
-
-    return c.json(threadToJSON(newThread), 201);
   });
 
   app.get('/api/messages', async (c) => {

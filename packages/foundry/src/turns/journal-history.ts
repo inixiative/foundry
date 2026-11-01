@@ -30,7 +30,8 @@ export const JOURNAL_HISTORY_CHARS = 40_000;
  * Undefined when there is nothing before this turn.
  */
 export function journalHistory(
-  store: Pick<LocalSessionStore, 'journalEntries'> & Partial<Pick<LocalSessionStore, 'threadMeta'>>,
+  store: Pick<LocalSessionStore, 'journalEntries'> &
+    Partial<Pick<LocalSessionStore, 'threadMeta' | 'phasesOf'>>,
   threadId: string,
   currentTurnId?: string,
   maxChars = JOURNAL_HISTORY_CHARS,
@@ -62,17 +63,35 @@ export function journalHistory(
         ...(through !== undefined ? { through } : {}),
       })
       .sort((a, b) => b.seq - a.seq);
+    // On the thread itself, a heard entry not yet delivered rides this turn as a note instead.
+    const delivered =
+      hops === 0 && store.phasesOf
+        ? new Set(
+            store
+              .phasesOf(reading, 'shared-entry-delivered')
+              .map((row) => `${String(row.record.hostThreadId)}:${String(row.record.hostSeq)}`),
+          )
+        : undefined;
+    const before = lines.length;
     for (const entry of entries) {
+      if (
+        delivered &&
+        entry.source === 'phase' &&
+        entry.phase === 'shared-entry' &&
+        !delivered.has(`${String(entry.record.hostThreadId)}:${String(entry.record.hostSeq)}`)
+      )
+        continue;
       const line = render(entry, currentTurnId);
       if (line) take(line);
     }
     const fork: ThreadFork | undefined =
       hops === 0 ? forkedFrom : store.threadMeta?.(reading)?.forkedFrom;
-    if (fork && lines.length && !full) lines.push('## Forked here');
+    // One marker between two threads' parts, never two in a row or a leading one.
+    if (fork && lines.length > before && !full) lines.push(FORKED_HERE);
     reading = fork?.threadId;
     through = fork?.journalSeq;
   }
-  while (lines.at(-1) === '## Forked here') lines.pop();
+  if (lines.at(-1) === FORKED_HERE) lines.pop();
   if (!lines.length) return undefined;
   lines.reverse();
   return [
@@ -90,6 +109,8 @@ export function journalHistory(
     lines.join('\n\n'),
   ].join('\n');
 }
+
+const FORKED_HERE = '## Forked here';
 
 /** How far up a chain of forks the history reaches (each hop is a source thread). */
 const MAX_FORK_HOPS = 20;
