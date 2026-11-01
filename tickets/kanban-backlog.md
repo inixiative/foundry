@@ -28,6 +28,7 @@ kanban
     CORE-002-idle-and-dispose-release
     FEAT-001-acp-session-list
     FEAT-002-codex-login-auth-command
+    FEAT-005-secret-placeholders
   In Progress
   Done
 ```
@@ -66,6 +67,7 @@ These tickets capture the connections between components that are individually b
 | [BOARD-004](./BOARD-004-outside-requests.md) | Parties off the machine: requests, standing Signets, teammate sessions that wait for Aron (Kingdom FEAT-023 first) | High |
 | [BOARD-005](./BOARD-005-g1-untrusted-content.md) | G1: content nobody typed is data on every thread | High |
 | [FEAT-003](./FEAT-003-rejections-ledger.md) | A rejections ledger: every action the agent wasn't allowed to take (gate, runtime, owner, model), to leave full-access mode on evidence | Medium |
+| [FEAT-005](./FEAT-005-secret-placeholders.md) | Paste secrets as `$$word`: lifted out into numbered placeholders before the turn, held by Foundry, used by number (Aron 11-01) | High |
 
 ---
 
