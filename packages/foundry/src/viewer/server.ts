@@ -625,6 +625,9 @@ export function createViewer(config: ViewerConfig) {
       service.hostedChanged(hosted, dropped),
     );
     service.raisePending();
+    // A settled turn frees the live slot a refused wake waited for, and lets a local member hear
+    // what arrived during its own turn (CONVERSATIONS.md §4.11).
+    const offSettled = turns.onSettled((threadId) => service.turnSettled(threadId));
     registerConversationRoutes(
       app,
       service,
@@ -634,7 +637,10 @@ export function createViewer(config: ViewerConfig) {
       },
       configStore,
     );
-    localStore.onClose(() => service.dispose());
+    localStore.onClose(() => {
+      offSettled();
+      service.dispose();
+    });
   }
   // "Setting up your thread": the thread's setup streams on `threads` with its meta.
   config.threadSetup?.onSetup((threadId, setup) => {

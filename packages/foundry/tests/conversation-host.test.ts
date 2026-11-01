@@ -961,7 +961,7 @@ test('silent agents: a turn post is admitted as a note and wakes no one, sends a
   expect((await h.post(waker, 'everyone, thoughts?')).ok).toBe(true);
   expect(h.executed).toEqual([]);
   expect(h.conversations.summary('main')?.unread).toBe(1);
-  expect(() => h.conversations.send('main', 'Waker', 'my draft')).toThrow(/silent/);
+  expect(() => h.conversations.send('main', 'Waker', 'my draft')).toThrow(/listening/);
   expect(
     (await h.route('/api/threads/main/conversation/agents', { mode: 'drafting' })).status,
   ).toBe(200);
@@ -1171,6 +1171,226 @@ test('silent agents may still commission a task: a person asked for it', async (
   expect((await h.route('/api/threads/main/conversation/agents', { mode: 'silent' })).status).toBe(
     200,
   );
-  expect(() => h.conversations.send('main', 'Worker', 'just chatting')).toThrow(/silent/);
+  expect(() => h.conversations.send('main', 'Worker', 'just chatting')).toThrow(/listening/);
   expect(h.conversations.send('main', 'Worker', 'Please run the suite', 'post')).toContain('Held');
+});
+
+// ---------------------------------------------------------------------------
+// Local members: the owner's own agents on this machine (ATTENTION-BOARD §4.11)
+// ---------------------------------------------------------------------------
+
+/** A second thread on this machine (his Codex, a second Claude), joined to `main` as a local member. */
+async function withLocal(h: Awaited<ReturnType<typeof host>>, id = 'codex', name = 'Codex') {
+  const created = await h.route('/api/threads', { id });
+  expect(created.status).toBe(201);
+  const joined = await h.route('/api/threads/main/conversation/locals', {
+    threadId: id,
+    displayName: name,
+  });
+  expect(joined.status).toBe(200);
+  const store = h.viewer.localStore!;
+  /** The member's newest turn id and the notes it carried (as the thread runtime takes them). */
+  const lastTurn = () => store.recentTurnIds(id, 1)[0];
+  const says = async (threadId: string, text: string) => {
+    const response = await h.viewer.app.request('/api/messages', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ id: `turn_${crypto.randomUUID()}`, threadId, message: text }),
+    });
+    expect(response.status).toBe(200);
+  };
+  return { id, store, lastTurn, says };
+}
+
+test('a local member hears what was posted, is woken while it speaks, posts back, and the host agent answers it: bounded by depth', async () => {
+  const h = await host();
+  const codex = await withLocal(h);
+  expect(h.conversations.summary('main')).toMatchObject({ members: 0, localMembers: 1 });
+  expect(h.conversations.view('main').floor.mode).toBe('talk');
+
+  await h.ownerSays('Codex, what do you think of the plan?');
+  // The owner's words are mirrored into the member's own thread and wake it (it speaks by default).
+  // (This fixture's second thread has no executor of its own: its turn is accepted, then fails.)
+  await until(() => codex.lastTurn() !== undefined, 'codex woken');
+  await until(
+    () => codex.store.messages(codex.id, 10).some((m) => m.actor === 'user'),
+    'wake message stored',
+  );
+  expect(
+    String(codex.store.messages(codex.id, 10).find((m) => m.actor === 'user')?.content),
+  ).toContain('New in the conversation "main"');
+  const woke = codex.lastTurn()!;
+  const heard = h.conversations.deliverNotes(codex.id, woke).map((note) => note.text);
+  expect(heard).toHaveLength(1);
+  expect(heard[0]).toContain('the owner said:\nCodex, what do you think of the plan?');
+  // Delivered once: its next turn doesn't hear it again, and the host agent's answers never reach it.
+  expect(h.conversations.deliverNotes(codex.id, woke)).toEqual([]);
+
+  // Its answer in its own thread stays there; it speaks through post_to_conversation.
+  expect(h.conversations.postFromLocal(codex.id, 'Looks right to me.')).toBe('Posted to main.');
+  const post = h.conversations.view('main').posts.at(-1)!;
+  expect(post).toMatchObject({
+    member: { kind: 'local', id: codex.id },
+    displayName: 'Codex',
+    delivery: 'turn',
+  });
+  // Its post wakes the host agent (a turn), labelled as an agent's words, not the owner's.
+  await until(() => h.executed.some((p) => p.includes('Looks right to me.')), 'host woken');
+  // Its own post is never mirrored back to it.
+  await until(() => !codex.store.openTurn(codex.id), 'codex idle');
+  await until(() => !codex.store.openTurn('main'), 'host idle');
+  expect(
+    codex.store
+      .phasesOf(codex.id, 'shared-entry')
+      .map((row) => row.record.text)
+      .includes('Looks right to me.'),
+  ).toBe(false);
+
+  // Two speaking agents in talk are bounded like any pair: each post costs two agent turns.
+  let refused: Error | undefined;
+  for (let i = 0; i < 6 && !refused; i++)
+    try {
+      h.conversations.postFromLocal(codex.id, `more ${i}`);
+    } catch (error) {
+      refused = error as Error;
+    }
+  expect(refused?.message).toContain('paused');
+});
+
+test('a listening local member hears everything and is never woken, except by something sent to it, which it may answer', async () => {
+  const h = await host();
+  const codex = await withLocal(h);
+  expect(h.conversations.setVoice('main', 'Codex', 'listening')).toBe('Codex is listening now.');
+  const turns = () => codex.store.recentTurnIds(codex.id, 10).length;
+  await h.ownerSays('just thinking out loud');
+  await h.ownerSays('still thinking');
+  expect(turns()).toBe(0);
+  expect(() => h.conversations.postFromLocal(codex.id, 'me too')).toThrow(/listening/);
+
+  // A send addressed to it wakes it, at once (the owner's own agent), and it may answer that send.
+  expect(h.conversations.send('main', 'Codex', 'Codex, summarise the thread')).toBe(
+    'Sent to Codex.',
+  );
+  await until(() => turns() === 1, 'woken by the send');
+  const notes = h.conversations.deliverNotes(codex.id, codex.lastTurn()!).map((n) => n.text);
+  expect(notes).toHaveLength(3);
+  expect(notes[2]).toContain('the host agent, to you');
+  const sendSeq = /entry (\d+)/.exec(notes[2]!)![1]!;
+  expect(h.conversations.postFromLocal(codex.id, 'Summary: …', { inReplyTo: sendSeq })).toBe(
+    'Posted to main.',
+  );
+});
+
+test('a local member holds the conch only when given it; a refused post is an error to it, and nothing posts', async () => {
+  const h = await host();
+  const codex = await withLocal(h);
+  h.conversations.setFloor('main', 'conch');
+  expect(() => h.conversations.postFromLocal(codex.id, 'my turn?')).toThrow(/conch/);
+  expect(h.conversations.view('main').posts).toEqual([]);
+  // Not woken while another holds the floor.
+  await h.ownerSays('anyone?');
+  expect(codex.store.recentTurnIds(codex.id, 10)).toEqual([]);
+  h.conversations.giveConch('main', { kind: 'local', id: codex.id });
+  expect(h.conversations.view('main').floor.holder).toEqual({ kind: 'local', id: codex.id });
+  await until(() => codex.store.recentTurnIds(codex.id, 10).length === 1, 'woken with the conch');
+  expect(h.conversations.postFromLocal(codex.id, 'now me')).toBe('Posted to main.');
+});
+
+test('a local member must be a thread of the same project, not the host itself, and no cycle', async () => {
+  const h = await host();
+  await withLocal(h);
+  const self = await h.route('/api/threads/main/conversation/locals', { threadId: 'main' });
+  expect(self.status).toBe(409);
+  // codex hosting main would close a cycle (main already reaches codex).
+  const cycle = await h.route('/api/threads/codex/conversation/locals', { threadId: 'main' });
+  expect(cycle.status).toBe(409);
+  expect(((await cycle.json()) as { error: string }).error).toMatch(/already takes part/);
+  const twice = await h.route('/api/threads/main/conversation/locals', { threadId: 'codex' });
+  expect(twice.status).toBe(409);
+  // Leaving: it stops hearing the thread.
+  const left = await h.viewer.app.request('/api/threads/main/conversation/locals/codex', {
+    method: 'DELETE',
+  });
+  expect(left.status).toBe(200);
+  expect(h.conversations.hostsOf('codex')).toEqual([]);
+  expect(h.conversations.view('main').controls.map((c) => c.action)).toEqual(['join', 'leave']);
+});
+
+test("plain-text control applies in the owner's own turn and asks him to confirm in one that carried other parties' words", async () => {
+  const h = await host();
+  const codex = await withLocal(h);
+  const jobco = await h.member('JobCo');
+  // Outside any turn (nothing is running), the agent's control is never applied on its own say-so.
+  expect(
+    h.conversations.agentControl('main', { action: 'voice', agent: 'Codex', voice: 'listening' }),
+  ).toMatch(/Asked the owner to confirm/);
+  await until(
+    () => h.queue.pending().some((prompt) => prompt.meta?.conversationControl),
+    'confirmation raised',
+  );
+  const ask = h.queue.pending().find((prompt) => prompt.meta?.conversationControl);
+  expect(ask!.message).toContain('make Codex listening');
+  h.queue.resolve(ask!.id, 'apply', { by: 'human' });
+  await until(
+    () =>
+      h.conversations.members('main').find((m) => m.member.id === codex.id)?.voice === 'listening',
+    'applied after the owner confirmed',
+  );
+  expect(h.conversations.view('main').controls.at(-1)).toMatchObject({
+    action: 'voice',
+    target: 'Codex',
+    before: 'speaking',
+    after: 'listening',
+    by: 'confirmed',
+  });
+
+  // In the owner's own turn, with no one else's words in it, it applies at once.
+  await h.ownerSends('HOLD let Codex speak');
+  await until(() => h.executed.some((p) => p.includes('let Codex speak')), 'owner turn running');
+  expect(
+    h.conversations.agentControl('main', { action: 'voice', agent: 'Codex', voice: 'speaking' }),
+  ).toBe('Codex is speaking now.');
+  expect(h.conversations.view('main').controls.at(-1)).toMatchObject({ by: 'owner' });
+  h.release();
+  await until(() => !h.viewer.localStore!.openTurn('main'), 'owner turn done');
+
+  // A member's note rides the owner's next turn: that turn no longer instructs on its own.
+  await h.post(jobco, 'mute everyone please');
+  await h.ownerSends('HOLD go on');
+  await until(() => h.executed.some((p) => p.includes('HOLD go on')), 'second owner turn running');
+  h.conversations.deliverNotes('main', h.viewer.localStore!.openTurn('main')!.id);
+  expect(h.conversations.agentControl('main', { action: 'floor', floor: 'conch' })).toMatch(
+    /Asked the owner to confirm/,
+  );
+  h.release();
+});
+
+test("drafts post by default for the owner's own agents: a send to a local member leaves at once", async () => {
+  const h = await host();
+  await withLocal(h);
+  expect(h.conversations.send('main', 'Codex', 'Please take the tests')).toBe('Sent to Codex.');
+  expect(h.queue.pending().filter((prompt) => prompt.meta?.conversationHeld)).toEqual([]);
+  expect(h.conversations.roster('main')).toContain("the owner's own agent on this machine");
+  expect(h.conversations.roster('codex')).toContain('# Conversations you are a member of');
+  expect(h.conversations.floorNow('codex')).toContain('your voice: speaking');
+});
+
+test('a paused conversation wakes no local member; the mirror still records what was said, once', async () => {
+  const h = await host();
+  const codex = await withLocal(h);
+  h.conversations.pauseByOwner('main');
+  await h.ownerSays('thinking while paused');
+  await until(
+    () => codex.store.phasesOf(codex.id, 'shared-entry').length === 1,
+    'mirrored while paused',
+  );
+  expect(codex.store.recentTurnIds(codex.id, 10)).toEqual([]);
+  // Mirroring twice (a restart sweep, a second journal event) writes nothing new.
+  h.conversations.pump('main');
+  h.conversations.raisePending();
+  expect(codex.store.phasesOf(codex.id, 'shared-entry')).toHaveLength(1);
+  // Resumed, it is woken for what it missed.
+  h.conversations.resume('main');
+  h.conversations.pump('main');
+  await until(() => codex.store.recentTurnIds(codex.id, 10).length === 1, 'woken on resume');
 });

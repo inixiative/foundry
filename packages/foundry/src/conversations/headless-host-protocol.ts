@@ -89,13 +89,14 @@ export const headlessThreadStateSchema = z.strictObject({
       paused: z.boolean(),
       held: z.number(),
       members: z.number(),
+      localMembers: z.number(),
     })
     .nullable(),
   members: z.array(
     z.strictObject({ id: z.string(), displayName: z.string(), listed: z.boolean() }),
   ),
   /** The journal's `member-post` rows, oldest first. */
-  posts: z.array(z.strictObject({ signetId: z.string(), text: z.string(), delivery: z.string() })),
+  posts: z.array(z.strictObject({ memberKey: z.string(), text: z.string(), delivery: z.string() })),
   /** Advice rows the chorus journalled on a member note (`trigger: consumed`). */
   consumedAdvice: z.number(),
   /** `member-post` rows in what Archive capture sends for the thread. */

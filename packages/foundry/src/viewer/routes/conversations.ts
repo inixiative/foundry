@@ -27,7 +27,18 @@ import type { ConfigStore } from '../config';
 import { readRepositorySettings } from '../config-resolve';
 
 const floorBody = z.strictObject({ mode: floorModeSchema.nullable() });
-const conchBody = z.strictObject({ to: z.string().min(1).max(128).nullable() });
+const conchBody = z.strictObject({
+  to: z.string().min(1).max(128).nullable(),
+  kind: z.enum(['signet', 'local']).optional(),
+});
+const localBody = z.strictObject({
+  threadId: z.string().min(1).max(128),
+  displayName: z.string().min(1).max(200).optional(),
+});
+const voiceBody = z.strictObject({
+  agent: z.string().min(1).max(200),
+  voice: z.enum(['speaking', 'listening']).nullable(),
+});
 const agentsBody = z.strictObject({ mode: z.enum(['silent', 'drafting']).nullable() });
 const answerBody = z.strictObject({
   action: z.enum(['release', 'edit', 'withdraw']),
@@ -102,8 +113,40 @@ export function registerConversationRoutes(
     const result = await guard(() =>
       conversations.giveConch(
         c.req.param('threadId'),
-        parsed.data.to ? { kind: 'signet', id: parsed.data.to } : null,
+        parsed.data.to ? { kind: parsed.data.kind ?? 'signet', id: parsed.data.to } : null,
       ),
+    );
+    return result.ok ? c.json({ ok: true }) : c.json({ error: result.error }, 409);
+  });
+
+  // The owner's own agents on this machine (§4.11 point 2): another of his threads joins as a member.
+  app.post('/api/threads/:threadId/conversation/locals', async (c) => {
+    const parsed = localBody.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) return c.json({ error: 'threadId is required' }, 400);
+    const result = await guard(() =>
+      conversations.joinLocal(
+        c.req.param('threadId'),
+        parsed.data.threadId,
+        parsed.data.displayName,
+      ),
+    );
+    return result.ok ? c.json({ ok: true }) : c.json({ error: result.error }, 409);
+  });
+
+  app.delete('/api/threads/:threadId/conversation/locals/:memberThreadId', async (c) => {
+    const result = await guard(() =>
+      conversations.leaveLocal(c.req.param('threadId'), c.req.param('memberThreadId')),
+    );
+    return result.ok ? c.json({ ok: true }) : c.json({ error: result.error }, 409);
+  });
+
+  // An agent's voice (§4.11 point 1): `host` or a local member; null resets it to the default.
+  app.post('/api/threads/:threadId/conversation/voice', async (c) => {
+    const parsed = voiceBody.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success)
+      return c.json({ error: 'agent and voice (speaking, listening or null) are required' }, 400);
+    const result = await guard(() =>
+      conversations.setVoice(c.req.param('threadId'), parsed.data.agent, parsed.data.voice),
     );
     return result.ok ? c.json({ ok: true }) : c.json({ error: result.error }, 409);
   });

@@ -57,6 +57,12 @@ There is no new link record, private mark or held-answer state.
 | `aside` entry kind: sender and addressee people only; skipped by notes, mirror, `journalHistory` and the agent's context | `view.ts`, viewer |
 | §4.4's private-home, fresh-session and audience pieces are **not built in v1** | — |
 
+## Local members, voices, plain-text control (planning doc §4.11; built 2026-11-01)
+
+- Built: the owner's own threads join as local members (same project, no cycles), hear the log through `shared-entry` mirror rows, are woken only while speaking and the floor would admit them, and speak with `post_to_conversation` (no hold). Voices per agent (`host`, `local:<id>`), `set_voice` / `set_floor` / `give_conch` gated on the owner's own message, else a Needs-you confirmation. `TurnService.onSettled` re-checks waits. CONVERSATIONS.md §4.11.
+- Not yet: fork with context (§4.11 point 3, next PR); a Signet member's voice (needs a signet release); Codex as a member needs a second subscription worker (subscription-only mode runs every main thread on one worker); Grok waits on Q-I (API key); Muse's API is unverified.
+- Open for Aron: may his own local agents read the main agent's answers? Built per the spec: no, the log is what was posted.
+
 ## The floor (planning doc §4.8)
 
 - **A shared thread defaults to `conch`** (Aron, 2026-11-01): outside agents are present, so one speaker at a time, with the host as leader. Unshared threads keep `talk`. It is applied when a thread gains its first member; a thread override still wins.

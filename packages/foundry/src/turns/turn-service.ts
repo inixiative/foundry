@@ -92,8 +92,13 @@ export interface TurnOrigin {
   member: ConversationMember;
   displayName: string;
   postId: string;
-  /** The Kingdom `AccessExecution` the post arrived under. */
-  executionId: string;
+  /** The Kingdom `AccessExecution` the post arrived under (a Signet member's post). */
+  executionId?: string;
+  /**
+   * Not a post: Foundry woke a local member because its shared thread (`member.id`) has something
+   * for it. The message is Foundry's own line; the entries ride the turn as notes.
+   */
+  wake?: true;
 }
 
 /** A settled turn's result as the routes and the requesting client receive it. */
@@ -262,7 +267,8 @@ export class TurnService {
         : undefined;
     // What the harness runs on: the member's post labelled as data (the Wardens and the executor
     // both read it so); the owner's message as typed.
-    const harnessPayload = origin ? memberPostReception(origin.displayName, payload) : payload;
+    const harnessPayload =
+      origin && !origin.wake ? memberPostReception(origin.displayName, payload) : payload;
     const { db, localStore, streams } = this.deps;
     const turnId = request.turnId ?? newId('turn');
     const threadId = request.threadId;
@@ -402,8 +408,23 @@ export class TurnService {
         this.live.delete(turnId);
         if (thread.size() === 0 && this.queues.get(threadId) === thread)
           this.queues.delete(threadId);
+        for (const listener of this.settledListeners) {
+          try {
+            listener(threadId, turnId);
+          } catch (error) {
+            console.warn(`[Turns] settled listener failed: ${(error as Error).message ?? error}`);
+          }
+        }
       });
     return { ok: true, turnId, threadId, queued, settled };
+  }
+
+  private readonly settledListeners = new Set<(threadId: string, turnId: string) => void>();
+
+  /** Called once each accepted turn settles (ran, failed or was cancelled); returns an unsubscribe. */
+  onSettled(listener: (threadId: string, turnId: string) => void): () => void {
+    this.settledListeners.add(listener);
+    return () => this.settledListeners.delete(listener);
   }
 
   /** The turn running on a thread now (dequeued and not settled), if any. */
