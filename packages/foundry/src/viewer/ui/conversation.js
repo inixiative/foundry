@@ -86,7 +86,6 @@ import {
   startDictation,
   toggleSpeakReplies,
 } from './voice.js';
-import { Work } from './work.js';
 
 // ---------------------------------------------------------------------------
 // Token bar — this thread's recorded usage, plus the Foundry session budget
@@ -1219,8 +1218,7 @@ function CacheStatus({ msgList }) {
 const CENTER_TABS = [
   ['conversation', 'Thread', 1],
   ['plan', 'Plan', 2],
-  ['work', 'Work', 3],
-  ['graph', 'Loop', 4],
+  ['graph', 'Loop', 3],
 ];
 
 function CenterTabs() {
@@ -1297,11 +1295,9 @@ export function Conversation({ onTraceSelect, onLayerClick }) {
       ${
         view === 'plan'
           ? html`<div class="center-frame"><${Plan} /></div>`
-          : view === 'work'
-            ? html`<div class="center-frame"><${Work} /></div>`
-            : view === 'graph'
-              ? html`<div class="center-frame center-frame--loop"><${LoopView} onLayerClick=${onLayerClick} /></div>`
-              : null
+          : view === 'graph'
+            ? html`<div class="center-frame center-frame--loop"><${LoopView} onLayerClick=${onLayerClick} /></div>`
+            : null
       }
       ${
         view === 'conversation'

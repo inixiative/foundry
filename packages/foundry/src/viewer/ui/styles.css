@@ -8712,3 +8712,23 @@ a.thread-ref:hover {
   font: 12px / 1.5 var(--font-mono);
   white-space: pre-wrap;
 }
+
+/* Work in the right panel: a Wide toggle gives diffs and file lists room */
+.panels--proj-open.panels--detail-open.panels--right-wide {
+  grid-template-columns: 260px 1fr 680px;
+}
+.panels--proj-closed.panels--detail-open.panels--right-wide {
+  grid-template-columns: 32px 1fr 680px;
+}
+.rp-wide {
+  margin-left: 10px;
+  vertical-align: middle;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 11.5px;
+  padding: 2px 8px;
+  cursor: pointer;
+}

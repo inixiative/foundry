@@ -27,6 +27,7 @@ import {
   launchLabels,
   RIGHT_TABS,
   rightTab,
+  rightWide,
   selectedEvent,
   selectedSpanId,
   showToast,
@@ -35,8 +36,10 @@ import {
   vendorName,
 } from './store.js';
 import { harnessName, ReferenceChips } from './thread-labels.js';
+import { Work } from './work.js';
 
 const TAB_LABELS = {
+  work: 'Work',
   context: 'Context',
   participants: 'Participants',
   permissions: 'Permissions',
@@ -174,6 +177,7 @@ function HeraldsTab() {
 }
 
 function TabBody({ tab, threadId }) {
+  if (tab === 'work') return html`<${Work} />`;
   if (tab === 'context') return html`<${ContextTab} />`;
   if (tab === 'participants') return html`<${ParticipantsPanel} />`;
   if (tab === 'permissions') return html`<${PermissionsTab} />`;
@@ -244,7 +248,13 @@ export function RightPanel({ onSpanSelect }) {
           detailDrawerOpen.value = false;
         }}>›</button>
       </div>
-      <h2 class="rp-title">${TAB_LABELS[tab]}</h2>
+      <h2 class="rp-title">${TAB_LABELS[tab]}${
+        tab === 'work'
+          ? html`<button class="rp-wide" aria-pressed=${rightWide.value} title="Widen the panel for diffs and file lists" onClick=${() => {
+              rightWide.value = !rightWide.value;
+            }}>${rightWide.value ? '⇥ Narrow' : '⇤ Wide'}</button>`
+          : null
+      }</h2>
       ${facts.info ? html`<div class="rp-info">${facts.info}</div>` : null}
       <nav class="rp-tabs" role="tablist" aria-label="Thread reference">
         ${RIGHT_TABS.map((t, i) => {

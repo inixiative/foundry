@@ -49,6 +49,7 @@ import {
   RIGHT_TABS,
   resyncStreams,
   rightTab,
+  rightWide,
   scopeProjectId,
   selectedEvent,
   selectedSpanId,
@@ -250,7 +251,7 @@ function App() {
 
   useEffect(() => {
     registerDefaults({
-      centerTabs: ['Thread', 'Plan', 'Work', 'Loop'],
+      centerTabs: ['Thread', 'Plan', 'Loop'],
       showCenterTab: (i) => {
         activePanel.value = CENTER_PANELS[i];
       },
@@ -313,7 +314,7 @@ function App() {
   const inbox = feedbackInboxOpen.value;
   const page = route.value.page;
 
-  const panelClass = `panels panels--proj-${projOpen ? 'open' : 'closed'} panels--detail-${detailOpen ? 'open' : 'closed'}${forge || inbox ? ' panels--forge' : ''}${boardOpen.value ? ' panels--board' : ''}`;
+  const panelClass = `panels panels--proj-${projOpen ? 'open' : 'closed'} panels--detail-${detailOpen ? 'open' : 'closed'}${forge || inbox ? ' panels--forge' : ''}${boardOpen.value ? ' panels--board' : ''}${detailOpen && rightWide.value && rightTab.value === 'work' ? ' panels--right-wide' : ''}`;
 
   if (page !== 'workspace')
     return html`
