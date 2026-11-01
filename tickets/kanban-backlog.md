@@ -81,7 +81,8 @@ Proposed, not built. Source: Oracle `docs/foundry/reference/COMPARISON.md` §0; 
 | [FEAT-002](./FEAT-002-codex-login-auth-command.md) | Kingdom Codex login written to `auth.json`; hand it over in memory through `auth.command` | Medium |
 | [CORE-003](./CORE-003-native-settings-load-normally.md) | Main threads load the harness's settings, commands and skills; Foundry excludes only the CLAUDE.md it composes | Medium |
 | [FEAT-003](./FEAT-003-worktree-lifecycle.md) | Worktree lifecycle for agent threads: template or classic mode, released on merge | Medium |
-| [FEAT-004](./FEAT-004-delegation-placements.md) | Delegation placements (primary / child / hidden), primary threads launched through the host | Medium |
+| [FEAT-004](./FEAT-004-delegation-placements.md) | Delegated threads are top-level with provenance; fresh access by default; launched through the host | Medium |
+| [CORE-004](./CORE-004-fork-and-rewind.md) | Fork and rewind on the native primitives, Foundry's ledger and thread knowledge kept in step; files rewound natively on Claude | Medium |
 
 ---
 
