@@ -186,4 +186,15 @@ export function registerDefaults(actions) {
     action: actions.toggleEvents,
   });
   bind('g', { description: 'Toggle graph view', category: 'panels', action: actions.toggleGraph });
+  bind(']', {
+    description: 'Open / fold the right panel',
+    category: 'panels',
+    action: actions.toggleRightPanel,
+  });
+  for (const [i, key] of ['5', '6', '7', '8', '9', '0'].entries())
+    bind(key, {
+      description: `Right panel: ${actions.rightTabs[i]}`,
+      category: 'panels',
+      action: () => actions.showRightTab(i),
+    });
 }

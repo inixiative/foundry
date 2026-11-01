@@ -12,13 +12,13 @@
 import { AnalyticsPage } from './analytics.js';
 import { CommandPalette, HelpOverlay } from './command-palette.js';
 import { Conversation } from './conversation.js';
-import { DetailDrawer } from './detail-drawer.js';
 import { FeedbackInbox } from './feedback.js';
 import { GlossButton, GlossReview } from './gloss.js';
 import { GraphPanel } from './graph-view.js';
 import { initHotkeys, registerDefaults } from './hotkeys.js';
 import { html, render, useEffect, useState } from './lib.js';
 import { ProjectSidebar } from './project-sidebar.js';
+import { RightPanel } from './right-panel.js';
 import { analyticsPath, navigate, onLink, route, settingsPath } from './route.js';
 import { SelfChatPane } from './self-chat.js';
 import { loadSettings, SettingsPage, settingsConfig } from './settings.js';
@@ -40,7 +40,9 @@ import {
   loadTraces,
   projectSidebarOpen,
   projects,
+  RIGHT_TABS,
   resyncStreams,
+  rightTab,
   scopeProjectId,
   selectedEvent,
   selectedSpanId,
@@ -91,8 +93,7 @@ function Header() {
   return html`
     <div class="header">
       <div class="header-left">
-        <span class="header-logo"><span class="logo-bracket">${'<'}</span><span class="logo-mark">iXi</span><span class="logo-bracket">${'>'}</span></span>
-        <span class="header-title">foundry</span>
+        <span class="header-brand">Foundry<span class="header-brand-dot">.</span></span>
         <${PageNav} />
       </div>
       <${HeaderScope} />
@@ -199,12 +200,10 @@ function Toast() {
 // ---------------------------------------------------------------------------
 
 function App() {
-  const [selectedSpan, setSelectedSpan] = useState(null);
-
   const handleSpanSelect = (span) => {
     selectedEvent.value = null;
     inspectTarget.value = null;
-    setSelectedSpan(span);
+    selectedSpanId.value = span?.id ?? null;
     detailDrawerOpen.value = true;
     compactPanel.value = 'detail';
   };
@@ -226,7 +225,6 @@ function App() {
       escape: () => {
         selectedEvent.value = null;
         inspectTarget.value = null;
-        setSelectedSpan(null);
         selectedSpanId.value = null;
       },
       togglePause: () => executeAction('thread:pause'),
@@ -245,6 +243,14 @@ function App() {
       toggleLayers: () => {},
       toggleEvents: () => {},
       toggleGraph: toggleGraphPanel,
+      toggleRightPanel: () => {
+        detailDrawerOpen.value = !detailDrawerOpen.value;
+      },
+      rightTabs: RIGHT_TABS.map((t) => t[0].toUpperCase() + t.slice(1)),
+      showRightTab: (i) => {
+        rightTab.value = RIGHT_TABS[i];
+        detailDrawerOpen.value = true;
+      },
     });
     initHotkeys();
   }, []);
@@ -310,12 +316,9 @@ function App() {
           }
         </div>
 
-        <!-- Right: Detail drawer -->
+        <!-- Right: reference about the thread, or the inspector -->
         <div class="panel-right" id="workspace-detail" tabIndex="0">
-          <${DetailDrawer}
-            selectedSpan=${selectedSpan}
-            selectedLayer=${inspectTarget.value?.kind === 'layer' ? inspectTarget.value.id : null}
-          />
+          <${RightPanel} onSpanSelect=${handleSpanSelect} />
         </div>
       </div>
 

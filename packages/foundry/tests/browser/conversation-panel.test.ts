@@ -81,6 +81,8 @@ test('an unread member post marks the thread; the panel shows the member and its
 
     await page.locator('.conversation-unread-badge').waitFor();
     expect(await page.locator('.conversation-unread-badge').innerText()).toBe('1');
+    // The members live on the right panel's Participants tab.
+    await page.locator('.rp-tab', { hasText: 'Participants' }).click();
     const panel = page.locator('.conversation-panel');
     await panel.waitFor();
     expect(await panel.locator('.conversation-member-name').innerText()).toBe('JobCo');
