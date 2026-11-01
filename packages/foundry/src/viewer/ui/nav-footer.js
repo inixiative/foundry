@@ -9,8 +9,10 @@
  * linking to its settings; one Subscriptions row that opens to each subscription. Threads, Wardens
  * and Forge Master live elsewhere.
  */
+
 import { capacityByProvider } from './capacity.js';
 import { html, useEffect, useState } from './lib.js';
+import { RenameModal } from './modal.js';
 import { navigate, settingsPath } from './route.js';
 import {
   authFetch,
@@ -91,8 +93,8 @@ function Subscriptions({ accounts, registry }) {
 function MachineName({ profile, onSaved }) {
   const [draft, setDraft] = useState(null);
   const name = profile?.installationName ?? 'This machine';
-  const save = async () => {
-    const next = draft?.trim();
+  const save = async (value) => {
+    const next = (value ?? draft)?.trim();
     if (!next || next === name) return setDraft(null);
     try {
       const res = await authFetch('/api/settings/profile', {
@@ -104,23 +106,23 @@ function MachineName({ profile, onSaved }) {
         throw Error((await res.json().catch(() => ({}))).error || 'Could not save the name');
       onSaved({ ...profile, installationName: next, custom: true });
       setDraft(null);
+      return true;
     } catch (error) {
       showToast(error.message, 'error');
+      return false;
     }
   };
-  if (draft !== null)
-    return html`<span class="nav-footer-name-edit">
-      <input class="nav-footer-name-input" aria-label="Machine name" value=${draft}
-        onInput=${(e) => setDraft(e.target.value)}
-        onKeyDown=${(e) => {
-          if (e.key === 'Enter') save();
-          if (e.key === 'Escape') setDraft(null);
-        }} ref=${(el) => el?.focus()} />
-      <button type="button" class="nav-footer-icon-btn" aria-label="Save name" onClick=${save}>✓</button>
-      <button type="button" class="nav-footer-icon-btn" aria-label="Cancel" onClick=${() => setDraft(null)}>✕</button>
-    </span>`;
+  const modal =
+    draft !== null
+      ? html`<${RenameModal} title="Rename this machine" label="Machine name" value=${name}
+          onClose=${() => setDraft(null)}
+          onSave=${async (next) => {
+            setDraft(next);
+            return save(next);
+          }} />`
+      : null;
   return html`<span class="nav-footer-device" title="This machine's name">${name}</span>
-    <button type="button" class="nav-footer-edit" title="Rename this machine" onClick=${() => setDraft(name)}>Edit</button>`;
+    <button type="button" class="nav-footer-edit" title="Rename this machine" onClick=${() => setDraft(name)}>Edit</button>${modal}`;
 }
 
 export function NavFooter() {
