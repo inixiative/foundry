@@ -73,6 +73,15 @@ import {
   threadPlace,
 } from './thread-labels.js';
 import {
+  AsidesSince,
+  AsidesView,
+  BtwView,
+  ChannelPicker,
+  composerChannel,
+  openViews,
+  ThreadViewSegments,
+} from './thread-views.js';
+import {
   dictationSupported,
   speakReplies,
   speechSupported,
@@ -409,6 +418,13 @@ function ChatInput() {
   const handleSubmit = async () => {
     const sent = text.trim();
     if (!sendable) return;
+    // /btw and asides need the shared-thread data (inixiative-da's slice 2b); until then nothing is
+    // sent and the text stays in the box.
+    if (composerChannel.value !== 'thread')
+      return showToast(
+        `${composerChannel.value === 'btw' ? '/btw' : 'Asides'} arrive with shared-thread asides; nothing was sent.`,
+        'warn',
+      );
     // `/feedback <text>` records feedback on this thread's last turn; it is never sent to the model.
     const feedback = /^\/feedback(?:\s+([\s\S]*))?$/.exec(sent);
     if (feedback) {
@@ -465,6 +481,7 @@ function ChatInput() {
     <div class="chat-input-bar ${dragging ? 'chat-input-dragging' : ''}"
       onDragOver=${handleDragOver} onDragLeave=${() => setDragging(false)} onDrop=${handleDrop}>
       <div class="chat-input-main">
+        <${ChannelPicker} people=${1 + (threadData.value?.conversation?.members ?? 0)} />
         ${
           images.length
             ? html`<div class="composer-images">
@@ -478,7 +495,13 @@ function ChatInput() {
         <textarea
           ref=${inputRef}
           class="chat-input"
-          placeholder="Send a message... (Enter to send, Shift+Enter for newline; paste or drop images)"
+          placeholder=${
+            composerChannel.value === 'btw'
+              ? 'Ask your agent privately…'
+              : composerChannel.value === 'aside'
+                ? 'An aside to the people here…'
+                : 'Send a message... (Enter to send, Shift+Enter for newline; paste or drop images)'
+          }
           value=${text}
           onInput=${(e) => setText(e.target.value)}
           onKeyDown=${handleKeyDown}
@@ -1174,7 +1197,14 @@ export function Conversation({ onTraceSelect, onLayerClick }) {
               ? html`<div class="center-frame center-frame--loop"><${LoopView} onLayerClick=${onLayerClick} /></div>`
               : null
       }
-      <div class="chat-messages center-frame" ref=${scrollRef} hidden=${view !== 'conversation'}>
+      ${
+        view === 'conversation'
+          ? html`<${ThreadViewSegments} conversation=${threadData.value?.conversation} />
+              <${AsidesSince} conversation=${threadData.value?.conversation} />`
+          : null
+      }
+      <div class="thread-views ${openViews.value.length > 1 ? `thread-views--columns thread-views--${openViews.value.length}` : ''}" hidden=${view !== 'conversation'}>
+      <div class="chat-messages center-frame" ref=${scrollRef} hidden=${!openViews.value.includes('thread')}>
         <${HistoryPager} threadId=${threadId} count=${msgList.length} onLoadOlder=${handleLoadOlder} />
         <${CacheStatus} msgList=${msgList} />
         ${
@@ -1195,6 +1225,9 @@ export function Conversation({ onTraceSelect, onLayerClick }) {
               : html`<${AgentMessage} key=${msg.turnId ? `${msg.actor}:${msg.turnId}` : (msg.id ?? i)} msg=${msg} index=${i}
                   onTraceClick=${handleTraceClick} />`,
         )}
+      </div>
+      ${openViews.value.includes('btw') ? html`<${BtwView} entries=${threadData.value?.conversation?.btw} />` : null}
+      ${openViews.value.includes('asides') ? html`<${AsidesView} entries=${threadData.value?.conversation?.asides} />` : null}
       </div>
       <${PromptList} threadId=${threadId} />
       <${ChatInput} />

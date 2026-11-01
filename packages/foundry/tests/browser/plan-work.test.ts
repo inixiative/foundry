@@ -176,7 +176,7 @@ test('Plan shows the about and the checklist, a step opens its turn; Work shows 
 
     // A step's turn opens Thread on that turn.
     await survey.locator('.plan-when').first().click();
-    await page.locator('.center-view--active', { hasText: 'Thread' }).waitFor();
+    await page.locator('.center-views .center-view--active', { hasText: 'Thread' }).waitFor();
     await until(
       async () => (await page.locator('[data-turn-id="turn-2"].chat-msg--focused').count()) > 0,
       'turn 2 focused',

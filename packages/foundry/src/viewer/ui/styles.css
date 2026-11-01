@@ -6968,10 +6968,15 @@ a.thread-ref:hover {
   border-radius: 8px;
   padding: 4px 12px;
 }
+.band-tabs .center-view {
+  background: transparent;
+  color: var(--text-dim);
+}
+/* On is a solid accent fill with contrasting text; off is plain text. Several can be on at once. */
 .band-tabs .center-view--active {
-  background: var(--surface);
-  box-shadow: var(--frame-shadow);
-  color: var(--text);
+  background: hsl(var(--app-primary));
+  color: hsl(var(--app-primary-foreground));
+  font-weight: 600;
 }
 .center-frame {
   flex: 1;
@@ -7883,4 +7888,188 @@ a.thread-ref:hover {
   padding: 0 5px;
   border-radius: 999px;
   background: var(--surface2);
+}
+
+/* ---- Thread · /btw · Asides: tabs by default, side by side as columns ---- */
+.thread-views-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 4px 6px;
+}
+.thread-view-unread {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text);
+}
+.thread-views {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.thread-views[hidden] {
+  display: none;
+}
+.thread-views > * {
+  flex: 1;
+  min-height: 0;
+}
+.thread-views--columns {
+  display: grid;
+  gap: 8px;
+}
+.thread-views--2 {
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+}
+.thread-views--3 {
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr);
+}
+/* The /thread · /btw · /aside control is the centre's switcher (band-tabs), one size smaller; its
+   segments toggle. */
+.thread-segments.band-tabs {
+  padding: 2px;
+  border-radius: 8px;
+}
+.thread-segments .center-view {
+  padding: 2px 9px;
+  border-radius: 6px;
+  font-size: 11.5px;
+}
+.thread-segment {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+}
+.side-view {
+  overflow-y: auto;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.side-view-title {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.side-view-hint {
+  margin-left: 6px;
+  font-weight: 400;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.side-view-empty {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--text-dim);
+}
+.btw-entry + .btw-entry {
+  margin-top: 10px;
+}
+.btw-q {
+  margin: 0;
+  font-weight: 600;
+}
+.btw-a {
+  margin: 4px 0 0;
+  color: var(--text-dim);
+}
+/* An aside reads as a different kind of thing: dashed, hatched, labelled "by the way". */
+.aside-card {
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px dashed hsl(var(--app-tertiary) / 0.6);
+  background: repeating-linear-gradient(
+    135deg,
+    hsl(var(--app-tertiary) / 0.04) 0 6px,
+    transparent 6px 12px
+  );
+}
+.aside-card + .aside-card {
+  margin-top: 8px;
+}
+.aside-card-head {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11.5px;
+  color: var(--text-dim);
+}
+.aside-card-kind {
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: hsl(var(--app-tertiary));
+}
+.aside-card-text {
+  margin: 4px 0 6px;
+}
+.asides-since {
+  align-self: flex-start;
+  margin: 0 4px 6px;
+  padding: 2px 10px;
+  border: 1px dashed hsl(var(--app-tertiary) / 0.6);
+  border-radius: 999px;
+  background: transparent;
+  color: hsl(var(--app-tertiary));
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+/* The composer always says where it sends; each room has its own label and look. */
+.channel-picker {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+  min-width: 0;
+}
+.channel-tabs {
+  display: inline-flex;
+  gap: 2px;
+  flex-shrink: 0;
+}
+.channel-tab {
+  padding: 2px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.channel-tab.is-active {
+  color: var(--text);
+  border-color: var(--text-dim);
+}
+.channel-tab:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.channel-sending {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.chat-input-main:has(.channel-picker--btw) .chat-input {
+  border-style: dashed;
+}
+.chat-input-main:has(.channel-picker--aside) .chat-input {
+  border-style: dashed;
+  border-color: hsl(var(--app-tertiary) / 0.7);
+}
+/* A key cap inside a switcher segment keeps its neutral look when the segment is filled. */
+.band-tabs .center-view--active kbd {
+  background: var(--surface2);
+  color: var(--text-dim);
+  font-weight: 400;
 }
