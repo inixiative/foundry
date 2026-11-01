@@ -40,7 +40,7 @@ Aron, 2026-11-01: "The config package can have a theme inside of it: public them
 
 **Kingdom**:
 - `apps/web` imports `@inixiative/config/theme/public.css` and `@inixiative/config/theme/agentic.css` (config moves to `dependencies` of the web app), replacing the hand-kept values in `apps/web/app/styles/app-theme.css`; template's `packages/shared/styles/theme.css` layers stay underneath.
-- This also fixes a gap: **Kingdom names its fonts but never loads them** (nothing in `apps/web` imports a webfont), so it renders in system-ui today. `theme/public.css` ships the fonts.
+- Kingdom loaded its fonts from Google Fonts (`apps/web/index.html`); an earlier note here said it never loaded them, which was wrong. With the theme it loads the same three fonts from the package instead, and the Google Fonts links go.
 
 ## Known cost to watch: config's peers in Foundry's install
 
