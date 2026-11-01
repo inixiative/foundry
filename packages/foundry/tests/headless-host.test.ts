@@ -187,7 +187,7 @@ test('the headless host pairs, admits a member note the Warden weighs in on, and
   let state = await inspect();
   expect(state.summary).toMatchObject({ unread: 1, members: 1 });
   expect(state.posts).toEqual([
-    { signetId: member.signetId, text: 'A role opened.', delivery: 'note' },
+    { memberKey: `signet:${member.signetId}`, text: 'A role opened.', delivery: 'note' },
   ]);
   await until(
     () => asked.some((call) => call.role === 'warden' && call.text.includes(`${label}\n> A role`)),

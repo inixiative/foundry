@@ -121,7 +121,7 @@ test('a view is cut at the 16,000-character read cap: forward continues after th
   // `own` sees its posts and the sends addressed to it; never owner or agent messages.
   const owner: ThreadEntry = { ...entry(4, 1), kind: 'owner', member: null };
   const other: ThreadEntry = { ...entry(5, 1), member: { kind: 'signet', id: 'b' } };
-  const own = { signetId: 'a', lens: { view: 'own' as const } };
+  const own = { member: { kind: 'signet' as const, id: 'a' }, lens: { view: 'own' as const } };
   expect([entry(1, 1), owner, other].filter((e) => visibleTo(e, own))).toEqual([entry(1, 1)]);
   expect(
     [entry(1, 1), owner, other].filter((e) => visibleTo(e, { ...own, lens: { view: 'thread' } })),

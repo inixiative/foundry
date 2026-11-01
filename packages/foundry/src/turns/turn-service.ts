@@ -92,8 +92,8 @@ export interface TurnOrigin {
   member: ConversationMember;
   displayName: string;
   postId: string;
-  /** The Kingdom `AccessExecution` the post arrived under. */
-  executionId: string;
+  /** The Kingdom `AccessExecution` the post arrived under (a Signet member's post). */
+  executionId?: string;
 }
 
 /** A settled turn's result as the routes and the requesting client receive it. */

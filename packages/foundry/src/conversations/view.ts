@@ -44,7 +44,7 @@ export function threadEntryOf(entry: JournalEntry): ThreadEntry | null {
       journalSeq: entry.seq,
       at,
       kind: 'post',
-      member: { kind: 'signet', id: post.signetId },
+      member: post.member,
       text: clip(post.text),
     };
   }
@@ -90,13 +90,10 @@ export function threadEntryOf(entry: JournalEntry): ThreadEntry | null {
  */
 export function visibleTo(
   entry: ThreadEntry,
-  view: { signetId: string; lens: Pick<ThreadsLens, 'view'> },
+  view: { member: ConversationMember; lens: Pick<ThreadsLens, 'view'> },
 ): boolean {
   if (view.lens.view === 'thread') return true;
-  return (
-    (entry.kind === 'post' || entry.kind === 'send') &&
-    sameMember(entry.member, { kind: 'signet', id: view.signetId })
-  );
+  return (entry.kind === 'post' || entry.kind === 'send') && sameMember(entry.member, view.member);
 }
 
 export const sameMember = (a: ConversationMember | null, b: ConversationMember | null) =>

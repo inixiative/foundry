@@ -222,7 +222,7 @@ async function main() {
       posts: phases
         .filter((row) => row.phase === 'member-post')
         .map((row) => ({
-          signetId: String(row.record.signetId),
+          memberKey: String(row.record.memberKey),
           text: String(row.record.text),
           delivery: String(row.record.delivery),
         })),

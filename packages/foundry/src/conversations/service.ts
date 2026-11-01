@@ -49,6 +49,7 @@ import {
   type Invitation,
   MAX_HELD_TEXT,
   type MemberPostRecord,
+  memberKey,
   OWNER_MEMBER,
 } from './types';
 import { capView, sameMember, threadEntryOf, visibleTo } from './view';
@@ -142,7 +143,7 @@ export interface ConversationMemberView {
 export class ConversationService implements ConversationWrapper {
   /** Each live view's cursor: the journal seq it has been pushed through. */
   private readonly cursors = new Map<string, number>();
-  /** When each member was last seen on a thread (`<signetId>:<threadId>`): a view opened or closed. */
+  /** When each member was last seen on a thread (`<member key>@<threadId>`): a view opened or closed. */
   private readonly seen = new Map<string, number>();
   /** The newest revision a frame from each member carried (frames are newer than snapshots, §4.5). */
   private readonly accepted = new Map<string, number>();
@@ -196,7 +197,37 @@ export class ConversationService implements ConversationWrapper {
     const closed = this.closedReason(thread);
     if (closed || !thread) return threadRefused(closed ?? 'unknown_thread');
     this.noteRevision(signetId, frame.acceptedRevision);
-    const me: ConversationMember = { kind: 'signet', id: signetId };
+    return this.admitPost(thread, {
+      member: { kind: 'signet', id: signetId },
+      displayName: frame.member.displayName,
+      postId: input.postId,
+      text: input.text,
+      delivery: lens.delivery,
+      ...(input.inReplyTo ? { inReplyTo: input.inReplyTo } : {}),
+      executionId: frame.requestId,
+      acceptedRevision: frame.acceptedRevision,
+    });
+  }
+
+  /**
+   * One post into an open thread, from any member (a Signet's frame, or a local member's answer): the
+   * one admission transaction (§4.2), then the note or turn it becomes.
+   */
+  private admitPost(
+    thread: Thread,
+    post: {
+      member: ConversationMember;
+      displayName: string;
+      postId: string;
+      text: string;
+      delivery: 'note' | 'turn';
+      inReplyTo?: string;
+      executionId?: string;
+      acceptedRevision?: number;
+    },
+  ): ThreadOutcome<'thread.prompt'> {
+    const me = post.member;
+    const key = memberKey(me);
     let outcome:
       | { kind: 'refused'; refusal: ThreadRefusal; message?: string }
       | { kind: 'duplicate'; seq: number }
@@ -204,8 +235,8 @@ export class ConversationService implements ConversationWrapper {
     try {
       outcome = this.deps.store.transaction(() => {
         const prior = this.deps.store
-          .phasesOf(thread.id, 'member-post', { key: 'postId', value: input.postId })
-          .find((row) => (row.record as unknown as MemberPostRecord).signetId === signetId);
+          .phasesOf(thread.id, 'member-post', { key: 'postId', value: post.postId })
+          .find((row) => (row.record as unknown as MemberPostRecord).memberKey === key);
         if (prior)
           return { kind: 'duplicate' as const, seq: this.deps.store.phaseSeq(prior.id) ?? 0 };
         const record = this.record(thread.id);
@@ -216,7 +247,7 @@ export class ConversationService implements ConversationWrapper {
         // post that would go past the bound is refused, and the conversation pauses.
         const depth = this.depth(thread.id, record);
         // Silent agents hear everything and are woken by nothing: a post is a note (§4.9, M7).
-        const delivery = settings.agents === 'silent' ? 'note' : lens.delivery;
+        const delivery = settings.agents === 'silent' ? 'note' : post.delivery;
         const cost = delivery === 'turn' ? 2 : 1;
         if (depth + cost > settings.maxAgentTurns) {
           // At the bound the conversation pauses; a `turn` post with one turn left is refused
@@ -224,14 +255,14 @@ export class ConversationService implements ConversationWrapper {
           if (depth >= settings.maxAgentTurns) this.pause(thread, record, 'depth');
           return { kind: 'refused' as const, refusal: 'conversation_paused' as const };
         }
-        const floor = this.takeFloor(record, settings, me, input.inReplyTo);
+        const floor = this.takeFloor(record, settings, me, post.inReplyTo);
         // A reply naming a notify commission whose invitation is gone (expired, already used) would
         // otherwise go public under talk; it never posts (round 5, M1).
         if (
           !floor.refusal &&
           !floor.commission &&
-          input.inReplyTo &&
-          this.commissionNamed(thread.id, input.inReplyTo, me)?.report === 'notify'
+          post.inReplyTo &&
+          this.commissionNamed(thread.id, post.inReplyTo, me)?.report === 'notify'
         )
           return { kind: 'refused' as const, refusal: 'not_invited' as const };
         if (floor.refusal) {
@@ -239,21 +270,28 @@ export class ConversationService implements ConversationWrapper {
           if (floor.changed) this.save(thread, record);
           return { kind: 'refused' as const, refusal: floor.refusal };
         }
-        if (record.sharedFromSeq === undefined && !this.isOwnerSignet(signetId))
+        if (
+          record.sharedFromSeq === undefined &&
+          me.kind === 'signet' &&
+          !this.isOwnerSignet(me.id)
+        )
           record.sharedFromSeq = this.deps.store.journalSeq(thread.id);
         const phaseId = newId('phase');
         const turnId = delivery === 'turn' ? newId('turn') : undefined;
-        const post: MemberPostRecord = {
-          postId: input.postId,
-          signetId,
-          displayName: frame.member.displayName,
-          text: input.text,
+        const row: MemberPostRecord = {
+          postId: post.postId,
+          member: me,
+          memberKey: key,
+          displayName: post.displayName,
+          text: post.text,
           delivery,
           ...(settings.agents === 'silent' ? { silent: true } : {}),
           ...(floor.commission === 'notify' ? { notify: true } : {}),
-          executionId: frame.requestId,
-          acceptedRevision: frame.acceptedRevision,
-          ...(input.inReplyTo ? { inReplyTo: input.inReplyTo } : {}),
+          ...(post.executionId ? { executionId: post.executionId } : {}),
+          ...(post.acceptedRevision !== undefined
+            ? { acceptedRevision: post.acceptedRevision }
+            : {}),
+          ...(post.inReplyTo ? { inReplyTo: post.inReplyTo } : {}),
           ...(turnId ? { turnId } : {}),
         };
         this.deps.store.appendPhase(thread, {
@@ -261,7 +299,7 @@ export class ConversationService implements ConversationWrapper {
           phase: 'member-post',
           turnId: null,
           dispatchId: null,
-          record: post as unknown as Record<string, unknown>,
+          record: row as unknown as Record<string, unknown>,
         });
         const seq = this.deps.store.phaseSeq(phaseId)!;
         if (depth + cost >= settings.maxAgentTurns) this.pause(thread, record, 'depth');
@@ -272,12 +310,12 @@ export class ConversationService implements ConversationWrapper {
           const accepted = turns.accept({
             threadId: thread.id,
             turnId,
-            payload: input.text,
+            payload: post.text,
             origin: {
               member: me,
-              displayName: frame.member.displayName,
-              postId: input.postId,
-              executionId: frame.requestId,
+              displayName: post.displayName,
+              postId: post.postId,
+              ...(post.executionId ? { executionId: post.executionId } : {}),
             },
           });
           if (!accepted.ok)
@@ -287,7 +325,7 @@ export class ConversationService implements ConversationWrapper {
               String(accepted.body.error ?? 'The turn was not accepted'),
             );
         }
-        return { kind: 'admitted' as const, seq, post };
+        return { kind: 'admitted' as const, seq, post: row };
       });
     } catch (error) {
       if (error instanceof Refusal) return threadRefused(error.refusal, error.message);
@@ -313,10 +351,10 @@ export class ConversationService implements ConversationWrapper {
         .emit({
           id: newId('sig-member-post'),
           kind: 'member_post',
-          source: `conversation:${signetId}`,
+          source: `conversation:${key}`,
           // Ids only: the bus reaches the Librarian's thread-state, which must never carry member
           // text. The runtime reads the labelled post through the wrapper (`notePost`).
-          content: { threadId: thread.id, signetId, postId: outcome.post.postId },
+          content: { threadId: thread.id, member: me, postId: outcome.post.postId },
           timestamp: Date.now(),
         })
         .catch((error: unknown) =>
@@ -332,14 +370,15 @@ export class ConversationService implements ConversationWrapper {
     const thread = this.deps.thread(frame.input.threadId);
     if (!thread) return threadRefused('unknown_thread');
     this.noteRevision(frame.signetId, frame.acceptedRevision);
-    this.seen.set(`${frame.signetId}:${thread.id}`, Date.now());
+    this.seen.set(seenKey(signetMember(frame.signetId), thread.id), Date.now());
     const after = Math.max(
       frame.input.afterSeq ?? 0,
       this.isOwnerSignet(frame.signetId) ? 0 : this.sharedFrom(thread),
     );
     const raw = this.deps.store.journalEntries(thread.id, { after, limit: RAW_READ });
     const owner = this.isOwnerSignet(frame.signetId);
-    const entries = raw.flatMap((row) => this.readable(row, frame, owner));
+    const reader = { member: signetMember(frame.signetId), lens: frame.lens };
+    const entries = raw.flatMap((row) => this.readable(row, reader, owner));
     const more = raw.length === RAW_READ;
     return threadResult(
       capView(
@@ -363,11 +402,12 @@ export class ConversationService implements ConversationWrapper {
     const from = this.isOwnerSignet(frame.signetId) ? 0 : this.sharedFrom(thread);
     const raw = this.deps.store.journalEntries(thread.id, { newest: true, limit: RAW_READ });
     const owner = this.isOwnerSignet(frame.signetId);
+    const reader = { member: signetMember(frame.signetId), lens: frame.lens };
     const entries = raw
       .filter((row) => row.seq > from)
-      .flatMap((row) => this.readable(row, frame, owner));
+      .flatMap((row) => this.readable(row, reader, owner));
     this.cursors.set(frame.requestId, journalSeq);
-    this.seen.set(`${frame.signetId}:${thread.id}`, Date.now());
+    this.seen.set(seenKey(signetMember(frame.signetId), thread.id), Date.now());
     this.deps.changed?.(thread.id);
     return threadResult(capView(entries, journalSeq, 'newest', raw.length === RAW_READ));
   }
@@ -380,7 +420,7 @@ export class ConversationService implements ConversationWrapper {
    */
   private readable(
     row: JournalEntry,
-    reader: { signetId: string; lens: Pick<ThreadsLens, 'view'> },
+    reader: { member: ConversationMember; lens: Pick<ThreadsLens, 'view'> },
     owner: boolean,
   ): ThreadEntry[] {
     const entry = threadEntryOf(row);
@@ -391,7 +431,7 @@ export class ConversationService implements ConversationWrapper {
       row.source !== 'message' &&
       (row.record as unknown as MemberPostRecord).notify &&
       !owner &&
-      !sameMember(entry.member, { kind: 'signet', id: reader.signetId })
+      !sameMember(entry.member, reader.member)
     )
       return [];
     return [entry];
@@ -400,7 +440,7 @@ export class ConversationService implements ConversationWrapper {
   /** A member's view closed (left, lease lapsed, socket dropped): it stops being pushed. */
   ended(subscription: ThreadSubscription, _reason: string): void {
     this.cursors.delete(subscription.subscriptionId);
-    this.seen.set(`${subscription.signetId}:${subscription.threadId}`, Date.now());
+    this.seen.set(seenKey(signetMember(subscription.signetId), subscription.threadId), Date.now());
     this.deps.changed?.(subscription.threadId);
   }
 
@@ -426,7 +466,11 @@ export class ConversationService implements ConversationWrapper {
     for (const row of raw)
       for (const view of views)
         if (row.seq > this.cursors.get(view.subscriptionId)!)
-          for (const entry of this.readable(row, view, owners.get(view.subscriptionId)!))
+          for (const entry of this.readable(
+            row,
+            { member: signetMember(view.signetId), lens: view.lens },
+            owners.get(view.subscriptionId)!,
+          ))
             view.append(entry);
     const last = raw.at(-1)!.seq;
     for (const view of views) this.cursors.set(view.subscriptionId, last);
@@ -923,14 +967,14 @@ export class ConversationService implements ConversationWrapper {
             phase: 'member-post-delivered',
             turnId,
             dispatchId: null,
-            record: { postId: post.postId, signetId: post.signetId },
+            record: { postId: post.postId, memberKey: post.memberKey },
           });
       });
     if (notes.length) this.deps.changed?.(threadId);
     return notes.map((post) => ({
       role: 'content' as const,
-      id: `member-post:${post.signetId}:${post.postId}`,
-      source: `conversation:${post.signetId}`,
+      id: `member-post:${post.memberKey}:${post.postId}`,
+      source: `conversation:${post.memberKey}`,
       placement: 'after-message' as const,
       text: memberPostReception(post.displayName, post.text),
     }));
@@ -939,13 +983,13 @@ export class ConversationService implements ConversationWrapper {
   /** One admitted post, labelled, for the Wardens' pass on it (ids travel on the bus, never text). */
   notePost(
     threadId: string,
-    signetId: string,
+    member: ConversationMember,
     postId: string,
   ): { displayName: string; text: string } | undefined {
     const post = this.deps.store
       .phasesOf(threadId, 'member-post', { key: 'postId', value: postId })
       .map((row) => row.record as unknown as MemberPostRecord)
-      .find((candidate) => candidate.signetId === signetId);
+      .find((candidate) => candidate.memberKey === memberKey(member));
     return post
       ? { displayName: post.displayName, text: memberPostReception(post.displayName, post.text) }
       : undefined;
@@ -979,7 +1023,7 @@ export class ConversationService implements ConversationWrapper {
       return {
         journalSeq: seq,
         at: new Date(storedAt).toISOString(),
-        member: { kind: 'signet' as const, id: post.signetId },
+        member: post.member,
         displayName: post.displayName,
         text: post.text,
         delivery: post.delivery,
@@ -1292,10 +1336,13 @@ export class ConversationService implements ConversationWrapper {
   private acceptedRevision(signetId: string, threadId: string): number {
     let revision = this.accepted.get(signetId) ?? 0;
     for (const row of this.deps.store.phasesOf(threadId, 'member-post', {
-      key: 'signetId',
-      value: signetId,
+      key: 'memberKey',
+      value: memberKey(signetMember(signetId)),
     }))
-      revision = Math.max(revision, (row.record as unknown as MemberPostRecord).acceptedRevision);
+      revision = Math.max(
+        revision,
+        (row.record as unknown as MemberPostRecord).acceptedRevision ?? 0,
+      );
     return revision;
   }
 
@@ -1337,7 +1384,7 @@ export class ConversationService implements ConversationWrapper {
       this.deps
         .subscriptions()
         .filter((view) => view.threadId === threadId && this.cursors.has(view.subscriptionId))
-        .map((view) => view.signetId),
+        .map((view) => memberKey(signetMember(view.signetId))),
     );
     const record = this.deps.store.conversation<ConversationRecord>(threadId);
     const now = Date.now();
@@ -1348,10 +1395,10 @@ export class ConversationService implements ConversationWrapper {
     const lastPost = new Map<string, number>();
     for (const row of this.deps.store.phasesOf(threadId, 'member-post')) {
       const post = row.record as unknown as MemberPostRecord;
-      lastPost.set(post.signetId, row.storedAt);
-      if (!views.has(post.signetId))
-        views.set(post.signetId, {
-          member: { kind: 'signet', id: post.signetId },
+      lastPost.set(post.memberKey, row.storedAt);
+      if (!views.has(post.memberKey))
+        views.set(post.memberKey, {
+          member: post.member,
           displayName: post.displayName,
           listed: false,
           outbound: 'review',
@@ -1363,8 +1410,9 @@ export class ConversationService implements ConversationWrapper {
     for (const signet of this.deps.hosted()) {
       const lens = this.grantOn(signet, threadId);
       if (!lens) continue;
-      views.set(signet.signetId, {
-        member: { kind: 'signet', id: signet.signetId },
+      const member = signetMember(signet.signetId);
+      views.set(memberKey(member), {
+        member,
         displayName: signet.recipient.displayName,
         listed: true,
         recipientModel: signet.recipient.recipientModel,
@@ -1381,11 +1429,13 @@ export class ConversationService implements ConversationWrapper {
         holdsConch: false,
       });
     }
-    for (const view of views.values()) {
-      const id = view.member.id;
-      view.outbound = this.outbound(id, threadId);
-      view.present = present.has(id);
-      const last = Math.max(this.seen.get(`${id}:${threadId}`) ?? 0, lastPost.get(id) ?? 0);
+    for (const [key, view] of views) {
+      if (view.member.kind === 'signet') view.outbound = this.outbound(view.member.id, threadId);
+      view.present = present.has(key);
+      const last = Math.max(
+        this.seen.get(seenKey(view.member, threadId)) ?? 0,
+        lastPost.get(key) ?? 0,
+      );
       view.lastSeen = view.present
         ? new Date().toISOString()
         : last
@@ -1416,7 +1466,7 @@ export class ConversationService implements ConversationWrapper {
     );
   }
 
-  /** Posts a `member-post-withdrawn` or `member-post-delivered` row settles, by `signetId:postId`. */
+  /** Posts a `member-post-withdrawn` or `member-post-delivered` row settles, by `<member key>:postId`. */
   private marked(
     threadId: string,
     phase: 'member-post-withdrawn' | 'member-post-delivered',
@@ -1424,7 +1474,7 @@ export class ConversationService implements ConversationWrapper {
     return new Set(
       this.deps.store
         .phasesOf(threadId, phase)
-        .map((row) => postKey(row.record as { signetId?: unknown; postId?: unknown })),
+        .map((row) => postKey(row.record as { memberKey?: unknown; postId?: unknown })),
     );
   }
 
@@ -1655,7 +1705,7 @@ export class ConversationService implements ConversationWrapper {
         ...this.marked(threadId, 'member-post-delivered'),
       ]);
       const record = this.record(threadId);
-      const gone = { kind: 'signet' as const, id: signetId };
+      const gone = signetMember(signetId);
       if (
         record.requests.some((request) => sameMember(request.member, gone)) ||
         record.invitations.some((invitation) => sameMember(invitation.to, gone))
@@ -1668,7 +1718,7 @@ export class ConversationService implements ConversationWrapper {
         this.settleHands(threadId);
       }
       for (const { post } of this.posts(threadId)) {
-        if (post.signetId !== signetId) continue;
+        if (post.memberKey !== memberKey(gone)) continue;
         if (post.turnId) {
           if (this.deps.store.turn(post.turnId)?.status === 'queued')
             await turns?.interrupt(threadId, post.turnId).catch(() => undefined);
@@ -1678,7 +1728,7 @@ export class ConversationService implements ConversationWrapper {
             phase: 'member-post-withdrawn',
             turnId: null,
             dispatchId: null,
-            record: { postId: post.postId, signetId, reason: 'revoked' },
+            record: { postId: post.postId, memberKey: post.memberKey, reason: 'revoked' },
           });
       }
       this.deps.changed?.(threadId);
@@ -1689,7 +1739,7 @@ export class ConversationService implements ConversationWrapper {
 /** How many journal rows one read or snapshot looks at before it says there is more. */
 const RAW_READ = 5_000;
 
-/** A member post's identity: its own id is the member's, so it is unique only per Signet. */
+/** A grant that answers the host's prompts: Kingdom allows it only to the thread's owner. */
 const ownsThreads = (signet: HostedSignet) =>
   signet.resources.some(
     (grant) => grant.kind === threadsResourceKind && grant.operations.includes('prompt.resolve'),
@@ -1698,8 +1748,14 @@ const ownsThreads = (signet: HostedSignet) =>
 const handKey = (threadId: string, member: ConversationMember) =>
   `${threadId}:${member.kind}:${member.id}`;
 
-const postKey = (post: { signetId?: unknown; postId?: unknown }) =>
-  `${String(post.signetId)}:${String(post.postId)}`;
+/** A post's identity: its id is its member's own, so it is unique only per member. */
+const postKey = (post: { memberKey?: unknown; postId?: unknown }) =>
+  `${String(post.memberKey)}:${String(post.postId)}`;
+
+const signetMember = (signetId: string): ConversationMember => ({ kind: 'signet', id: signetId });
+
+const seenKey = (member: ConversationMember, threadId: string) =>
+  `${memberKey(member)}@${threadId}`;
 
 function boundedText(text: string): string {
   const body = text.trim();

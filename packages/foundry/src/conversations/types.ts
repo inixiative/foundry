@@ -138,15 +138,19 @@ export const emptyConversation = (): ConversationRecord => ({
 /** A member's post as the journal holds it (phase `member-post`). */
 export interface MemberPostRecord {
   postId: string;
-  signetId: string;
+  /** Who posted: a Signet member (through Kingdom) or a local one (another thread on this machine). */
+  member: ConversationMember;
+  /** `<kind>:<id>` of `member`, top-level so the journal can match it in SQL (`phasesOf`). */
+  memberKey: string;
   displayName: string;
   text: string;
   delivery: 'note' | 'turn';
   /** Admitted while agents were silent: a person talking, so it costs no agent turn (§4.9). */
   silent?: boolean;
-  /** The Kingdom `AccessExecution` the post arrived under. */
-  executionId: string;
-  acceptedRevision: number;
+  /** The Kingdom `AccessExecution` the post arrived under (a Signet member's post). */
+  executionId?: string;
+  /** The grant revision the post's frame carried (a Signet member's post). */
+  acceptedRevision?: number;
   inReplyTo?: string;
   /** The turn the post opened (`delivery: 'turn'`). */
   turnId?: string;
@@ -225,7 +229,7 @@ export interface ConversationWrapper {
   /** One admitted post, labelled, for the Wardens' between-turns pass on it. */
   notePost(
     threadId: string,
-    signetId: string,
+    member: ConversationMember,
     postId: string,
   ): { displayName: string; text: string } | undefined;
 }
@@ -239,11 +243,14 @@ export function lateConversationWrapper(
     deliverNotes: (threadId, turnId) => resolve()?.deliverNotes(threadId, turnId) ?? [],
     roster: (threadId, held) => resolve()?.roster(threadId, held),
     floorNow: (threadId) => resolve()?.floorNow(threadId),
-    notePost: (threadId, signetId, postId) => resolve()?.notePost(threadId, signetId, postId),
+    notePost: (threadId, member, postId) => resolve()?.notePost(threadId, member, postId),
   };
 }
 
 export const MAX_HELD_TEXT = threadTextLimit;
+
+/** A member's key in maps and journal matches: `<kind>:<id>`. */
+export const memberKey = (member: ConversationMember) => `${member.kind}:${member.id}`;
 
 /** The journal rows a conversation writes on its main thread (the ordered ones: `JOURNAL_ORDERED_PHASES`). */
 export type ConversationPhase =

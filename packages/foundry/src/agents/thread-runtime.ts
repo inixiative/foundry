@@ -29,6 +29,7 @@ import {
   type ThreadMeta,
   type ToolCallObservation,
 } from '@inixiative/foundry-core';
+import type { ConversationMember } from '@inixiative/signet';
 import {
   DEFAULT_STAGES,
   KNOWLEDGE_DOC,
@@ -1738,12 +1739,14 @@ class ThreadRuntimeImpl implements ThreadRuntime {
     // project's work-item trigger is on. What it says rides the next turn with the note.
     this._unsubs.push(
       signals.on('member_post', async (signal) => {
-        const content = signal.content as { postId?: string; signetId?: string } | undefined;
-        if (!content?.postId || !content.signetId || !this.domainLibrarians.size) return;
-        const post = deps.conversations?.notePost(thread.id, content.signetId, content.postId);
+        const content = signal.content as
+          | { postId?: string; member?: ConversationMember }
+          | undefined;
+        if (!content?.postId || !content.member || !this.domainLibrarians.size) return;
+        const post = deps.conversations?.notePost(thread.id, content.member, content.postId);
         if (!post) return;
         const item: WorkItemMoment = {
-          itemId: `member-post:${content.signetId}:${content.postId}`,
+          itemId: `member-post:${content.member.kind}:${content.member.id}:${content.postId}`,
           name: `post from ${post.displayName}`,
           tool: 'conversation',
           text: post.text,
