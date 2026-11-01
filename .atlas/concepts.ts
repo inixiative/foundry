@@ -42,7 +42,6 @@ export const CONCEPTS: ConceptRegistry = {
   'primitive:memory': { docs: ['api/ADAPTERS.md'] }, // memory/knowledge adapters (file, sqlite, http, markdown, postgres, redis, Muninn, Supermemory)
   'primitive:journal': { docs: ['THREAD-TREE.md'] }, // the local journal: content-addressed records, session store, attachments
   'primitive:settings': {}, // the settings model, resolution, ConfigStore, settings routes
-  'primitive:logger': {}, // pluggable logger (consola, pino) with async scopes
   'primitive:websockets': {}, // data streams over WebSocket: registry, delivery, client
   'primitive:concurrency': {}, // the serialized queue: one task at a time, in order, a failure never poisons the chain
   'primitive:vcr': { docs: ['live-testing.md'] }, // cassettes: recorded HTTP, stdio and WebSocket sessions; live tier

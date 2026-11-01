@@ -9,7 +9,6 @@
 
 import { createSerializedQueue } from '@inixiative/foundry-core';
 import type { Server } from 'bun';
-import { log } from '../logger';
 import { sendTo } from './delivery';
 import { cleanupStaleConnections, drainConnections, updateLastPing } from './lifecycle';
 import { addConnection, createRegistry, removeConnection, type WSRegistry } from './registry';
@@ -100,7 +99,7 @@ export const createWebSocketServer = ({
     intervalMs: 60_000,
     tick: () => {
       const cleaned = cleanupStaleConnections(registry);
-      if (cleaned > 0) log.info(`[Viewer] cleaned up ${cleaned} stale WebSocket connections`);
+      if (cleaned > 0) console.info(`[Viewer] cleaned up ${cleaned} stale WebSocket connections`);
     },
   });
 
@@ -149,7 +148,7 @@ export const createWebSocketServer = ({
         return ws.data.queue
           .run(() => dispatch(ws, msg))
           .catch((err) => {
-            log.error(
+            console.error(
               `[Viewer] ws dispatch failed (${msg.action}): ${err instanceof Error ? err.message : String(err)}`,
             );
             sendTo(ws, {

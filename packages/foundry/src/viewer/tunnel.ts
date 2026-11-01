@@ -290,8 +290,7 @@ export class FoundryTunnel {
     const url = await this._readUrlFromStdout(proc, /https?:\/\/\S+/);
     this._url = url;
 
-    const { log } = await import('../logger');
-    log.info(`[Tunnel] localtunnel active: ${url}`);
+    console.info(`[Tunnel] localtunnel active: ${url}`);
 
     return url;
   }
@@ -315,8 +314,7 @@ export class FoundryTunnel {
     const url = await this._readUrlFromStderr(proc, /https:\/\/[a-z0-9-]+\.trycloudflare\.com/);
     this._url = url;
 
-    const { log } = await import('../logger');
-    log.info(`[Tunnel] cloudflared active: ${url}`);
+    console.info(`[Tunnel] cloudflared active: ${url}`);
 
     return url;
   }
