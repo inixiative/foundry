@@ -81,7 +81,7 @@ Claude decisions run on agent-session's `ClaudePrimedSessions`, with the same pe
 
 - **Prime once.** A role with stable context (`CompletionOpts.stablePrefix`) gets one persisted Claude session: Foundry's decision base and the role instructions as the appended system prompt, plus one primer turn carrying the stable context. The primer process exits once primed.
 - **Fork per cycle.** Each decision forks the primed session (`--resume <id> --fork-session`, not persisted) and sends only the per-cycle part. After a decision, the next fork for that role is pre-spawned so a warm decision pays no process start. Roles without stable context run inline on a fresh process.
-- **Bounds.** Every decision process launches text-only (`--safe-mode --tools "" --strict-mcp-config` with an empty MCP config, no slash commands, no Chrome) with `--setting-sources ""`, so the user's hooks, permissions and plugins never apply, and with paid credentials stripped. At most 16 roles stay primed (each holds one idle spare process, about 215 MB); idle roles are evicted after 30 minutes. Any tool activity is a violation that closes admission.
+- **Bounds.** Every decision process launches text-only (`--safe-mode --tools "" --strict-mcp-config` with an empty MCP config, no slash commands, no Chrome) with `--setting-sources ""`, so the user's hooks, permissions and plugins never apply, and with paid credentials stripped. Primed roles are sized for the largest chorus any project runs: max(16, (stages on the decision host + 1) × the largest roster + 8) (`liveDecisionHosts`, `providers/decision-host.ts`); each holds one idle spare process, about 215 MB; idle roles are evicted after 30 minutes. Any tool activity is a violation that closes admission.
 - **Login.** Before the first decision the host checks `claude auth status --json` for a `claude.ai` subscription login (never an API key) and registers as a shared holder; a failed check dispatches nothing. The CLI reports the served model (`claude-haiku-5-5` for Haiku 5.5), and a substitution is refused.
 - **History.** Primed transcripts live in `~/.claude/projects/<private host cwd>` while their role is primed and are deleted when it is evicted or the host closes; the empty directory is removed on close. A crash leaves them there.
 
@@ -141,7 +141,7 @@ The earlier Codex budget (`providers/decision-budget.ts`), measured live with `b
 | Message to worker start (turns 30 s apart) | p50 18.2 s, p95 22.7 s | p50 6.5–7.2 s, p95 8.2–8.7 s (two runs) |
 | One decision | p50 4.3 s, p95 6.5 s | p50 3.5–3.9 s, p95 5.5–7.4 s under the full fan-out |
 
-The budget is 7.5 s p95 per decision and 9 s p95 from message to worker start. About one decision in six is hedged. No websocket-to-HTTPS fallback appeared in 165 warm-host decisions. Back-to-back messages (a request burst every few seconds) trip provider throttling; those turns end at the 10 s safety net and are reported separately.
+The budget is 7.5 s p95 per decision and 9 s p95 from message to worker start. About one decision in six is hedged. No websocket-to-HTTPS fallback appeared in 165 warm-host decisions. Back-to-back messages (a request burst every few seconds) trip provider throttling; those turns ended at the decision deadline (then 10 s; 60 s since 2026-11-01) and are reported separately.
 
 The floor is the decision model's own first-token latency: about 2.2 s for gpt-6-luna alone, and about 3.5 s under a nine-decision fan-out. A faster decision model or provider lowers it without structural changes.
 
