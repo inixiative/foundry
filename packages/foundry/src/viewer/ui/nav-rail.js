@@ -12,6 +12,7 @@
  * status icon, the project and any counts.
  */
 import { html } from './lib.js';
+import { NavFooter } from './nav-footer.js';
 import { ProjectSidebar } from './project-sidebar.js';
 import { activeThreadId, allThreads, projectSidebarOpen, railView, selectThread } from './store.js';
 import { ThreadNode, threadTree } from './thread-tree.js';
@@ -65,5 +66,6 @@ export function NavRail() {
   return html`<div class="nav-rail">
     <${RailToggle} />
     ${railView.value === 'open' ? html`<${OpenRail} />` : html`<${ProjectSidebar} />`}
+    <${NavFooter} />
   </div>`;
 }

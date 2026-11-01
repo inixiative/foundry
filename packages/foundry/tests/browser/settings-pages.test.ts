@@ -162,9 +162,13 @@ test('settings and analytics are addressable pages scoped to Foundry or a projec
       .getByRole('button', { name: 'Set as decision model' });
     expect(await apiLuna.isDisabled()).toBe(true);
 
-    // A vendor's switch turns all its modes off; the setting is saved per vendor.
+    // A vendor's switch turns all its modes off; the setting is saved per vendor, and the vendor
+    // moves under "Add a provider".
     await page.locator('.vendor-row[data-vendor="xai"] .vendor-head .switch input').uncheck();
-    await page.locator('.vendor-row[data-vendor="xai"].vendor-off').waitFor();
+    await page
+      .locator('.vendor-add .vendor-row[data-vendor="xai"].vendor-off')
+      .waitFor({ state: 'attached' });
+    await page.locator('.vendor-add > summary', { hasText: 'Add a provider' }).waitFor();
     expect((await (await fetch(`${origin}/api/settings`)).json()).vendors.xai.enabled).toBe(false);
 
     await page.getByRole('link', { name: 'Project', exact: true }).click();

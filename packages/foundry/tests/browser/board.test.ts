@@ -26,7 +26,7 @@ const { chromium } = createRequire(import.meta.url)(
 // The attention board: every open thread on a column of its status colour. A pending approval sits
 // under Needs you and is answered from its card; a project filter narrows the columns; Back returns
 // to the thread.
-test('the board: a pending approval is answered from its card, filters narrow it, b and Back toggle it', async () => {
+test('the board: a pending approval is answered from its card, filters narrow it, b and the Board button toggle it', async () => {
   const cleanup: ReleaseStep[] = [];
   const dir = mkdtempSync(join(tmpdir(), 'foundry-board-'));
   cleanup.push(['dir', () => rmSync(dir, { recursive: true, force: true })]);
@@ -126,6 +126,9 @@ test('the board: a pending approval is answered from its card, filters narrow it
     await page.keyboard.press('Escape');
     await until(async () => (await popover.count()) === 0, 'popover closed');
     await page.keyboard.press('b');
+    // Incoming is one line above the columns until opened.
+    expect(await page.locator('.board-incoming .incoming-card').count()).toBe(0);
+    await page.locator('.board-incoming-toggle', { hasText: 'Incoming' }).click();
     const incomingCard = page.locator('.board-incoming .incoming-card');
     await incomingCard.waitFor();
     expect(await incomingCard.innerText()).toContain("Sam's agent asks to join your threads");
@@ -155,8 +158,9 @@ test('the board: a pending approval is answered from its card, filters narrow it
     expect((await answered).action).toBe('approve');
     await until(async () => (await needs.locator('.board-card').count()) === 0, 'card left');
 
-    // Back returns to the thread.
-    await page.locator('.board .rp-back').click();
+    // The Board button (or b) returns to the thread; there is no Back bar.
+    expect(await page.locator('.board .rp-back').count()).toBe(0);
+    await page.locator('.board-button').click();
     await page.locator('.context-bar-title', { hasText: 'Rewrite the setup guide' }).waitFor();
 
     // The board is a workspace view: Settings and Analytics have no Board button, `b` does nothing

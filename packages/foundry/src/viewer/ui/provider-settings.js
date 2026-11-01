@@ -272,16 +272,26 @@ export function ProvidersSection({ vendors, onSaved }) {
   const accountsById = Object.fromEntries((accounts.value ?? []).map((a) => [a.provider, a]));
   const current = selection.value;
   const apiTokens = current?.apiTokens === true;
+  // The providers this Foundry has on; the rest wait under "Add a provider".
+  const on = reg.vendors.filter((v) => vendors?.[v.id]?.enabled === true);
+  const off = reg.vendors.filter((v) => vendors?.[v.id]?.enabled !== true);
+  const row = (vendor) =>
+    html`<${VendorRow} key=${vendor.id} vendor=${vendor} settings=${vendors?.[vendor.id]}
+      providersById=${providersById} accountsById=${accountsById} apiTokens=${apiTokens} current=${current} />`;
   return html`
-    <p class="settings-desc">Every vendor Foundry can reach. A vendor runs in subscription mode on your own login (Claude Code, Codex), in API mode with an API key, or both.</p>
+    <p class="settings-desc">The providers this Foundry uses. A provider runs in subscription mode on your own login (Claude Code, Codex), in API mode with an API key, or both.</p>
     <${SelectionCard} current=${current} providersById=${providersById} />
     <div class="vendor-list">
-      ${reg.vendors.map(
-        (
-          vendor,
-        ) => html`<${VendorRow} key=${vendor.id} vendor=${vendor} settings=${vendors?.[vendor.id]}
-          providersById=${providersById} accountsById=${accountsById} apiTokens=${apiTokens} current=${current} />`,
-      )}
+      ${on.map(row)}
+      ${on.length ? null : html`<div class="settings-empty">No provider is on yet. Add one below.</div>`}
     </div>
+    ${
+      off.length
+        ? html`<details class="vendor-add">
+            <summary>Add a provider (${off.length})</summary>
+            <div class="vendor-list">${off.map(row)}</div>
+          </details>`
+        : null
+    }
   `;
 }

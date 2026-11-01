@@ -23,7 +23,6 @@ import {
   forgeMasterOpen,
   projectSidebarOpen,
   projects,
-  projectTags,
   selectScope,
   showToast,
   updateProject,
@@ -290,11 +289,9 @@ function CollapsedStrip({ onExpand }) {
 export function ProjectSidebar() {
   const isOpen = projectSidebarOpen.value;
   const all = projects.value;
-  const tags = projectTags.value;
   const active = activeProjectId.value;
   const [adding, setAdding] = useState(false);
   const [renaming, setRenaming] = useState(null);
-  const [filterTag, setFilterTag] = useState(null);
   const [showArchived, setShowArchived] = useState(false);
   const [listOpen, setListOpen] = useState(true);
   const archivedCount = all.filter((p) => p.status === 'archived').length;
@@ -306,8 +303,6 @@ export function ProjectSidebar() {
       projectSidebarOpen.value = true;
     }} />`;
   }
-
-  const filtered = filterTag ? items.filter((p) => (p.tags || []).includes(filterTag)) : items;
 
   const forge = forgeMasterOpen.value;
   const inbox = feedbackInboxOpen.value;
@@ -331,28 +326,6 @@ export function ProjectSidebar() {
           }}
             title="Collapse">\u2039</button>
         </div>
-
-        ${
-          listOpen && tags.length > 0
-            ? html`
-          <div class="proj-tags-bar">
-            <span
-              class="proj-filter-chip ${!filterTag ? 'active' : ''}"
-              onClick=${() => setFilterTag(null)}
-            >all</span>
-            ${tags.map(
-              (t) => html`
-              <span
-                key=${t}
-                class="proj-filter-chip ${filterTag === t ? 'active' : ''}"
-                onClick=${() => setFilterTag(filterTag === t ? null : t)}
-              >${t}</span>
-            `,
-            )}
-          </div>
-        `
-            : null
-        }
 
         <div class="proj-list">
           <div class="proj-defaults nav-pinned" role="group" aria-label="Pinned scopes">
@@ -392,7 +365,7 @@ export function ProjectSidebar() {
           ${
             listOpen
               ? html`
-          ${filtered.map(
+          ${items.map(
             (p) => html`
             <${ProjectItem}
               key=${p.id}
@@ -403,11 +376,6 @@ export function ProjectSidebar() {
             />
           `,
           )}
-          ${
-            filtered.length === 0 && items.length > 0
-              ? html`<div class="proj-empty">No projects match "${filterTag}"</div>`
-              : null
-          }
           ${all.length === 0 ? html`<div class="proj-empty">No projects yet</div>` : null}
           ${
             archivedCount > 0

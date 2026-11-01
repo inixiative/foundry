@@ -86,4 +86,13 @@ Proposed, not built. Source: Oracle `docs/foundry/reference/COMPARISON.md` §0; 
 
 ---
 
+### To figure out
+
+Ideas Aron raised that need a design before they become tickets.
+
+- **Orgs attached to projects** (2026-11-01): a project belongs to orgs — its GitHub org and its Kingdom org — and the viewer should show and use that (filters, routing, which Kingdom pool and Archive it lands in).
+- **Skills** (2026-11-01): how Foundry shows and composes them — a Context-tab list by level, per-turn use in Loop, the `/` menu, project settings. Aron's principle: skills fill up the context; if something can live in a Warden, it should — only genuine procedures stay skills.
+
+---
+
 _Last updated: 2026-11-01_

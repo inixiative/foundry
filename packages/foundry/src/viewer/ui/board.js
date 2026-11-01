@@ -134,15 +134,24 @@ export function IncomingCard({ request }) {
   </article>`;
 }
 
+/** Incoming: one compact line above the columns, opened to show the requests. */
 function Incoming() {
+  const [open, setOpen] = useState(false);
   const requests = incoming.value;
   if (!requests.length) return null;
-  return html`<section class="board-incoming" aria-label="Incoming requests">
-    <h3 class="board-column-head">Incoming <span class="rail-pane-count">${requests.length}</span>
-      <span class="board-incoming-hint">Requests to join, not yet accepted</span></h3>
-    <div class="board-incoming-list">
-      ${requests.map((r) => html`<${IncomingCard} key=${r.id} request=${r} />`)}
-    </div>
+  return html`<section class="board-incoming board-incoming--line" aria-label="Incoming requests">
+    <button type="button" class="board-incoming-toggle" aria-expanded=${open} onClick=${() => setOpen(!open)}>
+      <span class="board-incoming-caret">${open ? '▾' : '▸'}</span>
+      Incoming <span class="rail-pane-count">${requests.length}</span>
+      <span class="board-incoming-hint">Requests to join, not yet accepted</span>
+    </button>
+    ${
+      open
+        ? html`<div class="board-incoming-list">
+            ${requests.map((r) => html`<${IncomingCard} key=${r.id} request=${r} />`)}
+          </div>`
+        : null
+    }
   </section>`;
 }
 
@@ -169,11 +178,6 @@ export function Board() {
 
   return html`<div class="board">
     <header class="board-band">
-      <div class="band-row">
-        <button class="rp-back" onClick=${() => {
-          boardOpen.value = false;
-        }}>← Back to the thread (b)</button>
-      </div>
       <h2 class="board-title">Board</h2>
       <nav class="board-filters" aria-label="Board filter">
         ${chip('all', 'Everything')}
