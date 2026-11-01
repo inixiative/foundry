@@ -1,0 +1,19 @@
+/* Commands and keys, everywhere: mono, soft blue, a light tint (AD). Never in parentheses. */
+kbd,
+.cmd,
+.conv-empty-hint kbd,
+.detail-hint kbd,
+.band-tabs .center-view--active kbd,
+.hold-keys kbd,
+.help-key,
+.status-key,
+.action-palette-item kbd {
+  font: 500 11px var(--font-mono, ui-monospace, monospace);
+  color: hsl(205 70% 78%);
+  background: hsl(205 70% 60% / 0.12);
+  border: 0;
+  border-radius: 5px;
+  padding: 1px 6px;
+  box-shadow: none;
+  white-space: nowrap;
+}

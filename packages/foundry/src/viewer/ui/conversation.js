@@ -619,7 +619,7 @@ function ChatInput() {
         <textarea
           ref=${inputRef}
           class="chat-input"
-          placeholder=${aboutTarget.value ? `Message the thread about ${aboutTarget.value.label}… (/feedback to record it as feedback on it)` : 'Message the thread… (Enter to send, Shift+Enter for newline; paste or drop images)'}
+          placeholder=${aboutTarget.value ? `Message the thread about ${aboutTarget.value.label} · /feedback records it as feedback on it` : 'Message the thread · ↑ history · paste or drop images'}
           value=${text}
           onInput=${(e) => {
             // "/" typed into an empty box opens the actions palette (and goes no further).
