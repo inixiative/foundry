@@ -1,6 +1,6 @@
 /**
  * @atlas
- * @kind script
+ * @kind entrypoint
  * @partOf feature:viewer
  */
 /**
