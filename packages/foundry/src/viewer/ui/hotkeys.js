@@ -8,13 +8,13 @@
  * No dependencies. Supports chords, modifiers, and customizable bindings.
  */
 
+import { stepSize } from './panel-sizes.js';
 import {
   actionPaletteOpen,
   boardOpen,
   commandPaletteOpen,
   createThread,
   helpOpen,
-  projectSidebarOpen,
 } from './store.js';
 
 // ---------------------------------------------------------------------------
@@ -161,6 +161,9 @@ const ALT_CODES = {
 function altTwin(e) {
   if (e.code?.startsWith('Key')) return e.code.slice(3).toLowerCase();
   if (e.code?.startsWith('Digit')) return e.code.slice(5);
+  // ⌥⇧[ and ⌥⇧] are the "larger" twins ({ and }).
+  if (e.shiftKey && e.code === 'BracketLeft') return '{';
+  if (e.shiftKey && e.code === 'BracketRight') return '}';
   return ALT_CODES[e.code];
 }
 
@@ -402,16 +405,24 @@ export function registerDefaults(actions) {
     },
   });
   bind('[', {
-    description: 'Open / fold the left list',
+    description: 'Left list smaller',
     category: 'panels',
-    action: () => {
-      projectSidebarOpen.value = !projectSidebarOpen.value;
-    },
+    action: () => stepSize('left', -1),
+  });
+  bind('{', {
+    description: 'Left list larger',
+    category: 'panels',
+    action: () => stepSize('left', 1),
   });
   bind(']', {
-    description: 'Open / fold the right panel',
+    description: 'Right panel smaller',
     category: 'panels',
-    action: actions.toggleRightPanel,
+    action: () => stepSize('right', -1),
+  });
+  bind('}', {
+    description: 'Right panel larger',
+    category: 'panels',
+    action: () => stepSize('right', 1),
   });
   for (const [i, key] of ['5', '6', '7', '8', '9'].entries())
     bind(key, {
