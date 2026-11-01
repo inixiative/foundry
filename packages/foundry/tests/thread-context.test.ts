@@ -151,6 +151,7 @@ test("a thread's checkout record: template mode and slot from the repository, re
     expect(thread.meta.context?.checkout).toEqual({
       mode: 'template',
       path: linked,
+      root: main,
       main: false,
       slot: 3,
       state: 'live',
@@ -158,6 +159,7 @@ test("a thread's checkout record: template mode and slot from the repository, re
     expect(onMain.meta.context?.checkout).toEqual({
       mode: 'template',
       path: main,
+      root: main,
       main: true,
       slot: 0,
       state: 'live',
@@ -180,8 +182,91 @@ test('a repository without worktree:create is classic mode, with no slot', async
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'thread-classic-')));
   try {
     Bun.spawnSync(['git', '-C', root, 'init', '-q', '-b', 'main']);
-    expect(await checkoutPlace(root)).toEqual({ mode: 'classic', path: root, main: true });
+    expect(await checkoutPlace(root)).toEqual({
+      mode: 'classic',
+      path: root,
+      root,
+      main: true,
+    });
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+test('a released worktree is recreated from its branch with the repository mode, and its record goes live again', async () => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'thread-recreate-')));
+  try {
+    const main = join(root, 'main');
+    mkdirSync(main);
+    const git = (...args: string[]) =>
+      Bun.spawnSync(['git', '-C', main, ...args], { stderr: 'ignore' });
+    git('init', '-q', '-b', 'main');
+    // A template-mode repository whose create attaches the branch the way template's does.
+    writeFileSync(
+      join(main, 'package.json'),
+      JSON.stringify({
+        scripts: {
+          'worktree:create':
+            'sh -c \'git worktree add -q .worktrees/$(echo "$1" | tr / -) "$1"\' --',
+        },
+      }),
+    );
+    git('add', '.');
+    git('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '-m', 'init');
+    const linked = join(main, '.worktrees', 'feat-x');
+    git('worktree', 'add', '-q', '-b', 'feat/x', linked);
+    mkdirSync(join(linked, 'sub'));
+    writeFileSync(join(linked, 'sub', 'f'), '');
+    git('-C', linked, 'add', '.');
+    git('-C', linked, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '-m', 'sub');
+
+    const thread = new Thread('t', new ContextStack(), {
+      description: '',
+      cwd: join(linked, 'sub'),
+    });
+    const tracker = new ThreadContextTracker({ thread: () => thread, changed: () => {} });
+    expect(tracker.recreate('t')).toEqual({ error: 'only a released worktree can be recreated' });
+    await tracker.refresh('t');
+    git('worktree', 'remove', '--force', linked);
+    await tracker.refresh('t');
+    expect(thread.meta.context?.checkout?.state).toBe('released');
+
+    const run = tracker.recreate('t');
+    if ('error' in run) throw Error(run.error);
+    expect(thread.meta.context?.checkout?.state).toBe('recreating');
+    await run.started;
+    expect(thread.meta.context?.checkout).toEqual({
+      mode: 'template',
+      path: linked,
+      root: main,
+      main: false,
+      state: 'live',
+    });
+    expect(thread.meta.context?.branch).toBe('feat/x');
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('a failed recreate leaves the worktree released, with the command error on the record', async () => {
+  const thread = new Thread('t', new ContextStack(), { description: '', cwd: '/gone/wt' });
+  thread.meta.context = {
+    branch: 'feat/y',
+    worktree: '/gone/wt',
+    checkout: { mode: 'classic', path: '/gone/wt', root: '/gone', main: false, state: 'released' },
+    references: [],
+    updatedAt: 1,
+  };
+  const tracker = new ThreadContextTracker({
+    thread: () => thread,
+    changed: () => {},
+    recreate: async () => ({ error: 'git worktree add failed (exit 128): invalid reference' }),
+  });
+  const run = tracker.recreate('t');
+  if ('error' in run) throw Error(run.error);
+  await run.started;
+  expect(thread.meta.context?.checkout).toMatchObject({
+    state: 'released',
+    error: 'git worktree add failed (exit 128): invalid reference',
+  });
 });
