@@ -33,8 +33,8 @@
     "@anthropic-ai/claude-code": "^2.1.92",
     "@bull-board/api": "^6.20.7",
     "@bull-board/hono": "^6.20.7",
-    "@inixiative/agent-session": "^0.6.8",
-    "@inixiative/archive": "^0.24.0",
+    "@inixiative/agent-session": "^0.7.0",
+    "@inixiative/archive": "^0.28.0",
     "@inixiative/config": "^0.5.166",
     "@inixiative/foundry-core": "workspace:*",
     "@inixiative/gloss": "0.1.1",
@@ -54,7 +54,7 @@
     "pino": "^10.3.1",
     "playwright": "^1.63.0"
   },
-  "description": "Foundry: the opinionated agent harness built on @inixiative/foundry-core \u2014 providers, session adapters, planner, viewer and jobs",
+  "description": "Foundry: the opinionated agent harness built on @inixiative/foundry-core — providers, session adapters, planner, viewer and jobs",
   "license": "SEE LICENSE IN LICENSE",
   "files": [
     "src"
