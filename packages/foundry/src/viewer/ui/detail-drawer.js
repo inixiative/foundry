@@ -15,7 +15,6 @@
  * The layer, agent and creation views are exported for the Settings sections (runtime-panels.js).
  */
 
-import { feedbackIn, ThreadFeedback } from './feedback.js';
 import {
   deliveredUnderstanding,
   deliverySummary,
@@ -46,8 +45,6 @@ import {
   createDefinition,
   currentTrace,
   definitions,
-  detailDrawerOpen,
-  dismissTraceSelection,
   executeAction,
   knowledgeInspection,
   layerColor,
@@ -1290,7 +1287,7 @@ export function CreateAgentForm({ onCreated }) {
 // Thread detail — shows metadata + worktree assignment
 // ---------------------------------------------------------------------------
 
-function ThreadDetail() {
+export function ThreadDetail() {
   const data = threadData.value;
   const wts = worktrees.value;
   const tid = activeThreadId.value;
@@ -1393,10 +1390,6 @@ function ThreadDetail() {
       `
           : null
       }
-
-      <${Section} title=${`Feedback (${feedbackIn({ threadId: tid }).length})`}>
-        <${ThreadFeedback} threadId=${tid} />
-      </${Section}>
 
       <${KnowledgeInspection} key=${tid} threadId=${tid} />
     </div>
@@ -1629,94 +1622,41 @@ function KnowledgeDomain({ domain, history }) {
 }
 
 // ---------------------------------------------------------------------------
-// Detail drawer (main export)
+// Inspector: what the right panel shows when something is selected
 // ---------------------------------------------------------------------------
 
-export function DetailDrawer({ selectedSpan, selectedLayer, onSpanSelect }) {
+/** What is being inspected, most specific first: activity event > span > trace > layer. Null when
+ * nothing is (the right panel then shows its tabs). */
+export function inspection(selectedLayer) {
   const trace = currentTrace.value;
   const spanId = selectedSpanId.value;
+  const span = spanId && trace?.root ? findSpan(trace.root, spanId) : null;
+  if (selectedEvent.value) return { kind: 'event', title: selectedEvent.value.kind };
+  if (span && trace) return { kind: 'span', title: span.name ?? 'Span', span, trace };
+  if (trace) return { kind: 'trace', title: 'Turn trace', trace };
+  if (selectedLayer)
+    return { kind: 'layer', title: `Layer ${selectedLayer}`, layerId: selectedLayer };
+  return null;
+}
 
-  // Find selected span in trace tree
-  let span = null;
-  if (spanId && trace?.root) {
-    span = findSpan(trace.root, spanId);
-  }
-
-  // Priority: activity event > selected span > trace > selected layer > thread > empty
-  let content;
-  if (selectedEvent.value) {
-    content = html`<div class="detail-content">
+/** The inspector body for an `inspection()` result. */
+export function Inspector({ target, onSpanSelect }) {
+  if (target.kind === 'event')
+    return html`<div class="detail-content">
       <div class="detail-header"><span class="detail-name">${selectedEvent.value.kind}</span><span class="detail-kind-badge">activity</span></div>
       <${JsonBlock} data=${selectedEvent.value} maxHeight=${600} />
     </div>`;
-  } else if (span && trace) {
-    content = html`
-      <div>
-        <button class="back-btn" style="margin: 8px 8px 0"
-          onClick=${() => {
-            selectedSpanId.value = null;
-          }}>← Back to trace</button>
-        <${SpanDetail} span=${span} traceId=${trace.id} threadId=${trace.selectedTurn.threadId} />
-      </div>
-    `;
-  } else if (trace) {
-    content = html`<${TraceDetail} key=${trace.id} trace=${trace} onSpanSelect=${onSpanSelect} />`;
-  } else if (selectedLayer) {
-    content = html`<${LayerDetail} key=${`${activeThreadId.value}:${selectedLayer}`} layerId=${selectedLayer} />`;
-  } else if (threadData.value) {
-    content = html`<${ThreadDetail} />`;
-  } else {
-    content = html`
-      <div class="detail-empty">
-        <p>Select a trace, span or layer to inspect</p>
-        <div class="detail-hint">
-          Click <kbd>trace</kbd> on a message to see pipeline details
-        </div>
-      </div>
-    `;
-  }
-
-  const isOpen = detailDrawerOpen.value;
-
-  if (!isOpen) {
-    return html`
-      <div class="detail-drawer detail-drawer--collapsed">
-        <button class="panel-collapse-strip"
-          onClick=${() => {
-            detailDrawerOpen.value = true;
-          }}
-          title="Expand detail panel">
-          <span class="panel-collapse-label">DETAIL</span>
-        </button>
-      </div>
-    `;
-  }
-
-  return html`
-    <div class="detail-drawer">
-      <div class="panel-header">
-        <span class="panel-title">DETAIL</span>
-        <div style="margin-left: auto; display: flex; gap: 4px;">
-          ${
-            trace
-              ? html`
-            <button class="back-btn"
-              onClick=${() => dismissTraceSelection()}>
-              Clear
-            </button>
-          `
-              : null
-          }
-          <button class="panel-collapse-btn"
-            onClick=${() => {
-              detailDrawerOpen.value = false;
-            }}
-            title="Collapse detail panel">\u00bb</button>
-        </div>
-      </div>
-      ${content}
-    </div>
-  `;
+  if (target.kind === 'span')
+    return html`<div>
+      <button class="back-btn" style="margin: 8px 8px 0"
+        onClick=${() => {
+          selectedSpanId.value = null;
+        }}>← Back to trace</button>
+      <${SpanDetail} span=${target.span} traceId=${target.trace.id} threadId=${target.trace.selectedTurn.threadId} />
+    </div>`;
+  if (target.kind === 'trace')
+    return html`<${TraceDetail} key=${target.trace.id} trace=${target.trace} onSpanSelect=${onSpanSelect} />`;
+  return html`<${LayerDetail} key=${`${activeThreadId.value}:${target.layerId}`} layerId=${target.layerId} />`;
 }
 
 function findSpan(root, id) {

@@ -11,7 +11,7 @@
  * Clicking "trace" opens trace details in the right pane (detail drawer).
  */
 
-import { HeldPromptCard, ParticipantsPanel } from './conversation-members.js';
+import { HeldPromptCard } from './conversation-members.js';
 import {
   browserStorageNotice,
   browserStorageSummary,
@@ -1082,7 +1082,6 @@ export function Conversation({ onTraceSelect }) {
     <div class="conversation">
       <${ContextBar} />
       <${TokenBar} />
-      <${ParticipantsPanel} />
       <div class="chat-messages" ref=${scrollRef}>
         <${HistoryPager} threadId=${threadId} count=${msgList.length} onLoadOlder=${handleLoadOlder} />
         <${CacheStatus} msgList=${msgList} />

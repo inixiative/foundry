@@ -70,7 +70,8 @@ test('/feedback in the composer, the project strip, the thread marker and the pi
     await until(async () => (await strip.innerText()).includes('1 open'), 'strip counts it');
     expect(f.attempts).toHaveLength(1);
     expect(await page.locator('.chat-user').count()).toBe(1);
-    // The detail panel lists the thread's feedback.
+    // The right panel's Feedback tab lists the thread's feedback.
+    await page.locator('.rp-tab', { hasText: 'Feedback' }).click();
     const threadList = page.locator('.thread-feedback');
     await threadList.waitFor();
     expect(await threadList.innerText()).toContain('one paragraph');

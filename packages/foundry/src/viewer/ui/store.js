@@ -81,6 +81,18 @@ export const projectSidebarOpen = signal(true); // collapsed state
 export const detailDrawerOpen = signal(true); // right panel collapsed state
 /** What the detail drawer inspects besides a trace: `{ kind: 'layer', id }` or null. */
 export const inspectTarget = signal(null);
+/** The right panel's tab: context | participants | permissions | heralds | pointers | feedback. */
+export const RIGHT_TABS = [
+  'context',
+  'participants',
+  'permissions',
+  'heralds',
+  'pointers',
+  'feedback',
+];
+export const rightTab = signal('context');
+/** The open thread's launch settings (GET /api/threads/:id/launch): provider, model, effort, permission mode. */
+export const threadLaunch = signal(null);
 export const compactPanel = signal('conversation');
 
 // Action prompts — pending agent→human interactions
@@ -1378,6 +1390,17 @@ export async function deleteDefinition(section, id) {
 const _threadMessages = {};
 
 /** Select a thread by ID — switches active thread, restores its messages. */
+/** Read the thread's launch settings into `threadLaunch` (model, effort, permission mode, provider). */
+export async function loadLaunch(threadId) {
+  try {
+    const res = await authFetch(`/api/threads/${encodeURIComponent(threadId)}/launch`);
+    const body = res.ok ? await res.json() : null;
+    if (activeThreadId.peek() === threadId) threadLaunch.value = body;
+  } catch {
+    if (activeThreadId.peek() === threadId) threadLaunch.value = null;
+  }
+}
+
 export function selectThread(threadId) {
   compactPanel.value = 'conversation';
   const prev = activeThreadId.value;
@@ -1392,6 +1415,9 @@ export function selectThread(threadId) {
     // A thread switch is a new selection generation: pending detail requests for the old view are void.
     dismissTraceSelection();
     selectedEvent.value = null;
+    inspectTarget.value = null;
+    selectedSpanId.value = null;
+    threadLaunch.value = null;
     messages.value = _threadMessages[threadId] ?? [];
     threadData.value = allThreads.value.find((t) => t.threadId === threadId) ?? null;
   });
@@ -1791,6 +1817,7 @@ function writeHash() {
   if (activePanel.value !== 'conversation') params.set('panel', activePanel.value);
   if (!projectSidebarOpen.value) params.set('sidebar', '0');
   if (!detailDrawerOpen.value) params.set('detail', '0');
+  if (rightTab.value !== 'context') params.set('rtab', rightTab.value);
   const hash = params.toString();
   // Replace silently — no history entry per state change
   history.replaceState(null, '', hash ? `#${hash}` : location.pathname);
@@ -1805,6 +1832,7 @@ function restoreFromHash() {
   if (h.panel) activePanel.value = h.panel;
   if (h.sidebar === '0') projectSidebarOpen.value = false;
   if (h.detail === '0') detailDrawerOpen.value = false;
+  if (RIGHT_TABS.includes(h.rtab)) rightTab.value = h.rtab;
 }
 
 // ---------------------------------------------------------------------------
@@ -1829,6 +1857,16 @@ export function init() {
   setInterval(loadWorktrees, 30000);
   setInterval(loadTokenUsage, 10000); // token usage updates after each message + periodic
 
+  // A thread opened before the list arrived reads its launch settings once it is listed.
+  let launchRequested = null;
+  effect(() => {
+    const id = activeThreadId.value;
+    if (!id || launchRequested === id) return;
+    if (!allThreads.value.some((t) => t.threadId === id)) return;
+    launchRequested = id;
+    loadLaunch(id);
+  });
+
   // Sync view state → URL hash on any change
   effect(() => {
     // Touch all signals to subscribe
@@ -1841,6 +1879,7 @@ export function init() {
     activePanel.value;
     projectSidebarOpen.value;
     detailDrawerOpen.value;
+    rightTab.value;
     writeHash();
   });
 

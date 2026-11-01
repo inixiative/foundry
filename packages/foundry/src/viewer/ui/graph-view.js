@@ -79,7 +79,7 @@ function useVisible(ref) {
 
 /** The thread's `flow:<id>` stream, held only while `active`. A re-hold starts from a fresh snapshot.
  * State held for another thread is never returned, even on the render before the effect resets it. */
-function useFlowStream(threadId, active) {
+export function useFlowStream(threadId, active) {
   const [flow, setFlow] = useState(() => emptyFlow(threadId));
   useEffect(() => {
     setFlow(emptyFlow(threadId));
