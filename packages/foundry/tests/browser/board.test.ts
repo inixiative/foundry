@@ -147,11 +147,21 @@ test('the board: a pending approval is answered from its card, filters narrow it
     await working.locator('.board-card', { hasText: 'Rewrite the setup guide' }).waitFor();
     expect(await page.locator('.board-button-count').innerText()).toBe('1');
 
-    // A project filter narrows every column.
-    await page.locator('.board-filter', { hasText: 'Docs' }).click();
+    // Category chips (Project ▾ · Kingdom ▾ · Device ▾): a project narrows every column and its count.
+    const filters = page.getByRole('toolbar', { name: 'Filters' });
+    await filters.getByRole('button', { name: /^Project/ }).click();
+    await page
+      .getByRole('group', { name: 'Project' })
+      .getByRole('button', { name: /^Docs/ })
+      .click();
     await until(async () => (await needs.locator('.board-card').count()) === 0, 'Docs only');
     expect(await working.locator('.board-card').count()).toBe(1);
-    await page.locator('.board-filter', { hasText: 'Everything' }).click();
+    expect(await needs.locator('.rail-pane-count').innerText()).toBe('0');
+    expect(await filters.getByRole('button', { name: /^Project/ }).innerText()).toContain('1');
+    // Show quiet sits in the same row as the chips.
+    await filters.locator('.board-quiet-toggle').waitFor();
+    await filters.getByRole('button', { name: 'Clear 1' }).click();
+    await needs.locator('.board-card', { hasText: 'Checkout errors since 2:02' }).waitFor();
 
     // Quiet threads stay off the board until asked for; the toggle's count is the column's.
     expect(await page.locator('.board-column--quiet').count()).toBe(0);

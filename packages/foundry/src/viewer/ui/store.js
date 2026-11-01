@@ -106,13 +106,13 @@ export const searchOpen = signal(false);
 export const projectHomeOpen = signal(false);
 /** Which project page is open: its home, or its Knowledge and chorus page. */
 export const projectPage = signal('home');
-/** The board's filter: 'all', 'project:<id>', 'global', 'forge' or 'this'. */
-export const boardFilter = signal('all');
+/** The board's chip filter: { project?: Set, kingdom?: Set, device?: Set } (FilterChips' selection). */
+export const boardFilter = signal({});
 
 /** Open the board filtered to one project. */
 export function openProjectBoard(projectId) {
   batch(() => {
-    boardFilter.value = `project:${projectId}`;
+    boardFilter.value = { project: new Set([projectId]) };
     projectHomeOpen.value = false;
     watchtowerOpen.value = false;
     searchOpen.value = false;

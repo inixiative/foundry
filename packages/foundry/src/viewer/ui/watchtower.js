@@ -14,7 +14,7 @@ import { FilterChips, passesChips } from './filter-chips.js';
 import { html, useEffect, useState } from './lib.js';
 import { settingsConfig } from './settings.js';
 import { allThreads, projects, prompts, selectThread, watchtowerOpen } from './store.js';
-import { threadName } from './thread-labels.js';
+import { projectKingdom, threadName } from './thread-labels.js';
 import { categoryOf, isClosedThread, subagentParentOf, threadState } from './thread-status.js';
 
 export const STAGES = [
@@ -82,7 +82,7 @@ export function Watchtower() {
     return () => document.removeEventListener('keydown', onKey);
   }, []);
   const label = (id) => (id ? (projects.value.find((p) => p.id === id)?.label ?? id) : 'Global');
-  const kingdomOf = (id) => projects.value.find((x) => x.id === id)?.tags?.[0] ?? 'This Foundry';
+  const kingdomOf = projectKingdom;
   const all = allThreads.value
     .filter((t) => !subagentParentOf(t.meta) && !isClosedThread(t))
     .map((thread) => {
