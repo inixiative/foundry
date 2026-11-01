@@ -227,7 +227,7 @@
 .tv-regions li[data-decision="error"] .tv-decision {
   background: hsl(7 100% 74% / 0.3);
 }
-.tv-round,
+.tv-layer,
 .tv-said,
 .tv-pointer,
 .tv-chime {

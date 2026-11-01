@@ -5,6 +5,7 @@
  */
 
 import { existsSync } from 'node:fs';
+import { join, relative } from 'node:path';
 import type { ArchiveSnapshot } from '@inixiative/archive';
 import { archiveReferences, provenanceReferences } from '@inixiative/archive/tags';
 import type {
@@ -13,7 +14,7 @@ import type {
   ThreadContext,
   ThreadReference,
 } from '@inixiative/foundry-core';
-import { checkoutPlace, gitContext } from '../git';
+import { checkoutPlace, gitContext, recreateWorktree } from '../git';
 
 const PER_KIND = 3;
 
@@ -45,6 +46,7 @@ export function snapshotReferences(snapshot: ArchiveSnapshot): ThreadReference[]
 
 type Git = typeof gitContext;
 type Place = typeof checkoutPlace;
+type Recreate = typeof recreateWorktree;
 type Pending = { again: boolean };
 
 /**
@@ -55,6 +57,8 @@ type Pending = { again: boolean };
 export class ThreadContextTracker {
   private readonly references = new Map<string, ThreadReference[]>();
   private readonly pending = new Map<string, Pending>();
+  /** Threads whose released worktree is being created again: derive leaves their record alone. */
+  private readonly recreating = new Set<string>();
   /** Threads derive one at a time, so a startup capture of every thread never fans out git. */
   private queue: Promise<void> = Promise.resolve();
 
@@ -64,6 +68,7 @@ export class ThreadContextTracker {
       changed(thread: Thread): void;
       git?: Git;
       place?: Place;
+      recreate?: Recreate;
     },
   ) {}
 
@@ -96,7 +101,7 @@ export class ThreadContextTracker {
 
   private async derive(threadId: string): Promise<void> {
     const thread = this.options.thread(threadId);
-    if (!thread || thread.disposed) return;
+    if (!thread || thread.disposed || this.recreating.has(threadId)) return;
     const cwd = thread.meta.cwd;
     const prior = thread.meta.context;
     // A recorded checkout that is gone from disk was released: keep where it was, mark it released.
@@ -127,6 +132,54 @@ export class ThreadContextTracker {
       references: this.references.get(threadId) ?? prior?.references ?? [],
     };
     return this.publish(thread, next);
+  }
+
+  /**
+   * Create a released worktree again (FEAT-003 "recreate") from its recorded branch with the
+   * repository's worktree mode. Refused unless the thread's checkout is released and its branch is
+   * known. The record reads `recreating` while the command runs, then `live` (the thread's cwd moves
+   * to the new worktree if the mode put it elsewhere) or `released` with the command's error.
+   */
+  recreate(threadId: string): { started: Promise<void> } | { error: string } {
+    const thread = this.options.thread(threadId);
+    const context = thread?.meta.context;
+    const checkout = context?.checkout;
+    if (!thread || thread.disposed) return { error: 'thread not found' };
+    if (this.recreating.has(threadId)) return { error: 'a recreate is already running' };
+    if (!checkout || checkout.state !== 'released' || checkout.mode === 'none')
+      return { error: 'only a released worktree can be recreated' };
+    const branch = context.branch ?? thread.meta.branch;
+    if (!branch || !checkout.root || !checkout.path)
+      return { error: 'the released worktree has no recorded branch or repository' };
+    const { mode, root, path } = checkout;
+    const { updatedAt: _updatedAt, ...kept } = context;
+    this.publish(thread, { ...kept, checkout: { ...checkout, state: 'recreating' } });
+    this.recreating.add(threadId);
+    const started = (async () => {
+      const result = await (this.options.recreate ?? recreateWorktree)(
+        { mode, root, path },
+        branch,
+      ).catch((error: unknown) => ({ error: String((error as Error)?.message ?? error) }));
+      this.recreating.delete(threadId);
+      const current = thread.meta.context;
+      if ('error' in result) {
+        if (current?.checkout) {
+          const { updatedAt: _at, ...rest } = current;
+          this.publish(thread, {
+            ...rest,
+            checkout: { ...current.checkout, state: 'released', error: result.error },
+          });
+        }
+        return;
+      }
+      if (result.path !== path && thread.meta.cwd) {
+        thread.meta.cwd = join(result.path, relative(path, thread.meta.cwd));
+        // Instruction files are discovered from the cwd: re-read them on the next turn.
+        for (const layer of thread.stack.layers) layer.invalidate();
+      }
+      await this.refresh(threadId);
+    })();
+    return { started };
   }
 
   private publish(thread: Thread, next: Omit<ThreadContext, 'updatedAt'>): void {

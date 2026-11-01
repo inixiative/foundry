@@ -11,7 +11,9 @@
  */
 
 import { html, useEffect, useRef, useState } from './lib.js';
+import { composerDestination, separateViews } from './message-box.js';
 import { LoopBuilder } from './message-menu.js';
+import { settingsConfig } from './settings.js';
 import { snooze, tomorrowMorning } from './snooze.js';
 import {
   actionPaletteOpen,
@@ -136,14 +138,14 @@ export function paletteActions() {
           name: 'To /btw',
           hint: 'only you and your agent',
           key: '/btw',
-          ...SOON('Posting to /btw from Foundry isn’t built yet'),
+          run: ({ route }) => route('btw'),
         },
         {
           id: 'aside',
           name: 'As an /aside',
           hint: 'people only',
           key: '/aside',
-          ...SOON('Posting an aside isn’t built yet'),
+          run: ({ route }) => route('aside'),
         },
         {
           id: 'other',
@@ -203,22 +205,38 @@ export function ActionPalette({ onSend }) {
   const input = useRef(null);
   const open = actionPaletteOpen.value;
   useEffect(() => {
-    if (open) {
-      setQuery('');
-      setAt(0);
-      requestAnimationFrame(() => input.current?.focus());
+    if (!open) return;
+    setAt(0);
+    // Opened by "/" in an empty box: whatever was typed there before this input took focus
+    // belongs to the palette (a fast "/btw " lands in the box first).
+    const box = document.querySelector('textarea.chat-input');
+    const carried = open === 'slash' ? (box?.value ?? '') : '';
+    if (carried) composerFill.value = '';
+    if (carried && /^(btw|aside)\s/.test(carried) && !separateViews(settingsConfig.peek())) {
+      route(/^(btw|aside)/.exec(carried)[1], carried.replace(/^(btw|aside)\s/, ''));
+      return;
     }
+    setQuery(carried);
+    input.current?.focus();
   }, [open]);
   const groups = filterActions(paletteActions(), query);
   const flat = groups.flatMap(([, items]) => items);
   const close = () => {
     actionPaletteOpen.value = false;
   };
+  // Send this draft to /btw or an aside: the box's label switches, and focus goes back to it.
+  const route = (destination, rest = '') => {
+    close();
+    composerDestination.value = destination;
+    if (rest) composerFill.value = rest;
+    document.querySelector('textarea.chat-input')?.focus();
+  };
   const run = (action) => {
     if (action.disabled) return showToast(action.disabled, 'warn');
     close();
     const threadId = activeThreadId.peek();
     action.run({
+      route,
       threadId,
       send: onSend,
       openLoop: () => {
@@ -249,6 +267,12 @@ export function ActionPalette({ onSend }) {
         ? html`<div class="action-palette" role="dialog" aria-label="Actions">
           <input ref=${input} class="action-palette-input" placeholder="Do something with this thread or this message…"
             value=${query} onInput=${(e) => {
+              // "/btw " or "/aside " (the "/" opened the palette) switches the box's destination.
+              const typed = /^(btw|aside)\s/.exec(e.target.value);
+              if (typed && !separateViews(settingsConfig.peek())) {
+                route(typed[1]);
+                return;
+              }
               setQuery(e.target.value);
               setAt(0);
             }} onKeyDown=${onKeyDown} />

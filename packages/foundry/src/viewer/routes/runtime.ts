@@ -935,6 +935,20 @@ export function registerRuntimeRoutes(app: Hono, deps: RuntimeRoutesDeps): { tur
     return c.json(threadToJSON(thread));
   });
 
+  // -- Recreate a released worktree with the project's worktree mode (FEAT-003) --
+
+  app.post('/api/threads/:id/worktree/recreate', (c) => {
+    const id = c.req.param('id');
+    if (!directory.get(id)) return c.json({ error: 'thread not found' }, 404);
+    if (!threadContext) return c.json({ error: 'thread context is not tracked here' }, 503);
+    const result = threadContext.recreate(id);
+    if ('error' in result) return c.json({ error: result.error }, 409);
+    void result.started.catch((error: unknown) =>
+      console.warn('[Viewer] worktree recreate failed:', (error as Error).message ?? error),
+    );
+    return c.json(threadToJSON(directory.get(id)!), 202);
+  });
+
   // -- Revert thread to a message --
 
   app.post('/api/threads/:id/revert', async (c) => {

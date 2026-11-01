@@ -10,8 +10,8 @@ import { join, resolve, sep } from 'node:path';
 // Git worktree utilities — read-only detection of existing worktrees
 // ---------------------------------------------------------------------------
 //
-// Foundry doesn't create or destroy worktrees. The user manages them.
-// These utilities detect what's available so threads can be assigned to one.
+// Detection of existing worktrees so threads can be assigned to one, and recreating a released
+// worktree with the project's own worktree mode (FEAT-003). Foundry never destroys a worktree.
 //
 // Adapted from hivemind/src/git/getWorktrees.ts (async Bun.spawn, not execSync).
 // ---------------------------------------------------------------------------
@@ -203,6 +203,8 @@ export interface CheckoutPlace {
   mode: WorktreeMode;
   /** Root of the worktree containing the directory. */
   path: string;
+  /** The repository's main checkout, where the mode's commands run. */
+  root: string;
   /** The repository's main checkout (the original clone), not a linked worktree. */
   main: boolean;
   /** Template mode: the slot it holds (the main checkout is slot 0). */
@@ -217,7 +219,44 @@ export async function checkoutPlace(cwd: string): Promise<CheckoutPlace | undefi
   if (!own || !mainRoot) return undefined;
   const mode = worktreeMode(mainRoot);
   const slot = mode === 'template' ? (own.isMain ? 0 : worktreeSlot(own.path)) : undefined;
-  return { mode, path: own.path, main: own.isMain, ...(slot === undefined ? {} : { slot }) };
+  return {
+    mode,
+    path: own.path,
+    root: mainRoot,
+    main: own.isMain,
+    ...(slot === undefined ? {} : { slot }),
+  };
+}
+
+/**
+ * Create a worktree again on an existing branch with the repository's worktree mode (FEAT-003
+ * "recreate"): template runs `bun run worktree:create <branch>` (a fresh slot and setup, at
+ * `<root>/.worktrees/<branch with / as ->`); classic runs `git worktree add <path> <branch>`.
+ * Never `--force`. Returns the new worktree's root, or the command's failure.
+ */
+export async function recreateWorktree(
+  place: { mode: WorktreeMode; root: string; path: string },
+  branch: string,
+): Promise<{ path: string } | { error: string }> {
+  const command =
+    place.mode === 'template'
+      ? ['bun', 'run', 'worktree:create', branch]
+      : ['git', 'worktree', 'add', place.path, branch];
+  const proc = Bun.spawn(command, { cwd: place.root, stdout: 'pipe', stderr: 'pipe' });
+  const [out, err, code] = await Promise.all([
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
+    proc.exited,
+  ]);
+  if (code !== 0)
+    return {
+      error: `${command.slice(0, 3).join(' ')} failed (exit ${code}): ${`${err}\n${out}`.trim().slice(-600)}`,
+    };
+  const path =
+    place.mode === 'template'
+      ? findByBranch(await listWorktrees(place.root), branch)?.path
+      : place.path;
+  return path ? { path } : { error: `no worktree holds ${branch} after create` };
 }
 
 export interface BranchCommit {
