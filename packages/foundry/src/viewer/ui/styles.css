@@ -8428,3 +8428,37 @@ a.thread-ref:hover {
   color: hsl(var(--error));
   font-weight: 600;
 }
+
+/* Rail ⋯: always visible (dim until hover) and its menu opens anchored to the row, never inline. */
+.tree-node { position: relative; }
+.tree-node .thread-actions { display: flex !important; opacity: 1; }
+.tree-node .thread-action-trigger { opacity: 0.55; background: none; border-color: transparent; font-size: 13px; }
+.tree-node:hover .thread-action-trigger,
+.tree-node .thread-actions-open .thread-action-trigger { opacity: 1; background: var(--surface2); }
+.thread-action-menu {
+  background: hsl(var(--card)) !important;
+  position: absolute;
+  right: 4px;
+  top: calc(100% - 4px);
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  min-width: 140px;
+  padding: 4px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  box-shadow: 0 10px 30px rgb(0 0 0 / 0.35);
+}
+.thread-action-menu button {
+  background: none;
+  border: 0;
+  text-align: left;
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+  padding: 6px 9px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.thread-action-menu button:hover { background: var(--surface2); }

@@ -31,14 +31,42 @@ const readViews = () => {
   }
 };
 
-/** The views showing, in order; more than one shows them side by side. Never empty. */
+/** The views switched on, in order. Never empty. */
 export const openViews = signal(readViews());
 
-/** One segment toggles its view; turning the last one off leaves the thread. */
+/** Wide screens split the switched-on views into columns; narrower ones show one at a time. */
+const WIDE = '(min-width: 1600px)';
+const wideNow = () => typeof matchMedia === 'function' && matchMedia(WIDE).matches;
+export const wideViews = signal(wideNow());
+if (typeof matchMedia === 'function')
+  matchMedia(WIDE).addEventListener?.('change', () => {
+    wideViews.value = wideNow();
+  });
+/** The one view showing on a narrower screen: the last one picked. */
+export const primaryView = signal(readViews().at(-1) ?? 'thread');
+
+/** What actually shows: every switched-on view when wide, else the primary one. Never touches the side panels. */
+export const shownViews = () =>
+  wideViews.value
+    ? openViews.value
+    : [openViews.value.includes(primaryView.value) ? primaryView.value : openViews.value[0]];
+
+/** One segment: wide, it toggles its column (turning the last one off leaves the thread); narrower, it picks the view that shows. */
 export function toggleView(id) {
+  if (!wideViews.value) {
+    primaryView.value = id;
+    if (!openViews.value.includes(id))
+      openViews.value = VIEW_IDS.filter((v) => v === id || openViews.value.includes(v));
+    return save();
+  }
   const on = openViews.value.includes(id);
   const next = VIEW_IDS.filter((v) => (v === id ? !on : openViews.value.includes(v)));
   openViews.value = next.length ? next : ['thread'];
+  if (on && primaryView.value === id) primaryView.value = openViews.value.at(-1);
+  if (!on) primaryView.value = id;
+  save();
+}
+function save() {
   try {
     localStorage.setItem(OPEN_VIEWS, JSON.stringify(openViews.value));
   } catch {
@@ -60,7 +88,7 @@ export function ThreadViewSegments({ conversation }) {
   return html`<div class="thread-views-bar">
     <div class="thread-segments band-tabs" role="group" aria-label="Thread views">
       ${SEGMENTS.map(([id, label]) => {
-        const on = openViews.value.includes(id);
+        const on = shownViews().includes(id);
         return html`<button key=${id} aria-pressed=${on}
           class="thread-segment center-view ${on ? 'center-view--active' : ''}"
           onClick=${() => toggleView(id)}>${label}</button>`;

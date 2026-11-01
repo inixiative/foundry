@@ -71,7 +71,13 @@ import {
   threadName,
   threadPlace,
 } from './thread-labels.js';
-import { AsidesSince, AsidesView, BtwView, openViews, ThreadViewSegments } from './thread-views.js';
+import {
+  AsidesSince,
+  AsidesView,
+  BtwView,
+  shownViews,
+  ThreadViewSegments,
+} from './thread-views.js';
 import {
   dictationSupported,
   speakReplies,
@@ -1250,8 +1256,8 @@ export function Conversation({ onTraceSelect, onLayerClick }) {
           ? html`<${AsidesSince} conversation=${threadData.value?.conversation} />`
           : null
       }
-      <div class="thread-views ${openViews.value.length > 1 ? `thread-views--columns thread-views--${openViews.value.length}` : ''}" hidden=${view !== 'conversation'}>
-      <div class="chat-messages center-frame" ref=${scrollRef} hidden=${!openViews.value.includes('thread')}>
+      <div class="thread-views ${shownViews().length > 1 ? `thread-views--columns thread-views--${shownViews().length}` : ''}" hidden=${view !== 'conversation'}>
+      <div class="chat-messages center-frame" ref=${scrollRef} hidden=${!shownViews().includes('thread')}>
         <${HistoryPager} threadId=${threadId} count=${msgList.length} onLoadOlder=${handleLoadOlder} />
         <${CacheStatus} msgList=${msgList} />
         ${
@@ -1273,8 +1279,8 @@ export function Conversation({ onTraceSelect, onLayerClick }) {
                   onTraceClick=${handleTraceClick} />`,
         )}
       </div>
-      ${openViews.value.includes('btw') ? html`<${BtwView} entries=${threadData.value?.conversation?.btw} />` : null}
-      ${openViews.value.includes('asides') ? html`<${AsidesView} entries=${threadData.value?.conversation?.asides} />` : null}
+      ${shownViews().includes('btw') ? html`<${BtwView} entries=${threadData.value?.conversation?.btw} />` : null}
+      ${shownViews().includes('asides') ? html`<${AsidesView} entries=${threadData.value?.conversation?.asides} />` : null}
       </div>
       <${ThreadNowStrip} />
       <${PromptList} threadId=${threadId} />

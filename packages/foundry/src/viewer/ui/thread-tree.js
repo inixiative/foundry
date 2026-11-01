@@ -83,37 +83,15 @@ function ThreadActions({ thread }) {
   return html`
     <div class="thread-actions ${open ? 'thread-actions-open' : ''}">
       <button class="thread-action-btn thread-action-trigger" onClick=${toggle}
-        title="Actions" aria-expanded=${open}>${open ? '×' : '⋯'}</button>
+        title="Thread actions" aria-haspopup="menu" aria-expanded=${open}>⋯</button>
       ${
         open
-          ? html`
-        ${
-          canPause
-            ? html`
-          <button class="thread-action-btn" onClick=${run('thread:pause')}
-            title="Pause thread">pause</button>
-        `
-            : null
-        }
-        ${
-          canResume
-            ? html`
-          <button class="thread-action-btn" onClick=${run('thread:resume')}
-            title="Resume thread">resume</button>
-        `
-            : null
-        }
-        ${
-          !isArchived
-            ? html`
-          <button class="thread-action-btn" onClick=${run('thread:archive')}
-            title="Archive thread">archive</button>
-        `
-            : null
-        }
-        <button class="thread-action-btn" onClick=${run('thread:inspect')}
-          title="Inspect thread state">inspect</button>
-      `
+          ? html`<div class="thread-action-menu" role="menu" onClick=${(e) => e.stopPropagation()}>
+        ${canPause ? html`<button role="menuitem" onClick=${run('thread:pause')}>Pause</button>` : null}
+        ${canResume ? html`<button role="menuitem" onClick=${run('thread:resume')}>Resume</button>` : null}
+        ${!isArchived ? html`<button role="menuitem" onClick=${run('thread:archive')}>Archive</button>` : null}
+        <button role="menuitem" onClick=${run('thread:inspect')}>Inspect</button>
+      </div>`
           : null
       }
     </div>
