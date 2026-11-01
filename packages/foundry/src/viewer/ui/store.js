@@ -1213,6 +1213,8 @@ export async function loadWorktrees() {
  * requests). Not prompts: nothing runs until the owner accepts in Kingdom.
  */
 export const incoming = signal([]);
+/** The incoming request open in the centre (its request view), or null. */
+export const incomingOpenId = signal(null);
 
 export async function loadIncoming() {
   try {
@@ -1507,6 +1509,7 @@ export async function loadLaunch(threadId) {
 export function selectThread(threadId) {
   compactPanel.value = 'conversation';
   aboutTarget.value = null;
+  incomingOpenId.value = null;
   const prev = activeThreadId.value;
   if (prev === threadId) return;
 

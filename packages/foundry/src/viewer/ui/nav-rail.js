@@ -11,6 +11,7 @@
  * scopes, the project list, and the selected scope's threads. Rows are two lines: the name, then the
  * status icon, the project and any counts.
  */
+import { IncomingRows } from './incoming.js';
 import { html } from './lib.js';
 import { NavFooter } from './nav-footer.js';
 import { ProjectSidebar } from './project-sidebar.js';
@@ -37,10 +38,10 @@ function RailToggle() {
   </div>`;
 }
 
-function Pane({ title, count, children, empty }) {
+function Pane({ title, count, children, empty, lead }) {
   return html`<section class="rail-pane" aria-label=${title}>
     <h3 class="rail-pane-head"><span>${title}</span><span class="rail-pane-count">${count}</span></h3>
-    <div class="rail-frame">${count ? children : html`<div class="rail-empty">${empty}</div>`}</div>
+    <div class="rail-frame">${lead ?? null}${count ? children : html`<div class="rail-empty">${empty}</div>`}</div>
   </section>`;
 }
 
@@ -56,7 +57,7 @@ function OpenRail() {
     );
   return html`<div class="active-rail">
     <${Pane} title="Yours" count=${yours.length} empty="No open threads of your own.">${rows(yours)}</${Pane}>
-    <${Pane} title="Shared" count=${shared.length} empty="No thread is shared with anyone.">${rows(shared)}</${Pane}>
+    <${Pane} title="Shared" count=${shared.length} empty="No thread is shared with anyone." lead=${html`<${IncomingRows} />`}>${rows(shared)}</${Pane}>
   </div>`;
 }
 

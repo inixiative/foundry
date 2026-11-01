@@ -8840,3 +8840,165 @@ a.thread-ref:hover {
 .plan-step-row {
   grid-template-columns: 16px auto 1fr auto auto;
 }
+.incoming-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 4px;
+}
+.incoming-row {
+  display: grid;
+  gap: 1px;
+  text-align: left;
+  padding: 6px 10px;
+  border: 1px dashed hsl(var(--warning, 38 87% 69%) / 0.55);
+  border-radius: 8px;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  background: repeating-linear-gradient(135deg, hsl(38 87% 69% / 0.07) 0 6px, transparent 6px 12px);
+}
+.incoming-row.is-open,
+.incoming-row:hover {
+  border-style: solid;
+}
+.incoming-row > span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 12px;
+}
+.incoming-row-who {
+  font-weight: 600;
+  font-size: 13px !important;
+}
+.incoming-row-what,
+.incoming-row-route {
+  color: hsl(var(--muted-foreground, 0 0% 65%));
+}
+.incoming-glyph {
+  color: hsl(38 87% 69%);
+  margin-right: 6px;
+}
+.request-view {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 28px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  overflow: auto;
+  height: 100%;
+}
+.request-head {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+.request-head h2 {
+  margin: 2px 0 0;
+  font-size: 1.3rem;
+}
+.request-eyebrow {
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: hsl(38 87% 69%);
+}
+.request-box {
+  border: 1px solid hsl(var(--border, 0 0% 20%));
+  border-radius: 12px;
+  padding: 14px 16px;
+}
+.request-box h4 {
+  margin: 0 0 8px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: hsl(var(--muted-foreground, 0 0% 65%));
+}
+.request-terms {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  font-size: 13px;
+}
+.request-terms i {
+  color: hsl(var(--muted-foreground, 0 0% 65%));
+  font-style: normal;
+  margin-right: 4px;
+}
+.request-routes {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.request-route {
+  display: flex;
+  gap: 10px;
+  padding: 10px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  cursor: pointer;
+}
+.request-route.is-on {
+  border-color: hsl(var(--app-primary) / 0.6);
+  background: hsl(var(--app-primary) / 0.06);
+}
+.request-route b {
+  margin-right: 8px;
+}
+.request-route small {
+  display: block;
+  margin-top: 4px;
+  color: hsl(var(--muted-foreground, 0 0% 65%));
+}
+.request-safe {
+  font-size: 12px;
+  color: hsl(var(--muted-foreground, 0 0% 65%));
+  margin: 0;
+}
+.request-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+.incoming-row-when {
+  margin-left: 8px;
+  opacity: 0.7;
+}
+.request-compose {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.request-compose textarea {
+  min-height: 56px;
+}
+.request-route {
+  border-color: hsl(var(--border, 0 0% 20%));
+}
+.request-route select {
+  display: block;
+  width: auto;
+  min-width: 160px;
+  margin: 6px 0 2px;
+}
+.request-route input[type="radio"] {
+  accent-color: hsl(var(--app-primary));
+  margin-top: 3px;
+}
+.request-head .incoming-glyph {
+  font-size: 22px;
+}
+.request-actions .proj-btn {
+  text-decoration: none;
+  font-size: 14px;
+  padding: 7px 14px;
+  border-radius: 8px;
+}
+.request-compose .composer-note-hint {
+  padding: 0;
+  color: hsl(var(--muted-foreground, 0 0% 65%));
+}

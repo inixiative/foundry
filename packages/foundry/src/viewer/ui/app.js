@@ -16,6 +16,7 @@ import { Conversation } from './conversation.js';
 import { FeedbackInbox } from './feedback.js';
 import { GlossReview } from './gloss.js';
 import { initHotkeys, registerDefaults } from './hotkeys.js';
+import { RequestView } from './incoming.js';
 import { html, render, useEffect, useRef, useState } from './lib.js';
 import { NavRail } from './nav-rail.js';
 import { RightPanel } from './right-panel.js';
@@ -39,6 +40,7 @@ import {
   forgeMasterOpen,
   helpOpen,
   incoming,
+  incomingOpenId,
   init,
   inspectLayer,
   inspectTarget,
@@ -348,11 +350,13 @@ function App() {
                 ? html`<${FeedbackInbox} />`
                 : html`
             ${
-              boardOpen.value
-                ? html`<${Board} />`
-                : activePanel.value === 'feedback'
-                  ? html`<${FeedbackInbox} key=${scopeProjectId() ?? 'global'} projectId=${scopeProjectId()} />`
-                  : html`<${Conversation} onSpanSelect=${handleSpanSelect} onLayerClick=${inspectLayer} />`
+              incomingOpenId.value && incoming.value.some((r) => r.id === incomingOpenId.value)
+                ? html`<${RequestView} />`
+                : boardOpen.value
+                  ? html`<${Board} />`
+                  : activePanel.value === 'feedback'
+                    ? html`<${FeedbackInbox} key=${scopeProjectId() ?? 'global'} projectId=${scopeProjectId()} />`
+                    : html`<${Conversation} onSpanSelect=${handleSpanSelect} onLayerClick=${inspectLayer} />`
             }
           `
           }
