@@ -308,24 +308,50 @@ function tomlLine(key: string, value: unknown): string | undefined {
   }
 }
 
+/** Tables whose entries stand alone: one entry that can't be written back drops only itself. */
+const CODEX_PER_ENTRY = new Set<string>(['mcp_servers', 'plugins', 'marketplaces']);
+
 /**
  * The allowlisted part of the user's Codex config.toml, as TOML lines; empty when there is none.
- * A key whose value can't be written back unchanged is left out, never written altered.
+ * A value that can't be written back unchanged (a TOML date, `-0`) is left out, never written
+ * altered: one MCP server, plugin or marketplace entry at a time, any other key whole. Each drop,
+ * and a config Bun can't read, is reported through `warn`.
  */
-export function codexUserConfig(userDirectory: string): string {
+export function codexUserConfig(
+  userDirectory: string,
+  warn: (message: string) => void = console.warn,
+): string {
+  const file = join(userDirectory, 'config.toml');
+  let text: string;
+  try {
+    text = readFileSync(file, 'utf8');
+  } catch {
+    return ''; // No config: nothing to take.
+  }
   let parsed: Record<string, unknown>;
   try {
-    parsed = Bun.TOML.parse(readFileSync(join(userDirectory, 'config.toml'), 'utf8')) as Record<
-      string,
-      unknown
-    >;
-  } catch {
-    return ''; // Missing or unreadable: Codex would refuse it in the user's own home too.
+    parsed = Bun.TOML.parse(text) as Record<string, unknown>;
+  } catch (error) {
+    warn(`[Codex] ${file} could not be read (${(error as Error).message}); none of it is loaded`);
+    return '';
   }
-  return CODEX_USER_KEYS.filter((key) => key in parsed)
-    .map((key) => tomlLine(key, key === 'mcp_servers' ? withoutLoginEnv(parsed[key]) : parsed[key]))
-    .filter((line): line is string => line !== undefined)
-    .join('');
+  const lines: string[] = [];
+  for (const key of CODEX_USER_KEYS) {
+    if (!(key in parsed)) continue;
+    let value = key === 'mcp_servers' ? withoutLoginEnv(parsed[key]) : parsed[key];
+    if (CODEX_PER_ENTRY.has(key) && value && typeof value === 'object' && !Array.isArray(value))
+      value = Object.fromEntries(
+        Object.entries(value).filter(([name, entry]) => {
+          if (tomlLine('entry', entry)) return true;
+          warn(`[Codex] ${key}.${name} in ${file} can't be carried over unchanged; left out`);
+          return false;
+        }),
+      );
+    const line = tomlLine(key, value);
+    if (line) lines.push(line);
+    else warn(`[Codex] ${key} in ${file} can't be carried over unchanged; left out`);
+  }
+  return lines.join('');
 }
 
 /** A Foundry-owned CODEX_HOME for a main thread: the user's skills, rules and prompts by link. */

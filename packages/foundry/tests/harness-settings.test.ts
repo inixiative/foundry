@@ -276,7 +276,7 @@ test('a Codex main thread takes only the allowlisted part of the user’s config
   // No config, or an unreadable one, gives nothing.
   expect(codexUserConfig(join(root, 'missing'))).toBe('');
   writeFileSync(join(root, 'config.toml'), 'not = = toml');
-  expect(codexUserConfig(root)).toBe('');
+  expect(codexUserConfig(root, () => {})).toBe('');
 });
 
 test('a Codex MCP server never gets the user’s own Codex home or login from their config', () => {
@@ -323,6 +323,32 @@ test('a Codex config value that can’t be written back unchanged is left out, n
   // Bun reads a TOML date as a Temporal value that can't be written back, so `hooks` is
   // dropped whole rather than rewritten.
   expect(parsed.hooks).toBeUndefined();
+});
+
+test('one Codex MCP server that can’t be carried over drops only itself, with a warning', () => {
+  const root = scratch();
+  writeFileSync(
+    join(root, 'config.toml'),
+    [
+      '[mcp_servers.good]',
+      'command = "/bin/good"',
+      '[mcp_servers.dated]',
+      'command = "/bin/dated"',
+      'since = 1979-05-27T07:32:00Z',
+    ].join('\n'),
+  );
+  const warnings: string[] = [];
+  const parsed = Bun.TOML.parse(codexUserConfig(root, (m) => warnings.push(m))) as {
+    mcp_servers: Record<string, unknown>;
+  };
+  expect(Object.keys(parsed.mcp_servers)).toEqual(['good']);
+  expect(warnings).toHaveLength(1);
+  expect(warnings[0]).toContain('mcp_servers.dated');
+  // A config Bun can't read loads nothing, and says so.
+  writeFileSync(join(root, 'config.toml'), 'big = 99999999999999999999');
+  warnings.length = 0;
+  expect(codexUserConfig(root, (m) => warnings.push(m))).toBe('');
+  expect(warnings).toHaveLength(1);
 });
 
 test('a Codex home gets the user’s skills, rules and prompts by link', () => {

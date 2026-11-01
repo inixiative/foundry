@@ -189,7 +189,9 @@ export class KingdomSubscriptionAuthentication implements NativeAuthenticationPr
           this.writeCodexLogin(
             home,
             released,
-            harness ? CODEX_HOME_CONFIG + codexUserConfig(userCodex) : CODEX_HOME_CONFIG,
+            harness
+              ? CODEX_HOME_CONFIG + codexUserConfig(userCodex, this.options.warn)
+              : CODEX_HOME_CONFIG,
           );
           if (harness) shareCodexUserSetup(home, userCodex);
           env.CODEX_HOME = home;

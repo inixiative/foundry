@@ -968,10 +968,9 @@ export class CodexSessionAdapter implements SessionAdapter {
     const auth = await this._authentication?.prepare(opts.threadId, 'codex');
     const bindingId = auth?.bindingId ?? opts.threadId;
     // A main thread is the user's own Codex: their MCP servers, plugins, skills and rules.
-    const sources =
-      !opts.threadId.includes(':aux:') && !opts.nativeBridge?.toolPolicy
-        ? this._harnessSettings?.(opts.cwd)
-        : undefined;
+    const sources = !opts.threadId.includes(':aux:')
+      ? this._harnessSettings?.(opts.cwd)
+      : undefined;
     const existing = await this._store.load(bindingId, this.runtime);
 
     let ownedExit: Promise<number> | undefined;
