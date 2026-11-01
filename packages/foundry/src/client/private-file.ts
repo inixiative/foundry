@@ -19,8 +19,8 @@ import { dirname } from 'node:path';
 const MAX_PRIVATE_BYTES = 65_536;
 
 /**
- * Read a private JSON object without following symlinks: a regular file, mode 0600 or tighter,
- * at most 64 KiB. Errors name `label` and never include the file's contents.
+ * Read a private JSON object without following symlinks: a regular file with one link, owned by
+ * this user, mode 0600 or tighter, at most 64 KiB. Errors name `label` and never include the file's contents.
  */
 export function readPrivateJson(path: string, label: string): Record<string, unknown> {
   let fd: number;
@@ -35,6 +35,10 @@ export function readPrivateJson(path: string, label: string): Record<string, unk
   try {
     const stat = fstatSync(fd);
     if (!stat.isFile()) throw new Error(`${label} is not a regular file`);
+    // The same contract as @inixiative/signet's readPrivateJson: one link, owned by this user.
+    if (stat.nlink !== 1) throw new Error(`${label} has other hard links; refusing to read it`);
+    if (process.getuid && stat.uid !== process.getuid())
+      throw new Error(`${label} is not owned by this user`);
     if ((stat.mode & 0o077) !== 0)
       throw new Error(`${label} mode must be 0600; group/other bits are set`);
     if (stat.size > MAX_PRIVATE_BYTES) throw new Error(`${label} is too large`);
