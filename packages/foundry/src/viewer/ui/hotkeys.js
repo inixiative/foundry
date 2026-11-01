@@ -8,7 +8,7 @@
  * No dependencies. Supports chords, modifiers, and customizable bindings.
  */
 
-import { commandPaletteOpen, helpOpen } from './store.js';
+import { boardOpen, commandPaletteOpen, helpOpen, projectSidebarOpen } from './store.js';
 
 // ---------------------------------------------------------------------------
 // Hotkey registry
@@ -86,12 +86,198 @@ function eventToKey(e) {
 // Global listener
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// The message box: you never have to leave it
+// ---------------------------------------------------------------------------
+
+/** The visible message boxes, then the waiting stack: the only stops for Tab. */
+function tabStops() {
+  const visible = (el) => el.getBoundingClientRect().width > 0;
+  const boxes = [...document.querySelectorAll('textarea.chat-input')].filter(visible);
+  const stack = [...document.querySelectorAll('.prompt-stack')].filter(visible);
+  return boxes.concat(stack);
+}
+
+function focusMessageBox() {
+  const box = tabStops().find((el) => el.tagName === 'TEXTAREA');
+  if (!box) return false;
+  box.focus();
+  box.setSelectionRange(box.value.length, box.value.length);
+  return true;
+}
+
+function cycleTab(from, back) {
+  const stops = tabStops();
+  if (stops.length < 2) return false;
+  const at = stops.indexOf(from);
+  const next = stops[(at + (back ? -1 : 1) + stops.length) % stops.length];
+  next.focus();
+  return true;
+}
+
+/** The waiting stack's main action; a long command opens its full view first. */
+function stackPrimary(stack) {
+  const full = stack.querySelector('.prompt-full-link');
+  if (full) return full.click();
+  const btn = [...stack.querySelectorAll('.prompt-btn-approve, .prompt-btn')].find(
+    (b) => !b.disabled,
+  );
+  btn?.click();
+}
+
+function stackReject(stack) {
+  const btn = [...stack.querySelectorAll('.prompt-btn')].find(
+    (b) =>
+      !b.disabled &&
+      (b.classList.contains('prompt-btn-reject') ||
+        /Reject|Withdraw|Dismiss|Decline/.test(b.textContent)),
+  );
+  btn?.click();
+}
+
+function stackStep(stack, d) {
+  stack.querySelectorAll('.prompt-stack-step')[d < 0 ? 0 : 1]?.click();
+}
+
+function composerButton(title) {
+  return [...document.querySelectorAll('.chat-input-actions .chat-voice-btn')].find(
+    (b) => b.getBoundingClientRect().width > 0 && title.test(b.title),
+  );
+}
+
+/** ⌥ works while typing: the letter's binding, read from the physical key so macOS ⌥ characters never get typed. */
+const ALT_CODES = {
+  BracketLeft: '[',
+  BracketRight: ']',
+  Slash: '/',
+};
+function altTwin(e) {
+  if (e.code?.startsWith('Key')) return e.code.slice(3).toLowerCase();
+  if (e.code?.startsWith('Digit')) return e.code.slice(5);
+  return ALT_CODES[e.code];
+}
+
+const ALT_ONLY = {
+  f: () => composerButton(/attach/i)?.click(),
+  v: () => composerButton(/dictat/i)?.click(),
+  k: () => {
+    commandPaletteOpen.value = !commandPaletteOpen.value;
+  },
+};
+
+// The hold-⌥ overlay: what ⌥ does, without leaving the message box.
+let holdTimer = null;
+function showHoldKeys(on) {
+  document.querySelector('.hold-keys')?.remove();
+  if (!on) return;
+  const rows = [
+    ['⌥T ⌥B', 'Threads · Board'],
+    ['⌥1 ⌥2 ⌥3', 'Thread · Plan · Loop'],
+    ['⌥[ ⌥]', 'Left list · right panel'],
+    ['⌥↵ ⌥⌫', 'Approve · reject the waiting card'],
+    ['⌥← ⌥→', 'Previous · next waiting card'],
+    ['⌥F ⌥V', 'Attach a file · start voice'],
+    ['⌥K ⌘K', 'Command palette'],
+    ['Tab ⇧Tab', 'Message boxes and the waiting stack'],
+    ['Esc · /', 'Leave the message box · come back'],
+  ];
+  const el = document.createElement('div');
+  el.className = 'hold-keys';
+  el.setAttribute('role', 'tooltip');
+  const head = document.createElement('b');
+  head.textContent = '⌥ shortcuts · work while typing';
+  el.append(head);
+  for (const [k, what] of rows) {
+    const row = document.createElement('div');
+    const kbd = document.createElement('kbd');
+    kbd.textContent = k;
+    const span = document.createElement('span');
+    span.textContent = what;
+    row.append(kbd, span);
+    el.append(row);
+  }
+  document.body.append(el);
+}
+
 export function initHotkeys() {
   document.addEventListener('keydown', (e) => {
-    // Don't fire in inputs/textareas unless it's Escape
     if (!enabled) return;
     const tag = e.target.tagName;
-    if ((tag === 'INPUT' || tag === 'TEXTAREA') && e.key !== 'Escape') return;
+    const typing = tag === 'INPUT' || tag === 'TEXTAREA';
+    const inStack = e.target.classList?.contains('prompt-stack');
+
+    if (e.key === 'Alt') {
+      if (!e.repeat) {
+        clearTimeout(holdTimer);
+        holdTimer = setTimeout(() => showHoldKeys(true), 450);
+      }
+      return;
+    }
+
+    // Tab moves between the message boxes and the waiting stack, nothing else.
+    if (e.key === 'Tab' && (e.target.classList?.contains('chat-input') || inStack)) {
+      // Nothing else is a stop: with one box and no waiting card, Tab stays put.
+      e.preventDefault();
+      cycleTab(e.target, e.shiftKey);
+      return;
+    }
+
+    // On the waiting stack: Enter acts, ⌫ rejects, ←/→ step.
+    if (inStack && !e.altKey && !e.metaKey && !e.ctrlKey) {
+      const map = {
+        Enter: () => stackPrimary(e.target),
+        Backspace: () => stackReject(e.target),
+        Delete: () => stackReject(e.target),
+        ArrowLeft: () => stackStep(e.target, -1),
+        ArrowRight: () => stackStep(e.target, 1),
+      };
+      if (map[e.key]) {
+        e.preventDefault();
+        map[e.key]();
+        return;
+      }
+    }
+
+    if (e.altKey && !e.metaKey && !e.ctrlKey) {
+      clearTimeout(holdTimer);
+      showHoldKeys(false);
+      const stack = document.querySelector('.prompt-stack');
+      if (e.key === 'Enter' && stack) {
+        e.preventDefault();
+        return stackPrimary(stack);
+      }
+      if ((e.key === 'Backspace' || e.key === 'Delete') && stack) {
+        e.preventDefault();
+        return stackReject(stack);
+      }
+      if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && stack) {
+        e.preventDefault();
+        return stackStep(stack, e.key === 'ArrowLeft' ? -1 : 1);
+      }
+      const twin = altTwin(e);
+      const action = (twin && ALT_ONLY[twin]) || (twin && bindings.get(normalizeKey(twin))?.action);
+      if (action) {
+        e.preventDefault();
+        e.stopPropagation();
+        action();
+      }
+      return;
+    }
+
+    if (typing) {
+      // Esc leaves the message box (overlays still close through the escape binding).
+      if (e.key === 'Escape') {
+        e.target.blur();
+        bindings.get('escape')?.action();
+      }
+      return;
+    }
+
+    // / comes back to the message box.
+    if (e.key === '/' && !e.metaKey && !e.ctrlKey && focusMessageBox()) {
+      e.preventDefault();
+      return;
+    }
 
     const normalized = eventToKey(e);
     const binding = bindings.get(normalized);
@@ -101,6 +287,16 @@ export function initHotkeys() {
       e.stopPropagation();
       binding.action();
     }
+  });
+  document.addEventListener('keyup', (e) => {
+    if (e.key === 'Alt') {
+      clearTimeout(holdTimer);
+      showHoldKeys(false);
+    }
+  });
+  window.addEventListener('blur', () => {
+    clearTimeout(holdTimer);
+    showHoldKeys(false);
   });
 }
 
@@ -181,6 +377,20 @@ export function registerDefaults(actions) {
     description: 'The attention board',
     category: 'panels',
     action: actions.toggleBoard,
+  });
+  bind('t', {
+    description: 'Threads',
+    category: 'panels',
+    action: () => {
+      boardOpen.value = false;
+    },
+  });
+  bind('[', {
+    description: 'Open / fold the left list',
+    category: 'panels',
+    action: () => {
+      projectSidebarOpen.value = !projectSidebarOpen.value;
+    },
   });
   bind(']', {
     description: 'Open / fold the right panel',

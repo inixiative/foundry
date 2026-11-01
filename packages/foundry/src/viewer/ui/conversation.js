@@ -562,21 +562,22 @@ function ChatInput() {
           e.target.value = '';
         }} />
       <div class="chat-input-actions">
-        <button class="chat-voice-btn chat-attach-btn" onClick=${() => fileRef.current?.click()}
+        <button tabindex="-1" class="chat-voice-btn chat-attach-btn" onClick=${() => fileRef.current?.click()}
           title="Attach images" aria-label="Attach images">📎</button>
         ${
           dictationSupported
-            ? html`<button class="chat-voice-btn ${listening ? 'chat-voice-on' : ''}" onClick=${toggleDictation}
+            ? html`<button tabindex="-1" class="chat-voice-btn ${listening ? 'chat-voice-on' : ''}" onClick=${toggleDictation}
           title=${listening ? 'Stop dictation' : 'Dictate'} aria-pressed=${listening}>${listening ? '■' : '🎙'}</button>`
             : null
         }
         ${
           speechSupported
-            ? html`<button class="chat-voice-btn ${speakReplies.value ? 'chat-voice-on' : ''}" onClick=${toggleSpeakReplies}
+            ? html`<button tabindex="-1" class="chat-voice-btn ${speakReplies.value ? 'chat-voice-on' : ''}" onClick=${toggleSpeakReplies}
           title=${speakReplies.value ? 'Stop reading replies aloud' : 'Read replies aloud'} aria-pressed=${speakReplies.value}>${speakReplies.value ? '🔊' : '🔈'}</button>`
             : null
         }
         <button
+          tabindex="-1"
           class="chat-send-btn"
           onClick=${handleSubmit}
           disabled=${!sendable}
@@ -1161,7 +1162,7 @@ function PromptList({ threadId }) {
   const at = Math.min(index, pending.length - 1);
   const step = (d) => setIndex((at + d + pending.length) % pending.length);
   return html`
-    <div class="prompt-list prompt-stack" role="region" aria-label="Waiting on you">
+    <div class="prompt-list prompt-stack" role="region" aria-label="Waiting on you" tabindex="0">
       ${
         pending.length > 1
           ? html`<div class="prompt-stack-nav">
