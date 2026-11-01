@@ -1,6 +1,6 @@
 # FEAT-007: Each thread picks its subscription worker
 
-**Status**: 🔨 Planned and reviewed (2026-11-01); being built.
+**Status**: ✅ Built (2026-11-01), branch `feat/worker-per-thread`; awaiting review and the one-off stamping of existing records.
 **Assignee**: inixiative-b9
 **Priority**: High: FEAT-006 (Muse) needs it, and inixiative-da's shared-thread local members need it.
 **Created**: 2026-11-01
