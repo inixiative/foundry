@@ -20,7 +20,8 @@
  */
 
 import { FilterChips, passesChips } from './filter-chips.js';
-import { html, useState } from './lib.js';
+import { html, useEffect, useState } from './lib.js';
+import { loadMachineProfile, machineProfile } from './machine-icons.js';
 import { selfChatSending } from './self-chat.js';
 import { settingsConfig } from './settings.js';
 import { STATES, StatusIcon } from './status-icons.js';
@@ -160,7 +161,13 @@ const FORGE = '__forge';
 export function Board() {
   const chips = boardFilter.value;
   const [showQuiet, setShowQuiet] = useState(false);
-  const machine = settingsConfig.value?.installationName ?? 'This Foundry';
+  useEffect(() => {
+    loadMachineProfile();
+  }, []);
+  const machine =
+    machineProfile.value?.installationName ??
+    settingsConfig.value?.installationName ??
+    'This Foundry';
   // Every listed thread runs on this machine: the list has no other machine's threads yet.
   const valuesOf = {
     project: (t) => t.meta?.projectId ?? '',
