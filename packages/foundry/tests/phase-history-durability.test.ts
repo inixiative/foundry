@@ -140,7 +140,7 @@ function fixture(
   });
   const store = new LocalSessionStore(path);
   if (opts.journal !== false) new KnowledgePersistence(manager, store, events, []);
-  const thread = factory.create('durability', { projectId: 'P' });
+  const thread = factory.create('durability', { projectId: 'P', cwd: tmpdir() });
   const runtime = manager.get(thread.id)!;
   closes.push(() => {
     manager.disposeAll();

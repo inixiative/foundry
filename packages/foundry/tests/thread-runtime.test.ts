@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { tmpdir } from 'node:os';
 import {
   type CompletionOpts,
   type CompletionResult,
@@ -413,7 +414,7 @@ describe('ThreadRuntimeManager', () => {
   test('auxiliary compaction is observable but never clears the central injection ledger', async () => {
     const { adapter, bound } = fakeAdapter();
     const { factory, manager } = await setup({ sessionAdapter: adapter });
-    const a = factory.create('a');
+    const a = factory.create('a', { cwd: tmpdir() });
     const runtime = manager.get('a')!;
     const plan = await runtime.flowOrchestrator.preMessage('warm the plan');
     const prepared = await runtime.flowOrchestrator.hydrateDelta(plan);

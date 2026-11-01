@@ -105,7 +105,7 @@ function fixture(path: string) {
   });
   const store = new LocalSessionStore(path);
   const persistence = new KnowledgePersistence(manager, store, events, []);
-  const thread = factory.create('phase-history', { projectId: 'P' });
+  const thread = factory.create('phase-history', { projectId: 'P', cwd: tmpdir() });
   const runtime = manager.get(thread.id)!;
   closes.push(() => {
     manager.disposeAll();
