@@ -80,7 +80,15 @@ test('/feedback in the composer, the project strip, the thread marker and the pi
     const reply = page.locator('.chat-agent[data-turn-id="turn-1"]');
     await reply.hover();
     await reply.locator('.msg-action-trigger').click();
-    await reply.getByRole('button', { name: 'feedback' }).click();
+    expect(await reply.getByRole('menuitem').allTextContents()).toEqual([
+      'Give feedback on this/feedback',
+      'Flag thisfor review',
+      'Turn this into a looprepeat · learn',
+      'Open the turn viewfull trace',
+      'Revert to here',
+      'Fork from here',
+    ]);
+    await reply.getByRole('menuitem', { name: /Give feedback on this/ }).click();
     await reply
       .getByLabel('Feedback on this turn')
       .fill('The sections were right; only cut words.');

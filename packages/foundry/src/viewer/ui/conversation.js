@@ -31,6 +31,7 @@ import { kingdomOwnerOf } from './kingdom-holder.js';
 import { html, useEffect, useRef, useState } from './lib.js';
 import { liveExecutionStatus, liveThreadStatus, liveWorkLabel, workLog } from './live-state.js';
 import { LoopView } from './loop-view.js';
+import { MessageMenu } from './message-menu.js';
 import { Modal } from './modal.js';
 import { Plan } from './plan.js';
 import { settingsConfig } from './settings.js';
@@ -43,7 +44,6 @@ import {
   composerNote,
   contextWindowOf,
   focusTurnId,
-  forkThread,
   giveFeedback,
   historyPaging,
   kingdomStatus,
@@ -55,7 +55,6 @@ import {
   projects,
   prompts,
   resolvePrompt,
-  revertThread,
   selectedSpanId,
   sendMessage,
   showToast,
@@ -631,43 +630,6 @@ function ChatInput() {
 // Chat messages
 // ---------------------------------------------------------------------------
 
-function MessageActions({ index, onFeedback }) {
-  const [open, setOpen] = useState(false);
-
-  const toggle = (e) => {
-    e.stopPropagation();
-    setOpen((v) => !v);
-  };
-  const run = (fn) => (e) => {
-    e.stopPropagation();
-    setOpen(false);
-    fn(index);
-  };
-
-  return html`
-    <div class="msg-actions ${open ? 'msg-actions-open' : ''}">
-      <button class="msg-action-btn msg-action-trigger" onClick=${toggle}
-        title="Actions" aria-expanded=${open}>${open ? '×' : '⋯'}</button>
-      ${
-        open
-          ? html`
-        <button class="msg-action-btn" onClick=${run(revertThread)}
-          title="Revert to this point">revert</button>
-        <button class="msg-action-btn" onClick=${run(forkThread)}
-          title="Fork thread from here">fork</button>
-        ${
-          onFeedback
-            ? html`<button class="msg-action-btn" onClick=${run(onFeedback)}
-          title="Give feedback on this turn">feedback</button>`
-            : null
-        }
-      `
-          : null
-      }
-    </div>
-  `;
-}
-
 function BrowserStorageWarning({ msg }) {
   const notice = browserStorageNotice(msg);
   return notice
@@ -729,7 +691,7 @@ function UserMessage({ msg, index }) {
   const give = useGiveFeedback(msg);
   return html`
     <div class="chat-msg chat-user" data-turn-id=${msg.turnId ?? ''} data-actor="user">
-      <${MessageActions} index=${index} onFeedback=${give.onFeedback} />
+      <${MessageMenu} msg=${msg} index=${index} onFeedback=${give.onFeedback} />
       <${MessageImages} images=${msg.images ?? msg.meta?.images} />
       ${
         msg.meta?.postedBy
@@ -879,7 +841,7 @@ function AgentMessage({ msg, index, onTraceClick }) {
 
   return html`
     <div class="chat-msg chat-agent ${msg.error ? 'chat-error' : ''} ${isStreaming ? 'chat-streaming' : ''}" data-turn-id=${msg.turnId ?? ''} data-actor="agent">
-      <${MessageActions} index=${index} onFeedback=${give.onFeedback} />
+      <${MessageMenu} msg=${msg} index=${index} onFeedback=${give.onFeedback} />
       <!-- Pre-execution bar: classify → route → context loading -->
       <${PipelineBar}
         stages=${preStages}
