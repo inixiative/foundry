@@ -92,6 +92,8 @@ export function createViewerStreams(deps: {
    * derived from its journal (docs/reference/CONVERSATIONS.md §4.2); re-sent on `threadsChanged`.
    */
   conversation?: (threadId: string) => Record<string, unknown> | undefined;
+  /** The mode a thread's executor launches in (its list row marks Dangerous ones). */
+  permissionMode?: (threadId: string) => string | undefined;
 }) {
   const { directory, eventStream, actionQueue, deliverTo } = deps;
   const journal: FlowJournal = deps.journal ?? { store: null };
@@ -159,7 +161,11 @@ export function createViewerStreams(deps: {
         string,
         {
           text: string;
-          json: ReturnType<typeof threadToJSON> & { conversation?: unknown; lastTurn?: unknown };
+          json: ReturnType<typeof threadToJSON> & {
+            conversation?: unknown;
+            lastTurn?: unknown;
+            permissionMode?: string;
+          };
         }
       >();
       const sync = (only?: string) => {
@@ -172,10 +178,12 @@ export function createViewerStreams(deps: {
           }
           const conversation = deps.conversation?.(id);
           const turn = lastTurn(id);
+          const permissionMode = deps.permissionMode?.(id);
           const json = {
               ...threadToJSON(found),
               ...(conversation ? { conversation } : {}),
               ...(turn ? { lastTurn: turn } : {}),
+              ...(permissionMode ? { permissionMode } : {}),
             },
             text = JSON.stringify(json);
           if (sent.get(id)?.text === text) continue;
