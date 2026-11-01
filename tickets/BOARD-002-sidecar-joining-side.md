@@ -15,6 +15,8 @@ The other party's thread is F2 of `docs/reference/CONVERSATIONS.md` §4.9, alrea
 - it feeds each append into a thread of its own;
 - its agent posts back with `kingdom_post`.
 
+**Revised 2026-11-01 (planning doc §4.9, review round 4 B2):** the joining side **mirrors** the host's feed; it doesn't admit it. Each append becomes a `shared-entry` journal row keyed by the host's `journalSeq` (deduped, so a resync is idempotent), exempt from depth and floor, and collected for the joiner's agent's next turn by `deliverNotes`. The joiner's agent's own contributions are `kingdom_post` drafts its person releases. The joining **person's** typed post goes through `deliverPost` with no hold and isn't journalled locally, because the mirror echoes it.
+
 That agent is a second voice in the shared thread (Aron, Q8: "it's just a bridge to a session, so they can bring their agent to us"). It is not a read-only replica.
 
 - **Where the thread lives:** in the joiner's **shared** zone, carrying the sidecar's per-turn layer ("shared with Aron's agent; you see what was said, not Aron's tools or context").

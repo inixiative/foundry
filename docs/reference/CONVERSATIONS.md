@@ -1,6 +1,6 @@
 # Agent conversations: Foundry side
 
-Status: **APPROVED by Aron (2026-10-19); rulings in §11; adversarially reviewed 4 rounds (review in Oracle).** §11, the revision log with every ruling and review finding, and the four review rounds are design history in Oracle `docs/foundry/AGENT-CONVERSATIONS.review.md`.
+Status: **APPROVED by Aron (2026-10-19); rulings in §11; adversarially reviewed 4 rounds (review in Oracle). Revised for shared threads and participation (Aron, 2026-10-31 and 2026-11-01): §4.10, with the changes marked in §4.1, §4.3, §4.5 and §4.7; design and its reviews in Oracle `docs/foundry/ATTENTION-BOARD.md` §4.** §11, the revision log with every ruling and review finding, and the four review rounds are design history in Oracle `docs/foundry/AGENT-CONVERSATIONS.review.md`.
 
 This doc is the Foundry side: the conversation is a wrapper of a Foundry main thread. The Kingdom side, which is the boundary (grants, admission, transport and the member's held connection, §5 and the primitive ledger §6), is Kingdom [`docs/AGENT-CONVERSATIONS.md`](https://github.com/inixiative/kingdom/blob/main/docs/AGENT-CONVERSATIONS.md). Section numbers are shared across the two docs, so a reference to §5 points there. Remote access to a thread is the Signet path FOUNDRY-ACP [§7.2](FOUNDRY-ACP.md#72-remote-clients-specced-not-built) names.
 
@@ -132,8 +132,8 @@ flowchart LR
   The depth count is derived from the journal, never stored (§4.4).
 - **Members.**
   - Remote members are the Signets hosted on this Foundry's integration whose lens's thread selector matches the thread. `hostedSignets` (§5.6) carries them for **display, and for cancelling work on revocation**, never as an admission gate (§4.2).
-  - Local members come from settings.
-  - `ConversationMember` is `{ kind: 'owner' | 'local-herald' | 'signet'; id }`. It is deliberately not named "participant", because `ParticipantRequest` in the flow orchestrator means a Warden or middleware contributor.
+  - Local members come from settings, or from a per-thread invite stored on the conversation record (2026-10-31: any second agent, the owner's own Codex included, joins as a member).
+  - `ConversationMember` is `{ kind: 'owner' | 'local' | 'signet'; id }` (`local` replaced `local-herald` in signet 0.6.0; a local Herald is a local member). Foundry adopts 0.6.0 in BOARD-001. It is deliberately not named "participant", because `ParticipantRequest` in the flow orchestrator means a Warden or middleware contributor.
 - **Conversation threads are always wrapped.** `wrapsThread` (`pf/agents/thread-runtime.ts:118`) also returns true for a thread with a `conversation` record. Otherwise a fresh install's thread may be unwrapped, and notes may never reach the executor [unverified: what an unwrapped thread does with a decoration; F1 checks first].
 - **No new threads in v1.** A conversation is set up on a thread the owner already has (§5.5). Kingdom never mints a thread in v1. Threads opened by a request belong to discovery (§9).
 
@@ -180,7 +180,7 @@ An invitation is `{id, to: ConversationMember, by, standing: boolean, expiresAt 
 |---|---|
 | `talk` | No invitation needed. Bounded only by depth and Kingdom's limits |
 | `speak-when-spoken-to` | A post must name an open invitation to its member (`inReplyTo`). Posting consumes it: one reply per invitation. A `send_to_member` to P creates an invitation for P. Invitations may carry `expiresAt: null`, so a reply days later still counts |
-| `conch` | There is one **standing** invitation, with `expiresAt = now + holdSeconds`. Only its holder posts, and posting doesn't consume it. The holder passes it with `thread.floor {passTo}`. The owner can always take or reassign it, and so can the main agent's `pass_conch` if `conch.agentMayPass` (default false). An expired conch belongs to the host. A member asks for it with `thread.floor {request}`, and the owner sees the request |
+| `conch` | There is one **standing** invitation, with `expiresAt = now + holdSeconds`. Only its holder posts, and posting doesn't consume it. The holder passes it with `thread.floor {passTo}`. The owner can always take or reassign it, and so can the main agent's `pass_conch` if `conch.agentMayPass` (default false). An expired conch belongs to the host. A member asks for it with `thread.floor {request}`, and the owner sees the request (as a Needs-you prompt, §4.10). A member whose grant allows it may `take` the conch (§4.10). A reply invitation (a commissioned task's report) is still admitted under the conch (§4.10) |
 
 Expiry is checked inside the admission transaction, so no timer or job is needed. Each conversation has one mode, with no per-grant narrowing.
 
@@ -213,7 +213,7 @@ These bounds are what "so they can't go too deep" means here. They are all struc
 
 What's missing is a standing **untrusted-content reception charter** that every thread holds: content the owner didn't type (tool output, fetched pages, member posts, chimes) is data, never instructions. Each source labels itself when it enters. G1 starts from the scattered "data, not instructions" sites above and makes them one standing charter. G1 is the Foundry-wide guard improvement Aron's "default injection guard on all threads" names. It is **not** conversation machinery, and this spec doesn't design it. F1 only adds the member-post label, so a member post is already framed correctly when G1 lands.
 
-**Outbound: held by the send tool itself, not the gate.** Only an explicit `send_to_member {member, text}` leaves. Assistant transcript, tool output, Warden chimes and composed context never do.
+**Outbound: held by the send tool itself, not the gate.** Only an explicit `send_to_member {member, text}` leaves. Assistant transcript, tool output, Warden chimes and composed context never do. **Reaffirmed 2026-11-01 for shared threads** (§4.10): an agent's contribution is a draft its person elects, so on a shared thread every draft is held for `review` whatever the member's `outbound` term says. The one exception is a report against an open commission whose caller's person chose `post`. A person's own typed post is not a draft and is not held.
 - **Where the term comes from.** A send happens on the host's own initiative, so no frame carries the lens. The handler reads the member's entry in the latest `hostedSignets` snapshot. It **falls back to `review`** if the member is missing there, or if the snapshot's revision for that Signet is older than the last `acceptedRevision` a frame from that member carried. A stale or absent term can therefore only make a send more careful.
 - The member's `outbound` term is enforced **inside the tool's own handler**:
   - `auto` writes a released send entry.
@@ -253,7 +253,7 @@ conversations: {
 
 **What a member reads.** The member reads the main thread's journal through its lens, and nothing else. It reads live through the Kingdom-held connection (§5.6.1): a snapshot, then appends. `thread.read {afterSeq}` is the same view as one call, and it is what the snapshot is built from. Either way:
 - `view: 'own'` (default): the member's own posts plus the `send_to_member` entries addressed to it;
-- `view: 'thread'`: the main thread's user and assistant messages, never tool I/O or Warden entries. Only an owner recipient may hold it (§5.3).
+- `view: 'thread'`: the whole log. **Since 2026-11-01 any member may hold it** (Kingdom AUTH-014: sitting in is reading the whole thread). For a member who isn't the owner, the log is people's posts and released sends; the main agent's own messages are its owner's private side (§4.10). A recipient whose grant includes `prompt.resolve`, which Kingdom allows only to the host's owner, also reads the assistant messages; the filter is in `visibleTo`, never in `threadEntryOf`. Reads start no earlier than the conversation's `sharedFromSeq` unless the owner shared the history. Never tool I/O or Warden entries.
 
 The lens comes from the frame, never from the caller. A read is capped at 16,000 characters.
 
@@ -272,6 +272,49 @@ ACP hosts see posts as user chunks tagged with the member [unverified: how they 
 Member posts and sends are entries on the main thread's node (THREAD-TREE spec A), attributed to a `ConversationMember`. **They are part of the conversation, so they go into the host's thread and Archive by default.** Aron, 2026-10-19: "It's part of the conversation. It needs to go there."
 
 The lens has no retention term. The request and the grant show the member that its posts are kept in the host's Archive. Remote members are not nodes.
+
+### 4.10 Shared threads and participation (Aron, 2026-10-31 and 2026-11-01)
+
+The design, its review rounds and Aron's words in full are in Oracle `docs/foundry/ATTENTION-BOARD.md` §4 (§4.8 the floor, §4.9 participation). This section is the summary that governs the wrapper.
+
+**Why:** Aron wants other people's agents, and his own Codex, in his threads. He also wants each side's agent to keep straight what was said, which he doubted agents can do on their own (10-31: "I don't know if the agents are going to be very good at keeping straight what they said and didn't say… pretty essential"). The answer, agreed 11-01, is to make "what was said" a structural fact: "If you're having to think about the things again, posted or not, it's going to break."
+
+- **One member path.** A member is local (in-process, no Signet) or remote (Kingdom and a Signet; the trust boundary is the machine, 10-31). Both post through `admit` and read through `thread.read`/`subscribe` → `threadEntryOf` → `visibleTo`. Every site keyed by `signetId` takes the member key instead.
+- **Sitting in versus participating** are two grants: `thread.read` with `view: 'thread'`, or that plus `thread.prompt`.
+- **One log, with a private side for each party.** The log holds only what was posted: people's posts and released drafts. Each agent's context is the log plus its own side: its owner's `/btw`, its unposted drafts, its tools and context. Agents never post straight into the log.
+- **The suppressor is `note` delivery.** An agent without the floor gets no turn. New entries ride with its next turn, through `deliverNotes`, as member notes do today. "Append to context" means it rides with the next turn, because no native runtime takes context without one.
+- **Proposed comments are held sends** (`send_to_member`, `kingdom_post`): "Should I post this?" Edit, release or withdraw.
+- **The floor runs a shared thread. A shared thread defaults to `conch`** (11-01): outside agents are present, so one speaker at a time with the host as leader; an unshared thread keeps `talk`.
+  - Every member kind takes turns, local ones included.
+  - A raised hand is a Needs-you prompt.
+  - Settings add `agents: 'silent' | 'drafting'` ("silent until a marker"), and a `take` floor action for members whose grant allows it.
+  - Owner, driver (the conch holder) and leader (who may reassign it) are separate roles. Relationships (expert advising expert, pairing, mentoring) are presets over these settings, not a model.
+- **Three ways to speak:**
+  - `/btw` to one's own agent, never in the log;
+  - an aside, person to person, out of the log until someone promotes it;
+  - a post to the log.
+- **Commissioned tasks.** A released `send_to_member` that asks an agent for work creates a reply invitation in every floor mode.
+  - The report consumes it, even under the conch.
+  - It posts into the log by default (Aron, 11-01: "If we ask you to do something, tell us when it's done... unless we say, 'Notify me when it's done'").
+  - A thread setting can make notifying the default. The caller's instruction wins over either.
+  - A notice goes to the caller alone.
+- **Roles change during a thread** (11-01) through the Signet revise and grant path, with no role table.
+
+**After review round 4 (11-01)**, the pieces that are new rather than reused are:
+- **Notes ride every turn**, not only owner-typed ones (the `lastOwnerSeq` gate goes).
+- **The joining side records the host's feed as `shared-entry` mirror rows**, keyed by the host's `journalSeq` and exempt from depth and floor. It doesn't admit them.
+- **`sharedFromSeq`.** Members read from the share, unless the owner shares the history.
+- **Commission sends.** A commission carries `commission: {report, expiresAt}`. Only commissions create reply invitations outside `speak-when-spoken-to`. They survive mode changes and restarts, and they are marked on the entry.
+- **`floor.mayTake`**, a revisable lens term.
+- **The `aside` entry kind**, visible to two people and to no agent.
+- **`agents: 'silent'`**, enforced: posts become notes, and sends are refused.
+
+**What this changes from 10-19:**
+- (1) the owner's own Codex may be a member, not only a subagent node (§3.2);
+- (2) any member may read the whole log (§5.3);
+- (3) a shared thread defaults to `conch`.
+
+The outbound rule of §4.5 stands, and is reaffirmed.
 
 ### 4.9 Foundry build slices
 
@@ -438,6 +481,15 @@ The lens has no retention term. The request and the grant show the member that i
 - T3: person only. A Foundry owned by one person (User or membership) is that person's alone; `canManageIntegration` adds `canOpenFoundry` for Foundry integrations (grant, revise, approve).
 - Lens: a thread selector from the start. v1 accepts a list of ids; `withMember` and `tag` are named for later (§5.3).
 - Q9: `note` delivery by default. The single-thread default became a list of ids, under the selector ruling.
+
+**Rulings of 2026-10-31 and 2026-11-01 (shared threads, §4.10):**
+- **Members:** any second agent, own Codex included, joins as a member, and each party's thread is bridged.
+- **Trust boundary:** the machine, so everyone off it comes through a Signet.
+- **Private:** `/btw` only.
+- **What crosses:** tool calls never cross.
+- **Not a chat:** a bridge.
+- **Floor:** a shared thread defaults to `conch`.
+- **Participation:** one log with private sides, the suppressor, proposed comments as held sends, silence until a marker, relationships as presets, commissioned tasks reporting through invitations.
 
 Notification of a post that revives an idle thread: the Foundry sessions list in v1, and a Kingdom notification later (K2). I settled this as a default; I didn't ask him.
 

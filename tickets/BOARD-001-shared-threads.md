@@ -1,10 +1,10 @@
-# BOARD-001: Shared threads: one member path, everything visible except tool calls
+# BOARD-001: Shared threads: one member path, one log with private sides
 
 **Status**: 📐 Spec revision 4 (Aron answered Q0–Q9 on 10-31; §4 goes to him before CONVERSATIONS.md is revised)
 **Assignee**: TBD
 **Priority**: High
 **Created**: 2026-10-31
-**Updated**: 2026-11-01
+**Updated**: 2026-11-01 (participation design, planning doc §4.9)
 
 ---
 
@@ -41,6 +41,22 @@ There is no new link record, private mark or held-answer state.
 | The roster says what isn't shared (tool reads, context, `/btw`) and words local members | Extend `memberLines` / `conversationRoster` (`pf/conversations/roster.ts:15-18,53-56`); no new layer |
 | `/btw` on every runtime: the decision call with no tools, over `journalHistory` plus the composed context (so it sees no tool I/O). Stored in its own store beside the thread, never as a journal or phase row; its own Archive unit, routed personal | `textOnly` → `tools: false` (`session-backed.ts:1117`, `pf/providers/decision-host.ts`); ACP `COMMANDS` (`packages/acp/src/agent.ts:92`) |
 
+## Participation (planning doc §4.9, Aron 2026-11-01; review round 4 fixes)
+
+**Supersedes the "everything visible" pieces above.** Agents never post straight into the log; a person elects each draft.
+
+| Piece | Changes |
+|---|---|
+| The log is people's posts and released sends. The host agent's own messages reach only a member whose grant includes `prompt.resolve` (the owner) | `visibleTo` (`view.ts`), not `threadEntryOf` |
+| `sharedFromSeq`: reads start at the share, unless the owner shares the history | `ConversationRecord`; `read`/`subscribe` (`service.ts:312-345`) |
+| The suppressor: notes ride **every** turn of the agent | `deliverNotes` drops the `lastOwnerSeq` gate (`service.ts:706`) |
+| A shared thread holds every draft for `review`, except a report against an open commission whose caller chose `post` | `send()` / `hold()` |
+| Commission sends: `commission: {report: 'post'\|'notify', expiresAt}` (default 24 h, `conversations.commissionHours`). Only they invite outside `speak-when-spoken-to`. They survive `setFloor`, the switch to conch and restarts. The entry is marked (signet release) | `invite()`, `setFloor` (`:583-585`), `takeFloor`, `raisePending`-style startup |
+| `agents: 'silent' \| 'drafting'`: under silent, posts are admitted as `note`, and `send()` is refused (commissions excepted) | `conversations` settings; `admit`, `send` |
+| `floor.mayTake` lens term (signet release); a local member's term on its invite record | `threadsLensSchema`, `floor()` |
+| `aside` entry kind: sender and addressee people only; skipped by notes, mirror, `journalHistory` and the agent's context | `view.ts`, viewer |
+| §4.4's private-home, fresh-session and audience pieces are **not built in v1** | — |
+
 ## The floor (planning doc §4.8)
 
 - **A shared thread defaults to `conch`** (Aron, 2026-11-01): outside agents are present, so one speaker at a time, with the host as leader. Unshared threads keep `talk`. It is applied when a thread gains its first member; a thread override still wins.
@@ -59,7 +75,7 @@ Does a private home carry nothing personal: no user hooks (SessionStart `additio
 
 ## Definition of done
 
-- The planning doc's §10 tests 1–12 and 21–25 pass. They are built together with BOARD-002, because tests 8–10 need both ends.
+- The planning doc's §10 tests 1, 6–12, 21–34 pass (2–5 are history). Experiment 35 is pre-registered. They are built together with BOARD-002, because tests 8–10 need both ends.
 - CONVERSATIONS.md is revised to match, and its tests still pass.
 
 ## Related
