@@ -1,0 +1,149 @@
+/**
+ * @atlas
+ * @kind component
+ * @partOf feature:viewer
+ */
+/**
+ * A project's Knowledge and chorus page: how Foundry learns the project, in six steps (set up, update,
+ * analyse the docs, build regions, tune Wardens, Oracle). It shows what Foundry can read today: the
+ * chorus layers and regions (`/api/projects/:id/chorus`) and the project's Kingdoms (`/about`). The
+ * actions run as scripts outside the server (the region builder, the eval scripts), so each is shown
+ * and marked not built.
+ */
+
+import { html, useEffect, useState } from './lib.js';
+import { navigate } from './route.js';
+import { activeProjectId, projectPage, projects } from './store.js';
+
+// Region size (Foundry #81): about 20k tokens of knowledge per Warden, 40k the hard cap.
+const HEALTHY_TOKENS = 20_000;
+const CAP_TOKENS = 40_000;
+// Stage-one detection recall every docs, regions or Warden change must hold (finding 2026-10-17-slice1-diagnose).
+const DETECTION_BAR = '0.81';
+
+function useJson(url) {
+  const [value, setValue] = useState(undefined);
+  useEffect(() => {
+    let live = true;
+    setValue(undefined);
+    fetch(url)
+      .then((r) => (r.ok ? r.json() : null))
+      .catch(() => null)
+      .then((body) => live && setValue(body));
+    return () => {
+      live = false;
+    };
+  }, [url]);
+  return value;
+}
+
+/** A region's size in tokens: counted when the roster has it, else estimated from its bytes. */
+const tokensOf = (region) => region.tokens ?? Math.round((region.bytes ?? 0) / 4);
+const k = (n) => `${Math.round(n / 1000)}k`;
+
+function NotBuilt({ label, why }) {
+  return html`<button type="button" class="proj-btn" disabled title=${why}>${label} · not built</button>`;
+}
+
+function Step({ n, title, desc, actions, children }) {
+  return html`<section class="kstep" aria-label=${title}>
+    <span class="kstep-n">${n}</span>
+    <div><h3>${title}</h3><p>${desc}</p></div>
+    <div class="kstep-actions">${actions}</div>
+    <div class="kstep-body">${children}</div>
+  </section>`;
+}
+
+function SizeBar({ region }) {
+  const tokens = tokensOf(region);
+  const level = tokens > CAP_TOKENS ? 'over' : tokens > HEALTHY_TOKENS ? 'large' : 'ok';
+  return html`<div class="ksize" data-level=${level} title=${`${region.id}: ${tokens} tokens${region.tokens == null ? ' (estimated from bytes)' : ''}`}>
+    <span class="ksize-name">${region.title || region.id}</span>
+    <span class="ksize-track"><span class="ksize-fill" style=${`width:${Math.min(100, (tokens / CAP_TOKENS) * 100)}%`}></span><span class="ksize-mark"></span></span>
+    <span class="ksize-n">${k(tokens)}</span>
+  </div>`;
+}
+
+export function KnowledgePage() {
+  const projectId = activeProjectId.value;
+  const project = projects.value.find((p) => p.id === projectId);
+  const name = project?.label ?? projectId;
+  const id = encodeURIComponent(projectId);
+  const body = useJson(`/api/projects/${id}/chorus`);
+  const about = useJson(`/api/projects/${id}/about`);
+  const chorus = body?.chorus;
+  const regions = [...(chorus?.regions ?? [])].sort((a, b) => tokensOf(b) - tokensOf(a));
+  const over = regions.filter((r) => tokensOf(r) > CAP_TOKENS);
+  const large = regions.filter((r) => tokensOf(r) > HEALTHY_TOKENS && tokensOf(r) <= CAP_TOKENS);
+  const missing = chorus?.missingDocs ?? [];
+  const kingdoms = about?.kingdoms ?? [];
+
+  return html`<section class="knowledge" aria-label=${`${name}: Knowledge and chorus`}>
+    <header class="ph-head">
+      <button type="button" class="proj-btn" onClick=${() => {
+        projectPage.value = 'home';
+      }}>‹ ${name}</button>
+      <h2>Knowledge and chorus</h2>
+      <span class="ph-meta">How Foundry learns ${name}: its docs, its regions and the Wardens built from them</span>
+    </header>
+    ${body === undefined ? html`<div class="ph-meta">Reading the chorus…</div>` : null}
+    <div class="know">
+      <${Step} n="1" title="Set up"
+        desc="Reads the project's docs and code once and initialises the levels Wardens compose from. Project is required; the others are optional."
+        actions=${html`<${NotBuilt} label="Run setup" why="Regions are built by the region builder script (build_regions.py), outside Foundry" />`}>
+        ${
+          chorus?.layers?.length
+            ? html`<table class="ktable">${chorus.layers.map(
+                (l) =>
+                  html`<tr key=${l.label}><td>${l.label}</td><td class="mono">${l.regionsDir}</td><td class="kok">${l.regions} region${l.regions === 1 ? '' : 's'}</td></tr>`,
+              )}</table>`
+            : html`<span class="kwarn">No chorus levels set up${chorus?.reason ? `: ${chorus.reason}` : ''}.</span>`
+        }
+      <//>
+      <${Step} n="2" title="Update since the last setup"
+        desc="Re-reads only what changed, so regions and Wardens stay current without a full rebuild."
+        actions=${html`<${NotBuilt} label="Run the delta" why="No incremental region build exists yet" />`}>
+        <span class="rp-dim">Foundry records no build date for regions, so it can't yet say what changed since.</span>
+      <//>
+      <${Step} n="3" title="Analyse the docs"
+        desc="Checks every doc: its kind (system, pattern, guidance, feedback), anything it names that no longer exists, and code that changed without its doc. Reports only; nothing is rewritten."
+        actions=${html`<${NotBuilt} label="Analyse docs" why="The doc-freshness checker runs in template's CI only; docs carry no kind yet" />`}>
+        <span class="rp-dim">Docs aren't analysed yet: they carry no kind, and the freshness check runs only in template's CI.</span>
+      <//>
+      <${Step} n="4" title="Build regions"
+        desc="Splits docs, rules and primitives into regions by concept, each a healthy size for one Warden. Each region gets the short text Wardens recognise from and the full catalog they pick from."
+        actions=${html`<${NotBuilt} label="Build regions" why="The region builder is a script outside Foundry (build_regions.py)" />
+          <button type="button" class="proj-btn" onClick=${() => navigate(`/projects/${id}/settings/chorus`)}>See regions</button>`}>
+        ${
+          regions.length
+            ? html`<div>${regions.length} regions · ≈20k tokens each · cap 40k${
+                over.length || large.length || missing.length
+                  ? html`<br /><span class="kwarn">${[
+                      ...over.map((r) => `${r.id}: ${k(tokensOf(r))} · over the cap`),
+                      ...(large.length ? [`${large.length} above 20k`] : []),
+                      ...missing.map((m) => `${m.region}: no ${m.doc}`),
+                    ].join(', ')}</span>`
+                  : null
+              }</div>
+              <div class="ksizes">${regions.map((r) => html`<${SizeBar} key=${r.id} region=${r} />`)}</div>`
+            : html`<span class="rp-dim">No regions built for ${name}.</span>`
+        }
+      <//>
+      <${Step} n="5" title="Tune Wardens"
+        desc="Tests whether each region's Warden recognises its moments. A change to docs, regions or Wardens ships only if detection holds the bar, with false yeses no worse."
+        actions=${html`<${NotBuilt} label="Run the detection test" why="The detection test is an eval script (scripts/evals/warden-charter.ts) that spends quota" />`}>
+        <table class="ktable">
+          <tr><td>Detection recall</td><td>not recorded in Foundry · bar ${DETECTION_BAR}</td></tr>
+          <tr><td>False yes</td><td>not recorded</td></tr>
+          <tr><td>Last test</td><td>eval results live outside Foundry</td></tr>
+        </table>
+      <//>
+      <${Step} n="6" title="Oracle"
+        desc="Oracle measures whether corrections stick: replays real work with and without the chorus and reports what changed. It reads this project's sessions from its Archives through Kingdom."
+        actions=${html`<${NotBuilt} label="Connect Oracle" why="Foundry has no Oracle connection yet" />`}>
+        <div>Kingdom: <b>${about === undefined ? '…' : kingdoms.length ? kingdoms.join(', ') : 'not linked'}</b> · Archives: local Archive</div>
+        <span class="kwarn">Oracle isn't connected for ${name}.</span>
+      <//>
+    </div>
+  </section>`;
+}

@@ -1,0 +1,168 @@
+/* Project home (About, header actions) and its Knowledge and chorus page. */
+.ph-head-actions {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+}
+.proj-btn.is-go {
+  background: var(--accent);
+  color: var(--accent-ink);
+  border-color: transparent;
+}
+.ph-desc {
+  margin: 0;
+  font-size: 13.5px;
+}
+.ph-facts {
+  display: grid;
+  grid-template-columns: 90px minmax(0, 1fr);
+  gap: 6px 12px;
+  margin: 8px 0 0;
+  font-size: 13px;
+}
+.ph-facts dt {
+  color: var(--text-dim);
+}
+.ph-facts dd {
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.about-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+.knowledge {
+  height: 100%;
+  overflow: auto;
+  padding: 18px 22px;
+}
+.knowledge .ph-head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  margin-bottom: 14px;
+}
+.know {
+  display: grid;
+  gap: 14px;
+  max-width: 1100px;
+}
+.kstep {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 14px 16px;
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+  gap: 4px 14px;
+  align-items: start;
+}
+.kstep-n {
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  background: var(--accent-dim);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font: 600 12px var(--mono);
+}
+.kstep h3 {
+  margin: 0;
+  font-size: 15px;
+}
+.kstep p {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--text-dim);
+  max-width: 720px;
+}
+.kstep-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.kstep-body {
+  grid-column: 2 / 4;
+  font-size: 13px;
+}
+.ktable {
+  border-collapse: collapse;
+  margin-top: 6px;
+  font-size: 12.5px;
+}
+.ktable td {
+  padding: 3px 14px 3px 0;
+  border-bottom: 1px solid var(--line);
+  color: var(--text-dim);
+}
+.ktable td:first-child {
+  color: inherit;
+}
+.kok {
+  color: var(--st-working);
+}
+.kwarn {
+  color: var(--st-attention);
+}
+.ksizes {
+  display: grid;
+  gap: 3px;
+  margin-top: 8px;
+  max-width: 640px;
+}
+.ksize {
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr) 40px;
+  gap: 10px;
+  align-items: center;
+  font-size: 12px;
+}
+.ksize-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ksize-track {
+  position: relative;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--line);
+}
+.ksize-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 3px;
+  background: var(--st-working);
+}
+.ksize[data-level="large"] .ksize-fill {
+  background: var(--st-attention);
+}
+.ksize[data-level="over"] .ksize-fill {
+  background: var(--st-problem);
+}
+/* The healthy size, half the cap. */
+.ksize-mark {
+  position: absolute;
+  left: 50%;
+  top: -2px;
+  bottom: -2px;
+  width: 1px;
+  background: var(--text-dim);
+}
+.ksize-n {
+  text-align: right;
+  color: var(--text-dim);
+}
+.ph-facts a {
+  color: var(--accent);
+  text-decoration: none;
+}
+.ph-facts a:hover {
+  text-decoration: underline;
+}
