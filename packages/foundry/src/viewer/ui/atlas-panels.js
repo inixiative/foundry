@@ -1,4 +1,9 @@
 /**
+ * @atlas
+ * @kind component
+ * @partOf feature:viewer
+ */
+/**
  * Atlas in the panels: what this thread touches, by concept (Context), other threads sharing those
  * concepts (Heralds), and the "Set up Atlas" call when the project has no Atlas. Data from
  * `GET /api/threads/:id/atlas` (the thread's read and written files through the project's `atlas

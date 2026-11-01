@@ -1,4 +1,9 @@
 /**
+ * @atlas
+ * @kind service
+ * @partOf feature:viewer
+ */
+/**
  * What a thread touches, in Atlas concepts: the files its recent turns read and wrote (the tool
  * calls the journal holds), mapped through the project's `atlas graph` (the same read the
  * Cartographer uses). Also which other threads in the project touch the same concepts.
