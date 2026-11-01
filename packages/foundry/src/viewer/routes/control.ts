@@ -25,7 +25,6 @@ import {
   type ConfigStore,
   createProject,
   type FoundryConfig,
-  type McpSettingsConfig,
 } from '../config';
 import { ViewerFileAccess } from '../file-access';
 import { FoundrySelfChatStore, type SelfChatFocus } from '../foundry-self-chat';
@@ -927,115 +926,5 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps): void 
       draft.tunnel = current;
     });
     return c.json({ ok: true, tunnel: next.tunnel });
-  });
-
-  // -- MCP server management --
-
-  app.get('/api/mcp', async (c) => {
-    const cfg = await configStore.load();
-    const mcp = cfg.mcp ?? { enabled: false };
-    return c.json({
-      enabled: mcp.enabled,
-      transport: mcp.transport ?? 'stdio',
-      installedProjects: mcp.installedProjects ?? {},
-    });
-  });
-
-  app.post('/api/mcp/enable', async (c) => {
-    await configStore.load();
-    const next = await configStore.update((draft) => {
-      draft.mcp = { ...draft.mcp, enabled: true, transport: draft.mcp?.transport ?? 'stdio' };
-    });
-    return c.json({ ok: true, mcp: next.mcp });
-  });
-
-  app.post('/api/mcp/disable', async (c) => {
-    await configStore.load();
-    await configStore.update((draft) => {
-      if (draft.mcp) draft.mcp.enabled = false;
-    });
-    return c.json({ ok: true });
-  });
-
-  app.patch('/api/mcp', async (c) => {
-    const body = await c.req.json<Record<string, unknown>>();
-    await configStore.load();
-    const next = await configStore.update((draft) => {
-      const current: McpSettingsConfig = draft.mcp ?? { enabled: false };
-      if (typeof body.transport === 'string') current.transport = body.transport as 'stdio' | 'sse';
-      if (typeof body.enabled === 'boolean') current.enabled = body.enabled;
-      draft.mcp = current;
-    });
-    return c.json({ ok: true, mcp: next.mcp });
-  });
-
-  /**
-   * Install MCP for a project — writes .mcp.json to the project directory
-   * so Claude Code auto-discovers the Foundry MCP server.
-   */
-  app.post('/api/mcp/install/:projectId', async (c) => {
-    const { existsSync, writeFileSync } = await import('node:fs');
-    const { resolve, join } = await import('node:path');
-
-    const projectId = c.req.param('projectId');
-    const cfg = await configStore.load();
-    const project = cfg.projects[projectId];
-    if (!project) return c.json({ error: 'Project not found' }, 404);
-
-    const projectPath = resolve(project.path);
-    if (!existsSync(projectPath)) {
-      return c.json({ error: `Project path does not exist: ${projectPath}` }, 400);
-    }
-
-    // Build the .mcp.json content for Claude Code
-    const mcpCliPath = resolve('packages/foundry/src/mcp/cli.ts');
-    const mcpJson = {
-      mcpServers: {
-        foundry: {
-          command: 'bun',
-          args: ['run', mcpCliPath],
-          cwd: projectPath,
-        },
-      },
-    };
-
-    const mcpJsonPath = join(projectPath, '.mcp.json');
-    writeFileSync(mcpJsonPath, JSON.stringify(mcpJson, null, 2));
-
-    // Track installation in config
-    await configStore.update((draft) => {
-      const mcp = draft.mcp ?? { enabled: true };
-      mcp.enabled = true;
-      mcp.installedProjects = { ...mcp.installedProjects, [projectId]: mcpJsonPath };
-      draft.mcp = mcp;
-    });
-
-    return c.json({
-      ok: true,
-      projectId,
-      mcpJsonPath,
-      mcpJson,
-    });
-  });
-
-  /** Uninstall MCP from a project — removes .mcp.json. */
-  app.delete('/api/mcp/install/:projectId', async (c) => {
-    const { existsSync, unlinkSync } = await import('node:fs');
-
-    const projectId = c.req.param('projectId');
-    const cfg = await configStore.load();
-    const installed = cfg.mcp?.installedProjects?.[projectId];
-
-    if (installed && existsSync(installed)) {
-      unlinkSync(installed);
-    }
-
-    if (cfg.mcp?.installedProjects) {
-      await configStore.update((draft) => {
-        delete draft.mcp?.installedProjects?.[projectId];
-      });
-    }
-
-    return c.json({ ok: true, projectId });
   });
 }

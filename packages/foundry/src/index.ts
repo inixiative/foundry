@@ -147,9 +147,7 @@ export { initLogger, type Logger, type LogLevel, log } from './logger';
 // MCP — mid-session bridge (FLOW.md Loop 2)
 export {
   createFoundryMcpServer,
-  createSseTransport,
   type FoundryMcpConfig,
-  startStdioTransport,
 } from './mcp';
 // Prompts — project identity composition
 export {

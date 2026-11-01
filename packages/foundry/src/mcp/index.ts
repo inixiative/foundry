@@ -16,12 +16,10 @@ export {
 export {
   createFoundryMcp,
   createFoundryMcpServer,
-  createSseTransport,
   type FoundryMcp,
   type FoundryMcpConfig,
   type InvocationDiagnostics,
   type InvocationStatus,
-  startStdioTransport,
   type ToolInvocationRecord,
 } from './server';
 export {
