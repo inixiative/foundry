@@ -204,14 +204,24 @@ describe('scrubSecrets', () => {
     expect(corrections[0]!.correction).not.toContain('sk-ant');
   });
 
-  test('Kingdom run and refresh tokens are scrubbed', () => {
+  test('Kingdom run, refresh and Signet tokens and API tokens are scrubbed', () => {
     const run = `kingdom_run_${'a'.repeat(43)}`;
     const refresh = `kingdom_refresh_${'b'.repeat(43)}`;
-    const { text, hits } = scrubSecrets(`run ${run} and refresh ${refresh}`);
-    expect(hits).toBe(2);
-    expect(text).not.toContain(run);
-    expect(text).not.toContain(refresh);
+    const signet = `kingdom_${'c-_'.repeat(14)}d`;
+    const api = `prod_orgUser_${'0f'.repeat(24)}`;
+    const { text, hits } = scrubSecrets(
+      `run ${run} refresh ${refresh} signet ${signet} api ${api}`,
+    );
+    expect(hits).toBe(4);
+    for (const secret of [run, refresh, signet, api]) expect(text).not.toContain(secret);
     expect(text).toContain('[REDACTED:kingdom-token]');
+    expect(text).toContain('[REDACTED:api-token]');
+  });
+
+  test('Kingdom identifiers in prose are not taken for tokens', () => {
+    const prose =
+      'kingdom_integration_presence and kingdom_runtime_installation and kingdom_fixture_owner_organization_id';
+    expect(scrubSecrets(prose)).toEqual({ text: prose, hits: 0 });
   });
 
   test('leaves ordinary prose alone', () => {
