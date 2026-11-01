@@ -183,11 +183,11 @@ function checksum(text: string): string {
 }
 class StaleKnowledge extends Error {}
 
-/** A record from before FEAT-007 was stamped once by a throwaway script; a record without one now is a fault. */
+/** A record left without a worker after startup's stamping: its runtime couldn't be told. */
 export const UNSTAMPED_RECORD = 'names no worker';
 
 const unstampedRecord = (threadId: string) =>
-  `Stored thread ${threadId} ${UNSTAMPED_RECORD}: every thread record carries the worker it runs on (FEAT-007); restore it from a backup or set its worker`;
+  `Stored thread ${threadId} ${UNSTAMPED_RECORD}: its native session is bound under more than one runtime, so Foundry won't guess which it runs on (FEAT-007); set its worker`;
 
 /** Local turn journal. A completed response and its artifact commit together. */
 export class LocalSessionStore {
@@ -1408,6 +1408,83 @@ export class LocalSessionStore {
    * A stored thread's worker, read before the store is opened (the daemon's main thread keeps its
    * own). Undefined when there is no record; a record without a worker is refused, never defaulted.
    */
+  /**
+   * Gives each stored thread record without a worker the one it ran on, once, before anything reads
+   * them: the runtime whose bucket holds the thread's own native binding; an observed subagent its
+   * parent's; a thread that never ran natively its project's default, since no native session can
+   * disagree. A thread bound under two runtimes is left as it is, so reading it fails loudly.
+   */
+  static stampWorkers(
+    path: string,
+    sources: {
+      /** Bindings by session runtime, as the external session store holds them. */
+      bindings: Readonly<Record<string, Readonly<Record<string, string>>>>;
+      /** The worker each session runtime belongs to. */
+      runtimeWorker: ReadonlyMap<string, string>;
+      projectDefault: (projectId: string | undefined) => string;
+    },
+  ): { stamped: Array<{ id: string; worker: string }>; ambiguous: string[] } {
+    const done = {
+      stamped: [] as Array<{ id: string; worker: string }>,
+      ambiguous: [] as string[],
+    };
+    if (path === ':memory:' || !existsSync(path)) return done;
+    const db = new Database(path, { readwrite: true, create: false });
+    try {
+      if (
+        !db.query("SELECT 1 FROM sqlite_master WHERE type='table' AND name='session_threads'").get()
+      )
+        return done;
+      const rows = db.query('SELECT id, meta FROM session_threads').all() as Array<{
+        id: string;
+        meta: string;
+      }>;
+      const metas = new Map(rows.map((row) => [row.id, JSON.parse(row.meta) as ThreadMeta]));
+      const bound = (threadId: string) => {
+        const found = new Set<string>();
+        for (const [runtime, entries] of Object.entries(sources.bindings)) {
+          const worker = sources.runtimeWorker.get(runtime);
+          if (!worker) continue;
+          for (const key of Object.keys(entries))
+            if (
+              key === threadId ||
+              (key.startsWith(`${threadId}:`) && !key.startsWith(`${threadId}:aux:`))
+            )
+              found.add(worker);
+        }
+        return [...found];
+      };
+      const workerOf = (id: string, seen = new Set<string>()): string | undefined => {
+        const meta = metas.get(id);
+        if (!meta) return undefined;
+        if (meta.worker) return meta.worker;
+        if (meta.spawn?.observed && meta.parentThreadId && !seen.has(id)) {
+          seen.add(id);
+          return workerOf(meta.parentThreadId, seen);
+        }
+        const runtimes = bound(id);
+        if (runtimes.length > 1) return undefined;
+        return runtimes[0] ?? sources.projectDefault(meta.projectId);
+      };
+      const update = db.query('UPDATE session_threads SET meta=? WHERE id=?');
+      db.transaction(() => {
+        for (const [id, meta] of metas) {
+          if (meta.worker) continue;
+          const worker = workerOf(id);
+          if (!worker) {
+            done.ambiguous.push(id);
+            continue;
+          }
+          update.run(JSON.stringify({ ...meta, worker }), id);
+          done.stamped.push({ id, worker });
+        }
+      })();
+      return done;
+    } finally {
+      db.close();
+    }
+  }
+
   static storedWorker(path: string, threadId: string): string | undefined {
     if (path === ':memory:' || !existsSync(path)) return undefined;
     // A WAL journal closed cleanly has no -shm, and a read-only open can't create one; query only.

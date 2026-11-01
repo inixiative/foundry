@@ -711,6 +711,24 @@ const mainProjectId = Object.values(config.projects ?? {}).find(
 )?.id;
 // Main keeps the worker it ran on: a later change of the project's default is never applied to it
 // silently, and a stored record without one is refused, not given the current default.
+// Records from before FEAT-007 get the worker they ran on, once, before anything reads them.
+const stampedWorkers = LocalSessionStore.stampWorkers(join(FOUNDRY_DIR, 'sessions.sqlite'), {
+  bindings: await sessionStore.bindings(),
+  runtimeWorker: new Map(
+    [...sessionAdapters].map(([worker, adapter]) => [adapter.runtime, worker]),
+  ),
+  projectDefault: (projectId) =>
+    (projectId ? config.projects[projectId]?.defaults?.provider : undefined) ??
+    config.defaults.provider,
+});
+if (stampedWorkers.stamped.length)
+  console.log(
+    `[Workers] ${stampedWorkers.stamped.length} stored threads given the worker they ran on`,
+  );
+if (stampedWorkers.ambiguous.length)
+  console.warn(
+    `[Workers] bound under more than one runtime, left without a worker: ${stampedWorkers.ambiguous.join(', ')}`,
+  );
 const mainWorker = LocalSessionStore.storedWorker(join(FOUNDRY_DIR, 'sessions.sqlite'), 'main');
 const thread = createMainThread(factory, {
   description: 'Main conversation thread',

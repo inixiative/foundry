@@ -541,3 +541,58 @@ test('a turn sent while a worker change closes the old in-session host lands on 
   expect(thread.disposed).toBe(false);
   expect(thread.meta.worker).toBe('codex');
 });
+
+test('startup gives stored records from before FEAT-007 the worker they ran on, once', () => {
+  const dir = temporary('thread-worker-stamp-');
+  const path = join(dir, 'sessions.sqlite');
+  const store = new LocalSessionStore(path);
+  const record = (id: string, extra: Partial<ThreadMeta> = {}) => ({
+    id,
+    meta: {
+      description: '',
+      tags: [],
+      status: 'idle',
+      createdAt: 1,
+      lastActiveAt: 1,
+      ...extra,
+    } as ThreadMeta,
+  });
+  store.saveThread(record('main'));
+  store.saveThread(record('on-codex', { projectId: 'p' }));
+  store.saveThread(record('never-ran', { projectId: 'p' }));
+  store.saveThread(
+    record('child', {
+      parentThreadId: 'on-codex',
+      spawn: { observed: true } as ThreadMeta['spawn'],
+    }),
+  );
+  store.saveThread(record('both'));
+  store.saveThread(record('stamped', { worker: 'codex' }));
+  store.close();
+  const sources = {
+    bindings: {
+      'claude-code': { main: 'claude-main', 'main:aux:domain:x': 'aux', both: 'b1' },
+      'codex-app-server': { 'on-codex:kingdom:login': 'codex-1', both: 'b2' },
+    },
+    runtimeWorker: new Map([
+      ['claude-code', 'claude-code'],
+      ['codex-app-server', 'codex'],
+    ]),
+    projectDefault: (projectId: string | undefined) =>
+      projectId === 'p' ? 'codex' : 'claude-code',
+  };
+  const first = LocalSessionStore.stampWorkers(path, sources);
+  expect(Object.fromEntries(first.stamped.map(({ id, worker }) => [id, worker]))).toEqual({
+    main: 'claude-code', // its own binding; an auxiliary's never counts
+    'on-codex': 'codex', // an auth-suffixed binding is still its own
+    'never-ran': 'codex', // no native session to disagree: the project default
+    child: 'codex', // an observed child runs in its parent
+  });
+  // Bound under two runtimes: left alone, so reading it fails loudly rather than guessing.
+  expect(first.ambiguous).toEqual(['both']);
+  expect(() => LocalSessionStore.storedWorker(path, 'both')).toThrow(UNSTAMPED_RECORD);
+  expect(LocalSessionStore.storedWorker(path, 'main')).toBe('claude-code');
+  expect(LocalSessionStore.storedWorker(path, 'stamped')).toBe('codex');
+  // Once: a second startup stamps nothing.
+  expect(LocalSessionStore.stampWorkers(path, sources).stamped).toEqual([]);
+});
