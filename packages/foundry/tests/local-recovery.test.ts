@@ -12,6 +12,7 @@ import {
   Thread,
 } from '@inixiative/foundry-core';
 import { Hono } from 'hono';
+import { ThreadFactory } from '../src/agents/thread-factory';
 import { LocalSessionStore, type StoredMessage } from '../src/persistence/local-session-store';
 import type { PersistedTraceRecord } from '../src/persistence/trace-record';
 import { ConfigStore } from '../src/viewer/config';
@@ -284,4 +285,42 @@ test('G4: fork and rewind cannot acknowledge a view-only native history change',
   expect((await post('/api/threads/main/fork', { copyCount: 1 })).status).toBe(501);
   expect(runtime.localStore.messages('main')).toHaveLength(2);
   expect(runtime.localStore.threads()).toHaveLength(1);
+});
+
+test('an archive is undone: thread:unarchive reopens the thread with its journal', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'foundry-viewer-unarchive-'));
+  cleanup.push(() => rmSync(dir, { force: true, recursive: true }));
+  const main = new Thread('main', new ContextStack());
+  const viewer = createViewer({
+    // Reopening rebuilds the thread the way a restart does, so the viewer needs its factory.
+    threadFactory: new ThreadFactory({ stack: new ContextStack(), agents: new Map() }),
+    harness: new Harness(main),
+    eventStream: new EventStream(),
+    interventions: new InterventionLog(),
+    configDir: dir,
+  });
+  cleanup.push(() => {
+    for (const thread of viewer.directory.all()) thread.dispose();
+    viewer.localStore!.close();
+  });
+  const request = (url: string, body: unknown) =>
+    viewer.app.request(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  expect((await request('/api/threads', { id: 'undo-me', description: 'Undo me' })).status).toBe(
+    201,
+  );
+  expect(
+    (await request('/api/actions', { kind: 'thread:archive', target: 'undo-me' })).status,
+  ).toBe(200);
+  expect(viewer.directory.get('undo-me')?.meta.status).toBe('archived');
+
+  const undone = await request('/api/actions', { kind: 'thread:unarchive', target: 'undo-me' });
+  expect(await undone.json()).toMatchObject({ ok: true });
+  const thread = viewer.directory.get('undo-me');
+  expect(thread?.disposed).toBe(false);
+  expect(thread?.meta.status).not.toBe('archived');
+  expect(thread?.meta.description).toBe('Undo me');
 });

@@ -240,6 +240,14 @@ function Toast() {
     <div class="toast ${t.type} ${t.persistent ? 'toast--persistent' : ''}">
       <span class="toast-message">${t.message}</span>
       ${
+        t.undo
+          ? html`<button class="toast-undo" onClick=${() => {
+              dismissToast();
+              t.undo();
+            }}>Undo</button>`
+          : null
+      }
+      ${
         t.persistent &&
         html`
         <button class="toast-dismiss" onClick=${dismissToast} aria-label="Dismiss">\u00d7</button>

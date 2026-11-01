@@ -492,6 +492,7 @@ export function createViewer(config: ViewerConfig) {
     eventStream,
     interventions,
     resolveThread: (id) => directory.get(id),
+    reopenThread: (id) => turns.reopen(id),
     onThreadChange: (thread) => {
       localStore?.saveThread(thread);
       streams.threadsChanged(thread.id);

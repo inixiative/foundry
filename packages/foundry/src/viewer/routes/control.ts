@@ -84,6 +84,7 @@ function isActionKind(value: string): value is OperatorAction['kind'] {
     'thread:pause',
     'thread:resume',
     'thread:archive',
+    'thread:unarchive',
     'thread:inspect',
     'layer:warm',
     'layer:invalidate',

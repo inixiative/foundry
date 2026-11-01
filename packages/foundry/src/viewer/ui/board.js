@@ -35,7 +35,7 @@ import {
   selectThread,
 } from './store.js';
 import { threadName } from './thread-labels.js';
-import { categoryOf, subagentParentOf, threadState } from './thread-status.js';
+import { categoryOf, isClosedThread, subagentParentOf, threadState } from './thread-status.js';
 
 const COLUMNS = [
   { cat: 'problem', title: 'Problems' },
@@ -44,7 +44,7 @@ const COLUMNS = [
   { cat: 'queued', title: 'Queued' },
   { cat: 'done', title: 'Done' },
 ];
-const OPEN = (t) => !['archived', 'completed', 'done'].includes(t.meta?.status ?? 'idle');
+const OPEN = (t) => !isClosedThread(t);
 
 /** The board's filter: 'all', 'global', 'forge', 'this', or 'project:<id>'. */
 function matches(filter, thread) {

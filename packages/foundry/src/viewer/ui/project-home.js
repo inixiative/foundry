@@ -22,8 +22,8 @@ import {
   threadStatusOf,
 } from './store.js';
 import { threadName } from './thread-labels.js';
+import { isClosedThread } from './thread-status.js';
 
-const CLOSED = new Set(['archived', 'completed', 'done']);
 const INACTIVE = new Set(['paused', 'idle']);
 
 function useJson(url) {
@@ -74,8 +74,8 @@ export function ProjectHome() {
     (t) => (t.meta?.projectId ?? null) === (projectId ?? null) && !t.meta?.parentThreadId,
   );
   // Closed is the stored status; open vs inactive is the live one (a waiting request is open).
-  const closed = threads.filter((t) => CLOSED.has(t.meta?.status ?? 'idle'));
-  const live = threads.filter((t) => !CLOSED.has(t.meta?.status ?? 'idle'));
+  const closed = threads.filter(isClosedThread);
+  const live = threads.filter((t) => !isClosedThread(t));
   const inactive = live.filter((t) => INACTIVE.has(threadStatusOf(t.threadId)));
   const open = live.filter((t) => !INACTIVE.has(threadStatusOf(t.threadId)));
   const feedback = feedbackIn(isGlobal ? {} : { projectId });

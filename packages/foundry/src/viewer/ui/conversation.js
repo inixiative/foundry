@@ -1041,8 +1041,39 @@ function commandOf(prompt) {
   return prompt.detail ?? null;
 }
 
+/** One plain line saying what approving would do, from the call's capability, tool and command. */
+export function riskLine(prompt) {
+  const meta = prompt.meta ?? {};
+  // The call's command, or the ask itself when the call carries none ("Allow git push …?").
+  const command = String(meta.toolInput?.command ?? prompt.message ?? '');
+  const path = meta.path ?? meta.toolInput?.file_path ?? meta.toolInput?.path;
+  const cap = prompt.capability ?? '';
+  let what = null;
+  if (cap === 'git.push') what = 'Pushes to a remote';
+  else if (cap === 'exec:shell' || /^(Bash|shell|exec_command)$/.test(meta.toolName ?? '')) {
+    if (/\bgit\s+push\b/.test(command)) what = 'Pushes to a remote';
+    else if (/\brm\s+-[a-z]*r|\bDROP\s+|\bDELETE\s+FROM\b|--force-reset/i.test(command))
+      what = 'Deletes data';
+    else what = 'Runs a shell command';
+  } else if (cap === 'file:write') what = `Changes ${path ?? 'a file'}`;
+  else if (cap === 'file:read') what = `Reads ${path ?? 'a file'}`;
+  else if (cap.startsWith('net') || cap === 'fetch') what = 'Reaches the network';
+  if (!what) return null;
+  const level =
+    prompt.urgency === 'critical' ? 'critical' : prompt.urgency === 'high' ? 'high risk' : null;
+  return level ? `${what} · ${level}` : what;
+}
+
+const SCOPES = [
+  ['once', 'Once', true],
+  ['thread', 'This thread', true],
+  ['session', 'This session · not built', false],
+  ['project', 'Always for this project · not built', false],
+];
+
 function ActionPromptCard({ prompt }) {
   const [full, setFull] = useState(false);
+  const [scope, setScope] = useState('once');
   const [input, setInput] = useState('');
   const command = commandOf(prompt);
   const [resolving, setResolving] = useState(false);
@@ -1056,9 +1087,18 @@ function ActionPromptCard({ prompt }) {
 
   const handleAction = async (action) => {
     setResolving(true);
-    await resolvePrompt(prompt.id, action, input || undefined);
+    // "This thread" answers the same call the same way for the rest of this thread (the route's always).
+    await resolvePrompt(prompt.id, action, input || undefined, {
+      always: action === 'approve' && scope === 'thread',
+    });
     setResolving(false);
   };
+  const risk = riskLine(prompt);
+  const makeRule = () =>
+    giveFeedback(prompt.threadId, `Make a rule for this approval: ${prompt.message}`, {
+      ...(prompt.meta?.turnId ? { turnId: prompt.meta.turnId } : {}),
+      tags: ['rule-request'],
+    });
 
   const options = prompt.options || [];
   const isInput = prompt.kind === 'input';
@@ -1095,6 +1135,7 @@ function ActionPromptCard({ prompt }) {
           : null
       }
       <div class="prompt-card-message">${prompt.message}</div>
+      ${risk ? html`<div class="prompt-risk">${risk}</div>` : null}
       ${
         command
           ? isLong(command)
@@ -1153,10 +1194,19 @@ function ActionPromptCard({ prompt }) {
           <button class="prompt-btn prompt-btn-approve"
             onClick=${() => handleAction('approve')}
             disabled=${resolving}>${composerNote.value.trim() ? 'Approve + note' : 'Approve'}</button>
+          <select class="prompt-scope" aria-label="Approve for" value=${scope} onChange=${(e) => setScope(e.target.value)}>
+            ${SCOPES.map(([id, label, built]) => html`<option key=${id} value=${id} disabled=${!built}>${label}</option>`)}
+          </select>
           <button class="prompt-btn prompt-btn-reject"
             onClick=${() => handleAction('reject')}
             disabled=${resolving}>Reject</button>
         `
+        }
+        ${
+          prompt.kind === 'approval'
+            ? html`<button type="button" class="prompt-make-rule" onClick=${makeRule}
+          title="Records a feedback item for the Forge Master to turn into a rule">Tired of this? Make a rule</button>`
+            : null
         }
       </div>
     </div>

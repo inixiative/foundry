@@ -21,6 +21,7 @@ import {
   learningEntries,
   routingRequest,
 } from './inspector-data.js';
+import { CLOSED_STATUSES } from './thread-status.js';
 
 // ---------------------------------------------------------------------------
 // Stream state
@@ -139,8 +140,6 @@ const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 // Thread graph
 // ---------------------------------------------------------------------------
 
-const INACTIVE = new Set(['archived', 'completed', 'done']);
-
 /**
  * Threads and their subagent threads as a top-down tree. A thread whose parent is not in view is a root.
  * A node shows at most `maxChildren` children unless expanded; the rest fold into one "+N more" node,
@@ -196,7 +195,7 @@ export function threadGraph(
     else roots.push(node);
   }
   const recency = (a, b) =>
-    INACTIVE.has(a.status) - INACTIVE.has(b.status) ||
+    CLOSED_STATUSES.has(a.status) - CLOSED_STATUSES.has(b.status) ||
     (b.lastActiveAt ?? 0) - (a.lastActiveAt ?? 0);
   roots.sort(recency);
 
@@ -210,7 +209,7 @@ export function threadGraph(
       depth,
       childCount: node.children.length,
       active: node.id === activeThreadId,
-      inactive: INACTIVE.has(node.status),
+      inactive: CLOSED_STATUSES.has(node.status),
       children: undefined,
       detail: {
         thread: node.id,
