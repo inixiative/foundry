@@ -1,4 +1,4 @@
-import { afterEach, expect, test } from 'bun:test';
+import { afterAll, afterEach, expect, test } from 'bun:test';
 import {
   lstatSync,
   mkdirSync,
@@ -6,6 +6,7 @@ import {
   readdirSync,
   readFileSync,
   readlinkSync,
+  realpathSync,
   rmSync,
   statSync,
   symlinkSync,
@@ -15,13 +16,17 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   claudeSettingsFiles,
+  codexUserConfig,
   harnessSettingSources,
+  shareCodexUserSetup,
   shareUserSetup,
   subscriptionSettingsGuard,
 } from '../src/providers/harness-settings';
 import { SubscriptionAuthentication } from '../src/providers/subscription-authentication';
 import { subscriptionStatusProcess } from './helpers/subscription-transport';
+import { recordedCodexStatus, settleRecordings } from './helpers/vcr';
 
+afterAll(settleRecordings);
 const roots: string[] = [];
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
@@ -220,4 +225,109 @@ test('composition.harnessSettings takes only "load" or "off"', async () => {
   expect(() =>
     validateCompositionSettings({ harnessSettings: 'on' as unknown as 'load' }, []),
   ).toThrow('composition.harnessSettings must be "load" or "off"');
+});
+
+test('a Codex main thread takes only the allowlisted part of the user’s config.toml', () => {
+  const root = scratch();
+  writeFileSync(
+    join(root, 'config.toml'),
+    [
+      'model = "gpt-paid"',
+      'model_provider = "evil"',
+      '"profile" = "sneaky"',
+      'chatgpt_base_url = "http://evil"',
+      'cli_auth_credentials_store = "keyring"',
+      'notify = ["/bin/echo", "done"]',
+      '[model_providers.evil]',
+      'base_url = "http://evil"',
+      '[profiles.sneaky]',
+      'model_provider = "evil"',
+      '[projects."/repo"]',
+      'trust_level = "trusted"',
+      '[memories]',
+      'use_memories = true',
+      '[mcp_servers.repl]',
+      'command = "/bin/repl"',
+      'args = ["--a", "b c"]',
+      'startup_timeout_sec = 120',
+      '[mcp_servers.repl.env]',
+      'QUOTE = "say \\"hi\\""',
+      '[plugins."documents@openai-primary-runtime"]',
+      'enabled = true',
+      '[features]',
+      'memories = true',
+    ].join('\n'),
+  );
+  const text = codexUserConfig(root);
+  const parsed = Bun.TOML.parse(text) as Record<string, unknown>;
+  expect(Object.keys(parsed).sort()).toEqual(['features', 'mcp_servers', 'notify', 'plugins']);
+  expect(parsed.mcp_servers).toEqual({
+    repl: {
+      command: '/bin/repl',
+      args: ['--a', 'b c'],
+      startup_timeout_sec: 120,
+      env: { QUOTE: 'say "hi"' },
+    },
+  });
+  expect(parsed.plugins).toEqual({ 'documents@openai-primary-runtime': { enabled: true } });
+  for (const word of ['evil', 'gpt-paid', 'sneaky', 'keyring', 'trusted', 'use_memories'])
+    expect(text).not.toContain(word);
+  // No config, or an unreadable one, gives nothing.
+  expect(codexUserConfig(join(root, 'missing'))).toBe('');
+  writeFileSync(join(root, 'config.toml'), 'not = = toml');
+  expect(codexUserConfig(root)).toBe('');
+});
+
+test('a Codex home gets the user’s skills, rules and prompts by link', () => {
+  const root = scratch();
+  const user = join(root, 'codex');
+  const home = join(root, 'home');
+  mkdirSync(join(user, 'skills'), { recursive: true });
+  mkdirSync(join(user, 'rules'));
+  mkdirSync(home, { mode: 0o700 });
+  shareCodexUserSetup(home, user);
+  expect(readlinkSync(join(home, 'skills'))).toBe(join(user, 'skills'));
+  expect(readlinkSync(join(home, 'rules'))).toBe(join(user, 'rules'));
+  expect(() => lstatSync(join(home, 'prompts'))).toThrow();
+  // Never the user's AGENTS.md, memories or sessions.
+  for (const name of ['AGENTS.md', 'memories', 'sessions'])
+    expect(() => lstatSync(join(home, name))).toThrow();
+});
+
+test('a Codex main thread on the subscription runs on its own home with the user’s setup; others on the plain one', async () => {
+  const root = scratch();
+  const profile = join(root, 'codex-profile');
+  mkdirSync(join(profile, 'skills'), { recursive: true, mode: 0o700 });
+  writeFileSync(join(profile, 'auth.json'), '{}', { mode: 0o600 });
+  writeFileSync(
+    join(profile, 'config.toml'),
+    'model_provider = "evil"\n[mcp_servers.repl]\ncommand = "/bin/repl"\n',
+    { mode: 0o600 },
+  );
+  const auth = new SubscriptionAuthentication(
+    root,
+    {
+      id: crypto.randomUUID(),
+      integrationId: crypto.randomUUID(),
+      runtime: 'codex',
+      mode: 'native-profile',
+      profileDirectory: profile,
+    },
+    recordedCodexStatus(['chatgpt']).statusSpawn,
+  );
+  const main = await auth.prepare('main', 'codex');
+  const launched = main.launch(['codex', 'app-server'], {}, { sources: 'user', cwd: root });
+  const userHome = launched.env.CODEX_HOME!;
+  main.release();
+  const plain = await auth.prepare('decision', 'codex');
+  const plainHome = plain.launch(['codex', 'app-server'], {}).env.CODEX_HOME!;
+  plain.release();
+  expect(userHome).toBe(`${plainHome}-user`);
+  const userConfig = readFileSync(join(userHome, 'config.toml'), 'utf8');
+  expect(userConfig).toContain('cli_auth_credentials_store = "file"');
+  expect(userConfig).toContain('mcp_servers');
+  expect(userConfig).not.toContain('evil');
+  expect(readlinkSync(join(userHome, 'skills'))).toBe(join(realpathSync(profile), 'skills'));
+  expect(readFileSync(join(plainHome, 'config.toml'), 'utf8')).not.toContain('mcp_servers');
+  expect(() => lstatSync(join(plainHome, 'skills'))).toThrow();
 });

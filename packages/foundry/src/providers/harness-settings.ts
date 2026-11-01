@@ -194,7 +194,16 @@ export function shareUserSetup(home: string, userDirectory: string): void {
     } catch {
       /* Nothing to remove. */
     }
-  for (const name of USER_FOLDERS) {
+  linkUserFolders(home, userDirectory, USER_FOLDERS);
+}
+
+/**
+ * Links `names` in a Foundry-owned home to the user's own folders. A real folder found where a link
+ * goes is moved aside, kept, not deleted; links are swapped by rename, so another thread on the
+ * home never sees a gap.
+ */
+function linkUserFolders(home: string, userDirectory: string, names: readonly string[]): void {
+  for (const name of names) {
     const link = join(home, name);
     const target = join(userDirectory, name);
     let current: ReturnType<typeof lstatSync> | undefined;
@@ -215,4 +224,68 @@ export function shareUserSetup(home: string, userDirectory: string): void {
     symlinkSync(target, temporary);
     renameSync(temporary, link);
   }
+}
+
+/**
+ * The parts of a user's Codex `config.toml` a Foundry main thread takes (CORE-003), by allowlist:
+ * their MCP servers, plugins and marketplaces, feature flags, skills, tools, hooks, notify and
+ * shell policy. Never their model, provider, profiles, base URLs, login settings, project trust
+ * or memories, so nothing in it can move the thread off the subscription login, and AGENTS.md and
+ * memories stay with Foundry's composition. A denylist could be bypassed by quoting or dotted
+ * keys; an allowlist over the parsed table cannot.
+ */
+const CODEX_USER_KEYS = [
+  'mcp_servers',
+  'plugins',
+  'marketplaces',
+  'features',
+  'skills',
+  'tools',
+  'hooks',
+  'notify',
+  'shell_environment_policy',
+  'sandbox_workspace_write',
+  'model_reasoning_summary',
+  'model_verbosity',
+  'hide_agent_reasoning',
+  'show_raw_agent_reasoning',
+  'file_opener',
+] as const;
+
+/** Codex folders shared from the user's home: their skills, execpolicy rules and prompts. */
+const CODEX_USER_FOLDERS = ['skills', 'rules', 'prompts'] as const;
+
+const tomlKey = (key: string) => (/^[A-Za-z0-9_-]+$/.test(key) ? key : JSON.stringify(key));
+
+function tomlValue(value: unknown): string {
+  if (typeof value === 'string') return JSON.stringify(value);
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  if (value instanceof Date) return value.toISOString();
+  if (Array.isArray(value)) return `[${value.map(tomlValue).join(', ')}]`;
+  if (value && typeof value === 'object')
+    return `{ ${Object.entries(value)
+      .map(([key, inner]) => `${tomlKey(key)} = ${tomlValue(inner)}`)
+      .join(', ')} }`;
+  throw Error('Unsupported value in Codex config.toml');
+}
+
+/** The allowlisted part of the user's Codex config.toml, as TOML lines; empty when there is none. */
+export function codexUserConfig(userDirectory: string): string {
+  let parsed: Record<string, unknown>;
+  try {
+    parsed = Bun.TOML.parse(readFileSync(join(userDirectory, 'config.toml'), 'utf8')) as Record<
+      string,
+      unknown
+    >;
+  } catch {
+    return ''; // Missing or unreadable: Codex would refuse it in the user's own home too.
+  }
+  return CODEX_USER_KEYS.filter((key) => key in parsed)
+    .map((key) => `${key} = ${tomlValue(parsed[key])}\n`)
+    .join('');
+}
+
+/** A Foundry-owned CODEX_HOME for a main thread: the user's skills, rules and prompts by link. */
+export function shareCodexUserSetup(home: string, userDirectory: string): void {
+  linkUserFolders(home, userDirectory, CODEX_USER_FOLDERS);
 }

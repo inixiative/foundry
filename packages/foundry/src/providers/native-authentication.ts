@@ -18,7 +18,11 @@ import { isAbsolute, join } from 'node:path';
 import { sha256Hex } from '@inixiative/foundry-core';
 import { z } from 'zod';
 import { profileEnvironment } from './default-profiles';
-import type { HarnessSettingsLaunch } from './harness-settings';
+import {
+  codexUserConfig,
+  type HarnessSettingsLaunch,
+  shareCodexUserSetup,
+} from './harness-settings';
 import {
   assertPrivateProfile,
   assertProfile,
@@ -301,7 +305,7 @@ export class NativeAuthentication {
     const ownerId = crypto.randomUUID();
     const shared = source.mode === 'native-profile' && this.options.shared === true;
     const sharedLocks = join(directory, '.foundry-auth-shared');
-    const home = this.options.privateHome ? this.privateHomePath(source.id) : undefined;
+    const privateHome = this.options.privateHome ? this.privateHomePath(source.id) : undefined;
     let active = false;
     let released = false;
     const check = () => {
@@ -335,8 +339,21 @@ export class NativeAuthentication {
       integrationId: source.integrationId,
       mode: source.mode,
       check,
-      launch: (argv: string[], inherited: Record<string, string | undefined>) => {
+      launch: (
+        argv: string[],
+        inherited: Record<string, string | undefined>,
+        harness?: HarnessSettingsLaunch,
+      ) => {
         check();
+        // A main thread loading the user's own Codex setup runs on its own home beside the plain
+        // one, so decision sessions on the same login never read the user's config.
+        const home = privateHome && harness ? `${privateHome}-user` : privateHome;
+        const homeConfig =
+          home && harness ? PRIVATE_HOME_CONFIG + codexUserConfig(directory) : PRIVATE_HOME_CONFIG;
+        const writeHome = (target: string) => {
+          writeCredentialHome(target, directory, homeConfig);
+          if (harness) shareCodexUserSetup(target, directory);
+        };
         if (active) throw Error('Authentication launch already owns a process');
         const lock = join(directory, '.foundry-auth-lock');
         const env = withoutCompetingCredentials(inherited);
@@ -413,7 +430,7 @@ export class NativeAuthentication {
           }
           if (home)
             try {
-              writeCredentialHome(home, directory, PRIVATE_HOME_CONFIG);
+              writeHome(home);
             } catch {
               unlinkSync(join(sharedLocks, `${ownerId}.json`));
               try {
@@ -436,7 +453,7 @@ export class NativeAuthentication {
           try {
             for (const [path, contents] of files)
               writeProfileConfiguration(directory, path, contents);
-            if (home) writeCredentialHome(home, directory, PRIVATE_HOME_CONFIG);
+            if (home) writeHome(home);
             writeFileSync(join(lock, 'owner.json'), owner, { mode: 0o600 });
           } catch {
             try {

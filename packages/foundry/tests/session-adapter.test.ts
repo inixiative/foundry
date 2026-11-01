@@ -1169,3 +1169,36 @@ test('with in-session Wardens a main thread loads no harness settings, so user h
     main.kill();
   }
 });
+
+test('only a Codex main thread asks its launch for the user’s harness settings (CORE-003)', async () => {
+  const { appServerTransport } = await import('./helpers/subscription-transport');
+  const seen: Array<{ threadId: string; harness: unknown }> = [];
+  const appServer = appServerTransport();
+  const adapter = new CodexSessionAdapter({
+    store: new InMemoryExternalSessionStore(),
+    authentication: {
+      bindingId: (threadId: string) => threadId,
+      prepare: async (threadId: string) => ({
+        bindingId: threadId,
+        sourceId: 'source',
+        integrationId: 'integration',
+        mode: 'native-profile' as const,
+        check: () => {},
+        launch: (argv: string[], env: Record<string, string | undefined>, harness?: unknown) => {
+          seen.push({ threadId, harness });
+          return { argv, env };
+        },
+        release: () => {},
+      }),
+    },
+    harnessSettings: () => 'user',
+    defaults: { spawn: appServer.spawn },
+  });
+  const main = await adapter.createSession({ threadId: 'main', cwd: '/repo' });
+  try {
+    await main.start();
+    expect(seen).toEqual([{ threadId: 'main', harness: { sources: 'user', cwd: '/repo' } }]);
+  } finally {
+    main.kill();
+  }
+});
