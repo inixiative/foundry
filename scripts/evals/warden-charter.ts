@@ -672,7 +672,9 @@ const checkSpend = () => {
 };
 const spend = (windows: Record<string, number> | undefined) => {
   if (!bounded()) return;
-  const now = windows?.five_hour;
+  // A reading with no five_hour entry comes right after the window resets (the CLI reports no
+  // five-hour limit until something is spent): an empty window, not an unreadable one.
+  const now = windows ? (windows.five_hour ?? 0) : undefined;
   // Fail closed: a bound that cannot be read twice running stops the run.
   if (now === undefined) {
     if (++unreadable >= 2) stopped ??= 'the five-hour window could not be read twice running';
