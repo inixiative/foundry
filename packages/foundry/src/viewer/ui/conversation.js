@@ -635,7 +635,7 @@ function ChatInput() {
             // "/" typed into an empty box opens the actions palette (and goes no further).
             if (!text && e.target.value === '/') {
               e.target.value = '';
-              actionPaletteOpen.value = true;
+              actionPaletteOpen.value = 'slash';
               return;
             }
             const routed = routeTyped(e.target.value, settingsConfig.peek());

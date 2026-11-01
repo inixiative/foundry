@@ -205,11 +205,19 @@ export function ActionPalette({ onSend }) {
   const input = useRef(null);
   const open = actionPaletteOpen.value;
   useEffect(() => {
-    if (open) {
-      setQuery('');
-      setAt(0);
-      requestAnimationFrame(() => input.current?.focus());
+    if (!open) return;
+    setAt(0);
+    // Opened by "/" in an empty box: whatever was typed there before this input took focus
+    // belongs to the palette (a fast "/btw " lands in the box first).
+    const box = document.querySelector('textarea.chat-input');
+    const carried = open === 'slash' ? (box?.value ?? '') : '';
+    if (carried) composerFill.value = '';
+    if (carried && /^(btw|aside)\s/.test(carried) && !separateViews(settingsConfig.peek())) {
+      route(/^(btw|aside)/.exec(carried)[1], carried.replace(/^(btw|aside)\s/, ''));
+      return;
     }
+    setQuery(carried);
+    input.current?.focus();
   }, [open]);
   const groups = filterActions(paletteActions(), query);
   const flat = groups.flatMap(([, items]) => items);
@@ -217,9 +225,10 @@ export function ActionPalette({ onSend }) {
     actionPaletteOpen.value = false;
   };
   // Send this draft to /btw or an aside: the box's label switches, and focus goes back to it.
-  const route = (destination) => {
+  const route = (destination, rest = '') => {
     close();
     composerDestination.value = destination;
+    if (rest) composerFill.value = rest;
     document.querySelector('textarea.chat-input')?.focus();
   };
   const run = (action) => {
