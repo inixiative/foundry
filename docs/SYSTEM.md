@@ -18,7 +18,7 @@ Foundry is a **context management and orchestration layer** for AI agents. It ma
 │  │ Context Stack │  │ Anthropic│  │ File     │  │ PR Fixtures   │  │
 │  │ Thread        │  │ OpenAI   │  │ SQLite   │  │ Diff Scoring  │  │
 │  │ Harness       │  │ Gemini   │  │ Postgres │  │ LLM Scoring   │  │
-│  │ Planner       │  │          │  │ Redis    │  │ Regression    │  │
+│  │               │  │          │  │ Redis    │  │ Regression    │  │
 │  │ Herald        │  │ Runtime  │  │ HTTP     │  │ Trends        │  │
 │  │ ActiveMemory  │  │ Adapters │  │ Markdown │  │               │  │
 │  │ CorpusCompiler│  │          │  │          │  │               │  │
@@ -185,22 +185,6 @@ thread.signals.on("correction", async (signal) => {
 thread.signals.emit({ kind: "correction", content: "Use try/catch", source: "reviewer" });
 ```
 
-### Planner
-
-A new agent type that generates structured execution plans with topological step execution.
-
-```ts
-const planner = new Planner("planner", {
-  provider: "anthropic",
-  model: "claude-haiku-4-5-20251001",
-});
-thread.register(planner);
-const plan = await thread.dispatch("planner", { goal: "implement auth" });
-// Returns a DAG of steps executed in topological order
-```
-
-Steps are executed respecting dependency order, enabling parallel execution of independent steps and sequential execution where dependencies exist.
-
 ### Herald
 
 Cross-agent observation layer. Herald monitors agent interactions and detects emergent patterns across the system.
@@ -235,14 +219,6 @@ Per-provider, per-model, per-agent cost accounting with budget enforcement.
 - Aggregates costs by provider, model, and agent
 - Enforces budget limits — agents are blocked when budget is exhausted
 - Exposes data for the Analytics tab in the Viewer
-
-### Lifecycle Hooks
-
-16 hook points across the agent lifecycle, enabling fine-grained control over agent behavior.
-
-- Hooks fire at key points: pre/post dispatch, pre/post execution, layer warm/stale transitions, session events, etc.
-- **Plan-mode auto-shunt** — when a Planner is active, hooks automatically shunt dispatch into plan-mode execution
-- **Budget guards** — hooks that intercept dispatch when token budgets are near exhaustion
 
 ### Other Primitives
 
@@ -526,7 +502,7 @@ PostgreSQL with pgvector extension.
 | Production code | ~16,300 lines (69 source files) |
 | Test code | ~8,000+ lines (29 test files) |
 | Tests passing | 472+ |
-| Agent primitives | 25+ (including Planner, Herald, CorpusCompiler) |
+| Agent primitives | 25+ (including Herald, CorpusCompiler) |
 | Lifecycle hooks | 16 hook points |
 | Pattern detectors | 5 |
 | Memory adapters | 6 |

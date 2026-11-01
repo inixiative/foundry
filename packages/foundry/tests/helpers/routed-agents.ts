@@ -1,15 +1,9 @@
-/**
- * @atlas
- * @kind config
- * @partOf feature:flow
- */
-import type { AgentSettingsConfig } from './viewer/config';
+import type { AgentSettingsConfig } from '../../src/viewer/config';
 
 /**
- * The routed agents: a classifier and a router on the decision profile ahead of the Artificer. A
- * fresh install runs none of this (viewer/config.ts, defaultAgents). (The "development team" that
- * added hand-named decider Wardens per domain beside these went with the roster, 2026-10-17: a
- * project's Wardens are its region Wardens.)
+ * A routed-agents settings fixture: a classifier and a router on the decision profile ahead of the
+ * Artificer. Production never seeds these (viewer/config.ts, defaultAgents); tests use it to cover
+ * wrapped threads.
  */
 export function routedAgents(
   workerProvider: string,

@@ -1,8 +1,8 @@
 import { expect, test } from 'bun:test';
 import { ContextStack, Harness, type LLMProvider } from '@inixiative/foundry-core';
 import { buildAgents, ThreadFactory } from '../src/agents/thread-factory';
-import { routedAgents } from '../src/development-team';
 import { starterConfig } from '../src/viewer/config';
+import { routedAgents } from './helpers/routed-agents';
 
 function setup() {
   const config = starterConfig('claude-code', 'haiku');

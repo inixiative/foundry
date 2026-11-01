@@ -54,12 +54,6 @@ export {
   type GateContext,
   Harness,
   type HarnessResult,
-  type HookContext,
-  type HookHandler,
-  type HookPoint,
-  // Hooks
-  HookRegistry,
-  type HookResult,
   type HydrationAdapter,
   // Hydration
   HydrationRegistry,
@@ -83,8 +77,6 @@ export {
   type PermissionLevel,
   type PermissionPolicy,
   type PipelineStep,
-  type PlanModeConfig,
-  type PlanModeTrigger,
   type PromptBlock,
   type PromptKind,
   type PromptListener,
@@ -127,11 +119,6 @@ export {
 } from '@inixiative/foundry-core';
 
 // Foundry-specific: built-in hooks
-export {
-  budgetGuardHook,
-  type HookTokenTracker,
-  planModeHook,
-} from './builtin-hooks';
 // Cartographer — context routing (reads map, routes slices)
 export {
   Cartographer,
@@ -213,14 +200,6 @@ export {
   type LibrarianConfig,
   type ThreadState,
 } from './librarian';
-// Planner Agent
-export {
-  type Plan,
-  type PlanExecutionResult,
-  Planner,
-  type PlannerConfig,
-  type PlanStep,
-} from './planner';
 // Project — top-level container above threads
 export {
   fromSettingsConfig,

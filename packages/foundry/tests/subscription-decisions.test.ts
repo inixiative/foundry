@@ -12,7 +12,6 @@ import {
   ThreadFactory,
 } from '../src/agents/thread-factory';
 import { scopedProvider, ThreadRuntimeManager } from '../src/agents/thread-runtime';
-import { routedAgents } from '../src/development-team';
 import { KnowledgePersistence } from '../src/persistence/knowledge-persistence';
 import { LocalSessionStore } from '../src/persistence/local-session-store';
 import { buildNativeTextProvider } from '../src/providers/native-text-provider';
@@ -21,6 +20,7 @@ import {
   type SubscriptionDecisionConfig,
 } from '../src/providers/subscription-decisions';
 import { starterConfig } from '../src/viewer/config';
+import { routedAgents } from './helpers/routed-agents';
 import { subscriptionTransport } from './helpers/subscription-transport';
 import {
   DECIDED,

@@ -79,7 +79,7 @@ export default defineConfig({
       include: `${CORE}/{context-layer,context-stack,cache-lifecycle,hydrator}.ts`,
       partOf: 'primitive:contextLayers',
     },
-    { include: `${CORE}/{middleware,hooks,retry}.ts`, partOf: 'primitive:middleware' },
+    { include: `${CORE}/{middleware,retry}.ts`, partOf: 'primitive:middleware' },
     {
       include: `${CORE}/{signal,event-stream,intervention,action-prompt,bounded-set}.ts`,
       partOf: 'primitive:signals',
@@ -111,10 +111,9 @@ export default defineConfig({
 
     // foundry: agents
     {
-      include: `${FOUNDRY}/agents/{flow-orchestrator,cartographer,librarian,herald,workstream-detector,planner,reactive,builtin-hooks,corpus-compiler,learning-config,configured-experts}.ts`,
+      include: `${FOUNDRY}/agents/{flow-orchestrator,cartographer,librarian,herald,workstream-detector,reactive,corpus-compiler,learning-config,configured-experts}.ts`,
       partOf: 'feature:flow',
     },
-    { include: `${FOUNDRY}/development-team.ts`, partOf: 'feature:flow' },
     {
       include: `${FOUNDRY}/agents/{domain-librarian,region-roster,warden-triggers,chorus-reception,work-items}.ts`,
       partOf: 'feature:wardens',

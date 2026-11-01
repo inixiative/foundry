@@ -40,7 +40,6 @@ export {
   type AdviseResult,
   type BuildAgentsDeps,
   type BuildLayersDeps,
-  budgetGuardHook,
   buildAgents,
   buildLayers,
   // Cartographer (context routing)
@@ -75,7 +74,6 @@ export {
   type HeraldConfig,
   type HeraldPattern,
   type HeraldRecommendation,
-  type HookTokenTracker,
   type InjectionPlan,
   type InvalidationEvent,
   invalidateComposition,
@@ -89,12 +87,6 @@ export {
   lowConfidenceRule,
   type MapEntry,
   type PatternDetector,
-  type Plan,
-  type PlanExecutionResult,
-  // Planner
-  Planner,
-  type PlannerConfig,
-  type PlanStep,
   // Project
   Project,
   type ProjectConfig,
@@ -103,7 +95,6 @@ export {
   type ProjectSummary,
   parseJSON,
   // Built-in hooks
-  planModeHook,
   type ReactionContext,
   type ReactionRule,
   // Reactive Middleware

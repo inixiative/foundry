@@ -63,8 +63,7 @@ export function slim(value: unknown, depth = 0): unknown {
 // ---------------------------------------------------------------------------
 // Task lists. The executor's own plan tools, recorded as public tool input on the
 // turn's native history. A source maps one tool's input to { goal?, items }.
-// Extension point: add a source here when another plan shape is journalled
-// (e.g. the Planner agent's Plan once plans are recorded per turn).
+// Extension point: add a source here when another plan shape is journalled.
 // ---------------------------------------------------------------------------
 
 export interface TaskItem {

@@ -240,23 +240,7 @@ Executor produces output
   → Signals flow into the corpus via Librarian reconciliation
 ```
 
-**Setup:** Add a post:dispatch hook that conditionally invokes the reviewer:
-
-```typescript
-hooks.register({
-  id: "auto-review",
-  hookPoint: "post:dispatch",
-  priority: 200,
-  handler: async (ctx) => {
-    // Only review executor outputs, not classifier/router
-    if (ctx.agentId?.startsWith("executor-")) {
-      // Dispatch to reviewer with the output as payload
-      return { action: "continue", annotations: { needsReview: true } };
-    }
-    return { action: "continue" };
-  },
-});
-```
+Nothing wires this loop today: the lifecycle hook registry it assumed was removed, unwired, on 2026-11-01.
 
 ### Loop 3: Distillation → Knowledge (periodic)
 
@@ -370,15 +354,6 @@ const tracker = new TokenTracker({
   },
 });
 
-// Wire the budget guard hook
-hooks.register(budgetGuardHook(tracker));
-
-// Wire plan mode for complex tasks
-hooks.register(planModeHook({
-  plannerAgentId: "planner",
-  triggers: ["complexity", "newDomain"],
-  complexityThreshold: 4000,
-}));
 ```
 
 ---
