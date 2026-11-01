@@ -87,7 +87,17 @@ export const MODEL_CAPABILITIES: readonly ModelCapability[] = [
 export type ProviderCredential = 'api-key' | 'subscription' | 'local';
 
 /** Effort levels hosts publish. A superset of CompletionOpts.thinking. */
-export type ReasoningEffort = 'none' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra';
+export const REASONING_EFFORTS = [
+  'none',
+  'low',
+  'medium',
+  'high',
+  'xhigh',
+  'max',
+  'ultra',
+] as const;
+/** The one effort vocabulary: every effort setting and picker is a subset of it. */
+export type ReasoningEffort = (typeof REASONING_EFFORTS)[number];
 
 /**
  * How one model takes its reasoning controls. This is the map that replaced a
@@ -1731,6 +1741,18 @@ export function modelOptionsByCapability(...capabilities: ModelCapability[]): Mo
       )
       .map((model) => ({ provider: provider.id, model: model.id, label: model.id })),
   );
+}
+
+/**
+ * The efforts a registered model accepts, in order; undefined for a model the registry does not
+ * list (a local server's), which callers take as "not known, don't narrow".
+ */
+export function modelEfforts(
+  providerId: string,
+  modelId: string,
+): readonly ReasoningEffort[] | undefined {
+  const model = registryModel(providerId, modelId);
+  return model ? (model.reasoning?.efforts ?? []) : undefined;
 }
 
 export function registryModel(providerId: string, modelId: string): FoundryModelInfo | undefined {

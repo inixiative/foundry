@@ -3,6 +3,7 @@
  * @kind service
  * @partOf primitive:nativeSessions
  */
+import { REASONING_EFFORTS, type ReasoningEffort } from '@inixiative/foundry-core';
 /**
  * What a host (an ACP client, or the viewer) chose for one thread's executor session: the
  * permission mode, model and effort it runs with and the MCP servers it carries. Access follows
@@ -18,9 +19,8 @@
 export const PERMISSION_MODES = ['default', 'acceptEdits', 'plan', 'bypassPermissions'] as const;
 export type PermissionMode = (typeof PERMISSION_MODES)[number];
 
-/** Native effort levels both CLIs accept. */
-export const EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
-export type EffortLevel = (typeof EFFORT_LEVELS)[number];
+/** A thread's effort: the registry's vocabulary; which levels a model takes is the registry's (modelEfforts). */
+export type EffortLevel = ReasoningEffort;
 
 /** A client MCP server, in ACP's shape (`stdio` without a type, or `http`). */
 export type ClientMcpServer =
@@ -139,7 +139,7 @@ export class ThreadLaunchSettings {
     const current = this.get(threadId);
     if (patch.permissionMode != null && !PERMISSION_MODES.includes(patch.permissionMode))
       throw Error(`Unknown permission mode: ${patch.permissionMode}`);
-    if (patch.effort != null && !EFFORT_LEVELS.includes(patch.effort))
+    if (patch.effort != null && !REASONING_EFFORTS.includes(patch.effort))
       throw Error(`Unknown effort: ${patch.effort}`);
     if (patch.model != null && (typeof patch.model !== 'string' || !patch.model.trim()))
       throw Error('model must be a non-empty string');

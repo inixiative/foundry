@@ -12,7 +12,15 @@ import type {
   ThreadConfig,
   TokenTracker,
 } from '@inixiative/foundry-core';
-import { MODEL_REGISTRY, newId, Thread, threadTitle, timeFromId } from '@inixiative/foundry-core';
+import {
+  MODEL_REGISTRY,
+  modelEfforts,
+  newId,
+  REASONING_EFFORTS,
+  Thread,
+  threadTitle,
+  timeFromId,
+} from '@inixiative/foundry-core';
 import type { Hono } from 'hono';
 import { chorusRetries, chorusRows, turnChorus } from '../../agents/chorus-degraded';
 import type { PlanDrafter } from '../../agents/plan-drafter';
@@ -35,7 +43,6 @@ import type { LocalSessionStore } from '../../persistence/local-session-store';
 import { workerModelRequirement } from '../../providers/subscription-policy';
 import {
   describeMcpServers,
-  EFFORT_LEVELS,
   type EffortLevel,
   PERMISSION_MODES,
   type PermissionMode,
@@ -779,7 +786,7 @@ export function registerRuntimeRoutes(
           id: model.id,
           label: model.label,
         })),
-        efforts: EFFORT_LEVELS,
+        efforts: modelEfforts(provider, launch.model ?? configuredModel) ?? REASONING_EFFORTS,
         workers,
       },
     };
