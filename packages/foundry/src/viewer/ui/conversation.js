@@ -89,6 +89,7 @@ import {
   startDictation,
   toggleSpeakReplies,
 } from './voice.js';
+import { BranchIcon, FolderIcon, WorktreePill } from './worktree-pill.js';
 
 // ---------------------------------------------------------------------------
 // Token bar — this thread's recorded usage, plus the Foundry session budget
@@ -244,7 +245,7 @@ const signetLine = (m) =>
 
 /**
  * The centre's header band, two rows of grouped pills (Aron, 2026-11-01):
- *   row 1  the thread name                     | project · Kingdom · branch (worktree on hover)
+ *   row 1  the thread name                     | project · Kingdom · branch · worktree
  *   row 2  status · your agents · people · Signets | provider · model · effort · context fill · mode
  * What the thread is doing right now sits above the composer, not here. References, layers and
  * token detail live on the right panel's Context tab.
@@ -293,9 +294,14 @@ function ContextBar() {
           ${owner ? html`<span class="band-pill band-where--keep" title=${`Kingdom: ${owner}`}>${owner}</span>` : null}
           ${
             place.branch
-              ? html`<span class="band-pill context-bar-chip--branch" title=${[place.repository ? `branch of ${place.repository}` : 'branch', place.worktree ? `worktree ${place.worktree}` : null].filter(Boolean).join(' · ')}>${place.branch}</span>`
+              ? html`<span class="band-pill context-bar-chip--branch" title=${place.repository ? `branch of ${place.repository}` : 'branch'}>${BranchIcon()}${place.branch}</span>`
+              : null
+          }
+          ${
+            data.meta?.context?.checkout
+              ? html`<${WorktreePill} checkout=${data.meta.context.checkout} />`
               : place.worktreeShort
-                ? html`<span class="band-pill" title=${place.worktree}>${place.worktreeShort}</span>`
+                ? html`<span class="band-pill worktree-pill" title=${`${place.worktree}\nFrom the thread's working folder (no worktree record yet)`}>${FolderIcon()}${place.worktreeShort}</span>`
                 : null
           }
         </span>
