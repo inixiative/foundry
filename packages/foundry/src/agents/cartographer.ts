@@ -104,6 +104,27 @@ export interface RouteResult {
 export interface AtlasGraph {
   conceptToFiles: Record<string, string[]>;
   usesConsumers: Record<string, string[]>;
+  /** A concept's doc, resolved to a repo path (its gloss section). */
+  thesaurus?: Record<string, { phrases: string[]; doc?: string }>;
+}
+
+/**
+ * The project's `atlas graph --json`, or null when the repo has no atlas or the CLI fails. Uses the
+ * repo's own atlas devDep (`--no-install`): never npm, where "atlas" is an unrelated package.
+ */
+export async function readAtlasGraph(root: string): Promise<AtlasGraph | null> {
+  try {
+    const proc = Bun.spawn(['bunx', '--no-install', 'atlas', 'graph', '--json'], {
+      cwd: root,
+      stdout: 'pipe',
+      stderr: 'pipe',
+    });
+    const stdout = await new Response(proc.stdout).text();
+    if ((await proc.exited) !== 0) return null;
+    return JSON.parse(stdout) as AtlasGraph;
+  } catch {
+    return null;
+  }
 }
 
 /** Compact per-concept entry kept in the topology map. */
@@ -265,33 +286,19 @@ export class Cartographer {
   }
 
   private async _loadAtlasGraph(root: string): Promise<AtlasIndex | null> {
-    try {
-      // --no-install: only use the repo's own atlas devDep — never fall back
-      // to npm, where "atlas" is an unrelated package.
-      const proc = Bun.spawn(['bunx', '--no-install', 'atlas', 'graph', '--json'], {
-        cwd: root,
-        stdout: 'pipe',
-        stderr: 'pipe',
-      });
-      const stdout = await new Response(proc.stdout).text();
-      if ((await proc.exited) !== 0) return null;
-
-      const graph = JSON.parse(stdout) as AtlasGraph;
-      const ids = new Set([
-        ...Object.keys(graph.conceptToFiles ?? {}),
-        ...Object.keys(graph.usesConsumers ?? {}),
-      ]);
-      const concepts = [...ids].sort().map((id) => ({
-        id,
-        files: graph.conceptToFiles?.[id]?.length ?? 0,
-        consumers: graph.usesConsumers?.[id]?.length ?? 0,
-      }));
-      if (concepts.length === 0) return null;
-
-      return { concepts, source: 'graph', loadedAt: Date.now() };
-    } catch {
-      return null;
-    }
+    const graph = await readAtlasGraph(root);
+    if (!graph) return null;
+    const ids = new Set([
+      ...Object.keys(graph.conceptToFiles ?? {}),
+      ...Object.keys(graph.usesConsumers ?? {}),
+    ]);
+    const concepts = [...ids].sort().map((id) => ({
+      id,
+      files: graph.conceptToFiles?.[id]?.length ?? 0,
+      consumers: graph.usesConsumers?.[id]?.length ?? 0,
+    }));
+    if (concepts.length === 0) return null;
+    return { concepts, source: 'graph', loadedAt: Date.now() };
   }
 
   /** Fallback: pull concept ids out of a committed MAP.md (class:name tokens). */

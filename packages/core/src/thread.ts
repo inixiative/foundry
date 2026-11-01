@@ -74,12 +74,12 @@ export interface ThreadContext {
   readonly updatedAt: number;
 }
 
-/** The name a thread shows: a person's name overrides the agent-maintained one. */
+/** The name a thread shows: a person's name overrides the one Foundry gives it. */
 export function threadTitle(
-  meta: Pick<ThreadMeta, 'name' | 'agentName' | 'description'>,
-): { text: string; source: 'human' | 'agent' | 'description' } | undefined {
+  meta: Pick<ThreadMeta, 'name' | 'foundryName' | 'description'>,
+): { text: string; source: 'human' | 'foundry' | 'description' } | undefined {
   if (meta.name?.text) return { text: meta.name.text, source: 'human' };
-  if (meta.agentName?.text) return { text: meta.agentName.text, source: 'agent' };
+  if (meta.foundryName?.text) return { text: meta.foundryName.text, source: 'foundry' };
   return meta.description ? { text: meta.description, source: 'description' } : undefined;
 }
 
@@ -105,8 +105,11 @@ export interface ThreadMeta {
   /** Name a person set. A hard override: agents never change it. */
   name?: ThreadName;
 
-  /** Name an agent maintains while no person has named the thread. */
-  agentName?: ThreadName;
+  /**
+   * Name Foundry gives the thread from the person's messages (its first message, then again when
+   * the work moves) while no person has named it. Never set once a person has.
+   */
+  foundryName?: ThreadName;
 
   /** Branch, worktree and linked PRs/tickets, derived by the runtime. */
   context?: ThreadContext;

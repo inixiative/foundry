@@ -13,6 +13,7 @@ import { authFetch } from './store.js';
 const REPO_URL = 'https://github.com/inixiative/foundry';
 const T3_CODE_URL = 'https://github.com/pingdotgg/t3code';
 const PASEO_URL = 'https://github.com/getpaseo/paseo';
+const USEREVIDENCE_URL = 'https://userevidence.com';
 
 export function AboutSection() {
   const [version, setVersion] = useState(null);
@@ -60,6 +61,10 @@ export function AboutSection() {
 
       <section class="settings-card about-card" data-about="supporters">
         <p class="about-text">Thanks to <strong>UserEvidence</strong> for supporting open-source software.</p>
+        <div class="about-links">
+          <a class="proj-btn" href=${USEREVIDENCE_URL} target="_blank" rel="noreferrer">UserEvidence ↗</a>
+          <a class="proj-btn" href=${USEREVIDENCE_URL} target="_blank" rel="noreferrer">The customer advocacy platform ↗</a>
+        </div>
       </section>
     </div>
   `;
