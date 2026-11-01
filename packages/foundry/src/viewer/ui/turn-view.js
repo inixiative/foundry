@@ -4,16 +4,15 @@
  * @partOf feature:viewer
  */
 /**
- * One turn, read top to bottom in the centre: what Foundry did before the agent ran (input, routing,
- * each region's answer, the sealed plan), the agent's own work (each tool call with its detail), and
- * what Foundry did after (guards, delivery, writeback, feedback). Steps come from the same builder as
- * the Loop's turn graph (`turnFlowGraph`), so the two never disagree; every step keeps its raw record.
+ * One turn, read top to bottom in the centre, from the journal's turn timeline
+ * (`GET /api/threads/:id/turns/:turnId/timeline`): what Foundry did before the agent ran (input,
+ * routing, each region's answer round by round, the sealed plan, what was delivered), the agent's
+ * own work (each tool call with its detail, handoffs), and what Foundry did after (guards,
+ * writeback, feedback, Archive capture). Every step keeps its raw record.
  */
 
-import { turnFlowGraph } from './flow-graph.js';
-import { useFlowStream } from './graph-view.js';
 import { html, useEffect, useRef, useState } from './lib.js';
-import { openTurnDetail, turnViewTarget } from './store.js';
+import { authFetch, openTurnDetail, turnViewTarget } from './store.js';
 
 const FILTERS = [
   ['all', 'All'],
@@ -21,7 +20,25 @@ const FILTERS = [
   ['tools', 'Tools'],
   ['flags', 'Flags'],
 ];
-const FLAGGED = new Set(['warn', 'error', 'blocked', 'deny', 'fail']);
+const BEFORE = new Set(['input', 'route', 'chorus', 'plan', 'delivery']);
+const WORK = new Set(['tool', 'handoff']);
+const GROUPS = [
+  ['before', 'Foundry, before'],
+  ['work', "The agent's work"],
+  ['after', 'Foundry, after'],
+];
+const LABELS = {
+  input: 'Your message',
+  route: 'Routing',
+  chorus: 'Chorus',
+  plan: 'Plan sealed',
+  delivery: 'Delivered to the session',
+  handoff: 'Handed to a subagent',
+  guard: 'Guards',
+  writeback: 'Writeback',
+  feedback: 'Feedback captured',
+  archive: 'Archive',
+};
 
 const text = (value) =>
   typeof value === 'string' ? value : value == null ? '' : JSON.stringify(value);
@@ -29,136 +46,235 @@ const clip = (value, max = 1200) => {
   const s = text(value);
   return s.length > max ? `${s.slice(0, max)}…` : s;
 };
+const time = (at) => (at ? new Date(at).toLocaleTimeString() : '');
+
+/** Is the step worth a flag: an error, a refusal, a guard finding, a failed capture? */
+function flagged(step) {
+  if (step.kind === 'tool') return step.error;
+  if (step.kind === 'guard')
+    return step.failed.length > 0 || step.regions.some((r) => r.findings > 0);
+  if (step.kind === 'chorus') return step.regions.some((r) => r.decision === 'error');
+  if (step.kind === 'archive') return step.state === 'failed';
+  return false;
+}
+
+/** The one-line summary beside a step's name. */
+function summary(step) {
+  switch (step.kind) {
+    case 'input':
+      return step.text;
+    case 'route':
+      return [step.status, step.domains.join(', ')].filter(Boolean).join(' · ');
+    case 'chorus': {
+      const spoke = step.regions.filter((r) => r.decision === 'contribute').length;
+      return `${step.regions.length} regions asked · ${spoke} chimed in`;
+    }
+    case 'plan':
+      return `${step.layers.length} layers${step.confidence != null ? ` · confidence ${step.confidence}` : ''}`;
+    case 'delivery': {
+      const sent = step.parts.filter((p) => p.outcome === 'sent').length;
+      return `${sent} sent · ${step.parts.length - sent} already held · ${step.chimes.length} chimes`;
+    }
+    case 'tool':
+      return text(step.input?.file_path ?? step.input?.command ?? step.input?.path ?? '').slice(
+        0,
+        90,
+      );
+    case 'handoff':
+      return step.description ?? '';
+    case 'guard':
+      return `${step.status ?? ''}${step.failed.length ? ` · ${step.failed.length} failed` : ''}`;
+    case 'writeback':
+      return `${step.region} · ${step.decision}`;
+    case 'feedback':
+      return step.statement ?? '';
+    case 'archive':
+      return step.state;
+    default:
+      return '';
+  }
+}
 
 /** A tool call's own detail: the edit as a diff, the command and its output, the file read. */
-function ToolBody({ use }) {
-  const input = use.toolInput ?? {};
-  const output = use.toolOutputOmitted ? '(output not recorded)' : clip(use.toolOutput);
-  const name = use.toolName ?? 'tool';
-  if (/^(Edit|MultiEdit|Write|apply_patch)$/i.test(name)) {
-    const path = input.file_path ?? input.path ?? '';
-    const before = input.old_string ?? '';
-    const after = input.new_string ?? input.content ?? '';
+function ToolBody({ step }) {
+  const input = step.input ?? {};
+  const output = step.outputOmitted ? '(output not recorded)' : clip(step.output, 4000);
+  if (/^(Edit|MultiEdit|Write|apply_patch)$/i.test(step.tool)) {
+    const before = text(input.old_string ?? '');
+    const after = text(input.new_string ?? input.content ?? '');
     return html`<div class="tv-typed">
-      <div class="tv-path mono">${path}</div>
-      <pre class="tv-diff">${text(before)
-        .split('\n')
-        .filter((l) => l !== '' || before)
-        .map((l, i) => html`<span key=${`d${i}`} class="tv-del">- ${l}\n</span>`)}${text(after)
+      <div class="tv-path mono">${input.file_path ?? input.path ?? ''}</div>
+      <pre class="tv-diff">${before ? before.split('\n').map((l, i) => html`<span key=${`d${i}`} class="tv-del">- ${l}\n</span>`) : null}${after
         .split('\n')
         .map((l, i) => html`<span key=${`a${i}`} class="tv-add">+ ${l}\n</span>`)}</pre>
     </div>`;
   }
-  if (/^(Bash|shell|exec|local_shell)$/i.test(name)) {
+  if (/^(Bash|shell|exec_command|local_shell)$/i.test(step.tool))
     return html`<div class="tv-typed">
       <pre class="tv-cmd mono">$ ${clip(input.command ?? input.cmd, 600)}</pre>
       ${output ? html`<pre class="tv-out mono">${output}</pre>` : null}
     </div>`;
-  }
-  if (/^(Read|View)$/i.test(name)) {
+  if (step.tool === 'TodoWrite' && Array.isArray(input.todos))
+    return html`<ul class="tv-parts">${input.todos.map(
+      (t, i) =>
+        html`<li key=${i} data-outcome=${t.status === 'completed' ? 'sent' : 'held'}>${t.status === 'completed' ? '☑' : t.status === 'in_progress' ? '◐' : '☐'} ${t.content}</li>`,
+    )}</ul>`;
+  if (/^(Read|View)$/i.test(step.tool))
     return html`<div class="tv-typed">
       <div class="tv-path mono">${input.file_path ?? input.path ?? ''}</div>
       ${output ? html`<pre class="tv-out mono">${clip(output, 800)}</pre>` : null}
     </div>`;
-  }
   return html`<div class="tv-typed">
     ${Object.keys(input).length ? html`<pre class="tv-out mono">${clip(input, 600)}</pre>` : null}
     ${output ? html`<pre class="tv-out mono">${output}</pre>` : null}
   </div>`;
 }
 
-/** The turn as ordered steps: Foundry before, the agent's work, Foundry after. */
-export function turnSteps(turn) {
-  if (!turn) return [];
-  const graph = turnFlowGraph(turn);
-  const executor = graph.nodes.find((n) => n.kind === 'executor');
-  const cut = executor?.col ?? Number.POSITIVE_INFINITY;
-  const order = [...graph.nodes]
-    .filter((n) => n.kind !== 'more' && n.kind !== 'folded')
-    .sort((a, b) => a.col - b.col || (a.row ?? 0) - (b.row ?? 0));
-  const node = (n, group) => ({
-    key: n.id,
-    group,
-    kind: n.kind,
-    label: n.label,
-    sub: n.sub ?? '',
-    status: n.status ?? 'ok',
-    detail: n.detail ?? null,
-    raw: n.detail ?? n,
-  });
-  const before = order.filter((n) => n.col < cut).map((n) => node(n, 'before'));
-  const after = order.filter((n) => n.col > cut).map((n) => node(n, 'after'));
-  const uses = (Array.isArray(turn.toolUses) ? turn.toolUses : []).filter((u) => u.toolName);
-  const work = [
-    ...(executor ? [node(executor, 'work')] : []),
-    ...uses.map((use, i) => ({
-      key: `tool:${use.callId ?? i}`,
-      group: 'work',
-      kind: 'tool',
-      label: use.toolName,
-      sub: text(
-        use.toolInput?.file_path ?? use.toolInput?.command ?? use.toolInput?.path ?? '',
-      ).slice(0, 80),
-      status: use.toolError || use.nativeOutcome === 'failed' ? 'error' : 'ok',
-      use,
-      raw: use,
-    })),
-  ];
-  return [...before, ...work, ...after];
+/** Each region's answer, round by round: recognise (yes / no and why), then confirm and point. */
+function ChorusBody({ step }) {
+  const order = { contribute: 0, error: 1 };
+  const regions = [...step.regions].sort(
+    (a, b) => (order[a.decision] ?? 2) - (order[b.decision] ?? 2),
+  );
+  const quiet = Object.entries(step.skipped ?? {}).flatMap(([why, ids]) =>
+    ids.map((id) => `${id} (${why})`),
+  );
+  return html`<div class="tv-typed">
+    <ul class="tv-regions">${regions.map(
+      (r) => html`<li key=${r.region} data-decision=${r.decision}>
+        <b>${r.region}</b> <span class="tv-decision">${r.decision}</span>
+        ${r.served ? html` <span class="tv-dim">${r.served.model}${r.served.effort ? ` · ${r.served.effort}` : ''}</span>` : null}
+        ${r.rounds.map(
+          (round) =>
+            html`<div key=${round.round} class="tv-round">Round ${round.round} · ${round.task === 'recognise' ? 'recognise' : 'confirm and pick'}: ${round.outcome ?? (round.timedOut ? 'timed out' : round.error ? 'error' : '—')}${round.why ? ` — ${round.why}` : ''}</div>`,
+        )}
+        ${r.pointer?.pointer ? html`<div class="tv-pointer">† ${r.pointer.shape === 'choose-one' ? 'Choose one: ' : ''}${r.pointer.pointer}${r.pointer.where ? ` · ${r.pointer.where}` : ''}${r.pointer.why ? ` — ${r.pointer.why}` : ''}</div>` : null}
+        ${r.said.map((line, i) => html`<div key=${i} class="tv-said">${line}</div>`)}
+        ${!r.rounds.length && r.reason ? html`<div class="tv-dim">${r.reason}</div>` : null}
+      </li>`,
+    )}</ul>
+    ${quiet.length || step.prefiltered.length ? html`<div class="tv-dim">Not asked: ${[...quiet, ...step.prefiltered.map((id) => `${id} (pre-filter)`)].join(', ')}</div>` : null}
+  </div>`;
 }
 
-const GROUPS = [
-  ['before', 'Foundry, before'],
-  ['work', "The agent's work"],
-  ['after', 'Foundry, after'],
-];
+function DeliveryBody({ step }) {
+  return html`<div class="tv-typed">
+    ${step.session ? html`<div class="tv-dim">Session ${step.session === 'started' ? 'started (its system prompt carried the base)' : 'continuing'}</div>` : null}
+    <ul class="tv-parts">${step.parts.map(
+      (p) =>
+        html`<li key=${p.id} data-outcome=${p.outcome}><span class="mono">${p.id}</span> ${p.outcome === 'sent' ? 'sent' : 'already in context, not sent again'}</li>`,
+    )}</ul>
+    ${step.chimes.map(
+      (c, i) =>
+        html`<div key=${i} class="tv-chime"><b>${c.region}</b> ${c.text}${c.saidBefore ? html` <span class="tv-dim">(already said at turn ${c.saidBefore.turnId})</span>` : null}</div>`,
+    )}
+  </div>`;
+}
+
+function GuardBody({ step }) {
+  return html`<div class="tv-typed">
+    <ul class="tv-regions">${step.regions.map(
+      (
+        r,
+      ) => html`<li key=${r.region}><b>${r.region}</b> <span class="tv-decision">${r.status}</span>${r.findings ? ` · ${r.findings} findings` : ''}
+        ${r.notes.map((n, i) => html`<div key=${i} class="tv-said">${n}</div>`)}</li>`,
+    )}</ul>
+    ${step.notes.map((n, i) => html`<div key=${i} class="tv-said">${n.severity}: ${n.description}${n.location ? ` (${n.location})` : ''}</div>`)}
+    ${step.failed.length ? html`<div class="tv-dim">Failed: ${step.failed.join(', ')}</div>` : null}
+  </div>`;
+}
 
 function Detail({ step }) {
-  if (step.use) return html`<${ToolBody} use=${step.use} />`;
-  const entries = step.detail && typeof step.detail === 'object' ? Object.entries(step.detail) : [];
-  const shown = entries.filter(
-    ([, v]) => v != null && v !== '' && !(Array.isArray(v) && !v.length),
-  );
-  if (!shown.length) return null;
-  // Epoch milliseconds read as a time of day.
-  const show = (v) =>
-    typeof v === 'number' && v > 1e12 ? new Date(v).toLocaleTimeString() : clip(v, 400);
-  return html`<dl class="tv-dl">${shown.map(
-    ([k, v]) => html`<div key=${k}><dt>${k}</dt><dd>${show(v)}</dd></div>`,
-  )}</dl>`;
+  switch (step.kind) {
+    case 'tool':
+      return html`<${ToolBody} step=${step} />`;
+    case 'chorus':
+      return html`<${ChorusBody} step=${step} />`;
+    case 'delivery':
+      return html`<${DeliveryBody} step=${step} />`;
+    case 'guard':
+      return html`<${GuardBody} step=${step} />`;
+    case 'route':
+      return step.reason ? html`<div class="tv-dim">${step.reason}</div>` : null;
+    case 'plan':
+      return step.layers.length
+        ? html`<div class="tv-dim">Layers: ${step.layers.join(', ')}</div>`
+        : null;
+    case 'writeback':
+      return step.reason
+        ? html`<div class="tv-dim">${step.reason}${step.revision != null ? ` · revision ${step.revision}` : ''}</div>`
+        : null;
+    case 'archive':
+      return step.error ? html`<div class="tv-dim">${step.error}</div>` : null;
+    default:
+      return null;
+  }
+}
+
+/** The timeline's steps, grouped and keyed. */
+export function turnSteps(timeline) {
+  return (timeline?.steps ?? []).map((step, i) => ({
+    key: `${step.kind}:${i}`,
+    group: BEFORE.has(step.kind) ? 'before' : WORK.has(step.kind) ? 'work' : 'after',
+    label: step.kind === 'tool' ? step.tool : (LABELS[step.kind] ?? step.kind),
+    step,
+  }));
 }
 
 export function TurnView() {
   const target = turnViewTarget.value;
-  const flow = useFlowStream(target?.threadId ?? null, !!target);
+  const [timeline, setTimeline] = useState(undefined);
   const [filter, setFilter] = useState('all');
   const [at, setAt] = useState(0);
   const [raw, setRaw] = useState(() => new Set());
   const root = useRef(null);
-  const turns = flow.turns ?? [];
-  const index = turns.findIndex((t) => t.turnId === target?.turnId);
-  const turn = index >= 0 ? turns[index] : null;
-  const all = turnSteps(turn);
+
+  useEffect(() => {
+    if (!target) return;
+    let live = true;
+    setTimeline(undefined);
+    authFetch(
+      `/api/threads/${encodeURIComponent(target.threadId)}/turns/${encodeURIComponent(target.turnId)}/timeline`,
+      { cache: 'no-store' },
+    )
+      .then(async (res) =>
+        res.ok
+          ? res.json()
+          : {
+              error:
+                res.status === 404
+                  ? 'This turn is not in the thread’s journal.'
+                  : res.status === 503
+                    ? 'The history journal is unavailable.'
+                    : `Turn unavailable (${res.status}).`,
+            },
+      )
+      .catch((err) => ({ error: err.message }))
+      .then((body) => live && setTimeline(body));
+    return () => {
+      live = false;
+    };
+  }, [target?.threadId, target?.turnId]);
+
+  const all = turnSteps(timeline);
   const steps = all.filter((s) =>
     filter === 'all'
       ? true
       : filter === 'tools'
-        ? s.kind === 'tool'
+        ? s.step.kind === 'tool'
         : filter === 'flags'
-          ? FLAGGED.has(s.status)
+          ? flagged(s.step)
           : s.group !== 'work',
   );
   const close = () => {
     turnViewTarget.value = null;
   };
-
   useEffect(() => {
     root.current?.focus();
   }, [target?.turnId]);
   useEffect(() => {
     root.current?.querySelector(`[data-step-index="${at}"]`)?.scrollIntoView({ block: 'nearest' });
   }, [at]);
-
   const onKeyDown = (e) => {
     if (e.target.closest?.('input, textarea, select')) return;
     if (e.key === 'ArrowDown') {
@@ -179,13 +295,19 @@ export function TurnView() {
       next.has(key) ? next.delete(key) : next.add(key);
       return next;
     });
+  const input = timeline?.steps?.find((s) => s.kind === 'input');
+  const took =
+    timeline?.startedAt && timeline?.endedAt
+      ? `${((timeline.endedAt - timeline.startedAt) / 1000).toFixed(1)} s`
+      : null;
 
   return html`<section class="turn-view" ref=${root} tabIndex="-1" onKeyDown=${onKeyDown} aria-label="Turn">
     <header class="tv-head">
       <button type="button" class="proj-btn" onClick=${close} title="Back to the thread (Esc)">← Thread</button>
-      <h2>Turn ${index >= 0 ? index + 1 : ''}</h2>
-      <span class="tv-input">${turn?.input?.preview ?? ''}</span>
+      <h2>Turn</h2>
+      <span class="tv-input">${input?.text ?? ''}</span>
       <span class="tv-spacer"></span>
+      ${timeline?.status ? html`<span class="tv-dim">${timeline.status}${took ? ` · ${took}` : ''}</span>` : null}
       ${target ? html`<button type="button" class="proj-btn" onClick=${() => openTurnDetail(target.threadId, target.turnId)}>Open in inspector</button>` : null}
     </header>
     <div class="tv-bar">
@@ -200,31 +322,35 @@ export function TurnView() {
       </div>
       <span class="tv-hint"><kbd>↑</kbd><kbd>↓</kbd> steps · <kbd>Esc</kbd> back</span>
     </div>
+    ${timeline?.error ? html`<div class="tv-error">${timeline.error}</div>` : null}
     ${
-      !turn
-        ? html`<div class="rp-empty">${flow.turns ? 'This turn is outside the thread’s recent window.' : 'Reading the turn…'}</div>`
-        : html`<ol class="tv-steps">${GROUPS.map(([group, title]) => {
-            const mine = steps.filter((s) => s.group === group);
-            if (!mine.length) return null;
-            return html`<li key=${group} class="tv-group"><h3>${title}</h3><ol>${mine.map((s) => {
-              const i = steps.indexOf(s);
-              return html`<li key=${s.key} data-step-index=${i} class="tv-step ${i === at ? 'is-at' : ''}" data-status=${s.status}
-                onClick=${() => setAt(i)}>
-                <div class="tv-step-head">
-                  <span class="tv-dot"></span>
-                  <b>${s.label}</b>
-                  <span class="tv-sub">${s.sub}</span>
-                  <button type="button" class="tv-raw" aria-pressed=${raw.has(s.key)} onClick=${(
-                    e,
-                  ) => {
-                    e.stopPropagation();
-                    toggleRaw(s.key);
-                  }}>Raw</button>
-                </div>
-                ${raw.has(s.key) ? html`<pre class="tv-out mono">${JSON.stringify(s.raw, null, 2)}</pre>` : html`<${Detail} step=${s} />`}
-              </li>`;
-            })}</ol></li>`;
-          })}</ol>`
+      timeline === undefined
+        ? html`<div class="rp-empty">Reading the turn…</div>`
+        : timeline.error && !timeline.steps
+          ? null
+          : html`<ol class="tv-steps">${GROUPS.map(([group, title]) => {
+              const mine = steps.filter((s) => s.group === group);
+              if (!mine.length) return null;
+              return html`<li key=${group} class="tv-group"><h3>${title}</h3><ol>${mine.map((s) => {
+                const i = steps.indexOf(s);
+                return html`<li key=${s.key} data-step-index=${i} class="tv-step ${i === at ? 'is-at' : ''}" data-status=${flagged(s.step) ? 'error' : 'ok'}
+                  onClick=${() => setAt(i)}>
+                  <div class="tv-step-head">
+                    <span class="tv-dot"></span>
+                    <b>${s.label}</b>
+                    <span class="tv-sub">${summary(s.step)}</span>
+                    <span class="tv-dim">${time(s.step.at)}</span>
+                    <button type="button" class="tv-raw" aria-pressed=${raw.has(s.key)} onClick=${(
+                      e,
+                    ) => {
+                      e.stopPropagation();
+                      toggleRaw(s.key);
+                    }}>Raw</button>
+                  </div>
+                  ${raw.has(s.key) ? html`<pre class="tv-out mono">${JSON.stringify(s.step, null, 2)}</pre>` : html`<${Detail} step=${s.step} />`}
+                </li>`;
+              })}</ol></li>`;
+            })}</ol>`
     }
   </section>`;
 }
