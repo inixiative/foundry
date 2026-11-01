@@ -669,6 +669,18 @@ export function createFoundryMcp(config: FoundryMcpConfig): FoundryMcp {
         conversationCall('conversation', 'give_conch'),
       ),
     );
+    server.tool(
+      'fork_thread',
+      'Fork this thread into a new top-level thread that carries its conversation so far, when the owner says so in his own message ("take this and go do it in its own thread"). task: the first message the fork works on; name: its name. Otherwise the owner is asked to confirm first.',
+      {
+        name: z.string().min(1).max(200).optional(),
+        task: z.string().min(1).max(16_000).optional(),
+      },
+      guarded<{ name?: string; task?: string }>(
+        'fork_thread',
+        conversationCall('conversation', 'fork_thread'),
+      ),
+    );
   }
   if (config.tools?.get('kingdom_post') instanceof KingdomPostTool)
     server.tool(

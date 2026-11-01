@@ -409,6 +409,7 @@ export {
   type ThreadCheckout,
   type ThreadConfig,
   type ThreadContext,
+  type ThreadFork,
   type ThreadMeta,
   type ThreadName,
   type ThreadReference,

@@ -10,8 +10,15 @@ import {
   type ThreadViewResult,
   threadTextLimit,
 } from '@inixiative/signet';
+import { memberPostReception } from '../agents/chorus-reception';
 import type { JournalEntry } from '../persistence/local-session-store';
-import type { HeldRecord, HeldResolutionRecord, MemberPostRecord } from './types';
+import { quotedName } from './roster';
+import type {
+  HeldRecord,
+  HeldResolutionRecord,
+  MemberPostRecord,
+  SharedEntryRecord,
+} from './types';
 
 /**
  * The read-off point (docs/reference/CONVERSATIONS.md §4.7): a member reads a lens over the main
@@ -130,4 +137,13 @@ export function capView(
     entries: kept,
     truncated,
   };
+}
+
+/** A mirrored entry as the member's agent reads it: the owner's words as his, anyone else's as data. */
+export function sharedEntryText(entry: SharedEntryRecord): string {
+  const where = `In the conversation ${quotedName(entry.hostName)} (entry ${entry.hostSeq})`;
+  if (entry.kind === 'owner') return `${where}, the owner said:\n${entry.text}`;
+  if (entry.kind === 'send')
+    return `${where}, ${entry.speaker}${entry.addressed ? ' (reply with post_to_conversation, inReplyTo ' + entry.hostSeq + ')' : ''}:\n${entry.text}`;
+  return `${where}:\n${memberPostReception(entry.speaker, entry.text)}`;
 }

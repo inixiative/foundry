@@ -83,6 +83,17 @@ export function threadTitle(
   return meta.description ? { text: meta.description, source: 'description' } : undefined;
 }
 
+/**
+ * Where a forked thread came from: provenance, not nesting. A fork is a top-level thread (Aron,
+ * 2026-11-01: delegated threads are top-level; nesting is for subagents), so it is not a
+ * `parentThreadId`. Its first session is seeded with the source's conversation through `journalSeq`.
+ */
+export interface ThreadFork {
+  readonly threadId: string;
+  /** The source's journal seq the fork was cut at. */
+  readonly journalSeq: number;
+}
+
 /** How a subagent thread came to be: who spawned it, through what, and its native identity. */
 export interface ThreadSpawn {
   readonly via: 'foundry' | 'native-claude' | 'native-codex' | 'host-paseo' | 'host-t3';
@@ -131,6 +142,9 @@ export interface ThreadMeta {
 
   /** The parent's turn that spawned this thread (a subagent). */
   parentTurnId?: string;
+
+  /** The thread and point this one was forked from (provenance; a fork is top-level). */
+  forkedFrom?: ThreadFork;
 
   /** How this subagent thread was spawned. */
   spawn?: ThreadSpawn;
@@ -256,6 +270,8 @@ export interface ThreadConfig {
   branch?: string;
   /** Parent thread when this thread is a subagent spawned by another. */
   parentThreadId?: string;
+  /** The thread and point this one was forked from. */
+  forkedFrom?: ThreadFork;
   /** Project that owns this thread. Scopes memory sources and tool calls. */
   projectId?: string;
   /** Optional token tracker — auto-records costs for every dispatch. */
@@ -308,6 +324,7 @@ export class Thread {
       cwd: opts?.cwd,
       branch: opts?.branch,
       parentThreadId: opts?.parentThreadId,
+      ...(opts?.forkedFrom ? { forkedFrom: opts.forkedFrom } : {}),
       projectId: opts?.projectId,
       createdAt: now,
       lastActiveAt: now,

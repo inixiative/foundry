@@ -9,6 +9,7 @@ import type {
   Harness,
   InterventionLog,
   StreamEvent,
+  ThreadConfig,
   TokenTracker,
 } from '@inixiative/foundry-core';
 import { MODEL_REGISTRY, newId, Thread, threadTitle, timeFromId } from '@inixiative/foundry-core';
@@ -105,7 +106,16 @@ function decodeHistoryCursor(cursor: string): { t: string; s: number } | null {
   }
 }
 
-export function registerRuntimeRoutes(app: Hono, deps: RuntimeRoutesDeps): { turns: TurnService } {
+export function registerRuntimeRoutes(
+  app: Hono,
+  deps: RuntimeRoutesDeps,
+): {
+  turns: TurnService;
+  fork: (
+    sourceThreadId: string,
+    options: { atSeq: number; name?: string; task?: string },
+  ) => { threadId: string; name: string };
+} {
   const {
     harness,
     eventStream,
@@ -802,6 +812,69 @@ export function registerRuntimeRoutes(app: Hono, deps: RuntimeRoutesDeps): { tur
 
   // -- Thread creation --
 
+  /**
+   * A new thread with its own stack and agents: from the factory, or (no factory) a clone of the main
+   * thread's stack, never sharing its stack or agent instances, with scope-aware sources (memory)
+   * rebound to the new thread so main's private captures never reach it.
+   */
+  const constructThread = (id: string, opts: ThreadConfig): Thread => {
+    if (threadFactory) return threadFactory.create(id, opts);
+    const stack = harness.thread.stack.clone({
+      threadId: id,
+      projectId: opts.projectId,
+      cwd: opts.cwd,
+    });
+    const thread = new Thread(id, stack, opts);
+    for (const [, agent] of harness.thread.agents) thread.register(agent.withStack(stack));
+    return thread;
+  };
+
+  /**
+   * Fork a thread at a point of its journal (CORE-004's portable form; the native fork comes with
+   * the runner work): a new top-level thread in the source's project and working directory, with
+   * `forkedFrom` provenance and no nesting (Aron, 2026-11-01). Its first session is seeded with the
+   * source's conversation through the cut (`turns/journal-history.ts`). A `task` is its first
+   * message, the owner's: the caller has already established that he asked for it.
+   */
+  const forkThread = (
+    sourceThreadId: string,
+    options: { atSeq: number; name?: string; task?: string },
+  ): { threadId: string; name: string } => {
+    if (!localStore) throw Error('Forking needs the local session store');
+    const source = directory.get(sourceThreadId);
+    const meta = source?.meta ?? localStore.threadMeta(sourceThreadId);
+    if (!meta) throw Error(`source thread not found: ${sourceThreadId}`);
+    const latest = localStore.journalSeq(sourceThreadId);
+    if (!Number.isSafeInteger(options.atSeq) || options.atSeq < 0 || options.atSeq > latest)
+      throw Error(`atSeq must be between 0 and ${latest}`);
+    const project = meta.projectId ? projectRegistry?.get(meta.projectId) : undefined;
+    const sourceName = threadTitle(meta)?.text ?? sourceThreadId;
+    const id = newId('thread');
+    const thread = constructThread(id, {
+      description: `Fork of ${sourceName}`,
+      cwd: meta.cwd,
+      branch: meta.branch,
+      forkedFrom: { threadId: sourceThreadId, journalSeq: options.atSeq },
+      projectId: project?.id,
+    });
+    const name = options.name?.slice(0, 200) ?? `Fork of ${sourceName}`;
+    thread.rename(name);
+    if (project) project.addThread(thread);
+    directory.add(thread);
+    thread.start();
+    localStore.saveThread(thread);
+    streams.threadsChanged(thread.id);
+    void threadContext?.refresh(thread.id);
+    if (options.task) {
+      const accepted = turns.accept({ threadId: thread.id, payload: options.task });
+      if (!accepted.ok)
+        throw Error(
+          `Forked into ${id}, but its task was not started: ${String(accepted.body.error)}`,
+        );
+    }
+    return { threadId: id, name };
+  };
+
   app.post('/api/threads', async (c) => {
     const body = await c.req.json<Record<string, unknown>>();
     const id = typeof body.id === 'string' ? body.id : newId('thread');
@@ -842,33 +915,14 @@ export function registerRuntimeRoutes(app: Hono, deps: RuntimeRoutesDeps): { tur
     // A project thread works in its project's directory unless a worktree is given.
     const cwd = worktreePath ?? project?.path;
 
-    let thread: Thread;
-    if (threadFactory) {
-      thread = threadFactory.create(id, {
-        description,
-        tags,
-        cwd,
-        branch,
-        parentThreadId,
-        projectId: project?.id,
-      });
-    } else {
-      // No factory: still never share the main thread's stack or agent
-      // instances, and rebind scope-aware sources (memory) to the new thread
-      // so main's private captures never reach it.
-      const stack = harness.thread.stack.clone({ threadId: id, projectId: project?.id, cwd });
-      thread = new Thread(id, stack, {
-        description,
-        tags,
-        cwd,
-        branch,
-        parentThreadId,
-        projectId: project?.id,
-      });
-      for (const [, agent] of harness.thread.agents) {
-        thread.register(agent.withStack(stack));
-      }
-    }
+    const thread = constructThread(id, {
+      description,
+      tags,
+      cwd,
+      branch,
+      parentThreadId,
+      projectId: project?.id,
+    });
 
     if (typeof body.name === 'string') thread.rename(body.name.slice(0, 200));
     if (project) project.addThread(thread);
@@ -1007,8 +1061,11 @@ export function registerRuntimeRoutes(app: Hono, deps: RuntimeRoutesDeps): { tur
     const body = await c.req.json<Record<string, unknown>>();
     const copyCount = typeof body.copyCount === 'number' ? body.copyCount : null;
 
-    if (copyCount == null || !Number.isSafeInteger(copyCount) || copyCount < 1) {
-      return c.json({ error: 'copyCount is required (positive integer)' }, 400);
+    if (
+      typeof body.atSeq !== 'number' &&
+      (copyCount == null || !Number.isSafeInteger(copyCount) || copyCount < 1)
+    ) {
+      return c.json({ error: 'copyCount (a positive integer) or atSeq is required' }, 400);
     }
 
     const sourceThread = directory.get(sourceThreadId);
@@ -1016,12 +1073,28 @@ export function registerRuntimeRoutes(app: Hono, deps: RuntimeRoutesDeps): { tur
     if (!sourceThread) {
       return c.json({ error: `source thread not found: ${sourceThreadId}` }, 404);
     }
-    if (localStore)
-      return c.json(
-        { error: 'Native session fork is not yet supported; no child thread was created' },
-        501,
-      );
+    if (localStore) {
+      // `atSeq` is the journal point; `copyCount` (the viewer's "Fork from here") is the Nth message.
+      const atSeq =
+        typeof body.atSeq === 'number'
+          ? body.atSeq
+          : localStore
+              .journalEntries(sourceThreadId, { limit: 10_000 })
+              .filter((entry) => entry.source === 'message')[(copyCount ?? 0) - 1]?.seq;
+      if (atSeq === undefined)
+        return c.json({ error: `the thread has fewer than ${copyCount} messages` }, 400);
+      try {
+        const made = forkThread(sourceThreadId, {
+          atSeq,
+          ...(typeof body.name === 'string' ? { name: body.name } : {}),
+        });
+        return c.json(threadToJSON(directory.get(made.threadId)!), 201);
+      } catch (error) {
+        return c.json({ error: (error as Error).message }, 400);
+      }
+    }
 
+    if (copyCount == null) return c.json({ error: 'copyCount is required here' }, 400);
     const forkedThreadId = newId('thread');
     const sourceName = threadTitle(sourceThread.meta)?.text ?? sourceThreadId;
     const newOpts = {
@@ -1032,25 +1105,7 @@ export function registerRuntimeRoutes(app: Hono, deps: RuntimeRoutesDeps): { tur
       projectId: sourceThread.meta.projectId,
     };
 
-    let newThread: Thread;
-    if (threadFactory) {
-      newThread = threadFactory.create(forkedThreadId, newOpts);
-    } else {
-      // No factory: still never share the main thread's stack or agent
-      // instances, and rebind scope-aware sources (memory) to the fork.
-      const stack = harness.thread.stack.clone({
-        threadId: forkedThreadId,
-        projectId: sourceThread.meta.projectId,
-        cwd: newOpts.cwd,
-      });
-      newThread = new Thread(forkedThreadId, stack, {
-        ...newOpts,
-        projectId: sourceThread.meta.projectId,
-      });
-      for (const [, agent] of harness.thread.agents) {
-        newThread.register(agent.withStack(stack));
-      }
-    }
+    const newThread = constructThread(forkedThreadId, newOpts);
 
     // Add to same project as source
     if (projectRegistry) {
@@ -1150,5 +1205,5 @@ export function registerRuntimeRoutes(app: Hono, deps: RuntimeRoutesDeps): { tur
     const limit = Number(c.req.query('limit') ?? 100);
     return c.json(eventStream.recent({ kind, limit }));
   });
-  return { turns };
+  return { turns, fork: forkThread };
 }

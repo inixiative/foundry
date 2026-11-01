@@ -1192,7 +1192,7 @@ export class LocalSessionStore {
    */
   journalEntries(
     threadId: string,
-    opts: { after?: number; limit?: number; newest?: boolean } = {},
+    opts: { after?: number; through?: number; limit?: number; newest?: boolean } = {},
   ): JournalEntry[] {
     const limit = boundedLimit(opts.limit ?? 1000);
     const rows = this.query(
@@ -1201,9 +1201,9 @@ export class LocalSessionStore {
          FROM session_journal j
          LEFT JOIN session_messages m ON j.source = 'message' AND m.id = j.ref
          LEFT JOIN session_phase p ON j.source = 'phase' AND p.id = j.ref
-        WHERE j.thread_id=? AND j.seq > ?
+        WHERE j.thread_id=? AND j.seq > ? AND j.seq <= ?
         ORDER BY j.seq ${opts.newest ? 'DESC' : 'ASC'} LIMIT ?`,
-    ).all(threadId, opts.after ?? 0, limit) as Array<{
+    ).all(threadId, opts.after ?? 0, opts.through ?? Number.MAX_SAFE_INTEGER, limit) as Array<{
       seq: number;
       source: 'message' | 'phase';
       actor: StoredMessage['actor'] | null;
@@ -1387,6 +1387,14 @@ export class LocalSessionStore {
         meta: string;
       }>
     ).map((row) => ({ id: row.id, meta: JSON.parse(row.meta) }));
+  }
+
+  /** One stored thread's meta (a live or archived thread), or undefined. */
+  threadMeta(id: string): ThreadMeta | undefined {
+    const row = this.query('SELECT meta FROM session_threads WHERE id=?').get(id) as {
+      meta: string;
+    } | null;
+    return row ? JSON.parse(row.meta) : undefined;
   }
 
   turn(id: string): StoredTurn | undefined {
@@ -2373,6 +2381,9 @@ export const JOURNAL_ORDERED_PHASES = [
   'member-post',
   'outbound-held',
   'outbound-resolution',
+  // What a local member heard in a conversation it is in: part of its own conversation, so a
+  // fresh or forked session is seeded with it (`turns/journal-history.ts`).
+  'shared-entry',
 ] as const;
 
 /** One entry of a main thread's journal in order: a message, or an ordered phase row. */

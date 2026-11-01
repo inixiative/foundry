@@ -577,7 +577,7 @@ export function createViewer(config: ViewerConfig) {
     const pruner = setInterval(() => queue.prune(3_600_000), 600_000);
     (pruner as { unref?: () => void }).unref?.();
   }
-  const { turns } = registerRuntimeRoutes(app, {
+  const { turns, fork } = registerRuntimeRoutes(app, {
     threadLaunch,
     harness,
     eventStream,
@@ -624,6 +624,7 @@ export function createViewer(config: ViewerConfig) {
           scope: 'phase',
           timestamp: Date.now(),
         }),
+      fork: () => fork,
       log: (message) => log.warn(message),
     });
     const service = conversations;
