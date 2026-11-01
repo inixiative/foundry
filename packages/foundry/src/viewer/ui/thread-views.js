@@ -17,6 +17,8 @@
  */
 
 import { html, signal } from './lib.js';
+import { ViewBox } from './message-box.js';
+import { settingsConfig } from './settings.js';
 
 const OPEN_VIEWS = 'foundry.thread.views';
 const VIEW_IDS = ['thread', 'btw', 'asides'];
@@ -120,6 +122,7 @@ export function BtwView({ entries }) {
           )
         : html`<p class="side-view-empty">Ask your own agent something with /btw; it answers here and nothing enters the thread. Arrives with shared-thread asides.</p>`
     }
+    <${ViewBox} view="btw" config=${settingsConfig.value} />
   </section>`;
 }
 
@@ -138,5 +141,6 @@ export function AsidesView({ entries, onPromote }) {
           )
         : html`<p class="side-view-empty">Asides between the people in this thread show here. Arrives with shared-thread asides.</p>`
     }
+    <${ViewBox} view="aside" config=${settingsConfig.value} />
   </section>`;
 }

@@ -23,6 +23,7 @@ import { FilePicker } from './file-picker.js';
 import { IntegrationSection } from './integration-settings.js';
 import { KingdomSettings } from './kingdom-settings.js';
 import { html, signal, useEffect, useState } from './lib.js';
+import { MessageBoxSection } from './message-box.js';
 import { ProfileSection } from './profile-settings.js';
 import { ProvidersSection } from './provider-settings.js';
 import {
@@ -35,7 +36,7 @@ import {
 } from './route.js';
 import { ActivitySection, AgentsSection, LayersSection } from './runtime-panels.js';
 import { SelfChatPane } from './self-chat.js';
-import { modelRegistry, projects, showToast } from './store.js';
+import { authFetch, modelRegistry, projects, showToast } from './store.js';
 import { Switch } from './switch.js';
 
 export const settingsConfig = signal(null);
@@ -586,6 +587,18 @@ function FoundrySection({ section, config }) {
     label: p.label || id,
   }));
   if (section === 'profile') return html`<${ProfileSection} onSaved=${saved} />`;
+  if (section === 'messagebox')
+    return html`<${MessageBoxSection} config=${settingsConfig.value} onSave=${async (patch) => {
+      const res = await authFetch('/api/settings/messageBox', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(patch),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) return showToast(body.error || 'Could not save', 'error');
+      saved(body);
+      showToast('Saved for you', 'ok');
+    }} />`;
   if (section === 'about') return html`<${AboutSection} />`;
   if (section === 'loops')
     return html`<div class="settings-soon"><span class="badge">Coming soon</span><p>Saved loops you reuse: a <b>Repeat until</b> (do, check, stop) or a <b>Learn from this</b> made from a message's ⋯ menu, kept here to run again in any thread.</p></div>`;

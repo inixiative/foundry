@@ -18,6 +18,7 @@ import { signal } from './lib.js';
  */
 export const FOUNDRY_SETTINGS = [
   ['profile', 'Profile'],
+  ['messagebox', 'Message box'],
   ['providers', 'Providers'],
   ['kingdom', 'Kingdom', 'Integrations'],
   ['archive', 'Archive', 'Integrations'],

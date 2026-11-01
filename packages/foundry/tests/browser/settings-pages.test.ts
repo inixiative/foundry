@@ -61,6 +61,7 @@ test('settings and analytics are addressable pages scoped to Foundry or a projec
       (await page.locator('.settings-sections li').allInnerTexts()).map((t: string) => t.trim()),
     ).toEqual([
       'Profile',
+      'Message box',
       'Providers',
       'INTEGRATIONS',
       'Kingdom',

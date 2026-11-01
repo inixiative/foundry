@@ -32,6 +32,13 @@ import { kingdomOwnerOf } from './kingdom-holder.js';
 import { html, useEffect, useRef, useState } from './lib.js';
 import { liveExecutionStatus, liveThreadStatus, liveWorkLabel, workLog } from './live-state.js';
 import { LoopView } from './loop-view.js';
+import {
+  composerDestination,
+  DestinationLabel,
+  NOT_BUILT,
+  routeTyped,
+  separateViews,
+} from './message-box.js';
 import { MessageMenu } from './message-menu.js';
 import { Modal } from './modal.js';
 import { Plan } from './plan.js';
@@ -514,7 +521,8 @@ function ChatInput() {
 
   const uploading = images.some((image) => image.status === 'uploading');
   const ready = images.filter((image) => image.status === 'ready');
-  const sendable = !uploading && (!!text.trim() || ready.length > 0);
+  const destination = separateViews(settingsConfig.value) ? 'thread' : composerDestination.value;
+  const sendable = destination === 'thread' && !uploading && (!!text.trim() || ready.length > 0);
 
   const handleSubmit = async () => {
     const sent = text.trim();
@@ -616,6 +624,8 @@ function ChatInput() {
         </div>`
             : null
         }
+        <div class="composer-row">
+        <${DestinationLabel} config=${settingsConfig.value} />
         <textarea
           ref=${inputRef}
           class="chat-input"
@@ -628,15 +638,24 @@ function ChatInput() {
               actionPaletteOpen.value = true;
               return;
             }
+            const routed = routeTyped(e.target.value, settingsConfig.peek());
+            if (routed) {
+              composerDestination.value = routed.destination;
+              setText(routed.text);
+              return;
+            }
             setText(e.target.value);
           }}
           onKeyDown=${handleKeyDown}
           onPaste=${handlePaste}
           rows="4"
         ></textarea>
+        </div>
         ${(() => {
           const waiting = promptsForThread(prompts.value, activeThreadId.value);
           const approval = waiting.find((p) => p.kind === 'approval');
+          if (destination !== 'thread')
+            return html`<div class="composer-note-hint composer-note-hint--queue">${NOT_BUILT[destination]}</div>`;
           if (text.trim() && approval)
             return html`<div class="composer-note-hint">Sending declines “${approval.message}” and tells the agent why · or answer the card to send it with your answer</div>`;
           if (text.trim() && waiting.length)
