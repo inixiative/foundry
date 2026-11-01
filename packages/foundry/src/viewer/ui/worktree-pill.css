@@ -1,0 +1,33 @@
+/* The thread header's branch and worktree pills (worktree-pill.js). */
+.pill-icon {
+  flex: none;
+  margin-right: 5px;
+  vertical-align: -1px;
+  opacity: 0.8;
+}
+.band-pill.worktree-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.worktree-pill.is-muted {
+  color: hsl(var(--muted-foreground));
+}
+.worktree-pill.is-released {
+  background: hsl(200 8% 22%);
+  color: hsl(var(--muted-foreground));
+}
+.worktree-recreate {
+  margin-left: 6px;
+  border: 1px solid hsl(var(--border));
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: 11px;
+  border-radius: 6px;
+  padding: 0 6px;
+}
+.worktree-recreate:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
