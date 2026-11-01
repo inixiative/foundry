@@ -1,5 +1,6 @@
 import { afterEach, expect, test } from 'bun:test';
-import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { chmod, mkdir, mkdtemp, readFile, rm, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { readPrivateJson, SignetClient } from '@inixiative/signet';
@@ -207,4 +208,58 @@ test('a transient resolution failure can retry the same durable run intent', asy
   recovered.release();
   expect(runIds).toHaveLength(2);
   expect(runIds[0]).toBe(runIds[1]);
+});
+
+test("a crashed resolver's lock is reclaimed instead of failing the thread forever", async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'foundry-kingdom-stale-'));
+  cleanups.push(() => rm(directory, { recursive: true, force: true }));
+  const ownerKey = `Organization::${crypto.randomUUID()}:`,
+    bindingId = crypto.randomUUID();
+  const kingdom = mockKingdom({
+    onSignet: (action, body, presented) =>
+      action === 'resolveRun'
+        ? {
+            id: bindingId,
+            owner: ownerOf(ownerKey),
+            signetEnrollmentId: presented.enrollmentId,
+            runId: body.runId,
+            capacityId: crypto.randomUUID(),
+            integrationId: crypto.randomUUID(),
+            model: 'model',
+            effort: 'low',
+            runtime: 'claude',
+            expiresAt: new Date(Date.now() + 3600000).toISOString(),
+            authentication: 'api-key',
+            gatewayPath: `/api/v1/access/gateway/${bindingId}`,
+          }
+        : {
+            secret: secret('kingdom_refresh_'),
+            expiresAt: new Date(Date.now() + 3600000).toISOString(),
+          },
+  });
+  cleanups.push(async () => kingdom.stop());
+  const { credentialFile } = await heldSignet(kingdom, directory, ownerKey);
+  const runs = join(directory, 'runs');
+  // A holder killed mid-resolve two minutes ago left its lock behind.
+  const binding = join(runs, createHash('sha256').update('claude:thread').digest('hex'));
+  const lock = join(binding, '.hold-lock');
+  await mkdir(binding, { recursive: true, mode: 0o700 });
+  await mkdir(lock);
+  const old = new Date(Date.now() - 120_000);
+  await utimes(lock, old, old);
+  const auth = new KingdomAuthentication({
+    directory: runs,
+    defaultOwnerKey: ownerKey,
+    sources: [
+      {
+        id: ownerKey,
+        url: kingdom.url,
+        credentialFile,
+        selection: { model: 'model', effort: 'low' },
+      },
+    ],
+  });
+  const prepared = await auth.prepare('thread', 'claude');
+  expect(prepared.bindingId).toContain(bindingId);
+  prepared.release();
 });
