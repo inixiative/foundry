@@ -84,6 +84,7 @@ import { basename, dirname, join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import {
   computeHash,
+  REASONING_EFFORTS,
   requireExperiment,
   scoreCharterRun,
   TINY_MOMENTS,
@@ -182,7 +183,7 @@ const subagentProcesses = positive('subagents', values.subagents);
 const stopAtPoints = positive('stop-at-points', values['stop-at-points']);
 const stopSevenDay = positive('stop-seven-day', values['stop-seven-day']);
 const wardenModel = values.model ?? 'claude-haiku-5-5';
-const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max', 'default'] as const;
+const EFFORTS = [...REASONING_EFFORTS, 'default'] as const;
 const wardenEffort = values.effort as (typeof EFFORTS)[number] | undefined;
 if (wardenEffort !== undefined && !EFFORTS.includes(wardenEffort))
   throw Error(`--effort must be one of ${EFFORTS.join(', ')}`);

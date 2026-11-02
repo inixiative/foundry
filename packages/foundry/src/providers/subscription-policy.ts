@@ -7,6 +7,9 @@ import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   MODEL_REGISTRY,
+  modelEfforts,
+  REASONING_EFFORTS,
+  type ReasoningEffort,
   registryModel,
   SUBSCRIPTION_DECISION_MODELS,
   SUBSCRIPTION_WORKER_MODELS,
@@ -50,7 +53,7 @@ export const subscriptionSettingsSchema = z
     maxQueuedPerThread: z.number().int().min(1).max(1_024).optional(),
     maxConcurrent: z.number().int().min(1).max(32).optional(),
     callTimeoutMs: z.number().int().min(100).max(DECISION_CALL_TIMEOUT_MAX_MS).optional(),
-    effort: z.enum(['low', 'medium', 'high', 'xhigh', 'max']).optional(),
+    effort: z.enum(REASONING_EFFORTS).optional(),
     hedgeAfterMs: z.number().int().min(500).max(30_000).optional(),
   })
   .strict();
@@ -105,7 +108,7 @@ export interface SubscriptionPolicy {
   maxConcurrent: number;
   callTimeoutMs: number;
   /** Decision reasoning effort. */
-  effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+  effort?: ReasoningEffort;
   /** Codex decisions still running after this long are hedged on a second branch. */
   hedgeAfterMs?: number;
   /** Where a thread's Wardens run: primed sessions (default), or inside the thread's own process. */
@@ -325,6 +328,11 @@ export function resolveSubscriptionPolicy(
   )
     throw Error(
       `Decision model ${policy.model} is a ${other} model; set subscriptionOnly.model or defaults.classifierModel for ${decision.runtime} decisions`,
+    );
+  const takes = policy.effort && modelEfforts(runtimeProvider[decision.runtime], policy.model);
+  if (takes && policy.effort && !takes.includes(policy.effort))
+    throw Error(
+      `subscriptionOnly.effort ${policy.effort} is not one ${policy.model} takes (${takes.join(', ')})`,
     );
   if (options.startup) {
     try {
