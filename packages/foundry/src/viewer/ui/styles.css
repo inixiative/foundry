@@ -9667,6 +9667,10 @@ a.thread-ref:hover {
   justify-content: flex-end;
   gap: 8px;
 }
+.setting-row-value > select {
+  width: auto;
+  max-width: 100%;
+}
 .setting-value {
   color: var(--text);
   font-size: 13px;
