@@ -88,7 +88,7 @@ export const RIGHT_TABS = ['work', 'context', 'participants', 'permissions', 'he
 /** The right panel widened (for Work's diffs and file lists). */
 /** The side panels' size levels (panel-sizes.js steps and renders them). */
 export const leftSize = signal('normal'); // hidden · strip · normal · wide
-export const rightSize = signal('normal'); // hidden · icons · normal · wide · wider
+export const rightSize = signal('normal'); // hidden · icons · normal · wide
 export const rightTab = signal('context');
 /** The left rail: 'open' (every open thread, Yours over Shared) or 'projects' (the projects, then a scope's threads). */
 export const railView = signal('open');
@@ -141,7 +141,7 @@ let sizeBeforeTurnView = null;
 
 export function openTurnView(threadId, turnId) {
   if (!turnViewTarget.peek()) sizeBeforeTurnView = rightSize.peek();
-  rightSize.value = 'wider';
+  rightSize.value = 'wide';
   turnViewTarget.value = { threadId, turnId };
 }
 
@@ -2254,7 +2254,7 @@ function restoreFromHash() {
   if (h.sidebar === '0') projectSidebarOpen.value = false;
   if (h.detail === '0') detailDrawerOpen.value = false;
   if (['hidden', 'wide'].includes(h.lsize)) leftSize.value = h.lsize;
-  if (['hidden', 'wide', 'wider'].includes(h.rsize)) rightSize.value = h.rsize;
+  if (['hidden', 'wide'].includes(h.rsize)) rightSize.value = h.rsize;
   if (RIGHT_TABS.includes(h.rtab)) rightTab.value = h.rtab;
   boardOpen.value = h.view === 'board';
   watchtowerOpen.value = h.view === 'watch';

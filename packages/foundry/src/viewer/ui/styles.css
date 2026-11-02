@@ -2812,7 +2812,7 @@ body {
 .settings-page {
   grid-row: 2 / 4;
   display: grid;
-  grid-template-columns: 220px minmax(0, 1fr) 380px;
+  grid-template-columns: 220px minmax(0, 1fr);
   min-height: 0;
   min-width: 0;
 }
@@ -2993,10 +2993,25 @@ body {
   min-height: 0;
   flex: 1;
 }
+/* Forge Master beside a settings page: closed until the header opens it (Aron 11-02). */
 @media (min-width: 1001px) {
-  .settings-page:has(> .settings-chat.collapsed) {
-    grid-template-columns: 220px minmax(0, 1fr) 40px;
+  .settings-page.settings-show-chat {
+    grid-template-columns: 220px minmax(0, 1fr) 380px;
   }
+}
+.settings-chat-close {
+  margin-left: auto;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: none;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 11px;
+  padding: 1px 6px;
+  cursor: pointer;
+}
+.settings-chat-close:hover {
+  color: var(--accent);
 }
 
 .forge-master > .settings-chat {
@@ -4607,28 +4622,6 @@ body {
   min-height: 0;
 }
 
-.settings-chat.collapsed {
-  align-items: center;
-  padding-top: 10px;
-}
-
-.settings-chat-toggle {
-  writing-mode: vertical-rl;
-  transform: rotate(180deg);
-  background: none;
-  border: none;
-  color: var(--text-dim);
-  font-size: 11px;
-  font-family: var(--font);
-  letter-spacing: 0.15em;
-  padding: 8px 6px;
-  cursor: pointer;
-  text-transform: uppercase;
-}
-.settings-chat-toggle:hover {
-  color: var(--accent);
-}
-
 .settings-chat-header {
   display: flex;
   align-items: center;
@@ -5245,7 +5238,7 @@ body {
   gap: 8px;
 }
 .settings-chat-view {
-  display: none;
+  margin-left: auto;
 }
 @media (max-width: 600px) {
   .access-editor .settings-row {
@@ -5263,9 +5256,6 @@ body {
   }
   .settings-page > .settings-chat {
     display: none;
-  }
-  .settings-chat-view {
-    display: inline-block;
   }
   .settings-page.settings-show-chat {
     grid-template-columns: minmax(0, 1fr);
