@@ -93,16 +93,16 @@ export function HeldPromptCard({ prompt }) {
 }
 
 function MemberRow({ member, threadId, conch }) {
-  const lens = member.lens;
+  const terms = member.terms;
   return html`<li class="conversation-member ${member.present ? 'is-present' : ''}"
       data-member=${member.member.id}>
     <span class="conversation-presence" title=${member.present ? 'Here now' : `Last seen ${ago(member.lastSeen)}`}></span>
     <span class="conversation-member-name">${member.displayName}</span>
     ${member.listed ? null : html`<span class="context-bar-chip context-bar-chip--dim" title="Kingdom no longer lists this Signet on the thread (revoked, narrowed, or not yet in a snapshot)">unlisted</span>`}
     ${
-      lens
-        ? html`<span class="context-bar-chip" title="What it reads">${lens.view === 'thread' ? 'reads the thread' : 'reads its own'}</span>
-          <span class="context-bar-chip" title="How its posts arrive">${lens.delivery === 'turn' ? 'posts wake the agent' : 'posts as notes'}</span>`
+      terms
+        ? html`<span class="context-bar-chip" title="What it reads">${terms.view === 'thread' ? 'reads the thread' : 'reads its own'}</span>
+          <span class="context-bar-chip" title="How its posts arrive">${terms.delivery === 'turn' ? 'posts wake the agent' : 'posts as notes'}</span>`
         : null
     }
     <span class="context-bar-chip ${member.outbound === 'review' ? '' : 'context-bar-chip--dim'}"

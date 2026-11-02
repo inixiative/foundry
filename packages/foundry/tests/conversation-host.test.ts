@@ -12,7 +12,7 @@ import {
   InterventionLog,
   Thread,
 } from '@inixiative/foundry-core';
-import type { HostedSignet, ThreadsLens } from '@inixiative/signet';
+import type { HostedSignet, ThreadsTerms } from '@inixiative/signet';
 import type { LocalSessionStore } from '../src/persistence/local-session-store';
 import { pairKingdomIntegration } from '../src/providers/kingdom-pairing';
 import {
@@ -25,7 +25,14 @@ import { journalHistory } from '../src/turns/journal-history';
 import { ConfigStore } from '../src/viewer/config';
 import { createViewer } from '../src/viewer/server';
 import { claudeCli } from './helpers/claude-cli';
-import { mockKingdom, userOwner } from './helpers/kingdom-installation';
+import {
+  mockKingdom,
+  termsOf,
+  threadsBaseLenses,
+  threadsGrant,
+  userOwner,
+  withTerms,
+} from './helpers/kingdom-installation';
 import { until } from './helpers/live-watch-fixture';
 import { appServerTransport } from './helpers/subscription-transport';
 
@@ -40,7 +47,7 @@ afterEach(async () => {
   for (const fn of cleanup.splice(0).reverse()) await fn();
 });
 
-type Lens = Partial<Omit<ThreadsLens, 'threads'>> & { ids?: string[]; operations?: string[] };
+type Grant = Partial<ThreadsTerms> & { ids?: string[]; operations?: string[] };
 
 async function host(
   opts: {
@@ -129,8 +136,12 @@ async function host(
   });
   const conversations = viewer.conversations!;
 
-  /** Issue a Signet on this Foundry's `threads` resource: a member, as Kingdom lists it. */
-  const member = async (name: string, lens: Lens = {}, revision = 1): Promise<HostedSignet> => {
+  /**
+   * Issue a Signet on this Foundry's `threads` resource: a member, as Kingdom lists it, with the
+   * base lens its rows compose under (`baseLenses`).
+   */
+  const member = async (name: string, grant: Grant = {}, revision = 1): Promise<HostedSignet> => {
+    const { ids, operations, ...terms } = grant;
     const signet: HostedSignet = {
       signetId: crypto.randomUUID(),
       integrationId,
@@ -142,19 +153,13 @@ async function host(
       maxConcurrent: 1,
       recipient: { recipientModel: 'User', id: crypto.randomUUID(), displayName: name },
       resources: [
-        {
-          resourceId: crypto.randomUUID(),
-          kind: 'threads',
-          operations: lens.operations ?? ['thread.prompt', 'thread.read', 'thread.floor'],
-          lens: {
-            threads: { form: 'ids', ids: lens.ids ?? ['main'] },
-            view: lens.view ?? 'own',
-            delivery: lens.delivery ?? 'note',
-            outbound: lens.outbound ?? 'review',
-            floor: lens.floor ?? { mayTake: false },
-          },
-        },
+        threadsGrant({
+          threadIds: ids ?? ['main'],
+          ...(operations ? { operations } : {}),
+          terms,
+        }),
       ],
+      baseLenses: threadsBaseLenses(),
     };
     kingdom.host(signet);
     await until(
@@ -162,18 +167,17 @@ async function host(
       `${name} listed`,
     );
     if ((opts.floor ?? 'talk') === 'talk')
-      for (const threadId of lens.ids ?? ['main'])
+      for (const threadId of ids ?? ['main'])
         if (conversations.view(threadId).floorFrom === 'shared')
           conversations.setFloor(threadId, 'talk');
     return signet;
   };
-  const lensOf = (signet: HostedSignet) => signet.resources[0]!.lens as ThreadsLens;
   const relayed = (signet: HostedSignet) => ({
     requestId: crypto.randomUUID(),
     signetId: signet.signetId,
     acceptedRevision: signet.revision,
     member: { signetId: signet.signetId, displayName: signet.recipient.displayName },
-    lens: lensOf(signet),
+    terms: termsOf(signet),
   });
   /** Kingdom relays one admitted call and waits for the host's answer. */
   const request = async (frame: Record<string, unknown>) => {
@@ -551,7 +555,7 @@ test('a live view: one subscribe answers the snapshot and its journalSeq; append
   );
 });
 
-test('reading beyond the lens: an own view never shows other members, owner or agent messages; afterSeq continues; an unknown selector form is refused', async () => {
+test('reading beyond the terms: an own view never shows other members, owner or agent messages; afterSeq continues; a term this host cannot read is refused', async () => {
   const h = await host();
   const a = await h.member('A');
   const b = await h.member('B');
@@ -566,11 +570,11 @@ test('reading beyond the lens: an own view never shows other members, owner or a
   const frame = {
     type: 'thread.request',
     ...h.relayed(a),
-    lens: { ...h.relayed(a).lens, threads: { form: 'tag', tag: 'jobs' } },
+    terms: { ...h.relayed(a).terms, retention: 'forever' },
     operation: 'thread.read',
     input: { threadId: 'main' },
   };
-  expect(await h.request(frame)).toMatchObject({ ok: false, refusal: 'unknown_selector' });
+  expect(await h.request(frame)).toMatchObject({ ok: false, refusal: 'invalid_request' });
 });
 
 test('prompt.resolve: the owner remote client releases a held send; a member floor request is visible; a stranger prompt id is refused', async () => {
@@ -736,13 +740,9 @@ test('a member granted after the latest snapshot is reviewed: its frames are adm
   const listed = await h.member('Listed');
   // A Signet Kingdom granted and admitted a frame for, before any snapshot lists it.
   const fresh = {
-    ...listed,
+    ...withTerms(listed, { outbound: 'auto' }),
     signetId: crypto.randomUUID(),
     recipient: { ...listed.recipient, displayName: 'Fresh' },
-    resources: listed.resources.map((r) => ({
-      ...r,
-      lens: { ...r.lens, outbound: 'auto' as const },
-    })),
   };
   expect((await h.post(fresh, 'first post before the snapshot')).ok).toBe(true);
   expect(h.conversations.send('main', 'Fresh', 'hello')).toContain('Held');

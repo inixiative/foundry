@@ -167,12 +167,7 @@ export async function createViewerPreview(port = 0) {
     signetId,
     acceptedRevision: 1,
     member: { signetId, displayName: "Sam's agent" },
-    lens: {
-      threads: { form: 'ids', ids: ['main'] },
-      view: 'thread',
-      delivery: 'note',
-      outbound: 'review',
-    },
+    terms: { view: 'thread', delivery: 'note', outbound: 'review', floor: { mayTake: false } },
     operation: 'thread.prompt',
     input: { threadId: 'main', postId: crypto.randomUUID(), text: 'Can you keep our test name?' },
   } as Parameters<ConversationService['admit']>[0]);

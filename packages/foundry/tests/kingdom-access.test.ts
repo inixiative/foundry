@@ -59,16 +59,12 @@ async function fixture() {
             {
               key: 'issues.read',
               name: 'Read issue',
-              resources: [
-                { id: resourceId, name: 'Fixture issue', kind: 'issue', integrationId, lens: {} },
-              ],
+              resources: [{ id: resourceId, name: 'Fixture issue', kind: 'issue', integrationId }],
             },
             {
               key: 'issues.write',
               name: 'Write issue',
-              resources: [
-                { id: resourceId, name: 'Fixture issue', kind: 'issue', integrationId, lens: {} },
-              ],
+              resources: [{ id: resourceId, name: 'Fixture issue', kind: 'issue', integrationId }],
             },
           ],
         };

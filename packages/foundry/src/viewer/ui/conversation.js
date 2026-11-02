@@ -248,8 +248,8 @@ export function ContextStats() {
   </section>`;
 }
 
-/** Kingdom's own words for what a member reads (ThreadsLensEditor). */
-const LENS_READS = {
+/** Kingdom's own words for what a member reads (its `threads` terms). */
+const VIEW_READS = {
   own: 'Its own posts and what is sent to it',
   thread: 'The whole thread: messages and answers, never tool calls',
 };
@@ -257,7 +257,7 @@ const LENS_READS = {
 const signetLine = (m) =>
   [
     m.displayName,
-    m.lens ? LENS_READS[m.lens.view] : null,
+    m.terms ? VIEW_READS[m.terms.view] : null,
     m.limits?.maxRequests ? `up to ${m.limits.maxRequests} requests` : null,
     m.limits?.expiresAt ? `until ${new Date(m.limits.expiresAt).toLocaleDateString()}` : null,
     m.listed ? null : 'no longer listed by Kingdom',

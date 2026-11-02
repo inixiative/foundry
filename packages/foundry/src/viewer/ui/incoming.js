@@ -102,6 +102,7 @@ export function RequestView() {
       <h4>What they want</h4>
       <p>${request.name}</p>
       <div class="request-terms">
+        ${request.full ? html`<span><i>Can</i> do everything it offers</span>` : null}
         ${request.operations.map((op) => html`<span key=${op}><i>Can</i> ${op}</span>`)}
         <span><i>For</i> ${request.lifecycle}</span>
         <span><i>Limit</i> ${allowance}</span>

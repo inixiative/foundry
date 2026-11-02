@@ -16,7 +16,13 @@ import {
   kingdomPostDelivery,
   registerKingdomPost,
 } from '../src/tools/kingdom-post';
-import { heldSignet, mockKingdom, userOwner } from './helpers/kingdom-installation';
+import {
+  heldSignet,
+  mockKingdom,
+  threadsBaseLenses,
+  threadsGrant,
+  userOwner,
+} from './helpers/kingdom-installation';
 
 const require = createRequire(new URL('../package.json', import.meta.url));
 const { Client } = await import(require.resolve('@modelcontextprotocol/sdk/client/index.js'));
@@ -55,19 +61,13 @@ function hostedMember(threadId: string, outbound: 'review' | 'auto'): HostedSign
     maxConcurrent: 1,
     recipient: { recipientModel: 'User', id: crypto.randomUUID(), displayName: 'JobCo' },
     resources: [
-      {
-        resourceId: crypto.randomUUID(),
-        kind: 'threads',
+      threadsGrant({
+        threadIds: [threadId],
         operations: ['thread.prompt', 'thread.read'],
-        lens: {
-          threads: { form: 'ids', ids: [threadId] },
-          view: 'own',
-          delivery: 'note',
-          outbound,
-          floor: { mayTake: false },
-        },
-      },
+        terms: { outbound },
+      }),
     ],
+    baseLenses: threadsBaseLenses(),
   };
 }
 
@@ -85,6 +85,7 @@ async function bridge(opts: {
   const service = new ConversationService({
     store,
     thread: (id) => (id === thread.id ? thread : undefined),
+    threads: () => [thread],
     turns: () => null,
     queue,
     project: () => ({
@@ -175,13 +176,14 @@ test('kingdom_post holds the post for the owner before anything leaves, then pos
                   name: 'threads',
                   kind: 'threads',
                   integrationId,
-                  lens: {
-                    threads: { form: 'ids', ids: [remoteThread] },
-                    view: 'own',
-                    delivery: 'note',
-                    outbound: 'review',
-                    floor: { mayTake: false },
-                  },
+                  lens: [
+                    {
+                      id: crypto.randomUUID(),
+                      parents: ['foundry:threads'],
+                      root: { where: { field: 'id', operator: 'in', value: [remoteThread] } },
+                    },
+                  ],
+                  terms: { threads: { view: 'own' } },
                 },
               ],
             },

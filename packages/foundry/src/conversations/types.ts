@@ -143,18 +143,18 @@ export interface ConversationRecord {
 export type Voice = 'speaking' | 'listening';
 
 /**
- * A local member's terms, the same ones a Signet's lens names (M4): what it hears of the log, whether
- * its posts wake the host's agent, and whether it may take the conch. The log it hears is what was
- * posted: the host agent's own answers stay the host's side (§4.9 point 2, M8).
+ * A local member's terms, the same ones a Signet's `threads` terms name (M4): what it hears of the
+ * log, whether its posts wake the host's agent, and whether it may take the conch. The log it hears
+ * is what was posted: the host agent's own answers stay the host's side (§4.9 point 2, M8).
  */
-export interface LocalMemberLens {
+export interface LocalMemberTerms {
   view: 'thread' | 'own';
   delivery: 'note' | 'turn';
   floor: { mayTake: boolean };
 }
 
 /** The owner's own agents talk to the host's agent by default: their posts wake it (§4.11 point 2). */
-export const DEFAULT_LOCAL_LENS: LocalMemberLens = Object.freeze({
+export const DEFAULT_LOCAL_TERMS: LocalMemberTerms = Object.freeze({
   view: 'thread',
   delivery: 'turn',
   floor: Object.freeze({ mayTake: false }),
@@ -164,7 +164,7 @@ export interface LocalMemberRecord {
   /** The member's own Foundry thread on this machine. */
   threadId: string;
   displayName: string;
-  lens: LocalMemberLens;
+  terms: LocalMemberTerms;
   joinedAt: string;
   /** It hears the log from here on (the host journal seq when it joined). */
   fromSeq: number;

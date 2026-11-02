@@ -179,13 +179,13 @@ One sheet naming every part of Foundry, so people and agents use the same words.
 | conversation | A wrapper of a main thread, not a chat: one post-in point, one read-off point, and floor state. Always wrapped, so posts reach the executor. | `pf/conversations/`; [CONVERSATIONS.md](reference/CONVERSATIONS.md) | live |
 | shared thread | A thread with a member grant from someone other than its owner. | | live |
 | post-in point | Kingdom's relay frame, admitted in one synchronous transaction (dedupe, pause, depth, floor), then delivered as a note or a turn and labelled as untrusted data from that member. | `pf/conversations/service.ts` | live |
-| read-off point | A member reads the main thread's journal through its lens (`view: own` or `thread`), never tool I/O or Warden entries. | `thread.read`, `visibleTo` | live |
+| read-off point | A member reads the main thread's journal through its terms (`view: own` or `thread`), never tool I/O or Warden entries. | `thread.read`, `visibleTo` | live |
 | floor modes | `talk` (anyone posts), `speak-when-spoken-to` (one reply per invitation), `conch` (only the holder posts); all built on invitations. A shared thread defaults to `conch`, an unshared one to `talk`. | `conversations.floor`; `SHARED_CONVERSATION_DEFAULTS` | live |
 | invitation | The one floor mechanism: `{ to, by, standing, expiresAt }`. | `Invitation`, `pf/conversations/types.ts` | live |
 | conch | One standing invitation held for `holdSeconds` (300); the owner can always take or reassign it; the agent may pass it only with `agentMayPass` (false). A member may ask for it, or `take` it when its grant allows. | `conversations.conch`, `pass_conch` | live |
 | owner / driver / leader | Separate roles: who owns the thread, who holds the conch, who may reassign it. Roles change through Signet revise and grant, with no role table. | | live |
 | depth bound | Agent turns without the owner before the conversation pauses (`maxAgentTurns`, 6). | | live |
-| sitting in / participating | Two grants: reading the whole log (`thread.read`, `view: thread`), or that plus posting (`thread.prompt`), governed by the floor. | Kingdom Signet lens | live |
+| sitting in / participating | Two grants: reading the whole log (`thread.read`, `view: thread`), or that plus posting (`thread.prompt`), governed by the floor. | Kingdom Signet terms | live |
 | the log | The shared thread holds only what was posted. Each agent's context is the log plus its own private side. | | live |
 | held send | An agent's proposed post (`send_to_member`, `kingdom_post`) waits for its person to release, edit or withdraw it; agents never post straight in. | | live |
 | commission | A released send that asks an agent for work; its report posts into the log by default, unless the caller asked to be notified instead. | `commission: { report, expiresAt }` | proposed (BOARD-001 slice 2a) |

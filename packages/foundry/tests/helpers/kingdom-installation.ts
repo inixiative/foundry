@@ -1,4 +1,5 @@
 import { join } from 'node:path';
+import { createLens, type Lens, type StoredLens } from '@inixiative/json-rules';
 import {
   collectSignet,
   generateSignetKey,
@@ -10,11 +11,110 @@ import {
   writePrivateJson,
 } from '@inixiative/signet';
 import {
+  baseLensId,
   type HostedSignet,
   type RegistrationRequest,
   requestRegistrationSchema,
+  type SignetGrant,
+  type ThreadsTerms,
+  threadsTerms,
 } from '@inixiative/signet/contracts';
 import type { ServerWebSocket } from 'bun';
+
+const threadsBaseId = baseLensId('foundry', 'threads');
+
+/**
+ * The base lens records Kingdom lists beside a hosted Signet (`baseLenses`): its
+ * catalog's base for a Foundry's main threads, by id, keyed by `baseLensId`, `parents: []`.
+ */
+export const threadsBaseLenses = (): Record<string, StoredLens & Lens> => ({
+  [threadsBaseId]: {
+    ...createLens({
+      maps: {
+        foundry: {
+          models: {
+            Thread: { fields: { id: { kind: 'scalar', type: 'String', isRequired: true } } },
+          },
+        },
+      },
+      mapName: 'foundry',
+      model: 'Thread',
+    }),
+    id: threadsBaseId,
+    parents: [],
+  },
+});
+
+const reaching = (threadIds: string[]) => ({
+  root: { where: { field: 'id', operator: 'in', value: threadIds } },
+});
+
+/**
+ * A grant on a Foundry's `threads` resource as Kingdom stores it (signet 0.12): resolved operation
+ * leaves (or `full`), the lens layers Kingdom chains under the base (`request`, then an approver's
+ * `approval`), each a `where` over the thread's `id`, and the member's terms.
+ */
+export const threadsGrant = (
+  opts: {
+    threadIds?: string[];
+    approved?: string[];
+    full?: boolean;
+    operations?: string[];
+    terms?: Partial<ThreadsTerms>;
+  } = {},
+): SignetGrant => ({
+  resourceModel: 'IntegrationResource',
+  integrationResourceId: crypto.randomUUID(),
+  kind: 'threads',
+  ...(opts.full
+    ? { full: true, lens: [] }
+    : {
+        full: false,
+        operations: opts.operations ?? ['thread.prompt', 'thread.read', 'thread.floor'],
+        lens: [
+          { id: 'request', parents: [threadsBaseId], ...reaching(opts.threadIds ?? ['main']) },
+          ...(opts.approved
+            ? [{ id: 'approval', parents: [threadsBaseId, 'request'], ...reaching(opts.approved) }]
+            : []),
+        ],
+      }),
+  terms: { threads: threadsTerms({ threads: opts.terms }) },
+});
+
+/** A revision whose approver narrowed the threads the grant reaches to `threadIds`. */
+export const narrowedTo = <S extends HostedSignet>(signet: S, threadIds: string[]): S => ({
+  ...signet,
+  revision: signet.revision + 1,
+  resources: signet.resources.map((resource) =>
+    resource.resourceModel === 'IntegrationResource'
+      ? {
+          ...resource,
+          lens: [
+            ...(resource.lens ?? []).filter((layer) => layer.id === 'request'),
+            { id: 'approval', parents: [threadsBaseId, 'request'], ...reaching(threadIds) },
+          ],
+        }
+      : resource,
+  ),
+});
+
+/** A hosted Signet's terms on its `threads` grant, as Kingdom relays them on every frame. */
+export const termsOf = (signet: HostedSignet): ThreadsTerms => {
+  const grant = signet.resources.find(
+    (resource) => resource.resourceModel === 'IntegrationResource',
+  );
+  return threadsTerms(grant?.resourceModel === 'IntegrationResource' ? grant.terms : undefined);
+};
+
+/** The same Signet with its `threads` terms changed, as a revision lists it. */
+export const withTerms = <S extends HostedSignet>(signet: S, terms: Partial<ThreadsTerms>): S => ({
+  ...signet,
+  resources: signet.resources.map((resource) =>
+    resource.resourceModel === 'IntegrationResource'
+      ? { ...resource, terms: { threads: { ...termsOf(signet), ...terms } } }
+      : resource,
+  ),
+});
 
 /** Kingdom's owner reference for an owner key (`ownerModel:userId:organizationId:spaceId`). */
 export const ownerOf = (key: string): OwnerRef => {
