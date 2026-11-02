@@ -921,7 +921,42 @@ export function effectiveProject(
   const mine = config.projects[projectId];
   if (!mine) return undefined;
   const theirs = readRepositorySettings(mine.path);
-  if (!theirs || theirs.error) return mine;
+  if (!theirs || theirs.error) {
+    unapplied.delete(mine.path);
+    return mine;
+  }
+  // Checked once per version of this machine's entry, Foundry's agents and layers, and the file.
+  const stamp = repositoryCache.get(join(mine.path, REPOSITORY_SETTINGS_FILE))?.stamp;
+  // Keyed by content, not identity: a config edited in place is checked again.
+  const key = `${stamp}|${JSON.stringify(mine)}|${JSON.stringify(config.agents)}|${JSON.stringify(config.layers)}`;
+  const memo = appliedProjects.get(config)?.get(projectId);
+  if (memo?.key === key) return memo.project;
+  const merged = mergeProject(mine, theirs);
+  // The team's settings may name what this machine lacks (a parent agent it doesn't have): then
+  // none of them apply here and why is reported, so a checkout never stops the daemon.
+  let project = merged;
+  try {
+    checkProjectView(projectId, buildProjectView(config, projectId, merged).config);
+    unapplied.delete(mine.path);
+  } catch (error) {
+    unapplied.set(mine.path, (error as Error).message);
+    project = mine;
+  }
+  const byId = appliedProjects.get(config) ?? new Map();
+  byId.set(projectId, { key, project });
+  appliedProjects.set(config, byId);
+  return project;
+}
+
+const appliedProjects = new WeakMap<
+  FoundryConfig,
+  Map<string, { key: string; project: ProjectSettingsConfig }>
+>();
+
+function mergeProject(
+  mine: ProjectSettingsConfig,
+  theirs: RepositoryProjectSettings,
+): ProjectSettingsConfig {
   const merged: ProjectSettingsConfig = { ...mine };
   const scalar = <K extends 'threadOnMerge'>(key: K) => {
     if (mine[key] === undefined && theirs[key] !== undefined) merged[key] = theirs[key];
@@ -1037,18 +1072,7 @@ export function resolveProjectView(
   const mine = config.projects[projectId];
   if (!mine) return null;
   const project = options.repository === false ? mine : effectiveProject(config, projectId)!;
-  if (project === mine) return buildProjectView(config, projectId, mine);
-  // The team's settings may name what this machine lacks (a parent agent it doesn't have): then
-  // none of them apply here, and why is reported, so a checkout never stops the daemon.
-  try {
-    const view = buildProjectView(config, projectId, project);
-    checkProjectView(projectId, view.config);
-    unapplied.delete(mine.path);
-    return view;
-  } catch (error) {
-    unapplied.set(mine.path, (error as Error).message);
-    return buildProjectView(config, projectId, mine);
-  }
+  return buildProjectView(config, projectId, project);
 }
 
 /** Why a project's repository settings didn't apply on this machine, by project path. */

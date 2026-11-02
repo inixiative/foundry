@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync }
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { SUBSCRIPTION_WORKER_MODELS } from '@inixiative/foundry-core';
-import { defaultConfig, type ProjectSettingsConfig } from '../src/viewer/config';
+import { defaultAgents, defaultConfig, type ProjectSettingsConfig } from '../src/viewer/config';
 import {
   effectiveProject,
   readRepositorySettings,
@@ -52,6 +52,8 @@ const projectWith = (repository: unknown, mine: Partial<ProjectSettingsConfig> =
   mkdirSync(join(path, '.foundry'));
   writeFileSync(join(path, '.foundry/project.json'), JSON.stringify(repository));
   const config = defaultConfig();
+  config.agents = defaultAgents();
+  config.agents.planner = { ...config.agents.executor!, id: 'planner' };
   config.projects.p = { id: 'p', path, ...mine };
   return config;
 };
@@ -63,13 +65,13 @@ test('a project applies this machine’s settings over the repository’s, key b
       gloss: { enabled: true, display: 'hover' },
       feedback: { capture: true },
       agents: {
-        reviewer: { extends: 'base', prompt: 'team' },
-        writer: { extends: 'base', prompt: 'team' },
+        reviewer: { extends: 'planner', prompt: 'team' },
+        writer: { extends: 'executor', prompt: 'team' },
       },
     },
     {
       gloss: { enabled: false } as ProjectSettingsConfig['gloss'],
-      agents: { writer: { extends: 'base', prompt: 'mine' } },
+      agents: { writer: { extends: 'executor', prompt: 'mine' } },
     },
   );
   const project = effectiveProject(config, 'p')!;
@@ -77,9 +79,19 @@ test('a project applies this machine’s settings over the repository’s, key b
   expect(project.gloss).toEqual({ enabled: false, display: 'hover' });
   expect(project.feedback).toEqual({ capture: true });
   expect(project.agents).toEqual({
-    reviewer: { extends: 'base', prompt: 'team' },
-    writer: { extends: 'base', prompt: 'mine' },
+    reviewer: { extends: 'planner', prompt: 'team' },
+    writer: { extends: 'executor', prompt: 'mine' },
   });
+  expect(repositorySettingsProblem(config.projects.p!.path)).toBeUndefined();
+  // Two project agents extending one global agent can't be built: the team's settings don't apply.
+  const clash = projectWith(
+    { threadOnMerge: 'auto-archive', agents: { a: { extends: 'executor' } } },
+    {
+      agents: { b: { extends: 'executor', prompt: 'mine' } },
+    },
+  );
+  expect(effectiveProject(clash, 'p')!.threadOnMerge).toBeUndefined();
+  expect(repositorySettingsProblem(clash.projects.p!.path)).toContain('extend');
   // The raw settings stay this machine's alone: nothing of the repository's is copied into them.
   expect(config.projects.p!.threadOnMerge).toBeUndefined();
 });

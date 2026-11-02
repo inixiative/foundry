@@ -527,11 +527,14 @@ this person have no "for everyone" form, and the file may not carry them
 
 A model needs its worker (`defaults.model` without `defaults.provider` is
 refused). The file is checked by the same rules as the machine's settings
-(`validateRepositoryProject`). If it breaks one, or names what this machine
-lacks (an agent extending a global agent it doesn't have), it is reported (the
-settings rows' `repositoryError`, the doctor's `repository-settings-unreadable`
-error) and none of it applies: the project runs on this machine's settings, and a
-checkout never stops the daemon. settings.json is validated without the
+(`validateRepositoryProject`); a file that breaks one is reported and none of it
+applies. A valid file whose agents or layers this machine can't build (an agent
+extending a global agent it doesn't have, or two project agents extending the same
+one) is reported too, and its merged settings (`threadOnMerge`, `gloss`,
+`defaults`, `feedback`, `agents`, `layers`) don't apply here; `chorus`,
+`conversations` and `steer`, checked on their own, still do. Either way the project
+runs, why shows in the settings rows (`repositoryError`) and the doctor
+(`repository-settings-unreadable`), and a checkout never stops the daemon. settings.json is validated without the
 repository's layer (`resolveProjectView(…, { repository: false })`), so a worker a
 teammate commits that this machine has no login for is refused when a thread
 starts, with why, not when settings load. The machine's
