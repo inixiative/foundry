@@ -48,6 +48,7 @@ import {
 } from '@inixiative/agent-session';
 import { type NativeBridgeLease, newId, type SignalBus } from '@inixiative/foundry-core';
 import { spawnMspConnection } from '@muse-code/sdk';
+import { readFileSync } from 'fs';
 import { mkdir, readFile, rename, writeFile } from 'fs/promises';
 import { dirname, join } from 'path';
 import type { HarnessSettingSources } from './harness-settings';
@@ -135,6 +136,20 @@ export class FileExternalSessionStore implements ExternalSessionStore {
 
   constructor(path: string) {
     this._path = path;
+  }
+
+  /** Every native session id bound to a Foundry session key (`<thread id>:…`), across adapters; read synchronously for recovery. */
+  static boundTo(path: string, threadId: string): string[] {
+    try {
+      const data = JSON.parse(readFileSync(path, 'utf-8')) as FileStoreData;
+      return Object.values(data).flatMap((bindings) =>
+        Object.entries(bindings ?? {})
+          .filter(([key, id]) => key.startsWith(`${threadId}:`) && typeof id === 'string')
+          .map(([, id]) => id),
+      );
+    } catch {
+      return [];
+    }
   }
 
   /** Default path: `<projectRoot>/.foundry/sessions.json`. */

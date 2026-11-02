@@ -941,6 +941,29 @@ body {
   display: inline-flex;
   gap: 6px;
 }
+/* A turn lost to a restart: orange, it needs the owner (not an error). */
+.lost-turn-card {
+  margin-top: 8px;
+  padding: 10px 12px;
+  border: 1px solid hsl(var(--status-attention) / 0.55);
+  border-radius: 8px;
+  background: hsl(var(--status-attention) / 0.08);
+  font-size: 13px;
+}
+.lost-turn-title {
+  font-weight: 600;
+  color: var(--text);
+}
+.lost-turn-body {
+  margin-top: 2px;
+  color: var(--text-dim);
+}
+.lost-turn-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
 .context-bar-title {
   flex-shrink: 0;
   font-weight: 600;
