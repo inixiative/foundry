@@ -20,9 +20,7 @@ export interface DataStreamClientOptions extends FoundryEndpoint {
   pingIntervalMs?: number;
   /** Connection state changes. */
   onStatus?: (status: 'open' | 'closed' | 'reconnecting') => void;
-  /** The current bearer, read on every (re)connect: a restarted daemon publishes a new one. */
-  refreshCapability?: () => string | undefined;
-  /** Checked before every reconnect (the bearer goes with it); a throw waits and tries again. */
+  /** Checked before every reconnect; a throw waits and tries again. */
   beforeReconnect?: () => Promise<void>;
 }
 
@@ -72,10 +70,7 @@ export class DataStreamClient {
     if (this.disposed) return Promise.reject(Error('Data-stream client is closed'));
     if (this.socket?.readyState === WebSocket.OPEN) return Promise.resolve();
     this.connecting ??= new Promise<void>((resolve, reject) => {
-      const capability = this.options.refreshCapability?.() ?? this.options.capability;
-      const socket = new WebSocket(this.url(), {
-        headers: capability ? { authorization: `Bearer ${capability}` } : {},
-      });
+      const socket = new WebSocket(this.url());
       let opened = false;
       socket.onopen = () => {
         opened = true;

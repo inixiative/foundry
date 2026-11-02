@@ -11,10 +11,13 @@ import {
   Thread,
 } from '@inixiative/foundry-core';
 import { Hono } from 'hono';
+import { pairKingdomIntegration } from '../src/providers/kingdom-pairing';
+import { ConfigStore } from '../src/viewer/config';
 import { privateTunnelToken } from '../src/viewer/private-token';
 import { authenticatedRequest, sessionValue } from '../src/viewer/request-auth';
 import { createViewer } from '../src/viewer/server';
 import { FoundryTunnel, tunnelAuth } from '../src/viewer/tunnel';
+import { mockKingdom, userOwner } from './helpers/kingdom-installation';
 
 const token = 'synthetic-only-token-0123456789abcdef';
 const directories: string[] = [];
@@ -122,10 +125,10 @@ test('stopping a tunnel preserves the HTTP authentication boundary', async () =>
   });
   expect(response.status).toBe(200);
   expect(viewer.tunnelHolder.tunnel).toBeInstanceOf(FoundryTunnel);
-  expect((await viewer.app.request('http://localhost/api/tunnel')).status).toBe(401);
+  expect((await viewer.app.request('https://foundry-x.loca.lt/api/tunnel')).status).toBe(401);
   expect(
     (
-      await viewer.app.request('http://localhost/api/tunnel', {
+      await viewer.app.request('https://foundry-x.loca.lt/api/tunnel', {
         headers: { authorization: `Bearer ${token}` },
       })
     ).status,
@@ -169,4 +172,122 @@ test('trusted HTTPS tunnel origin works behind loopback proxy and does not trust
       })
     ).status,
   ).toBe(403);
+});
+
+test('while tunnelled, this machine opens the viewer directly; only tunnel traffic meets the login', async () => {
+  const dir = directory();
+  const viewer = createViewer({
+    harness: new Harness(new Thread('main', new ContextStack())),
+    eventStream: new EventStream(),
+    interventions: new InterventionLog(),
+    configDir: dir,
+    localStore: null,
+    tunnel: { port: 4500, token, configDir: dir },
+  });
+  for (const host of ['localhost', '127.0.0.1', '[::1]'])
+    expect((await viewer.app.request(`http://${host}:4500/api/tunnel`)).status).toBe(200);
+  for (const headers of [{ 'x-forwarded-for': '203.0.113.9' }, { 'cf-ray': 'abc' }] as Record<
+    string,
+    string
+  >[])
+    expect((await viewer.app.request('http://localhost:4500/api/tunnel', { headers })).status).toBe(
+      401,
+    );
+  const page = await viewer.app.request('https://foundry-x.loca.lt/', {
+    headers: { accept: 'text/html' },
+  });
+  expect(page.status).toBe(302);
+  expect(page.headers.get('location')).toBe('/auth');
+  await viewer.analyticsReady;
+});
+
+test('the login page offers each paired Kingdom: its devices page, else its dashboard', async () => {
+  const app = new Hono();
+  app.use(
+    '*',
+    tunnelAuth(token, undefined, async () => [
+      'https://kingdom.acme.test/devices',
+      'https://api.kingdom.other.test/dashboard',
+    ]),
+  );
+  const page = await (await app.request('https://viewer.test/auth')).text();
+  expect(page).toContain('href="https://kingdom.acme.test/devices"');
+  expect(page).toContain('Open through kingdom.acme.test');
+  expect(page).toContain('Open through api.kingdom.other.test');
+  const failed = await app.request('https://viewer.test/auth', {
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body: 'token=wrong',
+  });
+  expect(await failed.text()).toContain('https://kingdom.acme.test/devices');
+
+  const single = new Hono();
+  single.use(
+    '*',
+    tunnelAuth(token, undefined, async () => ['https://kingdom.acme.test/devices']),
+  );
+  expect(await (await single.request('https://viewer.test/auth')).text()).toContain(
+    '>Open through Kingdom</a>',
+  );
+
+  const none = new Hono();
+  none.use('*', tunnelAuth(token));
+  expect(await (await none.request('https://viewer.test/auth')).text()).not.toContain('Kingdom');
+});
+
+test("the viewer's login page links to the paired Kingdom's devices page", async () => {
+  const dir = directory();
+  const kingdom = mockKingdom({
+    onSignet: (action, body) =>
+      action === 'describe'
+        ? {
+            signetId: body.signetId,
+            integrationId: crypto.randomUUID(),
+            provider: null,
+            name: 'Host Foundry',
+            expiresAt: null,
+            lifecycle: 'ongoing',
+            taskId: null,
+            currentRevision: 1,
+            remainingRequests: null,
+            operations: [],
+            holder: {
+              integration: { id: crypto.randomUUID(), name: 'Host Foundry', provider: null },
+              owner: {
+                ownerModel: 'User',
+                name: 'Grace',
+                organization: null,
+                space: null,
+                user: { id: crypto.randomUUID(), name: 'Grace', email: 'grace@acme.test' },
+              },
+              issuedBy: { id: crypto.randomUUID(), name: null, email: 'grace@acme.test' },
+              webUrl: 'https://kingdom.acme.test',
+              manageUrl: 'https://kingdom.acme.test/dashboard',
+            },
+          }
+        : undefined,
+  });
+  try {
+    const store = new ConfigStore(dir);
+    await pairKingdomIntegration(store, dir, {
+      url: kingdom.url,
+      name: 'Host Foundry',
+      viewerToken: 't'.repeat(48),
+      onReview: () => kingdom.approve(userOwner()),
+    });
+    const viewer = createViewer({
+      harness: new Harness(new Thread('main', new ContextStack())),
+      eventStream: new EventStream(),
+      interventions: new InterventionLog(),
+      configDir: dir,
+      configStore: store,
+      localStore: null,
+      tunnel: { port: 4500, token, configDir: dir },
+    });
+    const page = await (await viewer.app.request('https://foundry-x.loca.lt/auth')).text();
+    expect(page).toContain('href="https://kingdom.acme.test/devices"');
+    await viewer.analyticsReady;
+  } finally {
+    kingdom.stop();
+  }
 });

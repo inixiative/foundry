@@ -123,9 +123,10 @@ test('the thread header shows its name and grouped pills', async () => {
   }
 }, 120_000);
 
-// Aron's rule: the header is always two rows. Each side's pill group is capped at 30% of the header
-// and never wraps; what doesn't fit fades, scrolls sideways and is listed under "…"; the title
-// truncates with its full text in a tooltip; the provider goes before the model.
+// Aron's rule: the header is always two rows. The right-hand pill groups take the room they need up
+// to 70% and the title keeps at least 30% (11-02); a group never wraps, and what doesn't fit scrolls
+// sideways, is hidden whole (never clipped mid-word) and is listed under "…"; the title truncates
+// with its full text in a tooltip; the provider goes before the model.
 test('the thread header stays two rows from 1024 to 1920 wide', async () => {
   const cleanup: ReleaseStep[] = [];
   const dir = mkdtempSync(join(tmpdir(), 'foundry-header-rows-'));
@@ -211,6 +212,20 @@ test('the thread header stays two rows from 1024 to 1920 wide', async () => {
           const r = g.getBoundingClientRect();
           return { width: r.width, top: r.top - box.top, over: g.classList.contains('is-over') };
         });
+        // A pill that shows sits wholly inside its group's visible box.
+        const clipped = [...el.querySelectorAll('.band-pills')].flatMap((scroller) => {
+          const r = scroller.getBoundingClientRect();
+          return [...scroller.children]
+            .filter((p) => !p.classList.contains('is-cut') && (p as HTMLElement).offsetParent)
+            .filter((p) => {
+              const q = p.getBoundingClientRect();
+              return q.left < r.left - 1 || q.right > r.right + 1;
+            })
+            .map((p) => (p as HTMLElement).innerText);
+        });
+        const titleColumn = (
+          el.querySelector('.band-title') as HTMLElement
+        ).getBoundingClientRect();
         const run = el.querySelector('.band-run') as HTMLElement;
         const drop = el.querySelector('.band-run .band-drop') as HTMLElement | null;
         return {
@@ -219,6 +234,8 @@ test('the thread header stays two rows from 1024 to 1920 wide', async () => {
           // Every pill sits on row 1 or row 2: none below the header.
           lowest: Math.max(...pills.map((p) => p.getBoundingClientRect().bottom - box.top)),
           widest: Math.max(...groups.map((g) => g.width)) / box.width,
+          titleShare: titleColumn.width / box.width,
+          clipped,
           rows: [...new Set(groups.map((g) => (g.top < 26 ? 1 : 2)))].sort(),
           over: groups.some((g) => g.over),
           providerShown: !!drop && getComputedStyle(drop).display !== 'none',
@@ -228,15 +245,20 @@ test('the thread header stays two rows from 1024 to 1920 wide', async () => {
       expect({ width, height: shape.height }).toEqual({ width, height: 54 });
       expect(shape.spill).toBeLessThanOrEqual(1);
       expect(shape.lowest).toBeLessThanOrEqual(55);
-      expect(shape.widest).toBeLessThanOrEqual(0.31);
+      expect(shape.widest).toBeLessThanOrEqual(0.71);
+      expect(shape.titleShare).toBeGreaterThanOrEqual(0.29);
+      expect(shape.clipped).toEqual([]);
       expect(shape.rows).toEqual([1, 2]);
       // The model always shows; the provider is what goes, never a clipped model name.
       expect(shape.runText).toContain('Opus 5.5');
       if (!shape.providerShown) expect(shape.runText).not.toContain('Anthropic');
       if (shape.over) squeezed = true;
     }
-    // At 1024 the long branch doesn't fit: "…" lists every pill in the group.
+    // Somewhere in the range a group overflows; narrower still, the long branch doesn't fit even
+    // at 70%: "…" lists every pill in the group, and no pill shows cut.
     expect(squeezed).toBe(true);
+    await page.setViewportSize({ width: 760, height: 900 });
+    await grid.locator('.band-where.is-over').waitFor();
     const more = grid.locator('.band-where .band-more-button');
     const list = grid.locator('.band-where .band-more-list');
     // Only one copy of each pill exists until "…" is opened.

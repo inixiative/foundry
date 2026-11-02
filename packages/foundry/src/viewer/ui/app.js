@@ -13,6 +13,7 @@ import { AnalyticsPage } from './analytics.js';
 import { Board, IncomingCard } from './board.js';
 import { CommandPalette, HelpOverlay } from './command-palette.js';
 import { Conversation } from './conversation.js';
+import { DevicePage } from './device-page.js';
 import { FeedbackInbox } from './feedback.js';
 import { GlossReview } from './gloss.js';
 import { initHotkeys, registerDefaults } from './hotkeys.js';
@@ -46,6 +47,7 @@ import {
   connected,
   currentTrace,
   detailDrawerOpen,
+  devicePageId,
   dismissToast,
   dismissTraceSelection,
   eventCount,
@@ -59,14 +61,15 @@ import {
   inspectLayer,
   inspectTarget,
   loadTraces,
+  openRightTab,
   projectHomeOpen,
   projectPage,
   projectSidebarOpen,
   projects,
   prompts,
+  RIGHT_TAB_KEYS,
   RIGHT_TABS,
   resyncStreams,
-  rightTab,
   scopeProjectId,
   selectedEvent,
   selectedSpanId,
@@ -336,11 +339,11 @@ function App() {
       toggleRightPanel: () => {
         detailDrawerOpen.value = !detailDrawerOpen.value;
       },
-      rightTabs: RIGHT_TABS.map((t) => t[0].toUpperCase() + t.slice(1)),
-      showRightTab: (i) => {
-        rightTab.value = RIGHT_TABS[i];
-        detailDrawerOpen.value = true;
-      },
+      rightTabKeys: Object.fromEntries(RIGHT_TABS.map((t) => [t, RIGHT_TAB_KEYS[t]])),
+      rightTabLabels: Object.fromEntries(
+        RIGHT_TABS.map((t) => [t, t[0].toUpperCase() + t.slice(1)]),
+      ),
+      showRightTab: (tab) => openRightTab(tab, { toggle: true }),
     });
     initHotkeys();
     loadMachineProfile();
@@ -406,9 +409,11 @@ function App() {
                   : boardOpen.value
                     ? html`<${Board} />`
                     : projectHomeOpen.value
-                      ? projectPage.value === 'knowledge' && activeProjectId.value
-                        ? html`<${KnowledgePage} key=${activeProjectId.value} />`
-                        : html`<${ProjectHome} key=${activeProjectId.value ?? 'global'} />`
+                      ? projectPage.value === 'device' && devicePageId.value
+                        ? html`<${DevicePage} key=${devicePageId.value} deviceId=${devicePageId.value} />`
+                        : projectPage.value === 'knowledge' && activeProjectId.value
+                          ? html`<${KnowledgePage} key=${activeProjectId.value} />`
+                          : html`<${ProjectHome} key=${activeProjectId.value ?? 'global'} />`
                       : activePanel.value === 'feedback'
                         ? html`<${FeedbackInbox} key=${scopeProjectId() ?? 'global'} projectId=${scopeProjectId()} />`
                         : html`<${Conversation} onSpanSelect=${handleSpanSelect} onLayerClick=${inspectLayer} />`
