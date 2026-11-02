@@ -12,6 +12,8 @@
  * under the step that spawned them. Then the plan → build → review → land strip, which opens Loop.
  * Decisions join the checklist when the running thread summary exists; it isn't built yet.
  */
+
+import { ComingSoon } from './coming-soon.js';
 import { useFlowStream } from './graph-view.js';
 import { html, useState } from './lib.js';
 import { liveThreadStatus, liveWorkLabel } from './live-state.js';
@@ -135,6 +137,9 @@ export function Plan() {
 
   return html`<article class="plan" data-drafted-by=${meta.plan?.draftedBy ?? null}>
     <section class="plan-about" aria-label="About">
+      <header class="plan-section-head"><h3>About</h3><small>what this thread is, where it came from, where it stands</small></header>
+      <${ComingSoon} inline=${true}
+        what="A running summary of the thread, updated each turn, leads here." />
       ${meta.description && meta.description !== threadName(data) ? html`<p class="plan-desc">${meta.description}</p>` : null}
 
       <${Line} label="From">
@@ -173,6 +178,12 @@ export function Plan() {
       <button type="button" class="rp-link" onClick=${() => {
         activePanel.value = 'graph';
       }}>The Loop is how it’s being done →</button></p>
+
+    <section class="plan-lifecycle" aria-label="Where the work stands">
+      <${LifecycleStrip} turns=${turns} meta=${meta} showNow=${true} onOpen=${() => {
+        activePanel.value = 'graph';
+      }} />
+    </section>
 
     <section class="plan-section plan-checklist" aria-label="Your outcomes">
       <header class="plan-section-head">
@@ -225,10 +236,5 @@ export function Plan() {
       }
     </section>
 
-    <section class="plan-lifecycle" aria-label="Where the work stands">
-      <${LifecycleStrip} turns=${turns} meta=${meta} onOpen=${() => {
-        activePanel.value = 'graph';
-      }} />
-    </section>
   </article>`;
 }
