@@ -100,7 +100,9 @@ export function connectStreams(viewer: Handler, clientId?: string | null) {
           f.category === 'data' &&
           f.stream === `thread:${threadId}` &&
           f.action === 'append' &&
-          (f.payload.kind === 'done' || f.payload.kind === 'error') &&
+          (f.payload.kind === 'done' ||
+            f.payload.kind === 'error' ||
+            f.payload.kind === 'steered') &&
           f.payload.turnId === turnId,
         `terminal for ${turnId}`,
       );

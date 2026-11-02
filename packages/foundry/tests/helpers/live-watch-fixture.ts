@@ -39,6 +39,8 @@ export async function liveWatchFixture(
     structuralRulesAtLaunch?: boolean;
     /** The session's transport declares image input (default true). */
     imageInput?: boolean;
+    /** The session's transport steers a running turn (default) or can't (`none`); CORE-001. */
+    push?: 'steer' | 'none';
   } = {},
 ) {
   await mkdir(dir, { recursive: true });
@@ -47,6 +49,7 @@ export async function liveWatchFixture(
     sessions: any[] = [],
     interrupts: string[] = [],
     exits: string[] = [],
+    pushes: string[] = [],
     requests: Promise<unknown>[] = [],
     created: CreateSessionOpts[] = [];
   const actionQueue = new ActionQueue();
@@ -77,7 +80,19 @@ export async function liveWatchFixture(
         /** The thread's tool gate, as a real adapter registers it on the native session. */
         toolGate: opts.toolGate,
         resource: `controlled-resource-${sessions.length + 1}`,
-        transport: { kind: 'claude-cli', capabilities: { images: options.imageInput !== false } },
+        transport: {
+          kind: options.push === 'none' ? 'claude-agent-sdk' : 'claude-cli',
+          capabilities: { images: options.imageInput !== false, push: options.push ?? 'steer' },
+        },
+        // A steer into the dispatched, unsettled turn (agent-session's push), recorded.
+        async push(payload: { kind: string; text: string }) {
+          const a = attempts.find(
+            (a) => a.session === s && !a.done && a.native.dispatch === 'attempted',
+          );
+          if (!a) return { outcome: 'ignored', reason: 'no owned in-flight turn' };
+          pushes.push(payload.text);
+          return { outcome: 'steered' };
+        },
         externalSessionId: `controlled-native-${sessions.length + 1}`,
         admissionProtocol: 'prewrite-v1',
         turnBudgetProtocol: 'optional-max-turns-v1',
@@ -298,6 +313,7 @@ export async function liveWatchFixture(
     attempts,
     sessions,
     interrupts,
+    pushes,
     exits,
     send,
     holdConstruction() {

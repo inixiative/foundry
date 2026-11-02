@@ -21,6 +21,7 @@ import {
   type NativeEvidence,
   type NativeObservation,
   type NativeOwner,
+  type NativeSteer,
   type OwnedAdmissionInspection,
   sameNativeOwner,
   splitSystemMessage,
@@ -31,6 +32,27 @@ import { projectNative } from './native-evidence';
 import type { ConstructionBinding, SessionAdapter } from './session-adapter';
 import { baseContextOf, type SessionTurn, sessionTurn } from './session-delivery';
 import type { ThreadLaunchSettings } from './thread-launch';
+
+/**
+ * How a running turn takes more input (CORE-001): through the session's own push() where its
+ * transport steers natively, or why it can't, from the transport's declared capability.
+ */
+function steerHandle(session: HarnessSession): NativeSteer {
+  const transport = session.transport;
+  if (transport?.capabilities.push === 'steer')
+    return { push: (text) => session.push({ kind: 'steer', text }) };
+  return {
+    reason: transport
+      ? `${TRANSPORT_NAMES[transport.kind] ?? transport.kind} can’t take a message into a running turn`
+      : 'this runtime does not say it can take a message into a running turn',
+  };
+}
+
+const TRANSPORT_NAMES: Partial<Record<string, string>> = {
+  'claude-agent-sdk': 'Claude through the Agent SDK',
+  acp: 'An ACP agent',
+  api: 'A metered API',
+};
 
 export const DECISION_CONTEXT =
   "You are Foundry's internal decision middleware, not its coding executor. " +
@@ -681,6 +703,7 @@ export class SessionBackedProvider implements LLMProvider {
                 });
                 if (session.interruptNative)
                   observation.interruptible?.((options) => session.interruptNative!(options));
+                observation.steerable?.(steerHandle(session));
               },
             }
           : {}),

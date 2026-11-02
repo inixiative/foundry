@@ -7,7 +7,7 @@
  * The actions palette by Send ("Actions ⌥/", or "/" typed into an empty message box): what you can
  * do with this thread, where this draft goes, and feedback. Fuzzy filter, ↑↓, Enter, Esc. Actions
  * with a backend run; the rest are listed with why they're not built (CORE-004 fork and rewind,
- * CORE-001 steering, asides and /btw posting, scheduling, hand-off).
+ * asides and /btw posting, scheduling, hand-off).
  */
 
 import { html, useEffect, useRef, useState } from './lib.js';
@@ -128,7 +128,7 @@ export function paletteActions() {
         {
           id: 'send',
           name: 'To the thread',
-          hint: 'queues behind a running turn until steering is built',
+          hint: 'steers into a running turn (when steering is on)',
           key: '↵',
           run: ({ send }) => send(),
         },
@@ -137,7 +137,7 @@ export function paletteActions() {
           name: 'Queue it',
           hint: 'after the current turn',
           key: '⌘↵',
-          run: ({ send }) => send(),
+          run: ({ send }) => send({ delivery: 'queue' }),
         },
         {
           id: 'btw',

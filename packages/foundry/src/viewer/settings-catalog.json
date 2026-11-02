@@ -75,6 +75,11 @@
     "description": "What a thread becomes when its branch merges (Aron, 2026-11-01): `done` (default; the thread shows done and can take another task) or `auto-archive` (archived, its worktree released per FEAT-003). A project's `threadOnMerge` overrides it."
   },
   {
+    "path": "steer",
+    "scope": "foundry",
+    "description": "When you send while a thread's turn runs (CORE-001, Aron 2026-11-01): `true` (default) steers the message into that turn; `false` queues it after. A queued message can always be steered in with \"Steer now\". A project's `steer` (yours, then the repository's) overrides it."
+  },
+  {
     "path": "composition",
     "scope": "foundry",
     "description": "The composition view: one ladder (CLAUDE.md, AGENTS.md, auto memory, role files) composes the instructions and domain knowledge of every role; see docs/usage-and-context.md."
@@ -508,6 +513,11 @@
     "path": "threadOnMerge",
     "scope": "project",
     "description": "This project's `threadOnMerge`, over the Foundry-wide one."
+  },
+  {
+    "path": "steer",
+    "scope": "project",
+    "description": "Your `steer` for this project, over the repository's `.foundry/project.json` and the Foundry-wide one."
   },
   {
     "path": "gloss",

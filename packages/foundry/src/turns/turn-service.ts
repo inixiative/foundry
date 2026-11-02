@@ -13,6 +13,7 @@ import type {
   NativeInterrupt,
   NativeInterruptOutcome,
   NativeOwner,
+  NativeSteer,
   Thread,
   Trace,
 } from '@inixiative/foundry-core';
@@ -30,8 +31,8 @@ import type { ThreadNamer } from '../agents/thread-namer';
 import type { FeedbackService } from '../feedback/service';
 import { isOpenTurn, type LocalSessionStore } from '../persistence/local-session-store';
 import { serializeTrace } from '../persistence/trace-record';
-import type { ConfigStore } from '../viewer/config';
-import type { ViewerStreams } from '../viewer/data-streams';
+import { type ConfigStore, steerOnSend } from '../viewer/config';
+import type { TurnTerminal, ViewerStreams } from '../viewer/data-streams';
 import type { StreamBuffer } from '../viewer/stream-buffer';
 import type { ViewerThreadDirectory } from '../viewer/thread-directory';
 import { splitHostInstructions } from './host-instructions';
@@ -93,6 +94,12 @@ export interface TurnRequest {
    * it, and feedback capture and thread naming never read it.
    */
   origin?: TurnOrigin;
+  /**
+   * Sent while a turn runs (CORE-001): `queue` waits for it; `steer` goes into it; absent follows the
+   * `steer` setting (project, then repository, then Foundry-wide; on by default). Where the running
+   * turn can't take it, it queues and the acceptance says why.
+   */
+  delivery?: 'steer' | 'queue';
 }
 
 /** Who a turn's message came from when it isn't the owner. */
@@ -126,7 +133,9 @@ export type TurnOutcome =
       error: string;
       evidence: ReturnType<TurnService['recordFailure']>;
       cancelled: boolean;
-    };
+    }
+  /** Steered into the running turn `into` (CORE-001): nothing ran on its own; `into` answers it. */
+  | { kind: 'steered'; into: string; native: 'steered' | 'unknown' };
 
 export type TurnAcceptance =
   | {
@@ -136,6 +145,8 @@ export type TurnAcceptance =
       /** The thread was busy: this turn waits for the turns ahead of it. */
       queued: boolean;
       settled: Promise<TurnOutcome>;
+      /** `deliver` only, for a message sent while a turn ran: steered in, or why it queued. */
+      steer?: SteerResult;
     }
   | { ok: false; status: 404 | 409 | 503; body: Record<string, unknown> };
 
@@ -147,6 +158,18 @@ export type TurnAcceptance =
  * runtime's own answer.
  */
 export type InterruptOutcome = NativeInterruptOutcome | 'cancelled' | 'requested' | 'unsupported';
+
+/**
+ * Steering a queued turn into the thread's running one (CORE-001). `steered`: the running turn took
+ * it (`native: 'unknown'` when the runtime never confirmed); the queued turn settled `steered`.
+ * `queued`: it stays queued, and `reason` says why.
+ */
+export type SteerResult =
+  | { steered: true; into: string; native: 'steered' | 'unknown' }
+  | { steered: false; reason: string };
+export type SteerRequestResult =
+  | { ok: true; result: SteerResult }
+  | { ok: false; status: 404 | 409; error: string };
 export type InterruptResult =
   | { ok: true; outcome: InterruptOutcome }
   | { ok: false; status: 404 | 409; error: string };
@@ -161,8 +184,18 @@ interface LiveTurn {
   nativeSettled: boolean;
   interrupt?: NativeInterrupt;
   stopping?: Promise<NativeInterruptOutcome>;
+  /** How the running turn takes more input, or why it can't (from its runtime, at admission). */
+  steer?: NativeSteer;
+  /** What steering this turn into another would send: the owner's message as the executor gets it. Absent: it can't be steered (a member's post). */
+  steerText?: string;
+  /** Why this turn can't be steered into another, when `steerText` is absent. */
+  steerRefusal?: string;
+  /** A steer of this queued turn is being sent: it neither runs, stops nor is steered twice meanwhile. */
+  steering?: Promise<unknown>;
   /** Settle a queued turn now, without running it. */
   cancelQueued(): void;
+  /** Settle a queued turn as steered into the running turn `into`. */
+  settleSteered(into: string, native: 'steered' | 'unknown'): void;
 }
 
 const STOP_TIMEOUT_MS = 5_000;
@@ -365,8 +398,16 @@ export class TurnService {
       cancelRequested: false,
       admitted: false,
       nativeSettled: false,
+      // Only the owner's own message can go into a running turn: verbatim, as the executor gets it.
+      ...(origin
+        ? { steerRefusal: 'a post from someone else waits its turn' }
+        : images.length
+          ? { steerRefusal: 'a message with images can’t go into a running turn' }
+          : { steerText: request.payload }),
       cancelQueued: () =>
         resolveSettled(this.cancelBeforeStart(harness.thread, turnId, buffer, clientId)),
+      settleSteered: (into, native) =>
+        resolveSettled(this.settleSteered(harness.thread, turnId, into, native, buffer, clientId)),
     };
     this.live.set(turnId, state);
     const thread = queue;
@@ -384,7 +425,9 @@ export class TurnService {
             .catch((error) =>
               console.warn(`[Turns] thread setup failed: ${(error as Error).message ?? error}`),
             );
-        // A queued turn cancelled while it waited has already settled.
+        // A steer of it being sent decides first: if the running turn took it, it is settled.
+        if (state.steering) await state.steering.catch(() => {});
+        // A queued turn cancelled (or steered) while it waited has already settled.
         if (state.phase !== 'settled') {
           // Out of the queue: the live turn reads running from here, not once the runtime first answers.
           buffer.start();
@@ -444,6 +487,8 @@ export class TurnService {
       return { ok: false, status: 404, error: 'turn not found in this thread' };
     }
     if (state.phase === 'settled') return { ok: false, status: 409, error: 'turn is not running' };
+    if (state.steering)
+      return { ok: false, status: 409, error: 'turn is being steered into the running turn' };
     state.cancelRequested = true;
     if (state.phase === 'queued') {
       state.phase = 'settled';
@@ -454,6 +499,97 @@ export class TurnService {
     }
     if (state.interrupt) return { ok: true, outcome: await this.stop(state) };
     return { ok: true, outcome: state.admitted ? 'unsupported' : 'requested' };
+  }
+
+  /**
+   * Accept a turn and, when it was sent while another runs on its thread, steer it into that turn if
+   * the request or the `steer` setting says so (CORE-001). It stays queued, with the reason, where
+   * the running turn can't take it. The message is journalled either way, when it was sent.
+   */
+  async deliver(request: TurnRequest): Promise<TurnAcceptance> {
+    const accepted = this.accept(request);
+    if (!accepted.ok || !accepted.queued || request.delivery === 'queue') return accepted;
+    const projectId = this.deps.directory.get(accepted.threadId)?.meta.projectId;
+    if (request.delivery !== 'steer' && !steerOnSend(this.deps.configStore.config, projectId))
+      return accepted;
+    const steered = await this.steerQueued(accepted.threadId, accepted.turnId);
+    return {
+      ...accepted,
+      steer: steered.ok ? steered.result : { steered: false, reason: steered.error },
+    };
+  }
+
+  /**
+   * "Steer now": a queued turn's message goes into the thread's running turn, whatever the `steer`
+   * setting says. The queued turn leaves the queue settled `steered`; the running turn answers it.
+   * Where it can't (no running turn, its runtime can't steer, it hasn't reached its runtime yet, the
+   * runtime refused), the turn stays queued and the result says why.
+   */
+  async steerQueued(threadId: string, turnId: string): Promise<SteerRequestResult> {
+    const state = this.live.get(turnId);
+    if (!state || state.threadId !== threadId) {
+      const stored = this.deps.localStore?.turn(turnId);
+      if (stored && stored.threadId === threadId)
+        return { ok: false, status: 409, error: `turn is not queued (${stored.status})` };
+      return { ok: false, status: 404, error: 'turn not found in this thread' };
+    }
+    if (state.phase !== 'queued') return { ok: false, status: 409, error: 'turn is not queued' };
+    if (state.steering)
+      return { ok: false, status: 409, error: 'turn is already being steered in' };
+    const queued = (reason: string): SteerRequestResult => ({
+      ok: true,
+      result: { steered: false, reason },
+    });
+    const text = state.steerText;
+    if (text === undefined) return queued(state.steerRefusal ?? 'this message can’t be steered');
+    const into = this.runningTurn(threadId);
+    const running = into ? this.live.get(into) : undefined;
+    if (!into || !running) return queued('no turn is running on this thread');
+    const steer = running.steer;
+    if (!steer) return queued('the running turn hasn’t reached its runtime yet');
+    if (!steer.push) return queued(steer.reason);
+    if (running.nativeSettled) return queued('the running turn is finishing');
+    const sending = steer
+      .push(text)
+      .catch((error) => ({ outcome: 'ignored' as const, reason: (error as Error).message }));
+    state.steering = sending;
+    const outcome = await sending.finally(() => {
+      state.steering = undefined;
+    });
+    if (outcome.outcome === 'ignored') return queued(outcome.reason);
+    state.phase = 'settled';
+    this.live.delete(turnId);
+    this.deps.feedback?.release(turnId);
+    state.settleSteered(into, outcome.outcome);
+    this.deps.streams.turns.get(into)?.steerReceived(text);
+    return { ok: true, result: { steered: true, into, native: outcome.outcome } };
+  }
+
+  /** A queued turn steered into the running turn `into`: journalled `steered`; nothing ran on its own. */
+  private settleSteered(
+    thread: Thread,
+    turnId: string,
+    into: string,
+    native: 'steered' | 'unknown',
+    buffer: StreamBuffer,
+    clientId?: string,
+  ): TurnOutcome {
+    try {
+      this.deps.localStore?.steerTurn(thread, turnId, into, native);
+    } catch (error) {
+      console.warn(`[Turns] could not record the steer: ${(error as Error).message ?? error}`);
+    }
+    this.journalChanged(thread, turnId);
+    this.publishTerminal(thread.id, clientId, turnId, 'steered', {
+      id: turnId,
+      threadId: thread.id,
+      into,
+      native,
+    });
+    buffer.steeredInto(into);
+    this.deps.streams.turns.drop(turnId);
+    this.deps.streams.threadsChanged(thread.id);
+    return { kind: 'steered', into, native };
   }
 
   /**
@@ -589,6 +725,14 @@ export class TurnService {
       interruptible: (interrupt: NativeInterrupt) => {
         state.interrupt = interrupt;
         if (state.cancelRequested) void this.stop(state);
+      },
+      steerable: (steer: NativeSteer) => {
+        state.steer = steer;
+        streams.turns
+          .get(turnId)
+          ?.steerable(
+            steer.push ? { available: true } : { available: false, reason: steer.reason },
+          );
       },
       thought: (text: string) => streams.turns.get(turnId)?.thought(text),
     };
@@ -743,7 +887,7 @@ export class TurnService {
     threadId: string,
     clientId: string | undefined,
     turnId: string,
-    kind: 'done' | 'error',
+    kind: TurnTerminal['kind'],
     result: Record<string, unknown>,
   ) {
     try {

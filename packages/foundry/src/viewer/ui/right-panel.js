@@ -21,7 +21,6 @@ import { feedbackIn, ThreadFeedback } from './feedback.js';
 import { html } from './lib.js';
 import { SizeControls } from './panel-sizes.js';
 import { Running } from './running.js';
-import { STEER_NOT_BUILT } from './steering.js';
 import {
   activeThreadId,
   authFetch,
@@ -30,6 +29,7 @@ import {
   dismissTraceSelection,
   inspectTarget,
   launchLabels,
+  loadLaunch,
   RIGHT_TABS,
   rightSize,
   rightTab,
@@ -96,6 +96,35 @@ function tabFacts(tab, threadId) {
   }
 }
 
+/**
+ * "When you send during a turn" (CORE-001), set for you: on this thread's project (over the
+ * repository's), or Foundry-wide for a thread outside a project. Settings › Threads sets it for everyone.
+ */
+async function setSteer(threadId, projectId, steer) {
+  try {
+    const res = projectId
+      ? await authFetch(`/api/projects/${encodeURIComponent(projectId)}/steer`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ scope: 'me', value: steer }),
+        })
+      : await authFetch('/api/settings/threads', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ steer }),
+        });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw Error(body.error ?? res.statusText);
+    await loadLaunch(threadId);
+    showToast(
+      steer ? 'Sends during a turn now steer into it' : 'Sends during a turn now queue',
+      'ok',
+    );
+  } catch (error) {
+    showToast(`Could not change it: ${error.message}`, 'error');
+  }
+}
+
 /** Change the thread's model or effort (applies on its next turn: its idle session relaunches). */
 async function setLaunch(threadId, patch) {
   try {
@@ -138,13 +167,14 @@ function ContextTab() {
             <dt>Provider</dt><dd title=${harnessName(launch.provider) ? `Runs through ${harnessName(launch.provider)}` : ''}>${vendorName(launch.provider) ?? '—'}</dd>
           </dl>
           <p class="rp-dim">A change applies on the thread’s next turn.</p>
-          <label class="steer-setting" title=${STEER_NOT_BUILT}>When you send during a turn
-            <select class="rp-select" disabled>
-              <option>Steer it in (project default)</option>
-              <option>Queue it</option>
+          <label class="steer-setting" data-setting="steer">When you send during a turn
+            <select class="rp-select" value=${launch.steer === false ? 'queue' : 'steer'}
+              onChange=${(e) => setSteer(threadId, threadData.value?.meta?.projectId, e.target.value === 'steer')}>
+              <option value="steer">Steer it into the turn</option>
+              <option value="queue">Queue it after</option>
             </select>
           </label>
-          <p class="rp-dim">${STEER_NOT_BUILT}: every message queues for now. The setting will inherit project, then device.</p>`
+          <p class="rp-dim">Set for you${threadData.value?.meta?.projectId ? ' on this project' : ''}. ⌘↵ always queues; a queued message can always be steered in.</p>`
           : html`<div class="rp-dim">Reading the thread’s launch settings…</div>`
       }
     </section>

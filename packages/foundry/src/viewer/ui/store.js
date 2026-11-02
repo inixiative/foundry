@@ -475,6 +475,12 @@ function applyThreadFrame(threadId, frame, touched) {
     scheduleReconcile([payload.event]);
     return;
   }
+  // This tab's send went into the running turn (CORE-001): it gets no answer of its own.
+  if (frame.action === 'append' && payload.kind === 'steered') {
+    _markSteered(threadId, payload.turnId, payload.result?.into);
+    settleSend(payload.turnId);
+    return;
+  }
   if (frame.action === 'append' && (payload.kind === 'done' || payload.kind === 'error')) {
     // This tab's own send: the full terminal, with evidence the bounded live turn never carries.
     // Its row may be ahead of live turns applied earlier in this flush: merge them first.
@@ -1855,7 +1861,38 @@ async function threadForSend() {
  * Resolves false when the message could not be bound to a thread. `images` are stored references
  * (`{ id, mediaType, bytes }`, from the upload route); the message needs text or an image.
  */
-export async function sendMessage(text, images = []) {
+/**
+ * A send that went into the running turn `into` (CORE-001): its message stays where it was sent,
+ * marked steered, and the pending answer row it was given goes (the running turn answers it).
+ */
+function _markSteered(threadId, turnId, into) {
+  const list =
+    _threadMessages[threadId] ?? (activeThreadId.value === threadId ? messages.value : []);
+  const answer = list.filter((m) => m.actor === 'agent' && m.turnId === turnId);
+  if (answer.length) _discardLocal(threadId, answer);
+  _persistLocal(
+    threadId,
+    list
+      .filter((m) => !(m.actor === 'agent' && m.turnId === turnId))
+      .map((m) =>
+        m.actor === 'user' && m.turnId === turnId
+          ? { ...m, steeredInto: into, status: { ...m.status, turn: 'steered' } }
+          : m,
+      ),
+  );
+  const turns = liveTurns.get(threadId);
+  if (turns?.has(turnId)) {
+    const next = new Map(turns);
+    next.delete(turnId);
+    liveTurns.set(threadId, next);
+  }
+}
+
+/**
+ * Send a message on the active thread. `delivery`: `queue` waits for a running turn (⌘↵); absent
+ * follows the `steer` setting, which steers it into the running turn by default (CORE-001).
+ */
+export async function sendMessage(text, images = [], { delivery } = {}) {
   if (!text.trim() && !images.length) return false;
 
   // Bind this send to the thread that was active at submit time.
@@ -1887,13 +1924,13 @@ export async function sendMessage(text, images = []) {
   inflight.value++;
   pendingSends.set(turnId, tid);
   socket.open(`thread:${tid}`);
-  _sendInBackground(text, tid, turnId, refs);
+  _sendInBackground(text, tid, turnId, refs, delivery);
   return true;
 }
 
 const SEND_OPEN_WAIT_MS = 5000;
 
-async function _sendInBackground(text, tid, turnId, images = []) {
+async function _sendInBackground(text, tid, turnId, images = [], delivery = undefined) {
   // Hold the thread stream on the server before the turn can finish, so its full result reaches this tab.
   await socket.opened(`thread:${tid}`, SEND_OPEN_WAIT_MS);
   let res;
@@ -1908,6 +1945,7 @@ async function _sendInBackground(text, tid, turnId, images = []) {
         threadId: tid,
         clientId,
         ...(images.length ? { images: images.map((image) => image.id) } : {}),
+        ...(delivery ? { delivery } : {}),
       }),
     });
   } catch (err) {
@@ -1931,6 +1969,16 @@ async function _sendInBackground(text, tid, turnId, images = []) {
     settleSend(turnId);
     return;
   }
+  const accepted = await res.json().catch(() => ({}));
+  // Steered into the running turn: nothing of its own will run (its terminal may have come first).
+  if (accepted.steer?.steered) {
+    _markSteered(tid, turnId, accepted.steer.into);
+    settleSend(turnId);
+    return;
+  }
+  // Sent to steer, but the running turn can't take it: it waits, and says why.
+  if (accepted.steer && !accepted.steer.steered)
+    showToast(`Queued after the running turn: ${accepted.steer.reason}`, 'warn');
   // Accepted; output arrives on the thread stream. Seed the turn so a later
   // snapshot that no longer has it reads as unconfirmed rather than running.
   const turns = liveTurns.get(tid) ?? new Map();
@@ -1986,6 +2034,31 @@ export async function executeAction(kind, target, payload) {
   } catch (err) {
     showToast(`Action failed: ${err.message}`, 'error');
     return { ok: false, message: err.message };
+  }
+}
+
+/**
+ * "Steer now" (CORE-001): a queued message goes into the running turn, whatever the `steer` setting
+ * says. Returns true when it went in; otherwise says why it stays queued.
+ */
+export async function steerTurn(threadId, turnId) {
+  try {
+    const res = await authFetch(
+      `/api/threads/${encodeURIComponent(threadId)}/turns/${encodeURIComponent(turnId)}/steer`,
+      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' },
+    );
+    const body = await res.json();
+    if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`);
+    if (!body.steered) {
+      showToast(`Still queued: ${body.reason}`, 'warn');
+      return false;
+    }
+    _markSteered(threadId, turnId, body.into);
+    settleSend(turnId);
+    return true;
+  } catch (err) {
+    showToast(`Steer failed: ${err.message}`, 'error');
+    return false;
   }
 }
 

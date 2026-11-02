@@ -885,6 +885,7 @@ function auxiliaryIdentity(
             bridge: undefined,
             // Stopping a turn stops its executor, never an auxiliary role's session.
             interruptible: undefined,
+            steerable: undefined,
             observe: (evidence) => {
               meta.recordNative?.(evidence);
               return meta.nativeObservation!.observe(evidence);

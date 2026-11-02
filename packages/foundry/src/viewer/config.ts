@@ -74,6 +74,20 @@ const GUARD_MODES: readonly GuardMode[] = ['per-turn', 'per-call'];
 export type ThreadOnMerge = 'done' | 'auto-archive';
 const THREAD_ON_MERGE: readonly ThreadOnMerge[] = ['done', 'auto-archive'];
 
+/**
+ * Whether a message sent during a running turn steers into it (CORE-001): your project setting, then
+ * the repository's `.foundry/project.json`, then Foundry-wide, then on.
+ */
+export function steerOnSend(config: FoundryConfig, projectId?: string): boolean {
+  const project = projectId ? config.projects?.[projectId] : undefined;
+  return (
+    project?.steer ??
+    (project ? readRepositorySettings(project.path)?.steer : undefined) ??
+    config.steer ??
+    true
+  );
+}
+
 /** What a thread in `projectId` becomes when its branch merges: project, then Foundry-wide, then `done`. */
 export function threadOnMerge(config: FoundryConfig, projectId?: string): ThreadOnMerge {
   return (
@@ -89,6 +103,7 @@ import type { ToolRules } from '../turns/tool-gate';
 import {
   type ResolvedLayerDefinition,
   type ResolvedProjectView,
+  readRepositorySettings,
   resolveProjectView,
 } from './config-resolve';
 
@@ -165,6 +180,12 @@ export interface FoundryConfig {
    * FEAT-003). A project's `threadOnMerge` overrides it.
    */
   threadOnMerge?: ThreadOnMerge;
+  /**
+   * When you send while a thread's turn runs (CORE-001, Aron 2026-11-01): `true` (default) steers the
+   * message into that turn; `false` queues it after. A queued message can always be steered in with
+   * "Steer now". A project's `steer` (yours, then the repository's) overrides it.
+   */
+  steer?: boolean;
   /**
    * The composition view: one ladder (CLAUDE.md, AGENTS.md, auto memory, role files) composes the
    * instructions and domain knowledge of every role; see docs/usage-and-context.md.
@@ -255,6 +276,8 @@ export interface FoundryConfig {
 export interface ProjectSettingsConfig {
   /** This project's `threadOnMerge`, over the Foundry-wide one. */
   threadOnMerge?: ThreadOnMerge;
+  /** Your `steer` for this project, over the repository's `.foundry/project.json` and the Foundry-wide one. */
+  steer?: boolean;
   /** Opt-in maintenance; existing margins remain readable when disabled. */
   gloss?: {
     /** Keep this project's gloss (margin commentary beside the code) maintained. */
@@ -1157,6 +1180,14 @@ export function validateConfig(config: FoundryConfig): void {
   ] as const)
     if (value !== undefined && !THREAD_ON_MERGE.includes(value))
       throw Error(`${where} must be one of "done", "auto-archive"`);
+  for (const [where, value] of [
+    ['steer', config.steer],
+    ...Object.entries(config.projects ?? {}).map(
+      ([pid, project]) => [`projects.${pid}.steer`, project?.steer] as const,
+    ),
+  ] as const)
+    if (value !== undefined && typeof value !== 'boolean')
+      throw Error(`${where} must be true or false`);
   for (const [pid, project] of Object.entries(config.projects ?? {})) {
     validateFeedbackSettings(`projects.${pid}.feedback`, project?.feedback);
     for (const key of ['wardens', 'regions'] as const)
@@ -1421,6 +1452,9 @@ export class ConfigStore {
         if (patch.threadOnMerge === null) delete next.threadOnMerge;
         else if (patch.threadOnMerge !== undefined)
           next.threadOnMerge = patch.threadOnMerge as ThreadOnMerge;
+        // Whether a send during a running turn steers into it; null returns to the default (on).
+        if (patch.steer === null) delete next.steer;
+        else if (patch.steer !== undefined) next.steer = patch.steer as boolean;
       } else if (section === 'agents') {
         next.agents = { ...next.agents, ...patch } as FoundryConfig['agents'];
       } else if (section === 'layers') {

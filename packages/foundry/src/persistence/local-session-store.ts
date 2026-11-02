@@ -60,8 +60,10 @@ export interface StoredMessage {
  * classification, routing and pre-message middleware). `active`: the executor has its input, so
  * work may have reached the runtime. `interrupted`: Foundry restarted while the turn was active; the native
  * outcome is unknown. A queued turn found at restart was never sent and is failed instead.
+ * `steered`: a queued turn whose message went into the running turn instead (CORE-001); it ran
+ * nothing of its own, and its `steered` phase row names the turn that answered it.
  */
-export type TurnStatus = 'queued' | 'active' | 'completed' | 'failed' | 'interrupted';
+export type TurnStatus = 'queued' | 'active' | 'completed' | 'failed' | 'interrupted' | 'steered';
 
 export interface StoredTurn {
   id: string;
@@ -1610,6 +1612,34 @@ export class LocalSessionStore {
         content,
         timestamp,
         ...(meta ? { meta } : {}),
+      });
+    })();
+  }
+
+  /**
+   * A queued turn's message went into the running turn `into` (CORE-001). It keeps its user message
+   * where it was sent in the journal and gets no agent message: `into` answers it.
+   */
+  steerTurn(
+    thread: Pick<Thread, 'id' | 'meta'>,
+    id: string,
+    into: string,
+    native: 'steered' | 'unknown',
+  ): void {
+    this.db.transaction(() => {
+      const turn = this.turn(id);
+      if (!turn || turn.threadId !== thread.id || turn.status !== 'queued')
+        throw new Error(`Turn is not queued in thread ${thread.id}: ${id}`);
+      this.query("UPDATE session_turns SET status='steered', ended_at=? WHERE id=?").run(
+        Date.now(),
+        id,
+      );
+      this.appendPhase(thread, {
+        id: newId('phase'),
+        turnId: id,
+        dispatchId: null,
+        phase: 'steered',
+        record: { into, native },
       });
     })();
   }

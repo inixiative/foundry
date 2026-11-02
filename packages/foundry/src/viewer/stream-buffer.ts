@@ -7,8 +7,9 @@ import { type NativeEvidence, sameNativeOwner } from '@inixiative/foundry-core';
 
 export interface LiveActivity {
   id: string;
-  /** `thought`: the executor's public thinking, live only (never journalled). */
-  kind: 'text' | 'tool' | 'thought';
+  /** `thought`: the executor's public thinking, live only (never journalled). `steer`: a message the
+   * person steered into this turn (its text; journalled as a user message of the turn). */
+  kind: 'text' | 'tool' | 'thought' | 'steer';
   text?: string;
   phase?: string;
   toolName?: string;
@@ -33,8 +34,10 @@ export interface StreamBufferSnapshot {
   readonly startedAt: number;
   readonly completedAt?: number;
   readonly error?: string;
-  /** `queued`: accepted, waiting its turn (a turn ahead of it, a held prompt, thread setup). */
-  readonly status: 'queued' | 'running' | 'completed' | 'failed';
+  /** `queued`: accepted, waiting its turn (a turn ahead of it, a held prompt, thread setup).
+   * `steered`: it went into the running turn `steeredInto` instead (CORE-001). */
+  readonly status: 'queued' | 'running' | 'completed' | 'failed' | 'steered';
+  readonly steeredInto?: string;
   readonly activity: readonly LiveActivity[];
   readonly truncated: boolean;
   readonly nativeDetail: 'available' | 'unavailable';
@@ -44,6 +47,12 @@ export interface StreamBufferSnapshot {
     rpc: 'unknown' | 'pending' | 'resolved' | 'failed';
   };
   readonly notificationFailed?: boolean;
+  /**
+   * Whether a message sent now goes into this running turn (CORE-001): `available` once its runtime
+   * has the turn and can steer; otherwise `reason` says why it would queue. Absent before the turn
+   * reached its runtime.
+   */
+  readonly steer?: { readonly available: boolean; readonly reason?: string };
 }
 /** What changed in one turn: text appended to its content, one activity row, or anything else (send the whole turn).
  * A text row's `appended` is exactly the text this change added, before the row's bounded tail drops any. */
@@ -76,6 +85,9 @@ export class StreamBuffer {
   private _native = new Map<string, NativeEvidence>();
   private _notificationFailed = false;
   private _thoughts = 0;
+  private _steer?: StreamBufferSnapshot['steer'];
+  private _steers = 0;
+  private _steeredInto?: string;
   notificationFailed() {
     this._notificationFailed = true;
   }
@@ -242,6 +254,38 @@ export class StreamBuffer {
         : undefined;
     this.changed({ kind: 'activity', row, ...(appended !== undefined ? { appended } : {}) });
   }
+  /** This queued turn went into the running turn `into` (CORE-001): it is over without running. */
+  steeredInto(into: string) {
+    if (this.done) return;
+    this._status = 'steered';
+    this._steeredInto = into;
+    this._completedAt = Date.now();
+    this.touch();
+  }
+  /** The running turn's runtime says whether it can take a steer (CORE-001). */
+  steerable(steer: NonNullable<StreamBufferSnapshot['steer']>) {
+    if (this.done) return;
+    this._steer = { ...steer };
+    this.touch();
+  }
+  /** A message the person steered into this turn, in order among its activity. */
+  steerReceived(text: string) {
+    if (this.done) return;
+    const row: LiveActivity = {
+      id: `steer:${this._steers++}`,
+      kind: 'steer',
+      admissionId: '',
+      text: this.bound(text, 4096),
+    };
+    this._activity.push(row);
+    if (this._activity.length > 64) {
+      this._activity.shift();
+      this._truncated = true;
+      this.touch();
+      return;
+    }
+    this.changed({ kind: 'activity', row });
+  }
   /** Thinking text from the executor: one row per run of thinking, extended until other activity. */
   thought(text: string) {
     if (this.done || !text) return;
@@ -337,6 +381,8 @@ export class StreamBuffer {
       truncated: this._truncated,
       nativeDetail: this._admissions.size ? 'available' : 'unavailable',
       terminal: this._terminal,
+      ...(this._steer && !this.done ? { steer: this._steer } : {}),
+      ...(this._steeredInto ? { steeredInto: this._steeredInto } : {}),
       native,
       notificationFailed: this._notificationFailed,
     });
