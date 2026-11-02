@@ -9631,6 +9631,7 @@ a.thread-ref:hover {
   border: 1px solid hsl(var(--app-primary) / 0.5);
   border-radius: 10px;
   font: 11.5px / 17px var(--mono);
+}
 .nav-footer-pill b {
   color: var(--text);
   font-weight: 600;
