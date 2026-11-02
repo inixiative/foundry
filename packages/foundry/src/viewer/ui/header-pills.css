@@ -34,3 +34,11 @@ button.fork-link b {
 button.fork-link:hover b {
   text-decoration: underline;
 }
+.row-done {
+  color: var(--st-done);
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}

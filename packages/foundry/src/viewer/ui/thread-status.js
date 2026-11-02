@@ -63,10 +63,15 @@ export function threadState(thread, context = {}) {
   if (context.childrenWorking) return 'subagents';
   if (turn === 'queued') return 'queued';
   if (meta.status === 'waiting' || conversation.paused) return 'paused';
+  // Done: its branch merged, or the agent marked a plan milestone; the owner's next message clears it.
+  if (meta.done) return 'done';
   // Until "seen by Aron" exists, an idle thread whose last turn completed reads as done.
   if (turn === 'completed') return 'done';
   return 'idle';
 }
+
+/** What a done thread says: its done text ("Merged into main", a milestone), else the state's label. */
+export const doneText = (thread) => thread?.meta?.done?.text ?? null;
 
 /** The colour category of a state: red, orange, green, yellow, blue, neutral, charcoal. */
 export const categoryOf = (state) => STATES[state]?.cat ?? 'idle';

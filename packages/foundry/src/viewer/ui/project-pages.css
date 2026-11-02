@@ -166,3 +166,83 @@
 .ph-facts a:hover {
   text-decoration: underline;
 }
+.thread-on-merge {
+  display: grid;
+  gap: 8px;
+  margin: 6px 0;
+}
+.settings-choice {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  cursor: pointer;
+}
+.settings-choice > span {
+  display: grid;
+  gap: 2px;
+}
+.ksub {
+  margin: 12px 0 4px;
+  color: var(--text-dim);
+  font: 600 10.5px var(--mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.kbuilds th {
+  text-align: left;
+  padding: 3px 14px 3px 0;
+  color: var(--text-dim);
+  font-weight: 500;
+}
+.kbuild {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+  justify-items: start;
+}
+.kconfirm {
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--st-attention);
+  border-radius: 10px;
+  max-width: 640px;
+}
+.kconfirm p {
+  margin: 0;
+}
+.kconfirm-actions {
+  display: flex;
+  gap: 8px;
+}
+.krun {
+  width: 100%;
+  max-width: 900px;
+  display: grid;
+  gap: 4px;
+}
+.krun-head {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  flex-wrap: wrap;
+}
+.krun[data-state="running"] .krun-head b {
+  color: var(--st-working);
+}
+.krun[data-state="failed"] .krun-head b {
+  color: var(--st-problem);
+}
+.krun-log {
+  margin: 0;
+  max-height: 180px;
+  overflow: auto;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font: 11.5px / 1.45 var(--mono);
+  white-space: pre-wrap;
+}
+.kreading {
+  margin: 4px 0;
+}

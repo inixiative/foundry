@@ -81,7 +81,8 @@ function About({ projectId, project }) {
     <dl class="ph-facts">
       <dt>Hosted</dt><dd>${about?.repository ? (about.repository.integration === 'github' ? html`<a href=${`https://github.com/${about.repository.ref}`} target="_blank" rel="noopener">GitHub · ${about.repository.ref}</a>` : about.repository.ref) : html`<span class="ph-meta">No hosted origin</span>`}</dd>
       <dt>Worktrees</dt><dd>${about ? WORKTREES[about.worktreeMode] : '—'}</dd>
-      <dt>Kingdom</dt><dd>${about?.kingdoms?.length ? about.kingdoms.join(', ') : html`<span class="ph-meta">Not linked</span>`}</dd>
+      <dt>Kingdom</dt><dd>${about?.kingdoms?.length ? about.kingdoms.join(', ') : html`<span class="ph-meta">No access grants</span>`}</dd>
+      <dt>Kingdom project</dt><dd>${about?.kingdomProject ? html`<span class="mono" title="The Kingdom project's id; its name and pool show once Kingdom serves them">${about.kingdomProject.projectId}</span> <span class="ph-meta">in ${about.kingdomProject.kingdom}</span>` : html`<span class="ph-meta">Not linked</span>`}</dd>
       <dt>Path</dt><dd class="mono">${project?.path ?? '—'}</dd>
     </dl>`;
 }

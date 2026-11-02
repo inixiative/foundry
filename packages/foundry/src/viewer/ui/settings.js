@@ -38,6 +38,7 @@ import { ActivitySection, AgentsSection, LayersSection } from './runtime-panels.
 import { SelfChatPane } from './self-chat.js';
 import { authFetch, modelRegistry, projects, showToast } from './store.js';
 import { Switch } from './switch.js';
+import { ThreadSettings } from './thread-settings.js';
 
 export const settingsConfig = signal(null);
 /** A setting Search jumped to ({ path, description, value, source, section, projectId }): its section shows it highlighted. */
@@ -688,6 +689,8 @@ function FoundrySection({ section, config }) {
   if (section === 'devices')
     return html`<${DevicesSection} projectIds=${JSON.stringify(projects.value.map((p) => p.id))}
       kingdomPaired=${!!config.kingdomIntegrations?.length} />`;
+  if (section === 'threads')
+    return html`<${ThreadSettings} config=${config} onSaved=${loadSettings} />`;
   if (section === 'layers') return html`<${LayersSection} />`;
   if (section === 'agents') return html`<${AgentsSection} />`;
   if (section === 'activity') return html`<${ActivitySection} />`;
@@ -707,6 +710,8 @@ function ProjectSection({ section, projectId, project, onFocusChange }) {
     return html`<${ComingSoon}>Gloss: margin commentary kept beside the code instead of in it, for this project's agents to read. It arrives with Foundry's code viewer (ticket VIEWER-004).</${ComingSoon}>`;
   if (section === 'chorus')
     return html`<${ProjectChorus} key=${projectId} projectId=${projectId} />`;
+  if (section === 'threads')
+    return html`<${ThreadSettings} key=${projectId} config=${settingsConfig.value} projectId=${projectId} onSaved=${loadSettings} />`;
   if (section === 'conversations')
     return html`<${ProjectConversations} key=${projectId} projectId=${projectId} />`;
   if (section === 'overrides') return html`<${ProjectOverrides} project=${project} />`;

@@ -389,6 +389,7 @@ export interface ConsumedSettings {
 export interface ProjectKingdomCapacity {
   /** Paired Kingdom id or API origin (`bun run kingdom status`). */
   kingdom: string;
+  /** The Kingdom Signet that grants this project its subscription pool (`subscription.use`). */
   signetId: string;
 }
 
@@ -396,6 +397,7 @@ export interface ProjectKingdomCapacity {
 export interface ProjectKingdomLink {
   /** Paired Kingdom id or API origin (`bun run kingdom status`). */
   kingdom: string;
+  /** The Kingdom project's id. */
   projectId: string;
 }
 

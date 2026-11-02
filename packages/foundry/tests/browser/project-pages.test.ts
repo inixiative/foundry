@@ -136,9 +136,8 @@ test('Project home shows About and opens Knowledge and chorus and its board', as
         .locator('.ksize')
         .evaluateAll((els: Element[]) => els.map((e: Element) => e.getAttribute('data-level'))),
     ).toEqual(['over', 'large', 'ok']);
-    expect(await know.getByRole('button', { name: 'Build regions · not built' }).isDisabled()).toBe(
-      true,
-    );
+    // Build regions runs from here now (after a confirm); done-and-pipeline covers the run.
+    await know.getByRole('button', { name: 'Build regions', exact: true }).waitFor();
 
     expect(await activeRow.innerText()).toContain('acme-shop');
     // Reload keeps the page; Esc goes back to the project's home.

@@ -29,3 +29,15 @@ test('the worktree pill names the slot, the folder, the main checkout or a relea
   });
   expect(worktreeLabel({ mode: 'none', main: false, state: 'live' }).label).toBe('no checkout');
 });
+
+test('a worktree whose branch merged says where it merged into', () => {
+  const path = '/repo/.worktrees/thread-view';
+  const merged = { into: 'main', at: 1 };
+  expect(worktreeLabel({ mode: 'classic', path, main: false, state: 'live', merged }).label).toBe(
+    'thread-view · merged into main',
+  );
+  expect(
+    worktreeLabel({ mode: 'template', path, main: false, slot: 3, state: 'released', merged })
+      .label,
+  ).toBe('thread-view · released · merged into main');
+});
