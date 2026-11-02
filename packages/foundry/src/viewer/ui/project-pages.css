@@ -291,3 +291,151 @@ button.nav-footer-device:hover,
 .nav-footer-others .coming-soon-note {
   font-size: 11px;
 }
+
+/* The machine page's band (concept-v4 redesign): icon, eyebrow, name, live status pills, two buttons. */
+.dp-band {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  margin-bottom: 12px;
+  padding: 18px 20px;
+  border: 1px solid var(--line-strong);
+  border-radius: 14px;
+  background:
+    linear-gradient(135deg, hsl(var(--app-tertiary) / 0.08), transparent 60%), var(--surface);
+}
+.dp-icon .dva {
+  border-radius: 12px;
+}
+.dp-id {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
+}
+.dp-eyebrow {
+  font: 600 10.5px var(--mono);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+.dp-id h2 {
+  margin: 0;
+  font: 650 28px / 1.1 var(--display);
+  letter-spacing: -0.02em;
+}
+.dp-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+}
+.dp-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  font-size: 12.5px;
+}
+.dp-pill i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-dimmer);
+}
+.dp-pill.is-on i {
+  background: var(--accent);
+}
+.dp-actions {
+  display: grid;
+  gap: 8px;
+}
+.dp-actions .proj-btn {
+  padding: 7px 14px;
+  border-radius: 8px;
+  font: 600 13px var(--font);
+}
+.dp-actions .proj-btn.is-go {
+  background: var(--accent);
+  color: var(--accent-ink);
+  border-color: transparent;
+}
+.dp-checkout {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 0;
+  border-top: 1px solid var(--line);
+  font-size: 13px;
+}
+.dp-checkout:first-of-type {
+  border-top: 0;
+}
+@media (max-width: 800px) {
+  .dp-band {
+    flex-wrap: wrap;
+  }
+}
+
+/* Settings › Kingdom: a card per paired Kingdom's Signet, Look · Manage · Get more · Adjust. */
+.signet-cards {
+  display: grid;
+  gap: 12px;
+}
+.signet-card {
+  padding: 12px 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: 12px;
+  background: var(--bg);
+}
+.signet-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.signet-card-head .settings-desc {
+  margin-left: 8px;
+}
+.signet-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+}
+.signet-card-grid section {
+  display: grid;
+  gap: 6px;
+  align-content: start;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+}
+.signet-card-grid h4 {
+  margin: 0;
+  font: 600 11px var(--font);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+.signet-facts {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 10px;
+  margin: 0;
+  font-size: 12.5px;
+}
+.signet-facts dt {
+  color: var(--text-dim);
+}
+.signet-facts dd {
+  margin: 0;
+}
+.signet-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}

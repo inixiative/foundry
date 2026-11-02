@@ -16,7 +16,13 @@
 
 import { ComingSoon } from './coming-soon.js';
 import { html, useEffect, useState } from './lib.js';
-import { loadMachineProfile, machineProfile, otherMachine } from './machine-icons.js';
+import {
+  DeviceIcon,
+  loadMachineProfile,
+  machineIcon,
+  machineProfile,
+  otherMachine,
+} from './machine-icons.js';
 import { navigate, settingsPath } from './route.js';
 import { settingsConfig } from './settings.js';
 import { STATES, StatusIcon } from './status-icons.js';
@@ -100,6 +106,17 @@ function useHere(here) {
   return { inventory, tunnel };
 }
 
+/** A status pill in the band: a dot, then what it says. */
+function Pill({ on, title, children }) {
+  return html`<span class="dp-pill ${on === true ? 'is-on' : on === false ? 'is-off' : ''}" title=${title}><i></i>${children}</span>`;
+}
+
+/**
+ * The machine page, as redesigned in concept-v4 (Aron 11-02): an icon band with live status pills
+ * and its two links as buttons, then what's open on it, its worktrees, what your Signet grants on it,
+ * its checkouts and the subscriptions it shares. This machine reads its own inventory; another reads
+ * `otherMachines()`, which fills from Kingdom's device operations (VIEWER-007) once they ship.
+ */
 export function DevicePage({ deviceId }) {
   useEffect(() => {
     loadMachineProfile();
@@ -109,67 +126,85 @@ export function DevicePage({ deviceId }) {
   const other = here ? null : otherMachines().find((m) => m.id === deviceId);
   const name = here ? thisMachineName() : (other?.name ?? 'Another machine');
   const open = threadsOnMachine(deviceId);
+  const inWorktrees = open.filter((t) => t.meta?.context?.checkout).length;
   const checkouts = inventory?.checkouts ?? [];
+  const openIn = (projectId) =>
+    open.filter((t) => (t.meta?.projectId ?? null) === projectId).length;
   const go = (section) => (e) => {
     e.preventDefault();
     navigate(settingsPath(null, section));
   };
+  const online = here ? true : (other?.online ?? null);
+  const tunnelOn = here ? (tunnel ? !!tunnel.active : null) : (other?.tunnel?.active ?? null);
 
   return html`<section class="project-home device-page" aria-label=${`${name}: machine page`}>
-    <header class="ph-head">
-      <h2>${name}</h2>
-      <span class="ph-meta">${
-        here
-          ? html`This machine · <span class="device-status is-on"><i></i>online</span>`
-          : other?.online == null
-            ? html`Your other machine · <span class="device-status" title="Whether it's online comes from Kingdom (VIEWER-007)"><i></i>status unknown</span>`
-            : html`Your other machine · <span class="device-status ${other.online ? 'is-on' : ''}"><i></i>${other.online ? 'online' : 'offline'}</span>`
-      }</span>
-      <span class="ph-head-actions">
-        <button type="button" class="proj-btn" onClick=${() => openMachineBoard(name)}>Its threads on the Board →</button>
+    <header class="dp-band">
+      <span class="dp-icon"><${DeviceIcon} icon=${here ? machineIcon() : undefined} size=${44} /></span>
+      <span class="dp-id">
+        <span class="dp-eyebrow">${here ? 'This machine' : 'Your other device'}</span>
+        <h2>${name}</h2>
+        <span class="dp-pills">
+          <${Pill} on=${online} title=${online == null ? "Whether it's online comes from Kingdom (VIEWER-007)" : null}>${online == null ? 'Status unknown' : online ? (here ? 'Online · this Foundry' : 'Online') : 'Offline'}</${Pill}>
+          <${Pill} on=${tunnelOn} title=${tunnelOn == null ? 'Its tunnel comes from Kingdom (VIEWER-007)' : null}>${tunnelOn == null ? 'Tunnel unknown' : tunnelOn ? 'Tunnel on' : 'Tunnel off'}</${Pill}>
+          <${Pill}>${open.length} open${here ? ` · ${inWorktrees} in worktrees` : ''}</${Pill}>
+        </span>
+      </span>
+      <span class="dp-actions">
+        <button type="button" class="proj-btn is-go" onClick=${() => openMachineBoard(name)}>Its threads on the Board →</button>
         <button type="button" class="proj-btn" onClick=${() => openMachineWatchtower(name)}>Show in the Watchtower →</button>
       </span>
     </header>
-    <div class="ph-grid">
+    <div class="ph-grid dp-grid">
       <section class="ph-box ph-threads">
-        <h4>Threads on this machine · ${open.length} open</h4>
+        <h4>Open on it now · ${open.length}</h4>
         ${open.length ? open.map((t) => html`<${ThreadRow} key=${t.threadId} thread=${t} />`) : html`<div class="ph-meta">Nothing open here.</div>`}
       </section>
       <section class="ph-box">
-        <h4>Checkouts</h4>
+        <h4>Worktree slots</h4>
+        ${
+          here
+            ? html`<div class="ph-line">${inWorktrees} open thread${inWorktrees === 1 ? '' : 's'} in a worktree</div>`
+            : null
+        }
+        <${ComingSoon} what="Each slot (its ports, database and Redis) and which thread holds it." />
+      </section>
+      ${
+        here
+          ? null
+          : html`<section class="ph-box">
+              <h4>Through your Signet</h4>
+              <${ComingSoon} what="What your Signet lets this Foundry do on it (read online, read tunnel, …), and a request to the owner for more." ticket="VIEWER-007" />
+            </section>`
+      }
+      <section class="ph-box">
+        <h4>Checkouts${here && inventory ? ` · ${checkouts.length}` : ''}</h4>
         ${
           here
             ? inventory === undefined
               ? html`<div class="ph-meta">Reading this machine…</div>`
               : checkouts.length
-                ? html`<div class="ph-line">${checkouts.map((c) => c.label).join(', ')}</div>
-                    <div class="ph-meta">${checkouts.length} registered project${checkouts.length === 1 ? '' : 's'} checked out here</div>`
+                ? checkouts.map(
+                    (c) =>
+                      html`<div key=${c.id} class="dp-checkout"><span class="mono" title=${c.path}>${c.label}</span><span class="ph-meta">${openIn(c.projectId) ? `${openIn(c.projectId)} open` : '—'}</span></div>`,
+                  )
                 : html`<div class="ph-meta">No registered project is checked out here.</div>`
-            : other?.checkouts
-              ? html`<div class="ph-line">${other.checkouts.map((c) => c.label).join(', ') || 'None'}</div>`
-              : html`<${ComingSoon} what="The projects this machine has checked out, from Kingdom." ticket="VIEWER-007" />`
+            : html`<div class="ph-meta">Kingdom doesn't list another machine's checkouts.</div>`
         }
       </section>
-      <section class="ph-box">
-        <h4>Tunnel</h4>
-        ${
-          here
-            ? html`<div class="ph-line">${tunnel === undefined ? 'Checking…' : tunnel?.active ? `on · ${tunnel.url ?? ''}` : 'off'}</div>
-                <div class="ph-meta">Reach this Foundry from your other machines through Kingdom.</div>
-                <a class="proj-btn ph-link" href=${settingsPath(null, 'devices')} onClick=${go('devices')}>Settings › Devices →</a>`
-            : other?.tunnel
-              ? html`<div class="ph-line">${other.tunnel.active ? 'on' : 'off'}</div>`
-              : html`<${ComingSoon} what="How this machine reaches your Kingdom, from Kingdom." ticket="VIEWER-007" />`
-        }
-      </section>
+      ${
+        here
+          ? html`<section class="ph-box">
+              <h4>Tunnel</h4>
+              <div class="ph-line">${tunnel === undefined ? 'Checking…' : tunnel?.active ? `on · ${tunnel.url ?? ''}` : 'off'}</div>
+              <div class="ph-meta">Reach this Foundry from your other machines through Kingdom.</div>
+              <a class="proj-btn ph-link" href=${settingsPath(null, 'devices')} onClick=${go('devices')}>Settings › Devices →</a>
+            </section>`
+          : null
+      }
       <section class="ph-box">
         <h4>Subscriptions</h4>
-        <div class="ph-line">Shared with your other machines</div>
-        <div class="ph-meta">Usage counts against the same logins everywhere; see the footer or Analytics.</div>
-        <a class="proj-btn ph-link" href="/analytics" onClick=${(e) => {
-          e.preventDefault();
-          navigate('/analytics');
-        }}>Analytics →</a>
+        <div class="ph-line">Shared with ${here ? 'your other machines' : 'this machine'}</div>
+        <div class="ph-meta">The same logins everywhere; usage counts once. See the footer or Analytics.</div>
       </section>
     </div>
   </section>`;
