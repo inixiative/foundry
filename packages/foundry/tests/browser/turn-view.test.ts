@@ -46,7 +46,7 @@ test('full trace opens the turn view: grouped steps, filters, arrow keys, Raw, E
     const view = page.locator('.panel-right .turn-view');
     await view.waitFor();
     expect(await page.locator('.panel-center textarea.chat-input').count()).toBe(1);
-    await page.waitForFunction(() => location.hash.includes('rsize=wider'));
+    await page.waitForFunction(() => location.hash.includes('rsize=wide'));
     await view.getByRole('button', { name: '✕ Close' }).click();
     await page.waitForFunction(
       (w: number) =>
@@ -81,7 +81,7 @@ test('full trace opens the turn view: grouped steps, filters, arrow keys, Raw, E
     await view.focus();
     await page.keyboard.press('Escape');
     await page.waitForFunction(() => !document.querySelector('.panel-right .turn-view'));
-    expect(page.url()).not.toContain('rsize=wider');
+    expect(page.url()).not.toContain('rsize=wide');
     expect(errors).toEqual([]);
   } finally {
     await releaseAll([
