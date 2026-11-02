@@ -78,6 +78,7 @@ import {
   resolvePrompt,
   rightTab,
   selectedSpanId,
+  selectThread,
   sendMessage,
   showToast,
   stopTurn,
@@ -96,7 +97,13 @@ import {
   threadName,
   threadPlace,
 } from './thread-labels.js';
-import { statusText } from './thread-status.js';
+import {
+  categoryOf,
+  isClosedThread,
+  statusText,
+  subagentParentOf,
+  threadState,
+} from './thread-status.js';
 import {
   AsidesSince,
   AsidesView,
@@ -659,6 +666,7 @@ function ChatInput() {
   };
 
   return html`
+    <${SubagentStrip} threadId=${activeThreadId.value} />
     <div class="chat-input-bar ${dragging ? 'chat-input-dragging' : ''}" style="position: relative"
       onDragOver=${handleDragOver} onDragLeave=${() => setDragging(false)} onDrop=${handleDrop}>
       <${ActionPalette} onSend=${handleSubmit} />
@@ -829,11 +837,53 @@ function InspectLink({ turnId }) {
     onClick=${() => openTurnView(activeThreadId.peek(), turnId)}>Inspect</button>`;
 }
 
+/** The thread's open subagents, above the composer (concept-v4 "Subagents · running N"); each opens. */
+function SubagentStrip({ threadId }) {
+  const kids = allThreads.value.filter(
+    (t) => subagentParentOf(t.meta) === threadId && !isClosedThread(t),
+  );
+  if (!kids.length) return null;
+  const running = kids.filter(
+    (t) => categoryOf(threadState(t, { prompts: [] })) === 'working',
+  ).length;
+  return html`<div class="subagent-strip" aria-label="Subagents">
+    <b>Subagents</b>
+    <span class="subagent-strip-count">${running ? `running ${running} of ${kids.length}` : `${kids.length} open`}</span>
+    ${kids.map(
+      (
+        t,
+      ) => html`<button key=${t.threadId} type="button" class="subagent-strip-item" onClick=${() => selectThread(t.threadId)}
+        title="Open this subagent">${threadName(t)}</button>`,
+    )}
+  </div>`;
+}
+
+/** "10:35 AM, Mon 2 Nov": a message's time, shown on hover (concept-v4 keeps no time inline). */
+const sentAt = (msg) =>
+  new Date(msg.timestamp).toLocaleString([], {
+    hour: 'numeric',
+    minute: '2-digit',
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+  });
+
+/** What Foundry added to this turn (the context layers its reply records), on your message. */
+function FoundryAdded({ turnId }) {
+  if (!turnId) return null;
+  const reply = messages.value.find((m) => m.turnId === turnId && m.actor !== 'user');
+  const layers = reply?.meta?.injectedLayers ?? [];
+  if (!layers.length) return null;
+  return html`<button type="button" class="chat-foundry-added" title=${layers.map((l) => l.id).join('\n')}
+    onClick=${() => openTurnView(activeThreadId.peek(), turnId)}>† ${layers.length} added by Foundry · Inspect →</button>`;
+}
+
 function UserMessage({ msg, index }) {
   const give = useGiveFeedback(msg);
   return html`
-    <div class="chat-msg chat-user" data-turn-id=${msg.turnId ?? ''} data-actor="user">
-      <div class="chat-msg-who">${msg.meta?.postedBy ?? 'You'}</div>
+    <div class="chat-msg chat-user" data-turn-id=${msg.turnId ?? ''} data-actor="user" title=${sentAt(msg)}>
+      <div class="chat-msg-n" aria-hidden="true">t${index + 1}</div>
+      <div class="chat-msg-who">${msg.meta?.postedBy ?? 'You'}${msg.turnId ? html` <${InspectLink} turnId=${msg.turnId} />` : null}</div>
       <${MessageMenu} msg=${msg} index=${index} onFeedback=${give.onFeedback} />
       <${MessageImages} images=${msg.images ?? msg.meta?.images} />
       ${
@@ -847,8 +897,9 @@ function UserMessage({ msg, index }) {
           ? html`<div class="chat-msg-steered" title="Sent while a turn ran: it went into that turn, which answers it">Steered into the running turn</div>`
           : null
       }
+      <${FoundryAdded} turnId=${msg.turnId} />
       <${BrowserStorageWarning} msg=${msg} />
-      <div class="chat-msg-time">${new Date(msg.timestamp).toLocaleTimeString()}${browserHistoryLabel(msg)}${msg.turnId ? html` · <${InspectLink} turnId=${msg.turnId} />` : null}</div>
+      ${browserHistoryLabel(msg) ? html`<div class="chat-msg-time">${browserHistoryLabel(msg).replace(/^\s*\|\s*/, '')}</div>` : null}
       ${give.form}
     </div>
   `;
@@ -1018,7 +1069,8 @@ function AgentMessage({ msg, index, onTraceClick }) {
   const execStage = execIdx >= 0 ? stages[execIdx] : null;
 
   return html`
-    <div class="chat-msg chat-agent ${msg.error ? 'chat-error' : ''} ${isStreaming ? 'chat-streaming' : ''}" data-turn-id=${msg.turnId ?? ''} data-actor="agent">
+    <div class="chat-msg chat-agent ${msg.error ? 'chat-error' : ''} ${isStreaming ? 'chat-streaming' : ''}" data-turn-id=${msg.turnId ?? ''} data-actor="agent" title=${sentAt(msg)}>
+      <div class="chat-msg-n" aria-hidden="true">t${index + 1}</div>
       <div class="chat-msg-who">Your agent</div>
       <${MessageMenu} msg=${msg} index=${index} onFeedback=${give.onFeedback} />
       <!-- Pre-execution bar: classify → route → context loading -->
@@ -1060,17 +1112,7 @@ function AgentMessage({ msg, index, onTraceClick }) {
             hasTrace
               ? html`
             <button class="chat-trace-btn" onClick=${() => onTraceClick(msg.traceId)}
-              title="Inspect trace in detail panel">
-              trace ${msg.trace?.totalDurationMs ? `(${(msg.trace.totalDurationMs / 1000).toFixed(1)}s)` : ''}
-            </button>
-            ${
-              msg.turnId
-                ? html`<button class="chat-fulltrace-btn" title="Open this turn as a timeline in the centre"
-              onClick=${() => {
-                openTurnView(activeThreadId.peek(), msg.turnId);
-              }}>full trace</button>`
-                : null
-            }
+              title=${`Inspect this turn in the detail panel${msg.trace?.totalDurationMs ? ` · ${(msg.trace.totalDurationMs / 1000).toFixed(1)} s` : ''}`}>Inspect</button>
           `
               : null
           }
@@ -1134,7 +1176,11 @@ function AgentMessage({ msg, index, onTraceClick }) {
         traceId=${msg.traceId}
       />
 
-      <div class="chat-msg-time">${new Date(msg.timestamp).toLocaleTimeString()}${browserHistoryLabel(msg)}${msg.connectionStatus === 'unconfirmed' ? ' | Connection interrupted; server outcome unconfirmed' : ''}${msg.turnId ? html` · <${InspectLink} turnId=${msg.turnId} />` : null}</div>
+      ${
+        browserHistoryLabel(msg) || msg.connectionStatus === 'unconfirmed'
+          ? html`<div class="chat-msg-time">${[browserHistoryLabel(msg).replace(/^\s*\|\s*/, ''), msg.connectionStatus === 'unconfirmed' ? 'Connection interrupted; server outcome unconfirmed' : ''].filter(Boolean).join(' · ')}</div>`
+          : null
+      }
       <${TurnFeedback} threadId=${activeThreadId.value} turnId=${msg.turnId} />
       ${give.form}
     </div>
@@ -1451,7 +1497,7 @@ function HistoryPager({ threadId, count, onLoadOlder }) {
           ${paging.loading ? 'Loading older messages…' : `Load older messages (${count} loaded)`}
         </button>
       `
-          : html`<span class="chat-history-oldest">Start of conversation${paging.pages > 1 ? ` (${count} messages)` : ''}</span>`
+          : html`<span class="chat-history-oldest visually-hidden">Start of conversation${paging.pages > 1 ? ` (${count} messages)` : ''}</span>`
       }
       ${paging.error ? html`<span class="chat-history-error">${paging.error}</span>` : null}
     </div>

@@ -9264,8 +9264,7 @@ a.thread-ref:hover {
   margin-inline: auto;
 }
 
-.chat-agent > .chat-pipeline .chat-trace-btn,
-.chat-agent > .chat-pipeline .chat-fulltrace-btn {
+.chat-agent > .chat-pipeline .chat-trace-btn {
   margin: 0;
   padding: 0;
   border: 0;
@@ -9274,4 +9273,108 @@ a.thread-ref:hover {
   font: 10.5px var(--mono);
   text-decoration: underline dotted;
   cursor: pointer;
+}
+
+/* Each turn has a mono number in a 44 px gutter, its body indented beside it (concept-v4 .tn). */
+.chat-msg,
+.chat-user,
+.chat-agent {
+  position: relative;
+  padding-left: 54px;
+}
+.chat-msg-n {
+  position: absolute;
+  left: 6px;
+  top: 7px;
+  width: 40px;
+  font: 10.5px / 15.75px var(--mono);
+  color: var(--text-dim);
+}
+.chat-msg-who .inspect-link {
+  margin-left: 6px;
+  font: 400 10.5px var(--mono);
+  color: var(--text-dim);
+}
+/* What Foundry added to the turn, under your message (concept-v4 .injm). */
+.chat-foundry-added {
+  margin-top: 4px;
+  padding: 2px 8px;
+  border: 1px dashed hsl(var(--app-primary) / 0.5);
+  border-radius: 6px;
+  background: none;
+  color: var(--accent);
+  font: 500 11.5px var(--font);
+  cursor: pointer;
+}
+/* Context layers and the work log under an agent turn, as the mockup's pointer chips and log line. */
+.chat-agent .chat-layers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 4px 0;
+}
+.chat-agent .chat-layers-prefix {
+  display: none;
+}
+.chat-agent .chat-layer-chip {
+  padding: 1px 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: none;
+  font: 11px / 18px var(--mono);
+  color: var(--text-dim);
+}
+.chat-agent .chat-layer-chip::before {
+  content: "† ";
+}
+.chat-agent .live-work-log > summary {
+  font: 11px var(--mono);
+  color: var(--text-dim);
+  cursor: pointer;
+}
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.chat-history-pager:has(> .chat-history-oldest:only-child) {
+  padding: 0;
+  border: 0;
+}
+.subagent-strip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 10px;
+  padding: 6px 12px;
+  border-top: 1px solid var(--line);
+  font-size: 12px;
+  color: var(--text-dim);
+  overflow-x: auto;
+  white-space: nowrap;
+}
+.subagent-strip b {
+  color: var(--text);
+  font-weight: 600;
+}
+.subagent-strip-item {
+  padding: 1px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: none;
+  color: var(--text-dim);
+  font: 11.5px var(--font);
+  cursor: pointer;
+}
+/* A live turn's activity as the mockup's Running card. */
+.chat-agent .live-work:not(.live-work--done) {
+  margin: 6px 0;
+  padding: 10px 12px;
+  border: 1px solid hsl(var(--app-primary) / 0.5);
+  border-radius: 10px;
+  font: 11.5px / 17px var(--mono);
 }
