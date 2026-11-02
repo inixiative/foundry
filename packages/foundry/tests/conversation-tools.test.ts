@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ActionQueue, ContextStack, Thread, ToolRegistry } from '@inixiative/foundry-core';
 import type { HostedSignet } from '@inixiative/signet';
+import type { HostedSignetWithBases } from '../src/conversations/grantReach';
 import { ConversationService } from '../src/conversations/service';
 import type { HeldRecord } from '../src/conversations/types';
 import { createFoundryMcp } from '../src/mcp/server';
@@ -19,7 +20,7 @@ import {
 import {
   heldSignet,
   mockKingdom,
-  termsOf,
+  threadsBaseLenses,
   threadsGrant,
   userOwner,
 } from './helpers/kingdom-installation';
@@ -49,7 +50,7 @@ async function until(predicate: () => boolean, label: string, ms = 3000) {
 
 const projectId = 'project-conversations';
 
-function hostedMember(threadId: string, outbound: 'review' | 'auto'): HostedSignet {
+function hostedMember(threadId: string, outbound: 'review' | 'auto'): HostedSignetWithBases {
   return {
     signetId: crypto.randomUUID(),
     integrationId: crypto.randomUUID(),
@@ -67,6 +68,7 @@ function hostedMember(threadId: string, outbound: 'review' | 'auto'): HostedSign
         terms: { outbound },
       }),
     ],
+    baseLenses: threadsBaseLenses(),
   };
 }
 
@@ -84,6 +86,7 @@ async function bridge(opts: {
   const service = new ConversationService({
     store,
     thread: (id) => (id === thread.id ? thread : undefined),
+    threads: () => [thread],
     turns: () => null,
     queue,
     project: () => ({
@@ -94,17 +97,6 @@ async function bridge(opts: {
     hosted: () => [member],
     subscriptions: () => [],
     deliverPost: kingdomPostDelivery(tools),
-  });
-  // JobCo's view opens: Kingdom admits its first read, so the host knows its grant reaches the thread.
-  service.read({
-    type: 'thread.request',
-    requestId: crypto.randomUUID(),
-    signetId: member.signetId,
-    acceptedRevision: 1,
-    member: { signetId: member.signetId, displayName: 'JobCo' },
-    terms: termsOf(member),
-    operation: 'thread.read',
-    input: { threadId: thread.id },
   });
   tools.register(new ConversationTool(() => service), CONVERSATION_TOOL_DESCRIPTION);
   await opts.register?.(tools, service);

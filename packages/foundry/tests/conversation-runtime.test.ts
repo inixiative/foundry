@@ -15,6 +15,7 @@ import type { HostedSignet, ThreadRequestOf } from '@inixiative/signet';
 import { ProjectRegistry } from '../src/agents/project';
 import { buildAgents, ThreadFactory } from '../src/agents/thread-factory';
 import { ThreadRuntimeManager } from '../src/agents/thread-runtime';
+import type { HostedSignetWithBases } from '../src/conversations/grantReach';
 import { conversationFloor, conversationRoster } from '../src/conversations/roster';
 import { ConversationService } from '../src/conversations/service';
 import { lateConversationWrapper } from '../src/conversations/types';
@@ -23,7 +24,13 @@ import { LocalSessionStore } from '../src/persistence/local-session-store';
 import { serializeTrace } from '../src/persistence/trace-record';
 import { starterConfig } from '../src/viewer/config';
 import { ViewerThreadDirectory } from '../src/viewer/thread-directory';
-import { termsOf, threadsGrant, withTerms } from './helpers/kingdom-installation';
+import {
+  narrowedTo,
+  termsOf,
+  threadsBaseLenses,
+  threadsGrant,
+  withTerms,
+} from './helpers/kingdom-installation';
 
 // The wrapper on the thread's own runtime (CONVERSATIONS.md §4.1, §4.2): a conversation thread is
 // always wrapped, a member's note rides the owner's next turn labelled as data, and admitting the
@@ -118,7 +125,7 @@ function fixture(opts: { wardens: boolean; joined?: boolean }) {
   const store = new LocalSessionStore(':memory:');
   new KnowledgePersistence(manager, store, events, []);
   const thread = factory.create('thread_conversation', { cwd: root });
-  const member: HostedSignet = {
+  const member: HostedSignetWithBases = {
     signetId: crypto.randomUUID(),
     integrationId: crypto.randomUUID(),
     name: 'JobCo',
@@ -129,11 +136,13 @@ function fixture(opts: { wardens: boolean; joined?: boolean }) {
     maxConcurrent: 1,
     recipient: { recipientModel: 'User', id: crypto.randomUUID(), displayName: 'JobCo' },
     resources: [threadsGrant({ threadIds: [thread.id], operations: ['thread.prompt'] })],
+    baseLenses: threadsBaseLenses(),
   };
-  let hosted: HostedSignet[] = opts.joined === false ? [] : [member];
+  let hosted: HostedSignetWithBases[] = opts.joined === false ? [] : [member];
   service = new ConversationService({
     store,
     thread: (id) => (id === thread.id ? (thread as Thread) : undefined),
+    threads: () => [thread as Thread],
     turns: () => null,
     queue: null,
     project: () => undefined,
@@ -179,22 +188,8 @@ function fixture(opts: { wardens: boolean; joined?: boolean }) {
       operation: 'thread.prompt',
       input: { threadId: thread.id, postId: crypto.randomUUID(), text },
     } as ThreadRequestOf<'thread.prompt'>);
-  /** The member's view opens: Kingdom admits its first read, so the host knows its grant reaches the thread. */
-  const opened = () =>
-    service!.read({
-      type: 'thread.request',
-      requestId: crypto.randomUUID(),
-      signetId: member.signetId,
-      acceptedRevision: 1,
-      member: { signetId: member.signetId, displayName: 'JobCo' },
-      terms: termsOf(member),
-      operation: 'thread.read',
-      input: { threadId: thread.id },
-    });
-  // A joined member is granted and its view is open.
-  if (opts.joined !== false) opened();
   /** Kingdom's snapshot changed: the hosted Signets are now these. */
-  const snapshot = (next: HostedSignet[]) => {
+  const snapshot = (next: HostedSignetWithBases[]) => {
     hosted = next;
     service!.hostedChanged(next, new Set());
   };
@@ -224,7 +219,6 @@ function fixture(opts: { wardens: boolean; joined?: boolean }) {
     member,
     turn,
     note,
-    opened,
     snapshot,
     lastSystem,
     lastUser,
@@ -285,10 +279,8 @@ test('the roster is part of the conversation: a member that joins shows with its
   await f.turn('turn_1', 'hello');
   // Not a conversation yet: no roster.
   expect(f.lastSystem()).not.toContain('# Conversation members');
-  // JobCo is granted the thread and its view opens (it hasn't posted): the next turn's context
-  // names it and its terms.
+  // JobCo is granted the thread (it hasn't posted): the next turn's context names it and its terms.
   f.snapshot([f.member]);
-  f.opened();
   await f.turn('turn_2', 'anyone here?');
   const joined = f.lastSystem();
   expect(joined).toContain('# Conversation members');
@@ -392,6 +384,7 @@ test('an archived thread comes back on a post: rebuilt with its id, journal and 
   const service = new ConversationService({
     store: f.store,
     thread: (id) => directory.get(id),
+    threads: () => directory.all(),
     reopen: (id) => {
       reopened.push(id);
       directory.reopen(id);
@@ -439,6 +432,7 @@ test('an archived thread that cannot be rebuilt stays closed to posts, and recor
   const service = new ConversationService({
     store: f.store,
     thread: (id) => directory.get(id),
+    threads: () => directory.all(),
     reopen: (id) => void directory.reopen(id),
     canReopen: (id) => directory.canReopen(id),
     turns: () => null,
@@ -493,15 +487,16 @@ test("a project's archived thread is rebuilt in place in its project; the main t
   expect(directory.canReopen('main')).toBe(false);
 });
 
-// Signet 0.12: which threads a grant reaches is its lens, which only Kingdom applies. The host never
-// evaluates it: a listed Signet is a member of a thread once Kingdom has relayed a call from it there.
-test('a listed Signet is a member of a thread only once Kingdom has admitted it there', async () => {
+// Signet 0.12: which threads a grant reaches is its lens. The host evaluates the grantor's lens
+// itself (the same lens Kingdom enforces), so the roster follows the latest snapshot at once.
+test('a grant reaches only the threads its lens names; a narrowing revision drops it at once; a full row reaches every thread', async () => {
   const f = fixture({ wardens: false, joined: false });
-  f.snapshot([f.member]);
+  const elsewhere = { ...f.member, resources: [threadsGrant({ threadIds: ['other-thread'] })] };
+  f.snapshot([elsewhere]);
   expect(f.service.members(f.thread.id)).toEqual([]);
   expect(f.service.wraps(f.thread.id)).toBe(false);
   expect(f.service.view(f.thread.id).floorFrom).not.toBe('shared');
-  f.opened();
+  f.snapshot([f.member]);
   expect(f.service.members(f.thread.id)).toMatchObject([
     {
       member: { kind: 'signet', id: f.member.signetId },
@@ -510,7 +505,14 @@ test('a listed Signet is a member of a thread only once Kingdom has admitted it 
     },
   ]);
   expect(f.service.view(f.thread.id).floorFrom).toBe('shared');
-  // Revoked: no longer listed, so no longer a member, though Kingdom admitted it before.
-  f.snapshot([]);
+  // An approver narrows it to another thread: the next snapshot drops it from this one.
+  f.snapshot([narrowedTo(f.member, ['other-thread'])]);
+  expect(f.service.members(f.thread.id)).toEqual([]);
+  // A full row reaches every thread, whatever its lens.
+  const full = { ...f.member, revision: 3, resources: [threadsGrant({ full: true })] };
+  f.snapshot([full]);
+  expect(f.service.members(f.thread.id)).toHaveLength(1);
+  // A row whose base lens the snapshot doesn't carry reaches nothing (refused, not guessed).
+  f.snapshot([{ ...f.member, revision: 4, baseLenses: {} }]);
   expect(f.service.members(f.thread.id)).toEqual([]);
 });

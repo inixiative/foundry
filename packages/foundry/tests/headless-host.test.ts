@@ -3,14 +3,20 @@ import { afterEach, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import type { HostedSignet } from '@inixiative/signet';
+import type { HostedSignetWithBases } from '../src/conversations/grantReach';
 import {
   type HeadlessHostCommand,
   headlessHostEnv,
   headlessHostEventSchema,
   headlessThreadStateSchema,
 } from '../src/conversations/headless-host-protocol';
-import { mockKingdom, termsOf, threadsGrant, userOwner } from './helpers/kingdom-installation';
+import {
+  mockKingdom,
+  termsOf,
+  threadsBaseLenses,
+  threadsGrant,
+  userOwner,
+} from './helpers/kingdom-installation';
 import { until } from './helpers/live-watch-fixture';
 import { writeRegions } from './helpers/regions';
 
@@ -134,7 +140,7 @@ test('the headless host pairs, admits a member note the Warden weighs in on, and
       await request({ type: 'inspect', requestId: crypto.randomUUID(), threadId: 'main' }),
     );
 
-  const member: HostedSignet = {
+  const member: HostedSignetWithBases = {
     signetId: crypto.randomUUID(),
     integrationId,
     name: 'JobCo',
@@ -145,25 +151,11 @@ test('the headless host pairs, admits a member note the Warden weighs in on, and
     maxConcurrent: 1,
     recipient: { recipientModel: 'User', id: crypto.randomUUID(), displayName: 'JobCo' },
     resources: [threadsGrant({ operations: ['thread.prompt', 'thread.read'] })],
+    baseLenses: threadsBaseLenses(),
   };
   kingdom.host(member);
   const requestId = crypto.randomUUID();
-  const relayed = {
-    signetId: member.signetId,
-    acceptedRevision: 1,
-    member: { signetId: member.signetId, displayName: 'JobCo' },
-    terms: termsOf(member),
-  };
-  // Its view opens: an admitted read is how the host learns its grant reaches `main`.
-  const opened = crypto.randomUUID();
-  kingdom.threadFrame({
-    type: 'thread.request',
-    requestId: opened,
-    ...relayed,
-    operation: 'thread.read',
-    input: { threadId: 'main' },
-  });
-  await kingdom.threadResponse(opened);
+  // Its base lens rides the socket snapshot: this waits on signet 0.12.1 (`baseLenses`).
   await until(async () => (await inspect()).members.some((m) => m.listed), 'member listed');
   // A shared thread defaults to the conch (Aron, 2026-11-01); this note is about the talk path.
   await request({

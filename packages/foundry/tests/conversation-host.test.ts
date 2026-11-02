@@ -13,6 +13,7 @@ import {
   Thread,
 } from '@inixiative/foundry-core';
 import type { HostedSignet, ThreadsTerms } from '@inixiative/signet';
+import type { HostedSignetWithBases } from '../src/conversations/grantReach';
 import type { LocalSessionStore } from '../src/persistence/local-session-store';
 import { pairKingdomIntegration } from '../src/providers/kingdom-pairing';
 import {
@@ -28,6 +29,7 @@ import { claudeCli } from './helpers/claude-cli';
 import {
   mockKingdom,
   termsOf,
+  threadsBaseLenses,
   threadsGrant,
   userOwner,
   withTerms,
@@ -136,13 +138,18 @@ async function host(
   const conversations = viewer.conversations!;
 
   /**
-   * Issue a Signet on this Foundry's `threads` resource: a member, as Kingdom lists it, whose view
-   * then opens (Kingdom admits its first read on each thread its lens reaches, which is how the host
-   * learns the grant reaches them).
+   * Issue a Signet on this Foundry's `threads` resource: a member, as Kingdom lists it, with the
+   * base lens its rows compose under. Its socket snapshot is parsed by signet, so these tests wait on
+   * signet 0.12.1 (`hostedSignets[].baseLenses`); under 0.12.0 the base is stripped and no member
+   * reaches a thread.
    */
-  const member = async (name: string, grant: Grant = {}, revision = 1): Promise<HostedSignet> => {
+  const member = async (
+    name: string,
+    grant: Grant = {},
+    revision = 1,
+  ): Promise<HostedSignetWithBases> => {
     const { ids, operations, ...terms } = grant;
-    const signet: HostedSignet = {
+    const signet: HostedSignetWithBases = {
       signetId: crypto.randomUUID(),
       integrationId,
       name,
@@ -159,24 +166,17 @@ async function host(
           terms,
         }),
       ],
+      baseLenses: threadsBaseLenses(),
     };
     kingdom.host(signet);
     await until(
       () => viewer.kingdom.hostedSignets().some((s) => s.signetId === signet.signetId),
       `${name} listed`,
     );
-    for (const threadId of ids ?? ['main']) {
-      const opened = {
-        type: 'thread.request',
-        ...relayed(signet),
-        operation: 'thread.read',
-        input: { threadId },
-      };
-      kingdom.threadFrame(opened);
-      await kingdom.threadResponse(opened.requestId);
-      if ((opts.floor ?? 'talk') === 'talk' && conversations.view(threadId).floorFrom === 'shared')
-        conversations.setFloor(threadId, 'talk');
-    }
+    if ((opts.floor ?? 'talk') === 'talk')
+      for (const threadId of ids ?? ['main'])
+        if (conversations.view(threadId).floorFrom === 'shared')
+          conversations.setFloor(threadId, 'talk');
     return signet;
   };
   const relayed = (signet: HostedSignet) => ({

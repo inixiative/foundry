@@ -16,9 +16,9 @@ import {
   type ConversationMember,
   type HostedSignet,
   permitsOperation,
-  type SignetGrant,
   type ThreadEntry,
   type ThreadHost,
+  type ThreadOperation,
   type ThreadOutcome,
   type ThreadRefusal,
   type ThreadRequestOf,
@@ -39,6 +39,7 @@ import {
 } from '../providers/kingdom-installation-connection';
 import type { TurnAcceptance, TurnRequest } from '../turns/turn-service';
 import type { ProjectSettingsConfig } from '../viewer/config';
+import { grantReaches } from './grantReach';
 import { conversationFloor, conversationRoster, quotedName } from './roster';
 import { resolveConversationSettings } from './settings';
 import {
@@ -68,6 +69,8 @@ export interface ConversationServiceDeps {
   store: LocalSessionStore;
   /** A thread this Foundry runs (restored threads included). */
   thread: (threadId: string) => Thread | undefined;
+  /** Every thread this Foundry runs: a grant's lens is evaluated over them to mark shares. */
+  threads: () => readonly Thread[];
   /**
    * Bring an archived thread back (TurnService.reopen): an admitted post revives it (§4.2). The
    * turn path reopens on its own; a note needs this.
@@ -142,7 +145,7 @@ interface OpenHeld {
 export interface ConversationMemberView {
   member: ConversationMember;
   displayName: string;
-  /** Kingdom lists the Signet and has admitted it on this thread; false: known only from its posts (revoked, or not yet in a snapshot). */
+  /** Kingdom lists a Signet whose grant reaches this thread now; false: known only from its posts (revoked, narrowed off, or not yet in a snapshot). */
   listed: boolean;
   recipientModel?: string;
   terms?: Pick<ThreadsTerms, 'view' | 'delivery' | 'outbound'>;
@@ -228,7 +231,6 @@ export class ConversationService implements ConversationWrapper {
     const closed = this.closedReason(thread);
     if (closed || !thread) return threadRefused(closed ?? 'unknown_thread');
     this.noteRevision(signetId, frame.acceptedRevision);
-    this.noteAdmitted(thread, signetId);
     // A person's aside (M6): out of the log, to every person and no agent; not admitted as a post.
     if (input.aside) {
       const recorded = this.aside(
@@ -415,7 +417,6 @@ export class ConversationService implements ConversationWrapper {
     const thread = this.deps.thread(frame.input.threadId);
     if (!thread) return threadRefused('unknown_thread');
     this.noteRevision(frame.signetId, frame.acceptedRevision);
-    this.noteAdmitted(thread, frame.signetId);
     this.seen.set(seenKey(signetMember(frame.signetId), thread.id), Date.now());
     const after = Math.max(
       frame.input.afterSeq ?? 0,
@@ -444,7 +445,6 @@ export class ConversationService implements ConversationWrapper {
     const thread = this.deps.thread(frame.threadId);
     if (!thread) return threadRefused('unknown_thread');
     this.noteRevision(frame.signetId, frame.acceptedRevision);
-    this.noteAdmitted(thread, frame.signetId);
     const journalSeq = this.deps.store.journalSeq(thread.id);
     const from = this.isOwnerSignet(frame.signetId) ? 0 : this.sharedFrom(thread);
     const raw = this.deps.store.journalEntries(thread.id, { newest: true, limit: RAW_READ });
@@ -530,7 +530,6 @@ export class ConversationService implements ConversationWrapper {
     const closed = this.closedReason(thread);
     if (closed || !thread) return threadRefused(closed ?? 'unknown_thread');
     this.noteRevision(frame.signetId, frame.acceptedRevision);
-    this.noteAdmitted(thread, frame.signetId);
     const me: ConversationMember = { kind: 'signet', id: frame.signetId };
     const action = frame.input.floor;
     let outcome: ThreadRefusal | null;
@@ -943,12 +942,14 @@ export class ConversationService implements ConversationWrapper {
 
   /**
    * A conversation thread is always wrapped: its notes and its roster must reach the executor
-   * (§4.1). It is one once its wrapper has state: from Kingdom's first relayed call for a member
-   * (a read or a subscribe, before its first post), or the owner's own settings.
+   * (§4.1). It is one once its wrapper has state, or as soon as a grant reaches it (a member joined
+   * and hasn't posted yet).
    */
   wraps(threadId: string): boolean {
     return (
-      this.deps.store.conversation(threadId) !== undefined || this.hostsOf(threadId).length > 0
+      this.deps.store.conversation(threadId) !== undefined ||
+      this.deps.hosted().some((signet) => this.termsOn(signet, threadId) !== undefined) ||
+      this.hostsOf(threadId).length > 0
     );
   }
 
@@ -1006,7 +1007,10 @@ export class ConversationService implements ConversationWrapper {
   floorNow(threadId: string): string | undefined {
     if (!this.wraps(threadId)) return undefined;
     const own =
-      this.deps.store.conversation(threadId) !== undefined ? this.ownFloor(threadId) : undefined;
+      this.deps.store.conversation(threadId) !== undefined ||
+      this.deps.hosted().some((signet) => this.termsOn(signet, threadId) !== undefined)
+        ? this.ownFloor(threadId)
+        : undefined;
     const elsewhere = this.memberships(threadId).map(
       (membership) =>
         `In ${quotedName(membership.hostName)} (your voice: ${membership.voice}): ${membership.floor}`,
@@ -1324,6 +1328,7 @@ export class ConversationService implements ConversationWrapper {
    */
   hostedChanged(hosted: readonly HostedSignet[], dropped: ReadonlySet<string>): void {
     if (dropped.has(UNKNOWN_HOSTED)) return;
+    this.markShared(hosted);
     const now = new Set(hosted.map((signet) => signet.signetId));
     const before = this.listed;
     this.listed = new Set([...now, ...[...dropped].filter((id) => before?.has(id))]);
@@ -1946,6 +1951,18 @@ export class ConversationService implements ConversationWrapper {
     }
   }
 
+  /** Mark the share on every thread a listed non-owner grant reaches now: members read from here on. */
+  private markShared(hosted: readonly HostedSignet[]): void {
+    const sharing = hosted.filter((signet) => !ownsThreads(signet));
+    if (!sharing.length) return;
+    for (const thread of this.deps.threads())
+      if (
+        this.record(thread.id).sharedFromSeq === undefined &&
+        sharing.some((signet) => this.termsOn(signet, thread.id) !== undefined)
+      )
+        this.sharedFrom(thread);
+  }
+
   private resolved(thread: Thread, record: ConversationRecord) {
     const projectId = thread.meta.projectId;
     return resolveConversationSettings(
@@ -2103,28 +2120,19 @@ export class ConversationService implements ConversationWrapper {
   }
 
   /**
-   * Kingdom relayed a call from this Signet on this thread: its grant's lens reaches the thread.
-   * The first call from someone other than the owner also marks the share (§4.9, B3).
+   * A listed Signet's terms on this thread, when its grant reaches it: the grantor's lens evaluated
+   * here (`grantReaches`), the same lens Kingdom enforces at admission.
    */
-  private noteAdmitted(thread: Thread, signetId: string): void {
-    const record = this.record(thread.id);
-    if (record.admitted?.includes(signetId)) return;
-    record.admitted = [...(record.admitted ?? []), signetId];
-    if (record.sharedFromSeq === undefined && !this.isOwnerSignet(signetId))
-      record.sharedFromSeq = this.deps.store.journalSeq(thread.id);
-    this.save(thread, record);
+  private termsOn(
+    signet: HostedSignet,
+    threadId: string,
+    operations?: readonly ThreadOperation[],
+  ): ThreadsTerms | undefined {
+    const grant = grantReaches(signet, threadId, operations, this.warn);
+    return grant ? threadsTerms(grant.terms) : undefined;
   }
 
-  /**
-   * A listed Signet's terms on this thread, once Kingdom has admitted it here. Which threads a grant
-   * reaches is its lens, which only Kingdom applies; the host learns it from the calls Kingdom
-   * relays (`noteAdmitted`), never by evaluating the lens itself.
-   */
-  private termsOn(signet: HostedSignet, threadId: string): ThreadsTerms | undefined {
-    const grant = threadsGrant(signet);
-    if (!grant || !this.record(threadId).admitted?.includes(signet.signetId)) return undefined;
-    return threadsTerms(grant.terms);
-  }
+  private readonly warn = (message: string) => (this.deps.log ?? console.warn)(message);
 
   /**
    * The member's outbound term for a send now (§4.5): from the latest snapshot, or `review` when the
@@ -2137,16 +2145,21 @@ export class ConversationService implements ConversationWrapper {
     return this.termsOn(signet, threadId)?.outbound ?? 'review';
   }
 
-  /** A member the conch can pass to: one whose listed grant reaches the thread now, not a past poster. */
+  /**
+   * A member the conch can pass to: one whose listed grant reaches the thread now for posting (what
+   * holding the conch is for), not a past poster.
+   */
   private isMember(threadId: string, signetId: string): boolean {
     return this.deps
       .hosted()
       .some(
-        (signet) => signet.signetId === signetId && this.termsOn(signet, threadId) !== undefined,
+        (signet) =>
+          signet.signetId === signetId &&
+          this.termsOn(signet, threadId, ['thread.prompt']) !== undefined,
       );
   }
 
-  /** Members of a thread: listed Signets Kingdom has admitted on it, and anyone who has posted to it. */
+  /** Members of a thread: listed Signets whose grant reaches it, and anyone who has posted to it. */
   members(threadId: string): ConversationMemberView[] {
     const views = new Map<string, ConversationMemberView>();
     const present = new Set(
@@ -2527,26 +2540,17 @@ export class ConversationService implements ConversationWrapper {
 /** How many journal rows one read or snapshot looks at before it says there is more. */
 const RAW_READ = 5_000;
 
-type IntegrationResourceGrantRow = Extract<SignetGrant, { resourceModel: 'IntegrationResource' }>;
-
-/** The Signet's grant on this Foundry's `threads` resource (one per Foundry), if it holds one. */
-const threadsGrant = (signet: HostedSignet) =>
-  signet.resources.find(
-    (grant): grant is IntegrationResourceGrantRow =>
-      grant.resourceModel === 'IntegrationResource' && grant.kind === threadsResourceKind,
-  );
-
 /** A grant that answers the host's prompts: Kingdom allows it only to the thread's owner. */
-const ownsThreads = (signet: HostedSignet) => {
-  const grant = threadsGrant(signet);
-  return (
-    !!grant &&
-    permitsOperation(
-      grant.full ? { full: true } : { full: false, operations: grant.operations ?? [] },
-      'prompt.resolve',
-    )
+const ownsThreads = (signet: HostedSignet) =>
+  signet.resources.some(
+    (grant) =>
+      grant.resourceModel === 'IntegrationResource' &&
+      grant.kind === threadsResourceKind &&
+      permitsOperation(
+        grant.full ? { full: true } : { full: false, operations: grant.operations ?? [] },
+        'prompt.resolve',
+      ),
   );
-};
 
 const handKey = (threadId: string, member: ConversationMember) =>
   `${threadId}:${member.kind}:${member.id}`;

@@ -124,12 +124,6 @@ export interface ConversationRecord {
    */
   sharedFromSeq?: number;
   /**
-   * The Signets Kingdom has relayed a call from on this thread. Which threads a grant reaches is its
-   * lens, a json-rules filter Kingdom applies at admission (signet 0.12); the host never evaluates
-   * it, so a relayed call is how it learns that a listed Signet reaches this thread (§4.1).
-   */
-  admitted?: string[];
-  /**
    * Members on this machine (§4.11 point 2): another Foundry thread of the owner's, his Codex or a
    * second Claude, joined in-process with no Signet. Each one's invite record carries its terms.
    */
