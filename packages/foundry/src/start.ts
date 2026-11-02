@@ -122,7 +122,7 @@ import {
   foundryConfigDir,
   starterConfig,
 } from './viewer/config';
-import { resolveProjectView } from './viewer/config-resolve';
+import { effectiveProject, resolveProjectView } from './viewer/config-resolve';
 import { startViewer } from './viewer/server';
 
 // ---------------------------------------------------------------------------
@@ -748,7 +748,7 @@ const stampedWorkers = LocalSessionStore.stampWorkers(join(FOUNDRY_DIR, 'session
     Object.entries(WORKER_SESSION_RUNTIMES).map(([worker, runtime]) => [runtime, worker]),
   ),
   projectDefault: (projectId) =>
-    (projectId ? config.projects[projectId]?.defaults?.provider : undefined) ??
+    (projectId ? effectiveProject(config, projectId)?.defaults?.provider : undefined) ??
     config.defaults.provider,
 });
 if (stampedWorkers.stamped.length)

@@ -40,7 +40,7 @@ import {
   type ImageAttachmentStore,
 } from '../../persistence/image-attachments';
 import type { LocalSessionStore } from '../../persistence/local-session-store';
-import { workerModelRequirement } from '../../providers/subscription-policy';
+import { workerDefaultModel, workerModelRequirement } from '../../providers/subscription-policy';
 import {
   describeMcpServers,
   type EffortLevel,
@@ -772,6 +772,33 @@ export function registerRuntimeRoutes(
   // Held in daemon memory only (client MCP server env and headers can be secrets, so they are never
   // echoed). A change applies on the thread's next turn: its idle session relaunches, resuming its
   // native binding.
+  /**
+   * The workers a thread in this project (or the global scope) may start on: the default, and each
+   * other one it has a login for (FEAT-007), each with the models its harness runs and its own
+   * default model, so a worker and its model are chosen together.
+   */
+  const workerChoices = (projectId: string | undefined, fallback: string) =>
+    [...new Set([fallback, ...Object.keys(SUBSCRIPTION_WORKERS)])]
+      .filter((worker) => worker === fallback || !threadFactory?.workerRefusal(projectId, worker))
+      .filter((worker) => worker === fallback || subscriptionWorker(worker))
+      .map((worker) => ({
+        id: worker,
+        label: MODEL_REGISTRY[worker]?.label ?? worker,
+        default: worker === fallback,
+        defaultModel: workerDefaultModel(deps.configStore.config, worker),
+        models: (MODEL_REGISTRY[worker]?.models ?? []).map((model) => ({
+          id: model.id,
+          label: model.label,
+        })),
+      }));
+
+  app.get('/api/projects/:id/workers', (c) => {
+    const id = c.req.param('id');
+    if (!deps.configStore.config.projects[id]) return c.json({ error: 'project not found' }, 404);
+    const fallback = threadFactory?.defaultWorker(id) ?? deps.configStore.config.defaults.provider;
+    return c.json({ workers: workerChoices(id, fallback) });
+  });
+
   const launchView = (thread: Thread) => {
     const launch = threadLaunch.get(thread.id);
     const { config: view, setAside } = resolveThreadView(deps.configStore.config, thread.meta);
@@ -779,15 +806,7 @@ export function registerRuntimeRoutes(
     const configuredModel = view.defaults.model;
     const projectId = thread.meta.projectId;
     const fallback = threadFactory?.defaultWorker(projectId) ?? provider;
-    // The workers a thread here may start on: the default, and each other one it has a login for.
-    const workers = [...new Set([fallback, ...Object.keys(SUBSCRIPTION_WORKERS)])]
-      .filter((worker) => worker === fallback || !threadFactory?.workerRefusal(projectId, worker))
-      .filter((worker) => worker === fallback || subscriptionWorker(worker))
-      .map((worker) => ({
-        id: worker,
-        label: MODEL_REGISTRY[worker]?.label ?? worker,
-        default: worker === fallback,
-      }));
+    const workers = workerChoices(projectId, fallback);
     return {
       threadId: thread.id,
       provider,

@@ -22,6 +22,7 @@ import type { LocalSessionStore } from '../persistence/local-session-store';
 import { resolveInstructionLadder } from '../prompts/instruction-settings';
 import { DECISION_PRIORITY } from '../providers/decision-priority';
 import type { FoundryConfig } from '../viewer/config';
+import { effectiveProject } from '../viewer/config-resolve';
 import { applyChange, type LevelRoots, revertChange } from './apply';
 import { activeChanges, type FeedbackItem, FeedbackLifecycle } from './lifecycle';
 import { defaultLevel, MAIN_ROLE, routeFeedback, slotFor, wardenRoles } from './routing';
@@ -144,7 +145,7 @@ export class FeedbackService {
     const projectId = thread.meta.projectId;
     return resolveFeedbackSettings(
       config.feedback,
-      projectId ? config.projects[projectId]?.feedback : undefined,
+      projectId ? effectiveProject(config, projectId)?.feedback : undefined,
     );
   }
 

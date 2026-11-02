@@ -11,7 +11,7 @@
  * credential-like keys are never shown.
  */
 
-import { defaultConfig, type FoundryConfig } from './config';
+import { defaultConfig, type FoundryConfig, personalOnlySetting } from './config';
 import { readRepositorySettings } from './config-resolve';
 import catalog from './settings-catalog.json';
 
@@ -23,6 +23,10 @@ export interface SettingHit {
   description: string;
   value: string | null;
   source: SettingSource;
+  /** Yours, and the repository sets another value for everyone. */
+  overridesTeam?: boolean;
+  /** Why a project setting has no "for everyone" form (a machine or person setting). */
+  personalOnly?: string;
 }
 
 const SECRET = /key|token|secret|password|credential/i;
@@ -93,7 +97,8 @@ export function settingsIndex(
     }
     if (!project) continue;
     const personal = config.projects?.[project.id];
-    const repository = readRepositorySettings(project.path);
+    const read = readRepositorySettings(project.path);
+    const repository = read?.error ? undefined : read;
     for (const path of expand(entry.path, [personal, repository])) {
       const mine = at(personal, path);
       const everyone = at(repository, path);
@@ -103,6 +108,10 @@ export function settingsIndex(
         description: entry.description,
         value: shown(entry.path, mine ?? everyone),
         source: mine !== undefined ? 'yours' : everyone !== undefined ? 'everyone' : 'default',
+        ...(mine !== undefined && everyone !== undefined ? { overridesTeam: true } : {}),
+        ...(personalOnlySetting(path.join('.'))
+          ? { personalOnly: personalOnlySetting(path.join('.')) }
+          : {}),
       });
     }
   }
