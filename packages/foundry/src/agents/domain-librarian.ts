@@ -45,7 +45,7 @@ import {
   chartered,
   charterFor,
   DEFAULT_STAGE,
-  isDefaultStages,
+  isSingleDefaultStage,
   NO_COMMENT,
   NO_COMMENT_RULE,
   protocolAnswer,
@@ -1498,7 +1498,7 @@ export class DomainLibrarian {
       this._stages.length === 1 &&
       this._stages[0]!.charter === undefined &&
       this._stages[0]!.regionInstructions === undefined &&
-      isDefaultStages([this._stages[0]!.config])
+      isSingleDefaultStage([this._stages[0]!.config])
     );
   }
 

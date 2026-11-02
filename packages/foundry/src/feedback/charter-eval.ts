@@ -36,10 +36,10 @@ import {
 import {
   type Carried,
   type ClassifyResult,
-  DEFAULT_STAGES,
-  isDefaultStages,
+  isSingleDefaultStage,
   KNOWLEDGE_DOC,
   type Recognition,
+  SINGLE_STAGE,
   type StageConfig,
   type StageDebug,
 } from '../classify';
@@ -84,7 +84,7 @@ export interface CharterEvalOptions {
   readonly warden: LLMProvider;
   /** One provider per stage (one host per model and effort); a stage without one uses `warden`. */
   readonly stageProviders?: readonly (LLMProvider | undefined)[];
-  /** The classify stages under test; the shipped single stage when omitted. */
+  /** The classify stages under test; the single stage when omitted (an experiment names its stages). */
   readonly stages?: readonly StageConfig[];
   /** Candidate charter text per stage (eval only); a stage without one runs its fixed charter. */
   readonly charters?: readonly (string | undefined)[];
@@ -333,9 +333,9 @@ async function ask(
   trigger: WardenProbeTrigger,
   sink?: DebugSink,
 ): Promise<WardenProbeAnswer[]> {
-  const stages = options.stages ?? DEFAULT_STAGES;
+  const stages = options.stages ?? SINGLE_STAGE;
   const staged =
-    !isDefaultStages(stages) ||
+    !isSingleDefaultStage(stages) ||
     !!options.charters?.some((c) => c !== undefined) ||
     !!options.regionInstructions?.some((r) => r !== undefined);
   const started = Date.now();

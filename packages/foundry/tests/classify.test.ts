@@ -14,7 +14,7 @@ import {
   DEFAULT_STAGE,
   EVAL_STAGE_KEYS,
   GUARD_RESPONSE_PROTOCOL,
-  isDefaultStages,
+  isSingleDefaultStage,
   parseWardenPointer,
   pointCharter,
   RECOGNISE_CHARTER,
@@ -44,8 +44,8 @@ describe('stage settings', () => {
   test('omitted fields take the default stage, which is today’s Warden', () => {
     const [stage] = validateStages('s', [{}]);
     expect(stage).toEqual(DEFAULT_STAGE);
-    expect(isDefaultStages([stage!])).toBe(true);
-    expect(isDefaultStages(validateStages('s', [{ reason: 'inline' }]))).toBe(false);
+    expect(isSingleDefaultStage([stage!])).toBe(true);
+    expect(isSingleDefaultStage(validateStages('s', [{ reason: 'inline' }]))).toBe(false);
   });
 
   test('refuses, by name, what does not fit', () => {

@@ -52,6 +52,7 @@ import {
   chartered,
   DEFAULT_STAGES,
   parseWardenPointer,
+  SINGLE_STAGE,
   WARDEN_CHARTER,
 } from '../src/classify';
 import { contentHash } from '../src/persistence/journal-content';
@@ -436,12 +437,17 @@ test("the chorus is opt-in: regions present but not enabled are off; the reposit
     consumed: { enabled: false, from: 'default' },
     reception: { on: false, from: 'default' },
     roles: {
-      warden: { stages: DEFAULT_STAGES, from: 'default', regions: 0 },
-      herald: { stages: DEFAULT_STAGES, from: 'default', regions: 0, built: false },
+      // This config is API-token decisions: no stage host serves Layer 2, so the single stage.
+      warden: { stages: SINGLE_STAGE, from: 'default', regions: 0 },
+      herald: { stages: SINGLE_STAGE, from: 'default', regions: 0, built: false },
     },
     layers: [],
     regions: [],
   });
+  // Subscription decisions: the default is the two-layer chain.
+  const subscription = structuredClone(c);
+  delete subscription.apiTokens;
+  expect(resolveProjectView(subscription, 'E')!.chorus.roles.warden.stages).toEqual(DEFAULT_STAGES);
   delete c.projects.E;
 
   // The repository says off, with a comment: still off, and now it is the repository's choice.

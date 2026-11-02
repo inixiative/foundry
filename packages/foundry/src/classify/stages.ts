@@ -55,7 +55,7 @@ export const KNOWLEDGE_DOC = 'knowledge.md';
 export const MAX_STAGES = 3;
 export const STAGE_EFFORTS: readonly StageEffort[] = ['low', 'medium', 'high', 'xhigh', 'max'];
 
-/** Today's single-stage Warden: one pointing stage on the region's knowledge, yes or no, no why. */
+/** One pointing stage on the region's knowledge, yes or no, no why: the field defaults every stage fills from. */
 export const DEFAULT_STAGE: StageConfig = Object.freeze({
   doc: KNOWLEDGE_DOC,
   outcomes: 'binary',
@@ -63,7 +63,37 @@ export const DEFAULT_STAGE: StageConfig = Object.freeze({
   task: 'point',
   pointer: Object.freeze({ any: true }),
 });
-export const DEFAULT_STAGES: readonly StageConfig[] = Object.freeze([DEFAULT_STAGE]);
+/** Sonnet 5.5, Layer 2's model in the default chain. */
+export const LAYER_2_MODEL = 'claude-sonnet-5-5';
+/**
+ * The default chorus (Aron, 2026-11-02): Layer 1, the decision model (Haiku 5.5, low) pointing with its
+ * why inline, escalates each yes, without that why, to Layer 2, Sonnet 5.5 low pointing on the same
+ * region knowledge. Layer 1 gets a quarter of the trigger's deadline; a stage that times out stays
+ * silent and the thread shows the chorus as degraded (FEAT-008). Measured on template's dev cells
+ * (Oracle finding 2026-11-01-l2-nowhy): 93/114 recall, 34.5/1350 false yes against the 92 / 37 bar;
+ * the why lifts Haiku's recall and, handed on, keeps Sonnet's false yeses.
+ */
+export const DEFAULT_STAGES: readonly StageConfig[] = Object.freeze([
+  Object.freeze({
+    ...DEFAULT_STAGE,
+    reason: 'inline',
+    escalate: Object.freeze(['yes'] as const),
+    carryWhy: false,
+    deadline: 0.25,
+  }),
+  Object.freeze({ ...DEFAULT_STAGE, model: LAYER_2_MODEL, effort: 'low' }),
+]);
+/** The plain single stage: a Warden registered in code, and every eval run that names no stages. */
+export const SINGLE_STAGE: readonly StageConfig[] = Object.freeze([DEFAULT_STAGE]);
+
+/**
+ * The stages a chorus runs when its settings write none. Layer 2 runs on its own decision host,
+ * which only subscription decisions start: with stage hosts it is the default chain; without
+ * (API-token decisions) it is the single stage, so turning `apiTokens` on never turns the chorus off.
+ */
+export function defaultStages(stageHosts: boolean): readonly StageConfig[] {
+  return stageHosts ? DEFAULT_STAGES : SINGLE_STAGE;
+}
 
 const STAGE_KEYS = [
   'model',
@@ -210,8 +240,8 @@ export function deadlineShares(stages: readonly StageConfig[]): number[] {
   return stages.map((s) => s.deadline ?? rest);
 }
 
-/** Whether a stage list is today's single-stage Warden (the default every setting starts from). */
-export function isDefaultStages(stages: readonly StageConfig[]): boolean {
+/** Whether a stage list is the plain single stage (`DEFAULT_STAGE`): its answers carry no stage trace. */
+export function isSingleDefaultStage(stages: readonly StageConfig[]): boolean {
   return stages.length === 1 && sameStage(stages[0]!, DEFAULT_STAGE);
 }
 

@@ -21,6 +21,8 @@ import {
 import { ThreadRuntimeManager } from '../src/agents/thread-runtime';
 import {
   charterFor,
+  DEFAULT_STAGES,
+  LAYER_2_MODEL,
   RECOGNISE_CHARTER,
   type StageEffort,
   validateStages,
@@ -50,11 +52,12 @@ const write = (path: string, text: string) => {
 
 const POINTER = 'Look over here: createLock (CONCURRENCY.md § Distributed Lock) — exclusion.';
 
-function project(stages: unknown[]) {
+/** A project with two regions; `stages` undefined writes none, so the chorus runs the default chain. */
+function project(stages: unknown[] | undefined) {
   const path = temp('classify-live');
   write(
     join(path, '.foundry', 'project.json'),
-    JSON.stringify({ chorus: { enabled: true, wardens: { stages } } }),
+    JSON.stringify({ chorus: { enabled: true, ...(stages ? { wardens: { stages } } : {}) } }),
   );
   for (const id of ['locks', 'queues']) {
     const at = join(path, '.foundry', 'regions', id);
@@ -252,6 +255,122 @@ test('each region Warden runs its stages: stage 1 on its own provider, stage 2 o
     decision: 'no-comment',
     classified: { outcome: 'no', delivered: false },
   });
+});
+
+test('a project that writes no stages runs the default chain: Layer 1 points with its why, each yes goes to Sonnet without it', async () => {
+  const f = runtime(
+    project(undefined),
+    (host, call) => {
+      const body = call.messages[1]!.content;
+      if (host === 'central')
+        return body.includes('CATALOGUE_LOCKS')
+          ? JSON.stringify({
+              outcome: 'yes',
+              why: 'HAIKU_WHY a nightly job that must not overlap',
+              snippets: [POINTER],
+              layers: [],
+              confidence: 0.7,
+            })
+          : JSON.stringify({ outcome: 'no', why: 'not a queue', snippets: [], layers: [] });
+      return JSON.stringify({ snippets: [POINTER], layers: [], confidence: 0.8 });
+    },
+    { hosts: [`${LAYER_2_MODEL}|low`] },
+  );
+  const thread = f.factory.create('default-chain', { projectId: 'P' });
+  const result = await thread.dispatch('worker', 'Add a nightly job that never overlaps.');
+
+  // Layer 1 asks every region on the decision provider; Layer 2 runs only on the yes, on its host.
+  const first = f.calls.filter(
+    (c) => c.host === 'central' && c.opts.threadId?.includes(':aux:domain:'),
+  );
+  expect(first.map((c) => c.opts.threadId!.split(':aux:')[1]).sort()).toEqual([
+    'domain:locks',
+    'domain:queues',
+  ]);
+  const second = f.calls.filter((c) => c.host === LAYER_2_MODEL);
+  expect(second).toHaveLength(1);
+  expect(second[0]!.opts.threadId).toEndWith(':aux:domain:locks:stage:1');
+  expect(second[0]!.opts.model).toBe(LAYER_2_MODEL);
+  expect(second[0]!.messages[1]!.content).toContain('CATALOGUE_LOCKS');
+  // carryWhy false: Sonnet judges the moment without Haiku's argument.
+  expect(second[0]!.messages[1]!.content).not.toContain('HAIKU_WHY');
+
+  const contributions = contributionsOf(result);
+  expect(contributions.find((c) => c.domain === 'locks')).toMatchObject({
+    decision: 'contribute',
+    snippets: [POINTER],
+    classified: {
+      outcome: 'yes',
+      delivered: true,
+      stages: [
+        { stage: 0, task: 'point', outcome: 'yes' },
+        { stage: 1, task: 'point', outcome: 'yes', model: LAYER_2_MODEL },
+      ],
+    },
+  });
+  expect(contributions.find((c) => c.domain === 'queues')).toMatchObject({
+    decision: 'no-comment',
+    classified: { outcome: 'no', delivered: false },
+  });
+  expect(f.manager.get(thread.id)!.domainLibrarians.get('locks')!.stageCount).toBe(
+    DEFAULT_STAGES.length,
+  );
+});
+
+test('a project that writes its own stages wins over the default chain', async () => {
+  const f = runtime(project([{}]), () => 'NO_COMMENT', { hosts: [`${LAYER_2_MODEL}|low`] });
+  const thread = f.factory.create('own-stages', { projectId: 'P' });
+  await thread.dispatch('worker', 'Add a lock.');
+  expect(f.manager.get(thread.id)!.domainLibrarians.get('locks')!.stageCount).toBe(1);
+  expect(f.calls.filter((c) => c.host === LAYER_2_MODEL)).toHaveLength(0);
+});
+
+test('without stage hosts (API-token decisions) the default is the single stage, so the chorus still runs', async () => {
+  const c = project(undefined);
+  const calls: string[] = [];
+  const provider = (id: string): LLMProvider => ({
+    id,
+    async complete(_messages, opts = {}) {
+      calls.push(opts.threadId ?? '');
+      return {
+        model: id,
+        content: opts.threadId?.endsWith(':cartographer')
+          ? JSON.stringify({ layers: [], domains: [], confidence: 1 })
+          : opts.threadId?.includes(':aux:')
+            ? 'NO_COMMENT'
+            : 'done',
+      };
+    },
+  });
+  const central = provider('central');
+  const flow = provider('flow');
+  const providers = new Map([central, flow].map((p) => [p.id, p]));
+  const sourceResolver = createSourceResolver({
+    memory: new FileMemory(join(temp('memory'), 'm')),
+  });
+  const stack = new ContextStack(buildLayers(c, { sourceResolver }));
+  const manager = new ThreadRuntimeManager({
+    config: c,
+    llm: flow,
+    providers,
+    resolveSource: sourceResolver,
+    log() {},
+    warn() {},
+    learning: { timeoutMs: 20, hardTimeoutMs: 1000 },
+  });
+  managers.push(manager);
+  const deps = { provider: central, providers };
+  const factory = new ThreadFactory({
+    stack,
+    agents: buildAgents(c, stack, deps),
+    runtime: manager,
+    configuration: { config: c, layers: { sourceResolver }, agents: deps },
+  });
+  const thread = factory.create('no-hosts', { projectId: 'P' });
+  await thread.dispatch('worker', 'Add a lock.');
+  expect(manager.get(thread.id)!.domainLibrarians.get('locks')!.stageCount).toBe(1);
+  expect(calls.some((id) => id.endsWith(':aux:domain:locks'))).toBe(true);
+  expect(calls.some((id) => id.includes(':stage:'))).toBe(false);
 });
 
 test('a later stage that outlives its share of the advise deadline keeps the previous outcome, journalled', async () => {

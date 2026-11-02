@@ -68,7 +68,6 @@ import {
 import { resolveLearningSettings } from './agents/learning-config';
 import { describeChorus } from './agents/region-roster';
 import { atlasRootOf, configureHarness, createMainThread } from './agents/thread-factory';
-import type { StageEffort } from './classify';
 import { acpLaunchPath, newAcpCapability, removeAcpLaunch, writeAcpLaunch } from './client/launch';
 import type { ConversationService } from './conversations/service';
 import { lateConversationWrapper } from './conversations/types';
@@ -261,8 +260,8 @@ const live = subscription
   : undefined;
 const decisions = live?.decisions;
 const flowLlm = decisions?.provider ?? createDecisionProvider(config);
-const stageHost = (model: string | undefined, effort: StageEffort | undefined) =>
-  live ? live.stageHost(model, effort) : undefined;
+/** Wired only with subscription decisions: without it, a chorus that writes no stages runs one. */
+const stageHost = live?.stageHost;
 const decisionModel = subscription?.policy.model ?? resolveDecisionModel(config).model;
 // API-token mode: agents saved on the decision provider's id resolve to the decision client.
 const decisionAlias = subscription
@@ -652,7 +651,7 @@ const runtimeManager = new ThreadRuntimeManager({
   atlasRoot,
   // Wardens come from settings only; their domain knowledge sources resolve like layer sources.
   resolveSource: sourceResolver,
-  stageHost,
+  ...(stageHost ? { stageHost } : {}),
   // Foundry's own signals feed the memory store only while a configured "file" source reads it as
   // working memory. With none (a fresh install), nothing Foundry logs lands where a source reads it back.
   signalSinks: [
