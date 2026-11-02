@@ -143,6 +143,9 @@ function render(entry: JournalEntry, currentTurnId: string | undefined): string 
         | HeldResolutionRecord;
       return `## Assistant, sent to ${JSON.stringify(record.toName ?? record.to?.id ?? 'a member')}\n${view.text}`;
     }
+    // People only (M6): an aside never reaches an agent, a fresh or forked session included.
+    case 'aside':
+      return undefined;
     default:
       return undefined;
   }

@@ -192,6 +192,30 @@ export interface SharedEntryRecord {
   text: string;
 }
 
+/**
+ * An aside (phase `aside`, ATTENTION-BOARD M6, Aron 2026-11-01): person to person, out of the log.
+ * Every person in the thread sees it; no agent does (mirror, notes, the journal seed and the agent's
+ * context all skip it) until someone promotes it, which posts it once. People only: the owner, or a
+ * member's person through `thread.prompt` with `aside`.
+ */
+export interface AsideRecord {
+  member: ConversationMember;
+  memberKey: string;
+  displayName: string;
+  /** The author's own id for it: a retry keeps it, so it is recorded once. */
+  postId: string;
+  text: string;
+}
+
+/** An aside promoted to the log (phase `aside-promoted`): the owner's message, or the member's post. */
+export interface AsidePromotedRecord {
+  asideId: string;
+  /** The owner's aside became a message on this turn. */
+  turnId?: string;
+  /** A member's aside became its post at this journal seq. */
+  postSeq?: number;
+}
+
 /** A plain-text control the host's agent carried out for the owner (§4.11 point 4), shown and reversible. */
 export interface ConversationControlRecord {
   action: 'voice' | 'floor' | 'conch' | 'join' | 'leave';
@@ -328,6 +352,8 @@ export const memberKey = (member: ConversationMember) => `${member.kind}:${membe
 
 /** The journal rows a conversation writes on its main thread (the ordered ones: `JOURNAL_ORDERED_PHASES`). */
 export type ConversationPhase =
+  | 'aside'
+  | 'aside-promoted'
   | 'shared-entry'
   | 'shared-entry-delivered'
   | 'conversation-control'

@@ -90,6 +90,21 @@ export const headlessThreadStateSchema = z.strictObject({
       held: z.number(),
       members: z.number(),
       localMembers: z.number(),
+      asides: z.array(
+        z.strictObject({
+          id: z.string(),
+          journalSeq: z.number(),
+          at: z.string(),
+          member: z.strictObject({
+            kind: z.enum(['owner', 'local', 'signet']),
+            id: z.string(),
+            name: z.string(),
+          }),
+          text: z.string(),
+          promoted: z.boolean(),
+        }),
+      ),
+      asidesSinceYourPost: z.number(),
     })
     .nullable(),
   members: z.array(

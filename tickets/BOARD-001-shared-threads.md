@@ -60,8 +60,14 @@ There is no new link record, private mark or held-answer state.
 ## Local members, voices, plain-text control (planning doc §4.11; built 2026-11-01)
 
 - Built: the owner's own threads join as local members (same project, no cycles), hear the log through `shared-entry` mirror rows, are woken only while speaking and the floor would admit them, and speak with `post_to_conversation` (no hold). Voices per agent (`host`, `local:<id>`), `set_voice` / `set_floor` / `give_conch` gated on the owner's own message, else a Needs-you confirmation. `TurnService.onSettled` re-checks waits. CONVERSATIONS.md §4.11.
-- Not yet: fork with context (§4.11 point 3, next PR); a Signet member's voice (needs a signet release); Codex as a member needs a second subscription worker (subscription-only mode runs every main thread on one worker); Grok waits on Q-I (API key); Muse's API is unverified.
-- Open for Aron: may his own local agents read the main agent's answers? Built per the spec: no, the log is what was posted.
+- Built since: fork with context (#237, `forkedFrom`, `fork_thread` under the control gate). Aron 11-01: everyone in the shared thread hears the whole conversation, so his own agents hear the host agent's answers (#230); a teammate's view still doesn't (unreviewed drafts across owners).
+- Not yet: a Signet member's voice (needs a signet release); Codex and Muse as members need several subscription workers at once and the Muse Code worker (inixiative-b9, FEAT-006); Grok dropped for now (Aron 11-01).
+
+## Asides (planning doc §6, M6; built 2026-11-01)
+
+- Built: `aside` phase on the host thread, journal-ordered, an `aside` entry in every person's view (`visibleTo` shows it whatever the lens) and in no agent path (mirror, notes, `journalHistory`). The owner's aside: `POST /api/threads/:id/conversation/asides {text, postId?}`, recorded once per author and `postId`. Promote: `POST …/asides/:asideId/promote`, once; the owner's becomes his message (a turn), a member's becomes its post through `admitPost` (floor and pause still decide). `asides` (each with `member.name`, `promoted`) and `asidesSinceYourPost` (others' asides since the owner last wrote), on `summary()` and `view()`, feed the "N asides since your last post" line and the unread badge. Not floor-gated, paused or counted in depth; starts no turn.
+- A member's person sends one through `thread.prompt` with `aside: true` (signet 0.10.0, #18): recorded once per `postId`, answered `{accepted, journalSeq, duplicate}`, never admitted as a post. Kingdom relays it once it adopts 0.10.0 (Kingdom #197).
+- Not yet: a member promoting its own aside (the owner promotes); Archive routing asides personal by default (Archive's routing pass); wiring the viewer's composer `/aside` to `POST …/conversation/asides` and the aside card's promote button to `…/asides/:asideId/promote` (inixiative-cd; the views and labels are built).
 
 ## The floor (planning doc §4.8)
 

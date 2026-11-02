@@ -183,7 +183,7 @@ async function host(
   const post = (
     signet: HostedSignet,
     text: string,
-    extra: { postId?: string; inReplyTo?: string; threadId?: string } = {},
+    extra: { postId?: string; inReplyTo?: string; threadId?: string; aside?: true } = {},
   ) =>
     request({
       type: 'thread.request',
@@ -194,6 +194,7 @@ async function host(
         postId: extra.postId ?? crypto.randomUUID(),
         text,
         ...(extra.inReplyTo ? { inReplyTo: extra.inReplyTo } : {}),
+        ...(extra.aside ? { aside: true } : {}),
       },
     });
   const read = (signet: HostedSignet, afterSeq?: number) =>
@@ -1516,4 +1517,99 @@ test("a local member's fork carries what it heard in the conversation", async ()
   const history = journalHistory(codex.store, forked.threadId)!;
   expect(history).toContain('## Heard');
   expect(history).toContain('ship on Friday');
+});
+
+// ---------------------------------------------------------------------------
+// Asides (ATTENTION-BOARD M6): person to person, out of the log, never an agent's
+// ---------------------------------------------------------------------------
+
+test("the owner's aside reaches every person's view and no agent; a retry is recorded once", async () => {
+  const h = await host();
+  const jobco = await h.member('JobCo');
+  const codex = await withLocal(h);
+  const before = h.executed.length;
+  const sent = await h.route('/api/threads/main/conversation/asides', {
+    text: 'between us: JobCo seems keen',
+    postId: 'aside-1',
+  });
+  expect(sent.status).toBe(200);
+  expect((await sent.json()) as { duplicate: boolean }).toMatchObject({ duplicate: false });
+  const again = await h.route('/api/threads/main/conversation/asides', {
+    text: 'between us: JobCo seems keen',
+    postId: 'aside-1',
+  });
+  expect((await again.json()) as { duplicate: boolean }).toMatchObject({ duplicate: true });
+  // A person's view shows it, as an aside.
+  const entries = (await h.read(jobco)).result.entries;
+  expect(entries.filter((e: any) => e.kind === 'aside').map((e: any) => e.text)).toEqual([
+    'between us: JobCo seems keen',
+  ]);
+  // No agent: the host agent took no turn, the local member heard nothing, the journal seed skips it.
+  h.conversations.pump('main');
+  expect(h.executed.length).toBe(before);
+  expect(
+    codex.store
+      .phasesOf(codex.id, 'shared-entry')
+      .some((row) => String(row.record.text).includes('keen')),
+  ).toBe(false);
+  expect(journalHistory(h.viewer.localStore!, 'main') ?? '').not.toContain('keen');
+  expect(h.conversations.view('main').asides).toHaveLength(1);
+});
+
+test("a member's aside counts until the owner writes, and promoting it posts it once as the member's", async () => {
+  const h = await host();
+  const jobco = await h.member('JobCo');
+  h.conversations.aside(
+    'main',
+    { member: { kind: 'signet', id: jobco.signetId }, displayName: 'JobCo' },
+    'can we talk price later?',
+  );
+  expect(h.conversations.view('main').asidesSinceYourPost).toBe(1);
+  expect(h.conversations.summary('main')?.asidesSinceYourPost).toBe(1);
+  expect(h.conversations.summary('main')?.asides[0]?.member).toMatchObject({ name: 'JobCo' });
+  const aside = h.conversations.view('main').asides[0]!;
+  const promoted = await h.route(`/api/threads/main/conversation/asides/${aside.id}/promote`);
+  expect(promoted.status).toBe(200);
+  const post = h.conversations.view('main').posts.at(-1)!;
+  expect(post).toMatchObject({ displayName: 'JobCo', text: 'can we talk price later?' });
+  expect(h.conversations.view('main').asides[0]!.promoted).toBe(true);
+  // Once.
+  expect((await h.route(`/api/threads/main/conversation/asides/${aside.id}/promote`)).status).toBe(
+    409,
+  );
+  // The owner writing clears the count.
+  await h.ownerSays('noted');
+  expect(h.conversations.summary('main')?.asidesSinceYourPost).toBe(0);
+});
+
+test("the owner's own aside, promoted, becomes his message to the thread", async () => {
+  const h = await host();
+  await h.route('/api/threads/main/conversation/asides', { text: 'actually, ship it Friday' });
+  const aside = h.conversations.view('main').asides[0]!;
+  expect((await h.route(`/api/threads/main/conversation/asides/${aside.id}/promote`)).status).toBe(
+    200,
+  );
+  await until(() => h.executed.some((p) => p.includes('ship it Friday')), 'host agent took it');
+});
+
+test("a teammate's person sends an aside through thread.prompt: recorded once, seen by people, starting no turn", async () => {
+  const h = await host();
+  const jobco = await h.member('JobCo');
+  const watcher = await h.member('Watcher');
+  const before = h.executed.length;
+  const postId = crypto.randomUUID();
+  const first = await h.post(jobco, 'off the record: budget is tight', { aside: true, postId });
+  expect(first).toMatchObject({ ok: true, result: { accepted: true, duplicate: false } });
+  expect(
+    await h.post(jobco, 'off the record: budget is tight', { aside: true, postId }),
+  ).toMatchObject({ ok: true, result: { duplicate: true } });
+  // Another person sees it as an aside; it is no post, and no agent took a turn for it.
+  const entries = (await h.read(watcher)).result.entries;
+  expect(entries.filter((e: any) => e.kind === 'aside').map((e: any) => e.text)).toEqual([
+    'off the record: budget is tight',
+  ]);
+  expect(h.conversations.view('main').posts).toEqual([]);
+  h.conversations.pump('main');
+  expect(h.executed.length).toBe(before);
+  expect(h.conversations.summary('main')?.asidesSinceYourPost).toBe(1);
 });

@@ -40,6 +40,8 @@ import type { ProjectSettingsConfig } from '../viewer/config';
 import { conversationFloor, conversationRoster, quotedName } from './roster';
 import { resolveConversationSettings } from './settings';
 import {
+  type AsidePromotedRecord,
+  type AsideRecord,
   type ConversationControlRecord,
   type ConversationRecord,
   type ConversationSettings,
@@ -224,6 +226,16 @@ export class ConversationService implements ConversationWrapper {
     const closed = this.closedReason(thread);
     if (closed || !thread) return threadRefused(closed ?? 'unknown_thread');
     this.noteRevision(signetId, frame.acceptedRevision);
+    // A person's aside (M6): out of the log, to every person and no agent; not admitted as a post.
+    if (input.aside) {
+      const recorded = this.aside(
+        thread.id,
+        { member: { kind: 'signet', id: signetId }, displayName: frame.member.displayName },
+        input.text,
+        input.postId,
+      );
+      return threadResult({ accepted: true as const, ...recorded });
+    }
     return this.admitPost(thread, {
       member: { kind: 'signet', id: signetId },
       displayName: frame.member.displayName,
@@ -1102,11 +1114,136 @@ export class ConversationService implements ConversationWrapper {
       : undefined;
   }
 
-  /** What the sessions list shows for a conversation thread: derived from the journal, no new state. */
-  summary(
+  /**
+   * An aside (ATTENTION-BOARD M6): person to person, out of the log. Recorded once per author and
+   * `postId`, pushed to every person's live view, and to no agent: not floor-gated, paused or counted
+   * in depth, and it starts no turn. The owner's comes from the viewer; a member's person sends one
+   * through `thread.prompt` with `aside`.
+   */
+  aside(
     threadId: string,
-  ):
-    | { unread: number; paused: boolean; held: number; members: number; localMembers: number }
+    by: { member: ConversationMember; displayName: string },
+    text: string,
+    postId: string = newId('aside'),
+  ): { journalSeq: number; duplicate: boolean } {
+    const thread = this.deps.thread(threadId);
+    const closed = this.closedReason(thread);
+    if (closed || !thread) throw Error('This thread is not open');
+    const key = memberKey(by.member);
+    const outcome = this.deps.store.transaction(() => {
+      const prior = this.deps.store
+        .phasesOf(thread.id, 'aside', { key: 'postId', value: postId })
+        .find((row) => (row.record as unknown as AsideRecord).memberKey === key);
+      if (prior) return { journalSeq: this.deps.store.phaseSeq(prior.id) ?? 0, duplicate: true };
+      const record: AsideRecord = {
+        member: by.member,
+        memberKey: key,
+        displayName: by.displayName,
+        postId,
+        text: boundedText(text),
+      };
+      const id = newId('phase');
+      this.deps.store.appendPhase(thread, {
+        id,
+        phase: 'aside',
+        turnId: null,
+        dispatchId: null,
+        record: record as unknown as Record<string, unknown>,
+      });
+      return { journalSeq: this.deps.store.phaseSeq(id) ?? 0, duplicate: false };
+    });
+    if (!outcome.duplicate) {
+      this.deps.journalChanged?.(thread);
+      this.deps.changed?.(thread.id);
+      this.pump(thread.id);
+    }
+    return outcome;
+  }
+
+  /**
+   * The owner promotes an aside into the log, once (M6): his own becomes his message (a turn, as if
+   * he had typed it there); a member's becomes that member's post, admitted like any post, so the
+   * floor and a pause still decide it.
+   */
+  promoteAside(threadId: string, asideId: string): string {
+    const thread = this.requireThread(threadId);
+    const row = this.deps.store.phasesOf(threadId, 'aside').find((item) => item.id === asideId);
+    if (!row) throw Error('No such aside in this thread');
+    const done = this.deps.store
+      .phasesOf(threadId, 'aside-promoted')
+      .some((item) => item.record.asideId === asideId);
+    if (done) throw Error('That aside was already promoted');
+    const aside = row.record as unknown as AsideRecord;
+    const promoted = (record: AsidePromotedRecord) =>
+      this.deps.store.appendPhase(thread, {
+        id: newId('phase'),
+        phase: 'aside-promoted',
+        turnId: null,
+        dispatchId: null,
+        record: record as unknown as Record<string, unknown>,
+      });
+    if (aside.member.kind === 'owner') {
+      const turns = this.deps.turns();
+      if (!turns) throw Error('Turns are not available');
+      const accepted = turns.accept({ threadId, payload: aside.text });
+      if (!accepted.ok) throw Error(String(accepted.body.error));
+      promoted({ asideId, turnId: accepted.turnId });
+      this.deps.changed?.(threadId);
+      return 'Posted your aside to the thread.';
+    }
+    const lens = this.members(threadId).find((member) =>
+      sameMember(member.member, aside.member),
+    )?.lens;
+    const outcome = this.admitPost(thread, {
+      member: aside.member,
+      displayName: aside.displayName,
+      postId: `aside:${asideId}`,
+      text: aside.text,
+      delivery: lens?.delivery ?? 'note',
+    });
+    if (!outcome.ok) throw Error(refusalText(outcome.refusal, outcome.message));
+    promoted({ asideId, postSeq: outcome.result.journalSeq });
+    this.deps.changed?.(threadId);
+    return `Posted ${quotedName(aside.displayName)}'s aside to the thread.`;
+  }
+
+  /** The thread's asides, oldest first, each with whether it was promoted. */
+  asides(threadId: string) {
+    const promoted = new Set(
+      this.deps.store.phasesOf(threadId, 'aside-promoted').map((row) => String(row.record.asideId)),
+    );
+    return this.deps.store.phasesOf(threadId, 'aside').map((row) => {
+      const aside = row.record as unknown as AsideRecord;
+      return {
+        id: row.id,
+        journalSeq: this.deps.store.phaseSeq(row.id) ?? 0,
+        at: new Date(row.storedAt).toISOString(),
+        member: { ...aside.member, name: aside.displayName },
+        text: aside.text,
+        promoted: promoted.has(row.id),
+      };
+    });
+  }
+
+  /** Others' asides since the owner last wrote in the thread: "N asides since your last post". */
+  private asidesSinceOwnerPost(threadId: string): number {
+    const last = this.deps.store.lastOwnerSeq(threadId);
+    return this.asides(threadId).filter(
+      (aside) => aside.member.kind !== 'owner' && aside.journalSeq > last,
+    ).length;
+  }
+
+  /** What the sessions list shows for a conversation thread: derived from the journal, no new state. */
+  summary(threadId: string):
+    | {
+        unread: number;
+        paused: boolean;
+        held: number;
+        members: number;
+        localMembers: number;
+        asides: ReturnType<ConversationService['asides']>;
+        asidesSinceYourPost: number;
+      }
     | undefined {
     const record = this.deps.store.conversation<ConversationRecord>(threadId);
     if (!record) return undefined;
@@ -1120,6 +1257,9 @@ export class ConversationService implements ConversationWrapper {
       ).length,
       // The owner's own agents in the thread (Codex, a second Claude): members, never "shared".
       localMembers: (record.locals ?? []).length,
+      // The viewer's aside view and its "N asides since your last post" line (M6).
+      asides: this.asides(threadId),
+      asidesSinceYourPost: this.asidesSinceOwnerPost(threadId),
     };
   }
 
@@ -1167,6 +1307,8 @@ export class ConversationService implements ConversationWrapper {
         ...(row.record as unknown as ConversationControlRecord),
       })),
       posts,
+      asides: this.asides(threadId),
+      asidesSinceYourPost: this.asidesSinceOwnerPost(threadId),
       held: this.heldPending(threadId).map((held) => ({
         ...held,
         promptId: this.open.get(held.heldId)?.promptId ?? null,
