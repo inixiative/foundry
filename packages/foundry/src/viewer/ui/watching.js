@@ -11,6 +11,7 @@
  * Kingdom with the Heralds.
  */
 
+import { ComingSoon } from './coming-soon.js';
 import { html, useEffect, useState } from './lib.js';
 import { DeviceIcon, machineIcon } from './machine-icons.js';
 import { navigate, settingsPath } from './route.js';
@@ -72,7 +73,8 @@ export function WatchingSidebar({ machine }) {
         ${live.map((p) => html`<span key=${p.id}>${p.label}</span>`)}
         ${archived.map((p) => html`<span key=${p.id} class="mut" title="Archived">${p.label}</span>`)}
       </div>
-      <small>Watching = on this map. Listening (Heralds telling you about overlaps) isn't built.</small>
+      <small>Watching = on this map.</small>
+      <small><${ComingSoon} inline what="Listening: the Heralds telling you when work in these projects overlaps." ticket="AGENT-001" /></small>
     </section>
     <section class="ws" aria-label="Connectors">
       <b>Connectors</b>
@@ -97,7 +99,7 @@ export function WatchingSidebar({ machine }) {
         <div class="wp1"><span class="pva">You</span><span>You</span></div>
         <div class="wdev"><${DeviceIcon} icon=${machineIcon()} size=${16} /><span>${machine}</span><small>this machine · active</small></div>
       </div>
-      <small>Teammates and your other machines arrive through Kingdom with the Heralds (not built).</small>
+      <small><${ComingSoon} inline what="Teammates and your other machines, through Kingdom and the Heralds." ticket="AGENT-001" /></small>
     </section>
   </aside>`;
 }

@@ -36,12 +36,13 @@ async function viewer() {
   return { dir, origin: `http://127.0.0.1:${started.server.port}` };
 }
 
-test('settings and analytics pages are served by path; unknown project paths are not', async () => {
+test('settings, analytics and search pages are served by path; unknown project paths are not', async () => {
   const { origin } = await viewer();
   for (const path of [
     '/settings',
     '/settings/providers',
     '/analytics',
+    '/search',
     '/projects/p1/settings',
     '/projects/p1/settings/archive',
     '/projects/p1/analytics',
