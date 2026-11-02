@@ -344,6 +344,8 @@ export const FOUNDRY_OWN_TOOLS: ReadonlySet<string> = new Set([
   'foundry_conventions',
   'foundry_memory',
   'foundry_device',
+  // The scratch pad's own tool only writes the person's secret where the agent says; secret_pipe runs a command, so it keeps the host's mode.
+  'secret_scratch',
 ]);
 
 export class ThreadRecordTool implements ApiTool {

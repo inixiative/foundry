@@ -1,6 +1,6 @@
 # FEAT-005: Paste secrets as `$$word`; the agent uses them from a scratch pad it never reads
 
-**Status**: 📝 Proposed (not built). Asked for by Aron 2026-11-01; design settled 2026-11-02.
+**Status**: ✅ Built 2026-11-02 (agent-session 0.10.0, AS-009). Asked for by Aron 2026-11-01; design settled and built 2026-11-02.
 **Assignee**: TBD
 **Priority**: High
 **Created**: 2026-11-01
@@ -23,7 +23,7 @@ How it works, end to end:
 
 ## The setting
 
-`secrets.scratchPad: "on" | "off"`, default `off`. Like every Foundry setting it can be set for me (personal) or for everyone (the repo's `.foundry/`). On, Foundry:
+`secrets.scratchPad: true | false`, default `false`, plus `secrets.privatePaths` (extra globs no agent reads; project globs add to global ones). Like every Foundry setting it can be set for me (personal) or for everyone (the repo's `.foundry/`). On, Foundry:
 
 - launches every thread's session with the scratch pad option, its directory under the thread's Foundry state (`.private/scratch/`), so a restart keeps it;
 - lifts `$$` words in `TurnService.accept`;
@@ -81,3 +81,27 @@ No new store, no new turn path.
 - [ ] Read/Grep and a `cat` of the pad or a `.private` path are denied.
 - [ ] The pad survives a daemon restart and is gone after the thread is archived.
 - [ ] A tool result containing a held value is scrubbed to its reference wherever Foundry already scrubs.
+
+## As built (2026-11-02)
+
+Aron, 2026-11-02: "One dagger per message, with a number for each sub-dagger… It's thread, message, dagger position… We'd make them use it. We should give them a tool to pipe in from the env file. That's what this whole thing is for."
+
+- **References** are thread, message and position: `†<turn>.<n>` in the thread's own messages, `†<thread>/<turn>.<n>` from any other thread, so a pad left behind can be listed (`list` with `thread` or `all`) and used once you have its thread.
+- **Two tools**, not one: `secret_scratch` (`list`, `env`, `write`, `consume`) only writes the person's own secret where the agent says, so it never asks (`FOUNDRY_OWN_TOOLS`, Codex pre-approval included); `secret_pipe` runs a shell command, so it keeps the host's mode, like Bash. Why: "Access follows the host": a command the host would ask about still asks.
+- **The normal path** is `env` into an env file, then `secret_pipe` from that file (`envFile` + `key`). A file the pad wrote is then off limits to read, search or print, like `.private` paths: the agent pipes from it. The skill `secrets` teaches this; the tool descriptions carry it too.
+- **Lifting** happens first in `TurnService.accept`; a lift that fails refuses the turn (503), so a secret never goes through raw. A member's post is never lifted.
+- **The block** runs in the tool gate before the structural rules, in every mode, but does not count as a structural rule, so Codex and Muse threads still start; they get the block on the calls they ask about. Codex under full access asks nothing.
+- **Cleanup**: the pad goes when its thread is archived; at start, pads of threads archived meanwhile are swept. A dispose without archiving (a restart) keeps it.
+- **Settings**: off unless `secrets.scratchPad` is true (global, or per project). `.private` blocking comes with the setting.
+- **After review** (adversarial, before merge):
+  - **Lift timing.** The lift runs after the turn's own checks (duplicate id, capacity, unknown or archived thread), and a turn that then fails to be recorded takes its secrets out of the pad again. A retried id is refused before anything is lifted.
+  - **Where `secret_scratch` writes.** It writes only inside the thread's working directory (real paths, so a symlink out is refused) and never into `.git`, `.claude`, `.codex`, `.foundry`, `.ssh`, `.gnupg`, `.aws`, `.mcp.json` or a `settings*.json`. Anything else goes through `secret_pipe`, which keeps the host's mode. Why: the tool never asks, and "access follows the host".
+  - **Who can use a pad.**
+    - A pad is reachable only from a thread of the same project (`list` shows only those); an unknown thread's pad is refused.
+    - Secrets are used only in a turn the owner's own message opened, with no other party's words in it. This is the same rule as the conversation controls (`ConversationService.ownerInstructed`, CONVERSATIONS.md §4.11).
+  - **Failing closed.** If the list of files the pad wrote can't be read, the gate denies every call until it can.
+  - **No raw echo.** `POST /api/messages` echoes the message as accepted, not as sent.
+  - **Best effort.** The block matches names, not what a command does (`cat .env*`, a recursive search, a pipe into a new file get past it), and Codex and Muse see it only on the calls they ask about. The skill says so: the rule is the agent's to keep.
+  - **Held files stay held.** A file the pad wrote stays off limits after its block is consumed, because the file still holds the secret. Editing other keys in that file goes through `secret_scratch env`, or through the person.
+  - **Not lifted.** `$$` in an aside or in `/feedback` text: only thread messages are lifted.
+- **Not built: sessions outside Foundry.** Aron, 2026-11-02: "this is when you're using Foundry… a setting you can have turned on." Config `sync` writing `.gitignore` entries and Claude `permissions.deny` for sessions outside Foundry was left out: `sync` manages no Claude permissions today, so it would be new machinery for a case he scoped out. The pads live only under Foundry's own directory, which `**/.foundry/*` keeps out of git.

@@ -46,6 +46,7 @@ import {
 } from '../providers/kingdom-installation-connection';
 import type { TaskSink } from '../providers/session-backed';
 import { ThreadLaunchSettings } from '../providers/thread-launch';
+import { resolveSecretsSettings, SecretScratch } from '../secrets/scratch';
 import { kingdomPostDelivery } from '../tools/kingdom-post';
 import type { ThreadRecords } from '../tools/thread-record';
 import { NativeTurnRecorder } from '../turns/native-turns';
@@ -634,6 +635,25 @@ export function createViewer(config: ViewerConfig) {
         log: (message) => console.warn(message),
       })
     : null;
+  // The secret scratch pad (FEAT-005): one private directory of pads, one per thread, under this
+  // Foundry's own directory. The setting is read live, global then project.
+  const secrets = new SecretScratch(join(configDir, '.private', 'scratch'), {
+    settings: (projectId) =>
+      resolveSecretsSettings(
+        configStore.config.secrets,
+        projectId ? configStore.config.projects[projectId]?.secrets : undefined,
+      ),
+    projectOf: (threadId) => {
+      const thread = directory.get(threadId);
+      return thread ? thread.meta.projectId : null;
+    },
+  });
+  // A pad whose thread was archived while nothing watched it goes now; a live thread's pad is kept.
+  try {
+    secrets.sweep((threadId) => directory.get(threadId)?.meta.status === 'archived');
+  } catch (error) {
+    console.warn(`[Secrets] scratch pads not swept: ${(error as Error).message}`);
+  }
   registerKingdomRoutes(
     app,
     configStore,
@@ -700,6 +720,7 @@ export function createViewer(config: ViewerConfig) {
     directory,
     streams,
     feedback,
+    secrets,
     images: new ImageAttachmentStore(join(configDir, 'attachments', 'images')),
     ...(config.threadSetup ? { threadSetup: config.threadSetup } : {}),
   });
@@ -732,7 +753,9 @@ export function createViewer(config: ViewerConfig) {
       fork: () => fork,
       log: (message) => console.warn(message),
     });
+    // Owner-only like the conversation controls: secrets are used only in a turn the owner's own message opened.
     const service = conversations;
+    secrets.ownerInstructed = (threadId) => service.ownerInstructed(threadId);
     kingdom.serveThreads(service.host(), (hosted, dropped) =>
       service.hostedChanged(hosted, dropped),
     );
@@ -936,6 +959,7 @@ export function createViewer(config: ViewerConfig) {
       mode: () => threadLaunch.forLaunch(threadId).permissionMode,
       queue: config.actionQueue ?? null,
       turnId: () => turns.runningTurn(threadId),
+      privacy: () => secrets.privacy(thread.meta.projectId),
       journal: (id, phase, turnId, record) => {
         try {
           localStore?.appendPhase(thread, { id, phase, turnId, dispatchId: null, record });
@@ -952,9 +976,11 @@ export function createViewer(config: ViewerConfig) {
         }
       },
     });
+    // Private paths are not structural rules: Codex and Muse still start, and get them when they ask.
     const bound: ThreadToolGate = { gate, hasRules: () => enforces(rules()) };
     gates.set(threadId, bound);
     forgetOnDispose(thread);
+    secrets.watch(thread);
     return bound;
   };
 
@@ -975,6 +1001,8 @@ export function createViewer(config: ViewerConfig) {
     localStore,
     directory,
     conversations,
+    /** The secret scratch pad: `secret_scratch` and `secret_pipe` reach it (FEAT-005). */
+    secrets,
     /** The record tool's reach: a live thread's plan, loop, name and status, persisted and published. */
     records: {
       read(threadId: string): Thread {
@@ -1096,6 +1124,7 @@ export async function startViewer(config: ViewerConfig) {
     kingdom: viewer.kingdom,
     conversations: viewer.conversations,
     records: viewer.records,
+    secrets: viewer.secrets,
   };
 }
 
