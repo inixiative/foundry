@@ -34,7 +34,7 @@ afterEach(() => {
 function setup(knowledge = 'DURABLE-PRIVATE-SENTINEL') {
   const dir = mkdtempSync(join(tmpdir(), 'foundry-knowledge-recovery-'));
   cleanup.push(() => rmSync(dir, { recursive: true, force: true }));
-  async function make() {
+  async function make(withWarden = true) {
     const config = starterConfig('mock', 'mock');
     config.agents = {
       worker: {
@@ -67,7 +67,7 @@ function setup(knowledge = 'DURABLE-PRIVATE-SENTINEL') {
       log: () => {},
       warn: () => {},
       eventStream: events,
-      domains: [{ domain: 'security', layerId: 'security', guardTriggers: [] }],
+      domains: withWarden ? [{ domain: 'security', layerId: 'security', guardTriggers: [] }] : [],
       llm: {
         id: 'flow',
         complete: async (messages) =>
@@ -155,6 +155,27 @@ test('committed private learning survives production viewer reconstruction and r
   expect(second.inputs[1]).not.toContain('DURABLE-PRIVATE-SENTINEL');
   await second.runtime.get('main')!.learningSettled();
   await second.runtime.get('other')!.learningSettled();
+});
+
+test('knowledge of a Warden that no longer exists stays in the journal and blocks nothing', async () => {
+  const { make } = setup();
+  const first = await make();
+  expect((await send(first, 'main', 'learn-with-warden')).status).toBe(200);
+  await first.runtime.get('main')!.learningSettled();
+  const stored = first.localStore!.knowledge('main');
+  expect(stored?.domains.security).toBeDefined();
+  first.close();
+
+  // The Warden is gone (a removed region, or the retired hand-named roster).
+  const second = await make(false);
+  const state = (await (
+    await second.app.request('/api/threads/main/knowledge')
+  ).json()) as KnowledgeBody;
+  expect(state.status).not.toBe('blocked');
+  expect(state.error).toBeUndefined();
+  expect((await send(second, 'main', 'after-warden-removed')).status).toBe(200);
+  // Not restored, not deleted: the journal still holds it should the Warden come back.
+  expect(second.localStore!.knowledge('main')?.domains.security).toEqual(stored?.domains.security);
 });
 
 test('learning persistence attaches to newly created viewer threads and restores them', async () => {

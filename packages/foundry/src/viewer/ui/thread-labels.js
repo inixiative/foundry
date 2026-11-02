@@ -71,6 +71,21 @@ export function harnessName(provider) {
 export const projectKingdom = (projectId) =>
   projects.value.find((p) => p.id === projectId)?.tags?.[0] ?? 'This Foundry';
 
+/**
+ * A paired Kingdom as a person reads it: its owner's name, as Kingdom describes the Signet's holder
+ * (e.g. "inixiative · Aron Greenspan"), never the raw owner key; "Kingdom at <host>" when Kingdom
+ * hasn't described it (offline, say).
+ */
+export function kingdomOwnerName(integration) {
+  const name = integration?.holder?.owner?.name;
+  if (name) return name;
+  try {
+    return `Kingdom at ${new URL(integration?.url).host}`;
+  } catch {
+    return 'Kingdom';
+  }
+}
+
 /** A project's label by id; Global for none. */
 export function projectLabel(projectId) {
   if (!projectId) return 'Global';

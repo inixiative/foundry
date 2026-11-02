@@ -173,7 +173,16 @@ test('done threads, the merge setting, the Kingdom project link and the region p
     await page.goto(`${origin}/#project=shop&home=1`);
     const about = page.locator('.ph-about');
     await about.locator('dd', { hasText: '5b1c6a3e-1f2a-4b3c-8d4e-5f6a7b8c9d0e' }).waitFor();
-    await about.locator('dd', { hasText: 'in http://127.0.0.1:9' }).waitFor();
+    // The Kingdom by name (its owner, or its host when Kingdom hasn't described it), not the pairing id.
+    await about.locator('dd', { hasText: 'in Kingdom at 127.0.0.1:9' }).waitFor();
+
+    // Watching names each paired Kingdom readably, never by its raw owner key.
+    await page.locator('.watchtower-button').click();
+    const kingdoms = page.getByRole('region', { name: 'Kingdoms' });
+    await kingdoms.locator('.wrow', { hasText: 'Kingdom at 127.0.0.1:9' }).waitFor();
+    expect(await kingdoms.innerText()).not.toContain('OrganizationUser:');
+    await page.goto(`${origin}/#project=shop&home=1`);
+    await about.waitFor();
 
     // Knowledge: the build and the last detection test; Build regions asks first, then runs.
     await page.getByRole('button', { name: 'Knowledge and chorus' }).click();
