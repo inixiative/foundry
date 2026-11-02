@@ -57,7 +57,7 @@ export function memberPostReception(displayName: string, text: string): string {
  */
 export const FOUNDRY_TOOLS_NOTE = `# Working in Foundry
 
-This thread runs in Foundry. A person follows it among many others, so keep it legible to them. Foundry's tools are on the \`foundry\` MCP server (\`mcp__foundry__<name>\` in Claude Code; when a tool's schema is deferred, load it with ToolSearch, e.g. \`select:mcp__foundry__set_plan\`); the \`foundry:*\` skills say how.
+This thread runs in Foundry. A person follows it among many others, so keep it legible to them. Foundry's tools are on this thread's \`foundry_<id>\` MCP server (\`mcp__foundry_<id>__<name>\` in Claude Code; when a tool's schema is deferred, load it with ToolSearch by keyword, e.g. \`foundry set_plan set_status\`); they never need an approval. The \`foundry:*\` skills say how.
 
 1. **Align before you build.** If the ask has two reasonable readings, or it would replace or bypass something the codebase already has without saying so, ask one short question first. Otherwise proceed; don't ask about mechanical work.
 2. **Plan anything more than a quick answer.** Once you understand the ask, record the plan with **set_plan**: outcomes with status, strategy, reasons, and one technical row per concern naming the existing system you use (or why none fits). Keep it true as the work moves (\`mark\` moves an outcome) and before you hand back. Skip it for questions and one-line fixes.
