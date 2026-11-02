@@ -9102,3 +9102,89 @@ a.thread-ref:hover {
   align-self: flex-start;
   text-decoration: none;
 }
+
+/* ---- Right panel (concept-v4 .insp): a band on the card colour with the eyebrow, the tab's one-line
+   summary and underlined icon tabs (the selected one names itself); the content in one bordered
+   frame of boxes; Running at the foot. ---- */
+.right-panel {
+  /* The foot keeps the rail's 10 px, so Running lines up with the left footer. */
+  padding: 0 0 10px;
+  gap: 0;
+}
+.rp-band {
+  padding: 10px 12px 0;
+  gap: 4px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+}
+.rp-eyebrow {
+  font: 600 10.5px var(--mono);
+  letter-spacing: 0.1em;
+  color: var(--text-dimmer);
+}
+.rp-band .rp-title {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+.rp-info {
+  font-size: 12px;
+  line-height: 18px;
+}
+.rp-tabs {
+  margin-top: 2px;
+  padding: 0;
+  gap: 2px;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  background: none;
+  border-radius: 0;
+  scrollbar-width: none;
+}
+.rp-tabs .rp-tab,
+.rp-tabs .rp-tab.is-active {
+  padding: 5px 7px;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  font-size: 12px;
+  line-height: 18px;
+}
+.rp-tabs .rp-tab.is-active {
+  border-bottom-color: var(--accent);
+  color: var(--text);
+}
+.rp-tabs .rp-tab:not(.is-active) .rp-tab-label {
+  display: none;
+}
+.rp-frame {
+  margin: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: hsl(var(--card) / 0.55);
+  box-shadow: none;
+  font-size: 12.5px;
+  line-height: 18.75px;
+}
+.rp-frame .rp-stack {
+  gap: 14px;
+}
+.rp-frame .rp-section {
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+}
+.rp-frame .rp-section-title {
+  font: 600 11px var(--font);
+  letter-spacing: 0.08em;
+  margin: 0 0 8px;
+}
+.running {
+  padding: 6px 12px 8px;
+  border-top: 1px solid var(--line);
+}

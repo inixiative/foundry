@@ -18,7 +18,7 @@ import { detailDrawerOpen, leftSize, projectSidebarOpen, rightSize } from './sto
 export const LEFT_LEVELS = ['hidden', 'strip', 'normal', 'wide'];
 export const RIGHT_LEVELS = ['hidden', 'icons', 'normal', 'wide', 'wider'];
 const LEFT_WIDTH = { hidden: 0, strip: 32, normal: 260, wide: 360 };
-const RIGHT_WIDTH = { hidden: 0, icons: 44, normal: 360, wide: 560, wider: 760 };
+const RIGHT_WIDTH = { hidden: 0, icons: 44, normal: 440, wide: 560, wider: 760 };
 
 export { leftSize, rightSize };
 
@@ -55,7 +55,7 @@ export function stepSize(side, delta) {
 /** The grid columns for the workspace (the board and Watchtower span the width on their own). */
 export function panelColumns({ forge }) {
   const left = LEFT_WIDTH[leftSize.value] ?? 260;
-  const right = forge ? 0 : (RIGHT_WIDTH[rightSize.value] ?? 360);
+  const right = forge ? 0 : (RIGHT_WIDTH[rightSize.value] ?? 440);
   return `${left}px minmax(0, 1fr) ${right}px`;
 }
 

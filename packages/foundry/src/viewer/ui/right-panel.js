@@ -302,7 +302,7 @@ export function RightPanel({ onSpanSelect }) {
   return html`<div class="right-panel detail-drawer">
     <header class="rp-band">
       <div class="rp-band-row">
-        <span class="rp-eyebrow">This thread</span>
+        <span class="rp-eyebrow" title="This thread's reference">${threadData.value.meta?.projectId ? `Project: ${projectLabel(threadData.value.meta.projectId)}` : 'Global'}</span>
         <${SizeControls} side="right" />
       </div>
       <h2 class="rp-title">${TAB_LABELS[tab]}</h2>
@@ -310,10 +310,10 @@ export function RightPanel({ onSpanSelect }) {
       <nav class="rp-tabs" role="tablist" aria-label="Thread reference">
         ${RIGHT_TABS.map((t, i) => {
           return html`<button key=${t} role="tab" aria-selected=${t === tab}
-            class="rp-tab ${t === tab ? 'is-active' : ''}" title=${`${TAB_LABELS[t]} (${i + 5})`}
+            aria-label=${TAB_LABELS[t]} class="rp-tab ${t === tab ? 'is-active' : ''}" title=${`${TAB_LABELS[t]} (${i + 5})`}
             onClick=${() => {
               rightTab.value = t;
-            }}><${TabIcon} tab=${t} />${TAB_LABELS[t]}</button>`;
+            }}><${TabIcon} tab=${t} /><span class="rp-tab-label">${TAB_LABELS[t]}</span></button>`;
         })}
       </nav>
     </header>
