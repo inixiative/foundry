@@ -4,8 +4,8 @@
  * @partOf feature:nativeAuth, integration:kingdom
  */
 import { createHash } from 'node:crypto';
-import { mkdirSync, unlinkSync } from 'node:fs';
-import { isAbsolute, join } from 'node:path';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, unlinkSync } from 'node:fs';
+import { dirname, isAbsolute, join } from 'node:path';
 import { kingdomUrl } from '@inixiative/signet';
 import { writePrivateFile } from '../client/private-file';
 import { capacityKingdomProject, type FoundryConfig } from '../viewer/config';
@@ -16,6 +16,7 @@ import {
   codexUserConfig,
   type HarnessSettingsLaunch,
   shareCodexUserSetup,
+  shareMuseUserConfig,
   shareUserSetup,
   subscriptionSettingsGuard,
 } from './harness-settings';
@@ -34,7 +35,9 @@ import {
   type NativeRuntime,
   withoutCompetingCredentials,
 } from './native-authentication';
-import { assertPrivateProfile } from './private-profile';
+import { nativeTextEnvironment } from './native-text-environment';
+import { museLoginRejected, type StatusProcess } from './native-text-provider';
+import { assertPrivateDirectory, assertPrivateProfile } from './private-profile';
 
 /** Where one thread's subscription comes from: a Signet this Foundry holds, and the Kingdom project it bills. */
 export interface KingdomCapacity {
@@ -46,10 +49,14 @@ export interface KingdomCapacity {
   effort: string;
 }
 
-type Runtime = 'claude' | 'codex';
+type Runtime = NativeRuntime;
 type Run = { envelope: KingdomRunEnvelope; client: KingdomClient; fingerprint: string };
 
 const CODEX_HOME_CONFIG = 'cli_auth_credentials_store = "file"\n';
+/** How long `muse usage` may take to confirm a rejected login, and how soon a failed launch may ask again. */
+const MUSE_CONFIRM_DEADLINE_MS = 20_000;
+const MUSE_CONFIRM_COOLDOWN_MS = 5 * 60_000;
+const SIGN_IN_AGAIN = 'sign in again with `bun run kingdom login muse`';
 const fingerprintOf = (capacity: KingdomCapacity) =>
   createHash('sha256').update(JSON.stringify(capacity)).digest('hex');
 
@@ -82,6 +89,8 @@ export class KingdomSubscriptionAuthentication implements NativeAuthenticationPr
   private runs = new Map<string, Run>();
   private pending = new Map<string, Promise<Run>>();
   private holders = new Map<string, number>();
+  /** Muse logins Meta rejected in this process: a pool left with none says so. */
+  private rejectedMuse = new Set<string>();
   constructor(
     private options: {
       directory: string;
@@ -91,6 +100,10 @@ export class KingdomSubscriptionAuthentication implements NativeAuthenticationPr
       userClaudeDirectory?: string;
       /** The user's own Codex home whose setup a main thread takes; default ~/.codex. */
       userCodexDirectory?: string;
+      /** The user's own config home (`$XDG_CONFIG_HOME`, default ~/.config) a Muse login's home links to. */
+      userConfigDirectory?: string;
+      /** Test seam: runs `muse usage --json` in this environment. */
+      museStatus?: (environment: Record<string, string | undefined>) => StatusProcess;
     },
   ) {
     if (!isAbsolute(options.directory)) throw Error('Kingdom profile directory must be absolute');
@@ -112,15 +125,24 @@ export class KingdomSubscriptionAuthentication implements NativeAuthenticationPr
         const client = await KingdomClient.fromFile(capacity.credentialFile);
         if (client.origin !== kingdomUrl(capacity.url))
           throw Error('Kingdom Signet belongs to another Kingdom');
-        const envelope = await client.resolve(crypto.randomUUID(), {
-          model: capacity.model,
-          effort: capacity.effort,
-          authentication: 'subscription',
-          runtime,
-          ...(capacity.projectId ? { projectId: capacity.projectId } : {}),
-        });
+        const envelope = await client
+          .resolve(crypto.randomUUID(), {
+            model: capacity.model,
+            effort: capacity.effort,
+            authentication: 'subscription',
+            runtime,
+            ...(capacity.projectId ? { projectId: capacity.projectId } : {}),
+          })
+          .catch((error: unknown) => {
+            if (runtime !== 'muse' || !this.rejectedMuse.size) throw error;
+            throw Error(
+              `${(error as Error).message}. Meta rejected this pool's Muse Code login (${[...this.rejectedMuse].join(', ')}); ${SIGN_IN_AGAIN}`,
+            );
+          });
         if (envelope.authentication !== 'subscription' || envelope.runtime !== runtime)
           throw Error('Kingdom selected a login for a different runtime');
+        // A login Kingdom releases again was signed in anew.
+        this.rejectedMuse.delete(envelope.integrationId);
         const run = { envelope, client, fingerprint };
         this.runs.set(key, run);
         return run;
@@ -147,9 +169,13 @@ export class KingdomSubscriptionAuthentication implements NativeAuthenticationPr
       throw Error('Kingdom released a different login');
     const bindingId = this.bindingFor(threadId, run);
     const baseHome = join(this.options.directory, released.integrationId, runtime);
-    let home = baseHome;
+    // Muse reads its login only from `$XDG_CONFIG_HOME/muse/auth.json`: the login's own config home.
+    let home = runtime === 'muse' ? join(baseHome, 'muse-config') : baseHome;
     let active = false,
-      ended = false;
+      ended = false,
+      reported = false,
+      confirming: Promise<boolean> | undefined,
+      confirmedAt = 0;
     const check = () => {
       if (ended) throw Error('Kingdom subscription launch was released');
     };
@@ -169,11 +195,19 @@ export class KingdomSubscriptionAuthentication implements NativeAuthenticationPr
         if (active) throw Error('Authentication launch already owns a process');
         // A Codex main thread with the user's own setup runs on its own home beside the plain one.
         if (runtime === 'codex' && harness) home = `${baseHome}-user`;
-        const env = withoutCompetingCredentials(inherited);
+        const env = withoutCompetingCredentials(inherited, runtime);
         mkdirSync(home, { recursive: true, mode: 0o700 });
-        assertPrivateProfile(home);
+        // A Muse config home holds links to the user's config (any name); its login is checked in `muse/`.
+        if (runtime === 'muse') assertPrivateDirectory(home);
+        else assertPrivateProfile(home);
         let launchArgs = [...argv];
-        if (runtime === 'claude') {
+        if (runtime === 'muse') {
+          // Every command Muse runs inherits XDG_CONFIG_HOME, so the user's other config is linked in;
+          // XDG_DATA_HOME stays the user's, so sessions, resume and Archive capture are unchanged.
+          shareMuseUserConfig(home, this.userConfigDirectory);
+          this.writeMuseLogin(home, released.accessToken);
+          env.XDG_CONFIG_HOME = home;
+        } else if (runtime === 'claude') {
           if (argv.some((arg) => /^(--settings|--setting-sources|--fallback-model)(=|$)/.test(arg)))
             throw Error('Subscription launch override refused');
           env.CLAUDE_CONFIG_DIR = home;
@@ -201,7 +235,7 @@ export class KingdomSubscriptionAuthentication implements NativeAuthenticationPr
           env.CODEX_HOME = home;
         }
         active = true;
-        this.holders.set(home, (this.holders.get(home) ?? 0) + 1);
+        this.hold(home);
         return { argv: launchArgs, env };
       },
       release: () => {
@@ -209,15 +243,41 @@ export class KingdomSubscriptionAuthentication implements NativeAuthenticationPr
         ended = true;
         if (!active) return;
         active = false;
-        const left = (this.holders.get(home) ?? 1) - 1;
-        if (left > 0) this.holders.set(home, left);
-        else {
-          this.holders.delete(home);
-          if (runtime === 'codex')
-            try {
-              unlinkSync(join(home, 'auth.json'));
-            } catch {}
-        }
+        this.unhold(home, runtime);
+      },
+      // Only Muse has a read-only check that names a rejected login; a Claude or Codex login that
+      // stops working shows as Kingdom's refusal at its next release.
+      loginFailed: async () => {
+        if (runtime !== 'muse') return false;
+        if (reported) return true;
+        if (!confirming && Date.now() - confirmedAt < MUSE_CONFIRM_COOLDOWN_MS) return false;
+        confirming ??= (async () => {
+          try {
+            if (!(await this.museRejected(baseHome, released.accessToken))) return false;
+            const { recorded } = await run.client.reportCredentialRejected(
+              released.executionId,
+              released.credentialVersion,
+            );
+            reported = true;
+            this.rejectedMuse.add(released.integrationId);
+            // The next launch resolves again: Kingdom picks another login in the pool, or says none is left.
+            const key = `${runtime}:${threadId}`;
+            if (this.runs.get(key) === run) this.runs.delete(key);
+            (this.options.warn ?? console.warn)(
+              `[Kingdom] Meta rejected the Muse Code login ${released.integrationId}; ${recorded ? 'Kingdom now shows it as needing a new sign-in' : 'Kingdom had already marked it, or it was replaced since'}. ${SIGN_IN_AGAIN}.`,
+            );
+            return true;
+          } catch (error) {
+            (this.options.warn ?? console.warn)(
+              `[Kingdom] could not confirm or report the Muse Code login ${released.integrationId}: ${(error as Error).message}`,
+            );
+            return false;
+          } finally {
+            confirmedAt = Date.now();
+            confirming = undefined;
+          }
+        })();
+        return await confirming;
       },
       observeLimits: (snapshot: NativeLimitSnapshot) => {
         void run.client
@@ -229,6 +289,106 @@ export class KingdomSubscriptionAuthentication implements NativeAuthenticationPr
           );
       },
     });
+  }
+  private get userConfigDirectory() {
+    return this.options.userConfigDirectory ?? dirname(defaultProfileDirectory('muse'));
+  }
+  private hold(home: string) {
+    this.holders.set(home, (this.holders.get(home) ?? 0) + 1);
+  }
+  /** The last holder of a login's home takes the login's tokens with it. */
+  private unhold(home: string, runtime: Runtime) {
+    const left = (this.holders.get(home) ?? 1) - 1;
+    if (left > 0) {
+      this.holders.set(home, left);
+      return;
+    }
+    this.holders.delete(home);
+    const login =
+      runtime === 'codex'
+        ? join(home, 'auth.json')
+        : runtime === 'muse'
+          ? join(home, 'muse', 'auth.json')
+          : undefined;
+    if (login)
+      try {
+        unlinkSync(login);
+      } catch {}
+  }
+  /**
+   * Muse reads its login from `<config home>/muse/auth.json`, a file-backed OAuth login (the CLI
+   * then adds the subscription api key it derives, so a file holding the same token is kept).
+   */
+  private writeMuseLogin(home: string, accessToken: string) {
+    const museHome = join(home, 'muse');
+    const file = join(museHome, 'auth.json');
+    mkdirSync(museHome, { recursive: true, mode: 0o700 });
+    let current: unknown;
+    try {
+      current = JSON.parse(readFileSync(file, 'utf8'));
+    } catch {
+      /* None yet, or unreadable: written below. */
+    }
+    const held = (current as { providers?: { meta?: { access_token?: unknown } } } | undefined)
+      ?.providers?.meta?.access_token;
+    if (held !== accessToken)
+      writePrivateFile(
+        file,
+        JSON.stringify({
+          schema_version: 1,
+          providers: {
+            meta: {
+              mechanism: 'oauth',
+              storage: 'file',
+              obtained_via: 'device_code',
+              api_base_url: 'https://api.meta.ai/v1',
+              access_token: accessToken,
+            },
+          },
+        }),
+      );
+    assertPrivateProfile(museHome);
+  }
+  /**
+   * Whether Meta rejects this launch's token, asked the way the user would (`muse usage --json`) in a
+   * throwaway config home beside the login's, so the check never rewrites the shared home's login
+   * (a newer token another thread runs on) and a release never removes the file under it.
+   */
+  private async museRejected(loginDirectory: string, accessToken: string): Promise<boolean> {
+    mkdirSync(loginDirectory, { recursive: true, mode: 0o700 });
+    const home = mkdtempSync(join(loginDirectory, 'check-'));
+    let child: StatusProcess | undefined;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      this.writeMuseLogin(home, accessToken);
+      const environment = {
+        ...withoutCompetingCredentials(nativeTextEnvironment(process.env), 'muse'),
+        XDG_CONFIG_HOME: home,
+      };
+      const spawned =
+        this.options.museStatus?.(environment) ??
+        Bun.spawn(['muse', 'usage', '--json'], {
+          env: environment,
+          stdin: 'ignore',
+          stdout: 'pipe',
+          stderr: 'pipe',
+        });
+      child = spawned;
+      return await Promise.race([
+        museLoginRejected(spawned),
+        new Promise<boolean>((resolve) => {
+          timer = setTimeout(() => resolve(false), MUSE_CONFIRM_DEADLINE_MS);
+        }),
+      ]);
+    } finally {
+      clearTimeout(timer);
+      try {
+        child?.kill();
+      } catch {
+        /* Already exited. */
+      }
+      rmSync(home, { recursive: true, force: true });
+    }
   }
   /** Codex reads its ChatGPT login from CODEX_HOME. It gets the access and id tokens only: with no
    * refresh token it cannot become a second refresher of the login Kingdom refreshes. */
@@ -253,16 +413,6 @@ export class KingdomSubscriptionAuthentication implements NativeAuthenticationPr
   }
 }
 
-/** Kingdom pools hold Claude and Codex logins; a Muse Code login in a pool waits on its own ticket. */
-const POOLED: ReadonlySet<NativeRuntime> = new Set(['claude', 'codex']);
-const pooled = (runtime: NativeRuntime): Runtime => {
-  if (!POOLED.has(runtime))
-    throw Error(
-      `This project runs on its Kingdom pool, which holds no ${runtime === 'muse' ? 'Muse Code' : runtime} logins yet; no local login is used. Run this thread in a project on this machine's capacity.`,
-    );
-  return runtime as Runtime;
-};
-
 /** Routes each thread to its project's capacity: this machine's login (`local`) or a Kingdom pool. */
 export class ProjectCapacityAuthentication implements NativeAuthenticationProvider {
   constructor(
@@ -274,12 +424,12 @@ export class ProjectCapacityAuthentication implements NativeAuthenticationProvid
   ) {}
   bindingId(threadId: string, runtime: NativeRuntime): string {
     if (this.options.usesKingdom(threadId))
-      return this.options.kingdom.bindingId(threadId, pooled(runtime));
+      return this.options.kingdom.bindingId(threadId, runtime);
     return this.options.local?.bindingId(threadId, runtime) ?? threadId;
   }
   async resolveBindingId(threadId: string, runtime: NativeRuntime): Promise<string> {
     if (this.options.usesKingdom(threadId))
-      return this.options.kingdom.resolveBindingId(threadId, pooled(runtime));
+      return this.options.kingdom.resolveBindingId(threadId, runtime);
     const local = this.options.local;
     if (!local) return threadId;
     return (
@@ -287,8 +437,7 @@ export class ProjectCapacityAuthentication implements NativeAuthenticationProvid
     );
   }
   async prepare(threadId: string, runtime: NativeRuntime): Promise<NativeAuthenticationLaunch> {
-    if (this.options.usesKingdom(threadId))
-      return this.options.kingdom.prepare(threadId, pooled(runtime));
+    if (this.options.usesKingdom(threadId)) return this.options.kingdom.prepare(threadId, runtime);
     if (this.options.local) return this.options.local.prepare(threadId, runtime);
     return Object.freeze({
       bindingId: threadId,

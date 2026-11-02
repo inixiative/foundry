@@ -35,9 +35,6 @@ import type { NativeRuntime } from './native-authentication';
 import { assertPrivateProfile, assertProfile } from './private-profile';
 
 export const SUBSCRIPTION_DECISIONS = 'subscription-decisions';
-/** A Kingdom-capacity project runs every thread on its pool; pools hold no Muse Code login yet (FEAT-006). */
-const KINGDOM_MUSE_REFUSAL =
-  "Kingdom pools hold no Muse Code logins yet, and a Kingdom-capacity project's threads never use this machine's login; run Muse threads in a project on this machine's capacity";
 const model = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,199}$/);
 /** Optional overrides of subscription mode. Every field has a default. */
 export const subscriptionSettingsSchema = z
@@ -367,7 +364,6 @@ export function resolveSubscriptionPolicy(
   // Each view is checked against its own worker: the global defaults, then every project's.
   const check = (view: FoundryConfig, pooled = false) => {
     const worker = view.defaults.provider;
-    if (pooled && worker === 'muse') throw Error(`Subscription-only mode: ${KINGDOM_MUSE_REFUSAL}`);
     if (!subscriptionWorker(worker) || !(pooled ? offered.includes(worker) : workers[worker]))
       throw Error(
         `Subscription-only mode: ${mainThreadRequirement(worker, false) ?? `the ${worker} worker has no usable login`}`,
@@ -454,10 +450,9 @@ export function threadWorkerRequirement(
     return `The ${worker} worker is off: turn on its vendor's subscription mode`;
   if (!resolution.offered.includes(worker))
     return `The ${worker} worker was not started with Foundry; restart Foundry`;
-  // A Kingdom-capacity project's threads run on its pool, which refuses a runtime it has no login for.
-  // Kingdom pools hold no Muse Code logins yet, and a pooled thread never falls back to this machine's.
-  if (projectId && view.projects[projectId]?.capacity === 'kingdom')
-    return worker === 'muse' ? KINGDOM_MUSE_REFUSAL : undefined;
+  // A Kingdom-capacity project's threads run on its pool, which refuses a runtime it has no login for;
+  // a pooled thread never falls back to this machine's login.
+  if (projectId && view.projects[projectId]?.capacity === 'kingdom') return undefined;
   if (!resolution.workers[worker])
     return `The ${worker} worker has no usable login${resolution.unavailable[worker] ? ` (${resolution.unavailable[worker]})` : ''}; log in with its CLI and restart Foundry`;
   return undefined;
