@@ -1175,7 +1175,8 @@ export async function resolvePrompt(promptId, action, input, { always, note: giv
     });
     if (res.ok) {
       if (note) {
-        composerNote.value = '';
+        // The note went with the answer: empty the box (its mirror empties composerNote).
+        if (!given) composerFill.value = '';
         const carried = REJECTING.has(action) && prompt?.kind === 'approval';
         if (!carried) await sendMessage(note);
         showToast(`${action} · your note went with it`, 'ok');

@@ -30,9 +30,12 @@ export const composerDestination = signal('thread');
 
 export const separateViews = (config) => config?.messageBox?.separateViews === true;
 
-/** "/btw text" or "/aside text" typed at the start switches the destination and drops the prefix. */
+/** A destination command at the start of `text` ("btw ", "aside ", "thread ", the space included). */
+export const DESTINATION_COMMAND = /^(btw|aside|thread)\s/;
+
+/** "/btw text", "/aside text" or "/thread text" typed at the start switches the destination and drops the prefix. */
 export function routeTyped(text, config) {
-  const m = /^\/(btw|aside)\s/.exec(text);
+  const m = /^\/(btw|aside|thread)\s/.exec(text);
   if (!m || separateViews(config)) return null;
   return { destination: m[1], text: text.slice(m[0].length) };
 }

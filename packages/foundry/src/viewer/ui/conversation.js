@@ -465,7 +465,8 @@ function ChatInput() {
   const [text, setText] = useState(() => drafts.get(activeThreadId.peek()) ?? '');
   const [asideError, setAsideError] = useState(null);
   const asidePost = useRef(null);
-  // Mirror the draft so a waiting card can send it with its answer; a consumed note clears the box.
+  // Mirror the draft so a waiting card can send it with its answer (which then empties the box
+  // through composerFill).
   useEffect(() => {
     composerNote.value = text;
     drafts.set(activeThreadId.peek(), text);
@@ -476,10 +477,6 @@ function ChatInput() {
     setText(fill);
     composerFill.value = null;
   }, [fill]);
-  const note = composerNote.value;
-  useEffect(() => {
-    if (note === '' && text !== '') setText('');
-  }, [note]);
   const [images, setImages] = useState([]);
   const [dragging, setDragging] = useState(false);
   const inputRef = useRef(null);
