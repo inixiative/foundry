@@ -11,7 +11,7 @@ import {
   type SessionNotification,
   type SessionUpdate,
 } from '@agentclientprotocol/sdk';
-import { newAcpCapability, writeAcpLaunch } from '@inixiative/foundry/client';
+import { writeAcpLaunch } from '@inixiative/foundry/client';
 import type { createViewer } from '../../../foundry/src/viewer/server';
 
 const CLI = join(import.meta.dir, '../../src/cli.ts');
@@ -29,7 +29,7 @@ export function serveDaemon(
     websocket: viewer.websocket,
   });
   const launchPath = launchAt ?? join(dir, 'acp-launch.json');
-  writeAcpLaunch(launchPath, { port: server.port!, capability: newAcpCapability() });
+  writeAcpLaunch(launchPath, { port: server.port! });
   return {
     launchPath,
     stop() {

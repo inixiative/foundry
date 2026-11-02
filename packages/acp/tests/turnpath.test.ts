@@ -4,7 +4,7 @@ import { mkdir, mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { client, type InitializeRequest } from '@agentclientprotocol/sdk';
-import { newAcpCapability, readAcpLaunch, writeAcpLaunch } from '@inixiative/foundry/client';
+import { readAcpLaunch, writeAcpLaunch } from '@inixiative/foundry/client';
 import type { CreateSessionOpts } from '../../foundry/src/providers/session-adapter';
 import { liveWatchFixture } from '../../foundry/tests/helpers/live-watch-fixture';
 import { createFoundryAgent } from '../src/agent';
@@ -43,7 +43,7 @@ function restartableDaemon(f: Fixture, dir: string) {
   });
   const port = server.port!;
   const launchPath = join(dir, 'acp-launch.json');
-  writeAcpLaunch(launchPath, { port, capability: newAcpCapability() });
+  writeAcpLaunch(launchPath, { port });
   cleanup.push(() => server.stop(true));
   return {
     launchPath,
@@ -291,7 +291,7 @@ test('a launch file whose daemon is gone, or whose port another process answers,
   const launchPath = join(dir, 'acp-launch.json');
   const daemon = serveDaemon(f.viewer, launchPath);
   cleanup.push(() => daemon.stop());
-  const { endpoint, capability } = readAcpLaunch(launchPath);
+  const { endpoint } = readAcpLaunch(launchPath);
   const port = Number(new URL(endpoint).port);
   const connect = async () => {
     const agentApp = createFoundryAgent({ launchPath, log: () => {} });
@@ -303,17 +303,17 @@ test('a launch file whose daemon is gone, or whose port another process answers,
   // The daemon that wrote it exited.
   const gone = Bun.spawn(['true']);
   await gone.exited;
-  writeAcpLaunch(launchPath, { port, capability, pid: gone.pid });
+  writeAcpLaunch(launchPath, { port, pid: gone.pid });
   await expect(connect()).rejects.toThrow(/stale launch file/);
 
   // A live process that is not the listener on that port.
   const other = Bun.spawn(['sleep', '30']);
   cleanup.push(() => other.kill());
-  writeAcpLaunch(launchPath, { port, capability, pid: other.pid });
+  writeAcpLaunch(launchPath, { port, pid: other.pid });
   await expect(connect()).rejects.toThrow(/not the daemon/);
 
   // The daemon's own file: trusted.
-  writeAcpLaunch(launchPath, { port, capability });
+  writeAcpLaunch(launchPath, { port });
   expect((await connect()).protocolVersion).toBe(1);
 });
 
@@ -364,7 +364,7 @@ test('a reconnect never carries the bearer or launch secrets to a process that t
   });
   const port = server.port!;
   const launchPath = join(dir, 'acp-launch.json');
-  writeAcpLaunch(launchPath, { port, capability: newAcpCapability() });
+  writeAcpLaunch(launchPath, { port });
   cleanup.push(() => server.stop(true));
   const h = host(launchPath);
   await h.agent.request('initialize', INITIALIZE);

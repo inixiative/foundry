@@ -34,10 +34,9 @@ export interface ThreadLaunchView {
   steer: boolean;
 }
 
-/** Where a local client reaches the daemon: its loopback origin and, while a tunnel is active, the bearer. */
+/** Where a local client reaches the daemon: its loopback origin. */
 export interface FoundryEndpoint {
   readonly endpoint: string;
-  readonly capability?: string;
 }
 
 export type ThreadJSON = ReturnType<typeof threadToJSON>;
@@ -54,8 +53,8 @@ export class FoundryHttpError extends Error {
 }
 
 /**
- * Typed loopback client for the daemon's HTTP API: the same routes the viewer calls. The bearer is
- * only ever sent to the endpoint's own origin, and redirects are refused.
+ * Typed loopback client for the daemon's HTTP API: the same routes the viewer calls. Redirects are
+ * refused.
  */
 export class FoundryClient {
   private readonly origin: string;
@@ -64,12 +63,7 @@ export class FoundryClient {
     this.origin = new URL(connection.endpoint).origin;
   }
 
-  private async request<T>(
-    method: string,
-    path: string,
-    body?: unknown,
-    anonymous = false,
-  ): Promise<T> {
+  private async request<T>(method: string, path: string, body?: unknown): Promise<T> {
     const response = await fetch(`${this.origin}${path}`, {
       method,
       redirect: 'manual',
@@ -80,9 +74,6 @@ export class FoundryClient {
               'content-type':
                 body instanceof Uint8Array ? 'application/octet-stream' : 'application/json',
             }),
-        ...(this.connection.capability && !anonymous
-          ? { authorization: `Bearer ${this.connection.capability}` }
-          : {}),
       },
       ...(body === undefined
         ? {}
@@ -111,12 +102,10 @@ export class FoundryClient {
    * is not the daemon never receives it. An unhealthy daemon still answers; an unreachable one throws.
    */
   async daemonPid(): Promise<number | undefined> {
-    const body = await this.request<{ pid?: unknown }>('GET', '/api/health', undefined, true).catch(
-      (error) => {
-        if (error instanceof FoundryHttpError) return error.body as { pid?: unknown };
-        throw error;
-      },
-    );
+    const body = await this.request<{ pid?: unknown }>('GET', '/api/health').catch((error) => {
+      if (error instanceof FoundryHttpError) return error.body as { pid?: unknown };
+      throw error;
+    });
     return typeof body.pid === 'number' ? body.pid : undefined;
   }
 

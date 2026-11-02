@@ -205,15 +205,7 @@ export function createFoundryAgent(options: FoundryAgentOptions = {}) {
     let dropped = false;
     const streams = new DataStreamClient({
       endpoint: launch.endpoint,
-      capability: launch.capability,
-      refreshCapability: () => {
-        try {
-          return readAcpLaunch(launchPath).capability;
-        } catch {
-          return undefined;
-        }
-      },
-      // A reconnect carries the bearer: only to the daemon the launch file names, at this origin.
+      // Reconnect only to the daemon the launch file names, at this origin.
       beforeReconnect: async () => {
         const current = readAcpLaunch(launchPath);
         if (current.endpoint !== launch.endpoint) throw Error('the daemon moved');
