@@ -22,6 +22,10 @@ import {
   segmentsText,
 } from '@inixiative/foundry-core';
 import { type CorpusTier, visibleTo } from '../agents/corpus-compiler';
+import {
+  nativeAuthenticationMode,
+  projectRunsOnKingdom,
+} from '../providers/native-authentication-mode';
 import { resolveSubscriptionPolicy } from '../providers/subscription-policy';
 import type { FoundryConfig } from '../viewer/config';
 import { resolveProjectView } from '../viewer/config-resolve';
@@ -530,6 +534,8 @@ export interface InstructionStackSourceOptions
   /** The role's picks (`composition.roles[role]`). */
   picks?: RoleComposition;
   dedupe?: HierarchyDedupeOptions;
+  /** Per project, whether the harness reads the global file itself (overrides harnessLoadsGlobal). */
+  harnessLoadsGlobalFor?: (projectId: string | undefined) => boolean;
   /** Where a thread with no cwd works: its project's directory. */
   projectPath?: (projectId: string) => string | undefined;
   /** The thread project's owner, for nodes registered by owner. */
@@ -576,6 +582,7 @@ export function instructionStackSource(
       const {
         projectPath: _path,
         owner: _owner,
+        harnessLoadsGlobalFor,
         role = MAIN_ROLE,
         slot = 'instructions',
         picks,
@@ -584,6 +591,9 @@ export function instructionStackSource(
       } = options;
       const view = await sharedRoleView({
         ...discover,
+        ...(harnessLoadsGlobalFor
+          ? { harnessLoadsGlobal: harnessLoadsGlobalFor(where.projectId) }
+          : {}),
         role,
         ...(picks ? { picks } : {}),
         ...(dedupe ? { dedupe } : {}),
@@ -620,7 +630,7 @@ export function compositionSource(
   for (const other of COMPOSITION_SLOTS) if (!delivered.includes(other)) picks[other] = false;
   return instructionStackSource(id, {
     harness: config.defaults.provider === 'codex' ? 'codex' : 'claude',
-    harnessLoadsGlobal: codexReadsUserHome(config),
+    harnessLoadsGlobalFor: (projectId) => codexReadsUserHome(config, projectId),
     role,
     slot,
     ladder: resolveInstructionLadder(settings),
@@ -670,20 +680,17 @@ export function harnessLoadsInstructions(config: FoundryConfig): boolean {
 }
 
 /**
- * True when the Codex worker runs on the user's own CODEX_HOME (no subscription or native
- * authentication), so Codex reads `$CODEX_HOME/AGENTS.md` itself with no way to turn it off.
+ * True when a thread of `projectId` runs Codex on the user's own CODEX_HOME (no subscription
+ * policy, Kingdom binding, native profile or Kingdom capacity pool), so Codex reads
+ * `$CODEX_HOME/AGENTS.md` itself with no way to turn it off. The same rule start.ts builds the
+ * session's login with (`nativeAuthenticationMode`, `projectRunsOnKingdom`).
  */
-export function codexReadsUserHome(config: FoundryConfig): boolean {
+export function codexReadsUserHome(config: FoundryConfig, projectId?: string): boolean {
   if (config.defaults.provider !== 'codex') return false;
   try {
     if (resolveSubscriptionPolicy(config)) return false;
   } catch {
     return false;
   }
-  return (
-    !config.defaults.kingdomOwnerKey &&
-    !Object.keys(config.kingdomInferenceAssignments ?? {}).length &&
-    !config.defaults.nativeAuthenticationId &&
-    !Object.keys(config.nativeAuthenticationSelections ?? {}).length
-  );
+  return nativeAuthenticationMode(config) === 'user' && !projectRunsOnKingdom(config, projectId);
 }
