@@ -10,15 +10,28 @@
  * recent call log with per-span cost, and budget status.
  */
 
+import {
+  analyticsRange,
+  CapacityBand,
+  RANGES,
+  RangeControl,
+  seriesTokens,
+  TokensOverTime,
+  useLogins,
+  useSeries,
+  windowUsed,
+} from './analytics-capacity.js';
+import { ComingSoon } from './coming-soon.js';
 import { html, signal, useEffect, useState } from './lib.js';
 import { analyticsPath, navigate, route } from './route.js';
+import { loadSettings, settingsConfig } from './settings.js';
 import { projects } from './store.js';
 
 // ---------------------------------------------------------------------------
 // State
 // ---------------------------------------------------------------------------
 
-const analyticsTab = signal('overview'); // overview | threads | calls | models
+const analyticsTab = signal('overview'); // overview | chorus | threads | calls | models
 
 // ---------------------------------------------------------------------------
 // Data fetching
@@ -69,9 +82,43 @@ function fmtTime(ts) {
 // Overview — session totals + budget
 // ---------------------------------------------------------------------------
 
+/** The headline: window share and tokens; $ only when Foundry spends API keys (concept-v4). */
+function Headline({ logins, series }) {
+  const range = RANGES.find(([r]) => r === analyticsRange.value) ?? RANGES[2];
+  const used = windowUsed(logins);
+  return html`<div class="an-tiles">
+    <div class="an-tile"><span class="an-tile-label">Window used · now</span>
+      <b>${used == null ? '—' : `${used}%`}</b><small>of the busiest login's 5-hour window</small></div>
+    <div class="an-tile"><span class="an-tile-label">Tokens · ${range[1]}</span>
+      <b>${series === undefined ? '…' : fmtTokens(seriesTokens(series))}</b><small>${settingsConfig.value?.apiTokens ? 'subscriptions and API keys' : 'included in your subscriptions'}</small></div>
+    <div class="an-tile"><span class="an-tile-label">Chorus overhead</span>
+      <${ComingSoon} inline=${true} what="The Wardens' share of your tokens, and the pointers that were followed." /></div>
+    <div class="an-tile"><span class="an-tile-label">Corrections recurred</span>
+      <${ComingSoon} inline=${true} what="Applied corrections that came back, from Oracle." /></div>
+  </div>`;
+}
+
+/** The chorus: what the Wardens cost against what they were worth, region by region. */
+function Chorus() {
+  return html`<section class="an-box">
+    <h3>Chorus</h3>
+    <${ComingSoon} what="Layer 1 and Layer 2 calls and tokens per region, the pointers each region gave and how many the agent followed, and the regions that timed out." />
+  </section>`;
+}
+
 function Overview({ data }) {
+  useEffect(() => {
+    if (!settingsConfig.value) loadSettings();
+  }, []);
+  const logins = useLogins();
+  const series = useSeries(analyticsRange.value);
+  const range = RANGES.find(([r]) => r === analyticsRange.value) ?? RANGES[2];
+  const lead = html`<${Headline} logins=${logins} series=${series} />
+    <${CapacityBand} logins=${logins} />
+    <${TokensOverTime} series=${series} rangeLabel=${range[1]} />`;
   if (!data?.session && !data?.observations?.calls)
-    return html`<div class="analytics-empty">No analytics data yet. Make some LLM calls to see costs.</div>`;
+    return html`<div class="analytics-overview">${lead}<div class="analytics-empty">No calls recorded yet.</div></div>`;
+  const api = !!settingsConfig.value?.apiTokens;
 
   // A project's view has no live session totals; it reads recorded history only.
   const s = data.session ?? {};
@@ -82,12 +129,13 @@ function Overview({ data }) {
 
   return html`
     <div class="analytics-overview">
-      <!-- Hero stats -->
+      ${lead}
+      <!-- Recorded totals; dollars only when Foundry spends API keys -->
       <div class="stats-grid">
-        <${StatCard} label="Recorded cost" value=${fmt$(o?.unavailableCostCalls ? null : (o?.knownCost ?? s.totalCost))} accent="blue" />
+        ${api ? html`<${StatCard} label="Recorded cost" value=${fmt$(o?.unavailableCostCalls ? null : (o?.knownCost ?? s.totalCost))} accent="blue" />` : null}
         <${StatCard} label="Recorded tokens" value=${fmtTokens(o?.knownTokens ?? s.totalTokens)} accent="green" />
         <${StatCard} label="Recorded calls" value=${o?.calls ?? s.totalCalls} accent="purple" />
-        <${StatCard} label="Avg $/Call" value=${fmt$(o?.unavailableCostCalls ? null : o?.calls ? o.knownCost / o.calls : 0)} accent="orange" />
+        ${api ? html`<${StatCard} label="Avg $/Call" value=${fmt$(o?.unavailableCostCalls ? null : o?.calls ? o.knownCost / o.calls : 0)} accent="orange" />` : null}
       </div>
       ${o ? html`<p class="analytics-availability">Recorded history: known subtotals only. Usage unavailable for ${o.unavailableUsageCalls} calls; cost unavailable for ${o.unavailableCostCalls} calls. Persistence: ${o.persistence}.</p>` : null}
 
@@ -388,6 +436,7 @@ export function AnalyticsPage() {
 
   const tabs = [
     { id: 'overview', label: 'Overview' },
+    { id: 'chorus', label: 'Chorus' },
     { id: 'threads', label: 'Threads' },
     { id: 'calls', label: 'Call Log' },
     { id: 'models', label: 'Models' },
@@ -402,6 +451,7 @@ export function AnalyticsPage() {
           ${known ? null : html`<option value=${projectId}>${projectId} (not registered)</option>`}
           ${projectList.map((p) => html`<option key=${p.id} value=${p.id}>${p.label}</option>`)}
         </select>
+        <${RangeControl} />
         <div class="analytics-tabs">
           ${tabs.map(
             (t) => html`
@@ -433,6 +483,7 @@ export function AnalyticsPage() {
             ? null
             : html`
         ${tab === 'overview' ? html`<${Overview} data=${data} />` : null}
+        ${tab === 'chorus' ? html`<${Chorus} />` : null}
         ${tab === 'threads' ? html`<${Threads} data=${data} />` : null}
         ${tab === 'calls' ? html`<${Calls} data=${data} />` : null}
         ${tab === 'models' ? html`<${Models} data=${data} />` : null}`
