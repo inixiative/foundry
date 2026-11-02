@@ -22,7 +22,7 @@ import { FeedbackSettings } from './feedback.js';
 import { FilePicker } from './file-picker.js';
 import { IntegrationSection } from './integration-settings.js';
 import { KingdomSettings } from './kingdom-settings.js';
-import { html, signal, useEffect, useState } from './lib.js';
+import { html, signal, useCallback, useEffect, useState } from './lib.js';
 import { MessageBoxSection } from './message-box.js';
 import { ProfileSection } from './profile-settings.js';
 import { ProvidersSection } from './provider-settings.js';
@@ -730,7 +730,9 @@ function ProjectSection({ section, projectId, project, onFocusChange }) {
 }
 
 export function SettingsPage() {
+  // Forge Master is closed until asked for (Aron 11-02); the header opens it, ✕ or Esc closes it.
   const [showChat, setShowChat] = useState(false);
+  const closeChat = useCallback(() => setShowChat(false), []);
   const config = settingsConfig.value;
   const { projectId, section } = route.value;
   const focus = selectedFocus.value;
@@ -781,7 +783,8 @@ export function SettingsPage() {
           <span class="settings-breadcrumb">${projectId ? project?.label || projectId : 'Foundry'}</span>
           <h1 class="settings-title">${label}</h1>
           ${focus ? html`<span class="settings-title-focus">${focus.kind}:${focus.id}</span>` : null}
-          <button class="action-btn settings-chat-view" onClick=${() => setShowChat(!showChat)}>${showChat ? 'Back to settings' : 'Forge Master'}</button>
+          <button type="button" class="action-btn settings-chat-view" aria-expanded=${showChat}
+            title="Ask the Forge Master about these settings" onClick=${() => setShowChat(!showChat)}>${showChat ? 'Back to settings' : 'Forge Master ▾'}</button>
         </header>
         <div class="settings-body">
           ${searched && anchor === 'missed' ? html`<${SearchedSetting} setting=${searched} />` : null}
@@ -792,7 +795,7 @@ export function SettingsPage() {
           }
         </div>
       </div>
-      <${SelfChatPane} focus=${chatFocus} />
+      ${showChat ? html`<${SelfChatPane} focus=${chatFocus} onClose=${closeChat} />` : null}
     </main>
   `;
 }

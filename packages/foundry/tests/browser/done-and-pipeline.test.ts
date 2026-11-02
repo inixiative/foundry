@@ -178,6 +178,7 @@ test('done threads, the merge setting, the Kingdom project link and the region p
 
     // Watching names each paired Kingdom readably, never by its raw owner key.
     await page.locator('.watchtower-button').click();
+    await page.getByRole('button', { name: 'Watching ▾' }).click();
     const kingdoms = page.getByRole('region', { name: 'Kingdoms' });
     await kingdoms.locator('.wrow', { hasText: 'Kingdom at 127.0.0.1:9' }).waitFor();
     expect(await kingdoms.innerText()).not.toContain('OrganizationUser:');

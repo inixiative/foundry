@@ -179,8 +179,12 @@ const USER_FOLDERS = ['commands', 'skills', 'agents', 'output-styles'] as const;
  * User-scope MCP servers (`~/.claude.json`) and plugins are not shared.
  */
 export function shareUserSetup(home: string, userDirectory: string): void {
-  const settings = join(userDirectory, 'settings.json');
-  const copy = join(home, 'settings.json');
+  copyUserSettings(join(userDirectory, 'settings.json'), join(home, 'settings.json'));
+  linkUserFolders(home, userDirectory, USER_FOLDERS);
+}
+
+/** The user's settings file as a private copy in a Foundry-owned home; gone when the user has none. */
+function copyUserSettings(settings: string, copy: string): void {
   if (existsSync(settings)) {
     const text = readFileSync(settings, 'utf8');
     let same = false;
@@ -197,7 +201,66 @@ export function shareUserSetup(home: string, userDirectory: string): void {
     } catch {
       /* Nothing to remove. */
     }
-  linkUserFolders(home, userDirectory, USER_FOLDERS);
+}
+
+/** Entries of `directory` (none when it is missing). */
+const entriesOf = (directory: string) => {
+  try {
+    return readdirSync(directory);
+  } catch {
+    return [];
+  }
+};
+
+/** Links in `directory`: the names an earlier share made. */
+const linksIn = (directory: string) =>
+  entriesOf(directory).filter((name) => {
+    try {
+      return lstatSync(join(directory, name)).isSymbolicLink();
+    } catch {
+      return false;
+    }
+  });
+
+/**
+ * A Kingdom-pool Muse login runs on a Foundry-owned `XDG_CONFIG_HOME` (its login is
+ * `$XDG_CONFIG_HOME/muse/auth.json`, and the CLI reads no other path for it). Every command Muse
+ * runs inherits that variable, so everything else the user keeps in their own config home (git,
+ * gh, the rest) is linked in, entry by entry, and a command finds the same config it would on the
+ * user's own login. In `muse/` the user's files (`settings.json`, `trust.json`) are private copies
+ * and their folders (skills and the like) links; their `auth.json` and the CLI's lock files (dot
+ * files) are never reached. Links to entries the user has since removed go.
+ */
+export function shareMuseUserConfig(configHome: string, userConfigHome: string): void {
+  const museHome = join(configHome, 'muse');
+  const userMuse = join(userConfigHome, 'muse');
+  mkdirSync(museHome, { recursive: true, mode: 0o700 });
+  const outside = new Set([...entriesOf(userConfigHome), ...linksIn(configHome)]);
+  outside.delete('muse');
+  linkUserFolders(configHome, userConfigHome, [...outside]);
+  // Files Muse writes (settings, trust) are private copies: a link would let a write reach the user's
+  // file past its lock, or be replaced by a file the next launch moves aside. Folders are links.
+  const inside = new Set([...entriesOf(userMuse), ...linksIn(museHome)]);
+  inside.delete('auth.json');
+  const folders: string[] = [];
+  for (const name of inside) {
+    if (name.startsWith('.')) continue;
+    const from = join(userMuse, name);
+    let folder = false;
+    try {
+      folder = lstatSync(from).isDirectory();
+    } catch {
+      /* Removed by the user: a stale link goes below. */
+    }
+    if (folder || !existsSync(from)) folders.push(name);
+    else {
+      const copy = join(museHome, name);
+      // A link an earlier share left here would carry the copy into the user's own file.
+      if (linksIn(museHome).includes(name)) unlinkSync(copy);
+      copyUserSettings(from, copy);
+    }
+  }
+  linkUserFolders(museHome, userMuse, folders);
 }
 
 /**
