@@ -100,8 +100,8 @@ test('panel sizes step with [ { ] }; hidden keeps its column at 0 with a restore
     );
     // The icons strip shows each tab's icon (its label stays for screen readers).
     const stripTabs = page.locator('.rp-strip-tab');
-    expect(await stripTabs.count()).toBe(6);
-    expect(await stripTabs.locator('svg.tab-icon').count()).toBe(6);
+    expect(await stripTabs.count()).toBe(7);
+    expect(await stripTabs.locator('svg.tab-icon').count()).toBe(7);
     expect(errors).toEqual([]);
   } finally {
     await releaseAll(cleanup);

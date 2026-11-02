@@ -18,7 +18,9 @@ import { ContextStats, TokenBar } from './conversation.js';
 import { ParticipantsPanel } from './conversation-members.js';
 import { Inspector, inspection, ThreadDetail } from './detail-drawer.js';
 import { feedbackIn, ThreadFeedback } from './feedback.js';
+import { useFlowStream } from './graph-view.js';
 import { html } from './lib.js';
+import { PointerLedger, pointerRows } from './loop-view.js';
 import { SizeControls } from './panel-sizes.js';
 import { Running } from './running.js';
 import {
@@ -30,6 +32,8 @@ import {
   inspectTarget,
   launchLabels,
   loadLaunch,
+  openRightTab,
+  RIGHT_TAB_KEYS,
   RIGHT_TABS,
   rightSize,
   rightTab,
@@ -53,6 +57,7 @@ const TAB_LABELS = {
   participants: 'Participants',
   permissions: 'Permissions',
   heralds: 'Heralds',
+  pointers: 'Pointers',
   feedback: 'Feedback',
 };
 
@@ -87,6 +92,8 @@ function tabFacts(tab, threadId) {
       };
     case 'heralds':
       return { info: 'Coming soon' };
+    case 'pointers':
+      return { info: "Where the Wardens pointed on this thread's turns, newest first" };
     case 'feedback': {
       const open = openFeedback(threadId);
       return { info: `${feedbackIn({ threadId }).length} given · ${open} open`, count: open };
@@ -234,12 +241,19 @@ function HeraldsTab() {
   </div>`;
 }
 
+/** The Wardens' pointers that reached this thread, newest first (moved here from Loop, Aron 11-02). */
+function PointersTab({ threadId }) {
+  const flow = useFlowStream(threadId, !!threadId);
+  return html`<div class="rp-stack"><${PointerLedger} rows=${pointerRows(flow)} /></div>`;
+}
+
 function TabBody({ tab, threadId }) {
   if (tab === 'work') return html`<${Work} />`;
   if (tab === 'context') return html`<${ContextTab} />`;
   if (tab === 'participants') return html`<${ParticipantsPanel} />`;
   if (tab === 'permissions') return html`<${PermissionsTab} />`;
   if (tab === 'heralds') return html`<${HeraldsTab} />`;
+  if (tab === 'pointers') return html`<${PointersTab} threadId=${threadId} />`;
   return html`<${ThreadFeedback} threadId=${threadId} />`;
 }
 
@@ -268,11 +282,8 @@ export function RightPanel({ onSpanSelect }) {
       : html`<div class="right-panel detail-drawer detail-drawer--collapsed right-panel--collapsed">
       <div class="rp-strip-controls"><${SizeControls} side="right" /></div>
       ${RIGHT_TABS.map((t) => {
-        return html`<button key=${t} class="rp-strip-tab" title=${TAB_LABELS[t]} onClick=${() => {
-          rightTab.value = t;
-          boardOpen.value = false;
-          detailDrawerOpen.value = true;
-        }}>
+        return html`<button key=${t} class="rp-strip-tab" title=${`${TAB_LABELS[t]} (${RIGHT_TAB_KEYS[t]})`} aria-label=${`Open ${TAB_LABELS[t]}`}
+          aria-current=${t === tab ? 'true' : undefined} onClick=${() => openRightTab(t)}>
           <${TabIcon} tab=${t} /><span class="rp-strip-label">${TAB_LABELS[t]}</span>
         </button>`;
       })}
@@ -308,12 +319,17 @@ export function RightPanel({ onSpanSelect }) {
       <h2 class="rp-title">${TAB_LABELS[tab]}</h2>
       ${facts.info ? html`<div class="rp-info">${facts.info}</div>` : null}
       <nav class="rp-tabs" role="tablist" aria-label="Thread reference">
-        ${RIGHT_TABS.map((t, i) => {
+        ${RIGHT_TABS.map((t) => {
           return html`<button key=${t} role="tab" aria-selected=${t === tab}
-            aria-label=${TAB_LABELS[t]} class="rp-tab ${t === tab ? 'is-active' : ''}" title=${`${TAB_LABELS[t]} (${i + 5})`}
+            aria-label=${TAB_LABELS[t]} class="rp-tab ${t === tab ? 'is-active' : ''}" title=${`${TAB_LABELS[t]} (${RIGHT_TAB_KEYS[t]})`}
             onClick=${() => {
               rightTab.value = t;
-            }}><${TabIcon} tab=${t} /><span class="rp-tab-label">${TAB_LABELS[t]}</span></button>`;
+            }}><${TabIcon} tab=${t} /><span class="rp-tab-label">${TAB_LABELS[t]}</span>${(() => {
+              const n = tabFacts(t, threadId).count;
+              return n
+                ? html`<span class="rp-tab-count ${t === 'feedback' ? 'is-attention' : ''}">${n}</span>`
+                : null;
+            })()}</button>`;
         })}
       </nav>
     </header>
