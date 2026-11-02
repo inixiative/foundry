@@ -25,6 +25,8 @@
   border: 1px solid var(--line);
   border-radius: 4px;
   font: 10.5px var(--mono);
+  color: var(--text-dim);
+  background: none;
 }
 @media (max-width: 1500px) {
   .search-button {

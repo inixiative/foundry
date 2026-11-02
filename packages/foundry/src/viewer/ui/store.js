@@ -85,6 +85,15 @@ export const detailDrawerOpen = signal(true); // right panel collapsed state
 export const inspectTarget = signal(null);
 /** The right panel's tab: context | participants | permissions | heralds | feedback. (Pointers live in Loop.) */
 export const RIGHT_TABS = ['work', 'context', 'participants', 'permissions', 'heralds', 'feedback'];
+/** Each right tab's number key (Aron 11-02): 1–3 are the centre's Thread, Plan and Loop; plain, ⌘ or ⌥. */
+export const RIGHT_TAB_KEYS = {
+  work: '4',
+  context: '5',
+  participants: '6',
+  permissions: '7',
+  heralds: '8',
+  feedback: '0',
+};
 /** The right panel widened (for Work's diffs and file lists). */
 /** The side panels' size levels (panel-sizes.js steps and renders them). */
 export const leftSize = signal('normal'); // hidden · strip · normal · wide
@@ -200,6 +209,35 @@ export const aboutTarget = signal(null); // { kind: 'plan-step' | 'loop-item', l
 export function commentOn(target) {
   aboutTarget.value = target;
   requestAnimationFrame(() => document.querySelector('textarea.chat-input')?.focus());
+}
+
+/**
+ * Open the right panel on a tab: a collapsed panel's tab icon and the number keys (4–0). It always
+ * shows the tab itself, the tab already selected included: the turn view, the inspector, the Board
+ * and the Watchtower give way. With `toggle`, a key for the tab already showing folds the panel.
+ */
+export function openRightTab(tab, { toggle = false } = {}) {
+  const showing =
+    detailDrawerOpen.peek() &&
+    rightTab.peek() === tab &&
+    !turnViewTarget.peek() &&
+    !inspectTarget.peek() &&
+    !boardOpen.peek() &&
+    !watchtowerOpen.peek();
+  batch(() => {
+    if (toggle && showing) {
+      detailDrawerOpen.value = false;
+      return;
+    }
+    closeTurnView();
+    dismissTraceSelection();
+    selectedEvent.value = null;
+    inspectTarget.value = null;
+    boardOpen.value = false;
+    watchtowerOpen.value = false;
+    rightTab.value = tab;
+    detailDrawerOpen.value = true;
+  });
 }
 
 /** The board is a workspace view: it toggles only there. */
@@ -382,23 +420,27 @@ function applyFrame(frame, touched) {
   else if (family === 'threads') applyThreadsFrame(frame);
   else if (family === 'prompts') applyPromptsFrame(frame);
   else if (family === 'events') applyEventsFrame(frame);
-  else heldStreams.get(frame.stream)?.(frame);
+  else for (const onFrame of heldStreams.get(frame.stream) ?? []) onFrame(frame);
 }
 
-// Streams a panel holds for itself, with the handler that applies their frames (in the same
-// per-animation-frame batch as the store's own). One holder per stream: a second open of a held
-// stream would share the server subscription and never get a snapshot of its own.
+// Streams panels hold for themselves, each with the handlers that apply their frames (in the same
+// per-animation-frame batch as the store's own). Several panels may hold one stream (Plan and the
+// right panel's Work both read `flow:<id>`): a holder that joins asks for a fresh snapshot, which
+// every holder takes, so each starts from a snapshot of its own.
 const heldStreams = new Map();
 
 /** Open `stream` for a panel while it shows it; `onFrame` gets its frames, and `{ action: "rejected" }`
  * if the server refuses it. Returns the release. */
 export function holdStream(stream, onFrame) {
-  if (heldStreams.has(stream)) throw new Error(`${stream} is already held`);
-  heldStreams.set(stream, onFrame);
+  const holders = heldStreams.get(stream);
+  if (holders) holders.add(onFrame);
+  else heldStreams.set(stream, new Set([onFrame]));
   socket.open(stream);
+  if (holders) socket.snapshot(stream);
   return () => {
-    if (heldStreams.get(stream) !== onFrame) return;
-    heldStreams.delete(stream);
+    const current = heldStreams.get(stream);
+    if (!current?.delete(onFrame)) return;
+    if (!current.size) heldStreams.delete(stream);
     socket.close(stream);
   };
 }
@@ -707,7 +749,7 @@ function connectStreams() {
     onRejected: (stream) => {
       // A project that no longer exists scopes nothing; fall back to the unscoped list.
       if (stream === threadsStream && activeProjectId.value) activeProjectId.value = null;
-      heldStreams.get(stream)?.({ action: 'rejected', stream });
+      for (const onFrame of heldStreams.get(stream) ?? []) onFrame({ action: 'rejected', stream });
       if (!stream.startsWith('thread:')) return;
       const threadId = stream.slice('thread:'.length);
       if (stream === activeStream) activeStream = null;
