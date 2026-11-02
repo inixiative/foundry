@@ -54,6 +54,14 @@ test('tab icons and number keys open the right panel on their tab', async () => 
     await page.goto(`${origin}/#thread=main&detail=1`);
     await page.locator('textarea.chat-input').waitFor();
     await title.filter({ hasText: 'Context' }).waitFor();
+    // Context leads with where the work lives: GitHub, the ticket, Slack, then what it runs on.
+    const sections = await page.locator('.right-panel .rp-section-title').allInnerTexts();
+    expect(sections.slice(0, 4).map((t: string) => t.toLowerCase())).toEqual([
+      'github',
+      'ticket',
+      'slack',
+      'runs on',
+    ]);
 
     // The selected tab's own icon reopens the folded panel on it.
     await page.locator('body').click({ position: { x: 800, y: 300 } });

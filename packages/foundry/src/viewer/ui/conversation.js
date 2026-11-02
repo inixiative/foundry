@@ -338,7 +338,13 @@ function ContextBar() {
         </span>
         <${PillGroup} className="band-where" label="Where it lives" render=${() => html`
           <span class="band-pill band-where--keep" title=${project ? `Project: ${project.label}` : 'No project'}>${project ? project.label : 'Global'}</span>
-          ${owner ? html`<span class="band-pill band-where--keep" title=${`Kingdom: ${owner}`}>${owner}</span>` : null}
+          ${
+            owner
+              ? html`<span class="band-pill band-where--keep" title=${`Kingdom: ${owner}`}>${owner}</span>`
+              : project?.tags?.[0]
+                ? html`<span class="band-pill band-where--keep band-org" title=${`Organisation tag: ${project.tags[0]} (the project's Kingdom names it once linked)`}>${project.tags[0]}</span>`
+                : null
+          }
           ${
             place.branch
               ? html`<span class="band-pill context-bar-chip--branch" title=${place.repository ? `branch of ${place.repository}` : 'branch'}>${BranchIcon()}${place.branch}</span>`
