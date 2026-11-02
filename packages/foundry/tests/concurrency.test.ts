@@ -8,6 +8,7 @@ import {
   SignalBus,
   Thread,
 } from '@inixiative/foundry-core';
+import { SessionManager, type ThreadBlueprint } from '../src/agents/session';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -490,3 +491,83 @@ describe('Context stack concurrent access', () => {
 // ---------------------------------------------------------------------------
 // Session Manager
 // ---------------------------------------------------------------------------
+
+describe('SessionManager concurrency', () => {
+  test('concurrent thread creation: dispatches to different lazy threads', async () => {
+    const sm = new SessionManager();
+    const createdIds: string[] = [];
+
+    sm.addBlueprint({
+      match: /^worker-/,
+      create: async (destId) => {
+        await delay(Math.random() * 10);
+        const thread = makeThread(destId);
+        thread.register(
+          new Executor({
+            id: 'handler',
+            stack: thread.stack,
+            handler: async (_ctx, payload: string) => `${destId}:${payload}`,
+          }),
+        );
+        createdIds.push(destId);
+        return thread;
+      },
+    });
+
+    // Dispatch to 5 different destinations concurrently
+    const results = await Promise.all(
+      Array.from({ length: 5 }, (_, i) =>
+        sm.dispatch(`worker-${i}`, `payload-${i}`, { agentId: 'handler' }),
+      ),
+    );
+
+    // All dispatches completed correctly
+    expect(results.length).toBe(5);
+    for (let i = 0; i < 5; i++) {
+      expect(results[i].output).toBe(`worker-${i}:payload-${i}`);
+    }
+
+    // All threads were created
+    expect(createdIds.length).toBe(5);
+    expect(sm.threads.size).toBe(5);
+  });
+
+  test('blueprint race: two dispatches to same unresolved blueprint', async () => {
+    const sm = new SessionManager();
+    sm.addBlueprint({
+      match: 'shared-thread',
+      create: async (destId) => {
+        await delay(10); // Simulate async thread creation
+        const thread = makeThread(destId);
+        thread.register(
+          new Executor({
+            id: 'handler',
+            stack: thread.stack,
+            handler: async (_ctx, payload: string) => `result:${payload}`,
+          }),
+        );
+        return thread;
+      },
+    });
+
+    // Two concurrent dispatches to the same unresolved destination
+    const results = await Promise.allSettled([
+      sm.dispatch('shared-thread', 'first', { agentId: 'handler' }),
+      sm.dispatch('shared-thread', 'second', { agentId: 'handler' }),
+    ]);
+
+    // At least one should succeed
+    const fulfilled = results.filter((r) => r.status === 'fulfilled');
+    expect(fulfilled.length).toBeGreaterThanOrEqual(1);
+
+    // The thread should exist in the manager
+    expect(sm.get('shared-thread')).toBeDefined();
+
+    // Both results should produce valid output (whether from same or different thread)
+    // The key assertion: no crash, no undefined behavior, results are valid
+    for (const r of fulfilled) {
+      const output = (r as PromiseFulfilledResult<{ output: unknown }>).value.output as string;
+      expect(output).toMatch(/^result:(first|second)$/);
+    }
+  });
+});

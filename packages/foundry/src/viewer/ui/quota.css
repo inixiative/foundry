@@ -1,0 +1,31 @@
+/* Subscription usage windows in the footer: "5h ▬ 7%" per window, as the mockup's meter labels. */
+.nav-footer-limits {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+  margin: 1px 0 4px 18px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.nav-footer-limits .meterlbl {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+.nav-footer-limits .bar2 {
+  display: inline-block;
+  width: 40px;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--line);
+  overflow: hidden;
+}
+.nav-footer-limits .bar2 i {
+  display: block;
+  height: 100%;
+  background: var(--text-dim);
+}
+.nav-footer-limits.is-blocked .bar2 i {
+  background: var(--st-problem);
+}

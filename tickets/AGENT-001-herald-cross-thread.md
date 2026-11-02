@@ -8,7 +8,8 @@
 
 ---
 
-**2026-11-01:** `agents/herald.ts` (its five detectors), `agents/workstream-detector.ts` and `SessionManager` were deleted unwired (Aron: delete). Build the Herald on `@inixiative/foundry/classify` with region `role: herald` and the live thread directory (`viewer/thread-directory.ts`); the deleted code is in git history (`git log --diff-filter=D -- packages/foundry/src/agents/herald.ts`).
+**2026-11-02:** `agents/herald.ts`, `agents/workstream-detector.ts` and `SessionManager` (`agents/session.ts`), deleted unwired on 11-01 (#202), are restored as the placeholder this ticket builds on (Aron, 2026-11-02: features we intend to build are not cut because they're unwired). Build the Herald on `@inixiative/foundry/classify` with region `role: herald` and the live thread directory (`viewer/thread-directory.ts`), adopting or rewriting these.
+
 
 ## Revision 2026-10-31 (attention board): read this first
 

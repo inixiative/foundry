@@ -52,7 +52,7 @@ export interface FoundryMcpConfig {
   thread: Thread;
   /** Optional isolated local profile; never accepted from tool arguments. */
   deviceIdentityPath?: string;
-  /** Registry of registered Thread objects. */
+  /** Registry of registered Thread objects (SessionManager or equivalent). */
   sessionManager?: LiveThreadRegistry;
   /** Live runtime manager; pins the runtime object and generation. */
   runtime?: ThreadRuntimeManager;

@@ -9,6 +9,7 @@ import {
 } from '@inixiative/foundry-core';
 import { DomainLibrarian } from '../src/agents/domain-librarian';
 import { Librarian } from '../src/agents/librarian';
+import { SessionManager } from '../src/agents/session';
 import { buildAgents, buildLayers, ThreadFactory } from '../src/agents/thread-factory';
 import { ThreadRuntimeManager } from '../src/agents/thread-runtime';
 import { starterConfig, validateConfig } from '../src/viewer/config';
@@ -96,6 +97,28 @@ test('a standalone DomainLibrarian default layer and a Librarian with a custom l
   expect(stateBlocks.length).toBeGreaterThan(0);
   for (const block of stateBlocks) expect(block.kind).toBe('thread-knowledge'); // custom id, not the "thread-state" heuristic
   expect(artifact.blocks.find((b) => b.text === 'DOMAIN')?.kind).toBe('domain-knowledge');
+});
+
+test('session layer inheritance copies preserve the segment; shared layers are the same instance', () => {
+  const generated = new ContextLayer({
+    id: 'thread-knowledge:conventions',
+    segment: 'thread-knowledge',
+  });
+  generated.set('PRIVATE');
+  const configured = new ContextLayer({ id: 'conventions' });
+  configured.set('DOMAIN');
+  const parent = new Thread('parent', new ContextStack([generated, configured]));
+  const copied = SessionManager.inheritLayers(parent, {
+    copy: ['thread-knowledge:conventions', 'conventions'],
+  });
+  expect(copied.layers.find((l) => l.id === 'thread-knowledge:conventions')?.segment).toBe(
+    'thread-knowledge',
+  );
+  expect(copied.layers.find((l) => l.id === 'thread-knowledge:conventions')).not.toBe(generated);
+  expect(copied.layers.find((l) => l.id === 'conventions')?.segment).toBeUndefined();
+  expect(kinds(copied)).toEqual({ PRIVATE: 'thread-knowledge', DOMAIN: 'domain-knowledge' });
+  const shared = SessionManager.inheritLayers(parent, { share: ['thread-knowledge:conventions'] });
+  expect(shared.layers[0]).toBe(generated);
 });
 
 test('configured layers carry a segment only when configured, and an invalid configured value is refused', () => {

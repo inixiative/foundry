@@ -9,6 +9,7 @@ import type { ActionQueue, Harness, TokenTracker, ToolRegistry } from '@inixiati
 import type { Context, Hono } from 'hono';
 import { fromSettingsConfig, type ProjectRegistry } from '../../agents/project';
 import { providerAccounts } from '../../providers/provider-accounts';
+import { providerLimits } from '../../providers/provider-limits';
 import { describeReadinessChorus, inspectNativeClis } from '../../readiness';
 import type { ActionHandler, OperatorAction } from '../actions';
 import type { AIAssist, AssistRequest } from '../ai-assist';
@@ -201,6 +202,12 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps): void 
   app.get('/api/providers/accounts', async (c) => {
     await configStore.load();
     return c.json(providerAccounts(configStore.config, { all: c.req.query('all') === '1' }));
+  });
+
+  // Each subscription login's usage windows (no model call; cached a few minutes per login).
+  app.get('/api/providers/limits', async (c) => {
+    await configStore.load();
+    return c.json({ limits: await providerLimits(providerAccounts(configStore.config)) });
   });
 
   app.put('/api/settings', async (c) => {

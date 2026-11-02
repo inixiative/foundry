@@ -36,7 +36,7 @@ export interface AuthorizedThreadSummary {
   readonly tags: readonly string[];
 }
 
-/** Registry of live threads the bridge may consult. */
+/** Registry of live threads the bridge may consult. SessionManager satisfies it. */
 export interface LiveThreadRegistry {
   readonly threads: ReadonlyMap<string, Thread>;
 }

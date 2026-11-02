@@ -23,7 +23,7 @@ import {
   selectThread,
   threadStatusOf,
 } from './store.js';
-import { threadName } from './thread-labels.js';
+import { kingdomOwnerName, threadName } from './thread-labels.js';
 import { isClosedThread } from './thread-status.js';
 
 const INACTIVE = new Set(['paused', 'idle']);
@@ -73,8 +73,22 @@ const WORKTREES = {
   classic: 'classic mode · plain git worktrees',
 };
 
+const host = (url) => {
+  try {
+    return new URL(url).host;
+  } catch {
+    return url;
+  }
+};
+
 function About({ projectId, project }) {
   const about = useJson(`/api/projects/${encodeURIComponent(projectId)}/about`);
+  const kingdom = useJson(about?.kingdomProject ? '/api/kingdom/status' : null);
+  // The link names its Kingdom by the pairing's id or its API origin; the pairing gives owner and host.
+  const named = about?.kingdomProject?.kingdom;
+  const linkedKingdom = kingdom?.integrations?.find(
+    (k) => k.id === named || host(k.url) === host(named ?? ''),
+  );
   if (about === undefined) return html`<div class="ph-meta">Reading the project…</div>`;
   return html`
     <p class="ph-desc">${about?.description ?? html`<span class="ph-meta">No description. Add one in the project's settings.</span>`}</p>
@@ -82,7 +96,7 @@ function About({ projectId, project }) {
       <dt>Hosted</dt><dd>${about?.repository ? (about.repository.integration === 'github' ? html`<a href=${`https://github.com/${about.repository.ref}`} target="_blank" rel="noopener">GitHub · ${about.repository.ref}</a>` : about.repository.ref) : html`<span class="ph-meta">No hosted origin</span>`}</dd>
       <dt>Worktrees</dt><dd>${about ? WORKTREES[about.worktreeMode] : '—'}</dd>
       <dt>Kingdom</dt><dd>${about?.kingdoms?.length ? about.kingdoms.join(', ') : html`<span class="ph-meta">No access grants</span>`}</dd>
-      <dt>Kingdom project</dt><dd>${about?.kingdomProject ? html`<span class="mono" title="The Kingdom project's id; its name and pool show once Kingdom serves them">${about.kingdomProject.projectId}</span> <span class="ph-meta">in ${about.kingdomProject.kingdom}</span>` : html`<span class="ph-meta">Not linked</span>`}</dd>
+      <dt>Kingdom project</dt><dd>${about?.kingdomProject ? html`<span class="mono" title="The Kingdom project's id: Kingdom doesn't give a paired Foundry its projects' names yet">${about.kingdomProject.projectId}</span> <span class="ph-meta">in ${linkedKingdom ? (linkedKingdom.holder?.owner?.name ? `${linkedKingdom.holder.owner.name}'s Kingdom (${host(linkedKingdom.url)})` : kingdomOwnerName(linkedKingdom)) : 'a Kingdom this Foundry is no longer paired with'}</span>` : html`<span class="ph-meta">Not linked</span>`}</dd>
       <dt>Path</dt><dd class="mono">${project?.path ?? '—'}</dd>
     </dl>`;
 }
