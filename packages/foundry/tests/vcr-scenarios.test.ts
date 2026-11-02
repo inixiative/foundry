@@ -25,12 +25,15 @@ import {
   CODEX_HARNESS_INSTRUCTIONS_OFF,
   composeRoleView,
 } from '../src/prompts/instruction-stack';
+import { defaultProfileSource } from '../src/providers/default-profiles';
+import { boundLaunchEnvironment } from '../src/providers/native-text-environment';
 import { buildNativeTextProvider, subscriptionStatus } from '../src/providers/native-text-provider';
 import { createPrimedDecisionHost, primedRequest } from '../src/providers/primed-decisions';
 import {
   ClaudeCodeSessionAdapter,
   CodexSessionAdapter,
   InMemoryExternalSessionStore,
+  MuseSessionAdapter,
 } from '../src/providers/session-adapter';
 import { SessionBackedProvider } from '../src/providers/session-backed';
 import { SubscriptionAuthentication } from '../src/providers/subscription-authentication';
@@ -55,9 +58,12 @@ import {
   FIXTURES_DIR,
   kingdomVcr,
   LIVE,
+  museVcr,
   recordedAppServerTransport,
   recordedClaudeTransport,
   recordedCodexStatus,
+  recordedMuseConnect,
+  recordedMuseStatus,
   sameAsLive,
   settleRecordings,
 } from './helpers/vcr';
@@ -1418,6 +1424,82 @@ test.skipIf(!kingdomUp)(
       { type: 'pong' },
       { type: 'identity', userId: null },
     ]);
+  },
+  LIVE_TIMEOUT,
+);
+
+test(
+  "muse worker session: two turns on one `muse serve` host, on the user's own Muse login, with Meta's API key ignored",
+  async () => {
+    const vcr = museVcr();
+    const out = await scenario(vcr, 'worker', async () => {
+      const directory = root(),
+        cwd = join(directory, 'project');
+      mkdirSync(cwd);
+      // The login is the user's own (~/.config/muse); a live run's child gets the account's HOME back.
+      const home = process.env.HOME,
+        key = process.env.META_API_KEY;
+      process.env.HOME = directory;
+      process.env.META_API_KEY = 'meta-model-api-key';
+      mkdirSync(join(directory, '.config', 'muse'), { recursive: true, mode: 0o700 });
+      const status = recordedMuseStatus(['subscribed'], vcr);
+      const host = recordedMuseConnect(['two-turns'], vcr);
+      const adapter = new MuseSessionAdapter({
+        store: new InMemoryExternalSessionStore(),
+        authentication: new SubscriptionAuthentication(
+          join(directory, 'runtime-profiles'),
+          defaultProfileSource('muse'),
+          status.statusSpawn,
+        ),
+        defaults: { model: LIVE.museModel, effort: 'low' },
+        environment: boundLaunchEnvironment,
+        connect: host.connect,
+      });
+      const provider = new SessionBackedProvider({
+        id: 'muse',
+        adapter,
+        defaultModel: LIVE.museModel,
+        defaultCwd: cwd,
+      });
+      try {
+        const first = await provider.complete(
+          [{ role: 'user', content: answerPrompt('first turn') }],
+          { threadId: 'muse-worker', cwd },
+        );
+        const second = await provider.complete(
+          [{ role: 'user', content: answerPrompt('second turn') }],
+          { threadId: 'muse-worker', cwd },
+        );
+        const launch = host.launches[0];
+        return {
+          turns: [first.content.trim(), second.content.trim()],
+          launches: host.launches.length,
+          argv: launch?.argv.slice(1),
+          statusChecks: status.statusChecks,
+          meteredKeyPassed: launch?.env.META_API_KEY !== undefined,
+          noAutoUpdate: launch?.env.MUSE_NO_AUTO_UPDATE,
+          // agent-session 0.8.0 names the Muse session (nativeSessionId) only on the turn that opened
+          // it; the binding (externalSessionId) is on every turn.
+          sameSession:
+            !!first.native?.externalSessionId &&
+            first.native.externalSessionId === second.native?.externalSessionId,
+        };
+      } finally {
+        await adapter.releaseAll();
+        process.env.HOME = home;
+        if (key === undefined) delete process.env.META_API_KEY;
+        else process.env.META_API_KEY = key;
+      }
+    });
+    expect(out).toEqual({
+      turns: [ANSWER, ANSWER],
+      launches: 1,
+      argv: ['serve', '--trust-workspace', '--disable-sandbox'],
+      statusChecks: 1,
+      meteredKeyPassed: false,
+      noAutoUpdate: '1',
+      sameSession: true,
+    });
   },
   LIVE_TIMEOUT,
 );

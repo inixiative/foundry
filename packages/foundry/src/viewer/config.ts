@@ -1052,8 +1052,9 @@ function validateProjectCapacity(config: FoundryConfig, project: ProjectSettings
       `Project ${project.id} uses Kingdom capacity: set kingdomCapacity { kingdom, signetId }`,
     );
   selectKingdomIntegration(config.kingdomIntegrations, capacity.kingdom);
+  // Kingdom pools hold Claude Code and Codex logins; a Muse Code login in a pool is not built yet.
   if (!['claude-code', 'codex'].includes(project.defaults?.provider ?? config.defaults.provider))
-    throw Error('Kingdom capacity requires a native runtime provider');
+    throw Error('Kingdom capacity requires a Claude Code or Codex default worker');
 }
 
 export function validateConfig(config: FoundryConfig): void {
@@ -1134,10 +1135,7 @@ export function validateConfig(config: FoundryConfig): void {
     });
     for (const [threadId, sourceId] of Object.entries(config.nativeAuthenticationSelections ?? {}))
       authentication.select(threadId, sourceId);
-    if (
-      config.defaults.nativeAuthenticationId &&
-      !['claude-code', 'codex'].includes(config.defaults.provider)
-    )
+    if (config.defaults.nativeAuthenticationId && !subscriptionWorker(config.defaults.provider))
       throw Error('Native authentication requires a native runtime provider');
   }
   validateLearningSettings(config.learning);

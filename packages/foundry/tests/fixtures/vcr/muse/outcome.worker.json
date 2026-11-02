@@ -1,0 +1,27 @@
+{
+  "version": "1.4.14",
+  "status": 200,
+  "body": {
+    "turns": [
+      "accepted-private-answer",
+      "accepted-private-answer"
+    ],
+    "launches": 1,
+    "argv": [
+      "serve",
+      "--trust-workspace",
+      "--disable-sandbox"
+    ],
+    "statusChecks": 1,
+    "meteredKeyPassed": false,
+    "noAutoUpdate": "1",
+    "sameSession": true
+  },
+  "recorded": {
+    "service": "muse",
+    "cli": "muse",
+    "recordedAt": "2026-11-02T03:07:41.112Z",
+    "agentSession": "0.8.0",
+    "environment": "terminal"
+  }
+}

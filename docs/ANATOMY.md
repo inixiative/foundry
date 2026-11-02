@@ -49,7 +49,7 @@ One sheet naming every part of Foundry, so people and agents use the same words.
 | foundry-core | Engine primitives with no runner and no I/O policy (Thread, Harness, ContextLayer/Stack, MiddlewareChain, SignalBus, capability gate), so the harness logic is reusable alone. MIT. | `packages/core` (`@inixiative/foundry-core`) | live |
 | Foundry | The harness and the app: daemon, turns, middleware, viewer, persistence, Kingdom pairing, Archive capture. BSL 1.1. | `packages/foundry` (`@inixiative/foundry`) | live |
 | foundry-acp | A thin stdio ACP agent that maps ACP sessions onto Foundry threads through the daemon's loopback API, so any ACP host drives the same turn path as the viewer. MIT. | `packages/acp`; [FOUNDRY-ACP.md](reference/FOUNDRY-ACP.md) | live |
-| agent-session | The separate package that runs native Claude Code and Codex sessions and primed decision sessions. Foundry never launches a CLI itself. | `@inixiative/agent-session` | live |
+| agent-session | The separate package that runs native Claude Code, Codex and Muse Code sessions and primed decision sessions. Foundry never launches a CLI itself. | `@inixiative/agent-session` | live |
 
 ## The thread and its tree
 
@@ -57,7 +57,8 @@ One sheet naming every part of Foundry, so people and agents use the same words.
 |---|---|---|---|
 | thread | One line of work: its stack, agents, journal and turns. Its id is also its ACP `sessionId` and its Archive session id. | `pc/thread.ts`, `pf/agents/thread-runtime.ts` | live |
 | main thread | The thread the user talks to. Its executor is the only agent that does the work. | | live |
-| Artificer / executor | The native Claude Code (or Codex) session running as the main thread's executor. "Artificer" is the role name in [FLOW.md](FLOW.md); code says `executor`. | `pf/providers/session-adapter.ts`, `session-backed.ts` | live |
+| Artificer / executor | The native Claude Code (or Codex, or Muse Code) session running as the main thread's executor. "Artificer" is the role name in [FLOW.md](FLOW.md); code says `executor`. | `pf/providers/session-adapter.ts`, `session-backed.ts` | live |
+| worker | The subscription harness a thread's main session runs on: `claude-code`, `codex` or `muse` (Muse Code, on the user's own Muse login; main threads only, never decisions). Set when the thread is created; a project has a default. | `ThreadMeta.worker`, `SUBSCRIPTION_WORKERS` (`pf/models/registry.ts`) | live |
 | turn | One message and the work it starts. A turn accepted while the thread is busy is `queued`, not `active`, so restart recovery drops it rather than marking it interrupted. | `pf/turns/turn-service.ts` (`TurnService`, per-thread `SerializedQueue`) | live |
 | unwrapped / wrapped thread | A thread with no layer, classifier, router, Warden or conversation is unwrapped: the message reaches the native session as typed, with no Cartographer call or thread state. A fresh install's threads are unwrapped. | `wrapsThread`, `pf/agents/thread-runtime.ts` | live |
 | project / global scope | A registered repository a thread works in; its chorus, settings cascade and capacity hang off it. A cwd outside every project uses the global (unscoped) scope and is never refused. | `projects` in settings; `.foundry/project.json` in the repo | live |

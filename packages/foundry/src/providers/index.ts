@@ -71,10 +71,13 @@ export {
   type ExternalSessionStore,
   FileExternalSessionStore,
   InMemoryExternalSessionStore,
+  MuseSessionAdapter,
+  type MuseSessionAdapterConfig,
   type SessionAdapter,
 } from './session-adapter';
 export {
   formatMessagesForNativeSession,
+  type NativeTurnSink,
   SessionBackedProvider,
   type SessionBackedProviderConfig,
 } from './session-backed';

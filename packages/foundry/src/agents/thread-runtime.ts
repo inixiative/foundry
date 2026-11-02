@@ -42,6 +42,7 @@ import {
 import { CONVERSATION_FLOOR_LAYER, CONVERSATION_ROSTER_LAYER } from '../conversations/roster';
 import type { ConversationPhase, ConversationWrapper } from '../conversations/types';
 import type { FeedbackPhase } from '../feedback/types';
+import { workerHostsFoundryTools } from '../models/registry';
 import { roleComposition } from '../prompts/instruction-settings';
 import type { SessionAdapter } from '../providers/session-adapter';
 import {
@@ -1225,8 +1226,10 @@ class ThreadRuntimeImpl implements ThreadRuntime {
 
     // A wrapped thread holds Foundry's tools note once, as a standing layer: when to call set_plan and
     // the other Foundry tools. An unwrapped thread gets nothing standing (a fresh install), only the skills.
+    // A thread on a worker that cannot hold the tools (Muse Code) is never told about them.
     if (
       wrapsThread(deps.config, this.domainLibrarians.size, stack) &&
+      workerHostsFoundryTools(thread.meta.worker) &&
       !stack.getLayer(FOUNDRY_TOOLS_LAYER)
     ) {
       const note = new ContextLayer({

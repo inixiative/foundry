@@ -8,7 +8,7 @@ import { join, resolve } from 'node:path';
 import { resolveDecisionModel } from '@inixiative/foundry-core';
 import { stampFoundryRun } from './archives/run-stamp';
 import { AGENT_CLIS, ensureAgentClisOnPath } from './daemon/agent-clis';
-import { WORKER_SESSION_RUNTIMES } from './models/registry';
+import { subscriptionWorker, WORKER_SESSION_RUNTIMES } from './models/registry';
 import { providerBaseUrl, providerContextBudget, providerEnabled } from './models/vendors';
 import {
   type DecisionEvents,
@@ -85,6 +85,7 @@ import {
   createRegisteredProvider,
   FileExternalSessionStore,
   GeminiProvider,
+  MuseSessionAdapter,
   OpenAIProvider,
   providerApiKey,
   type SessionAdapter,
@@ -103,6 +104,7 @@ import { MemoryToolAdapter } from './tools/memory-adapter';
 import { rtk as rtkFilter } from './tools/output-filters';
 import { PLAN_TOOL_DESCRIPTION, type ThreadPlans, ThreadPlanTool } from './tools/thread-plan';
 import { journalHistory } from './turns/journal-history';
+import { nativeQuestions } from './turns/native-questions';
 import { lateBoundToolGate, type ThreadToolGate } from './turns/tool-gate';
 import {
   ConfigStore,
@@ -350,7 +352,7 @@ function createProvider(
             })
           : undefined;
   const routed = projectCapacityAuthentication(authentication);
-  if (routed && !['claude-code', 'codex'].includes(providerId))
+  if (routed && !subscriptionWorker(providerId))
     throw Error('Native authentication requires a native runtime provider');
   if (authentication instanceof NativeAuthentication)
     for (const [threadId, sourceId] of Object.entries(config.nativeAuthenticationSelections ?? {}))
@@ -440,6 +442,27 @@ function createProvider(
         sessionAdapter,
         provider: new SessionBackedProvider({
           id: 'codex',
+          adapter: sessionAdapter,
+          defaultModel: defaultModel,
+          ...hostSettings,
+        }),
+      };
+    }
+    case 'muse': {
+      // Muse Code on the user's own Muse login. Its questions go to the thread's person on the
+      // prompt queue the tool gate asks on; its config is the user's own (MuseSessionAdapter).
+      const sessionAdapter = new MuseSessionAdapter({
+        store: sessionStore,
+        authentication: routed,
+        // Effort is the host's (the thread's launch settings); otherwise Muse's own default.
+        defaults: { model: defaultModel },
+        ...(subscription ? { environment: boundLaunchEnvironment } : {}),
+        questions: (threadId) => nativeQuestions(actionQueue, threadId),
+      });
+      return {
+        sessionAdapter,
+        provider: new SessionBackedProvider({
+          id: 'muse',
           adapter: sessionAdapter,
           defaultModel: defaultModel,
           ...hostSettings,
@@ -915,6 +938,8 @@ const viewer = await startViewer({
   // Every worker's subagents become observed child threads (docs/THREAD-TREE.md spec A).
   subagentSources: sessionProviders,
   taskSources: sessionProviders,
+  // Turns a worker's session starts itself (Muse crons, monitors, goals) land in their thread.
+  nativeTurnSources: sessionProviders,
   ...(inSession && claudeProvider instanceof SessionBackedProvider
     ? {
         threadSetup: inSessionThreadSetup({

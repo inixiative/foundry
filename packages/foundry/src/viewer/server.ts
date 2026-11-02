@@ -48,6 +48,7 @@ import type { TaskSink } from '../providers/session-backed';
 import { ThreadLaunchSettings } from '../providers/thread-launch';
 import { kingdomPostDelivery } from '../tools/kingdom-post';
 import { applyPlanPatch, type PlanPatch, type ThreadPlans } from '../tools/thread-plan';
+import { NativeTurnRecorder } from '../turns/native-turns';
 import { RunningTasks } from '../turns/running-tasks';
 import { SubagentRecorder } from '../turns/subagents';
 import {
@@ -135,6 +136,10 @@ export interface ViewerConfig {
   };
   /** Executor providers whose sessions report their background tasks (shells, monitors). */
   taskSources?: ReadonlyArray<{ observeTasks(sink: TaskSink): () => void }>;
+  /** Executor providers whose sessions start turns on their own (Muse crons, monitors, goals). */
+  nativeTurnSources?: ReadonlyArray<{
+    observeNativeTurns(sink: import('../providers/session-backed').NativeTurnSink): () => void;
+  }>;
   /** Executor providers whose sessions report their subagents (spec A: observed child threads). */
   subagentSources?: ReadonlyArray<{
     observeSubagents(
@@ -435,6 +440,26 @@ export function createViewer(config: ViewerConfig) {
           subagents.observe(threadId, evidence);
         } catch (error) {
           console.warn(`[Subagents] ${threadId}: ${(error as Error).message}`);
+        }
+      });
+    // A turn the session started itself lands in its thread's journal and live stream; when it
+    // ends, the thread list sees its new last turn.
+    const nativeTurns = new NativeTurnRecorder({
+      store: localStore,
+      thread: (id) => directory.get(id),
+      events: eventStream,
+      arrived: (thread) => {
+        thread.meta.lastActiveAt = Date.now();
+        localStore.saveThread(thread);
+        streams.threadsChanged(thread.id);
+      },
+    });
+    for (const source of config.nativeTurnSources ?? [])
+      source.observeNativeTurns((threadId, evidence, task) => {
+        try {
+          nativeTurns.observe(threadId, evidence, task);
+        } catch (error) {
+          console.warn(`[Native turns] ${threadId}: ${(error as Error).message}`);
         }
       });
   }

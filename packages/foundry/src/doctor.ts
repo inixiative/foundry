@@ -17,7 +17,7 @@ async function main() {
     args = flags.filter((arg) => arg !== '--offline');
   if (args.includes('--help')) {
     console.log(
-      'Usage: bun run doctor [configuration-directory] [--offline]\nReads existing settings.json and checks local setup without starting agents or provider requests. Asks each paired Kingdom which Signets it lists and sends one request to the local Archive; --offline skips them.',
+      'Usage: bun run doctor [configuration-directory] [--offline]\nReads existing settings.json and checks local setup without starting agents or provider requests. Asks each paired Kingdom which Signets it lists, sends one request to the local Archive and asks Muse Code whether it is signed in (muse usage, no model turn); --offline skips them.',
     );
     return;
   }

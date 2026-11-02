@@ -7,6 +7,7 @@ import { lstatSync, mkdirSync, readlinkSync, renameSync, symlinkSync, unlinkSync
 import { join } from 'node:path';
 import { writePrivateFile } from '../client/private-file';
 import { isDefaultProfile } from './default-profiles';
+import type { NativeRuntime } from './native-authentication';
 
 function assertPrivateDirectory(directory: string): void {
   const stat = lstatSync(directory);
@@ -66,8 +67,12 @@ export function assertUserProfile(directory: string): void {
 }
 
 /** Default login locations are referenced in place; every other profile must be Foundry-private. */
-export function assertProfile(directory: string, runtime: 'claude' | 'codex'): void {
+export function assertProfile(directory: string, runtime: NativeRuntime): void {
   if (isDefaultProfile(directory, runtime)) assertUserProfile(directory);
+  else if (runtime === 'muse')
+    throw Error(
+      "A Muse Code login is the user's own default profile; other Muse profiles are not supported yet",
+    );
   else assertPrivateProfile(directory);
 }
 

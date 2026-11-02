@@ -21,6 +21,7 @@ import {
   type ThreadMeta,
   threadTitle,
 } from '@inixiative/foundry-core';
+import { workerArchiveRuntime } from '../models/registry';
 import { contentHash } from '../persistence/journal-content';
 import type { LocalSessionStore } from '../persistence/local-session-store';
 import type { ArchiveWriter } from './local';
@@ -258,6 +259,10 @@ export function captureThread(
     sessionId: threadId,
     title: threadTitle(thread.meta)?.text.slice(0, 500) || threadId,
     projectId: thread.meta.projectId,
+    // A Muse Code thread is `meta` on a subscription, which Archive keeps personal (alwaysPersonal).
+    ...(workerArchiveRuntime(thread.meta.worker)
+      ? { runtime: workerArchiveRuntime(thread.meta.worker) }
+      : {}),
     ...(actor ? { actor } : {}),
     ...(lineageOf(journal, thread.meta) ?? {}),
     // A test or eval harness running this Foundry stamps its threads (ARCHIVE_RUN).
@@ -433,6 +438,9 @@ const RENEW_MS = 2 * 60_000;
  */
 function nativeSessions(journal: LocalSessionStore, threadId: string): NativeSession[] {
   const meta = journal.threads().find((t) => t.id === threadId)?.meta;
+  // A Muse Code session is not a claimable source in Archive (claims name Claude Code and Codex
+  // sessions only); naming its id as either would be a wrong claim. Archive's Muse collector takes it.
+  if (meta?.worker === 'muse') return [];
   // An observed subagent's own native session: a Codex child's thread (a Claude subagent's
   // transcript follows its session's claim, so it has none of its own).
   if (meta?.spawn?.observed)

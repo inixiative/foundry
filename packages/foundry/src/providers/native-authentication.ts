@@ -30,11 +30,15 @@ import {
   writeProfileConfiguration,
 } from './private-profile';
 
+/** The native CLIs a login belongs to: Claude Code, Codex and Muse Code. */
+export const NATIVE_RUNTIMES = ['claude', 'codex', 'muse'] as const;
+export type NativeRuntime = (typeof NATIVE_RUNTIMES)[number];
+
 export type NativeAuthenticationSource = {
   /** Local identities, never provider account names or secrets. */
   id: string;
   integrationId: string;
-  runtime: 'claude' | 'codex';
+  runtime: NativeRuntime;
 } & (
   | { mode: 'native-profile'; profileDirectory: string }
   | {
@@ -54,7 +58,7 @@ export type NativeAuthenticationSource = {
 const identity = {
   id: z.string(),
   integrationId: z.string(),
-  runtime: z.enum(['claude', 'codex']),
+  runtime: z.enum(NATIVE_RUNTIMES),
 };
 const sourceSchema = z.discriminatedUnion('mode', [
   z
@@ -83,7 +87,7 @@ const sourceSchema = z.discriminatedUnion('mode', [
 /** The account limits a native session reports (agent-session's LimitSnapshot), declared here so a
  * consumer of this module never compiles agent-session's sources. */
 export interface NativeLimitSnapshot {
-  readonly runtime: 'claude' | 'codex';
+  readonly runtime: NativeRuntime;
   readonly source: 'poll' | 'stream';
   readonly observedAt: number;
   readonly windows: readonly {
@@ -118,23 +122,40 @@ export interface NativeAuthenticationLaunch {
 }
 
 export interface NativeAuthenticationProvider {
-  bindingId(threadId: string, runtime: 'claude' | 'codex'): string;
-  resolveBindingId?(threadId: string, runtime: 'claude' | 'codex'): Promise<string>;
-  prepare(threadId: string, runtime: 'claude' | 'codex'): Promise<NativeAuthenticationLaunch>;
+  bindingId(threadId: string, runtime: NativeRuntime): string;
+  resolveBindingId?(threadId: string, runtime: NativeRuntime): Promise<string>;
+  prepare(threadId: string, runtime: NativeRuntime): Promise<NativeAuthenticationLaunch>;
 }
 
+/**
+ * What would bill, route or loosen Muse Code away from its saved subscription login and the gates, by
+ * the names the 1.4.14 binary reads: Meta's metered keys and endpoints (META_, LLM_, MODEL_, LLAMA_,
+ * OPENROUTER_), its auth and key-mint endpoints, and the MUSE_ switches for the model, experiments,
+ * contributor mode, the approval judge and a fail-open permission profile. agent-session's
+ * MuseSession strips the same set; Foundry strips it first so no launch path depends on that.
+ */
+const MUSE_COMPETING =
+  /^(META_|LLM_|MODEL_|LLAMA_|OPENROUTER_|TBH_(AUTH|MINT)_BASE_URL$|MUSE_EXPERIMENTAL_|MUSE_(MODEL|CONTRIBUTOR_MODE|DISABLE_APPROVAL_JUDGE|PERMISSION_PROFILE_FAIL_OPEN)$)/;
+
 /** The child's environment without inherited credentials, endpoints or profile overrides: only the
- * binding's own source may set them, after this. Foundry's instruction-file switch is policy, not a credential. */
-export function withoutCompetingCredentials(inherited: Record<string, string | undefined>) {
+ * binding's own source may set them, after this. Foundry's instruction-file switch is policy, not a credential.
+ * A Muse launch also loses Meta's metered keys and Muse's billing and approval switches, and never self-updates
+ * (the CLI must stay on the version agent-session's SDK is pinned to). */
+export function withoutCompetingCredentials(
+  inherited: Record<string, string | undefined>,
+  runtime?: NativeRuntime,
+) {
   const env = { ...inherited };
   for (const key of Object.keys(env))
     if (
       /^(ANTHROPIC_|OPENAI_|CODEX_|CLAUDE_CODE_|CLAUDE_CONFIG_DIR$|FOUNDRY_GATEWAY_TOKEN$)/.test(
         key,
-      )
+      ) ||
+      (runtime === 'muse' && MUSE_COMPETING.test(key))
     )
       delete env[key];
   if (inherited.CLAUDE_CODE_DISABLE_CLAUDE_MDS === '1') env.CLAUDE_CODE_DISABLE_CLAUDE_MDS = '1';
+  if (runtime === 'muse') env.MUSE_NO_AUTO_UPDATE = '1';
   return env;
 }
 
@@ -202,9 +223,12 @@ export class NativeAuthentication {
       if (
         !uuid.test(source.id) ||
         !uuid.test(source.integrationId) ||
-        !['claude', 'codex'].includes(source.runtime)
+        !NATIVE_RUNTIMES.includes(source.runtime)
       )
         throw Error('Invalid native authentication identity');
+      // Muse Code bills only its own saved login; there is no gateway (endpoint) mode for it.
+      if (source.runtime === 'muse' && source.mode !== 'native-profile')
+        throw Error('A Muse Code login is a native profile; Muse has no gateway mode');
       if (this.sources.has(source.id)) throw Error('Duplicate authentication source');
       if (source.mode === 'native-profile') {
         if (!isAbsolute(source.profileDirectory))
@@ -263,14 +287,14 @@ export class NativeAuthentication {
   revoke(sourceId: string): void {
     this.revoked.add(sourceId);
   }
-  private source(threadId: string, runtime: 'claude' | 'codex') {
+  private source(threadId: string, runtime: NativeRuntime) {
     const id = this.selections.get(threadId) ?? this.options.defaultSourceId;
     const source = id && this.sources.get(id);
     if (!source || source.runtime !== runtime || this.revoked.has(source.id))
       throw Error('Native authentication source unavailable');
     return source;
   }
-  bindingId(threadId: string, runtime: 'claude' | 'codex'): string {
+  bindingId(threadId: string, runtime: NativeRuntime): string {
     const source = this.source(threadId, runtime);
     return `${threadId}:auth:${source.id}:${hash(JSON.stringify(source))}`;
   }
@@ -287,10 +311,7 @@ export class NativeAuthentication {
     writeCredentialHome(home, await realpath(source.profileDirectory), PRIVATE_HOME_CONFIG);
     return home;
   }
-  async prepare(
-    threadId: string,
-    runtime: 'claude' | 'codex',
-  ): Promise<NativeAuthenticationLaunch> {
+  async prepare(threadId: string, runtime: NativeRuntime): Promise<NativeAuthenticationLaunch> {
     const source = this.source(threadId, runtime);
     if (source.mode === 'native-profile' && threadId.includes(':aux:'))
       throw Error(
@@ -356,7 +377,7 @@ export class NativeAuthentication {
         };
         if (active) throw Error('Authentication launch already owns a process');
         const lock = join(directory, '.foundry-auth-lock');
-        const env = withoutCompetingCredentials(inherited);
+        const env = withoutCompetingCredentials(inherited, runtime);
         for (const configured of this.sources.values())
           if (configured.mode === 'gateway' && configured.credential.type === 'environment')
             delete env[configured.credential.variable];
