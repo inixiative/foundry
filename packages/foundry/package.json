@@ -1,6 +1,6 @@
 {
   "name": "@inixiative/foundry",
-  "version": "0.5.6",
+  "version": "0.5.7",
   "type": "module",
   "main": "src/index.ts",
   "types": "src/index.ts",
@@ -35,7 +35,8 @@
     "@inixiative/config": "^0.5.177",
     "@inixiative/foundry-core": "workspace:*",
     "@inixiative/gloss": "0.1.1",
-    "@inixiative/signet": "^0.11.1",
+    "@inixiative/json-rules": "^3.16.0",
+    "@inixiative/signet": "^0.12.1",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@muse-code/sdk": "1.4.14",
     "@prisma/client": "^6.6.0",

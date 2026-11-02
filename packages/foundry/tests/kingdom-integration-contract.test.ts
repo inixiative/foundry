@@ -117,7 +117,6 @@ test('read routes the exact discovered resource Integration and rejects foreign 
                   name: 'Controlled',
                   kind: 'document',
                   integrationId: resourceIntegrationId,
-                  lens: {},
                 },
               ],
             },
@@ -191,7 +190,7 @@ test('signet 0.5: a describe resource this package cannot read costs that resour
     taskId: null,
     currentRevision: 1,
     remainingRequests: null,
-    // A Kingdom before K1 sends no lens; a newer one may send a lens of another shape.
+    // No lens is the base lens; a lens that isn't json-rules layers (a pre-0.12 lens object) is dropped.
     operations: [
       {
         key: 'documents.read',

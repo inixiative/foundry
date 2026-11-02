@@ -15,18 +15,20 @@ import {
 import {
   type ConversationMember,
   type HostedSignet,
-  selectsThread,
+  permitsOperation,
   type ThreadEntry,
   type ThreadHost,
+  type ThreadOperation,
   type ThreadOutcome,
   type ThreadRefusal,
   type ThreadRequestOf,
   type ThreadSubscribeFrame,
   type ThreadSubscription,
-  type ThreadsLens,
+  type ThreadsTerms,
   threadRefused,
   threadResult,
   threadsResourceKind,
+  threadsTerms,
   threadTextLimit,
 } from '@inixiative/signet';
 import { memberPostReception } from '../agents/chorus-reception';
@@ -37,6 +39,7 @@ import {
 } from '../providers/kingdom-installation-connection';
 import type { TurnAcceptance, TurnRequest } from '../turns/turn-service';
 import type { ProjectSettingsConfig } from '../viewer/config';
+import { grantReaches } from './grantReach';
 import { conversationFloor, conversationRoster, quotedName } from './roster';
 import { resolveConversationSettings } from './settings';
 import {
@@ -46,7 +49,7 @@ import {
   type ConversationRecord,
   type ConversationSettings,
   type ConversationWrapper,
-  DEFAULT_LOCAL_LENS,
+  DEFAULT_LOCAL_TERMS,
   emptyConversation,
   type HeldDeliveryRecord,
   type HeldRecord,
@@ -66,6 +69,8 @@ export interface ConversationServiceDeps {
   store: LocalSessionStore;
   /** A thread this Foundry runs (restored threads included). */
   thread: (threadId: string) => Thread | undefined;
+  /** Every thread this Foundry runs: a grant's lens is evaluated over them to mark shares. */
+  threads: () => readonly Thread[];
   /**
    * Bring an archived thread back (TurnService.reopen): an admitted post revives it (§4.2). The
    * turn path reopens on its own; a note needs this.
@@ -140,10 +145,10 @@ interface OpenHeld {
 export interface ConversationMemberView {
   member: ConversationMember;
   displayName: string;
-  /** Kingdom lists the Signet on this thread now; false: known only from its posts (revoked, or not yet in a snapshot). */
+  /** Kingdom lists a Signet whose grant reaches this thread now; false: known only from its posts (revoked, narrowed off, or not yet in a snapshot). */
   listed: boolean;
   recipientModel?: string;
-  lens?: Pick<ThreadsLens, 'view' | 'delivery' | 'outbound'>;
+  terms?: Pick<ThreadsTerms, 'view' | 'delivery' | 'outbound'>;
   /** The outbound term a send uses now (falls back to `review`, §4.5). */
   outbound: 'review' | 'auto';
   revision?: number;
@@ -221,7 +226,7 @@ export class ConversationService implements ConversationWrapper {
    * transaction. Floor and depth are judged here, at admission, never later.
    */
   admit(frame: ThreadRequestOf<'thread.prompt'>): ThreadOutcome<'thread.prompt'> {
-    const { input, signetId, lens } = frame;
+    const { input, signetId, terms } = frame;
     const thread = this.deps.thread(input.threadId);
     const closed = this.closedReason(thread);
     if (closed || !thread) return threadRefused(closed ?? 'unknown_thread');
@@ -241,7 +246,7 @@ export class ConversationService implements ConversationWrapper {
       displayName: frame.member.displayName,
       postId: input.postId,
       text: input.text,
-      delivery: lens.delivery,
+      delivery: terms.delivery,
       ...(input.inReplyTo ? { inReplyTo: input.inReplyTo } : {}),
       executionId: frame.requestId,
       acceptedRevision: frame.acceptedRevision,
@@ -419,7 +424,7 @@ export class ConversationService implements ConversationWrapper {
     );
     const raw = this.deps.store.journalEntries(thread.id, { after, limit: RAW_READ });
     const owner = this.isOwnerSignet(frame.signetId);
-    const reader = { member: signetMember(frame.signetId), lens: frame.lens };
+    const reader = { member: signetMember(frame.signetId), terms: frame.terms };
     const entries = raw.flatMap((row) => this.readable(row, reader, owner));
     const more = raw.length === RAW_READ;
     return threadResult(
@@ -444,7 +449,7 @@ export class ConversationService implements ConversationWrapper {
     const from = this.isOwnerSignet(frame.signetId) ? 0 : this.sharedFrom(thread);
     const raw = this.deps.store.journalEntries(thread.id, { newest: true, limit: RAW_READ });
     const owner = this.isOwnerSignet(frame.signetId);
-    const reader = { member: signetMember(frame.signetId), lens: frame.lens };
+    const reader = { member: signetMember(frame.signetId), terms: frame.terms };
     const entries = raw
       .filter((row) => row.seq > from)
       .flatMap((row) => this.readable(row, reader, owner));
@@ -455,14 +460,14 @@ export class ConversationService implements ConversationWrapper {
   }
 
   /**
-   * One journal row as this reader may see it (§4.9): its lens first, then the per-reader rules.
+   * One journal row as this reader may see it (§4.9): its terms first, then the per-reader rules.
    * The host agent's own messages are the owner's private side, so only an owner recipient (a grant
    * with `prompt.resolve`) reads them (M8). A report against a `notify` commission reaches only its
    * author and the owner (M1).
    */
   private readable(
     row: JournalEntry,
-    reader: { member: ConversationMember; lens: Pick<ThreadsLens, 'view'> },
+    reader: { member: ConversationMember; terms: Pick<ThreadsTerms, 'view'> },
     owner: boolean,
   ): ThreadEntry[] {
     const entry = threadEntryOf(row);
@@ -487,7 +492,7 @@ export class ConversationService implements ConversationWrapper {
   }
 
   /**
-   * Push what each live view hasn't had yet, filtered to its lens. The socket numbers appends
+   * Push what each live view hasn't had yet, filtered to its terms. The socket numbers appends
    * densely per view and skips what the snapshot covered, so pushing twice is harmless.
    */
   pump(threadId: string): void {
@@ -511,7 +516,7 @@ export class ConversationService implements ConversationWrapper {
         if (row.seq > this.cursors.get(view.subscriptionId)!)
           for (const entry of this.readable(
             row,
-            { member: signetMember(view.signetId), lens: view.lens },
+            { member: signetMember(view.signetId), terms: view.terms },
             owners.get(view.subscriptionId)!,
           ))
             view.append(entry);
@@ -548,9 +553,9 @@ export class ConversationService implements ConversationWrapper {
           this.save(thread, record);
           return null;
         }
-        // A member whose grant says floor.mayTake takes the conch without being given it (§4.9).
+        // A member whose terms say floor.mayTake takes the conch without being given it (§4.9).
         if (action.action === 'take') {
-          if (!frame.lens.floor.mayTake) {
+          if (!frame.terms.floor.mayTake) {
             if (lapsed) this.save(thread, record);
             return 'floor_denied' as const;
           }
@@ -937,19 +942,19 @@ export class ConversationService implements ConversationWrapper {
 
   /**
    * A conversation thread is always wrapped: its notes and its roster must reach the executor
-   * (§4.1). It is one once its wrapper has state, or as soon as a grant selects it (a member joined
+   * (§4.1). It is one once its wrapper has state, or as soon as a grant reaches it (a member joined
    * and hasn't posted yet).
    */
   wraps(threadId: string): boolean {
     return (
       this.deps.store.conversation(threadId) !== undefined ||
-      this.deps.hosted().some((signet) => this.grantOn(signet, threadId) !== undefined) ||
+      this.deps.hosted().some((signet) => this.termsOn(signet, threadId) !== undefined) ||
       this.hostsOf(threadId).length > 0
     );
   }
 
   /**
-   * The roster the main agent reads ("F1 follow-ups"): who is in, and each member's lens in plain
+   * The roster the main agent reads ("F1 follow-ups"): who is in, and each member's terms in plain
    * words. Read on every turn of a conversation thread, so a join, a leave or a revision reaches the
    * next turn. `held`: the thread's context already carries a roster, so one is due even when no
    * member is left.
@@ -967,8 +972,8 @@ export class ConversationService implements ConversationWrapper {
         ...(member.recipientModel && member.member.kind !== 'local'
           ? { recipientModel: member.recipientModel }
           : {}),
-        ...(member.lens
-          ? { lens: { view: member.lens.view, delivery: member.lens.delivery } }
+        ...(member.terms
+          ? { terms: { view: member.terms.view, delivery: member.terms.delivery } }
           : {}),
         outbound: member.outbound,
         ...(member.voice ? { local: { voice: member.voice } } : {}),
@@ -1003,7 +1008,7 @@ export class ConversationService implements ConversationWrapper {
     if (!this.wraps(threadId)) return undefined;
     const own =
       this.deps.store.conversation(threadId) !== undefined ||
-      this.deps.hosted().some((signet) => this.grantOn(signet, threadId) !== undefined)
+      this.deps.hosted().some((signet) => this.termsOn(signet, threadId) !== undefined)
         ? this.ownFloor(threadId)
         : undefined;
     const elsewhere = this.memberships(threadId).map(
@@ -1191,15 +1196,15 @@ export class ConversationService implements ConversationWrapper {
       this.deps.changed?.(threadId);
       return 'Posted your aside to the thread.';
     }
-    const lens = this.members(threadId).find((member) =>
+    const terms = this.members(threadId).find((member) =>
       sameMember(member.member, aside.member),
-    )?.lens;
+    )?.terms;
     const outcome = this.admitPost(thread, {
       member: aside.member,
       displayName: aside.displayName,
       postId: `aside:${asideId}`,
       text: aside.text,
-      delivery: lens?.delivery ?? 'note',
+      delivery: terms?.delivery ?? 'note',
     });
     if (!outcome.ok) throw Error(refusalText(outcome.refusal, outcome.message));
     promoted({ asideId, postSeq: outcome.result.journalSeq });
@@ -1364,7 +1369,7 @@ export class ConversationService implements ConversationWrapper {
       record.locals.push({
         threadId: member.id,
         displayName: name,
-        lens: { ...DEFAULT_LOCAL_LENS, floor: { ...DEFAULT_LOCAL_LENS.floor } },
+        terms: { ...DEFAULT_LOCAL_TERMS, floor: { ...DEFAULT_LOCAL_TERMS.floor } },
         joinedAt: new Date().toISOString(),
         fromSeq: this.deps.store.journalSeq(host.id),
       });
@@ -1485,7 +1490,7 @@ export class ConversationService implements ConversationWrapper {
       displayName: local.displayName,
       postId: newId('post'),
       text: boundedText(text),
-      delivery: local.lens.delivery,
+      delivery: local.terms.delivery,
       ...(options.inReplyTo ? { inReplyTo: options.inReplyTo } : {}),
     });
     if (!outcome.ok) throw Error(refusalText(outcome.refusal, outcome.message));
@@ -1644,7 +1649,7 @@ export class ConversationService implements ConversationWrapper {
       // A local member is the owner's own agent, so it reads as the owner does: the host agent's
       // answers too. Everyone in the shared thread hears the whole conversation (Aron, 2026-11-01).
       for (const row of raw)
-        for (const entry of this.readable(row, { member: me, lens: local.lens }, true)) {
+        for (const entry of this.readable(row, { member: me, terms: local.terms }, true)) {
           // An aside is person to person, never shown to an agent (signet `threadEntrySchema`).
           if (entry.kind === 'aside') continue;
           if (entry.kind === 'post' && sameMember(entry.member, me)) continue;
@@ -1733,7 +1738,7 @@ export class ConversationService implements ConversationWrapper {
     const addressed = heard.some((entry) => entry.addressed);
     if (!addressed) {
       if (this.voice(record, settings, memberKey(me)) !== 'speaking') return;
-      if (local.lens.delivery !== 'turn') return;
+      if (local.terms.delivery !== 'turn') return;
       const floor = this.floorState(host);
       if (floor.mode === 'speak-when-spoken-to') return;
       if (floor.mode === 'conch' && !sameMember(floor.holder, me)) return;
@@ -1910,11 +1915,11 @@ export class ConversationService implements ConversationWrapper {
     return !!signet && ownsThreads(signet);
   }
 
-  /** Shared: a listed grant from someone other than the owner selects the thread (§4.8, §4.9). */
+  /** Shared: a listed grant from someone other than the owner reaches the thread (§4.8, §4.9). */
   private isShared(threadId: string): boolean {
     return this.deps
       .hosted()
-      .some((signet) => !ownsThreads(signet) && this.grantOn(signet, threadId) !== undefined);
+      .some((signet) => !ownsThreads(signet) && this.termsOn(signet, threadId) !== undefined);
   }
 
   /**
@@ -1946,19 +1951,16 @@ export class ConversationService implements ConversationWrapper {
     }
   }
 
-  /** Mark the share on every thread a listed grant selects by id: members read from here on. */
+  /** Mark the share on every thread a listed non-owner grant reaches now: members read from here on. */
   private markShared(hosted: readonly HostedSignet[]): void {
-    for (const signet of hosted) {
-      if (ownsThreads(signet)) continue;
-      for (const grant of signet.resources) {
-        if (grant.kind !== threadsResourceKind || !('threads' in grant.lens)) continue;
-        if (grant.lens.threads.form !== 'ids') continue;
-        for (const threadId of grant.lens.threads.ids) {
-          const thread = this.deps.thread(threadId);
-          if (thread && this.record(threadId).sharedFromSeq === undefined) this.sharedFrom(thread);
-        }
-      }
-    }
+    const sharing = hosted.filter((signet) => !ownsThreads(signet));
+    if (!sharing.length) return;
+    for (const thread of this.deps.threads())
+      if (
+        this.record(thread.id).sharedFromSeq === undefined &&
+        sharing.some((signet) => this.termsOn(signet, thread.id) !== undefined)
+      )
+        this.sharedFrom(thread);
   }
 
   private resolved(thread: Thread, record: ConversationRecord) {
@@ -2117,16 +2119,20 @@ export class ConversationService implements ConversationWrapper {
     return revision;
   }
 
-  private grantOn(signet: HostedSignet, threadId: string): ThreadsLens | undefined {
-    for (const grant of signet.resources)
-      if (
-        grant.kind === threadsResourceKind &&
-        'threads' in grant.lens &&
-        selectsThread(grant.lens.threads, threadId)
-      )
-        return grant.lens;
-    return undefined;
+  /**
+   * A listed Signet's terms on this thread, when its grant reaches it: the grantor's lens evaluated
+   * here (`grantReaches`), the same lens Kingdom enforces at admission.
+   */
+  private termsOn(
+    signet: HostedSignet,
+    threadId: string,
+    operations?: readonly ThreadOperation[],
+  ): ThreadsTerms | undefined {
+    const grant = grantReaches(signet, threadId, operations, this.warn);
+    return grant ? threadsTerms(grant.terms) : undefined;
   }
+
+  private readonly warn = (message: string) => (this.deps.log ?? console.warn)(message);
 
   /**
    * The member's outbound term for a send now (§4.5): from the latest snapshot, or `review` when the
@@ -2136,19 +2142,24 @@ export class ConversationService implements ConversationWrapper {
   private outbound(signetId: string, threadId: string): 'review' | 'auto' {
     const signet = this.deps.hosted().find((candidate) => candidate.signetId === signetId);
     if (!signet || signet.revision < this.acceptedRevision(signetId, threadId)) return 'review';
-    return this.grantOn(signet, threadId)?.outbound ?? 'review';
+    return this.termsOn(signet, threadId)?.outbound ?? 'review';
   }
 
-  /** A member the conch can pass to: one whose grant selects the thread now, not a past poster. */
+  /**
+   * A member the conch can pass to: one whose listed grant reaches the thread now for posting (what
+   * holding the conch is for), not a past poster.
+   */
   private isMember(threadId: string, signetId: string): boolean {
     return this.deps
       .hosted()
       .some(
-        (signet) => signet.signetId === signetId && this.grantOn(signet, threadId) !== undefined,
+        (signet) =>
+          signet.signetId === signetId &&
+          this.termsOn(signet, threadId, ['thread.prompt']) !== undefined,
       );
   }
 
-  /** Members of a thread: Signets whose grant selects it, and anyone who has posted to it. */
+  /** Members of a thread: listed Signets whose grant reaches it, and anyone who has posted to it. */
   members(threadId: string): ConversationMemberView[] {
     const views = new Map<string, ConversationMemberView>();
     const present = new Set(
@@ -2179,15 +2190,15 @@ export class ConversationService implements ConversationWrapper {
         });
     }
     for (const signet of this.deps.hosted()) {
-      const lens = this.grantOn(signet, threadId);
-      if (!lens) continue;
+      const terms = this.termsOn(signet, threadId);
+      if (!terms) continue;
       const member = signetMember(signet.signetId);
       views.set(memberKey(member), {
         member,
         displayName: signet.recipient.displayName,
         listed: true,
         recipientModel: signet.recipient.recipientModel,
-        lens: { view: lens.view, delivery: lens.delivery, outbound: lens.outbound },
+        terms: { view: terms.view, delivery: terms.delivery, outbound: terms.outbound },
         outbound: 'review',
         revision: signet.revision,
         limits: {
@@ -2208,7 +2219,7 @@ export class ConversationService implements ConversationWrapper {
         displayName: local.displayName,
         listed: true,
         recipientModel: 'agent on this machine',
-        lens: { view: local.lens.view, delivery: local.lens.delivery, outbound: 'auto' },
+        terms: { view: local.terms.view, delivery: local.terms.delivery, outbound: 'auto' },
         outbound: 'auto',
         present: false,
         lastSeen: null,
@@ -2532,7 +2543,13 @@ const RAW_READ = 5_000;
 /** A grant that answers the host's prompts: Kingdom allows it only to the thread's owner. */
 const ownsThreads = (signet: HostedSignet) =>
   signet.resources.some(
-    (grant) => grant.kind === threadsResourceKind && grant.operations.includes('prompt.resolve'),
+    (grant) =>
+      grant.resourceModel === 'IntegrationResource' &&
+      grant.kind === threadsResourceKind &&
+      permitsOperation(
+        grant.full ? { full: true } : { full: false, operations: grant.operations ?? [] },
+        'prompt.resolve',
+      ),
   );
 
 const handKey = (threadId: string, member: ConversationMember) =>

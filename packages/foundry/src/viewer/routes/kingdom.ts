@@ -3,6 +3,7 @@
  * @kind route
  * @partOf feature:viewer, integration:kingdom
  */
+import type { HostedSignetRequest } from '@inixiative/signet';
 import type { Hono } from 'hono';
 import { z } from 'zod';
 import { defaultKingdomUrl, installationNameOf } from '../../providers/kingdom-cli';
@@ -21,6 +22,12 @@ import {
   withdrawKingdomRegistration,
 } from '../../providers/kingdom-pairing';
 import type { ConfigStore } from '../config';
+
+/** The operations each asked-for resource picks (a Project row asks for none). */
+const picked = (request: HostedSignetRequest) =>
+  request.terms.resources.flatMap((resource) =>
+    resource.resourceModel === 'IntegrationResource' ? [resource.operations] : [],
+  );
 
 /** Pending, unexpired Signet requests across every paired Kingdom, newest first. */
 export function incomingRequests(
@@ -43,8 +50,10 @@ export function incomingRequests(
           lifecycle: request.terms.lifecycle,
           maxRequests: request.terms.maxRequests,
           until: request.terms.expiresAt,
+          // A resource asked for whole (`full`) is everything it offers, now and as it grows.
+          full: picked(request).some((pick) => 'full' in pick),
           operations: [
-            ...new Set(request.terms.resources.flatMap((resource) => resource.operations)),
+            ...new Set(picked(request).flatMap((pick) => ('picks' in pick ? pick.picks : []))),
           ],
           reviewUrl: request.reviewUrl,
         })),

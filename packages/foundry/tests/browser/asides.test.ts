@@ -52,12 +52,7 @@ test('asides: post from /aside, unread count, promote once and say why the secon
     signetId,
     acceptedRevision: 1,
     member: { signetId, displayName: 'JobCo' },
-    lens: {
-      threads: { form: 'ids', ids: ['main'] },
-      view: 'own',
-      delivery: 'note',
-      outbound: 'review',
-    },
+    terms: { view: 'own', delivery: 'note', outbound: 'review', floor: { mayTake: false } },
     operation: 'thread.prompt',
     input: { threadId: 'main', postId: crypto.randomUUID(), text: 'The role you wanted opened.' },
   } as ThreadRequestOf<'thread.prompt'>);

@@ -10,7 +10,13 @@ import {
   headlessHostEventSchema,
   headlessThreadStateSchema,
 } from '../src/conversations/headless-host-protocol';
-import { mockKingdom, userOwner } from './helpers/kingdom-installation';
+import {
+  mockKingdom,
+  termsOf,
+  threadsBaseLenses,
+  threadsGrant,
+  userOwner,
+} from './helpers/kingdom-installation';
 import { until } from './helpers/live-watch-fixture';
 import { writeRegions } from './helpers/regions';
 
@@ -144,20 +150,8 @@ test('the headless host pairs, admits a member note the Warden weighs in on, and
     maxRequests: null,
     maxConcurrent: 1,
     recipient: { recipientModel: 'User', id: crypto.randomUUID(), displayName: 'JobCo' },
-    resources: [
-      {
-        resourceId: crypto.randomUUID(),
-        kind: 'threads',
-        operations: ['thread.prompt', 'thread.read'],
-        lens: {
-          threads: { form: 'ids', ids: ['main'] },
-          view: 'own',
-          delivery: 'note',
-          outbound: 'review',
-          floor: { mayTake: false },
-        },
-      },
-    ],
+    resources: [threadsGrant({ operations: ['thread.prompt', 'thread.read'] })],
+    baseLenses: threadsBaseLenses(),
   };
   kingdom.host(member);
   const requestId = crypto.randomUUID();
@@ -176,7 +170,7 @@ test('the headless host pairs, admits a member note the Warden weighs in on, and
     signetId: member.signetId,
     acceptedRevision: 1,
     member: { signetId: member.signetId, displayName: 'JobCo' },
-    lens: member.resources[0]!.lens,
+    terms: termsOf(member),
     operation: 'thread.prompt',
     input: { threadId: 'main', postId: crypto.randomUUID(), text: 'A role opened.' },
   });

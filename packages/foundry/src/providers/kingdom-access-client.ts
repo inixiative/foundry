@@ -8,7 +8,6 @@ import {
   kingdomUrl,
   readPrivateJson,
   SignetClient,
-  selectsThread,
   signetCredentialSchema,
   threadsResourceKind,
 } from '@inixiative/signet';
@@ -164,23 +163,24 @@ export class KingdomAccessClient {
 
   /**
    * Post into a conversation this Foundry joined (the joining side, `kingdom_post`): the held
-   * Signet's `thread.prompt` on the `threads` resource whose lens selects the thread. `postId` is
-   * the post's own id, kept across a retry; each call is a new request id.
+   * Signet's `thread.prompt` on the host Foundry's `threads` resource. Which threads the grant
+   * reaches is its lens, which only Kingdom applies (signet 0.12), so Kingdom answers whether this
+   * thread is one of them, refusing the call if not. `postId` is the post's own id, kept across a
+   * retry; each call is a new request id.
    */
   async threadPrompt(
     input: { threadId: string; postId: string; text: string; inReplyTo?: string },
     onDispatch?: () => void,
   ) {
     const description = await this.granted();
-    const resource = description.operations
-      .find((operation) => operation.key === 'thread.prompt')
-      ?.resources.find(
-        (candidate) =>
-          candidate.kind === threadsResourceKind &&
-          'threads' in candidate.lens &&
-          selectsThread(candidate.lens.threads, input.threadId),
-      );
-    if (!resource) throw Error('This Signet does not reach that conversation thread');
+    const resources =
+      description.operations
+        .find((operation) => operation.key === 'thread.prompt')
+        ?.resources.filter((candidate) => candidate.kind === threadsResourceKind) ?? [];
+    if (!resources.length) throw Error('This Signet does not reach that conversation thread');
+    // One `threads` resource per host Foundry, and a Signet is issued on one integration.
+    if (resources.length > 1) throw Error('This Signet names more than one conversation resource');
+    const resource = resources[0]!;
     return this.execute(
       {
         requestId: crypto.randomUUID(),

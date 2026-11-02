@@ -182,7 +182,6 @@ test('explicit checks use only the saved origin and enrolled Signet, expose meta
                 name: 'Issue',
                 kind: 'issue',
                 integrationId: f.source.integrationId,
-                lens: {},
               },
             ],
           },

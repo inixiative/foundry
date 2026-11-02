@@ -18,7 +18,7 @@ import { activeThreadId, detailDrawerOpen, openTurnDetail, rightTab, threadData 
 const githubRef = (ref) => /^#?\d+$/.test(ref) || /^[\w.-]+\/[\w.-]+#\d+$/.test(ref);
 
 /** Kingdom's own wording for a member's terms (Kingdom `ThreadsLensEditor.tsx`). */
-const LENS_WORDS = {
+const TERMS_WORDS = {
   view: {
     own: 'Its own posts and what is sent to it',
     thread: 'The whole thread: messages and answers, never tool calls',
@@ -74,7 +74,7 @@ function kingdomManageUrl(view) {
 }
 
 function SignetCard({ member, manageUrl }) {
-  const lens = member.lens;
+  const terms = member.terms;
   const limits = member.limits ?? {};
   return html`<li class="signet-card" data-member=${member.member.id}>
     <div class="signet-card-head">
@@ -83,9 +83,9 @@ function SignetCard({ member, manageUrl }) {
       ${member.listed ? null : html`<span class="rp-dim">no longer listed by Kingdom</span>`}
     </div>
     <dl class="rp-facts">
-      ${lens ? html`<dt>It reads</dt><dd>${LENS_WORDS.view[lens.view] ?? lens.view}</dd>` : null}
-      ${lens ? html`<dt>Its posts arrive as</dt><dd>${LENS_WORDS.delivery[lens.delivery] ?? lens.delivery}</dd>` : null}
-      ${lens ? html`<dt>Replies to it</dt><dd>${LENS_WORDS.outbound[lens.outbound] ?? lens.outbound}</dd>` : null}
+      ${terms ? html`<dt>It reads</dt><dd>${TERMS_WORDS.view[terms.view] ?? terms.view}</dd>` : null}
+      ${terms ? html`<dt>Its posts arrive as</dt><dd>${TERMS_WORDS.delivery[terms.delivery] ?? terms.delivery}</dd>` : null}
+      ${terms ? html`<dt>Replies to it</dt><dd>${TERMS_WORDS.outbound[terms.outbound] ?? terms.outbound}</dd>` : null}
       <dt>Requests</dt><dd>${limits.maxRequests ?? 'unlimited'}</dd>
       <dt>Expires</dt><dd>${limits.expiresAt ? new Date(limits.expiresAt).toLocaleString() : 'no grant deadline'}</dd>
     </dl>
