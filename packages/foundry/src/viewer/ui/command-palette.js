@@ -221,7 +221,7 @@ const KEY_GROUPS = [
       ['⌥/ · ⌥N', 'Actions for this thread and draft · new thread'],
       [
         '↵ · ⌘↵',
-        'Send (steers into a running turn once steering is built; queues today) · queue it',
+        'Send (steers into a running turn when steering is on) · queue it after the running turn',
       ],
     ],
   ],

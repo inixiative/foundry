@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type {
   HarnessSession,
+  PushOutcome,
   SessionArtifact,
   SessionEventHandler,
   SessionResult,
@@ -218,7 +219,9 @@ class FakeSession implements HarnessSession {
   onBeforeSend(): () => void {
     return () => {};
   }
-  async push(): Promise<void> {}
+  async push(): Promise<PushOutcome> {
+    return { outcome: 'ignored', reason: 'fake session' };
+  }
   artifact(): SessionArtifact {
     return {
       externalSessionId: 'native-1',

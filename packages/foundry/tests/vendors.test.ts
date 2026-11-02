@@ -34,7 +34,7 @@ test('every registry provider serves exactly one vendor mode, and the five main 
   ]);
   const rest = MODEL_VENDORS.slice(5).map((vendor) => vendor.label);
   expect(rest).toEqual(rest.toSorted((a, b) => a.localeCompare(b)));
-  // A subscription mode exists where a native CLI transport does; Google, Meta and xAI are coming.
+  // A subscription mode exists where a native CLI transport does (Muse Code for Meta); Google and xAI are coming.
   expect(vendorOfProvider('claude-code')).toMatchObject({
     vendor: { id: 'anthropic' },
     mode: 'subscription',
@@ -44,7 +44,8 @@ test('every registry provider serves exactly one vendor mode, and the five main 
     vendor: { id: 'openai' },
     mode: 'subscription',
   });
-  for (const id of ['google', 'meta', 'xai'])
+  expect(vendorOfProvider('muse')).toMatchObject({ vendor: { id: 'meta' }, mode: 'subscription' });
+  for (const id of ['google', 'xai'])
     expect(MODEL_VENDORS.find((vendor) => vendor.id === id)!.subscription).toEqual({
       comingSoon: true,
     });

@@ -312,13 +312,17 @@ test('the drafter writes a marked draft after a work turn with no plan, skips ch
   const thread = new Thread('p', new ContextStack(), { description: '' });
 
   // Chat: no decision runs at all.
-  drafter.turnCompleted(thread, { user: 'hi there', agent: 'hello' });
+  drafter.turnCompleted(thread, { user: 'hi there', agent: 'hello' }, thread.meta.plan);
   await Bun.sleep(5);
   expect(thread.meta.plan).toBeUndefined();
 
   // The decision says skip (a question).
   answers.push('{"skip":true}');
-  drafter.turnCompleted(thread, { user: 'What does the login route return?', agent: 'A token.' });
+  drafter.turnCompleted(
+    thread,
+    { user: 'What does the login route return?', agent: 'A token.' },
+    thread.meta.plan,
+  );
   await Bun.sleep(5);
   expect(thread.meta.plan).toBeUndefined();
 
@@ -326,7 +330,11 @@ test('the drafter writes a marked draft after a work turn with no plan, skips ch
   answers.push(
     '{"outcomes":[{"text":"Login endpoint returns a token","status":"doing"}],"strategy":[{"text":"Add the route"}]}',
   );
-  drafter.turnCompleted(thread, { user: 'Add a login endpoint', agent: 'Added it.' });
+  drafter.turnCompleted(
+    thread,
+    { user: 'Add a login endpoint', agent: 'Added it.' },
+    thread.meta.plan,
+  );
   await Bun.sleep(5);
   expect(thread.meta.plan).toMatchObject({
     draftedBy: 'foundry',
@@ -337,9 +345,21 @@ test('the drafter writes a marked draft after a work turn with no plan, skips ch
 
   // A draft exists: no second draft.
   answers.push('{"outcomes":[{"text":"Other","status":"todo"}]}');
-  drafter.turnCompleted(thread, { user: 'Also add logout', agent: 'Done.' });
+  drafter.turnCompleted(thread, { user: 'Also add logout', agent: 'Done.' }, thread.meta.plan);
   await Bun.sleep(5);
   expect(thread.meta.plan?.outcomes[0]?.text).toBe('Login endpoint returns a token');
+
+  // The agent recorded and finished its own plan during the turn: it stands, no draft.
+  const own = new Thread('own', new ContextStack(), { description: '' });
+  const atStart = own.meta.plan;
+  recordPlan(own, { outcomes: [{ text: 'Stats command works', status: 'done' }] });
+  answers.push('{"outcomes":[{"text":"Overwrite","status":"todo"}]}');
+  drafter.turnCompleted(own, { user: 'Add a stats command', agent: 'Added it.' }, atStart);
+  await Bun.sleep(5);
+  expect(own.meta.plan).toMatchObject({
+    draftedBy: 'agent',
+    outcomes: [{ text: 'Stats command works' }],
+  });
 
   // A draft that claims done, or is malformed, is dropped.
   expect(parseDraft('{"outcomes":[{"text":"x","status":"done"}]}')).toBeUndefined();

@@ -5,6 +5,7 @@
  */
 import { constants } from 'node:fs';
 import { access, stat } from 'node:fs/promises';
+import { MUSE_SDK_VERSION } from '@inixiative/agent-session';
 import type { ArchiveClient } from '@inixiative/archive/remote';
 import { computeHash, MODEL_REGISTRY, resolveDecisionModel } from '@inixiative/foundry-core';
 import { readPrivateJson, signetCredentialFile, signetCredentialSchema } from '@inixiative/signet';
@@ -13,6 +14,7 @@ import { regionKey } from './agents/region-roster';
 import { archiveStatus, localArchiveUrl } from './archives/local';
 import { charterFor, deadlineShares, responseProtocol, type StageConfig } from './classify';
 import { ensureAgentClisOnPath, type Install } from './daemon/agent-clis';
+import { SUBSCRIPTION_WORKERS, subscriptionWorker } from './models/registry';
 import { providerEnabled } from './models/vendors';
 import {
   type KingdomIntegration,
@@ -20,6 +22,9 @@ import {
   kingdomIntegrationId,
   listedSignets,
 } from './providers/kingdom-installation-connection';
+import { withoutCompetingCredentials } from './providers/native-authentication';
+import { nativeTextEnvironment } from './providers/native-text-environment';
+import { museSubscriptionStatus } from './providers/native-text-provider';
 import { providerApiKey } from './providers/openai-compatible';
 import { prefilterInstalled } from './providers/prefilter-model';
 import { assertProfile } from './providers/private-profile';
@@ -153,8 +158,18 @@ export interface ReadinessReport {
 const NATIVE_CLIS = [
   ['claude-code', 'claude'],
   ['codex', 'codex'],
+  ['muse', 'muse'],
 ] as const;
-const NATIVE_LABELS: Record<string, string> = { claude: 'Claude Code', codex: 'Codex' };
+const NATIVE_LABELS: Record<string, string> = {
+  claude: 'Claude Code',
+  codex: 'Codex',
+  muse: 'Muse Code',
+};
+/**
+ * CLIs whose protocol is pinned to one release: agent-session's MuseSession speaks the @muse-code/sdk
+ * of exactly this version and refuses a host serving another, so a mismatch is found here first.
+ */
+const PINNED_CLI_VERSIONS: Record<string, string> = { muse: MUSE_SDK_VERSION };
 
 /**
  * Each native runtime CLI the configuration launches (every enabled native provider's, and the
@@ -169,6 +184,12 @@ export async function inspectNativeClis(
     which?: (binary: string) => string | null;
     /** Provider ids something in the configuration launches beyond the main thread. */
     requested?: ReadonlySet<string>;
+    /**
+     * Ask each found CLI with a read-only login check whether it is signed in (Muse Code: `muse
+     * usage --json`, no model turn). Off unless the caller allows provider requests. The answer is
+     * signed in or not; nothing about the account is read out.
+     */
+    loginStatus?: (cli: string, binary: string) => Promise<boolean | undefined>;
   } = {},
 ): Promise<{ nativeClis: ReadinessNativeCli[]; issues: ReadinessIssue[] }> {
   let subscription: SubscriptionResolution | undefined;
@@ -208,6 +229,19 @@ export async function inspectNativeClis(
       ...(install?.version.length ? { version: install.version.join('.') } : {}),
     };
   });
+  const pinned = nativeClis.flatMap((native): ReadinessIssue[] => {
+    const wanted = PINNED_CLI_VERSIONS[native.cli];
+    if (!native.binary || !wanted || native.version === wanted) return [];
+    const label = NATIVE_LABELS[native.cli] ?? native.cli;
+    return [
+      {
+        severity: native.used ? 'error' : 'warning',
+        scope: 'global',
+        code: 'native-cli-version',
+        message: `${label} ${native.version ?? 'of an unknown version'} is installed, and Foundry's agent-session speaks ${label} ${wanted} only; install ${label} ${wanted} (it does not auto-update under Foundry).`,
+      },
+    ];
+  });
   const issues = nativeClis
     .filter((native) => !native.binary)
     .map((native): ReadinessIssue => {
@@ -221,7 +255,41 @@ export async function inspectNativeClis(
           : `Decisions run on ${native.cli} but no ${native.cli} CLI was found on PATH or in an app bundle; install ${label} or change subscriptionOnly.decisionRuntime.`,
       };
     });
-  return { nativeClis, issues };
+  const logins: ReadinessIssue[] = [];
+  if (options.loginStatus)
+    for (const native of nativeClis) {
+      if (!native.binary || !native.provider) continue;
+      const signedIn = await options.loginStatus(native.cli, native.binary);
+      if (signedIn !== false) continue;
+      const label = NATIVE_LABELS[native.cli] ?? native.cli;
+      logins.push({
+        severity: native.used ? 'error' : 'warning',
+        scope: 'global',
+        code: 'native-login-missing',
+        message: `${label} is enabled but not signed in to a subscription; run \`${native.cli} login\`.`,
+      });
+    }
+  return { nativeClis, issues: [...issues, ...pinned, ...logins] };
+}
+
+/**
+ * The read-only login check a native CLI offers without a model turn. Only Muse Code's is asked here
+ * (Claude's and Codex's are checked at launch by their worker's authentication); undefined: not asked.
+ */
+export async function nativeLoginStatus(cli: string, binary: string): Promise<boolean | undefined> {
+  if (cli !== 'muse') return undefined;
+  const child = Bun.spawn([binary, 'usage', '--json'], {
+    env: { ...withoutCompetingCredentials(nativeTextEnvironment(process.env), 'muse') },
+    stdin: 'ignore',
+    stdout: 'pipe',
+    stderr: 'pipe',
+  });
+  const timer = setTimeout(() => child.kill(), 20_000);
+  try {
+    return await museSubscriptionStatus(child);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /** Local configuration inspection only. No provider construction, auth renewal, reservation or task dispatch. */
@@ -236,8 +304,10 @@ export async function inspectReadiness(
     archive?: () => ArchiveClient | undefined;
     /** Where the Kingdom Installation keys and Signets live (default `.foundry`). */
     configDir?: string;
-    /** Enables one Signet listing per paired Kingdom, one local Archive request and one pre-filter health check. */
+    /** Enables one Signet listing per paired Kingdom, one local Archive request, one pre-filter health check and the native login checks. */
     transport?: typeof fetch;
+    /** Test seam for the native login checks (default `nativeLoginStatus`). */
+    loginStatus?: (cli: string, binary: string) => Promise<boolean | undefined>;
     /** Where the pre-filter's model is installed (default ~/.foundry/models). */
     modelsDir?: string;
   } = {},
@@ -504,7 +574,8 @@ export async function inspectReadiness(
     // A login serves the workers of its runtime; one no worker in use runs on is a mismatch.
     if (
       ![...required].some(
-        (worker) => (worker === 'codex' ? 'codex' : 'claude') === source.runtime,
+        (worker) =>
+          (subscriptionWorker(worker) ? SUBSCRIPTION_WORKERS[worker] : 'claude') === source.runtime,
       ) &&
       !(
         subscription && Object.values(subscription.workers).some((login) => login?.id === source.id)
@@ -574,7 +645,12 @@ export async function inspectReadiness(
   );
   if (options.archive) archive = await inspectArchive(options.archive(), issue, options.transport);
   prefilter = await inspectPrefilter(config, issue, options.transport, options.modelsDir);
-  const native = await inspectNativeClis(saved, { which: options.which, requested });
+  const native = await inspectNativeClis(saved, {
+    which: options.which,
+    requested,
+    // Asked only when provider requests are allowed (the doctor without --offline).
+    ...(options.transport ? { loginStatus: options.loginStatus ?? nativeLoginStatus } : {}),
+  });
   nativeClis = native.nativeClis;
   issues.push(...native.issues);
   for (const [scope, c] of choruses)

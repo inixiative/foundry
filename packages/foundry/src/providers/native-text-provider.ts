@@ -453,6 +453,26 @@ export async function codexSubscriptionStatus(proc: StatusProcess): Promise<bool
   }
 }
 
+/**
+ * `muse usage --json` (no model turn): signed in when it exits 0 with a subscription allowance tier
+ * (`allowance.tier`, e.g. "Muse Code Everyday Usage"). Status shows no other login signal, and a
+ * logged-out CLI still serves cached models, so the tier is the proof. Nothing about the account is kept.
+ */
+export async function museSubscriptionStatus(proc: StatusProcess): Promise<boolean> {
+  try {
+    const [code, stdout] = await Promise.all([
+      proc.exited,
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+    ]);
+    if (code !== 0) return false;
+    const tier = JSON.parse(stdout)?.allowance?.tier;
+    return typeof tier === 'string' && tier.trim().length > 0;
+  } catch {
+    return false;
+  }
+}
+
 /** Supported read-only status command: a claude.ai login, or a subscription `setup-token` (`oauth_token`).
  * Never an API key. Never persist raw output or account identity. */
 export async function subscriptionStatus(proc: StatusProcess): Promise<boolean> {

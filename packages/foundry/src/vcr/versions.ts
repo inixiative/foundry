@@ -24,6 +24,8 @@ export const cliVersion = async (cmd: string, opts: CliVersionOptions = {}): Pro
   const env = {
     ...process.env,
     ...(process.env.FOUNDRY_VCR_PATH ? { PATH: process.env.FOUNDRY_VCR_PATH } : {}),
+    // Muse Code's launcher updates itself on a run unless told not to; a probe never moves a CLI.
+    MUSE_NO_AUTO_UPDATE: '1',
   };
   const { stdout, stderr } = await execAsync(`${cmd} ${command}`, { env });
   const output = `${stdout}\n${stderr}`;

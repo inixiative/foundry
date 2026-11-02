@@ -21,15 +21,38 @@ import {
   type NativeEvidence,
   type NativeObservation,
   type NativeOwner,
+  type NativeSteer,
   type OwnedAdmissionInspection,
   sameNativeOwner,
   splitSystemMessage,
 } from '@inixiative/foundry-core';
+import { workerHostsFoundryTools } from '../models/registry';
 import type { ThreadToolGate } from '../turns/tool-gate';
 import { projectNative } from './native-evidence';
 import type { ConstructionBinding, SessionAdapter } from './session-adapter';
 import { baseContextOf, type SessionTurn, sessionTurn } from './session-delivery';
 import type { ThreadLaunchSettings } from './thread-launch';
+
+/**
+ * How a running turn takes more input (CORE-001): through the session's own push() where its
+ * transport steers natively, or why it can't, from the transport's declared capability.
+ */
+function steerHandle(session: HarnessSession): NativeSteer {
+  const transport = session.transport;
+  if (transport?.capabilities.push === 'steer')
+    return { push: (text) => session.push({ kind: 'steer', text }) };
+  return {
+    reason: transport
+      ? `${TRANSPORT_NAMES[transport.kind] ?? transport.kind} can’t take a message into a running turn`
+      : 'this runtime does not say it can take a message into a running turn',
+  };
+}
+
+const TRANSPORT_NAMES: Partial<Record<string, string>> = {
+  'claude-agent-sdk': 'Claude through the Agent SDK',
+  acp: 'An ACP agent',
+  api: 'A metered API',
+};
 
 export const DECISION_CONTEXT =
   "You are Foundry's internal decision middleware, not its coding executor. " +
@@ -135,6 +158,17 @@ export type TaskSink = (
   stop?: () => Promise<void>,
 ) => void;
 
+/**
+ * A turn the runtime started itself (a Muse cron firing, monitor wake, goal or reminder), outside any
+ * turn Foundry sent: each of its events, and its `task` lifecycle (keyed by the native turn id) when
+ * the event is one. The session's `session_end` is passed too, so a turn left open is closed.
+ */
+export type NativeTurnSink = (
+  threadId: string,
+  evidence: NativeEvidence,
+  task?: TaskLifecycle,
+) => void;
+
 export class SessionBackedProvider implements LLMProvider {
   readonly id: string;
   readonly nativeOwnership = 'required-prewrite' as const;
@@ -193,6 +227,18 @@ export class SessionBackedProvider implements LLMProvider {
     this._taskSinks.add(sink);
     return () => {
       this._taskSinks.delete(sink);
+    };
+  }
+  private _nativeTurnSinks = new Set<NativeTurnSink>();
+
+  /**
+   * Observe the turns the executor's sessions start on their own (no Foundry send), for the thread
+   * they run under: their events and their lifecycle. Returns an unsubscribe.
+   */
+  observeNativeTurns(sink: NativeTurnSink): () => void {
+    this._nativeTurnSinks.add(sink);
+    return () => {
+      this._nativeTurnSinks.delete(sink);
     };
   }
   private _observerFailures = new WeakMap<NativeObservation, number>();
@@ -340,7 +386,8 @@ export class SessionBackedProvider implements LLMProvider {
     const key = JSON.stringify([cwd, threadId]);
     if (this._sessions.has(key) || threadId.includes(':aux:')) return;
     const host = this._launch?.forLaunch(threadId);
-    const source = opts.bridge;
+    // A worker whose session cannot hold Foundry's MCP bridge runs without it (Muse Code today).
+    const source = workerHostsFoundryTools(this.id) ? opts.bridge : undefined;
     await this._getSession(
       threadId,
       cwd,
@@ -522,7 +569,7 @@ export class SessionBackedProvider implements LLMProvider {
           owner: freezeEvidence({ ...opts.nativeObservation.owner, providerSessionKey: threadId }),
         }
       : undefined;
-    const source = observation?.bridge;
+    const source = workerHostsFoundryTools(this.id) ? observation?.bridge : undefined;
     if (source) {
       if (textOnly) throw Error('Auxiliary sessions cannot acquire a native tool bridge');
       source.check(observation!.owner);
@@ -656,6 +703,7 @@ export class SessionBackedProvider implements LLMProvider {
                 });
                 if (session.interruptNative)
                   observation.interruptible?.((options) => session.interruptNative!(options));
+                observation.steerable?.(steerHandle(session));
               },
             }
           : {}),
@@ -1157,6 +1205,24 @@ export class SessionBackedProvider implements LLMProvider {
             if (!requested.textOnly && event.admissionId && event.text)
               observations.get(event.admissionId)?.thought?.(event.text);
             return;
+          }
+          // A turn the runtime started itself belongs to no admission: its events and lifecycle go to
+          // the native-turn observers (the lifecycle also to the task observers, as a running task).
+          // The session's end closes any such turn still open (it will never report its own end).
+          if (
+            !requested.textOnly &&
+            ((event.unattributedReason === 'task' && event.correlation === 'native-turn') ||
+              event.kind === 'session_end')
+          ) {
+            const observed = this._ownedProjection(session, event);
+            for (const sink of this._nativeTurnSinks) {
+              try {
+                sink(threadId, observed, event.kind === 'task' ? event.task : undefined);
+              } catch {
+                /* an observer's failure never touches the session */
+              }
+            }
+            if (event.kind !== 'task' && event.kind !== 'session_end') return;
           }
           // A background task belongs to no admission either: it goes to the task observers.
           if (!requested.textOnly && event.kind === 'task' && event.task) {

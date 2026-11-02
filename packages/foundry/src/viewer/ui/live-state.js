@@ -100,6 +100,12 @@ export function mergeLiveSnapshot(messages, snapshot) {
   );
   for (const b of snapshot.buffers) {
     seen.add(b.messageId);
+    // Steered into the running turn (CORE-001): no answer row of its own; the running turn answers it.
+    if (b.status === 'steered') {
+      const answer = next.findIndex((m) => m.actor === 'agent' && m.turnId === b.messageId);
+      if (answer >= 0 && !hasFullTerminal(next[answer])) next.splice(answer, 1);
+      continue;
+    }
     const i = next.findIndex((m) => m.actor === 'agent' && m.turnId === b.messageId);
     const old = i < 0 ? {} : next[i];
     if (old.threadId && old.threadId !== b.threadId) continue;

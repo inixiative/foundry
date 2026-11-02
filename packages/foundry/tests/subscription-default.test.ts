@@ -76,7 +76,7 @@ test("a fresh configuration is subscription-only: Claude worker and Claude Haiku
     profileDirectory: join(root, '.claude'),
   });
   // Worker and decisions share the one Claude login.
-  expect(resolved.decision).toEqual(resolved.workers['claude-code']!);
+  expect(resolved.workers['claude-code']).toEqual(resolved.decision);
   expect(resolved.policy).toEqual({
     model: 'claude-haiku-5-5',
     directory: join(cwd, '.foundry', 'decision-receipts'),

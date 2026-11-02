@@ -8,7 +8,7 @@ import { join, resolve } from 'node:path';
 import { resolveDecisionModel } from '@inixiative/foundry-core';
 import { stampFoundryRun } from './archives/run-stamp';
 import { AGENT_CLIS, ensureAgentClisOnPath } from './daemon/agent-clis';
-import { WORKER_SESSION_RUNTIMES } from './models/registry';
+import { subscriptionWorker, WORKER_SESSION_RUNTIMES } from './models/registry';
 import { providerBaseUrl, providerContextBudget, providerEnabled } from './models/vendors';
 import {
   type DecisionEvents,
@@ -24,6 +24,10 @@ import {
   NativeAuthentication,
   type NativeAuthenticationProvider,
 } from './providers/native-authentication';
+import {
+  nativeAuthenticationMode,
+  projectRunsOnKingdom,
+} from './providers/native-authentication-mode';
 import { boundLaunchEnvironment } from './providers/native-text-environment';
 import { SubscriptionAuthentication } from './providers/subscription-authentication';
 import {
@@ -85,6 +89,7 @@ import {
   createRegisteredProvider,
   FileExternalSessionStore,
   GeminiProvider,
+  MuseSessionAdapter,
   OpenAIProvider,
   providerApiKey,
   type SessionAdapter,
@@ -107,6 +112,7 @@ import {
   ThreadRecordTool,
 } from './tools/thread-record';
 import { journalHistory } from './turns/journal-history';
+import { nativeQuestions } from './turns/native-questions';
 import { lateBoundToolGate, type ThreadToolGate } from './turns/tool-gate';
 import {
   ConfigStore,
@@ -304,8 +310,8 @@ const sessionStore = new FileExternalSessionStore(join(FOUNDRY_DIR, 'sessions.js
 // Kingdom-capacity projects run their threads, on every worker, on a login Kingdom releases from the
 // project's pool, never on this machine's; every other thread keeps the machine's own login. Applies
 // to projects set to kingdom at startup.
-const projectCapacityAuthentication = Object.values(config.projects ?? {}).some(
-  (project) => project.capacity === 'kingdom',
+const projectCapacityAuthentication = Object.keys(config.projects ?? {}).some((id) =>
+  projectRunsOnKingdom(config, id),
 )
   ? projectCapacity({
       foundryDir: FOUNDRY_DIR,
@@ -337,16 +343,14 @@ function createProvider(
     ? new SubscriptionAuthentication(join(FOUNDRY_DIR, 'runtime-profiles'), login)
     : subscription
       ? noLocalLogin(providerId)
-      : config.defaults.kingdomOwnerKey ||
-          Object.keys(config.kingdomInferenceAssignments ?? {}).length
+      : nativeAuthenticationMode(config) === 'kingdom'
         ? new KingdomAuthentication({
             directory: join(FOUNDRY_DIR, 'kingdom'),
             sources: config.kingdomInference ?? [],
             defaultOwnerKey: config.defaults.kingdomOwnerKey,
             assignments: config.kingdomInferenceAssignments,
           })
-        : config.defaults.nativeAuthenticationId ||
-            Object.keys(config.nativeAuthenticationSelections ?? {}).length
+        : nativeAuthenticationMode(config) === 'native-profile'
           ? new NativeAuthentication({
               directory: join(FOUNDRY_DIR, 'runtime-profiles'),
               sources: config.nativeAuthentication ?? [],
@@ -354,7 +358,7 @@ function createProvider(
             })
           : undefined;
   const routed = projectCapacityAuthentication(authentication);
-  if (routed && !['claude-code', 'codex'].includes(providerId))
+  if (routed && !subscriptionWorker(providerId))
     throw Error('Native authentication requires a native runtime provider');
   if (authentication instanceof NativeAuthentication)
     for (const [threadId, sourceId] of Object.entries(config.nativeAuthenticationSelections ?? {}))
@@ -444,6 +448,27 @@ function createProvider(
         sessionAdapter,
         provider: new SessionBackedProvider({
           id: 'codex',
+          adapter: sessionAdapter,
+          defaultModel: defaultModel,
+          ...hostSettings,
+        }),
+      };
+    }
+    case 'muse': {
+      // Muse Code on the user's own Muse login. Its questions go to the thread's person on the
+      // prompt queue the tool gate asks on; its config is the user's own (MuseSessionAdapter).
+      const sessionAdapter = new MuseSessionAdapter({
+        store: sessionStore,
+        authentication: routed,
+        // Effort is the host's (the thread's launch settings); otherwise Muse's own default.
+        defaults: { model: defaultModel },
+        ...(subscription ? { environment: boundLaunchEnvironment } : {}),
+        questions: (threadId) => nativeQuestions(actionQueue, threadId),
+      });
+      return {
+        sessionAdapter,
+        provider: new SessionBackedProvider({
+          id: 'muse',
           adapter: sessionAdapter,
           defaultModel: defaultModel,
           ...hostSettings,
@@ -919,6 +944,8 @@ const viewer = await startViewer({
   // Every worker's subagents become observed child threads (docs/THREAD-TREE.md spec A).
   subagentSources: sessionProviders,
   taskSources: sessionProviders,
+  // Turns a worker's session starts itself (Muse crons, monitors, goals) land in their thread.
+  nativeTurnSources: sessionProviders,
   ...(inSession && claudeProvider instanceof SessionBackedProvider
     ? {
         threadSetup: inSessionThreadSetup({

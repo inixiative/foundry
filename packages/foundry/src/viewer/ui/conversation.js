@@ -47,7 +47,7 @@ import { Modal, RenameModal } from './modal.js';
 import { Plan } from './plan.js';
 import { settingsConfig } from './settings.js';
 import { isDangerous, MODES, ModeIcon, STATES, StatusIcon } from './status-icons.js';
-import { QueuedRows, STEER_NOT_BUILT, turnRunning } from './steering.js';
+import { QueuedRows, SendHint, turnRunning } from './steering.js';
 import {
   aboutTarget,
   actionPaletteOpen,
@@ -566,7 +566,8 @@ function ChatInput() {
     (destination === 'thread' && !uploading && (!!text.trim() || ready.length > 0)) ||
     (destination === 'aside' && !!text.trim());
 
-  const handleSubmit = async () => {
+  /** `delivery: 'queue'` (⌘↵) waits for a running turn; otherwise the `steer` setting decides. */
+  const handleSubmit = async ({ delivery } = {}) => {
     const sent = text.trim();
     if (!sendable) return;
     // An aside goes to the people here, never an agent. One id per message: a retry records once.
@@ -622,7 +623,7 @@ function ChatInput() {
     const outgoing = about && sent ? `Re: ${about.label}\n\n${sent}` : sent;
     if (about) aboutTarget.value = null;
     // Unsent text and images come back unless something new was added meanwhile.
-    if (!(await sendMessage(outgoing, ready))) {
+    if (!(await sendMessage(outgoing, ready, delivery ? { delivery } : {}))) {
       if (about) aboutTarget.value = about;
       setText((current) => current || sent);
       setImages((current) => (current.length ? current : attached));
@@ -634,7 +635,8 @@ function ChatInput() {
   const handleKeyDown = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      handleSubmit();
+      // ↵ sends (into a running turn, with steering on); ⌘↵ / Ctrl↵ queues it after.
+      handleSubmit(e.metaKey || e.ctrlKey ? { delivery: 'queue' } : {});
     }
     if (e.key === 'ArrowUp' && !text.includes('\n')) {
       if (inputHistory.length === 0) return;
@@ -719,8 +721,7 @@ function ChatInput() {
             return html`<div class="composer-note-hint">Sending declines “${approval.message}” and tells the agent why · or answer the card to send it with your answer</div>`;
           if (text.trim() && waiting.length)
             return html`<div class="composer-note-hint">Goes with your answer to the waiting card · or press Send to post it on its own</div>`;
-          if (text.trim() && turnRunning(messages.value))
-            return html`<div class="composer-note-hint composer-note-hint--queue" title=${STEER_NOT_BUILT}>Enter queues it after the running turn · ⌘↵ queues · steering isn’t built yet</div>`;
+          if (text.trim() && turnRunning(messages.value)) return html`<${SendHint} />`;
           return null;
         })()}
       </div>
@@ -840,6 +841,11 @@ function UserMessage({ msg, index }) {
           : null
       }
       ${msg.content ? html`<${UserContent} content=${msg.content} />` : null}
+      ${
+        msg.steeredInto || msg.status?.turn === 'steered'
+          ? html`<div class="chat-msg-steered" title="Sent while a turn ran: it went into that turn, which answers it">Steered into the running turn</div>`
+          : null
+      }
       <${BrowserStorageWarning} msg=${msg} />
       <div class="chat-msg-time">${new Date(msg.timestamp).toLocaleTimeString()}${browserHistoryLabel(msg)}${msg.turnId ? html` · <${InspectLink} turnId=${msg.turnId} />` : null}</div>
       ${give.form}
@@ -920,6 +926,8 @@ function LayerChips({ layers }) {
 }
 
 function ActivityRow({ a }) {
+  if (a.kind === 'steer')
+    return html`<div class="live-work-steer"><small>You steered in</small><br/>${a.text}</div>`;
   if (a.kind === 'thought')
     return html`<div class="live-work-thought"><small>Thinking</small><br/>${a.text}</div>`;
   if (a.kind === 'text')

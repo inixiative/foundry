@@ -1,11 +1,57 @@
 # FEAT-006: Muse Code worker: Aron's Muse subscription in Foundry threads
 
-**Status**: 📝 Design, reviewed 2026-11-01 (findings below). Not built. Blocked on FEAT-007 and on `muse` being installed and signed in.
+**Status**: 🔨 Built (2026-11-02) on agent-session 0.8.0 (`MuseSession`) and FEAT-007; PR open, not merged. See "As built" below; it overrides the design sections where they differ.
 **Assignee**: inixiative-b9 (handed over by inixiative-da, 2026-11-01)
 **Priority**: High (Aron asked for it, 2026-11-01)
 **Created**: 2026-11-01
 
 ---
+
+## As built (2026-11-02)
+
+Aron's decisions (2026-11-01) override the design below: **full coding from the start** (not text-only), **Muse may run in any project** (no owner check), and **every Muse session goes to the personal Archive**.
+
+| Concern | Existing primitive used |
+|---|---|
+| Native session | agent-session `MuseSession` (0.8.0), `musePermissions`, `NativeBindingMissingError` (runtime `muse`) |
+| Worker registry | `SUBSCRIPTION_WORKERS.muse`, `WORKER_SESSION_RUNTIMES.muse = 'muse-serve'` (`models/registry.ts`); core `muse` provider, `meta` vendor subscription `{ provider: 'muse' }`, `SUBSCRIPTION_WORKER_MODELS.muse = 'muse-wonder-1.0'` (the default in Muse's catalogue) |
+| Adapter | `MuseSessionAdapter` beside the Codex adapter (`providers/session-adapter.ts`), same contract: store binding, construction record, auth `check()` around admission, `structuralRulesAtLaunch` |
+| Login | `NativeAuthenticationSource.runtime` gains `muse` (default profile `$XDG_CONFIG_HOME/muse`, `default-profiles.ts`); `SubscriptionAuthentication` checks it with `muse usage --json`; `withoutCompetingCredentials(env, 'muse')` |
+| Tool gate | `turns/tool-gate.ts` via `onToolRequest` in gated modes; structural rules refused at launch like Codex |
+| Questions | Foundry's `ActionQueue` (`choice` / `input` prompts), the queue the tool gate asks on: `turns/native-questions.ts` |
+| Muse-started turns | the observed-turn store calls subagents use (`startObservedTurn` / `appendObservedNative` / `endObservedTurn`): `turns/native-turns.ts`, fed by `SessionBackedProvider.observeNativeTurns` |
+| Recovery | `NativeBindingMissingError` → fresh session seeded from the journal (unchanged, generic in `session-backed.ts`) |
+| Host lifecycle | the SDK's own handshake (`spawnMspConnection`), as agent-session's default host, so the adapter learns when `muse serve` exited and releases the login only then |
+| Limits | `rate_limit` events → `auth.observeLimits` (the Kingdom path), as Codex |
+| Archive | `captureThread` stamps `runtime: { provider: 'meta', accessPath: 'subscription' }` (`workerArchiveRuntime`), which Archive's `alwaysPersonal` keys on |
+| Setup/doctor | `inspectNativeClis`: `muse` CLI found, version equal to `MUSE_SDK_VERSION`, login via `muse usage` (doctor without `--offline`) |
+| Tests | scripted MSP host (`tests/helpers/fake-muse.ts`, from agent-session) and a live cassette (`tests/fixtures/vcr/muse/`, two turns) |
+
+Decisions made while building, and why:
+
+- **Muse loads the user's own Muse config.** Its login and its config share `$XDG_CONFIG_HOME/muse`; a Foundry-owned home means moving `XDG_CONFIG_HOME`, which every command Muse runs inherits. What could take the subscription away is closed outside the config (provider forced `meta`, Foundry's model, competing env stripped). `harnessSettings: off` cannot apply to Muse.
+- **Only the user's default Muse login.** Another profile directory is refused (`profileEnvironment`, `assertProfile`) for the same reason; it comes with the Kingdom-pool ticket.
+- **No Foundry tools on Muse threads.** agent-session 0.8.0 offers Muse no session MCP, so `SessionBackedProvider` gives a Muse session no native bridge and the thread gets no `foundry-tools` note (`workerHostsFoundryTools`). A host's MCP servers are not passed either (logged).
+- **Muse is never a decision runtime.** A Muse `decisionSourceId` and choosing `muse` as the decision model are refused.
+- **Kingdom-capacity projects refuse Muse threads** (and a Muse default) with the reason, never falling back to this machine's login (FEAT-007's rule).
+- **Muse is off by default** (`enabledByDefault: false`): few machines have it signed in. The daemon resolves `muse` on its PATH when installed but does not require it.
+- **No version probe updates the CLI.** Every `muse --version` / `muse usage` Foundry runs sets `MUSE_NO_AUTO_UPDATE=1`: the launcher otherwise updates itself hourly, past the SDK pin.
+
+Still open:
+
+- **Questions under an ACP host.** foundry-acp forwards only approval prompts, so a Muse question asked from Zed, Paseo or T3 waits for the viewer or its 15-minute timeout. Mapping choice/input prompts into ACP is a foundry-acp change.
+- **Conversation layers.** A Muse thread in a shared conversation still gets the roster and floor layers that name the conversation tools, which its session lacks (no session MCP). Only the `foundry-tools` note is suppressed.
+- **Overlapping turns.** While a Muse-started turn and a Foundry-sent turn are both active, `LocalSessionStore.openTurn` picks the later-started one, so a member post or a subagent spawn in that window can attach to the Muse turn.
+- **The host-exit seam.** The adapter keeps its own `spawnMuseHost` (the SDK handshake agent-session uses) only to learn when `muse serve` exited; when agent-session exposes that (and the child pid, for `adopt`), it goes.
+- **Viewer setup wizard** keeps its own worker list (`viewer/ui/wizard.js`), without Muse: viewer lane.
+- **Login check in setup.** Only the doctor (without `--offline`) runs `muse usage`; setup's Agent CLIs step does not.
+- **Archive claims.** Archive's claim sources are Claude Code and Codex only; adding `muse` there would let Foundry claim its Muse sessions (Archive ticket).
+
+- **New-arrival attention.** A Muse-started turn lands on its thread and the thread reads as done; an orange "new arrival" needs `meta.attention` (attention-board data lane, not built). The recorder exposes `arrived` for it.
+- **Kingdom pool for Muse** (separate ticket, pending Aron).
+- **Session MCP** (Foundry's tools, host MCP servers) and **workspace trust** (agent-session always passes `--trust-workspace`): agent-session changes.
+- **agent-session evidence gap:** a Muse turn after the first carries no `nativeSessionId` (only `externalSessionId`).
+- **The login lock** has no child pid (the SDK's child exposes none), so a crashed Foundry's shared registration on `~/.config/muse` is not reclaimed automatically; it blocks only exclusive holders, and nothing holds a Muse login exclusively.
 
 ## Why
 
@@ -113,9 +159,9 @@ A Muse subscription runs only through Meta's own Muse Code CLI (`muse`). The Mod
 
 ## Acceptance
 
-- [ ] A Foundry thread on the `muse` provider holds a multi-turn conversation on Aron's Muse login. `META_API_KEY` is set in the parent environment and is not used, as recorded in the transcript's billing or usage.
-- [ ] Resume after a daemon restart continues the native session. A deleted native session starts fresh from the journal.
-- [ ] An approval in supervised mode reaches Foundry's queue. Full access runs without asking.
-- [ ] A Muse thread in a project owned by an organization is refused, with the reason.
-- [ ] Every Muse thread Foundry captures into Archive carries `runtime: { provider: 'meta', accessPath: 'subscription' }`. That is what Archive's `alwaysPersonal` gate keys on (Archive #47, inixiative-ec): Muse never reaches an org.
-- [ ] Cassettes are recorded live. `bun run check` is green in agent-session and Foundry.
+- [x] A Foundry thread on the `muse` provider holds a multi-turn conversation on Aron's Muse login. `META_API_KEY` is set in the parent environment and is not used (cassette `muse/serve.two-turns.json`; the launch env carries no `META_API_KEY`; usage moved on the subscription window).
+- [x] Resume after a daemon restart continues the native session (binding test). A deleted native session starts fresh from the journal (generic `NativeBindingMissingError` path; not exercised live).
+- [x] An approval in supervised mode reaches Foundry's queue (gated launch → `promptUnmatched`/`:ask-me`, gate registered; the approval round trip is agent-session's recorded fixture). Full access runs without asking.
+- [x] ~~A Muse thread in a project owned by an organization is refused~~: dropped (Aron 2026-11-01: Muse may run in any project; Archive keeps it personal).
+- [x] Every Muse thread Foundry captures into Archive carries `runtime: { provider: 'meta', accessPath: 'subscription' }`. That is what Archive's `alwaysPersonal` gate keys on (Archive #47, inixiative-ec): Muse never reaches an org.
+- [ ] Cassettes are recorded live (Muse: done). `bun run check` green in Foundry needs the agentic train to adopt agent-session 0.8.0 (every older cassette re-recorded).

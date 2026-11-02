@@ -30,6 +30,8 @@ export interface ThreadLaunchView {
   };
   /** Executor models pinned in settings that this thread's worker does not run. */
   setAside: Array<{ agent: string; model: string }>;
+  /** Whether a send during a running turn steers into it, from the `steer` setting (CORE-001). */
+  steer: boolean;
 }
 
 /** Where a local client reaches the daemon: its loopback origin and, while a tunnel is active, the bearer. */
@@ -171,11 +173,17 @@ export class FoundryClient {
     clientId?: string;
     /** Image ids from `uploadImage`. */
     images?: string[];
+    /** Sent during a running turn: `queue` waits, `steer` goes in; absent, the `steer` setting decides (CORE-001). */
+    delivery?: 'steer' | 'queue';
   }): Promise<{
     id: string;
     threadId: string;
-    status: 'accepted';
+    status: 'accepted' | 'steered';
     queued: boolean;
+    /** Sent during a running turn: steered into it (`into`), or why it queued (`reason`). */
+    steer?:
+      | { steered: true; into: string; native: 'steered' | 'unknown' }
+      | { steered: false; reason: string };
     /** The thread is setting up its Wardens: the turn waits queued until it is ready. */
     settingUp?: boolean;
   }> {

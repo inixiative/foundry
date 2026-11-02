@@ -261,6 +261,22 @@ export class TurnProjection {
     }, TERMINAL_GRACE_MS);
   }
 
+  /**
+   * This prompt went into the running turn `into` (CORE-001): it gets no answer of its own and ends
+   * when that turn does (or now, when this session doesn't hold it).
+   */
+  steeredInto(into: TurnProjection | undefined): void {
+    if (this.settled) return;
+    if (!into || into === this) {
+      this.finish('', 'end_turn');
+      return;
+    }
+    void into.done.then(
+      (reason) => this.finish('', reason),
+      () => this.finish('', 'end_turn'),
+    );
+  }
+
   /** The sender-only terminal: the full result of this turn. */
   terminal(kind: 'done' | 'error', result: Record<string, unknown>): void {
     if (this.settled) return;

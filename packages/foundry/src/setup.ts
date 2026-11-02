@@ -208,7 +208,7 @@ async function configureLoop(config: FoundryConfig) {
       `Sources              (${c.sources} configured)`,
       `Projects             (${c.projects} configured)`,
       `Kingdom & archives   (${archiveSummary})`,
-      'Agent CLIs           (find claude / codex)',
+      'Agent CLIs           (find claude / codex / muse)',
       `Legacy defaults      (${legacyCount(config)})`,
       'Reset to starter config',
       'Done',
@@ -276,7 +276,9 @@ async function checkAgentClis(config: FoundryConfig) {
         ? `  ✓ ${native.cli}: ${native.binary}${native.version ? ` (${native.version})` : ''}`
         : `  ✗ ${native.cli}: no working install found`,
     );
-  for (const item of report.issues.filter((issue) => issue.code === 'native-cli-missing'))
+  for (const item of report.issues.filter((issue) =>
+    ['native-cli-missing', 'native-cli-version'].includes(issue.code),
+  ))
     console.log(`  ${item.severity === 'error' ? '✗' : '!'} ${item.message}`);
 }
 

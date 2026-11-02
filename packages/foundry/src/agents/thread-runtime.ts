@@ -42,6 +42,7 @@ import {
 import { CONVERSATION_FLOOR_LAYER, CONVERSATION_ROSTER_LAYER } from '../conversations/roster';
 import type { ConversationPhase, ConversationWrapper } from '../conversations/types';
 import type { FeedbackPhase } from '../feedback/types';
+import { workerHostsFoundryTools } from '../models/registry';
 import { roleComposition } from '../prompts/instruction-settings';
 import type { SessionAdapter } from '../providers/session-adapter';
 import {
@@ -575,6 +576,8 @@ export interface PhaseRecordInput {
     | 'handoff'
     | 'handoff-return'
     | 'chorus-dismiss'
+    /** A queued turn whose message went into the running turn (`record.into`, CORE-001). */
+    | 'steered'
     | FeedbackPhase
     | ConversationPhase;
   readonly record: Record<string, unknown>;
@@ -1230,7 +1233,8 @@ class ThreadRuntimeImpl implements ThreadRuntime {
     // Every thread holds the session briefing once, as a standing layer: how to work in Foundry and
     // when to call its tools (Aron, 2026-11-02: "Foundry should be on new sessions"). An unwrapped
     // thread (a fresh install) holds it too; it stays unwrapped otherwise: no decision calls, no other context.
-    if (!stack.getLayer(FOUNDRY_TOOLS_LAYER)) {
+    // A thread on a worker that cannot hold the tools (Muse Code) is never told about them.
+    if (workerHostsFoundryTools(thread.meta.worker) && !stack.getLayer(FOUNDRY_TOOLS_LAYER)) {
       const note = new ContextLayer({
         id: FOUNDRY_TOOLS_LAYER,
         owner: { threadId: thread.id, projectId: thread.meta.projectId as string | undefined },

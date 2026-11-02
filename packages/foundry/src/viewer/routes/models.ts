@@ -80,6 +80,8 @@ export function registerModelRoutes(app: Hono, configStore: ConfigStore) {
   });
 
   choose('/api/models/decision', (draft, { provider, model }) => {
+    if (provider === 'muse')
+      throw Error('Muse Code runs main threads only; decisions run on Claude or Codex');
     if (subscriptionWorker(provider)) {
       // A subscription login runs decisions: Claude (in its own sessions, or in-session) or Codex.
       const current = draft.subscriptionOnly?.decisionRuntime;

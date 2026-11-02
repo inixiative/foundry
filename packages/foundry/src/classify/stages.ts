@@ -10,11 +10,13 @@
 // already says "phase" for advise, guard and review, so these are stages, never phases.
 
 import type { ClassifyOutcome } from '@inixiative/foundry-core';
+import { REASONING_EFFORTS, type ReasoningEffort } from '@inixiative/foundry-core';
 
 export type StageOutcomes = 'binary' | 'ternary';
 export type StageReason = 'none' | 'inline' | 'followup';
 export type StageTask = 'recognise' | 'point';
-export type StageEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+/** A stage's effort: the registry's vocabulary (the subscription policy checks the decision model takes it). */
+export type StageEffort = ReasoningEffort;
 
 /**
  * The pointer shapes a point stage may answer in. `one` (ranked: the likely one, then less likely
@@ -53,7 +55,7 @@ export interface StageConfig {
 /** A region's primary doc: the full catalogue a pointing Warden reads. */
 export const KNOWLEDGE_DOC = 'knowledge.md';
 export const MAX_STAGES = 3;
-export const STAGE_EFFORTS: readonly StageEffort[] = ['low', 'medium', 'high', 'xhigh', 'max'];
+export const STAGE_EFFORTS: readonly StageEffort[] = REASONING_EFFORTS;
 
 /** One pointing stage on the region's knowledge, yes or no, no why: the field defaults every stage fills from. */
 export const DEFAULT_STAGE: StageConfig = Object.freeze({

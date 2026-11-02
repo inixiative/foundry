@@ -122,7 +122,12 @@ test("modes and config options are the host's: they reach the executor launch an
     ['model', 'model'],
     ['worker', '_worker'],
     ['effort', 'thought_level'],
+    ['steer', '_steer'],
   ]);
+  // Steering follows the thread's setting (on by default) until the host picks for this session.
+  expect(created.configOptions?.find((o) => o.id === 'steer')).toMatchObject({
+    currentValue: 'steer',
+  });
   // The command list follows the session's creation.
   await until(
     () => h.all(sessionId).some((u) => u.sessionUpdate === 'available_commands_update'),
@@ -151,6 +156,18 @@ test("modes and config options are the host's: they reach the executor launch an
   expect(effort.configOptions.find((o) => o.id === 'effort')).toMatchObject({
     currentValue: 'high',
   });
+  const steer = await h.agent.request('session/set_config_option', {
+    sessionId,
+    configId: 'steer',
+    value: 'queue',
+  });
+  expect(steer.configOptions.find((o) => o.id === 'steer')).toMatchObject({
+    currentValue: 'queue',
+  });
+  const unknownSteer = await h.agent
+    .request('session/set_config_option', { sessionId, configId: 'steer', value: 'maybe' })
+    .catch((e: Error) => e);
+  expect(String((unknownSteer as Error).message)).toContain('Expected steer or queue');
   const unknownMode = await h.agent
     .request('session/set_mode', { sessionId, modeId: 'yolo' })
     .catch((e: Error) => e);
@@ -588,5 +605,31 @@ test('/correction records a correction against the last turn without running a t
     threadId: sessionId,
     correction: 'Use the existing parser, not a new one',
     operator: 'acp:Paseo',
+  });
+});
+
+test('a prompt that arrives while a turn runs steers into it and is answered when that turn ends (CORE-001)', async () => {
+  const { f, dir, host } = await nativeHost();
+  const h = host();
+  await h.agent.request('initialize', INITIALIZE);
+  const { sessionId } = await h.agent.request('session/new', {
+    cwd: join(dir, 'P'),
+    mcpServers: [],
+  });
+  await turn(h, f, sessionId, 'first', async (attempt) => {
+    let answered = false;
+    const second = h.agent
+      .request('session/prompt', { sessionId, prompt: [{ type: 'text', text: 'also this' }] })
+      .then((r) => {
+        answered = true;
+        return r;
+      });
+    await until(() => f.pushes.includes('also this'), 'steered into the running turn');
+    await Bun.sleep(50);
+    // No native turn of its own, and no answer before the turn it went into ends.
+    expect(f.attempts).toHaveLength(1);
+    expect(answered).toBe(false);
+    attempt.finish(false, 'done');
+    expect(await second).toEqual({ stopReason: 'end_turn' });
   });
 });

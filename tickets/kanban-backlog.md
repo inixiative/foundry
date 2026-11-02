@@ -24,13 +24,13 @@ kanban
     BOARD-004-outside-requests
     BOARD-005-g1-untrusted-content
     FEAT-003-rejections-ledger
-    CORE-001-explicit-steer-path
     CORE-002-idle-and-dispose-release
     FEAT-001-acp-session-list
     FEAT-002-codex-login-auth-command
     FEAT-005-secret-placeholders
   In Progress
   Done
+    CORE-001-explicit-steer-path
 ```
 
 ## Tickets
@@ -77,7 +77,6 @@ Proposed, not built. Source: Oracle `docs/foundry/reference/COMPARISON.md` §0; 
 
 | Ticket | Gap | Priority |
 |--------|-----|----------|
-| [CORE-001](./CORE-001-explicit-steer-path.md) | Steer toggle, on by default; queued items always steerable (Aron 11-01) | Medium |
 | [CORE-002](./CORE-002-idle-and-dispose-release.md) | Main-thread native sessions live until shutdown; extend the existing guarded release to idle time and dispose | Medium |
 | [FEAT-001](./FEAT-001-acp-session-list.md) | ACP `session/list` missing; hosts can't find past threads | Low |
 | [FEAT-002](./FEAT-002-codex-login-auth-command.md) | Kingdom Codex login written to `auth.json`; hand it over in memory through `auth.command` | Medium |

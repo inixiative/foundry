@@ -114,7 +114,7 @@ Runtime config lives in `.foundry/settings.json`. A fresh install is one executo
 
 It defines:
 - Default provider/model
-- Vendors (`vendors`): one per vendor (Anthropic, OpenAI, Google, Meta, xAI, ...), each on or off with a subscription mode (a native CLI login: Claude Code, Codex) and an API mode (an API key); a registry provider runs while its vendor and mode are on (`models/vendors.ts`). A saved pre-vendor `providers` key is refused by name; nothing converts it
+- Vendors (`vendors`): one per vendor (Anthropic, OpenAI, Google, Meta, xAI, ...), each on or off with a subscription mode (a native CLI login: Claude Code, Codex, Muse Code) and an API mode (an API key); a registry provider runs while its vendor and mode are on (`models/vendors.ts`). A saved pre-vendor `providers` key is refused by name; nothing converts it
 - This Foundry's name (`installationName`), which Kingdom pairing uses
 - Agent definitions (id, kind, prompt, provider, model, temperature, visible/owned layers). No Wardens: a `domain-advising`, `domain-librarian` or `decider` agent in `agents` or `projects[id].agents` is refused by name (`refuseHandNamedWardens`), with the fix
 - The composition view (`composition`): the instruction ladder and what each role picks from it
@@ -148,6 +148,6 @@ A thread is a tree (docs/THREAD-TREE.md spec A).
 - **Language**: TypeScript (strict)
 - **Testing**: `bun test` (bun's built-in test runner)
 - **Database**: SQLite for the local journal (`.foundry/sessions.sqlite`), the record of every turn; PostgreSQL via Prisma (`prisma/schema.prisma`, `entries` only) as an optional memory backend for the `postgres` memory tool. Nothing mirrors the journal into Postgres (Aron 2026-11-01).
-- **Providers**: native Claude Code and Codex sessions via `@inixiative/agent-session` (subscription, the default); with `apiTokens: true`, Anthropic, OpenAI, Gemini, Voyage (embeddings), plus the OpenAI-compatible family (xAI, DeepSeek, Qwen, Kimi, GLM, Meta, Mistral, OpenRouter, Groq, Together, Fireworks, Ollama, vLLM) through one adapter and the registry's `apiRoot`
+- **Providers**: native Claude Code, Codex and Muse Code sessions via `@inixiative/agent-session` (subscription, the default; Muse Code runs main threads only, on the user's own Muse login, FEAT-006); with `apiTokens: true`, Anthropic, OpenAI, Gemini, Voyage (embeddings), plus the OpenAI-compatible family (xAI, DeepSeek, Qwen, Kimi, GLM, Meta, Mistral, OpenRouter, Groq, Together, Fireworks, Ollama, vLLM) through one adapter and the registry's `apiRoot`
 - **MCP**: Model Context Protocol server for the mid-session bridge
 - **ACP**: foundry-acp, the Agent Client Protocol agent hosts talk to

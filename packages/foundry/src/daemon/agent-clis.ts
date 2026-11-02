@@ -13,7 +13,13 @@ export const SYSTEM_PATH = [
   '/usr/sbin',
   '/sbin',
 ];
-export const AGENT_CLIS = ['claude', 'codex'] as const;
+export const AGENT_CLIS = ['claude', 'codex', 'muse'] as const;
+/**
+ * The CLIs the daemon cannot run without (Foundry's default workers and decisions). Muse Code is off
+ * until the user turns on Meta's subscription mode, so a machine without it still installs the
+ * daemon; where it is installed, the daemon's PATH reaches it.
+ */
+export const REQUIRED_AGENT_CLIS: readonly string[] = ['claude', 'codex'];
 
 export type Install = { binary: string; version: number[] };
 
@@ -99,8 +105,9 @@ export const installLocations = async (
 };
 
 const versionUnder = async (binary: string, pathEntries: string[], home: string) => {
+  // Muse Code's launcher updates itself on a run unless told not to; a probe never moves a CLI.
   const run = await $`/usr/bin/env ${binary} --version`
-    .env({ HOME: home, PATH: pathEntries.join(':') })
+    .env({ HOME: home, PATH: pathEntries.join(':'), MUSE_NO_AUTO_UPDATE: '1' })
     .quiet()
     .nothrow();
   const match = run.exitCode === 0 ? /(\d+)\.(\d+)\.(\d+)/.exec(run.stdout.toString()) : null;
@@ -198,6 +205,7 @@ export const resolveDaemonPath = async (
   const missing: string[] = [];
   for (const cli of AGENT_CLIS) {
     const chosen = resolved.get(cli);
+    if (!chosen && !REQUIRED_AGENT_CLIS.includes(cli)) continue;
     if (!chosen || (await whichUnder(cli, pathEntries)) !== chosen.binary) missing.push(cli);
   }
   return { pathEntries, resolved, missing };

@@ -443,8 +443,12 @@ describe('ClaudeCodeSessionAdapter', () => {
           },
         },
       });
-      expect(cmd.join(' ')).not.toContain('secret');
-      expect(JSON.stringify(env)).not.toContain('secret');
+      // The two secret values, not the word: the inherited environment may name anything (CI's
+      // GITHUB_HEAD_REF carries the branch name).
+      for (const secret of ['secret-token', 'Bearer secret-header']) {
+        expect(cmd.join(' ')).not.toContain(secret);
+        expect(JSON.stringify(env)).not.toContain(secret);
+      }
       session.kill();
       for (let i = 0; i < 100 && existsSync(file); i++) await Bun.sleep(10);
       expect(existsSync(file)).toBe(false);

@@ -40,8 +40,9 @@ import { FLOW_TURNS, type FlowJournal, flowSnapshot, readLearning, readTurn } fr
  *                       append   { kind: 'turn', turn } | { kind: 'learning', entries } | { kind: 'knowledge', knowledge, review, learningError }
  */
 export type ThreadAppend = TurnAppend | { kind: 'event'; event: StreamEvent };
+/** A turn's full terminal, to the client that sent it. `steered`: it went into the running turn `result.into` (CORE-001). */
 export type TurnTerminal = {
-  kind: 'done' | 'error';
+  kind: 'done' | 'error' | 'steered';
   turnId: string;
   result: Record<string, unknown>;
 };
