@@ -147,11 +147,24 @@ test('every shared project setting has a repository layer; machine and person se
   expect(JSON.parse(readFileSync(file, 'utf8'))).not.toHaveProperty('defaults');
 
   // Machine and person settings: refused for everyone, with why.
-  for (const path of ['toolRules', 'capacity', 'label', 'defaults.nativeAuthenticationId']) {
+  for (const path of [
+    'toolRules',
+    'sources',
+    'capacity',
+    'label',
+    'defaults.nativeAuthenticationId',
+    'defaults.classifierProvider',
+  ]) {
     expect((await get(path)).personalOnly).toBeString();
     const refused = await put('everyone', { [path]: path === 'toolRules' ? {} : 'x' });
     expect(refused.status).toBe(400);
     expect(refused.body.error).toContain("can't be set for everyone");
   }
   expect((await put('me', { path: '/elsewhere' })).status).toBe(400);
+  // Only what the settings pages set, and never a path into an object's prototype.
+  expect((await put('me', { 'foo.bar': 1 })).status).toBe(400);
+  expect((await put('me', { kingdomProject: {} })).status).toBe(400);
+  for (const path of ['gloss.__proto__.polluted', 'feedback.constructor.x'])
+    expect((await put('me', { [path]: 'yes' })).status).toBe(400);
+  expect(({} as Record<string, unknown>).polluted).toBeUndefined();
 });

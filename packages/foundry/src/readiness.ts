@@ -5,12 +5,13 @@
  */
 import { constants } from 'node:fs';
 import { access, stat } from 'node:fs/promises';
+import { join } from 'node:path';
 import { MUSE_SDK_VERSION } from '@inixiative/agent-session';
 import type { ArchiveClient } from '@inixiative/archive/remote';
 import { computeHash, MODEL_REGISTRY, resolveDecisionModel } from '@inixiative/foundry-core';
 import { readPrivateJson, signetCredentialFile, signetCredentialSchema } from '@inixiative/signet';
 import { configuredExperts } from './agents/configured-experts';
-import { regionKey } from './agents/region-roster';
+import { REPOSITORY_SETTINGS_FILE, regionKey } from './agents/region-roster';
 import { archiveStatus, localArchiveUrl } from './archives/local';
 import { charterFor, deadlineShares, responseProtocol, type StageConfig } from './classify';
 import { ensureAgentClisOnPath, type Install } from './daemon/agent-clis';
@@ -37,7 +38,11 @@ import {
 import { resolvePrefilterSettings, WardenPrefilter } from './providers/warden-prefilter';
 import { describeLegacyItem, findLegacyStarter } from './setup/legacy-starter';
 import { type FoundryConfig, validateConfig } from './viewer/config';
-import { type ResolvedChorus, resolveProjectView } from './viewer/config-resolve';
+import {
+  type ResolvedChorus,
+  repositorySettingsProblem,
+  resolveProjectView,
+} from './viewer/config-resolve';
 
 export interface ReadinessIssue {
   severity: 'error' | 'warning';
@@ -653,14 +658,17 @@ export async function inspectReadiness(
   });
   nativeClis = native.nativeClis;
   issues.push(...native.issues);
-  for (const [scope, c] of choruses)
-    if (c.repository?.error)
+  for (const [scope] of choruses) {
+    const project = config.projects[scope];
+    const problem = project && repositorySettingsProblem(project.path);
+    if (problem)
       issue(
         'error',
         scope,
         'repository-settings-unreadable',
-        `${c.repository.file} was not read (${c.repository.error}); none of its settings apply.`,
+        `${join(project.path, REPOSITORY_SETTINGS_FILE)} does not apply on this machine (${problem}); none of its settings apply.`,
       );
+  }
   chorus = await Promise.all(
     choruses.map(([scope, c]) =>
       describeReadinessChorus(scope, c, (region, message) =>

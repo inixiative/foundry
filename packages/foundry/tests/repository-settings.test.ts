@@ -7,9 +7,11 @@ import { defaultConfig, type ProjectSettingsConfig } from '../src/viewer/config'
 import {
   effectiveProject,
   readRepositorySettings,
+  repositorySettingsProblem,
   resolveProjectView,
+  setAtPath,
   settingLayer,
-  writeRepositorySetting,
+  writeRepositorySettings,
 } from '../src/viewer/config-resolve';
 
 const dirs: string[] = [];
@@ -25,17 +27,17 @@ test("'set for everyone' writes one key of the committed project file and keeps 
     join(project, '.foundry/project.json'),
     JSON.stringify({ $comment: 'team', chorus: { enabled: true } }),
   );
-  writeRepositorySetting(project, 'conversations', { floor: 'conch' });
+  writeRepositorySettings(project, [['conversations', { floor: 'conch' }]]);
   expect(readRepositorySettings(project)).toMatchObject({
     chorus: { enabled: true },
     conversations: { floor: 'conch' },
   });
   expect(statSync(join(project, '.foundry/project.json')).mode & 0o777).toBe(0o644);
-  writeRepositorySetting(project, 'chorus', null);
+  writeRepositorySettings(project, [['chorus', null]]);
   const saved = JSON.parse(readFileSync(join(project, '.foundry/project.json'), 'utf8'));
   expect(saved).toEqual({ $comment: 'team', conversations: { floor: 'conch' } });
   writeFileSync(join(project, '.foundry/project.json'), '{"bogus": 1}');
-  expect(() => writeRepositorySetting(project, 'chorus', { enabled: true })).toThrow('bogus');
+  expect(() => writeRepositorySettings(project, [['chorus', { enabled: true }]])).toThrow('bogus');
 });
 
 test('a setting comes from this machine, else the repository, else the default', () => {
@@ -88,6 +90,12 @@ test('the worker and its model are one unit: they come from the layer that names
     provider: 'codex',
     model: SUBSCRIPTION_WORKER_MODELS.codex,
   });
+  // My model wins when the team's worker runs it.
+  const runs = projectWith(
+    { defaults: { provider: 'codex', model: SUBSCRIPTION_WORKER_MODELS.codex } },
+    { defaults: { model: 'gpt-6-luna' } },
+  );
+  expect(effectiveProject(runs, 'p')!.defaults!.model).toBe('gpt-6-luna');
   // My model alone doesn't pair with the team's worker unless that worker runs it.
   const mismatched = projectWith(
     { defaults: { provider: 'codex' } },
@@ -108,6 +116,14 @@ test('the worker and its model are one unit: they come from the layer that names
 test('a repository file that breaks a rule is reported and none of it applies', () => {
   for (const bad of [
     { toolRules: {} },
+    { sources: { notes: { id: 'notes', type: 'markdown', uri: '/Users/me/notes' } } },
+    { defaults: { classifierProvider: 'anthropic' } },
+    { defaults: { model: 'gpt-6-astra' } },
+    { defaults: { provider: 'codex', codexEffort: 'bogus' } },
+    { agents: [1, 2] },
+    { agents: { cls: { kind: 'classifier', provider: 'anthropic' } } },
+    { agents: { exec: { kind: 'executor', tools: true } } },
+    { agents: { cls: { kind: 'classifier', model: 'claude-opus-5-5' } } },
     { label: 'team name' },
     { defaults: { nativeAuthenticationId: 'mine' } },
     { defaults: { provider: 'codex', model: 'fable' } },
@@ -126,4 +142,27 @@ test('settings.json is checked without the repository: a teammate’s worker nev
     config.defaults.provider,
   );
   expect(resolveProjectView(config, 'p')!.config.defaults.provider).toBe('muse');
+});
+
+test('team settings this machine can’t build don’t apply here, and why is reported', () => {
+  const config = projectWith({
+    steer: false,
+    agents: { reviewer: { extends: 'not-on-this-machine' } },
+  });
+  const path = config.projects.p!.path;
+  expect(readRepositorySettings(path)?.error).toBeUndefined();
+  const view = resolveProjectView(config, 'p')!;
+  expect(view.config.agents.reviewer).toBeUndefined();
+  expect(repositorySettingsProblem(path)).toContain('not-on-this-machine');
+});
+
+test('a setting path never reaches an object’s prototype', () => {
+  const root: Record<string, unknown> = {};
+  for (const path of [
+    ['gloss', '__proto__', 'polluted'],
+    ['constructor', 'x'],
+    ['a', 'prototype'],
+  ])
+    expect(() => setAtPath(root, path, 'yes')).toThrow('is not a setting');
+  expect(({} as Record<string, unknown>).polluted).toBeUndefined();
 });

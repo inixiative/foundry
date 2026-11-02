@@ -27,6 +27,7 @@ import {
   type BrowserConfig,
   type BrowserConfigOverride,
   type ChorusSettings,
+  checkProjectView,
   type FoundryConfig,
   type InvocationCondition,
   type InvocationConditionOverride,
@@ -38,6 +39,7 @@ import {
   personalOnlySetting,
   REPOSITORY_SETTING_KEYS,
   type RepositorySettingKey,
+  UNSAFE_SETTING_SEGMENTS,
   validateChorusSettings,
   validateRepositoryProject,
 } from './config';
@@ -832,7 +834,8 @@ export function readRepositorySettings(projectPath: string): RepositorySettingsR
     return undefined;
   }
   const cached = repositoryCache.get(file);
-  if (cached?.stamp === stamp) return cached.read;
+  // A copy: nothing downstream can change what the next reader sees.
+  if (cached?.stamp === stamp) return structuredClone(cached.read);
   let read: RepositorySettingsRead;
   try {
     const raw: unknown = JSON.parse(readFileSync(file, 'utf8'));
@@ -845,21 +848,18 @@ export function readRepositorySettings(projectPath: string): RepositorySettingsR
     read = { file, error: (error as Error).message };
   }
   repositoryCache.set(file, { stamp, read });
-  return read;
+  return structuredClone(read);
 }
 
 /**
- * "Set for everyone": write one repository setting at a dotted path (`threadOnMerge`,
+ * "Set for everyone": write repository settings at dotted paths (`threadOnMerge`,
  * `defaults.provider`, `agents.reviewer`) into the project's committed `.foundry/project.json`,
- * keeping its other keys; `null` removes it (and any object it leaves empty). The file is
- * team-shared (0644) and replaced whole. Refuses a machine or person setting, a file on disk that
- * is not a valid settings file, and a value that breaks a rule (the file is left as it was).
+ * keeping its other keys; `null` removes one (and any object it leaves empty), so a value of
+ * `null` itself can't be stored at a path. All of them apply, or none: the file is team-shared
+ * (0644) and replaced whole. Refuses a machine or person setting, a file on disk that is not a valid
+ * settings file, and a value that breaks a rule (the file is left as it was). Synchronous from
+ * read to write, so two requests never interleave inside it.
  */
-export function writeRepositorySetting(projectPath: string, path: string, value: unknown): void {
-  writeRepositorySettings(projectPath, [[path, value]]);
-}
-
-/** Several repository settings in one write: all of them apply, or none. */
 export function writeRepositorySettings(
   projectPath: string,
   entries: ReadonlyArray<readonly [path: string, value: unknown]>,
@@ -884,12 +884,13 @@ export function writeRepositorySettings(
 export function setAtPath(root: Record<string, unknown>, path: string[], value: unknown): void {
   const [head, ...rest] = path;
   if (head === undefined) return;
+  if (UNSAFE_SETTING_SEGMENTS.has(head)) throw Error(`${head} is not a setting`);
   if (!rest.length) {
     if (value === null) delete root[head];
     else root[head] = value;
     return;
   }
-  const child = root[head];
+  const child = Object.hasOwn(root, head) ? root[head] : undefined;
   const isObject = !!child && typeof child === 'object' && !Array.isArray(child);
   if (value === null) {
     if (!isObject) return;
@@ -904,10 +905,11 @@ export function setAtPath(root: Record<string, unknown>, path: string[], value: 
 
 /**
  * A project's settings as they apply: this machine's (`projects[id]`) over the repository's, key by
- * key. Records (`agents`, `layers`, `sources`) merge by id, the machine's entry replacing the
+ * key. Records (`agents`, `layers`) merge by id, the machine's entry replacing the
  * repository's whole; objects (`gloss`, `feedback`) merge field by field; a scalar is the machine's,
- * else the repository's. The worker and its model are one unit (FEAT-007): they come from the layer
- * that names the worker, a model on its own applying only when that worker runs it. `chorus`,
+ * else the repository's. The worker and its model are one unit (FEAT-007): the worker is the layer
+ * that names it; your model wins whenever that worker runs it, else the worker's layer's, else the
+ * worker's own default. `chorus`,
  * `conversations` and `steer` keep their own readers, which report each value's layer
  * (`projectChorus`, `conversationSettings`, `steerOnSend`). Machine and person settings are the
  * machine's alone.
@@ -930,7 +932,6 @@ export function effectiveProject(
   if (theirs.feedback || mine.feedback) merged.feedback = { ...theirs.feedback, ...mine.feedback };
   if (theirs.agents || mine.agents) merged.agents = { ...theirs.agents, ...mine.agents };
   if (theirs.layers || mine.layers) merged.layers = { ...theirs.layers, ...mine.layers };
-  if (theirs.sources || mine.sources) merged.sources = { ...theirs.sources, ...mine.sources };
   if (theirs.defaults || mine.defaults)
     merged.defaults = mergeDefaults(theirs.defaults, mine.defaults);
   return merged;
@@ -945,9 +946,10 @@ function mergeDefaults(
   const worker = mine?.provider ?? theirs?.provider;
   if (worker) {
     const own = mine?.provider ? mine : theirs;
+    // Your model wins whenever the worker in effect runs it; else the worker's layer's, else its own.
     const model =
-      own?.model ??
       (mine?.model && registryModel(worker, mine.model) ? mine.model : undefined) ??
+      own?.model ??
       SUBSCRIPTION_WORKER_MODELS[worker as keyof typeof SUBSCRIPTION_WORKER_MODELS];
     if (model) merged.model = model;
     else delete merged.model;
@@ -1032,10 +1034,36 @@ export function resolveProjectView(
   projectId: string,
   options: { repository?: boolean } = {},
 ): ResolvedProjectView | null {
-  const project =
-    options.repository === false ? config.projects[projectId] : effectiveProject(config, projectId);
-  if (!project) return null;
+  const mine = config.projects[projectId];
+  if (!mine) return null;
+  const project = options.repository === false ? mine : effectiveProject(config, projectId)!;
+  if (project === mine) return buildProjectView(config, projectId, mine);
+  // The team's settings may name what this machine lacks (a parent agent it doesn't have): then
+  // none of them apply here, and why is reported, so a checkout never stops the daemon.
+  try {
+    const view = buildProjectView(config, projectId, project);
+    checkProjectView(projectId, view.config);
+    unapplied.delete(mine.path);
+    return view;
+  } catch (error) {
+    unapplied.set(mine.path, (error as Error).message);
+    return buildProjectView(config, projectId, mine);
+  }
+}
 
+/** Why a project's repository settings didn't apply on this machine, by project path. */
+const unapplied = new Map<string, string>();
+
+/** Why the repository's settings at `projectPath` don't apply here: unreadable, or unbuildable. */
+export function repositorySettingsProblem(projectPath: string): string | undefined {
+  return readRepositorySettings(projectPath)?.error ?? unapplied.get(projectPath);
+}
+
+function buildProjectView(
+  config: FoundryConfig,
+  projectId: string,
+  project: ProjectSettingsConfig,
+): ResolvedProjectView {
   const resolved: FoundryConfig = {
     ...(config.learning !== undefined ? { learning: structuredClone(config.learning) } : {}),
     ...(config.composition !== undefined

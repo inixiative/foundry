@@ -52,7 +52,7 @@ import {
 } from '../providers/warden-prefilter';
 import { needsPlan } from '../tools/thread-record';
 import type { FoundryConfig } from '../viewer/config';
-import { resolveThreadView } from '../viewer/config-resolve';
+import { projectChorus, resolveThreadView } from '../viewer/config-resolve';
 import { Cartographer, DEFAULT_ROUTE_INSTRUCTIONS } from './cartographer';
 import {
   allDegraded,
@@ -387,7 +387,9 @@ function wardenStages(
   projectId: string | undefined,
   stageHosts: boolean,
 ): readonly StageConfig[] {
-  const written = projectId ? config.projects?.[projectId]?.chorus?.wardens?.stages : undefined;
+  const project = projectId ? config.projects?.[projectId] : undefined;
+  // The machine's chorus over the repository's, as the view reports it.
+  const written = project ? projectChorus(project).chorus.wardens?.stages : undefined;
   return written ? validateStages('chorus.wardens.stages', written) : defaultStages(stageHosts);
 }
 
@@ -999,8 +1001,8 @@ class ThreadRuntimeImpl implements ThreadRuntime {
     this._warn = warn;
     this._guardMode = deps.config.guard ?? 'per-turn';
     this._consumed = consumedMatcher(
-      thread.meta.projectId
-        ? deps.config.projects?.[thread.meta.projectId as string]?.chorus?.consumed
+      thread.meta.projectId && deps.config.projects?.[thread.meta.projectId as string]
+        ? projectChorus(deps.config.projects[thread.meta.projectId as string]!).chorus.consumed
         : undefined,
     );
     const { stack, signals } = thread;
@@ -1213,9 +1215,10 @@ class ThreadRuntimeImpl implements ThreadRuntime {
     // A thread with a chorus holds the reception charter once, as a standing layer: how the main
     // thread reads a pointer (`chorus.reception: false` leaves it out). Fixed text, so its inline
     // source re-warms it unchanged. Set at construction: a chorus turned on later reaches new threads.
-    const projectChorusSettings = thread.meta.projectId
-      ? deps.config.projects?.[thread.meta.projectId as string]?.chorus
+    const chorusProject = thread.meta.projectId
+      ? deps.config.projects?.[thread.meta.projectId as string]
       : undefined;
+    const projectChorusSettings = chorusProject ? projectChorus(chorusProject).chorus : undefined;
     if (
       this.domainLibrarians.size &&
       projectChorusSettings?.reception !== false &&

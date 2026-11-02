@@ -9,9 +9,8 @@
  * it comes from this machine's settings or the repository's `.foundry/project.json`.
  */
 
-import { html, useEffect, useState } from './lib.js';
+import { html } from './lib.js';
 import { SettingRow } from './setting-row.js';
-import { authFetch } from './store.js';
 import {
   layeredActions,
   ProjectChoiceRow,
@@ -49,9 +48,22 @@ const summary = (value) => {
 function GroupRow({ projectId, group: [key, label, help], onSaved }) {
   const { state, busy, save } = useProjectSetting(projectId, key, onSaved);
   if (!state || (state.mine === null && state.repository === null)) return null;
+  const value = state.mine ?? state.repository;
+  // An object's personal keys (your login, your pool) never go to everyone and survive a reset.
+  const personal = new Set(state.personalKeys ?? []);
+  const values = personal.size
+    ? Object.fromEntries(
+        Object.entries(value)
+          .filter(([k]) => !personal.has(k))
+          .map(([k, v]) => [`${key}.${k}`, v]),
+      )
+    : { [key]: value };
+  const actions = layeredActions(state, save, values);
+  if (personal.size && !Object.keys(values).length)
+    actions.everyone = 'Only your own keys are set here';
   return html`<${SettingRow} path=${key} label=${label} help=${help} busy=${busy}
-    source=${sourceOf(state)} actions=${layeredActions(state, save, { [key]: state.mine ?? state.repository })}>
-    <code class="setting-value">${summary(state.mine ?? state.repository)}</code>
+    source=${sourceOf(state)} actions=${actions}>
+    <code class="setting-value">${summary(value)}</code>
   </${SettingRow}>`;
 }
 
@@ -68,45 +80,22 @@ export function ProjectOverrides({ projectId, onSaved }) {
 }
 
 /**
- * Settings › Project › Sources: every source the project has, yours and the team's, each with where
- * it comes from and ⋯; `editor(id, source)` renders its editor (edits are saved as yours).
+ * Settings › Project › Sources: this machine's sources for the project, each with its editor. They are
+ * yours alone: a source reads files and Archive projects on this machine, so the repository can't
+ * carry one, and ⋯ says why.
  */
-export function ProjectSources({ projectId, editor, onSaved }) {
-  const [layers, setLayers] = useState(undefined);
-  const load = () =>
-    authFetch(`/api/projects/${encodeURIComponent(projectId)}/setting?path=sources`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then(setLayers)
-      .catch(() => setLayers(null));
-  // biome-ignore lint/correctness/useExhaustiveDependencies: reload per project.
-  useEffect(() => {
-    load();
-  }, [projectId]);
-  if (layers === undefined) return html`<div class="settings-empty">Reading sources…</div>`;
-  if (layers === null)
-    return html`<div class="settings-empty">The sources could not be read.</div>`;
-  const ids = [
-    ...new Set([...Object.keys(layers.repository ?? {}), ...Object.keys(layers.mine ?? {})]),
-  ];
-  if (!ids.length)
+export function ProjectSources({ projectId, sources, editor }) {
+  // Why sources are yours alone, as the daemon says it.
+  const why = useProjectSetting(projectId, 'sources').state?.personalOnly ?? 'Yours alone';
+  const list = Object.values(sources ?? {});
+  if (!list.length)
     return html`<div class="settings-empty">No sources configured for this project.</div>`;
-  return ids.map(
-    (id) => html`<${SourceRow} key=${id} projectId=${projectId} id=${id} editor=${editor}
-      onSaved=${async () => {
-        await onSaved?.();
-        await load();
-      }} />`,
+  return list.map(
+    (source) => html`<div key=${source.id} class="source-layer">
+      <${SettingRow} path=${`sources.${source.id}`} label=${source.label ?? source.id}
+        help=${`${source.type ?? ''} · ${source.uri ?? ''}`} source="yours"
+        actions=${{ me: 'Edit it below', everyone: why, reset: 'Remove it below' }} />
+      ${editor(source.id, source)}
+    </div>`,
   );
-}
-
-function SourceRow({ projectId, id, editor, onSaved }) {
-  const path = `sources.${id}`;
-  const { state, busy, save } = useProjectSetting(projectId, path, onSaved);
-  if (!state) return null;
-  const source = state.mine ?? state.repository;
-  return html`<div class="source-layer">
-    <${SettingRow} path=${path} label=${source?.label ?? id} help=${`${source?.type ?? ''} · ${source?.uri ?? ''}`}
-      busy=${busy} source=${sourceOf(state)} actions=${layeredActions(state, save, { [path]: source })} />
-    ${editor(id, source)}
-  </div>`;
 }

@@ -12,6 +12,7 @@ import {
   type Harness,
   type MemorySelectionPolicy,
   newId,
+  REASONING_EFFORTS,
   registryModel,
   SUBSCRIPTION_WORKER_MODELS,
   type VersionEntry,
@@ -1226,14 +1227,10 @@ export function validateConfig(config: FoundryConfig): void {
       validateLayerDefinition(`project ${JSON.stringify(pid)} layers`, id, layer);
   configuredExperts(config);
   for (const projectId of Object.keys(config.projects ?? {})) {
-    const view = resolveProjectView(config, projectId, { repository: false })!.config;
-    validateAgentKinds(`project ${JSON.stringify(projectId)}`, view.agents);
-    // What thread construction checks, checked before the settings are saved.
-    try {
-      configuredExperts(view);
-    } catch (error) {
-      throw Error(`project ${JSON.stringify(projectId)}: ${(error as Error).message}`);
-    }
+    checkProjectView(
+      projectId,
+      resolveProjectView(config, projectId, { repository: false })!.config,
+    );
   }
   const check = validateSourceDefinitions;
   check('global sources', config.sources);
@@ -1281,7 +1278,6 @@ export const REPOSITORY_SETTING_KEYS = [
   'feedback',
   'agents',
   'layers',
-  'sources',
   'chorus',
   'conversations',
 ] as const;
@@ -1301,9 +1297,31 @@ const PERSONAL_PROJECT_SETTINGS: Readonly<Record<string, string>> = {
   kingdomProject: 'Your link to a Kingdom project',
   toolRules:
     'Tool rules gate what agents may run on this machine; a cloned repository can’t loosen them',
+  sources:
+    'Sources read files and Archive projects on this machine; a cloned repository can’t point them elsewhere',
   'defaults.nativeAuthenticationId': 'Your login on this machine',
   'defaults.kingdomOwnerKey': 'Your Kingdom subscription pool',
+  'defaults.classifierProvider':
+    'Decision roles run on this machine’s subscription; a cloned repository can’t move them to a paid API',
+  'defaults.classifierModel':
+    'Decision roles run on this machine’s subscription; a cloned repository can’t move them to a paid API',
 };
+
+/** What a repository's agent may not set: where it runs and how it samples stay this machine's. */
+const MACHINE_AGENT_FIELDS = [
+  'provider',
+  'tools',
+  'temperature',
+  'thinking',
+  'cacheControl',
+] as const;
+
+/** A path segment that would reach an object's prototype: never a setting. */
+export const UNSAFE_SETTING_SEGMENTS: ReadonlySet<string> = new Set([
+  '__proto__',
+  'constructor',
+  'prototype',
+]);
 
 /** Why a project setting has no "for everyone" form, or undefined when the repository may set it. */
 export function personalOnlySetting(path: string): string | undefined {
@@ -1335,7 +1353,16 @@ export function validateRepositoryProject(settings: Record<string, unknown>): vo
       if (personal) throw Error(`defaults.${key} is not a repository setting: ${personal}`);
       if (typeof defaults[key] !== 'string') throw Error(`defaults.${key} must be a string`);
     }
-    // The worker and its model go together (FEAT-007): a model is one the worker runs.
+    if (
+      defaults.codexEffort !== undefined &&
+      !(REASONING_EFFORTS as readonly unknown[]).includes(defaults.codexEffort)
+    )
+      throw Error(`defaults.codexEffort must be one of ${REASONING_EFFORTS.join(', ')}`);
+    // The worker and its model go together (FEAT-007): a model is one the worker runs, never alone.
+    if (defaults.model !== undefined && defaults.provider === undefined)
+      throw Error(
+        'defaults.model needs defaults.provider: a worker and its model are set together',
+      );
     if (typeof defaults.provider === 'string') {
       if (!(defaults.provider in SUBSCRIPTION_WORKER_MODELS))
         throw Error(`defaults.provider ${defaults.provider} is not a subscription worker`);
@@ -1363,18 +1390,48 @@ export function validateRepositoryProject(settings: Record<string, unknown>): vo
   validateFeedbackSettings('feedback', settings.feedback);
   validateChorusSettings('chorus', settings.chorus);
   validateConversationSettings('conversations', settings.conversations);
+  for (const key of ['agents', 'layers'] as const) {
+    const records = settings[key];
+    if (records !== undefined && !isRecordOfObjects(records))
+      throw Error(`${key} must map ids to objects`);
+  }
   const agents = settings.agents as Record<string, Partial<AgentSettingsConfig>> | undefined;
   if (agents !== undefined) {
     const found = handNamedWardens('agents', agents);
     if (found.length) throwHandNamed(found);
     validateAgentKinds('repository', agents);
+    for (const [id, agent] of Object.entries(agents)) {
+      const set = MACHINE_AGENT_FIELDS.find((field) => field in agent);
+      if (set)
+        throw Error(
+          `agents.${id}.${set} is not a repository setting: where an agent runs and how it samples stay this machine's`,
+        );
+      if ('model' in agent && agent.kind !== undefined && agent.kind !== 'executor')
+        throw Error(
+          `agents.${id}.model is not a repository setting: decision roles run on this machine's subscription`,
+        );
+    }
   }
   for (const [id, layer] of Object.entries((settings.layers as Record<string, unknown>) ?? {}))
     validateLayerDefinition('repository layers', id, layer);
-  validateSourceDefinitions(
-    'repository sources',
-    settings.sources as Record<string, DataSourceConfig> | undefined,
+}
+
+const isRecordOfObjects = (value: unknown): boolean =>
+  !!value &&
+  typeof value === 'object' &&
+  !Array.isArray(value) &&
+  Object.values(value).every(
+    (entry) => !!entry && typeof entry === 'object' && !Array.isArray(entry),
   );
+
+/** What thread construction checks on a project's view: its agents' kinds and that they build. */
+export function checkProjectView(projectId: string, view: FoundryConfig): void {
+  validateAgentKinds(`project ${JSON.stringify(projectId)}`, view.agents);
+  try {
+    configuredExperts(view);
+  } catch (error) {
+    throw Error(`project ${JSON.stringify(projectId)}: ${(error as Error).message}`);
+  }
 }
 
 /** A mutation named a settings revision that is no longer current. */

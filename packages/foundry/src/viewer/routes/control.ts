@@ -20,9 +20,12 @@ import {
   createProject,
   type FoundryConfig,
   personalOnlySetting,
+  REPOSITORY_SETTING_KEYS,
+  UNSAFE_SETTING_SEGMENTS,
 } from '../config';
 import {
   readRepositorySettings,
+  repositorySettingsProblem,
   setAtPath,
   settingLayer,
   writeRepositorySettings,
@@ -68,6 +71,20 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  * What an "always" answer covers: the capability and tool, and for a shell call the whole command
  * exactly (trimmed). Never a prefix: `ls && curl … | sh` must not ride on an "always" for `ls`.
  */
+
+/** The project setting roots PUT /api/projects/:id/setting writes: what the settings pages show. */
+const SETTABLE_PROJECT_ROOTS: ReadonlySet<string> = new Set<string>([
+  ...REPOSITORY_SETTING_KEYS,
+  'sources',
+  'toolRules',
+]);
+
+/** An object setting's keys that are this machine's or this person's alone. */
+const personalKeysOf = (path: string, value: unknown): string[] =>
+  value && typeof value === 'object' && !Array.isArray(value)
+    ? Object.keys(value).filter((key) => personalOnlySetting(`${path}.${key}`))
+    : [];
+
 export function alwaysKey(prompt: { capability?: string; meta?: Record<string, unknown> }) {
   const tool = prompt.meta?.toolName;
   if (typeof tool !== 'string' || !prompt.capability) return null;
@@ -465,20 +482,14 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps): void 
   app.patch('/api/projects/:id', async (c) => {
     const id = c.req.param('id');
     const body = await c.req.json<Record<string, unknown>>();
-    const { label, status, threadOnMerge } = body;
+    const { label, status } = body;
     if (label !== undefined && (typeof label !== 'string' || !label.trim() || label.length > 200))
       return c.json({ error: 'label must be a non-empty string (max 200 chars)' }, 400);
     if (status !== undefined && status !== 'archived' && status !== 'active')
       return c.json({ error: 'status must be archived or active' }, 400);
-    if (
-      threadOnMerge !== undefined &&
-      threadOnMerge !== null &&
-      threadOnMerge !== 'done' &&
-      threadOnMerge !== 'auto-archive'
-    )
-      return c.json({ error: 'threadOnMerge must be done, auto-archive or null' }, 400);
-    if (label === undefined && status === undefined && threadOnMerge === undefined)
-      return c.json({ error: 'nothing to change: send label, status or threadOnMerge' }, 400);
+    // A project's settings (threadOnMerge and the rest) are set through PUT /api/projects/:id/setting.
+    if (label === undefined && status === undefined)
+      return c.json({ error: 'nothing to change: send label or status' }, 400);
     await configStore.load();
     if (!Object.hasOwn(configStore.config.projects, id))
       return c.json({ error: 'project not found' }, 404);
@@ -487,9 +498,6 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps): void 
       if (typeof label === 'string') project.label = label.trim();
       if (status === 'archived') project.status = 'archived';
       else if (status === 'active') delete project.status;
-      // A project's own merge behaviour; null falls back to the Foundry-wide one.
-      if (threadOnMerge === null) delete project.threadOnMerge;
-      else if (threadOnMerge !== undefined) project.threadOnMerge = threadOnMerge;
     });
     const live = projectRegistry?.get(id);
     if (live) {
@@ -512,7 +520,9 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps): void 
     const config = configStore.config;
     const project = config.projects[id];
     if (!project) return c.json({ error: 'project not found' }, 404);
-    const repository = readRepositorySettings(project.path);
+    const read = readRepositorySettings(project.path);
+    const problem = repositorySettingsProblem(project.path);
+    const repository = problem ? undefined : read;
     const at = (root: unknown) =>
       path
         .split('.')
@@ -522,7 +532,7 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps): void 
           root,
         );
     const mine = at(project);
-    const theirs = repository?.error ? undefined : at(repository);
+    const theirs = at(repository);
     const foundry = at(config);
     return c.json({
       path,
@@ -535,8 +545,10 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps): void 
       repository: theirs ?? null,
       foundry: foundry ?? null,
       personalOnly: personalOnlySetting(path) ?? null,
-      ...(repository ? { repositoryFile: repository.file } : {}),
-      ...(repository?.error ? { repositoryError: repository.error } : {}),
+      ...(read ? { repositoryFile: read.file } : {}),
+      ...(problem ? { repositoryError: problem } : {}),
+      // An object's keys that are this machine's or this person's alone (never set for everyone).
+      personalKeys: personalKeysOf(path, mine ?? theirs),
     });
   });
 
@@ -561,11 +573,17 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps): void 
       return c.json({ error: 'values must map setting paths to values' }, 400);
     const entries = Object.entries(values as Record<string, unknown>);
     for (const [path] of entries) {
-      if (!/^[A-Za-z][\w-]*(\.[\w-]+)*$/.test(path))
+      const parts = path.split('.');
+      if (
+        !/^[A-Za-z][\w-]*(\.[\w-]+)*$/.test(path) ||
+        parts.some((part) => UNSAFE_SETTING_SEGMENTS.has(part))
+      )
         return c.json({ error: `${path} is not a dotted setting path` }, 400);
-      const root = path.split('.')[0]!;
-      if (root === 'id' || root === 'path')
-        return c.json({ error: `${root} is not set here` }, 400);
+      const personal = scope === 'everyone' ? personalOnlySetting(path) : undefined;
+      if (personal) return c.json({ error: `${path} can't be set for everyone: ${personal}` }, 400);
+      // Set here: what the settings pages show. Registration, capacity and Kingdom links have their own flows.
+      if (!SETTABLE_PROJECT_ROOTS.has(parts[0]!))
+        return c.json({ error: `${parts[0]} is not set here` }, 400);
     }
     const id = c.req.param('id');
     await configStore.load();

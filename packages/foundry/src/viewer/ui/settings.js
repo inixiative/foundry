@@ -680,7 +680,7 @@ function ProjectSection({ section, projectId, project, onFocusChange }) {
   if (section === 'overrides')
     return html`<${ProjectOverrides} key=${projectId} projectId=${projectId} onSaved=${loadSettings} />`;
   if (section === 'sources')
-    return html`<${ProjectSources} key=${projectId} projectId=${projectId} onSaved=${loadSettings}
+    return html`<${ProjectSources} key=${projectId} projectId=${projectId} sources=${project.sources}
       editor=${(id, source) => html`<${SourceEditor}
         key=${id}
         source=${source}
