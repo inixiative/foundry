@@ -155,16 +155,34 @@ test('done threads, the merge setting, the Kingdom project link and the region p
     // Settings › Threads: Foundry-wide, then a project's own over it.
     await page.goto(`${origin}/settings/threads`);
     const merge = page.locator('[data-setting="threadOnMerge"]');
-    await merge.getByRole('radio', { name: /Archive it/ }).check();
+    await merge.locator('select').selectOption('auto-archive');
     await page.waitForFunction(
       async (url: string) => (await (await fetch(url)).json()).threadOnMerge === 'auto-archive',
       `${origin}/api/settings`,
     );
-    await page.goto(`${origin}/projects/shop/settings/threads`);
-    await merge.locator('.settings-desc', { hasText: 'Following Foundry’s setting' }).waitFor();
-    expect(await merge.getByRole('radio', { name: /Archive it/ }).isChecked()).toBe(true);
-    await merge.getByRole('radio', { name: /Mark it done/ }).check();
-    await merge.locator('.settings-desc', { hasText: 'Set for this project' }).waitFor();
+    // The project's Work page: the row follows Foundry's until set here, and says where it comes from.
+    await page.goto(`${origin}/projects/shop/settings/work`);
+    await merge.locator('.setting-source', { hasText: 'Foundry’s' }).waitFor();
+    expect(await merge.locator('select').inputValue()).toBe('auto-archive');
+    await merge.locator('select').selectOption('done');
+    await merge.locator('.setting-source', { hasText: 'Yours' }).waitFor();
+    // ⋯ offers Set for everyone only where the repository has a layer; Reset is live once set.
+    await merge.getByRole('button', { name: /Set for me, for everyone, or reset/ }).click();
+    expect(await merge.getByRole('menuitem', { name: /Set for everyone/ }).isDisabled()).toBe(true);
+    expect(await merge.getByRole('menuitem', { name: 'Reset' }).isDisabled()).toBe(false);
+    await page.keyboard.press('Escape');
+    await page
+      .locator('[data-setting="worktreeMode"] .setting-source', { hasText: 'From the repo' })
+      .waitFor();
+    // Agent: Enter (steer) has all three layers.
+    await page.goto(`${origin}/projects/shop/settings/agent`);
+    const steer = page.locator('[data-setting="steer"]');
+    await steer.locator('.setting-source').waitFor();
+    await steer.getByRole('button', { name: /Set for me, for everyone, or reset/ }).click();
+    expect(await steer.getByRole('menuitem', { name: /Set for everyone/ }).isDisabled()).toBe(
+      false,
+    );
+    await page.keyboard.press('Escape');
     expect(
       JSON.parse(readFileSync(join(dir, 'settings.json'), 'utf8')).projects.shop.threadOnMerge,
     ).toBe('done');

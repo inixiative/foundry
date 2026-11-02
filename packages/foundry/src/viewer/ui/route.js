@@ -50,7 +50,8 @@ export const FOUNDRY_SETTINGS = [
 
 export const PROJECT_SETTINGS = [
   ['integrations', 'Integrations', null, false, ['kingdomAccess']],
-  ['threads', 'Threads', null, false, ['threadOnMerge', 'steer']],
+  ['work', 'Work', null, false, ['threadOnMerge']],
+  ['agent', 'Agent', null, false, ['steer']],
   ['chorus', 'Chorus', null, false, ['chorus']],
   ['conversations', 'Conversations', null, false, ['conversations']],
   ['archive', 'Archive'],
