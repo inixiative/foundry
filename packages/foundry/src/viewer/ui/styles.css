@@ -9421,3 +9421,21 @@ a.thread-ref:hover {
     font-size: 12px;
   }
 }
+
+/* The narrow-screen rule (panel-sizes.js panelFit): the right panel floats over the centre as a
+   drawer, its width kept, while its grid column keeps only the icon strip's width. */
+.panels--right-overlay > .panel-right {
+  position: relative;
+  overflow: visible;
+}
+.panels--right-overlay > .panel-right > .right-panel:not(.right-panel--collapsed) {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 25;
+  width: var(--right-overlay-width, 360px);
+  background: var(--bg);
+  border-left: 1px solid var(--line-strong);
+  box-shadow: -18px 0 36px hsl(0 0% 0% / 0.45);
+}
