@@ -8,8 +8,6 @@ import {
   readPrivateJson,
   SignetClient,
   signetCredentialSchema,
-  signetPost,
-  signetProof,
 } from '@inixiative/signet';
 import { z } from 'zod';
 import { refreshSecretPattern, runSecretPattern } from './kingdom-secrets';
@@ -110,16 +108,11 @@ export class KingdomClient {
   private constructor(
     private signet: SignetClient,
     private enrollmentId: string,
-    private credentialFile: string,
   ) {}
   /** A client for the Signet a credential file holds. */
   static async fromFile(credentialFile: string) {
     const { enrollmentId } = signetCredentialSchema.parse(await readPrivateJson(credentialFile));
-    return new KingdomClient(
-      await SignetClient.fromFile(credentialFile),
-      enrollmentId,
-      credentialFile,
-    );
+    return new KingdomClient(await SignetClient.fromFile(credentialFile), enrollmentId);
   }
   get origin() {
     return this.signet.url;
@@ -177,32 +170,10 @@ export class KingdomClient {
    * refreshed since, or already marked.
    */
   async reportCredentialRejected(executionId: string, credentialVersion: number) {
-    // why: signet 0.11 refuses this action (signet#26 adds it); signed as SignetClient.post does until adopted.
-    const action = 'reportCredentialRejected';
-    const read = async () =>
-      signetCredentialSchema.parse(await readPrivateJson(this.credentialFile));
-    let credential = await read();
-    if (credential.url !== this.signet.url || credential.signetId !== this.signet.signetId)
-      throw Error('Signet credential audience mismatch');
-    if (Date.parse(credential.expiresAt) <= Date.now() + 30_000) {
-      await this.signet.renew();
-      credential = await read();
-    }
-    const proof = await signetProof(
-      this.signet.url,
-      action,
-      credential.keyFile,
-      credential.accessToken,
-    );
     return z
       .object({ integrationId: z.string().uuid(), recorded: z.boolean() })
       .parse(
-        await signetPost(
-          this.signet.url,
-          action,
-          { executionId, credentialVersion },
-          { authorization: `DPoP ${credential.accessToken}`, DPoP: proof },
-        ),
+        await this.signet.post('reportCredentialRejected', { executionId, credentialVersion }),
       );
   }
 }

@@ -73,7 +73,7 @@ Decisions and why:
 - **`XDG_CONFIG_HOME` moves, not `MUSE_AUTH_PATH`.** The launcher honours `MUSE_AUTH_PATH`, the 1.4.14 binary does not (measured: "not logged in" with it set; `credential_rejected` from a file at `$XDG_CONFIG_HOME/muse/auth.json`).
 - **Confirm before reporting.** agent-session folds a failed turn's `error.kind` (`authRequired`) into the terminal's reason only, so the adapter cannot tell an auth failure from others; every failed turn asks, and the read-only `muse usage` decides. A wrong report would lock the user out of a working login until a new sign-in.
 - **No local block after a rejection.** Kingdom stops releasing the marked login; Foundry re-resolves so the pool can pick another one.
-- **Signet stopgap.** signet 0.11's `SignetClient.post` refuses `reportCredentialRejected` by name; signet#26 adds it (0.12.2). Foundry is held on signet ^0.11.1 until the 0.12 cutover, so `KingdomClient.reportCredentialRejected` signs the call itself with signet's own `signetProof`/`signetPost` (renewing through `SignetClient.renew`). It becomes `this.signet.post(...)` when Foundry adopts ≥0.12.2.
+- **Signet.** The rejection report goes through `SignetClient.post('reportCredentialRejected', …)`, allowed from signet 0.12.2 (signet#26); Foundry requires `^0.12.2`.
 
 Still open (Kingdom login):
 
