@@ -16,6 +16,7 @@ export const REPO_URL = 'https://github.com/inixiative/foundry';
 const TICKETS = {
   'AGENT-001': 'AGENT-001-herald-cross-thread',
   'BOARD-003': 'BOARD-003-inbound-items',
+  'VIEWER-007': 'VIEWER-007-your-other-machines',
 };
 
 export const ticketUrl = (id) => `${REPO_URL}/blob/main/tickets/${TICKETS[id]}.md`;
