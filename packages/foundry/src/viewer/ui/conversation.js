@@ -93,6 +93,7 @@ import {
   threadName,
   threadPlace,
 } from './thread-labels.js';
+import { doneText } from './thread-status.js';
 import {
   AsidesSince,
   AsidesView,
@@ -343,7 +344,7 @@ function ContextBar() {
       <div class="band-row band-row--bottom">
         <span class="band-pills">
           <span class="band-pill band-status" data-state=${state}>
-            <${StatusIcon} state=${state} still=${true} />${STATES[state]?.label ?? state}
+            <${StatusIcon} state=${state} still=${true} />${(state === 'done' && doneText(data)) || (STATES[state]?.label ?? state)}
           </span>
           <${ForkLink} threadId=${data.threadId} forkedFrom=${meta.forkedFrom} />
           <span class="band-pill band-count band-pop" tabindex="0" role="button" onClick=${openParticipants}

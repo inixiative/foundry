@@ -12,6 +12,13 @@
  */
 
 import { html, useEffect, useState } from './lib.js';
+import {
+  BuildHistory,
+  BuildRegions,
+  DetectionTests,
+  latestBuild,
+  usePipeline,
+} from './region-pipeline.js';
 import { navigate } from './route.js';
 import { activeProjectId, projectPage, projects } from './store.js';
 
@@ -77,6 +84,11 @@ export function KnowledgePage() {
   const large = regions.filter((r) => tokensOf(r) > HEALTHY_TOKENS && tokensOf(r) <= CAP_TOKENS);
   const missing = chorus?.missingDocs ?? [];
   const kingdoms = about?.kingdoms ?? [];
+  const [pipeline, reread] = usePipeline();
+  const build = latestBuild(pipeline);
+  const builtNote = build
+    ? html`<span class="rp-dim">Last done as part of the region build of ${build.builtAt ? new Date(build.builtAt).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : 'an unknown date'} (template ${build.templateCommit?.slice(0, 10) ?? '—'}).</span>`
+    : html`<span class="rp-dim">Runs as part of the region build (step 4); no build on this machine yet.</span>`;
 
   return html`<section class="knowledge" aria-label=${`${name}: Knowledge and chorus`}>
     <header class="ph-head">
@@ -90,7 +102,7 @@ export function KnowledgePage() {
     <div class="know">
       <${Step} n="1" title="Set up"
         desc="Reads the project's docs and code once and initialises the levels Wardens compose from. Project is required; the others are optional."
-        actions=${html`<${NotBuilt} label="Run setup" why="Regions are built by the region builder script (build_regions.py), outside Foundry" />`}>
+        actions=${html`<span class="rp-dim">part of Build regions</span>`}>
         ${
           chorus?.layers?.length
             ? html`<table class="ktable">${chorus.layers.map(
@@ -99,21 +111,21 @@ export function KnowledgePage() {
               )}</table>`
             : html`<span class="kwarn">No chorus levels set up${chorus?.reason ? `: ${chorus.reason}` : ''}.</span>`
         }
+        <div>${builtNote}</div>
       <//>
       <${Step} n="2" title="Update since the last setup"
         desc="Re-reads only what changed, so regions and Wardens stay current without a full rebuild."
-        actions=${html`<${NotBuilt} label="Run the delta" why="No incremental region build exists yet" />`}>
-        <span class="rp-dim">Foundry records no build date for regions, so it can't yet say what changed since.</span>
+        actions=${html`<span class="rp-dim">part of Build regions</span>`}>
+        ${builtNote}
       <//>
       <${Step} n="3" title="Analyse the docs"
         desc="Checks every doc: its kind (system, pattern, guidance, feedback), anything it names that no longer exists, and code that changed without its doc. Reports only; nothing is rewritten."
-        actions=${html`<${NotBuilt} label="Analyse docs" why="The doc-freshness checker runs in template's CI only; docs carry no kind yet" />`}>
-        <span class="rp-dim">Docs aren't analysed yet: they carry no kind, and the freshness check runs only in template's CI.</span>
+        actions=${html`<span class="rp-dim">part of Build regions</span>`}>
+        ${builtNote}
       <//>
       <${Step} n="4" title="Build regions"
         desc="Splits docs, rules and primitives into regions by concept, each a healthy size for one Warden. Each region gets the short text Wardens recognise from and the full catalog they pick from."
-        actions=${html`<${NotBuilt} label="Build regions" why="The region builder is a script outside Foundry (build_regions.py)" />
-          <button type="button" class="proj-btn" onClick=${() => navigate(`/projects/${id}/settings/chorus`)}>See regions</button>`}>
+        actions=${html`<button type="button" class="proj-btn" onClick=${() => navigate(`/projects/${id}/settings/chorus`)}>See regions</button>`}>
         ${
           regions.length
             ? html`<div>${regions.length} regions · ≈20k tokens each · cap 40k${
@@ -126,17 +138,16 @@ export function KnowledgePage() {
                   : null
               }</div>
               <div class="ksizes">${regions.map((r) => html`<${SizeBar} key=${r.id} region=${r} />`)}</div>`
-            : html`<span class="rp-dim">No regions built for ${name}.</span>`
+            : html`<span class="rp-dim">No regions in ${name}'s chorus.</span>`
         }
+        <h4 class="ksub">Builds on this machine</h4>
+        <${BuildHistory} pipeline=${pipeline} />
+        <${BuildRegions} pipeline=${pipeline} reread=${reread} />
       <//>
       <${Step} n="5" title="Tune Wardens"
         desc="Tests whether each region's Warden recognises its moments. A change to docs, regions or Wardens ships only if detection holds the bar, with false yeses no worse."
-        actions=${html`<${NotBuilt} label="Run the detection test" why="The detection test is an eval script (scripts/evals/warden-charter.ts) that spends quota" />`}>
-        <table class="ktable">
-          <tr><td>Detection recall</td><td>not recorded in Foundry · bar ${DETECTION_BAR}</td></tr>
-          <tr><td>False yes</td><td>not recorded</td></tr>
-          <tr><td>Last test</td><td>eval results live outside Foundry</td></tr>
-        </table>
+        actions=${html`<${NotBuilt} label="Run the detection test" why="No committed runner: the detection test is an eval script that spends quota" />`}>
+        <${DetectionTests} pipeline=${pipeline} bar=${DETECTION_BAR} />
       <//>
       <${Step} n="6" title="Oracle"
         desc="Oracle measures whether corrections stick: replays real work with and without the chorus and reports what changed. It reads this project's sessions from its Archives through Kingdom."

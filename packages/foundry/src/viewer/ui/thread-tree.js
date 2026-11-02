@@ -48,7 +48,13 @@ import {
   threadName,
   threadPlace,
 } from './thread-labels.js';
-import { CLOSED_STATUSES, categoryOf, subagentParentOf, threadState } from './thread-status.js';
+import {
+  CLOSED_STATUSES,
+  categoryOf,
+  doneText,
+  subagentParentOf,
+  threadState,
+} from './thread-status.js';
 
 // ---------------------------------------------------------------------------
 // Active/inactive classification
@@ -235,6 +241,7 @@ export function ThreadNode({ thread, depth = 0, selectedId, onSelect, inactive =
         <div class="tree-row tree-row--meta">
           <span class="row-project" title=${thread.meta.worker ? `Runs on ${thread.meta.worker}` : null}>${projectLabel(thread.meta.projectId)}${thread.meta.worker ? ` · ${harnessName(thread.meta.worker) ?? thread.meta.worker}` : ''}</span>
           <${StatusIcon} state=${nodeState(thread)} />
+          ${nodeState(thread) === 'done' && doneText(thread) ? html`<span class="row-done" title="Done; your next message clears it">${doneText(thread)}</span>` : null}
           <${DeviceBadge} thread=${thread} />
           ${isDangerous(thread.permissionMode) ? html`<span class="row-dangerous" title="Dangerous: every permission check is skipped">Dangerous</span>` : null}
           ${

@@ -60,16 +60,17 @@ export function worktreeLabel(checkout) {
   if (checkout.state === 'released')
     return {
       tone: 'released',
-      label: `${name} · released`,
+      label: `${name} · released${checkout.merged ? ` · merged into ${checkout.merged.into}` : ''}`,
       title: `${checkout.path ?? name}\n${mode}\nReleased: the worktree was removed after merge${checkout.error ? `\nThe last recreate failed: ${checkout.error}` : ''}`,
     };
+  const merged = checkout.merged ? ` · merged into ${checkout.merged.into}` : '';
   return {
     tone: 'live',
     label:
       checkout.mode === 'template' && checkout.slot != null
-        ? `slot ${checkout.slot} · ${name}`
-        : name,
-    title: `${checkout.path ?? name}\n${mode}`,
+        ? `slot ${checkout.slot} · ${name}${merged}`
+        : `${name}${merged}`,
+    title: `${checkout.path ?? name}\n${mode}${checkout.merged ? `\nIts branch merged into ${checkout.merged.into}` : ''}`,
   };
 }
 

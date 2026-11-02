@@ -17,11 +17,14 @@ export interface ProjectAbout {
   repository: { integration: string; ref: string } | null;
   worktreeMode: ReturnType<typeof worktreeMode>;
   kingdoms: string[];
+  /** The Kingdom project this project links to (`kingdomProject`): its id and Kingdom. */
+  kingdomProject: { kingdom: string; projectId: string } | null;
 }
 
 export async function projectAbout(
   project: { id: string; path: string; description?: string },
   kingdomAccess: readonly KingdomAccessSource[],
+  kingdomProject?: { kingdom: string; projectId: string },
 ): Promise<ProjectAbout> {
   const git = await gitContext(project.path).catch(() => ({ remote: undefined }));
   const repository = provenanceReferences({ repository: git.remote })[0] ?? null;
@@ -33,5 +36,6 @@ export async function projectAbout(
     repository,
     worktreeMode: worktreeMode(project.path),
     kingdoms,
+    kingdomProject: kingdomProject ?? null,
   };
 }

@@ -414,7 +414,9 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps): void 
     const cfg = await configStore.load();
     const project = projectRegistry?.get(id)?.summary() ?? cfg.projects[id];
     if (!project) return c.json({ error: 'not found' }, 404);
-    return c.json(await projectAbout(project, cfg.kingdomAccess ?? []));
+    return c.json(
+      await projectAbout(project, cfg.kingdomAccess ?? [], cfg.projects[id]?.kingdomProject),
+    );
   });
 
   app.post('/api/projects', async (c) => {
@@ -449,13 +451,20 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps): void 
   app.patch('/api/projects/:id', async (c) => {
     const id = c.req.param('id');
     const body = await c.req.json<Record<string, unknown>>();
-    const { label, status } = body;
+    const { label, status, threadOnMerge } = body;
     if (label !== undefined && (typeof label !== 'string' || !label.trim() || label.length > 200))
       return c.json({ error: 'label must be a non-empty string (max 200 chars)' }, 400);
     if (status !== undefined && status !== 'archived' && status !== 'active')
       return c.json({ error: 'status must be archived or active' }, 400);
-    if (label === undefined && status === undefined)
-      return c.json({ error: 'nothing to change: send label or status' }, 400);
+    if (
+      threadOnMerge !== undefined &&
+      threadOnMerge !== null &&
+      threadOnMerge !== 'done' &&
+      threadOnMerge !== 'auto-archive'
+    )
+      return c.json({ error: 'threadOnMerge must be done, auto-archive or null' }, 400);
+    if (label === undefined && status === undefined && threadOnMerge === undefined)
+      return c.json({ error: 'nothing to change: send label, status or threadOnMerge' }, 400);
     await configStore.load();
     if (!Object.hasOwn(configStore.config.projects, id))
       return c.json({ error: 'project not found' }, 404);
@@ -464,6 +473,9 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps): void 
       if (typeof label === 'string') project.label = label.trim();
       if (status === 'archived') project.status = 'archived';
       else if (status === 'active') delete project.status;
+      // A project's own merge behaviour; null falls back to the Foundry-wide one.
+      if (threadOnMerge === null) delete project.threadOnMerge;
+      else if (threadOnMerge !== undefined) project.threadOnMerge = threadOnMerge;
     });
     const live = projectRegistry?.get(id);
     if (live) {

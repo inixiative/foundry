@@ -757,7 +757,7 @@
   {
     "path": "kingdomCapacity.signetId",
     "scope": "project",
-    "description": ""
+    "description": "The Kingdom Signet that grants this project its subscription pool (`subscription.use`)."
   },
   {
     "path": "kingdomProject",
@@ -772,6 +772,6 @@
   {
     "path": "kingdomProject.projectId",
     "scope": "project",
-    "description": ""
+    "description": "The Kingdom project's id."
   }
 ]
