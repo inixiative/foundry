@@ -9102,3 +9102,176 @@ a.thread-ref:hover {
   align-self: flex-start;
   text-decoration: none;
 }
+
+/* ---- Thread centre as a document (concept-v4 .turn): no bubbles. Each turn is full width with
+   "You" / "Your agent" on top, 14 px text, and the time and Inspect on a dim line under it. ---- */
+.center-frame {
+  background: hsl(var(--card) / 0.45);
+  border: 1px solid var(--line-strong);
+  border-radius: 12px;
+  box-shadow: none;
+  padding: 10px 16px;
+}
+.chat-msg,
+.chat-user,
+.chat-agent {
+  align-self: stretch;
+  max-width: 820px;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  font-size: 14px;
+  line-height: 21px;
+}
+.chat-msg:hover {
+  background: hsl(var(--foreground) / 0.03);
+}
+.chat-agent.chat-error {
+  border-left: 2px solid var(--err);
+  background: var(--err-dim);
+}
+.chat-agent.chat-streaming {
+  border: 0;
+}
+.chat-msg-who {
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 18px;
+  color: var(--text);
+}
+.chat-agent > .chat-msg-who {
+  color: var(--accent);
+}
+.chat-msg-content code {
+  padding: 0 4px;
+  border-radius: 4px;
+  background: var(--hover);
+  font: 12.5px / 18.75px var(--mono);
+}
+.chat-msg-time {
+  font-size: 11px;
+  color: var(--text-dimmer);
+}
+/* Thread · Plan · Loop: underlined tabs on the band's edge, not a filled segment (concept-v4 .lens). */
+.center-tab-row {
+  border-top: 1px solid var(--line);
+  padding-top: 1px;
+}
+.center-tab-row > .center-views.band-tabs {
+  padding: 0;
+  gap: 2px;
+  background: none;
+  border: 0;
+  border-radius: 0;
+}
+.center-tab-row > .center-views.band-tabs .center-view {
+  padding: 4px 9px 5px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  background: none;
+  color: var(--text-dim);
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 17px;
+}
+.center-tab-row > .center-views.band-tabs .center-view--active {
+  border-bottom-color: var(--accent);
+  background: none;
+  color: var(--text);
+  font-weight: 400;
+}
+/* The composer: one rounded box on one line (concept-v4 .sbox/.cbox): destination, the message,
+   then attach, dictate, read aloud, Actions and Send. It grows with what's typed. */
+.chat-input-bar {
+  margin: 6px 10px 8px;
+  padding: 8px 8px 8px 14px;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: 12px;
+  background: var(--surface);
+}
+.chat-input-bar:focus-within {
+  border-color: hsl(var(--app-primary) / 0.6);
+}
+.chat-input-bar .composer-row {
+  align-items: center;
+  gap: 8px;
+}
+.chat-input-bar .composer-row > .composer-destination {
+  align-self: center;
+  margin-top: 0;
+  padding: 3px 8px;
+  border-color: var(--line-strong);
+  font: 600 11.5px var(--font);
+}
+.chat-input-bar .chat-input {
+  field-sizing: content;
+  min-height: 25px;
+  max-height: 240px;
+  padding: 2px 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  font-size: 14px;
+  line-height: 21px;
+  resize: none;
+}
+.chat-input-bar .chat-input:focus {
+  border: 0;
+}
+.chat-input-actions {
+  flex-direction: row;
+  align-items: center;
+  gap: 2px;
+}
+.chat-input-actions .chat-voice-btn {
+  height: 26px;
+  padding: 2px 6px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: none;
+  color: var(--text-dimmer);
+}
+.chat-input-actions .chat-voice-btn:hover {
+  border-color: var(--line-strong);
+}
+.chat-input-actions .composer-actions-btn {
+  margin-left: 6px;
+  padding: 5px 10px;
+  border-color: var(--line);
+  font: 600 12.5px var(--font);
+}
+.chat-input-actions .chat-send-btn {
+  flex: none;
+  align-self: center;
+  margin-left: 6px;
+  padding: 4px 11px;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  font: 600 12.5px / 18.75px var(--font);
+}
+/* An agent turn's trace chips sit on one dim mono line under its name (concept-v4 "2 pointers · Inspect"). */
+.chat-agent > .chat-pipeline {
+  margin: 0 0 2px;
+  font: 10.5px var(--mono);
+  color: var(--text-dim);
+}
+.chat-msg {
+  width: 100%;
+  margin-inline: auto;
+}
+
+.chat-agent > .chat-pipeline .chat-trace-btn,
+.chat-agent > .chat-pipeline .chat-fulltrace-btn {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-dim);
+  font: 10.5px var(--mono);
+  text-decoration: underline dotted;
+  cursor: pointer;
+}

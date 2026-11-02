@@ -705,7 +705,7 @@ function ChatInput() {
           }}
           onKeyDown=${handleKeyDown}
           onPaste=${handlePaste}
-          rows="4"
+          rows="1"
         ></textarea>
         </div>
         ${(() => {
@@ -833,6 +833,7 @@ function UserMessage({ msg, index }) {
   const give = useGiveFeedback(msg);
   return html`
     <div class="chat-msg chat-user" data-turn-id=${msg.turnId ?? ''} data-actor="user">
+      <div class="chat-msg-who">${msg.meta?.postedBy ?? 'You'}</div>
       <${MessageMenu} msg=${msg} index=${index} onFeedback=${give.onFeedback} />
       <${MessageImages} images=${msg.images ?? msg.meta?.images} />
       ${
@@ -1018,6 +1019,7 @@ function AgentMessage({ msg, index, onTraceClick }) {
 
   return html`
     <div class="chat-msg chat-agent ${msg.error ? 'chat-error' : ''} ${isStreaming ? 'chat-streaming' : ''}" data-turn-id=${msg.turnId ?? ''} data-actor="agent">
+      <div class="chat-msg-who">Your agent</div>
       <${MessageMenu} msg=${msg} index=${index} onFeedback=${give.onFeedback} />
       <!-- Pre-execution bar: classify → route → context loading -->
       <${PipelineBar}
