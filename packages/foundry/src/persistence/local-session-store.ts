@@ -42,6 +42,40 @@ import {
 } from './journal-content';
 import type { PersistedTraceRecord } from './trace-record';
 
+/** The admission guard's refusal while a lost turn's outcome is unsettled (`unsettledAdmissions`). */
+export const NATIVE_OUTCOME_UNRESOLVED =
+  'Foundry lost track of the last turn after a restart. Check the files it touched, then Continue (or Retry the turn).';
+
+export interface UnsettledAdmission {
+  admissionId: string;
+  /** The logical turn the admission ran. */
+  turnId: string;
+  /** The thread's own executor session (its pool key is the thread id), not an aux session in its turn. */
+  main: boolean;
+  /** When Foundry registered it, just before the native write. */
+  admittedAt: number;
+  nativeSessionId?: string;
+  externalSessionId?: string;
+  observedAt?: number;
+}
+
+/**
+ * `completed`/`interrupted`: read from the native session's own record. `continued`: the owner
+ * accepted the turn as it stands. `retried`: the owner settled it to send the turn again.
+ */
+export interface AdmissionSettlement {
+  outcome: 'completed' | 'interrupted' | 'continued' | 'retried';
+  by: 'native-record' | 'owner';
+  detail: string;
+  nativeSessionId?: string;
+}
+
+export interface TurnRecovery {
+  outcome: AdmissionSettlement['outcome'];
+  by: AdmissionSettlement['by'];
+  nativeOutcome: NativeEvidence['nativeOutcome'];
+}
+
 export interface StoredMessage {
   id: string;
   threadId: string;
@@ -2111,6 +2145,7 @@ export class LocalSessionStore {
       }
     }
     const keySeparator = String.fromCharCode(31);
+    const recoveries = this.recoveries(threadId, turnIds);
     const messages = page.map((row) => {
       const meta: Record<string, unknown> = {};
       for (const key of SUMMARY_META_KEYS) {
@@ -2183,8 +2218,26 @@ export class LocalSessionStore {
       if (Object.keys(meta).length) summary.meta = meta;
       const health = agent ? chorus.get(row.turnId) : undefined;
       if (health) summary.chorus = health;
+      const recovered = agent ? recoveries.get(row.turnId) : undefined;
+      if (recovered) {
+        summary.meta = {
+          ...summary.meta,
+          recovery: recovered.outcome,
+          nativeOutcome: recovered.nativeOutcome,
+        };
+        summary.status.nativeOutcome = recovered.nativeOutcome;
+      }
       return summary;
     });
+    // A lost turn still unsettled: the thread's latest answer carries the owner's Continue / Retry.
+    const latest = messages.at(-1);
+    if (
+      before === undefined &&
+      latest?.actor === 'agent' &&
+      latest.kind === 'error' &&
+      this.unsettledAdmissions(threadId, threadId).length
+    )
+      latest.meta = { ...latest.meta, recovery: 'pending' };
     return {
       messages,
       hasMore,
@@ -2457,28 +2510,128 @@ export class LocalSessionStore {
     )
       throw Error('Native capacity owner mismatch');
     this.requireOpen(owner.messageId, thread.id);
-    const prior = this.query(
-      'SELECT record FROM session_native WHERE thread_id=? ORDER BY seq',
-    ).all(thread.id) as { record: string }[];
-    const admissions = new Map<string, boolean>();
-    for (const row of prior) {
+    if (this.unsettledAdmissions(thread.id, owner.providerSessionKey).length)
+      throw Error(NATIVE_OUTCOME_UNRESOLVED);
+  }
+
+  /**
+   * Admissions on a thread whose native outcome was never observed: Foundry stopped watching
+   * (a restart mid-turn) before the runtime's terminal arrived. Each blocks a new admission on
+   * the same pool key until it is settled from the native session's own record
+   * (`turns/native-outcome-recovery.ts`) or by the owner (`settleAdmission`).
+   */
+  unsettledAdmissions(threadId: string, providerSessionKey?: string): UnsettledAdmission[] {
+    // Nearly every thread has none: skip the full read unless an unknown outcome was ever recorded.
+    if (
+      !this.query(
+        "SELECT 1 FROM session_native WHERE thread_id=? AND json_extract(record, '$.nativeOutcome')='unknown' LIMIT 1",
+      ).get(threadId)
+    )
+      return [];
+    const rows = this.query(
+      'SELECT record, stored_at AS storedAt FROM session_native WHERE thread_id=? ORDER BY seq',
+    ).all(threadId) as { record: string; storedAt: number }[];
+    const admissions = new Map<string, UnsettledAdmission & { settled: boolean }>();
+    for (const row of rows) {
       const e = JSON.parse(row.record) as NativeEvidence;
       // Missing historical pool identity stays conservative across code rollback.
       if (
         e.owner?.providerSessionKey &&
-        owner.providerSessionKey &&
-        e.owner.providerSessionKey !== owner.providerSessionKey
+        providerSessionKey &&
+        e.owner.providerSessionKey !== providerSessionKey
       )
         continue;
-      admissions.set(
-        e.admissionId!,
-        admissions.get(e.admissionId!) === true ||
-          e.nativeOutcome !== 'unknown' ||
-          (e.dispatch === 'not-dispatched' && e.localOutcome === 'rejected'),
-      );
+      const prior = admissions.get(e.admissionId!);
+      const settled =
+        prior?.settled === true ||
+        e.nativeOutcome !== 'unknown' ||
+        (e.dispatch === 'not-dispatched' && e.localOutcome === 'rejected');
+      admissions.set(e.admissionId!, {
+        admissionId: e.admissionId!,
+        turnId: prior?.turnId ?? e.owner?.messageId ?? '',
+        // The thread's own executor session, not a decision or review session inside its turn.
+        main:
+          prior?.main ?? (!e.owner?.providerSessionKey || e.owner.providerSessionKey === threadId),
+        admittedAt: prior?.admittedAt ?? row.storedAt,
+        nativeSessionId: e.nativeSessionId ?? prior?.nativeSessionId,
+        externalSessionId: e.externalSessionId ?? prior?.externalSessionId,
+        observedAt: e.observedAt ?? prior?.observedAt,
+        settled,
+      });
     }
-    if ([...admissions.values()].some((settled) => !settled))
-      throw Error('Previous native outcome unresolved; no replay or new admission permitted');
+    return [...admissions.values()]
+      .filter((admission) => !admission.settled)
+      .map(({ settled: _settled, ...admission }) => admission);
+  }
+
+  /**
+   * Record the outcome of an admission Foundry lost track of. The row is native evidence like any
+   * other (same owner, `terminal.type: 'recovered'`), so the admission guard and every reader see
+   * the admission settled; `by` says who decided: the native session's own record or the owner.
+   */
+  settleAdmission(threadId: string, admissionId: string, settlement: AdmissionSettlement): void {
+    this.db.transaction(() => {
+      const first = this.query(
+        'SELECT record FROM session_native WHERE admission_id=? AND thread_id=? ORDER BY seq LIMIT 1',
+      ).get(admissionId, threadId) as { record: string } | null;
+      if (!first) throw Error('No native admission to settle');
+      if (!this.unsettledAdmissions(threadId).some((a) => a.admissionId === admissionId)) return;
+      const registered = JSON.parse(first.record) as NativeEvidence;
+      this.query(
+        'INSERT INTO session_native(admission_id, thread_id, turn_id, record, stored_at) VALUES (?, ?, ?, ?, ?)',
+      ).run(
+        admissionId,
+        threadId,
+        registered.owner?.messageId ?? null,
+        JSON.stringify({
+          schema: 1,
+          owner: registered.owner,
+          admissionId,
+          nativeOutcome: settlement.outcome === 'completed' ? 'completed' : 'failed',
+          localOutcome: 'resolved',
+          observedAt: Date.now(),
+          terminal: {
+            type: 'recovered',
+            subtype: settlement.outcome,
+            reason: `${settlement.by}: ${settlement.detail}`,
+          },
+          ...(settlement.nativeSessionId ? { nativeSessionId: settlement.nativeSessionId } : {}),
+        } satisfies NativeEvidence),
+        Date.now(),
+      );
+    })();
+  }
+
+  /** Threads holding an admission whose native outcome was never observed (cheap pre-filter; `unsettledAdmissions` decides). */
+  threadsWithUnknownAdmissions(): string[] {
+    return (
+      this.query(
+        "SELECT DISTINCT thread_id AS threadId FROM session_native WHERE json_extract(record, '$.nativeOutcome')='unknown'",
+      ).all() as Array<{ threadId: string }>
+    )
+      .map((row) => row.threadId)
+      .filter((threadId) => this.unsettledAdmissions(threadId).length > 0);
+  }
+
+  /** How each of these turns' lost admissions were settled, read from the `recovered` rows. */
+  recoveries(threadId: string, turnIds: string[]): Map<string, TurnRecovery> {
+    const found = new Map<string, TurnRecovery>();
+    if (!turnIds.length) return found;
+    for (const row of this.query(
+      `SELECT turn_id AS turnId, record FROM session_native WHERE thread_id=? AND turn_id IN (${turnIds
+        .map(() => '?')
+        .join(',')}) AND json_extract(record, '$.terminal.type')='recovered'
+        AND coalesce(json_extract(record, '$.owner.providerSessionKey'), thread_id)=thread_id ORDER BY seq`,
+    ).all(threadId, ...turnIds) as Array<{ turnId: string; record: string }>) {
+      const e = JSON.parse(row.record) as NativeEvidence;
+      const by = e.terminal?.reason?.split(':')[0];
+      found.set(row.turnId, {
+        outcome: e.terminal?.subtype as TurnRecovery['outcome'],
+        by: by as TurnRecovery['by'],
+        nativeOutcome: e.nativeOutcome,
+      });
+    }
+    return found;
   }
 
   appendNative(thread: Pick<Thread, 'id' | 'meta'>, evidence: NativeEvidence): void {

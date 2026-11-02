@@ -2171,6 +2171,30 @@ export async function stopTurn(threadId, turnId) {
 }
 
 /**
+ * A turn Foundry lost track of after a restart, which the native session's own record couldn't
+ * settle: `continue` accepts it as it stands, `retry` sends its message again. Either way the
+ * thread takes messages again; the journal change reaches the thread through its reconcile.
+ */
+export async function resolveLostTurn(threadId, action) {
+  try {
+    const res = await authFetch(`/api/threads/${encodeURIComponent(threadId)}/recovery`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action }),
+    });
+    const body = await res.json();
+    if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`);
+    if (body.retryError) throw new Error(`settled, but the retry was not sent: ${body.retryError}`);
+    showToast(action === 'retry' ? 'Sent the turn again' : 'Continuing from here', 'ok');
+    requestReconcile(threadId, 0);
+    return true;
+  } catch (err) {
+    showToast(`Could not resolve the lost turn: ${err.message}`, 'error');
+    return false;
+  }
+}
+
+/**
  * A degraded chorus on a turn (FEAT-008): `retry` asks the Wardens that went unheard again (what they
  * say rides with the next message), `dismiss` closes the notice. The journal row each writes reaches
  * the thread through its own reconcile; nothing is changed here first.

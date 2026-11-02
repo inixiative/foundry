@@ -75,6 +75,7 @@ import {
   prompts,
   recreateWorktree,
   renameThread,
+  resolveLostTurn,
   resolvePrompt,
   rightTab,
   selectedSpanId,
@@ -1065,6 +1066,26 @@ function ChorusNotice({ msg }) {
   </div>`;
 }
 
+/** A turn lost to a restart that the native record couldn't settle: the owner decides, never a silent refusal. */
+function LostTurnCard({ msg }) {
+  const [busy, setBusy] = useState(false);
+  if (msg.meta?.recovery !== 'pending') return null;
+  const threadId = msg.threadId ?? activeThreadId.value;
+  const act = async (action) => {
+    setBusy(true);
+    await resolveLostTurn(threadId, action);
+    setBusy(false);
+  };
+  return html`<section class="lost-turn-card" role="alert" aria-label="Lost turn">
+    <div class="lost-turn-title">Foundry lost track of the last turn after a restart.</div>
+    <div class="lost-turn-body">Check the files it touched, then Continue. Retry sends that turn's message again; anything you sent after it needs sending again.</div>
+    <div class="lost-turn-actions">
+      <button class="prompt-btn prompt-btn-approve" disabled=${busy} onClick=${() => act('continue')}>Continue</button>
+      <button class="prompt-btn" disabled=${busy} onClick=${() => act('retry')}>Retry the turn</button>
+    </div>
+  </section>`;
+}
+
 function AgentMessage({ msg, index, onTraceClick }) {
   const hasTrace = !!msg.traceId;
   const stages = msg.trace?.stages || [];
@@ -1146,6 +1167,7 @@ function AgentMessage({ msg, index, onTraceClick }) {
             !volatile || (!notice.includes('browser-only') && !notice.includes('Browser-only')),
         )
         .map((notice) => html`<div class="chat-msg-time">${notice}</div>`)}
+      <${LostTurnCard} msg=${msg} />
       ${msg.journalRecord ? html`<div class="chat-msg-time">Server journal: ${msg.journalRecord.meta?.turnStatus}; this browser's observed result is separate.</div>` : null}
       ${
         isUnsavedCompletion(msg)

@@ -30,7 +30,11 @@ import type { PlanDrafter } from '../agents/plan-drafter';
 import type { ThreadFactory } from '../agents/thread-factory';
 import type { ThreadNamer } from '../agents/thread-namer';
 import type { FeedbackService } from '../feedback/service';
-import { isOpenTurn, type LocalSessionStore } from '../persistence/local-session-store';
+import {
+  isOpenTurn,
+  type LocalSessionStore,
+  NATIVE_OUTCOME_UNRESOLVED,
+} from '../persistence/local-session-store';
 import { serializeTrace } from '../persistence/trace-record';
 import type { SecretScratch } from '../secrets/scratch';
 import { type ConfigStore, steerOnSend } from '../viewer/config';
@@ -38,6 +42,7 @@ import type { TurnTerminal, ViewerStreams } from '../viewer/data-streams';
 import type { StreamBuffer } from '../viewer/stream-buffer';
 import type { ViewerThreadDirectory } from '../viewer/thread-directory';
 import { splitHostInstructions } from './host-instructions';
+import type { NativeOutcomeRecovery } from './native-outcome-recovery';
 
 /**
  * The one turn path for messages: viewer sends and ACP prompts (and Oracle, when it drives turns
@@ -66,6 +71,8 @@ export interface TurnServiceDeps {
    */
   threadSetup?: ThreadSetupHost;
   localStore?: LocalSessionStore | null;
+  /** Settles a turn lost to a restart from the native session's own record before the next admission. */
+  nativeRecovery?: NativeOutcomeRecovery;
   directory: ViewerThreadDirectory;
   streams: ViewerStreams;
   /** `$$word` secrets are lifted into the thread's scratch pad before anything reads the message (FEAT-005). */
@@ -319,10 +326,47 @@ export class TurnService {
     return this.deps.directory.canReopen(threadId);
   }
 
+  /** Turns queued or running on this daemon, across threads. */
+  liveCount(): number {
+    return this.live.size;
+  }
+
   /** Whether the thread has a turn queued or running here. */
   hasTurns(threadId: string): boolean {
     for (const turn of this.live.values()) if (turn.threadId === threadId) return true;
     return false;
+  }
+
+  /**
+   * The owner's answer to a turn Foundry lost track of and couldn't settle from the native record:
+   * `continue` accepts it as it stands, `retry` settles it and sends its message again. Either way
+   * the next message is admitted and resumes the thread's native session.
+   */
+  resolveLostTurn(
+    threadId: string,
+    action: 'continue' | 'retry',
+  ): { ok: true; resolved: number; retried?: TurnAcceptance } | { ok: false; error: string } {
+    const { localStore, nativeRecovery } = this.deps;
+    if (!localStore || !nativeRecovery) return { ok: false, error: 'no journal' };
+    if (this.hasTurns(threadId)) return { ok: false, error: 'the thread has a turn running' };
+    const resolved = nativeRecovery.resolveByOwner(threadId, action);
+    if (!resolved.length) return { ok: true, resolved: 0 };
+    if (action === 'continue') {
+      this.deps.streams.threadsChanged(threadId);
+      return { ok: true, resolved: resolved.length };
+    }
+    const lost = resolved.find((admission) => admission.main);
+    if (!lost) return { ok: true, resolved: resolved.length };
+    const turnId = lost.turnId;
+    const message = localStore
+      .messages(threadId, 500)
+      .find((entry) => entry.turnId === turnId && entry.actor === 'user');
+    if (!message) return { ok: true, resolved: resolved.length };
+    return {
+      ok: true,
+      resolved: resolved.length,
+      retried: this.accept({ threadId, payload: message.content }),
+    };
   }
 
   /** Every Harness created so far, one per thread. */
@@ -743,6 +787,9 @@ export class TurnService {
       preflight: (owner: NativeOwner) => {
         if (state.cancelRequested) throw Error(CANCELLED_BEFORE_DISPATCH);
         if (!localStore) throw Error('Native admission requires an available ownership journal');
+        // A turn lost to a restart is settled from the native record first; only what that record
+        // can't settle refuses the admission, and the owner gets Continue / Retry for it.
+        this.deps.nativeRecovery?.settle(thread.id);
         localStore.assertNativeCapacity(thread, owner);
       },
       // Registration precedes the native write, so a stop that arrived while the session was
@@ -892,6 +939,8 @@ export class TurnService {
       console.error('[Turns] could not persist failed turn', err);
     }
     if (!this.journalChanged(thread, turnId)) meta.notification = 'failed';
+    // Live only, never stored: the journal works out whether a lost turn is still pending on read.
+    if (error === NATIVE_OUTCOME_UNRESOLVED) meta.recovery = 'pending';
     return { traceId: trace?.id, trace: trace?.summary(), meta };
   }
 
