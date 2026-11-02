@@ -11,7 +11,7 @@
  */
 
 import { html, useEffect, useRef, useState } from './lib.js';
-import { composerDestination, separateViews } from './message-box.js';
+import { composerDestination, DESTINATION_COMMAND, separateViews } from './message-box.js';
 import { LoopBuilder } from './message-menu.js';
 import { settingsConfig } from './settings.js';
 import { snooze, snoozeUntilQuotaReset, tomorrowMorning } from './snooze.js';
@@ -204,6 +204,17 @@ export function filterActions(groups, query) {
     .filter(([, items]) => items.length);
 }
 
+/**
+ * Set the message box's text now: its DOM value and its own input handler, in the same tick. A
+ * deferred fill would land after keys typed fast into the box and erase them.
+ */
+function setBoxText(text) {
+  const box = document.querySelector('textarea.chat-input');
+  if (!box || box.value === text) return;
+  box.value = text;
+  box.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
 export function ActionPalette({ onSend }) {
   const [query, setQuery] = useState('');
   const [at, setAt] = useState(0);
@@ -217,12 +228,12 @@ export function ActionPalette({ onSend }) {
     // belongs to the palette (a fast "/btw " lands in the box first).
     const box = document.querySelector('textarea.chat-input');
     const carried = open === 'slash' ? (box?.value ?? '') : '';
-    if (carried) composerFill.value = '';
-    if (carried && /^(btw|aside)\s/.test(carried) && !separateViews(settingsConfig.peek())) {
-      route(/^(btw|aside)/.exec(carried)[1], carried.replace(/^(btw|aside)\s/, ''));
-      return;
-    }
+    if (carried) setBoxText('');
+    if (routeCommand(carried)) return;
     setQuery(carried);
+    // The input shows the carried text before it takes focus, so keys typed in between append to it
+    // instead of replacing it (the render that sets `value` hasn't happened yet).
+    if (input.current) input.current.value = carried;
     input.current?.focus();
   }, [open]);
   const groups = filterActions(paletteActions(), query);
@@ -234,8 +245,15 @@ export function ActionPalette({ onSend }) {
   const route = (destination, rest = '') => {
     close();
     composerDestination.value = destination;
-    if (rest) composerFill.value = rest;
+    setBoxText(rest);
     document.querySelector('textarea.chat-input')?.focus();
+  };
+  /** A destination command ("aside hello") closes the palette and switches the box, the rest kept. */
+  const routeCommand = (typed) => {
+    const command = DESTINATION_COMMAND.exec(typed);
+    if (!command || separateViews(settingsConfig.peek())) return false;
+    route(command[1], typed.slice(command[0].length));
+    return true;
   };
   const run = (action) => {
     if (action.disabled) return showToast(action.disabled, 'warn');
@@ -273,12 +291,9 @@ export function ActionPalette({ onSend }) {
         ? html`<div class="action-palette" role="dialog" aria-label="Actions">
           <input ref=${input} class="action-palette-input" placeholder="Do something with this thread or this message…"
             value=${query} onInput=${(e) => {
-              // "/btw " or "/aside " (the "/" opened the palette) switches the box's destination.
-              const typed = /^(btw|aside)\s/.exec(e.target.value);
-              if (typed && !separateViews(settingsConfig.peek())) {
-                route(typed[1]);
-                return;
-              }
+              // "/btw ", "/aside " or "/thread " (the "/" opened the palette) switches the box's
+              // destination, and what follows stays in the box.
+              if (routeCommand(e.target.value)) return;
               setQuery(e.target.value);
               setAt(0);
             }} onKeyDown=${onKeyDown} />
