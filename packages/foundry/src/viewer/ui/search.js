@@ -42,6 +42,30 @@ const SOURCE_LABEL = {
 };
 
 /** The query's matches in `text`, marked. */
+/** Who recorded each Archive session, in words. */
+const SESSION_SOURCES = {
+  'claude-code': 'A Claude Code session',
+  codex: 'A Codex session',
+  chatgpt: 'A ChatGPT conversation',
+  muse: 'A Muse session',
+};
+
+/**
+ * Where an Archive hit can be opened. A Foundry thread opens when it is on this machine; any other
+ * session says it isn't a Foundry thread. An older Archive doesn't name the session, so its
+ * hits show without an open link.
+ */
+export function sessionPlace(hit, threads) {
+  if (!hit.source || !hit.sessionId) return { thread: null, note: null };
+  if (hit.source !== 'foundry')
+    return {
+      thread: null,
+      note: `${SESSION_SOURCES[hit.source] ?? `A ${hit.source} session`}, not a Foundry thread`,
+    };
+  const thread = threads.find((t) => t.threadId === hit.sessionId) ?? null;
+  return { thread, note: thread ? null : "A Foundry thread that isn't on this machine" };
+}
+
 function Marked({ text, query }) {
   if (!query || !text) return text ?? '';
   const lower = text.toLowerCase();
@@ -329,21 +353,22 @@ export function SearchPage() {
 
     const messageHits = archive.hits.map((a) => {
       const text = snippet(a.chunks?.[0]?.text ?? '', query) || a.title;
-      const thread =
-        a.source === 'foundry' && allThreads.value.find((t) => t.threadId === a.sessionId);
+      const place = sessionPlace(a, allThreads.value);
       return {
         key: `message:${a.archiveId}`,
         title: text,
         sub: [
           text === a.title ? null : a.title,
-          a.source ?? [...new Set((a.models ?? []).map((m) => m.model))].join(', '),
+          place.note ?? [...new Set((a.models ?? []).map((m) => m.model))].join(', '),
         ]
           .filter(Boolean)
           .join(' · '),
         where: a.projectId ? projectLabel(a.projectId) : '',
         preview: () =>
-          html`<div class="sp-message"><h3>${a.title}</h3><pre>${(a.chunks ?? []).map((c) => c.text).join('\n\n…\n\n')}</pre></div>`,
-        open: thread ? () => inWorkspace(() => selectThread(thread.threadId)) : null,
+          html`<div class="sp-message"><h3>${a.title}</h3>${
+            place.note ? html`<p class="sp-dim">${place.note}</p>` : null
+          }<pre>${(a.chunks ?? []).map((c) => c.text).join('\n\n…\n\n')}</pre></div>`,
+        open: place.thread ? () => inWorkspace(() => selectThread(place.thread.threadId)) : null,
       };
     });
     groups.push({
