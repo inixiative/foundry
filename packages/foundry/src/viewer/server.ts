@@ -44,10 +44,18 @@ import {
   type KingdomIntegration,
   shareViewerCredential,
 } from '../providers/kingdom-installation-connection';
+import { FileExternalSessionStore } from '../providers/session-adapter';
 import type { TaskSink } from '../providers/session-backed';
 import { ThreadLaunchSettings } from '../providers/thread-launch';
+import { resolveSecretsSettings, SecretScratch } from '../secrets/scratch';
 import { kingdomPostDelivery } from '../tools/kingdom-post';
 import type { ThreadRecords } from '../tools/thread-record';
+import {
+  NATIVE_RECORD_QUIET_MS,
+  NATIVE_TOOL_QUIET_MS,
+  NativeOutcomeRecovery,
+  nativeHomes,
+} from '../turns/native-outcome-recovery';
 import { NativeTurnRecorder } from '../turns/native-turns';
 import { RunningTasks } from '../turns/running-tasks';
 import { SubagentRecorder } from '../turns/subagents';
@@ -329,6 +337,18 @@ export function createViewer(config: ViewerConfig) {
       socket.streams.appendTo(clientId, stream, payload);
     },
   });
+  const nativeRecovery = localStore
+    ? new NativeOutcomeRecovery({
+        store: localStore,
+        bootedAt: Date.now(),
+        homes: () => nativeHomes(config.configDir ?? '.foundry'),
+        boundSessions: (threadId) =>
+          FileExternalSessionStore.boundTo(
+            join(config.configDir ?? '.foundry', 'sessions.json'),
+            threadId,
+          ),
+      })
+    : undefined;
   if (localStore) {
     const recovered = localStore.recoverInterrupted();
     if (recovered.interrupted || recovered.neverSent)
@@ -337,6 +357,33 @@ export function createViewer(config: ViewerConfig) {
       );
     for (const warning of directory.restore(localStore.threads()))
       console.warn(`[Recovery] ${warning}`);
+    // Settle what the native records already show; records still being written (a native process
+    // the restart orphaned) are read again once they go quiet, and again before any next turn.
+    const settleLost = () => {
+      try {
+        const pass = nativeRecovery!.settleAll();
+        for (const { turnId, outcome } of pass.settled)
+          console.warn(`[Recovery] turn ${turnId}: ${outcome}, read from the native record`);
+        for (const { turnId, detail } of pass.undecided)
+          console.warn(`[Recovery] turn ${turnId} still unsettled: ${detail}`);
+        return pass;
+      } catch (error) {
+        console.warn(`[Recovery] native outcome recovery failed: ${String(error)}`);
+        return undefined;
+      }
+    };
+    if (settleLost()?.undecided.length) {
+      // Look again each minute until every record has gone quiet (a pending tool call waits longest).
+      const started = Date.now();
+      const again = setInterval(() => {
+        const pass = settleLost();
+        for (const turnId of new Set(pass?.settled.map((entry) => entry.turnId)))
+          streams.threadsChanged(localStore.turn(turnId)?.threadId ?? '');
+        if (!pass?.undecided.length || Date.now() - started > NATIVE_TOOL_QUIET_MS + 120_000)
+          clearInterval(again);
+      }, NATIVE_RECORD_QUIET_MS);
+      again.unref?.();
+    }
     for (const thread of directory.all()) localStore.saveThread(thread);
     // A turn a restart closed is reduced before its first capture (spec A).
     localStore.compactClosedTurns();
@@ -634,6 +681,25 @@ export function createViewer(config: ViewerConfig) {
         log: (message) => console.warn(message),
       })
     : null;
+  // The secret scratch pad (FEAT-005): one private directory of pads, one per thread, under this
+  // Foundry's own directory. The setting is read live, global then project.
+  const secrets = new SecretScratch(join(configDir, '.private', 'scratch'), {
+    settings: (projectId) =>
+      resolveSecretsSettings(
+        configStore.config.secrets,
+        projectId ? configStore.config.projects[projectId]?.secrets : undefined,
+      ),
+    projectOf: (threadId) => {
+      const thread = directory.get(threadId);
+      return thread ? thread.meta.projectId : null;
+    },
+  });
+  // A pad whose thread was archived while nothing watched it goes now; a live thread's pad is kept.
+  try {
+    secrets.sweep((threadId) => directory.get(threadId)?.meta.status === 'archived');
+  } catch (error) {
+    console.warn(`[Secrets] scratch pads not swept: ${(error as Error).message}`);
+  }
   registerKingdomRoutes(
     app,
     configStore,
@@ -681,6 +747,7 @@ export function createViewer(config: ViewerConfig) {
     (pruner as { unref?: () => void }).unref?.();
   }
   const { turns, fork } = registerRuntimeRoutes(app, {
+    nativeRecovery,
     threadLaunch,
     harness,
     eventStream,
@@ -700,6 +767,7 @@ export function createViewer(config: ViewerConfig) {
     directory,
     streams,
     feedback,
+    secrets,
     images: new ImageAttachmentStore(join(configDir, 'attachments', 'images')),
     ...(config.threadSetup ? { threadSetup: config.threadSetup } : {}),
   });
@@ -732,7 +800,9 @@ export function createViewer(config: ViewerConfig) {
       fork: () => fork,
       log: (message) => console.warn(message),
     });
+    // Owner-only like the conversation controls: secrets are used only in a turn the owner's own message opened.
     const service = conversations;
+    secrets.ownerInstructed = (threadId) => service.ownerInstructed(threadId);
     kingdom.serveThreads(service.host(), (hosted, dropped) =>
       service.hostedChanged(hosted, dropped),
     );
@@ -936,6 +1006,7 @@ export function createViewer(config: ViewerConfig) {
       mode: () => threadLaunch.forLaunch(threadId).permissionMode,
       queue: config.actionQueue ?? null,
       turnId: () => turns.runningTurn(threadId),
+      privacy: () => secrets.privacy(thread.meta.projectId),
       journal: (id, phase, turnId, record) => {
         try {
           localStore?.appendPhase(thread, { id, phase, turnId, dispatchId: null, record });
@@ -952,15 +1023,19 @@ export function createViewer(config: ViewerConfig) {
         }
       },
     });
+    // Private paths are not structural rules: Codex and Muse still start, and get them when they ask.
     const bound: ThreadToolGate = { gate, hasRules: () => enforces(rules()) };
     gates.set(threadId, bound);
     forgetOnDispose(thread);
+    secrets.watch(thread);
     return bound;
   };
 
   return {
     toolGate,
     threadLaunch,
+    /** Turns queued or running on this daemon; the auto-updater waits for none before it restarts. */
+    liveTurns: () => turns.liveCount(),
     app,
     fetch: handleRequest,
     websocket: socket.websocket,
@@ -975,6 +1050,8 @@ export function createViewer(config: ViewerConfig) {
     localStore,
     directory,
     conversations,
+    /** The secret scratch pad: `secret_scratch` and `secret_pipe` reach it (FEAT-005). */
+    secrets,
     /** The record tool's reach: a live thread's plan, loop, name and status, persisted and published. */
     records: {
       read(threadId: string): Thread {
@@ -1088,6 +1165,7 @@ export async function startViewer(config: ViewerConfig) {
 
   return {
     toolGate: viewer.toolGate,
+    liveTurns: viewer.liveTurns,
     server,
     actions,
     analyticsStore,
@@ -1096,6 +1174,7 @@ export async function startViewer(config: ViewerConfig) {
     kingdom: viewer.kingdom,
     conversations: viewer.conversations,
     records: viewer.records,
+    secrets: viewer.secrets,
   };
 }
 

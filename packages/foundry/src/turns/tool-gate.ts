@@ -3,7 +3,13 @@
  * @kind middleware
  * @partOf feature:toolGate
  */
-import type { ToolDecision, ToolGate, ToolRequest } from '@inixiative/agent-session';
+import {
+  type PrivatePathOptions,
+  privatePathDenial,
+  type ToolDecision,
+  type ToolGate,
+  type ToolRequest,
+} from '@inixiative/agent-session';
 import {
   type ActionQueue,
   type Capability,
@@ -122,6 +128,8 @@ export interface ToolGateDeps {
   ) => void;
   /** How long an ask waits for an answer before it is rejected; default ASK_TIMEOUT_MS. */
   askTimeoutMs?: number;
+  /** Paths no agent reads, with the scratch pad on (FEAT-005): denied in every mode, before the rules. */
+  privacy?: () => PrivatePathOptions | undefined;
 }
 
 /** An unanswered ask is rejected after this long, so a thread never waits on no one forever. */
@@ -163,6 +171,15 @@ export function createToolGate(deps: ToolGateDeps): ToolGate {
       return decision;
     };
 
+    let hidden: string | undefined;
+    try {
+      const privacy = deps.privacy?.();
+      hidden = privacy ? privatePathDenial(request, privacy) : undefined;
+    } catch {
+      // Fail closed: what is private can't be read, so nothing passes until it can.
+      hidden = 'The list of private paths could not be read, so no tool call runs until it can.';
+    }
+    if (hidden) return outcome({ behavior: 'deny', message: hidden }, 'private-path');
     if (level === 'deny')
       return outcome(
         {

@@ -293,7 +293,13 @@ export function secretInstructionPath(path: string, trusted: readonly string[] =
     name.startsWith('.') ||
     /^id_[a-z0-9]+/i.test(name) ||
     /\.(pem|key|p12|pfx|keystore|jks)$/i.test(name) ||
-    rest.split(sep).some((part) => CREDENTIAL_DIRECTORIES.has(part))
+    rest.split(sep).some((part) => CREDENTIAL_DIRECTORIES.has(part)) ||
+    // A `.private` path is never read (FEAT-005): a segment named or ending `.private`, or holding `.private.`.
+    path
+      .split(sep)
+      .some(
+        (part) => part === '.private' || part.endsWith('.private') || part.includes('.private.'),
+      )
   );
 }
 

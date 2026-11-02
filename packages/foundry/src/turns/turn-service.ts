@@ -3,6 +3,7 @@
  * @kind service
  * @partOf feature:threads
  */
+import { SecretScratchError } from '@inixiative/agent-session';
 import type {
   EventStream,
   HarnessResult,
@@ -29,13 +30,19 @@ import type { PlanDrafter } from '../agents/plan-drafter';
 import type { ThreadFactory } from '../agents/thread-factory';
 import type { ThreadNamer } from '../agents/thread-namer';
 import type { FeedbackService } from '../feedback/service';
-import { isOpenTurn, type LocalSessionStore } from '../persistence/local-session-store';
+import {
+  isOpenTurn,
+  type LocalSessionStore,
+  NATIVE_OUTCOME_UNRESOLVED,
+} from '../persistence/local-session-store';
 import { serializeTrace } from '../persistence/trace-record';
+import type { SecretScratch } from '../secrets/scratch';
 import { type ConfigStore, steerOnSend } from '../viewer/config';
 import type { TurnTerminal, ViewerStreams } from '../viewer/data-streams';
 import type { StreamBuffer } from '../viewer/stream-buffer';
 import type { ViewerThreadDirectory } from '../viewer/thread-directory';
 import { splitHostInstructions } from './host-instructions';
+import type { NativeOutcomeRecovery } from './native-outcome-recovery';
 
 /**
  * The one turn path for messages: viewer sends and ACP prompts (and Oracle, when it drives turns
@@ -64,8 +71,12 @@ export interface TurnServiceDeps {
    */
   threadSetup?: ThreadSetupHost;
   localStore?: LocalSessionStore | null;
+  /** Settles a turn lost to a restart from the native session's own record before the next admission. */
+  nativeRecovery?: NativeOutcomeRecovery;
   directory: ViewerThreadDirectory;
   streams: ViewerStreams;
+  /** `$$word` secrets are lifted into the thread's scratch pad before anything reads the message (FEAT-005). */
+  secrets?: SecretScratch | null;
 }
 
 /** Opens a thread's native session ahead of its turn and waits for its in-session Wardens. */
@@ -147,8 +158,10 @@ export type TurnAcceptance =
       settled: Promise<TurnOutcome>;
       /** `deliver` only, for a message sent while a turn ran: steered in, or why it queued. */
       steer?: SteerResult;
+      /** The message as accepted: its `$$` secrets already replaced by references. */
+      payload: string;
     }
-  | { ok: false; status: 404 | 409 | 503; body: Record<string, unknown> };
+  | { ok: false; status: 400 | 404 | 409 | 503; body: Record<string, unknown> };
 
 /**
  * `cancelled`: a queued turn, settled now without running. `requested`: a running turn not yet
@@ -255,6 +268,33 @@ export class TurnService {
     this.harnesses = new Map([[deps.harness.thread.id, deps.harness]]);
   }
 
+  /**
+   * The owner's message with its `$$` secrets lifted into the thread's scratch pad, before the journal,
+   * feedback, the Wardens or the session read it. A lift that fails refuses the turn, so a secret
+   * never goes through raw. A member's post is never lifted: it is not the owner's to hand over.
+   */
+  private liftSecrets(
+    thread: Thread,
+    request: TurnRequest & { turnId: string },
+  ): { request: TurnRequest; refs: string[] } | { refusal: TurnAcceptance } {
+    const secrets = this.deps.secrets;
+    if (!secrets || request.origin) return { request, refs: [] };
+    try {
+      const lifted = secrets.lift(thread, request.turnId, request.payload);
+      return { request: { ...request, payload: lifted.text }, refs: lifted.refs };
+    } catch (error) {
+      const reason =
+        error instanceof SecretScratchError ? error.message : 'the pad could not be written';
+      return {
+        refusal: {
+          ok: false,
+          status: error instanceof SecretScratchError && /^Not a /.test(error.message) ? 400 : 503,
+          body: { error: `Secrets could not be held, so the message was not sent: ${reason}` },
+        },
+      };
+    }
+  }
+
   /** The Harness that runs a thread's turns, created on first use (and again for a reopened thread). */
   harness(threadId: string): Harness | null {
     const existing = this.harnesses.get(threadId);
@@ -286,10 +326,47 @@ export class TurnService {
     return this.deps.directory.canReopen(threadId);
   }
 
+  /** Turns queued or running on this daemon, across threads. */
+  liveCount(): number {
+    return this.live.size;
+  }
+
   /** Whether the thread has a turn queued or running here. */
   hasTurns(threadId: string): boolean {
     for (const turn of this.live.values()) if (turn.threadId === threadId) return true;
     return false;
+  }
+
+  /**
+   * The owner's answer to a turn Foundry lost track of and couldn't settle from the native record:
+   * `continue` accepts it as it stands, `retry` settles it and sends its message again. Either way
+   * the next message is admitted and resumes the thread's native session.
+   */
+  resolveLostTurn(
+    threadId: string,
+    action: 'continue' | 'retry',
+  ): { ok: true; resolved: number; retried?: TurnAcceptance } | { ok: false; error: string } {
+    const { localStore, nativeRecovery } = this.deps;
+    if (!localStore || !nativeRecovery) return { ok: false, error: 'no journal' };
+    if (this.hasTurns(threadId)) return { ok: false, error: 'the thread has a turn running' };
+    const resolved = nativeRecovery.resolveByOwner(threadId, action);
+    if (!resolved.length) return { ok: true, resolved: 0 };
+    if (action === 'continue') {
+      this.deps.streams.threadsChanged(threadId);
+      return { ok: true, resolved: resolved.length };
+    }
+    const lost = resolved.find((admission) => admission.main);
+    if (!lost) return { ok: true, resolved: resolved.length };
+    const turnId = lost.turnId;
+    const message = localStore
+      .messages(threadId, 500)
+      .find((entry) => entry.turnId === turnId && entry.actor === 'user');
+    if (!message) return { ok: true, resolved: resolved.length };
+    return {
+      ok: true,
+      resolved: resolved.length,
+      retried: this.accept({ threadId, payload: message.content }),
+    };
   }
 
   /** Every Harness created so far, one per thread. */
@@ -300,30 +377,6 @@ export class TurnService {
   /** Accept a turn durably, then run it after any turn already on its thread. */
   accept(request: TurnRequest): TurnAcceptance {
     const { clientId, origin } = request;
-    // A host's instruction wrappers go to the executor verbatim; everything that learns from the
-    // message (and the journal's user message) reads only the user's words. A member's post is
-    // never split: wrappers in it are its own text.
-    const split = origin ? null : splitHostInstructions(request.payload);
-    const payload = split?.userText ?? request.payload;
-    const images = request.images ?? [];
-    const userMeta =
-      split || images.length || origin
-        ? {
-            ...(split
-              ? { hostInstructions: split.instructions.map((block) => ({ ...block })) }
-              : {}),
-            ...(images.length
-              ? { images: images.map(({ id, mediaType, bytes }) => ({ id, mediaType, bytes })) }
-              : {}),
-            ...(origin ? { origin: { ...origin }, postedBy: origin.displayName } : {}),
-          }
-        : undefined;
-    // What the harness runs on: the member's post labelled as data (the Wardens and the executor
-    // both read it so); the owner's message as typed.
-    const harnessPayload =
-      origin && !origin.wake && !origin.fork
-        ? memberPostReception(origin.displayName, payload)
-        : payload;
     const { localStore, streams } = this.deps;
     const turnId = request.turnId ?? newId('turn');
     const threadId = request.threadId;
@@ -349,22 +402,57 @@ export class TurnService {
         status: 409,
         body: { error: 'an observed subagent thread takes no turns; message its parent thread' },
       };
+    /** Not accepted after all: the thread goes back to archived, in memory and in the store (reopen recorded it open), with its original archive time. */
+    const restoreArchived = () => {
+      if (!reopened) return;
+      const archivedAt = before?.meta.archivedAt;
+      harness.thread.archive();
+      if (archivedAt !== undefined) harness.thread.meta.archivedAt = archivedAt;
+      try {
+        localStore?.saveThread(harness.thread);
+      } catch {
+        /* the store may be what failed; restore reads the archived row it still holds */
+      }
+      streams.threadsChanged(threadId);
+    };
+    // The owner's `$$` secrets leave the message now, once the turn can be taken and before anything
+    // records or reads it. A lift that fails refuses the turn, so a secret never goes through raw.
+    const lifted = this.liftSecrets(harness.thread, { ...request, turnId });
+    if ('refusal' in lifted) {
+      restoreArchived();
+      return lifted.refusal;
+    }
+    request = lifted.request;
+    // A host's instruction wrappers go to the executor verbatim; everything that learns from the
+    // message (and the journal's user message) reads only the user's words. A member's post is
+    // never split: wrappers in it are its own text.
+    const split = origin ? null : splitHostInstructions(request.payload);
+    const payload = split?.userText ?? request.payload;
+    const images = request.images ?? [];
+    const userMeta =
+      split || images.length || origin
+        ? {
+            ...(split
+              ? { hostInstructions: split.instructions.map((block) => ({ ...block })) }
+              : {}),
+            ...(images.length
+              ? { images: images.map(({ id, mediaType, bytes }) => ({ id, mediaType, bytes })) }
+              : {}),
+            ...(origin ? { origin: { ...origin }, postedBy: origin.displayName } : {}),
+          }
+        : undefined;
+    // What the harness runs on: the member's post labelled as data (the Wardens and the executor
+    // both read it so); the owner's message as typed.
+    const harnessPayload =
+      origin && !origin.wake && !origin.fork
+        ? memberPostReception(origin.displayName, payload)
+        : payload;
     try {
       localStore?.beginTurn(harness.thread, turnId, payload, userMeta);
     } catch (err) {
-      // Not accepted after all: the thread goes back to archived, in memory and in the store
-      // (reopen recorded it open), with its original archive time.
-      if (reopened) {
-        const archivedAt = before?.meta.archivedAt;
-        harness.thread.archive();
-        if (archivedAt !== undefined) harness.thread.meta.archivedAt = archivedAt;
-        try {
-          localStore?.saveThread(harness.thread);
-        } catch {
-          /* the store may be what failed; restore reads the archived row it still holds */
-        }
-        streams.threadsChanged(threadId);
-      }
+      // The secrets of a message that was never accepted leave the pad with it.
+      this.deps.secrets?.forget(threadId, lifted.refs);
+      restoreArchived();
       return {
         ok: false,
         status: 503,
@@ -459,7 +547,7 @@ export class TurnService {
           }
         }
       });
-    return { ok: true, turnId, threadId, queued, settled };
+    return { ok: true, turnId, threadId, queued, settled, payload: request.payload };
   }
 
   private readonly settledListeners = new Set<(threadId: string, turnId: string) => void>();
@@ -699,6 +787,9 @@ export class TurnService {
       preflight: (owner: NativeOwner) => {
         if (state.cancelRequested) throw Error(CANCELLED_BEFORE_DISPATCH);
         if (!localStore) throw Error('Native admission requires an available ownership journal');
+        // A turn lost to a restart is settled from the native record first; only what that record
+        // can't settle refuses the admission, and the owner gets Continue / Retry for it.
+        this.deps.nativeRecovery?.settle(thread.id);
         localStore.assertNativeCapacity(thread, owner);
       },
       // Registration precedes the native write, so a stop that arrived while the session was
@@ -848,6 +939,8 @@ export class TurnService {
       console.error('[Turns] could not persist failed turn', err);
     }
     if (!this.journalChanged(thread, turnId)) meta.notification = 'failed';
+    // Live only, never stored: the journal works out whether a lost turn is still pending on read.
+    if (error === NATIVE_OUTCOME_UNRESOLVED) meta.recovery = 'pending';
     return { traceId: trace?.id, trace: trace?.summary(), meta };
   }
 

@@ -50,6 +50,8 @@ import {
   type ThreadLaunchPatch,
   ThreadLaunchSettings,
 } from '../../providers/thread-launch';
+import type { SecretScratch } from '../../secrets/scratch';
+import type { NativeOutcomeRecovery } from '../../turns/native-outcome-recovery';
 import type { RunningTasks } from '../../turns/running-tasks';
 import { type ThreadSetupHost, TurnService } from '../../turns/turn-service';
 import { type ConfigStore, steerOnSend } from '../config';
@@ -85,6 +87,8 @@ export interface RuntimeRoutesDeps {
   /** Re-derives a thread's branch/worktree/linked work when its worktree changes. */
   threadContext?: ThreadContextTracker;
   localStore?: LocalSessionStore | null;
+  /** Settles turns lost to a restart (`turns/native-outcome-recovery.ts`). */
+  nativeRecovery?: NativeOutcomeRecovery;
   /** Background processes each thread's agent started (`turns/running-tasks.ts`). */
   runningTasks?: RunningTasks;
   /** Usage window readings: a `quota-reset` snooze resolves to the reached window's reset. */
@@ -98,6 +102,8 @@ export interface RuntimeRoutesDeps {
   threadLaunch?: ThreadLaunchSettings;
   /** The feedback lifecycle: typed turns and corrections are captured here. */
   feedback?: FeedbackService | null;
+  /** The secret scratch pad (FEAT-005): owners' messages are lifted on accept. */
+  secrets?: SecretScratch | null;
   /** Images sent with messages (`POST /api/attachments/images`, then `images: [id]` on a send). */
   images?: ImageAttachmentStore;
 }
@@ -157,9 +163,11 @@ export function registerRuntimeRoutes(
     namer,
     planDrafter: deps.planDrafter,
     localStore,
+    ...(deps.nativeRecovery ? { nativeRecovery: deps.nativeRecovery } : {}),
     directory,
     streams,
     feedback: deps.feedback ?? null,
+    secrets: deps.secrets ?? null,
     ...(deps.threadSetup ? { threadSetup: deps.threadSetup } : {}),
   });
 
@@ -268,18 +276,20 @@ export function registerRuntimeRoutes(
     const body = await c.req.json<Record<string, unknown>>();
     const input = await messageInput(body);
     if ('error' in input) return c.json({ error: input.error }, 400);
-    const { payload, images } = input;
+    const { images } = input;
 
     const delivery = deliveryOf(body);
     if (delivery === null) return c.json({ error: 'delivery must be steer or queue' }, 400);
     const accepted = await turns.deliver({
       threadId: typeof body.threadId === 'string' ? body.threadId : harness.thread.id,
       turnId: typeof body.id === 'string' ? body.id : undefined,
-      payload,
+      payload: input.payload,
       ...(images.length ? { images } : {}),
       ...(delivery ? { delivery } : {}),
     });
     if (!accepted.ok) return c.json(accepted.body, accepted.status);
+    // Echo the message as accepted, never as sent: its `$$` secrets are references by now.
+    const payload = accepted.payload;
     const outcome = await accepted.settled;
     // Steered into the running turn (CORE-001): that turn answers it, on its own terminal.
     if (outcome.kind === 'steered')
@@ -355,6 +365,41 @@ export function registerRuntimeRoutes(
   // "Steer now" (CORE-001): a queued turn's message goes into the thread's running turn, whatever
   // the `steer` setting says. 200 with `{ steered: true, into }`, or `{ steered: false, reason }`
   // when it stays queued (the running turn can't take it); 404/409 when it isn't queued here.
+  // A turn Foundry lost track of after a restart that the native record couldn't settle: the owner
+  // continues past it or sends it again (`TurnService.resolveLostTurn`).
+  app.post('/api/threads/:threadId/recovery', async (c) => {
+    const body = await c.req.json<{ action?: unknown }>().catch(() => ({}) as { action?: unknown });
+    if (body.action !== 'continue' && body.action !== 'retry')
+      return c.json({ error: 'action must be continue or retry' }, 400);
+    const threadId = c.req.param('threadId');
+    if (!directory.get(threadId)) return c.json({ error: 'thread not found' }, 404);
+    const result = turns.resolveLostTurn(threadId, body.action);
+    if (!result.ok) return c.json({ error: result.error }, 409);
+    return c.json({
+      resolved: result.resolved,
+      ...(result.retried
+        ? result.retried.ok
+          ? { retried: { id: result.retried.turnId, queued: result.retried.queued } }
+          : { retryError: result.retried.body.error }
+        : {}),
+    });
+  });
+
+  app.get('/api/threads/:threadId/recovery', (c) => {
+    if (!localStore) return c.json({ error: 'journal unavailable' }, 503);
+    const threadId = c.req.param('threadId');
+    const unsettled = localStore.unsettledAdmissions(threadId);
+    return c.json({
+      threadId,
+      admissionAllowed: unsettled.length === 0,
+      unsettled: unsettled.map(({ turnId, admittedAt, nativeSessionId }) => ({
+        turnId,
+        admittedAt,
+        ...(nativeSessionId ? { nativeSessionId } : {}),
+      })),
+    });
+  });
+
   app.post('/api/threads/:threadId/turns/:turnId/steer', async (c) => {
     const result = await turns.steerQueued(c.req.param('threadId'), c.req.param('turnId'));
     if (!result.ok) return c.json({ error: result.error }, result.status);

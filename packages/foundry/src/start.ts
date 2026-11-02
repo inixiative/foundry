@@ -1,13 +1,9 @@
 #!/usr/bin/env bun
-/**
- * @atlas
- * @kind entrypoint
- * @partOf feature:daemon, feature:flow
- */
 import { join, resolve } from 'node:path';
 import { resolveDecisionModel } from '@inixiative/foundry-core';
 import { stampFoundryRun } from './archives/run-stamp';
 import { AGENT_CLIS, ensureAgentClisOnPath } from './daemon/agent-clis';
+import { publishDaemonRuntime } from './daemon/runtime-hook';
 import { subscriptionWorker, WORKER_SESSION_RUNTIMES } from './models/registry';
 import { providerBaseUrl, providerContextBudget, providerEnabled } from './models/vendors';
 import {
@@ -41,6 +37,13 @@ import {
   usableLogins,
   workerDefaultModel,
 } from './providers/subscription-policy';
+/**
+ * @atlas
+ * @kind entrypoint
+ * @partOf feature:daemon, feature:flow
+ */
+import type { SecretScratch } from './secrets/scratch';
+import { SECRET_SCRATCH_DESCRIPTION, SecretScratchTool } from './tools/secret-scratch';
 
 /**
  * Foundry — production entrypoint.
@@ -635,6 +638,9 @@ registerKingdomPost(tools, config.kingdomAccess ?? [], () => conversationService
 // The thread's own record (plan, loop, name, status), written on its meta by the viewer once it exists.
 let threadRecords: ThreadRecords | null = null;
 tools.register(new ThreadRecordTool(() => threadRecords), THREAD_RECORD_TOOL_DESCRIPTION);
+// The secret scratch pad's tools (FEAT-005), on the viewer's pads once it exists.
+let secretScratch: SecretScratch | null = null;
+tools.register(new SecretScratchTool(() => secretScratch), SECRET_SCRATCH_DESCRIPTION);
 
 // Memory as a queryable tool (agents search on demand, not just passive layers)
 const memoryTool = MemoryToolAdapter.fromFileMemory(memory);
@@ -1007,6 +1013,7 @@ toolGateFor = viewer.toolGate;
 journalStore = viewer.localStore;
 conversationService = viewer.conversations;
 threadRecords = viewer.records;
+secretScratch = viewer.secrets;
 
 console.log(`Viewer: http://localhost:${viewer.server.port ?? port}`);
 if (acpLaunch) {
@@ -1039,6 +1046,9 @@ await runStartupSelfTest({
   warn: console.warn,
   error: console.error,
 });
+
+// The supervisor's auto-updater drains: it restarts only once no turn is queued or running.
+publishDaemonRuntime({ liveTurns: viewer.liveTurns });
 
 console.log();
 console.log('Ready. Send messages through the harness API or viewer.');
