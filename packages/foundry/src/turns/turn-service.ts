@@ -775,6 +775,8 @@ export class TurnService {
     try {
       if (state.cancelRequested) throw Error(CANCELLED_BEFORE_START);
       state.phase = 'running';
+      // The plan as this turn starts: the drafter drafts only if the agent records none during it.
+      const planAtStart = thread.meta.plan;
       // Foundry names an unnamed thread from the first message that names work, as it is sent.
       if (ownerTyped) this.deps.namer?.messageSent(thread, payload);
       // The next task starts: the last one's done state (a merge, a milestone) is over.
@@ -812,7 +814,11 @@ export class TurnService {
       if (completed.meta.persistence !== 'failed') {
         if (ownerTyped) {
           this.deps.namer?.turnCompleted(thread, { user: payload, agent: completed.content });
-          this.deps.planDrafter?.turnCompleted(thread, { user: payload, agent: completed.content });
+          this.deps.planDrafter?.turnCompleted(
+            thread,
+            { user: payload, agent: completed.content },
+            planAtStart,
+          );
         }
       }
       return { kind: 'completed', completed, result };
