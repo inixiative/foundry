@@ -8,16 +8,21 @@ import {
   readPrivateJson,
   SignetClient,
   signetCredentialSchema,
+  signetPost,
+  signetProof,
 } from '@inixiative/signet';
 import { z } from 'zod';
 import { refreshSecretPattern, runSecretPattern } from './kingdom-secrets';
 
+/** The native harnesses whose subscription logins Kingdom holds and releases. */
+export const subscriptionRuntimeSchema = z.enum(['claude', 'codex', 'muse']);
+export type SubscriptionRuntime = z.infer<typeof subscriptionRuntimeSchema>;
 export const kingdomSelectionSchema = z
   .object({
     model: z.string().min(1).optional(),
     effort: z.string().min(1).optional(),
     authentication: z.enum(['api-key', 'subscription']).optional(),
-    runtime: z.enum(['claude', 'codex']).optional(),
+    runtime: subscriptionRuntimeSchema.optional(),
     poolId: z.string().uuid().optional(),
     capacityIds: z.array(z.string().uuid()).optional(),
     integrationIds: z.array(z.string().uuid()).optional(),
@@ -56,7 +61,7 @@ export const kingdomEnvelopeSchema = z
     capacityId: z.string().uuid(),
     model: z.string(),
     effort: z.string(),
-    runtime: z.enum(['claude', 'codex']),
+    runtime: subscriptionRuntimeSchema,
     authentication: z.enum(['api-key', 'subscription']),
     expiresAt: z.string().datetime(),
     gatewayPath: z.string(),
@@ -69,11 +74,13 @@ export const kingdomSubscriptionReleaseSchema = z
     integrationId: z.string().uuid(),
     capacityId: z.string().uuid(),
     executionId: z.string().uuid(),
-    runtime: z.enum(['claude', 'codex']),
+    runtime: subscriptionRuntimeSchema,
     accessToken: z.string().min(1),
     idToken: z.string().nullable(),
     accountId: z.string().nullable(),
     expiresAt: z.string().datetime().nullable(),
+    /** The released credential's version; a rejection report names it, so a late one never marks a newer login. */
+    credentialVersion: z.number().int().min(1),
   })
   .strict();
 export type KingdomSubscriptionRelease = z.infer<typeof kingdomSubscriptionReleaseSchema>;
@@ -103,11 +110,16 @@ export class KingdomClient {
   private constructor(
     private signet: SignetClient,
     private enrollmentId: string,
+    private credentialFile: string,
   ) {}
   /** A client for the Signet a credential file holds. */
   static async fromFile(credentialFile: string) {
     const { enrollmentId } = signetCredentialSchema.parse(await readPrivateJson(credentialFile));
-    return new KingdomClient(await SignetClient.fromFile(credentialFile), enrollmentId);
+    return new KingdomClient(
+      await SignetClient.fromFile(credentialFile),
+      enrollmentId,
+      credentialFile,
+    );
   }
   get origin() {
     return this.signet.url;
@@ -158,6 +170,40 @@ export class KingdomClient {
       bindingId,
       reading: kingdomLimitReadingSchema.parse(reading),
     });
+  }
+  /**
+   * The provider rejected the login a release handed out (`executionId`, at `credentialVersion`):
+   * Kingdom marks it as needing a new sign-in. `recorded` is false when the login was replaced or
+   * refreshed since, or already marked.
+   */
+  async reportCredentialRejected(executionId: string, credentialVersion: number) {
+    // why: signet 0.11 refuses this action (signet#26 adds it); signed as SignetClient.post does until adopted.
+    const action = 'reportCredentialRejected';
+    const read = async () =>
+      signetCredentialSchema.parse(await readPrivateJson(this.credentialFile));
+    let credential = await read();
+    if (credential.url !== this.signet.url || credential.signetId !== this.signet.signetId)
+      throw Error('Signet credential audience mismatch');
+    if (Date.parse(credential.expiresAt) <= Date.now() + 30_000) {
+      await this.signet.renew();
+      credential = await read();
+    }
+    const proof = await signetProof(
+      this.signet.url,
+      action,
+      credential.keyFile,
+      credential.accessToken,
+    );
+    return z
+      .object({ integrationId: z.string().uuid(), recorded: z.boolean() })
+      .parse(
+        await signetPost(
+          this.signet.url,
+          action,
+          { executionId, credentialVersion },
+          { authorization: `DPoP ${credential.accessToken}`, DPoP: proof },
+        ),
+      );
   }
 }
 

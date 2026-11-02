@@ -473,6 +473,25 @@ export async function museSubscriptionStatus(proc: StatusProcess): Promise<boole
   }
 }
 
+/**
+ * `muse usage --json` on a login a session just failed with: true only when Meta rejected the login
+ * itself (the CLI exits non-zero naming `credential_rejected`; measured on 1.4.14 with a token Meta
+ * does not accept). Anything else (a network failure, a timeout, a missing CLI) is not a rejection, so a
+ * one-off failure never sends a working login back for a new sign-in.
+ */
+export async function museLoginRejected(proc: StatusProcess): Promise<boolean> {
+  try {
+    const [code, stdout, stderr] = await Promise.all([
+      proc.exited,
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+    ]);
+    return code !== 0 && /\bcredential_rejected\b/.test(`${stdout}\n${stderr}`);
+  } catch {
+    return false;
+  }
+}
+
 /** Supported read-only status command: a claude.ai login, or a subscription `setup-token` (`oauth_token`).
  * Never an API key. Never persist raw output or account identity. */
 export async function subscriptionStatus(proc: StatusProcess): Promise<boolean> {

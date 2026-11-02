@@ -455,7 +455,7 @@ function createProvider(
       };
     }
     case 'muse': {
-      // Muse Code on the user's own Muse login. Its questions go to the thread's person on the
+      // Muse Code on the user's own Muse login, or a Kingdom pool's. Its questions go to the thread's person on the
       // prompt queue the tool gate asks on; its config is the user's own (MuseSessionAdapter).
       const sessionAdapter = new MuseSessionAdapter({
         store: sessionStore,
