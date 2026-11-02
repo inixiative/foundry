@@ -15,6 +15,7 @@
 import { ComingSoon } from './coming-soon.js';
 import { html, signal, useEffect, useState } from './lib.js';
 import { authFetch, vendorName } from './store.js';
+import { readPools } from './subscriptions.js';
 
 const getJson = (url) =>
   authFetch(url)
@@ -53,28 +54,53 @@ export function RangeControl() {
 
 const SUBSCRIPTION_SOURCES = new Set(['login', 'profile', 'kingdom', 'gateway']);
 
-/** Each subscription login with its usage windows: { name, provider, limit }. */
+const POOLED_PROVIDER = { claude: 'claude-code', codex: 'codex' };
+
+/**
+ * Each subscription login with its usage windows: { name, provider, limit, runs? }. This machine's
+ * Claude and Codex logins come from their pools (`/api/providers/pools`, the record the footer's
+ * scale reads, with each login's turns in the last five hours); any other subscription from its account.
+ */
 export function useLogins() {
   const [logins, setLogins] = useState(undefined);
   useEffect(() => {
     let live = true;
-    Promise.all([getJson('/api/providers/accounts'), getJson('/api/providers/limits')]).then(
-      ([accounts, limits]) => {
-        if (!live) return;
-        const subs = (Array.isArray(accounts) ? accounts : []).filter((a) =>
-          SUBSCRIPTION_SOURCES.has(a.source),
-        );
-        const left = [...(limits?.limits ?? [])];
-        // The limits come back in the accounts' order, one per subscription login of a worker.
-        setLogins(
-          subs.map((a) => {
-            const at = left.findIndex((l) => l.provider === a.provider);
-            const limit = at >= 0 ? left.splice(at, 1)[0] : null;
-            return { name: a.detail || a.provider, provider: a.provider, limit };
-          }),
-        );
-      },
-    );
+    Promise.all([
+      getJson('/api/providers/accounts'),
+      getJson('/api/providers/limits'),
+      readPools(),
+    ]).then(([accounts, limits, pools]) => {
+      if (!live) return;
+      const pooled = new Set((pools?.pools ?? []).map((p) => POOLED_PROVIDER[p.runtime]));
+      const fromPools = (pools?.pools ?? []).flatMap((pool) =>
+        pool.logins
+          .filter((l) => l.status !== 'signing-in')
+          .map((l) => ({
+            name: l.name,
+            provider: POOLED_PROVIDER[pool.runtime],
+            runs: l.runs,
+            status: l.status,
+            plan: l.plan,
+            account: l.account,
+            limit: l.limits?.windows?.length
+              ? { state: 'probed', snapshot: l.limits }
+              : { state: 'unavailable' },
+          })),
+      );
+      const subs = (Array.isArray(accounts) ? accounts : []).filter(
+        (a) => SUBSCRIPTION_SOURCES.has(a.source) && !pooled.has(a.provider),
+      );
+      const left = [...(limits?.limits ?? [])];
+      // The limits come back in the accounts' order, one per subscription login of a worker.
+      setLogins([
+        ...fromPools,
+        ...subs.map((a) => {
+          const at = left.findIndex((l) => l.provider === a.provider);
+          const limit = at >= 0 ? left.splice(at, 1)[0] : null;
+          return { name: a.detail || a.provider, provider: a.provider, limit };
+        }),
+      ]);
+    });
     return () => {
       live = false;
     };
@@ -114,16 +140,16 @@ export function CapacityBand({ logins }) {
           ? logins.map((l, i) => {
               const five = windowOf(l.limit, 300);
               const week = windowOf(l.limit, 10_080);
-              const plan = l.limit?.snapshot?.plan;
+              const plan = l.plan ?? l.limit?.snapshot?.plan;
               return html`<div key=${i} class="an-cap-row">
-                <span class="an-cap-name"><b>${plan ? `${plan} · ` : ''}${l.name}</b><small>${vendorName(l.provider) ?? l.provider}</small></span>
+                <span class="an-cap-name"><b>${plan ? `${plan} · ` : ''}${l.name}</b><small>${vendorName(l.provider) ?? l.provider}${typeof l.runs === 'number' ? ` · ${l.runs} turns in 5h` : ''}</small></span>
                 ${
                   l.limit?.state === 'kingdom'
                     ? html`<span class="an-dim">A Kingdom pool: Kingdom reports its limits</span>`
                     : l.limit?.state === 'probed'
                       ? html`<${Meter} label="5-hour" window=${five} /><${Meter} label="7-day" window=${week} />
                         <span class="an-cap-reset">${five?.resetsAt ? `resets in ${resetsIn(five.resetsAt)}` : ''}</span>`
-                      : html`<span class="an-dim">The CLI didn't report its usage windows</span>`
+                      : html`<span class="an-dim">${l.status === 'expired' ? 'Needs signing in again' : "The CLI didn't report its usage windows"}</span>`
                 }
               </div>`;
             })

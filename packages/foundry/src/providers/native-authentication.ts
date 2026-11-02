@@ -14,10 +14,11 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { realpath } from 'node:fs/promises';
-import { isAbsolute, join } from 'node:path';
+import { dirname, isAbsolute, join } from 'node:path';
 import { sha256Hex } from '@inixiative/foundry-core';
 import { z } from 'zod';
-import { profileEnvironment } from './default-profiles';
+import { readPrivateJson } from '../client/private-file';
+import { defaultProfileDirectory, isFoundryLogin, profileEnvironment } from './default-profiles';
 import {
   codexUserConfig,
   type HarnessSettingsLaunch,
@@ -39,8 +40,21 @@ export type NativeAuthenticationSource = {
   id: string;
   integrationId: string;
   runtime: NativeRuntime;
+  /** The person's own label for this login ("inixiative", "work"): never the provider account's name. */
+  name?: string;
+  /** Whose subscription it is, in the person's words (personal, inixiative, work). */
+  owner?: string;
 } & (
-  | { mode: 'native-profile'; profileDirectory: string }
+  | {
+      mode: 'native-profile';
+      profileDirectory: string;
+      /**
+       * A Claude login made with `claude setup-token` (Anthropic's own sign-in, inference only, one
+       * year): the private file under `profileDirectory` that holds the token. The launch hands it to
+       * the child as `CLAUDE_CODE_OAUTH_TOKEN`; it is never logged, copied or sent anywhere else.
+       */
+      tokenFile?: string;
+    }
   | {
       mode: 'gateway';
       baseUrl: string;
@@ -59,10 +73,29 @@ const identity = {
   id: z.string(),
   integrationId: z.string(),
   runtime: z.enum(NATIVE_RUNTIMES),
+  name: z
+    .string()
+    .trim()
+    .min(1)
+    .max(40)
+    .regex(/^[^\r\n\0]+$/)
+    .optional(),
+  owner: z
+    .string()
+    .trim()
+    .min(1)
+    .max(40)
+    .regex(/^[^\r\n\0]+$/)
+    .optional(),
 };
 const sourceSchema = z.discriminatedUnion('mode', [
   z
-    .object({ ...identity, mode: z.literal('native-profile'), profileDirectory: z.string() })
+    .object({
+      ...identity,
+      mode: z.literal('native-profile'),
+      profileDirectory: z.string(),
+      tokenFile: z.string().optional(),
+    })
     .strict(),
   z
     .object({
@@ -119,6 +152,8 @@ export interface NativeAuthenticationLaunch {
   release(): void;
   /** Account limits the native session observed for this launch's login. */
   observeLimits?(limits: NativeLimitSnapshot): void;
+  /** A turn on this launch was admitted (about to be written to the native session): a run on its login. */
+  admitted?(): void;
   /**
    * The native session failed (a failed turn, a host that would not start) and the login may be why.
    * The provider confirms with the login's own read-only check before acting on it: a rejected
@@ -240,6 +275,13 @@ export class NativeAuthentication {
       if (source.mode === 'native-profile') {
         if (!isAbsolute(source.profileDirectory))
           throw Error('Native profile directory must be absolute');
+        if (
+          source.tokenFile !== undefined &&
+          (source.runtime !== 'claude' ||
+            !isAbsolute(source.tokenFile) ||
+            dirname(source.tokenFile) !== source.profileDirectory)
+        )
+          throw Error('A setup-token file belongs to a Claude login, inside its own profile');
       } else if (source.mode === 'gateway') {
         let url: URL;
         try {
@@ -302,7 +344,8 @@ export class NativeAuthentication {
     return source;
   }
   bindingId(threadId: string, runtime: NativeRuntime): string {
-    const source = this.source(threadId, runtime);
+    const { name: _label, owner: _owner, ...source } = this.source(threadId, runtime);
+    // The label is the person's own and may change; the native binding (and its history) does not.
     return `${threadId}:auth:${source.id}:${hash(JSON.stringify(source))}`;
   }
   private privateHomePath(sourceId: string): string {
@@ -376,11 +419,16 @@ export class NativeAuthentication {
         // A main thread loading the user's own Codex setup runs on its own home beside the plain
         // one, so decision sessions on the same login never read the user's config.
         const home = privateHome && harness ? `${privateHome}-user` : privateHome;
+        // The user's own Codex setup is in their own home, also when this login is another one.
+        const userCodex =
+          runtime === 'codex' && isFoundryLogin(directory)
+            ? defaultProfileDirectory('codex')
+            : directory;
         const homeConfig =
-          home && harness ? PRIVATE_HOME_CONFIG + codexUserConfig(directory) : PRIVATE_HOME_CONFIG;
+          home && harness ? PRIVATE_HOME_CONFIG + codexUserConfig(userCodex) : PRIVATE_HOME_CONFIG;
         const writeHome = (target: string) => {
           writeCredentialHome(target, directory, homeConfig);
-          if (harness) shareCodexUserSetup(target, directory);
+          if (harness) shareCodexUserSetup(target, userCodex);
         };
         if (active) throw Error('Authentication launch already owns a process');
         const lock = join(directory, '.foundry-auth-lock');
@@ -397,6 +445,8 @@ export class NativeAuthentication {
               ? profileEnvironment(runtime, directory)
               : { [runtime === 'codex' ? 'CODEX_HOME' : 'CLAUDE_CONFIG_DIR']: directory },
         );
+        if (source.mode === 'native-profile' && source.tokenFile)
+          env.CLAUDE_CODE_OAUTH_TOKEN = readSetupToken(source);
         if (source.mode === 'gateway') {
           if (source.credential.type === 'environment') {
             const token = process.env[source.credential.variable];
@@ -527,6 +577,28 @@ export class NativeAuthentication {
       },
     });
   }
+}
+
+/** A setup-token login's token, read from its private file at launch; refused when the file is not private. */
+export function readSetupToken(
+  source: Extract<NativeAuthenticationSource, { mode: 'native-profile' }>,
+): string {
+  if (!source.tokenFile) throw Error('This login has no setup token');
+  assertPrivateProfile(source.profileDirectory);
+  const token = readPrivateJson(source.tokenFile, 'Claude setup token') as { token?: unknown };
+  if (typeof token?.token !== 'string' || !/^sk-ant-oat\d+-[A-Za-z0-9_-]{20,}$/.test(token.token))
+    throw Error('This Claude login has no usable setup token; sign in again');
+  return token.token;
+}
+
+/** The environment a login's own read-only checks (status, limits) run in: its home, and its token. */
+export function loginEnvironment(
+  source: Extract<NativeAuthenticationSource, { mode: 'native-profile' }>,
+): Record<string, string> {
+  return {
+    ...profileEnvironment(source.runtime, source.profileDirectory),
+    ...(source.tokenFile ? { CLAUDE_CODE_OAUTH_TOKEN: readSetupToken(source) } : {}),
+  };
 }
 
 function dead(pid: unknown): boolean {

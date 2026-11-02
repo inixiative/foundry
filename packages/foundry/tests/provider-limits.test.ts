@@ -22,18 +22,18 @@ const snapshot = (runtime: 'claude' | 'codex' | 'muse'): LimitSnapshot => ({
 });
 
 test('each subscription login is probed in its own home; a Kingdom pool and API keys are not', async () => {
-  const homes: Array<[string, string | undefined]> = [];
+  const homes: Array<[string, Record<string, string> | undefined]> = [];
   const probes = {
-    'claude-code': async (home: string | undefined) => {
-      homes.push(['claude', home]);
+    'claude-code': async (env: Record<string, string> | undefined) => {
+      homes.push(['claude', env]);
       return snapshot('claude');
     },
-    codex: async (home: string | undefined) => {
-      homes.push(['codex', home]);
+    codex: async (env: Record<string, string> | undefined) => {
+      homes.push(['codex', env]);
       return undefined;
     },
-    muse: async (home: string | undefined) => {
-      homes.push(['muse', home]);
+    muse: async (env: Record<string, string> | undefined) => {
+      homes.push(['muse', env]);
       return snapshot('muse');
     },
   };
@@ -49,7 +49,7 @@ test('each subscription login is probed in its own home; a Kingdom pool and API 
   // The default login probes in the CLI's own home; a separate profile in its directory.
   expect(homes).toEqual([
     ['claude', undefined],
-    ['codex', '/Users/me/.foundry/codex-work'],
+    ['codex', { CODEX_HOME: '/Users/me/.foundry/codex-work' }],
     ['muse', undefined],
   ]);
   expect(limits).toEqual([

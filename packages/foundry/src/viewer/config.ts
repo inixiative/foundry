@@ -67,9 +67,13 @@ import {
 } from '../providers/native-authentication';
 import {
   assertMainThreadLabs,
+  type LoginPoolsSettings,
+  POOLED_RUNTIMES,
   resolveSubscriptionPolicy,
+  runtimeLogins,
   SUBSCRIPTION_DECISIONS,
   type SubscriptionSettings,
+  validateLoginPools,
 } from '../providers/subscription-policy';
 import { type PrefilterSettings, validatePrefilterSettings } from '../providers/warden-prefilter';
 
@@ -154,8 +158,14 @@ export interface FoundryConfig {
   subscriptionOnly?: SubscriptionSettings;
   /** Structural tool rules: the only tool denials, held in every permission mode (turns/tool-gate.ts). */
   toolRules?: ToolRules;
-  /** Credential references only; do not put tokens in settings. */
+  /** Credential references only; do not put tokens in settings. Several of one runtime are a pool. */
   nativeAuthentication?: NativeAuthenticationSource[];
+  /**
+   * How a runtime with several logins balances them (Aron, 2026-11-02: "a balancing toggle… like a
+   * scale"): `routing` (default `quartile-balanced`; `pinned` is balancing off) and the login
+   * `owner-first` or `pinned` prefers. A project's `subscriptionPools` overrides it.
+   */
+  subscriptionPools?: LoginPoolsSettings;
   /** Kingdom subscription pools this Foundry draws main-thread logins from: one per owner's Signet (URL, credential file, pool selection). */
   kingdomInference?: KingdomInferenceSource[];
   /** Project-scoped integration grants. Independent of inference resource selection. Restart to apply. */
@@ -342,6 +352,8 @@ export interface ProjectSettingsConfig {
   conversations?: ConversationSettingsInput;
   /** Where main threads get their subscription: this machine's login (`local`, the default) or a Kingdom pool. */
   capacity?: 'local' | 'kingdom';
+  /** How this project's threads balance this machine's logins, per runtime; over the Foundry-wide `subscriptionPools`. */
+  subscriptionPools?: LoginPoolsSettings;
   /** Required when `capacity` is `kingdom`. */
   kingdomCapacity?: ProjectKingdomCapacity;
   /** The one Kingdom project this Foundry project links to (Aron, 2026-11-01); its pool chooses a Kingdom-capacity login. */
@@ -1096,6 +1108,30 @@ function validateProjectCapacity(config: FoundryConfig, project: ProjectSettings
     throw Error('Kingdom capacity requires a Claude Code, Codex or Muse Code default worker');
 }
 
+/** Each pool setting is well formed and prefers one of its runtime's logins. */
+function validateLoginPoolReferences(config: FoundryConfig): void {
+  const scopes: Array<[string, LoginPoolsSettings | undefined]> = [
+    ['subscriptionPools', config.subscriptionPools],
+    ...Object.entries(config.projects ?? {}).map(
+      ([id, project]): [string, LoginPoolsSettings | undefined] => [
+        `projects.${id}.subscriptionPools`,
+        project?.subscriptionPools,
+      ],
+    ),
+  ];
+  for (const [where, pools] of scopes) {
+    validateLoginPools(where, pools);
+    for (const runtime of POOLED_RUNTIMES) {
+      const preferred = pools?.[runtime]?.preferredLoginId;
+      if (preferred === undefined) continue;
+      if (!runtimeLogins(config, runtime).logins.some((login) => login.id === preferred))
+        throw Error(
+          `${where}.${runtime}.preferredLoginId is not one of this machine's ${runtime} logins`,
+        );
+    }
+  }
+}
+
 export function validateConfig(config: FoundryConfig): void {
   if ('providers' in config)
     throw Error(
@@ -1181,6 +1217,7 @@ export function validateConfig(config: FoundryConfig): void {
   validateJournalSettings(config.journal);
   validateFeedbackSettings('feedback', config.feedback);
   validatePrefilterSettings('prefilter', config.prefilter);
+  validateLoginPoolReferences(config);
   if ('wardens' in config)
     throw Error(
       'settings key "wardens" is gone: a project\'s Wardens are its chorus, projects[id].chorus (docs/usage-and-context.md, "Chorus")',
@@ -1295,6 +1332,8 @@ const PERSONAL_PROJECT_SETTINGS: Readonly<Record<string, string>> = {
   capacity: 'Which subscriptions you run this project on',
   kingdomCapacity: 'Your Kingdom subscription pool',
   kingdomProject: 'Your link to a Kingdom project',
+  subscriptionPools:
+    'How your own logins on this machine are balanced (their ids are this machine’s)',
   toolRules:
     'Tool rules gate what agents may run on this machine; a cloned repository can’t loosen them',
   sources:
