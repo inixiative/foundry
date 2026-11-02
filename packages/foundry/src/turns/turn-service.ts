@@ -355,7 +355,9 @@ export class TurnService {
       this.deps.streams.threadsChanged(threadId);
       return { ok: true, resolved: resolved.length };
     }
-    const turnId = resolved[0]!.turnId;
+    const lost = resolved.find((admission) => admission.main);
+    if (!lost) return { ok: true, resolved: resolved.length };
+    const turnId = lost.turnId;
     const message = localStore
       .messages(threadId, 500)
       .find((entry) => entry.turnId === turnId && entry.actor === 'user');
@@ -917,7 +919,6 @@ export class TurnService {
       ...(injectedLayers ? { injectedLayers } : {}),
       ...(partialOutput ? { partialOutput } : {}),
       ...(cancelled ? { cancelled: true } : {}),
-      ...(error === NATIVE_OUTCOME_UNRESOLVED ? { recovery: 'pending' } : {}),
     };
     // Failure details travel with historical traces as well as message rows.
     // Keep the live annotation linked so a rejected transaction reads unsaved.
@@ -938,6 +939,8 @@ export class TurnService {
       console.error('[Turns] could not persist failed turn', err);
     }
     if (!this.journalChanged(thread, turnId)) meta.notification = 'failed';
+    // Live only, never stored: the journal works out whether a lost turn is still pending on read.
+    if (error === NATIVE_OUTCOME_UNRESOLVED) meta.recovery = 'pending';
     return { traceId: trace?.id, trace: trace?.summary(), meta };
   }
 

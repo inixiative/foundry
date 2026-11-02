@@ -52,6 +52,7 @@ import { kingdomPostDelivery } from '../tools/kingdom-post';
 import type { ThreadRecords } from '../tools/thread-record';
 import {
   NATIVE_RECORD_QUIET_MS,
+  NATIVE_TOOL_QUIET_MS,
   NativeOutcomeRecovery,
   nativeHomes,
 } from '../turns/native-outcome-recovery';
@@ -339,6 +340,7 @@ export function createViewer(config: ViewerConfig) {
   const nativeRecovery = localStore
     ? new NativeOutcomeRecovery({
         store: localStore,
+        bootedAt: Date.now(),
         homes: () => nativeHomes(config.configDir ?? '.foundry'),
         boundSessions: (threadId) =>
           FileExternalSessionStore.boundTo(
@@ -370,12 +372,18 @@ export function createViewer(config: ViewerConfig) {
         return undefined;
       }
     };
-    if (settleLost()?.undecided.length)
-      setTimeout(() => {
+    if (settleLost()?.undecided.length) {
+      // Look again each minute until every record has gone quiet (a pending tool call waits longest).
+      const started = Date.now();
+      const again = setInterval(() => {
         const pass = settleLost();
         for (const turnId of new Set(pass?.settled.map((entry) => entry.turnId)))
           streams.threadsChanged(localStore.turn(turnId)?.threadId ?? '');
-      }, NATIVE_RECORD_QUIET_MS + 5_000).unref?.();
+        if (!pass?.undecided.length || Date.now() - started > NATIVE_TOOL_QUIET_MS + 120_000)
+          clearInterval(again);
+      }, NATIVE_RECORD_QUIET_MS);
+      again.unref?.();
+    }
     for (const thread of directory.all()) localStore.saveThread(thread);
     // A turn a restart closed is reduced before its first capture (spec A).
     localStore.compactClosedTurns();

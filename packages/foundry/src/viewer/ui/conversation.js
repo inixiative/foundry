@@ -1071,7 +1071,7 @@ function LostTurnCard({ msg }) {
   };
   return html`<section class="lost-turn-card" role="alert" aria-label="Lost turn">
     <div class="lost-turn-title">Foundry lost track of the last turn after a restart.</div>
-    <div class="lost-turn-body">Check the files it touched, then Continue. Retry sends that turn's message again.</div>
+    <div class="lost-turn-body">Check the files it touched, then Continue. Retry sends that turn's message again; anything you sent after it needs sending again.</div>
     <div class="lost-turn-actions">
       <button class="prompt-btn prompt-btn-approve" disabled=${busy} onClick=${() => act('continue')}>Continue</button>
       <button class="prompt-btn" disabled=${busy} onClick=${() => act('retry')}>Retry the turn</button>

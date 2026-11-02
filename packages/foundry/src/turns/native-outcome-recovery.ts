@@ -25,12 +25,17 @@ import type {
 
 /** A record untouched this long belongs to no running native process. */
 export const NATIVE_RECORD_QUIET_MS = 60_000;
-/** Clock skew allowed between Foundry's admission time and the runtime's own timestamps. */
-const ADMISSION_SKEW_MS = 5_000;
+/** A tool call with no result yet may be a long command or subagent: wait much longer before calling it dead. */
+export const NATIVE_TOOL_QUIET_MS = 15 * 60_000;
+/**
+ * The native prompt is written after Foundry registers the admission on the same machine, so only a
+ * small allowance is needed. A wide one would let the previous turn's ending pass for this one's.
+ */
+const ADMISSION_SKEW_MS = 1_000;
 const CLAUDE_DONE = new Set(['end_turn', 'stop_sequence', 'refusal']);
 
 export type NativeRecordReading =
-  | { outcome: 'completed' | 'interrupted'; detail: string }
+  | { outcome: 'completed' | 'interrupted'; detail: string; neverReached?: boolean }
   | { outcome: 'undecided'; detail: string };
 
 const lines = (text: string): Array<Record<string, unknown>> =>
@@ -47,35 +52,65 @@ const lines = (text: string): Array<Record<string, unknown>> =>
 const time = (entry: Record<string, unknown>) =>
   typeof entry.timestamp === 'string' ? Date.parse(entry.timestamp) : Number.NaN;
 
-/** A Claude Code transcript: did the turn admitted at `admittedAt` finish? */
+const blocks = (entry: Record<string, unknown>): Array<{ type?: unknown }> => {
+  const content = (entry.message as { content?: unknown } | undefined)?.content;
+  return Array.isArray(content) ? (content as Array<{ type?: unknown }>) : [];
+};
+
+/** A message someone sent the session, not a tool result, a meta line or a compaction summary. */
+const isPrompt = (entry: Record<string, unknown>) => {
+  if (entry.type !== 'user' || entry.isMeta || entry.isCompactSummary) return false;
+  const content = (entry.message as { content?: unknown } | undefined)?.content;
+  return typeof content === 'string' || blocks(entry).some((block) => block.type === 'text');
+};
+
+const stillWorking = {
+  outcome: 'undecided',
+  detail: 'the native session may still be working',
+} as const;
+
+/**
+ * A Claude Code transcript: did the turn admitted at `admittedAt` finish? Only what follows this
+ * turn's own prompt counts; `quietForMs` is how long the session's files have been untouched.
+ */
 export function readClaudeTranscript(
   text: string,
   admittedAt: number,
-  quiet: boolean,
+  quietForMs: number,
 ): NativeRecordReading {
-  const turn = lines(text).filter(
-    (entry) =>
-      (entry.type === 'user' || entry.type === 'assistant') &&
-      !(time(entry) < admittedAt - ADMISSION_SKEW_MS),
+  const entries = lines(text).filter(
+    (entry) => (entry.type === 'user' || entry.type === 'assistant') && !entry.isSidechain,
   );
-  if (!turn.some((entry) => entry.type === 'user'))
-    return quiet
-      ? { outcome: 'interrupted', detail: 'the message never reached the native session' }
+  const prompt = entries.findIndex(
+    (entry) => isPrompt(entry) && !(time(entry) < admittedAt - ADMISSION_SKEW_MS),
+  );
+  if (prompt < 0)
+    return quietForMs >= NATIVE_RECORD_QUIET_MS
+      ? {
+          outcome: 'interrupted',
+          detail: 'the message never reached the native session',
+          neverReached: true,
+        }
       : { outcome: 'undecided', detail: 'the native session has not recorded the message yet' };
-  const last = turn.at(-1)!;
-  const message = last.message as { stop_reason?: unknown } | undefined;
-  if (last.type === 'assistant' && CLAUDE_DONE.has(String(message?.stop_reason)))
+  const last = entries.at(-1)!;
+  if (
+    last.type === 'assistant' &&
+    CLAUDE_DONE.has(String((last.message as { stop_reason?: unknown } | undefined)?.stop_reason)) &&
+    !blocks(last).some((block) => block.type === 'tool_use')
+  )
     return { outcome: 'completed', detail: 'the native session finished its answer' };
-  return quiet
-    ? { outcome: 'interrupted', detail: 'the native session stopped part-way through the turn' }
-    : { outcome: 'undecided', detail: 'the native session may still be working' };
+  const toolPending =
+    last.type === 'assistant' && blocks(last).some((block) => block.type === 'tool_use');
+  if (quietForMs < (toolPending ? NATIVE_TOOL_QUIET_MS : NATIVE_RECORD_QUIET_MS))
+    return stillWorking;
+  return { outcome: 'interrupted', detail: 'the native session stopped part-way through the turn' };
 }
 
-/** A Codex rollout: the last task event after the admission says how the turn ended. */
+/** A Codex rollout: the task events after this turn's own `task_started` say how it ended. */
 export function readCodexRollout(
   text: string,
   admittedAt: number,
-  quiet: boolean,
+  quietForMs: number,
 ): NativeRecordReading {
   const events = lines(text)
     .filter(
@@ -85,19 +120,49 @@ export function readCodexRollout(
     .filter(
       (type) => type === 'task_started' || type === 'task_complete' || type === 'turn_aborted',
     );
+  const started = events.indexOf('task_started');
+  if (started < 0)
+    return quietForMs >= NATIVE_RECORD_QUIET_MS
+      ? {
+          outcome: 'interrupted',
+          detail: 'the message never reached the native session',
+          neverReached: true,
+        }
+      : { outcome: 'undecided', detail: 'the native session has not recorded the message yet' };
   const last = events.at(-1);
   if (last === 'task_complete')
     return { outcome: 'completed', detail: 'the native session finished its answer' };
   if (last === 'turn_aborted')
     return { outcome: 'interrupted', detail: 'the native session aborted the turn' };
-  if (!quiet) return { outcome: 'undecided', detail: 'the native session may still be working' };
-  return {
-    outcome: 'interrupted',
-    detail: last
-      ? 'the native session stopped part-way through the turn'
-      : 'the message never reached the native session',
-  };
+  if (quietForMs < NATIVE_RECORD_QUIET_MS) return stillWorking;
+  return { outcome: 'interrupted', detail: 'the native session stopped part-way through the turn' };
 }
+
+/** The newest write among a record and what its session keeps beside it (`<id>/subagents/…`, tool results). */
+const lastWrite = (path: string): number => {
+  let newest = statSync(path).mtimeMs;
+  const walk = (dir: string, depth: number) => {
+    let entries: import('node:fs').Dirent[];
+    try {
+      entries = readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      const child = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (depth > 0) walk(child, depth - 1);
+      } else
+        try {
+          newest = Math.max(newest, statSync(child).mtimeMs);
+        } catch {
+          /* gone meanwhile */
+        }
+    }
+  };
+  walk(path.replace(/\.jsonl$/, ''), 2);
+  return newest;
+};
 
 const directories = (path: string): string[] => {
   try {
@@ -195,7 +260,8 @@ export interface NativeOutcomeRecoveryOptions {
   homes: () => readonly string[];
   /** Native session ids bound to a thread (the external-session bindings), for an admission that died before any native event named one. */
   boundSessions?: (threadId: string) => readonly string[];
-  quietMs?: number;
+  /** When this Foundry process started: admissions after it are its own, live or not. */
+  bootedAt: number;
   now?: () => number;
 }
 
@@ -222,13 +288,18 @@ export class NativeOutcomeRecovery {
   settle(threadId: string): RecoveryPass {
     const pass: RecoveryPass = { settled: [], undecided: [] };
     const { store } = this.options;
-    const unsettled = store.unsettledAdmissions(threadId);
+    // Only what an earlier run of Foundry admitted: an admission of this run still has its observer,
+    // and an unknown outcome there means "not finished yet", not "lost".
+    const unsettled = store
+      .unsettledAdmissions(threadId)
+      .filter((admission) => admission.admittedAt < this.options.bootedAt);
     if (!unsettled.length) return pass;
     const homes = this.options.homes();
     for (const admission of unsettled) {
       const reading = this.read(threadId, admission, homes);
       if (reading.outcome === 'undecided') {
-        pass.undecided.push({ turnId: admission.turnId, detail: reading.detail });
+        if (admission.main)
+          pass.undecided.push({ turnId: admission.turnId, detail: reading.detail });
         continue;
       }
       store.settleAdmission(threadId, admission.admissionId, {
@@ -237,14 +308,16 @@ export class NativeOutcomeRecovery {
         detail: reading.detail,
         ...(reading.sessionId ? { nativeSessionId: reading.sessionId } : {}),
       });
-      pass.settled.push({ turnId: admission.turnId, outcome: reading.outcome });
+      if (admission.main) pass.settled.push({ turnId: admission.turnId, outcome: reading.outcome });
     }
     return pass;
   }
 
   /** The owner decides: `continue` accepts the lost turn as it stands, `retry` settles it to send again. */
   resolveByOwner(threadId: string, action: 'continue' | 'retry'): UnsettledAdmission[] {
-    const unsettled = this.options.store.unsettledAdmissions(threadId);
+    const unsettled = this.options.store
+      .unsettledAdmissions(threadId)
+      .filter((admission) => admission.admittedAt < this.options.bootedAt);
     for (const admission of unsettled)
       this.options.store.settleAdmission(threadId, admission.admissionId, {
         outcome: action === 'continue' ? 'continued' : 'retried',
@@ -262,11 +335,14 @@ export class NativeOutcomeRecovery {
     admission: UnsettledAdmission,
     homes: readonly string[],
   ): NativeRecordReading & { sessionId?: string } {
-    const ids = [
-      admission.nativeSessionId,
-      admission.externalSessionId,
-      ...(this.options.boundSessions?.(threadId) ?? []),
-    ].filter((id, index, all): id is string => !!id && all.indexOf(id) === index);
+    const named = [admission.nativeSessionId, admission.externalSessionId].filter(
+      (id): id is string => !!id,
+    );
+    // The thread's bindings (every login and runtime it ran on) only stand in for the executor's own
+    // session when no native event named one; a bound session that shows no sign of this turn says nothing.
+    const bound =
+      admission.main && !named.length ? (this.options.boundSessions?.(threadId) ?? []) : [];
+    const ids = [...named, ...bound].filter((id, index, all) => all.indexOf(id) === index);
     for (const id of ids) {
       const record = locateNativeRecord(id, homes);
       if (!record) continue;
@@ -274,17 +350,16 @@ export class NativeOutcomeRecovery {
       let modified: number;
       try {
         text = readFileSync(record.path, 'utf8');
-        modified = statSync(record.path).mtimeMs;
+        modified = lastWrite(record.path);
       } catch {
         continue;
       }
-      const quiet =
-        (this.options.now?.() ?? Date.now()) - modified >=
-        (this.options.quietMs ?? NATIVE_RECORD_QUIET_MS);
+      const quietFor = (this.options.now?.() ?? Date.now()) - modified;
       const reading =
         record.kind === 'claude'
-          ? readClaudeTranscript(text, admission.admittedAt, quiet)
-          : readCodexRollout(text, admission.admittedAt, quiet);
+          ? readClaudeTranscript(text, admission.admittedAt, quietFor)
+          : readCodexRollout(text, admission.admittedAt, quietFor);
+      if (reading.outcome !== 'undecided' && reading.neverReached && !named.includes(id)) continue;
       return { ...reading, sessionId: id };
     }
     return {

@@ -17,6 +17,7 @@ import {
 } from '../src/persistence/local-session-store';
 import {
   locateNativeRecord,
+  NATIVE_TOOL_QUIET_MS,
   NativeOutcomeRecovery,
   readClaudeTranscript,
   readCodexRollout,
@@ -34,6 +35,7 @@ afterEach(() => {
   for (const fn of cleanup.splice(0).reverse()) fn();
 });
 
+const QUIET = 2 * 60_000;
 const SESSION = '5b3f8cd8-efdc-4b71-a133-3daf16a89eb4';
 const at = (ms: number) => new Date(ms).toISOString();
 const jsonl = (rows: unknown[]) => `${rows.map((row) => JSON.stringify(row)).join('\n')}\n`;
@@ -109,17 +111,49 @@ test('Claude transcript: end_turn after the admission is completed; a dangling t
     assistant(t + 40, 'end_turn'),
     { type: 'last-prompt' },
   ]);
-  expect(readClaudeTranscript(done, t, false).outcome).toBe('completed');
+  expect(readClaudeTranscript(done, t, 0).outcome).toBe('completed');
   const cut = jsonl([user(t + 10), assistant(t + 20, 'tool_use', 'tool_use'), toolResult(t + 30)]);
-  expect(readClaudeTranscript(cut, t, false).outcome).toBe('undecided');
-  expect(readClaudeTranscript(cut, t, true).outcome).toBe('interrupted');
+  expect(readClaudeTranscript(cut, t, 0).outcome).toBe('undecided');
+  expect(readClaudeTranscript(cut, t, QUIET).outcome).toBe('interrupted');
   // The previous turn's end_turn says nothing about this one: the message never arrived.
   const never = jsonl([user(t - 60_000), assistant(t - 50_000, 'end_turn')]);
-  expect(readClaudeTranscript(never, t, true)).toMatchObject({
+  expect(readClaudeTranscript(never, t, QUIET)).toMatchObject({
     outcome: 'interrupted',
     detail: 'the message never reached the native session',
   });
-  expect(readClaudeTranscript(`${cut}{"type":"assist`, t, true).outcome).toBe('interrupted');
+  expect(readClaudeTranscript(`${cut}{"type":"assist`, t, QUIET).outcome).toBe('interrupted');
+});
+
+test("Claude transcript: only this turn's own prompt opens it; a tool call with no result waits longer; sidechains don't count", () => {
+  const t = 1_000_000;
+  // The previous turn ended a moment before this one was admitted: a tool result and end_turn
+  // stamped just around the admission are not this turn's answer.
+  const previous = jsonl([user(t - 5_000), toolResult(t - 400), assistant(t - 300, 'end_turn')]);
+  expect(readClaudeTranscript(previous, t, QUIET)).toMatchObject({
+    outcome: 'interrupted',
+    neverReached: true,
+  });
+  // A long command or a subagent: the tool call has no result yet.
+  const running = jsonl([user(t + 10), assistant(t + 20, 'tool_use', 'tool_use')]);
+  expect(readClaudeTranscript(running, t, QUIET).outcome).toBe('undecided');
+  expect(readClaudeTranscript(running, t, NATIVE_TOOL_QUIET_MS).outcome).toBe('interrupted');
+  const sidechain = jsonl([
+    user(t + 10),
+    toolResult(t + 20),
+    { ...assistant(t + 30, 'end_turn'), isSidechain: true },
+  ]);
+  expect(readClaudeTranscript(sidechain, t, QUIET).outcome).toBe('interrupted');
+});
+
+test("Codex rollout: a terminal before this turn's task_started is the previous turn's", () => {
+  const t = 2_000_000;
+  const rows = jsonl([
+    { type: 'event_msg', timestamp: at(t + 5), payload: { type: 'task_complete' } },
+  ]);
+  expect(readCodexRollout(rows, t, QUIET)).toMatchObject({
+    outcome: 'interrupted',
+    neverReached: true,
+  });
 });
 
 test('Codex rollout: the last task event after the admission decides', () => {
@@ -130,14 +164,10 @@ test('Codex rollout: the last task event after the admission decides', () => {
     payload: { type },
   });
   const rows = (...types: string[]) => jsonl(types.map((type, i) => event(t + 10 + i, type)));
-  expect(readCodexRollout(rows('task_started', 'task_complete'), t, false).outcome).toBe(
-    'completed',
-  );
-  expect(readCodexRollout(rows('task_started', 'turn_aborted'), t, false).outcome).toBe(
-    'interrupted',
-  );
-  expect(readCodexRollout(rows('task_started'), t, false).outcome).toBe('undecided');
-  expect(readCodexRollout(rows('task_started'), t, true).outcome).toBe('interrupted');
+  expect(readCodexRollout(rows('task_started', 'task_complete'), t, 0).outcome).toBe('completed');
+  expect(readCodexRollout(rows('task_started', 'turn_aborted'), t, 0).outcome).toBe('interrupted');
+  expect(readCodexRollout(rows('task_started'), t, 0).outcome).toBe('undecided');
+  expect(readCodexRollout(rows('task_started'), t, QUIET).outcome).toBe('interrupted');
 });
 
 test('the native record is found in any profile home, Claude project or Codex date shard', () => {
@@ -185,7 +215,11 @@ test('a turn lost to a restart is settled from its transcript, and the next admi
     NATIVE_OUTCOME_UNRESOLVED,
   );
 
-  const recovery = new NativeOutcomeRecovery({ store, homes: () => [home] });
+  const recovery = new NativeOutcomeRecovery({
+    store,
+    homes: () => [home],
+    bootedAt: Date.now() + 1,
+  });
   expect(recovery.settle(thread.id)).toEqual({
     settled: [{ turnId: 'turn-lost', outcome: 'interrupted' }],
     undecided: [],
@@ -208,7 +242,12 @@ test('a transcript still being written stays unsettled; settleAll finds every th
   const admitted = store.unsettledAdmissions(thread.id)[0]!.admittedAt;
   writeFileSync(transcript, jsonl([user(admitted + 10), toolResult(admitted + 30)]));
   let now = Date.now();
-  const recovery = new NativeOutcomeRecovery({ store, homes: () => [home], now: () => now });
+  const recovery = new NativeOutcomeRecovery({
+    store,
+    homes: () => [home],
+    bootedAt: Date.now() + 1,
+    now: () => now,
+  });
   expect(recovery.settleAll()).toMatchObject({
     settled: [],
     undecided: [{ turnId: 'turn-lost', detail: 'the native session may still be working' }],
@@ -226,7 +265,11 @@ test('a transcript still being written stays unsettled; settleAll finds every th
 test('no record anywhere: the latest answer carries Continue / Retry, and the owner settles it', () => {
   const { store, thread, home } = setup();
   lostTurn(store, thread);
-  const recovery = new NativeOutcomeRecovery({ store, homes: () => [home] });
+  const recovery = new NativeOutcomeRecovery({
+    store,
+    homes: () => [home],
+    bootedAt: Date.now() + 1,
+  });
   expect(recovery.settle(thread.id).undecided).toEqual([
     { turnId: 'turn-lost', detail: "the native session's record was not found on this machine" },
   ]);
@@ -256,12 +299,28 @@ test('the external-session binding names the session when the turn died before a
   });
   store.recoverInterrupted();
   const transcript = join(home, 'projects', '-Users-me-repo', `${SESSION}.jsonl`);
+  // A bound session with no sign of this turn says nothing; one holding its prompt settles it.
   writeFileSync(transcript, jsonl([user(1), assistant(2, 'end_turn')]));
+  const stale = (Date.now() - 120_000) / 1000;
+  utimesSync(transcript, stale, stale);
+  const unbound = new NativeOutcomeRecovery({
+    store,
+    homes: () => [home],
+    bootedAt: Date.now() + 1,
+    boundSessions: () => [SESSION],
+  });
+  expect(unbound.settle(thread.id).undecided).toHaveLength(1);
+  const admitted = store.unsettledAdmissions(thread.id)[0]!.admittedAt;
+  writeFileSync(
+    transcript,
+    jsonl([user(1), assistant(2, 'end_turn'), user(admitted + 10), toolResult(admitted + 20)]),
+  );
   const old = (Date.now() - 120_000) / 1000;
   utimesSync(transcript, old, old);
   const recovery = new NativeOutcomeRecovery({
     store,
     homes: () => [home],
+    bootedAt: Date.now() + 1,
     boundSessions: (threadId) => (threadId === thread.id ? [SESSION] : []),
   });
   expect(recovery.settle(thread.id).settled).toEqual([
@@ -296,7 +355,11 @@ test('routes: GET says whether a message can be admitted; Continue opens it, Ret
       interventions: new InterventionLog(),
       configStore: new ConfigStore(dir),
       localStore: store,
-      nativeRecovery: new NativeOutcomeRecovery({ store, homes: () => [home] }),
+      nativeRecovery: new NativeOutcomeRecovery({
+        store,
+        homes: () => [home],
+        bootedAt: Date.now() + 1,
+      }),
     }),
   );
   const state = async () => (await app.request('/api/threads/main/recovery')).json();
@@ -322,4 +385,53 @@ test('routes: GET says whether a message can be admitted; Continue opens it, Ret
   expect(ran).toEqual(['please load more projects']);
   // Nothing left to resolve.
   expect(await (await post('continue')).json()).toEqual({ resolved: 0 });
+});
+
+test("an admission of this Foundry run is live, not lost; a subagent's writes keep the session awake", () => {
+  const { store, thread, home } = setup();
+  lostTurn(store, thread);
+  const transcript = join(home, 'projects', '-Users-me-repo', `${SESSION}.jsonl`);
+  const admitted = store.unsettledAdmissions(thread.id)[0]!.admittedAt;
+  writeFileSync(transcript, jsonl([user(admitted + 10), toolResult(admitted + 30)]));
+  const old = (Date.now() - 120_000) / 1000;
+  utimesSync(transcript, old, old);
+  // Booted before the admission: this run owns it.
+  expect(
+    new NativeOutcomeRecovery({ store, homes: () => [home], bootedAt: admitted }).settle(thread.id),
+  ).toEqual({ settled: [], undecided: [] });
+  // A subagent still writing beside the transcript.
+  const subagents = join(home, 'projects', '-Users-me-repo', SESSION, 'subagents');
+  mkdirSync(subagents, { recursive: true });
+  writeFileSync(join(subagents, 'agent-1.jsonl'), '{}\n');
+  const recovery = new NativeOutcomeRecovery({
+    store,
+    homes: () => [home],
+    bootedAt: Date.now() + 1,
+  });
+  expect(recovery.settle(thread.id).undecided).toHaveLength(1);
+  utimesSync(join(subagents, 'agent-1.jsonl'), old, old);
+  expect(recovery.settle(thread.id).settled).toEqual([
+    { turnId: 'turn-lost', outcome: 'interrupted' },
+  ]);
+});
+
+test("a decision session's lost admission is settled without touching the turn's answer", () => {
+  const { store, thread, home } = setup();
+  store.beginTurn(thread, 'turn-aux', 'route this');
+  store.registerNative(thread, {
+    schema: 1,
+    admissionId: 'adm-aux',
+    nativeOutcome: 'unknown',
+    owner: { ...nextOwner(thread, 'turn-aux'), providerSessionKey: `${thread.id}:aux:route` },
+  });
+  store.recoverInterrupted();
+  const recovery = new NativeOutcomeRecovery({
+    store,
+    homes: () => [home],
+    bootedAt: Date.now() + 1,
+  });
+  expect(store.messageIndex(thread.id).messages.at(-1)?.meta?.recovery).toBeUndefined();
+  expect(recovery.resolveByOwner(thread.id, 'continue')).toHaveLength(1);
+  expect(store.unsettledAdmissions(thread.id)).toEqual([]);
+  expect(store.messageIndex(thread.id).messages.at(-1)?.meta?.recovery).toBeUndefined();
 });

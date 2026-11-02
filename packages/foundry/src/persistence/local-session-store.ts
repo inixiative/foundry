@@ -50,6 +50,8 @@ export interface UnsettledAdmission {
   admissionId: string;
   /** The logical turn the admission ran. */
   turnId: string;
+  /** The thread's own executor session (its pool key is the thread id), not an aux session in its turn. */
+  main: boolean;
   /** When Foundry registered it, just before the native write. */
   admittedAt: number;
   nativeSessionId?: string;
@@ -2233,7 +2235,7 @@ export class LocalSessionStore {
       before === undefined &&
       latest?.actor === 'agent' &&
       latest.kind === 'error' &&
-      this.unsettledAdmissions(threadId).length
+      this.unsettledAdmissions(threadId, threadId).length
     )
       latest.meta = { ...latest.meta, recovery: 'pending' };
     return {
@@ -2519,6 +2521,13 @@ export class LocalSessionStore {
    * (`turns/native-outcome-recovery.ts`) or by the owner (`settleAdmission`).
    */
   unsettledAdmissions(threadId: string, providerSessionKey?: string): UnsettledAdmission[] {
+    // Nearly every thread has none: skip the full read unless an unknown outcome was ever recorded.
+    if (
+      !this.query(
+        "SELECT 1 FROM session_native WHERE thread_id=? AND json_extract(record, '$.nativeOutcome')='unknown' LIMIT 1",
+      ).get(threadId)
+    )
+      return [];
     const rows = this.query(
       'SELECT record, stored_at AS storedAt FROM session_native WHERE thread_id=? ORDER BY seq',
     ).all(threadId) as { record: string; storedAt: number }[];
@@ -2540,6 +2549,9 @@ export class LocalSessionStore {
       admissions.set(e.admissionId!, {
         admissionId: e.admissionId!,
         turnId: prior?.turnId ?? e.owner?.messageId ?? '',
+        // The thread's own executor session, not a decision or review session inside its turn.
+        main:
+          prior?.main ?? (!e.owner?.providerSessionKey || e.owner.providerSessionKey === threadId),
         admittedAt: prior?.admittedAt ?? row.storedAt,
         nativeSessionId: e.nativeSessionId ?? prior?.nativeSessionId,
         externalSessionId: e.externalSessionId ?? prior?.externalSessionId,
@@ -2608,7 +2620,8 @@ export class LocalSessionStore {
     for (const row of this.query(
       `SELECT turn_id AS turnId, record FROM session_native WHERE thread_id=? AND turn_id IN (${turnIds
         .map(() => '?')
-        .join(',')}) AND json_extract(record, '$.terminal.type')='recovered' ORDER BY seq`,
+        .join(',')}) AND json_extract(record, '$.terminal.type')='recovered'
+        AND coalesce(json_extract(record, '$.owner.providerSessionKey'), thread_id)=thread_id ORDER BY seq`,
     ).all(threadId, ...turnIds) as Array<{ turnId: string; record: string }>) {
       const e = JSON.parse(row.record) as NativeEvidence;
       const by = e.terminal?.reason?.split(':')[0];
