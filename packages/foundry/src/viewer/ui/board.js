@@ -46,6 +46,7 @@ import {
   subagentParentOf,
   threadState,
 } from './thread-status.js';
+import { ThreadActions, threadTree } from './thread-tree.js';
 
 const COLUMNS = [
   { cat: 'problem', title: 'Problems' },
@@ -57,7 +58,28 @@ const COLUMNS = [
 const OPEN = (t) => !isClosedThread(t);
 
 /** The board's filter: 'all', 'global', 'forge', 'this', or 'project:<id>'. */
-function Card({ thread, state }) {
+/** "12 min", "3 h", "2 d": how long since the thread last moved. */
+function age(at) {
+  if (!at) return null;
+  const minutes = Math.max(0, Math.round((Date.now() - at) / 60_000));
+  if (minutes < 1) return 'just now';
+  if (minutes < 60) return `${minutes} min`;
+  if (minutes < 60 * 24) return `${Math.round(minutes / 60)} h`;
+  return `${Math.round(minutes / 1440)} d`;
+}
+
+/** Whose machine it runs on, in the badge's one place: this machine or another of yours. */
+function MachineBadge({ thread }) {
+  if (otherMachine(thread)) return html`<${DeviceBadge} thread=${thread} />`;
+  return html`<span class="device-badge is-here" title="Runs on this machine">this machine</span>`;
+}
+
+/**
+ * A card, as in concept-v4: project on top with the machine badge and ⋯ (Open, Another thread for
+ * this, Pause, Archive …), the name, one status line (icon · status · age, the rail's line 2), what
+ * it asks, one-tap answers, and its subagents folded in.
+ */
+function Card({ thread, state, subagents = [] }) {
   const pending = prompts.value.filter((p) => p.threadId === thread.threadId);
   const ask = pending[0];
   const project = thread.meta?.projectId
@@ -76,14 +98,30 @@ function Card({ thread, state }) {
           { id: 'reject', label: 'Reject' },
         ]
       : [];
+  const node = threadTree([thread])[0];
+  const since = age(thread.meta?.lastActiveAt);
+  const done = subagents.filter(
+    (c) => categoryOf(threadState(c, { prompts: [] })) === 'done',
+  ).length;
   return html`<article class="board-card" data-thread=${thread.threadId}>
     <div class="board-card-head">
-      <${StatusIcon} state=${state} />
-      <span class="board-card-kind">${statusText(thread, state) || (s?.kind ?? s?.label)}</span>
       <span class="board-card-project">${project}</span>
-      <${DeviceBadge} thread=${thread} />
+      <span class="board-card-spacer"></span>
+      <${MachineBadge} thread=${thread} />
+      <${ThreadActions} thread=${node} lead=${[
+        { label: 'Open', onClick: open },
+        {
+          label: 'Another thread for this',
+          onClick: () => createThread({ description: `Follow-up to: ${threadName(thread)}` }),
+        },
+      ]} />
     </div>
     <button class="board-card-title" onClick=${open} title="Open the thread">${threadName(thread)}</button>
+    <div class="board-card-status">
+      <${StatusIcon} state=${state} />
+      <span class="board-card-kind">${statusText(thread, state) || (s?.kind ?? s?.label)}</span>
+      ${since ? html`<span class="board-card-age">· ${since}</span>` : null}
+    </div>
     ${ask ? html`<p class="board-card-ask">${ask.message}</p>` : null}
     ${
       choices.length
@@ -93,11 +131,11 @@ function Card({ thread, state }) {
           )}</div>`
         : null
     }
-    <div class="board-card-foot">
-      <button class="rp-link" onClick=${open}>Open ›</button>
-      <button class="rp-link" onClick=${() => createThread({ description: `Follow-up to: ${threadName(thread)}` })}>Another thread for this</button>
-      <button class="rp-link" onClick=${() => executeAction('thread:archive', thread.threadId)}>Close</button>
-    </div>
+    ${
+      subagents.length
+        ? html`<div class="board-card-subs">${subagents.length} subagent${subagents.length === 1 ? '' : 's'}${done ? ` · ${done} done` : ''}</div>`
+        : null
+    }
   </article>`;
 }
 
@@ -168,6 +206,8 @@ const FORGE = '__forge';
 export function Board() {
   const chips = boardFilter.value;
   const [showQuiet, setShowQuiet] = useState(false);
+  // All · Yours · Shared (another party is a member), as the rail splits them.
+  const [zone, setZone] = useState('all');
   useEffect(() => {
     loadMachineProfile();
   }, []);
@@ -181,8 +221,11 @@ export function Board() {
     kingdom: (t) => projectKingdom(t.meta?.projectId),
     device: (t) => otherMachine(t)?.deviceName ?? machine,
   };
-  const open = allThreads.value.filter((t) => showQuiet || OPEN(t));
-  const threads = open.filter((t) => passesChips(chips, valuesOf, t));
+  // Subagents fold into their parent's card; the counts are top-level threads only.
+  const open = allThreads.value.filter((t) => (showQuiet || OPEN(t)) && !subagentParentOf(t.meta));
+  const isShared = (t) => (t.conversation?.members ?? 0) > 0;
+  const inZone = (t) => zone === 'all' || (zone === 'shared') === isShared(t);
+  const threads = open.filter((t) => inZone(t) && passesChips(chips, valuesOf, t));
   const place = (t) => {
     const children = allThreads.value.filter((c) => subagentParentOf(c.meta) === t.threadId);
     const state = threadState(t, {
@@ -191,7 +234,7 @@ export function Board() {
         (c) => categoryOf(threadState(c, { prompts: [] })) === 'working',
       ),
     });
-    return { thread: t, state, cat: categoryOf(state) };
+    return { thread: t, state, cat: categoryOf(state), subagents: children };
   };
   const placed = threads.map(place);
   const forge = !!chips.project?.has(FORGE);
@@ -222,7 +265,7 @@ export function Board() {
     },
     {
       id: 'device',
-      label: 'Device',
+      label: 'Machine',
       options: [...new Set([machine, ...open.map(valuesOf.device)])].map((d) =>
         option('device', d, d),
       ),
@@ -232,16 +275,24 @@ export function Board() {
   return html`<div class="board">
     <header class="board-band">
       <h2 class="board-title">Board</h2>
-      <span class="board-device-note" title="A thread on another of your machines carries a device badge">This machine: ${machine}</span>
-    </header>
-    <div class="board-filter-row">
+      <span class="board-zone" role="group" aria-label="Whose threads">
+        ${[
+          ['all', 'All', open.length],
+          ['yours', 'Yours', open.filter((t) => !isShared(t)).length],
+          ['shared', 'Shared', open.filter(isShared).length],
+        ].map(
+          ([id, label, n]) =>
+            html`<button key=${id} type="button" aria-pressed=${zone === id} onClick=${() => setZone(id)}>${label}<span class="board-zone-count">${n}</span></button>`,
+        )}
+      </span>
+      <span class="board-filter-label">Filter</span>
       <${FilterChips} groups=${groups} selected=${chips} onChange=${(next) => {
         boardFilter.value = next;
       }}>
         <button type="button" class="board-quiet-toggle" aria-pressed=${showQuiet} title="Paused, idle and archived threads"
           onClick=${() => setShowQuiet(!showQuiet)}>${showQuiet ? 'Hide' : 'Show'} quiet · ${quietCount}</button>
       <//>
-    </div>
+    </header>
     <${Incoming} />
     <div class="board-columns">
       ${columns.map((col) => {
@@ -253,12 +304,12 @@ export function Board() {
         const forgeHere = forge && col.cat === (selfChatSending.value ? 'working' : null);
         return html`<section key=${col.cat} class="board-column board-column--${col.cat}">
           <h3 class="board-column-head">
-            <span class="board-column-swatch"></span>${col.title}
+            <span class="board-column-swatch"></span><span class="board-column-title">${col.title}</span>
             <span class="rail-pane-count">${cards.length + (forgeHere ? 1 : 0)}</span>
           </h3>
           <div class="board-frame">
             ${forgeHere ? html`<${ForgeMasterCard} />` : null}
-            ${cards.map((p) => html`<${Card} key=${p.thread.threadId} thread=${p.thread} state=${p.state} />`)}
+            ${cards.map((p) => html`<${Card} key=${p.thread.threadId} thread=${p.thread} state=${p.state} subagents=${p.subagents} />`)}
             ${!cards.length && !forgeHere ? html`<div class="rail-empty">Nothing here.</div>` : null}
           </div>
         </section>`;

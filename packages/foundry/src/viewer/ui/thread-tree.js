@@ -87,7 +87,8 @@ function InactiveFold({ count, label, defaultOpen = false, children }) {
 // Thread actions — overflow menu per thread (mirrors MessageActions)
 // ---------------------------------------------------------------------------
 
-function ThreadActions({ thread }) {
+/** A thread's ⋯ menu. `lead` items (the Board's Open, Another thread for this) come first. */
+export function ThreadActions({ thread, lead = [] }) {
   const [open, setOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [at, setAt] = useState(null);
@@ -129,6 +130,7 @@ function ThreadActions({ thread }) {
       ${
         open
           ? html`<div class="thread-action-menu" role="menu" style=${at ? `position:fixed;left:${at.left}px;top:${at.top}px;right:auto;min-width:240px` : ''} onClick=${(e) => e.stopPropagation()}>
+        ${lead.map((item) => html`<button key=${item.label} role="menuitem" onClick=${local(item.onClick)}>${item.label}</button>`)}
         ${canPause ? html`<button role="menuitem" onClick=${run('thread:pause')}>Pause</button>` : null}
         ${canResume ? html`<button role="menuitem" onClick=${run('thread:resume')}>Resume</button>` : null}
         ${!isArchived ? html`<button role="menuitem" onClick=${run('thread:archive')}>Archive</button>` : null}

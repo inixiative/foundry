@@ -142,10 +142,10 @@ test('threads on another machine are badged and filterable; a recorded plan fill
       .waitFor();
     await board
       .getByRole('toolbar', { name: 'Filters' })
-      .getByRole('button', { name: /^Device/ })
+      .getByRole('button', { name: /^Machine/ })
       .click();
     await page
-      .getByRole('group', { name: 'Device' })
+      .getByRole('group', { name: 'Machine' })
       .getByRole('button', { name: /^studio Mac/ })
       .click();
     await board.locator('.board-card', { hasText: 'Rebuild regions' }).waitFor();
