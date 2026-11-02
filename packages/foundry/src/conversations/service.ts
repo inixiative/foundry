@@ -226,6 +226,16 @@ export class ConversationService implements ConversationWrapper {
     const closed = this.closedReason(thread);
     if (closed || !thread) return threadRefused(closed ?? 'unknown_thread');
     this.noteRevision(signetId, frame.acceptedRevision);
+    // A person's aside (M6): out of the log, to every person and no agent; not admitted as a post.
+    if (input.aside) {
+      const recorded = this.aside(
+        thread.id,
+        { member: { kind: 'signet', id: signetId }, displayName: frame.member.displayName },
+        input.text,
+        input.postId,
+      );
+      return threadResult({ accepted: true as const, ...recorded });
+    }
     return this.admitPost(thread, {
       member: { kind: 'signet', id: signetId },
       displayName: frame.member.displayName,
@@ -1198,7 +1208,7 @@ export class ConversationService implements ConversationWrapper {
   }
 
   /** The thread's asides, oldest first, each with whether it was promoted. */
-  private asides(threadId: string) {
+  asides(threadId: string) {
     const promoted = new Set(
       this.deps.store.phasesOf(threadId, 'aside-promoted').map((row) => String(row.record.asideId)),
     );
@@ -1208,8 +1218,7 @@ export class ConversationService implements ConversationWrapper {
         id: row.id,
         journalSeq: this.deps.store.phaseSeq(row.id) ?? 0,
         at: new Date(row.storedAt).toISOString(),
-        member: aside.member,
-        displayName: aside.displayName,
+        member: { ...aside.member, name: aside.displayName },
         text: aside.text,
         promoted: promoted.has(row.id),
       };
@@ -1232,7 +1241,8 @@ export class ConversationService implements ConversationWrapper {
         held: number;
         members: number;
         localMembers: number;
-        asides: number;
+        asides: ReturnType<ConversationService['asides']>;
+        asidesSinceYourPost: number;
       }
     | undefined {
     const record = this.deps.store.conversation<ConversationRecord>(threadId);
@@ -1247,8 +1257,9 @@ export class ConversationService implements ConversationWrapper {
       ).length,
       // The owner's own agents in the thread (Codex, a second Claude): members, never "shared".
       localMembers: (record.locals ?? []).length,
-      // Others' asides since the owner last wrote: decisions made aside get noticed (M6).
-      asides: this.asidesSinceOwnerPost(threadId),
+      // The viewer's aside view and its "N asides since your last post" line (M6).
+      asides: this.asides(threadId),
+      asidesSinceYourPost: this.asidesSinceOwnerPost(threadId),
     };
   }
 
@@ -1297,7 +1308,7 @@ export class ConversationService implements ConversationWrapper {
       })),
       posts,
       asides: this.asides(threadId),
-      asidesSinceOwnerPost: this.asidesSinceOwnerPost(threadId),
+      asidesSinceYourPost: this.asidesSinceOwnerPost(threadId),
       held: this.heldPending(threadId).map((held) => ({
         ...held,
         promptId: this.open.get(held.heldId)?.promptId ?? null,

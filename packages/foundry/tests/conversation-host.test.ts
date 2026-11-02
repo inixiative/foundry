@@ -183,7 +183,7 @@ async function host(
   const post = (
     signet: HostedSignet,
     text: string,
-    extra: { postId?: string; inReplyTo?: string; threadId?: string } = {},
+    extra: { postId?: string; inReplyTo?: string; threadId?: string; aside?: true } = {},
   ) =>
     request({
       type: 'thread.request',
@@ -194,6 +194,7 @@ async function host(
         postId: extra.postId ?? crypto.randomUUID(),
         text,
         ...(extra.inReplyTo ? { inReplyTo: extra.inReplyTo } : {}),
+        ...(extra.aside ? { aside: true } : {}),
       },
     });
   const read = (signet: HostedSignet, afterSeq?: number) =>
@@ -1563,8 +1564,9 @@ test("a member's aside counts until the owner writes, and promoting it posts it 
     { member: { kind: 'signet', id: jobco.signetId }, displayName: 'JobCo' },
     'can we talk price later?',
   );
-  expect(h.conversations.view('main').asidesSinceOwnerPost).toBe(1);
-  expect(h.conversations.summary('main')?.asides).toBe(1);
+  expect(h.conversations.view('main').asidesSinceYourPost).toBe(1);
+  expect(h.conversations.summary('main')?.asidesSinceYourPost).toBe(1);
+  expect(h.conversations.summary('main')?.asides[0]?.member).toMatchObject({ name: 'JobCo' });
   const aside = h.conversations.view('main').asides[0]!;
   const promoted = await h.route(`/api/threads/main/conversation/asides/${aside.id}/promote`);
   expect(promoted.status).toBe(200);
@@ -1577,7 +1579,7 @@ test("a member's aside counts until the owner writes, and promoting it posts it 
   );
   // The owner writing clears the count.
   await h.ownerSays('noted');
-  expect(h.conversations.summary('main')?.asides).toBe(0);
+  expect(h.conversations.summary('main')?.asidesSinceYourPost).toBe(0);
 });
 
 test("the owner's own aside, promoted, becomes his message to the thread", async () => {
@@ -1588,4 +1590,26 @@ test("the owner's own aside, promoted, becomes his message to the thread", async
     200,
   );
   await until(() => h.executed.some((p) => p.includes('ship it Friday')), 'host agent took it');
+});
+
+test("a teammate's person sends an aside through thread.prompt: recorded once, seen by people, starting no turn", async () => {
+  const h = await host();
+  const jobco = await h.member('JobCo');
+  const watcher = await h.member('Watcher');
+  const before = h.executed.length;
+  const postId = crypto.randomUUID();
+  const first = await h.post(jobco, 'off the record: budget is tight', { aside: true, postId });
+  expect(first).toMatchObject({ ok: true, result: { accepted: true, duplicate: false } });
+  expect(
+    await h.post(jobco, 'off the record: budget is tight', { aside: true, postId }),
+  ).toMatchObject({ ok: true, result: { duplicate: true } });
+  // Another person sees it as an aside; it is no post, and no agent took a turn for it.
+  const entries = (await h.read(watcher)).result.entries;
+  expect(entries.filter((e: any) => e.kind === 'aside').map((e: any) => e.text)).toEqual([
+    'off the record: budget is tight',
+  ]);
+  expect(h.conversations.view('main').posts).toEqual([]);
+  h.conversations.pump('main');
+  expect(h.executed.length).toBe(before);
+  expect(h.conversations.summary('main')?.asidesSinceYourPost).toBe(1);
 });
