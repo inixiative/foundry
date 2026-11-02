@@ -1,17 +1,4 @@
-/* The board's filter row (shared FilterChips, Show quiet at its right end) and its device note. */
-.board-filter-row {
-  padding: 0 16px 8px;
-}
-.board-filter-row .board-quiet-toggle {
+/* The board's filter row sits in its title band; Show quiet stays at the end of the chips. */
+.board-band .board-quiet-toggle {
   margin-left: 0;
-}
-.board-device-note {
-  margin-left: auto;
-  color: var(--text-dim);
-  font-size: 12px;
-}
-/* Title and device note on one line, now that the filters sit in their own row. */
-.board-band {
-  flex-direction: row;
-  align-items: baseline;
 }

@@ -202,7 +202,7 @@ test('Plan shows the about and the checklist, a step opens its turn; Work shows 
     await work
       .locator('.work-section', { hasText: 'No Signet is in use on this thread.' })
       .waitFor();
-    // Larger steps the panel wider for diffs (normal → wide → wider, then no larger); smaller steps back.
+    // Larger steps the panel wider for diffs (normal → wide, then no larger); smaller steps back.
     const width = () =>
       page.locator('.panel-right').evaluate((el: Element) => el.getBoundingClientRect().width);
     const normal = await width();
@@ -213,11 +213,9 @@ test('Plan shows the about and the checklist, a step opens its turn; Work shows 
         (document.querySelector('.panel-right')?.getBoundingClientRect().width ?? 0) > n,
       normal,
     );
-    await larger.click();
-    await page.waitForFunction(() => location.hash.includes('rsize=wider'));
+    await page.waitForFunction(() => location.hash.includes('rsize=wide'));
     expect(await larger.count()).toBe(0);
     const smaller = page.getByRole('button', { name: 'Make the right panel smaller' });
-    await smaller.click();
     await smaller.click();
     await page.waitForFunction(
       (n: number) =>

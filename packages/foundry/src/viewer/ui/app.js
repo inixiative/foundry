@@ -410,7 +410,7 @@ function App() {
         <div class="panel-center" id="workspace-conversation" tabIndex="0">
           ${
             forge
-              ? html`<div class="forge-master"><${SelfChatPane} docked=${false} /></div>`
+              ? html`<div class="forge-master"><${SelfChatPane} /></div>`
               : inbox
                 ? html`<${FeedbackInbox} />`
                 : html`

@@ -5,15 +5,15 @@
  */
 /**
  * Forge Master — the persistent thread for talking to this Foundry about
- * itself. It opens from the workspace sidebar and sits beside every settings
- * page, where it knows what the operator is viewing (scope/section/focus).
+ * itself. It opens from the workspace sidebar, and on a settings page from the
+ * header (closed by default, ✕ or Esc closes it, Aron 2026-11-02), where it
+ * knows what the operator is viewing (scope/section/focus).
  * Uses the default executor model.
  */
 
 import { html, signal, useEffect, useRef, useState } from './lib.js';
 import { showToast } from './store.js';
 
-export const selfChatCollapsed = signal(false);
 export const selfChatMessages = signal([]);
 export const selfChatSending = signal(false);
 
@@ -72,8 +72,8 @@ function describeFocus(focus) {
   return joined;
 }
 
-export function SelfChatPane({ focus, docked = true }) {
-  const collapsed = selfChatCollapsed.value;
+/** `onClose`, beside a settings page: a ✕ in the header and Esc close it. */
+export function SelfChatPane({ focus, onClose }) {
   const messages = selfChatMessages.value;
   const sending = selfChatSending.value;
   const [draft, setDraft] = useState('');
@@ -103,19 +103,20 @@ export function SelfChatPane({ focus, docked = true }) {
     }
   };
 
-  if (docked && collapsed) {
-    return html`
-      <div class="settings-chat collapsed">
-        <button
-          class="settings-chat-toggle"
-          onClick=${() => {
-            selfChatCollapsed.value = false;
-          }}
-          title="Expand Forge Master"
-        >Forge Master</button>
-      </div>
-    `;
-  }
+  useEffect(() => {
+    if (!onClose) return undefined;
+    const onKey = (e) => {
+      if (e.key !== 'Escape') return;
+      // An open dialog takes Esc first.
+      if (document.querySelector('[role="dialog"], [aria-modal="true"]')) return;
+      // Esc in another field (a setting being edited) stays with that field.
+      if (e.target.closest?.('input, select, [contenteditable]')) return;
+      if (e.target.tagName === 'TEXTAREA' && !e.target.closest('.settings-chat')) return;
+      onClose();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onClose]);
 
   const focusDesc = describeFocus(focus);
 
@@ -125,15 +126,9 @@ export function SelfChatPane({ focus, docked = true }) {
         <span class="settings-chat-title">Forge Master</span>
         <span class="settings-chat-meta">${messages.length} msgs</span>
         ${
-          docked
-            ? html`<button
-          class="settings-chat-toggle"
-          style="writing-mode: horizontal-tb; transform: none; padding: 2px 6px;"
-          onClick=${() => {
-            selfChatCollapsed.value = true;
-          }}
-          title="Collapse"
-        >\u203A</button>`
+          onClose
+            ? html`<button type="button" class="settings-chat-close" onClick=${onClose}
+                aria-label="Close Forge Master" title="Close (Esc)">✕</button>`
             : null
         }
       </div>

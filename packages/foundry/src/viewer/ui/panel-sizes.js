@@ -5,7 +5,7 @@
  */
 /**
  * The side panels' sizes, in steps: left hidden · strip · normal · wide; right hidden · icons ·
- * normal · wide · wider. One symbol makes a side larger and one smaller, at every step; a control
+ * normal · wide (the widest step was dropped, Aron 11-02). One symbol makes a side larger and one smaller, at every step; a control
  * disappears at its side's limit, and a strip shows only "larger". A hidden side keeps its grid
  * column at 0 width (the other panels never shift), with a slim restore tab mid-height on that edge.
  * `projectSidebarOpen` / `detailDrawerOpen` stay the "at least normal" view of these levels, so the
@@ -16,9 +16,9 @@ import { effect, html } from './lib.js';
 import { detailDrawerOpen, leftSize, projectSidebarOpen, rightSize } from './store.js';
 
 export const LEFT_LEVELS = ['hidden', 'strip', 'normal', 'wide'];
-export const RIGHT_LEVELS = ['hidden', 'icons', 'normal', 'wide', 'wider'];
+export const RIGHT_LEVELS = ['hidden', 'icons', 'normal', 'wide'];
 const LEFT_WIDTH = { hidden: 0, strip: 32, normal: 272, wide: 360 };
-const RIGHT_WIDTH = { hidden: 0, icons: 44, normal: 440, wide: 560, wider: 760 };
+const RIGHT_WIDTH = { hidden: 0, icons: 44, normal: 440, wide: 560 };
 
 export { leftSize, rightSize };
 

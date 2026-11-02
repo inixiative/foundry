@@ -16,7 +16,7 @@ import { startViewer } from '../../src/viewer/server';
 import { type ReleaseStep, releaseAll } from '../helpers/release-all';
 
 // Panel sizes step: [ { for the left (hidden · strip · normal · wide), ] } for the right (hidden ·
-// icons · normal · wide · wider). A hidden side keeps a 0-width column with a restore tab; a strip
+// icons · normal · wide). A hidden side keeps a 0-width column with a restore tab; a strip
 // shows only "larger"; a control disappears at its side's limit.
 const { chromium } = createRequire(import.meta.url)(
   process.env.FOUNDRY_QA_PLAYWRIGHT ?? 'playwright',
