@@ -13,8 +13,10 @@
 
 import { html, useEffect, useState } from './lib.js';
 // settings.js imports this module's settings card; the signal is read at render, so the cycle is safe.
+import { SettingRow } from './setting-row.js';
 import { settingsConfig } from './settings.js';
 import { activeThreadId, prompts, resolvePrompt, showToast, threadData } from './store.js';
+import { layeredActions, sourceOf } from './thread-settings.js';
 
 const FLOORS = [
   ['talk', 'Talk'],
@@ -283,88 +285,94 @@ export function ParticipantsPanel() {
   </section>`;
 }
 
-const LAYER = { default: 'the default', repository: 'the repository', settings: 'your settings' };
+/** A conversations field: its path under `conversations`, its label, and how to read its value. */
+const CONVERSATION_FIELDS = [
+  ['floor', 'floor', 'Floor', 'Who may post when more than your agent is in a thread.'],
+  [
+    'maxAgentTurns',
+    'maxAgentTurns',
+    'Agent turns before a pause',
+    'Other parties pause after this many turns in a row without you.',
+  ],
+  [
+    'holdSeconds',
+    'conch.holdSeconds',
+    'Conch hold (seconds)',
+    'How long the conch stays with whoever holds it.',
+  ],
+  [
+    'agentMayPass',
+    'conch.agentMayPass',
+    'The agent may pass the conch',
+    'Off: only people pass the conch.',
+  ],
+];
+
+const at = (root, path) => path.split('.').reduce((node, key) => node?.[key], root);
 
 /**
- * A project's `conversations` setting (§4.6): each field with the layer it comes from, set for me
- * (this machine's project settings, which win) or for everyone (the repository's committed file).
+ * A project's `conversations` setting (§4.6), one row per field: the value in effect, where it
+ * comes from (yours over the repository's over the default) and ⋯ to set it for me or for everyone,
+ * through /api/projects/:id/setting like every project setting.
  */
 export function ProjectConversations({ projectId }) {
   const [state, setState] = useState(undefined);
-  const [draft, setDraft] = useState(null);
-  // Only the fields the owner changed are written: the rest keep coming from their layer.
-  const [touched, setTouched] = useState(new Set());
-  const change = (field, next) => {
-    setDraft(next);
-    setTouched(new Set([...touched, field]));
-  };
-  const base = `/api/projects/${encodeURIComponent(projectId)}/conversations`;
+  const [busy, setBusy] = useState(false);
+  const base = `/api/projects/${encodeURIComponent(projectId)}`;
   const load = () =>
-    fetch(base)
+    fetch(`${base}/conversations`)
       .then((r) => (r.ok ? r.json() : null))
-      .then((body) => {
-        setState(body);
-        if (body) setDraft(body.settings);
-        setTouched(new Set());
-      })
+      .then(setState)
       .catch(() => setState(null));
   // biome-ignore lint/correctness/useExhaustiveDependencies: load once per project.
   useEffect(() => {
     load();
   }, [projectId]);
   if (state === undefined) return html`<div class="settings-empty">Reading conversations…</div>`;
-  if (state === null || !draft)
+  if (state === null)
     return html`<div class="settings-empty">The conversations setting could not be read.</div>`;
-  const save = async (scope, clear) => {
-    // Merged over what that layer already says, so saving one field never pins the others.
-    const layer = (scope === 'me' ? state.mine : state.repository) ?? {};
-    const conch = {
-      ...layer.conch,
-      ...(touched.has('holdSeconds') ? { holdSeconds: Number(draft.conch.holdSeconds) } : {}),
-      ...(touched.has('agentMayPass') ? { agentMayPass: draft.conch.agentMayPass } : {}),
-    };
-    const value = {
-      ...layer,
-      ...(touched.has('floor') ? { floor: draft.floor } : {}),
-      ...(touched.has('maxAgentTurns') ? { maxAgentTurns: Number(draft.maxAgentTurns) } : {}),
-      ...(Object.keys(conch).length ? { conch } : {}),
-    };
-    const res = await fetch(base, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ scope, value: clear ? null : value }),
-    });
-    if (!res.ok) showToast((await res.json()).error || 'Not saved', 'error');
-    else {
-      showToast(scope === 'me' ? 'Saved for you' : 'Saved for everyone', 'ok');
-      load();
+  const save = async (scope, values) => {
+    setBusy(true);
+    try {
+      const res = await fetch(`${base}/setting`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scope, values }),
+      });
+      if (!res.ok) return showToast((await res.json()).error || 'Not saved', 'error');
+      const cleared = Object.values(values).every((v) => v === null);
+      showToast(cleared ? 'Reset' : scope === 'me' ? 'Saved for you' : 'Saved for everyone', 'ok');
+      await load();
+    } finally {
+      setBusy(false);
     }
   };
-  const from = (field) => html`<span class="settings-desc">from ${LAYER[state.from[field]]}</span>`;
-  return html`<div class="settings-card conversation-settings" data-setting="conversations">
-    <div class="settings-card-header">
-      <span class="settings-card-title">Conversations</span>
-      <span class="settings-desc">How members of this project's conversations take turns.</span>
-    </div>
+  const row = ([field, sub, label, help]) => {
+    const path = `conversations.${sub}`;
+    const value = at(state.settings, sub);
+    const layer = {
+      mine: at(state.mine, sub) ?? null,
+      repository: at(state.repository, sub) ?? null,
+      from: state.from[field],
+      personalOnly: null,
+    };
+    const control =
+      field === 'floor'
+        ? html`<select class="settings-input small" aria-label=${label} disabled=${busy} value=${value}
+            onChange=${(e) => save('me', { [path]: e.target.value })}>
+            ${FLOORS.map(([id, text]) => html`<option key=${id} value=${id}>${text}</option>`)}
+          </select>`
+        : field === 'agentMayPass'
+          ? html`<input type="checkbox" aria-label=${label} disabled=${busy} checked=${value}
+              onChange=${(e) => save('me', { [path]: e.target.checked })} />`
+          : html`<input class="settings-input small" type="number" aria-label=${label} disabled=${busy}
+              min=${field === 'holdSeconds' ? 10 : 1} max=${field === 'maxAgentTurns' ? 100 : undefined} value=${value}
+              onChange=${(e) => save('me', { [path]: Number(e.target.value) })} />`;
+    return html`<${SettingRow} key=${field} path=${path} label=${label} help=${help} busy=${busy}
+      source=${sourceOf(layer)} actions=${layeredActions(layer, save, { [path]: value })}>${control}</${SettingRow}>`;
+  };
+  return html`<section class="settings-card setting-rows conversation-settings" data-setting="conversations">
     ${state.repositoryError ? html`<p class="settings-desc">${state.repositoryFile}: ${state.repositoryError}</p>` : null}
-    <label>Floor
-      <select value=${draft.floor} onChange=${(e) => change('floor', { ...draft, floor: e.target.value })}>
-        ${FLOORS.map(([id, label]) => html`<option value=${id}>${label}</option>`)}
-      </select> ${from('floor')}</label>
-    <label>Agent turns before a pause
-      <input type="number" min="1" max="100" value=${draft.maxAgentTurns}
-        onInput=${(e) => change('maxAgentTurns', { ...draft, maxAgentTurns: e.target.value })} /> ${from('maxAgentTurns')}</label>
-    <label>Conch hold (seconds)
-      <input type="number" min="10" value=${draft.conch.holdSeconds}
-        onInput=${(e) => change('holdSeconds', { ...draft, conch: { ...draft.conch, holdSeconds: e.target.value } })} /> ${from('holdSeconds')}</label>
-    <label><input type="checkbox" checked=${draft.conch.agentMayPass}
-        onChange=${(e) => change('agentMayPass', { ...draft, conch: { ...draft.conch, agentMayPass: e.target.checked } })} />
-      The agent may pass the conch ${from('agentMayPass')}</label>
-    <div class="settings-card-actions">
-      <button class="action-btn" disabled=${!touched.size} onClick=${() => save('me')}>Set this for me</button>
-      <button class="action-btn" disabled=${!touched.size} onClick=${() => save('everyone')} title=${`Writes ${state.repositoryFile}`}>Set this for everyone</button>
-      ${state.mine ? html`<button class="action-btn" onClick=${() => save('me', true)}>Drop my override</button>` : null}
-    </div>
-    ${state.mine ? html`<p class="settings-desc">Your settings override the repository's for: ${Object.keys(state.mine).join(', ')}.</p>` : null}
-  </div>`;
+    ${CONVERSATION_FIELDS.map(row)}
+  </section>`;
 }

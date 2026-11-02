@@ -9,6 +9,7 @@ import { toolUseLoop } from '../agents/tool-loop';
 import { enabledProviderIds } from '../models/vendors';
 import type { ReadinessNativeCli } from '../readiness';
 import type { AgentSettingsConfig, FoundryConfig, LayerSettingsConfig } from './config';
+import { effectiveProject } from './config-resolve';
 import type { SelfChatFocus, SelfChatMessage } from './foundry-self-chat';
 
 // ---------------------------------------------------------------------------
@@ -405,7 +406,7 @@ export class AIAssist {
   private _focusDetail(config: FoundryConfig, focus: SelfChatFocus): string {
     if (!focus.focusKind || !focus.focusId) return '';
     const { focusKind, focusId } = focus;
-    const project = focus.projectId ? config.projects?.[focus.projectId] : null;
+    const project = focus.projectId ? effectiveProject(config, focus.projectId) : null;
 
     let target: unknown;
     if (focusKind === 'source') {

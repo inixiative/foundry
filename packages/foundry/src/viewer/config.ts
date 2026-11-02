@@ -12,6 +12,8 @@ import {
   type Harness,
   type MemorySelectionPolicy,
   newId,
+  registryModel,
+  SUBSCRIPTION_WORKER_MODELS,
   type VersionEntry,
   type VersionLog,
   validateMemorySelection,
@@ -91,7 +93,9 @@ export function steerOnSend(config: FoundryConfig, projectId?: string): boolean 
 /** What a thread in `projectId` becomes when its branch merges: project, then Foundry-wide, then `done`. */
 export function threadOnMerge(config: FoundryConfig, projectId?: string): ThreadOnMerge {
   return (
-    (projectId ? config.projects?.[projectId]?.threadOnMerge : undefined) ??
+    (projectId && config.projects?.[projectId]
+      ? effectiveProject(config, projectId)?.threadOnMerge
+      : undefined) ??
     config.threadOnMerge ??
     'done'
   );
@@ -101,6 +105,7 @@ import type { ReasoningEffort } from '@inixiative/foundry-core';
 import { writeFileAtomic } from '../client/private-file';
 import type { ToolRules } from '../turns/tool-gate';
 import {
+  effectiveProject,
   type ResolvedLayerDefinition,
   type ResolvedProjectView,
   readRepositorySettings,
@@ -945,20 +950,29 @@ function validateAgentKinds(owner: string, agents: Record<string, Partial<AgentS
  * from a project's `.foundry/regions` when its chorus is enabled, are the only chorus. A Warden left in
  * settings is refused by name, with the fix, never silently dropped (no alias, no migration).
  */
+function handNamedWardens(where: string, agents: Record<string, unknown> | undefined): string[] {
+  const found: string[] = [];
+  for (const [id, agent] of Object.entries(agents ?? {})) {
+    const a = (agent ?? {}) as { kind?: string; flowRole?: string };
+    if (a.flowRole === 'domain-advising' || a.kind === 'domain-librarian' || a.kind === 'decider')
+      found.push(`${where}.${id} is a hand-named Warden (${a.kind ?? a.flowRole})`);
+  }
+  return found;
+}
+
 function refuseHandNamedWardens(config: FoundryConfig) {
   // Every offender in one error, so a settings file holding a whole roster is fixed in one pass.
-  const found: string[] = [];
-  const scan = (where: string, agents: Record<string, unknown> | undefined) => {
-    for (const [id, agent] of Object.entries(agents ?? {})) {
-      const a = (agent ?? {}) as { kind?: string; flowRole?: string };
-      if (a.flowRole === 'domain-advising' || a.kind === 'domain-librarian' || a.kind === 'decider')
-        found.push(`${where}.${id} is a hand-named Warden (${a.kind ?? a.flowRole})`);
-    }
-  };
-  scan('agents', config.agents);
-  for (const [pid, project] of Object.entries(config.projects ?? {}))
-    scan(`projects.${pid}.agents`, project?.agents);
+  const found = [
+    ...handNamedWardens('agents', config.agents),
+    ...Object.entries(config.projects ?? {}).flatMap(([pid, project]) =>
+      handNamedWardens(`projects.${pid}.agents`, project?.agents),
+    ),
+  ];
   if (!found.length) return;
+  throwHandNamed(found);
+}
+
+function throwHandNamed(found: string[]): never {
   throw Error(
     `${found.join('; ')}: the hand-named Warden roster is retired and region Wardens are the only chorus. Remove ${found.length === 1 ? 'it' : 'them'} from settings; a project's Wardens are generated from its .foundry/regions when "chorus": { "enabled": true } is set in its .foundry/project.json or projects[id].chorus (docs/usage-and-context.md, "Chorus")`,
   );
@@ -1212,7 +1226,7 @@ export function validateConfig(config: FoundryConfig): void {
       validateLayerDefinition(`project ${JSON.stringify(pid)} layers`, id, layer);
   configuredExperts(config);
   for (const projectId of Object.keys(config.projects ?? {})) {
-    const view = resolveProjectView(config, projectId)!.config;
+    const view = resolveProjectView(config, projectId, { repository: false })!.config;
     validateAgentKinds(`project ${JSON.stringify(projectId)}`, view.agents);
     // What thread construction checks, checked before the settings are saved.
     try {
@@ -1221,32 +1235,146 @@ export function validateConfig(config: FoundryConfig): void {
       throw Error(`project ${JSON.stringify(projectId)}: ${(error as Error).message}`);
     }
   }
-  const check = (owner: string, sources: Record<string, DataSourceConfig> | undefined) => {
-    for (const [id, src] of Object.entries(sources ?? {})) {
-      if ('audience' in (src ?? {}))
-        throw new Error(
-          `invalid source ${JSON.stringify(id)} in ${owner}: audience moved to composition.roles.<role>.audience`,
-        );
-      if (src?.slot !== undefined && !(COMPOSITION_SLOTS as readonly string[]).includes(src.slot))
-        throw new Error(
-          `invalid source ${JSON.stringify(id)} in ${owner}: slot must be one of ${COMPOSITION_SLOTS.join(', ')}`,
-        );
-      if (!src || src.selection === undefined || src.selection === false) continue;
-      try {
-        validateMemorySelection(src.selection);
-      } catch (err) {
-        throw new Error(
-          `invalid source ${JSON.stringify(id)} in ${owner}: ${(err as Error).message}`,
-        );
-      }
-    }
-  };
+  const check = validateSourceDefinitions;
   check('global sources', config.sources);
   for (const [pid, project] of Object.entries(config.projects ?? {}))
     check(
       `project ${JSON.stringify(pid)} sources`,
       project?.sources as Record<string, DataSourceConfig> | undefined,
     );
+}
+
+function validateSourceDefinitions(
+  owner: string,
+  sources: Record<string, DataSourceConfig> | undefined,
+): void {
+  for (const [id, src] of Object.entries(sources ?? {})) {
+    if ('audience' in (src ?? {}))
+      throw new Error(
+        `invalid source ${JSON.stringify(id)} in ${owner}: audience moved to composition.roles.<role>.audience`,
+      );
+    if (src?.slot !== undefined && !(COMPOSITION_SLOTS as readonly string[]).includes(src.slot))
+      throw new Error(
+        `invalid source ${JSON.stringify(id)} in ${owner}: slot must be one of ${COMPOSITION_SLOTS.join(', ')}`,
+      );
+    if (!src || src.selection === undefined || src.selection === false) continue;
+    try {
+      validateMemorySelection(src.selection);
+    } catch (err) {
+      throw new Error(
+        `invalid source ${JSON.stringify(id)} in ${owner}: ${(err as Error).message}`,
+      );
+    }
+  }
+}
+
+/**
+ * A project's settings shared with everyone through the repository's committed
+ * `.foundry/project.json` (Aron 2026-10-16: every setting offers "set this for me" and "set this for
+ * everyone"). They cascade: this machine's project settings over the repository's over the default.
+ */
+export const REPOSITORY_SETTING_KEYS = [
+  'threadOnMerge',
+  'steer',
+  'gloss',
+  'defaults',
+  'feedback',
+  'agents',
+  'layers',
+  'sources',
+  'chorus',
+  'conversations',
+] as const;
+export type RepositorySettingKey = (typeof REPOSITORY_SETTING_KEYS)[number];
+
+/** Project settings that belong to this machine or this person, never the repository: why each. */
+const PERSONAL_PROJECT_SETTINGS: Readonly<Record<string, string>> = {
+  id: 'How this project is registered on this machine',
+  path: 'Where this project is checked out on this machine',
+  label: 'How this project is registered on this machine',
+  tags: 'How this project is registered on this machine',
+  description: 'How this project is registered on this machine',
+  enabled: 'Whether this machine runs this project',
+  status: 'Whether this machine has archived this project',
+  capacity: 'Which subscriptions you run this project on',
+  kingdomCapacity: 'Your Kingdom subscription pool',
+  kingdomProject: 'Your link to a Kingdom project',
+  toolRules:
+    'Tool rules gate what agents may run on this machine; a cloned repository can’t loosen them',
+  'defaults.nativeAuthenticationId': 'Your login on this machine',
+  'defaults.kingdomOwnerKey': 'Your Kingdom subscription pool',
+};
+
+/** Why a project setting has no "for everyone" form, or undefined when the repository may set it. */
+export function personalOnlySetting(path: string): string | undefined {
+  const parts = path.split('.');
+  const exact = PERSONAL_PROJECT_SETTINGS[parts.slice(0, 2).join('.')];
+  if (exact) return exact;
+  if (PERSONAL_PROJECT_SETTINGS[parts[0]!]) return PERSONAL_PROJECT_SETTINGS[parts[0]!];
+  return (REPOSITORY_SETTING_KEYS as readonly string[]).includes(parts[0]!)
+    ? undefined
+    : `${parts[0]} is not a project setting`;
+}
+
+/**
+ * The repository's settings, checked by the same rules as this machine's project settings: one
+ * error naming the first bad key. Machine and person settings are refused with why.
+ */
+export function validateRepositoryProject(settings: Record<string, unknown>): void {
+  for (const key of Object.keys(settings)) {
+    if (key === '$comment') continue;
+    const personal = personalOnlySetting(key);
+    if (personal) throw Error(`${key} is not a repository setting: ${personal}`);
+  }
+  const defaults = settings.defaults as Record<string, unknown> | undefined;
+  if (defaults !== undefined) {
+    if (!defaults || typeof defaults !== 'object' || Array.isArray(defaults))
+      throw Error('defaults must be an object');
+    for (const key of Object.keys(defaults)) {
+      const personal = personalOnlySetting(`defaults.${key}`);
+      if (personal) throw Error(`defaults.${key} is not a repository setting: ${personal}`);
+      if (typeof defaults[key] !== 'string') throw Error(`defaults.${key} must be a string`);
+    }
+    // The worker and its model go together (FEAT-007): a model is one the worker runs.
+    if (typeof defaults.provider === 'string') {
+      if (!(defaults.provider in SUBSCRIPTION_WORKER_MODELS))
+        throw Error(`defaults.provider ${defaults.provider} is not a subscription worker`);
+      if (typeof defaults.model === 'string' && !registryModel(defaults.provider, defaults.model))
+        throw Error(`defaults.model ${defaults.model} is not a ${defaults.provider} model`);
+    }
+  }
+  if (
+    settings.threadOnMerge !== undefined &&
+    !THREAD_ON_MERGE.includes(settings.threadOnMerge as ThreadOnMerge)
+  )
+    throw Error('threadOnMerge must be one of "done", "auto-archive"');
+  if (settings.steer !== undefined && typeof settings.steer !== 'boolean')
+    throw Error('steer must be true or false');
+  const gloss = settings.gloss as { enabled?: unknown; display?: unknown } | undefined;
+  if (
+    gloss !== undefined &&
+    (!gloss ||
+      typeof gloss !== 'object' ||
+      (gloss.enabled !== undefined && typeof gloss.enabled !== 'boolean') ||
+      (gloss.display !== undefined &&
+        !['margin', 'hover', 'inline'].includes(gloss.display as string)))
+  )
+    throw Error('gloss must be { enabled?: boolean, display?: "margin" | "hover" | "inline" }');
+  validateFeedbackSettings('feedback', settings.feedback);
+  validateChorusSettings('chorus', settings.chorus);
+  validateConversationSettings('conversations', settings.conversations);
+  const agents = settings.agents as Record<string, Partial<AgentSettingsConfig>> | undefined;
+  if (agents !== undefined) {
+    const found = handNamedWardens('agents', agents);
+    if (found.length) throwHandNamed(found);
+    validateAgentKinds('repository', agents);
+  }
+  for (const [id, layer] of Object.entries((settings.layers as Record<string, unknown>) ?? {}))
+    validateLayerDefinition('repository layers', id, layer);
+  validateSourceDefinitions(
+    'repository sources',
+    settings.sources as Record<string, DataSourceConfig> | undefined,
+  );
 }
 
 /** A mutation named a settings revision that is no longer current. */

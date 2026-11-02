@@ -5,6 +5,7 @@
  */
 import { Hono } from 'hono';
 import type { ConfigStore } from '../config';
+import { effectiveProject } from '../config-resolve';
 import { type GlossAction, GlossError, GlossService } from '../gloss/service';
 
 const actions = new Set(['install', 'setup', 'harvest', 'fix', 'check']);
@@ -46,7 +47,7 @@ export function registerGlossRoutes(
 
   const project = async (id: string) => {
     const config = await configStore.load();
-    const found = Object.hasOwn(config.projects, id) ? config.projects[id] : undefined;
+    const found = Object.hasOwn(config.projects, id) ? effectiveProject(config, id) : undefined;
     if (!found) throw new GlossError('Project not found', 404);
     return found;
   };
@@ -60,7 +61,7 @@ export function registerGlossRoutes(
   });
   app.put(`${base}/settings`, async (c) => {
     const id = c.req.param('id') ?? '';
-    const p = await project(id);
+    await project(id);
     const body = await c.req.json();
     if (
       !body ||
@@ -69,7 +70,11 @@ export function registerGlossRoutes(
       Object.keys(body).some((k) => k !== 'enabled' && k !== 'display')
     )
       throw new GlossError('Invalid Gloss settings');
-    await configStore.patch('projects', { [id]: { ...p, gloss: body } });
+    // This machine's settings: the raw entry, so the repository's values are never copied into them.
+    await configStore.update((draft) => {
+      const mine = draft.projects[id];
+      if (mine) mine.gloss = body;
+    });
     return c.json({ settings: body });
   });
   for (const action of ['list', 'read', 'detail', 'history'] as const) {

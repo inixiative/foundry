@@ -3,7 +3,7 @@
  * @kind config
  * @partOf feature:viewer, primitive:settings
  */
-import { existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { registryModel, SUBSCRIPTION_WORKER_MODELS } from '@inixiative/foundry-core';
 import {
@@ -22,10 +22,6 @@ import {
 import { defaultStages, type StageConfig, validateStages } from '../classify';
 import { writeFileAtomic } from '../client/private-file';
 import {
-  type ConversationSettingsInput,
-  validateConversationSettings,
-} from '../conversations/types';
-import {
   type AgentExtension,
   type AgentSettingsConfig,
   type BrowserConfig,
@@ -39,7 +35,11 @@ import {
   type LayerSettingsOverride,
   type ListPatch,
   type ProjectSettingsConfig,
+  personalOnlySetting,
+  REPOSITORY_SETTING_KEYS,
+  type RepositorySettingKey,
   validateChorusSettings,
+  validateRepositoryProject,
 } from './config';
 
 export type MergeOrigin = 'global' | 'project' | 'merged';
@@ -806,68 +806,153 @@ function resolveLayerDefinition(
   };
 }
 
+/** The repository's settings: every project setting the team shares (`REPOSITORY_SETTING_KEYS`). */
+export type RepositoryProjectSettings = Partial<Pick<ProjectSettingsConfig, RepositorySettingKey>>;
+
+const repositoryCache = new Map<string, { stamp: string; read: RepositorySettingsRead }>();
+type RepositorySettingsRead =
+  | ({ file: string; error?: string } & RepositoryProjectSettings)
+  | undefined;
+
 /**
- * The repository's own settings (`<project>/.foundry/project.json`): `{ "chorus"?, "$comment"? }`. A
- * file that is missing reads as none; one that is malformed is reported, not thrown, so a repository's
- * checkout never stops the daemon or turns its chorus on.
+ * The repository's own settings (`<project>/.foundry/project.json`), every key a project setting the
+ * team shares (Aron 2026-10-16). Checked by the same rules as this machine's project settings
+ * (`validateRepositoryProject`). A file that is missing reads as none; one that is malformed or
+ * breaks a rule is reported, not thrown, and none of it applies, so a repository's checkout never
+ * stops the daemon or changes how its threads run. Read again only when the file changes.
  */
-export function readRepositorySettings(projectPath: string):
-  | {
-      file: string;
-      chorus?: ChorusSettings;
-      conversations?: ConversationSettingsInput;
-      /** Whether a send during a running turn steers into it, for everyone on this project (CORE-001). */
-      steer?: boolean;
-      error?: string;
-    }
-  | undefined {
+export function readRepositorySettings(projectPath: string): RepositorySettingsRead {
   const file = join(projectPath, REPOSITORY_SETTINGS_FILE);
-  if (!existsSync(file)) return undefined;
+  let stamp: string;
+  try {
+    const stat = statSync(file);
+    stamp = `${stat.mtimeMs}:${stat.size}:${stat.ino}`;
+  } catch {
+    repositoryCache.delete(file);
+    return undefined;
+  }
+  const cached = repositoryCache.get(file);
+  if (cached?.stamp === stamp) return cached.read;
+  let read: RepositorySettingsRead;
   try {
     const raw: unknown = JSON.parse(readFileSync(file, 'utf8'));
     if (!raw || typeof raw !== 'object' || Array.isArray(raw))
-      throw Error('must be an object: { "chorus"?, "conversations"?, "steer"? }');
-    const settings = raw as Record<string, unknown>;
-    for (const key of Object.keys(settings))
-      if (key !== 'chorus' && key !== 'conversations' && key !== 'steer' && key !== '$comment')
-        throw Error(`${key} is not a repository setting (chorus, conversations, steer, $comment)`);
-    validateChorusSettings('chorus', settings.chorus);
-    validateConversationSettings('conversations', settings.conversations);
-    if (settings.steer !== undefined && typeof settings.steer !== 'boolean')
-      throw Error('steer must be true or false');
-    return {
-      file,
-      ...(settings.chorus === undefined ? {} : { chorus: settings.chorus as ChorusSettings }),
-      ...(settings.conversations === undefined
-        ? {}
-        : { conversations: settings.conversations as ConversationSettingsInput }),
-      ...(settings.steer === undefined ? {} : { steer: settings.steer as boolean }),
-    };
+      throw Error(`must be an object of project settings (${REPOSITORY_SETTING_KEYS.join(', ')})`);
+    validateRepositoryProject(raw as Record<string, unknown>);
+    const { $comment: _comment, ...settings } = raw as Record<string, unknown>;
+    read = { file, ...(settings as RepositoryProjectSettings) };
   } catch (error) {
-    return { file, error: (error as Error).message };
+    read = { file, error: (error as Error).message };
   }
+  repositoryCache.set(file, { stamp, read });
+  return read;
 }
 
 /**
- * "Set for everyone": write one repository setting (`chorus`, `conversations` or `steer`) into the project's
- * committed `.foundry/project.json`, keeping its other keys; `null` removes it. The file is
- * team-shared (0644) and replaced whole. Refuses when the file on disk is not a valid settings file.
+ * "Set for everyone": write one repository setting at a dotted path (`threadOnMerge`,
+ * `defaults.provider`, `agents.reviewer`) into the project's committed `.foundry/project.json`,
+ * keeping its other keys; `null` removes it (and any object it leaves empty). The file is
+ * team-shared (0644) and replaced whole. Refuses a machine or person setting, a file on disk that
+ * is not a valid settings file, and a value that breaks a rule (the file is left as it was).
  */
-export function writeRepositorySetting(
+export function writeRepositorySetting(projectPath: string, path: string, value: unknown): void {
+  writeRepositorySettings(projectPath, [[path, value]]);
+}
+
+/** Several repository settings in one write: all of them apply, or none. */
+export function writeRepositorySettings(
   projectPath: string,
-  key: 'chorus' | 'conversations' | 'steer',
-  value: unknown,
+  entries: ReadonlyArray<readonly [path: string, value: unknown]>,
 ): void {
   const file = join(projectPath, REPOSITORY_SETTINGS_FILE);
+  for (const [path] of entries) {
+    const personal = personalOnlySetting(path);
+    if (personal) throw Error(`${path} can't be set for everyone: ${personal}`);
+  }
   const repository = readRepositorySettings(projectPath);
   if (repository?.error) throw Error(`${file}: ${repository.error}`);
   const current: Record<string, unknown> = existsSync(file)
     ? (JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>)
     : {};
-  if (value === null) delete current[key];
-  else current[key] = value;
+  for (const [path, value] of entries) setAtPath(current, path.split('.'), value);
+  validateRepositoryProject(current);
   mkdirSync(dirname(file), { recursive: true });
   writeFileAtomic(file, `${JSON.stringify(current, null, 2)}\n`, 0o644);
+}
+
+/** Set `value` at `path` in `root`; `null` deletes it and prunes the objects it leaves empty. */
+export function setAtPath(root: Record<string, unknown>, path: string[], value: unknown): void {
+  const [head, ...rest] = path;
+  if (head === undefined) return;
+  if (!rest.length) {
+    if (value === null) delete root[head];
+    else root[head] = value;
+    return;
+  }
+  const child = root[head];
+  const isObject = !!child && typeof child === 'object' && !Array.isArray(child);
+  if (value === null) {
+    if (!isObject) return;
+    setAtPath(child as Record<string, unknown>, rest, null);
+    if (!Object.keys(child as object).length) delete root[head];
+    return;
+  }
+  const next = isObject ? (child as Record<string, unknown>) : {};
+  root[head] = next;
+  setAtPath(next, rest, value);
+}
+
+/**
+ * A project's settings as they apply: this machine's (`projects[id]`) over the repository's, key by
+ * key. Records (`agents`, `layers`, `sources`) merge by id, the machine's entry replacing the
+ * repository's whole; objects (`gloss`, `feedback`) merge field by field; a scalar is the machine's,
+ * else the repository's. The worker and its model are one unit (FEAT-007): they come from the layer
+ * that names the worker, a model on its own applying only when that worker runs it. `chorus`,
+ * `conversations` and `steer` keep their own readers, which report each value's layer
+ * (`projectChorus`, `conversationSettings`, `steerOnSend`). Machine and person settings are the
+ * machine's alone.
+ */
+export function effectiveProject(
+  config: FoundryConfig,
+  projectId: string,
+): ProjectSettingsConfig | undefined {
+  const mine = config.projects[projectId];
+  if (!mine) return undefined;
+  const theirs = readRepositorySettings(mine.path);
+  if (!theirs || theirs.error) return mine;
+  const merged: ProjectSettingsConfig = { ...mine };
+  const scalar = <K extends 'threadOnMerge'>(key: K) => {
+    if (mine[key] === undefined && theirs[key] !== undefined) merged[key] = theirs[key];
+  };
+  scalar('threadOnMerge');
+  if (theirs.gloss || mine.gloss)
+    merged.gloss = { ...theirs.gloss, ...mine.gloss } as ProjectSettingsConfig['gloss'];
+  if (theirs.feedback || mine.feedback) merged.feedback = { ...theirs.feedback, ...mine.feedback };
+  if (theirs.agents || mine.agents) merged.agents = { ...theirs.agents, ...mine.agents };
+  if (theirs.layers || mine.layers) merged.layers = { ...theirs.layers, ...mine.layers };
+  if (theirs.sources || mine.sources) merged.sources = { ...theirs.sources, ...mine.sources };
+  if (theirs.defaults || mine.defaults)
+    merged.defaults = mergeDefaults(theirs.defaults, mine.defaults);
+  return merged;
+}
+
+function mergeDefaults(
+  theirs: ProjectSettingsConfig['defaults'],
+  mine: ProjectSettingsConfig['defaults'],
+): ProjectSettingsConfig['defaults'] {
+  const merged = { ...theirs, ...mine };
+  // The worker and its model travel together: the layer naming the worker supplies its model.
+  const worker = mine?.provider ?? theirs?.provider;
+  if (worker) {
+    const own = mine?.provider ? mine : theirs;
+    const model =
+      own?.model ??
+      (mine?.model && registryModel(worker, mine.model) ? mine.model : undefined) ??
+      SUBSCRIPTION_WORKER_MODELS[worker as keyof typeof SUBSCRIPTION_WORKER_MODELS];
+    if (model) merged.model = model;
+    else delete merged.model;
+  }
+  return merged;
 }
 
 /**
@@ -937,11 +1022,18 @@ function stagesOf(written: unknown, apiTokens: boolean): readonly StageConfig[] 
   return written === undefined ? defaultStages(!apiTokens) : validateStages('stages', written);
 }
 
+/**
+ * `repository: false` leaves the repository's settings out: settings.json is checked on its own, so
+ * a teammate's committed file never stops this machine's settings from loading (a worker it names
+ * that this machine can't run is refused when a thread starts, with why).
+ */
 export function resolveProjectView(
   config: FoundryConfig,
   projectId: string,
+  options: { repository?: boolean } = {},
 ): ResolvedProjectView | null {
-  const project = config.projects[projectId];
+  const project =
+    options.repository === false ? config.projects[projectId] : effectiveProject(config, projectId);
   if (!project) return null;
 
   const resolved: FoundryConfig = {
