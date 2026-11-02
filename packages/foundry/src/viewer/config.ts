@@ -1076,9 +1076,9 @@ function validateProjectCapacity(config: FoundryConfig, project: ProjectSettings
       `Project ${project.id} uses Kingdom capacity: set kingdomCapacity { kingdom, signetId }`,
     );
   selectKingdomIntegration(config.kingdomIntegrations, capacity.kingdom);
-  // Kingdom pools hold Claude Code and Codex logins; a Muse Code login in a pool is not built yet.
-  if (!['claude-code', 'codex'].includes(project.defaults?.provider ?? config.defaults.provider))
-    throw Error('Kingdom capacity requires a Claude Code or Codex default worker');
+  // Kingdom pools hold subscription logins: Claude Code, Codex and Muse Code.
+  if (!subscriptionWorker(project.defaults?.provider ?? config.defaults.provider))
+    throw Error('Kingdom capacity requires a Claude Code, Codex or Muse Code default worker');
 }
 
 export function validateConfig(config: FoundryConfig): void {

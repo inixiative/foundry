@@ -119,6 +119,13 @@ export interface NativeAuthenticationLaunch {
   release(): void;
   /** Account limits the native session observed for this launch's login. */
   observeLimits?(limits: NativeLimitSnapshot): void;
+  /**
+   * The native session failed (a failed turn, a host that would not start) and the login may be why.
+   * The provider confirms with the login's own read-only check before acting on it: a rejected
+   * Kingdom-released login is reported back so Kingdom marks it as needing a new sign-in. True when
+   * the login is confirmed rejected: the session should end, so its next launch takes another login.
+   */
+  loginFailed?(): Promise<boolean>;
 }
 
 export interface NativeAuthenticationProvider {
