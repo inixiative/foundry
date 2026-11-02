@@ -9308,6 +9308,7 @@ a.thread-ref:hover {
 }
 .vendor-list > .settings-card.vendor-row:last-child {
   border-bottom: 0;
+}
 .nav-footer-pill b {
   color: var(--text);
   font-weight: 600;
