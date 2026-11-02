@@ -30,6 +30,8 @@ import {
   inspectTarget,
   launchLabels,
   loadLaunch,
+  openRightTab,
+  RIGHT_TAB_KEYS,
   RIGHT_TABS,
   rightSize,
   rightTab,
@@ -268,11 +270,8 @@ export function RightPanel({ onSpanSelect }) {
       : html`<div class="right-panel detail-drawer detail-drawer--collapsed right-panel--collapsed">
       <div class="rp-strip-controls"><${SizeControls} side="right" /></div>
       ${RIGHT_TABS.map((t) => {
-        return html`<button key=${t} class="rp-strip-tab" title=${TAB_LABELS[t]} onClick=${() => {
-          rightTab.value = t;
-          boardOpen.value = false;
-          detailDrawerOpen.value = true;
-        }}>
+        return html`<button key=${t} class="rp-strip-tab" title=${`${TAB_LABELS[t]} (${RIGHT_TAB_KEYS[t]})`} aria-label=${`Open ${TAB_LABELS[t]}`}
+          aria-current=${t === tab ? 'true' : undefined} onClick=${() => openRightTab(t)}>
           <${TabIcon} tab=${t} /><span class="rp-strip-label">${TAB_LABELS[t]}</span>
         </button>`;
       })}
@@ -308,9 +307,9 @@ export function RightPanel({ onSpanSelect }) {
       <h2 class="rp-title">${TAB_LABELS[tab]}</h2>
       ${facts.info ? html`<div class="rp-info">${facts.info}</div>` : null}
       <nav class="rp-tabs" role="tablist" aria-label="Thread reference">
-        ${RIGHT_TABS.map((t, i) => {
+        ${RIGHT_TABS.map((t) => {
           return html`<button key=${t} role="tab" aria-selected=${t === tab}
-            class="rp-tab ${t === tab ? 'is-active' : ''}" title=${`${TAB_LABELS[t]} (${i + 5})`}
+            class="rp-tab ${t === tab ? 'is-active' : ''}" title=${`${TAB_LABELS[t]} (${RIGHT_TAB_KEYS[t]})`}
             onClick=${() => {
               rightTab.value = t;
             }}><${TabIcon} tab=${t} />${TAB_LABELS[t]}</button>`;
