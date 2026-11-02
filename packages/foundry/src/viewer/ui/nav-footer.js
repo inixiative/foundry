@@ -229,15 +229,15 @@ export function NavFooter() {
         tunnel
           ? html`<a class="nav-footer-link" href=${settingsPath(null, 'devices')} onClick=${go('devices')}
               title=${tunnel.active ? `Tunnel on: ${tunnel.url ?? ''}` : `Tunnel off (${tunnel.mode})`}>
-              <span class="nav-footer-dot ${tunnel.active ? 'is-ok' : 'is-off'}"></span>Tunnel ${tunnel.active ? 'on' : 'off'}
+              <span class="nav-footer-dot ${tunnel.active ? 'is-ok' : 'is-off'}"></span>tunnel ${tunnel.active ? 'on' : 'off'}
             </a>`
           : null
       }
     </div>
     <div class="nav-footer-pills">
-      <a class="nav-footer-pill" href=${settingsPath(null, 'kingdom')} onClick=${go('kingdom')}>Kingdoms ${kingdoms}</a>
+      <a class="nav-footer-pill" href=${settingsPath(null, 'kingdom')} onClick=${go('kingdom')}>Kingdoms <b>${kingdoms}</b></a>
       <a class="nav-footer-pill" href=${settingsPath(null, 'archive')} onClick=${go('archive')}
-        title=${archive?.reachable ? 'Local Archive running' : 'Local Archive not running'}>Archives ${archives}</a>
+        title=${archive?.reachable ? 'Local Archive running' : 'Local Archive not running'}>Archives <b>${archives}</b></a>
     </div>
     <${OtherMachines} />
     <${Subscriptions} accounts=${accounts} registry=${registry} />

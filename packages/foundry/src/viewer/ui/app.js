@@ -10,6 +10,7 @@
  */
 
 import { AnalyticsPage } from './analytics.js';
+import { Attention, openRoots } from './attention.js';
 import { Board, IncomingCard } from './board.js';
 import { CommandPalette, HelpOverlay } from './command-palette.js';
 import { Conversation } from './conversation.js';
@@ -40,7 +41,6 @@ import { loadSettings, SettingsPage, settingsConfig } from './settings.js';
 import {
   activePanel,
   activeProjectId,
-  allThreads,
   boardOpen,
   CENTER_PANELS,
   compactPanel,
@@ -61,14 +61,15 @@ import {
   inspectLayer,
   inspectTarget,
   loadTraces,
+  openRightTab,
   projectHomeOpen,
   projectPage,
   projectSidebarOpen,
   projects,
-  prompts,
+  RIGHT_TAB_KEYS,
   RIGHT_TABS,
+  railView,
   resyncStreams,
-  rightTab,
   scopeProjectId,
   selectedEvent,
   selectedSpanId,
@@ -78,7 +79,6 @@ import {
   toggleWatchtower,
   watchtowerOpen,
 } from './store.js';
-import { categoryOf, threadState } from './thread-status.js';
 import { Watchtower } from './watchtower.js';
 import { checkSetupNeeded, Wizard, wizardOpen } from './wizard.js';
 
@@ -106,22 +106,35 @@ function SearchButton() {
 }
 
 /** The selected scope, centered in the header: a project's name, else Global / Forge Master / Feedback (or Foundry off the workspace). */
-/** The board button, with how many threads wait on you. */
-function BoardButton() {
-  // The Needs-you column's size: threads waiting on you (a prompt, a held send, an unread post).
-  const waiting = new Set([
-    ...prompts.value.map((p) => p.threadId),
-    ...allThreads.value
-      .filter((t) => categoryOf(threadState(t, { prompts: [] })) === 'attention')
-      .map((t) => t.threadId),
-  ]).size;
-  return html`<button class="board-button ${boardOpen.value ? 'is-active' : ''}" title="The attention board (b)"
-    onClick=${toggleBoard}>Board${waiting ? html`<span class="board-button-count">${waiting}</span>` : null}</button>`;
+/**
+ * Threads · Board · Watchtower: one segmented switch with its keys (concept-v4). The Board carries
+ * the orange and red counts (attention.js), top-level threads only.
+ */
+function WorkspaceSwitch() {
+  const board = boardOpen.value;
+  const tower = watchtowerOpen.value;
+  return html`<span class="ws-seg" role="group" aria-label="Workspace view">
+    <button type="button" class=${!board && !tower ? 'is-active' : ''} title="Threads (t)"
+      onClick=${() => {
+        boardOpen.value = false;
+        watchtowerOpen.value = false;
+      }}>Threads<kbd>T</kbd></button>
+    <button type="button" class="board-button ${board ? 'is-active' : ''}" title="The attention board (b)"
+      onClick=${toggleBoard}>Board<${Attention} nodes=${openRoots()} /><kbd>B</kbd></button>
+    <button type="button" class="watchtower-button ${tower ? 'is-active' : ''}" title="Watchtower: work by stage (h)"
+      onClick=${toggleWatchtower}>Watchtower<kbd>H</kbd></button>
+  </span>`;
 }
 
-function WatchtowerButton() {
-  return html`<button class="watchtower-button ${watchtowerOpen.value ? 'is-active' : ''}" title="Watchtower: work by stage (h)"
-    onClick=${toggleWatchtower}>Watchtower</button>`;
+/** Open N: every open top-level thread, with the orange and red counts; it shows the Open list. */
+function OpenPill() {
+  const roots = openRoots();
+  return html`<button type="button" class="top-pill open-pill" title="Your open threads"
+    onClick=${() => {
+      railView.value = 'open';
+      boardOpen.value = false;
+      watchtowerOpen.value = false;
+    }}><span class="top-pill-dot"></span>Open<span class="top-pill-count">${roots.length}</span><${Attention} nodes=${roots} /></button>`;
 }
 
 /**
@@ -191,15 +204,16 @@ function Header() {
         <${PageNav} /><${SearchButton} />
       </div>
       <div class="header-center">
-        ${route.value.page === 'workspace' ? html`<${IncomingIndicator} /><${BoardButton} /><${WatchtowerButton} />` : null}
+        ${route.value.page === 'workspace' ? html`<${WorkspaceSwitch} />` : null}
       </div>
       <div class="header-right">
+        <${OpenPill} />
+        <span class="header-divider"></span>
+        <${IncomingIndicator} />
+        <span class="header-divider"></span>
         <${KingdomPill} />
-        <span class="status-dot ${isConnected ? 'on' : 'off'}" title=${`${isConnected ? 'Connected' : 'Reconnecting'} · ${count} events`}></span>
-        <span class="status-text">${isConnected ? 'connected' : 'reconnecting...'}</span>
-        <span class="status-sep">|</span>
-        <kbd class="status-key">Ctrl+K</kbd>
-        <span class="status-text dim">commands</span>
+        <span class="status-dot ${isConnected ? 'on' : 'off'}" title=${`${isConnected ? 'Connected to this Foundry' : 'Reconnecting'} · ${count} events · ⌘K commands`} aria-label=${isConnected ? 'Connected' : 'Reconnecting'}></span>
+        ${isConnected ? null : html`<span class="status-text">reconnecting…</span>`}
         <button class="help-btn" aria-label="Help" title="Help (?)" onClick=${() => {
           helpOpen.value = !helpOpen.value;
         }}>?</button>
@@ -338,11 +352,11 @@ function App() {
       toggleRightPanel: () => {
         detailDrawerOpen.value = !detailDrawerOpen.value;
       },
-      rightTabs: RIGHT_TABS.map((t) => t[0].toUpperCase() + t.slice(1)),
-      showRightTab: (i) => {
-        rightTab.value = RIGHT_TABS[i];
-        detailDrawerOpen.value = true;
-      },
+      rightTabKeys: Object.fromEntries(RIGHT_TABS.map((t) => [t, RIGHT_TAB_KEYS[t]])),
+      rightTabLabels: Object.fromEntries(
+        RIGHT_TABS.map((t) => [t, t[0].toUpperCase() + t.slice(1)]),
+      ),
+      showRightTab: (tab) => openRightTab(tab, { toggle: true }),
     });
     initHotkeys();
     loadMachineProfile();
