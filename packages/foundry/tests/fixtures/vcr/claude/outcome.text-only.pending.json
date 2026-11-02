@@ -1,0 +1,29 @@
+{
+  "version": "2.1.316",
+  "status": 200,
+  "body": {
+    "answers": [
+      "{\"category\":\"feature\"}",
+      "{\"category\":\"feature\"}"
+    ],
+    "calls": [
+      {
+        "valid": true,
+        "release": "released",
+        "processExit": "exited"
+      },
+      {
+        "valid": true,
+        "release": "released",
+        "processExit": "exited"
+      }
+    ]
+  },
+  "recorded": {
+    "service": "claude",
+    "cli": "claude",
+    "recordedAt": "2026-11-02T22:29:04.460Z",
+    "agentSession": "0.10.0",
+    "environment": "terminal"
+  }
+}

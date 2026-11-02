@@ -1,0 +1,172 @@
+{
+  "version": "0.162.1",
+  "status": 0,
+  "body": {
+    "kind": "process",
+    "argv": [
+      "codex",
+      "app-server",
+      "--listen",
+      "stdio://"
+    ],
+    "cwd": "{{cwd}}",
+    "stdin": [
+      "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"capabilities\":{},\"clientInfo\":{\"name\":\"inixiative-bench\",\"version\":\"0.1.0\"}}}",
+      "{\"jsonrpc\":\"2.0\",\"method\":\"initialized\"}",
+      "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"thread/start\",\"params\":{\"model\":\"gpt-5.6-luna\",\"cwd\":\"{{cwd}}\",\"approvalPolicy\":\"never\",\"sandbox\":\"danger-full-access\",\"config\":{\"project_doc_max_bytes\":0,\"memories.use_memories\":false}}}",
+      "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"turn/start\",\"params\":{\"threadId\":\"01a19e61-0b51-73c1-8f9c-d3dcd6694e69\",\"input\":[{\"type\":\"text\",\"text\":\"# User Message\\n\\nDo not use any tools. If your instructions or context state a project codeword, reply with exactly that codeword. Otherwise reply with exactly NONE.\"}],\"effort\":\"low\"}}"
+    ],
+    "stdinEnded": true,
+    "frames": [
+      {
+        "after": 1,
+        "stream": "stdout",
+        "data": "{\"id\":1,\"result\":{\"userAgent\":\"inixiative-bench/0.162.1 (Mac OS 15.7.3; arm64) xterm-ghostty (inixiative-bench; 0.1.0)\",\"codexHome\":\"~/.codex\",\"platformFamily\":\"unix\",\"platformOs\":\"macos\"}}"
+      },
+      {
+        "after": 3,
+        "stream": "stdout",
+        "data": "{\"method\":\"remoteControl/status/changed\",\"params\":{\"status\":\"disabled\",\"serverName\":\"host\",\"installationId\":\"00000000-0000-4000-8000-000000000000\",\"environmentId\":null},\"emittedAtMs\":1793658522444}"
+      },
+      {
+        "after": 3,
+        "stream": "stdout",
+        "data": "{\"id\":2,\"result\":{\"thread\":{\"id\":\"01a19e61-0b51-73c1-8f9c-d3dcd6694e69\",\"environments\":[{\"environmentId\":\"local\",\"cwd\":\"{{cwd}}\",\"runtimeWorkspaceRoots\":[\"{{cwd}}\"]}],\"extra\":null,\"sessionId\":\"01a19e61-0b51-73c1-8f9c-d3dcd6694e69\",\"forkedFromId\":null,\"parentThreadId\":null,\"preview\":\"\",\"ephemeral\":false,\"section\":null,\"sectionEnteredAt\":null,\"projectId\":null,\"historyMode\":\"paginated\",\"modelProvider\":\"openai\",\"model\":\"gpt-5.6-luna\",\"reasoningEffort\":\"high\",\"createdAt\":1793658522,\"updatedAt\":1793658522,\"recencyAt\":1793658522,\"status\":{\"type\":\"idle\"},\"path\":\"~/.codex/sessions/2026/11/02/rollout-2026-11-02T19-28-42-01a19e61-0b51-73c1-8f9c-d3dcd6694e69.jsonl\",\"cwd\":\"{{cwd}}\",\"cliVersion\":\"0.162.1\",\"originator\":\"inixiative-bench\",\"source\":\"vscode\",\"canAcceptDirectInput\":true,\"threadSource\":null,\"agentNickname\":null,\"agentRole\":null,\"gitInfo\":null,\"name\":null,\"daybreakEnabled\":null,\"turns\":[]},\"model\":\"gpt-5.6-luna\",\"modelProvider\":\"openai\",\"serviceTier\":null,\"disabledPluginIds\":[],\"cwd\":\"{{cwd}}\",\"runtimeWorkspaceRoots\":[\"{{cwd}}\"],\"instructionSources\":[\"~/.codex/AGENTS.md\"],\"approvalPolicy\":\"never\",\"approvalsReviewer\":\"user\",\"sandbox\":{\"type\":\"dangerFullAccess\"},\"activePermissionProfile\":null,\"reasoningEffort\":\"high\",\"multiAgentMode\":\"explicitRequestOnly\"}}"
+      },
+      {
+        "after": 4,
+        "stream": "stdout",
+        "data": "{\"method\":\"thread/started\",\"params\":{\"thread\":{\"id\":\"01a19e61-0b51-73c1-8f9c-d3dcd6694e69\",\"environments\":[{\"environmentId\":\"local\",\"cwd\":\"{{cwd}}\",\"runtimeWorkspaceRoots\":[\"{{cwd}}\"]}],\"extra\":null,\"sessionId\":\"01a19e61-0b51-73c1-8f9c-d3dcd6694e69\",\"forkedFromId\":null,\"parentThreadId\":null,\"preview\":\"\",\"ephemeral\":false,\"section\":null,\"sectionEnteredAt\":null,\"projectId\":null,\"historyMode\":\"paginated\",\"modelProvider\":\"openai\",\"model\":\"gpt-5.6-luna\",\"reasoningEffort\":\"high\",\"createdAt\":1793658522,\"updatedAt\":1793658522,\"recencyAt\":1793658522,\"status\":{\"type\":\"idle\"},\"path\":\"~/.codex/sessions/2026/11/02/rollout-2026-11-02T19-28-42-01a19e61-0b51-73c1-8f9c-d3dcd6694e69.jsonl\",\"cwd\":\"{{cwd}}\",\"cliVersion\":\"0.162.1\",\"originator\":\"inixiative-bench\",\"source\":\"vscode\",\"canAcceptDirectInput\":true,\"threadSource\":null,\"agentNickname\":null,\"agentRole\":null,\"gitInfo\":null,\"name\":null,\"daybreakEnabled\":null,\"turns\":[]}},\"emittedAtMs\":1793658522577}"
+      },
+      {
+        "after": 4,
+        "stream": "stdout",
+        "data": "{\"method\":\"mcpServer/startupStatus/updated\",\"params\":{\"threadId\":\"01a19e61-0b51-73c1-8f9c-d3dcd6694e69\",\"name\":\"codex_apps\",\"status\":\"starting\",\"error\":null,\"failureReason\":null},\"emittedAtMs\":1793658522577}"
+      },
+      {
+        "after": 4,
+        "stream": "stdout",
+        "data": "{\"method\":\"mcpServer/startupStatus/updated\",\"params\":{\"threadId\":\"01a19e61-0b51-73c1-8f9c-d3dcd6694e69\",\"name\":\"node_repl\",\"status\":\"starting\",\"error\":null,\"failureReason\":null},\"emittedAtMs\":1793658522577}"
+      },
+      {
+        "after": 4,
+        "stream": "stdout",
+        "data": "{\"method\":\"mcpServer/startupStatus/updated\",\"params\":{\"threadId\":\"01a19e61-0b51-73c1-8f9c-d3dcd6694e69\",\"name\":\"cua_repl\",\"status\":\"starting\",\"error\":null,\"failureReason\":null},\"emittedAtMs\":1793658522577}"
+      },
+      {
+        "after": 4,
+        "stream": "stdout",
+        "data": "{\"id\":3,\"result\":{\"turn\":{\"id\":\"01a19e61-0bd3-7373-8a0c-9874868e7d15\",\"rootTurnId\":\"01a19e61-0bd3-7373-8a0c-9874868e7d15\",\"items\":[],\"itemsView\":\"notLoaded\",\"status\":\"inProgress\",\"error\":null,\"startedAt\":null,\"completedAt\":null,\"durationMs\":null}}}"
+      },
+      {
+        "after": 4,
+        "stream": "stdout",
+        "data": "{\"method\":\"account/updated\",\"params\":{\"authMode\":\"chatgpt\",\"planType\":\"REDACTED\"},\"emittedAtMs\":1793658522728}"
+      },
+      {
+        "after": 4,
+        "stream": "stdout",
+        "data": "{\"method\":\"thread/status/changed\",\"params\":{\"threadId\":\"01a19e61-0b51-73c1-8f9c-d3dcd6694e69\",\"status\":{\"type\":\"active\",\"activeFlags\":[]}},\"emittedAtMs\":1793658522735}"
+      },
+      {
+        "after": 4,
+        "stream": "stdout",
+        "data": "{\"method\":\"turn/started\",\"params\":{\"threadId\":\"01a19e61-0b51-73c1-8f9c-d3dcd6694e69\",\"turn\":{\"id\":\"01a19e61-0bd3-7373-8a0c-9874868e7d15\",\"rootTurnId\":\"01a19e61-0bd3-7373-8a0c-9874868e7d15\",\"items\":[],\"itemsView\":\"notLoaded\",\"status\":\"inProgress\",\"error\":null,\"startedAt\":1793658522,\"completedAt\":null,\"durationMs\":null}},\"emittedAtMs\":1793658522735}"
+      },
+      {
+        "after": 4,
+        "stream": "stdout",
+        "data": "{\"method\":\"mcpServer/startupStatus/updated\",\"params\":{\"threadId\":\"01a19e61-0b51-73c1-8f9c-d3dcd6694e69\",\"name\":\"node_repl\",\"status\":\"ready\",\"error\":null,\"failureReason\":null},\"emittedAtMs\":1793658522804}"
+      },
+      {
+        "after": 4,
+        "stream": "stdout",
+        "data": "{\"method\":\"mcpServer/startupStatus/updated\",\"params\":{\"threadId\":\"01a19e61-0b51-73c1-8f9c-d3dcd6694e69\",\"name\":\"cua_repl\",\"status\":\"ready\",\"error\":null,\"failureReason\":null},\"emittedAtMs\":1793658522839}"
+      },
+      {
+        "after": 4,
+        "stream": "stdout",
+        "data": "{\"method\":\"mcpServer/startupStatus/updated\",\"params\":{\"threadId\":\"01a19e61-0b51-73c1-8f9c-d3dcd6694e69\",\"name\":\"node_repl\",\"status\":\"ready\",\"error\":null,\"failureReason\":null},\"emittedAtMs\":1793658523274}"
+      },
+      {
+        "after": 4,
+        "stream": "stdout",
+        "data": "{\"method\":\"mcpServer/startupStatus/updated\",\"params\":{\"threadId\":\"01a19e61-0b51-73c1-8f9c-d3dcd6694e69\",\"name\":\"cua_repl\",\"status\":\"ready\",\"error\":null,\"failureReason\":null},\"emittedAtMs\":1793658523274}"
+      },
+      {
+        "after": 4,
+        "stream": "stdout",
+        "data": "{\"method\":\"mcpServer/startupStatus/updated\",\"params\":{\"threadId\":\"01a19e61-0b51-73c1-8f9c-d3dcd6694e69\",\"name\":\"codex_apps\",\"status\":\"ready\",\"error\":null,\"failureReason\":null},\"emittedAtMs\":1793658523274}"
+      },
+      {
+        "after": 4,
+        "stream": "stdout",
+        "data": "{\"method\":\"item/started\",\"params\":{\"item\":{\"type\":\"userMessage\",\"id\":\"01a19e61-118c-7482-aa60-c3d1bcbb57b4\",\"clientId\":null,\"content\":[{\"type\":\"text\",\"text\":\"# User Message\\n\\nDo not use any tools. If your instructions or context state a project codeword, reply with exactly that codeword. Otherwise reply with exactly NONE.\",\"text_elements\":[]}]},\"threadId\":\"01a19e61-0b51-73c1-8f9c-d3dcd6694e69\",\"turnId\":\"01a19e61-0bd3-7373-8a0c-9874868e7d15\",\"startedAtMs\":1793658524045},\"emittedAtMs\":1793658524045}"
+      },
+      {
+        "after": 4,
+        "stream": "stdout",
+        "data": "{\"method\":\"item/completed\",\"params\":{\"item\":{\"type\":\"userMessage\",\"id\":\"01a19e61-118c-7482-aa60-c3d1bcbb57b4\",\"clientId\":null,\"content\":[{\"type\":\"text\",\"text\":\"# User Message\\n\\nDo not use any tools. If your instructions or context state a project codeword, reply with exactly that codeword. Otherwise reply with exactly NONE.\",\"text_elements\":[]}]},\"threadId\":\"01a19e61-0b51-73c1-8f9c-d3dcd6694e69\",\"turnId\":\"01a19e61-0bd3-7373-8a0c-9874868e7d15\",\"completedAtMs\":1793658524045},\"emittedAtMs\":1793658524046}"
+      },
+      {
+        "after": 4,
+        "stream": "stdout",
+        "data": "{\"method\":\"item/started\",\"params\":{\"item\":{\"type\":\"reasoning\",\"id\":\"rs_03bcc41ec832ccaa016ae90e9d6c6881919d435237452451ff\",\"summary\":[],\"content\":[]},\"threadId\":\"01a19e61-0b51-73c1-8f9c-d3dcd6694e69\",\"turnId\":\"01a19e61-0bd3-7373-8a0c-9874868e7d15\",\"startedAtMs\":1793658525431},\"emittedAtMs\":1793658525431}"
+      },
+      {
+        "after": 4,
+        "stream": "stdout",
+        "data": "{\"method\":\"item/completed\",\"params\":{\"item\":{\"type\":\"reasoning\",\"id\":\"rs_03bcc41ec832ccaa016ae90e9d6c6881919d435237452451ff\",\"summary\":[],\"content\":[]},\"threadId\":\"01a19e61-0b51-73c1-8f9c-d3dcd6694e69\",\"turnId\":\"01a19e61-0bd3-7373-8a0c-9874868e7d15\",\"completedAtMs\":1793658525431},\"emittedAtMs\":1793658525434}"
+      },
+      {
+        "after": 4,
+        "stream": "stdout",
+        "data": "{\"method\":\"item/started\",\"params\":{\"item\":{\"type\":\"agentMessage\",\"id\":\"msg_03bcc41ec832ccaa016ae90e9d7b68819187e2d481f1649e21\",\"text\":\"\",\"phase\":\"final_answer\",\"memoryCitation\":null,\"delivery\":null,\"questions\":null},\"threadId\":\"01a19e61-0b51-73c1-8f9c-d3dcd6694e69\",\"turnId\":\"01a19e61-0bd3-7373-8a0c-9874868e7d15\",\"startedAtMs\":1793658525478},\"emittedAtMs\":1793658525479}"
+      },
+      {
+        "after": 4,
+        "stream": "stdout",
+        "data": "{\"method\":\"item/agentMessage/delta\",\"params\":{\"threadId\":\"01a19e61-0b51-73c1-8f9c-d3dcd6694e69\",\"turnId\":\"01a19e61-0bd3-7373-8a0c-9874868e7d15\",\"itemId\":\"msg_03bcc41ec832ccaa016ae90e9d7b68819187e2d481f1649e21\",\"delta\":\"NONE\"},\"emittedAtMs\":1793658525479}"
+      },
+      {
+        "after": 4,
+        "stream": "stdout",
+        "data": "{\"method\":\"item/completed\",\"params\":{\"item\":{\"type\":\"agentMessage\",\"id\":\"msg_03bcc41ec832ccaa016ae90e9d7b68819187e2d481f1649e21\",\"text\":\"NONE\",\"phase\":\"final_answer\",\"memoryCitation\":null,\"delivery\":null,\"questions\":null},\"threadId\":\"01a19e61-0b51-73c1-8f9c-d3dcd6694e69\",\"turnId\":\"01a19e61-0bd3-7373-8a0c-9874868e7d15\",\"completedAtMs\":1793658525569},\"emittedAtMs\":1793658525574}"
+      },
+      {
+        "after": 4,
+        "stream": "stdout",
+        "data": "{\"method\":\"thread/tokenUsage/updated\",\"params\":{\"threadId\":\"01a19e61-0b51-73c1-8f9c-d3dcd6694e69\",\"turnId\":\"01a19e61-0bd3-7373-8a0c-9874868e7d15\",\"tokenUsage\":{\"total\":{\"totalTokens\":13744,\"inputTokens\":13697,\"cachedInputTokens\":11136,\"cacheWriteInputTokens\":0,\"outputTokens\":47,\"reasoningOutputTokens\":40},\"last\":{\"totalTokens\":13744,\"inputTokens\":13697,\"cachedInputTokens\":11136,\"cacheWriteInputTokens\":0,\"outputTokens\":47,\"reasoningOutputTokens\":40},\"modelContextWindow\":258400}},\"emittedAtMs\":1793658525620}"
+      },
+      {
+        "after": 4,
+        "stream": "stdout",
+        "data": "{\"method\":\"account/rateLimits/updated\",\"params\":{\"rateLimits\":{\"limitId\":\"codex\",\"limitName\":null,\"normalModelSlug\":null,\"primary\":{\"usedPercent\":0,\"windowDurationMins\":10080,\"resetsAt\":1793888194},\"secondary\":null,\"credits\":{\"hasCredits\":true,\"unlimited\":false,\"balance\":\"62500.0000000000\"},\"individualLimit\":null,\"spendControlReached\":null,\"planType\":\"REDACTED\",\"rateLimitReachedType\":null}},\"emittedAtMs\":1793658525620}"
+      },
+      {
+        "after": 4,
+        "stream": "stdout",
+        "data": "{\"method\":\"thread/status/changed\",\"params\":{\"threadId\":\"01a19e61-0b51-73c1-8f9c-d3dcd6694e69\",\"status\":{\"type\":\"idle\"}},\"emittedAtMs\":1793658525633}"
+      },
+      {
+        "after": 4,
+        "stream": "stdout",
+        "data": "{\"method\":\"turn/completed\",\"params\":{\"threadId\":\"01a19e61-0b51-73c1-8f9c-d3dcd6694e69\",\"turn\":{\"id\":\"01a19e61-0bd3-7373-8a0c-9874868e7d15\",\"rootTurnId\":\"01a19e61-0bd3-7373-8a0c-9874868e7d15\",\"items\":[{\"type\":\"agentMessage\",\"id\":\"msg_03bcc41ec832ccaa016ae90e9d7b68819187e2d481f1649e21\",\"text\":\"NONE\",\"phase\":\"final_answer\",\"memoryCitation\":null,\"delivery\":null,\"questions\":null}],\"itemsView\":\"summary\",\"status\":\"completed\",\"error\":null,\"startedAt\":1793658522,\"completedAt\":1793658525,\"durationMs\":3041}},\"emittedAtMs\":1793658525633}"
+      }
+    ],
+    "exit": {
+      "after": 5,
+      "code": null,
+      "killed": true
+    }
+  },
+  "recorded": {
+    "service": "codex",
+    "cli": "codex",
+    "recordedAt": "2026-11-02T22:28:45.688Z",
+    "agentSession": "0.10.0",
+    "environment": "terminal",
+    "durationMs": 3341,
+    "model": "gpt-5.6-luna"
+  }
+}
