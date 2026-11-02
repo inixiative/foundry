@@ -57,6 +57,28 @@
   --layer-9: hsl(150 40% 60%);
   --layer-10: hsl(300 40% 72%);
   --layer-11: hsl(15 65% 72%);
+
+  /* The mockup's short names (concept-v4 tokens.css) the viewer lacked, so ported CSS reads the same. */
+  --fg: hsl(var(--foreground));
+  --raise: hsl(var(--app-accent));
+  --line2: hsl(var(--input));
+  --tx-muted: hsl(var(--muted-foreground));
+  --dim: hsl(var(--subtle-foreground));
+  --ui: var(--font-sans);
+  --yours: hsl(var(--app-primary));
+  --kingdom-shared: hsl(var(--app-tertiary));
+  --kingdom-signet: hsl(var(--app-quaternary));
+  --needs: hsl(var(--status-attention));
+  --st-err: hsl(var(--status-problem));
+  --st-att: hsl(var(--status-attention));
+  --st-work: hsl(var(--status-working));
+  --st-rest: hsl(var(--status-idle));
+  --st-arch: hsl(var(--status-archived));
+  --badge-ink: hsl(var(--foreground));
+  --badge-knockout: hsl(var(--background));
+  --badge: var(--badge-ink);
+  --badge-size: 9px;
+  --badge-radius: 3px;
 }
 
 /* Three-panel: tree | conversation | detail */
@@ -80,6 +102,15 @@ body {
 }
 
 /* ---- Layout ---- */
+
+/* Big developer screens: a step larger, more room for content (concept-v4). */
+@media (min-width: 1700px) {
+  .app {
+    zoom: 1.1;
+    width: calc(100vw / 1.1);
+    height: calc(100dvh / 1.1) !important;
+  }
+}
 
 .app {
   display: grid;
@@ -179,7 +210,7 @@ body {
   display: none;
 }
 .panels--proj-open.panels--detail-open {
-  grid-template-columns: 260px 1fr 360px;
+  grid-template-columns: 272px 1fr 360px;
 }
 
 .panels--proj-closed.panels--detail-open {
@@ -6729,36 +6760,126 @@ a.thread-ref:hover {
   align-items: center;
 }
 
-/* ---- Top bar (Kingdom look) ---- */
+/* ---- Top bar (Kingdom look; sizes from concept-v4 .top) ---- */
 .header {
-  height: 44px;
-  padding: 0 14px;
+  height: 48px;
+  padding: 0 16px;
+  gap: 14px;
   background: var(--bg);
 }
 .header-brand {
   font-family: var(--display);
-  font-weight: 750;
-  font-size: 17px;
-  letter-spacing: -0.02em;
+  font-weight: 650;
+  font-size: 18px;
+  letter-spacing: -0.03em;
   color: var(--text);
   user-select: none;
 }
 .header-brand-dot {
   color: var(--accent);
+  font-weight: 900;
 }
 .page-nav {
-  background: var(--surface2);
-  border-radius: 999px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 9px;
   padding: 2px;
 }
 .page-nav a {
-  font-size: 12px;
-  padding: 4px 11px;
-  border-radius: 999px;
+  font-size: 12.5px;
+  padding: 3px 10px;
+  border-radius: 7px;
 }
 .page-nav a[aria-current="page"] {
+  font-weight: 600;
+}
+/* Threads · Board · Watchtower: one segmented switch with its keys (concept-v4 .wsseg). */
+.ws-seg {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--line2);
+  border-radius: 9px;
   background: var(--surface);
-  box-shadow: var(--frame-shadow);
+}
+.ws-seg > button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 7px;
+  background: none;
+  color: var(--text-dim);
+  font: 500 12.5px var(--ui);
+  cursor: pointer;
+}
+.ws-seg > button:hover {
+  color: var(--text);
+}
+.ws-seg > button.is-active {
+  background: hsl(var(--app-primary) / 0.4);
+  color: var(--text);
+  font-weight: 600;
+}
+.ws-seg kbd {
+  padding: 0 4px;
+  border: 1px solid var(--line2);
+  border-radius: 4px;
+  background: none;
+  color: var(--text-dim);
+  font: 500 10px / 14px var(--mono);
+}
+.ws-seg > button.is-active kbd {
+  background: var(--bg);
+  border-color: var(--bg);
+}
+/* The top bar's pills (Open, Incoming, Kingdom): bordered, on the card colour. */
+.header .top-pill {
+  height: 30px;
+  padding: 0 6px 0 12px;
+  border: 1px solid var(--line2);
+  border-radius: 999px;
+  background: var(--surface);
+  font-size: 13px;
+  gap: 7px;
+}
+.header .top-pill:last-child,
+.header .top-pill.is-plain {
+  padding-right: 12px;
+}
+.top-pill-count {
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--text);
+  color: var(--bg);
+  font: 600 11.5px / 20px var(--ui);
+  text-align: center;
+}
+.top-pill-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--yours);
+}
+.header-divider {
+  width: 1px;
+  height: 20px;
+  background: var(--line2);
+}
+.header .help-btn {
+  width: auto;
+  height: 26px;
+  padding: 3px 9px;
+  border: 1px solid var(--line2);
+  border-radius: 8px;
+  background: none;
+  color: var(--text-dim);
+  font-size: 12px;
 }
 
 /* ---- Right panel: header band, tabs, framed content ---- */
@@ -7382,8 +7503,9 @@ a.thread-ref:hover {
   display: flex;
   gap: 2px;
   padding: 2px;
-  background: var(--surface2);
-  border-radius: 10px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 9px;
   flex-shrink: 0;
 }
 .rail-toggle-btn {
@@ -7393,14 +7515,14 @@ a.thread-ref:hover {
   color: var(--text-dim);
   font: inherit;
   font-size: 12.5px;
-  padding: 5px 8px;
-  border-radius: 8px;
+  padding: 4px 0;
+  border-radius: 7px;
   cursor: pointer;
 }
 .rail-toggle-btn.is-active {
   color: var(--text);
-  background: var(--surface);
-  box-shadow: var(--frame-shadow);
+  background: var(--raise);
+  box-shadow: none;
 }
 .active-rail {
   flex: 1;
@@ -7419,22 +7541,31 @@ a.thread-ref:hover {
 }
 .rail-pane-head {
   display: flex;
-  justify-content: space-between;
-  align-items: baseline;
+  align-items: center;
+  gap: 7px;
   margin: 0;
-  padding: 0 4px;
-  font-family: var(--mono);
+  padding: 4px 6px 0;
+  font-family: var(--ui);
   font-size: 10.5px;
-  font-weight: 500;
-  letter-spacing: 0.14em;
+  font-weight: 600;
+  letter-spacing: 0.09em;
   text-transform: uppercase;
   color: var(--text-dim);
 }
-.rail-pane:first-child .rail-pane-head span:first-child {
-  color: var(--accent);
+.rail-pane-head > span:last-child {
+  font-weight: 500;
+  color: var(--dim);
+}
+/* Yours leads with a lime dot, as in the mockup. */
+.rail-pane:first-child .rail-pane-head::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--yours);
 }
 .rail-pane:last-child .rail-pane-head span:first-child {
-  color: var(--shared);
+  color: var(--text-dim);
 }
 .rail-frame {
   flex: 1;
@@ -7442,9 +7573,9 @@ a.thread-ref:hover {
   min-width: 0;
   overflow-x: hidden;
   overflow-y: auto;
-  background: var(--surface);
-  border-radius: 0.75rem;
-  box-shadow: var(--frame-shadow);
+  background: hsl(var(--card) / 0.55);
+  border: 1px solid var(--line2);
+  border-radius: 10px;
   padding: 4px;
 }
 .rail-empty {
@@ -7453,14 +7584,15 @@ a.thread-ref:hover {
   font-size: 12.5px;
 }
 
-/* Rows: line 1 the name (never wraps), line 2 status · project · counts. No box around an item. */
+/* Rows: line 1 the name (never wraps), line 2 status · project · counts. No box around an item.
+   Sizes, padding and the neutral selection follow the mockup (concept-v4 .row). */
 .tree-node {
   display: flex;
   align-items: center;
   gap: 4px;
-  min-height: 38px;
-  padding: 3px 6px;
-  border-radius: 8px;
+  min-height: 40px;
+  padding: 2px 4px 2px 8px;
+  border-radius: 6px;
   border: none;
   background: none;
 }
@@ -7468,7 +7600,7 @@ a.thread-ref:hover {
   background: hsl(var(--foreground) / 0.04);
 }
 .tree-node.selected {
-  background: hsl(var(--app-primary) / 0.1);
+  background: var(--raise);
   box-shadow: none;
 }
 .row-text {
@@ -8175,9 +8307,9 @@ a.thread-ref:hover {
   flex-direction: column;
   gap: 4px;
   padding: 8px 10px;
-  border-top: 1px solid var(--border);
-  font-size: 12px;
-  color: var(--text);
+  border-top: 1px solid var(--line);
+  font-size: 11.5px;
+  color: var(--text-dim);
 }
 .nav-footer-line {
   display: flex;
@@ -8191,9 +8323,11 @@ a.thread-ref:hover {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+  font-weight: 600;
+  color: var(--text);
 }
 .nav-footer-link {
-  color: var(--text);
+  color: var(--text-dim);
   text-decoration: none;
   display: inline-flex;
   align-items: center;
@@ -8233,6 +8367,7 @@ a.thread-ref:hover {
 }
 .nav-footer-name {
   flex: 1 1 auto;
+  font-weight: 500;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -8324,8 +8459,8 @@ a.thread-ref:hover {
   text-align: left;
   gap: 1px;
   min-width: 0;
-  min-height: 0;
-  padding: 4px 6px;
+  min-height: 40px;
+  padding: 2px 4px 2px 8px;
 }
 .tree-node--two .thread-actions {
   margin-left: auto;
@@ -8345,9 +8480,23 @@ a.thread-ref:hover {
   text-overflow: ellipsis;
   font-size: 13px;
 }
+.tree-row--name > .tree-label {
+  line-height: 18px;
+}
 .tree-row--meta {
+  gap: 5px;
   font-size: 11.5px;
+  line-height: 16px;
   color: var(--text-dim);
+}
+.tree-row--meta > .row-project {
+  color: var(--dim);
+}
+.tree-row--meta > .row-status {
+  flex: none;
+  max-width: 70%;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .tree-row--meta > .row-project {
   min-width: 0;
@@ -8365,7 +8514,6 @@ a.thread-ref:hover {
 .page-nav a[aria-current="page"],
 .band-tabs .center-view--active,
 .thread-segment.center-view--active,
-.rail-toggle-btn.is-active,
 .rp-tab.is-active,
 .board-button.is-active {
   background: hsl(var(--app-primary) / 0.4);
@@ -8405,15 +8553,18 @@ a.thread-ref:hover {
 }
 .nav-footer-pill {
   text-align: center;
-  padding: 3px 6px;
+  padding: 1px 8px;
+  border: 1px solid var(--line2);
   border-radius: 6px;
-  background: hsl(var(--muted));
-  color: var(--text);
+  background: none;
+  color: var(--text-dim);
+  font-weight: 500;
   text-decoration: none;
   white-space: nowrap;
 }
 .nav-footer-pill:hover {
-  background: hsl(var(--app-primary) / 0.2);
+  border-color: hsl(var(--app-primary) / 0.6);
+  color: var(--text);
 }
 .nav-footer-sub-name {
   overflow: hidden;
@@ -8550,7 +8701,7 @@ a.thread-ref:hover {
 }
 .top-pill .pill-glyph {
   flex: none;
-  color: var(--text-dim);
+  color: var(--text);
 }
 
 /* Rename: one small centred window */
@@ -9377,4 +9528,68 @@ a.thread-ref:hover {
   border: 1px solid hsl(var(--app-primary) / 0.5);
   border-radius: 10px;
   font: 11.5px / 17px var(--mono);
+.nav-footer-pill b {
+  color: var(--text);
+  font-weight: 600;
+}
+
+/* Rail pane head: orange and red counts side by side, then "+ New thread" at the end (concept-v4). */
+.rail-attn {
+  display: inline-flex;
+  gap: 3px;
+}
+.rail-attn > span {
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  font: 700 11px / 18px var(--ui);
+  letter-spacing: 0;
+  text-align: center;
+  color: var(--bg);
+}
+.rail-attn-needs {
+  background: var(--st-att);
+}
+.rail-attn-red {
+  background: var(--st-err);
+}
+.rail-new-thread {
+  margin-left: auto;
+  padding: 1px 8px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: none;
+  color: var(--text);
+  font: 500 11.5px var(--ui);
+  letter-spacing: 0;
+  text-transform: none;
+  cursor: pointer;
+}
+.rail-new-thread:hover {
+  border-color: hsl(var(--app-primary) / 0.6);
+}
+.header-divider + .header-divider {
+  display: none;
+}
+
+/* Narrow screens: the top bar keeps its switch and Open pill, without key hints. */
+@media (max-width: 1099px) {
+  .ws-seg kbd,
+  .header .top-pill-dot {
+    display: none;
+  }
+  .ws-seg > button {
+    padding: 0 6px;
+  }
+}
+@media (max-width: 600px) {
+  .ws-seg > .watchtower-button,
+  .header .open-pill .rail-attn {
+    display: none;
+  }
+  .page-nav a {
+    padding: 3px 5px;
+    font-size: 12px;
+  }
 }

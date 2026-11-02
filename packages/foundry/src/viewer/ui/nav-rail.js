@@ -11,6 +11,7 @@
  * scopes, the project list, and the selected scope's threads. Rows are two lines: the name, then the
  * status icon, the project and any counts.
  */
+import { Attention } from './attention.js';
 import { IncomingRows } from './incoming.js';
 import { html } from './lib.js';
 import { NavFooter } from './nav-footer.js';
@@ -19,6 +20,7 @@ import { ProjectSidebar } from './project-sidebar.js';
 import {
   activeThreadId,
   allThreads,
+  createThread,
   leftSize,
   projectSidebarOpen,
   railView,
@@ -47,9 +49,9 @@ function RailToggle() {
   </div>`;
 }
 
-function Pane({ title, count, children, empty, lead }) {
+function Pane({ title, count, children, empty, lead, nodes = [], action = null }) {
   return html`<section class="rail-pane" aria-label=${title}>
-    <h3 class="rail-pane-head"><span>${title}</span><span class="rail-pane-count">${count}</span></h3>
+    <h3 class="rail-pane-head"><span>${title}</span><span class="rail-pane-count">${count}</span><${Attention} nodes=${nodes} />${action}</h3>
     <div class="rail-frame">${lead ?? null}${count ? children : html`<div class="rail-empty">${empty}</div>`}</div>
   </section>`;
 }
@@ -65,8 +67,9 @@ function OpenRail() {
         html`<${ThreadNode} key=${n.id} thread=${n} selectedId=${selected} onSelect=${selectThread} />`,
     );
   return html`<div class="active-rail">
-    <${Pane} title="Yours" count=${yours.length} empty="No open threads of your own.">${rows(yours)}</${Pane}>
-    <${Pane} title="Shared" count=${shared.length} empty="No thread is shared with anyone." lead=${html`<${IncomingRows} />`}>${rows(shared)}</${Pane}>
+    <${Pane} title="Yours" count=${yours.length} nodes=${yours} empty="No open threads of your own."
+      action=${html`<button type="button" class="rail-new-thread" onClick=${() => createThread()}>+ New thread</button>`}>${rows(yours)}</${Pane}>
+    <${Pane} title="Shared" count=${shared.length} nodes=${shared} empty="No thread is shared with anyone." lead=${html`<${IncomingRows} />`}>${rows(shared)}</${Pane}>
   </div>`;
 }
 
