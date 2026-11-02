@@ -19,7 +19,9 @@ import {
   type ConfigStore,
   createProject,
   type FoundryConfig,
+  steerOnSend,
 } from '../config';
+import { readRepositorySettings, settingLayer, writeRepositorySetting } from '../config-resolve';
 import { ViewerFileAccess } from '../file-access';
 import { FoundrySelfChatStore, type SelfChatFocus } from '../foundry-self-chat';
 import { validateId } from '../http-helpers';
@@ -490,6 +492,59 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps): void 
       if (status !== undefined) live.setArchived(status === 'archived');
     }
     return c.json(next.projects[id]);
+  });
+
+  // A project's `steer` (CORE-001): whether a send during a running turn steers into it. In effect,
+  // with the layer it came from; set for me (this machine's project settings, which win) or for
+  // everyone (the repository's committed `.foundry/project.json`); `null` drops that layer's value.
+  app.get('/api/projects/:id/steer', async (c) => {
+    await configStore.load();
+    const config = configStore.config;
+    const project = config.projects[c.req.param('id')];
+    if (!project) return c.json({ error: 'project not found' }, 404);
+    const repository = readRepositorySettings(project.path);
+    return c.json({
+      steer: steerOnSend(config, c.req.param('id')),
+      from:
+        project.steer === undefined && repository?.steer === undefined && config.steer !== undefined
+          ? 'foundry'
+          : settingLayer(project.steer !== undefined, repository?.steer !== undefined),
+      mine: project.steer ?? null,
+      repository: repository?.steer ?? null,
+      foundry: config.steer ?? null,
+      ...(repository ? { repositoryFile: repository.file } : {}),
+      ...(repository?.error ? { repositoryError: repository.error } : {}),
+    });
+  });
+
+  app.put('/api/projects/:id/steer', async (c) => {
+    const body = (await c.req.json().catch(() => null)) as {
+      scope?: unknown;
+      value?: unknown;
+    } | null;
+    const scope = body?.scope;
+    const value = body?.value ?? null;
+    if (scope !== 'me' && scope !== 'everyone')
+      return c.json({ error: 'scope must be me or everyone' }, 400);
+    if (value !== null && typeof value !== 'boolean')
+      return c.json({ error: 'value must be true, false or null' }, 400);
+    const id = c.req.param('id');
+    await configStore.load();
+    const project = configStore.config.projects[id];
+    if (!project) return c.json({ error: 'project not found' }, 404);
+    try {
+      if (scope === 'me')
+        await configStore.update((draft) => {
+          const mine = draft.projects[id];
+          if (!mine) throw Error('project not found');
+          if (value === null) delete mine.steer;
+          else mine.steer = value;
+        });
+      else writeRepositorySetting(project.path, 'steer', value);
+    } catch (error) {
+      return c.json({ error: (error as Error).message }, 409);
+    }
+    return c.json({ ok: true, steer: steerOnSend(await configStore.load(), id) });
   });
 
   app.delete('/api/projects/:id', async (c) => {

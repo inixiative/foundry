@@ -225,6 +225,8 @@ export interface NativeObservation {
   observe(evidence: NativeEvidence): void | Promise<void>;
   /** Receives the stop for this owner's registered admission, where the runtime acknowledges stops. */
   interruptible?(interrupt: NativeInterrupt): void;
+  /** Receives how to steer more input into this owner's registered admission, or why it can't be. */
+  steerable?(steer: NativeSteer): void;
   /**
    * The executor's public thinking text, for live display only. It never becomes evidence:
    * nothing here is journalled, traced or projected (reasoning stays out of NativeEvidence).
@@ -234,6 +236,17 @@ export interface NativeObservation {
 /** `acknowledged`: the runtime confirmed the stop and the turn reached its native terminal. */
 export type NativeInterruptOutcome = 'acknowledged' | 'no-turn' | 'unacknowledged';
 export type NativeInterrupt = (opts?: { timeoutMs?: number }) => Promise<NativeInterruptOutcome>;
+/** What became of a steer: taken into the running turn, sent but unconfirmed, or not delivered (with why). */
+export type NativeSteerOutcome =
+  | { readonly outcome: 'steered' | 'unknown' }
+  | { readonly outcome: 'ignored'; readonly reason: string };
+/**
+ * A running admission's steer (CORE-001): `push` adds text to that turn, where the runtime can steer.
+ * Where it can't, `push` is absent and `reason` says why, so the caller queues and says so.
+ */
+export type NativeSteer =
+  | { readonly push: (text: string) => Promise<NativeSteerOutcome> }
+  | { readonly push?: undefined; readonly reason: string };
 export function freezeEvidence<T>(value: T): T {
   const copy = structuredClone(value);
   const freeze = (v: unknown) => {

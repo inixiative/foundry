@@ -51,7 +51,7 @@ import {
 } from '../../providers/thread-launch';
 import type { RunningTasks } from '../../turns/running-tasks';
 import { type ThreadSetupHost, TurnService } from '../../turns/turn-service';
-import type { ConfigStore } from '../config';
+import { type ConfigStore, steerOnSend } from '../config';
 import { resolveThreadView } from '../config-resolve';
 import type { ViewerStreams } from '../data-streams';
 import { docSections } from '../doc-sections';
@@ -269,14 +269,20 @@ export function registerRuntimeRoutes(
     if ('error' in input) return c.json({ error: input.error }, 400);
     const { payload, images } = input;
 
-    const accepted = turns.accept({
+    const delivery = deliveryOf(body);
+    if (delivery === null) return c.json({ error: 'delivery must be steer or queue' }, 400);
+    const accepted = await turns.deliver({
       threadId: typeof body.threadId === 'string' ? body.threadId : harness.thread.id,
       turnId: typeof body.id === 'string' ? body.id : undefined,
       payload,
       ...(images.length ? { images } : {}),
+      ...(delivery ? { delivery } : {}),
     });
     if (!accepted.ok) return c.json(accepted.body, accepted.status);
     const outcome = await accepted.settled;
+    // Steered into the running turn (CORE-001): that turn answers it, on its own terminal.
+    if (outcome.kind === 'steered')
+      return c.json({ id: accepted.turnId, payload, steered: true, into: outcome.into });
     if (outcome.kind === 'failed')
       return c.json(
         {
@@ -319,25 +325,39 @@ export function registerRuntimeRoutes(
     if ('error' in input) return c.json({ error: input.error }, 400);
     const { payload, images } = input;
 
-    const accepted = turns.accept({
+    const delivery = deliveryOf(body);
+    if (delivery === null) return c.json({ error: 'delivery must be steer or queue' }, 400);
+    const accepted = await turns.deliver({
       threadId: typeof body.threadId === 'string' ? body.threadId : harness.thread.id,
       turnId: typeof body.id === 'string' ? body.id : undefined,
       payload,
       ...(images.length ? { images } : {}),
       // The requesting client (a tab's socket id, optional) receives the full result on its `thread:<threadId>` stream.
       clientId: typeof body.clientId === 'string' ? body.clientId : undefined,
+      ...(delivery ? { delivery } : {}),
     });
     if (!accepted.ok) return c.json(accepted.body, accepted.status);
     return c.json(
       {
         id: accepted.turnId,
         threadId: accepted.threadId,
-        status: 'accepted',
-        queued: accepted.queued,
+        status: accepted.steer?.steered ? 'steered' : 'accepted',
+        queued: accepted.queued && !accepted.steer?.steered,
+        // Sent during a running turn: steered into it (`into`), or why it queued (`reason`).
+        ...(accepted.steer ? { steer: accepted.steer } : {}),
         ...(deps.threadSetup?.pending(accepted.threadId) ? { settingUp: true } : {}),
       },
       202,
     );
+  });
+
+  // "Steer now" (CORE-001): a queued turn's message goes into the thread's running turn, whatever
+  // the `steer` setting says. 200 with `{ steered: true, into }`, or `{ steered: false, reason }`
+  // when it stays queued (the running turn can't take it); 404/409 when it isn't queued here.
+  app.post('/api/threads/:threadId/turns/:turnId/steer', async (c) => {
+    const result = await turns.steerQueued(c.req.param('threadId'), c.req.param('turnId'));
+    if (!result.ok) return c.json({ error: result.error }, result.status);
+    return c.json(result.result);
   });
 
   // Stop a turn: a queued turn or one not yet natively dispatched is cancelled; a dispatched one is
@@ -778,6 +798,8 @@ export function registerRuntimeRoutes(
       effort: launch.effort ?? null,
       mcpServers: describeMcpServers(launch.mcpServers),
       revision: launch.revision,
+      /** Whether a send during a running turn steers into it (CORE-001), and where that came from. */
+      steer: steerOnSend(deps.configStore.config, projectId),
       /** Executor models pinned in settings that this thread's worker does not run. */
       setAside,
       options: {
@@ -1318,4 +1340,11 @@ export function registerRuntimeRoutes(
     return c.json(eventStream.recent({ kind, limit }));
   });
   return { turns, fork: forkThread };
+}
+
+/** A send's `delivery` (CORE-001): `steer`, `queue`, absent (the `steer` setting decides), or null when malformed. */
+function deliveryOf(body: Record<string, unknown>): 'steer' | 'queue' | undefined | null {
+  const value = body.delivery;
+  if (value === undefined) return undefined;
+  return value === 'steer' || value === 'queue' ? value : null;
 }

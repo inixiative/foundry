@@ -816,6 +816,8 @@ export function readRepositorySettings(projectPath: string):
       file: string;
       chorus?: ChorusSettings;
       conversations?: ConversationSettingsInput;
+      /** Whether a send during a running turn steers into it, for everyone on this project (CORE-001). */
+      steer?: boolean;
       error?: string;
     }
   | undefined {
@@ -824,19 +826,22 @@ export function readRepositorySettings(projectPath: string):
   try {
     const raw: unknown = JSON.parse(readFileSync(file, 'utf8'));
     if (!raw || typeof raw !== 'object' || Array.isArray(raw))
-      throw Error('must be an object: { "chorus"?, "conversations"? }');
+      throw Error('must be an object: { "chorus"?, "conversations"?, "steer"? }');
     const settings = raw as Record<string, unknown>;
     for (const key of Object.keys(settings))
-      if (key !== 'chorus' && key !== 'conversations' && key !== '$comment')
-        throw Error(`${key} is not a repository setting (chorus, conversations, $comment)`);
+      if (key !== 'chorus' && key !== 'conversations' && key !== 'steer' && key !== '$comment')
+        throw Error(`${key} is not a repository setting (chorus, conversations, steer, $comment)`);
     validateChorusSettings('chorus', settings.chorus);
     validateConversationSettings('conversations', settings.conversations);
+    if (settings.steer !== undefined && typeof settings.steer !== 'boolean')
+      throw Error('steer must be true or false');
     return {
       file,
       ...(settings.chorus === undefined ? {} : { chorus: settings.chorus as ChorusSettings }),
       ...(settings.conversations === undefined
         ? {}
         : { conversations: settings.conversations as ConversationSettingsInput }),
+      ...(settings.steer === undefined ? {} : { steer: settings.steer as boolean }),
     };
   } catch (error) {
     return { file, error: (error as Error).message };

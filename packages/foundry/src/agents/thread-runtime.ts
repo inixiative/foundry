@@ -576,6 +576,8 @@ export interface PhaseRecordInput {
     | 'handoff'
     | 'handoff-return'
     | 'chorus-dismiss'
+    /** A queued turn whose message went into the running turn (`record.into`, CORE-001). */
+    | 'steered'
     | FeedbackPhase
     | ConversationPhase;
   readonly record: Record<string, unknown>;

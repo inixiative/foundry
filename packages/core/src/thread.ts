@@ -639,6 +639,7 @@ export class Thread {
             register: opts.nativeObservation.register,
             observe: opts.nativeObservation.observe,
             interruptible: opts.nativeObservation.interruptible,
+            steerable: opts.nativeObservation.steerable,
             thought: opts.nativeObservation.thought,
             owner: Object.freeze({
               threadId: this.id,
