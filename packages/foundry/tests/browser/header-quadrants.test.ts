@@ -139,7 +139,7 @@ test('the thread header stays two rows from 1024 to 1920 wide', async () => {
       id: 'shop',
       label: 'acme-shop-storefront',
       path: join(dir, 'shop'),
-      tags: [],
+      tags: ['acme'],
       runtime: 'claude-code',
     });
     project.addThread(
@@ -153,6 +153,12 @@ test('the thread header stays two rows from 1024 to 1920 wide', async () => {
     const config = starterConfig('controlled', 'controlled');
     config.agents = defaultAgents();
     config.setupComplete = true;
+    config.projects.shop = {
+      id: 'shop',
+      path: join(dir, 'shop'),
+      label: 'acme-shop-storefront',
+      tags: ['acme'],
+    };
     await configStore.save(config);
     const viewer = createViewer({
       harness: new Harness(new Thread('main', new ContextStack(), { description: 'Global' })),
@@ -197,6 +203,8 @@ test('the thread header stays two rows from 1024 to 1920 wide', async () => {
     const grid = page.locator('.thread-band--pills .band-grid');
     await grid.locator('.band-run', { hasText: 'high' }).waitFor();
     const title = grid.locator('.context-bar-title');
+    // With no Kingdom owner yet, the project's organisation tag sits beside it.
+    await grid.locator('.band-org', { hasText: 'acme' }).waitFor();
     expect(await title.getAttribute('title')).toContain(name);
     let squeezed = false;
     for (const width of [1920, 1680, 1440, 1280, 1100, 1024]) {
