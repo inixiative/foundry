@@ -15,6 +15,7 @@
 import { AboutSection } from './about-settings.js';
 import { AccessSettings } from './access-settings.js';
 import { ArchiveSettings, ProjectArchive } from './archive-settings.js';
+import { ComingSoon } from './coming-soon.js';
 import { ProjectConversations } from './conversation-members.js';
 import { devMode, setDevMode } from './dev-mode.js';
 import { DevicesSection } from './devices.js';
@@ -25,6 +26,7 @@ import { KingdomSettings } from './kingdom-settings.js';
 import { html, signal, useCallback, useEffect, useState } from './lib.js';
 import { MessageBoxSection } from './message-box.js';
 import { ProfileSection } from './profile-settings.js';
+import { ChorusSwitch, ProjectOverrides, ProjectSources } from './project-setting-rows.js';
 import { ProvidersSection } from './provider-settings.js';
 import {
   FOUNDRY_SETTINGS,
@@ -36,6 +38,7 @@ import {
 } from './route.js';
 import { ActivitySection, AgentsSection, LayersSection } from './runtime-panels.js';
 import { SelfChatPane } from './self-chat.js';
+import { SettingRow } from './setting-row.js';
 import { authFetch, modelRegistry, projects, showToast } from './store.js';
 import { Switch } from './switch.js';
 import { ProjectAgent, ProjectWork, ThreadSettings } from './thread-settings.js';
@@ -592,64 +595,6 @@ const saved = (next) => {
   settingsConfig.value = next;
 };
 
-/** A section that exists but is not built yet: it says so, and shows no controls. */
-function ComingSoon({ children }) {
-  return html`<section class="settings-card coming-soon-card">
-    <span class="coming-soon">Coming soon</span>
-    <p class="settings-desc">${children}</p>
-  </section>`;
-}
-
-/** What this project sets on top of Foundry's settings, read-only (edit `projects[id]` in settings.json). */
-const OVERRIDE_GROUPS = [
-  ['defaults', 'Defaults', 'Executor and classifier provider and model'],
-  ['toolRules', 'Tool rules', 'Capabilities here override the global ones; protected paths add up'],
-  ['feedback', 'Feedback', 'Each field overrides the global one'],
-  ['prompts', 'Prompts', 'Base identity prompt files'],
-  ['agents', 'Agents', 'Standalone, or extending a global agent'],
-  ['layers', 'Layers', 'Merged over the global layers'],
-];
-
-function overrideEntries(value) {
-  if (!value || typeof value !== 'object') return [];
-  return Object.entries(value).filter(([, v]) => v !== undefined);
-}
-
-function overrideValue(key, value) {
-  if (key === 'agents' && value && typeof value === 'object')
-    return 'extends' in value ? `extends ${value.extends}` : 'standalone';
-  if (value === null || typeof value !== 'object') return String(value);
-  return JSON.stringify(value);
-}
-
-function ProjectOverrides({ project }) {
-  const groups = OVERRIDE_GROUPS.map(([key, label, desc]) => ({
-    key,
-    label,
-    desc,
-    entries: overrideEntries(project[key]),
-  })).filter((g) => g.entries.length);
-  return html`<section class="settings-card project-overrides">
-    <p class="settings-desc">What this project sets on top of Foundry's settings. Everything not listed is inherited. Read-only here: edit <code>projects[${project.id}]</code> in settings.json.</p>
-    ${
-      groups.length
-        ? groups.map(
-            (
-              g,
-            ) => html`<div key=${g.key} class="override-group" data-override=${g.key} data-setting=${g.key}>
-              <h3>${g.label}</h3>
-              <p class="settings-desc">${g.desc}</p>
-              <dl class="override-list">${g.entries.map(
-                ([k, v]) =>
-                  html`<div key=${k} data-setting=${`${g.key}.${k}`}><dt><code>${k}</code></dt><dd><code>${overrideValue(g.key, v)}</code></dd></div>`,
-              )}</dl>
-            </div>`,
-          )
-        : html`<p class="settings-empty">No overrides: this project inherits everything from Foundry settings.</p>`
-    }
-  </section>`;
-}
-
 function FoundrySection({ section, config }) {
   const projectList = Object.entries(config.projects ?? {}).map(([id, p]) => ({
     id,
@@ -695,39 +640,54 @@ function FoundrySection({ section, config }) {
   return null;
 }
 
+/** A project page whose settings are this person's alone: the chip says so, ⋯ says why. */
+function PersonalRow({ path, label, why }) {
+  return html`<section class="settings-card setting-rows">
+    <${SettingRow} path=${path} label=${label} help="Set on this machine, for you." source="yours"
+      actions=${{ me: 'Set below', everyone: why, reset: 'Set below' }} />
+  </section>`;
+}
+
 function ProjectSection({ section, projectId, project, onFocusChange }) {
+  // The chorus view is read again after its switch saves.
+  const [chorusRead, setChorusRead] = useState(0);
   if (!project)
     return html`<div class="settings-empty">This project is not registered with Foundry.</div>`;
   if (section === 'integrations')
-    return html`<${AccessSettings} key=${projectId} projectId=${projectId} onSaved=${loadSettings} />`;
+    return html`<${PersonalRow} path="kingdomAccess" label="Integration grants"
+        why="Your grants come from your Kingdom; each teammate pairs their own" />
+      <${AccessSettings} key=${projectId} projectId=${projectId} onSaved=${loadSettings} />`;
   if (section === 'archive')
-    return html`<${ProjectArchive} key=${projectId} projectId=${projectId} />`;
+    return html`<${PersonalRow} path="archive" label="Archive"
+        why="Where your sessions are archived is yours; each teammate connects their own" />
+      <${ProjectArchive} key=${projectId} projectId=${projectId} />`;
   if (section === 'gloss')
-    return html`<${ComingSoon}>Gloss: margin commentary kept beside the code instead of in it, for this project's agents to read. It arrives with Foundry's code viewer (ticket VIEWER-004).</${ComingSoon}>`;
+    return html`<${ComingSoon} card=${true} ticket="VIEWER-004"
+      what="Gloss: margin commentary kept beside the code instead of in it, for this project's agents to read. It arrives with Foundry's code viewer." />`;
   if (section === 'chorus')
-    return html`<${ProjectChorus} key=${projectId} projectId=${projectId} />`;
+    return html`<${ChorusSwitch} key=${`switch-${projectId}`} projectId=${projectId}
+        onSaved=${async () => {
+          await loadSettings();
+          setChorusRead((n) => n + 1);
+        }} />
+      <${ProjectChorus} key=${`${projectId}-${chorusRead}`} projectId=${projectId} />`;
   if (section === 'work')
     return html`<${ProjectWork} key=${projectId} config=${settingsConfig.value} projectId=${projectId} onSaved=${loadSettings} />`;
   if (section === 'agent')
     return html`<${ProjectAgent} key=${projectId} config=${settingsConfig.value} projectId=${projectId} onSaved=${loadSettings} />`;
   if (section === 'conversations')
     return html`<${ProjectConversations} key=${projectId} projectId=${projectId} />`;
-  if (section === 'overrides') return html`<${ProjectOverrides} project=${project} />`;
-  if (section === 'sources') {
-    const sources = Object.values(project.sources || {});
-    return html`
-      ${sources.map(
-        (s) => html`<${SourceEditor}
-          key=${s.id}
-          source=${s}
-          onSave=${(source) => saveProjectSection(projectId, 'sources', { [source.id]: source })}
-          onDelete=${(id) => deleteProjectItem(projectId, 'sources', id)}
-          onFocusChange=${onFocusChange}
-        />`,
-      )}
-      ${sources.length ? null : html`<div class="settings-empty">No sources configured for this project.</div>`}
-    `;
-  }
+  if (section === 'overrides')
+    return html`<${ProjectOverrides} key=${projectId} projectId=${projectId} onSaved=${loadSettings} />`;
+  if (section === 'sources')
+    return html`<${ProjectSources} key=${projectId} projectId=${projectId} sources=${project.sources}
+      editor=${(id, source) => html`<${SourceEditor}
+        key=${id}
+        source=${source}
+        onSave=${(next) => saveProjectSection(projectId, 'sources', { [next.id]: next })}
+        onDelete=${(gone) => deleteProjectItem(projectId, 'sources', gone)}
+        onFocusChange=${onFocusChange}
+      />`} />`;
   return null;
 }
 

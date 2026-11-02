@@ -17,7 +17,8 @@ import {
   probeCodexLimits,
 } from '@inixiative/agent-session';
 import { SUBSCRIPTION_WORKERS, type SubscriptionWorker } from '../models/registry';
-import { withoutCompetingCredentials } from './native-authentication';
+import { isDefaultProfile, type NativeProfileSource, profileEnvironment } from './default-profiles';
+import { loginEnvironment, withoutCompetingCredentials } from './native-authentication';
 import { nativeTextEnvironment } from './native-text-environment';
 import type { ProviderAccount } from './provider-accounts';
 
@@ -32,18 +33,13 @@ const FRESH_MS = 5 * 60_000;
 const cache = new Map<string, { at: number; snapshot: LimitSnapshot | undefined }>();
 const inFlight = new Map<string, Promise<LimitSnapshot | undefined>>();
 
-/** `home` is a separate profile's directory; undefined is the default login (the CLI's own home). */
-type Probe = (home: string | undefined) => Promise<LimitSnapshot | undefined>;
+/** `env` selects a separate login (its home, and a setup-token login's token); absent, the CLI's own login. */
+type Probe = (env: Record<string, string> | undefined) => Promise<LimitSnapshot | undefined>;
 const PROBES: Record<SubscriptionWorker, Probe> = {
-  'claude-code': (home) =>
-    probeClaudeLimits({
-      ...(home ? { env: { CLAUDE_CONFIG_DIR: home } } : {}),
-      timeoutMs: 30_000,
-    }).catch(() => undefined),
-  codex: (home) =>
-    probeCodexLimits({ ...(home ? { env: { CODEX_HOME: home } } : {}), timeoutMs: 15_000 }).catch(
-      () => undefined,
-    ),
+  'claude-code': (env) =>
+    probeClaudeLimits({ ...(env ? { env } : {}), timeoutMs: 30_000 }).catch(() => undefined),
+  codex: (env) =>
+    probeCodexLimits({ ...(env ? { env } : {}), timeoutMs: 15_000 }).catch(() => undefined),
   muse: () => probeMuseLimits().catch(() => undefined),
 };
 
@@ -67,21 +63,57 @@ async function probeMuseLimits(timeoutMs = 15_000): Promise<LimitSnapshot | unde
 
 async function probe(
   provider: SubscriptionWorker,
-  home: string | undefined,
+  key: string,
+  env: () => Record<string, string> | undefined,
   probes: Record<SubscriptionWorker, Probe>,
 ) {
-  const key = `${provider}:${home ?? 'login'}`;
   const hit = cache.get(key);
   if (hit && Date.now() - hit.at < FRESH_MS) return hit.snapshot;
   const running = inFlight.get(key);
   if (running) return running;
-  const next = probes[provider](home).then((snapshot) => {
-    cache.set(key, { at: Date.now(), snapshot });
-    inFlight.delete(key);
-    return snapshot;
-  });
+  const next = Promise.resolve()
+    .then(() => probes[provider](env()))
+    .catch(() => undefined)
+    .then((snapshot) => {
+      cache.set(key, { at: Date.now(), snapshot });
+      inFlight.delete(key);
+      return snapshot;
+    });
   inFlight.set(key, next);
   return next;
+}
+
+/**
+ * One login's usage windows, read in its own home (and, for a setup-token login, with its token),
+ * cached a few minutes per login. The default login is read in the CLI's own home: pointing the CLI
+ * at that same directory by variable changes where Claude Code looks up its credential.
+ */
+export function loginLimits(
+  login: NativeProfileSource,
+  probes: Record<SubscriptionWorker, Probe> = PROBES,
+): Promise<LimitSnapshot | undefined> {
+  const worker = (Object.keys(SUBSCRIPTION_WORKERS) as SubscriptionWorker[]).find(
+    (w) => SUBSCRIPTION_WORKERS[w] === login.runtime,
+  )!;
+  const own = isDefaultProfile(login.profileDirectory, login.runtime);
+  return probe(
+    worker,
+    `${worker}:${own ? 'login' : login.profileDirectory}`,
+    () => (own && !login.tokenFile ? undefined : loginEnvironment(login)),
+    probes,
+  );
+}
+
+/** Forget a login's cached reading: a new sign-in, or a session that saw its limits change. */
+export function forgetLoginLimits(login: NativeProfileSource): void {
+  const own = isDefaultProfile(login.profileDirectory, login.runtime);
+  const suffix = `:${own ? 'login' : login.profileDirectory}`;
+  for (const key of cache.keys())
+    if (
+      key.endsWith(suffix) &&
+      key.startsWith(login.runtime === 'codex' ? 'codex:' : 'claude-code:')
+    )
+      cache.delete(key);
 }
 
 /** The limits of every subscription login among `accounts`. */
@@ -101,7 +133,12 @@ export async function providerLimits(
       // The default login probes in the CLI's own home: pointing the CLI at that same directory by
       // variable changes where Claude Code looks up its credential.
       const home = account.source === 'profile' ? account.detail : undefined;
-      const snapshot = await probe(account.provider, home, probes);
+      const snapshot = await probe(
+        account.provider,
+        `${account.provider}:${home ?? 'login'}`,
+        () => (home ? profileEnvironment(SUBSCRIPTION_WORKERS[account.provider], home) : undefined),
+        probes,
+      );
       return snapshot
         ? { provider: account.provider, state: 'probed', snapshot }
         : { provider: account.provider, state: 'unavailable' };

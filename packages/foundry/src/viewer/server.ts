@@ -75,6 +75,7 @@ import { registerConversationRoutes } from './routes/conversations';
 import { registerDeviceRoutes } from './routes/devices';
 import { registerGlossRoutes } from './routes/gloss';
 import { registerKingdomRoutes } from './routes/kingdom';
+import { registerLoginRoutes } from './routes/logins';
 import { registerModelRoutes } from './routes/models';
 import { registerProfileRoutes } from './routes/profile';
 import { registerRuntimeRoutes } from './routes/runtime';
@@ -133,6 +134,8 @@ export interface ViewerConfig {
   threadSetup?: ThreadSetupHost & {
     onSetup(listener: (threadId: string, setup: ThreadSetup) => void): void;
   };
+  /** This machine's subscription logins, their balancing and sign-ins (providers/login-pool.ts). */
+  logins?: Omit<import('./routes/logins').LoginRoutesDeps, 'configStore' | 'foundryDir'>;
   /** Executor providers whose sessions report their background tasks (shells, monitors). */
   taskSources?: ReadonlyArray<{ observeTasks(sink: TaskSink): () => void }>;
   /** Executor providers whose sessions start turns on their own (Muse crons, monitors, goals). */
@@ -798,6 +801,14 @@ export function createViewer(config: ViewerConfig) {
     assistTools: config.assistTools,
     threadsChanged: () => streams.threadsChanged(),
   });
+  if (config.logins)
+    registerLoginRoutes(app, {
+      ...config.logins,
+      configStore,
+      foundryDir: config.configDir ?? '.foundry',
+    });
+  // A viewer without this machine's logins (API tokens, tests) has no pools to show.
+  else app.get('/api/providers/pools', (c) => c.json({ pools: [], setups: [], kingdom: [] }));
 
   // The browser and offline verifier execute the same import-free proof module.
   app.get('/ui/delivery-evidence.js', async (c) =>
@@ -811,7 +822,7 @@ export function createViewer(config: ViewerConfig) {
       { 'Content-Type': 'application/javascript' },
     ),
   );
-  // The look is @inixiative/config's shared theme (public.css, agentic.css and the fonts they load),
+  // The look is @inixiative/config's shared theme (public.css, status.css and the fonts they load),
   // read from the package at runtime so Foundry and Kingdom never drift apart.
   const themeDir = dirname(
     fileURLToPath(import.meta.resolve('@inixiative/config/theme/public.css')),

@@ -4,7 +4,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 // The viewer's colours and type come from @inixiative/config's shared theme (public.css and
-// agentic.css, served at /ui/theme/) plus the viewer's working names in styles.css. These checks
+// status.css, served at /ui/theme/) plus the viewer's working names in styles.css. These checks
 // keep it that way: every variable used is defined, no stylesheet or component hard-codes a colour,
 // and every font the theme loads ships with it.
 
@@ -13,7 +13,7 @@ const read = (f: string) => readFileSync(join(ui, f), 'utf8');
 const withoutComments = (css: string) => css.replace(/\/\*[\s\S]*?\*\//g, '');
 const themeDir = dirname(fileURLToPath(import.meta.resolve('@inixiative/config/theme/public.css')));
 const theme = (f: string) => readFileSync(join(themeDir, f), 'utf8');
-const tokens = withoutComments(theme('public.css') + theme('agentic.css'));
+const tokens = withoutComments(theme('public.css') + theme('status.css'));
 const sheets = [
   ['theme', tokens] as const,
   ...['styles.css', 'gloss.css'].map((f) => [f, withoutComments(read(f))] as const),
@@ -86,8 +86,8 @@ test('the viewer loads the theme before its own styles', () => {
     const html = read(page);
     const at = (href: string) => html.indexOf(`href="${href}"`);
     expect(at('/ui/theme/public.css')).toBeGreaterThan(-1);
-    expect(at('/ui/theme/public.css')).toBeLessThan(at('/ui/theme/agentic.css'));
-    expect(at('/ui/theme/agentic.css')).toBeLessThan(at('/ui/styles.css'));
+    expect(at('/ui/theme/public.css')).toBeLessThan(at('/ui/theme/status.css'));
+    expect(at('/ui/theme/status.css')).toBeLessThan(at('/ui/styles.css'));
     expect(html).toContain('class="dark"');
   }
 });

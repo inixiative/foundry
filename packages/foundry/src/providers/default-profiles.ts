@@ -3,7 +3,7 @@
  * @kind service
  * @partOf feature:nativeAuth
  */
-import { realpathSync } from 'node:fs';
+import { existsSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { isAbsolute, join, resolve } from 'node:path';
 import type { NativeAuthenticationSource } from './native-authentication';
@@ -49,6 +49,18 @@ export function defaultProfileSource(runtime: Runtime): NativeProfileSource {
     mode: 'native-profile',
     profileDirectory: defaultProfileDirectory(runtime),
   };
+}
+
+/** The marker `login-setup.ts` leaves in a login home Foundry made (the user's own setup lives elsewhere). */
+export const FOUNDRY_LOGIN_MARKER = '.foundry-login';
+
+/**
+ * A login home Foundry made for one of several subscriptions: it holds only the sign-in, so a main
+ * thread on it takes the user's own setup from their default home. Any other profile is the user's
+ * own and keeps its own setup.
+ */
+export function isFoundryLogin(directory: string): boolean {
+  return existsSync(join(directory, FOUNDRY_LOGIN_MARKER));
 }
 
 export function isDefaultProfile(directory: string, runtime: Runtime): boolean {

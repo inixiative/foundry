@@ -166,26 +166,67 @@ test('done threads, the merge setting, the Kingdom project link and the region p
     expect(await merge.locator('select').inputValue()).toBe('auto-archive');
     await merge.locator('select').selectOption('done');
     await merge.locator('.setting-source', { hasText: 'Yours' }).waitFor();
-    // ⋯ offers Set for everyone only where the repository has a layer; Reset is live once set.
-    await merge.getByRole('button', { name: /Set for me, for everyone, or reset/ }).click();
-    expect(await merge.getByRole('menuitem', { name: /Set for everyone/ }).isDisabled()).toBe(true);
-    expect(await merge.getByRole('menuitem', { name: 'Reset' }).isDisabled()).toBe(false);
-    await page.keyboard.press('Escape');
+    expect(
+      JSON.parse(readFileSync(join(dir, 'settings.json'), 'utf8')).projects.shop.threadOnMerge,
+    ).toBe('done');
+    // ⋯ Set for everyone writes the repository's file; yours still wins over it.
+    const menu = (row: typeof merge) =>
+      row.getByRole('button', { name: /Set for me, for everyone, or reset/ }).click();
+    await menu(merge);
+    await merge.getByRole('menuitem', { name: /Set for everyone/ }).click();
+    await merge.locator('.setting-source', { hasText: 'Yours · overrides team' }).waitFor();
+    expect(JSON.parse(readFileSync(join(dir, '.foundry/project.json'), 'utf8'))).toEqual({
+      threadOnMerge: 'done',
+    });
+    // Reset drops yours: the team's value is in effect.
+    await menu(merge);
+    await merge.getByRole('menuitem', { name: 'Reset' }).click();
+    await merge.locator('.setting-source', { hasText: 'Team · .foundry/' }).waitFor();
+    expect(
+      JSON.parse(readFileSync(join(dir, 'settings.json'), 'utf8')).projects.shop,
+    ).not.toHaveProperty('threadOnMerge');
     await page
       .locator('[data-setting="worktreeMode"] .setting-source', { hasText: 'From the repo' })
       .waitFor();
-    // Agent: Enter (steer) has all three layers.
+    // Agent: the worker and its model are chosen together; Enter (steer) has all three layers.
     await page.goto(`${origin}/projects/shop/settings/agent`);
+    const worker = page.locator('[data-setting="defaults.provider"]');
+    await worker.getByRole('combobox', { name: 'Model' }).waitFor();
+    expect(await worker.getByRole('combobox', { name: 'Default worker' }).count()).toBe(1);
     const steer = page.locator('[data-setting="steer"]');
     await steer.locator('.setting-source').waitFor();
-    await steer.getByRole('button', { name: /Set for me, for everyone, or reset/ }).click();
+    await menu(steer);
     expect(await steer.getByRole('menuitem', { name: /Set for everyone/ }).isDisabled()).toBe(
       false,
     );
     await page.keyboard.press('Escape');
+    // Overrides lists each group the project sets, the team's included, with where it comes from.
+    await fetch(`${origin}/api/projects/shop/setting`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ scope: 'everyone', values: { 'feedback.capture': true } }),
+    });
+    await page.goto(`${origin}/projects/shop/settings/overrides`);
+    await page
+      .locator('[data-setting="feedback"] .setting-source', { hasText: 'Team · .foundry/' })
+      .waitFor();
+    // Conversations: one row per field, each with its layer and ⋯.
+    await page.goto(`${origin}/projects/shop/settings/conversations`);
+    const floor = page.locator('[data-setting="conversations.floor"]');
+    await floor.locator('.setting-source', { hasText: 'Default' }).waitFor();
+    await floor.locator('select').selectOption('conch');
+    await floor.locator('.setting-source', { hasText: 'Yours' }).waitFor();
+    // Chorus: on or off, yours or the team's.
+    await page.goto(`${origin}/projects/shop/settings/chorus`);
+    await page.locator('[data-setting="chorus.enabled"] .setting-source').waitFor();
+    // A person setting says why it has no "for everyone".
+    await page.goto(`${origin}/projects/shop/settings/integrations`);
+    const grants = page.locator('[data-setting="kingdomAccess"]');
+    await menu(grants);
     expect(
-      JSON.parse(readFileSync(join(dir, 'settings.json'), 'utf8')).projects.shop.threadOnMerge,
-    ).toBe('done');
+      await grants.getByRole('menuitem', { name: /Set for everyone/ }).getAttribute('title'),
+    ).toContain('Kingdom');
+    await page.keyboard.press('Escape');
 
     // About names the Kingdom project.
     await page.goto(`${origin}/#project=shop&home=1`);

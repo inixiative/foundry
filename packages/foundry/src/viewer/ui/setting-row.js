@@ -27,7 +27,7 @@ const SOURCE = {
   detected: ['From the repo', 'Read from the repository; not a setting'],
 };
 
-function SourceMenu({ path, actions, busy }) {
+export function SourceMenu({ path, actions, busy }) {
   const [open, setOpen] = useState(false);
   useEffect(() => {
     if (!open) return;

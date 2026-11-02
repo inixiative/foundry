@@ -15,6 +15,8 @@ import { harnessSettingSources } from './providers/harness-settings';
 import { InSessionWardens, inSessionThreadSetup } from './providers/in-session-wardens';
 import { KingdomAuthentication } from './providers/kingdom-authentication';
 import { projectCapacity } from './providers/kingdom-subscription-authentication';
+import { LoginPoolAuthentication, LoginRunLog } from './providers/login-pool';
+import { LoginSetup } from './providers/login-setup';
 import {
   NativeAuthentication,
   type NativeAuthenticationProvider,
@@ -26,8 +28,12 @@ import {
 import { boundLaunchEnvironment } from './providers/native-text-environment';
 import { SubscriptionAuthentication } from './providers/subscription-authentication';
 import {
+  loginPoolSettings,
+  POOLED_RUNTIMES,
+  type PooledRuntime,
   resolveSubscriptionPolicy,
   threadWorkerRequirement,
+  usableLogins,
   workerDefaultModel,
 } from './providers/subscription-policy';
 /**
@@ -124,7 +130,7 @@ import {
   foundryConfigDir,
   starterConfig,
 } from './viewer/config';
-import { resolveProjectView } from './viewer/config-resolve';
+import { effectiveProject, resolveProjectView } from './viewer/config-resolve';
 import { startViewer } from './viewer/server';
 
 // ---------------------------------------------------------------------------
@@ -330,6 +336,37 @@ const noLocalLogin = (worker: string): NativeAuthenticationProvider => ({
   },
 });
 
+// This machine's logins per runtime, balanced when there are several (providers/login-pool.ts). Read
+// live from settings: a login added in Settings › Providers serves the next launch.
+const loginRuns = new LoginRunLog(LoginPoolAuthentication.runsFile(FOUNDRY_DIR));
+const loginPools: Partial<Record<PooledRuntime, LoginPoolAuthentication>> = {};
+for (const runtime of POOLED_RUNTIMES) {
+  const worker = runtime === 'claude' ? 'claude-code' : 'codex';
+  const started = subscription?.workers[worker];
+  if (!started) continue;
+  const live = () => {
+    try {
+      return usableLogins(configStore.config, runtime);
+    } catch {
+      return { primary: started, logins: subscription?.pools[worker] ?? [started] };
+    }
+  };
+  loginPools[runtime] = new LoginPoolAuthentication({
+    runtime,
+    directory: join(FOUNDRY_DIR, 'runtime-profiles'),
+    logins: () => live().logins,
+    primary: () => live().primary,
+    settings: (threadId) =>
+      loginPoolSettings(
+        configStore.config,
+        runtime,
+        threadMeta?.(threadId.split(':aux:')[0]!)?.projectId,
+      ),
+    runs: loginRuns,
+  });
+}
+process.once('exit', () => loginRuns.flush());
+
 /** One worker's provider and session adapter. Building it spawns nothing: processes start per thread. */
 function createProvider(
   config: FoundryConfig,
@@ -341,8 +378,11 @@ function createProvider(
   const login = subscription?.workers[providerId as keyof typeof subscription.workers];
   // Each worker's adapter starts on its own default model: the global model only on the global worker.
   const defaultModel = workerDefaultModel(config, providerId);
+  const pooled = login && (login.runtime === 'claude' || login.runtime === 'codex');
   const authentication = login
-    ? new SubscriptionAuthentication(join(FOUNDRY_DIR, 'runtime-profiles'), login)
+    ? pooled
+      ? loginPools[login.runtime as PooledRuntime]!
+      : new SubscriptionAuthentication(join(FOUNDRY_DIR, 'runtime-profiles'), login)
     : subscription
       ? noLocalLogin(providerId)
       : nativeAuthenticationMode(config) === 'kingdom'
@@ -753,7 +793,7 @@ const stampedWorkers = LocalSessionStore.stampWorkers(join(FOUNDRY_DIR, 'session
     Object.entries(WORKER_SESSION_RUNTIMES).map(([worker, runtime]) => [runtime, worker]),
   ),
   projectDefault: (projectId) =>
-    (projectId ? config.projects[projectId]?.defaults?.provider : undefined) ??
+    (projectId ? effectiveProject(config, projectId)?.defaults?.provider : undefined) ??
     config.defaults.provider,
 });
 if (stampedWorkers.stamped.length)
@@ -928,6 +968,11 @@ const acpLaunch =
 const claudeProvider = workers.get('claude-code')?.provider;
 const viewer = await startViewer({
   autoTunnel: true,
+  logins: {
+    pools: loginPools,
+    runs: loginRuns,
+    setup: new LoginSetup({ foundryDir: FOUNDRY_DIR, store: configStore }),
+  },
   harness,
   eventStream,
   interventions,

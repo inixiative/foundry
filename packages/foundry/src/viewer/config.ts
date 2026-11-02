@@ -12,6 +12,9 @@ import {
   type Harness,
   type MemorySelectionPolicy,
   newId,
+  REASONING_EFFORTS,
+  registryModel,
+  SUBSCRIPTION_WORKER_MODELS,
   type VersionEntry,
   type VersionLog,
   validateMemorySelection,
@@ -64,9 +67,13 @@ import {
 } from '../providers/native-authentication';
 import {
   assertMainThreadLabs,
+  type LoginPoolsSettings,
+  POOLED_RUNTIMES,
   resolveSubscriptionPolicy,
+  runtimeLogins,
   SUBSCRIPTION_DECISIONS,
   type SubscriptionSettings,
+  validateLoginPools,
 } from '../providers/subscription-policy';
 import { type PrefilterSettings, validatePrefilterSettings } from '../providers/warden-prefilter';
 import { type SecretsSettings, validateSecretsSettings } from '../secrets/scratch';
@@ -92,7 +99,9 @@ export function steerOnSend(config: FoundryConfig, projectId?: string): boolean 
 /** What a thread in `projectId` becomes when its branch merges: project, then Foundry-wide, then `done`. */
 export function threadOnMerge(config: FoundryConfig, projectId?: string): ThreadOnMerge {
   return (
-    (projectId ? config.projects?.[projectId]?.threadOnMerge : undefined) ??
+    (projectId && config.projects?.[projectId]
+      ? effectiveProject(config, projectId)?.threadOnMerge
+      : undefined) ??
     config.threadOnMerge ??
     'done'
   );
@@ -102,6 +111,7 @@ import type { ReasoningEffort } from '@inixiative/foundry-core';
 import { writeFileAtomic } from '../client/private-file';
 import type { ToolRules } from '../turns/tool-gate';
 import {
+  effectiveProject,
   type ResolvedLayerDefinition,
   type ResolvedProjectView,
   readRepositorySettings,
@@ -149,8 +159,14 @@ export interface FoundryConfig {
   subscriptionOnly?: SubscriptionSettings;
   /** Structural tool rules: the only tool denials, held in every permission mode (turns/tool-gate.ts). */
   toolRules?: ToolRules;
-  /** Credential references only; do not put tokens in settings. */
+  /** Credential references only; do not put tokens in settings. Several of one runtime are a pool. */
   nativeAuthentication?: NativeAuthenticationSource[];
+  /**
+   * How a runtime with several logins balances them (Aron, 2026-11-02: "a balancing toggle… like a
+   * scale"): `routing` (default `quartile-balanced`; `pinned` is balancing off) and the login
+   * `owner-first` or `pinned` prefers. A project's `subscriptionPools` overrides it.
+   */
+  subscriptionPools?: LoginPoolsSettings;
   /** Kingdom subscription pools this Foundry draws main-thread logins from: one per owner's Signet (URL, credential file, pool selection). */
   kingdomInference?: KingdomInferenceSource[];
   /** Project-scoped integration grants. Independent of inference resource selection. Restart to apply. */
@@ -341,6 +357,8 @@ export interface ProjectSettingsConfig {
   conversations?: ConversationSettingsInput;
   /** Where main threads get their subscription: this machine's login (`local`, the default) or a Kingdom pool. */
   capacity?: 'local' | 'kingdom';
+  /** How this project's threads balance this machine's logins, per runtime; over the Foundry-wide `subscriptionPools`. */
+  subscriptionPools?: LoginPoolsSettings;
   /** Required when `capacity` is `kingdom`. */
   kingdomCapacity?: ProjectKingdomCapacity;
   /** The one Kingdom project this Foundry project links to (Aron, 2026-11-01); its pool chooses a Kingdom-capacity login. */
@@ -950,20 +968,29 @@ function validateAgentKinds(owner: string, agents: Record<string, Partial<AgentS
  * from a project's `.foundry/regions` when its chorus is enabled, are the only chorus. A Warden left in
  * settings is refused by name, with the fix, never silently dropped (no alias, no migration).
  */
+function handNamedWardens(where: string, agents: Record<string, unknown> | undefined): string[] {
+  const found: string[] = [];
+  for (const [id, agent] of Object.entries(agents ?? {})) {
+    const a = (agent ?? {}) as { kind?: string; flowRole?: string };
+    if (a.flowRole === 'domain-advising' || a.kind === 'domain-librarian' || a.kind === 'decider')
+      found.push(`${where}.${id} is a hand-named Warden (${a.kind ?? a.flowRole})`);
+  }
+  return found;
+}
+
 function refuseHandNamedWardens(config: FoundryConfig) {
   // Every offender in one error, so a settings file holding a whole roster is fixed in one pass.
-  const found: string[] = [];
-  const scan = (where: string, agents: Record<string, unknown> | undefined) => {
-    for (const [id, agent] of Object.entries(agents ?? {})) {
-      const a = (agent ?? {}) as { kind?: string; flowRole?: string };
-      if (a.flowRole === 'domain-advising' || a.kind === 'domain-librarian' || a.kind === 'decider')
-        found.push(`${where}.${id} is a hand-named Warden (${a.kind ?? a.flowRole})`);
-    }
-  };
-  scan('agents', config.agents);
-  for (const [pid, project] of Object.entries(config.projects ?? {}))
-    scan(`projects.${pid}.agents`, project?.agents);
+  const found = [
+    ...handNamedWardens('agents', config.agents),
+    ...Object.entries(config.projects ?? {}).flatMap(([pid, project]) =>
+      handNamedWardens(`projects.${pid}.agents`, project?.agents),
+    ),
+  ];
   if (!found.length) return;
+  throwHandNamed(found);
+}
+
+function throwHandNamed(found: string[]): never {
   throw Error(
     `${found.join('; ')}: the hand-named Warden roster is retired and region Wardens are the only chorus. Remove ${found.length === 1 ? 'it' : 'them'} from settings; a project's Wardens are generated from its .foundry/regions when "chorus": { "enabled": true } is set in its .foundry/project.json or projects[id].chorus (docs/usage-and-context.md, "Chorus")`,
   );
@@ -1086,6 +1113,30 @@ function validateProjectCapacity(config: FoundryConfig, project: ProjectSettings
     throw Error('Kingdom capacity requires a Claude Code, Codex or Muse Code default worker');
 }
 
+/** Each pool setting is well formed and prefers one of its runtime's logins. */
+function validateLoginPoolReferences(config: FoundryConfig): void {
+  const scopes: Array<[string, LoginPoolsSettings | undefined]> = [
+    ['subscriptionPools', config.subscriptionPools],
+    ...Object.entries(config.projects ?? {}).map(
+      ([id, project]): [string, LoginPoolsSettings | undefined] => [
+        `projects.${id}.subscriptionPools`,
+        project?.subscriptionPools,
+      ],
+    ),
+  ];
+  for (const [where, pools] of scopes) {
+    validateLoginPools(where, pools);
+    for (const runtime of POOLED_RUNTIMES) {
+      const preferred = pools?.[runtime]?.preferredLoginId;
+      if (preferred === undefined) continue;
+      if (!runtimeLogins(config, runtime).logins.some((login) => login.id === preferred))
+        throw Error(
+          `${where}.${runtime}.preferredLoginId is not one of this machine's ${runtime} logins`,
+        );
+    }
+  }
+}
+
 export function validateConfig(config: FoundryConfig): void {
   if ('providers' in config)
     throw Error(
@@ -1172,6 +1223,7 @@ export function validateConfig(config: FoundryConfig): void {
   validateFeedbackSettings('feedback', config.feedback);
   validateSecretsSettings('secrets', config.secrets);
   validatePrefilterSettings('prefilter', config.prefilter);
+  validateLoginPoolReferences(config);
   if ('wardens' in config)
     throw Error(
       'settings key "wardens" is gone: a project\'s Wardens are its chorus, projects[id].chorus (docs/usage-and-context.md, "Chorus")',
@@ -1219,41 +1271,209 @@ export function validateConfig(config: FoundryConfig): void {
       validateLayerDefinition(`project ${JSON.stringify(pid)} layers`, id, layer);
   configuredExperts(config);
   for (const projectId of Object.keys(config.projects ?? {})) {
-    const view = resolveProjectView(config, projectId)!.config;
-    validateAgentKinds(`project ${JSON.stringify(projectId)}`, view.agents);
-    // What thread construction checks, checked before the settings are saved.
-    try {
-      configuredExperts(view);
-    } catch (error) {
-      throw Error(`project ${JSON.stringify(projectId)}: ${(error as Error).message}`);
-    }
+    checkProjectView(
+      projectId,
+      resolveProjectView(config, projectId, { repository: false })!.config,
+    );
   }
-  const check = (owner: string, sources: Record<string, DataSourceConfig> | undefined) => {
-    for (const [id, src] of Object.entries(sources ?? {})) {
-      if ('audience' in (src ?? {}))
-        throw new Error(
-          `invalid source ${JSON.stringify(id)} in ${owner}: audience moved to composition.roles.<role>.audience`,
-        );
-      if (src?.slot !== undefined && !(COMPOSITION_SLOTS as readonly string[]).includes(src.slot))
-        throw new Error(
-          `invalid source ${JSON.stringify(id)} in ${owner}: slot must be one of ${COMPOSITION_SLOTS.join(', ')}`,
-        );
-      if (!src || src.selection === undefined || src.selection === false) continue;
-      try {
-        validateMemorySelection(src.selection);
-      } catch (err) {
-        throw new Error(
-          `invalid source ${JSON.stringify(id)} in ${owner}: ${(err as Error).message}`,
-        );
-      }
-    }
-  };
+  const check = validateSourceDefinitions;
   check('global sources', config.sources);
   for (const [pid, project] of Object.entries(config.projects ?? {}))
     check(
       `project ${JSON.stringify(pid)} sources`,
       project?.sources as Record<string, DataSourceConfig> | undefined,
     );
+}
+
+function validateSourceDefinitions(
+  owner: string,
+  sources: Record<string, DataSourceConfig> | undefined,
+): void {
+  for (const [id, src] of Object.entries(sources ?? {})) {
+    if ('audience' in (src ?? {}))
+      throw new Error(
+        `invalid source ${JSON.stringify(id)} in ${owner}: audience moved to composition.roles.<role>.audience`,
+      );
+    if (src?.slot !== undefined && !(COMPOSITION_SLOTS as readonly string[]).includes(src.slot))
+      throw new Error(
+        `invalid source ${JSON.stringify(id)} in ${owner}: slot must be one of ${COMPOSITION_SLOTS.join(', ')}`,
+      );
+    if (!src || src.selection === undefined || src.selection === false) continue;
+    try {
+      validateMemorySelection(src.selection);
+    } catch (err) {
+      throw new Error(
+        `invalid source ${JSON.stringify(id)} in ${owner}: ${(err as Error).message}`,
+      );
+    }
+  }
+}
+
+/**
+ * A project's settings shared with everyone through the repository's committed
+ * `.foundry/project.json` (Aron 2026-10-16: every setting offers "set this for me" and "set this for
+ * everyone"). They cascade: this machine's project settings over the repository's over the default.
+ */
+export const REPOSITORY_SETTING_KEYS = [
+  'threadOnMerge',
+  'steer',
+  'gloss',
+  'defaults',
+  'feedback',
+  'agents',
+  'layers',
+  'chorus',
+  'conversations',
+] as const;
+export type RepositorySettingKey = (typeof REPOSITORY_SETTING_KEYS)[number];
+
+/** Project settings that belong to this machine or this person, never the repository: why each. */
+const PERSONAL_PROJECT_SETTINGS: Readonly<Record<string, string>> = {
+  id: 'How this project is registered on this machine',
+  path: 'Where this project is checked out on this machine',
+  label: 'How this project is registered on this machine',
+  tags: 'How this project is registered on this machine',
+  description: 'How this project is registered on this machine',
+  enabled: 'Whether this machine runs this project',
+  status: 'Whether this machine has archived this project',
+  capacity: 'Which subscriptions you run this project on',
+  kingdomCapacity: 'Your Kingdom subscription pool',
+  kingdomProject: 'Your link to a Kingdom project',
+  subscriptionPools:
+    'How your own logins on this machine are balanced (their ids are this machine’s)',
+  toolRules:
+    'Tool rules gate what agents may run on this machine; a cloned repository can’t loosen them',
+  sources:
+    'Sources read files and Archive projects on this machine; a cloned repository can’t point them elsewhere',
+  'defaults.nativeAuthenticationId': 'Your login on this machine',
+  'defaults.kingdomOwnerKey': 'Your Kingdom subscription pool',
+  'defaults.classifierProvider':
+    'Decision roles run on this machine’s subscription; a cloned repository can’t move them to a paid API',
+  'defaults.classifierModel':
+    'Decision roles run on this machine’s subscription; a cloned repository can’t move them to a paid API',
+};
+
+/** What a repository's agent may not set: where it runs and how it samples stay this machine's. */
+const MACHINE_AGENT_FIELDS = [
+  'provider',
+  'tools',
+  'temperature',
+  'thinking',
+  'cacheControl',
+] as const;
+
+/** A path segment that would reach an object's prototype: never a setting. */
+export const UNSAFE_SETTING_SEGMENTS: ReadonlySet<string> = new Set([
+  '__proto__',
+  'constructor',
+  'prototype',
+]);
+
+/** Why a project setting has no "for everyone" form, or undefined when the repository may set it. */
+export function personalOnlySetting(path: string): string | undefined {
+  const parts = path.split('.');
+  const exact = PERSONAL_PROJECT_SETTINGS[parts.slice(0, 2).join('.')];
+  if (exact) return exact;
+  if (PERSONAL_PROJECT_SETTINGS[parts[0]!]) return PERSONAL_PROJECT_SETTINGS[parts[0]!];
+  return (REPOSITORY_SETTING_KEYS as readonly string[]).includes(parts[0]!)
+    ? undefined
+    : `${parts[0]} is not a project setting`;
+}
+
+/**
+ * The repository's settings, checked by the same rules as this machine's project settings: one
+ * error naming the first bad key. Machine and person settings are refused with why.
+ */
+export function validateRepositoryProject(settings: Record<string, unknown>): void {
+  for (const key of Object.keys(settings)) {
+    if (key === '$comment') continue;
+    const personal = personalOnlySetting(key);
+    if (personal) throw Error(`${key} is not a repository setting: ${personal}`);
+  }
+  const defaults = settings.defaults as Record<string, unknown> | undefined;
+  if (defaults !== undefined) {
+    if (!defaults || typeof defaults !== 'object' || Array.isArray(defaults))
+      throw Error('defaults must be an object');
+    for (const key of Object.keys(defaults)) {
+      const personal = personalOnlySetting(`defaults.${key}`);
+      if (personal) throw Error(`defaults.${key} is not a repository setting: ${personal}`);
+      if (typeof defaults[key] !== 'string') throw Error(`defaults.${key} must be a string`);
+    }
+    if (
+      defaults.codexEffort !== undefined &&
+      !(REASONING_EFFORTS as readonly unknown[]).includes(defaults.codexEffort)
+    )
+      throw Error(`defaults.codexEffort must be one of ${REASONING_EFFORTS.join(', ')}`);
+    // The worker and its model go together (FEAT-007): a model is one the worker runs, never alone.
+    if (defaults.model !== undefined && defaults.provider === undefined)
+      throw Error(
+        'defaults.model needs defaults.provider: a worker and its model are set together',
+      );
+    if (typeof defaults.provider === 'string') {
+      if (!(defaults.provider in SUBSCRIPTION_WORKER_MODELS))
+        throw Error(`defaults.provider ${defaults.provider} is not a subscription worker`);
+      if (typeof defaults.model === 'string' && !registryModel(defaults.provider, defaults.model))
+        throw Error(`defaults.model ${defaults.model} is not a ${defaults.provider} model`);
+    }
+  }
+  if (
+    settings.threadOnMerge !== undefined &&
+    !THREAD_ON_MERGE.includes(settings.threadOnMerge as ThreadOnMerge)
+  )
+    throw Error('threadOnMerge must be one of "done", "auto-archive"');
+  if (settings.steer !== undefined && typeof settings.steer !== 'boolean')
+    throw Error('steer must be true or false');
+  const gloss = settings.gloss as { enabled?: unknown; display?: unknown } | undefined;
+  if (
+    gloss !== undefined &&
+    (!gloss ||
+      typeof gloss !== 'object' ||
+      (gloss.enabled !== undefined && typeof gloss.enabled !== 'boolean') ||
+      (gloss.display !== undefined &&
+        !['margin', 'hover', 'inline'].includes(gloss.display as string)))
+  )
+    throw Error('gloss must be { enabled?: boolean, display?: "margin" | "hover" | "inline" }');
+  validateFeedbackSettings('feedback', settings.feedback);
+  validateChorusSettings('chorus', settings.chorus);
+  validateConversationSettings('conversations', settings.conversations);
+  for (const key of ['agents', 'layers'] as const) {
+    const records = settings[key];
+    if (records !== undefined && !isRecordOfObjects(records))
+      throw Error(`${key} must map ids to objects`);
+  }
+  const agents = settings.agents as Record<string, Partial<AgentSettingsConfig>> | undefined;
+  if (agents !== undefined) {
+    const found = handNamedWardens('agents', agents);
+    if (found.length) throwHandNamed(found);
+    validateAgentKinds('repository', agents);
+    for (const [id, agent] of Object.entries(agents)) {
+      const set = MACHINE_AGENT_FIELDS.find((field) => field in agent);
+      if (set)
+        throw Error(
+          `agents.${id}.${set} is not a repository setting: where an agent runs and how it samples stay this machine's`,
+        );
+    }
+  }
+  for (const [id, layer] of Object.entries((settings.layers as Record<string, unknown>) ?? {}))
+    validateLayerDefinition('repository layers', id, layer);
+}
+
+const isRecordOfObjects = (value: unknown): boolean =>
+  !!value &&
+  typeof value === 'object' &&
+  !Array.isArray(value) &&
+  Object.values(value).every(
+    (entry) => !!entry && typeof entry === 'object' && !Array.isArray(entry),
+  );
+
+/** What thread construction checks on a project's view: its agents' kinds and that they build. */
+export function checkProjectView(projectId: string, view: FoundryConfig): void {
+  validateAgentKinds(`project ${JSON.stringify(projectId)}`, view.agents);
+  try {
+    configuredExperts(view);
+  } catch (error) {
+    throw Error(`project ${JSON.stringify(projectId)}: ${(error as Error).message}`);
+  }
 }
 
 /** A mutation named a settings revision that is no longer current. */
