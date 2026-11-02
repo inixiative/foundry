@@ -267,7 +267,10 @@ export class TurnProjection {
    */
   steeredInto(into: TurnProjection | undefined): void {
     if (this.settled) return;
-    if (!into || into === this) return this.finish('', 'end_turn');
+    if (!into || into === this) {
+      this.finish('', 'end_turn');
+      return;
+    }
     void into.done.then(
       (reason) => this.finish('', reason),
       () => this.finish('', 'end_turn'),
