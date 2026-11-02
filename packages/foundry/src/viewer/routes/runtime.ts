@@ -46,6 +46,12 @@ import type { ConfigStore } from '../config';
 import type { ViewerStreams } from '../data-streams';
 import { docSections } from '../doc-sections';
 import { threadToJSON, traceToJSON, validateId } from '../http-helpers';
+import {
+  detectionTests,
+  pipelinePaths,
+  RegionPipelineRuns,
+  regionBuilds,
+} from '../region-pipeline';
 import { projectConcepts, projectOverlaps, threadAtlas } from '../thread-atlas';
 import { ViewerThreadDirectory } from '../thread-directory';
 import { resolveSnooze, type SnoozeRequest } from '../thread-snooze';
@@ -1006,6 +1012,33 @@ export function registerRuntimeRoutes(
     } catch (error) {
       return c.json({ error: `stop not acknowledged: ${(error as Error).message}` }, 502);
     }
+  });
+
+  // -- The Warden region pipeline: last builds and detection tests; a build only when asked --
+
+  const regionRuns = new RegionPipelineRuns();
+  app.get('/api/regions/pipeline', (c) => {
+    const paths = pipelinePaths();
+    return c.json({
+      paths,
+      builds: regionBuilds(paths),
+      detectionTests: detectionTests(paths),
+      runs: regionRuns.list(),
+    });
+  });
+  app.post('/api/regions/pipeline/runs', async (c) => {
+    const body: { step?: unknown; commit?: unknown } = await c.req
+      .json<{ step?: unknown; commit?: unknown }>()
+      .catch(() => ({}));
+    if (body.step !== 'region-build')
+      return c.json(
+        { error: 'step must be region-build (the detection test has no runner here)' },
+        400,
+      );
+    if (typeof body.commit !== 'string') return c.json({ error: 'commit is required' }, 400);
+    const run = regionRuns.start(body.commit);
+    if ('error' in run) return c.json(run, 409);
+    return c.json(run, 202);
   });
 
   // -- Snooze: quiet until a time or a condition's time; the status is untouched (thread-snooze.ts) --
