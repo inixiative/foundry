@@ -126,12 +126,12 @@ test('an exhausted login is skipped, and a thread on it moves to another', async
 
 test('pinned is balancing off: every launch goes to the pinned login, and the scale says so', async () => {
   const f = fixture({ used: { inixiative: 80, personal: 5, work: 5 } });
-  f.set({ routing: 'pinned', preferredLoginId: f.byName.inixiative!.id });
+  f.set({ pinned: true, preferredLoginId: f.byName.inixiative!.id });
   expect(await turn(f, 'a')).toBe('inixiative');
   expect(await turn(f, 'b')).toBe('inixiative');
   expect(f.runs.ofThread('b')[0]!.why).toBe('pinned');
   const state = f.pool.state({
-    routing: 'pinned',
+    pinned: true,
     preferredLoginId: f.byName.inixiative!.id,
     from: 'foundry',
   });
@@ -139,7 +139,7 @@ test('pinned is balancing off: every launch goes to the pinned login, and the sc
   // Pinned to an exhausted login, nothing serves: no fallback to another subscription.
   f.used.inixiative = 100;
   const exhausted = fixture({ used: { inixiative: 100 } });
-  exhausted.set({ routing: 'pinned', preferredLoginId: exhausted.byName.inixiative!.id });
+  exhausted.set({ pinned: true, preferredLoginId: exhausted.byName.inixiative!.id });
   await expect(turn(exhausted, 'c')).rejects.toThrow('Every claude login is unavailable');
 });
 
@@ -255,4 +255,35 @@ test('a burst of new threads on logins with no reading spreads out before any tu
   const launches = await Promise.all(['a', 'b', 'c'].map((t) => f.pool.prepare(t, 'claude')));
   expect(new Set(launches.map((l) => l.sourceId)).size).toBe(3);
   for (const launch of launches) launch.release();
+});
+
+test('a thread that moves and comes back starts fresh on its old login, never its stale session', async () => {
+  const f = fixture({ used: { inixiative: 10, personal: 50, work: 60 } });
+  expect(await turn(f, 'a')).toBe('inixiative');
+  const first = f.pool.bindingId('a', 'claude');
+  // Pinned to personal: thread a moves there, on a new binding.
+  f.set({ pinned: true, preferredLoginId: f.byName.personal!.id });
+  expect(await turn(f, 'a')).toBe('personal');
+  // Balanced again, a stays where its session now lives.
+  f.set({});
+  expect(await turn(f, 'a')).toBe('personal');
+  // Pinned back to inixiative: a returns, on a binding its old session there doesn't hold.
+  f.set({ pinned: true, preferredLoginId: f.byName.inixiative!.id });
+  expect(await turn(f, 'a')).toBe('inixiative');
+  const back = f.pool.bindingId('a', 'claude');
+  expect(back).not.toBe(first);
+  expect(back.startsWith(first)).toBe(true);
+  expect(f.runs.ofThread('a').map((r) => r.why)).toEqual(['balanced', 'moved', 'kept', 'moved']);
+});
+
+test('a lookup never chooses a login, and a login with a running launch reports it in use', async () => {
+  const f = fixture({ used: { inixiative: 60, personal: 10, work: 60 } });
+  // No launch yet: the primary's binding, nothing placed.
+  expect(f.pool.bindingId('x', 'claude')).toContain(f.byName.inixiative!.id);
+  const launch = await f.pool.prepare('x', 'claude');
+  expect(launch.sourceId).toBe(f.byName.personal!.id);
+  launch.launch(['claude'], {});
+  expect(f.pool.inUse(f.byName.personal!.id)).toBe(1);
+  launch.release();
+  expect(f.pool.inUse(f.byName.personal!.id)).toBe(0);
 });

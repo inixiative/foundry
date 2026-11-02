@@ -124,7 +124,7 @@ test("the first login added keeps this machine's own login in the pool; rename a
   const own = saved[0]!.id;
   await store.update((draft) => renameLogin(draft, own, 'personal'));
   await store.update((draft) => {
-    draft.subscriptionPools = { claude: { routing: 'pinned', preferredLoginId: started.id } };
+    draft.subscriptionPools = { claude: { pinned: true, preferredLoginId: started.id } };
   });
   // Removing a login clears the settings that name it, and deletes only the home Foundry made.
   let remove: string | undefined;

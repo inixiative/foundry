@@ -61,7 +61,11 @@ export function registerLoginRoutes(app: Hono, deps: LoginRoutesDeps): void {
             runs: 0,
             preferred: false,
           });
-      states.push(state);
+      // Projects that balance this runtime their own way: the footer's scale doesn't move them.
+      const overrides = Object.entries(configStore.config.projects ?? {})
+        .filter(([id, p]) => id !== project && p.subscriptionPools?.[runtime])
+        .map(([id, p]) => ({ projectId: id, name: p.label ?? id }));
+      states.push({ ...state, overrides });
     }
     // Projects that run on a Kingdom pool: Kingdom balances those, not this machine.
     const kingdom = Object.entries(configStore.config.projects ?? {})
@@ -77,7 +81,7 @@ export function registerLoginRoutes(app: Hono, deps: LoginRoutesDeps): void {
     return c.json({ runs: deps.runs.ofThread(thread) });
   });
 
-  /** A runtime's balancing: `routing` (pinned is balancing off) and the login it prefers; null clears. */
+  /** A runtime's balancing: `routing`, the login it prefers, and `pinned` (the scale off); null clears. */
   app.patch('/api/providers/pools/:runtime', async (c) => {
     const runtime = c.req.param('runtime');
     if (!isRuntime(runtime))
@@ -85,8 +89,11 @@ export function registerLoginRoutes(app: Hono, deps: LoginRoutesDeps): void {
     const body = (await c.req.json().catch(() => ({}))) as {
       routing?: LoginRouting | null;
       preferredLoginId?: string | null;
+      pinned?: boolean | null;
       project?: string;
     };
+    if (body.pinned != null && typeof body.pinned !== 'boolean')
+      return c.json({ error: 'pinned must be true or false' }, 400);
     if (body.routing != null && !LOGIN_ROUTINGS.includes(body.routing))
       return c.json({ error: `routing must be one of ${LOGIN_ROUTINGS.join(', ')}` }, 400);
     try {
@@ -100,6 +107,8 @@ export function registerLoginRoutes(app: Hono, deps: LoginRoutesDeps): void {
         else if (body.routing) next.routing = body.routing;
         if (body.preferredLoginId === null) delete next.preferredLoginId;
         else if (body.preferredLoginId) next.preferredLoginId = body.preferredLoginId;
+        if (body.pinned === null || body.pinned === false) delete next.pinned;
+        else if (body.pinned) next.pinned = true;
         if (Object.keys(next).length) pools[runtime] = next;
         else delete pools[runtime];
         if (!Object.keys(pools).length) delete holder.subscriptionPools;
@@ -153,10 +162,19 @@ export function registerLoginRoutes(app: Hono, deps: LoginRoutesDeps): void {
   });
 
   app.delete('/api/providers/logins/:id', async (c) => {
+    const id = c.req.param('id');
+    const running = Object.values(pools).reduce((n, pool) => n + (pool?.inUse(id) ?? 0), 0);
+    if (running)
+      return c.json(
+        {
+          error: `${running} thread${running === 1 ? ' is' : 's are'} running on this login; stop ${running === 1 ? 'it' : 'them'} or wait for ${running === 1 ? 'it' : 'them'} to finish, then remove it`,
+        },
+        409,
+      );
     let remove: string | undefined;
     try {
       await configStore.update((draft) => {
-        remove = removeLogin(draft, c.req.param('id'), deps.foundryDir).remove;
+        remove = removeLogin(draft, id, deps.foundryDir).remove;
       });
     } catch (error) {
       return c.json({ error: (error as Error).message }, 400);

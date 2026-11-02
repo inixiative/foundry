@@ -106,7 +106,14 @@ export function loginLimits(
 
 /** Forget a login's cached reading: a new sign-in, or a session that saw its limits change. */
 export function forgetLoginLimits(login: NativeProfileSource): void {
-  for (const key of cache.keys()) if (key.endsWith(`:${login.profileDirectory}`)) cache.delete(key);
+  const own = isDefaultProfile(login.profileDirectory, login.runtime);
+  const suffix = `:${own ? 'login' : login.profileDirectory}`;
+  for (const key of cache.keys())
+    if (
+      key.endsWith(suffix) &&
+      key.startsWith(login.runtime === 'codex' ? 'codex:' : 'claude-code:')
+    )
+      cache.delete(key);
 }
 
 /** The limits of every subscription login among `accounts`. */

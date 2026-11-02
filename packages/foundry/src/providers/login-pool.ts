@@ -58,6 +58,8 @@ const KEEP_RUNS = 2_000;
 export class LoginRunLog {
   private runs: LoginRun[] = [];
   private last = new Map<string, string>();
+  /** How many times each thread moved to another login: its native binding's epoch. */
+  private moves = new Map<string, number>();
   private writing?: ReturnType<typeof setTimeout>;
   constructor(
     private file?: string,
@@ -68,9 +70,11 @@ export class LoginRunLog {
       const saved = JSON.parse(readFileSync(file, 'utf8')) as {
         runs?: LoginRun[];
         threads?: Record<string, string>;
+        moves?: Record<string, number>;
       };
       this.runs = Array.isArray(saved.runs) ? saved.runs.slice(-KEEP_RUNS) : [];
       this.last = new Map(Object.entries(saved.threads ?? {}));
+      this.moves = new Map(Object.entries(saved.moves ?? {}));
     } catch {
       /* A damaged record starts empty; threads then take a login afresh. */
     }
@@ -80,6 +84,18 @@ export class LoginRunLog {
     if (this.runs.length > KEEP_RUNS) this.runs.splice(0, this.runs.length - KEEP_RUNS);
     this.last.set(`${run.runtime}:${run.threadId}`, run.loginId);
     this.save();
+  }
+  /**
+   * A thread moving to another login starts a fresh native session there; its binding carries the
+   * move count, so coming back to a login it left never resumes that login's older session.
+   */
+  moved(runtime: PooledRuntime, threadId: string): void {
+    const key = `${runtime}:${threadId}`;
+    this.moves.set(key, (this.moves.get(key) ?? 0) + 1);
+    this.save();
+  }
+  epoch(runtime: PooledRuntime, threadId: string): number {
+    return this.moves.get(`${runtime}:${threadId}`) ?? 0;
   }
   /** The login a thread last ran on, on this runtime. */
   lastLogin(runtime: PooledRuntime, threadId: string): string | undefined {
@@ -118,6 +134,7 @@ export class LoginRunLog {
       writePrivateJson(this.file, {
         runs: this.runs,
         threads: Object.fromEntries(this.last),
+        moves: Object.fromEntries(this.moves),
       });
     } catch (error) {
       console.warn(`[logins] could not save the run record: ${(error as Error).message}`);
@@ -147,7 +164,7 @@ export type Balancing =
   | {
       state: 'balanced';
       across: number;
-      routing: Exclude<LoginRouting, 'pinned'>;
+      routing: LoginRouting;
       /** `usage`: by each login's windows; `turns`: by turns served, because a login reports no usage. */
       by: 'usage' | 'turns';
     }
@@ -161,6 +178,8 @@ export type Balancing =
 export interface PoolState {
   runtime: PooledRuntime;
   routing: LoginRouting;
+  /** The scale off: every launch runs on the preferred login. */
+  pinned: boolean;
   preferredLoginId?: string;
   /** Where the routing setting comes from. */
   from: 'project' | 'foundry' | 'default';
@@ -173,6 +192,8 @@ export interface PoolState {
     threadId: string;
     why: LoginChoice;
   }>;
+  /** Projects that set their own balancing for this runtime (the route fills it). */
+  overrides?: Array<{ projectId: string; name: string }>;
 }
 
 const TRANSPORT = { claude: 'claude-cli', codex: 'codex-app-server' } as const;
@@ -226,6 +247,8 @@ export class LoginPoolAuthentication implements NativeAuthenticationProvider {
   private assigned = new Map<string, { loginId: string; why: LoginChoice }>();
   /** Logins whose status check failed, with the refusal, until a later check passes. */
   private expired = new Map<string, string>();
+  /** Launches holding each login (a native process running on it). */
+  private holders = new Map<string, number>();
   constructor(private options: LoginPoolOptions) {}
 
   private get runtime(): PooledRuntime {
@@ -235,7 +258,8 @@ export class LoginPoolAuthentication implements NativeAuthenticationProvider {
     return this.options.logins().filter((login) => login.runtime === this.runtime);
   }
   private authFor(login: NativeProfileSource): SubscriptionAuthentication {
-    const key = JSON.stringify(login);
+    const { name: _label, ...identity } = login;
+    const key = JSON.stringify(identity);
     const held = this.auths.get(login.id);
     if (held?.key === key) return held.auth;
     const auth =
@@ -272,7 +296,11 @@ export class LoginPoolAuthentication implements NativeAuthenticationProvider {
     this.pool = { key, pool };
     return pool;
   }
-  private routing(threadId: string): { routing: LoginRouting; preferred?: string } {
+  private routing(threadId: string): {
+    routing: LoginRouting;
+    pinned: boolean;
+    preferred?: string;
+  } {
     const settings = this.options.settings(threadId);
     const routing = settings.routing ?? 'quartile-balanced';
     const ids = new Set(this.logins().map((l) => l.id));
@@ -282,18 +310,19 @@ export class LoginPoolAuthentication implements NativeAuthenticationProvider {
         : undefined;
     const primary = this.options.primary();
     const preferred = named ?? (ids.has(primary.id) ? primary.id : this.logins()[0]?.id);
-    return { routing, ...(preferred ? { preferred } : {}) };
+    return { routing, pinned: settings.pinned === true, ...(preferred ? { preferred } : {}) };
   }
   /** Rank the logins for a thread; the logins that cannot serve, with why. */
-  private rank(threadId: string, pinned: boolean) {
-    const { routing, preferred } = this.routing(threadId);
+  private rank(threadId: string) {
+    const { routing, pinned, preferred } = this.routing(threadId);
     const ranked = this.ranking().rank({
       runtime: this.runtime,
       // Every login serves every model its runtime runs; the model is the thread's, not the login's.
       model: 'thread',
-      ordering: routing === 'pinned' || routing === 'owner-first' ? 'owner-first' : routing,
+      ordering: routing,
       ...(preferred ? { preferredInstanceId: preferred } : {}),
-      ...(pinned && routing === 'pinned' && preferred ? { pinned: true } : {}),
+      // The scale off: only the preferred login serves (agent-session's eligibility filter).
+      ...(pinned && preferred ? { pinned: true } : {}),
       // A login never read yet (a setup-token login whose usage Claude doesn't report) still serves, last.
       unknownUtilization: 'rank-last',
     });
@@ -303,7 +332,7 @@ export class LoginPoolAuthentication implements NativeAuthenticationProvider {
     // A login that reports no usage (a `claude setup-token` login reports no windows) can't be ranked
     // by usage: rank-last would leave it idle until every read login is spent. Then the balanced
     // routings order by turns served in the last five hours instead, the pool's rank breaking ties.
-    if (byTurns(routing, candidates)) {
+    if (!pinned && byTurns(routing, candidates)) {
       const counts = this.options.runs.counts(this.runtime);
       // Launches placed but not yet admitted count too, so a burst of new threads spreads out.
       for (const [thread, { loginId }] of this.assigned)
@@ -320,6 +349,7 @@ export class LoginPoolAuthentication implements NativeAuthenticationProvider {
       candidates: candidates.map((candidate) => candidate.accountId),
       excluded,
       routing,
+      pinned,
       preferred,
     };
   }
@@ -329,7 +359,7 @@ export class LoginPoolAuthentication implements NativeAuthenticationProvider {
     if (!logins.length)
       throw Error(`No ${this.runtime} login on this machine; add one in Settings › Providers`);
     if (logins.length === 1) return { login: logins[0]!, why: 'only' };
-    const { candidates, excluded, routing, preferred } = this.rank(threadId, true);
+    const { candidates, excluded, routing, pinned, preferred } = this.rank(threadId);
     const own =
       this.assigned.get(threadId)?.loginId ?? this.options.runs.lastLogin(this.runtime, threadId);
     const byId = new Map(logins.map((l) => [l.id, l]));
@@ -344,7 +374,7 @@ export class LoginPoolAuthentication implements NativeAuthenticationProvider {
     const why: LoginChoice =
       own && byId.has(own)
         ? 'moved'
-        : routing === 'pinned'
+        : pinned
           ? 'pinned'
           : routing === 'owner-first' && best === preferred
             ? 'preferred'
@@ -354,34 +384,47 @@ export class LoginPoolAuthentication implements NativeAuthenticationProvider {
   private isOwn(login: NativeProfileSource): boolean {
     return this.options.own?.(login) ?? isDefaultProfile(login.profileDirectory, login.runtime);
   }
-  private assign(threadId: string) {
-    const current = this.assigned.get(threadId);
-    const logins = new Set(this.logins().map((l) => l.id));
-    if (current && logins.has(current.loginId)) return current;
-    const { login, why } = this.choose(threadId);
-    const next = { loginId: login.id, why };
-    this.assigned.set(threadId, next);
-    return next;
-  }
   private loginOf(id: string): NativeProfileSource {
     const login = this.logins().find((l) => l.id === id);
     if (!login) throw Error('That login was removed; the thread takes another at its next launch');
     return login;
   }
+  /** The binding of a thread on a login: the login's own, plus the thread's move epoch once it moved. */
+  private bindingOn(login: NativeProfileSource, threadId: string, runtime: NativeRuntime) {
+    const base = this.authFor(login).bindingId(threadId, runtime);
+    const epoch = this.options.runs.epoch(this.runtime, threadId);
+    return epoch ? `${base}:move:${epoch}` : base;
+  }
+  /**
+   * A lookup (resume, clear) never chooses: the login of the thread's live launch, else the one it
+   * last ran on, else the primary. Only `prepare` chooses.
+   */
   bindingId(threadId: string, runtime: NativeRuntime): string {
-    return this.authFor(this.loginOf(this.assign(threadId).loginId)).bindingId(threadId, runtime);
+    const ids = new Set(this.logins().map((l) => l.id));
+    const id = [
+      this.assigned.get(threadId)?.loginId,
+      this.options.runs.lastLogin(this.runtime, threadId),
+      this.options.primary().id,
+    ].find((candidate) => candidate && ids.has(candidate));
+    const login = id ? this.loginOf(id) : this.logins()[0];
+    if (!login) throw Error(`No ${this.runtime} login on this machine`);
+    return this.bindingOn(login, threadId, runtime);
   }
   async resolveBindingId(threadId: string, runtime: NativeRuntime): Promise<string> {
     return this.bindingId(threadId, runtime);
   }
+  /** Launches running on a login now: it can't be removed under them. */
+  inUse(loginId: string): number {
+    return this.holders.get(loginId) ?? 0;
+  }
   async prepare(threadId: string, runtime: NativeRuntime): Promise<NativeAuthenticationLaunch> {
     if (runtime !== this.runtime) throw Error('Subscription worker runtime mismatch');
-    // A new launch is a new choice: the thread's own login while it serves, the pool's pick otherwise.
-    this.assigned.delete(threadId);
     if (this.logins().length > 1) await this.refresh();
+    // A new launch is a new choice: the thread's own login while it serves, the pool's pick otherwise.
     for (let attempt = 0; ; attempt++) {
-      const { loginId, why } = this.assign(threadId);
-      const login = this.loginOf(loginId);
+      this.assigned.delete(threadId);
+      const { login, why } = this.choose(threadId);
+      this.assigned.set(threadId, { loginId: login.id, why });
       const auth = this.authFor(login);
       try {
         await auth.verify();
@@ -393,10 +436,33 @@ export class LoginPoolAuthentication implements NativeAuthenticationProvider {
         if (this.logins().length > 1 && attempt < this.logins().length) continue;
         throw Error('Subscription worker unavailable; no API fallback');
       }
+      const last = this.options.runs.lastLogin(this.runtime, threadId);
+      if (last && last !== login.id) this.options.runs.moved(this.runtime, threadId);
       const launch = await auth.prepare(threadId, runtime);
       const pool = this.logins().length > 1 ? this.ranking() : undefined;
+      let held = false;
       return {
         ...launch,
+        bindingId: this.bindingOn(login, threadId, runtime),
+        launch: (argv, env, harness) => {
+          const owned = launch.launch(argv, env, harness);
+          if (!held) {
+            held = true;
+            this.holders.set(login.id, this.inUse(login.id) + 1);
+          }
+          return owned;
+        },
+        release: () => {
+          launch.release();
+          if (held) {
+            held = false;
+            const left = this.inUse(login.id) - 1;
+            if (left > 0) this.holders.set(login.id, left);
+            else this.holders.delete(login.id);
+          }
+          // A launch that ended frees its placement; the run record keeps where it ran.
+          if (this.assigned.get(threadId)?.loginId === login.id) this.assigned.delete(threadId);
+        },
         admitted: () => {
           launch.admitted?.();
           this.options.runs.record({ runtime: this.runtime, loginId: login.id, threadId, why });
@@ -442,6 +508,7 @@ export class LoginPoolAuthentication implements NativeAuthenticationProvider {
   state(settings: LoginPoolSettings & { from: PoolState['from'] }): PoolState {
     const logins = this.logins();
     const routing = settings.routing ?? 'quartile-balanced';
+    const pinned = settings.pinned === true;
     const ids = new Set(logins.map((l) => l.id));
     const primary = this.options.primary();
     const preferred =
@@ -490,7 +557,7 @@ export class LoginPoolAuthentication implements NativeAuthenticationProvider {
             reason: 'one-login',
             ...(logins[0] ? { on: loginName(logins[0], this.isOwn(logins[0])) } : {}),
           }
-        : routing === 'pinned'
+        : pinned
           ? {
               state: 'stopped',
               reason: 'pinned',
@@ -514,6 +581,7 @@ export class LoginPoolAuthentication implements NativeAuthenticationProvider {
     return {
       runtime: this.runtime,
       routing,
+      pinned,
       ...(preferred ? { preferredLoginId: preferred } : {}),
       from: settings.from,
       balancing,

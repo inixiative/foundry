@@ -15,12 +15,12 @@
  * The first login added to a runtime keeps this machine's own login (`~/.claude`) in the pool, so
  * adding a second subscription never drops the first; it can be named or removed like any other.
  */
-import { existsSync, mkdirSync, realpathSync, rmSync } from 'node:fs';
+import { mkdirSync, realpathSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
-import { writePrivateFile, writePrivateJson } from '../client/private-file';
+import { writePrivateJson } from '../client/private-file';
 import type { ConfigStore, FoundryConfig } from '../viewer/config';
 import { defaultProfileSource, type NativeProfileSource } from './default-profiles';
-import { maskedOutput } from './kingdom-subscription-login';
+import { maskedOutput, prepareCodexLoginHome, readCodexLogin } from './kingdom-subscription-login';
 import { withoutCompetingCredentials } from './native-authentication';
 import { assertProfile } from './private-profile';
 import type { PooledRuntime } from './subscription-policy';
@@ -171,7 +171,8 @@ export class LoginSetup {
   cancel(id: string): void {
     const running = this.running.get(id);
     if (!running) return;
-    if (running.view.state === 'done') return;
+    // Once the login is being saved it is kept; remove it afterwards instead.
+    if (running.view.state === 'done' || running.view.state === 'saving') return;
     running.view.state = 'cancelled';
     running.endedAt = Date.now();
     try {
@@ -186,8 +187,7 @@ export class LoginSetup {
     const { view, directory } = running;
     const env = withoutCompetingCredentials(process.env);
     const argv = view.runtime === 'claude' ? ['claude', 'setup-token'] : ['codex', 'login'];
-    if (view.runtime === 'codex')
-      writePrivateFile(join(directory, 'config.toml'), 'cli_auth_credentials_store = "file"\n');
+    if (view.runtime === 'codex') prepareCodexLoginHome(directory);
     const childEnv = {
       ...env,
       ...(view.runtime === 'claude' ? { CLAUDE_CONFIG_DIR: directory } : { CODEX_HOME: directory }),
@@ -224,8 +224,7 @@ export class LoginSetup {
       const tokenFile = join(real, SETUP_TOKEN_FILE);
       writePrivateJson(tokenFile, { token });
       login.tokenFile = tokenFile;
-    } else if (!existsSync(join(real, 'auth.json')))
-      throw Error('codex login left no ChatGPT login');
+    } else readCodexLogin(real);
     await this.options.store.update((draft) => addLogin(draft, login));
     view.loginId = login.id;
     view.state = 'done';
@@ -263,8 +262,13 @@ export class LoginSetup {
 export function addLogin(draft: FoundryConfig, login: NativeProfileSource): void {
   draft.nativeAuthentication ??= [];
   const sources = draft.nativeAuthentication;
+  // The decision login is the Wardens', not a main-thread login: it doesn't count here.
+  const decision = draft.subscriptionOnly?.decisionSourceId;
   const ofRuntime = sources.filter(
-    (s) => s.runtime === login.runtime && s.mode === 'native-profile',
+    (s) =>
+      s.runtime === login.runtime &&
+      s.mode === 'native-profile' &&
+      (s.id !== decision || s.id === draft.defaults.nativeAuthenticationId),
   );
   if (!ofRuntime.length) {
     const own = defaultProfileSource(login.runtime);
@@ -309,7 +313,7 @@ export function removeLogin(
     for (const pool of Object.values(pools ?? {}))
       if (pool?.preferredLoginId === id) {
         delete pool.preferredLoginId;
-        if (pool.routing === 'pinned') delete pool.routing;
+        delete pool.pinned;
       }
   };
   unprefer(draft.subscriptionPools);

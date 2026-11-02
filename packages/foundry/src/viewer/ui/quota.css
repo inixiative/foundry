@@ -208,3 +208,13 @@
   white-space: pre-wrap;
   word-break: break-all;
 }
+.pool-table .nav-footer-dot {
+  display: inline-block;
+  margin-right: 4px;
+  vertical-align: middle;
+}
+.pool-overrides {
+  margin: 0 0 3px 18px;
+  font-size: 11px;
+  color: var(--text-dim);
+}

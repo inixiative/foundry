@@ -66,7 +66,6 @@ const ROUTING_LABEL = {
   'quartile-balanced': 'least used first',
   'owner-first': 'preferred login first',
   'priority-balanced': 'in the order added',
-  pinned: 'pinned to one login',
 };
 const STATUS_LABEL = {
   ready: 'Ready',
@@ -119,19 +118,25 @@ async function savePool(runtime, patch, project) {
   }
 }
 
-/** Toggles the load balancer: balanced ↔ pinned to the preferred login (or the one most recently used). */
+/**
+ * Toggles the load balancer: balanced ↔ pinned to the preferred login (or the one most recently used).
+ * Pinning keeps the routing, so turning balancing back on returns to it.
+ */
 export function toggleBalancing(pool) {
-  if (pool.routing === 'pinned') return savePool(pool.runtime, { routing: null });
+  if (pool.pinned) return savePool(pool.runtime, { pinned: false });
   const on = pool.preferredLoginId ?? pool.lastRuns[0]?.loginId ?? pool.logins[0]?.id;
-  return savePool(pool.runtime, { routing: 'pinned', preferredLoginId: on });
+  return savePool(pool.runtime, { pinned: true, preferredLoginId: on });
 }
 
 /** The scale button: one click toggles the load balancer. */
 export function ScaleButton({ pool }) {
   const several = pool.logins.filter((l) => l.status !== 'signing-in').length > 1;
-  const on = pool.routing !== 'pinned';
+  const on = !pool.pinned;
+  const others = pool.overrides?.length
+    ? ` ${pool.overrides.map((o) => o.name).join(', ')} set${pool.overrides.length === 1 ? 's' : ''} its own balancing, which this doesn't change.`
+    : '';
   const title = several
-    ? `${balancingText(pool)}. Click to ${on ? 'turn balancing off (pin to one login)' : 'balance across every login'}.`
+    ? `${balancingText(pool)}. Click to ${on ? 'turn balancing off (pin to one login)' : 'balance across every login'}.${others}`
     : 'Add another login to balance across them (Settings › Providers)';
   return html`<button type="button" class=${`scale-btn${pool.balancing.state === 'balanced' ? ' is-balanced' : ''}`}
     aria-pressed=${on} aria-label=${`Load balancer for ${RUNTIME_LABEL[pool.runtime]}: ${on ? 'on' : 'off'}`}
@@ -213,6 +218,11 @@ export function FooterPools() {
       </div>
       <div class=${`pool-balancing is-${pool.balancing.state}`}>${balancingText(pool)}</div>
       ${
+        pool.overrides?.length
+          ? html`<div class="pool-overrides" title="These projects balance this runtime their own way (their Settings › Providers)">${pool.overrides.map((o) => o.name).join(', ')}: own balancing</div>`
+          : null
+      }
+      ${
         isOpen
           ? html`<ul class="pool-logins">${pool.logins.map((l) => html`<${LoginRow} key=${l.id} login=${l} />`)}</ul>
             <${LastRuns} pool=${pool} limit=${4} />`
@@ -249,14 +259,15 @@ function PoolCard({ pool, setups }) {
     </div>
     <div class="pool-controls">
       <label>Balancing
-        <select value=${pool.routing} onChange=${(e) => savePool(pool.runtime, { routing: e.target.value === 'quartile-balanced' ? null : e.target.value })}>
+        <select class="settings-input small" value=${pool.routing} disabled=${pool.pinned} title=${pool.pinned ? 'Balancing is off: every launch runs on the preferred login' : ''}
+          onChange=${(e) => savePool(pool.runtime, { routing: e.target.value === 'quartile-balanced' ? null : e.target.value })}>
           ${Object.entries(ROUTING_LABEL).map(([value, label]) => html`<option key=${value} value=${value}>${label}</option>`)}
         </select>
       </label>
       ${
         ready.length > 1
           ? html`<label>Preferred login
-              <select value=${pool.preferredLoginId ?? ''} onChange=${(e) => savePool(pool.runtime, { preferredLoginId: e.target.value || null })}>
+              <select class="settings-input small" value=${pool.preferredLoginId ?? ''} onChange=${(e) => savePool(pool.runtime, { preferredLoginId: e.target.value || null })}>
                 ${ready.map((l) => html`<option key=${l.id} value=${l.id}>${l.name}</option>`)}
               </select>
             </label>`

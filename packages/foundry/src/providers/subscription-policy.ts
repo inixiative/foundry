@@ -177,22 +177,21 @@ export function workerDefaultModel(config: FoundryConfig, worker: string): strin
         config.defaults.model);
 }
 
-/** How a runtime with several logins chooses one (agent-session's routing strategies; `pinned` is balancing off). */
-export const LOGIN_ROUTINGS = [
-  'quartile-balanced',
-  'owner-first',
-  'priority-balanced',
-  'pinned',
-] as const;
+/** How a runtime with several logins chooses one: agent-session's routing strategies. */
+export const LOGIN_ROUTINGS = ['quartile-balanced', 'owner-first', 'priority-balanced'] as const;
 export type LoginRouting = (typeof LOGIN_ROUTINGS)[number];
 /** The pooled runtimes: Muse Code keeps one login (agent-session does not pool Muse yet). */
 export const POOLED_RUNTIMES = ['claude', 'codex'] as const;
 export type PooledRuntime = (typeof POOLED_RUNTIMES)[number];
 
-/** One runtime's balancing: the routing and, for `owner-first` and `pinned`, the login it prefers. */
+/**
+ * One runtime's balancing: the routing, the login `owner-first` prefers, and `pinned` (the scale
+ * off: every launch runs on the preferred login). Pinning keeps the routing for when it is turned back on.
+ */
 export interface LoginPoolSettings {
   routing?: LoginRouting;
   preferredLoginId?: string;
+  pinned?: boolean;
 }
 export type LoginPoolsSettings = Partial<Record<PooledRuntime, LoginPoolSettings>>;
 
@@ -204,11 +203,15 @@ export function validateLoginPools(where: string, pools: unknown): void {
     if (!(POOLED_RUNTIMES as readonly string[]).includes(runtime))
       throw Error(`${where}.${runtime}: only ${POOLED_RUNTIMES.join(' and ')} logins are pooled`);
     if (!pool || typeof pool !== 'object' || Array.isArray(pool))
-      throw Error(`${where}.${runtime} must be { routing?, preferredLoginId? }`);
+      throw Error(`${where}.${runtime} must be { routing?, preferredLoginId?, pinned? }`);
     for (const key of Object.keys(pool))
-      if (key !== 'routing' && key !== 'preferredLoginId')
-        throw Error(`${where}.${runtime}.${key} is not a pool setting (routing, preferredLoginId)`);
-    const { routing, preferredLoginId } = pool as LoginPoolSettings;
+      if (key !== 'routing' && key !== 'preferredLoginId' && key !== 'pinned')
+        throw Error(
+          `${where}.${runtime}.${key} is not a pool setting (routing, preferredLoginId, pinned)`,
+        );
+    const { routing, preferredLoginId, pinned } = pool as LoginPoolSettings;
+    if (pinned !== undefined && typeof pinned !== 'boolean')
+      throw Error(`${where}.${runtime}.pinned must be true or false`);
     if (routing !== undefined && !LOGIN_ROUTINGS.includes(routing))
       throw Error(`${where}.${runtime}.routing must be one of ${LOGIN_ROUTINGS.join(', ')}`);
     if (preferredLoginId !== undefined && typeof preferredLoginId !== 'string')
@@ -228,10 +231,12 @@ export function loginPoolSettings(
   const global = config.subscriptionPools?.[runtime];
   const routing = project?.routing ?? global?.routing;
   const preferredLoginId = project?.preferredLoginId ?? global?.preferredLoginId;
+  const pinned = project?.pinned ?? global?.pinned;
   return {
     ...(routing ? { routing } : {}),
     ...(preferredLoginId ? { preferredLoginId } : {}),
-    from: project ? 'project' : global ? 'foundry' : 'default',
+    ...(pinned ? { pinned } : {}),
+    from: project && Object.keys(project).length ? 'project' : global ? 'foundry' : 'default',
   };
 }
 
@@ -254,13 +259,16 @@ export function runtimeLogins(
     throw Error('Subscription-only execution requires native profile sources');
   if (named?.runtime === runtime && named.mode !== 'native-profile')
     throw Error('Subscription-only execution requires native profile sources');
+  // The decision login is the Wardens', never a main thread's, unless it is also the named primary.
+  const decisionId = config.subscriptionOnly?.decisionSourceId;
   const configured = (config.nativeAuthentication ?? []).filter(
     (item): item is NativeProfileSource =>
-      item.runtime === runtime && item.mode === 'native-profile',
+      item.runtime === runtime &&
+      item.mode === 'native-profile' &&
+      (item.id !== decisionId || item.id === config.defaults.nativeAuthenticationId),
   );
-  // A runtime whose only configured source is the decision login runs main threads on its default profile.
-  const only = configured.length === 1 ? configured[0] : undefined;
-  if (!configured.length || (only && only.id === config.subscriptionOnly?.decisionSourceId)) {
+  // A runtime whose only configured sources are the decision login runs main threads on its default profile.
+  if (!configured.length) {
     const fallback = defaultProfileSource(runtime);
     return { primary: fallback, logins: [fallback] };
   }
@@ -282,7 +290,10 @@ export function usableLogins(
   runtime: NativeRuntime,
 ): { primary: NativeProfileSource; logins: NativeProfileSource[] } {
   const { primary, logins } = runtimeLogins(config, runtime);
+  const configured = new Set((config.nativeAuthentication ?? []).map((item) => item.id));
   const usable = logins.filter((login) => {
+    // The default location was checked at startup; configured logins are checked as they are read.
+    if (!configured.has(login.id)) return true;
     try {
       assertProfile(login.profileDirectory, login.runtime);
       return true;

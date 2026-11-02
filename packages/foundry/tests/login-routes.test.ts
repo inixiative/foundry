@@ -114,7 +114,7 @@ test('the scale: pinned turns balancing off and says on which login; clearing tu
   expect(
     (
       await f.call('PATCH', '/api/providers/pools/claude', {
-        routing: 'pinned',
+        pinned: true,
         preferredLoginId: personal,
       })
     ).status,
@@ -124,7 +124,7 @@ test('the scale: pinned turns balancing off and says on which login; clearing tu
     reason: 'pinned',
     on: 'personal',
   });
-  await f.call('PATCH', '/api/providers/pools/claude', { routing: null });
+  await f.call('PATCH', '/api/providers/pools/claude', { pinned: false });
   expect((await f.pools()).pools[0]!.balancing.state).toBe('balanced');
   // A project sets its own balancing, over the Foundry-wide one.
   await f.call('PATCH', '/api/providers/pools/claude', {
@@ -133,6 +133,10 @@ test('the scale: pinned turns balancing off and says on which login; clearing tu
     project: f.projectId,
   });
   const project = (await f.pools(`?project=${f.projectId}`)).pools[0]!;
+  // The Foundry-wide view names the project that balances its own way.
+  expect((await f.pools()).pools[0]!.overrides).toEqual([
+    { projectId: f.projectId, name: 'Template' },
+  ]);
   expect([project.routing, project.from, project.preferredLoginId]).toEqual([
     'owner-first',
     'project',
@@ -149,9 +153,10 @@ test('the scale: pinned turns balancing off and says on which login; clearing tu
       })
     ).status,
   ).toBe(400);
-  expect((await f.call('PATCH', '/api/providers/pools/muse', { routing: 'pinned' })).status).toBe(
+  expect((await f.call('PATCH', '/api/providers/pools/claude', { routing: 'pinned' })).status).toBe(
     400,
   );
+  expect((await f.call('PATCH', '/api/providers/pools/muse', { pinned: true })).status).toBe(400);
 });
 
 test('name and remove a login from the API', async () => {
