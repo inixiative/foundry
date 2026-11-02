@@ -7005,29 +7005,6 @@ a.thread-ref:hover {
   flex-direction: column;
   gap: 4px;
 }
-.band-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-}
-.band-row .context-bar-title {
-  max-width: none;
-  flex: 0 1 auto;
-  font-family: var(--display);
-  font-size: 18px;
-  font-weight: 650;
-  letter-spacing: -0.02em;
-  flex-shrink: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.band-row--facts {
-  font-size: 12px;
-  color: var(--text-dim);
-}
 .band-chip {
   font-size: 11.5px;
   padding: 1px 8px;
@@ -7915,33 +7892,6 @@ a.thread-ref:hover {
   gap: 6px;
   padding: 8px 14px 6px;
   min-width: 0;
-}
-.band-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-}
-.band-row--top .context-bar-title {
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-family: var(--font-display);
-  font-size: 15px;
-  font-weight: 650;
-}
-.band-pills {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  flex-wrap: nowrap;
-}
-.band-pills--right {
-  margin-left: auto;
-  flex-shrink: 0;
 }
 .band-pill {
   display: inline-flex;

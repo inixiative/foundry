@@ -106,17 +106,29 @@ export function createViewerStreams(deps: {
       for (const sync of threadLists) sync(threadId);
     },
   });
-  /** The newest live turn's status, for the thread's status icon (absent once the buffer is pruned). */
+  /**
+   * The thread's newest turn, for its status icon and the seen-by-owner mark: a live turn while it
+   * runs or waits (the buffer), otherwise the newest turn the journal recorded as ended. The journal
+   * outlives the buffer's five-minute prune and a restart, and also holds turns no buffer ever saw
+   * (a turn the agent started on its own, an observed run).
+   */
   const lastTurn = (threadId: string) => {
-    const latest = turns
+    const live = turns
       .forThread(threadId)
       .sort((a, b) => a.startedAt - b.startedAt)
       .at(-1);
-    return latest
+    if (live && live.status !== 'completed' && live.status !== 'failed')
+      return { status: live.status, startedAt: live.startedAt };
+    const store = journal.store;
+    const id = store?.recentTurnIds(threadId, 1)[0];
+    const ended = id ? store?.turn(id) : undefined;
+    if (ended?.endedAt && (ended.status === 'completed' || ended.status === 'failed'))
+      return { status: ended.status, startedAt: ended.startedAt, completedAt: ended.endedAt };
+    return live
       ? {
-          status: latest.status,
-          startedAt: latest.startedAt,
-          ...(latest.completedAt !== undefined ? { completedAt: latest.completedAt } : {}),
+          status: live.status,
+          startedAt: live.startedAt,
+          ...(live.completedAt !== undefined ? { completedAt: live.completedAt } : {}),
         }
       : undefined;
   };

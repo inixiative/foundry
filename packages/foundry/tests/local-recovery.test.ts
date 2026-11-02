@@ -325,3 +325,21 @@ test('an archive is undone: thread:unarchive reopens the thread with its journal
   expect(thread?.meta.status).not.toBe('archived');
   expect(thread?.meta.description).toBe('Undo me');
 });
+
+test('POST /seen records when the owner last looked at the thread', async () => {
+  const { make } = setup();
+  const runtime = make();
+  cleanup.push(() => {
+    runtime.localStore.close();
+    runtime.thread.dispose();
+  });
+  const before = Date.now();
+  const response = await runtime.app.request('/api/threads/main/seen', { method: 'POST' });
+  expect(response.status).toBe(200);
+  const { seenAt } = (await response.json()) as { seenAt: number };
+  expect(seenAt).toBeGreaterThanOrEqual(before);
+  expect(runtime.localStore.threadMeta('main')?.seenAt).toBe(seenAt);
+  expect((await runtime.app.request('/api/threads/missing/seen', { method: 'POST' })).status).toBe(
+    404,
+  );
+});

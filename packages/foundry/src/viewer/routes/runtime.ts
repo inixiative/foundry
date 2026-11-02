@@ -1168,6 +1168,17 @@ export function registerRuntimeRoutes(
     return c.json(run, 202);
   });
 
+  // -- Seen: the owner looked at the thread; a turn completed after it reads as a new arrival --
+
+  app.post('/api/threads/:id/seen', (c) => {
+    const thread = directory.get(c.req.param('id'));
+    if (!thread) return c.json({ error: 'thread not found' }, 404);
+    thread.meta.seenAt = Date.now();
+    localStore?.saveThread(thread);
+    streams.threadsChanged(thread.id);
+    return c.json({ seenAt: thread.meta.seenAt });
+  });
+
   // -- Snooze: quiet until a time or a condition's time; the status is untouched (thread-snooze.ts) --
 
   app.put('/api/threads/:id/snooze', async (c) => {
