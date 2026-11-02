@@ -54,7 +54,7 @@ export function paletteActions() {
           name: 'Revert to a turn…',
           hint: 'rewind the conversation and its file changes',
           key: '/revert',
-          ...SOON('Native rewind isn’t built yet (CORE-004)'),
+          ...SOON('Coming soon: rewind the conversation and its files'),
         },
         {
           id: 'split',
