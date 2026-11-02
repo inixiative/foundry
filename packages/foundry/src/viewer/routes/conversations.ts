@@ -3,13 +3,11 @@
  * @kind route
  * @partOf feature:viewer, feature:conversations
  */
-import { existsSync, mkdirSync, readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 import { floorModeSchema, threadTextLimit } from '@inixiative/signet';
 import type { Hono } from 'hono';
 import { z } from 'zod';
 import { REPOSITORY_SETTINGS_FILE } from '../../agents/region-roster';
-import { writeFileAtomic } from '../../client/private-file';
 import type { ConversationService } from '../../conversations/service';
 import {
   conversationSettingSources,
@@ -26,7 +24,7 @@ import {
   kingdomIntegrationId,
 } from '../../providers/kingdom-installation-connection';
 import type { ConfigStore } from '../config';
-import { readRepositorySettings } from '../config-resolve';
+import { readRepositorySettings, writeRepositorySetting } from '../config-resolve';
 
 const floorBody = z.strictObject({ mode: floorModeSchema.nullable() });
 const conchBody = z.strictObject({
@@ -265,18 +263,7 @@ export function registerConversationRoutes(
           else mine.conversations = value;
         });
       else {
-        // The repository's file keeps its other keys; it is committed and shared with the team.
-        const file = join(project.path, REPOSITORY_SETTINGS_FILE);
-        const repository = readRepositorySettings(project.path);
-        if (repository?.error) throw Error(`${file}: ${repository.error}`);
-        const current: Record<string, unknown> = existsSync(file)
-          ? (JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>)
-          : {};
-        if (value === null) delete current.conversations;
-        else current.conversations = value;
-        mkdirSync(dirname(file), { recursive: true });
-        // Whole or not at all. The file is committed and team-shared, so not private. Git tracks its history.
-        writeFileAtomic(file, `${JSON.stringify(current, null, 2)}\n`, 0o644);
+        writeRepositorySetting(project.path, 'conversations', value);
       }
     } catch (error) {
       return c.json({ error: (error as Error).message }, 409);
