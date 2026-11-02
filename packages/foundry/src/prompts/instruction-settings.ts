@@ -143,14 +143,18 @@ const DIRECTORY_FILES: readonly HierarchyFileSource[] = [
   { path: '.claude/AGENTS.md' },
 ];
 
-/** Each place's role files: `.foundry/roles/<role>/<slot>.md`, for every role and both slots. */
+/** Where a role file lives in a directory, for every role and both slots. Feedback writes here too. */
+export const ROLE_FILE_TEMPLATE = '.foundry/roles/{role}/{slot}.md';
+/** A personal role file beside it, like CLAUDE.local.md. */
+export const LOCAL_ROLE_FILE_TEMPLATE = '.foundry/roles/{role}/{slot}.local.md';
+/** The computer's own role file, in the home directory. */
+export const GLOBAL_ROLE_FILE_TEMPLATE = '{home}/.foundry/roles/{role}/{slot}.md';
 const ROLE_FILE: HierarchyFileSource = {
-  path: '.foundry/roles/{role}/{slot}.md',
+  path: ROLE_FILE_TEMPLATE,
   when: { slots: [...COMPOSITION_SLOTS] },
 };
-/** A personal role file beside it, like CLAUDE.local.md. */
 const LOCAL_ROLE_FILE: HierarchyFileSource = {
-  path: '.foundry/roles/{role}/{slot}.local.md',
+  path: LOCAL_ROLE_FILE_TEMPLATE,
   when: { slots: [...COMPOSITION_SLOTS] },
 };
 
@@ -197,7 +201,7 @@ export const DEFAULT_INSTRUCTION_LADDER: readonly InstructionNodeSettings[] = Ob
         path: ['{codexHome}/AGENTS.override.md', '{codexHome}/AGENTS.md'],
       },
       { walk: [{ path: 'CLAUDE.md' }, { path: 'AGENTS.md' }], span: { only: ['{home}'] } },
-      { path: '{home}/.foundry/roles/{role}/{slot}.md', when: { slots: [...COMPOSITION_SLOTS] } },
+      { path: GLOBAL_ROLE_FILE_TEMPLATE, when: { slots: [...COMPOSITION_SLOTS] } },
     ],
   },
   {
@@ -262,6 +266,17 @@ export function resolveInstructionLadder(
     else nodes.set(id, { ...node, id });
   }
   return [...nodes.values()];
+}
+
+/**
+ * Whether `ladder` reads role files from `template` at all (any node, any source). Feedback refuses
+ * to write a role file the registered ladder no longer reads, rather than write one nothing loads.
+ */
+export function ladderReadsRoleFile(
+  ladder: readonly InstructionNodeSettings[],
+  template: string,
+): boolean {
+  return ladder.some((node) => JSON.stringify(node.sources).includes(JSON.stringify(template)));
 }
 
 const isStrings = (value: unknown): value is string[] =>

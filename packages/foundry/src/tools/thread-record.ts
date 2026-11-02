@@ -329,6 +329,23 @@ const OPERATIONS: Record<
 
 export const THREAD_RECORD_OPERATIONS = Object.keys(OPERATIONS);
 
+/**
+ * Foundry's own tools that only write the thread's own record (plan, loop, name, status) or read
+ * Foundry's context: bookkeeping the briefing asks for, not an action on the user's world, so they
+ * never wait on an approval in any mode: the tool gate allows them (`turns/tool-gate.ts`) and a Codex thread's
+ * launch pre-approves them (`appServerBridgeConfiguration`). A user's structural rule naming one still holds. Sends,
+ * the conch, forks and Kingdom access are not here: they keep their own owner gates and the host's mode.
+ */
+export const FOUNDRY_OWN_TOOLS: ReadonlySet<string> = new Set([
+  ...THREAD_RECORD_OPERATIONS,
+  'ask_herald',
+  'foundry_threads',
+  'foundry_query',
+  'foundry_conventions',
+  'foundry_memory',
+  'foundry_device',
+]);
+
 export class ThreadRecordTool implements ApiTool {
   readonly id = 'thread';
   readonly kind = 'api' as const;

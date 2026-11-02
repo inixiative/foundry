@@ -18,6 +18,7 @@ import { lintStatement, parseMatch, ruleMarker } from '../src/feedback/sharpen';
 import { validateFeedbackSettings } from '../src/feedback/types';
 import { assess } from '../src/feedback/view';
 import { LocalSessionStore } from '../src/persistence/local-session-store';
+import { resolveInstructionLadder } from '../src/prompts/instruction-settings';
 import { type FoundryConfig, starterConfig } from '../src/viewer/config';
 import { writeRegions } from './helpers/regions';
 
@@ -222,7 +223,9 @@ test('role files resolve per rung; personal repo files are kept out of git', () 
 test('apply appends one line with the item id; revert removes exactly that line', () => {
   const root = tempDir('feedback-apply-');
   const roots = { home: root };
+  const ladder = resolveInstructionLadder(undefined);
   const first = applyChange({
+    ladder,
     itemId: 'fb_111111111111',
     changeId: 'c1',
     statement: RULE,
@@ -232,6 +235,7 @@ test('apply appends one line with the item id; revert removes exactly that line'
     roots,
   });
   applyChange({
+    ladder,
     itemId: 'fb_222222222222',
     changeId: 'c2',
     statement: 'Never add backwards compatibility shims.',
@@ -241,7 +245,7 @@ test('apply appends one line with the item id; revert removes exactly that line'
     roots,
   });
   expect(first.line).toBe(`- ${RULE} (fb_111111111111)`);
-  expect(() => applyChange({ ...first, statement: RULE, roots, level: 'project' })).toThrow(
+  expect(() => applyChange({ ...first, ladder, statement: RULE, roots, level: 'project' })).toThrow(
     'pull request',
   );
   const reverted = revertChange(first);
@@ -250,6 +254,11 @@ test('apply appends one line with the item id; revert removes exactly that line'
   expect(text).not.toContain('fb_111111111111');
   expect(text).toContain('fb_222222222222');
   expect(revertChange(first).found).toBe(false);
+  // A ladder that no longer reads the computer's role files is never written to.
+  const noGlobal = ladder.filter((node) => node.id !== 'global');
+  expect(() =>
+    applyChange({ ...first, ladder: noGlobal, statement: RULE, roots, level: 'computer' }),
+  ).toThrow('no longer reads');
 });
 
 test('a detected correction is captured, routed and tuned without holding the turn (ask)', async () => {
