@@ -71,6 +71,17 @@ import {
 import { type PrefilterSettings, validatePrefilterSettings } from '../providers/warden-prefilter';
 
 const GUARD_MODES: readonly GuardMode[] = ['per-turn', 'per-call'];
+export type ThreadOnMerge = 'done' | 'auto-archive';
+const THREAD_ON_MERGE: readonly ThreadOnMerge[] = ['done', 'auto-archive'];
+
+/** What a thread in `projectId` becomes when its branch merges: project, then Foundry-wide, then `done`. */
+export function threadOnMerge(config: FoundryConfig, projectId?: string): ThreadOnMerge {
+  return (
+    (projectId ? config.projects?.[projectId]?.threadOnMerge : undefined) ??
+    config.threadOnMerge ??
+    'done'
+  );
+}
 
 import { writeFileAtomic } from '../client/private-file';
 import type { ToolRules } from '../turns/tool-gate';
@@ -123,9 +134,11 @@ export interface FoundryConfig {
   toolRules?: ToolRules;
   /** Credential references only; do not put tokens in settings. */
   nativeAuthentication?: NativeAuthenticationSource[];
+  /** Kingdom subscription pools this Foundry draws main-thread logins from: one per owner's Signet (URL, credential file, pool selection). */
   kingdomInference?: KingdomInferenceSource[];
   /** Project-scoped integration grants. Independent of inference resource selection. Restart to apply. */
   kingdomAccess?: KingdomAccessSource[];
+  /** Which Kingdom owner's pool (and spread or selection) a given thread draws its login from, by thread id. */
   kingdomInferenceAssignments?: Record<string, KingdomInferenceAssignment>;
   /** Explicit thread-to-source UUID assignments, applied on Foundry startup. */
   nativeAuthenticationSelections?: Record<string, string>;
@@ -146,16 +159,27 @@ export interface FoundryConfig {
    */
   guard?: GuardMode;
   /**
+   * What a thread becomes when its branch merges (Aron, 2026-11-01): `done` (default; the thread
+   * shows done and can take another task) or `auto-archive` (archived, its worktree released per
+   * FEAT-003). A project's `threadOnMerge` overrides it.
+   */
+  threadOnMerge?: ThreadOnMerge;
+  /**
    * The composition view: one ladder (CLAUDE.md, AGENTS.md, auto memory, role files) composes the
    * instructions and domain knowledge of every role; see docs/usage-and-context.md.
    */
   composition?: CompositionSettings;
   /** Global defaults — executor provider/model + classifier provider/model. */
   defaults: {
+    /** The provider new threads run on (e.g. `claude-code`, `codex`). */
     provider: string;
+    /** The model new threads run on. */
     model: string;
+    /** Which local login (a native authentication source) threads use by default. */
     nativeAuthenticationId?: string;
+    /** Which Kingdom owner's subscription pool threads use by default. */
     kingdomOwnerKey?: string;
+    /** Reasoning effort for Codex threads; omitted, Codex's own default. */
     codexEffort?: 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
     /** Classifier/router provider. Defaults to same as executor if omitted. */
     classifierProvider?: string;
@@ -172,9 +196,17 @@ export interface FoundryConfig {
   /** This Foundry's installation name: what Kingdom pairing names it. Default "Foundry on <host>". */
   installationName?: string;
   /** This machine's icon where machines are shown (Watchtower actors, Watching): a glyph and a slot of the theme's categorical palette (`--layer-0` to `--layer-11`). */
-  installationIcon?: { glyph: MachineGlyph; color: number };
+  installationIcon?: {
+    /** The icon's shape (anvil, bolt, leaf, moon, peak, wave, star, hex). */
+    glyph: MachineGlyph;
+    /** The icon's colour: a slot of the theme's categorical palette, 0 to 11. */
+    color: number;
+  };
   /** The message box: one box with a destination label (Thread · /btw · /aside), or a box per open view. */
-  messageBox?: { separateViews?: boolean };
+  messageBox?: {
+    /** Show a message box per open view (Thread, /btw, /aside) instead of one box with a destination label. */
+    separateViews?: boolean;
+  };
 
   /**
    * Global agent templates (keyed by agent ID).
@@ -220,8 +252,15 @@ export interface FoundryConfig {
  * Projects just say "here's a directory" and optionally override agents/layers.
  */
 export interface ProjectSettingsConfig {
+  /** This project's `threadOnMerge`, over the Foundry-wide one. */
+  threadOnMerge?: ThreadOnMerge;
   /** Opt-in maintenance; existing margins remain readable when disabled. */
-  gloss?: { enabled: boolean; display: 'margin' | 'hover' | 'inline' };
+  gloss?: {
+    /** Keep this project's gloss (margin commentary beside the code) maintained. */
+    enabled: boolean;
+    /** How gloss shows beside the code: in the margin, on hover, or inline. */
+    display: 'margin' | 'hover' | 'inline';
+  };
   /** Auto-generated UUID. Never manually specified. */
   id: string;
   /** Path to project root directory. The only truly required field. */
@@ -275,6 +314,8 @@ export interface ProjectSettingsConfig {
   capacity?: 'local' | 'kingdom';
   /** Required when `capacity` is `kingdom`. */
   kingdomCapacity?: ProjectKingdomCapacity;
+  /** The one Kingdom project this Foundry project links to (Aron, 2026-11-01); its pool chooses a Kingdom-capacity login. */
+  kingdomProject?: ProjectKingdomLink;
 }
 
 /** One layer of a project's chorus: a regions directory (`<dir>/<region id>/{region.json,knowledge.md}`). */
@@ -297,7 +338,9 @@ export interface ChorusLayerSettings {
 export interface ChorusSettings {
   /** Run this project's region Wardens. Off by default. */
   enabled?: boolean;
+  /** The one regions directory the chorus reads (absolute or relative to the project; default `.foundry/regions`). */
   regions?: string;
+  /** Several regions directories in order, a later layer's region replacing an earlier one (e.g. template base, then this project). */
   layers?: ChorusLayerSettings[];
   /** The `consumed` trigger: Wardens are asked when a thread takes in a work item. Off by default. */
   consumed?: ConsumedSettings;
@@ -331,6 +374,7 @@ export type StageSettings = { [K in keyof StageConfig]?: StageConfig[K] };
  * `enabled`; each key the machine's settings give wins over the repository's.
  */
 export interface ConsumedSettings {
+  /** Ask the Wardens when a thread takes in a work item (a ticket, spec or issue it read). Off by default. */
   enabled?: boolean;
   /** Globs on a tool's name; a matching call's output is the work item. Default `DEFAULT_CONSUMED_TOOLS`. */
   tools?: string[];
@@ -340,13 +384,19 @@ export interface ConsumedSettings {
   maxChars?: number;
 }
 
-/** A Kingdom-capacity project: the paired Kingdom, the Signet (`subscription.use`) it runs under, and the
- * Kingdom project whose pool chooses the login (absent: the Signet's own project). */
+/** A Kingdom-capacity project: the paired Kingdom and the Signet (`subscription.use`) it runs under. The
+ * Kingdom project whose pool chooses the login is the project's `kingdomProject` (absent: the Signet's own). */
 export interface ProjectKingdomCapacity {
   /** Paired Kingdom id or API origin (`bun run kingdom status`). */
   kingdom: string;
   signetId: string;
-  projectId?: string;
+}
+
+/** A Foundry project's link to its Kingdom project: one per Foundry project. */
+export interface ProjectKingdomLink {
+  /** Paired Kingdom id or API origin (`bun run kingdom status`). */
+  kingdom: string;
+  projectId: string;
 }
 
 /**
@@ -416,7 +466,9 @@ export const AGENT_KINDS = [
 export type AgentKind = (typeof AGENT_KINDS)[number];
 
 export interface AgentSettingsConfig {
+  /** The agent's id: its key in `agents`, and how projects extend or override it. */
   id: string;
+  /** What the agent does in a turn (executor, classifier, router…). */
   kind: AgentKind;
   /** FLOW.md role: context-routing, domain-advising, execution, correctness-checking, signal-reconciliation. */
   flowRole?: string;
@@ -432,6 +484,7 @@ export interface AgentSettingsConfig {
   prompt: string;
   /** LLM settings — provider/model default to global if omitted. */
   provider?: string;
+  /** The model this agent runs on; omitted, the global default model. */
   model?: string;
   /** Temperature — set per agent. Classifiers/routers want 0, creative agents want higher. */
   temperature?: number;
@@ -545,6 +598,7 @@ export const isAgentExtension = (agent: ProjectAgentSettings): agent is AgentExt
  * - Executor (Claude Code): READS assembled context from all active layers
  */
 export interface LayerSettingsConfig {
+  /** The layer's id: its key in `layers`, and how projects and agents refer to it. */
   id: string;
   /** Domain knowledge ownership. An enabled domain-advising agent must explicitly
    * own this layer to register a custom expert; passive layers do not spawn actors. */
@@ -591,8 +645,11 @@ export interface LayerSettingsConfig {
 
 export interface LayerSettingsOverride
   extends Omit<Partial<LayerSettingsConfig>, 'sourceIds' | 'writers' | 'condition'> {
+  /** Change the layer's data sources for this project: replace the list, or append and remove ids. */
   sourceIds?: ListPatch<string>;
+  /** Change which agents may write the layer in this project: replace, or append and remove ids. */
   writers?: ListPatch<string>;
+  /** Change or clear (null) when a conditional layer is included in this project. */
   condition?: InvocationConditionOverride | null;
 }
 
@@ -616,7 +673,9 @@ export interface InvocationConditionOverride {
 }
 
 export interface DataSourceConfig {
+  /** The source's id: its key in `sources`, and how layers name it in `sourceIds`. */
   id: string;
+  /** Where the content comes from: a file, database, URL, markdown, inline text, the Archive, or instruction files. */
   type:
     | 'file'
     | 'sqlite'
@@ -635,9 +694,12 @@ export interface DataSourceConfig {
   slot?: CompositionSlot;
   /** Searches the local Archive for this project; `uri` is unused. */
   archive?: {
+    /** The Archive project whose captured sessions are searched. */
     projectId: string;
+    /** Most tokens of matching session text taken per search (128 to 16,000; default 2,048). */
     budget?: number;
   };
+  /** The source's display name in Settings and the layer view. */
   label: string;
   /** Connection string, file path, URL — depends on type. */
   uri: string;
@@ -964,21 +1026,26 @@ export function validateChorusSettings(where: string, chorus: unknown): void {
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function validateProjectCapacity(config: FoundryConfig, project: ProjectSettingsConfig) {
+  if (project.kingdomCapacity && 'projectId' in project.kingdomCapacity)
+    throw Error(
+      `Project ${project.id}: kingdomCapacity.projectId is gone; the Kingdom project is the project's own link, kingdomProject { kingdom, projectId }`,
+    );
+  if (project.kingdomProject) {
+    if (!uuidPattern.test(project.kingdomProject.projectId))
+      throw Error(`Project ${project.id}: kingdomProject.projectId must be a Kingdom project id`);
+    selectKingdomIntegration(config.kingdomIntegrations, project.kingdomProject.kingdom);
+  }
   if (project.capacity === undefined && project.kingdomCapacity === undefined) return;
   if (project.capacity !== 'local' && project.capacity !== 'kingdom')
     throw Error(`Project ${project.id} capacity must be local or kingdom`);
   if (project.capacity === 'local') return;
   const capacity = project.kingdomCapacity;
-  if (
-    !capacity ||
-    !uuidPattern.test(capacity.signetId) ||
-    (capacity.projectId !== undefined && !uuidPattern.test(capacity.projectId))
-  )
+  if (!capacity || !uuidPattern.test(capacity.signetId))
     throw Error(
-      `Project ${project.id} uses Kingdom capacity: set kingdomCapacity { kingdom, signetId, projectId? }`,
+      `Project ${project.id} uses Kingdom capacity: set kingdomCapacity { kingdom, signetId }`,
     );
   selectKingdomIntegration(config.kingdomIntegrations, capacity.kingdom);
-  if (!['claude-code', 'codex'].includes(config.defaults.provider))
+  if (!['claude-code', 'codex'].includes(project.defaults?.provider ?? config.defaults.provider))
     throw Error('Kingdom capacity requires a native runtime provider');
 }
 
@@ -1076,6 +1143,14 @@ export function validateConfig(config: FoundryConfig): void {
     );
   if (config.guard !== undefined && !GUARD_MODES.includes(config.guard))
     throw Error(`guard must be one of ${GUARD_MODES.map((m) => `"${m}"`).join(', ')}`);
+  for (const [where, value] of [
+    ['threadOnMerge', config.threadOnMerge],
+    ...Object.entries(config.projects ?? {}).map(
+      ([pid, project]) => [`projects.${pid}.threadOnMerge`, project?.threadOnMerge] as const,
+    ),
+  ] as const)
+    if (value !== undefined && !THREAD_ON_MERGE.includes(value))
+      throw Error(`${where} must be one of "done", "auto-archive"`);
   for (const [pid, project] of Object.entries(config.projects ?? {})) {
     validateFeedbackSettings(`projects.${pid}.feedback`, project?.feedback);
     for (const key of ['wardens', 'regions'] as const)
@@ -1335,6 +1410,11 @@ export class ConfigStore {
         if (patch.installationIcon === null) delete next.installationIcon;
         else if (patch.installationIcon !== undefined)
           next.installationIcon = patch.installationIcon as FoundryConfig['installationIcon'];
+      } else if (section === 'threads') {
+        // What a thread becomes when its branch merges; null returns to the default (done).
+        if (patch.threadOnMerge === null) delete next.threadOnMerge;
+        else if (patch.threadOnMerge !== undefined)
+          next.threadOnMerge = patch.threadOnMerge as ThreadOnMerge;
       } else if (section === 'agents') {
         next.agents = { ...next.agents, ...patch } as FoundryConfig['agents'];
       } else if (section === 'layers') {
@@ -1541,4 +1621,17 @@ function validateJournalSettings(journal: JournalSettings | undefined): void {
   const days = journal.rawMiddlewareDays;
   if (days !== undefined && (!Number.isFinite(days) || days < 0))
     throw Error('journal.rawMiddlewareDays must be a number of days, 0 or more');
+}
+
+/** The Kingdom project a Kingdom-capacity login bills: the project's link, when it is on the same Kingdom. */
+export function capacityKingdomProject(
+  config: Pick<FoundryConfig, 'kingdomIntegrations'>,
+  project: Pick<ProjectSettingsConfig, 'kingdomCapacity' | 'kingdomProject'>,
+): string | undefined {
+  const capacity = project.kingdomCapacity;
+  const link = project.kingdomProject;
+  if (!capacity || !link) return undefined;
+  const url = (kingdom: string) =>
+    selectKingdomIntegration(config.kingdomIntegrations, kingdom).url;
+  return url(link.kingdom) === url(capacity.kingdom) ? link.projectId : undefined;
 }

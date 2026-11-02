@@ -203,6 +203,7 @@ export class SubagentRecorder {
         },
         depth: (parent.meta.depth ?? 0) + 1,
         ...(parent.meta.projectId ? { projectId: parent.meta.projectId } : {}),
+        ...(parent.meta.worker ? { worker: parent.meta.worker } : {}),
         createdAt: now,
         lastActiveAt: now,
       },

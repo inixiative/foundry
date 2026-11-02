@@ -21,6 +21,7 @@ import {
   composerFill,
   createThread,
   executeAction,
+  forkThread,
   messages,
   showToast,
 } from './store.js';
@@ -44,9 +45,9 @@ export function paletteActions() {
         {
           id: 'fork',
           name: 'Fork from here',
-          hint: 'a copy of the thread from this turn',
+          hint: 'a new thread with this one’s conversation so far',
           key: '/fork',
-          ...SOON('Native fork isn’t built yet (CORE-004)'),
+          run: () => forkThread(messages.value.length - 1),
         },
         {
           id: 'revert',

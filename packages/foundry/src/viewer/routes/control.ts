@@ -24,6 +24,7 @@ import { FoundrySelfChatStore, type SelfChatFocus } from '../foundry-self-chat';
 import { validateId } from '../http-helpers';
 import { projectAbout } from '../project-about';
 import { SESSION_COOKIE, sessionValue } from '../request-auth';
+import { settingsIndex } from '../settings-search';
 import { FoundryTunnel, type TunnelHolder } from '../tunnel';
 import { registerAccessRoutes } from './access';
 
@@ -393,6 +394,19 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps): void 
     const project = cfg.projects[id];
     if (!project) return c.json({ error: 'not found' }, 404);
     return c.json(project);
+  });
+
+  // Every setting with its value and where it comes from, for Search (a project's too, given one).
+  app.get('/api/settings/index', async (c) => {
+    const cfg = await configStore.load();
+    const projectId = c.req.query('projectId');
+    const project = projectId
+      ? (projectRegistry?.get(projectId)?.summary() ?? cfg.projects[projectId])
+      : undefined;
+    if (projectId && !project) return c.json({ error: 'project not found' }, 404);
+    return c.json({
+      settings: settingsIndex(cfg, project ? { id: projectId!, path: project.path } : undefined),
+    });
   });
 
   app.get('/api/projects/:id/about', async (c) => {

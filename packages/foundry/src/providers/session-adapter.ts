@@ -50,6 +50,7 @@ import {
   appServerBridgeConfiguration,
   appServerClientMcpConfiguration,
   withClientMcpServers,
+  withFoundrySkills,
   withIsolatedFixture,
   withNativeBridge,
 } from './native-launch';
@@ -175,6 +176,11 @@ export class FileExternalSessionStore implements ExternalSessionStore {
     } finally {
       release();
     }
+  }
+
+  /** Every binding, by runtime: which native runtime holds each thread's session. */
+  async bindings(): Promise<Readonly<Record<string, Readonly<Record<string, string>>>>> {
+    return structuredClone(await this._read());
   }
 
   async load(threadId: string, runtime: string): Promise<string | null> {
@@ -665,8 +671,9 @@ export class ClaudeCodeSessionAdapter implements SessionAdapter {
               },
             )
           : (() => {
+              const base = launch?.argv ?? cmd;
               const client = withClientMcpServers(
-                launch?.argv ?? cmd,
+                mainThread ? withFoundrySkills(base) : base,
                 opts.tools === false ? [] : (opts.mcpServers ?? []),
               );
               try {

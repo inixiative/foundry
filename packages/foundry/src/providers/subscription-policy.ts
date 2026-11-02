@@ -9,6 +9,7 @@ import {
   MODEL_REGISTRY,
   registryModel,
   SUBSCRIPTION_DECISION_MODELS,
+  SUBSCRIPTION_WORKER_MODELS,
 } from '@inixiative/foundry-core';
 import { z } from 'zod';
 import {
@@ -17,6 +18,7 @@ import {
   type SubscriptionWorker,
   subscriptionWorker,
 } from '../models/registry';
+import { providerEnabled } from '../models/vendors';
 import {
   type AgentSettingsConfig,
   type FoundryConfig,
@@ -130,9 +132,13 @@ export const SUBSCRIPTION_DEFAULTS = {
 
 export interface SubscriptionResolution {
   policy: SubscriptionPolicy;
-  /** The native harness running every main thread. */
-  workerProvider: SubscriptionWorker;
-  worker: NativeProfileSource;
+  /** Each usable subscription worker's login: its vendor's subscription mode is on and (at startup) the login exists. */
+  workers: Partial<Record<SubscriptionWorker, NativeProfileSource>>;
+  /** Why each other worker is not usable (its vendor's subscription mode is on, its login is not). */
+  unavailable: Partial<Record<SubscriptionWorker, string>>;
+  /** Every worker a thread may name: its vendor's subscription mode is on, or a project defaults to it.
+   * Each gets an adapter; one without a login runs only a Kingdom-capacity project's threads. */
+  offered: SubscriptionWorker[];
   decision: NativeProfileSource;
   /** Effective configuration: every enabled decision role runs on the subscription decision profile. */
   config: FoundryConfig;
@@ -140,10 +146,66 @@ export interface SubscriptionResolution {
   rerouted: string[];
 }
 
+/** The subscription worker each main thread runs on by default: the global default and every enabled project's. */
+export function defaultWorkers(
+  config: FoundryConfig,
+  options: { onThisMachine?: boolean } = {},
+): Map<string, string> {
+  const defaults = new Map<string, string>([['global', config.defaults.provider]]);
+  for (const [id, project] of Object.entries(config.projects ?? {}))
+    if (project.enabled !== false && !(options.onThisMachine && project.capacity === 'kingdom'))
+      defaults.set(`project ${id}`, project.defaults?.provider ?? config.defaults.provider);
+  return defaults;
+}
+
+/** A worker's adapter default model: the global model on the global worker, else the worker's own. */
+export function workerDefaultModel(config: FoundryConfig, worker: string): string {
+  return worker === config.defaults.provider
+    ? config.defaults.model
+    : (SUBSCRIPTION_WORKER_MODELS[worker as keyof typeof SUBSCRIPTION_WORKER_MODELS] ??
+        config.defaults.model);
+}
+
+/**
+ * One login per runtime: the native profile `defaults.nativeAuthenticationId` names when it is that
+ * runtime's, else the runtime's only configured native profile (unless that is the decision source),
+ * else its default profile location. Several of one runtime with none named is ambiguous and refused.
+ */
+function runtimeLogin(config: FoundryConfig, runtime: 'claude' | 'codex'): NativeProfileSource {
+  const named = config.defaults.nativeAuthenticationId
+    ? config.nativeAuthentication?.find(
+        (item) => item.id === config.defaults.nativeAuthenticationId,
+      )
+    : undefined;
+  if (config.defaults.nativeAuthenticationId && !named)
+    throw Error('Subscription-only execution requires native profile sources');
+  if (named?.runtime === runtime) {
+    if (named.mode !== 'native-profile')
+      throw Error('Subscription-only execution requires native profile sources');
+    assertProfile(named.profileDirectory, named.runtime);
+    return named;
+  }
+  const configured = (config.nativeAuthentication ?? []).filter(
+    (item): item is NativeProfileSource =>
+      item.runtime === runtime && item.mode === 'native-profile',
+  );
+  if (configured.length > 1)
+    throw Error(
+      `Several ${runtime} logins are configured (${configured.map((item) => item.id).join(', ')}); name the one main threads use with defaults.nativeAuthenticationId`,
+    );
+  const only = configured[0];
+  // A runtime whose only configured source is the decision login runs main threads on its default profile.
+  if (!only || only.id === config.subscriptionOnly?.decisionSourceId)
+    return defaultProfileSource(runtime);
+  assertProfile(only.profileDirectory, only.runtime);
+  return only;
+}
+
 /**
  * Subscription-only is the default. `apiTokens: true` is the only way to construct API
- * providers. Without it the worker (Claude Code or Codex) and the decision profile (Claude by
- * default, `decisionRuntime` to change) both use subscription logins, referenced in place, with no paid fallback.
+ * providers. Without it every main thread runs on a subscription worker (Claude Code or Codex, its
+ * project's default or the one chosen for the thread) and the decision profile (Claude by default,
+ * `decisionRuntime` to change) on subscription logins, referenced in place, with no paid fallback.
  *
  * `startup` also checks the default login locations and prepares the default receipt
  * directory; configuration saves validate structure and explicit profiles only.
@@ -169,11 +231,12 @@ export function resolveSubscriptionPolicy(
     throw Error(
       'Subscription-only startup requires fixed native profile selections, without gateway or per-thread overrides; set apiTokens: true for other sources',
     );
-  const workerProvider = config.defaults.provider;
-  const requirement = mainThreadRequirement(workerProvider, false);
-  if (requirement || !subscriptionWorker(workerProvider))
-    throw Error(`Subscription-only mode: ${requirement}`);
-  const workerRuntime = SUBSCRIPTION_WORKERS[workerProvider];
+  const defaults = defaultWorkers(config);
+  for (const provider of new Set(defaults.values())) {
+    const requirement = mainThreadRequirement(provider, false);
+    if (requirement || !subscriptionWorker(provider))
+      throw Error(`Subscription-only mode: ${requirement}`);
+  }
   const explicit = (id: string) => {
     const found = config.nativeAuthentication?.find((item) => item.id === id);
     if (!found || found.mode !== 'native-profile')
@@ -181,15 +244,37 @@ export function resolveSubscriptionPolicy(
     assertProfile(found.profileDirectory, found.runtime);
     return found;
   };
-  const worker = config.defaults.nativeAuthenticationId
-    ? explicit(config.defaults.nativeAuthenticationId)
-    : defaultProfileSource(workerRuntime);
-  if (worker.runtime !== workerRuntime)
-    throw Error(`The ${workerProvider} subscription worker runs on a ${workerRuntime} profile`);
+  // Every worker whose vendor's subscription mode is on (or a project's default) is offered, and
+  // runs threads on its runtime's one login. A default worker of a thread that runs on this machine
+  // must have that login; a Kingdom-capacity project's threads run on its pool, never on it.
+  const workers: Partial<Record<SubscriptionWorker, NativeProfileSource>> = {};
+  const unavailable: Partial<Record<SubscriptionWorker, string>> = {};
+  const offered: SubscriptionWorker[] = [];
+  const required = new Set(defaultWorkers(config, { onThisMachine: true }).values());
+  const projectDefaults = new Set(defaults.values());
+  for (const worker of Object.keys(SUBSCRIPTION_WORKERS) as SubscriptionWorker[]) {
+    if (!projectDefaults.has(worker) && !providerEnabled(config, worker)) continue;
+    offered.push(worker);
+    try {
+      const login = runtimeLogin(config, SUBSCRIPTION_WORKERS[worker]);
+      if (options.startup)
+        try {
+          assertProfile(login.profileDirectory, login.runtime);
+        } catch (error) {
+          throw Error(
+            `${login.runtime} subscription profile unavailable at ${login.profileDirectory}: ${(error as Error).message}`,
+          );
+        }
+      workers[worker] = login;
+    } catch (error) {
+      if (required.has(worker)) throw error;
+      unavailable[worker] = (error as Error).message;
+    }
+  }
   const inSession = settings.decisionRuntime === 'claude-in-session';
-  if (inSession && workerRuntime !== 'claude')
+  if (inSession && !workers['claude-code'])
     throw Error(
-      'subscriptionOnly.decisionRuntime claude-in-session holds Wardens inside the Claude Code main thread; the worker must be claude-code',
+      'subscriptionOnly.decisionRuntime claude-in-session holds Wardens inside Claude Code main threads; it needs a usable Claude Code login',
     );
   const decisionRuntime =
     settings.decisionRuntime === 'claude-in-session' ? 'claude' : settings.decisionRuntime;
@@ -242,44 +327,44 @@ export function resolveSubscriptionPolicy(
       `Decision model ${policy.model} is a ${other} model; set subscriptionOnly.model or defaults.classifierModel for ${decision.runtime} decisions`,
     );
   if (options.startup) {
-    for (const source of [worker, decision]) {
-      try {
-        assertProfile(source.profileDirectory, source.runtime);
-      } catch (error) {
-        throw Error(
-          `${source.runtime} subscription profile unavailable at ${source.profileDirectory}: ${(error as Error).message}`,
-        );
-      }
+    try {
+      assertProfile(decision.profileDirectory, decision.runtime);
+    } catch (error) {
+      throw Error(
+        `${decision.runtime} subscription profile unavailable at ${decision.profileDirectory}: ${(error as Error).message}`,
+      );
     }
     if (!settings.directory) mkdirSync(policy.directory, { recursive: true, mode: 0o700 });
   }
   if (options.startup || settings.directory) assertPrivateProfile(policy.directory);
-  // Worker and decisions are shared holders of one login, like interactive sessions on it.
+  // Workers and decisions are shared holders of their logins, like interactive sessions on them.
+  const logins = new Set(Object.values(workers).map((login) => login.id));
 
   const { config: effective, rerouted } = routeDecisions(config, policy.model);
-  const check = (view: FoundryConfig) => {
-    if (view.defaults.provider !== workerProvider)
+  // Each view is checked against its own worker: the global defaults, then every project's.
+  const check = (view: FoundryConfig, pooled = false) => {
+    const worker = view.defaults.provider;
+    if (!subscriptionWorker(worker) || !(pooled ? offered.includes(worker) : workers[worker]))
       throw Error(
-        `Subscription-only mode runs every main thread on the ${workerProvider} worker; ${
-          mainThreadRequirement(view.defaults.provider, false) ?? `set it as the global default`
-        }`,
+        `Subscription-only mode: ${mainThreadRequirement(worker, false) ?? `the ${worker} worker has no usable login`}`,
       );
     if (
-      view.defaults.nativeAuthenticationId !== config.defaults.nativeAuthenticationId ||
+      (view.defaults.nativeAuthenticationId !== undefined &&
+        !logins.has(view.defaults.nativeAuthenticationId)) ||
       view.defaults.kingdomOwnerKey ||
       view.defaults.classifierProvider !== SUBSCRIPTION_DECISIONS ||
       view.defaults.classifierModel !== policy.model
     )
       throw Error(
-        'Subscription-only defaults require the configured worker and subscription decision model',
+        'Subscription-only defaults require a configured worker login and the subscription decision model',
       );
     model.parse(view.defaults.model);
     // A main-thread model other than the global default must be one the worker runs.
     const workerModel = (chosen: string) => {
       const refusal =
-        chosen === config.defaults.model
+        chosen === config.defaults.model && worker === config.defaults.provider
           ? undefined
-          : workerModelRequirement(workerProvider, chosen);
+          : workerModelRequirement(worker, chosen);
       if (refusal) throw Error(`Subscription-only mode: ${refusal}`);
     };
     workerModel(view.defaults.model);
@@ -288,7 +373,7 @@ export function resolveSubscriptionPolicy(
       const central = agent.kind === 'executor';
       if (
         (agent.provider ?? view.defaults.provider) !==
-          (central ? workerProvider : SUBSCRIPTION_DECISIONS) ||
+          (central ? worker : SUBSCRIPTION_DECISIONS) ||
         (!central && (agent.model ?? undefined) !== policy.model) ||
         (!central && agent.tools === true)
       )
@@ -312,9 +397,44 @@ export function resolveSubscriptionPolicy(
       throw Error('Subscription-only review override refused');
   };
   check(effective);
-  for (const id of Object.keys(effective.projects))
-    check(resolveProjectView(effective, id)!.config);
-  return structuredClone({ policy, workerProvider, worker, decision, config: effective, rerouted });
+  for (const [id, project] of Object.entries(effective.projects))
+    check(resolveProjectView(effective, id)!.config, project.capacity === 'kingdom');
+  return structuredClone({
+    policy,
+    workers,
+    unavailable,
+    offered,
+    decision,
+    config: effective,
+    rerouted,
+  });
+}
+
+/**
+ * Why a thread cannot run on `worker` in `view` (its project's view), or undefined when it can.
+ * Checked when a thread is created, restored or reopened, so a vendor turned off since is refused.
+ * There is never a fallback: no other login, no API provider.
+ */
+export function threadWorkerRequirement(
+  resolution: SubscriptionResolution | undefined,
+  view: FoundryConfig,
+  worker: string,
+  projectId?: string,
+): string | undefined {
+  if (worker === view.defaults.provider && !resolution) return undefined;
+  if (view.apiTokens === true || !resolution)
+    return `With apiTokens on, every thread runs on the default provider ${view.defaults.provider}; ${worker} is refused`;
+  if (!subscriptionWorker(worker))
+    return `${worker} is not a subscription worker; a thread runs on ${Object.keys(SUBSCRIPTION_WORKERS).join(' or ')}`;
+  if (!providerEnabled(view, worker))
+    return `The ${worker} worker is off: turn on its vendor's subscription mode`;
+  if (!resolution.offered.includes(worker))
+    return `The ${worker} worker was not started with Foundry; restart Foundry`;
+  // A Kingdom-capacity project's threads run on its pool, which refuses a runtime it has no login for.
+  if (projectId && view.projects[projectId]?.capacity === 'kingdom') return undefined;
+  if (!resolution.workers[worker])
+    return `The ${worker} worker has no usable login${resolution.unavailable[worker] ? ` (${resolution.unavailable[worker]})` : ''}; log in with its CLI and restart Foundry`;
+  return undefined;
 }
 
 /** Decision roles (every enabled non-executor agent) run on the subscription decision profile.

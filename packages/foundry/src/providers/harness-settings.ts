@@ -6,6 +6,8 @@
 import {
   existsSync,
   lstatSync,
+  mkdirSync,
+  readdirSync,
   readFileSync,
   readlinkSync,
   realpathSync,
@@ -15,6 +17,7 @@ import {
 } from 'node:fs';
 import { join, relative, resolve, sep } from 'node:path';
 import { writePrivateFile } from '../client/private-file';
+import { FOUNDRY_PLUGIN_DIR } from './native-launch';
 
 /**
  * What a main thread's Claude loads of the user's own setup (CORE-003): settings, commands, skills,
@@ -277,7 +280,7 @@ function withoutLoginEnv(servers: unknown): unknown {
 }
 
 /** Codex folders shared from the user's home: their skills, execpolicy rules and prompts. */
-const CODEX_USER_FOLDERS = ['skills', 'rules', 'prompts'] as const;
+const CODEX_USER_FOLDERS = ['rules', 'prompts'] as const;
 
 const tomlKey = (key: string) => (/^[A-Za-z0-9_-]+$/.test(key) ? key : JSON.stringify(key));
 
@@ -354,7 +357,66 @@ export function codexUserConfig(
   return lines.join('');
 }
 
-/** A Foundry-owned CODEX_HOME for a main thread: the user's skills, rules and prompts by link. */
-export function shareCodexUserSetup(home: string, userDirectory: string): void {
+/**
+ * A Foundry-owned CODEX_HOME for a main thread: the user's rules and prompts by link, and a skills
+ * folder holding the user's own skills (one link each) beside Foundry's (`foundry-<name>`, from the
+ * plugin Claude loads with `--plugin-dir`), so a Codex thread learns Foundry's tools the same way.
+ */
+export function shareCodexUserSetup(
+  home: string,
+  userDirectory: string,
+  foundrySkills: string = join(FOUNDRY_PLUGIN_DIR, 'skills'),
+): void {
   linkUserFolders(home, userDirectory, CODEX_USER_FOLDERS);
+  composeSkills(join(home, 'skills'), join(userDirectory, 'skills'), foundrySkills);
+}
+
+const present = (path: string) => {
+  try {
+    lstatSync(path);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+/** `folder` as a real directory of links: each of the user's skills, then each of Foundry's as `foundry-<name>`. */
+function composeSkills(folder: string, userSkills: string, foundrySkills: string): void {
+  const entries = (dir: string) => {
+    try {
+      return readdirSync(dir);
+    } catch {
+      return [];
+    }
+  };
+  let current: ReturnType<typeof lstatSync> | undefined;
+  try {
+    current = lstatSync(folder);
+  } catch {
+    /* Missing. */
+  }
+  // An earlier home linked the whole folder to the user's: replace the link, never the user's folder.
+  if (current?.isSymbolicLink()) unlinkSync(folder);
+  mkdirSync(folder, { recursive: true });
+  const wanted = new Map<string, string>([
+    ...entries(userSkills)
+      .filter((name) => !name.startsWith('.') && !name.startsWith('foundry-'))
+      .map((name) => [name, join(userSkills, name)] as const),
+    ...entries(foundrySkills).map(
+      (name) => [`foundry-${name}`, join(foundrySkills, name)] as const,
+    ),
+  ]);
+  for (const name of entries(folder)) {
+    const path = join(folder, name);
+    if (!lstatSync(path).isSymbolicLink()) continue;
+    if (wanted.get(name) !== readlinkSync(path)) unlinkSync(path);
+  }
+  for (const [name, target] of wanted) {
+    const link = join(folder, name);
+    // Kept above when it already points at its target; anything else there is the user's to keep.
+    if (present(link)) continue;
+    const temporary = join(folder, `.${name}-${crypto.randomUUID()}`);
+    symlinkSync(target, temporary);
+    renameSync(temporary, link);
+  }
 }

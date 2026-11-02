@@ -12,6 +12,8 @@ import type {
   InterventionLog,
   LLMProvider,
   Thread,
+  ThreadMachine,
+  ThreadPlan,
   ThreadSetup,
   TokenTracker,
   ToolRegistry,
@@ -26,13 +28,16 @@ import { registerArchiveRoutes } from '../archives/routes';
 import { ThreadContextTracker } from '../archives/thread-context';
 import { CompositionAuditor } from '../audit/compositions';
 import { ConversationService } from '../conversations/service';
+import { readLocalDevice } from '../devices/local-inventory';
 import { feedbackRoots } from '../feedback/apply';
 import { MAIN_ROLE } from '../feedback/routing';
 import { FeedbackService } from '../feedback/service';
 import { classifyCorrection, matchExisting } from '../feedback/sharpen';
+import { releaseWorktree } from '../git';
 import { ImageAttachmentStore } from '../persistence/image-attachments';
 import { KnowledgePersistence } from '../persistence/knowledge-persistence';
 import { LocalSessionStore } from '../persistence/local-session-store';
+import { installationNameOf } from '../providers/kingdom-cli';
 import { KingdomHolders } from '../providers/kingdom-holder';
 import {
   KingdomInstallationConnections,
@@ -42,6 +47,7 @@ import {
 import type { TaskSink } from '../providers/session-backed';
 import { ThreadLaunchSettings } from '../providers/thread-launch';
 import { kingdomPostDelivery } from '../tools/kingdom-post';
+import { applyPlanPatch, type PlanPatch, type ThreadPlans } from '../tools/thread-plan';
 import { RunningTasks } from '../turns/running-tasks';
 import { SubagentRecorder } from '../turns/subagents';
 import {
@@ -59,7 +65,7 @@ import { makeUnrefInterval } from '../ws/unref-interval';
 import { ActionHandler } from './actions';
 import { AIAssist } from './ai-assist';
 import { AnalyticsStore } from './analytics';
-import { ConfigStore, DEFAULT_RAW_MIDDLEWARE_DAYS } from './config';
+import { ConfigStore, DEFAULT_RAW_MIDDLEWARE_DAYS, threadOnMerge } from './config';
 import { createViewerStreams } from './data-streams';
 import { authenticatedRequest, sameOrigin, sameSecret } from './request-auth';
 import { registerControlRoutes } from './routes/control';
@@ -266,10 +272,28 @@ export function createViewer(config: ViewerConfig) {
     config.localStore === undefined
       ? new LocalSessionStore(join(config.configDir ?? '.foundry', 'sessions.sqlite'))
       : config.localStore;
+  // This machine: the local device identity, and the Foundry's name once settings are read.
+  let installationName: string | undefined;
+  const machine = (): ThreadMachine | undefined => {
+    let device: ReturnType<typeof readLocalDevice> = null;
+    try {
+      device = readLocalDevice(config.deviceIdentityPath);
+    } catch {
+      return undefined;
+    }
+    return device
+      ? {
+          deviceId: device.id,
+          deviceName: device.name,
+          ...(installationName ? { installationName } : {}),
+        }
+      : undefined;
+  };
   const directory = new ViewerThreadDirectory(
     harness.thread,
     config.projectRegistry,
     config.threadFactory,
+    machine,
   );
   const kingdomLost = () => !kingdom.authorized;
   const revoke = () =>
@@ -351,7 +375,8 @@ export function createViewer(config: ViewerConfig) {
         ? undefined
         : (rootThreadId, turn) => {
             const root = directory.get(rootThreadId);
-            if (!root) return;
+            // Only a thread whose worker holds its Wardens in-session; the others' are primed.
+            if (!root || !config.threadSetup?.applies(rootThreadId)) return;
             void root.signals
               .emit({
                 id: newId('sig-subturn'),
@@ -375,7 +400,7 @@ export function createViewer(config: ViewerConfig) {
         ? undefined
         : (rootThreadId, call) => {
             const root = directory.get(rootThreadId);
-            if (!root) return;
+            if (!root || !config.threadSetup?.applies(rootThreadId)) return;
             void root.signals
               .emit({
                 id: newId('sig-tool'),
@@ -430,7 +455,40 @@ export function createViewer(config: ViewerConfig) {
   const threadContext = new ThreadContextTracker({
     thread: (id) => directory.get(id),
     changed: threadChanged,
+    onMerged: (thread, into) => void settleMerged(thread, into),
   });
+  /**
+   * A thread's branch merged: `threadOnMerge` decides (project, then Foundry-wide, default `done`).
+   * done: the thread shows "Merged into <base>" until its next task. auto-archive: archived, and its
+   * worktree released with the project's mode (FEAT-003), never forced; a refusal stays on the record.
+   */
+  const settleMerged = async (thread: Thread, into: string) => {
+    const mode = threadOnMerge(await configStore.load(), thread.meta.projectId);
+    if (mode === 'done') {
+      thread.meta.done = { kind: 'merged', text: `Merged into ${into}`, at: Date.now() };
+      threadChanged(thread);
+      return;
+    }
+    await actions.execute({
+      kind: 'thread:archive',
+      target: thread.id,
+      operator: 'foundry',
+      timestamp: Date.now(),
+    });
+    const context = thread.meta.context;
+    const checkout = context?.checkout;
+    if (!context || !checkout?.path || !checkout.root || checkout.main || checkout.mode === 'none')
+      return;
+    const released = await releaseWorktree({
+      mode: checkout.mode,
+      root: checkout.root,
+      path: checkout.path,
+    });
+    if ('error' in released) {
+      thread.meta.context = { ...context, checkout: { ...checkout, error: released.error } };
+      threadChanged(thread);
+    } else void threadContext.refresh(thread.id);
+  };
   // Archive capture covers every journalled thread at startup and after each turn.
   const archiveCapture = localStore
     ? registerArchiveRoutes(app, localStore, eventStream, (snapshot) => {
@@ -439,6 +497,19 @@ export function createViewer(config: ViewerConfig) {
     : undefined;
   if (!localStore) for (const thread of directory.all()) void threadContext.refresh(thread.id);
   const configStore = config.configStore ?? new ConfigStore(config.configDir ?? '.foundry');
+  void configStore
+    .load()
+    .then((loaded) => {
+      installationName = installationNameOf(loaded);
+      // Threads stamped before settings were read get this Foundry's name on their own machine.
+      for (const thread of directory.all()) {
+        const here = thread.meta.machine;
+        if (!here || here.installationName || here.deviceId !== machine()?.deviceId) continue;
+        thread.meta.machine = { ...here, installationName };
+        threadChanged(thread);
+      }
+    })
+    .catch(() => {});
   // Raw middleware rows age out once reduced (`journal.rawMiddlewareDays`, default 30).
   if (localStore) {
     const prune = () => {
@@ -861,6 +932,25 @@ export function createViewer(config: ViewerConfig) {
     localStore,
     directory,
     conversations,
+    /** The plan tool's reach: a thread's plan, recorded on its meta, persisted and published. */
+    plans: {
+      setPlan(threadId: string, patch: PlanPatch): ThreadPlan {
+        const thread = directory.get(threadId);
+        if (!thread || thread.disposed) throw Error('This thread is not live here');
+        const before = new Set(
+          (thread.meta.plan?.outcomes ?? []).filter((o) => o.status === 'done').map((o) => o.text),
+        );
+        const plan = applyPlanPatch(thread.meta.plan, patch);
+        thread.meta.plan = plan;
+        // An outcome newly done is a milestone: the thread shows it as done until its next task.
+        const reached = plan.outcomes
+          .filter((o) => o.status === 'done' && !before.has(o.text))
+          .at(-1);
+        if (reached) thread.meta.done = { kind: 'milestone', text: reached.text, at: Date.now() };
+        threadChanged(thread);
+        return plan;
+      },
+    } satisfies ThreadPlans,
     startSocket() {
       socket.startStaleSweep();
       kingdomWatch.start();
@@ -967,6 +1057,7 @@ export async function startViewer(config: ViewerConfig) {
     localStore,
     kingdom: viewer.kingdom,
     conversations: viewer.conversations,
+    plans: viewer.plans,
   };
 }
 

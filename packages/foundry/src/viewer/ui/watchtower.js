@@ -12,7 +12,13 @@
 
 import { FilterChips, passesChips } from './filter-chips.js';
 import { html, useEffect, useState } from './lib.js';
-import { ActorChip, loadMachineProfile, machineIcon, machineProfile } from './machine-icons.js';
+import {
+  ActorChip,
+  loadMachineProfile,
+  machineIcon,
+  machineProfile,
+  otherMachine,
+} from './machine-icons.js';
 import { settingsConfig } from './settings.js';
 import { allThreads, projects, prompts, selectThread, watchtowerOpen } from './store.js';
 import { projectKingdom, threadName } from './thread-labels.js';
@@ -66,7 +72,7 @@ function Card({ item, machine }) {
           html`<span key=${k} class="wt-src s-${k}">${k === 'github' ? 'GitHub' : k === 'linear' ? 'Linear' : 'Sessions'} ${n}</span>`,
       )}</span>
     <span class="wt-actors">
-      ${item.mine ? html`<${ActorChip} person="You" machine=${machine} icon=${machineIcon()} me=${true} here=${true} />` : null}
+      ${item.mine ? html`<${ActorChip} person="You" machine=${item.device} icon=${item.here ? machineIcon() : undefined} me=${true} here=${item.here} />` : null}
       ${people.filter((p) => p !== 'You').map((p) => html`<${ActorChip} key=${p} person=${p} />`)}
     </span>
   </button>`;
@@ -117,9 +123,10 @@ export function Watchtower() {
           sessions: 1 + subagents.length,
         },
         people: members ? ['You', `+${members}`] : ['You'],
-        // Every listed thread runs on this machine and is yours: the list has no other machine's threads yet.
+        // Every listed thread is yours; it runs on this machine unless meta.machine names another.
         mine: true,
-        device: machine,
+        device: otherMachine(thread)?.deviceName ?? machine,
+        here: !otherMachine(thread),
       };
     });
   const valuesOf = {

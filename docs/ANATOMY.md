@@ -117,6 +117,7 @@ One sheet naming every part of Foundry, so people and agents use the same words.
 | outcomes | `binary` (yes / NO_COMMENT) or `ternary` (adds `unsure`). | `StageOutcomes` | live (`binary`) |
 | reason | `none`, `inline` (the why with every answer) or `followup` ("why?" asked after a yes or unsure). | `StageReason` | live (`none`) |
 | escalate | The outcomes of a non-final stage that go on to the next, carrying their why. | `StageConfig.escalate` | off (single stage) |
+| carryWhy | Whether a non-final stage hands its why on with its outcome; false hands the outcome alone. | `StageConfig.carryWhy` | true |
 | deadline share | A stage's share of its trigger's deadline. | `StageConfig.deadline` | off (single stage) |
 | two-stage chorus | Layer 1 and Layer 2 together: a cheap model asks every region, and on each yes a stronger model (Sonnet) confirms and picks. Configurable today as two stages; not the default. | `chorus.wardens.stages` | off |
 | phase | What a Warden is doing for its trigger: advice, guard, brief or review. Not a stage: Foundry says "phase" for these and "stage" only for classification steps. | journal phase rows | live |

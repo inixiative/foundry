@@ -8,15 +8,17 @@ import {
   KingdomSubscriptionAuthentication,
   limitReading,
   ProjectCapacityAuthentication,
+  projectCapacity,
 } from '../src/providers/kingdom-subscription-authentication';
 import {
   kingdomLogin,
   maskedOutput,
   selectOwner,
+  setKingdomProject,
   setProjectCapacity,
 } from '../src/providers/kingdom-subscription-login';
 import { subscriptionStatus } from '../src/providers/native-text-provider';
-import { ConfigStore, starterConfig } from '../src/viewer/config';
+import { ConfigStore, capacityKingdomProject, starterConfig } from '../src/viewer/config';
 import { heldSignet, mockKingdom, ownerOf } from './helpers/kingdom-installation';
 
 const cleanups: (() => Promise<unknown>)[] = [];
@@ -273,6 +275,56 @@ test('threads of a kingdom project route to Kingdom; every other thread keeps th
   expect((await routed.prepare('kingdom-thread', 'claude')).mode).toBe('kingdom-subscription');
 });
 
+test("a Kingdom project's Codex thread whose pool has no Codex login is refused with Kingdom's reason, never run locally", async () => {
+  const directory = await temporary();
+  const owner = `OrganizationUser:${crypto.randomUUID()}:${crypto.randomUUID()}:`;
+  const asked: Array<{ runtime: string; model: string }> = [];
+  // The pool holds only a Claude login: Kingdom refuses a Codex run.
+  const kingdom = mockKingdom({
+    onSignet: (action, body) => {
+      if (action === 'resolveRun')
+        asked.push({ runtime: body.selection.runtime, model: body.selection.model });
+      return Response.json({ error: 'No authorized capacity matches' }, { status: 409 });
+    },
+  });
+  cleanups.push(async () => kingdom.stop());
+  const { credentialFile, signetId } = await heldSignet(kingdom, directory, owner);
+  const config = starterConfig('claude-code', 'fable');
+  config.kingdomIntegrations = [
+    { url: kingdom.url, owner, integrationId: crypto.randomUUID(), signetId },
+  ];
+  config.projects = {
+    pooled: {
+      id: 'pooled',
+      path: directory,
+      tags: [],
+      capacity: 'kingdom',
+      kingdomCapacity: { kingdom: kingdom.url, signetId },
+    },
+  };
+  let local = 0;
+  // The daemon's wiring: one capacity router for every worker, the thread's own model.
+  const route = projectCapacity({
+    foundryDir: directory,
+    config: () => config,
+    meta: (threadId) =>
+      threadId === 'codex-thread' ? { projectId: 'pooled', worker: 'codex' } : undefined,
+    credentialFile: async () => credentialFile,
+  });
+  const routed = route({
+    bindingId: (threadId) => threadId,
+    prepare: async () => {
+      local++;
+      throw Error('the local login must not be used');
+    },
+  });
+  await expect(routed.prepare('codex-thread', 'codex')).rejects.toThrow(
+    'No authorized capacity matches',
+  );
+  expect(asked).toEqual([{ runtime: 'codex', model: 'gpt-6-astra' }]);
+  expect(local).toBe(0);
+});
+
 test('kingdom login hands the native login to the chosen owner and leaves nothing on disk', async () => {
   const { directory, kingdom, owner, keyFile, integrationId } = await kingdomWithLogin('claude');
   const configDir = join(directory, 'config');
@@ -364,4 +416,47 @@ test('the setup-token Claude prints is captured but never echoed, even split by 
   expect(captured).toBe(setupToken);
   expect(written.join('')).not.toContain(setupToken.slice(14));
   expect(written.join('')).toContain('[token captured]');
+});
+
+test('a Foundry project links to one Kingdom project; a Kingdom-capacity login bills it on the same Kingdom', async () => {
+  const { directory, kingdom, owner, integrationId } = await kingdomWithLogin('claude');
+  const store = new ConfigStore(join(directory, 'config'));
+  const config = starterConfig('claude-code', 'fable');
+  config.kingdomIntegrations = [
+    { url: kingdom.url, integrationId, owner, signetId: crypto.randomUUID() },
+  ];
+  const projectId = crypto.randomUUID();
+  config.projects = { [projectId]: { id: projectId, path: directory } };
+  await store.save(config);
+  const kingdomProjectId = crypto.randomUUID();
+  await setProjectCapacity(store, projectId, {
+    source: 'kingdom',
+    kingdom: kingdom.url,
+    signetId: crypto.randomUUID(),
+  });
+  const linked = await setKingdomProject(store, projectId, {
+    kingdom: kingdom.url,
+    projectId: kingdomProjectId,
+  });
+  expect(linked.projects[projectId]!.kingdomProject).toEqual({
+    kingdom: kingdom.url,
+    projectId: kingdomProjectId,
+  });
+  expect(capacityKingdomProject(linked, linked.projects[projectId]!)).toBe(kingdomProjectId);
+  // The old place for it is refused by name, with the fix.
+  await expect(
+    store.update((draft) => {
+      (draft.projects[projectId]!.kingdomCapacity as unknown as Record<string, unknown>).projectId =
+        kingdomProjectId;
+    }),
+  ).rejects.toThrow('kingdomCapacity.projectId is gone');
+  await expect(
+    setKingdomProject(store, projectId, {
+      kingdom: 'https://elsewhere.example',
+      projectId: kingdomProjectId,
+    }),
+  ).rejects.toThrow();
+  const unlinked = await setKingdomProject(store, projectId, null);
+  expect(unlinked.projects[projectId]!.kingdomProject).toBeUndefined();
+  expect(capacityKingdomProject(unlinked, unlinked.projects[projectId]!)).toBeUndefined();
 });

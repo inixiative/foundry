@@ -21,7 +21,7 @@
 
 import { FilterChips, passesChips } from './filter-chips.js';
 import { html, useEffect, useState } from './lib.js';
-import { loadMachineProfile, machineProfile } from './machine-icons.js';
+import { DeviceBadge, loadMachineProfile, machineProfile, otherMachine } from './machine-icons.js';
 import { selfChatSending } from './self-chat.js';
 import { settingsConfig } from './settings.js';
 import { STATES, StatusIcon } from './status-icons.js';
@@ -75,6 +75,7 @@ function Card({ thread, state }) {
       <${StatusIcon} state=${state} />
       <span class="board-card-kind">${s?.kind ?? s?.label}</span>
       <span class="board-card-project">${project}</span>
+      <${DeviceBadge} thread=${thread} />
     </div>
     <button class="board-card-title" onClick=${open} title="Open the thread">${threadName(thread)}</button>
     ${ask ? html`<p class="board-card-ask">${ask.message}</p>` : null}
@@ -168,11 +169,11 @@ export function Board() {
     machineProfile.value?.installationName ??
     settingsConfig.value?.installationName ??
     'This Foundry';
-  // Every listed thread runs on this machine: the list has no other machine's threads yet.
+  // A thread runs on this machine unless its meta.machine names another device.
   const valuesOf = {
     project: (t) => t.meta?.projectId ?? '',
     kingdom: (t) => projectKingdom(t.meta?.projectId),
-    device: () => machine,
+    device: (t) => otherMachine(t)?.deviceName ?? machine,
   };
   const open = allThreads.value.filter((t) => showQuiet || OPEN(t));
   const threads = open.filter((t) => passesChips(chips, valuesOf, t));
@@ -213,13 +214,19 @@ export function Board() {
       label: 'Kingdom',
       options: [...new Set(open.map(valuesOf.kingdom))].map((k) => option('kingdom', k, k)),
     },
-    { id: 'device', label: 'Device', options: [option('device', machine, machine)] },
+    {
+      id: 'device',
+      label: 'Device',
+      options: [...new Set([machine, ...open.map(valuesOf.device)])].map((d) =>
+        option('device', d, d),
+      ),
+    },
   ];
 
   return html`<div class="board">
     <header class="board-band">
       <h2 class="board-title">Board</h2>
-      <span class="board-device-note" title="Threads on your other machines show here with a device badge once Foundry records where each thread runs">Threads on ${machine}</span>
+      <span class="board-device-note" title="A thread on another of your machines carries a device badge">This machine: ${machine}</span>
     </header>
     <div class="board-filter-row">
       <${FilterChips} groups=${groups} selected=${chips} onChange=${(next) => {

@@ -8,6 +8,7 @@ import { join, resolve } from 'node:path';
 import { resolveDecisionModel } from '@inixiative/foundry-core';
 import { stampFoundryRun } from './archives/run-stamp';
 import { AGENT_CLIS, ensureAgentClisOnPath } from './daemon/agent-clis';
+import { WORKER_SESSION_RUNTIMES } from './models/registry';
 import { providerBaseUrl, providerContextBudget, providerEnabled } from './models/vendors';
 import {
   type DecisionEvents,
@@ -16,23 +17,20 @@ import {
 } from './providers/decision-host';
 import { createDecisionProvider } from './providers/decision-provider';
 import { harnessSettingSources } from './providers/harness-settings';
-import { InSessionWardens } from './providers/in-session-wardens';
+import { InSessionWardens, inSessionThreadSetup } from './providers/in-session-wardens';
 import { KingdomAuthentication } from './providers/kingdom-authentication';
-import {
-  heldSignetFile,
-  selectKingdomIntegration,
-} from './providers/kingdom-installation-connection';
-import {
-  KingdomSubscriptionAuthentication,
-  ProjectCapacityAuthentication,
-} from './providers/kingdom-subscription-authentication';
+import { projectCapacity } from './providers/kingdom-subscription-authentication';
 import {
   NativeAuthentication,
   type NativeAuthenticationProvider,
 } from './providers/native-authentication';
 import { boundLaunchEnvironment } from './providers/native-text-environment';
 import { SubscriptionAuthentication } from './providers/subscription-authentication';
-import { resolveSubscriptionPolicy } from './providers/subscription-policy';
+import {
+  resolveSubscriptionPolicy,
+  threadWorkerRequirement,
+  workerDefaultModel,
+} from './providers/subscription-policy';
 
 /**
  * Foundry — production entrypoint.
@@ -48,6 +46,7 @@ import {
   ContextStack,
   type MemoryEntry,
   type NativeBridgeSource,
+  type ThreadMeta,
   type ThreadSetup,
   ToolRegistry,
 } from '@inixiative/foundry-core';
@@ -68,12 +67,12 @@ import {
 } from './agents';
 import { resolveLearningSettings } from './agents/learning-config';
 import { describeChorus } from './agents/region-roster';
-import { atlasRootOf, configureHarness } from './agents/thread-factory';
+import { atlasRootOf, configureHarness, createMainThread } from './agents/thread-factory';
 import type { StageEffort } from './classify';
 import { acpLaunchPath, newAcpCapability, removeAcpLaunch, writeAcpLaunch } from './client/launch';
 import type { ConversationService } from './conversations/service';
 import { lateConversationWrapper } from './conversations/types';
-import type { LocalSessionStore } from './persistence/local-session-store';
+import { LocalSessionStore } from './persistence/local-session-store';
 import {
   CLAUDE_HARNESS_INSTRUCTIONS_OFF,
   CODEX_HARNESS_INSTRUCTIONS_OFF,
@@ -103,6 +102,7 @@ import { registerKingdomAccess } from './tools/kingdom-access';
 import { registerKingdomPost } from './tools/kingdom-post';
 import { MemoryToolAdapter } from './tools/memory-adapter';
 import { rtk as rtkFilter } from './tools/output-filters';
+import { PLAN_TOOL_DESCRIPTION, type ThreadPlans, ThreadPlanTool } from './tools/thread-plan';
 import { journalHistory } from './turns/journal-history';
 import { lateBoundToolGate, type ThreadToolGate } from './turns/tool-gate';
 import {
@@ -186,7 +186,11 @@ const subscription = resolveSubscriptionPolicy(config, { startup: true });
 if (subscription) {
   config = subscription.config;
   console.log(
-    `Subscription-only: worker ${subscription.workerProvider} (${subscription.worker.profileDirectory}), decisions ${subscription.decision.runtime} ${subscription.policy.model} (${subscription.decision.profileDirectory}); no API providers`,
+    `Subscription-only: workers ${Object.entries(subscription.workers)
+      .map(([worker, login]) => `${worker} (${login!.profileDirectory})`)
+      .join(
+        ', ',
+      )}, decisions ${subscription.decision.runtime} ${subscription.policy.model} (${subscription.decision.profileDirectory}); no API providers`,
   );
   if (subscription.rerouted.length)
     console.log(`Decision roles use subscription decisions: ${subscription.rerouted.join(', ')}`);
@@ -202,8 +206,6 @@ for (const [projectId, project] of Object.entries(config.projects ?? {})) {
 // decisionRuntime claude-in-session: each thread's Wardens are held inside its own Claude Code
 // process (docs/THREAD-TREE.md spec C). Off by default.
 const setupListeners: Array<(threadId: string, setup: ThreadSetup) => void> = [];
-/** Threads whose session was opened ahead of a turn (in-session Wardens). */
-const opened = new Set<string>();
 const inSession =
   subscription?.policy.wardens === 'in-session'
     ? new InSessionWardens({
@@ -220,7 +222,9 @@ const inSession =
       })
     : undefined;
 if (inSession)
-  console.log("Wardens: held inside each thread's own Claude Code process (claude-in-session)");
+  console.log(
+    "Wardens: held inside each Claude Code thread's own process (claude-in-session); threads on other workers use primed Wardens",
+  );
 /** Pressure and recycles of every decision host (the decision host and each stage host) reach the viewer. */
 const decisionEvents: DecisionEvents = {
   onPressure: (event: Parameters<NonNullable<DecisionEvents['onPressure']>>[0]) => {
@@ -289,68 +293,64 @@ const hostSettings = {
     journalStore ? journalHistory(journalStore, threadId, turnId) : undefined,
 };
 
-// Which project a thread (or its auxiliary session) belongs to; bound once the runtimes exist.
-let threadProject: ((threadId: string) => string | undefined) | undefined;
+// A thread's (or its auxiliary session's) record; bound once the runtimes exist.
+let threadMeta: ((threadId: string) => ThreadMeta | undefined) | undefined;
 let liveConfig = config;
+// One binding store for every worker: it is keyed by runtime.
+const sessionStore = new FileExternalSessionStore(join(FOUNDRY_DIR, 'sessions.json'));
+// Kingdom-capacity projects run their threads, on every worker, on a login Kingdom releases from the
+// project's pool, never on this machine's; every other thread keeps the machine's own login. Applies
+// to projects set to kingdom at startup.
+const projectCapacityAuthentication = Object.values(config.projects ?? {}).some(
+  (project) => project.capacity === 'kingdom',
+)
+  ? projectCapacity({
+      foundryDir: FOUNDRY_DIR,
+      config: () => liveConfig,
+      meta: (threadId) => threadMeta?.(threadId),
+    })
+  : (local: NativeAuthenticationProvider | undefined) => local;
 
-/** Kingdom-capacity projects run their threads on a login Kingdom releases from the project's pool;
- * every other thread keeps the machine's own login. Applies to projects set to kingdom at startup. */
-function projectCapacityAuthentication(
+/** Local authentication for a worker with no login here: only Kingdom-capacity threads may use it. */
+const noLocalLogin = (worker: string): NativeAuthenticationProvider => ({
+  bindingId: (threadId) => threadId,
+  prepare: async () => {
+    throw Error(`The ${worker} worker has no login on this machine; no other login is used`);
+  },
+});
+
+/** One worker's provider and session adapter. Building it spawns nothing: processes start per thread. */
+function createProvider(
   config: FoundryConfig,
-  local: NativeAuthenticationProvider | undefined,
-): NativeAuthenticationProvider | undefined {
-  if (!Object.values(config.projects ?? {}).some((project) => project.capacity === 'kingdom'))
-    return local;
-  const projectOf = (threadId: string) => {
-    const id = threadProject?.(threadId.split(':aux:')[0]!);
-    return id ? liveConfig.projects[id] : undefined;
-  };
-  return new ProjectCapacityAuthentication({
-    local,
-    usesKingdom: (threadId) => projectOf(threadId)?.capacity === 'kingdom',
-    kingdom: new KingdomSubscriptionAuthentication({
-      directory: join(FOUNDRY_DIR, 'kingdom', 'subscriptions'),
-      capacity: async (threadId) => {
-        const capacity = projectOf(threadId)?.kingdomCapacity;
-        if (!capacity) throw Error('This project has no Kingdom capacity configured');
-        const { url } = selectKingdomIntegration(liveConfig.kingdomIntegrations, capacity.kingdom);
-        return {
-          url,
-          credentialFile: await heldSignetFile(FOUNDRY_DIR, url, capacity.signetId),
-          ...(capacity.projectId ? { projectId: capacity.projectId } : {}),
-          model: liveConfig.defaults.model,
-          effort: liveConfig.defaults.codexEffort ?? 'default',
-        };
-      },
-    }),
-  });
-}
-
-function createProvider(config: FoundryConfig): {
+  providerId: string,
+): {
   provider: LLMProvider;
   sessionAdapter?: SessionAdapter;
 } {
-  const providerId = config.defaults.provider;
-  const sessionStore = new FileExternalSessionStore(join(FOUNDRY_DIR, 'sessions.json'));
-  const authentication = subscription
-    ? new SubscriptionAuthentication(join(FOUNDRY_DIR, 'runtime-profiles'), subscription.worker)
-    : config.defaults.kingdomOwnerKey ||
-        Object.keys(config.kingdomInferenceAssignments ?? {}).length
-      ? new KingdomAuthentication({
-          directory: join(FOUNDRY_DIR, 'kingdom'),
-          sources: config.kingdomInference ?? [],
-          defaultOwnerKey: config.defaults.kingdomOwnerKey,
-          assignments: config.kingdomInferenceAssignments,
-        })
-      : config.defaults.nativeAuthenticationId ||
-          Object.keys(config.nativeAuthenticationSelections ?? {}).length
-        ? new NativeAuthentication({
-            directory: join(FOUNDRY_DIR, 'runtime-profiles'),
-            sources: config.nativeAuthentication ?? [],
-            defaultSourceId: config.defaults.nativeAuthenticationId,
+  const login = subscription?.workers[providerId as keyof typeof subscription.workers];
+  // Each worker's adapter starts on its own default model: the global model only on the global worker.
+  const defaultModel = workerDefaultModel(config, providerId);
+  const authentication = login
+    ? new SubscriptionAuthentication(join(FOUNDRY_DIR, 'runtime-profiles'), login)
+    : subscription
+      ? noLocalLogin(providerId)
+      : config.defaults.kingdomOwnerKey ||
+          Object.keys(config.kingdomInferenceAssignments ?? {}).length
+        ? new KingdomAuthentication({
+            directory: join(FOUNDRY_DIR, 'kingdom'),
+            sources: config.kingdomInference ?? [],
+            defaultOwnerKey: config.defaults.kingdomOwnerKey,
+            assignments: config.kingdomInferenceAssignments,
           })
-        : undefined;
-  const routed = projectCapacityAuthentication(config, authentication);
+        : config.defaults.nativeAuthenticationId ||
+            Object.keys(config.nativeAuthenticationSelections ?? {}).length
+          ? new NativeAuthentication({
+              directory: join(FOUNDRY_DIR, 'runtime-profiles'),
+              sources: config.nativeAuthentication ?? [],
+              defaultSourceId: config.defaults.nativeAuthenticationId,
+            })
+          : undefined;
+  const routed = projectCapacityAuthentication(authentication);
   if (routed && !['claude-code', 'codex'].includes(providerId))
     throw Error('Native authentication requires a native runtime provider');
   if (authentication instanceof NativeAuthentication)
@@ -410,7 +410,7 @@ function createProvider(config: FoundryConfig): {
         ...(inSession ? { inSession } : {}),
         harnessSettings,
         defaults: {
-          model: config.defaults.model,
+          model: defaultModel,
           ...(suppressInstructions ? { env: { ...CLAUDE_HARNESS_INSTRUCTIONS_OFF } } : {}),
           ...subscriptionSpawn,
         },
@@ -420,7 +420,7 @@ function createProvider(config: FoundryConfig): {
         provider: new SessionBackedProvider({
           id: 'claude-code',
           adapter: sessionAdapter,
-          defaultModel: config.defaults.model,
+          defaultModel: defaultModel,
           ...hostSettings,
         }),
       };
@@ -432,7 +432,7 @@ function createProvider(config: FoundryConfig): {
         authentication: routed,
         ...(suppressInstructions ? { appServerConfig: CODEX_HARNESS_INSTRUCTIONS_OFF } : {}),
         defaults: {
-          model: config.defaults.model,
+          model: defaultModel,
           effort: config.defaults.codexEffort,
           ...subscriptionSpawn,
         },
@@ -442,7 +442,7 @@ function createProvider(config: FoundryConfig): {
         provider: new SessionBackedProvider({
           id: 'codex',
           adapter: sessionAdapter,
-          defaultModel: config.defaults.model,
+          defaultModel: defaultModel,
           ...hostSettings,
         }),
       };
@@ -505,9 +505,21 @@ function createProvider(config: FoundryConfig): {
   }
 }
 
-const providerSetup = createProvider(config);
-const provider = providerSetup.provider;
-const sessionAdapter: SessionAdapter | undefined = providerSetup.sessionAdapter;
+// Every usable worker is built now (subscription mode); with apiTokens, only the default provider.
+const workers = new Map(
+  (subscription ? subscription.offered : [config.defaults.provider]).map(
+    (id) => [id, createProvider(config, id)] as const,
+  ),
+);
+const provider = workers.get(config.defaults.provider)!.provider;
+const sessionAdapters = new Map(
+  [...workers].flatMap(([id, built]) =>
+    built.sessionAdapter ? [[id, built.sessionAdapter] as const] : [],
+  ),
+);
+const sessionProviders = [...workers.values()].flatMap(({ provider }) =>
+  provider instanceof SessionBackedProvider ? [provider] : [],
+);
 
 // ---------------------------------------------------------------------------
 // Action queue
@@ -552,6 +564,9 @@ let conversationService: ConversationService | null = null;
 // post and the plain-text controls must reach an unpaired one too.
 tools.register(new ConversationTool(() => conversationService), CONVERSATION_TOOL_DESCRIPTION);
 registerKingdomPost(tools, config.kingdomAccess ?? [], () => conversationService);
+// The thread's own plan (set_plan), recorded on its meta by the viewer once it exists.
+let threadPlans: ThreadPlans | null = null;
+tools.register(new ThreadPlanTool(() => threadPlans), PLAN_TOOL_DESCRIPTION);
 
 // Memory as a queryable tool (agents search on demand, not just passive layers)
 const memoryTool = MemoryToolAdapter.fromFileMemory(memory);
@@ -581,6 +596,12 @@ const templateStack = new ContextStack(buildLayers(config, { sourceResolver }));
 await templateStack.warmAll();
 
 const templateAgents = buildAgents(config, templateStack, { provider, tokenTracker, tools });
+// Every provider a thread's agents or phases may name, shared by the runtimes and the factory.
+const providers = new Map<string, LLMProvider>([
+  ...decisionAlias,
+  [flowLlm.id, flowLlm],
+  ...[...workers].map(([id, built]) => [id, built.provider] as const),
+]);
 
 // ---------------------------------------------------------------------------
 // Per-thread runtime — Librarian, Cartographer, Wardens, orchestrator, bridges
@@ -622,15 +643,10 @@ const atlasRoot = atlasRootOf(config);
 const runtimeManager = new ThreadRuntimeManager({
   config,
   llm: flowLlm,
-  providers: new Map([...decisionAlias, [provider.id, provider], [flowLlm.id, flowLlm]]),
+  providers,
   // Review uses its explicit phase profile, otherwise the configured flow policy.
   // No provider is constructed and no live binding/settings are changed by this resolver.
-  learning: resolveLearningSettings(
-    config.learning,
-    new Map([...decisionAlias, [provider.id, provider], [flowLlm.id, flowLlm]]),
-    flowLlm,
-    decisionModel,
-  ),
+  learning: resolveLearningSettings(config.learning, providers, flowLlm, decisionModel),
   eventStream,
   ...(prefilter ? { prefilter } : {}),
   atlasRoot,
@@ -647,10 +663,10 @@ const runtimeManager = new ThreadRuntimeManager({
         ? writeSignal(signal, owner)
         : undefined,
   ],
-  // Native session lifecycle (compaction) binds per thread: central session
-  // to the thread bus, auxiliaries (classifier/router/cartographer/wardens)
-  // to a side bus that never invalidates the central ledger.
-  sessionAdapter,
+  // Native session lifecycle (compaction) binds per thread, on its worker's adapter: central
+  // session to the thread bus, auxiliaries (classifier/router/cartographer/wardens) to a side bus
+  // that never invalidates the central ledger.
+  sessionAdapters,
   // Conversation threads are always wrapped and carry their members' notes; bound once the viewer exists.
   conversations: lateConversationWrapper(() => conversationService ?? undefined),
 });
@@ -669,9 +685,12 @@ const factory = new ThreadFactory({
       tools,
       // Refuse an unavailable explicit project provider; only these providers
       // have actually been constructed above.
-      providers: new Map([...decisionAlias, [flowLlm.id, flowLlm], [provider.id, provider]]),
+      providers,
     },
   },
+  // A thread's worker: a subscription worker with its vendor on and a login (or, with apiTokens, the default).
+  workerRequirement: (view, worker, projectId) =>
+    threadWorkerRequirement(subscription, view, worker, projectId),
 });
 
 // Settings edits reach live threads on their next turn; decision providers stay as started.
@@ -691,9 +710,32 @@ configStore.watch();
 const mainProjectId = Object.values(config.projects ?? {}).find(
   (project) => project.enabled !== false,
 )?.id;
-const thread = factory.create('main', {
+// Main keeps the worker it ran on: a later change of the project's default is never applied to it
+// silently, and a stored record without one is refused, not given the current default.
+// Records from before FEAT-007 get the worker they ran on, once, before anything reads them.
+const stampedWorkers = LocalSessionStore.stampWorkers(join(FOUNDRY_DIR, 'sessions.sqlite'), {
+  bindings: await sessionStore.bindings(),
+  // Every runtime a worker can bind, built here or not: a Codex binding stays Codex with Codex off.
+  runtimeWorker: new Map<string, string>(
+    Object.entries(WORKER_SESSION_RUNTIMES).map(([worker, runtime]) => [runtime, worker]),
+  ),
+  projectDefault: (projectId) =>
+    (projectId ? config.projects[projectId]?.defaults?.provider : undefined) ??
+    config.defaults.provider,
+});
+if (stampedWorkers.stamped.length)
+  console.log(
+    `[Workers] ${stampedWorkers.stamped.length} stored threads given the worker they ran on`,
+  );
+if (stampedWorkers.ambiguous.length)
+  console.warn(
+    `[Workers] bound under more than one runtime, left without a worker: ${stampedWorkers.ambiguous.join(', ')}`,
+  );
+const mainWorker = LocalSessionStore.storedWorker(join(FOUNDRY_DIR, 'sessions.sqlite'), 'main');
+const thread = createMainThread(factory, {
   description: 'Main conversation thread',
   ...(mainProjectId ? { projectId: mainProjectId } : {}),
+  ...(mainWorker ? { worker: mainWorker } : {}),
 });
 
 // Main's own stack. Everything below (reactive rules, Librarian, Cartographer,
@@ -702,8 +744,7 @@ const thread = factory.create('main', {
 const stack = thread.stack;
 
 const mainRuntime = runtimeManager.get(thread.id)!;
-threadProject = (threadId) =>
-  runtimeManager.get(threadId)?.thread.meta.projectId as string | undefined;
+threadMeta = (threadId) => runtimeManager.get(threadId)?.thread.meta;
 
 // ---------------------------------------------------------------------------
 // Session adapter — long-lived HarnessSession factory with crash recovery
@@ -717,10 +758,10 @@ threadProject = (threadId) =>
 //     to clear the Librarian's injection ledger and re-hydrate next turn.
 // ---------------------------------------------------------------------------
 
-if (sessionAdapter) {
-  factory.attachSessionAdapter(sessionAdapter);
-  console.log(`Session adapter: ${sessionAdapter.runtime} (store: ${FOUNDRY_DIR}/sessions.json)`);
-}
+if (sessionAdapters.size)
+  console.log(
+    `Session adapters: ${[...sessionAdapters.values()].map((adapter) => adapter.runtime).join(', ')} (store: ${FOUNDRY_DIR}/sessions.json)`,
+  );
 
 // ---------------------------------------------------------------------------
 // Flow — main's Cartographer, Wardens, Librarian and FlowOrchestrator are
@@ -851,6 +892,7 @@ const acpLaunch =
     ? { path: acpLaunchPath(), capability: newAcpCapability() }
     : undefined;
 
+const claudeProvider = workers.get('claude-code')?.provider;
 const viewer = await startViewer({
   autoTunnel: true,
   harness,
@@ -871,31 +913,26 @@ const viewer = await startViewer({
   assistTools: tools,
   acpCapability: acpLaunch?.capability,
   threadLaunch,
-  // The executor's subagents become observed child threads (docs/THREAD-TREE.md spec A).
-  subagentSources: provider instanceof SessionBackedProvider ? [provider] : [],
-  taskSources: provider instanceof SessionBackedProvider ? [provider] : [],
-  ...(inSession && provider instanceof SessionBackedProvider
+  // Every worker's subagents become observed child threads (docs/THREAD-TREE.md spec A).
+  subagentSources: sessionProviders,
+  taskSources: sessionProviders,
+  ...(inSession && claudeProvider instanceof SessionBackedProvider
     ? {
-        threadSetup: {
-          open: async (threadId: string, opts: { cwd?: string; bridge?: NativeBridgeSource }) => {
-            opened.add(threadId);
-            await provider.open(threadId, opts);
-            await inSession.ready(threadId);
-          },
-          // Setting up: a host is starting, or the thread's session has not been opened yet.
-          pending: (threadId: string) =>
-            inSession.setup(threadId)?.status === 'starting' ||
-            (!inSession.attached(threadId) && !opened.has(threadId)),
-          onSetup: (listener: (threadId: string, setup: ThreadSetup) => void) => {
+        threadSetup: inSessionThreadSetup({
+          wardens: inSession,
+          provider: claudeProvider,
+          worker: (threadId) => threadMeta?.(threadId)?.worker,
+          onSetup: (listener) => {
             setupListeners.push(listener);
           },
-        },
+        }),
       }
     : {}),
 });
 toolGateFor = viewer.toolGate;
 journalStore = viewer.localStore;
 conversationService = viewer.conversations;
+threadPlans = viewer.plans;
 
 console.log(`Viewer: http://localhost:${viewer.server.port ?? port}`);
 if (acpLaunch) {
@@ -945,7 +982,11 @@ const shutdown = async () => {
   if (acpLaunch) removeAcpLaunch(acpLaunch.path, process.pid);
   // Native processes must exit before their profile locks (in ~/.claude, ~/.codex) are released.
   await Promise.race([
-    Promise.all([sessionAdapter?.releaseAll?.(), live?.shutdown(), inSession?.close()]),
+    Promise.all([
+      ...[...sessionAdapters.values()].map((adapter) => adapter.releaseAll?.()),
+      live?.shutdown(),
+      inSession?.close(),
+    ]),
     Bun.sleep(5_000),
   ]);
   runtimeManager.disposeAll();

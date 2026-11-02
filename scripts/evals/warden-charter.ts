@@ -15,7 +15,7 @@
  *     [--roles librarian-reuse] [--session <key>] [--budget <chars>] [--input-cap <chars>] \
  *     [--no-judge] [--regions <dir>] [--primed-sessions <n>] [--pause-at <percent>] [--model <id>] [--effort <level>]
  *     [--experiment <design.md>] [--subagents <processes>] [--stop-at-points <n>] [--stop-seven-day <percent>]
- *     [--carry <earlier run dir> [--carry-why on|off]]
+ *     [--carry <earlier run dir>]
  *
  * Each Warden is composed exactly as a live thread composes it: the daemon's settings and the
  * composition view (`buildRoleLayers`), bound to the probe's project and working directory. A Warden
@@ -165,7 +165,6 @@ const { values } = parseArgs({
     effort: { type: 'string' },
     experiment: { type: 'string' },
     carry: { type: 'string' },
-    'carry-why': { type: 'string' },
   },
   strict: true,
 });
@@ -570,11 +569,8 @@ if (values.rejudge) {
 /**
  * --carry <run dir>: test the later stages with stage 1 held fixed. Each cell's stage 1 is the earlier
  * run's (same stage 1 config); only cells it escalated are asked, from stage 2, carrying its reading.
- * --carry-why off leaves stage 1's why out of what stage 2 is handed (live hands it on).
+ * Whether stage 2 is handed stage 1's why is the run config's `carryWhy` on stage 1, as live.
  */
-if (values['carry-why'] !== undefined && !['on', 'off'].includes(values['carry-why']))
-  throw Error('--carry-why is on or off');
-if (values['carry-why'] !== undefined && !values.carry) throw Error('--carry-why needs --carry');
 if (values.carry && stages.length < 2)
   throw Error('--carry needs a run config with two or more stages');
 const carried = values.carry
@@ -781,7 +777,6 @@ try {
       ? {
           carry: (probeId: string, domain: string, trigger: WardenProbeTrigger) =>
             carried.get(`${probeId}|${domain}|${trigger}`),
-          carryWhy: values['carry-why'] !== 'off',
         }
       : {}),
     done: (probeId, trigger) => !!stopped || finished.has(turnKey(probeId, trigger)),
@@ -872,9 +867,7 @@ try {
         effort: wardenEffort ?? 'low',
         thinkingTokens: process.env.MAX_THINKING_TOKENS,
         classify,
-        ...(values.carry
-          ? { carry: resolve(values.carry), carryWhy: values['carry-why'] !== 'off' }
-          : {}),
+        ...(values.carry ? { carry: resolve(values.carry) } : {}),
         budget: budgetOverride,
         inputCap,
         roster: [...new Set([...composed.values()].flat().map((w) => w.domain))],

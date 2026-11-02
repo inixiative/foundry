@@ -21,3 +21,16 @@ button.context-bar-name-source:hover {
   color: var(--text-dim);
   border-style: solid;
 }
+/* "forked from <source> · turn N": provenance, a link to the source at that turn. */
+button.fork-link {
+  font-family: inherit;
+  cursor: pointer;
+  color: var(--text-dim);
+}
+button.fork-link b {
+  color: var(--text);
+  font-weight: 600;
+}
+button.fork-link:hover b {
+  text-decoration: underline;
+}

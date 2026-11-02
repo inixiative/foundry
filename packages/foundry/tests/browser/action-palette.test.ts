@@ -78,7 +78,7 @@ test('"/" in an empty box opens the actions palette; it filters, runs, and names
     await page.waitForFunction(() =>
       document.activeElement?.classList.contains('action-palette-input'),
     );
-    await page.keyboard.type('fork');
+    await page.keyboard.type('revert');
     await page.keyboard.press('Enter');
     await page.locator('.toast', { hasText: 'CORE-004' }).waitFor();
     expect(await palette.count()).toBe(1);

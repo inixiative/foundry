@@ -5,7 +5,7 @@
  */
 import { Database, type Statement } from 'bun:sqlite';
 import { createHash } from 'node:crypto';
-import { mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import {
   computeHash,
@@ -182,6 +182,12 @@ function checksum(text: string): string {
   return createHash('sha256').update(text).digest('hex');
 }
 class StaleKnowledge extends Error {}
+
+/** A stored record without a worker: startup's stamping couldn't tell which runtime it ran on. */
+export const UNSTAMPED_RECORD = 'names no worker';
+
+const unstampedRecord = (threadId: string) =>
+  `Stored thread ${threadId} ${UNSTAMPED_RECORD}: startup couldn't tell which runtime it ran on (its native session is bound under more than one, or under one no worker owns), so Foundry won't guess (FEAT-007); set its worker in the record`;
 
 /** Local turn journal. A completed response and its artifact commit together. */
 export class LocalSessionStore {
@@ -1373,11 +1379,133 @@ export class LocalSessionStore {
     const existing = this.query('SELECT meta FROM session_threads WHERE id=?').get(thread.id) as {
       meta: string;
     } | null;
-    if (existing && JSON.parse(existing.meta).projectId !== thread.meta.projectId)
+    const prior = existing ? (JSON.parse(existing.meta) as ThreadMeta) : undefined;
+    if (prior && prior.projectId !== thread.meta.projectId)
       throw new Error(`Thread journal owner cannot change: ${thread.id}`);
+    // A record from before workers were stored is stamped at startup (`stampWorkers`), never by a save.
+    if (
+      prior &&
+      prior.worker === undefined &&
+      thread.meta.worker !== undefined &&
+      !prior.spawn?.observed
+    )
+      throw new Error(unstampedRecord(thread.id));
+    // A thread's worker is never changed silently: only before its first turn, when no native session holds it.
+    if (prior?.worker !== undefined && prior.worker !== thread.meta.worker) {
+      if (thread.meta.worker === undefined)
+        throw new Error(`Thread worker cannot be removed: ${thread.id}`);
+      if (this.query('SELECT 1 FROM session_turns WHERE thread_id=? LIMIT 1').get(thread.id))
+        throw new Error(
+          `Thread worker cannot change after its first turn: ${thread.id} runs on ${prior.worker}`,
+        );
+    }
     this.query(
       'INSERT INTO session_threads(id, meta) VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET meta=excluded.meta',
     ).run(thread.id, JSON.stringify(thread.meta));
+  }
+
+  /**
+   * Gives each stored thread record without a worker the one it ran on, once, before anything reads
+   * them: the runtime whose bucket holds the thread's own native binding; an observed subagent its
+   * parent's; a thread that never ran natively its project's default, since no native session can
+   * disagree. A thread bound under two runtimes, or under one no worker owns, is left as it is, so
+   * reading it fails loudly rather than guessing.
+   */
+  static stampWorkers(
+    path: string,
+    sources: {
+      /** Bindings by session runtime, as the external session store holds them. */
+      bindings: Readonly<Record<string, Readonly<Record<string, string>>>>;
+      /** The worker each session runtime belongs to. */
+      runtimeWorker: ReadonlyMap<string, string>;
+      projectDefault: (projectId: string | undefined) => string;
+    },
+  ): { stamped: Array<{ id: string; worker: string }>; ambiguous: string[] } {
+    const done = {
+      stamped: [] as Array<{ id: string; worker: string }>,
+      ambiguous: [] as string[],
+    };
+    if (path === ':memory:' || !existsSync(path)) return done;
+    const db = new Database(path, { readwrite: true, create: false });
+    try {
+      if (
+        !db.query("SELECT 1 FROM sqlite_master WHERE type='table' AND name='session_threads'").get()
+      )
+        return done;
+      const rows = db.query('SELECT id, meta FROM session_threads').all() as Array<{
+        id: string;
+        meta: string;
+      }>;
+      const metas = new Map(rows.map((row) => [row.id, JSON.parse(row.meta) as ThreadMeta]));
+      const bound = (threadId: string) => {
+        const found = new Set<string>();
+        for (const [runtime, entries] of Object.entries(sources.bindings)) {
+          const worker = sources.runtimeWorker.get(runtime) ?? `unknown runtime ${runtime}`;
+          for (const key of Object.keys(entries))
+            if (
+              key === threadId ||
+              (key.startsWith(`${threadId}:`) && !key.startsWith(`${threadId}:aux:`))
+            )
+              found.add(worker);
+        }
+        return [...found];
+      };
+      const workerOf = (id: string, seen = new Set<string>()): string | undefined => {
+        const meta = metas.get(id);
+        if (!meta) return undefined;
+        if (meta.worker) return meta.worker;
+        if (meta.spawn?.observed && meta.parentThreadId && !seen.has(id)) {
+          seen.add(id);
+          const parent = workerOf(meta.parentThreadId, seen);
+          if (parent) return parent;
+        }
+        const runtimes = bound(id);
+        if (runtimes.length > 1 || runtimes[0]?.startsWith('unknown runtime')) return undefined;
+        return runtimes[0] ?? sources.projectDefault(meta.projectId);
+      };
+      const update = db.query('UPDATE session_threads SET meta=? WHERE id=?');
+      db.transaction(() => {
+        for (const [id, meta] of metas) {
+          if (meta.worker) continue;
+          const worker = workerOf(id);
+          if (!worker) {
+            done.ambiguous.push(id);
+            continue;
+          }
+          update.run(JSON.stringify({ ...meta, worker }), id);
+          done.stamped.push({ id, worker });
+        }
+      })();
+      return done;
+    } finally {
+      db.close();
+    }
+  }
+
+  /**
+   * A stored thread's worker, read before the store is opened (the daemon's main thread keeps its
+   * own). Undefined when there is no record; a record without a worker is refused, never defaulted.
+   */
+  static storedWorker(path: string, threadId: string): string | undefined {
+    if (path === ':memory:' || !existsSync(path)) return undefined;
+    // A WAL journal closed cleanly has no -shm, and a read-only open can't create one; query only.
+    const db = new Database(path, { readwrite: true, create: false });
+    db.exec('PRAGMA query_only = true');
+    try {
+      const table = db
+        .query("SELECT 1 FROM sqlite_master WHERE type='table' AND name='session_threads'")
+        .get();
+      if (!table) return undefined;
+      const row = db.query('SELECT meta FROM session_threads WHERE id=?').get(threadId) as {
+        meta: string;
+      } | null;
+      if (!row) return undefined;
+      const worker = (JSON.parse(row.meta) as ThreadMeta).worker;
+      if (!worker) throw new Error(unstampedRecord(threadId));
+      return worker;
+    } finally {
+      db.close();
+    }
   }
 
   threads(): Array<{ id: string; meta: ThreadMeta }> {
@@ -1408,6 +1536,20 @@ export class LocalSessionStore {
         seq,
       ) as { source: 'message' | 'phase'; ref: string } | null) ?? undefined
     );
+  }
+
+  /** Where a cut at journal `seq` falls: the turn of its last message and how many turns came through it. */
+  turnAtSeq(threadId: string, seq: number): { turnId: string; ordinal: number } | undefined {
+    const at = this.query(
+      `SELECT m.turn_id AS turnId FROM session_journal j JOIN session_messages m ON m.id = j.ref
+       WHERE j.thread_id=? AND j.source='message' AND j.seq<=? ORDER BY j.seq DESC LIMIT 1`,
+    ).get(threadId, seq) as { turnId: string } | null;
+    if (!at) return undefined;
+    const { n } = this.query(
+      `SELECT COUNT(DISTINCT m.turn_id) AS n FROM session_journal j JOIN session_messages m ON m.id = j.ref
+       WHERE j.thread_id=? AND j.source='message' AND j.seq<=?`,
+    ).get(threadId, seq) as { n: number };
+    return { turnId: at.turnId, ordinal: n };
   }
 
   /** One stored thread's meta (a live or archived thread), or undefined. */

@@ -394,9 +394,11 @@ describe('ThreadRuntimeManager', () => {
 
   test('session adapter signals are bound per thread and released on dispose', async () => {
     const { adapter, bound, released } = fakeAdapter();
-    const { factory, manager } = await setup({ sessionAdapter: adapter });
-    const a = factory.create('a');
-    const b = factory.create('b');
+    const { factory, manager } = await setup({
+      sessionAdapters: new Map([['claude-code', adapter]]),
+    });
+    const a = factory.create('a', { worker: 'claude-code' });
+    const b = factory.create('b', { worker: 'claude-code' });
 
     expect(bound.get('a')).toBe(a.signals);
     expect(bound.get('b')).toBe(b.signals);
@@ -411,10 +413,29 @@ describe('ThreadRuntimeManager', () => {
     expect(bound.get('b')).toBe(b.signals);
   });
 
+  test("a thread binds its own worker's session adapter: a Codex thread the Codex one", async () => {
+    const claude = fakeAdapter(),
+      codex = fakeAdapter();
+    const { factory } = await setup({
+      sessionAdapters: new Map([
+        ['claude-code', claude.adapter],
+        ['codex', codex.adapter],
+      ]),
+    });
+    const a = factory.create('a', { worker: 'claude-code' });
+    const b = factory.create('b', { worker: 'codex' });
+    expect(claude.bound.get('a')).toBe(a.signals);
+    expect(claude.bound.has('b')).toBe(false);
+    expect(codex.bound.get('b')).toBe(b.signals);
+    expect(codex.bound.has('a')).toBe(false);
+  });
+
   test('auxiliary compaction is observable but never clears the central injection ledger', async () => {
     const { adapter, bound } = fakeAdapter();
-    const { factory, manager } = await setup({ sessionAdapter: adapter });
-    const a = factory.create('a', { cwd: tmpdir() });
+    const { factory, manager } = await setup({
+      sessionAdapters: new Map([['claude-code', adapter]]),
+    });
+    const a = factory.create('a', { cwd: tmpdir(), worker: 'claude-code' });
     const runtime = manager.get('a')!;
     const plan = await runtime.flowOrchestrator.preMessage('warm the plan');
     const prepared = await runtime.flowOrchestrator.hydrateDelta(plan);
