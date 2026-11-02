@@ -219,3 +219,70 @@
   background: hsl(var(--app-primary) / 0.4);
   color: var(--text);
 }
+/* The counts line: each count filters the map (concept-v4 .wcounts). */
+.wt-counts {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.wt-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: none;
+  color: var(--text);
+  font: 500 12.5px var(--font);
+}
+button.wt-count {
+  cursor: pointer;
+}
+.wt-count[aria-pressed="true"] {
+  border-color: hsl(var(--app-primary) / 0.6);
+  background: hsl(var(--app-primary) / 0.15);
+}
+.wt-count.is-red b {
+  color: var(--st-problem);
+}
+.wt-count.is-dim,
+.wt-count.is-soon {
+  color: var(--text-dim);
+}
+.wt-count.is-soon {
+  border-style: dashed;
+}
+/* The machine strip above the map: one chip per machine, filtering to it. */
+.wt-machines {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.wt-machine {
+  padding: 2px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: none;
+  color: var(--text);
+  font: 500 12px var(--font);
+  cursor: pointer;
+}
+.wt-machine.is-off {
+  color: var(--text-dim);
+  border-style: dashed;
+}
+.wt-machine[aria-pressed="true"] {
+  border-color: hsl(var(--app-primary) / 0.6);
+  background: hsl(var(--app-primary) / 0.15);
+}
+.wt-stage-tag {
+  justify-self: start;
+  padding: 0 6px;
+  border: 1px solid hsl(var(--status-problem) / 0.5);
+  border-radius: 5px;
+  color: var(--st-problem);
+  font-size: 11px;
+}

@@ -19,7 +19,7 @@ import { ParticipantsPanel } from './conversation-members.js';
 import { Inspector, inspection, ThreadDetail } from './detail-drawer.js';
 import { feedbackIn, ThreadFeedback } from './feedback.js';
 import { useFlowStream } from './graph-view.js';
-import { html } from './lib.js';
+import { html, useEffect, useState } from './lib.js';
 import { PointerLedger, pointerRows } from './loop-view.js';
 import { SizeControls } from './panel-sizes.js';
 import { Running } from './running.js';
@@ -33,6 +33,7 @@ import {
   launchLabels,
   loadLaunch,
   openRightTab,
+  projects,
   RIGHT_TAB_KEYS,
   RIGHT_TABS,
   rightSize,
@@ -47,7 +48,7 @@ import {
   watchtowerOpen,
 } from './store.js';
 import { TabIcon } from './tab-icons.js';
-import { harnessName, projectLabel, ReferenceChips } from './thread-labels.js';
+import { harnessName, projectLabel, ReferenceChips, threadPlace } from './thread-labels.js';
 import { TurnView } from './turn-view.js';
 import { Work } from './work.js';
 
@@ -148,12 +149,75 @@ async function setLaunch(threadId, patch) {
   }
 }
 
+/** The project's hosted repository ({ integration, ref }), from its About record. */
+function useRepository(projectId) {
+  const [repo, setRepo] = useState(undefined);
+  // Only a registered project has an About; an unregistered folder has no repository to show.
+  const registered = !!projectId && projects.value.some((p) => p.id === projectId);
+  useEffect(() => {
+    if (!registered) return setRepo(null);
+    let live = true;
+    authFetch(`/api/projects/${encodeURIComponent(projectId)}/about`)
+      .then((r) => (r.ok ? r.json() : null))
+      .catch(() => null)
+      .then((about) => live && setRepo(about?.repository ?? null));
+    return () => {
+      live = false;
+    };
+  }, [projectId, registered]);
+  return repo;
+}
+
+/**
+ * Context leads with where the work lives (design review 11-02): the GitHub repository and branch,
+ * the ticket, and the Slack conversation that started it. Then what it runs on.
+ */
+function ContextLinks() {
+  const meta = threadData.value?.meta ?? {};
+  const repo = useRepository(meta.projectId ?? null);
+  const refs = meta.context?.references ?? [];
+  const tickets = refs.filter((r) => r.integration === 'linear' || r.kind === 'issue');
+  const pulls = refs.filter((r) => r.integration === 'github' && !tickets.includes(r));
+  const other = refs.filter((r) => !tickets.includes(r) && !pulls.includes(r));
+  const chips = (references) =>
+    html`<div class="rp-refs"><${ReferenceChips} meta=${{ context: { references } }} /></div>`;
+  const branch = threadPlace(meta).branch;
+  const github = repo?.integration === 'github' ? repo.ref : null;
+  return html`
+    <section class="rp-section" aria-label="GitHub">
+      <h3 class="rp-section-title">GitHub</h3>
+      ${
+        github
+          ? html`<a class="rp-link-chip" href=${`https://github.com/${github}${branch ? `/tree/${encodeURIComponent(branch)}` : ''}`} target="_blank" rel="noopener noreferrer">${github}${branch ? ` · ${branch}` : ''} ↗</a>`
+          : html`<div class="rp-dim">${repo === undefined ? 'Reading the project…' : 'No GitHub repository recorded for this project.'}</div>`
+      }
+      ${pulls.length ? chips(pulls) : null}
+    </section>
+    <section class="rp-section" aria-label="Ticket">
+      <h3 class="rp-section-title">Ticket</h3>
+      ${tickets.length ? chips(tickets) : html`<div class="rp-dim">No ticket yet.</div>`}
+      <${ComingSoon} inline=${true} what="New ticket: open one in Linear from this thread." ticket="BOARD-003" />
+    </section>
+    <section class="rp-section" aria-label="Slack">
+      <h3 class="rp-section-title">Slack</h3>
+      <${ComingSoon} what="The Slack conversation behind this thread, a short excerpt, and Go to Slack to talk to these people or read it there." ticket="BOARD-003" />
+    </section>
+    ${
+      other.length
+        ? html`<section class="rp-section" aria-label="Other links">
+            <h3 class="rp-section-title">Other links</h3>${chips(other)}
+          </section>`
+        : null
+    }`;
+}
+
 function ContextTab() {
   const launch = threadLaunch.value;
   const threadId = activeThreadId.value;
   return html`<div class="rp-stack">
+    <${ContextLinks} />
     <section class="rp-section">
-      <h3 class="rp-section-title">Model</h3>
+      <h3 class="rp-section-title">Runs on</h3>
       ${
         launch
           ? html`<dl class="rp-facts">
@@ -191,14 +255,6 @@ function ContextTab() {
       <${ComingSoon}
         what="For a Slack, Linear or GitHub item that opened this thread: what the agent read before you opened it (the message, the ticket, the files, the sender)."
         ticket="BOARD-003" />
-    </section>
-    <section class="rp-section">
-      <h3 class="rp-section-title">Linked work</h3>
-      ${
-        (threadData.value?.meta?.context?.references ?? []).length
-          ? html`<div class="rp-refs"><${ReferenceChips} meta=${threadData.value?.meta || {}} /></div>`
-          : html`<div class="rp-dim">No linked tickets or pull requests.</div>`
-      }
     </section>
     <${TokenBar} />
     <${ContextStats} />
