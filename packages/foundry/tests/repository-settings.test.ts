@@ -91,7 +91,10 @@ test('a project applies this machine’s settings over the repository’s, key b
     },
   );
   expect(effectiveProject(clash, 'p')!.threadOnMerge).toBeUndefined();
-  expect(repositorySettingsProblem(clash.projects.p!.path)).toContain('extend');
+  expect(repositorySettingsProblem(clash.projects.p!.path)).toMatchObject({
+    kind: 'unbuildable',
+    message: expect.stringContaining('extend'),
+  });
   // The raw settings stay this machine's alone: nothing of the repository's is copied into them.
   expect(config.projects.p!.threadOnMerge).toBeUndefined();
 });
@@ -135,7 +138,6 @@ test('a repository file that breaks a rule is reported and none of it applies', 
     { agents: [1, 2] },
     { agents: { cls: { kind: 'classifier', provider: 'anthropic' } } },
     { agents: { exec: { kind: 'executor', tools: true } } },
-    { agents: { cls: { kind: 'classifier', model: 'claude-opus-5-5' } } },
     { label: 'team name' },
     { defaults: { nativeAuthenticationId: 'mine' } },
     { defaults: { provider: 'codex', model: 'fable' } },
@@ -165,7 +167,7 @@ test('team settings this machine can’t build don’t apply here, and why is re
   expect(readRepositorySettings(path)?.error).toBeUndefined();
   const view = resolveProjectView(config, 'p')!;
   expect(view.config.agents.reviewer).toBeUndefined();
-  expect(repositorySettingsProblem(path)).toContain('not-on-this-machine');
+  expect(repositorySettingsProblem(path)?.message).toContain('not-on-this-machine');
 });
 
 test('a setting path never reaches an object’s prototype', () => {
@@ -177,4 +179,24 @@ test('a setting path never reaches an object’s prototype', () => {
   ])
     expect(() => setAtPath(root, path, 'yes')).toThrow('is not a setting');
   expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+});
+
+test('a repository’s agents are executors on a model their worker runs; decision roles stay this machine’s', () => {
+  const withClassifier = (repository: unknown) => {
+    const config = projectWith(repository);
+    config.agents.classifier = { ...config.agents.executor!, id: 'classifier', kind: 'classifier' };
+    return config;
+  };
+  // An extension carries no kind of its own: it is judged by the agent it extends.
+  const extended = withClassifier({
+    agents: { mine: { extends: 'classifier', model: 'claude-opus-5-5' } },
+  });
+  expect(effectiveProject(extended, 'p')!.agents).toBeUndefined();
+  expect(repositorySettingsProblem(extended.projects.p!.path)?.message).toContain('decision roles');
+  // An executor's model must be one the worker in effect runs.
+  const offWorker = projectWith({
+    agents: { coder: { extends: 'executor', model: 'gpt-6-astra' } },
+  });
+  expect(effectiveProject(offWorker, 'p')!.agents).toBeUndefined();
+  expect(repositorySettingsProblem(offWorker.projects.p!.path)?.message).toContain('not a');
 });

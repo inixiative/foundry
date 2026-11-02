@@ -666,7 +666,9 @@ export async function inspectReadiness(
         'error',
         scope,
         'repository-settings-unreadable',
-        `${join(project.path, REPOSITORY_SETTINGS_FILE)} does not apply on this machine (${problem}); none of its settings apply.`,
+        problem.kind === 'unreadable'
+          ? `${join(project.path, REPOSITORY_SETTINGS_FILE)} was not read (${problem.message}); none of its settings apply.`
+          : `${join(project.path, REPOSITORY_SETTINGS_FILE)} can't be built on this machine (${problem.message}); its threadOnMerge, gloss, defaults, feedback, agents and layers don't apply here (its chorus, conversations and steer still do).`,
       );
   }
   chorus = await Promise.all(

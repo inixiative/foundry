@@ -1406,10 +1406,6 @@ export function validateRepositoryProject(settings: Record<string, unknown>): vo
         throw Error(
           `agents.${id}.${set} is not a repository setting: where an agent runs and how it samples stay this machine's`,
         );
-      if ('model' in agent && agent.kind !== undefined && agent.kind !== 'executor')
-        throw Error(
-          `agents.${id}.model is not a repository setting: decision roles run on this machine's subscription`,
-        );
     }
   }
   for (const [id, layer] of Object.entries((settings.layers as Record<string, unknown>) ?? {}))

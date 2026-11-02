@@ -1,6 +1,6 @@
 import './helpers/isolate-archive';
 import { afterEach, expect, test } from 'bun:test';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -167,4 +167,21 @@ test('every shared project setting has a repository layer; machine and person se
   for (const path of ['gloss.__proto__.polluted', 'feedback.constructor.x'])
     expect((await put('me', { [path]: 'yes' })).status).toBe(400);
   expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+
+  // A file whose agents this machine can't build: its merged settings don't show or apply, its
+  // chorus, conversations and steer still do, and the rows say why.
+  writeFileSync(
+    file,
+    JSON.stringify({
+      steer: false,
+      threadOnMerge: 'auto-archive',
+      agents: { r: { extends: 'nope' } },
+    }),
+  );
+  expect(await get('threadOnMerge')).toMatchObject({
+    repository: null,
+    repositoryError: expect.any(String),
+  });
+  expect(await get('steer')).toMatchObject({ repository: false, from: 'repository' });
+  expect((await get('steer')).repositoryError).toBeUndefined();
 });

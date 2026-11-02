@@ -24,8 +24,10 @@ import {
   UNSAFE_SETTING_SEGMENTS,
 } from '../config';
 import {
+  effectiveProject,
   readRepositorySettings,
   repositorySettingsProblem,
+  SELF_LAYERED_SETTINGS,
   setAtPath,
   settingLayer,
   writeRepositorySettings,
@@ -521,8 +523,14 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps): void 
     const project = config.projects[id];
     if (!project) return c.json({ error: 'project not found' }, 404);
     const read = readRepositorySettings(project.path);
+    // The cascade decides whether the team's settings build here; its verdict is the problem.
+    effectiveProject(config, id);
     const problem = repositorySettingsProblem(project.path);
-    const repository = problem ? undefined : read;
+    // Unreadable: none of the file applies. Unbuildable here: only chorus, conversations and steer do.
+    const applies =
+      !problem ||
+      (problem.kind === 'unbuildable' && SELF_LAYERED_SETTINGS.has(path.split('.')[0]!));
+    const repository = applies ? read : undefined;
     const at = (root: unknown) =>
       path
         .split('.')
@@ -546,7 +554,7 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps): void 
       foundry: foundry ?? null,
       personalOnly: personalOnlySetting(path) ?? null,
       ...(read ? { repositoryFile: read.file } : {}),
-      ...(problem ? { repositoryError: problem } : {}),
+      ...(problem && !applies ? { repositoryError: problem.message } : {}),
       // An object's keys that are this machine's or this person's alone (never set for everyone).
       personalKeys: personalKeysOf(path, mine ?? theirs),
     });

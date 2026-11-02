@@ -928,7 +928,16 @@ export function effectiveProject(
   // Checked once per version of this machine's entry, Foundry's agents and layers, and the file.
   const stamp = repositoryCache.get(join(mine.path, REPOSITORY_SETTINGS_FILE))?.stamp;
   // Keyed by content, not identity: a config edited in place is checked again.
-  const key = `${stamp}|${JSON.stringify(mine)}|${JSON.stringify(config.agents)}|${JSON.stringify(config.layers)}`;
+  const key = JSON.stringify([
+    stamp,
+    mine,
+    config.agents,
+    config.layers,
+    config.sources,
+    config.defaults,
+    config.composition,
+    config.apiTokens,
+  ]);
   const memo = appliedProjects.get(config)?.get(projectId);
   if (memo?.key === key) return memo.project;
   const merged = mergeProject(mine, theirs);
@@ -936,16 +945,41 @@ export function effectiveProject(
   // none of them apply here and why is reported, so a checkout never stops the daemon.
   let project = merged;
   try {
-    checkProjectView(projectId, buildProjectView(config, projectId, merged).config);
+    const view = buildProjectView(config, projectId, merged).config;
+    checkProjectView(projectId, view);
+    checkRepositoryAgents(view, theirs, mine);
     unapplied.delete(mine.path);
   } catch (error) {
-    unapplied.set(mine.path, (error as Error).message);
+    unapplied.set(mine.path, `together with this machine's settings: ${(error as Error).message}`);
     project = mine;
   }
   const byId = appliedProjects.get(config) ?? new Map();
   byId.set(projectId, { key, project });
   appliedProjects.set(config, byId);
   return project;
+}
+
+/**
+ * A repository's agents are executors only, on a model their worker runs: decision roles (classifier,
+ * router, Cartographer) run on this machine's subscription decision profile, which the repository
+ * can't reach. Checked on the built view, so an agent extending a global one is judged by its kind.
+ */
+function checkRepositoryAgents(
+  view: FoundryConfig,
+  theirs: RepositoryProjectSettings,
+  mine: ProjectSettingsConfig,
+): void {
+  for (const [id, entry] of Object.entries(theirs.agents ?? {})) {
+    if (mine.agents?.[id]) continue;
+    const agent = view.agents[id];
+    if (agent && agent.kind !== 'executor')
+      throw Error(
+        `agents.${id} is a ${agent.kind}: decision roles run on this machine's subscription`,
+      );
+    const model = (entry as { model?: string }).model;
+    if (model && !registryModel(view.defaults.provider, model))
+      throw Error(`agents.${id}.model ${model} is not a ${view.defaults.provider} model`);
+  }
 }
 
 const appliedProjects = new WeakMap<
@@ -1078,10 +1112,26 @@ export function resolveProjectView(
 /** Why a project's repository settings didn't apply on this machine, by project path. */
 const unapplied = new Map<string, string>();
 
-/** Why the repository's settings at `projectPath` don't apply here: unreadable, or unbuildable. */
-export function repositorySettingsProblem(projectPath: string): string | undefined {
-  return readRepositorySettings(projectPath)?.error ?? unapplied.get(projectPath);
+/**
+ * Why the repository's settings at `projectPath` don't apply here. `unreadable`: none of the file
+ * applies. `unbuildable`: its merged settings don't, but `chorus`, `conversations` and `steer`,
+ * checked and layered on their own, still do.
+ */
+export function repositorySettingsProblem(
+  projectPath: string,
+): { kind: 'unreadable' | 'unbuildable'; message: string } | undefined {
+  const error = readRepositorySettings(projectPath)?.error;
+  if (error) return { kind: 'unreadable', message: error };
+  const message = unapplied.get(projectPath);
+  return message ? { kind: 'unbuildable', message } : undefined;
 }
+
+/** The settings a repository applies on their own, whether or not its merged settings build here. */
+export const SELF_LAYERED_SETTINGS: ReadonlySet<string> = new Set([
+  'chorus',
+  'conversations',
+  'steer',
+]);
 
 function buildProjectView(
   config: FoundryConfig,
