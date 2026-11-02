@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { ContextStack, Thread } from '@inixiative/foundry-core';
 import { ThreadContextTracker } from '../src/archives/thread-context';
 import { releaseWorktree, squashMergedInto } from '../src/git';
+import { recordPlan } from '../src/tools/thread-record';
 import { starterConfig, threadOnMerge, validateConfig } from '../src/viewer/config';
 import { m0Scenario } from './helpers/m0-domain-loop';
 
@@ -101,19 +102,23 @@ test('threadOnMerge: project over Foundry-wide over done; anything else is refus
 test('an outcome newly done is the thread’s milestone until its next task starts', async () => {
   const s = await m0Scenario();
   cleanup.push(() => s.close());
-  s.current.plans.setPlan('a', {
-    outcomes: [
-      { text: 'History recorded', status: 'doing' },
-      { text: 'Clear resets it', status: 'todo' },
-    ],
-  });
+  s.current.records.update('a', (thread) =>
+    recordPlan(thread, {
+      outcomes: [
+        { text: 'History recorded', status: 'doing' },
+        { text: 'Clear resets it', status: 'todo' },
+      ],
+    }),
+  );
   expect(s.current.directory.get('a')?.meta.done).toBeUndefined();
-  s.current.plans.setPlan('a', {
-    outcomes: [
-      { text: 'History recorded', status: 'done' },
-      { text: 'Clear resets it', status: 'todo' },
-    ],
-  });
+  s.current.records.update('a', (thread) =>
+    recordPlan(thread, {
+      outcomes: [
+        { text: 'History recorded', status: 'done' },
+        { text: 'Clear resets it', status: 'todo' },
+      ],
+    }),
+  );
   expect(s.current.directory.get('a')?.meta.done).toEqual({
     kind: 'milestone',
     text: 'History recorded',

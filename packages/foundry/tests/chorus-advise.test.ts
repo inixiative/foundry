@@ -1,5 +1,6 @@
 // chorus-advise: one message through a thread built as the daemon builds it, returning what a fresh
 // live Claude Code session would receive from the chorus (Oracle's `chorus` replay arm reads it).
+
 import { afterEach, expect, test } from 'bun:test';
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -12,7 +13,11 @@ import {
   type LLMProvider,
   type MessageDecoration,
 } from '@inixiative/foundry-core';
-import { CHORUS_RECEPTION, CHORUS_RECEPTION_LAYER } from '../src/agents/chorus-reception';
+import {
+  CHORUS_RECEPTION,
+  CHORUS_RECEPTION_LAYER,
+  PLAN_ASK_NOTE,
+} from '../src/agents/chorus-reception';
 import { createSourceResolver } from '../src/agents/thread-factory';
 import type { PhaseRecordInput } from '../src/agents/thread-runtime';
 import { adviseOnce, chorusMessage, chorusPart } from '../src/feedback/chorus-advise';
@@ -126,9 +131,12 @@ test('one message through a live-built thread: the chimes on the message, the re
     ['lens-model', 'no-comment'],
   ]);
   expect(advice.decisions[0]!.pointer).toMatchObject({ pointer: 'createLock', level: 'exact' });
-  expect(advice.notes).toEqual([`The concurrency-locks Warden chimed in:\n- ${POINTER}`]);
+  expect(advice.notes).toEqual([
+    `The concurrency-locks Warden chimed in:\n- ${POINTER}`,
+    PLAN_ASK_NOTE,
+  ]);
   expect(advice.message).toBe(
-    `Add a SET NX lock around the sync job\n\n---\n\nThe concurrency-locks Warden chimed in:\n- ${POINTER}`,
+    `Add a SET NX lock around the sync job\n\n---\n\nThe concurrency-locks Warden chimed in:\n- ${POINTER}\n\n${PLAN_ASK_NOTE}`,
   );
   // The chorus's standing context is the reception charter alone, framed as a live session's system
   // prompt frames it; the executor's own instructions stay out (they are Foundry, not the chorus).
@@ -190,7 +198,10 @@ test('prime warms every Warden with one decision on its own session before the m
     ['lens-model', 'answered'],
   ]);
   // Priming reaches nothing: the message carries only its own advice.
-  expect(advice.notes).toEqual([`The concurrency-locks Warden chimed in:\n- ${POINTER}`]);
+  expect(advice.notes).toEqual([
+    `The concurrency-locks Warden chimed in:\n- ${POINTER}`,
+    PLAN_ASK_NOTE,
+  ]);
 });
 
 test("the composed message is the executor's own for the same decoration", async () => {

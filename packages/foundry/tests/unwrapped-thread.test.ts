@@ -6,6 +6,7 @@ import {
   type LLMMessage,
   type LLMProvider,
 } from '@inixiative/foundry-core';
+import { FOUNDRY_TOOLS_NOTE } from '../src/agents/chorus-reception';
 import {
   buildAgents,
   buildLayers,
@@ -76,7 +77,7 @@ test('a fresh install has one executor that inherits the defaults, and no layers
   expect(config.sources).toEqual({});
 });
 
-test('an unwrapped thread sends the message as typed: no decision call, no context, no thread-state', async () => {
+test('an unwrapped thread sends the message as typed with only the session briefing: no decision call, no other context, no thread-state', async () => {
   const { thread, harness: h, manager, decisions, central } = harness(fresh());
   try {
     const result = await h.send({ id: 'm1', payload: 'Add a login endpoint' });
@@ -90,11 +91,14 @@ test('an unwrapped thread sends the message as typed: no decision call, no conte
     ]);
     expect(decisions).toEqual([]);
     expect(central).toHaveLength(1);
-    expect(central[0]!.messages).toEqual([{ role: 'user', content: 'Add a login endpoint' }]);
-    // A session provider would be handed nothing to hold and nothing to send with the turn.
-    expect(central[0]!.opts?.delivery?.standing).toEqual([]);
+    expect(central[0]!.messages).toEqual([
+      { role: 'system', content: FOUNDRY_TOOLS_NOTE },
+      { role: 'user', content: 'Add a login endpoint' },
+    ]);
+    // A session provider would be handed the briefing to hold and nothing to send with the turn.
+    expect(central[0]!.opts?.delivery?.standing.map((part) => part.id)).toEqual(['foundry-tools']);
     expect(central[0]!.opts?.delivery?.turn).toBe('');
-    expect(thread.stack.layers.map((layer) => layer.id)).toEqual([]);
+    expect(thread.stack.layers.map((layer) => layer.id)).toEqual(['foundry-tools']);
     // No pre-message plan was sealed, so the turn records no routing.
     expect(result.result.meta?.phases).toEqual({ guards: [] });
   } finally {

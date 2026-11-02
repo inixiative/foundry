@@ -95,7 +95,7 @@ import {
   threadName,
   threadPlace,
 } from './thread-labels.js';
-import { doneText } from './thread-status.js';
+import { statusText } from './thread-status.js';
 import {
   AsidesSince,
   AsidesView,
@@ -319,7 +319,7 @@ function ContextBar() {
       <div class="band-row band-row--top">
         <span class="context-bar-title ${isUnnamed(data) ? 'context-bar-title--unnamed' : ''}" data-name-source=${titleSource || ''}
           title=${`${title} · ${data.threadId}${titleSource ? ` · ${nameSourceLabel[titleSource]}` : ''}`}>${title}</span>
-        ${titleSource === 'foundry' ? html`<button type="button" class="context-bar-name-source" title=${`${nameSourceLabel.foundry} · rename`} onClick=${() => setRenaming(true)}>auto · rename</button>` : null}
+        ${titleSource === 'foundry' || titleSource === 'agent' ? html`<button type="button" class="context-bar-name-source" title=${`${nameSourceLabel[titleSource]} · rename`} onClick=${() => setRenaming(true)}>auto · rename</button>` : null}
         ${
           renaming
             ? html`<${RenameModal} title="Rename thread" label="Thread name" value=${title}
@@ -346,7 +346,7 @@ function ContextBar() {
       <div class="band-row band-row--bottom">
         <span class="band-pills">
           <span class="band-pill band-status" data-state=${state}>
-            <${StatusIcon} state=${state} still=${true} />${(state === 'done' && doneText(data)) || (STATES[state]?.label ?? state)}
+            <${StatusIcon} state=${state} still=${true} />${statusText(data, state) || (STATES[state]?.label ?? state)}
           </span>
           <${ForkLink} threadId=${data.threadId} forkedFrom=${meta.forkedFrom} />
           <span class="band-pill band-count band-pop" tabindex="0" role="button" onClick=${openParticipants}
