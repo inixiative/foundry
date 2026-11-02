@@ -45,7 +45,7 @@ import {
   chartered,
   charterFor,
   DEFAULT_STAGE,
-  isDefaultStages,
+  isSingleDefaultStage,
   NO_COMMENT,
   NO_COMMENT_RULE,
   protocolAnswer,
@@ -878,7 +878,7 @@ export interface DomainLibrarianConfig {
   /**
    * How it classifies (classify/): its stages in order, each with its provider, the doc it reads and,
    * under evaluation only, candidate charter text. Stage 0 defaults to this Warden's own provider,
-   * options and cache. Default: one stage, today's Warden (`DEFAULT_STAGE`).
+   * options and cache. Default: one stage (`DEFAULT_STAGE`); a region chorus passes its own (`defaultStages`).
    */
   stages?: readonly WardenStage[];
   /** The region ids a recogniser stage may name: a group's members. Default: its own domain. */
@@ -1498,7 +1498,7 @@ export class DomainLibrarian {
       this._stages.length === 1 &&
       this._stages[0]!.charter === undefined &&
       this._stages[0]!.regionInstructions === undefined &&
-      isDefaultStages([this._stages[0]!.config])
+      isSingleDefaultStage([this._stages[0]!.config])
     );
   }
 

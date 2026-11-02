@@ -109,8 +109,8 @@ import {
   chartered,
   charterFor,
   charterVersion,
-  DEFAULT_STAGES,
   KNOWLEDGE_DOC,
+  SINGLE_STAGE,
   type StageConfig,
   WARDEN_CHARTER_VERSION,
   withRegionInstructions,
@@ -186,9 +186,12 @@ const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max', 'default'] as const;
 const wardenEffort = values.effort as (typeof EFFORTS)[number] | undefined;
 if (wardenEffort !== undefined && !EFFORTS.includes(wardenEffort))
   throw Error(`--effort must be one of ${EFFORTS.join(', ')}`);
-/** --classify: the run's stages, each stage's charter as its sections set it, and debug. */
+/**
+ * --classify: the run's stages, each stage's charter as its sections set it, and debug. Without it,
+ * the single stage: a run names the chain it measures (the live default is the two-layer chain).
+ */
 const runConfig = values.classify ? readClassifyRun(values.classify) : undefined;
-const stages: readonly StageConfig[] = runConfig?.stages ?? DEFAULT_STAGES;
+const stages: readonly StageConfig[] = runConfig?.stages ?? SINGLE_STAGE;
 /** The stages as a project's settings write them: the eval-only `sections` left out. */
 const settingsStages = runConfig?.settingsStages;
 const charters: readonly (string | undefined)[] = runConfig?.charters ?? [];

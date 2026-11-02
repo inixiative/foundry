@@ -31,8 +31,9 @@ import {
 } from '@inixiative/foundry-core';
 import type { ConversationMember } from '@inixiative/signet';
 import {
-  DEFAULT_STAGES,
+  defaultStages,
   KNOWLEDGE_DOC,
+  SINGLE_STAGE,
   type StageConfig,
   type StageEffort,
   validateStages,
@@ -372,13 +373,17 @@ interface StageDoc {
   readonly sourceId: string;
 }
 
-/** The stages a project's region Wardens classify in: its chorus's, else today's single stage. */
+/**
+ * The stages a project's region Wardens classify in: its chorus's, else the default for this Foundry
+ * (the two-layer chain where stage hosts serve Layer 2, else the single stage).
+ */
 function wardenStages(
   config: FoundryConfig,
   projectId: string | undefined,
+  stageHosts: boolean,
 ): readonly StageConfig[] {
   const written = projectId ? config.projects?.[projectId]?.chorus?.wardens?.stages : undefined;
-  return written ? validateStages('chorus.wardens.stages', written) : DEFAULT_STAGES;
+  return written ? validateStages('chorus.wardens.stages', written) : defaultStages(stageHosts);
 }
 
 export interface ThreadRuntimeDeps {
@@ -407,7 +412,8 @@ export interface ThreadRuntimeDeps {
   /**
    * The decision host for a classify stage that names its own model or effort (one host per pair):
    * `null` when that pair is the decision default (the Warden's own provider serves it), undefined
-   * when nothing serves it, and the stage is refused.
+   * when nothing serves it, and the stage is refused. Only subscription decisions wire it; a Foundry
+   * without it runs the single stage by default (`defaultStages`).
    */
   stageHost?: (
     model: string | undefined,
@@ -903,6 +909,8 @@ class ThreadRuntimeImpl implements ThreadRuntime {
   private _prestartTimer?: ReturnType<typeof setTimeout>;
   /** Providers that may hold pre-started work for this thread (released on dispose). */
   private _wardenProviders = new Set<LLMProvider>();
+  /** Whether stage hosts are wired (`ThreadRuntimeDeps.stageHost`): the default chain needs them. */
+  private readonly _stageHosts: boolean;
   private _eventStream: EventStream | undefined;
   private _onDisposed: () => void;
   private _knowledgeLayers: ContextLayer[] = [];
@@ -996,10 +1004,15 @@ class ThreadRuntimeImpl implements ThreadRuntime {
     this._onDisposed = onDisposed;
     this._clock = deps.learning?.clock ?? (() => performance.now());
     this.auxiliarySessionIds = [];
-    // A project chorus's region Wardens classify in its stages (chorus.wardens.stages); a Warden
-    // registered in code runs today's single stage. A stage no decision host serves is refused here,
-    // before the runtime attaches to anything.
-    const chorusStages = wardenStages(deps.config, thread.meta.projectId as string | undefined);
+    // A project chorus's region Wardens classify in its stages (chorus.wardens.stages, else the
+    // default chain); a Warden registered in code runs the single stage. A stage no decision host
+    // serves is refused here, before the runtime attaches to anything.
+    this._stageHosts = deps.stageHost !== undefined;
+    const chorusStages = wardenStages(
+      deps.config,
+      thread.meta.projectId as string | undefined,
+      this._stageHosts,
+    );
     if (domains.some((dc) => dc.expert))
       chorusStages.forEach((config, index) => {
         if (
@@ -1098,7 +1111,7 @@ class ThreadRuntimeImpl implements ThreadRuntime {
       if (!cache) continue;
       const domainId = auxiliarySessionId(thread.id, `domain:${dc.domain}`);
       this.auxiliarySessionIds.push(domainId);
-      const stages = role ? chorusStages : DEFAULT_STAGES;
+      const stages = role ? chorusStages : SINGLE_STAGE;
       const stageDocs: StageDoc[] = [];
       const bound: WardenStage[] = stages.map((config, index) => {
         const host =
@@ -3651,7 +3664,13 @@ class ThreadRuntimeImpl implements ThreadRuntime {
       if (
         held &&
         JSON.stringify(held.stages) !==
-          JSON.stringify(wardenStages(config, this.thread.meta.projectId as string | undefined))
+          JSON.stringify(
+            wardenStages(
+              config,
+              this.thread.meta.projectId as string | undefined,
+              this._stageHosts,
+            ),
+          )
       )
         deferred.push(`Warden ${dc.domain}'s stages apply to new threads`);
       // Settings edits reach the composed slots on the next turn's warm.

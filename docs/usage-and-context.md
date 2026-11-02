@@ -539,9 +539,11 @@ regions never run (Heralds are not built) and the view says so.
   Wardens. There is no global setting: a chorus is per project because its
   docs are.
 - **Stages** (`chorus.wardens.stages`, `@inixiative/foundry/classify`). How the
-  region Wardens classify, as at most three stages; omitted, one stage, today's
-  Warden. Each stage is `{ model?, effort?, doc?, outcomes?, reason?, task?,
-  pointer?, escalate?, deadline? }`, every field defaulting to the default
+  region Wardens classify, as at most three stages; omitted, the two-layer
+  chain (Haiku 5.5 low pointing with its why inline, each yes escalated without
+  it to Sonnet 5.5 low on the same `knowledge.md`; with API-token decisions,
+  the single stage). Each stage is `{ model?, effort?, doc?, outcomes?, reason?, task?,
+  pointer?, escalate?, carryWhy?, deadline? }`, every field defaulting to the default
   stage's (`knowledge.md`, `binary`, `none`, `point`, `pointer: { any: true }`;
   model and effort the decision model's):
 

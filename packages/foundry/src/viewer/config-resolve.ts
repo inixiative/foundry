@@ -19,7 +19,7 @@ import {
   type RegionSummary,
   regionWardens,
 } from '../agents/region-roster';
-import { DEFAULT_STAGES, type StageConfig, validateStages } from '../classify';
+import { defaultStages, type StageConfig, validateStages } from '../classify';
 import {
   type ConversationSettingsInput,
   validateConversationSettings,
@@ -898,9 +898,12 @@ export function projectChorus(project: Pick<ProjectSettingsConfig, 'path' | 'cho
   };
 }
 
-/** A role's stages as written, defaults filled; absent, today's single-stage Warden. */
-function stagesOf(written: unknown): readonly StageConfig[] {
-  return written === undefined ? DEFAULT_STAGES : validateStages('stages', written);
+/**
+ * A role's stages as written, defaults filled; absent, the default chain, or the single stage with
+ * API-token decisions (no stage host serves Layer 2 there).
+ */
+function stagesOf(written: unknown, apiTokens: boolean): readonly StageConfig[] {
+  return written === undefined ? defaultStages(!apiTokens) : validateStages('stages', written);
 }
 
 export function resolveProjectView(
@@ -939,12 +942,12 @@ export function resolveProjectView(
     reception: { on: false, from: setting.receptionFrom },
     roles: {
       warden: {
-        stages: stagesOf(setting.chorus.wardens?.stages),
+        stages: stagesOf(setting.chorus.wardens?.stages, config.apiTokens === true),
         from: setting.stagesFrom.warden,
         regions: 0,
       },
       herald: {
-        stages: stagesOf(setting.chorus.heralds?.stages),
+        stages: stagesOf(setting.chorus.heralds?.stages, config.apiTokens === true),
         from: setting.stagesFrom.herald,
         regions: 0,
         built: false as const,

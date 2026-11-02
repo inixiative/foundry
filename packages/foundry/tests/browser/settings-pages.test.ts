@@ -196,15 +196,22 @@ test('settings and analytics are addressable pages scoped to Foundry or a projec
     await page.goBack();
     expect(new URL(page.url()).pathname).toBe(`/projects/${project.id}/settings/integrations`);
 
-    // The chorus page shows how its Wardens classify: today's single stage, from the default.
+    // The chorus page shows how its Wardens classify: the default two-layer chain (Layer 1 on the
+    // decision model escalating its yes within a quarter of the deadline, Layer 2 on Sonnet).
     await page.goto(`${origin}/projects/${project.id}/settings/chorus`);
     await page.locator('.settings-section-label', { hasText: 'Classification' }).waitFor();
     expect(await page.locator('.settings-body').innerText()).toContain(
-      "Wardens: 1 stage, from the default (today's Warden). Heralds: not built.",
+      'Wardens: 2 stages, from the default. Heralds: not built.',
     );
-    expect(
-      await page.locator('.chorus-table').first().locator('tbody tr td').allInnerTexts(),
-    ).toEqual(expect.arrayContaining(['1', 'point', 'knowledge.md', 'binary', '–', '100%']));
+    const cells = await page
+      .locator('.chorus-table')
+      .first()
+      .locator('tbody tr td')
+      .allInnerTexts();
+    expect(cells).toEqual(
+      expect.arrayContaining(['1', '2', 'point', 'knowledge.md', 'yes', '25%', '–', '75%']),
+    );
+    expect(cells.some((cell: string) => cell.includes('claude-sonnet-5-5'))).toBe(true);
     await page.goto(`${origin}/projects/${project.id}/settings/integrations`);
 
     await page.getByRole('link', { name: 'Workspace' }).click();

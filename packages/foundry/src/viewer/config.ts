@@ -350,8 +350,10 @@ export interface ChorusSettings {
    */
   reception?: boolean;
   /**
-   * How the chorus's Warden regions classify (classify/): their stages, at most three. Omitted, one
-   * stage, today's Warden. The machine's list replaces the repository's whole.
+   * How the chorus's Warden regions classify (classify/): their stages, at most three. Omitted, the
+   * two-layer chain: Haiku 5.5 low points with its why inline and escalates each yes, without the why,
+   * to Sonnet 5.5 low on the same knowledge.md (Oracle finding 2026-11-01-l2-nowhy); with API-token
+   * decisions, one stage. The machine's list replaces the repository's whole.
    */
   wardens?: ChorusRoleSettings;
   /** How Herald regions would classify: the socket only. Heralds are not built; their regions do not run. */
@@ -360,7 +362,10 @@ export interface ChorusSettings {
 
 /** One role's classification settings in a chorus. */
 export interface ChorusRoleSettings {
-  /** Its stages, each `{ model?, effort?, doc?, outcomes?, reason?, task?, pointer?, escalate?, deadline? }`. */
+  /**
+   * Its stages, each `{ model?, effort?, doc?, outcomes?, reason?, task?, pointer?, escalate?,
+   * carryWhy?, deadline? }`.
+   */
   stages?: StageSettings[];
 }
 

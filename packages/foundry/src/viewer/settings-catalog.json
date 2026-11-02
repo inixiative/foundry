@@ -717,12 +717,12 @@
   {
     "path": "chorus.wardens",
     "scope": "project",
-    "description": "How the chorus's Warden regions classify (classify/): their stages, at most three. Omitted, one stage, today's Warden. The machine's list replaces the repository's whole."
+    "description": "How the chorus's Warden regions classify (classify/): their stages, at most three. Omitted, the two-layer chain: Haiku 5.5 low points with its why inline and escalates each yes, without the why, to Sonnet 5.5 low on the same knowledge.md (Oracle finding 2026-11-01-l2-nowhy); with API-token decisions, one stage. The machine's list replaces the repository's whole."
   },
   {
     "path": "chorus.wardens.stages",
     "scope": "project",
-    "description": "Its stages, each `{ model?, effort?, doc?, outcomes?, reason?, task?, pointer?, escalate?, deadline? }`."
+    "description": "Its stages, each `{ model?, effort?, doc?, outcomes?, reason?, task?, pointer?, escalate?, carryWhy?, deadline? }`."
   },
   {
     "path": "chorus.heralds",
@@ -732,7 +732,7 @@
   {
     "path": "chorus.heralds.stages",
     "scope": "project",
-    "description": "Its stages, each `{ model?, effort?, doc?, outcomes?, reason?, task?, pointer?, escalate?, deadline? }`."
+    "description": "Its stages, each `{ model?, effort?, doc?, outcomes?, reason?, task?, pointer?, escalate?, carryWhy?, deadline? }`."
   },
   {
     "path": "conversations",

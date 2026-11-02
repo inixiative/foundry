@@ -97,7 +97,7 @@ export interface ReadinessChorus {
 
 /** One role's classification as the view shows it. */
 export interface ReadinessRole {
-  /** Which layer gave the stage list: the machine's settings, the repository's, or the default (today's Warden). */
+  /** Which layer gave the stage list: the machine's settings, the repository's, or the default (`defaultStages`). */
   from: ResolvedChorus['roles']['warden']['from'];
   regions: number;
   stages: Array<{
