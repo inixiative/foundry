@@ -46,7 +46,7 @@ test('full trace opens the turn view: grouped steps, filters, arrow keys, Raw, E
     const view = page.locator('.panel-right .turn-view');
     await view.waitFor();
     expect(await page.locator('.panel-center textarea.chat-input').count()).toBe(1);
-    await page.waitForFunction(() => location.hash.includes('rsize=wider'));
+    await page.waitForFunction(() => location.hash.includes('rsize=wide'));
     await view.getByRole('button', { name: '✕ Close' }).click();
     await page.waitForFunction(
       (w: number) =>
@@ -54,8 +54,8 @@ test('full trace opens the turn view: grouped steps, filters, arrow keys, Raw, E
         Math.round(w),
       before,
     );
-    // "full trace" opens the same panel.
-    await page.locator('.chat-fulltrace-btn').first().click();
+    // Inspect on the speaker line opens the same panel.
+    await page.locator('.chat-user .inspect-link').first().click();
     // The turn arrives over the flow stream after the view opens.
     await view.locator('.tv-group').first().waitFor();
     const groups = await view.locator('.tv-group h3').allTextContents();
@@ -81,7 +81,7 @@ test('full trace opens the turn view: grouped steps, filters, arrow keys, Raw, E
     await view.focus();
     await page.keyboard.press('Escape');
     await page.waitForFunction(() => !document.querySelector('.panel-right .turn-view'));
-    expect(page.url()).not.toContain('rsize=wider');
+    expect(page.url()).not.toContain('rsize=wide');
     expect(errors).toEqual([]);
   } finally {
     await releaseAll([

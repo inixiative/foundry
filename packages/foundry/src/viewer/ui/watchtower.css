@@ -2,17 +2,59 @@
 .watchtower {
   height: 100%;
   overflow: auto;
-  padding: 16px 20px 40px;
+  padding: 16px 22px 26px;
 }
 .wt-head {
   display: flex;
-  align-items: baseline;
-  gap: 10px;
+  align-items: center;
+  gap: 8px 12px;
   flex-wrap: wrap;
 }
 .wt-head h2 {
   margin: 0;
-  font-size: 1.35rem;
+  font-family: var(--display);
+  font-size: 24px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  line-height: 36px;
+}
+.wt-head-spacer {
+  flex: 1;
+}
+.wt-watching-anchor {
+  position: relative;
+}
+.wt-watching-btn,
+.wt-filter-label {
+  font: 500 12.5px var(--font);
+}
+.wt-watching-btn {
+  padding: 3px 11px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: none;
+  color: var(--text);
+  cursor: pointer;
+}
+.wt-watching-pop {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 30;
+  width: 300px;
+  max-height: 70vh;
+  overflow: auto;
+  border: 1px solid var(--line-strong);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: 0 12px 30px hsl(0 0% 0% / 0.5);
+}
+.wt-filter-label {
+  align-self: center;
+  font: 600 10.5px var(--mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-dim);
 }
 .wt-chip {
   font-size: 11px;
@@ -45,7 +87,7 @@
   display: inline-flex;
   gap: 2px;
   padding: 2px;
-  border-radius: 8px;
+  border-radius: 9px;
   background: hsl(var(--muted));
 }
 .wt-scope button {
@@ -59,20 +101,35 @@
   cursor: pointer;
 }
 .wt-scope button[aria-selected="true"] {
-  background: hsl(var(--card));
+  background: hsl(var(--app-primary) / 0.4);
+  color: var(--text);
+}
+/* The map in one bordered frame; the grid itself bordered, its heads on the page colour. */
+.wt-main {
+  padding: 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: 12px;
+  background: hsl(var(--card) / 0.55);
 }
 .wt-grid {
   display: grid;
-  gap: 6px;
-  align-items: start;
+  grid-auto-rows: max-content;
+  gap: 0;
+  align-items: stretch;
   min-width: 1200px;
+  margin-top: 10px;
+  padding-bottom: 8px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  overflow: hidden;
 }
 .wt-th {
-  font-size: 11px;
+  font: 600 10.5px var(--mono);
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.06em;
   color: hsl(var(--muted-foreground));
-  padding: 4px 2px;
+  padding: 8px 8px 6px;
+  background: var(--bg);
 }
 .wt-th.is-blocked {
   color: hsl(7 100% 74%);
@@ -80,13 +137,15 @@
 .wt-lane {
   font-size: 12.5px;
   font-weight: 600;
-  padding: 8px 4px;
+  padding: 8px;
   border-top: 1px solid hsl(var(--border));
+  background: var(--bg);
 }
 .wt-cell {
   display: grid;
+  align-content: start;
   gap: 6px;
-  padding-top: 6px;
+  padding: 6px;
   border-top: 1px solid hsl(var(--border));
   min-height: 40px;
 }

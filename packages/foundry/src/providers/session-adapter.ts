@@ -1210,7 +1210,7 @@ export class CodexSessionAdapter implements SessionAdapter {
 // ---------------------------------------------------------------------------
 
 export interface MuseSessionAdapterConfig {
-  /** The thread's login: the user's own Muse login (subscription), never Kingdom's pool (refused there). */
+  /** The thread's login: the user's own Muse login, or one its project's Kingdom pool releases. */
   authentication?: NativeAuthenticationProvider;
   /** Where to persist the (thread, Muse session id) mapping. */
   store: ExternalSessionStore;
@@ -1235,7 +1235,8 @@ export interface MuseSessionAdapterConfig {
 }
 
 /**
- * Muse Code (`muse serve`) through agent-session's MuseSession, on the user's own Muse login.
+ * Muse Code (`muse serve`) through agent-session's MuseSession, on the user's own Muse login or one
+ * a Kingdom pool releases (its own `XDG_CONFIG_HOME`, `KingdomSubscriptionAuthentication`).
  *
  * - Access follows the host: a gated mode sends Muse's approvals to the thread's tool gate (and so to
  *   Foundry's approval queue); full access (and no host mode) runs unrestricted and unsandboxed.
@@ -1243,9 +1244,12 @@ export interface MuseSessionAdapterConfig {
  *   middleware never runs in vendor hooks), so a thread with structural rules is refused at launch.
  * - The Muse session id is the binding: a restart resumes it (`session/resume`); a missing one raises
  *   `NativeBindingMissingError`, and the provider starts fresh, seeded from the journal.
- * - Muse's config is the user's own: its login and settings share one home (`$XDG_CONFIG_HOME/muse`),
- *   and moving that home would move the config of every command Muse runs. agent-session launches it
- *   with `--trust-workspace`, so a workspace's Muse skills and rules load too.
+ * - Muse's config is the user's own: its login and settings share one home (`$XDG_CONFIG_HOME/muse`).
+ *   On the user's own login nothing moves; a Kingdom login's home links the user's config in, so the
+ *   commands Muse runs find the same config. agent-session launches it with `--trust-workspace`, so a
+ *   workspace's Muse skills and rules load too.
+ * - A failed turn, or a host that would not start, asks the login's provider whether the login was
+ *   rejected (`loginFailed`); Kingdom's confirms with `muse usage` before reporting it.
  * - No MCP: agent-session's MuseSession offers no session MCP, so Foundry's bridge and a host's MCP
  *   servers do not reach a Muse thread (`workerHostsFoundryTools`).
  */
@@ -1316,7 +1320,7 @@ export class MuseSessionAdapter implements SessionAdapter {
       auth?.release();
       throw error;
     }
-    // A Kingdom launch names its effort as text; Muse never runs on one (refused before this).
+    // The host's effort (a Kingdom launch's `auth.effort` is only what its run recorded).
     const effort: MuseReasoningEffort | undefined = opts.effort ?? this._defaults.effort;
     const model = auth?.model ?? opts.model ?? this._defaults.model;
     // The host's own exit is what ends the session: the login is released only once `muse serve`
@@ -1375,6 +1379,17 @@ export class MuseSessionAdapter implements SessionAdapter {
     };
     session.onEvent((event) => {
       if (event.kind === 'session_end') release();
+      // A login Meta stopped accepting fails the turn; the provider confirms before acting on it.
+      if (
+        event.kind === 'result' &&
+        event.nativeOutcome === 'failed' &&
+        event.terminal?.subtype !== 'cancelled' &&
+        event.terminal?.subtype !== 'unqueued'
+      )
+        void auth?.loginFailed?.().then((rejected) => {
+          // The host holds the dead token: end it, so the next turn launches on another login.
+          if (rejected) session.kill();
+        });
     });
     const start = session.start.bind(session);
     session.start = async () => {
@@ -1383,6 +1398,7 @@ export class MuseSessionAdapter implements SessionAdapter {
       try {
         await start();
       } catch (error) {
+        void auth?.loginFailed?.();
         release();
         throw error;
       }
