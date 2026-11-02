@@ -12,6 +12,7 @@
  */
 
 import { ActionPalette } from './action-palette.js';
+import { PillGroup } from './band-pills.js';
 import { chorusNotice, lastDegraded } from './chorus-health.js';
 import { HeldPromptCard, useConversationView } from './conversation-members.js';
 import {
@@ -316,7 +317,8 @@ function ContextBar() {
 
   return html`
     <div class="context-bar thread-band thread-band--pills">
-      <div class="band-row band-row--top">
+      <div class="band-grid">
+        <span class="band-title">
         <span class="context-bar-title ${isUnnamed(data) ? 'context-bar-title--unnamed' : ''}" data-name-source=${titleSource || ''}
           title=${`${title} · ${data.threadId}${titleSource ? ` · ${nameSourceLabel[titleSource]}` : ''}`}>${title}</span>
         ${titleSource === 'foundry' ? html`<button type="button" class="context-bar-name-source" title=${`${nameSourceLabel.foundry} · rename`} onClick=${() => setRenaming(true)}>auto · rename</button>` : null}
@@ -326,7 +328,8 @@ function ContextBar() {
                 onClose=${() => setRenaming(false)} onSave=${(next) => renameThread(data.threadId, next)} />`
             : null
         }
-        <span class="band-pills band-pills--right" aria-label="Where it lives">
+        </span>
+        <${PillGroup} className="band-where" label="Where it lives" render=${() => html`
           <span class="band-pill band-where--keep" title=${project ? `Project: ${project.label}` : 'No project'}>${project ? project.label : 'Global'}</span>
           ${owner ? html`<span class="band-pill band-where--keep" title=${`Kingdom: ${owner}`}>${owner}</span>` : null}
           ${
@@ -341,10 +344,8 @@ function ContextBar() {
                 ? html`<span class="band-pill worktree-pill" title=${`${place.worktree}\nFrom the thread's working folder (no worktree record yet)`}>${FolderIcon()}${place.worktreeShort}</span>`
                 : null
           }
-        </span>
-      </div>
-      <div class="band-row band-row--bottom">
-        <span class="band-pills">
+        `} />
+        <${PillGroup} className="band-who" label="Who is in it" render=${() => html`
           <span class="band-pill band-status" data-state=${state}>
             <${StatusIcon} state=${state} still=${true} />${(state === 'done' && doneText(data)) || (STATES[state]?.label ?? state)}
           </span>
@@ -375,9 +376,17 @@ function ContextBar() {
                   aria-label=${`${signets.length} Signet${signets.length === 1 ? '' : 's'}`}>Signet${signets.length > 1 ? html` ${signets.length}` : null}</span>`
               : null
           }
-        </span>
-        <span class="band-pills band-pills--right" aria-label="How it runs">
-          ${runs.length ? html`<span class="band-pill" title=${`Provider · model · effort${harness ? ` — runs through ${harness}` : ''}`}>${runs.join(' · ')}</span>` : null}
+        `} />
+        <${PillGroup} className="band-runs" label="How it runs" render=${() => html`
+          ${
+            runs.length
+              ? html`<span class="band-pill band-run" title=${`${runs.join(' · ')}${harness ? ` · runs through ${harness}` : ''}`}>${
+                  named.provider && runs.length > 1
+                    ? html`<span class="band-drop">${named.provider}\u00a0·\u00a0</span>`
+                    : null
+                }${(named.provider && runs.length > 1 ? runs.slice(1) : runs).join(' · ')}</span>`
+              : null
+          }
           ${
             fill !== null
               ? html`<span class="band-pill band-meter" title=${`Estimated context fill: ${fmtNum(threadContextTokens.value)} of ${fmtNum(contextWindow)} tokens`}>
@@ -397,7 +406,7 @@ function ContextBar() {
               ? html`<span class="band-pill band-dangerous" title="Dangerous: every permission check is skipped, overriding the mode's asks">Dangerous</span>`
               : null
           }
-        </span>
+        `} />
       </div>
       ${
         meta.setup?.status === 'starting'

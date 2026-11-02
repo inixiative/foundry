@@ -13,6 +13,7 @@
  */
 import { AccessSettings } from './access-settings.js';
 import { AtlasTouches, SharedConcepts } from './atlas-panels.js';
+import { ComingSoon } from './coming-soon.js';
 import { ContextStats, TokenBar } from './conversation.js';
 import { ParticipantsPanel } from './conversation-members.js';
 import { Inspector, inspection, ThreadDetail } from './detail-drawer.js';
@@ -85,7 +86,7 @@ function tabFacts(tab, threadId) {
           : 'Access follows the host',
       };
     case 'heralds':
-      return { info: 'Not running yet' };
+      return { info: 'Coming soon' };
     case 'feedback': {
       const open = openFeedback(threadId);
       return { info: `${feedbackIn({ threadId }).length} given · ${open} open`, count: open };
@@ -149,6 +150,12 @@ function ContextTab() {
     </section>
     <${AtlasTouches} threadId=${threadData.value?.threadId} project=${projectLabel(threadData.value?.meta?.projectId)} />
     <section class="rp-section">
+      <h3 class="rp-section-title">Loaded when it arrived</h3>
+      <${ComingSoon}
+        what="For a Slack, Linear or GitHub item that opened this thread: what the agent read before you opened it (the message, the ticket, the files, the sender)."
+        ticket="BOARD-003" />
+    </section>
+    <section class="rp-section">
       <h3 class="rp-section-title">Linked work</h3>
       ${
         (threadData.value?.meta?.context?.references ?? []).length
@@ -186,11 +193,9 @@ function PermissionsTab() {
 
 function HeraldsTab() {
   return html`<div class="rp-stack">
-    <div class="rp-empty">
-      Heralds aren’t running yet. When they are, this tab shows how this thread looks to them:
-      teammates’ threads touching the same files, related threads, past work it repeats, and who
-      else is watching.
-    </div>
+    <${ComingSoon}
+      what="How this thread looks to the Heralds: teammates’ threads touching the same files, related threads, past work it repeats, and who else is watching."
+      ticket="AGENT-001" />
     <section class="rp-section">
       <h3 class="rp-section-title">Shared Atlas concepts</h3>
       <p class="rp-dim">Other threads in this project touching the same concepts (this machine’s threads, until Heralds bring teammates’).</p>

@@ -59,7 +59,7 @@ It replaces the 10-23 "inbox mode beside directory mode" idea. The directory is 
 | Thread rows | `threads` stream, `pf/viewer/data-streams.ts:130-170`; `ThreadList`/`ThreadNode`, `pf/viewer/ui/thread-tree.js` | A cross-project stream (`threads:all`) and a zone field from the conversation summary |
 | Status | Thread status (`pc/thread.ts:16`), turn status (`pf/persistence/local-session-store.ts:58`) | — |
 | Prompts | `prompts` stream (`data-streams.ts:172-185`), `promptCounts` (`pf/viewer/ui/store.js:86-92`) | — |
-| Unread | `ConversationService.summary` (`service.ts:747-758`) | Today "unread" means *not yet delivered to the agent*. The board needs a second mark, *not yet seen by Aron* (last-opened seq per thread), so that hand-backs show |
+| Unread | `ConversationService.summary` (`service.ts:747-758`) | Today "unread" means *not yet delivered to the agent*. The second mark, *not yet seen by Aron*, is built (2026-11-02): `ThreadMeta.seenAt`, set by `POST /api/threads/:id/seen` whenever the viewer has the thread open (`store.js`); a turn completed after it reads as `newarrival` (orange, `thread-status.js`). Turns an agent starts on its own (a Muse cron or goal) show up this way with nothing worker-specific |
 
 No new store: the board is a filter and a sort over these streams, plus the seen-by-Aron mark.
 
