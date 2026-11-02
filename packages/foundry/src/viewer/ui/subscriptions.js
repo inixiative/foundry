@@ -187,7 +187,7 @@ export function KingdomPools({ kingdom }) {
   if (!kingdom?.length) return null;
   return html`<div class="pool-kingdom">
     <span>${kingdom.length === 1 ? kingdom[0].name : `${kingdom.length} projects`} on a Kingdom pool</span>
-    <a class="coming-soon" href=${KINGDOM_TICKET} target="_blank" rel="noreferrer"
+    <a class="coming-soon is-link" href=${KINGDOM_TICKET} target="_blank" rel="noreferrer"
       title="Kingdom balances its pool's logins; showing its balancing here is planned (Kingdom ticket)">Coming soon</a>
   </div>`;
 }

@@ -141,9 +141,6 @@
   font-size: 11.5px;
   color: var(--text-dim);
 }
-.pool-kingdom a.coming-soon {
-  text-decoration: none;
-}
 
 /* Settings › Providers: one card per runtime's logins. */
 .login-pools .pool-card {
