@@ -180,7 +180,8 @@ test('threads on another machine are badged and filterable; a recorded plan fill
     expect(await devicePage.locator('.ph-row', { hasText: 'Cap checkout retries' }).count()).toBe(
       0,
     );
-    await devicePage.locator('.coming-soon-note', { hasText: 'checked out' }).waitFor();
+    await devicePage.locator('.coming-soon-note', { hasText: 'Signet' }).waitFor();
+    await devicePage.locator('.dp-pill', { hasText: 'Status unknown' }).waitFor();
     await devicePage.getByRole('button', { name: 'Show in the Watchtower →' }).click();
     const chip = tower.locator('.filter-chip-active', { hasText: 'Machine: studio Mac' });
     await chip.waitFor();
@@ -195,7 +196,7 @@ test('threads on another machine are badged and filterable; a recorded plan fill
     await page.locator('button.nav-footer-device').click();
     await devicePage.locator('h2', { hasText: 'MacBook Pro' }).waitFor();
     await devicePage.locator('.ph-row', { hasText: 'Cap checkout retries' }).waitFor();
-    await devicePage.locator('.ph-line', { hasText: 'acme-shop' }).waitFor();
+    await devicePage.locator('.dp-checkout', { hasText: 'acme-shop' }).waitFor();
     await devicePage.getByRole('button', { name: 'Its threads on the Board →' }).click();
     await board.locator('.filter-chip-active', { hasText: 'Machine: MacBook Pro' }).waitFor();
     expect(errors).toEqual([]);
