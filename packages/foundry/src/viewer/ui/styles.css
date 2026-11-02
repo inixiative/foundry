@@ -6377,11 +6377,12 @@ a.thread-ref:hover {
 /* ---- Settings: nav groups, dev mode, coming soon ---- */
 
 .settings-group {
-  font-size: 10px;
-  color: var(--text-dimmer);
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--text-dim);
   text-transform: uppercase;
-  letter-spacing: 0.08em;
-  padding: 10px 10px 2px;
+  letter-spacing: 0.09em;
+  padding: 10px 8px 2px;
 }
 .settings-grouped .settings-section {
   padding-left: 16px;
@@ -7687,48 +7688,70 @@ a.thread-ref:hover {
 }
 
 /* ---- Pages (Settings, Analytics, Feedback inbox): Kingdom panels and segmented tabs ---- */
+/* Settings, sized as concept-v4's .sset3: nav buttons at 13.5 px, the body in one bordered frame of
+   bordered cards, the crumb with the section in display type. */
 .settings-nav {
   background: var(--bg);
   border-right: none;
-  padding: 14px 10px 14px 14px;
+  padding: 14px 12px;
 }
 .settings-scope {
-  border: none;
-  background: var(--surface2);
-  border-radius: 10px;
+  border: 1px solid var(--line-strong);
+  background: var(--bg);
+  border-radius: 9px;
 }
 .settings-scope-tab {
   border-radius: 8px;
-  font-size: 12.5px;
+  padding: 6px 10px;
+  font-size: 13.5px;
 }
 .settings-scope-tab.active {
-  background: var(--surface);
-  box-shadow: var(--frame-shadow);
+  background: hsl(var(--app-primary) / 0.15);
+  box-shadow: none;
 }
 .settings-section {
-  font-size: 13px;
+  font-size: 13.5px;
+  line-height: 20px;
   padding: 6px 10px;
   border-radius: 8px;
 }
 .settings-section.active {
-  background: hsl(var(--app-primary) / 0.1);
+  background: hsl(var(--app-primary) / 0.15);
   color: var(--text);
 }
 .settings-main {
-  margin: 10px 0;
-  background: var(--surface);
-  border-radius: 1rem;
-  box-shadow: var(--frame-shadow);
+  margin: 10px 10px 10px 0;
+  background: hsl(var(--card) / 0.55);
+  border: 1px solid var(--line-strong);
+  border-radius: 12px;
+  box-shadow: none;
 }
 .settings-page-header {
   font-family: var(--display);
   letter-spacing: -0.02em;
+  padding: 14px 18px 4px;
+  border-bottom: 0;
+}
+.settings-breadcrumb {
+  font: 12px var(--font);
+  color: var(--text-dim);
+}
+.settings-title {
+  font: 650 16px var(--display);
+}
+.settings-body {
+  padding: 4px 18px 14px;
+}
+.settings-body > .settings-desc,
+.settings-body > div > .settings-desc:first-child {
+  font-size: 13px;
+  line-height: 19.5px;
 }
 .settings-card {
-  border: none;
-  border-radius: 0.75rem;
-  background: var(--surface2);
-  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  padding: 12px 14px;
 }
 .settings-card-header {
   color: var(--text);
@@ -9101,4 +9124,37 @@ a.thread-ref:hover {
 .ph-link {
   align-self: flex-start;
   text-decoration: none;
+}
+
+/* Settings content: one centred column (concept-v4 .scol). Rows lead with a 13 px label; the
+   providers are one bordered list of rows, not a stack of cards. */
+.settings-page-header,
+.settings-body {
+  width: 100%;
+  max-width: 916px;
+  margin-inline: auto;
+}
+.model-selection-row .settings-label {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--text);
+}
+.vendor-list {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.vendor-list > .settings-card.vendor-row {
+  margin: 0;
+  padding: 9px 12px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  background: none;
+  font-size: 13.5px;
+}
+.vendor-list > .settings-card.vendor-row:last-child {
+  border-bottom: 0;
 }
