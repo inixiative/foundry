@@ -30,6 +30,7 @@ import {
   type ThreadLaunchPatch,
   type ThreadLaunchView,
   type TurnAppend,
+  type TurnTerminal,
 } from '@inixiative/foundry/client';
 import { promptImages, promptText } from './prompt';
 import {
@@ -125,10 +126,7 @@ interface Daemon {
 
 const DAEMON_LOST_MS = 30_000;
 
-type ThreadPayload =
-  | TurnAppend
-  | { kind: 'event' }
-  | { kind: 'done' | 'error'; turnId: string; result: Record<string, unknown> };
+type ThreadPayload = TurnAppend | { kind: 'event' } | TurnTerminal;
 
 /** The listener is the daemon the launch file names (asked without the bearer), or this throws. */
 async function identify(http: FoundryClient, launch: AcpLaunch): Promise<void> {
