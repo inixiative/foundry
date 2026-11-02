@@ -28,9 +28,9 @@
   "recorded": {
     "service": "muse",
     "cli": "muse",
-    "recordedAt": "2026-11-02T03:06:54.377Z",
-    "agentSession": "0.8.0",
+    "recordedAt": "2026-11-02T05:59:17.782Z",
+    "agentSession": "0.9.0",
     "environment": "terminal",
-    "durationMs": 1169
+    "durationMs": 1408
   }
 }

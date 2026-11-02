@@ -1437,10 +1437,14 @@ test(
         cwd = join(directory, 'project');
       mkdirSync(cwd);
       // The login is the user's own (~/.config/muse); a live run's child gets the account's HOME back.
+      // Sessions go to a fresh data home: the recording's command ids are a counter, and `muse serve`
+      // remembers ids across runs in its session store, so a shared one refuses a re-record.
       const home = process.env.HOME,
-        key = process.env.META_API_KEY;
+        key = process.env.META_API_KEY,
+        data = process.env.XDG_DATA_HOME;
       process.env.HOME = directory;
       process.env.META_API_KEY = 'meta-model-api-key';
+      process.env.XDG_DATA_HOME = join(directory, 'muse-data');
       mkdirSync(join(directory, '.config', 'muse'), { recursive: true, mode: 0o700 });
       const status = recordedMuseStatus(['subscribed'], vcr);
       const host = recordedMuseConnect(['two-turns'], vcr);
@@ -1489,6 +1493,8 @@ test(
         process.env.HOME = home;
         if (key === undefined) delete process.env.META_API_KEY;
         else process.env.META_API_KEY = key;
+        if (data === undefined) delete process.env.XDG_DATA_HOME;
+        else process.env.XDG_DATA_HOME = data;
       }
     });
     expect(out).toEqual({
