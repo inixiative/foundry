@@ -213,7 +213,7 @@ One sheet naming every part of Foundry, so people and agents use the same words.
 |---|---|---|---|
 | ACP host | An editor or runner (Zed, Paseo, T3 Code) that drives Foundry over ACP v1. Every turn from it passes through Foundry's middleware. | [FOUNDRY-ACP.md](reference/FOUNDRY-ACP.md) | live |
 | access follows the host | Foundry honours whatever permission mode the user chose in the host, full access included; no Foundry-only stricter modes. Only structural rules deny. | §0 | live |
-| ACP launch file | `~/.foundry/acp-launch.json` (0600): the daemon's loopback endpoint and capability, which foundry-acp reads. foundry-acp auto-starts the daemon. | `pf/client` | live |
+| ACP launch file | `~/.foundry/acp-launch.json` (0600): the daemon's loopback endpoint and pid, which foundry-acp reads. foundry-acp auto-starts the daemon. | `pf/client` | live |
 | remote ACP clients | ACP from another machine. | §7.2 | proposed |
 
 ## Kingdom links

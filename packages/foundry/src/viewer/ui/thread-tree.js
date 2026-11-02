@@ -21,7 +21,7 @@ import {
   tomorrowMorning,
   unsnooze,
 } from './snooze.js';
-import { isDangerous, StatusIcon } from './status-icons.js';
+import { isDangerous, STATES, StatusIcon } from './status-icons.js';
 import {
   activePanel,
   activeProjectId,
@@ -204,7 +204,7 @@ export function threadTree(threads) {
 }
 
 /** A row's status: its own fields, its pending prompts, and whether a child (a subagent) is working. */
-function nodeState(node) {
+export function nodeState(node) {
   const childrenWorking = (node.children || []).some((c) => categoryOf(nodeState(c)) === 'working');
   return threadState(node, {
     prompts: prompts.value.filter((p) => p.threadId === node.id),
@@ -241,9 +241,9 @@ export function ThreadNode({ thread, depth = 0, selectedId, onSelect, inactive =
           <${ThreadActions} thread=${thread} />
         </div>
         <div class="tree-row tree-row--meta">
-          <span class="row-project" title=${thread.meta.worker ? `Runs on ${thread.meta.worker}` : null}>${projectLabel(thread.meta.projectId)}${thread.meta.worker ? ` · ${harnessName(thread.meta.worker) ?? thread.meta.worker}` : ''}</span>
           <${StatusIcon} state=${nodeState(thread)} />
-          ${statusText(thread, nodeState(thread)) ? html`<span class="row-done" title="Your next message clears it">${statusText(thread, nodeState(thread))}</span>` : null}
+          <span class=${`row-status${nodeState(thread) === 'done' && statusText(thread, 'done') ? ' row-done' : ''}`} title=${statusText(thread, nodeState(thread)) && nodeState(thread) === 'done' ? 'Your next message clears it' : null}>${statusText(thread, nodeState(thread)) ?? STATES[nodeState(thread)]?.label ?? nodeState(thread)}</span>
+          <span class="row-project" title=${thread.meta.worker ? `Runs on ${thread.meta.worker}` : null}>· ${projectLabel(thread.meta.projectId)}${thread.meta.worker ? ` · ${harnessName(thread.meta.worker) ?? thread.meta.worker}` : ''}</span>
           <${DeviceBadge} thread=${thread} />
           ${isDangerous(thread.permissionMode) ? html`<span class="row-dangerous" title="Dangerous: every permission check is skipped">Dangerous</span>` : null}
           ${
