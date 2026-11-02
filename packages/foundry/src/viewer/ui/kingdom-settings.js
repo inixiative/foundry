@@ -10,6 +10,7 @@
  * approves it there, and the row appears. A custom Kingdom URL is a dev-mode field.
  */
 
+import { ComingSoon } from './coming-soon.js';
 import { devMode, setDevMode } from './dev-mode.js';
 import { operatorOf, ownerName } from './kingdom-holder.js';
 import { html, useEffect, useState } from './lib.js';
@@ -32,33 +33,53 @@ const kingdomHome = (state) => {
   }
 };
 
-function PairedTable({ integrations, busy, pending, onReconnect, onDisconnect }) {
-  return html`<table class="settings-table kingdom-table">
-    <thead><tr>
-      <th>Organization / owner</th><th>You</th><th>Integration</th><th>Approved by</th><th>Status</th><th></th>
-    </tr></thead>
-    <tbody>
-      ${integrations.map((k) => {
-        const holder = k.holder;
-        const you = operatorOf(holder);
-        return html`<tr key=${k.id} class="kingdom-row" data-status=${k.status}>
-          <td data-label="Owner">
-            <strong>${ownerName(holder) ?? 'Owner'}</strong>
-            <div class="settings-desc">${new URL(k.url).host}${holder ? '' : html` · <code title=${k.owner}>${k.owner.split(':')[0]}</code>`}</div>
-          </td>
-          <td data-label="You">${you ? html`${you.name ?? ''}<div class="settings-desc">${you.email}</div>` : html`<span class="settings-desc">Not described</span>`}</td>
-          <td data-label="Integration">${holder?.integration.name ?? html`<code>${k.integrationId.slice(0, 8)}</code>`}</td>
-          <td data-label="Approved by">${holder?.issuedBy ? html`${holder.issuedBy.name ?? ''}<div class="settings-desc">${holder.issuedBy.email}</div>` : html`<span class="settings-desc">—</span>`}</td>
-          <td data-label="Status"><span class="mode-chip tone-${k.status === 'connected' ? 'ok' : 'warn'}">${STATUS_TEXT[k.status] ?? k.status}</span></td>
-          <td class="kingdom-actions">
-            ${holder?.manageUrl ? html`<a class="action-btn subtle" href=${holder.manageUrl} target="_blank" rel="noopener noreferrer">Manage in Kingdom</a>` : null}
+/**
+ * One card per paired Kingdom, built around the Signet this Foundry holds from it (concept-v4,
+ * Aron 11-02): Look (who it's for and what it grants), Manage (reconnect issues a new Signet;
+ * disconnect drops this machine's), Get more (a request the owner approves) and Adjust (narrow it).
+ * What Kingdom doesn't give a paired Foundry yet (each grant's resource, actions and anchor, and the
+ * request flow) says Coming soon.
+ */
+function SignetCards({ integrations, busy, pending, onReconnect, onDisconnect }) {
+  return html`<div class="signet-cards">${integrations.map((k) => {
+    const holder = k.holder;
+    const you = operatorOf(holder);
+    return html`<article key=${k.id} class="kingdom-row signet-card" data-status=${k.status} aria-label=${`${ownerName(holder) ?? 'Kingdom'} Signet`}>
+      <header class="signet-card-head">
+        <span><strong>${ownerName(holder) ?? 'Owner'}</strong>
+          <span class="settings-desc">${new URL(k.url).host}${holder ? '' : html` · <code title=${k.owner}>${k.owner.split(':')[0]}</code>`}</span></span>
+        <span class="mode-chip tone-${k.status === 'connected' ? 'ok' : 'warn'}">${STATUS_TEXT[k.status] ?? k.status}</span>
+      </header>
+      <div class="signet-card-grid">
+        <section aria-label="Look">
+          <h4>Look</h4>
+          <dl class="signet-facts">
+            <dt>Integration</dt><dd>${holder?.integration.name ?? html`<code>${k.integrationId.slice(0, 8)}</code>`}</dd>
+            <dt>You</dt><dd>${you ? html`${you.name ?? ''} <span class="settings-desc">${you.email}</span>` : html`<span class="settings-desc">Not described</span>`}</dd>
+            <dt>Approved by</dt><dd>${holder?.issuedBy ? html`${holder.issuedBy.name ?? ''} <span class="settings-desc">${holder.issuedBy.email}</span>` : html`<span class="settings-desc">—</span>`}</dd>
+          </dl>
+          <${ComingSoon} inline=${true} what="Each grant: its resource, actions and anchor." />
+        </section>
+        <section aria-label="Manage">
+          <h4>Manage</h4>
+          <p class="settings-desc">Reconnecting pairs again and issues a new Signet; disconnecting deletes this machine's.</p>
+          <span class="signet-actions">
             <button class="action-btn subtle" disabled=${busy || !!pending} onClick=${() => onReconnect(k)}>Reconnect</button>
             <button class="action-btn subtle danger" disabled=${busy} onClick=${() => onDisconnect(k)}>Disconnect</button>
-          </td>
-        </tr>`;
-      })}
-    </tbody>
-  </table>`;
+          </span>
+        </section>
+        <section aria-label="Get more">
+          <h4>Get more</h4>
+          <${ComingSoon} inline=${true} what="Ask for more under it: a request the owner approves in Kingdom." />
+        </section>
+        <section aria-label="Adjust">
+          <h4>Adjust</h4>
+          <p class="settings-desc">Narrow what it grants, or revoke it, in Kingdom.</p>
+          ${holder?.manageUrl ? html`<a class="action-btn subtle" href=${holder.manageUrl} target="_blank" rel="noopener noreferrer">Manage in Kingdom</a>` : null}
+        </section>
+      </div>
+    </article>`;
+  })}</div>`;
 }
 
 export function KingdomSettings({ standalone = false }) {
@@ -127,10 +148,10 @@ export function KingdomSettings({ standalone = false }) {
         ? html`<p>Loading paired Kingdoms…</p>`
         : html`
       <div class="settings-card" data-setting="kingdomIntegrations">
-        <div class="settings-card-header"><span class="settings-card-title">Paired Kingdoms</span></div>
+        <div class="settings-card-header"><span class="settings-card-title">Your Signets · one per paired Kingdom</span></div>
         ${
           integrations.length
-            ? html`<${PairedTable} integrations=${integrations} busy=${busy} pending=${pending}
+            ? html`<${SignetCards} integrations=${integrations} busy=${busy} pending=${pending}
                 onReconnect=${(k) => setReplacing(k)}
                 onDisconnect=${(k) => act('disconnect', { id: k.id })} />
               <p class="settings-desc">Disconnecting deletes this machine's Signet for that Kingdom only; revoke the Foundry integration in Kingdom too. Grants, expiry and revocation are managed there.</p>`

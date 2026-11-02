@@ -95,17 +95,22 @@ test('the Kingdom page pairs through the review code and shows the connection on
     const owner = organizationOwner();
     kingdom.approve(owner);
     expect(kingdom.requested()?.name ?? kingdom.installations.at(-1)?.name).toBe('Browser Foundry');
-    // The paired Kingdom is a table row named the way Kingdom describes it.
+    // The paired Kingdom is a Signet card named the way Kingdom describes it.
     const row = page.locator('.kingdom-row');
     await row.filter({ hasText: 'Connected' }).waitFor();
-    const cells = (await row.locator('td').allInnerTexts()).map((text: string) => text.trim());
-    expect(cells.slice(0, 5)).toEqual([
-      `Acme Robotics\n${new URL(kingdom.url).host}`,
-      'Ada Operator\nada@acme.test',
+    const head = await row.locator('.signet-card-head').innerText();
+    expect(head).toContain('Acme Robotics');
+    expect(head).toContain(new URL(kingdom.url).host);
+    const facts = (await row.locator('.signet-facts dd').allInnerTexts()).map((t: string) =>
+      t.trim(),
+    );
+    expect(facts).toEqual([
       'Browser Foundry',
-      'Grace Admin\ngrace@acme.test',
-      'Connected',
+      'Ada Operator ada@acme.test',
+      'Grace Admin grace@acme.test',
     ]);
+    for (const part of ['Look', 'Manage', 'Get more', 'Adjust'])
+      await row.getByRole('region', { name: part }).waitFor();
     expect(await row.getByRole('link', { name: 'Manage in Kingdom' }).getAttribute('href')).toBe(
       'https://kingdom.acme.test/integrations/browser-foundry',
     );
