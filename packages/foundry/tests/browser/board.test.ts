@@ -145,6 +145,16 @@ test('the board: a pending approval is answered from its card, filters narrow it
       'Allow git push origin fix/checkout?',
     );
     await working.locator('.board-card', { hasText: 'Rewrite the setup guide' }).waitFor();
+    // Details opens a drawer with the card's actions; ✕ (or Esc) closes it.
+    await working
+      .locator('.board-card', { hasText: 'Rewrite the setup guide' })
+      .locator('.board-card-details')
+      .click();
+    const details = page.locator('.board-details');
+    await details.getByRole('button', { name: 'Open' }).waitFor();
+    await details.getByRole('button', { name: 'Archive' }).waitFor();
+    await details.getByRole('button', { name: 'Close details' }).click();
+    await details.waitFor({ state: 'detached' });
     expect(await page.locator('.board-button .rail-attn-needs').innerText()).toBe('1');
 
     // Category chips (Project ▾ · Kingdom ▾ · Device ▾): a project narrows every column and its count.
