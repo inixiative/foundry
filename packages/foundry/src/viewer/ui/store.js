@@ -1496,6 +1496,43 @@ export async function forkThread(messageIndex) {
 }
 
 /** Set a person's name on a thread (a hard override); an empty name hands naming back to the agent. */
+/**
+ * Post an aside to the people in a thread (never an agent). `postId` is stable per message, so a
+ * retry records it once. Returns { ok } or { error } (409: the thread isn't open for asides).
+ */
+export async function postAside(threadId, text, postId) {
+  try {
+    const res = await authFetch(
+      `/api/threads/${encodeURIComponent(threadId)}/conversation/asides`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text, postId }),
+      },
+    );
+    const body = await res.json().catch(() => ({}));
+    return res.ok
+      ? { ok: true, duplicate: !!body.duplicate }
+      : { error: body.error ?? `${res.status}` };
+  } catch (err) {
+    return { error: err.message };
+  }
+}
+
+/** Promote an aside into the thread. Returns { ok } or { error } (409: already promoted, or the floor refuses). */
+export async function promoteAside(threadId, asideId) {
+  try {
+    const res = await authFetch(
+      `/api/threads/${encodeURIComponent(threadId)}/conversation/asides/${encodeURIComponent(asideId)}/promote`,
+      { method: 'POST' },
+    );
+    const body = await res.json().catch(() => ({}));
+    return res.ok ? { ok: true } : { error: body.error ?? `${res.status}` };
+  } catch (err) {
+    return { error: err.message };
+  }
+}
+
 /** Recreate a thread's released worktree from its branch (the project's worktree mode). */
 export async function recreateWorktree(threadId) {
   try {
