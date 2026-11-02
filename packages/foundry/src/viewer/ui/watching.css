@@ -1,4 +1,4 @@
-/* Watchtower v3: the Watching sidebar beside the map, both scrolling inside the page's frame. */
+/* Watchtower: the map scrolls inside the page's frame; Watching opens from the header as a popover. */
 .watchtower {
   display: flex;
   flex-direction: column;
@@ -6,8 +6,8 @@
 }
 .wt-wrap {
   display: grid;
-  grid-template-columns: 270px minmax(0, 1fr);
-  gap: 16px;
+  grid-template-columns: minmax(0, 1fr);
+  margin-top: 12px;
   flex: 1;
   min-height: 0;
 }
@@ -17,7 +17,7 @@
   overflow: auto;
 }
 .watching {
-  border: 1px solid var(--line);
+  border: 0;
   border-radius: 12px;
   padding: 12px;
   overflow: auto;

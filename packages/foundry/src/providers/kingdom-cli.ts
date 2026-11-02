@@ -142,7 +142,7 @@ export const defaultKingdomUrl = () => process.env.KINGDOM_URL ?? HOSTED_KINGDOM
 
 const usage = [
   'Usage: bun run kingdom <pair|status|disconnect> [--url KINGDOM_API_ORIGIN] [--name NAME] [--organization SLUG|ID] [--replace] [--kingdom ID|URL] [--no-open] [--config-dir DIR]',
-  '       bun run kingdom login <claude|codex> [--owner PAIRED_ID|OWNER_KEY|ORG_OR_USER_ID] [--kingdom ID|URL] [--name NAME]',
+  '       bun run kingdom login <claude|codex|muse> [--owner PAIRED_ID|OWNER_KEY|ORG_OR_USER_ID] [--kingdom ID|URL] [--name NAME]',
   '       bun run kingdom capacity <FOUNDRY_PROJECT_ID> <local|kingdom> [--kingdom ID|URL] [--signet SIGNET_ID]',
   '       bun run kingdom project <FOUNDRY_PROJECT_ID> <KINGDOM_PROJECT_ID|none> --kingdom ID|URL',
 ].join('\n');
@@ -179,7 +179,7 @@ async function main() {
   const output = (value: unknown) => console.log(JSON.stringify(value, null, 2));
   if (command === 'login') {
     const runtime = positionals[1];
-    if (runtime !== 'claude' && runtime !== 'codex') {
+    if (runtime !== 'claude' && runtime !== 'codex' && runtime !== 'muse') {
       console.log(usage);
       process.exitCode = 1;
       return;

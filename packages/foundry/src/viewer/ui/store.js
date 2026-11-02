@@ -84,7 +84,15 @@ export const detailDrawerOpen = signal(true); // right panel collapsed state
 /** What the detail drawer inspects besides a trace: `{ kind: 'layer', id }` or null. */
 export const inspectTarget = signal(null);
 /** The right panel's tab: context | participants | permissions | heralds | feedback. (Pointers live in Loop.) */
-export const RIGHT_TABS = ['work', 'context', 'participants', 'permissions', 'heralds', 'feedback'];
+export const RIGHT_TABS = [
+  'work',
+  'context',
+  'participants',
+  'permissions',
+  'heralds',
+  'pointers',
+  'feedback',
+];
 /** Each right tab's number key (Aron 11-02): 1–3 are the centre's Thread, Plan and Loop; plain, ⌘ or ⌥. */
 export const RIGHT_TAB_KEYS = {
   work: '4',
@@ -92,12 +100,13 @@ export const RIGHT_TAB_KEYS = {
   participants: '6',
   permissions: '7',
   heralds: '8',
+  pointers: '9',
   feedback: '0',
 };
 /** The right panel widened (for Work's diffs and file lists). */
 /** The side panels' size levels (panel-sizes.js steps and renders them). */
 export const leftSize = signal('normal'); // hidden · strip · normal · wide
-export const rightSize = signal('normal'); // hidden · icons · normal · wide · wider
+export const rightSize = signal('normal'); // hidden · icons · normal · wide
 export const rightTab = signal('context');
 /** The left rail: 'open' (every open thread, Yours over Shared) or 'projects' (the projects, then a scope's threads). */
 export const railView = signal('open');
@@ -186,7 +195,7 @@ let sizeBeforeTurnView = null;
 
 export function openTurnView(threadId, turnId) {
   if (!turnViewTarget.peek()) sizeBeforeTurnView = rightSize.peek();
-  rightSize.value = 'wider';
+  rightSize.value = 'wide';
   turnViewTarget.value = { threadId, turnId };
 }
 
@@ -2336,7 +2345,7 @@ function restoreFromHash() {
   if (h.sidebar === '0') projectSidebarOpen.value = false;
   if (h.detail === '0') detailDrawerOpen.value = false;
   if (['hidden', 'wide'].includes(h.lsize)) leftSize.value = h.lsize;
-  if (['hidden', 'wide', 'wider'].includes(h.rsize)) rightSize.value = h.rsize;
+  if (['hidden', 'wide'].includes(h.rsize)) rightSize.value = h.rsize;
   if (RIGHT_TABS.includes(h.rtab)) rightTab.value = h.rtab;
   boardOpen.value = h.view === 'board';
   watchtowerOpen.value = h.view === 'watch';

@@ -207,18 +207,6 @@
 .tv-add {
   color: hsl(var(--app-primary));
 }
-.chat-fulltrace-btn {
-  border: 0;
-  background: none;
-  padding: 0 4px;
-  font-size: 11px;
-  color: hsl(var(--muted-foreground));
-  cursor: pointer;
-  text-decoration: underline dotted;
-}
-.chat-fulltrace-btn:hover {
-  color: hsl(var(--app-primary));
-}
 .tv-dim {
   color: hsl(var(--muted-foreground));
   font-size: 12px;
