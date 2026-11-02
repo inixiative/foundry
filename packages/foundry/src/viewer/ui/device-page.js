@@ -144,8 +144,8 @@ export function DevicePage({ deviceId }) {
         <span class="dp-eyebrow">${here ? 'This machine' : 'Your other device'}</span>
         <h2>${name}</h2>
         <span class="dp-pills">
-          <${Pill} on=${online} title=${online == null ? "Whether it's online comes from Kingdom (VIEWER-007)" : null}>${online == null ? 'Status unknown' : online ? (here ? 'Online · this Foundry' : 'Online') : 'Offline'}</${Pill}>
-          <${Pill} on=${tunnelOn} title=${tunnelOn == null ? 'Its tunnel comes from Kingdom (VIEWER-007)' : null}>${tunnelOn == null ? 'Tunnel unknown' : tunnelOn ? 'Tunnel on' : 'Tunnel off'}</${Pill}>
+          <${Pill} on=${online} title=${online == null ? "Whether it's online: coming soon" : null}>${online == null ? 'Status unknown' : online ? (here ? 'Online · this Foundry' : 'Online') : 'Offline'}</${Pill}>
+          <${Pill} on=${tunnelOn} title=${tunnelOn == null ? 'Whether its tunnel is on: coming soon' : null}>${tunnelOn == null ? 'Tunnel unknown' : tunnelOn ? 'Tunnel on' : 'Tunnel off'}</${Pill}>
           <${Pill}>${open.length} open${here ? ` · ${inWorktrees} in worktrees` : ''}</${Pill}>
         </span>
       </span>
@@ -188,7 +188,7 @@ export function DevicePage({ deviceId }) {
                       html`<div key=${c.id} class="dp-checkout"><span class="mono" title=${c.path}>${c.label}</span><span class="ph-meta">${openIn(c.projectId) ? `${openIn(c.projectId)} open` : '—'}</span></div>`,
                   )
                 : html`<div class="ph-meta">No registered project is checked out here.</div>`
-            : html`<div class="ph-meta">Kingdom doesn't list another machine's checkouts.</div>`
+            : html`<${ComingSoon} inline=${true} what="Its checkouts, and which thread holds each." ticket="VIEWER-007" />`
         }
       </section>
       ${

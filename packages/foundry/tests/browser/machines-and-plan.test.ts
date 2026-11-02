@@ -181,6 +181,14 @@ test('threads on another machine are badged and filterable; a recorded plan fill
       0,
     );
     await devicePage.locator('.coming-soon-note', { hasText: 'Signet' }).waitFor();
+    // The badge itself links to the plan; no separate ticket link or id (Aron 11-02).
+    const soon = devicePage
+      .locator('.coming-soon-note', { hasText: 'Signet' })
+      .locator('a.coming-soon');
+    expect(await soon.innerText()).toBe('Coming soon');
+    expect(await soon.getAttribute('href')).toContain('tickets/VIEWER-007');
+    expect(await page.locator('.coming-soon-link').count()).toBe(0);
+    expect(await page.getByText('VIEWER-007').count()).toBe(0);
     await devicePage.locator('.dp-pill', { hasText: 'Status unknown' }).waitFor();
     await devicePage.getByRole('button', { name: 'Show in the Watchtower →' }).click();
     const chip = tower.locator('.filter-chip-active', { hasText: 'Machine: studio Mac' });

@@ -206,11 +206,11 @@ function OtherMachines() {
       ) => html`<button key=${m.id} type="button" class="nav-footer-row nav-footer-other" onClick=${() => openDevicePage(m.id)}
         title=${`Open ${m.name}'s page. It uses the same subscriptions as this machine.`}>
         <span class="nav-footer-name">${m.name}</span>
-        <span class=${`nav-footer-dot ${m.online ? 'is-ok' : ''}`} title=${m.online == null ? "Whether it's online comes from Kingdom (VIEWER-007)" : m.online ? 'Online' : 'Offline'}></span>
+        <span class=${`nav-footer-dot ${m.online ? 'is-ok' : ''}`} title=${m.online == null ? "Whether it's online: coming soon" : m.online ? 'Online' : 'Offline'}></span>
         <span class="nav-footer-count">${openThreadsLabel(m.open)}</span>
       </button>`,
     )}
-    <${ComingSoon} inline=${true} what=${machines.length ? 'Status from Kingdom' : 'From Kingdom'} ticket="VIEWER-007" />
+    <${ComingSoon} inline=${true} what=${machines.length ? 'Whether each is online' : 'Your other machines'} ticket="VIEWER-007" />
   </div>`;
 }
 

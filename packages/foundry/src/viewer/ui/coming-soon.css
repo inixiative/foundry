@@ -22,7 +22,14 @@
 .coming-soon-what {
   flex: 1 1 12em;
 }
-.coming-soon-link {
-  color: var(--accent);
-  white-space: nowrap;
+/* With a ticket the badge is the link to its plan. */
+a.coming-soon.is-link {
+  text-decoration: none;
+  cursor: pointer;
+}
+a.coming-soon.is-link:hover {
+  text-decoration: underline;
+}
+a.wt-count.is-soon {
+  text-decoration: none;
 }

@@ -15,6 +15,7 @@
 import { AboutSection } from './about-settings.js';
 import { AccessSettings } from './access-settings.js';
 import { ArchiveSettings, ProjectArchive } from './archive-settings.js';
+import { ComingSoon } from './coming-soon.js';
 import { ProjectConversations } from './conversation-members.js';
 import { devMode, setDevMode } from './dev-mode.js';
 import { DevicesSection } from './devices.js';
@@ -592,14 +593,6 @@ const saved = (next) => {
   settingsConfig.value = next;
 };
 
-/** A section that exists but is not built yet: it says so, and shows no controls. */
-function ComingSoon({ children }) {
-  return html`<section class="settings-card coming-soon-card">
-    <span class="coming-soon">Coming soon</span>
-    <p class="settings-desc">${children}</p>
-  </section>`;
-}
-
 /** What this project sets on top of Foundry's settings, read-only (edit `projects[id]` in settings.json). */
 const OVERRIDE_GROUPS = [
   ['defaults', 'Defaults', 'Executor and classifier provider and model'],
@@ -703,7 +696,8 @@ function ProjectSection({ section, projectId, project, onFocusChange }) {
   if (section === 'archive')
     return html`<${ProjectArchive} key=${projectId} projectId=${projectId} />`;
   if (section === 'gloss')
-    return html`<${ComingSoon}>Gloss: margin commentary kept beside the code instead of in it, for this project's agents to read. It arrives with Foundry's code viewer (ticket VIEWER-004).</${ComingSoon}>`;
+    return html`<${ComingSoon} card=${true} ticket="VIEWER-004"
+      what="Gloss: margin commentary kept beside the code instead of in it, for this project's agents to read. It arrives with Foundry's code viewer." />`;
   if (section === 'chorus')
     return html`<${ProjectChorus} key=${projectId} projectId=${projectId} />`;
   if (section === 'work')
