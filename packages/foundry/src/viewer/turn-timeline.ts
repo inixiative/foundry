@@ -331,8 +331,9 @@ export function turnTimeline(detail: TurnDetail, sources: TurnTimelineSources = 
       ),
     };
   };
+  // A retry (FEAT-008) asked on the message again later: its chimes ride with the next turn, not this one.
   const onMessage = adviceRows.filter(
-    (p) => (str(p.record.trigger) ?? 'user-message') === 'user-message',
+    (p) => (str(p.record.trigger) ?? 'user-message') === 'user-message' && !p.record.retryOf,
   );
   for (const row of onMessage) steps.push(chorus(row));
 

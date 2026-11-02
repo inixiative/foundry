@@ -18,6 +18,12 @@ import {
   type Thread,
   type ThreadMeta,
 } from '@inixiative/foundry-core';
+import {
+  CHORUS_PHASES,
+  type ChorusRow,
+  type TurnChorus,
+  turnChorus,
+} from '../agents/chorus-degraded';
 import type { ReviewJob } from '../agents/domain-librarian';
 import type { PhaseRecordInput, ThreadKnowledgeBundle } from '../agents/thread-runtime';
 import {
@@ -82,6 +88,8 @@ export interface MessageSummary {
   error?: string;
   /** Primitive-valued metadata only (turnStatus, persistence, outcomes, injectedLayers, images); never objects. */
   meta?: Record<string, unknown>;
+  /** An agent row: its turn's degraded Wardens, when the chorus was degraded on it (FEAT-008). */
+  chorus?: TurnChorus;
   status: {
     turn: StoredTurn['status'] | 'unknown';
     persistence: 'committed';
@@ -1997,7 +2005,8 @@ export class LocalSessionStore {
     const turnStatus = new Map<string, StoredTurn['status']>(),
       nativeCounts = new Map<string, number>(),
       toolCounts = new Map<string, number>(),
-      traced = new Set<string>();
+      traced = new Set<string>(),
+      chorus = new Map<string, TurnChorus>();
     const traceSummaries = new Map<string, PersistedTraceRecord['summary']>();
     if (turnIds.length) {
       for (const row of this.query(
@@ -2012,6 +2021,48 @@ export class LocalSessionStore {
         `SELECT turn_id AS turnId, COUNT(*) AS n FROM session_native_tools WHERE thread_id=? AND turn_id IN (${marks}) GROUP BY turn_id`,
       ).all(threadId, ...turnIds) as Array<{ turnId: string; n: number }>)
         toolCounts.set(row.turnId, row.n);
+      // A turn's chorus rows, read from the fields each row records for this (`degraded`, `retryOf`, `of`).
+      const chorusRows = new Map<string, ChorusRow[]>();
+      for (const row of this.query(
+        `SELECT id, turn_id AS turnId, phase, json_extract(record, '$.trigger') AS trigger,
+            json_extract(record, '$.degraded') AS degraded, json_extract(record, '$.retryOf') AS retryOf,
+            json_extract(record, '$.of') AS ofRows
+          FROM session_phase WHERE thread_id=? AND turn_id IN (${marks})
+            AND phase IN (${CHORUS_PHASES.map(() => '?').join(',')}) ORDER BY seq`,
+      ).all(threadId, ...turnIds, ...CHORUS_PHASES) as Array<{
+        id: string;
+        turnId: string;
+        phase: string;
+        trigger: unknown;
+        degraded: string | null;
+        retryOf: unknown;
+        ofRows: string | null;
+      }>) {
+        const parse = (text: string | null) => {
+          try {
+            const value = text ? JSON.parse(text) : undefined;
+            return Array.isArray(value) ? value : undefined;
+          } catch {
+            return undefined;
+          }
+        };
+        const degraded = parse(row.degraded);
+        const of = parse(row.ofRows);
+        const list = chorusRows.get(row.turnId) ?? [];
+        list.push({
+          id: row.id,
+          phase: row.phase,
+          ...(typeof row.trigger === 'string' ? { trigger: row.trigger } : {}),
+          ...(degraded ? { degraded } : {}),
+          ...(typeof row.retryOf === 'string' ? { retryOf: row.retryOf } : {}),
+          ...(of ? { of } : {}),
+        });
+        chorusRows.set(row.turnId, list);
+      }
+      for (const [turnId, rows] of chorusRows) {
+        const health = turnChorus(rows);
+        if (health) chorus.set(turnId, health);
+      }
       for (const value of this.volatileTools.values()) {
         const owner = value.record.association.owner?.messageId;
         if (value.record.owner.threadId === threadId && owner && turnIds.includes(owner))
@@ -2100,6 +2151,8 @@ export class LocalSessionStore {
       if (traceSummary) summary.trace = traceSummary;
       if (row.error !== null) summary.error = row.error;
       if (Object.keys(meta).length) summary.meta = meta;
+      const health = agent ? chorus.get(row.turnId) : undefined;
+      if (health) summary.chorus = health;
       return summary;
     });
     return {
@@ -2542,7 +2595,7 @@ const PHASE_RECORD_LIMIT = 200_000;
 const LEARNING_RECORD_LIMIT = 100_000;
 const TRACE_RECORD_LIMIT = 200_000;
 /** Root keys the store reads in SQL (`$.content.domain`, `$.summary`); spilling moves only what is below them. */
-const SQL_READ_KEYS = ['content', 'summary', 'meta'];
+const SQL_READ_KEYS = ['content', 'summary', 'meta', 'degraded', 'of'];
 const CONTENT_CACHE_CHARS = 16_000_000;
 /**
  * Phase rows that take a place in a thread's one journal order beside its messages: what a

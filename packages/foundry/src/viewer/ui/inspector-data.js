@@ -582,7 +582,12 @@ export function expertParticipants(injection, phases) {
   if ((!decoration || typeof decoration !== 'object') && Array.isArray(phases)) {
     // No delivered artifact (failed or interrupted turn): the sealed advice row journalled before the central call.
     const sealed = phases
-      .filter((row) => row?.phase === 'advice' && Array.isArray(row.record?.participants))
+      .filter(
+        (row) =>
+          row?.phase === 'advice' &&
+          !row.record?.retryOf &&
+          Array.isArray(row.record?.participants),
+      )
       .at(-1);
     if (sealed)
       decoration = {

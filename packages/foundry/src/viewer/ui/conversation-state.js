@@ -267,6 +267,8 @@ export function mergeMessageHistory(local, server) {
             meta: { ...saved.meta, ...message.meta },
             traceId: message.traceId ?? saved.traceId,
             trace: message.trace ?? saved.trace,
+            // The turn's chorus health is the journal's alone: a retry or dismissal changes it later.
+            chorus: saved.chorus,
             ...(differs ? { journalRecord: saved } : {}),
             streaming: false,
             connectionStatus: undefined,
@@ -303,6 +305,7 @@ export function mergeMessageHistory(local, server) {
           ...(message.terminalSource === 'watch' ? { terminalSource: 'journal' } : {}),
           traceId: saved.traceId,
           trace: saved.trace,
+          chorus: saved.chorus,
           meta: browserFailureEvidence ? { ...saved.meta, browserFailureEvidence } : saved.meta,
           error: saved.error ?? false,
           connectionStatus: undefined,

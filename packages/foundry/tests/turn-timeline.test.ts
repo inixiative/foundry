@@ -134,3 +134,48 @@ test('tool calls pair each use with its result, in observed order', () => {
     of(turnTimeline(detail, { archive: { error: 'Archive unreachable' } }), 'archive')[0],
   ).toMatchObject({ state: 'failed', error: 'Archive unreachable' });
 });
+
+test('a retry of the message chorus (FEAT-008) is its own step in the work, not the pre-plan chorus', () => {
+  const row = (id: string, record: Record<string, unknown>, storedAt: number) => ({
+    id,
+    threadId: 'a',
+    turnId: 't',
+    dispatchId: null,
+    phase: 'advice',
+    record,
+    storedAt,
+  });
+  const detail: TurnDetail = {
+    threadId: 'a',
+    turnId: 't',
+    turn: { id: 't', threadId: 'a', status: 'completed', startedAt: 1, endedAt: 9 },
+    messages: [],
+    trace: null,
+    injection: null,
+    nativeHistory: [],
+    nativeTools: [],
+    phases: [
+      row(
+        'p1',
+        { trigger: 'user-message', participants: [{ domain: 'db', decision: 'timeout' }] },
+        2,
+      ),
+      row(
+        'p2',
+        {
+          trigger: 'user-message',
+          retryOf: 'p1',
+          participants: [{ domain: 'db', decision: 'contribute', snippets: ['x'] }],
+        },
+        20,
+      ),
+    ],
+  };
+  const steps = turnTimeline(detail).steps;
+  const chorus = steps.filter((s) => s.kind === 'chorus');
+  expect(
+    chorus.map((s) => (s as { regions: { decision: string }[] }).regions[0]!.decision),
+  ).toEqual(['timeout', 'contribute']);
+  // The sealed chorus comes before the plan's place; the retry sits with the work, by its time.
+  expect(steps.findIndex((s) => s === chorus[1])).toBe(steps.length - 2);
+});

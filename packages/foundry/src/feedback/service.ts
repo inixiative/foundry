@@ -462,7 +462,7 @@ export class FeedbackService {
       .filter(
         (p) =>
           p.turnId !== turnId &&
-          (p.phase === 'advice' ||
+          ((p.phase === 'advice' && !(p.record as { retryOf?: string }).retryOf) ||
             (p.phase === REDUCED_PHASE &&
               (p.record as { trigger?: string }).trigger === 'user-message')),
       );

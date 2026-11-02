@@ -52,6 +52,14 @@ import type { FoundryConfig } from '../viewer/config';
 import { resolveThreadView } from '../viewer/config-resolve';
 import { Cartographer, DEFAULT_ROUTE_INSTRUCTIONS } from './cartographer';
 import {
+  allDegraded,
+  type ChorusRetry,
+  type DegradedContext,
+  degradedField,
+  degradedGuards,
+  degradedWardens,
+} from './chorus-degraded';
+import {
   CHORUS_RECEPTION,
   CHORUS_RECEPTION_LAYER,
   CHORUS_RECEPTION_VERSION,
@@ -84,8 +92,11 @@ import {
   type FlowTimingConfig,
   type HandoffMoment,
   type HydrationResult,
+  handoffText,
   type InjectionPlan,
+  retryNotes,
   type WorkItemMoment,
+  workItemText,
 } from './flow-orchestrator';
 import { Librarian } from './librarian';
 import { lowConfidenceRule, ReactiveMiddleware } from './reactive';
@@ -99,7 +110,7 @@ import {
   replaceRoleSources,
   roleSources,
 } from './role-layers';
-import type { GuardMode, TriggerPoint } from './warden-triggers';
+import type { AdviceTrigger, GuardMode, TriggerPoint } from './warden-triggers';
 import { type ConsumedMatcher, consumedMatcher, workItemOf } from './work-items';
 
 // ---------------------------------------------------------------------------
@@ -189,7 +200,8 @@ type GuardCorrelation =
   | 'dispatch-not-live'
   | 'no-dispatch-id'
   | 'subagent-turn'
-  | 'subagent-call';
+  | 'subagent-call'
+  | 'retry';
 
 /** Who a guard moment belongs to: the identity its journal rows carry. */
 interface GuardMomentOwner {
@@ -202,6 +214,9 @@ interface GuardMomentOwner {
   readonly live?: LiveDispatch;
   /** An observed subagent's node: its rows go there, under its own turn. */
   readonly node?: { id: string; meta: ThreadMeta };
+  /** A retry (FEAT-008): ask only these Wardens, and name the row being retried. */
+  readonly only?: ReadonlySet<string>;
+  readonly retryOf?: string;
 }
 
 interface LiveDispatch {
@@ -482,6 +497,12 @@ export interface ThreadRuntime {
    * triggers. Returns what only a new thread picks up (added, removed or remapped Wardens).
    */
   reconfigure(config: FoundryConfig, domains: ReturnType<typeof resolveThreadDomains>): string[];
+  /**
+   * Ask the Wardens that were degraded on a journalled chorus row again (FEAT-008), on the same
+   * moment: an advice row's chimes ride with the next turn, a guard row's findings take the guard's
+   * path. Journalled as a row with `retryOf`. Null when that row is already being retried.
+   */
+  retryChorus(retry: ChorusRetry): Promise<void> | null;
   dispose(): void;
 }
 
@@ -543,6 +564,7 @@ export interface PhaseRecordInput {
     | 'middleware-reduced'
     | 'handoff'
     | 'handoff-return'
+    | 'chorus-dismiss'
     | FeedbackPhase
     | ConversationPhase;
   readonly record: Record<string, unknown>;
@@ -1467,6 +1489,14 @@ class ThreadRuntimeImpl implements ThreadRuntime {
               ...(warmShortfalls.length || prepared.warmShortfalls.length
                 ? { warm: { wardens: warmShortfalls, layers: prepared.warmShortfalls } }
                 : {}),
+              // The message the Wardens were asked on, so a degraded one can be asked again (FEAT-008).
+              moment: plan.input.message,
+              ...degradedField(
+                degradedWardens(
+                  plan.contributions,
+                  this._degradedContext(warmShortfalls.map((s) => s.id)),
+                ),
+              ),
             });
             ctx.annotations.phaseJournal = { route: routeJournal, advice: adviceJournal };
             const decided = plan.contributions.map((c) => `${c.domain}:${c.decision}`).join(', ');
@@ -1768,6 +1798,7 @@ class ThreadRuntimeImpl implements ThreadRuntime {
           wraps: item.itemId,
           label: `member ${item.name}`,
           ask: (flow) => flow.consume(item),
+          text: workItemText(item),
           record: { memberPost: { postId: content.postId, chars: post.text.length } },
           notes: (report) => consumedNotes(item, report),
         });
@@ -1985,6 +2016,7 @@ class ThreadRuntimeImpl implements ThreadRuntime {
     };
     try {
       const report = await flow.postAction(activity, {
+        ...(owner.only ? { only: owner.only } : {}),
         onRequest: (domain, request, threadKnowledgeRevision) => {
           const id = newId('phase');
           try {
@@ -2045,6 +2077,8 @@ class ThreadRuntimeImpl implements ThreadRuntime {
         elapsed: report.elapsed,
         requests: requestsJournal(),
         requestJournal: requestJournalStates(),
+        ...degradedField(degradedGuards(report.outcomes, report.failed, this._degradedContext())),
+        ...(owner.retryOf ? { retryOf: owner.retryOf } : {}),
         outcomes: report.outcomes.map(({ request, ...rest }) => ({
           ...rest,
           requestRecord:
@@ -2088,6 +2122,17 @@ class ThreadRuntimeImpl implements ThreadRuntime {
         status: 'failed',
         finishedAt: Date.now(),
         error,
+        ...(owner.retryOf ? { retryOf: owner.retryOf } : {}),
+        // The whole guard failed: every Warden that would have been asked went unheard.
+        ...degradedField(
+          allDegraded(
+            [...this.domainLibrarians.values()]
+              .filter((d) => (!owner.only || owner.only.has(d.domain)) && d.guards(activity))
+              .map((d) => d.domain),
+            error,
+            this._degradedContext(),
+          ),
+        ),
         requests: requestsJournal(),
         requestJournal: requestJournalStates(),
         outcomes: [],
@@ -2128,6 +2173,7 @@ class ThreadRuntimeImpl implements ThreadRuntime {
       wraps: handoff.handoffId,
       label: `handoff brief ${handoff.handoffId}`,
       ask: (flow) => flow.brief(moment),
+      text: handoffText(moment),
       record: {
         handoff: {
           childThreadId: handoff.childThreadId,
@@ -2139,6 +2185,46 @@ class ThreadRuntimeImpl implements ThreadRuntime {
       },
       notes: (report) => briefNotes(moment, report),
     });
+  }
+
+  /** What a degraded record needs from the live chorus: each Warden's layer count, who was not warm. */
+  private _degradedContext(notWarm: readonly string[] = []): DegradedContext {
+    return {
+      stageCount: (domain) => this.domainLibrarians.get(domain)?.stageCount,
+      notWarm: new Set(notWarm),
+    };
+  }
+
+  /** Rows being retried now: a second Retry on the same row waits for the first (FEAT-008). */
+  private _retrying = new Set<string>();
+
+  retryChorus(retry: ChorusRetry): Promise<void> | null {
+    if (this._disposed || this._retrying.has(retry.of)) return null;
+    this._retrying.add(retry.of);
+    const run =
+      retry.kind === 'advice'
+        ? this._askBetweenTurns({
+            trigger: retry.trigger,
+            turnId: retry.turnId,
+            wraps: `retry:${retry.of}`,
+            label: `retry of ${retry.of}`,
+            ask: (flow) => flow.retry(retry.trigger, retry.moment, retry.domains),
+            text: retry.moment,
+            domains: retry.domains,
+            record: { retryOf: retry.of },
+            notes: (report) => retryNotes(retry.of, retry.trigger, report),
+          })
+        : this._guardActivity(
+            { turnId: retry.turnId, observations: [...retry.observations] },
+            {
+              momentId: newId('retry'),
+              dispatchId: null,
+              correlation: 'retry',
+              only: new Set(retry.domains),
+              retryOf: retry.of,
+            },
+          );
+    return run.finally(() => this._retrying.delete(retry.of));
   }
 
   /** The consumed trigger: the chorus is asked about a work item the main thread took in. */
@@ -2153,6 +2239,7 @@ class ThreadRuntimeImpl implements ThreadRuntime {
       wraps: item.itemId,
       label: `work item ${item.name}`,
       ask: (flow) => flow.consume(item),
+      text: workItemText(item),
       record: {
         workItem: {
           itemId: item.itemId,
@@ -2174,12 +2261,16 @@ class ThreadRuntimeImpl implements ThreadRuntime {
    * turn.
    */
   private async _askBetweenTurns(moment: {
-    trigger: Extract<TriggerPoint, 'subagent-spawn' | 'consumed'>;
+    trigger: AdviceTrigger;
     node?: { id: string; meta: ThreadMeta };
     turnId: string | null;
     wraps: string;
     label: string;
     ask: (flow: FlowOrchestrator) => Promise<BriefReport>;
+    /** The moment's text, as the Wardens are given it. */
+    text: string;
+    /** The Wardens asked (a retry asks only the degraded ones); every one by default. */
+    domains?: readonly string[];
     record: Record<string, unknown>;
     notes: (report: BriefReport) => PromptBlock[];
   }): Promise<void> {
@@ -2188,9 +2279,10 @@ class ThreadRuntimeImpl implements ThreadRuntime {
     const node = moment.node && moment.node.id !== this.thread.id ? moment.node : undefined;
     // As before a turn: a Warden whose cache is still warming (a thread just started) is waited for
     // within the deadline, not skipped as cold.
-    for (const shortfall of await flow.warmWithin(
+    const shortfalls = await flow.warmWithin(
       [...this.domainLibrarians].map(([id, lib]) => ({ id, warm: () => lib.warm() })),
-    ))
+    );
+    for (const shortfall of shortfalls)
       this._warn(
         `  [flow:${this.thread.id}] ${shortfall.id} Warden cache not warm (${shortfall.outcome}): ${shortfall.reason}`,
       );
@@ -2198,9 +2290,39 @@ class ThreadRuntimeImpl implements ThreadRuntime {
     try {
       report = await moment.ask(flow);
     } catch (error) {
-      this._warn(
-        `  [flow:${this.thread.id}] ${moment.label} failed: ${(error as Error)?.message ?? error}`,
-      );
+      const message = String((error as Error)?.message ?? error);
+      this._warn(`  [flow:${this.thread.id}] ${moment.label} failed: ${message}`);
+      // No Warden was heard: the row says so, so the thread shows it and Retry can ask again.
+      try {
+        this._journalPhase({
+          ...(node ? { node } : {}),
+          id: newId('phase'),
+          turnId: moment.turnId,
+          dispatchId: null,
+          phase: 'advice',
+          record: {
+            trigger: moment.trigger,
+            charter: WARDEN_CHARTER_VERSION,
+            wraps: moment.wraps,
+            ...moment.record,
+            moment: moment.text,
+            status: 'failed',
+            error: message.slice(0, 300),
+            participants: [],
+            ...degradedField(
+              allDegraded(
+                moment.domains ?? [...this.domainLibrarians.keys()],
+                message,
+                this._degradedContext(),
+              ),
+            ),
+          },
+        });
+      } catch (journal) {
+        this._warn(
+          `  [flow:${this.thread.id}] ${moment.label} journal failed: ${(journal as Error)?.message ?? journal}`,
+        );
+      }
       return;
     }
     if (this._disposed) return;
@@ -2216,6 +2338,8 @@ class ThreadRuntimeImpl implements ThreadRuntime {
           charter: WARDEN_CHARTER_VERSION,
           wraps: moment.wraps,
           ...moment.record,
+          // The moment as the Wardens were given it, so a degraded one can be asked again (FEAT-008).
+          moment: report.input.message,
           inputHash: report.input.hash,
           sealedAt: report.sealedAt,
           participants: report.contributions
@@ -2245,6 +2369,12 @@ class ThreadRuntimeImpl implements ThreadRuntime {
             ).map(([reason, list]) => [reason, (list ?? []).map((c) => c.domain)]),
           ),
           elapsed: report.elapsed,
+          ...degradedField(
+            degradedWardens(
+              report.contributions,
+              this._degradedContext(shortfalls.map((s) => s.id)),
+            ),
+          ),
         },
       });
     } catch (error) {

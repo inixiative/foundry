@@ -19,6 +19,26 @@ export interface ContextSummary {
   readonly text: string;
   readonly routing: Record_ | null;
   readonly participants: Array<{ domain: string; decision: string; reason?: string }>;
+  /** Wardens the system kept quiet (timed out, failed, not admitted), as the row records them (FEAT-008). */
+  readonly degraded: Record_[];
+}
+
+/** A row's `degraded` list, as recorded. */
+export function degradedOf(record: unknown): Record_[] {
+  return isRecord(record) && Array.isArray(record.degraded) ? record.degraded.filter(isRecord) : [];
+}
+
+/** "Chorus degraded …" in words: which Wardens went unheard, at which layer, and why. */
+export function degradedLine(degraded: readonly Record_[]): string | null {
+  if (!degraded.length) return null;
+  const what = degraded.map((d) => {
+    const layer = typeof d.layer === 'number' ? `Layer ${d.layer} ` : '';
+    const kind =
+      d.kind === 'timeout' ? 'timed out' : d.kind === 'not-started' ? 'not started' : 'failed';
+    const spoke = d.silent === false ? '; spoke from Layer 1 only, unconfirmed' : '';
+    return `${String(d.domain)} (${layer}${kind}${spoke})`;
+  });
+  return `Chorus degraded; the turn went on without them: ${what.join(', ')}. Retry is in the Foundry viewer.`;
 }
 
 /** The summary for one flow-stream turn, or null while neither phase row has been recorded. */
@@ -26,7 +46,10 @@ export function contextSummary(turn: unknown): ContextSummary | null {
   if (!isRecord(turn) || !Array.isArray(turn.phases)) return null;
   const rows = turn.phases.filter(isRecord);
   const route = rows.find((row) => row.phase === 'route');
-  const advice = rows.find((row) => row.phase === 'advice');
+  // The sealed advice row; a retry (FEAT-008) is a later row with `retryOf`.
+  const advice = rows.find(
+    (row) => row.phase === 'advice' && !(isRecord(row.record) && row.record.retryOf),
+  );
   if (!route && !advice) return null;
 
   const routing =
@@ -61,5 +84,13 @@ export function contextSummary(turn: unknown): ContextSummary | null {
       'Wardens:',
       ...participants.map((p) => `- ${p.domain}: ${p.decision}${p.reason ? ` (${p.reason})` : ''}`),
     );
-  return { text: lines.join('\n') || 'No routing or advice recorded.', routing, participants };
+  const degraded = degradedOf(advice?.record);
+  const line = degradedLine(degraded);
+  if (line) lines.push(line);
+  return {
+    text: lines.join('\n') || 'No routing or advice recorded.',
+    routing,
+    participants,
+    degraded,
+  };
 }
