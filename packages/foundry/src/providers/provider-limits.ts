@@ -6,11 +6,19 @@
 /**
  * Each subscription login's usage windows (5 hour, 7 day…, percent used and when they reset), for
  * the footer. Read with agent-session's limit probes in the login's own home (`CLAUDE_CONFIG_DIR`,
- * `CODEX_HOME`): the CLI answers over its control channel, no model call. Cached a few minutes per
+ * `CODEX_HOME`): the CLI answers over its control channel, no model call. Muse Code's are its
+ * `muse usage --json` (no model turn), on the user's own login (the only Muse login Foundry runs). Cached a few minutes per
  * login, one probe in flight at a time. A Kingdom-pool login's limits are Kingdom's to report.
  */
-import { type LimitSnapshot, probeClaudeLimits, probeCodexLimits } from '@inixiative/agent-session';
+import {
+  type LimitSnapshot,
+  museLimitSnapshot,
+  probeClaudeLimits,
+  probeCodexLimits,
+} from '@inixiative/agent-session';
 import { SUBSCRIPTION_WORKERS, type SubscriptionWorker } from '../models/registry';
+import { withoutCompetingCredentials } from './native-authentication';
+import { nativeTextEnvironment } from './native-text-environment';
 import type { ProviderAccount } from './provider-accounts';
 
 export interface ProviderLimits {
@@ -36,7 +44,26 @@ const PROBES: Record<SubscriptionWorker, Probe> = {
     probeCodexLimits({ ...(home ? { env: { CODEX_HOME: home } } : {}), timeoutMs: 15_000 }).catch(
       () => undefined,
     ),
+  muse: () => probeMuseLimits().catch(() => undefined),
 };
+
+/** `muse usage --json`'s allowance windows as agent-session reads Muse's own usage reports. */
+async function probeMuseLimits(timeoutMs = 15_000): Promise<LimitSnapshot | undefined> {
+  const child = Bun.spawn(['muse', 'usage', '--json'], {
+    env: withoutCompetingCredentials(nativeTextEnvironment(process.env), 'muse'),
+    stdin: 'ignore',
+    stdout: 'pipe',
+    stderr: 'ignore',
+  });
+  const timer = setTimeout(() => child.kill(), timeoutMs);
+  try {
+    const [code, stdout] = await Promise.all([child.exited, new Response(child.stdout).text()]);
+    if (code !== 0) return undefined;
+    return museLimitSnapshot((JSON.parse(stdout) as { allowance?: unknown }).allowance, 'poll');
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 async function probe(
   provider: SubscriptionWorker,

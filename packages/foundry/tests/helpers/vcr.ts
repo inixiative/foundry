@@ -219,8 +219,11 @@ export function recordedMuseConnect(names: string[], vcr = museVcr()) {
         child.stdin.write(chunk);
         child.stdin.flush();
       },
+      // The connection closes on the host's EOF. A live host exits on stdin EOF; a cassette ends
+      // only when killed, so the recording is killed too and both runs end the same way.
       close() {
         child.stdin.end();
+        child.kill();
       },
     };
     let minted = 0;
@@ -237,8 +240,7 @@ export function recordedMuseConnect(names: string[], vcr = museVcr()) {
       initializeResult,
       exited,
       close: async () => {
-        await connection.close();
-        child.kill();
+        await connection.close().catch(() => undefined);
         return exited;
       },
     };
