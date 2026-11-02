@@ -67,13 +67,13 @@ const encoder = new TextEncoder();
 const text = (data: string | Uint8Array) =>
   typeof data === 'string' ? data : new TextDecoder().decode(data);
 
-/** The account's own login, whatever temporary profile or HOME a test composed for Foundry. A composed
+/** The account's own login, whatever temporary profile, HOME or XDG_CONFIG_HOME (Muse Code) a test composed for Foundry. A composed
  * private Codex home stays private: it runs live on a copy of its config with the account's login linked in. */
 export function liveEnvironment(
   env: Record<string, string | undefined>,
 ): Record<string, string | undefined> {
   const live: Record<string, string | undefined> = { ...env, HOME: accountHome() };
-  for (const key of ['CLAUDE_CONFIG_DIR', 'CODEX_HOME']) {
+  for (const key of ['CLAUDE_CONFIG_DIR', 'CODEX_HOME', 'XDG_CONFIG_HOME']) {
     const value = live[key];
     if (
       value &&

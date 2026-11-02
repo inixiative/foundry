@@ -1441,8 +1441,11 @@ test(
       // remembers ids across runs in its session store, so a shared one refuses a re-record.
       const home = process.env.HOME,
         key = process.env.META_API_KEY,
-        data = process.env.XDG_DATA_HOME;
+        data = process.env.XDG_DATA_HOME,
+        config = process.env.XDG_CONFIG_HOME;
       process.env.HOME = directory;
+      // A CI runner sets XDG_CONFIG_HOME, which Muse's login location follows; point it at the composed home too.
+      process.env.XDG_CONFIG_HOME = join(directory, '.config');
       process.env.META_API_KEY = 'meta-model-api-key';
       process.env.XDG_DATA_HOME = join(directory, 'muse-data');
       mkdirSync(join(directory, '.config', 'muse'), { recursive: true, mode: 0o700 });
@@ -1495,6 +1498,8 @@ test(
         else process.env.META_API_KEY = key;
         if (data === undefined) delete process.env.XDG_DATA_HOME;
         else process.env.XDG_DATA_HOME = data;
+        if (config === undefined) delete process.env.XDG_CONFIG_HOME;
+        else process.env.XDG_CONFIG_HOME = config;
       }
     });
     expect(out).toEqual({
