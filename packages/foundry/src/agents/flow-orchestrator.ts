@@ -334,6 +334,8 @@ export interface GuardOutcome {
 
 /** Caller hooks for the post-action flow. `onRequest` fires at each domain's call boundary, before its answer. */
 export interface GuardPhaseHooks {
+  /** Ask only these Wardens (a retry of the ones that were degraded, FEAT-008); the rest are not asked. */
+  only?: ReadonlySet<string>;
   onRequest?: (
     domain: string,
     request: PhaseRequestEvidence,
@@ -731,10 +733,24 @@ export class FlowOrchestrator {
     return this._between('consumed', workItemText(item));
   }
 
+  /**
+   * Ask the named Wardens again on a moment where they were degraded (FEAT-008): the same moment
+   * text, under its own trigger, with the current thread state. Like a brief, it never blocks, and
+   * what is said rides with the next turn.
+   */
+  async retry(
+    trigger: AdviceTrigger,
+    message: string,
+    domains: readonly string[],
+  ): Promise<BriefReport> {
+    return this._between(trigger, message, new Set(domains));
+  }
+
   /** One fan-out to the chorus at a moment between turns, through the advice protocol. */
   private async _between(
-    trigger: Extract<AdviceTrigger, 'subagent-spawn' | 'consumed'>,
+    trigger: AdviceTrigger,
     message: string,
+    only?: ReadonlySet<string>,
   ): Promise<BriefReport> {
     const start = Date.now();
     const threadState = this._librarian.layer.content;
@@ -745,7 +761,7 @@ export class FlowOrchestrator {
       threadStateHash: computeHash(threadState),
       capturedAt: start,
     };
-    const participants = this._participants();
+    const participants = this._participants().filter((p) => !only || only.has(p.lib.domain));
     const clock = this._clock(start);
     const outstanding: OutstandingCall[] = [];
     const prefiltered = await this.prefilter(
@@ -1310,6 +1326,7 @@ export class FlowOrchestrator {
     const triggered: DomainLibrarian[] = [];
     const skipped: string[] = [];
     for (const [, domainLib] of this._domains) {
+      if (hooks?.only && !hooks.only.has(domainLib.domain)) continue;
       if (domainLib.guards(activity)) triggered.push(domainLib);
       else skipped.push(domainLib.domain);
     }
@@ -1701,6 +1718,17 @@ function betweenTurnNotes(idPrefix: string, heading: string, report: BriefReport
 export function briefNotes(handoff: HandoffMoment, report: BriefReport): PromptBlock[] {
   const to = handoff.description ?? handoff.agentType ?? handoff.childThreadId;
   return betweenTurnNotes(`brief:${handoff.handoffId}`, `on the handoff to ${to}`, report);
+}
+
+/** The notes a retry's answers become on the next turn, naming the moment it asked again (FEAT-008). */
+export function retryNotes(of: string, trigger: AdviceTrigger, report: BriefReport): PromptBlock[] {
+  const moment =
+    trigger === 'subagent-spawn'
+      ? 'the earlier handoff'
+      : trigger === 'consumed'
+        ? 'the earlier work item'
+        : 'your earlier message';
+  return betweenTurnNotes(`retry:${of}`, `on ${moment} (asked again)`, report);
 }
 
 /** The notes a work item's answers become on the next turn, naming the item. */

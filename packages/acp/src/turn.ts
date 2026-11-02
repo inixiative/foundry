@@ -130,6 +130,7 @@ export class TurnProjection {
           turnId: this.turnId,
           routing: summary?.routing ?? null,
           participants: summary?.participants ?? [],
+          degraded: summary?.degraded ?? [],
         },
       },
     });
@@ -316,6 +317,7 @@ export class TurnProjection {
       text: `Not accepted by Foundry: ${error.message}`,
       routing: null,
       participants: [],
+      degraded: [],
     };
     this.closeContext();
     this.reject(error);

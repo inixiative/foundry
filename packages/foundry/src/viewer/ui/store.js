@@ -1972,6 +1972,36 @@ export async function stopTurn(threadId, turnId) {
   }
 }
 
+/**
+ * A degraded chorus on a turn (FEAT-008): `retry` asks the Wardens that went unheard again (what they
+ * say rides with the next message), `dismiss` closes the notice. The journal row each writes reaches
+ * the thread through its own reconcile; nothing is changed here first.
+ */
+export async function chorusAction(threadId, turnId, action) {
+  try {
+    const res = await authFetch(
+      `/api/threads/${encodeURIComponent(threadId)}/turns/${encodeURIComponent(turnId)}/chorus/${action}`,
+      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' },
+    );
+    const body = await res.json();
+    if (!res.ok && !body.unavailable?.length) throw new Error(body.error ?? `HTTP ${res.status}`);
+    if (action === 'retry') {
+      const missing = body.unavailable ?? [];
+      showToast(
+        body.started?.length
+          ? `Asking ${body.started.length === 1 ? 'it' : 'them'} again`
+          : body.busy?.length
+            ? 'Already asking again'
+            : `Cannot ask again: ${missing.map((u) => u.reason).join('; ')}`,
+        body.started?.length || body.busy?.length ? 'ok' : 'error',
+      );
+    }
+    return body;
+  } catch (err) {
+    showToast(`${action === 'retry' ? 'Retry' : 'Dismiss'} failed: ${err.message}`, 'error');
+  }
+}
+
 export async function submitIntervention(threadId, traceId, spanId, correction, reason) {
   try {
     const res = await authFetch(`/api/threads/${encodeURIComponent(threadId)}/interventions`, {

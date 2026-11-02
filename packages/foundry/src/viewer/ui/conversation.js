@@ -12,6 +12,7 @@
  */
 
 import { ActionPalette } from './action-palette.js';
+import { chorusNotice, lastDegraded } from './chorus-health.js';
 import { HeldPromptCard, useConversationView } from './conversation-members.js';
 import {
   browserStorageNotice,
@@ -52,6 +53,7 @@ import {
   activePanel,
   activeThreadId,
   allThreads,
+  chorusAction,
   composerFill,
   composerNote,
   contextWindowOf,
@@ -405,8 +407,20 @@ function ContextBar() {
               </div>`
             : null
       }
+      <${ChorusBarLine} threadId=${data.threadId} />
     </div>
   `;
+}
+
+/** The context bar's line for the last turn's degraded chorus (FEAT-008), beside the setup notice. */
+function ChorusBarLine({ threadId }) {
+  const message = lastDegraded(messages.value);
+  if (!message) return null;
+  const { count } = chorusNotice(message.chorus);
+  return html`<div class="context-bar-setup context-bar-setup--degraded" role="status" data-chorus-bar="open">
+    Chorus degraded on the last turn: ${count} Warden${count === 1 ? '' : 's'} went unheard.
+    <button class="chorus-bar-retry" onClick=${() => chorusAction(threadId, message.turnId, 'retry')}>Retry</button>
+  </div>`;
 }
 
 /** What the thread is doing right now, one line above the composer (moved out of the header). */
@@ -920,6 +934,34 @@ function LiveWork({ msg }) {
   </section>`;
 }
 
+/** The turn's degraded chorus (FEAT-008): which Wardens went unheard, with Retry and Dismiss. */
+function ChorusNotice({ msg }) {
+  const [busy, setBusy] = useState(false);
+  const notice = chorusNotice(msg.chorus);
+  const threadId = activeThreadId.value;
+  if (!notice || !msg.turnId || !threadId) return null;
+  const act = async (action) => {
+    setBusy(true);
+    try {
+      await chorusAction(threadId, msg.turnId, action);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return html`<div class="chorus-notice chorus-notice--${notice.state}" role="status" data-chorus=${notice.state}>
+    <span>${notice.text}</span>
+    ${
+      notice.state === 'open'
+        ? html`<span class="chorus-notice-actions">
+            <button class="prompt-btn" disabled=${busy} onClick=${() => act('retry')}
+              title="Ask these Wardens again on the same moment; what they say rides with your next message">Retry</button>
+            <button class="prompt-btn" disabled=${busy} onClick=${() => act('dismiss')}>Dismiss</button>
+          </span>`
+        : null
+    }
+  </div>`;
+}
+
 function AgentMessage({ msg, index, onTraceClick }) {
   const hasTrace = !!msg.traceId;
   const stages = msg.trace?.stages || [];
@@ -1040,6 +1082,8 @@ function AgentMessage({ msg, index, onTraceClick }) {
       `
           : null
       }
+
+      <${ChorusNotice} msg=${msg} />
 
       <!-- Post-execution bar: guards, writeback -->
       <${PipelineBar}

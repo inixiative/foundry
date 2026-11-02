@@ -14,6 +14,7 @@ import type {
 } from '@inixiative/foundry-core';
 import { MODEL_REGISTRY, newId, Thread, threadTitle, timeFromId } from '@inixiative/foundry-core';
 import type { Hono } from 'hono';
+import { chorusRetries, chorusRows, turnChorus } from '../../agents/chorus-degraded';
 import type { ProjectRegistry } from '../../agents/project';
 import { type ThreadFactory, WorkerRefusedError } from '../../agents/thread-factory';
 import type { ThreadNamer } from '../../agents/thread-namer';
@@ -635,6 +636,66 @@ export function registerRuntimeRoutes(
           : null,
       }),
     );
+  });
+
+  // A degraded chorus (FEAT-008): ask the Wardens that were kept quiet on a turn again, or dismiss the notice.
+  app.post('/api/threads/:threadId/turns/:turnId/chorus/retry', (c) => {
+    if (!localStore) return c.json({ error: 'history journal unavailable' }, 503);
+    const threadId = c.req.param('threadId'),
+      turnId = c.req.param('turnId');
+    const detail = localStore.turnDetail(threadId, turnId);
+    if (!detail) return c.json({ error: 'turn not found in this thread' }, 404);
+    const runtime = threadFactory?.runtime?.get(threadId);
+    if (!runtime) return c.json({ error: 'the thread is not running; open it to retry' }, 409);
+    const { retries, unavailable } = chorusRetries({
+      turnId,
+      phases: detail.phases,
+      nativeHistory: detail.nativeHistory,
+    });
+    const started: string[] = [];
+    const busy: string[] = [];
+    for (const retry of retries) {
+      const run = runtime.retryChorus(retry);
+      if (!run) {
+        busy.push(retry.of);
+        continue;
+      }
+      started.push(retry.of);
+      void run.catch((error) =>
+        console.warn(`[chorus] retry of ${retry.of} failed: ${(error as Error)?.message ?? error}`),
+      );
+    }
+    if (!started.length && !busy.length && !unavailable.length)
+      return c.json({ error: 'nothing on this turn is degraded' }, 409);
+    return c.json({ started, busy, unavailable }, started.length ? 202 : 409);
+  });
+
+  app.post('/api/threads/:threadId/turns/:turnId/chorus/dismiss', (c) => {
+    if (!localStore) return c.json({ error: 'history journal unavailable' }, 503);
+    const threadId = c.req.param('threadId'),
+      turnId = c.req.param('turnId');
+    const detail = localStore.turnDetail(threadId, turnId);
+    if (!detail) return c.json({ error: 'turn not found in this thread' }, 404);
+    const open = turnChorus(chorusRows(detail.phases))?.open ?? [];
+    if (!open.length) return c.json({ error: 'nothing on this turn is degraded' }, 409);
+    const thread =
+      directory.get(threadId) ?? localStore.threads().find((stored) => stored.id === threadId);
+    if (!thread) return c.json({ error: 'thread not found' }, 404);
+    localStore.appendPhase(thread, {
+      id: newId('phase'),
+      turnId,
+      dispatchId: null,
+      phase: 'chorus-dismiss',
+      record: { of: open, by: localOperator() },
+    });
+    eventStream.push({
+      kind: 'journal',
+      threadId,
+      projectId: thread.meta.projectId,
+      turnId,
+      timestamp: Date.now(),
+    });
+    return c.json({ dismissed: open });
   });
 
   app.get('/api/threads/:threadId/layers/:layerId', (c) => {

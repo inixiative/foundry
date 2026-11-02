@@ -1648,6 +1648,11 @@ export class DomainLibrarian {
     }
   }
 
+  /** How many layers this Warden runs (`chorus.wardens.stages`; one by default). */
+  get stageCount(): number {
+    return this._stages.length;
+  }
+
   async advise(message: string, threadState?: string, opts?: AdviseOpts): Promise<AdviseResult> {
     const head = this._stages[0]!.cache;
     const frozen = head === this._cache ? opts?.cache : undefined;
