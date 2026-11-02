@@ -14,6 +14,7 @@ import {
 import type { CompositionSlot } from '../prompts/instruction-settings';
 import { compositionSource, forgetSharedRoleViews } from '../prompts/instruction-stack';
 import type { FoundryConfig } from '../viewer/config';
+import { effectiveProject } from '../viewer/config-resolve';
 
 /** Turns a configured source id into a ContextSource (thread-factory's `SourceResolver`). */
 export type ResolveSource = (sourceId: string, config: FoundryConfig) => ContextSource | null;
@@ -116,7 +117,7 @@ export function roleSources(
     const own = fromSettings ? agent!.prompt : options.builtIn;
     const subject = fromSettings
       ? (projectId?: string) =>
-          `prompt:agent:${role}${projectId && config.projects?.[projectId]?.agents?.[role] ? `@project:${projectId}` : ''}`
+          `prompt:agent:${role}${projectId && config.projects?.[projectId] && effectiveProject(config, projectId)?.agents?.[role] ? `@project:${projectId}` : ''}`
       : () => `prompt:builtin:${role}`;
     return [
       ...(own ? [promptSource(`${roleLayerId(role, slot)}#settings`, own, subject)] : []),

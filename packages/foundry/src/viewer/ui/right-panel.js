@@ -111,10 +111,10 @@ function tabFacts(tab, threadId) {
 async function setSteer(threadId, projectId, steer) {
   try {
     const res = projectId
-      ? await authFetch(`/api/projects/${encodeURIComponent(projectId)}/steer`, {
+      ? await authFetch(`/api/projects/${encodeURIComponent(projectId)}/setting`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ scope: 'me', value: steer }),
+          body: JSON.stringify({ scope: 'me', values: { steer } }),
         })
       : await authFetch('/api/settings/threads', {
           method: 'PATCH',

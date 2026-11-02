@@ -8,7 +8,8 @@
  * Foundry's name, editable in place; the name opens this machine's page) and its tunnel; Kingdoms
  * and Archives as two equal pills, each linking to its settings; your other machines, each with its
  * open threads and no meters (subscriptions are per login and shared across machines, Aron
- * 2026-11-02); one Subscriptions row that opens to each subscription. Threads, Wardens and Forge
+ * 2026-11-02); Subscriptions: this machine's Claude and Codex logins per runtime with the balancing
+ * scale (subscriptions.js), then any other subscription. Threads, Wardens and Forge
  * Master live elsewhere.
  */
 
@@ -28,6 +29,7 @@ import {
   showToast,
   vendorName,
 } from './store.js';
+import { FooterPools, useLoginPools } from './subscriptions.js';
 import { harnessName } from './thread-labels.js';
 
 const getJson = (url) =>
@@ -117,18 +119,27 @@ function LimitMeters({ limit }) {
   )}</span>`;
 }
 
+/** Accounts whose subscription is one of this machine's pooled logins (shown by `FooterPools`). */
+const POOLED = new Set(['claude-code', 'codex']);
+
 function Subscriptions({ accounts, registry }) {
   const [open, setOpen] = useState({});
   const limits = useLimits();
-  const limitOf = (provider) => limits.find((l) => l.provider === provider);
-  const subscriptions = (Array.isArray(accounts) ? accounts : []).filter((a) =>
-    SUBSCRIPTION_SOURCES.has(a.source),
+  const pools = useLoginPools();
+  const pooled = new Set(
+    (pools?.pools ?? []).map((p) => (p.runtime === 'claude' ? 'claude-code' : 'codex')),
   );
-  // Only providers that have a subscription; each row opens to its subscriptions.
+  const limitOf = (provider) => limits.find((l) => l.provider === provider);
+  // Claude Code and Codex logins show as their pools (scale, logins, meters); the rest as before.
+  const subscriptions = (Array.isArray(accounts) ? accounts : []).filter(
+    (a) =>
+      SUBSCRIPTION_SOURCES.has(a.source) && !(POOLED.has(a.provider) && pooled.has(a.provider)),
+  );
   const groups = capacityByProvider(subscriptions, (provider) => vendorName(provider, registry));
-  if (!groups.length) return null;
+  if (!groups.length && !pools?.pools?.length && !pools?.kingdom?.length) return null;
   return html`<div class="nav-footer-subscriptions">
     <div class="nav-footer-label">Subscriptions</div>
+    <${FooterPools} />
     ${groups.map((g) => {
       const isOpen = !!open[g.provider];
       const total = g.accounts.length;

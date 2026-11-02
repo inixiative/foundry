@@ -17,7 +17,12 @@
   {
     "path": "nativeAuthentication",
     "scope": "foundry",
-    "description": "Credential references only; do not put tokens in settings."
+    "description": "Credential references only; do not put tokens in settings. Several of one runtime are a pool."
+  },
+  {
+    "path": "subscriptionPools",
+    "scope": "foundry",
+    "description": "How a runtime with several logins balances them (Aron, 2026-11-02: \"a balancing toggle… like a scale\"): `routing` (default `quartile-balanced`; `pinned` is balancing off) and the login `owner-first` or `pinned` prefers. A project's `subscriptionPools` overrides it."
   },
   {
     "path": "kingdomInference",
@@ -753,6 +758,11 @@
     "path": "capacity",
     "scope": "project",
     "description": "Where main threads get their subscription: this machine's login (`local`, the default) or a Kingdom pool."
+  },
+  {
+    "path": "subscriptionPools",
+    "scope": "project",
+    "description": "How this project's threads balance this machine's logins, per runtime; over the Foundry-wide `subscriptionPools`."
   },
   {
     "path": "kingdomCapacity",

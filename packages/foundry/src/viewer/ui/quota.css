@@ -29,3 +29,209 @@
 .nav-footer-limits.is-blocked .bar2 i {
   background: var(--st-problem);
 }
+
+/* Login pools (subscriptions.js): per runtime, the balancing scale, then each login with its meters. */
+.pool-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.pool-head .nav-footer-row {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.scale-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 20px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+.scale-btn.is-balanced {
+  color: var(--ok);
+  border-color: color-mix(in srgb, var(--ok) 45%, var(--line));
+}
+.scale-btn[aria-pressed="false"] {
+  color: var(--warn);
+}
+.scale-btn:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+.scale-icon g {
+  transition: transform 0.2s ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  .scale-icon g {
+    transition: none;
+  }
+}
+.pool-balancing {
+  margin: 0 0 3px 18px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.pool-balancing.is-stopped {
+  color: var(--warn);
+}
+.pool-logins {
+  list-style: none;
+  margin: 2px 0 2px 12px;
+  padding: 0;
+  display: grid;
+  gap: 2px;
+}
+.pool-login-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+.pool-login-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pool-login-runs,
+.pool-pref {
+  color: var(--text-dim);
+  font-size: 11px;
+}
+.pool-login .nav-footer-limits {
+  margin-left: 12px;
+}
+.nav-footer-dot.is-bad {
+  background: var(--st-problem);
+}
+.nav-footer-dot.is-busy {
+  background: var(--warn);
+  animation: pool-pulse 1.4s ease-in-out infinite;
+}
+@keyframes pool-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .nav-footer-dot.is-busy {
+    animation: none;
+  }
+}
+.pool-last {
+  margin: 2px 0 4px 18px;
+  font-size: 11px;
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pool-kingdom {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 4px 0;
+  font-size: 11.5px;
+  color: var(--text-dim);
+}
+
+/* Settings › Providers: one card per runtime's logins. */
+.login-pools .pool-card {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+.pool-card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.pool-card-head .pool-balancing {
+  margin: 0;
+}
+.pool-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 8px 0;
+  font-size: 12px;
+}
+.pool-controls label {
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.pool-table td {
+  vertical-align: middle;
+}
+.pool-table .nav-footer-limits {
+  margin: 0;
+}
+.pool-actions {
+  white-space: nowrap;
+  text-align: right;
+}
+.pool-add {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+.pool-add input {
+  flex: 1 1 220px;
+  min-width: 0;
+}
+.pool-signin {
+  display: grid;
+  gap: 6px;
+  margin-top: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font-size: 12.5px;
+}
+.pool-signin[data-state="failed"] {
+  border-color: var(--st-problem);
+}
+.pool-output {
+  max-height: 160px;
+  overflow: auto;
+  font-size: 11px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.pool-table .nav-footer-dot {
+  display: inline-block;
+  margin-right: 4px;
+  vertical-align: middle;
+}
+.pool-overrides {
+  margin: 0 0 3px 18px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.pool-login-sub {
+  margin-left: 12px;
+  font-size: 11px;
+  color: var(--text-dim);
+  overflow-wrap: anywhere;
+}
+.pool-table .pool-login-sub {
+  margin: 2px 0 0;
+  white-space: normal;
+}
+.pool-plan.is-unknown {
+  font-style: italic;
+}
+.pool-plan {
+  color: var(--text);
+}

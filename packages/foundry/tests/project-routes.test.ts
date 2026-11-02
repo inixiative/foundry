@@ -1,6 +1,6 @@
 import './helpers/isolate-archive';
 import { afterEach, expect, test } from 'bun:test';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -74,45 +74,114 @@ test('a project patch refuses an empty label, an unknown status, an empty body a
   expect((await f.request('/api/projects/proj_missing', { label: 'x' }, 'PATCH')).status).toBe(404);
 });
 
-test('a project’s steer setting (CORE-001): yours over the repository’s over Foundry’s, on by default', async () => {
+test('a project setting: yours over the repository’s over Foundry’s (steer, CORE-001)', async () => {
   const f = fixture();
   const repo = mkdtempSync(join(tmpdir(), 'foundry-steer-repo-'));
   dirs.push(repo);
   const created = await f.request('/api/projects', { path: repo, label: 'Steer' });
   const id = created.body.id as string;
-  const steer = async () => (await f.request(`/api/projects/${id}/steer`)).body;
+  const steer = async () => (await f.request(`/api/projects/${id}/setting?path=steer`)).body;
+  const put = (scope: string, values: Record<string, unknown>) =>
+    f.request(`/api/projects/${id}/setting`, { scope, values }, 'PUT');
   expect(await steer()).toMatchObject({
-    steer: true,
+    value: null,
     from: 'default',
     mine: null,
     repository: null,
+    personalOnly: null,
   });
 
   // Foundry-wide off: the project follows it.
   expect((await f.request('/api/settings/threads', { steer: false }, 'PATCH')).status).toBe(200);
-  expect(await steer()).toMatchObject({ steer: false, from: 'foundry', foundry: false });
+  expect(await steer()).toMatchObject({ value: false, from: 'foundry', foundry: false });
 
   // For everyone: the repository's committed file.
-  expect(
-    (await f.request(`/api/projects/${id}/steer`, { scope: 'everyone', value: true }, 'PUT'))
-      .status,
-  ).toBe(200);
+  expect((await put('everyone', { steer: true })).status).toBe(200);
   expect(JSON.parse(readFileSync(join(repo, '.foundry/project.json'), 'utf8'))).toEqual({
     steer: true,
   });
-  expect(await steer()).toMatchObject({ steer: true, from: 'repository', repository: true });
+  expect(await steer()).toMatchObject({ value: true, from: 'repository', repository: true });
 
   // For me: this machine's project settings win.
-  await f.request(`/api/projects/${id}/steer`, { scope: 'me', value: false }, 'PUT');
+  await put('me', { steer: false });
   expect(f.saved(id).steer).toBe(false);
-  expect(await steer()).toMatchObject({ steer: false, from: 'settings', mine: false });
-  await f.request(`/api/projects/${id}/steer`, { scope: 'me', value: null }, 'PUT');
-  expect(await steer()).toMatchObject({ steer: true, from: 'repository', mine: null });
+  expect(await steer()).toMatchObject({ value: false, from: 'settings', mine: false });
+  await put('me', { steer: null });
+  expect(await steer()).toMatchObject({ value: true, from: 'repository', mine: null });
 
+  expect((await put('team', { steer: true })).status).toBe(400);
+  expect((await put('me', { steer: 'yes' })).status).toBe(400);
+  expect((await put('everyone', { steer: 'yes' })).status).toBe(400);
+});
+
+test('every shared project setting has a repository layer; machine and person settings do not', async () => {
+  const f = fixture();
+  const repo = mkdtempSync(join(tmpdir(), 'foundry-layer-repo-'));
+  dirs.push(repo);
+  const id = (await f.request('/api/projects', { path: repo, label: 'Layer' })).body.id as string;
+  const put = (scope: string, values: Record<string, unknown>) =>
+    f.request(`/api/projects/${id}/setting`, { scope, values }, 'PUT');
+  const get = async (path: string) =>
+    (await f.request(`/api/projects/${id}/setting?path=${path}`)).body;
+  const file = join(repo, '.foundry/project.json');
+
+  // threadOnMerge for everyone, then yours over it, then reset back to the team's.
+  expect((await put('everyone', { threadOnMerge: 'auto-archive' })).status).toBe(200);
+  expect(await get('threadOnMerge')).toMatchObject({ value: 'auto-archive', from: 'repository' });
+  await put('me', { threadOnMerge: 'done' });
+  expect(await get('threadOnMerge')).toMatchObject({ value: 'done', from: 'settings' });
+  await put('me', { threadOnMerge: null });
+  expect(f.saved(id)).not.toHaveProperty('threadOnMerge');
+  expect(await get('threadOnMerge')).toMatchObject({ from: 'repository' });
+
+  // Nested paths, and null prunes what it empties.
+  expect((await put('everyone', { 'feedback.capture': true })).status).toBe(200);
+  expect(JSON.parse(readFileSync(file, 'utf8')).feedback).toEqual({ capture: true });
+  await put('everyone', { 'feedback.capture': null });
+  expect(JSON.parse(readFileSync(file, 'utf8'))).not.toHaveProperty('feedback');
+
+  // A worker and its model together; a model the worker doesn't run is refused, the file untouched.
   expect(
-    (await f.request(`/api/projects/${id}/steer`, { scope: 'team', value: true }, 'PUT')).status,
+    (await put('everyone', { 'defaults.provider': 'codex', 'defaults.model': 'fable' })).status,
   ).toBe(400);
-  expect(
-    (await f.request(`/api/projects/${id}/steer`, { scope: 'me', value: 'yes' }, 'PUT')).status,
-  ).toBe(400);
+  expect(JSON.parse(readFileSync(file, 'utf8'))).not.toHaveProperty('defaults');
+
+  // Machine and person settings: refused for everyone, with why.
+  for (const path of [
+    'toolRules',
+    'sources',
+    'capacity',
+    'label',
+    'defaults.nativeAuthenticationId',
+    'defaults.classifierProvider',
+  ]) {
+    expect((await get(path)).personalOnly).toBeString();
+    const refused = await put('everyone', { [path]: path === 'toolRules' ? {} : 'x' });
+    expect(refused.status).toBe(400);
+    expect(refused.body.error).toContain("can't be set for everyone");
+  }
+  expect((await put('me', { path: '/elsewhere' })).status).toBe(400);
+  // Only what the settings pages set, and never a path into an object's prototype.
+  expect((await put('me', { 'foo.bar': 1 })).status).toBe(400);
+  expect((await put('me', { kingdomProject: {} })).status).toBe(400);
+  for (const path of ['gloss.__proto__.polluted', 'feedback.constructor.x'])
+    expect((await put('me', { [path]: 'yes' })).status).toBe(400);
+  expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+
+  // A file whose agents this machine can't build: its merged settings don't show or apply, its
+  // chorus, conversations and steer still do, and the rows say why.
+  writeFileSync(
+    file,
+    JSON.stringify({
+      steer: false,
+      threadOnMerge: 'auto-archive',
+      agents: { r: { extends: 'nope' } },
+    }),
+  );
+  expect(await get('threadOnMerge')).toMatchObject({
+    repository: null,
+    repositoryError: expect.any(String),
+  });
+  expect(await get('steer')).toMatchObject({ repository: false, from: 'repository' });
+  expect((await get('steer')).repositoryError).toBeUndefined();
 });

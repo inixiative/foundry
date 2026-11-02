@@ -273,7 +273,7 @@ export async function nativeLogin(
     if (code !== 0 || !token) throw Error('claude setup-token did not produce a token');
     return { accessToken: token };
   }
-  writePrivateFile(join(directory, 'config.toml'), 'cli_auth_credentials_store = "file"\n');
+  prepareCodexLoginHome(directory);
   const child = Bun.spawn(['codex', 'login'], {
     env: { ...env, CODEX_HOME: directory },
     stdin: 'inherit',
@@ -281,6 +281,16 @@ export async function nativeLogin(
     stderr: 'inherit',
   });
   if ((await child.exited) !== 0) throw Error('codex login did not complete');
+  return readCodexLogin(directory);
+}
+
+/** A fresh CODEX_HOME for `codex login`: its login kept in a file there, never the keyring. */
+export function prepareCodexLoginHome(directory: string): void {
+  writePrivateFile(join(directory, 'config.toml'), 'cli_auth_credentials_store = "file"\n');
+}
+
+/** The ChatGPT login `codex login` left in `directory`, checked whole. */
+export function readCodexLogin(directory: string): NativeLogin {
   const auth = join(directory, 'auth.json');
   if (!existsSync(auth)) throw Error('codex login left no ChatGPT login');
   const { tokens } = codexAuthSchema.parse(readPrivateJson(auth, 'Codex login'));
