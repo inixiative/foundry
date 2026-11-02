@@ -48,8 +48,12 @@ const clip = (value, max = 1200) => {
 };
 const time = (at) => (at ? new Date(at).toLocaleTimeString() : '');
 
-/** Is the step worth a flag: an error, a refusal, a guard finding, a failed capture? */
+/** Routing that failed: the turn went on with its standing layers, unrouted (degraded, not failed). */
+const routeDegraded = (step) => step.kind === 'route' && step.status === 'error';
+
+/** Is the step worth a flag: an error, a refusal, a guard finding, a failed capture, degraded routing? */
 function flagged(step) {
+  if (routeDegraded(step)) return true;
   if (step.kind === 'tool') return step.error;
   if (step.kind === 'guard')
     return step.failed.length > 0 || step.regions.some((r) => r.findings > 0);
@@ -64,7 +68,9 @@ function summary(step) {
     case 'input':
       return step.text;
     case 'route':
-      return [step.status, step.domains.join(', ')].filter(Boolean).join(' · ');
+      return routeDegraded(step)
+        ? 'degraded · ran without routing'
+        : [step.status, step.domains.join(', ')].filter(Boolean).join(' · ');
     case 'chorus': {
       const spoke = step.regions.filter((r) => r.decision === 'contribute').length;
       return `${step.regions.length} regions asked · ${spoke} chimed in`;
@@ -195,7 +201,11 @@ function Detail({ step }) {
     case 'guard':
       return html`<${GuardBody} step=${step} />`;
     case 'route':
-      return step.reason ? html`<div class="tv-dim">${step.reason}</div>` : null;
+      return routeDegraded(step)
+        ? html`<div class="tv-degraded">Routing was skipped on this turn: the turn ran with its standing layers, no routed ones.${step.reason ? html`<div class="tv-dim">Why: ${step.reason}</div>` : null}</div>`
+        : step.reason
+          ? html`<div class="tv-dim">${step.reason}</div>`
+          : null;
     case 'plan':
       return step.layers.length
         ? html`<div class="tv-dim">Layers: ${step.layers.join(', ')}</div>`
@@ -436,7 +446,7 @@ export function TurnView() {
               if (!mine.length) return null;
               return html`<li key=${group} class="tv-group"><h3>${title}</h3><ol>${mine.map((s) => {
                 const i = steps.indexOf(s);
-                return html`<li key=${s.key} data-step-index=${i} class="tv-step ${i === at ? 'is-at' : ''}" data-status=${flagged(s.step) ? 'error' : 'ok'}
+                return html`<li key=${s.key} data-step-index=${i} class="tv-step ${i === at ? 'is-at' : ''}" data-status=${routeDegraded(s.step) ? 'warn' : flagged(s.step) ? 'error' : 'ok'}
                   onClick=${() => setAt(i)}>
                   <div class="tv-step-head">
                     <span class="tv-dot"></span>

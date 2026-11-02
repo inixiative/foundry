@@ -336,3 +336,9 @@
 .tv-wardens tr.is-timeout td {
   color: var(--st-attention);
 }
+
+/* Degraded, not failed: the turn went on (a routing error). */
+.tv-degraded {
+  color: var(--st-attention);
+  font-size: 12.5px;
+}

@@ -385,12 +385,31 @@ test('the Cartographer composes too, and over its budget routing reports an erro
   } finally {
     await f.close();
   }
+  // By default the Cartographer reads its prompt and its role files, not the CLAUDE.md stack: it
+  // routes, and the coding rules are the main thread's (the inixiative org CLAUDE.md alone put a
+  // routing call ~25,000 characters over budget).
+  write(roleFile(repo, 'cartographer', 'instructions'), 'ROUTING_HINTS');
   const g = setup(config());
   try {
     await g.thread.dispatch('worker', 'Route me', undefined, { messageId: 'm1' });
-    expect(g.last('route').messages[0]!.content).toContain('ORG_RULES');
+    const routed = g.last('route').messages[0]!.content;
+    expect(routed).toContain('ROUTING_HINTS');
+    for (const general of ['ORG_RULES', 'PROJECT_RULES', 'PERSONAL_GLOBAL'])
+      expect(routed).not.toContain(general);
   } finally {
     await g.close();
+  }
+  // Settings may still hand it the stack, the same way any role picks.
+  const all = config();
+  all.composition = {
+    roles: { ...all.composition!.roles, cartographer: { instructions: { general: 'all' } } },
+  };
+  const h = setup(all);
+  try {
+    await h.thread.dispatch('worker', 'Route me', undefined, { messageId: 'm1' });
+    expect(h.last('route').messages[0]!.content).toContain('ORG_RULES');
+  } finally {
+    await h.close();
   }
 });
 

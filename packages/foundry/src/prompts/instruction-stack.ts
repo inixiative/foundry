@@ -624,9 +624,14 @@ export function compositionSource(
   role: string,
   slot: CompositionSlot,
   delivered: readonly CompositionSlot[],
+  /** The role's built-in picks; a slot the settings pick for wins whole. */
+  defaults?: RoleComposition,
 ): ContextSource {
   const settings = config.composition;
   const { budget: _budget, ...picks } = roleComposition(settings, role);
+  for (const other of COMPOSITION_SLOTS)
+    if (settings?.roles?.[role]?.[other] === undefined && defaults?.[other] !== undefined)
+      picks[other] = defaults[other];
   for (const other of COMPOSITION_SLOTS) if (!delivered.includes(other)) picks[other] = false;
   return instructionStackSource(id, {
     harness: config.defaults.provider === 'codex' ? 'codex' : 'claude',

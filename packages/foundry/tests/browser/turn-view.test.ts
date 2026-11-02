@@ -100,3 +100,47 @@ test('full trace opens the turn view: grouped steps, filters, arrow keys, Raw, E
     ]);
   }
 }, 120_000);
+
+test('routing that fails shows as degraded: the turn ran without routed layers, and why', async () => {
+  const out = resolve(root, '.foundry/qa', `turn-view-degraded-${Date.now()}`);
+  mkdirSync(out, { recursive: true });
+  process.env.FOUNDRY_M0_OUTPUT_DIR = out;
+  let scenario: Awaited<ReturnType<typeof m0Scenario>> | undefined;
+  let server: ReturnType<typeof Bun.serve> | undefined;
+  let browser: { close: () => Promise<void>; newPage: (o: object) => Promise<any> } | undefined;
+  try {
+    // A Cartographer budget nothing fits: routing errors, and the turn goes on without it.
+    scenario = await m0Scenario({
+      configure: (config) => {
+        config.composition = { roles: { cartographer: { budget: 10 } } };
+      },
+    });
+    const s = scenario;
+    server = Bun.serve({
+      hostname: '127.0.0.1',
+      port: 0,
+      fetch: (request, srv) => s.current.fetch(request, srv),
+      websocket: s.current.websocket,
+    });
+    await s.send('a', 't1', 'Perform the migration');
+    await s.settled('a');
+    browser = await chromium.launch({ headless: true });
+    const page = await browser!.newPage({ viewport: { width: 1440, height: 900 } });
+    page.setDefaultTimeout(15_000);
+    await page.goto(`http://127.0.0.1:${server.port}/#project=P&thread=a`);
+    await page.locator('.inspect-link').first().click();
+    const route = page.locator('.panel-right .turn-view .tv-step', { hasText: 'Routing' });
+    await route.waitFor();
+    expect(await route.getAttribute('data-status')).toBe('warn');
+    expect(await route.locator('.tv-sub').innerText()).toBe('degraded · ran without routing');
+    await route
+      .locator('.tv-degraded', { hasText: 'composition.roles.cartographer.budget' })
+      .waitFor();
+  } finally {
+    await releaseAll([
+      ['browser', browser ? () => browser!.close() : undefined],
+      ['server', server ? () => server!.stop(true) : undefined],
+      ['scenario', scenario ? () => scenario!.close() : undefined],
+    ]);
+  }
+}, 120_000);

@@ -23,7 +23,7 @@ import { buildAgents, ThreadFactory } from '../../src/agents/thread-factory';
 import { type LearningConfig, ThreadRuntimeManager } from '../../src/agents/thread-runtime';
 import type { SessionAdapter } from '../../src/providers/session-adapter';
 import { SessionBackedProvider } from '../../src/providers/session-backed';
-import { ConfigStore, starterConfig } from '../../src/viewer/config';
+import { ConfigStore, type FoundryConfig, starterConfig } from '../../src/viewer/config';
 import { createViewer } from '../../src/viewer/server';
 
 export const domains = ['architecture', 'testing'] as const;
@@ -91,6 +91,8 @@ export interface ScenarioOptions {
   failExecutor?: boolean;
   /** Run the executor on a native session through this adapter (warm-cache delivery) instead of the controlled provider. */
   session?: () => SessionAdapter;
+  /** Change the scenario's settings before the viewer starts (a role's budget, say). */
+  configure?: (config: FoundryConfig) => void;
 }
 
 /** No model calls. Production factory, tool loop, HTTP dispatch, runtime and SQLite;
@@ -132,6 +134,7 @@ export async function m0Scenario(options: ScenarioOptions = {}) {
         enabled: true,
       },
     };
+    options.configure?.(config);
     const stack = new ContextStack(
       domains.map((d) => {
         const layer = new ContextLayer({

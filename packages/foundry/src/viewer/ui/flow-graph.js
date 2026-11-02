@@ -330,7 +330,8 @@ function layoutTree(nodes, edges, { gapX = 24, gapY = 56 } = {}) {
 // Turn flow
 // ---------------------------------------------------------------------------
 
-const ROUTE_STATUS = { routed: 'ok', fallback: 'warn', timeout: 'warn', error: 'error' };
+// A routing error is degraded, not failed: the turn went on with its standing layers.
+const ROUTE_STATUS = { routed: 'ok', fallback: 'warn', timeout: 'warn', error: 'warn' };
 const DECISION_STATUS = {
   contribute: 'ok',
   'no-comment': 'skip',
