@@ -166,6 +166,7 @@ test('Plan shows the about and the checklist, a step opens its turn; Work shows 
     await plan.locator('.plan-section-head', { hasText: '1 of 2 done' }).waitFor();
     // Plan is the what and why: five sections, and a link to the Loop for the how.
     expect(await plan.locator('.plan-section-head h3').allInnerTexts()).toEqual([
+      'About',
       'Your outcomes',
       'Pain and friction',
       'Strategy',
@@ -181,7 +182,19 @@ test('Plan shows the about and the checklist, a step opens its turn; Work shows 
     ).toBe('working');
     // The child thread spawned on turn 1 nests under the step in progress then.
     await survey.locator('.plan-child', { hasText: 'Find the callers' }).waitFor();
-    await plan.locator('.lifecycle').waitFor();
+    // Stage chips sit above the checklist, the current one marked "now".
+    await plan.locator('.lifecycle-step.is-current', { hasText: '· now' }).waitFor();
+    expect(
+      await plan.evaluate(
+        (el: Element) =>
+          !!(
+            el
+              .querySelector('.plan-lifecycle')!
+              .compareDocumentPosition(el.querySelector('.plan-checklist')!) &
+            Node.DOCUMENT_POSITION_FOLLOWING
+          ),
+      ),
+    ).toBe(true);
 
     // A step's turn opens Thread on that turn.
     await survey.locator('.plan-when').first().click();

@@ -7406,6 +7406,12 @@ a.thread-ref:hover {
 .lifecycle--link {
   cursor: pointer;
 }
+.lifecycle-open {
+  align-self: center;
+  margin-left: auto;
+  color: var(--text-dim);
+  font-size: 12px;
+}
 .work-section .rp-link {
   margin-top: 6px;
 }
