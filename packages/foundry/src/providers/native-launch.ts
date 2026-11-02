@@ -10,6 +10,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { NativeBridgeLease } from '@inixiative/foundry-core';
+import { FOUNDRY_OWN_TOOLS } from '../tools/thread-record';
 import type { ClientMcpServer } from './thread-launch';
 
 /** Metadata-only recording policy: neither launch paths/config nor capability
@@ -64,7 +65,14 @@ export function appServerBridgeConfiguration(
     throw Error('Owned bridge launch descriptor is invalid');
   return {
     ...structuredClone(existing),
-    [key]: { command: server.command, args: [...server.args] },
+    // Foundry's own record tools and reads never ask (FOUNDRY_OWN_TOOLS); every other tool keeps Codex's mode.
+    [key]: {
+      command: server.command,
+      args: [...server.args],
+      tools: Object.fromEntries(
+        [...FOUNDRY_OWN_TOOLS].map((tool) => [tool, { approval_mode: 'approve' }]),
+      ),
+    },
   };
 }
 
