@@ -31,6 +31,7 @@ import {
 } from '../src/prompts/instruction-stack';
 import { primedRequest } from '../src/providers/primed-decisions';
 import { type FoundryConfig, starterConfig } from '../src/viewer/config';
+import { resolveThreadView } from '../src/viewer/config-resolve';
 import { writeRegions } from './helpers/regions';
 
 /**
@@ -510,6 +511,26 @@ test('a slot the role does not receive is not composed, so dedupe never moves te
   const both = await view('main');
   expect(both.slots.instructions.text).not.toContain('KEEP_ME');
   expect(both.slots.domainKnowledge.text).toContain('KEEP_ME');
+});
+
+test("the main thread's harness follows the thread's worker: a Codex thread reads AGENTS.md, a Claude one CLAUDE.md", async () => {
+  write(join(claudeDir, 'CLAUDE.md'), '# Me\n\nCLAUDE_GLOBAL');
+  write(join(home, '.codex', 'AGENTS.md'), '# Me\n\nCODEX_GLOBAL');
+  const c = starterConfig('claude-code', 'fable');
+  const load = (worker: string) =>
+    compositionSource(
+      resolveThreadView(c, { worker }).config,
+      'main-instructions',
+      'main',
+      'instructions',
+      ['instructions'],
+    ).bind!({ threadId: 't', cwd: repo }).load();
+  const claude = await load('claude-code');
+  expect(claude).toContain('CLAUDE_GLOBAL');
+  expect(claude).not.toContain('CODEX_GLOBAL');
+  const codex = await load('codex');
+  expect(codex).toContain('CODEX_GLOBAL');
+  expect(codex).not.toContain('CLAUDE_GLOBAL');
 });
 
 test('a composition edit reaches the main thread on its next turn', async () => {

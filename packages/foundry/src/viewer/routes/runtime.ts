@@ -15,7 +15,7 @@ import type {
 import { MODEL_REGISTRY, newId, Thread, threadTitle, timeFromId } from '@inixiative/foundry-core';
 import type { Hono } from 'hono';
 import type { ProjectRegistry } from '../../agents/project';
-import type { ThreadFactory } from '../../agents/thread-factory';
+import { type ThreadFactory, WorkerRefusedError } from '../../agents/thread-factory';
 import type { ThreadNamer } from '../../agents/thread-namer';
 import type { ArchiveCapture } from '../../archives/capture';
 import type { ThreadContextTracker } from '../../archives/thread-context';
@@ -23,7 +23,7 @@ import { type FeedbackService, localOperator } from '../../feedback/service';
 import type { FeedbackAbout } from '../../feedback/types';
 import { byAttention, feedbackView, newestFirst } from '../../feedback/view';
 import { branchCommits, listWorktrees } from '../../git';
-import { registryForViewer, subscriptionWorker } from '../../models/registry';
+import { registryForViewer, SUBSCRIPTION_WORKERS, subscriptionWorker } from '../../models/registry';
 import {
   IMAGE_MAX_BYTES,
   ImageAttachmentError,
@@ -43,6 +43,7 @@ import {
 import type { RunningTasks } from '../../turns/running-tasks';
 import { type ThreadSetupHost, TurnService } from '../../turns/turn-service';
 import type { ConfigStore } from '../config';
+import { resolveThreadView } from '../config-resolve';
 import type { ViewerStreams } from '../data-streams';
 import { docSections } from '../doc-sections';
 import { threadToJSON, traceToJSON, validateId } from '../http-helpers';
@@ -89,6 +90,8 @@ export interface RuntimeRoutesDeps {
   /** Images sent with messages (`POST /api/attachments/images`, then `images: [id]` on a send). */
   images?: ImageAttachmentStore;
 }
+
+type SubscriptionWorkerId = keyof typeof SUBSCRIPTION_WORKERS;
 
 /** Opaque history cursor: base64url of {t: threadId, s: oldest seq of the issued page}. */
 function encodeHistoryCursor(threadId: string, seq: number): string {
@@ -680,21 +683,32 @@ export function registerRuntimeRoutes(
   // native binding.
   const launchView = (thread: Thread) => {
     const launch = threadLaunch.get(thread.id);
-    const settings = deps.configStore.config;
-    const projectDefaults = thread.meta.projectId
-      ? settings.projects[thread.meta.projectId]?.defaults
-      : undefined;
-    const provider = projectDefaults?.provider ?? settings.defaults.provider;
-    const configuredModel = projectDefaults?.model ?? settings.defaults.model;
+    const { config: view, setAside } = resolveThreadView(deps.configStore.config, thread.meta);
+    const provider = view.defaults.provider;
+    const configuredModel = view.defaults.model;
+    const projectId = thread.meta.projectId;
+    const fallback = threadFactory?.defaultWorker(projectId) ?? provider;
+    // The workers a thread here may start on: the default, and each other one it has a login for.
+    const workers = [...new Set([fallback, ...Object.keys(SUBSCRIPTION_WORKERS)])]
+      .filter((worker) => worker === fallback || !threadFactory?.workerRefusal(projectId, worker))
+      .filter((worker) => worker === fallback || subscriptionWorker(worker))
+      .map((worker) => ({
+        id: worker,
+        label: MODEL_REGISTRY[worker]?.label ?? worker,
+        default: worker === fallback,
+      }));
     return {
       threadId: thread.id,
       provider,
+      worker: thread.meta.worker ?? provider,
       permissionMode: launch.permissionMode ?? null,
       model: launch.model ?? configuredModel,
       modelOverride: launch.model ?? null,
       effort: launch.effort ?? null,
       mcpServers: describeMcpServers(launch.mcpServers),
       revision: launch.revision,
+      /** Executor models pinned in settings that this thread's worker does not run. */
+      setAside,
       options: {
         permissionModes: PERMISSION_MODES,
         models: (MODEL_REGISTRY[provider]?.models ?? []).map((model) => ({
@@ -702,6 +716,7 @@ export function registerRuntimeRoutes(
           label: model.label,
         })),
         efforts: EFFORT_LEVELS,
+        workers,
       },
     };
   };
@@ -865,6 +880,8 @@ export function registerRuntimeRoutes(
       branch: meta.branch,
       forkedFrom: { threadId: sourceThreadId, journalSeq: options.atSeq },
       projectId: project?.id,
+      // A fork runs on its source's worker: its seeded history is that worker's conversation.
+      ...(meta.worker ? { worker: meta.worker } : {}),
     });
     const name = options.name?.slice(0, 200) ?? `Fork of ${sourceName}`;
     thread.rename(name);
@@ -914,6 +931,9 @@ export function registerRuntimeRoutes(
     const branch = typeof body.branch === 'string' ? body.branch : undefined;
     const parentThreadId =
       typeof body.parentThreadId === 'string' ? body.parentThreadId : undefined;
+    if (body.worker !== undefined && typeof body.worker !== 'string')
+      return c.json({ error: 'worker must be a string' }, 400);
+    const worker = body.worker as string | undefined;
 
     // Resolve ownership before building anything: an unknown project or a
     // live duplicate id must not leave an unreachable thread and runtime.
@@ -928,14 +948,23 @@ export function registerRuntimeRoutes(
     // A project thread works in its project's directory unless a worktree is given.
     const cwd = worktreePath ?? project?.path;
 
-    const thread = constructThread(id, {
-      description,
-      tags,
-      cwd,
-      branch,
-      parentThreadId,
-      projectId: project?.id,
-    });
+    if (worker && !threadFactory)
+      return c.json({ error: 'choosing a worker needs the thread factory' }, 400);
+    let thread: Thread;
+    try {
+      thread = constructThread(id, {
+        description,
+        tags,
+        cwd,
+        branch,
+        parentThreadId,
+        projectId: project?.id,
+        ...(worker ? { worker } : {}),
+      });
+    } catch (error) {
+      if (error instanceof WorkerRefusedError) return c.json({ error: error.message }, 400);
+      throw error;
+    }
 
     if (typeof body.name === 'string') thread.rename(body.name.slice(0, 200));
     registerThread(thread, project);
@@ -948,8 +977,42 @@ export function registerRuntimeRoutes(
     const id = c.req.param('id');
     const body = await c.req.json<Record<string, unknown>>();
 
-    const thread = directory.get(id);
+    let thread = directory.get(id);
     if (!thread) return c.json({ error: 'thread not found' }, 404);
+
+    // A thread's worker is chosen before its first turn (an ACP host that cannot send it on create);
+    // after that it is fixed. The thread is rebuilt on the new worker.
+    if (body.worker !== undefined && body.worker !== thread.meta.worker) {
+      if (typeof body.worker !== 'string') return c.json({ error: 'worker must be a string' }, 400);
+      if (!threadFactory || !thread.meta.worker)
+        return c.json({ error: 'choosing a worker needs the thread factory' }, 400);
+      if (thread === harness.thread)
+        return c.json({ error: "the main thread runs on its project's default worker" }, 409);
+      if (
+        thread.disposed ||
+        thread.meta.status === 'active' ||
+        turns.hasTurns(id) ||
+        (localStore?.recentTurnIds(id, 1).length ?? 0) > 0
+      )
+        return c.json(
+          { error: `the thread has started on ${thread.meta.worker}; its worker is fixed` },
+          409,
+        );
+      const refusal = threadFactory.workerRefusal(thread.meta.projectId, body.worker);
+      if (refusal) return c.json({ error: refusal }, 400);
+      // Checked and rebuilt with no await between, so no turn lands on the old thread meanwhile.
+      try {
+        thread = directory.rebuild(id, { ...structuredClone(thread.meta), worker: body.worker });
+      } catch (error) {
+        return c.json({ error: (error as Error).message }, 409);
+      }
+      // A model chosen for the old worker is not carried to the new one.
+      const chosen = threadLaunch.get(id).model;
+      if (chosen && workerModelRequirement(body.worker as SubscriptionWorkerId, chosen))
+        threadLaunch.update(id, { model: null });
+      // The old worker's in-session host goes; the rebuilt thread is already the live one.
+      await deps.threadSetup?.release?.(id);
+    }
 
     // Update worktree assignment
     const priorCwd = thread.meta.cwd;

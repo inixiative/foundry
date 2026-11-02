@@ -8,6 +8,7 @@ import {
   KingdomSubscriptionAuthentication,
   limitReading,
   ProjectCapacityAuthentication,
+  projectCapacity,
 } from '../src/providers/kingdom-subscription-authentication';
 import {
   kingdomLogin,
@@ -271,6 +272,56 @@ test('threads of a kingdom project route to Kingdom; every other thread keeps th
   expect(calls).toHaveLength(0);
   expect(await routed.resolveBindingId('kingdom-thread', 'claude')).toContain(':kingdom:');
   expect((await routed.prepare('kingdom-thread', 'claude')).mode).toBe('kingdom-subscription');
+});
+
+test("a Kingdom project's Codex thread whose pool has no Codex login is refused with Kingdom's reason, never run locally", async () => {
+  const directory = await temporary();
+  const owner = `OrganizationUser:${crypto.randomUUID()}:${crypto.randomUUID()}:`;
+  const asked: Array<{ runtime: string; model: string }> = [];
+  // The pool holds only a Claude login: Kingdom refuses a Codex run.
+  const kingdom = mockKingdom({
+    onSignet: (action, body) => {
+      if (action === 'resolveRun')
+        asked.push({ runtime: body.selection.runtime, model: body.selection.model });
+      return Response.json({ error: 'No authorized capacity matches' }, { status: 409 });
+    },
+  });
+  cleanups.push(async () => kingdom.stop());
+  const { credentialFile, signetId } = await heldSignet(kingdom, directory, owner);
+  const config = starterConfig('claude-code', 'fable');
+  config.kingdomIntegrations = [
+    { url: kingdom.url, owner, integrationId: crypto.randomUUID(), signetId },
+  ];
+  config.projects = {
+    pooled: {
+      id: 'pooled',
+      path: directory,
+      tags: [],
+      capacity: 'kingdom',
+      kingdomCapacity: { kingdom: kingdom.url, signetId },
+    },
+  };
+  let local = 0;
+  // The daemon's wiring: one capacity router for every worker, the thread's own model.
+  const route = projectCapacity({
+    foundryDir: directory,
+    config: () => config,
+    meta: (threadId) =>
+      threadId === 'codex-thread' ? { projectId: 'pooled', worker: 'codex' } : undefined,
+    credentialFile: async () => credentialFile,
+  });
+  const routed = route({
+    bindingId: (threadId) => threadId,
+    prepare: async () => {
+      local++;
+      throw Error('the local login must not be used');
+    },
+  });
+  await expect(routed.prepare('codex-thread', 'codex')).rejects.toThrow(
+    'No authorized capacity matches',
+  );
+  expect(asked).toEqual([{ runtime: 'codex', model: 'gpt-6-astra' }]);
+  expect(local).toBe(0);
 });
 
 test('kingdom login hands the native login to the chosen owner and leaves nothing on disk', async () => {

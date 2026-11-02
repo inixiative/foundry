@@ -81,10 +81,69 @@ test('subscription policy resolves explicit models and sources without API acces
   const f = fixture();
   expect(() => validateConfig(f.c)).not.toThrow();
   expect(resolveSubscriptionPolicy(f.c)).toMatchObject({
-    worker: { id: f.worker.id },
+    workers: { 'claude-code': { id: f.worker.id } },
     decision: { id: f.decision.id },
     policy: { model: 'decision-model' },
   });
+});
+
+test("a Codex source is the Codex worker's login; the named Claude source stays the Claude worker's", () => {
+  const f = fixture();
+  const codex = {
+    id: crypto.randomUUID(),
+    integrationId: crypto.randomUUID(),
+    runtime: 'codex' as const,
+    mode: 'native-profile' as const,
+    profileDirectory: join(f.root, 'codex-login'),
+  };
+  mkdirSync(codex.profileDirectory, { mode: 0o700 });
+  f.c.nativeAuthentication!.push(codex);
+  expect(resolveSubscriptionPolicy(f.c)!.workers).toMatchObject({
+    'claude-code': { id: f.worker.id },
+    codex: { id: codex.id },
+  });
+  // Naming the Codex source leaves two Claude sources unnamed: ambiguous, refused, never ~/.claude.
+  f.c.defaults.nativeAuthenticationId = codex.id;
+  expect(() => resolveSubscriptionPolicy(f.c)).toThrow('Several claude logins are configured');
+});
+
+test('Codex-default and Claude-default projects resolve together, each checked on its own worker', () => {
+  const f = fixture();
+  // The executor runs on each project's default worker.
+  delete f.c.agents.artificer!.provider;
+  f.c.projects.codexProject = {
+    id: 'codexProject',
+    path: f.root,
+    tags: [],
+    defaults: { provider: 'codex', model: 'gpt-6-astra' },
+  };
+  const resolved = resolveSubscriptionPolicy(f.c)!;
+  expect(Object.keys(resolved.workers).sort()).toEqual(['claude-code', 'codex']);
+  // A model of the other worker is refused on that project.
+  f.c.projects.codexProject.defaults = { provider: 'codex', model: 'opus' };
+  expect(() => resolveSubscriptionPolicy(f.c)).toThrow('opus is not a codex model');
+});
+
+test("a default worker without a login is refused at startup; another worker's missing login only withholds it", () => {
+  const root = mkdtempSync(join(tmpdir(), 'worker-logins-'));
+  roots.push(root);
+  mkdirSync(join(root, '.claude'), { mode: 0o755 });
+  const home = process.env.HOME;
+  process.env.HOME = root;
+  try {
+    const c = defaultConfig();
+    const resolved = resolveSubscriptionPolicy(c, { startup: true, cwd: root })!;
+    expect(Object.keys(resolved.workers)).toEqual(['claude-code']);
+    expect(resolved.unavailable.codex).toContain('subscription profile unavailable');
+    c.projects = {
+      p: { id: 'p', path: root, tags: [], defaults: { provider: 'codex', model: 'gpt-6-astra' } },
+    };
+    expect(() => resolveSubscriptionPolicy(c, { startup: true, cwd: root })).toThrow(
+      'codex subscription profile unavailable',
+    );
+  } finally {
+    process.env.HOME = home;
+  }
 });
 
 for (const change of [
@@ -92,7 +151,6 @@ for (const change of [
   'review-api',
   'review-model',
   'gateway',
-  'codex-worker',
   'expert-tools',
   'codex-observed-model',
 ] as const)
@@ -117,9 +175,6 @@ for (const change of [
           baseUrl: 'https://example.com',
           credential: { type: 'environment', variable: 'SYNTHETIC_KEY' },
         };
-        break;
-      case 'codex-worker':
-        f.c.nativeAuthentication![0].runtime = 'codex';
         break;
       case 'expert-tools':
         f.c.agents.router.tools = true;
@@ -165,7 +220,7 @@ test('an explicit Codex decision profile runs Codex decisions beside the Claude 
   f.c.nativeAuthentication![1].runtime = 'codex';
   delete f.c.subscriptionOnly!.expectedObservedModel;
   expect(resolveSubscriptionPolicy(f.c)).toMatchObject({
-    worker: { runtime: 'claude' },
+    workers: { 'claude-code': { runtime: 'claude' } },
     decision: { id: f.decision.id, runtime: 'codex' },
     policy: { model: 'decision-model' },
   });
@@ -402,17 +457,22 @@ test('Codex is a subscription main thread: GPT-6 Astra on the Codex login, no AP
   expect(f.c.apiTokens).toBeUndefined();
   expect(() => validateConfig(f.c)).not.toThrow();
   expect(resolveSubscriptionPolicy(f.c)).toMatchObject({
-    workerProvider: 'codex',
-    worker: { id: f.worker.id, runtime: 'codex' },
+    workers: { codex: { id: f.worker.id, runtime: 'codex' } },
     decision: { id: f.decision.id, runtime: 'codex' },
     config: { defaults: { provider: 'codex', model: 'gpt-6-astra' } },
   });
   // A shared Codex login: the worker and decisions may use the same profile.
   f.decision.profileDirectory = f.worker.profileDirectory;
   expect(() => resolveSubscriptionPolicy(f.c)).not.toThrow();
-  // The worker profile must match the worker harness.
+  // A worker runs only on a login of its own runtime: the named Claude source is the Claude
+  // worker's. The only Codex source is the decision login, so the Codex worker takes its default
+  // profile, never the Claude one.
   f.worker.runtime = 'claude';
-  expect(() => resolveSubscriptionPolicy(f.c)).toThrow('runs on a codex profile');
+  const resolved = resolveSubscriptionPolicy(f.c)!;
+  expect(resolved.workers['claude-code']).toMatchObject({ id: f.worker.id, runtime: 'claude' });
+  expect(resolved.workers.codex).toMatchObject({ runtime: 'codex' });
+  expect(resolved.workers.codex!.id).not.toBe(f.decision.id);
+  expect(resolved.workers.codex!.id).not.toBe(f.worker.id);
 });
 
 test("a fresh Codex main thread defaults to the user's own ~/.codex login; decisions stay on Claude unless set", () => {
@@ -428,7 +488,7 @@ test("a fresh Codex main thread defaults to the user's own ~/.codex login; decis
     c.defaults.provider = 'codex';
     c.defaults.model = 'gpt-6-astra';
     const resolved = resolveSubscriptionPolicy(c, { startup: true, cwd: root })!;
-    expect(resolved.worker).toMatchObject({
+    expect(resolved.workers.codex).toMatchObject({
       runtime: 'codex',
       profileDirectory: join(root, '.codex'),
     });
@@ -464,11 +524,14 @@ test('claude-in-session runs Claude decisions with Wardens held in the Claude Co
     expect(resolved.policy.wardens).toBe('in-session');
     expect(resolved.decision.runtime).toBe('claude');
     expect(resolved.policy.model).toBe('claude-haiku-5-5');
-    // A Codex main thread cannot hold Claude Wardens.
+    // A Codex-default Foundry still holds Claude threads' Wardens in-session; its Codex threads use
+    // primed Wardens. It needs only a usable Claude login.
     c.defaults.provider = 'codex';
     c.defaults.model = 'gpt-6-astra';
+    expect(resolveSubscriptionPolicy(c, { cwd: root })!.policy.wardens).toBe('in-session');
+    c.vendors = { ...c.vendors, anthropic: { enabled: false } };
     expect(() => resolveSubscriptionPolicy(c, { cwd: root })).toThrow(
-      'the worker must be claude-code',
+      'it needs a usable Claude Code login',
     );
   } finally {
     process.env.HOME = home;

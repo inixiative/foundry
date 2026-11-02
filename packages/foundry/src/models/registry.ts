@@ -26,6 +26,11 @@ import {
 /** Native harnesses that run a main thread on the user's own subscription login, and the profile each uses. */
 export const SUBSCRIPTION_WORKERS = { 'claude-code': 'claude', codex: 'codex' } as const;
 export type SubscriptionWorker = keyof typeof SUBSCRIPTION_WORKERS;
+/** The session-store bucket each worker's native binding is saved under (the session adapter's runtime). */
+export const WORKER_SESSION_RUNTIMES: Readonly<Record<SubscriptionWorker, string>> = {
+  'claude-code': 'claude-code',
+  codex: 'codex-app-server',
+};
 export const subscriptionWorker = (provider: string): provider is SubscriptionWorker =>
   Object.hasOwn(SUBSCRIPTION_WORKERS, provider);
 

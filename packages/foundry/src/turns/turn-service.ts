@@ -69,6 +69,10 @@ export interface ThreadSetupHost {
   open(threadId: string, opts: { cwd?: string; bridge?: NativeBridgeSource }): Promise<void>;
   /** The thread's Wardens are not held yet (setup not run, or still starting). */
   pending(threadId: string): boolean;
+  /** Whether this thread holds its Wardens in its own process (its worker runs them); others use primed Wardens. */
+  applies(threadId: string): boolean;
+  /** Close the thread's in-session host (its worker changed before its first turn). */
+  release?(threadId: string): Promise<void>;
 }
 
 export interface TurnRequest {
@@ -246,6 +250,12 @@ export class TurnService {
     return this.deps.directory.canReopen(threadId);
   }
 
+  /** Whether the thread has a turn queued or running here. */
+  hasTurns(threadId: string): boolean {
+    for (const turn of this.live.values()) if (turn.threadId === threadId) return true;
+    return false;
+  }
+
   /** Every Harness created so far, one per thread. */
   all(): Harness[] {
     return [...this.harnesses.values()];
@@ -362,7 +372,7 @@ export class TurnService {
         // A blocking tuning prompt holds the turn (still queued, so a stop cancels it) until answered.
         await this.deps.feedback?.held(turnId);
         // A thread setting up its in-session Wardens holds the turn (still queued) until they are held.
-        if (state.phase !== 'settled' && this.deps.threadSetup)
+        if (state.phase !== 'settled' && this.deps.threadSetup?.applies(threadId))
           await this.deps.threadSetup
             .open(threadId, {
               ...(harness.thread.meta.cwd ? { cwd: harness.thread.meta.cwd } : {}),

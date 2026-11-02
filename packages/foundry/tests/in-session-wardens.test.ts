@@ -25,8 +25,10 @@ import type { NativeTextConfig } from '../src/providers/native-text-provider';
 import type { CreateSessionOpts, SessionAdapter } from '../src/providers/session-adapter';
 import { SessionBackedProvider } from '../src/providers/session-backed';
 import { buildSubscriptionDecisions } from '../src/providers/subscription-decisions';
+import { workerDefaultModel } from '../src/providers/subscription-policy';
 import { ThreadLaunchSettings } from '../src/providers/thread-launch';
 import { SubagentRecorder, type SubagentToolCall } from '../src/turns/subagents';
+import { starterConfig } from '../src/viewer/config';
 import { createViewer } from '../src/viewer/server';
 import { until } from './helpers/live-watch-fixture';
 
@@ -75,6 +77,7 @@ test('a turn waits queued while its thread sets up its Wardens; setup streams on
         for (const l of listeners) l(threadId, setup('ready', 3));
       },
       pending: () => !ready,
+      applies: () => true,
       onSetup: (listener) => {
         listeners.push(listener);
       },
@@ -282,6 +285,22 @@ test('a session opened ahead of the first turn is adopted by it, or relaunched w
   expect(adapter.sessions.length).toBe(3);
   expect(adapter.sessions[1]!.alive).toBe(false);
   expect(adapter.created[2]).toMatchObject({ threadId: 't2', model: 'sonnet' });
+});
+
+test('with a Codex global default, the Claude Code worker opens its in-session thread on its own model', async () => {
+  const config = starterConfig('codex', 'gpt-6-astra');
+  // The global model belongs to the global worker; the Claude worker's adapter starts on its own.
+  expect(workerDefaultModel(config, 'codex')).toBe('gpt-6-astra');
+  expect(workerDefaultModel(config, 'claude-code')).toBe('fable');
+  const adapter = new FakeAdapter();
+  const provider = new SessionBackedProvider({
+    id: 'claude-code',
+    adapter,
+    defaultModel: workerDefaultModel(config, 'claude-code'),
+    launch: new ThreadLaunchSettings(),
+  });
+  await provider.open('claude-thread', { cwd: '/w' });
+  expect(adapter.created[0]).toMatchObject({ threadId: 'claude-thread', model: 'fable' });
 });
 
 test("a subagent's tool calls go to the root thread's guard Wardens, on the subagent's node", () => {

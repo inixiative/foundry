@@ -70,6 +70,35 @@ async function turn(
   return attempt;
 }
 
+test("a host names the thread's worker in _meta, or as the worker option before the first turn; after it the worker is fixed", async () => {
+  const { f, dir, host } = await nativeHost();
+  const h = host();
+  await h.agent.request('initialize', INITIALIZE);
+  const created = await h.agent.request('session/new', {
+    cwd: join(dir, 'P'),
+    mcpServers: [],
+    _meta: { foundry: { worker: 'codex' } },
+  });
+  const { sessionId } = created;
+  expect(created.configOptions?.find((o) => o.id === 'worker')).toMatchObject({
+    currentValue: 'codex',
+  });
+  // Before the first turn the option moves the thread to another worker.
+  const moved = await h.agent.request('session/set_config_option', {
+    sessionId,
+    configId: 'worker',
+    value: 'claude-code',
+  });
+  expect(moved.configOptions.find((o) => o.id === 'worker')).toMatchObject({
+    currentValue: 'claude-code',
+  });
+  await turn(h, f, sessionId, 'first');
+  const late = await h.agent
+    .request('session/set_config_option', { sessionId, configId: 'worker', value: 'codex' })
+    .catch((e: Error) => e);
+  expect(String((late as Error).message)).toContain('its worker is fixed');
+});
+
 test("modes and config options are the host's: they reach the executor launch and a change relaunches it", async () => {
   const { f, dir, host } = await nativeHost();
   const h = host();
@@ -91,6 +120,7 @@ test("modes and config options are the host's: they reach the executor launch an
   expect(created.configOptions?.map((option) => [option.id, option.category])).toEqual([
     ['mode', 'mode'],
     ['model', 'model'],
+    ['worker', '_worker'],
     ['effort', 'thought_level'],
   ]);
   // The command list follows the session's creation.

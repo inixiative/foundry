@@ -220,6 +220,9 @@ export interface ThreadMeta {
   /** Project that owns this thread. Scopes memory sources and tool calls. */
   projectId?: string;
 
+  /** The harness running this thread's main session (`claude-code`, `codex`). Set at creation; never changed silently. */
+  worker?: string;
+
   /** When this thread was created. */
   readonly createdAt: number;
 
@@ -333,6 +336,8 @@ export interface ThreadConfig {
   forkedFrom?: ThreadFork;
   /** Project that owns this thread. Scopes memory sources and tool calls. */
   projectId?: string;
+  /** The harness running this thread's main session. */
+  worker?: string;
   /** Optional token tracker — auto-records costs for every dispatch. */
   tokenTracker?: TokenTracker;
 }
@@ -385,6 +390,7 @@ export class Thread {
       parentThreadId: opts?.parentThreadId,
       ...(opts?.forkedFrom ? { forkedFrom: opts.forkedFrom } : {}),
       projectId: opts?.projectId,
+      ...(opts?.worker ? { worker: opts.worker } : {}),
       createdAt: now,
       lastActiveAt: now,
     };

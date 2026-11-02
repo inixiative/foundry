@@ -70,13 +70,13 @@ test("a fresh configuration is subscription-only: Claude worker and Claude Haiku
   expect(config.apiTokens).toBeUndefined();
   expect(() => validateConfig(config)).not.toThrow();
   const resolved = resolveSubscriptionPolicy(config, { startup: true, cwd })!;
-  expect(resolved.worker).toMatchObject({
+  expect(resolved.workers['claude-code']).toMatchObject({
     runtime: 'claude',
     mode: 'native-profile',
     profileDirectory: join(root, '.claude'),
   });
   // Worker and decisions share the one Claude login.
-  expect(resolved.decision).toEqual(resolved.worker);
+  expect(resolved.decision).toEqual(resolved.workers['claude-code']!);
   expect(resolved.policy).toEqual({
     model: 'claude-haiku-5-5',
     directory: join(cwd, '.foundry', 'decision-receipts'),
@@ -672,8 +672,10 @@ test('a fresh install starts subscription-only with no settings, API provider or
       await Bun.sleep(25);
     }
     expect(foundry.output).toContain(
-      `Subscription-only: worker claude-code (${join(root, '.claude')}), decisions claude claude-haiku-5-5 (${join(root, '.claude')}); no API providers`,
+      `Subscription-only: workers claude-code (${join(root, '.claude')}), codex (${join(root, '.codex')}), decisions claude claude-haiku-5-5 (${join(root, '.claude')}); no API providers`,
     );
+    // Every usable worker's adapter is built at start; building one spawns nothing.
+    expect(foundry.output).toContain('Session adapters: claude-code, codex-app-server');
     expect(foundry.output).toContain('Librarian (subscription-decisions)');
     expect(foundry.output).not.toContain('openai-decisions');
     expect(foundry.output).not.toContain('Decision roles use subscription decisions');

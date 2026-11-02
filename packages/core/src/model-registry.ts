@@ -241,6 +241,11 @@ export const SUBSCRIPTION_DECISION_MODELS = {
   claude: DECISION_MODEL,
   codex: 'gpt-5.6-luna',
 } as const;
+/** A subscription worker's main-thread model when a thread runs on a worker other than its project's default. */
+export const SUBSCRIPTION_WORKER_MODELS = {
+  'claude-code': 'fable',
+  codex: 'gpt-6-astra',
+} as const;
 
 /** Tag rule: every model judges. Cheap models review and route; capable models execute and advise. */
 const FAST = ['judgment', 'learning-review', 'tool-use'] as ModelCapability[];

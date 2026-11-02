@@ -12,6 +12,8 @@ import { html, useEffect, useRef, useState } from './lib.js';
 import { analyticsPath, navigate, settingsPath } from './route.js';
 import { MODES, ModeIcon, StatusLegend } from './status-icons.js';
 import {
+  activeThreadId,
+  authFetch,
   commandPaletteOpen,
   createThread,
   executeAction,
@@ -76,10 +78,36 @@ const COMMANDS = [
   },
 ];
 
+/** "New <worker> thread in this scope" for each worker other than the scope's default that has a login. */
+function useWorkerCommands(isOpen) {
+  const [workers, setWorkers] = useState([]);
+  useEffect(() => {
+    const threadId = activeThreadId.value;
+    if (!isOpen || !threadId) return;
+    let live = true;
+    authFetch(`/api/threads/${encodeURIComponent(threadId)}/launch`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((view) => {
+        if (live) setWorkers((view?.options?.workers ?? []).filter((worker) => !worker.default));
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [isOpen]);
+  return workers.map((worker) => ({
+    id: `new-thread-${worker.id}`,
+    label: `New ${worker.label} thread in this scope`,
+    icon: '+',
+    action: () => createThread({ worker: worker.id }),
+  }));
+}
+
 export function CommandPalette() {
   const [query, setQuery] = useState('');
   const inputRef = useRef(null);
   const isOpen = commandPaletteOpen.value;
+  const workerCommands = useWorkerCommands(isOpen);
 
   useEffect(() => {
     if (isOpen && inputRef.current) {
@@ -90,13 +118,14 @@ export function CommandPalette() {
 
   if (!isOpen) return null;
 
+  const commands = [...COMMANDS, ...workerCommands];
   const filtered = query.trim()
-    ? COMMANDS.filter(
+    ? commands.filter(
         (c) =>
           c.label.toLowerCase().includes(query.toLowerCase()) ||
           c.id.toLowerCase().includes(query.toLowerCase()),
       )
-    : COMMANDS;
+    : commands;
 
   const close = () => {
     commandPaletteOpen.value = false;

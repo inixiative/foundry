@@ -764,8 +764,17 @@ export function createFoundryAgent(options: FoundryAgentOptions = {}) {
     })
     .onRequest('session/new', async (ctx) => {
       const foundry = await ensureDaemon().catch(httpError);
+      // A host may name the thread's subscription worker; the project's default otherwise.
+      const meta = ctx.params._meta as { foundry?: { worker?: unknown } } | null | undefined;
+      const worker = meta?.foundry?.worker;
+      if (worker !== undefined && typeof worker !== 'string')
+        throw RequestError.invalidParams({ worker }, '_meta.foundry.worker must be a string');
       const thread = await foundry.http
-        .createThread({ cwd: ctx.params.cwd, tags: ['acp', `acp:${clientName}`] })
+        .createThread({
+          cwd: ctx.params.cwd,
+          tags: ['acp', `acp:${clientName}`],
+          ...(worker ? { worker } : {}),
+        })
         .catch(httpError);
       const session = await bind(thread, ctx.params.cwd);
       const setup = await sessionSetup(
@@ -852,6 +861,13 @@ export function createFoundryAgent(options: FoundryAgentOptions = {}) {
       const configId = ctx.params.configId;
       if (configId === 'mode' && !isModeId(value))
         throw RequestError.invalidParams({ configId, value }, 'Unknown mode');
+      // The worker is the thread's, not a launch setting: chosen before its first turn (409 after).
+      if (configId === 'worker') {
+        const foundry = await ensureDaemon().catch(httpError);
+        await foundry.http.updateThread(session.threadId, { worker: value }).catch(httpError);
+        const view = await foundry.http.launch(session.threadId).catch(httpError);
+        return { configOptions: configOptions(view) };
+      }
       const patch: ThreadLaunchPatch =
         configId === 'mode'
           ? { permissionMode: value as ModeId }

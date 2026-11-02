@@ -178,6 +178,11 @@ export class FileExternalSessionStore implements ExternalSessionStore {
     }
   }
 
+  /** Every binding, by runtime: which native runtime holds each thread's session. */
+  async bindings(): Promise<Readonly<Record<string, Readonly<Record<string, string>>>>> {
+    return structuredClone(await this._read());
+  }
+
   async load(threadId: string, runtime: string): Promise<string | null> {
     const data = await this._read();
     return data[runtime]?.[threadId] ?? null;

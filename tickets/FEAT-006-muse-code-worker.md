@@ -117,4 +117,5 @@ A Muse subscription runs only through Meta's own Muse Code CLI (`muse`). The Mod
 - [ ] Resume after a daemon restart continues the native session. A deleted native session starts fresh from the journal.
 - [ ] An approval in supervised mode reaches Foundry's queue. Full access runs without asking.
 - [ ] A Muse thread in a project owned by an organization is refused, with the reason.
+- [ ] Every Muse thread Foundry captures into Archive carries `runtime: { provider: 'meta', accessPath: 'subscription' }`. That is what Archive's `alwaysPersonal` gate keys on (Archive #47, inixiative-ec): Muse never reaches an org.
 - [ ] Cassettes are recorded live. `bun run check` is green in agent-session and Foundry.
