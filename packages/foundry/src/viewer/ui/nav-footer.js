@@ -14,7 +14,7 @@
 
 import { capacityByProvider } from './capacity.js';
 import { ComingSoon } from './coming-soon.js';
-import { knownOtherMachines, openThreadsLabel } from './device-page.js';
+import { openThreadsLabel, otherMachines } from './device-page.js';
 import { html, useEffect, useState } from './lib.js';
 import { DeviceIcon, MachineIconPicker, machineIcon, machineProfile } from './machine-icons.js';
 import { RenameModal } from './modal.js';
@@ -197,7 +197,7 @@ function MachineName({ profile, onSaved }) {
 
 /** Your other machines: each opens its page; listed with its open threads, never metered. */
 function OtherMachines() {
-  const machines = knownOtherMachines();
+  const machines = otherMachines();
   return html`<div class="nav-footer-others">
     <div class="nav-footer-label">Your other devices</div>
     ${machines.map(
@@ -206,7 +206,7 @@ function OtherMachines() {
       ) => html`<button key=${m.id} type="button" class="nav-footer-row nav-footer-other" onClick=${() => openDevicePage(m.id)}
         title=${`Open ${m.name}'s page. It uses the same subscriptions as this machine.`}>
         <span class="nav-footer-name">${m.name}</span>
-        <span class="nav-footer-dot" title="Whether it's online comes from Kingdom (VIEWER-007)"></span>
+        <span class=${`nav-footer-dot ${m.online ? 'is-ok' : ''}`} title=${m.online == null ? "Whether it's online comes from Kingdom (VIEWER-007)" : m.online ? 'Online' : 'Offline'}></span>
         <span class="nav-footer-count">${openThreadsLabel(m.open)}</span>
       </button>`,
     )}

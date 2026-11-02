@@ -8,8 +8,10 @@
  * checkouts, its tunnel, and a note that subscriptions are shared across machines (quota belongs to
  * the login, never to a machine). It leads to the machine's threads on the Board or in the
  * Watchtower, each opened with a removable Machine filter. This machine reads its own inventory
- * (`/api/devices`, `/api/tunnel`); another machine is known only from threads that carry its
- * `meta.machine` until Foundry asks Kingdom for your other machines (VIEWER-007).
+ * (`/api/devices`, `/api/tunnel`). Everything about your other machines comes through one function,
+ * `otherMachines()`: today it knows a machine only from threads that carry its `meta.machine`; it
+ * switches to the Signet Foundry holds from Kingdom (an entitlement anchored at your user: read
+ * online, read tunnel, ...) once Kingdom serves that call (VIEWER-007).
  */
 
 import { ComingSoon } from './coming-soon.js';
@@ -50,14 +52,24 @@ export function threadsOnMachine(deviceId) {
   });
 }
 
-/** Your other machines that this Foundry knows of: those that run a thread listed here. */
-export function knownOtherMachines() {
+/**
+ * Your other machines: { id, name, open, online, checkouts, tunnel }. The one place their data comes
+ * from. `online`, `checkouts` and `tunnel` are null until Kingdom serves them through Foundry's
+ * Signet (VIEWER-007); every surface shows "Coming soon" for a null.
+ */
+export function otherMachines() {
   const seen = new Map();
   for (const t of allThreads.value) {
     const m = otherMachine(t);
     if (m && !seen.has(m.deviceId)) seen.set(m.deviceId, { id: m.deviceId, name: m.deviceName });
   }
-  return [...seen.values()].map((m) => ({ ...m, open: threadsOnMachine(m.id).length }));
+  return [...seen.values()].map((m) => ({
+    ...m,
+    open: threadsOnMachine(m.id).length,
+    online: null,
+    checkouts: null,
+    tunnel: null,
+  }));
 }
 
 export const openThreadsLabel = (n) => `${n} open thread${n === 1 ? '' : 's'}`;
@@ -94,7 +106,7 @@ export function DevicePage({ deviceId }) {
   }, []);
   const here = deviceId === 'here';
   const { inventory, tunnel } = useHere(here);
-  const other = here ? null : knownOtherMachines().find((m) => m.id === deviceId);
+  const other = here ? null : otherMachines().find((m) => m.id === deviceId);
   const name = here ? thisMachineName() : (other?.name ?? 'Another machine');
   const open = threadsOnMachine(deviceId);
   const checkouts = inventory?.checkouts ?? [];
@@ -109,7 +121,9 @@ export function DevicePage({ deviceId }) {
       <span class="ph-meta">${
         here
           ? html`This machine · <span class="device-status is-on"><i></i>online</span>`
-          : html`Your other machine · <span class="device-status" title="Whether it's online comes from Kingdom (VIEWER-007)"><i></i>status unknown</span>`
+          : other?.online == null
+            ? html`Your other machine · <span class="device-status" title="Whether it's online comes from Kingdom (VIEWER-007)"><i></i>status unknown</span>`
+            : html`Your other machine · <span class="device-status ${other.online ? 'is-on' : ''}"><i></i>${other.online ? 'online' : 'offline'}</span>`
       }</span>
       <span class="ph-head-actions">
         <button type="button" class="proj-btn" onClick=${() => openMachineBoard(name)}>Its threads on the Board →</button>
@@ -131,7 +145,9 @@ export function DevicePage({ deviceId }) {
                 ? html`<div class="ph-line">${checkouts.map((c) => c.label).join(', ')}</div>
                     <div class="ph-meta">${checkouts.length} registered project${checkouts.length === 1 ? '' : 's'} checked out here</div>`
                 : html`<div class="ph-meta">No registered project is checked out here.</div>`
-            : html`<${ComingSoon} what="The projects this machine has checked out, from Kingdom." ticket="VIEWER-007" />`
+            : other?.checkouts
+              ? html`<div class="ph-line">${other.checkouts.map((c) => c.label).join(', ') || 'None'}</div>`
+              : html`<${ComingSoon} what="The projects this machine has checked out, from Kingdom." ticket="VIEWER-007" />`
         }
       </section>
       <section class="ph-box">
@@ -141,7 +157,9 @@ export function DevicePage({ deviceId }) {
             ? html`<div class="ph-line">${tunnel === undefined ? 'Checking…' : tunnel?.active ? `on · ${tunnel.url ?? ''}` : 'off'}</div>
                 <div class="ph-meta">Reach this Foundry from your other machines through Kingdom.</div>
                 <a class="proj-btn ph-link" href=${settingsPath(null, 'devices')} onClick=${go('devices')}>Settings › Devices →</a>`
-            : html`<${ComingSoon} what="How this machine reaches your Kingdom, from Kingdom." ticket="VIEWER-007" />`
+            : other?.tunnel
+              ? html`<div class="ph-line">${other.tunnel.active ? 'on' : 'off'}</div>`
+              : html`<${ComingSoon} what="How this machine reaches your Kingdom, from Kingdom." ticket="VIEWER-007" />`
         }
       </section>
       <section class="ph-box">

@@ -16,20 +16,16 @@ The rail footer lists **your other devices** under this machine, each with its s
 
 Quota belongs to a subscription login and is shared across devices, so it is never shown per machine. The footer reads: this Mac, then Kingdoms and Archives, then "Your other devices" (listed with status and open-thread count), then Subscriptions. Intended features stay visible as placeholders.
 
-## What Kingdom needs
+## What Kingdom needs (Aron, 2026-11-02)
 
-Kingdom already knows each paired Foundry. It is a `foundry` Integration on its owner, and its liveness is integration presence (`readIntegrationPresence`, `apps/api/src/modules/me/services/readIntegrationPresence.ts`, Redis `lastSeenAt` within `PRESENCE_TTL_SECONDS`). But only a person reads it, through `GET /me/overview`. A paired Foundry presents its Signet enrollment on the installation socket and has no way to ask.
+Your other devices reach Foundry through **the Signet Foundry holds from Kingdom**. Each of your other machines is a `foundry` Integration. Foundry's Signet carries an entitlement anchored at your user, with operations such as *read online* and *read tunnel* over those integrations. Kingdom already has the liveness, as integration presence (`readIntegrationPresence`, `apps/api/src/modules/me/services/readIntegrationPresence.ts`). The Kingdom lane building this (with inixiative-bf's grant cutover) gives the exact operation and response.
 
-1. **An installation operation `installations.siblings`** on the installation socket (or `access/…`): the other enabled `foundry` integrations of the same owner, plus those of the owner's personal owners (the User and their OrganizationUsers). It returns each integration's id, name (the Foundry's `installationName` from pairing) and presence (`online` / `lastSeenAt`). Permission: the caller's own owner, or its personal owner. It reuses `readIntegrationPresence`, with no second presence store.
-2. **A short presence summary** carried with the presence a Foundry already reports: open top-level thread count, registered checkouts (project ids and labels), and tunnel on/off. Kingdom stores it beside `lastSeenAt` (Redis, same TTL), so `installations.siblings` returns it.
+Also wanted with it: a short presence summary each Foundry reports (open top-level threads, registered checkouts, tunnel on/off), stored beside `lastSeenAt` and read under the same entitlement.
 
 ## Foundry side (built)
 
-- `ui/device-page.js` (`DevicePage`, `knownOtherMachines`, `threadsOnMachine`); `openDevicePage`, `openMachineBoard`, `openMachineWatchtower`, `watchtowerFilter` in `ui/store.js`.
+- `ui/device-page.js` (`DevicePage`, `otherMachines`, `threadsOnMachine`); `openDevicePage`, `openMachineBoard`, `openMachineWatchtower`, `watchtowerFilter` in `ui/store.js`.
 - The footer's "Your other devices" (`ui/nav-footer.js`).
 - Removable filter chips (`ui/filter-chips.js`).
 
-To do once Kingdom serves the two items above:
-- Read `installations.siblings` through the existing Kingdom client, and merge it with the machines known from threads.
-- Report the summary with presence.
-- Replace the three "Coming soon" notes.
+To do once Kingdom serves the call: switch `otherMachines()` (`ui/device-page.js`), the one function every surface reads, to the Signet call through the existing Kingdom client, merged with the machines known from threads; it fills `online`, `checkouts` and `tunnel`, and the "Coming soon" notes give way on their own. Report the summary with presence.
