@@ -190,6 +190,12 @@ export interface ThreadMeta {
   /** Put out of mind until a time (or a condition, resolved to its time); status is untouched. */
   snooze?: ThreadSnooze;
 
+  /**
+   * When the owner last looked at the thread (epoch ms; the viewer marks it on open and while open).
+   * A turn that completed after it is a hand-back, a "new arrival" (VIEWER-001's seen-by-Aron mark).
+   */
+  seenAt?: number;
+
   /** Working directory for this thread's tool execution (worktree path). */
   cwd?: string;
 
