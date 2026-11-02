@@ -9,7 +9,8 @@ import { writePrivateFile } from '../client/private-file';
 import { isDefaultProfile } from './default-profiles';
 import type { NativeRuntime } from './native-authentication';
 
-function assertPrivateDirectory(directory: string): void {
+/** An owned private (0700) real directory; nothing about its contents. */
+export function assertPrivateDirectory(directory: string): void {
   const stat = lstatSync(directory);
   if (
     !stat.isDirectory() ||
