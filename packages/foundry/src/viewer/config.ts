@@ -69,6 +69,7 @@ import {
   type SubscriptionSettings,
 } from '../providers/subscription-policy';
 import { type PrefilterSettings, validatePrefilterSettings } from '../providers/warden-prefilter';
+import { type SecretsSettings, validateSecretsSettings } from '../secrets/scratch';
 
 const GUARD_MODES: readonly GuardMode[] = ['per-turn', 'per-call'];
 export type ThreadOnMerge = 'done' | 'auto-archive';
@@ -162,6 +163,8 @@ export interface FoundryConfig {
   learning?: LearningSettings;
   /** The feedback lifecycle: capture, tuning prompts and the role-file changes they apply (docs/FEEDBACK-LOOP.md). */
   feedback?: FeedbackSettings;
+  /** `$$word` secrets lifted into the thread's scratch pad, and paths no agent reads (FEAT-005). Off by default. */
+  secrets?: SecretsSettings;
   /** The local journal (docs/THREAD-TREE.md spec A). */
   journal?: JournalSettings;
   /**
@@ -301,6 +304,8 @@ export interface ProjectSettingsConfig {
   toolRules?: ToolRules;
   /** Project feedback settings: each field overrides the global one. */
   feedback?: FeedbackSettings;
+  /** Project secrets settings: `scratchPad` overrides the global one; `privatePaths` add up. */
+  secrets?: SecretsSettings;
   /**
    * Project agents. Each is standalone (a full definition, replacing any global agent of the same id)
    * or `extends` a global agent. No entry: the global agent applies unchanged.
@@ -1165,6 +1170,7 @@ export function validateConfig(config: FoundryConfig): void {
   validateLearningSettings(config.learning);
   validateJournalSettings(config.journal);
   validateFeedbackSettings('feedback', config.feedback);
+  validateSecretsSettings('secrets', config.secrets);
   validatePrefilterSettings('prefilter', config.prefilter);
   if ('wardens' in config)
     throw Error(
@@ -1190,6 +1196,7 @@ export function validateConfig(config: FoundryConfig): void {
       throw Error(`${where} must be true or false`);
   for (const [pid, project] of Object.entries(config.projects ?? {})) {
     validateFeedbackSettings(`projects.${pid}.feedback`, project?.feedback);
+    validateSecretsSettings(`projects.${pid}.secrets`, project?.secrets);
     for (const key of ['wardens', 'regions'] as const)
       if (project && key in project)
         throw Error(
@@ -1471,6 +1478,8 @@ export class ConfigStore {
         next.subscriptionOnly = { ...next.subscriptionOnly, ...patch } as SubscriptionSettings;
       } else if (section === 'feedback') {
         next.feedback = { ...next.feedback, ...patch } as FeedbackSettings;
+      } else if (section === 'secrets') {
+        next.secrets = { ...next.secrets, ...patch } as SecretsSettings;
       } else if (section === 'journal') {
         next.journal = { ...next.journal, ...patch } as JournalSettings;
       } else if (section === 'toolRules') {

@@ -1,9 +1,4 @@
 #!/usr/bin/env bun
-/**
- * @atlas
- * @kind entrypoint
- * @partOf feature:daemon, feature:flow
- */
 import { join, resolve } from 'node:path';
 import { resolveDecisionModel } from '@inixiative/foundry-core';
 import { stampFoundryRun } from './archives/run-stamp';
@@ -35,6 +30,13 @@ import {
   threadWorkerRequirement,
   workerDefaultModel,
 } from './providers/subscription-policy';
+/**
+ * @atlas
+ * @kind entrypoint
+ * @partOf feature:daemon, feature:flow
+ */
+import type { SecretScratch } from './secrets/scratch';
+import { SECRET_SCRATCH_DESCRIPTION, SecretScratchTool } from './tools/secret-scratch';
 
 /**
  * Foundry — production entrypoint.
@@ -595,6 +597,9 @@ registerKingdomPost(tools, config.kingdomAccess ?? [], () => conversationService
 // The thread's own record (plan, loop, name, status), written on its meta by the viewer once it exists.
 let threadRecords: ThreadRecords | null = null;
 tools.register(new ThreadRecordTool(() => threadRecords), THREAD_RECORD_TOOL_DESCRIPTION);
+// The secret scratch pad's tools (FEAT-005), on the viewer's pads once it exists.
+let secretScratch: SecretScratch | null = null;
+tools.register(new SecretScratchTool(() => secretScratch), SECRET_SCRATCH_DESCRIPTION);
 
 // Memory as a queryable tool (agents search on demand, not just passive layers)
 const memoryTool = MemoryToolAdapter.fromFileMemory(memory);
@@ -962,6 +967,7 @@ toolGateFor = viewer.toolGate;
 journalStore = viewer.localStore;
 conversationService = viewer.conversations;
 threadRecords = viewer.records;
+secretScratch = viewer.secrets;
 
 console.log(`Viewer: http://localhost:${viewer.server.port ?? port}`);
 if (acpLaunch) {

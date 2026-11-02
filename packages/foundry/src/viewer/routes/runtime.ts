@@ -49,6 +49,7 @@ import {
   type ThreadLaunchPatch,
   ThreadLaunchSettings,
 } from '../../providers/thread-launch';
+import type { SecretScratch } from '../../secrets/scratch';
 import type { RunningTasks } from '../../turns/running-tasks';
 import { type ThreadSetupHost, TurnService } from '../../turns/turn-service';
 import { type ConfigStore, steerOnSend } from '../config';
@@ -97,6 +98,8 @@ export interface RuntimeRoutesDeps {
   threadLaunch?: ThreadLaunchSettings;
   /** The feedback lifecycle: typed turns and corrections are captured here. */
   feedback?: FeedbackService | null;
+  /** The secret scratch pad (FEAT-005): owners' messages are lifted on accept. */
+  secrets?: SecretScratch | null;
   /** Images sent with messages (`POST /api/attachments/images`, then `images: [id]` on a send). */
   images?: ImageAttachmentStore;
 }
@@ -159,6 +162,7 @@ export function registerRuntimeRoutes(
     directory,
     streams,
     feedback: deps.feedback ?? null,
+    secrets: deps.secrets ?? null,
     ...(deps.threadSetup ? { threadSetup: deps.threadSetup } : {}),
   });
 
@@ -267,18 +271,20 @@ export function registerRuntimeRoutes(
     const body = await c.req.json<Record<string, unknown>>();
     const input = await messageInput(body);
     if ('error' in input) return c.json({ error: input.error }, 400);
-    const { payload, images } = input;
+    const { images } = input;
 
     const delivery = deliveryOf(body);
     if (delivery === null) return c.json({ error: 'delivery must be steer or queue' }, 400);
     const accepted = await turns.deliver({
       threadId: typeof body.threadId === 'string' ? body.threadId : harness.thread.id,
       turnId: typeof body.id === 'string' ? body.id : undefined,
-      payload,
+      payload: input.payload,
       ...(images.length ? { images } : {}),
       ...(delivery ? { delivery } : {}),
     });
     if (!accepted.ok) return c.json(accepted.body, accepted.status);
+    // Echo the message as accepted, never as sent: its `$$` secrets are references by now.
+    const payload = accepted.payload;
     const outcome = await accepted.settled;
     // Steered into the running turn (CORE-001): that turn answers it, on its own terminal.
     if (outcome.kind === 'steered')
