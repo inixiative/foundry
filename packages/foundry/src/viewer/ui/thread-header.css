@@ -1,0 +1,111 @@
+/* The thread header: always two rows. Row 1 the title and where it lives; row 2 who is in it and
+   how it runs. Each pill group is capped at 30% of the header and never wraps (band-pills.js). */
+.band-grid {
+  container-type: inline-size;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: 26px 24px;
+  column-gap: 12px;
+  row-gap: 4px;
+  align-items: center;
+}
+.band-title {
+  grid-column: 1;
+  grid-row: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.band-title .context-bar-title {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 650;
+  line-height: 26px;
+}
+.band-title .context-bar-name-source {
+  flex: none;
+}
+.band-where {
+  grid-column: 2;
+  grid-row: 1;
+  justify-self: end;
+}
+.band-who {
+  grid-column: 1;
+  grid-row: 2;
+  justify-self: start;
+}
+.band-runs {
+  grid-column: 2;
+  grid-row: 2;
+  justify-self: end;
+}
+.band-group {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  max-width: 30cqw;
+}
+.band-pills {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex-wrap: nowrap;
+}
+.band-pills > * {
+  flex: none;
+}
+.band-run {
+  gap: 0;
+}
+.band-pills.is-tight .band-drop {
+  display: none;
+}
+.band-group.is-over .band-pills {
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  mask-image: linear-gradient(90deg, hsl(0 0% 0%) calc(100% - 34px), transparent);
+}
+.band-group.is-over .band-pills::-webkit-scrollbar {
+  display: none;
+}
+.band-more {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+}
+.band-more-button {
+  height: 18px;
+  padding: 0 6px;
+  border: 1px solid hsl(var(--border));
+  border-radius: 6px;
+  background: hsl(var(--muted));
+  color: var(--text);
+  font: 600 11px var(--font-ui, inherit);
+  cursor: pointer;
+}
+.band-more-list {
+  display: flex;
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 40;
+  flex-wrap: wrap;
+  gap: 6px;
+  width: max-content;
+  max-width: 420px;
+  padding: 8px;
+  border: 1px solid hsl(var(--border));
+  border-radius: 10px;
+  background: hsl(var(--card));
+  box-shadow: 0 12px 30px hsl(0 0% 0% / 0.5);
+}
