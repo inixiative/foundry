@@ -1,9 +1,11 @@
 /* The thread header: always two rows. Row 1 the title and where it lives; row 2 who is in it and
-   how it runs. Each pill group is capped at 30% of the header and never wraps (band-pills.js). */
+   how it runs. The right-hand pill groups take the room they need, up to 70%, and the left column
+   (the title) keeps at least 30% (Aron 11-02: "not filling enough"). A group never wraps; one that
+   still overflows scrolls inside itself, hides any pill it would cut, and shows "…" (band-pills.js). */
 .band-grid {
   container-type: inline-size;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(30%, 1fr) fit-content(70%);
   grid-template-rows: 26px 24px;
   column-gap: 12px;
   row-gap: 4px;
@@ -50,7 +52,7 @@
   position: relative;
   display: flex;
   min-width: 0;
-  max-width: 30cqw;
+  max-width: 100%;
 }
 .band-pills {
   display: flex;
@@ -72,7 +74,11 @@
   overflow-x: auto;
   overflow-y: hidden;
   scrollbar-width: none;
-  mask-image: linear-gradient(90deg, hsl(0 0% 0%) calc(100% - 34px), transparent);
+  padding-right: 26px;
+}
+/* A pill the group's edge would cut is hidden whole: pills never clip mid-word; "…" lists it. */
+.band-pills > .is-cut {
+  visibility: hidden;
 }
 .band-group.is-over .band-pills::-webkit-scrollbar {
   display: none;

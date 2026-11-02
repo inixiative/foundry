@@ -71,7 +71,13 @@ export interface TunnelInfo {
 /**
  * Minimal HTML login page served when auth is required.
  */
-function loginPage(error?: string): string {
+function loginPage(error?: string, kingdoms: readonly string[] = []): string {
+  const entrances = kingdoms
+    .map(
+      (url) =>
+        `<a class="kingdom" href="${url}">Open through ${kingdoms.length > 1 ? new URL(url).host : 'Kingdom'}</a>`,
+    )
+    .join('');
   return `<!DOCTYPE html>
 <html><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width">
@@ -91,6 +97,10 @@ function loginPage(error?: string): string {
            color: #0a0a0c; font-size: 14px; font-weight: 600; cursor: pointer; }
   button:hover { background: #8ab4ff; }
   .error { color: #f87171; font-size: 12px; margin-bottom: 12px; }
+  .or { margin: 20px 0 12px; }
+  .kingdom { display: block; padding: 10px; border: 1px solid #6c9eff; border-radius: 6px;
+             color: #6c9eff; font-size: 14px; font-weight: 600; text-decoration: none; margin-top: 8px; }
+  .kingdom:hover { background: #141c2e; }
 </style>
 </head><body>
 <div class="card">
@@ -101,6 +111,7 @@ function loginPage(error?: string): string {
     <input type="password" name="token" placeholder="Access token" autofocus required />
     <button type="submit">Continue</button>
   </form>
+  ${entrances ? `<p class="or">Or open it from your devices in Kingdom.</p>${entrances}` : ''}
 </div>
 </body></html>`;
 }
@@ -117,9 +128,17 @@ function loginPage(error?: string): string {
  *
  * Session cookie is HttpOnly + SameSite=Strict. Value is HMAC of the
  * token, not the token itself.
+ *
+ * `kingdoms` lists where each paired Kingdom opens this Foundry (its devices page, which mints a
+ * handoff), so the login page offers that instead of the token.
  */
-export function tunnelAuth(token: string, publicOrigin?: string) {
+export function tunnelAuth(
+  token: string,
+  publicOrigin?: string,
+  kingdoms: () => Promise<readonly string[]> = async () => [],
+) {
   const validSession = sessionValue(token);
+  const page = async (error?: string) => loginPage(error, await kingdoms().catch(() => []));
 
   return async (c: Context, next: Next) => {
     const url = new URL(c.req.url);
@@ -148,7 +167,7 @@ export function tunnelAuth(token: string, publicOrigin?: string) {
     if (path === '/auth/handoff' && c.req.method === 'GET') {
       const code = url.searchParams.get('code') ?? '';
       if (!redeemHandoffCode(code, token))
-        return c.html(loginPage('That link has expired or was already used.'), 401);
+        return c.html(await page('That link has expired or was already used.'), 401);
       return new Response(null, {
         status: 302,
         headers: { Location: '/', 'Set-Cookie': handoffCookie(token) },
@@ -157,7 +176,7 @@ export function tunnelAuth(token: string, publicOrigin?: string) {
 
     // Serve login page (GET /auth)
     if (path === '/auth' && c.req.method === 'GET') {
-      return c.html(loginPage());
+      return c.html(await page());
     }
 
     // Handle login submission (POST /auth)
@@ -175,7 +194,7 @@ export function tunnelAuth(token: string, publicOrigin?: string) {
           headers: { Location: '/', 'Set-Cookie': cookie },
         });
       }
-      return c.html(loginPage('Invalid token. Try again.'), 401);
+      return c.html(await page('Invalid token. Try again.'), 401);
     }
 
     if (authenticatedRequest(c.req.raw, token, publicOrigin)) return next();

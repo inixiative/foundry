@@ -21,7 +21,14 @@ import {
   otherMachine,
 } from './machine-icons.js';
 import { settingsConfig } from './settings.js';
-import { allThreads, projects, prompts, selectThread, watchtowerOpen } from './store.js';
+import {
+  allThreads,
+  projects,
+  prompts,
+  selectThread,
+  watchtowerFilter,
+  watchtowerOpen,
+} from './store.js';
 import { projectKingdom, threadName } from './thread-labels.js';
 import { categoryOf, isClosedThread, subagentParentOf, threadState } from './thread-status.js';
 import { WatchingSidebar } from './watching.js';
@@ -81,7 +88,10 @@ function Card({ item, machine }) {
 
 export function Watchtower() {
   const [scope, setScope] = useState('everyone');
-  const [chips, setChips] = useState({});
+  const chips = watchtowerFilter.value;
+  const setChips = (next) => {
+    watchtowerFilter.value = next;
+  };
   useEffect(() => {
     loadMachineProfile();
   }, []);
@@ -168,7 +178,7 @@ export function Watchtower() {
     { id: 'actors', label: 'Actors', options: options('actors', inScope.flatMap(valuesOf.actors)) },
     {
       id: 'device',
-      label: 'Device',
+      label: 'Machine',
       options: options(
         'device',
         inScope.map((i) => i.device),

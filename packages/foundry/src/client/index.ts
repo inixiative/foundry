@@ -26,7 +26,6 @@ export {
   type AcpLaunch,
   acpLaunchPath,
   defaultAcpLaunchPath,
-  newAcpCapability,
   readAcpLaunch,
   removeAcpLaunch,
   writeAcpLaunch,

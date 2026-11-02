@@ -18,6 +18,7 @@ kanban
     VIEWER-004-gloss-viewer
     VIEWER-005-heralds-view
     VIEWER-006-theme-from-config
+    VIEWER-007-your-other-machines
     BOARD-001-shared-threads
     BOARD-002-sidecar-joining-side
     BOARD-003-inbound-items
@@ -56,6 +57,7 @@ These tickets capture the connections between components that are individually b
 | [VIEWER-004](./VIEWER-004-gloss-viewer.md) | Gloss in the code viewer; the top-bar button returns with it | Low |
 | [VIEWER-005](./VIEWER-005-heralds-view.md) | A workspace view like the Board: how threads are represented to the Heralds (needs AGENT-001) | Medium |
 | [VIEWER-006](./VIEWER-006-theme-from-config.md) | One theme for Kingdom and Foundry from `@inixiative/config` (`theme/public`, `theme/agentic`), loaded at runtime from the package (Aron 11-01) | Medium |
+| [VIEWER-007](./VIEWER-007-your-other-machines.md) | Your other machines and their pages, read through Foundry's Kingdom Signet (an entitlement anchored at your user); the viewer side is built | Medium |
 
 ### Backlog — Attention board (Foundry Version 4)
 
