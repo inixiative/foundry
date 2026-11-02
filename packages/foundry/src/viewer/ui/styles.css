@@ -9637,3 +9637,25 @@ a.thread-ref:hover {
   border-left: 1px solid var(--line-strong);
   box-shadow: -18px 0 36px hsl(0 0% 0% / 0.45);
 }
+
+/* Context's links: GitHub as a chip that opens the branch. */
+.rp-link-chip {
+  display: inline-block;
+  padding: 3px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  color: var(--text);
+  font-size: 12.5px;
+  text-decoration: none;
+}
+.rp-link-chip:hover {
+  border-color: hsl(var(--app-primary) / 0.6);
+}
+/* Participants leads with who is in it, then the floor and its posts (design review 11-02). */
+.conversation-panel-body {
+  display: flex;
+  flex-direction: column;
+}
+.conversation-panel-body > .conversation-members {
+  order: -1;
+}
