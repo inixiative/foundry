@@ -51,7 +51,7 @@ export const kingdomPairInputSchema = z
 
 /** What a Foundry asks Kingdom for: inference on the owner's models. */
 export const foundryPairingResources = [
-  { resourceKind: 'model', operations: ['inference.create'] },
+  { resourceKind: 'model', operations: { picks: ['inference.create'] } },
 ] as const satisfies RequestedResource[];
 
 /** What a person needs to approve the pairing in Kingdom. */

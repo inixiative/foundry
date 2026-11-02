@@ -16,7 +16,13 @@ import {
   kingdomPostDelivery,
   registerKingdomPost,
 } from '../src/tools/kingdom-post';
-import { heldSignet, mockKingdom, userOwner } from './helpers/kingdom-installation';
+import {
+  heldSignet,
+  mockKingdom,
+  termsOf,
+  threadsGrant,
+  userOwner,
+} from './helpers/kingdom-installation';
 
 const require = createRequire(new URL('../package.json', import.meta.url));
 const { Client } = await import(require.resolve('@modelcontextprotocol/sdk/client/index.js'));
@@ -55,18 +61,11 @@ function hostedMember(threadId: string, outbound: 'review' | 'auto'): HostedSign
     maxConcurrent: 1,
     recipient: { recipientModel: 'User', id: crypto.randomUUID(), displayName: 'JobCo' },
     resources: [
-      {
-        resourceId: crypto.randomUUID(),
-        kind: 'threads',
+      threadsGrant({
+        threadIds: [threadId],
         operations: ['thread.prompt', 'thread.read'],
-        lens: {
-          threads: { form: 'ids', ids: [threadId] },
-          view: 'own',
-          delivery: 'note',
-          outbound,
-          floor: { mayTake: false },
-        },
-      },
+        terms: { outbound },
+      }),
     ],
   };
 }
@@ -95,6 +94,17 @@ async function bridge(opts: {
     hosted: () => [member],
     subscriptions: () => [],
     deliverPost: kingdomPostDelivery(tools),
+  });
+  // JobCo's view opens: Kingdom admits its first read, so the host knows its grant reaches the thread.
+  service.read({
+    type: 'thread.request',
+    requestId: crypto.randomUUID(),
+    signetId: member.signetId,
+    acceptedRevision: 1,
+    member: { signetId: member.signetId, displayName: 'JobCo' },
+    terms: termsOf(member),
+    operation: 'thread.read',
+    input: { threadId: thread.id },
   });
   tools.register(new ConversationTool(() => service), CONVERSATION_TOOL_DESCRIPTION);
   await opts.register?.(tools, service);
@@ -175,13 +185,14 @@ test('kingdom_post holds the post for the owner before anything leaves, then pos
                   name: 'threads',
                   kind: 'threads',
                   integrationId,
-                  lens: {
-                    threads: { form: 'ids', ids: [remoteThread] },
-                    view: 'own',
-                    delivery: 'note',
-                    outbound: 'review',
-                    floor: { mayTake: false },
-                  },
+                  lens: [
+                    {
+                      id: crypto.randomUUID(),
+                      parents: ['foundry:threads'],
+                      root: { where: { field: 'id', operator: 'in', value: [remoteThread] } },
+                    },
+                  ],
+                  terms: { threads: { view: 'own' } },
                 },
               ],
             },

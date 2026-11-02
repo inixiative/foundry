@@ -1239,7 +1239,7 @@ class ThreadRuntimeImpl implements ThreadRuntime {
     }
 
     // A conversation thread holds its roster the same way: a standing layer, read through the
-    // wrapper (who is in, each member's lens in plain words, the floor). Its source reports a change
+    // wrapper (who is in, each member's terms in plain words, the floor). Its source reports a change
     // when the roster moves (a join, a leave, a revision, the conch), so the next turn re-warms it
     // and delivery sends it as the replacing version; an unchanged roster is not sent again.
     const conversations = deps.conversations;

@@ -141,7 +141,7 @@ test('CLI pairing shows the review code, opens the review page and persists like
     });
     expect(kingdom.requested()).toMatchObject({
       owner: { ownerModel: 'Organization', organization: 'inixiative' },
-      resources: [{ resourceKind: 'model', operations: ['inference.create'] }],
+      resources: [{ resourceKind: 'model', operations: { picks: ['inference.create'] } }],
     });
     expect(result).toMatchObject({
       status: 'connected',

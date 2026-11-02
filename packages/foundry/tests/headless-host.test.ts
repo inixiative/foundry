@@ -10,7 +10,7 @@ import {
   headlessHostEventSchema,
   headlessThreadStateSchema,
 } from '../src/conversations/headless-host-protocol';
-import { mockKingdom, userOwner } from './helpers/kingdom-installation';
+import { mockKingdom, termsOf, threadsGrant, userOwner } from './helpers/kingdom-installation';
 import { until } from './helpers/live-watch-fixture';
 import { writeRegions } from './helpers/regions';
 
@@ -144,23 +144,26 @@ test('the headless host pairs, admits a member note the Warden weighs in on, and
     maxRequests: null,
     maxConcurrent: 1,
     recipient: { recipientModel: 'User', id: crypto.randomUUID(), displayName: 'JobCo' },
-    resources: [
-      {
-        resourceId: crypto.randomUUID(),
-        kind: 'threads',
-        operations: ['thread.prompt', 'thread.read'],
-        lens: {
-          threads: { form: 'ids', ids: ['main'] },
-          view: 'own',
-          delivery: 'note',
-          outbound: 'review',
-          floor: { mayTake: false },
-        },
-      },
-    ],
+    resources: [threadsGrant({ operations: ['thread.prompt', 'thread.read'] })],
   };
   kingdom.host(member);
   const requestId = crypto.randomUUID();
+  const relayed = {
+    signetId: member.signetId,
+    acceptedRevision: 1,
+    member: { signetId: member.signetId, displayName: 'JobCo' },
+    terms: termsOf(member),
+  };
+  // Its view opens: an admitted read is how the host learns its grant reaches `main`.
+  const opened = crypto.randomUUID();
+  kingdom.threadFrame({
+    type: 'thread.request',
+    requestId: opened,
+    ...relayed,
+    operation: 'thread.read',
+    input: { threadId: 'main' },
+  });
+  await kingdom.threadResponse(opened);
   await until(async () => (await inspect()).members.some((m) => m.listed), 'member listed');
   // A shared thread defaults to the conch (Aron, 2026-11-01); this note is about the talk path.
   await request({
@@ -176,7 +179,7 @@ test('the headless host pairs, admits a member note the Warden weighs in on, and
     signetId: member.signetId,
     acceptedRevision: 1,
     member: { signetId: member.signetId, displayName: 'JobCo' },
-    lens: member.resources[0]!.lens,
+    terms: termsOf(member),
     operation: 'thread.prompt',
     input: { threadId: 'main', postId: crypto.randomUUID(), text: 'A role opened.' },
   });

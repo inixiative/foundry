@@ -21,15 +21,16 @@ const request = (over: Partial<HostedSignetRequest>): HostedSignetRequest => ({
     maxConcurrent: 1,
     resources: [
       {
-        resourceId: '00000000-0000-4000-8000-0000000000cc',
-        operations: ['thread.read', 'thread.prompt'],
-        lens: {},
+        resourceModel: 'IntegrationResource',
+        integrationResourceId: '00000000-0000-4000-8000-0000000000cc',
+        operations: { picks: ['thread.read', 'thread.prompt'] },
       },
       {
-        resourceId: '00000000-0000-4000-8000-0000000000dd',
-        operations: ['thread.read'],
-        lens: {},
+        resourceModel: 'IntegrationResource',
+        integrationResourceId: '00000000-0000-4000-8000-0000000000dd',
+        operations: { picks: ['thread.read'] },
       },
+      { resourceModel: 'Project', projectId: '00000000-0000-4000-8000-0000000000ff' },
     ],
   },
   reviewUrl: 'https://kingdom.example/dashboard?integration=x&signetRequest=y',
@@ -75,7 +76,27 @@ test('incomingRequests keeps pending, unexpired requests from every Kingdom, new
     lifecycle: 'task',
     maxRequests: 50,
     until: '2026-11-07T00:00:00.000Z',
+    full: false,
     operations: ['thread.read', 'thread.prompt'],
     reviewUrl: 'https://kingdom.example/dashboard?integration=x&signetRequest=y',
   });
+});
+
+// A resource asked for whole is everything it offers, now and as it grows (signet 0.12 `full`).
+test('incomingRequests says when a request asks for a resource whole', () => {
+  const whole = request({
+    terms: {
+      ...request({}).terms,
+      resources: [
+        {
+          resourceModel: 'IntegrationResource',
+          integrationResourceId: '00000000-0000-4000-8000-0000000000cc',
+          operations: { full: true },
+        },
+      ],
+    },
+  });
+  expect(
+    incomingRequests([{ url: 'https://kingdom-a.example', signetRequests: [whole] }])[0],
+  ).toMatchObject({ full: true, operations: [] });
 });

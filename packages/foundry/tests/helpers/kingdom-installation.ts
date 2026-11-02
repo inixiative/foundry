@@ -10,11 +10,56 @@ import {
   writePrivateJson,
 } from '@inixiative/signet';
 import {
+  baseLensId,
   type HostedSignet,
   type RegistrationRequest,
   requestRegistrationSchema,
+  type SignetGrant,
+  type ThreadsTerms,
+  threadsTerms,
 } from '@inixiative/signet/contracts';
 import type { ServerWebSocket } from 'bun';
+
+/**
+ * A grant on a Foundry's `threads` resource as Kingdom lists it (signet 0.12): resolved operation
+ * leaves, a lens layer whose `where` reaches `threadIds` (Kingdom applies it at admission, over
+ * `threadRow`), and the member's terms.
+ */
+export const threadsGrant = (
+  opts: { threadIds?: string[]; operations?: string[]; terms?: Partial<ThreadsTerms> } = {},
+): SignetGrant => ({
+  resourceModel: 'IntegrationResource',
+  integrationResourceId: crypto.randomUUID(),
+  kind: 'threads',
+  full: false,
+  operations: opts.operations ?? ['thread.prompt', 'thread.read', 'thread.floor'],
+  lens: [
+    {
+      id: crypto.randomUUID(),
+      parents: [baseLensId('foundry', 'threads')],
+      root: { where: { field: 'id', operator: 'in', value: opts.threadIds ?? ['main'] } },
+    },
+  ],
+  terms: { threads: threadsTerms({ threads: opts.terms }) },
+});
+
+/** A hosted Signet's terms on its `threads` grant, as Kingdom relays them on every frame. */
+export const termsOf = (signet: HostedSignet): ThreadsTerms => {
+  const grant = signet.resources.find(
+    (resource) => resource.resourceModel === 'IntegrationResource',
+  );
+  return threadsTerms(grant?.resourceModel === 'IntegrationResource' ? grant.terms : undefined);
+};
+
+/** The same Signet with its `threads` terms changed, as a revision lists it. */
+export const withTerms = (signet: HostedSignet, terms: Partial<ThreadsTerms>): HostedSignet => ({
+  ...signet,
+  resources: signet.resources.map((resource) =>
+    resource.resourceModel === 'IntegrationResource'
+      ? { ...resource, terms: { threads: { ...termsOf(signet), ...terms } } }
+      : resource,
+  ),
+});
 
 /** Kingdom's owner reference for an owner key (`ownerModel:userId:organizationId:spaceId`). */
 export const ownerOf = (key: string): OwnerRef => {

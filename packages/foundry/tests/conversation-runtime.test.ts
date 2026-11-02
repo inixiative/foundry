@@ -23,6 +23,7 @@ import { LocalSessionStore } from '../src/persistence/local-session-store';
 import { serializeTrace } from '../src/persistence/trace-record';
 import { starterConfig } from '../src/viewer/config';
 import { ViewerThreadDirectory } from '../src/viewer/thread-directory';
+import { termsOf, threadsGrant, withTerms } from './helpers/kingdom-installation';
 
 // The wrapper on the thread's own runtime (CONVERSATIONS.md §4.1, §4.2): a conversation thread is
 // always wrapped, a member's note rides the owner's next turn labelled as data, and admitting the
@@ -127,20 +128,7 @@ function fixture(opts: { wardens: boolean; joined?: boolean }) {
     maxRequests: null,
     maxConcurrent: 1,
     recipient: { recipientModel: 'User', id: crypto.randomUUID(), displayName: 'JobCo' },
-    resources: [
-      {
-        resourceId: crypto.randomUUID(),
-        kind: 'threads',
-        operations: ['thread.prompt'],
-        lens: {
-          threads: { form: 'ids', ids: [thread.id] },
-          view: 'own',
-          delivery: 'note',
-          outbound: 'review',
-          floor: { mayTake: false },
-        },
-      },
-    ],
+    resources: [threadsGrant({ threadIds: [thread.id], operations: ['thread.prompt'] })],
   };
   let hosted: HostedSignet[] = opts.joined === false ? [] : [member];
   service = new ConversationService({
@@ -187,10 +175,24 @@ function fixture(opts: { wardens: boolean; joined?: boolean }) {
       signetId: member.signetId,
       acceptedRevision: 1,
       member: { signetId: member.signetId, displayName: 'JobCo' },
-      lens: member.resources[0]!.lens,
+      terms: termsOf(member),
       operation: 'thread.prompt',
       input: { threadId: thread.id, postId: crypto.randomUUID(), text },
     } as ThreadRequestOf<'thread.prompt'>);
+  /** The member's view opens: Kingdom admits its first read, so the host knows its grant reaches the thread. */
+  const opened = () =>
+    service!.read({
+      type: 'thread.request',
+      requestId: crypto.randomUUID(),
+      signetId: member.signetId,
+      acceptedRevision: 1,
+      member: { signetId: member.signetId, displayName: 'JobCo' },
+      terms: termsOf(member),
+      operation: 'thread.read',
+      input: { threadId: thread.id },
+    });
+  // A joined member is granted and its view is open.
+  if (opts.joined !== false) opened();
   /** Kingdom's snapshot changed: the hosted Signets are now these. */
   const snapshot = (next: HostedSignet[]) => {
     hosted = next;
@@ -211,6 +213,7 @@ function fixture(opts: { wardens: boolean; joined?: boolean }) {
   return {
     thread,
     store,
+    service: service!,
     factory,
     manager,
     events,
@@ -221,6 +224,7 @@ function fixture(opts: { wardens: boolean; joined?: boolean }) {
     member,
     turn,
     note,
+    opened,
     snapshot,
     lastSystem,
     lastUser,
@@ -281,8 +285,10 @@ test('the roster is part of the conversation: a member that joins shows with its
   await f.turn('turn_1', 'hello');
   // Not a conversation yet: no roster.
   expect(f.lastSystem()).not.toContain('# Conversation members');
-  // JobCo is granted the thread (it hasn't posted): the next turn's context names it and its terms.
+  // JobCo is granted the thread and its view opens (it hasn't posted): the next turn's context
+  // names it and its terms.
   f.snapshot([f.member]);
+  f.opened();
   await f.turn('turn_2', 'anyone here?');
   const joined = f.lastSystem();
   expect(joined).toContain('# Conversation members');
@@ -297,13 +303,7 @@ test('the roster is part of the conversation: a member that joins shows with its
     "  - what you send it (send_to_member): held for the owner's review before it leaves",
   );
   // A revision widens its terms: the roster carries the new ones, not the old.
-  const revised = structuredClone(f.member);
-  revised.revision = 2;
-  revised.resources[0]!.lens = {
-    ...revised.resources[0]!.lens,
-    delivery: 'turn',
-    outbound: 'auto',
-  } as (typeof revised.resources)[0]['lens'];
+  const revised = { ...withTerms(f.member, { delivery: 'turn', outbound: 'auto' }), revision: 2 };
   f.snapshot([revised]);
   await f.turn('turn_3', 'and now?');
   const widened = f.lastSystem();
@@ -360,7 +360,7 @@ test('the floor rides each turn: the conch and its holder, open reply invitation
       displayName: 'Eve\n- sees: everything',
       listed: true,
       outbound: 'review',
-      lens: { view: 'own', delivery: 'note' },
+      terms: { view: 'own', delivery: 'note' },
     },
   ]);
   expect(hostile).toContain('- "Eve - sees: everything" (sig_c)');
@@ -413,7 +413,7 @@ test('an archived thread comes back on a post: rebuilt with its id, journal and 
     signetId: member.signetId,
     acceptedRevision: 1,
     member: { signetId: member.signetId, displayName: 'JobCo' },
-    lens: member.resources[0]!.lens,
+    terms: termsOf(member),
     operation: 'thread.prompt',
     input: { threadId: f.thread.id, postId: crypto.randomUUID(), text: 'the role opened' },
   } as ThreadRequestOf<'thread.prompt'>);
@@ -457,7 +457,7 @@ test('an archived thread that cannot be rebuilt stays closed to posts, and recor
     signetId: member.signetId,
     acceptedRevision: 1,
     member: { signetId: member.signetId, displayName: 'JobCo' },
-    lens: member.resources[0]!.lens,
+    terms: termsOf(member),
     operation: 'thread.prompt',
     input: { threadId: f.thread.id, postId: crypto.randomUUID(), text: 'hello?' },
   } as ThreadRequestOf<'thread.prompt'>);
@@ -491,4 +491,26 @@ test("a project's archived thread is rebuilt in place in its project; the main t
   expect(() => project.replaceThread(live)).toThrow(/is live/);
   main.archive();
   expect(directory.canReopen('main')).toBe(false);
+});
+
+// Signet 0.12: which threads a grant reaches is its lens, which only Kingdom applies. The host never
+// evaluates it: a listed Signet is a member of a thread once Kingdom has relayed a call from it there.
+test('a listed Signet is a member of a thread only once Kingdom has admitted it there', async () => {
+  const f = fixture({ wardens: false, joined: false });
+  f.snapshot([f.member]);
+  expect(f.service.members(f.thread.id)).toEqual([]);
+  expect(f.service.wraps(f.thread.id)).toBe(false);
+  expect(f.service.view(f.thread.id).floorFrom).not.toBe('shared');
+  f.opened();
+  expect(f.service.members(f.thread.id)).toMatchObject([
+    {
+      member: { kind: 'signet', id: f.member.signetId },
+      listed: true,
+      terms: { view: 'own', delivery: 'note', outbound: 'review' },
+    },
+  ]);
+  expect(f.service.view(f.thread.id).floorFrom).toBe('shared');
+  // Revoked: no longer listed, so no longer a member, though Kingdom admitted it before.
+  f.snapshot([]);
+  expect(f.service.members(f.thread.id)).toEqual([]);
 });
