@@ -168,7 +168,8 @@ test('threads on another machine are badged and filterable; a recorded plan fill
 
     // Footer: your other machine with its open threads (no meter); its page lists its threads and
     // opens the Watchtower filtered to it, with a removable chip.
-    await page.keyboard.press('Escape');
+    await page.locator('.watchtower-button').click();
+    await tower.waitFor({ state: 'detached' });
     const other = page.locator('.nav-footer-other', { hasText: 'studio Mac' });
     await other.locator('.nav-footer-count', { hasText: '1 open thread' }).waitFor();
     expect(await other.locator('.bar2').count()).toBe(0);
@@ -189,7 +190,8 @@ test('threads on another machine are badged and filterable; a recorded plan fill
     await tower.locator('.wt-card', { hasText: 'Cap checkout retries' }).waitFor();
 
     // This machine's page: its own threads and checkouts, read from this Foundry.
-    await page.keyboard.press('Escape');
+    await page.locator('.watchtower-button').click();
+    await tower.waitFor({ state: 'detached' });
     await page.locator('button.nav-footer-device').click();
     await devicePage.locator('h2', { hasText: 'MacBook Pro' }).waitFor();
     await devicePage.locator('.ph-row', { hasText: 'Cap checkout retries' }).waitFor();
