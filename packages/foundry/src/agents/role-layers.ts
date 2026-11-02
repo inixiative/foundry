@@ -15,6 +15,8 @@ import type { CompositionSlot } from '../prompts/instruction-settings';
 import { compositionSource, forgetSharedRoleViews } from '../prompts/instruction-stack';
 import type { FoundryConfig } from '../viewer/config';
 import { effectiveProject } from '../viewer/config-resolve';
+import { CARTOGRAPHER_PICKS } from './cartographer';
+import { cartographerRoleId } from './configured-experts';
 
 /** Turns a configured source id into a ContextSource (thread-factory's `SourceResolver`). */
 export type ResolveSource = (sourceId: string, config: FoundryConfig) => ContextSource | null;
@@ -111,6 +113,7 @@ export function roleSources(
     role,
     slot,
     delivered,
+    role === cartographerRoleId(config) ? CARTOGRAPHER_PICKS : undefined,
   );
   if (slot === 'instructions') {
     const fromSettings = !!agent?.prompt?.trim();
