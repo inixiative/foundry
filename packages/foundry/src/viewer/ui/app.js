@@ -209,8 +209,8 @@ function Header() {
         <${IncomingIndicator} />
         <span class="header-divider"></span>
         <${KingdomPill} />
-        <span class="status-dot ${isConnected ? 'on' : 'off'}" title=${`${isConnected ? 'Connected' : 'Reconnecting'} · ${count} events · ⌘K commands`}></span>
-        <span class="status-text">${isConnected ? 'connected' : 'reconnecting...'}</span>
+        <span class="status-dot ${isConnected ? 'on' : 'off'}" title=${`${isConnected ? 'Connected to this Foundry' : 'Reconnecting'} · ${count} events · ⌘K commands`} aria-label=${isConnected ? 'Connected' : 'Reconnecting'}></span>
+        ${isConnected ? null : html`<span class="status-text">reconnecting…</span>`}
         <button class="help-btn" aria-label="Help" title="Help (?)" onClick=${() => {
           helpOpen.value = !helpOpen.value;
         }}>?</button>
