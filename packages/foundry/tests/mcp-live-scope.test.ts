@@ -12,12 +12,12 @@ import {
   Thread,
   ToolRegistry,
 } from '@inixiative/foundry-core';
+import { SessionManager } from '../src/agents/session';
 import { buildAgents, ThreadFactory } from '../src/agents/thread-factory';
 import { ThreadRuntimeManager } from '../src/agents/thread-runtime';
 import { createFoundryMcp, createFoundryMcpServer } from '../src/mcp/server';
 import { MemoryToolAdapter } from '../src/tools/memory-adapter';
 import { starterConfig } from '../src/viewer/config';
-import { ThreadRegistry } from './helpers/thread-registry';
 
 // T1 focused SDK tests. Written RED first. Every case drives the actual SDK
 // initialize/listTools/callTool path over the in-memory transport; no model,
@@ -116,7 +116,7 @@ async function memoryFixture() {
 
 test('SDK listTools exposes the read-only bridge, and each result carries a bounded invocation contract', async () => {
   const owner = layerThread('owner', 'project-A', 'CURRENT_OWNER_FACT');
-  const manager = new ThreadRegistry();
+  const manager = new SessionManager();
   manager.add(owner);
   const { server, invocations } = createFoundryMcp({ thread: owner, sessionManager: manager });
   const client = await connect(server);
@@ -156,7 +156,7 @@ test('SDK listTools exposes the read-only bridge, and each result carries a boun
 
 test('scoped memory search and get reach an own omitted record and same-project publications only', async () => {
   const owner = layerThread('owner', 'project-A', 'layer content without the omitted fact');
-  const manager = new ThreadRegistry();
+  const manager = new SessionManager();
   manager.add(owner);
   const { tools } = await memoryFixture();
   const client = await connect(
@@ -194,7 +194,7 @@ test('scoped memory search and get reach an own omitted record and same-project 
 
 test('a backend that cannot honor scope and a session without a memory tool are explicitly unavailable', async () => {
   const owner = layerThread('owner', 'project-A', 'fact');
-  const manager = new ThreadRegistry();
+  const manager = new SessionManager();
   manager.add(owner);
   const incapable = new ToolRegistry();
   const store = new Map<string, MemoryEntry>([
@@ -230,7 +230,7 @@ test('a backend that cannot honor scope and a session without a memory tool are 
 
 test('authority is re-validated after an awaited read: disposal during a slow backend read refuses delivery', async () => {
   const owner = layerThread('owner', 'project-A', 'fact');
-  const manager = new ThreadRegistry();
+  const manager = new SessionManager();
   manager.add(owner);
   let release!: () => void;
   const held = new Promise<void>((r) => {
@@ -280,7 +280,7 @@ test('authority is re-validated after an awaited read: disposal during a slow ba
 
 test('a later publication becomes visible to the same-project reader while earlier results stay immutable', async () => {
   const owner = layerThread('owner', 'project-A', 'fact');
-  const manager = new ThreadRegistry();
+  const manager = new SessionManager();
   manager.add(owner);
   const { memory, tools } = await memoryFixture();
   const client = await connect(
@@ -301,7 +301,7 @@ test('foundry_threads discloses only authorized same-project live summaries; an 
   other.meta.description = 'OTHER_UNPROJECTED_DESCRIPTION';
   const projected = layerThread('projected', 'project-A', 'PROJECTED_FACT');
   projected.meta.description = 'PROJECTED_DESCRIPTION';
-  const manager = new ThreadRegistry();
+  const manager = new SessionManager();
   for (const t of [owner, other, projected]) manager.add(t);
   const client = await connect(createFoundryMcpServer({ thread: owner, sessionManager: manager }));
   const threads = await client.callTool({ name: 'foundry_threads', arguments: {} });
@@ -345,7 +345,7 @@ test('foundry_signal is refused on the read-only native grant and emits only wit
 
 test('observer failures are isolated on ok, refusal and error paths, counted without retaining error text, and never awaited on retrieval', async () => {
   const owner = layerThread('owner', 'project-A', 'OBSERVER_FACT');
-  const manager = new ThreadRegistry();
+  const manager = new SessionManager();
   manager.add(owner);
   let calls = 0;
   const unhandled: unknown[] = [];
@@ -408,7 +408,7 @@ test('observer failures are isolated on ok, refusal and error paths, counted wit
 
 test('hostile thrown and rejected values are never inspected: throwing accessors, proxies and non-Error rejections cannot escape or leak', async () => {
   const owner = layerThread('owner', 'project-A', 'HOSTILE_FACT');
-  const manager = new ThreadRegistry();
+  const manager = new SessionManager();
   manager.add(owner);
   const unhandled: unknown[] = [];
   const onUnhandled = (reason: unknown) => {
@@ -476,7 +476,7 @@ test('hostile thrown and rejected values are never inspected: throwing accessors
 
 test('revocation discovered after a throwing backend read is a refusal that admits the read, never a bare tool error', async () => {
   const owner = layerThread('owner', 'project-A', 'fact');
-  const manager = new ThreadRegistry();
+  const manager = new SessionManager();
   manager.add(owner);
   const tools = new ToolRegistry();
   tools.register(
@@ -522,7 +522,7 @@ test('revocation discovered after a throwing backend read is a refusal that admi
 
 test('record listeners share the observer contract: async rejections counted, hostile thenables isolated, retrieval unaffected, exact-once notification', async () => {
   const owner = layerThread('owner', 'project-A', 'LISTENER_FACT');
-  const manager = new ThreadRegistry();
+  const manager = new SessionManager();
   manager.add(owner);
   const unhandled: unknown[] = [];
   const onUnhandled = (reason: unknown) => {

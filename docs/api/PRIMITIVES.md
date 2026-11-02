@@ -470,6 +470,49 @@ harness.getTraceForMessage("msg-1")      // by message id
 
 ---
 
+## Sessions
+
+Lazy thread resolution. Router says "send to X" — if X doesn't exist, it's created.
+
+```ts
+import { SessionManager } from "@foundry/agent-primitives";
+
+const sessions = new SessionManager();
+sessions.add(mainThread);
+
+// Register blueprints for lazy creation
+sessions.addBlueprint({
+  match: /^feature-.*/,  // String or RegExp
+  async create(destinationId, parent) {
+    const childStack = SessionManager.inheritLayers(parent!, {
+      share: ["docs"],          // Same layer instance
+      copy: ["conventions"],    // Snapshot copy
+    });
+    const child = new Thread(destinationId, childStack, {
+      description: `Feature thread: ${destinationId}`,
+    });
+    child.register(makeExecutor(destinationId));
+    return child;
+  },
+});
+
+// Resolve — finds existing or spawns from blueprint
+const thread = await sessions.resolve("feature-auth", mainThread);
+
+// Dispatch across threads
+await sessions.dispatch("feature-auth", payload, {
+  sourceThread: mainThread,
+  agentId: "executor",
+});
+
+// Tree
+sessions.parentOf("feature-auth")   // → mainThread
+sessions.childrenOf("main")         // → [feature-auth thread]
+sessions.active                     // non-archived threads
+sessions.archived                   // archived threads
+```
+
+---
 
 ## Interventions
 

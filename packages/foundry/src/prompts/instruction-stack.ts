@@ -21,7 +21,7 @@ import {
   type SourceSelectionReport,
   segmentsText,
 } from '@inixiative/foundry-core';
-import { type CorpusTier, visibleTo } from '../agents/corpus-tiers';
+import { type CorpusTier, visibleTo } from '../agents/corpus-compiler';
 import { resolveSubscriptionPolicy } from '../providers/subscription-policy';
 import type { FoundryConfig } from '../viewer/config';
 import { resolveProjectView } from '../viewer/config-resolve';
