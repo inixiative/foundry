@@ -18,7 +18,7 @@ import { detailDrawerOpen, leftSize, projectSidebarOpen, rightSize } from './sto
 export const LEFT_LEVELS = ['hidden', 'strip', 'normal', 'wide'];
 export const RIGHT_LEVELS = ['hidden', 'icons', 'normal', 'wide'];
 const LEFT_WIDTH = { hidden: 0, strip: 32, normal: 272, wide: 360 };
-const RIGHT_WIDTH = { hidden: 0, icons: 44, normal: 360, wide: 560 };
+const RIGHT_WIDTH = { hidden: 0, icons: 44, normal: 440, wide: 560 };
 
 export { leftSize, rightSize };
 
@@ -72,7 +72,7 @@ export const panelFit = computed(() => {
   // At 1700 px and up the app is zoomed 1.1 (styles.css), so it lays out in fewer pixels.
   const width = viewportWidth.value >= 1700 ? viewportWidth.value / 1.1 : viewportWidth.value;
   let left = LEFT_WIDTH[leftSize.value] ?? 272;
-  const right = RIGHT_WIDTH[rightSize.value] ?? 360;
+  const right = RIGHT_WIDTH[rightSize.value] ?? 440;
   if (width < 1100) return { leftFolded: false, rightOverlay: false, left, right };
   const leftFolded = left > LEFT_WIDTH.strip && width - left - right < CENTRE_MIN;
   if (leftFolded) left = LEFT_WIDTH.strip;
