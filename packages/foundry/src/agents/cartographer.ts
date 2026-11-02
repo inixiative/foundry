@@ -32,6 +32,7 @@ import {
   type SignalBus,
   servedModel,
 } from '@inixiative/foundry-core';
+import type { RoleComposition } from '../prompts/instruction-settings';
 import { STANDING_LAYERS } from './chorus-reception';
 
 // ---------------------------------------------------------------------------
@@ -181,6 +182,14 @@ export interface CartographerConfig {
    */
   atlasRoot?: string;
 }
+
+/**
+ * What the Cartographer picks from the ladder unless settings say otherwise: its prompt and its role
+ * files, not the CLAUDE.md stack. It routes a message to layers; the project's coding rules are the
+ * main thread's instructions, and composed in they put a routing call far over its budget (the
+ * inixiative org CLAUDE.md alone is ~113,000 characters). Region Wardens default the same way.
+ */
+export const CARTOGRAPHER_PICKS: RoleComposition = { instructions: { general: [] } };
 
 export const DEFAULT_ROUTE_INSTRUCTIONS = `You are a context router. Given a message, a topology map of available context, and (when present) the codebase concept map, decide which layers the message needs. Concepts (e.g. "feature:auth") tell you which part of the codebase a message touches — use them to pick the matching domains and layers. Route precisely — load what's needed, skip what isn't.`;
 
