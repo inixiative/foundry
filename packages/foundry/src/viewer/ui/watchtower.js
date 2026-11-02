@@ -10,6 +10,7 @@
  * branch, linked PRs, shared conversation); nothing records "aligned", so that column stays empty.
  */
 
+import { ComingSoon } from './coming-soon.js';
 import { FilterChips, passesChips } from './filter-chips.js';
 import { html, useEffect, useState } from './lib.js';
 import {
@@ -197,7 +198,8 @@ export function Watchtower() {
       </div>
       <${FilterChips} groups=${groups} selected=${chips} onChange=${setChips} />
     </div>
-    <p class="wt-note">Mapped from this Foundry's threads, all running on ${machine}: threads on your other machines, and Slack, Linear and teammates' work, arrive with the Heralds (not built). A stage is read from the thread (status, plan, branch, linked PR); nothing marks a thread Aligned yet. Lanes use the project's first tag until projects record their Kingdom.</p>
+    <${ComingSoon} what="Threads on your other machines, and Slack, Linear and teammates' work, as cards on this map, brought in by the Heralds." ticket="AGENT-001" />
+    <p class="wt-note">Mapped from this Foundry's threads, all running on ${machine}. A stage is read from the thread (status, plan, branch, linked PR); nothing marks a thread Aligned yet. Lanes use the project's first tag until projects record their Kingdom.</p>
     <div class="wt-grid" style=${`grid-template-columns: 170px repeat(${STAGES.length}, minmax(150px, 1fr))`}>
       <div class="wt-th"></div>${STAGES.map(([id, title]) => html`<div key=${id} class="wt-th ${id === 'blocked' ? 'is-blocked' : ''}">${title}</div>`)}
       ${lanes.map(

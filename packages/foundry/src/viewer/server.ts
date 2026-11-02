@@ -779,7 +779,7 @@ export function createViewer(config: ViewerConfig) {
     '/kingdom',
     serveStatic({ root: fileURLToPath(new URL('./', import.meta.url)), path: 'ui/kingdom.html' }),
   );
-  // The workspace and its settings/analytics pages are one client-routed app (ui/route.js).
+  // The workspace and its settings, analytics and search pages are one client-routed app (ui/route.js).
   const appPage = serveStatic({
     root: fileURLToPath(new URL('./', import.meta.url)),
     path: 'ui/index.html',
@@ -789,6 +789,7 @@ export function createViewer(config: ViewerConfig) {
     '/settings',
     '/settings/*',
     '/analytics',
+    '/search',
     '/projects/:id/settings',
     '/projects/:id/settings/*',
     '/projects/:id/analytics',

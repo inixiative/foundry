@@ -7,10 +7,10 @@
  * Settings → About: what Foundry is, who helped shape it, its version and licence.
  */
 
+import { REPO_URL } from './coming-soon.js';
 import { html, useEffect, useState } from './lib.js';
 import { authFetch } from './store.js';
 
-const REPO_URL = 'https://github.com/inixiative/foundry';
 const T3_CODE_URL = 'https://github.com/pingdotgg/t3code';
 const PASEO_URL = 'https://github.com/getpaseo/paseo';
 const USEREVIDENCE_URL = 'https://userevidence.com';
