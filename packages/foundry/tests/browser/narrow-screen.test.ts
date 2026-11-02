@@ -63,12 +63,20 @@ test('the centre keeps 560 px: the rail folds, then the right panel floats', asy
     await page.waitForFunction(() =>
       document.querySelector('.panels')?.classList.contains('panels--left-folded'),
     );
+    // The columns animate: wait for them to settle.
+    await page.waitForFunction(
+      () => (document.querySelector('.panel-center')?.getBoundingClientRect().width ?? 0) >= 559,
+    );
     expect(await centre()).toBeGreaterThanOrEqual(559);
     // Widened, the right panel steps to wide: folding the rail isn't enough, so it floats.
     await page.locator('body').click({ position: { x: 600, y: 5 } });
     await page.keyboard.press('}');
     await page.waitForFunction(() =>
       document.querySelector('.panels')?.classList.contains('panels--right-overlay'),
+    );
+    // The columns animate: wait for them to settle.
+    await page.waitForFunction(
+      () => (document.querySelector('.panel-center')?.getBoundingClientRect().width ?? 0) >= 559,
     );
     expect(await centre()).toBeGreaterThanOrEqual(559);
     const drawer = await page
