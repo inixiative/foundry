@@ -50,6 +50,7 @@ import {
   prefilterSkip,
   type WardenPrefilter,
 } from '../providers/warden-prefilter';
+import { needsPlan } from '../tools/thread-record';
 import type { FoundryConfig } from '../viewer/config';
 import { resolveThreadView } from '../viewer/config-resolve';
 import { Cartographer, DEFAULT_ROUTE_INSTRUCTIONS } from './cartographer';
@@ -68,6 +69,8 @@ import {
   FOUNDRY_TOOLS_LAYER,
   FOUNDRY_TOOLS_NOTE,
   FOUNDRY_TOOLS_NOTE_VERSION,
+  PLAN_ASK_NOTE,
+  STANDING_LAYERS,
 } from './chorus-reception';
 import { cartographerRoleId, resolveThreadDomains } from './configured-experts';
 import {
@@ -112,6 +115,7 @@ import {
   replaceRoleSources,
   roleSources,
 } from './role-layers';
+import { hasWorkContent } from './thread-namer';
 import type { AdviceTrigger, GuardMode, TriggerPoint } from './warden-triggers';
 import { type ConsumedMatcher, consumedMatcher, workItemOf } from './work-items';
 
@@ -142,7 +146,7 @@ export function auxiliarySessionId(threadId: string, role: string): string {
 function wrapsThread(config: FoundryConfig, wardens: number, stack: ContextStack): boolean {
   return (
     wardens > 0 ||
-    stack.layers.length > 0 ||
+    stack.layers.some((layer) => !STANDING_LAYERS.has(layer.id)) ||
     Object.values(config.agents).some(
       (agent) => agent.enabled && (agent.kind === 'classifier' || agent.kind === 'router'),
     )
@@ -1224,14 +1228,11 @@ class ThreadRuntimeImpl implements ThreadRuntime {
       stack.addLayer(reception);
     }
 
-    // A wrapped thread holds Foundry's tools note once, as a standing layer: when to call set_plan and
-    // the other Foundry tools. An unwrapped thread gets nothing standing (a fresh install), only the skills.
+    // Every thread holds the session briefing once, as a standing layer: how to work in Foundry and
+    // when to call its tools (Aron, 2026-11-02: "Foundry should be on new sessions"). An unwrapped
+    // thread (a fresh install) holds it too; it stays unwrapped otherwise: no decision calls, no other context.
     // A thread on a worker that cannot hold the tools (Muse Code) is never told about them.
-    if (
-      wrapsThread(deps.config, this.domainLibrarians.size, stack) &&
-      workerHostsFoundryTools(thread.meta.worker) &&
-      !stack.getLayer(FOUNDRY_TOOLS_LAYER)
-    ) {
+    if (workerHostsFoundryTools(thread.meta.worker) && !stack.getLayer(FOUNDRY_TOOLS_LAYER)) {
       const note = new ContextLayer({
         id: FOUNDRY_TOOLS_LAYER,
         owner: { threadId: thread.id, projectId: thread.meta.projectId as string | undefined },
@@ -1348,6 +1349,17 @@ class ThreadRuntimeImpl implements ThreadRuntime {
       // Member posts delivered as notes ride the agent's turn, labelled, after the fresh advice.
       const memberNotes = deps.conversations?.deliverNotes(thread.id, identity?.messageId) ?? [];
       if (memberNotes.length) flow.queueNotes(memberNotes);
+      // New work on a thread with no plan: ask for one on this turn (the session briefing's item 2).
+      if (needsPlan(thread.meta) && hasWorkContent(message))
+        flow.queueNotes([
+          {
+            role: 'content',
+            id: `plan-ask:${identity?.messageId ?? Date.now()}`,
+            source: 'foundry',
+            placement: 'after-message',
+            text: PLAN_ASK_NOTE,
+          },
+        ]);
       await refreshRoster();
       let plan: InjectionPlan | undefined, failure: Error | undefined;
       try {
@@ -1403,13 +1415,15 @@ class ThreadRuntimeImpl implements ThreadRuntime {
         const started = ctx.messageId ? early.get(ctx.messageId) : undefined;
         if (ctx.messageId) early.delete(ctx.messageId);
         // Nothing wraps an unwrapped thread (no layers, decision roles or Wardens): the message reaches
-        // the session as typed, with no Cartographer call, no plan and no thread-state. Settings that
-        // add a layer wrap it from the next turn.
+        // the session as typed, with no Cartographer call, no plan and no thread-state; it holds only
+        // Foundry's standing briefing. Settings that add a layer wrap it from the next turn.
         // A conversation thread is always wrapped, so a member's note reaches the session.
         const wrapped =
           !!started ||
           domainLibrarians.size > 0 ||
-          stack.layers.some((layer) => layer !== this.librarian.layer) ||
+          stack.layers.some(
+            (layer) => layer !== this.librarian.layer && !STANDING_LAYERS.has(layer.id),
+          ) ||
           !!deps.conversations?.wraps(thread.id);
         this.librarian.setDelivered(wrapped);
         const {

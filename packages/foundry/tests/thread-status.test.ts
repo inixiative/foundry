@@ -49,7 +49,46 @@ describe('threadState', () => {
   });
   test('queued is light yellow; a completed last turn on an idle thread is done', () => {
     expect(threadState(t({ lastTurn: { status: 'queued' } }))).toBe('queued');
-    expect(threadState(t({ lastTurn: { status: 'completed' } }))).toBe('done');
+    expect(
+      threadState(
+        t({
+          meta: { status: 'idle', seenAt: 200 },
+          lastTurn: { status: 'completed', completedAt: 100 },
+        }),
+      ),
+    ).toBe('done');
+  });
+  test('a turn completed after the owner last looked is a new arrival (orange) until he looks', () => {
+    // A reply he hasn't read, or a turn the agent started on its own (a Muse cron).
+    expect(threadState(t({ lastTurn: { status: 'completed', completedAt: 100 } }))).toBe(
+      'newarrival',
+    );
+    expect(categoryOf('newarrival')).toBe('attention');
+    expect(
+      threadState(
+        t({
+          meta: { status: 'idle', seenAt: 50 },
+          lastTurn: { status: 'completed', completedAt: 100 },
+        }),
+      ),
+    ).toBe('newarrival');
+    // A milestone the agent marked still shows the arrival first; once seen, it reads done.
+    expect(
+      threadState(
+        t({
+          meta: { status: 'idle', done: { text: 'Merged' } },
+          lastTurn: { status: 'completed', completedAt: 100 },
+        }),
+      ),
+    ).toBe('newarrival');
+    expect(
+      threadState(
+        t({
+          meta: { status: 'idle', seenAt: 150, done: { text: 'Merged' } },
+          lastTurn: { status: 'completed', completedAt: 100 },
+        }),
+      ),
+    ).toBe('done');
   });
   test('waiting (paused by the owner) and a paused conversation are paused', () => {
     expect(threadState(t({ meta: { status: 'waiting' } }))).toBe('paused');

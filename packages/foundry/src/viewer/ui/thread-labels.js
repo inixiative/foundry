@@ -25,6 +25,7 @@ export const threadName = (t) => t?.title?.text || t?.meta?.description || creat
 
 export const nameSourceLabel = {
   human: 'named by you',
+  agent: 'named by the agent',
   foundry: 'named by Foundry from your message',
   description: 'creation description',
 };

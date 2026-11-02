@@ -24,6 +24,10 @@ import {
   NativeAuthentication,
   type NativeAuthenticationProvider,
 } from './providers/native-authentication';
+import {
+  nativeAuthenticationMode,
+  projectRunsOnKingdom,
+} from './providers/native-authentication-mode';
 import { boundLaunchEnvironment } from './providers/native-text-environment';
 import { SubscriptionAuthentication } from './providers/subscription-authentication';
 import {
@@ -102,7 +106,11 @@ import { registerKingdomAccess } from './tools/kingdom-access';
 import { registerKingdomPost } from './tools/kingdom-post';
 import { MemoryToolAdapter } from './tools/memory-adapter';
 import { rtk as rtkFilter } from './tools/output-filters';
-import { PLAN_TOOL_DESCRIPTION, type ThreadPlans, ThreadPlanTool } from './tools/thread-plan';
+import {
+  THREAD_RECORD_TOOL_DESCRIPTION,
+  type ThreadRecords,
+  ThreadRecordTool,
+} from './tools/thread-record';
 import { journalHistory } from './turns/journal-history';
 import { nativeQuestions } from './turns/native-questions';
 import { lateBoundToolGate, type ThreadToolGate } from './turns/tool-gate';
@@ -302,8 +310,8 @@ const sessionStore = new FileExternalSessionStore(join(FOUNDRY_DIR, 'sessions.js
 // Kingdom-capacity projects run their threads, on every worker, on a login Kingdom releases from the
 // project's pool, never on this machine's; every other thread keeps the machine's own login. Applies
 // to projects set to kingdom at startup.
-const projectCapacityAuthentication = Object.values(config.projects ?? {}).some(
-  (project) => project.capacity === 'kingdom',
+const projectCapacityAuthentication = Object.keys(config.projects ?? {}).some((id) =>
+  projectRunsOnKingdom(config, id),
 )
   ? projectCapacity({
       foundryDir: FOUNDRY_DIR,
@@ -335,16 +343,14 @@ function createProvider(
     ? new SubscriptionAuthentication(join(FOUNDRY_DIR, 'runtime-profiles'), login)
     : subscription
       ? noLocalLogin(providerId)
-      : config.defaults.kingdomOwnerKey ||
-          Object.keys(config.kingdomInferenceAssignments ?? {}).length
+      : nativeAuthenticationMode(config) === 'kingdom'
         ? new KingdomAuthentication({
             directory: join(FOUNDRY_DIR, 'kingdom'),
             sources: config.kingdomInference ?? [],
             defaultOwnerKey: config.defaults.kingdomOwnerKey,
             assignments: config.kingdomInferenceAssignments,
           })
-        : config.defaults.nativeAuthenticationId ||
-            Object.keys(config.nativeAuthenticationSelections ?? {}).length
+        : nativeAuthenticationMode(config) === 'native-profile'
           ? new NativeAuthentication({
               directory: join(FOUNDRY_DIR, 'runtime-profiles'),
               sources: config.nativeAuthentication ?? [],
@@ -586,9 +592,9 @@ let conversationService: ConversationService | null = null;
 // post and the plain-text controls must reach an unpaired one too.
 tools.register(new ConversationTool(() => conversationService), CONVERSATION_TOOL_DESCRIPTION);
 registerKingdomPost(tools, config.kingdomAccess ?? [], () => conversationService);
-// The thread's own plan (set_plan), recorded on its meta by the viewer once it exists.
-let threadPlans: ThreadPlans | null = null;
-tools.register(new ThreadPlanTool(() => threadPlans), PLAN_TOOL_DESCRIPTION);
+// The thread's own record (plan, loop, name, status), written on its meta by the viewer once it exists.
+let threadRecords: ThreadRecords | null = null;
+tools.register(new ThreadRecordTool(() => threadRecords), THREAD_RECORD_TOOL_DESCRIPTION);
 
 // Memory as a queryable tool (agents search on demand, not just passive layers)
 const memoryTool = MemoryToolAdapter.fromFileMemory(memory);
@@ -956,7 +962,7 @@ const viewer = await startViewer({
 toolGateFor = viewer.toolGate;
 journalStore = viewer.localStore;
 conversationService = viewer.conversations;
-threadPlans = viewer.plans;
+threadRecords = viewer.records;
 
 console.log(`Viewer: http://localhost:${viewer.server.port ?? port}`);
 if (acpLaunch) {

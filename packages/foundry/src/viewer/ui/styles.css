@@ -7005,29 +7005,6 @@ a.thread-ref:hover {
   flex-direction: column;
   gap: 4px;
 }
-.band-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-}
-.band-row .context-bar-title {
-  max-width: none;
-  flex: 0 1 auto;
-  font-family: var(--display);
-  font-size: 18px;
-  font-weight: 650;
-  letter-spacing: -0.02em;
-  flex-shrink: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.band-row--facts {
-  font-size: 12px;
-  color: var(--text-dim);
-}
 .band-chip {
   font-size: 11.5px;
   padding: 1px 8px;
@@ -7091,6 +7068,47 @@ a.thread-ref:hover {
   gap: 8px;
   flex: 1;
   min-height: 0;
+}
+.loop-record {
+  box-shadow: var(--frame-shadow);
+  border-radius: 8px;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 40%;
+  overflow: auto;
+}
+.loop-steps {
+  margin: 0;
+  padding-left: 18px;
+}
+.loop-steps small {
+  display: block;
+  color: var(--text-dim);
+}
+.loop-rounds {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.loop-round {
+  display: grid;
+  grid-template-columns: 16px 64px 1fr;
+  gap: 6px;
+  align-items: baseline;
+}
+.loop-round.r-pass .loop-round-mark {
+  color: var(--st-done);
+}
+.loop-round.r-fail .loop-round-mark {
+  color: var(--st-problem);
+}
+.loop-round.r-partial .loop-round-mark {
+  color: var(--st-attention);
 }
 .loop-graph {
   flex: 1;
@@ -7874,33 +7892,6 @@ a.thread-ref:hover {
   gap: 6px;
   padding: 8px 14px 6px;
   min-width: 0;
-}
-.band-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-}
-.band-row--top .context-bar-title {
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-family: var(--font-display);
-  font-size: 15px;
-  font-weight: 650;
-}
-.band-pills {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  flex-wrap: nowrap;
-}
-.band-pills--right {
-  margin-left: auto;
-  flex-shrink: 0;
 }
 .band-pill {
   display: inline-flex;

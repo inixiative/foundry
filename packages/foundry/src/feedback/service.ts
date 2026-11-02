@@ -19,6 +19,7 @@ import type { Cartographer } from '../agents/cartographer';
 import { REDUCED_PHASE } from '../archives/reduced-middleware';
 import type { AuditLog } from '../audit/audit-log';
 import type { LocalSessionStore } from '../persistence/local-session-store';
+import { resolveInstructionLadder } from '../prompts/instruction-settings';
 import { DECISION_PRIORITY } from '../providers/decision-priority';
 import type { FoundryConfig } from '../viewer/config';
 import { applyChange, type LevelRoots, revertChange } from './apply';
@@ -704,6 +705,7 @@ export class FeedbackService {
       )
         continue;
       const applied = applyChange({
+        ladder: resolveInstructionLadder(this.deps.config().composition),
         itemId: item.id,
         changeId: newId('chg'),
         statement: item.statement,

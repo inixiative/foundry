@@ -13,7 +13,6 @@ import type {
   LLMProvider,
   Thread,
   ThreadMachine,
-  ThreadPlan,
   ThreadSetup,
   TokenTracker,
   ToolRegistry,
@@ -22,6 +21,7 @@ import { newId } from '@inixiative/foundry-core';
 import type { Server } from 'bun';
 import { Hono } from 'hono';
 import { serveStatic } from 'hono/bun';
+import { PlanDrafter } from '../agents/plan-drafter';
 import { invalidateComposition } from '../agents/role-layers';
 import { ThreadNamer } from '../agents/thread-namer';
 import { registerArchiveRoutes } from '../archives/routes';
@@ -47,7 +47,7 @@ import {
 import type { TaskSink } from '../providers/session-backed';
 import { ThreadLaunchSettings } from '../providers/thread-launch';
 import { kingdomPostDelivery } from '../tools/kingdom-post';
-import { applyPlanPatch, type PlanPatch, type ThreadPlans } from '../tools/thread-plan';
+import type { ThreadRecords } from '../tools/thread-record';
 import { NativeTurnRecorder } from '../turns/native-turns';
 import { RunningTasks } from '../turns/running-tasks';
 import { SubagentRecorder } from '../turns/subagents';
@@ -474,6 +474,10 @@ export function createViewer(config: ViewerConfig) {
   const namer = config.namingProvider
     ? new ThreadNamer({ provider: config.namingProvider, changed: threadChanged })
     : undefined;
+  // The same decision provider drafts a plan when a turn that brought work ended without one.
+  const planDrafter = config.namingProvider
+    ? new PlanDrafter({ provider: config.namingProvider, changed: threadChanged })
+    : undefined;
   const runningTasks = new RunningTasks((threadId, callId) =>
     localStore?.nativeToolUse(threadId, callId),
   );
@@ -683,6 +687,7 @@ export function createViewer(config: ViewerConfig) {
     configStore,
     projectRegistry: config.projectRegistry,
     namer,
+    planDrafter,
     threadContext,
     runningTasks,
     ...(config.tokenTracker ? { tokenTracker: config.tokenTracker } : {}),
@@ -799,7 +804,7 @@ export function createViewer(config: ViewerConfig) {
     '/kingdom',
     serveStatic({ root: fileURLToPath(new URL('./', import.meta.url)), path: 'ui/kingdom.html' }),
   );
-  // The workspace and its settings/analytics pages are one client-routed app (ui/route.js).
+  // The workspace and its settings, analytics and search pages are one client-routed app (ui/route.js).
   const appPage = serveStatic({
     root: fileURLToPath(new URL('./', import.meta.url)),
     path: 'ui/index.html',
@@ -809,6 +814,7 @@ export function createViewer(config: ViewerConfig) {
     '/settings',
     '/settings/*',
     '/analytics',
+    '/search',
     '/projects/:id/settings',
     '/projects/:id/settings/*',
     '/projects/:id/analytics',
@@ -957,25 +963,20 @@ export function createViewer(config: ViewerConfig) {
     localStore,
     directory,
     conversations,
-    /** The plan tool's reach: a thread's plan, recorded on its meta, persisted and published. */
-    plans: {
-      setPlan(threadId: string, patch: PlanPatch): ThreadPlan {
+    /** The record tool's reach: a live thread's plan, loop, name and status, persisted and published. */
+    records: {
+      read(threadId: string): Thread {
         const thread = directory.get(threadId);
         if (!thread || thread.disposed) throw Error('This thread is not live here');
-        const before = new Set(
-          (thread.meta.plan?.outcomes ?? []).filter((o) => o.status === 'done').map((o) => o.text),
-        );
-        const plan = applyPlanPatch(thread.meta.plan, patch);
-        thread.meta.plan = plan;
-        // An outcome newly done is a milestone: the thread shows it as done until its next task.
-        const reached = plan.outcomes
-          .filter((o) => o.status === 'done' && !before.has(o.text))
-          .at(-1);
-        if (reached) thread.meta.done = { kind: 'milestone', text: reached.text, at: Date.now() };
-        threadChanged(thread);
-        return plan;
+        return thread;
       },
-    } satisfies ThreadPlans,
+      update<T>(threadId: string, change: (thread: Thread) => T): T {
+        const thread = this.read(threadId);
+        const result = change(thread);
+        threadChanged(thread);
+        return result;
+      },
+    } satisfies ThreadRecords,
     startSocket() {
       socket.startStaleSweep();
       kingdomWatch.start();
@@ -1082,7 +1083,7 @@ export async function startViewer(config: ViewerConfig) {
     localStore,
     kingdom: viewer.kingdom,
     conversations: viewer.conversations,
-    plans: viewer.plans,
+    records: viewer.records,
   };
 }
 

@@ -13,7 +13,10 @@
  * Inputs:
  *   thread.meta.status       idle | active | waiting | archived (+ legacy completed / done)
  *   thread.meta.setup        { status: 'starting' | 'ready' | 'degraded' }
- *   thread.lastTurn          { status: 'queued' | 'running' | 'completed' | 'failed' } (newest live turn)
+ *   thread.meta.agentStatus  { state: 'needs-you' | 'blocked', text } (the agent's set_status)
+ *   thread.meta.plan         an outcome with status 'you' waits on the person
+ *   thread.meta.seenAt       when the owner last looked (epoch ms)
+ *   thread.lastTurn          { status, startedAt, completedAt? } (newest live turn)
  *   thread.conversation      { unread, paused, held, members }
  *   prompts                  pending ActionQueue prompts for this thread
  *   childrenWorking          true when a child thread (subagent) is working
@@ -56,6 +59,16 @@ export function threadState(thread, context = {}) {
   if (prompts.length) return promptState(prompts[0]);
   if ((conversation.held ?? 0) > 0) return 'held';
   if ((conversation.unread ?? 0) > 0) return 'request';
+  // What the agent said at hand-back (set_status, or a plan outcome left waiting on the person),
+  // while no turn runs: blocked is red, waiting on you is orange. The owner's next message clears it.
+  if (turn !== 'running' && meta.status !== 'active') {
+    if (meta.agentStatus?.state === 'blocked') return 'blocked';
+    if (
+      meta.agentStatus?.state === 'needs-you' ||
+      (meta.plan?.draftedBy !== 'foundry' && meta.plan?.outcomes?.some((o) => o.status === 'you'))
+    )
+      return 'question';
+  }
   // A snooze quiets the calm states; a problem or a request for you still shows.
   if (snoozeRunning(thread?.meta?.snooze)) return 'snoozed';
   if (meta.setup?.status === 'starting') return 'starting';
@@ -63,15 +76,30 @@ export function threadState(thread, context = {}) {
   if (context.childrenWorking) return 'subagents';
   if (turn === 'queued') return 'queued';
   if (meta.status === 'waiting' || conversation.paused) return 'paused';
+  // A hand-back: a turn completed after the owner last looked (a reply he hasn't read, or a turn the
+  // agent started on its own, a Muse cron or goal). Opening the thread clears it.
+  if (turn === 'completed' && (thread.lastTurn?.completedAt ?? 0) > (meta.seenAt ?? 0))
+    return 'newarrival';
   // Done: its branch merged, or the agent marked a plan milestone; the owner's next message clears it.
   if (meta.done) return 'done';
-  // Until "seen by Aron" exists, an idle thread whose last turn completed reads as done.
   if (turn === 'completed') return 'done';
   return 'idle';
 }
 
-/** What a done thread says: its done text ("Merged into main", a milestone), else the state's label. */
-export const doneText = (thread) => thread?.meta?.done?.text ?? null;
+/**
+ * The line a thread's state carries, when it has one: a done thread's done text ("Merged into main",
+ * a milestone), or what the agent said it waits on or is blocked by. Null: show the state's label.
+ */
+export function statusText(thread, state) {
+  const meta = thread?.meta ?? {};
+  if (state === 'done') return meta.done?.text ?? null;
+  if (state === 'blocked' && meta.agentStatus?.state === 'blocked') return meta.agentStatus.text;
+  if (state === 'question') {
+    if (meta.agentStatus?.state === 'needs-you') return meta.agentStatus.text;
+    return meta.plan?.outcomes?.find((o) => o.status === 'you')?.text ?? null;
+  }
+  return null;
+}
 
 /** The colour category of a state: red, orange, green, yellow, blue, neutral, charcoal. */
 export const categoryOf = (state) => STATES[state]?.cat ?? 'idle';

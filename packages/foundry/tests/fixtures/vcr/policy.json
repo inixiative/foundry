@@ -4,6 +4,6 @@
     "claude": "2.1.316",
     "codex": "0.162.1",
     "muse": "1.4.14",
-    "@inixiative/agent-session": "0.7.0"
+    "@inixiative/agent-session": "0.9.0"
   }
 }

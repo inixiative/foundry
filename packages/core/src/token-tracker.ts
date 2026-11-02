@@ -145,6 +145,10 @@ const attributionMatches = (
 export interface ModelPricing {
   readonly inputPer1M: number;
   readonly outputPer1M: number;
+  /** Cache reads; default a tenth of input. */
+  readonly cacheReadPer1M?: number;
+  /** Cache writes (5-minute); default 1.25x input. */
+  readonly cacheWritePer1M?: number;
 }
 
 /**
@@ -214,11 +218,22 @@ export interface UsageSummary {
 }
 
 // ---------------------------------------------------------------------------
-// Default cost table (approximate pricing as of early 2026)
+// Default cost table. Anthropic: first-party API list prices per 1M tokens, as published at
+// https://platform.claude.com/docs/en/about-claude/pricing (read 2026-11-01; cache writes are the
+// 5-minute rate, 1.25x input). Haiku 5.5 is its rate up to 100K-token prompts.
 // ---------------------------------------------------------------------------
 
 export const DEFAULT_COST_TABLE: CostTable = {
   anthropic: {
+    'claude-fable-5-1': { inputPer1M: 10, outputPer1M: 50, cacheReadPer1M: 0.25 },
+    'claude-fable-5': { inputPer1M: 10, outputPer1M: 50 },
+    'claude-opus-5-5': { inputPer1M: 4, outputPer1M: 20, cacheReadPer1M: 0.2 },
+    'claude-opus-5': { inputPer1M: 5, outputPer1M: 25 },
+    'claude-opus-4-8': { inputPer1M: 5, outputPer1M: 25 },
+    'claude-sonnet-5-5': { inputPer1M: 2, outputPer1M: 10, cacheReadPer1M: 0.2 },
+    'claude-sonnet-5': { inputPer1M: 2, outputPer1M: 10 },
+    'claude-haiku-5-5': { inputPer1M: 0.1, outputPer1M: 0.5 },
+    'claude-haiku-4-5': { inputPer1M: 1, outputPer1M: 5 },
     'claude-opus-4-7': { inputPer1M: 5, outputPer1M: 25 },
     'claude-opus-4-6': { inputPer1M: 5, outputPer1M: 25 },
     'claude-sonnet-4-6': { inputPer1M: 3, outputPer1M: 15 },
@@ -244,9 +259,23 @@ export const DEFAULT_COST_TABLE: CostTable = {
     'muse-spark-1.2-contributor': { inputPer1M: 0.1, outputPer1M: 0.2 },
     'muse-spark-1.1': { inputPer1M: 1.25, outputPer1M: 4.25 },
   },
-  // Claude Code provider tracks usage via session output, not cost table
-  'claude-code': {},
 };
+
+/**
+ * A model's price: its own provider's row, else the same model id under any provider. A Claude
+ * model run through the Claude Code login (provider `claude-code` or a decision host) is priced at
+ * its API list price: an API-equivalent cost, not what a subscription bills.
+ */
+export function modelPricing(
+  table: CostTable,
+  provider: string,
+  model: string,
+): ModelPricing | undefined {
+  const own = table[provider]?.[model];
+  if (own) return own;
+  for (const rows of Object.values(table)) if (rows[model]) return rows[model];
+  return undefined;
+}
 
 // ---------------------------------------------------------------------------
 // Token estimation
@@ -321,19 +350,14 @@ export class TokenTracker {
    * Throws if budget.haltAt is exceeded (when configured).
    */
   record(entry: Omit<UsageEntry, 'timestamp' | 'cost'>): UsageEntry {
-    const cost = this._computeCost(
-      entry.provider,
-      entry.model,
-      entry.tokens.input,
-      entry.tokens.output,
-      entry.cached,
-    );
+    const pricing = modelPricing(this._costTable, entry.provider, entry.model);
+    const cost = pricing ? this._computeCost(pricing, entry.tokens, entry.cached) : 0;
 
     const full: UsageEntry = {
       ...entry,
       timestamp: Date.now(),
       cost,
-      costKnown: !!this._costTable[entry.provider]?.[entry.model],
+      costKnown: !!pricing,
     };
 
     this._entries.push(full);
@@ -479,20 +503,16 @@ export class TokenTracker {
   // Private helpers
   // -----------------------------------------------------------------------
 
-  private _computeCost(
-    provider: string,
-    model: string,
-    input: number,
-    output: number,
-    cached?: boolean,
-  ): number {
-    const pricing = this._costTable[provider]?.[model];
-    if (!pricing) return 0;
-
-    // Cached input tokens are typically free or heavily discounted
-    const effectiveInput = cached ? input * 0.1 : input;
+  private _computeCost(pricing: ModelPricing, tokens: TokenCounts, cached?: boolean): number {
+    // `cached` marks a whole call served from a provider cache that reports no split.
+    const input = cached ? tokens.input * 0.1 : tokens.input;
+    const perToken = (count: number | undefined, per1M: number) =>
+      ((count ?? 0) / 1_000_000) * per1M;
     return (
-      (effectiveInput / 1_000_000) * pricing.inputPer1M + (output / 1_000_000) * pricing.outputPer1M
+      perToken(input, pricing.inputPer1M) +
+      perToken(tokens.output, pricing.outputPer1M) +
+      perToken(tokens.cacheRead, pricing.cacheReadPer1M ?? pricing.inputPer1M * 0.1) +
+      perToken(tokens.cacheWrite, pricing.cacheWritePer1M ?? pricing.inputPer1M * 1.25)
     );
   }
 

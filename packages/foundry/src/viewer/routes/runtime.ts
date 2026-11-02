@@ -12,9 +12,18 @@ import type {
   ThreadConfig,
   TokenTracker,
 } from '@inixiative/foundry-core';
-import { MODEL_REGISTRY, newId, Thread, threadTitle, timeFromId } from '@inixiative/foundry-core';
+import {
+  MODEL_REGISTRY,
+  modelEfforts,
+  newId,
+  REASONING_EFFORTS,
+  Thread,
+  threadTitle,
+  timeFromId,
+} from '@inixiative/foundry-core';
 import type { Hono } from 'hono';
 import { chorusRetries, chorusRows, turnChorus } from '../../agents/chorus-degraded';
+import type { PlanDrafter } from '../../agents/plan-drafter';
 import type { ProjectRegistry } from '../../agents/project';
 import { type ThreadFactory, WorkerRefusedError } from '../../agents/thread-factory';
 import type { ThreadNamer } from '../../agents/thread-namer';
@@ -34,7 +43,6 @@ import type { LocalSessionStore } from '../../persistence/local-session-store';
 import { workerModelRequirement } from '../../providers/subscription-policy';
 import {
   describeMcpServers,
-  EFFORT_LEVELS,
   type EffortLevel,
   PERMISSION_MODES,
   type PermissionMode,
@@ -72,6 +80,7 @@ export interface RuntimeRoutesDeps {
   projectRegistry?: ProjectRegistry;
   /** Agent-maintained thread names (optional). */
   namer?: ThreadNamer;
+  planDrafter?: PlanDrafter;
   /** Re-derives a thread's branch/worktree/linked work when its worktree changes. */
   threadContext?: ThreadContextTracker;
   localStore?: LocalSessionStore | null;
@@ -145,6 +154,7 @@ export function registerRuntimeRoutes(
     configStore: deps.configStore,
     deviceIdentityPath: deps.deviceIdentityPath,
     namer,
+    planDrafter: deps.planDrafter,
     localStore,
     directory,
     streams,
@@ -776,7 +786,7 @@ export function registerRuntimeRoutes(
           id: model.id,
           label: model.label,
         })),
-        efforts: EFFORT_LEVELS,
+        efforts: modelEfforts(provider, launch.model ?? configuredModel) ?? REASONING_EFFORTS,
         workers,
       },
     };
@@ -1163,6 +1173,17 @@ export function registerRuntimeRoutes(
     const run = regionRuns.start(body.commit);
     if ('error' in run) return c.json(run, 409);
     return c.json(run, 202);
+  });
+
+  // -- Seen: the owner looked at the thread; a turn completed after it reads as a new arrival --
+
+  app.post('/api/threads/:id/seen', (c) => {
+    const thread = directory.get(c.req.param('id'));
+    if (!thread) return c.json({ error: 'thread not found' }, 404);
+    thread.meta.seenAt = Date.now();
+    localStore?.saveThread(thread);
+    streams.threadsChanged(thread.id);
+    return c.json({ seenAt: thread.meta.seenAt });
   });
 
   // -- Snooze: quiet until a time or a condition's time; the status is untouched (thread-snooze.ts) --

@@ -1,11 +1,30 @@
 ---
 name: threads
-description: Use in a Foundry thread when work should split off, or when deciding whether to continue here. Covers continuing in this thread versus forking into a new thread with fork_thread, and checking sibling threads with foundry_threads before starting overlapping work.
+description: Use in a Foundry thread before handing back (status), when the thread's outcome becomes clear or changes (rename), when work should split off, or before overlapping work. Covers set_status (needs-you, blocked, done, clear), rename_thread, fork_thread, and foundry_threads.
 ---
 
-# Threads: here, or a new one
+# Threads: status, name, here or a new one
 
-A Foundry thread is one line of work the person follows. Keep it about one outcome.
+A Foundry thread is one line of work the person follows among many. Keep it about one outcome, and keep its name and status true: they are all the person sees on the board.
+
+## Status (`set_status`), before you hand back
+
+Foundry already shows what it can see: working, queued, a failed turn, an approval waiting, archived. You say what it can't:
+
+| You are handing back because | Call |
+|---|---|
+| You wait on the person: a question, a decision, a review | `set_status` `{status: "needs-you", text: "Which table should sessions write to?"}` (orange) |
+| You can't go on: a missing credential, permission or dependency | `{status: "blocked", text: "No GitHub token for inixiative/kingdom"}` (red) |
+| The ask is finished | `{status: "done", text: "Login endpoint merged"}` (blue), or mark the plan's last outcome `done` |
+| A status you set no longer holds | `{status: "clear"}` |
+
+`text` is one line the person reads on the board. The person's next message clears the status. A turn that just ends with no status reads as done, so say `needs-you` whenever your answer ends in a question.
+
+## Name (`rename_thread`)
+
+Foundry names a new thread from the person's first message. Rename it when the outcome becomes clear or changes: the outcome in 3–7 plain words ("Fix flaky login test", not "Working on tests"; no status words). Once you rename it, Foundry's namer leaves it to you. A name the person gave is theirs: the tool refuses, and you ask them.
+
+## Here, or a new one
 
 | Situation | Do |
 |---|---|

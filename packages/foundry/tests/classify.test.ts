@@ -64,7 +64,7 @@ describe('stage settings', () => {
       [[{}, {}], /\[0\]\.escalate is required/],
       [[{ escalate: ['unsure'] }, {}], /only a ternary stage answers/],
       [[{ doc: '../secret.md' }], /doc must be a markdown file name/],
-      [[{ effort: 'huge' }], /effort must be one of low, medium, high, xhigh, max/],
+      [[{ effort: 'huge' }], /effort must be one of none, low, medium, high, xhigh, max, ultra/],
       [[{ escalate: ['yes'], deadline: 0.7 }, { deadline: 0.6 }], /add up to 1.3/],
     ];
     for (const [value, error] of refused) expect(() => validateStages('s', value)).toThrow(error);

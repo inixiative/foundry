@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import type {
   BeforeSendHook,
   HarnessSession,
+  PushOutcome,
   SessionArtifact,
   SessionEvent,
   SessionEventHandler,
@@ -55,7 +56,9 @@ class FakeSession implements HarnessSession {
     return () => {};
   }
 
-  async push(): Promise<void> {}
+  async push(): Promise<PushOutcome> {
+    return { outcome: 'ignored', reason: 'fake session' };
+  }
 
   artifact(): SessionArtifact {
     return {

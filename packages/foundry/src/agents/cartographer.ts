@@ -32,6 +32,7 @@ import {
   type SignalBus,
   servedModel,
 } from '@inixiative/foundry-core';
+import { STANDING_LAYERS } from './chorus-reception';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -348,8 +349,8 @@ export class Cartographer {
     >();
 
     for (const layer of layers) {
-      // Skip the Librarian's thread-state layer (not routable context)
-      if (layer.id === 'thread-state') continue;
+      // Skip the Librarian's thread-state layer and Foundry's standing layers (always held, never routed)
+      if (layer.id === 'thread-state' || STANDING_LAYERS.has(layer.id)) continue;
 
       const domain = layer.definition?.domain ?? this._inferDomain(layer.id);
       if (!domainGroups.has(domain)) {

@@ -1,0 +1,28 @@
+/* "Coming soon" notes: a surface we intend to build, not an empty one (coming-soon.js). */
+.coming-soon-note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+  padding: 8px 10px;
+  border: 1px dashed var(--border);
+  border-radius: 6px;
+  color: var(--text-dim);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.coming-soon-note.is-inline {
+  display: inline-flex;
+  padding: 0;
+  border: 0;
+}
+.coming-soon-note .coming-soon {
+  flex: none;
+}
+.coming-soon-what {
+  flex: 1 1 12em;
+}
+.coming-soon-link {
+  color: var(--accent);
+  white-space: nowrap;
+}

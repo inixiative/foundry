@@ -35,7 +35,15 @@ import { readOperationSchema } from '../providers/kingdom-access-client';
 import { ConversationTool } from '../tools/conversation';
 import { KingdomAccessTool } from '../tools/kingdom-access';
 import { KingdomPostTool } from '../tools/kingdom-post';
-import { type PlanPatch, planPatchSchema, ThreadPlanTool } from '../tools/thread-plan';
+import {
+  loopRoundSchema,
+  loopSchema,
+  loopStopSchema,
+  planPatchSchema,
+  renameSchema,
+  statusSchema,
+  ThreadRecordTool,
+} from '../tools/thread-record';
 import {
   type AuthorityRefusal,
   bindLiveAuthority,
@@ -576,22 +584,77 @@ export function createFoundryMcp(config: FoundryMcpConfig): FoundryMcp {
     );
 
   // -----------------------------------------------------------------------
-  // set_plan — the thread's own plan, for the Plan view (tools/thread-plan.ts)
+  // The thread's own record (tools/thread-record.ts): plan, loop, name and status
   // -----------------------------------------------------------------------
-  if (config.tools?.get('plan') instanceof ThreadPlanTool)
-    server.tool(
-      'set_plan',
-      "Record this thread's plan so the person sees it in the Plan view, and keep it current as the work moves. Give any sections; each one given replaces that section. outcomes: what the person gets, each with its status (todo, doing, done, you = waits on the person). pains: what hurts today. strategy: how the work goes. reasons: why this way. technical: one row per concern the work touches (auth, permissions, db access, requests, locks, jobs, events, errors, ...): the existing system it uses and where it lives (reuse, extend, combine, refactor, migrate), or decision 'new' with why none fits and what would have made the closest one fit, or 'none' when the concern needs nothing. Lines are short; put more in detail.",
-      planPatchSchema.shape,
-      guarded<PlanPatch>('set_plan', async (args) => {
+  if (config.tools?.get('thread') instanceof ThreadRecordTool) {
+    /** One operation on this thread's record; its answer is the tool's own sentence. */
+    const record = (operation: string) =>
+      guarded<Record<string, unknown>>(operation, async (args) => {
         const result = await config.tools!.dispatch(
-          'plan_request',
-          { url: 'set_plan', method: 'POST', body: args },
+          'thread_request',
+          { url: operation, method: 'POST', body: args },
           { scope: authority.scope() },
         );
         return { status: result.ok ? 'ok' : 'error', text: result.summary };
-      }),
+      });
+    server.tool(
+      'set_plan',
+      "Record this thread's plan so the person sees it in the Plan view, and keep it current as the work moves. Call it once you understand an ask that is more than a quick answer, before building; again when an outcome, the strategy or a technical decision changes; and before you hand back, so the statuses are true. Give any sections; each one given replaces that section. outcomes: what the person gets, each with its status (todo, doing, done, you = waits on the person); an outcome newly done shows the thread as done. pains: what hurts today. strategy: how the work goes. reasons: why this way. technical: one row per concern the work touches (auth, permissions, db access, requests, locks, jobs, events, errors, ...): the existing system it uses and where it lives (reuse, extend, combine, refactor, migrate), or decision 'new' with why none fits and what would have made the closest one fit, or 'none' when the concern needs nothing. mark: move outcomes to a status without resending the list ({outcome: its text or number, status}). A plan Foundry drafted is replaced whole by your first set_plan. Lines are short; put more in detail.",
+      planPatchSchema.shape,
+      record('set_plan'),
     );
+    server.tool(
+      'get_plan',
+      'Read what Foundry shows for this thread: its name (and whether the person gave it), its status, its plan (and whether Foundry drafted it) and its loop. Use it after a compaction or when resuming, before changing the plan.',
+      {},
+      record('get_plan'),
+    );
+    server.tool(
+      'clear_plan',
+      "Remove this thread's plan, when the work it described was dropped or the thread moved to something else. Record the new plan with set_plan.",
+      {},
+      record('clear_plan'),
+    );
+    server.tool(
+      'set_loop',
+      "Start this thread's loop, or revise the running one: the process you repeat to reach the plan's outcomes, for work that needs several rounds of build, check and fix (a failing suite, a migration, a tuning run). Not for a single pass. goal: what the loop drives toward. steps: one round, in order. until: the check whose passing means done. maxRounds: when to stop and ask instead. Shown in the Loop view.",
+      loopSchema.shape,
+      record('set_loop'),
+    );
+    server.tool(
+      'loop_round',
+      'Record a round of the running loop when it ends: result (pass, fail, partial) and a note of what it found or changed. When maxRounds is reached without a pass, stop the loop and tell the person.',
+      loopRoundSchema.shape,
+      record('loop_round'),
+    );
+    server.tool(
+      'stop_loop',
+      "End the running loop: result 'done' when its until-check passed, 'stopped' when you end it otherwise (the limit, a blocker, the person changed course), with the reason.",
+      loopStopSchema.shape,
+      record('stop_loop'),
+    );
+    server.tool(
+      'rename_thread',
+      'Rename this thread when its outcome is clear or has changed: the outcome in 3 to 7 plain words ("Fix flaky login test", not "Working on tests"), no status words. Foundry names new threads itself; rename when that name no longer says what the work is. A name the person gave is theirs and stays.',
+      renameSchema.shape,
+      record('rename_thread'),
+    );
+    server.tool(
+      'set_status',
+      "Say where this thread stands when Foundry can't see it, before you hand back: 'needs-you' (you wait on the person: a question, a decision, a review), 'blocked' (you can't go on: a missing credential, permission or dependency), 'done' (the ask is finished; text says what), or 'clear'. text: one line the person reads on the board. Working, queued, failed, approvals and archived are Foundry's and never set here; the owner's next message clears the status.",
+      statusSchema.shape,
+      record('set_status'),
+    );
+  }
+  server.tool(
+    'ask_herald',
+    'Coming soon: ask a Herald what other threads, agents and teammates are working on (Linear, GitHub, Slack), before starting work that may overlap. Not built yet (AGENT-001); today it answers with what to use instead.',
+    { question: z.string().min(1).max(2_000) },
+    guarded<{ question: string }>('ask_herald', async () => ({
+      status: 'unavailable',
+      text: "Heralds are coming soon (AGENT-001): nothing reads teammates' Linear, GitHub or Slack activity for you yet. For this project's other live threads on this machine, call foundry_threads. For anything else, ask the person.",
+    })),
+  );
 
   // -----------------------------------------------------------------------
   // Conversations (docs/reference/CONVERSATIONS.md §4.5): the host's send and conch, the joiner's post

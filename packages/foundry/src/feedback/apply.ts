@@ -14,6 +14,13 @@ import {
 import { homedir } from 'node:os';
 import { dirname, join, relative } from 'node:path';
 import { sha256Hex } from '@inixiative/foundry-core';
+import {
+  GLOBAL_ROLE_FILE_TEMPLATE,
+  type InstructionNodeSettings,
+  LOCAL_ROLE_FILE_TEMPLATE,
+  ladderReadsRoleFile,
+  ROLE_FILE_TEMPLATE,
+} from '../prompts/instruction-settings';
 import { ruleMarker } from './sharpen';
 import {
   type FeedbackApplyRecord,
@@ -31,6 +38,18 @@ export interface LevelRoots {
   readonly org?: string;
 }
 
+const fill = (template: string, role: string, slot: FeedbackSlot) =>
+  template.replace('{role}', role).replace('{slot}', slot);
+
+/** The ladder template each rung's role file is written from (the same constants the ladder reads). */
+export const RUNG_TEMPLATE: Readonly<Record<FeedbackLevel, string>> = {
+  computer: GLOBAL_ROLE_FILE_TEMPLATE,
+  org: ROLE_FILE_TEMPLATE,
+  'org-personal': LOCAL_ROLE_FILE_TEMPLATE,
+  project: ROLE_FILE_TEMPLATE,
+  'project-personal': LOCAL_ROLE_FILE_TEMPLATE,
+};
+
 export function roleFilePath(
   level: FeedbackLevel,
   role: string,
@@ -39,21 +58,20 @@ export function roleFilePath(
 ): string {
   if (!/^[A-Za-z0-9][A-Za-z0-9_.-]{0,199}$/.test(role) || role.includes('..'))
     throw Error(`Invalid role id: ${role}`);
-  const file = (dir: string, personal: boolean) =>
-    join(dir, '.foundry', 'roles', role, `${slot}${personal ? '.local' : ''}.md`);
+  const file = fill(RUNG_TEMPLATE[level], role, slot);
   const project = roots.project;
   const org = roots.org ?? (project ? dirname(project) : undefined);
   switch (level) {
     case 'computer':
-      return join(roots.home ?? homedir(), '.foundry', 'roles', role, `${slot}.md`);
+      return file.replace('{home}', roots.home ?? homedir());
     case 'org':
     case 'org-personal':
       if (!org) throw Error('No org directory for this thread');
-      return file(org, level === 'org-personal');
+      return join(org, file);
     case 'project':
     case 'project-personal':
       if (!project) throw Error('No project directory for this thread');
-      return file(project, level === 'project-personal');
+      return join(project, file);
   }
 }
 
@@ -97,6 +115,8 @@ export function guardPersonalFile(path: string): void {
 }
 
 export interface ApplyChange {
+  /** The registered ladder (`resolveInstructionLadder`): a rung it no longer reads is refused. */
+  readonly ladder: readonly InstructionNodeSettings[];
   readonly itemId: string;
   readonly changeId: string;
   readonly statement: string;
@@ -110,6 +130,10 @@ export interface ApplyChange {
 export function applyChange(change: ApplyChange): FeedbackApplyRecord {
   if (!WRITABLE_LEVELS.includes(change.level))
     throw Error(`${change.level} is committed; it changes through a pull request, not here`);
+  if (!ladderReadsRoleFile(change.ladder, RUNG_TEMPLATE[change.level]))
+    throw Error(
+      `The composition ladder no longer reads ${RUNG_TEMPLATE[change.level]}; this rung's role file would never load`,
+    );
   const path = roleFilePath(change.level, change.role, change.slot, change.roots);
   guardPersonalFile(path);
   const before = read(path);

@@ -195,3 +195,57 @@ test('a rejection carries the note the user typed with it to the agent', async (
   });
   expect(queue.get(prompt!.id)?.resolution?.note).toBe('push only after CI is green');
 });
+
+test("Foundry's own record and read tools never wait on an approval; sends and structural denies still apply", async () => {
+  const bridge = 'mcp__foundry_3f6951c8a5284627a049eba9839ad6dc';
+  const call = (operation: string): ToolRequest => ({
+    stage: 'permission',
+    toolName: `${bridge}__${operation}`,
+    toolInput: {},
+    callId: `call-${operation}`,
+  });
+  const { decide, queue, rows } = gate(undefined, 'default');
+  for (const operation of [
+    'set_plan',
+    'set_status',
+    'rename_thread',
+    'loop_round',
+    'get_plan',
+    'ask_herald',
+    'foundry_threads',
+  ])
+    expect(await decide(call(operation))).toEqual({ behavior: 'allow' });
+  expect(queue.pending()).toEqual([]);
+  expect(rows.at(-1)!.record).toMatchObject({ decision: 'allow', by: 'foundry-own' });
+
+  // A send to a member is the host's mode to decide: it asks.
+  void decide(call('send_to_member'));
+  await Bun.sleep(0);
+  expect(queue.pending()).toHaveLength(1);
+
+  // A user's structural rule naming the tool still holds.
+  const strict = gate({ capabilities: { [`tool:${bridge}__set_status`]: 'deny' } }, 'default');
+  expect(await strict.decide(call('set_status'))).toMatchObject({ behavior: 'deny' });
+});
+
+test("a Codex thread's launch pre-approves exactly Foundry's own tools on its bridge; sends keep Codex's mode", async () => {
+  const { appServerBridgeConfiguration } = await import('../src/providers/native-launch');
+  const { FOUNDRY_OWN_TOOLS } = await import('../src/tools/thread-record');
+  const name = 'foundry_3f6951c8a5284627a049eba9839ad6dc';
+  const lease = {
+    name,
+    check() {},
+    launch: {
+      claudeJson: JSON.stringify({
+        mcpServers: { [name]: { command: 'bun', args: ['run', 'bridge.ts'] } },
+      }),
+    },
+  } as unknown as Parameters<typeof appServerBridgeConfiguration>[0];
+  const server = appServerBridgeConfiguration(lease)[`mcp_servers.${name}`] as {
+    tools: Record<string, { approval_mode: string }>;
+  };
+  expect(Object.keys(server.tools).sort()).toEqual([...FOUNDRY_OWN_TOOLS].sort());
+  expect(Object.values(server.tools).every((t) => t.approval_mode === 'approve')).toBe(true);
+  expect(server.tools.send_to_member).toBeUndefined();
+  expect(server.tools.fork_thread).toBeUndefined();
+});

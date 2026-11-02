@@ -83,6 +83,7 @@ export function threadOnMerge(config: FoundryConfig, projectId?: string): Thread
   );
 }
 
+import type { ReasoningEffort } from '@inixiative/foundry-core';
 import { writeFileAtomic } from '../client/private-file';
 import type { ToolRules } from '../turns/tool-gate';
 import {
@@ -180,7 +181,7 @@ export interface FoundryConfig {
     /** Which Kingdom owner's subscription pool threads use by default. */
     kingdomOwnerKey?: string;
     /** Reasoning effort for Codex threads; omitted, Codex's own default. */
-    codexEffort?: 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
+    codexEffort?: ReasoningEffort;
     /** Classifier/router provider. Defaults to same as executor if omitted. */
     classifierProvider?: string;
     /** Classifier/router model. Defaults to same as executor if omitted. */
