@@ -22,11 +22,11 @@ import {
   Thread,
   ToolRegistry,
 } from '@inixiative/foundry-core';
+import { SessionManager } from '../src/agents/session';
 import { readLaunchFile, runProxy } from '../src/mcp/proxy';
 import { createFoundryMcp } from '../src/mcp/server';
 import { createLiveBridge, type LiveBridge } from '../src/mcp/transport';
 import { type MemoryBackend, MemoryToolAdapter } from '../src/tools/memory-adapter';
-import { ThreadRegistry } from './helpers/thread-registry';
 
 // T2 focused tests, written RED first. Actual loopback HTTP through the SDK
 // streamable client, and a REAL owned Bun stdio proxy subprocess talking to that
@@ -157,7 +157,7 @@ async function fixture(opts: { projectId?: string; slowRead?: () => Promise<void
   const foreign = new Thread('foreign', new ContextStack([new ContextLayer({ id: 'x' })]));
   foreign.meta.projectId = 'project-B';
   foreign.meta.description = 'PRIVATE_PROJECT_B_DESCRIPTION';
-  const manager = new ThreadRegistry();
+  const manager = new SessionManager();
   for (const t of [owner, sibling, foreign]) manager.add(t);
   cleanups.push(() => {
     for (const t of [owner, sibling, foreign]) t.dispose();
@@ -1149,7 +1149,7 @@ function observedThread(id: string, projectId: string, fact: string) {
 
 test('SDK session churn leaves no disposal hooks, while detached authorities still refuse disposal, replacement and project changes on late reads', async () => {
   const owner = observedThread('churn-owner', 'project-A', 'CHURN_FACT');
-  const manager = new ThreadRegistry();
+  const manager = new SessionManager();
   manager.add(owner.thread);
   let release!: () => void;
   let entered!: () => void;

@@ -8,7 +8,8 @@
 
 ---
 
-**2026-11-01:** the `CorpusCompiler` class was deleted unwired (Aron: delete); only its tiers survive, in `agents/corpus-tiers.ts`. The pipeline below is a design to build, not code to wire; the deleted class is in git history.
+**2026-11-02:** the `CorpusCompiler` class (`agents/corpus-compiler.ts`), deleted unwired on 11-01 (#202), is restored: Oracle `docs/foundry/DISTILLATION.md` keeps snapshot production on it (Aron, 2026-11-02: intended features stay as placeholders).
+
 
 ## Overview
 
