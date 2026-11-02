@@ -160,7 +160,7 @@ test('Plan shows the about and the checklist, a step opens its turn; Work shows 
     await page.locator('.context-bar-title', { hasText: 'Checkout errors since 2:02' }).waitFor();
 
     // Plan (key 2): About, then the checklist.
-    await page.keyboard.press('2');
+    await page.keyboard.press('Alt+Digit2');
     const plan = page.locator('.plan');
     await plan.locator('.plan-about').waitFor();
     await plan.locator('.plan-section-head', { hasText: '1 of 2 done' }).waitFor();

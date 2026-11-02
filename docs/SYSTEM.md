@@ -383,19 +383,24 @@ Thin colored strips between agent calls. Each layer gets a persistent color (has
 
 ### Hotkeys
 
+Focus lives in the message box (Aron 2026-11-02): when a view with a message box is showing, typing
+goes to it, and clicking anything that isn't a place to type (a row, tab, card, panel, button)
+leaves focus there (`composer-focus.js`). A place to type (Search, a settings field, a rename box,
+an answer's note) or an open dialog holds focus while in use, then hands it back. So app commands
+are ⌥ chords; their plain forms act only where no message box is shown. Hold ⌥ to see them.
+
 | Key | Action |
 |-----|--------|
-| `1` `2` `3` | Focus tree / conversation / detail |
-| `j` / `k` | Next / previous item |
-| `Enter` | Expand / select |
-| `Escape` | Close overlay / deselect |
-| `Ctrl+K` | Command palette |
-| `?` | Hotkey help overlay |
-| `p` | Pause / resume thread |
-| `i` | Inspect thread state |
-| `s` | Open settings |
-| `r` | Refresh all data |
-| `a` | Open analytics tab |
+| `⌥T` `⌥B` `⌥H` | Threads · Board · Watchtower |
+| `⌥1` `⌥2` `⌥3` (or `⌘`) | Thread · Plan · Loop |
+| `⌥4`–`⌥0` (or `⌘`) | Right panel tabs (the open tab's key folds it) |
+| `⌥[` `⌥⇧[` · `⌥]` `⌥⇧]` | Left list smaller · larger · right panel smaller · larger |
+| `⌥↑` `⌥↓` | Step through the turn view |
+| `⌥↵` `⌥⌫` · `⌥←` `⌥→` | Approve · reject the waiting card · previous · next card |
+| `⌥F` `⌥V` · `⌥⇧F` | Attach · voice · Search everything |
+| `⌥/` `⌥N` · `⌥K` `⌘K` | Actions for this thread · new thread · command palette |
+| `⌥?` | Help |
+| `Esc` | Close what is open; you stay in the message box |
 
 ### Settings Panel
 

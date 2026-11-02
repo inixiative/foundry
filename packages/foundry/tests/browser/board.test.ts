@@ -125,7 +125,7 @@ test('the board: a pending approval is answered from its card, filters narrow it
     expect(await page.locator('.board').count()).toBe(0);
     await page.keyboard.press('Escape');
     await until(async () => (await popover.count()) === 0, 'popover closed');
-    await page.keyboard.press('b');
+    await page.keyboard.press('Alt+KeyB');
     // Incoming is one line above the columns until opened.
     expect(await page.locator('.board-incoming .incoming-card').count()).toBe(0);
     await page.locator('.board-incoming-toggle', { hasText: 'Incoming' }).click();
@@ -198,13 +198,13 @@ test('the board: a pending approval is answered from its card, filters narrow it
     // there, and leaving the workspace with the board open leaves the board. No Gloss button until a
     // Gloss viewer exists.
     expect(await page.locator('.gloss-launch').count()).toBe(0);
-    await page.keyboard.press('b');
+    await page.keyboard.press('Alt+KeyB');
     await page.locator('.board').waitFor();
     for (const name of ['Settings', 'Analytics']) {
       await page.locator('.page-nav a', { hasText: name }).click();
       await until(async () => (await page.locator('.board').count()) === 0, `${name}: no board`);
       expect(await page.locator('.board-button').count()).toBe(0);
-      await page.keyboard.press('b');
+      await page.keyboard.press('Alt+KeyB');
       expect(await page.locator('.board').count()).toBe(0);
     }
     await page.locator('.page-nav a', { hasText: 'Workspace' }).click();

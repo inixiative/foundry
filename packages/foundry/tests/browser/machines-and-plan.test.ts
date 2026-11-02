@@ -122,7 +122,7 @@ test('threads on another machine are badged and filterable; a recorded plan fill
     ).toBe(0);
 
     // Plan: the agent's recorded plan, section by section.
-    await page.keyboard.press('2');
+    await page.keyboard.press('Alt+Digit2');
     const plan = page.locator('.plan');
     await plan.locator('.plan-items', { hasText: 'Checkout retries stop at three' }).waitFor();
     for (const text of [
