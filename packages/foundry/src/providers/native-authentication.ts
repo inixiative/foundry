@@ -83,7 +83,7 @@ const sourceSchema = z.discriminatedUnion('mode', [
 /** The account limits a native session reports (agent-session's LimitSnapshot), declared here so a
  * consumer of this module never compiles agent-session's sources. */
 export interface NativeLimitSnapshot {
-  readonly runtime: 'claude' | 'codex';
+  readonly runtime: 'claude' | 'codex' | 'muse';
   readonly source: 'poll' | 'stream';
   readonly observedAt: number;
   readonly windows: readonly {
