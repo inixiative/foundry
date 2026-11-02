@@ -57,6 +57,19 @@ test('settings and analytics are addressable pages scoped to Foundry or a projec
     // Profile comes first; the nav groups Integrations and Advanced, Dev mode sits at the bottom.
     await page.goto(`${origin}/settings`);
     await page.locator('h1.settings-title', { hasText: 'Profile' }).waitFor();
+    // Forge Master is closed until the header opens it; ✕ and Esc close it (Aron 11-02).
+    expect(await page.locator('.settings-page > .settings-chat').count()).toBe(0);
+    const forge = page.getByRole('button', { name: 'Forge Master ▾' });
+    await forge.click();
+    const chat = page.locator('.settings-page > .settings-chat');
+    await chat.waitFor();
+    await chat.getByRole('button', { name: 'Close Forge Master' }).click();
+    await chat.waitFor({ state: 'detached' });
+    await forge.click();
+    await chat.waitFor();
+    await page.locator('h1.settings-title').click();
+    await page.keyboard.press('Escape');
+    await chat.waitFor({ state: 'detached' });
     expect(
       (await page.locator('.settings-sections li').allInnerTexts()).map((t: string) => t.trim()),
     ).toEqual([
