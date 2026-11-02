@@ -204,6 +204,7 @@ test('the thread header stays two rows from 1024 to 1920 wide', async () => {
       await page.waitForTimeout(250);
       const shape = await grid.evaluate((el: Element) => {
         const box = el.getBoundingClientRect();
+        const zoom = Number(getComputedStyle(document.querySelector('.app') as Element).zoom) || 1;
         const band = el.closest('.thread-band') as HTMLElement;
         const pills = [...el.querySelectorAll('.band-pills > .band-pill')].filter(
           (p) => (p as HTMLElement).offsetParent,
@@ -229,10 +230,11 @@ test('the thread header stays two rows from 1024 to 1920 wide', async () => {
         const run = el.querySelector('.band-run') as HTMLElement;
         const drop = el.querySelector('.band-run .band-drop') as HTMLElement | null;
         return {
-          height: Math.round(box.height),
+          // Wide screens zoom the app 1.1 (concept-v4); measure in its own pixels.
+          height: Math.round(box.height / zoom),
           spill: band.scrollWidth - band.clientWidth,
           // Every pill sits on row 1 or row 2: none below the header.
-          lowest: Math.max(...pills.map((p) => p.getBoundingClientRect().bottom - box.top)),
+          lowest: Math.max(...pills.map((p) => p.getBoundingClientRect().bottom - box.top)) / zoom,
           widest: Math.max(...groups.map((g) => g.width)) / box.width,
           titleShare: titleColumn.width / box.width,
           clipped,
