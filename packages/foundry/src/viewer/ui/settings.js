@@ -496,11 +496,7 @@ function ProjectChorus({ projectId }) {
 }
 
 const layerName = (from) =>
-  from === 'default'
-    ? "the default (today's Warden)"
-    : from === 'settings'
-      ? 'your settings'
-      : 'the repository';
+  from === 'default' ? 'the default' : from === 'settings' ? 'your settings' : 'the repository';
 
 /** How each role classifies (classify): its stages in order, where they came from, and their versions. */
 /** A model's display name from the registry: "Claude Haiku 5.5 · Claude Code". */

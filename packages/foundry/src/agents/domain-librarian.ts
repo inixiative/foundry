@@ -878,7 +878,7 @@ export interface DomainLibrarianConfig {
   /**
    * How it classifies (classify/): its stages in order, each with its provider, the doc it reads and,
    * under evaluation only, candidate charter text. Stage 0 defaults to this Warden's own provider,
-   * options and cache. Default: one stage, today's Warden (`DEFAULT_STAGE`).
+   * options and cache. Default: one stage (`DEFAULT_STAGE`); a region chorus passes its own (`defaultStages`).
    */
   stages?: readonly WardenStage[];
   /** The region ids a recogniser stage may name: a group's members. Default: its own domain. */
