@@ -145,7 +145,7 @@ test('the board: a pending approval is answered from its card, filters narrow it
       'Allow git push origin fix/checkout?',
     );
     await working.locator('.board-card', { hasText: 'Rewrite the setup guide' }).waitFor();
-    expect(await page.locator('.board-button-count').innerText()).toBe('1');
+    expect(await page.locator('.board-button .rail-attn-needs').innerText()).toBe('1');
 
     // Category chips (Project ▾ · Kingdom ▾ · Device ▾): a project narrows every column and its count.
     const filters = page.getByRole('toolbar', { name: 'Filters' });
