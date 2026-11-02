@@ -788,7 +788,7 @@ export function createViewer(config: ViewerConfig) {
       { 'Content-Type': 'application/javascript' },
     ),
   );
-  // The look is @inixiative/config's shared theme (public.css, agentic.css and the fonts they load),
+  // The look is @inixiative/config's shared theme (public.css, status.css and the fonts they load),
   // read from the package at runtime so Foundry and Kingdom never drift apart.
   const themeDir = dirname(
     fileURLToPath(import.meta.resolve('@inixiative/config/theme/public.css')),
