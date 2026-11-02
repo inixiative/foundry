@@ -3,6 +3,7 @@ import { join, resolve } from 'node:path';
 import { resolveDecisionModel } from '@inixiative/foundry-core';
 import { stampFoundryRun } from './archives/run-stamp';
 import { AGENT_CLIS, ensureAgentClisOnPath } from './daemon/agent-clis';
+import { publishDaemonRuntime } from './daemon/runtime-hook';
 import { subscriptionWorker, WORKER_SESSION_RUNTIMES } from './models/registry';
 import { providerBaseUrl, providerContextBudget, providerEnabled } from './models/vendors';
 import {
@@ -1045,6 +1046,9 @@ await runStartupSelfTest({
   warn: console.warn,
   error: console.error,
 });
+
+// The supervisor's auto-updater drains: it restarts only once no turn is queued or running.
+publishDaemonRuntime({ liveTurns: viewer.liveTurns });
 
 console.log();
 console.log('Ready. Send messages through the harness API or viewer.');

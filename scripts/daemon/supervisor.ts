@@ -7,10 +7,12 @@
 /**
  * Daemon entrypoint. Stages an update before launching, then boots a release (see
  * update.ts) and keeps watching, because a daemon left running for days would
- * otherwise never see main move. Local services come up first. A candidate
+ * otherwise never see main move. A restart onto a new release waits for running
+ * turns to finish (watch.ts). Local services come up first. A candidate
  * that fails to boot falls back to stable; a stable boot that fails on changed
  * settings restores the last settings that booted.
  */
+import { daemonRuntime } from '../../packages/foundry/src/daemon/runtime-hook';
 import { recordBooted, restoreAfterFailedBoot } from './last-good';
 import { ensureServices } from './services';
 import { recordBoot, rejectCandidate, selectRelease, stageUpdate } from './update';
@@ -39,11 +41,17 @@ if (update.action === 'failed') log(`update skipped — ${update.detail}`);
 
 const settings = await readSettings();
 const checkSeconds = Number(settings?.daemon?.updateCheckSeconds ?? 300);
+const drainSeconds = Number(settings?.daemon?.drainTimeoutSeconds);
 if (Number.isSafeInteger(checkSeconds) && checkSeconds >= 30)
   startUpdateWatcher({
     repoRoot,
     configDir,
     intervalMs: checkSeconds * 1000,
+    // The booted daemon (a release) publishes its live turns; the watcher drains them before a restart.
+    liveTurns: () => daemonRuntime()?.liveTurns(),
+    ...(Number.isSafeInteger(drainSeconds) && drainSeconds >= 0
+      ? { drainTimeoutMs: drainSeconds * 1000 }
+      : {}),
     log,
   });
 

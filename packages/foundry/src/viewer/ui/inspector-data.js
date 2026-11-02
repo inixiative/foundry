@@ -19,6 +19,17 @@ export function traceInjection(trace) {
   return spans.find((span) => !span.kind && span.annotations?.injection)?.annotations.injection;
 }
 
+/** How a turn lost to a restart was settled (`recovery` on the message, from the journal). */
+const RECOVERY_NOTICES = {
+  completed:
+    "Recovered after the restart: the native session's own record shows it finished. The next message resumes it.",
+  interrupted:
+    "Recovered after the restart: the native session's own record shows it stopped part-way. The next message resumes it.",
+  continued: 'You continued past this turn; the next message resumes the native session.',
+  retried: 'You sent this turn again.',
+  pending: "Foundry couldn't tell from the native record how this turn ended.",
+};
+
 /** Shared labels for the conversation and historical failure inspector. */
 export function failurePresentation(meta) {
   const native = meta?.nativeOutcome ?? meta?.native?.nativeOutcome;
@@ -64,10 +75,11 @@ export function failurePresentation(meta) {
       'Input unavailable: no executor snapshot is available. Delivery acknowledgment unavailable.',
     );
   }
+  const recovered = RECOVERY_NOTICES[meta.recovery];
   notices.push(
     meta.neverSent
       ? 'Never sent: Foundry restarted while this turn was queued, so nothing reached the runtime. Safe to send again.'
-      : (nativeNotice ?? 'Native outcome unknown; check before retrying.'),
+      : (recovered ?? nativeNotice ?? 'Native outcome unknown; check before retrying.'),
   );
   const browserEvidence = meta.browserFailureEvidence;
   if (browserEvidence)

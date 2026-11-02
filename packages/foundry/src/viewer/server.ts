@@ -44,11 +44,18 @@ import {
   type KingdomIntegration,
   shareViewerCredential,
 } from '../providers/kingdom-installation-connection';
+import { FileExternalSessionStore } from '../providers/session-adapter';
 import type { TaskSink } from '../providers/session-backed';
 import { ThreadLaunchSettings } from '../providers/thread-launch';
 import { resolveSecretsSettings, SecretScratch } from '../secrets/scratch';
 import { kingdomPostDelivery } from '../tools/kingdom-post';
 import type { ThreadRecords } from '../tools/thread-record';
+import {
+  NATIVE_RECORD_QUIET_MS,
+  NATIVE_TOOL_QUIET_MS,
+  NativeOutcomeRecovery,
+  nativeHomes,
+} from '../turns/native-outcome-recovery';
 import { NativeTurnRecorder } from '../turns/native-turns';
 import { RunningTasks } from '../turns/running-tasks';
 import { SubagentRecorder } from '../turns/subagents';
@@ -330,6 +337,18 @@ export function createViewer(config: ViewerConfig) {
       socket.streams.appendTo(clientId, stream, payload);
     },
   });
+  const nativeRecovery = localStore
+    ? new NativeOutcomeRecovery({
+        store: localStore,
+        bootedAt: Date.now(),
+        homes: () => nativeHomes(config.configDir ?? '.foundry'),
+        boundSessions: (threadId) =>
+          FileExternalSessionStore.boundTo(
+            join(config.configDir ?? '.foundry', 'sessions.json'),
+            threadId,
+          ),
+      })
+    : undefined;
   if (localStore) {
     const recovered = localStore.recoverInterrupted();
     if (recovered.interrupted || recovered.neverSent)
@@ -338,6 +357,33 @@ export function createViewer(config: ViewerConfig) {
       );
     for (const warning of directory.restore(localStore.threads()))
       console.warn(`[Recovery] ${warning}`);
+    // Settle what the native records already show; records still being written (a native process
+    // the restart orphaned) are read again once they go quiet, and again before any next turn.
+    const settleLost = () => {
+      try {
+        const pass = nativeRecovery!.settleAll();
+        for (const { turnId, outcome } of pass.settled)
+          console.warn(`[Recovery] turn ${turnId}: ${outcome}, read from the native record`);
+        for (const { turnId, detail } of pass.undecided)
+          console.warn(`[Recovery] turn ${turnId} still unsettled: ${detail}`);
+        return pass;
+      } catch (error) {
+        console.warn(`[Recovery] native outcome recovery failed: ${String(error)}`);
+        return undefined;
+      }
+    };
+    if (settleLost()?.undecided.length) {
+      // Look again each minute until every record has gone quiet (a pending tool call waits longest).
+      const started = Date.now();
+      const again = setInterval(() => {
+        const pass = settleLost();
+        for (const turnId of new Set(pass?.settled.map((entry) => entry.turnId)))
+          streams.threadsChanged(localStore.turn(turnId)?.threadId ?? '');
+        if (!pass?.undecided.length || Date.now() - started > NATIVE_TOOL_QUIET_MS + 120_000)
+          clearInterval(again);
+      }, NATIVE_RECORD_QUIET_MS);
+      again.unref?.();
+    }
     for (const thread of directory.all()) localStore.saveThread(thread);
     // A turn a restart closed is reduced before its first capture (spec A).
     localStore.compactClosedTurns();
@@ -701,6 +747,7 @@ export function createViewer(config: ViewerConfig) {
     (pruner as { unref?: () => void }).unref?.();
   }
   const { turns, fork } = registerRuntimeRoutes(app, {
+    nativeRecovery,
     threadLaunch,
     harness,
     eventStream,
@@ -987,6 +1034,8 @@ export function createViewer(config: ViewerConfig) {
   return {
     toolGate,
     threadLaunch,
+    /** Turns queued or running on this daemon; the auto-updater waits for none before it restarts. */
+    liveTurns: () => turns.liveCount(),
     app,
     fetch: handleRequest,
     websocket: socket.websocket,
@@ -1116,6 +1165,7 @@ export async function startViewer(config: ViewerConfig) {
 
   return {
     toolGate: viewer.toolGate,
+    liveTurns: viewer.liveTurns,
     server,
     actions,
     analyticsStore,
