@@ -1332,6 +1332,8 @@ const PERSONAL_PROJECT_SETTINGS: Readonly<Record<string, string>> = {
   capacity: 'Which subscriptions you run this project on',
   kingdomCapacity: 'Your Kingdom subscription pool',
   kingdomProject: 'Your link to a Kingdom project',
+  subscriptionPools:
+    'How your own logins on this machine are balanced (their ids are this machine’s)',
   toolRules:
     'Tool rules gate what agents may run on this machine; a cloned repository can’t loosen them',
   sources:
