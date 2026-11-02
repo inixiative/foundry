@@ -455,8 +455,11 @@ export async function codexSubscriptionStatus(proc: StatusProcess): Promise<bool
 
 /**
  * `muse usage --json` (no model turn): signed in when it exits 0 with a subscription allowance tier
- * (`allowance.tier`, e.g. "Muse Code Everyday Usage"). Status shows no other login signal, and a
- * logged-out CLI still serves cached models, so the tier is the proof. Nothing about the account is kept.
+ * (`allowance.tier`, e.g. "Muse Code Everyday Usage"), or with no allowance yet because the server
+ * answered for the subscription with no usage in a new window (`reason: "server_sent_no_usage"`,
+ * measured on 1.4.14, 2026-11-02). Status shows no other login signal, and a logged-out CLI still
+ * serves cached models, so Meta's answer about the subscription is the proof. Nothing about the
+ * account is kept.
  */
 export async function museSubscriptionStatus(proc: StatusProcess): Promise<boolean> {
   try {
@@ -466,7 +469,9 @@ export async function museSubscriptionStatus(proc: StatusProcess): Promise<boole
       new Response(proc.stderr).text(),
     ]);
     if (code !== 0) return false;
-    const tier = JSON.parse(stdout)?.allowance?.tier;
+    const usage = JSON.parse(stdout);
+    if (usage?.allowance === null && usage?.reason === 'server_sent_no_usage') return true;
+    const tier = usage?.allowance?.tier;
     return typeof tier === 'string' && tier.trim().length > 0;
   } catch {
     return false;

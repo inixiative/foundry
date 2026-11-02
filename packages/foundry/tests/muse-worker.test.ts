@@ -215,11 +215,23 @@ test("a Muse login is the user's own: the default profile, never a gateway or an
   ).toThrow('Muse has no gateway mode');
 });
 
-test('the Muse login check reads only the allowance tier of `muse usage --json`', async () => {
+test('the Muse login check reads the allowance tier of `muse usage --json`, or a new window with no usage yet', async () => {
   const run = (tier: string | null, code = 0) => museSubscriptionStatus(usage(tier, code)());
   expect(await run('Muse Code Everyday Usage')).toBe(true);
   expect(await run(null)).toBe(false);
   expect(await run('Muse Code Everyday Usage', 1)).toBe(false);
+  // A new window before its first use: Meta answers for the subscription with no usage yet.
+  const fresh = (code = 0) =>
+    museSubscriptionStatus({
+      stdout: new Response(
+        JSON.stringify({ schemaVersion: 1, allowance: null, reason: 'server_sent_no_usage' }),
+      ).body!,
+      stderr: new Response('').body!,
+      exited: Promise.resolve(code),
+      kill() {},
+    } as unknown as Parameters<typeof museSubscriptionStatus>[0]);
+  expect(await fresh()).toBe(true);
+  expect(await fresh(1)).toBe(false);
 });
 
 /** A config with Meta's subscription mode on, so the muse worker is offered. */

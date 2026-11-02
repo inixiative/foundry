@@ -1,0 +1,4 @@
+# Retired-term uses that predate the rule: reported, not failed (@inixiative/config check).
+# One per line: <path>\t<term>\t<count>. Fix the copy and lower or delete its line.
+# Rewrite after fixing: inixiative-config terms --write-baseline (it refuses to grow).
+README.md	foundry-roles	3
