@@ -273,7 +273,7 @@ function TurnSummary({ steps, calls, took }) {
   ].filter(Boolean);
   return html`<dl class="tv-summary" aria-label="Turn summary">
     <dt>Got</dt><dd>${input?.text ? clip(input.text, 160) : '—'}</dd>
-    <dt>Did</dt><dd>${did.length ? did.join(' · ') : tools.length ? `${tools.length} tool calls` : 'No tool calls'}</dd>
+    <dt>Did</dt><dd>${did.length ? did.join(' · ') : tools.length ? `${tools.length} tool call${tools.length === 1 ? '' : 's'}` : 'No tool calls'}</dd>
     <dt>Wardens</dt><dd>${regions.length ? `${regions.length} asked · ${spoke} chimed in${timedOut ? ` · ${timedOut} timed out` : ''}` : 'No chorus on this turn'}</dd>
     <dt>Cost</dt><dd>${calls === undefined ? 'Reading…' : calls.length ? `${kTokens(tokens)} tokens · ${calls.length} call${calls.length === 1 ? '' : 's'}${took ? ` · ${took}` : ''}` : `No recorded calls${took ? ` · ${took}` : ''}`}</dd>
   </dl>`;
