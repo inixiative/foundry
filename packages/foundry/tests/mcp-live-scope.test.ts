@@ -122,6 +122,7 @@ test('SDK listTools exposes the read-only bridge, and each result carries a boun
   const client = await connect(server);
   const listed = await client.listTools();
   expect(listed.tools.map((t: any) => t.name).sort()).toEqual([
+    'ask_herald',
     'foundry_conventions',
     'foundry_device',
     'foundry_memory',
