@@ -2228,6 +2228,27 @@ export function init() {
     loadLaunch(id);
   });
 
+  // The owner sees the thread he has open: a turn completed there is read, not a new arrival
+  // (VIEWER-001's seen-by-Aron mark). Opening a thread with an unread turn marks it too.
+  let seenMarked = null;
+  const markSeen = (id, threads) => {
+    const thread = threads.find((t) => t.threadId === id);
+    const completedAt =
+      thread?.lastTurn?.status === 'completed' ? thread.lastTurn.completedAt : null;
+    if (!id || !completedAt || completedAt <= (thread.meta?.seenAt ?? 0)) return;
+    const key = `${id}:${completedAt}`;
+    if (seenMarked === key || document.visibilityState === 'hidden') return;
+    seenMarked = key;
+    authFetch(`/api/threads/${encodeURIComponent(id)}/seen`, { method: 'POST' }).catch(() => {
+      seenMarked = null;
+    });
+  };
+  effect(() => markSeen(activeThreadId.value, allThreads.value));
+  // A turn that finished while the tab was hidden is seen when he comes back to it.
+  document.addEventListener('visibilitychange', () =>
+    markSeen(activeThreadId.peek(), allThreads.peek()),
+  );
+
   // Leaving the workspace leaves the board; Settings and Analytics have none.
   effect(() => {
     if (route.value.page !== 'workspace') {

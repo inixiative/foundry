@@ -664,3 +664,38 @@ test('a thread may choose any model its subscription worker runs, and nothing el
   expect(chosen.status).toBe(200);
   expect(await chosen.json()).toMatchObject({ provider: 'claude-code', modelOverride: 'fable' });
 });
+
+test('a turn the journal recorded as ended reaches the list after the live buffer dropped it, observed turns included', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'foundry-data-streams-ended-'));
+  const main = new Thread('main', new ContextStack());
+  const viewer = createViewer({
+    harness: new Harness(main),
+    eventStream: new EventStream(),
+    interventions: new InterventionLog(),
+    configDir: dir,
+  });
+  cleanup.push(async () => {
+    await viewer.analyticsReady.catch(() => {});
+    viewer.localStore?.close();
+    rmSync(dir, { force: true, recursive: true });
+  });
+  // A turn the agent started on its own (a Muse cron), recorded straight to the journal: no buffer.
+  viewer.localStore!.startObservedTurn(main, 'turn_cron', 'check flights');
+  viewer.localStore!.endObservedTurn(main, 'turn_cron', 'Found a cheaper flight', 'completed');
+  const list = connectStreams(viewer);
+  await list.open('threads');
+  const snapshot = await list.next(
+    (frame) =>
+      frame.category === 'data' && frame.stream === 'threads' && frame.action === 'snapshot',
+    'the thread list snapshot',
+  );
+  const rows: Array<{ threadId: string; lastTurn?: unknown }> = JSON.stringify(
+    snapshot.payload,
+  ).includes('"threads"')
+    ? snapshot.payload.threads
+    : snapshot.payload;
+  expect(rows.find((thread) => thread.threadId === 'main')?.lastTurn).toMatchObject({
+    status: 'completed',
+    completedAt: expect.any(Number),
+  });
+});
