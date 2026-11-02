@@ -19,7 +19,7 @@ import { ParticipantsPanel } from './conversation-members.js';
 import { Inspector, inspection, ThreadDetail } from './detail-drawer.js';
 import { feedbackIn, ThreadFeedback } from './feedback.js';
 import { useFlowStream } from './graph-view.js';
-import { html } from './lib.js';
+import { html, useEffect, useState } from './lib.js';
 import { PointerLedger, pointerRows } from './loop-view.js';
 import { SizeControls } from './panel-sizes.js';
 import { Running } from './running.js';
@@ -47,7 +47,7 @@ import {
   watchtowerOpen,
 } from './store.js';
 import { TabIcon } from './tab-icons.js';
-import { harnessName, projectLabel, ReferenceChips } from './thread-labels.js';
+import { harnessName, projectLabel, ReferenceChips, threadPlace } from './thread-labels.js';
 import { TurnView } from './turn-view.js';
 import { Work } from './work.js';
 
@@ -148,12 +148,65 @@ async function setLaunch(threadId, patch) {
   }
 }
 
+/** The project's hosted repository ({ integration, ref }), from its About record. */
+function useRepository(projectId) {
+  const [repo, setRepo] = useState(undefined);
+  useEffect(() => {
+    if (!projectId) return setRepo(null);
+    let live = true;
+    authFetch(`/api/projects/${encodeURIComponent(projectId)}/about`)
+      .then((r) => (r.ok ? r.json() : null))
+      .catch(() => null)
+      .then((about) => live && setRepo(about?.repository ?? null));
+    return () => {
+      live = false;
+    };
+  }, [projectId]);
+  return repo;
+}
+
+/**
+ * Context leads with where the work lives (design review 11-02): the GitHub repository and branch,
+ * the ticket, and the Slack conversation that started it. Then what it runs on.
+ */
+function ContextLinks() {
+  const meta = threadData.value?.meta ?? {};
+  const repo = useRepository(meta.projectId ?? null);
+  const refs = meta.context?.references ?? [];
+  const tickets = refs.filter((r) => r.integration === 'linear' || r.kind === 'issue');
+  const branch = threadPlace(meta).branch;
+  const github = repo?.integration === 'github' ? repo.ref : null;
+  return html`
+    <section class="rp-section" aria-label="GitHub">
+      <h3 class="rp-section-title">GitHub</h3>
+      ${
+        github
+          ? html`<a class="rp-link-chip" href=${`https://github.com/${github}${branch ? `/tree/${encodeURIComponent(branch)}` : ''}`} target="_blank" rel="noopener noreferrer">${github}${branch ? ` · ${branch}` : ''} ↗</a>`
+          : html`<div class="rp-dim">${repo === undefined ? 'Reading the project…' : 'No GitHub repository recorded for this project.'}</div>`
+      }
+    </section>
+    <section class="rp-section" aria-label="Ticket">
+      <h3 class="rp-section-title">Ticket</h3>
+      ${
+        tickets.length
+          ? html`<div class="rp-refs"><${ReferenceChips} meta=${{ context: { references: tickets } }} /></div>`
+          : html`<div class="rp-dim">No ticket yet.</div>`
+      }
+      <${ComingSoon} inline=${true} what="New ticket: open one in Linear from this thread." ticket="BOARD-003" />
+    </section>
+    <section class="rp-section" aria-label="Slack">
+      <h3 class="rp-section-title">Slack</h3>
+      <${ComingSoon} what="The Slack conversation behind this thread, a short excerpt, and Go to Slack to talk to these people or read it there." ticket="BOARD-003" />
+    </section>`;
+}
+
 function ContextTab() {
   const launch = threadLaunch.value;
   const threadId = activeThreadId.value;
   return html`<div class="rp-stack">
+    <${ContextLinks} />
     <section class="rp-section">
-      <h3 class="rp-section-title">Model</h3>
+      <h3 class="rp-section-title">Runs on</h3>
       ${
         launch
           ? html`<dl class="rp-facts">
