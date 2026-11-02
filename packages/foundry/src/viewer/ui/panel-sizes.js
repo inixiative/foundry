@@ -12,13 +12,13 @@
  * many places that open a panel keep working; the two are synced both ways here.
  */
 
-import { effect, html } from './lib.js';
+import { computed, effect, html, signal } from './lib.js';
 import { detailDrawerOpen, leftSize, projectSidebarOpen, rightSize } from './store.js';
 
 export const LEFT_LEVELS = ['hidden', 'strip', 'normal', 'wide'];
 export const RIGHT_LEVELS = ['hidden', 'icons', 'normal', 'wide'];
 const LEFT_WIDTH = { hidden: 0, strip: 32, normal: 272, wide: 360 };
-const RIGHT_WIDTH = { hidden: 0, icons: 44, normal: 360, wide: 560 };
+const RIGHT_WIDTH = { hidden: 0, icons: 44, normal: 440, wide: 560 };
 
 export { leftSize, rightSize };
 
@@ -52,11 +52,39 @@ export function stepSize(side, delta) {
   size.value = levels[i];
 }
 
+/** The window's width, kept current. */
+export const viewportWidth = signal(window.innerWidth);
+window.addEventListener('resize', () => {
+  viewportWidth.value = window.innerWidth;
+});
+
+/** The centre never drops below this (design review 11-02, the narrow-screen rule). */
+const CENTRE_MIN = 560;
+
+/**
+ * How the sides fit beside a centre of at least 560 px, without changing the sizes you chose: the
+ * left list folds to its strip first; if that isn't enough, the right panel (the turn view with it)
+ * floats over the centre as a drawer, keeping only its icon column. Below 1100 px the workspace is
+ * tabs instead (styles.css), so this applies from there up. Closing or widening the window restores
+ * the layout you had.
+ */
+export const panelFit = computed(() => {
+  // At 1700 px and up the app is zoomed 1.1 (styles.css), so it lays out in fewer pixels.
+  const width = viewportWidth.value >= 1700 ? viewportWidth.value / 1.1 : viewportWidth.value;
+  let left = LEFT_WIDTH[leftSize.value] ?? 272;
+  const right = RIGHT_WIDTH[rightSize.value] ?? 440;
+  if (width < 1100) return { leftFolded: false, rightOverlay: false, left, right };
+  const leftFolded = left > LEFT_WIDTH.strip && width - left - right < CENTRE_MIN;
+  if (leftFolded) left = LEFT_WIDTH.strip;
+  const rightOverlay = right > RIGHT_WIDTH.icons && width - left - right < CENTRE_MIN;
+  return { leftFolded, rightOverlay, left, right };
+});
+
 /** The grid columns for the workspace (the board and Watchtower span the width on their own). */
 export function panelColumns({ forge }) {
-  const left = LEFT_WIDTH[leftSize.value] ?? 272;
-  const right = forge ? 0 : (RIGHT_WIDTH[rightSize.value] ?? 360);
-  return `${left}px minmax(0, 1fr) ${right}px`;
+  const fit = panelFit.value;
+  const right = forge ? 0 : fit.rightOverlay ? RIGHT_WIDTH.icons : fit.right;
+  return `${fit.left}px minmax(0, 1fr) ${right}px`;
 }
 
 /** A panel edge with a chevron: `edge` is the side the panel sits on, `toward` where it moves. */

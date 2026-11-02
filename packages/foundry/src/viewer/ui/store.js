@@ -84,7 +84,15 @@ export const detailDrawerOpen = signal(true); // right panel collapsed state
 /** What the detail drawer inspects besides a trace: `{ kind: 'layer', id }` or null. */
 export const inspectTarget = signal(null);
 /** The right panel's tab: context | participants | permissions | heralds | feedback. (Pointers live in Loop.) */
-export const RIGHT_TABS = ['work', 'context', 'participants', 'permissions', 'heralds', 'feedback'];
+export const RIGHT_TABS = [
+  'work',
+  'context',
+  'participants',
+  'permissions',
+  'heralds',
+  'pointers',
+  'feedback',
+];
 /** Each right tab's number key (Aron 11-02): 1–3 are the centre's Thread, Plan and Loop; plain, ⌘ or ⌥. */
 export const RIGHT_TAB_KEYS = {
   work: '4',
@@ -92,6 +100,7 @@ export const RIGHT_TAB_KEYS = {
   participants: '6',
   permissions: '7',
   heralds: '8',
+  pointers: '9',
   feedback: '0',
 };
 /** The right panel widened (for Work's diffs and file lists). */

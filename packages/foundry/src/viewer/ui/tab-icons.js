@@ -21,6 +21,8 @@ const PATHS = {
   permissions: html`<path d="M2.586 17.414A2 2 0 0 0 2 18.828V21a1 1 0 0 0 1 1h3a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h1a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h.172a2 2 0 0 0 1.414-.586l.814-.814a6.5 6.5 0 1 0-4-4z" /><circle cx="16.5" cy="7.5" r=".5" />`,
   // lucide megaphone: Heralds carry what others are doing
   heralds: html`<path d="m3 11 18-5v12L3 14v-3z" /><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6" />`,
+  // a dagger: the Wardens' pointers into the docs
+  pointers: html`<path d="M12 2v20" /><path d="M7 7h10" />`,
   // lucide message-square-text
   feedback: html`<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /><path d="M13 8H7M17 12H7" />`,
 };
