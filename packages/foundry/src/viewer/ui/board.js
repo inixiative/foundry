@@ -20,7 +20,7 @@
  */
 
 import { FilterChips, passesChips } from './filter-chips.js';
-import { html, useEffect, useState } from './lib.js';
+import { html, signal, useEffect, useState } from './lib.js';
 import { DeviceBadge, loadMachineProfile, machineProfile, otherMachine } from './machine-icons.js';
 import { selfChatSending } from './self-chat.js';
 import { settingsConfig } from './settings.js';
@@ -79,6 +79,9 @@ function MachineBadge({ thread }) {
  * this, Pause, Archive …), the name, one status line (icon · status · age, the rail's line 2), what
  * it asks, one-tap answers, and its subagents folded in.
  */
+/** The card whose Details drawer is open (its thread id), or null. */
+const detailsOf = signal(null);
+
 function Card({ thread, state, subagents = [] }) {
   const pending = prompts.value.filter((p) => p.threadId === thread.threadId);
   const ask = pending[0];
@@ -108,6 +111,10 @@ function Card({ thread, state, subagents = [] }) {
       <span class="board-card-project">${project}</span>
       <span class="board-card-spacer"></span>
       <${MachineBadge} thread=${thread} />
+      <button type="button" class="board-card-details" title="Details" aria-label=${`Details: ${threadName(thread)}`}
+        onClick=${() => {
+          detailsOf.value = thread.threadId;
+        }}>ⓘ</button>
       <${ThreadActions} thread=${node} lead=${[
         { label: 'Open', onClick: open },
         {
@@ -177,24 +184,76 @@ export function IncomingCard({ request }) {
 }
 
 /** Incoming: one compact line above the columns, opened to show the requests. */
+/** Incoming: a button at the band's end that opens the requests as a popover (concept-v4). */
 function Incoming() {
   const [open, setOpen] = useState(false);
   const requests = incoming.value;
   if (!requests.length) return null;
-  return html`<section class="board-incoming board-incoming--line" aria-label="Incoming requests">
-    <button type="button" class="board-incoming-toggle" aria-expanded=${open} onClick=${() => setOpen(!open)}>
-      <span class="board-incoming-caret">${open ? '▾' : '▸'}</span>
-      Incoming <span class="rail-pane-count">${requests.length}</span>
-      <span class="board-incoming-hint">Requests to join, not yet accepted</span>
-    </button>
+  return html`<span class="board-incoming" aria-label="Incoming requests">
+    <button type="button" class="board-incoming-toggle" aria-expanded=${open} title="Requests to join, not yet accepted"
+      onClick=${() => setOpen(!open)}>Incoming <span class="rail-pane-count">${requests.length}</span></button>
     ${
       open
-        ? html`<div class="board-incoming-list">
+        ? html`<div class="board-incoming-list" role="dialog" aria-label="Incoming requests">
             ${requests.map((r) => html`<${IncomingCard} key=${r.id} request=${r} />`)}
           </div>`
         : null
     }
-  </section>`;
+  </span>`;
+}
+
+/** A card's Details: everything the card says, its subagents, and the same actions as its ⋯. */
+function Details({ placed }) {
+  const id = detailsOf.value;
+  useEffect(() => {
+    if (!id) return undefined;
+    const onKey = (e) => {
+      if (e.key !== 'Escape') return;
+      e.stopPropagation();
+      detailsOf.value = null;
+    };
+    // Capture: Esc closes the drawer before any other binding sees it.
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [id]);
+  const p = placed.find((x) => x.thread.threadId === id);
+  if (!p) return null;
+  const { thread, state, subagents } = p;
+  const s = STATES[state];
+  const status = (t) => threadState(t, { prompts: [] });
+  const open = () => {
+    detailsOf.value = null;
+    boardOpen.value = false;
+    selectThread(thread.threadId);
+  };
+  const ask = prompts.value.find((q) => q.threadId === thread.threadId);
+  return html`<aside class="board-details" aria-label="Details">
+    <header>
+      <span class="board-card-project">${thread.meta?.projectId ? (projects.value.find((x) => x.id === thread.meta.projectId)?.label ?? thread.meta.projectId) : 'Global'}</span>
+      <${MachineBadge} thread=${thread} />
+      <button type="button" class="board-details-close" aria-label="Close details" onClick=${() => {
+        detailsOf.value = null;
+      }}>✕</button>
+    </header>
+    <h3>${threadName(thread)}</h3>
+    <div class="board-card-status"><${StatusIcon} state=${state} /><span>${statusText(thread, state) || (s?.kind ?? s?.label)}</span>${age(thread.meta?.lastActiveAt) ? html`<span class="board-card-age">· ${age(thread.meta.lastActiveAt)}</span>` : null}</div>
+    ${ask ? html`<p class="board-card-ask">${ask.message}</p>` : null}
+    ${thread.meta?.branch || thread.meta?.context?.branch ? html`<div class="board-details-row"><span>Branch</span><code>${thread.meta.branch ?? thread.meta.context.branch}</code></div>` : null}
+    ${
+      subagents.length
+        ? html`<div class="board-details-subs"><b>Subagents · ${subagents.length}</b>${subagents.map(
+            (c) =>
+              html`<div key=${c.threadId} class="board-details-row"><${StatusIcon} state=${status(c)} /><span>${threadName(c)}</span></div>`,
+          )}</div>`
+        : null
+    }
+    <div class="board-details-actions">
+      <button type="button" class="proj-btn proj-btn-ok" onClick=${open}>Open</button>
+      <button type="button" class="proj-btn" onClick=${() => createThread({ description: `Follow-up to: ${threadName(thread)}` })}>Another thread for this</button>
+      <button type="button" class="proj-btn" onClick=${() => executeAction('thread:pause', thread.threadId)}>Pause</button>
+      <button type="button" class="proj-btn" onClick=${() => executeAction('thread:archive', thread.threadId)}>Archive</button>
+    </div>
+  </aside>`;
 }
 
 /** Quiet threads: paused, idle, snoozed (all neutral) or archived. Off the board unless asked for. */
@@ -292,8 +351,9 @@ export function Board() {
         <button type="button" class="board-quiet-toggle" aria-pressed=${showQuiet} title="Paused, idle and archived threads"
           onClick=${() => setShowQuiet(!showQuiet)}>${showQuiet ? 'Hide' : 'Show'} quiet · ${quietCount}</button>
       <//>
+      <${Incoming} />
     </header>
-    <${Incoming} />
+    <${Details} placed=${placed} />
     <div class="board-columns">
       ${columns.map((col) => {
         const cards = forge
