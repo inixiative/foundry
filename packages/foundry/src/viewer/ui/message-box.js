@@ -8,11 +8,13 @@
  * One Foundry setting, "Separate message boxes for /btw and /aside" (`messageBox.separateViews`,
  * off by default), decides the layout: off is one box whose label picks the destination (click to
  * cycle; typing /btw or /aside at the start switches it); on gives each open view its own box.
- * Posting to /btw or an aside isn't built yet, so those destinations say so instead of sending.
+ * Posting to /btw isn't built yet, so that destination says so instead of sending; an aside posts
+ * to the people in the thread (`POST /api/threads/:id/conversation/asides`).
  * Every helper takes the Foundry settings (`settingsConfig.value`) as `config`.
  */
 
-import { html, signal } from './lib.js';
+import { html, signal, useRef, useState } from './lib.js';
+import { activeThreadId, postAside } from './store.js';
 
 export const DESTINATIONS = [
   ['thread', 'Thread'],
@@ -21,8 +23,6 @@ export const DESTINATIONS = [
 ];
 export const NOT_BUILT = {
   btw: 'Posting to /btw isn’t built yet: Foundry has no private side-channel to your agent',
-  aside:
-    'Posting an aside isn’t built yet: shared-thread asides arrive with the conversations work',
 };
 
 /** Where the single box sends. */
@@ -49,12 +49,41 @@ export function DestinationLabel({ config }) {
     }}>${label}</button>`;
 }
 
-/** With separate boxes on, an open /btw or aside column gets its own box (not built yet). */
+/** With separate boxes on, an open /btw or aside column gets its own box; /btw's isn't built yet. */
 export function ViewBox({ view, config }) {
   if (!separateViews(config)) return null;
+  if (view === 'aside') return html`<${AsideBox} />`;
   return html`<div class="view-box" title=${NOT_BUILT[view]}>
-    <textarea class="view-box-input" rows="2" disabled placeholder=${view === 'btw' ? 'Ask your own agent privately' : 'Say something to the people here'}></textarea>
+    <textarea class="view-box-input" rows="2" disabled placeholder="Ask your own agent privately"></textarea>
     <p class="view-box-note">${NOT_BUILT[view]}</p>
+  </div>`;
+}
+
+/** The aside column's own box: Enter posts to the people here (one id per message, so a retry records once). */
+function AsideBox() {
+  const [text, setText] = useState('');
+  const [error, setError] = useState(null);
+  const post = useRef(null);
+  const send = async () => {
+    const sent = text.trim();
+    if (!sent) return;
+    if (post.current?.text !== sent) post.current = { text: sent, id: crypto.randomUUID() };
+    const result = await postAside(activeThreadId.value, sent, post.current.id);
+    if (result.error) return setError(result.error);
+    post.current = null;
+    setError(null);
+    setText('');
+  };
+  return html`<div class="view-box">
+    <textarea class="view-box-input" rows="2" placeholder="Say something to the people here" value=${text}
+      onInput=${(e) => setText(e.target.value)}
+      onKeyDown=${(e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+          e.preventDefault();
+          send();
+        }
+      }}></textarea>
+    ${error ? html`<p class="view-box-note view-box-error" role="alert">The aside wasn’t posted: ${error}</p>` : html`<p class="view-box-note">Enter posts an aside: people only, never an agent</p>`}
   </div>`;
 }
 

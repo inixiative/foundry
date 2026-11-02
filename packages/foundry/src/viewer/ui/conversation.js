@@ -68,7 +68,9 @@ import {
   loadTraceDetail,
   messages,
   openTurnView,
+  postAside,
   projects,
+  promoteAside,
   prompts,
   recreateWorktree,
   renameThread,
@@ -461,6 +463,8 @@ const drafts = new Map();
 
 function ChatInput() {
   const [text, setText] = useState(() => drafts.get(activeThreadId.peek()) ?? '');
+  const [asideError, setAsideError] = useState(null);
+  const asidePost = useRef(null);
   // Mirror the draft so a waiting card can send it with its answer; a consumed note clears the box.
   useEffect(() => {
     composerNote.value = text;
@@ -552,11 +556,26 @@ function ChatInput() {
   const uploading = images.some((image) => image.status === 'uploading');
   const ready = images.filter((image) => image.status === 'ready');
   const destination = separateViews(settingsConfig.value) ? 'thread' : composerDestination.value;
-  const sendable = destination === 'thread' && !uploading && (!!text.trim() || ready.length > 0);
+  const sendable =
+    (destination === 'thread' && !uploading && (!!text.trim() || ready.length > 0)) ||
+    (destination === 'aside' && !!text.trim());
 
   const handleSubmit = async () => {
     const sent = text.trim();
     if (!sendable) return;
+    // An aside goes to the people here, never an agent. One id per message: a retry records once.
+    if (destination === 'aside') {
+      if (asidePost.current?.text !== sent)
+        asidePost.current = { text: sent, id: crypto.randomUUID() };
+      const posted = await postAside(activeThreadId.value, sent, asidePost.current.id);
+      if (posted.error) return setAsideError(posted.error);
+      asidePost.current = null;
+      setAsideError(null);
+      inputHistory.push(sent);
+      historyIdx = -1;
+      setText('');
+      return;
+    }
     // `/feedback <text>` records feedback on this thread's last turn; it is never sent to the model.
     const feedback = /^\/feedback(?:\s+([\s\S]*))?$/.exec(sent);
     if (feedback) {
@@ -684,6 +703,10 @@ function ChatInput() {
         ${(() => {
           const waiting = promptsForThread(prompts.value, activeThreadId.value);
           const approval = waiting.find((p) => p.kind === 'approval');
+          if (destination === 'aside')
+            return asideError
+              ? html`<div class="composer-note-hint composer-note-hint--error" role="alert">The aside wasn’t posted: ${asideError}</div>`
+              : html`<div class="composer-note-hint">An aside: the people in this thread see it, never an agent</div>`;
           if (destination !== 'thread')
             return html`<div class="composer-note-hint composer-note-hint--queue">${NOT_BUILT[destination]}</div>`;
           if (text.trim() && approval)
@@ -1541,7 +1564,7 @@ export function Conversation({ onTraceSelect, onLayerClick }) {
         )}
       </div>
       ${shownViews().includes('btw') ? html`<${BtwView} entries=${threadData.value?.conversation?.btw} />` : null}
-      ${shownViews().includes('asides') ? html`<${AsidesView} entries=${threadData.value?.conversation?.asides} />` : null}
+      ${shownViews().includes('asides') ? html`<${AsidesView} entries=${threadData.value?.conversation?.asides} onPromote=${(aside) => promoteAside(activeThreadId.value, aside.id)} />` : null}
       </div>
       <${ThreadNowStrip} />
       <${PromptList} threadId=${threadId} />

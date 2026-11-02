@@ -16,7 +16,7 @@
  * conversation view carries them, those views say so in one line.
  */
 
-import { html, signal } from './lib.js';
+import { html, signal, useState } from './lib.js';
 import { ViewBox } from './message-box.js';
 import { settingsConfig } from './settings.js';
 
@@ -93,7 +93,11 @@ export function ThreadViewSegments({ conversation }) {
         const on = shownViews().includes(id);
         return html`<button key=${id} aria-pressed=${on}
           class="thread-segment center-view ${on ? 'center-view--active' : ''}"
-          onClick=${() => toggleView(id)}>${label}</button>`;
+          onClick=${() => toggleView(id)}>${label}${
+            id === 'asides' && conversation?.asidesSinceYourPost
+              ? html`<span class="segment-unread" title="Asides since your last post">${conversation.asidesSinceYourPost}</span>`
+              : null
+          }</button>`;
       })}
     </div>
   </div>`;
@@ -126,20 +130,36 @@ export function BtwView({ entries }) {
   </section>`;
 }
 
+/** One aside: who said it, the text, and Promote (or why it couldn't be promoted). */
+function AsideCard({ aside, onPromote }) {
+  const [state, setState] = useState(null);
+  const promote = async () => {
+    setState({ busy: true });
+    const result = await onPromote(aside);
+    setState(result?.error ? { error: result.error } : null);
+  };
+  return html`<article class="aside-card" data-promoted=${!!aside.promoted}>
+    <div class="aside-card-head"><span class="aside-card-kind">by the way</span><span class="aside-card-who">${aside.member?.name ?? 'Someone'}</span></div>
+    <p class="aside-card-text">${aside.text}</p>
+    ${
+      aside.promoted
+        ? html`<span class="aside-card-promoted">In the thread</span>`
+        : onPromote
+          ? html`<button class="rp-link" disabled=${state?.busy} onClick=${promote}>Promote to the thread</button>`
+          : null
+    }
+    ${state?.error ? html`<p class="aside-card-error" role="alert">Not promoted: ${state.error}</p>` : null}
+  </article>`;
+}
+
 /** Asides between the people in the thread; one action promotes an aside into the thread. */
 export function AsidesView({ entries, onPromote }) {
   return html`<section class="side-view side-view--asides" aria-label="Asides">
     <h3 class="side-view-title">Asides <span class="side-view-hint">people only, never an agent</span></h3>
     ${
       entries?.length
-        ? entries.map(
-            (e) => html`<article key=${e.id} class="aside-card">
-              <div class="aside-card-head"><span class="aside-card-kind">by the way</span><span class="aside-card-who">${e.member?.name ?? 'Someone'}</span></div>
-              <p class="aside-card-text">${e.text}</p>
-              ${onPromote ? html`<button class="rp-link" onClick=${() => onPromote(e)}>Promote to the thread</button>` : null}
-            </article>`,
-          )
-        : html`<p class="side-view-empty">Asides between the people in this thread show here. Arrives with shared-thread asides.</p>`
+        ? entries.map((e) => html`<${AsideCard} key=${e.id} aside=${e} onPromote=${onPromote} />`)
+        : html`<p class="side-view-empty">Asides between the people in this thread show here: start a message with /aside.</p>`
     }
     <${ViewBox} view="aside" config=${settingsConfig.value} />
   </section>`;
