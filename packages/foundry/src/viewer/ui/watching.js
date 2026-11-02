@@ -15,6 +15,7 @@ import { html, useEffect, useState } from './lib.js';
 import { DeviceIcon, machineIcon } from './machine-icons.js';
 import { navigate, settingsPath } from './route.js';
 import { authFetch, projects } from './store.js';
+import { kingdomOwnerName } from './thread-labels.js';
 
 function useJson(url) {
   const [value, setValue] = useState(undefined);
@@ -57,8 +58,8 @@ export function WatchingSidebar({ machine }) {
           : kingdoms.length
             ? kingdoms.map(
                 (k) => html`<div key=${k.id} class="wrow">
-                  <span class="kd">${(k.owner || '?').slice(0, 1).toUpperCase()}</span>
-                  <span>${k.owner}<small>${host(k.url)} · ${k.status}</small></span>
+                  <span class="kd">${kingdomOwnerName(k).slice(0, 1).toUpperCase()}</span>
+                  <span title=${k.owner}>${kingdomOwnerName(k)}<small>${host(k.url)} · ${k.status}</small></span>
                   <button type="button" disabled title="Choosing what to watch in a Kingdom isn't built yet">Edit</button>
                 </div>`,
               )

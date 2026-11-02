@@ -59,8 +59,63 @@ function useMachine() {
 }
 
 /** One row that opens to every subscription, grouped by the provider that sells it. */
+const LIMITS_EVERY_MS = 5 * 60_000;
+
+/** Each subscription login's usage windows (`/api/providers/limits`), re-read every few minutes. */
+function useLimits() {
+  const [limits, setLimits] = useState([]);
+  useEffect(() => {
+    let live = true;
+    const read = () =>
+      authFetch('/api/providers/limits')
+        .then((res) => (res.ok ? res.json() : null))
+        .then((body) => live && body && setLimits(body.limits ?? []))
+        .catch(() => {});
+    read();
+    const timer = setInterval(read, LIMITS_EVERY_MS);
+    return () => {
+      live = false;
+      clearInterval(timer);
+    };
+  }, []);
+  return limits;
+}
+
+/** "5h", "7d": a window's length, from its minutes, else its id. */
+const windowLabel = (w) =>
+  w.windowMinutes
+    ? w.windowMinutes < 1440
+      ? `${Math.round(w.windowMinutes / 60)}h`
+      : `${Math.round(w.windowMinutes / 1440)}d`
+    : w.id.replace(/_/g, ' ');
+
+const resets = (w) =>
+  w.resetsAt
+    ? ` · resets ${new Date(w.resetsAt).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })}`
+    : '';
+
+/** One login's windows as meters: "5h ▬ 7%". */
+function LimitMeters({ limit }) {
+  if (!limit) return null;
+  if (limit.state === 'kingdom')
+    return html`<span class="nav-footer-limits rp-dim" title="This subscription is a Kingdom pool; Kingdom reports its limits">pool limits in Kingdom</span>`;
+  const windows = limit.snapshot?.windows ?? [];
+  if (limit.state !== 'probed' || !windows.length)
+    return html`<span class="nav-footer-limits rp-dim" title="The CLI didn't report its usage windows">limits unavailable</span>`;
+  const plan = limit.snapshot.plan ? `${limit.snapshot.plan} plan · ` : '';
+  return html`<span class="nav-footer-limits${limit.snapshot.blocked ? ' is-blocked' : ''}">${windows.map(
+    (
+      w,
+    ) => html`<span key=${w.id} class="meterlbl" title=${`${plan}${windowLabel(w)} window used${resets(w)}`}>
+      ${windowLabel(w)} <span class="bar2"><i style=${`width:${Math.min(100, w.usedPercent)}%`}></i></span>${Math.round(w.usedPercent)}%
+    </span>`,
+  )}</span>`;
+}
+
 function Subscriptions({ accounts, registry }) {
   const [open, setOpen] = useState({});
+  const limits = useLimits();
+  const limitOf = (provider) => limits.find((l) => l.provider === provider);
   const subscriptions = (Array.isArray(accounts) ? accounts : []).filter((a) =>
     SUBSCRIPTION_SOURCES.has(a.source),
   );
@@ -81,6 +136,7 @@ function Subscriptions({ accounts, registry }) {
           <span class="nav-footer-dot ${g.ready === total ? 'is-ok' : 'is-warn'}"></span>
           <span class="nav-footer-count">${g.ready}/${total} ready</span>
         </button>
+        ${g.accounts.map((a, i) => html`<${LimitMeters} key=${`${g.provider}:limits:${i}`} limit=${limitOf(a.provider)} />`)}
         ${
           isOpen
             ? html`<ul class="nav-footer-subs">${g.accounts.map(

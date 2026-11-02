@@ -82,16 +82,15 @@ export class KnowledgePersistence {
       try {
         if (this.errors.has(runtime.thread.id)) throw Error(this.errors.get(runtime.thread.id)!);
         const bundle = store.knowledge(runtime.thread.id);
-        if (bundle) {
-          this.validate(runtime, bundle);
-          runtime.restoreKnowledge(bundle);
-        }
+        if (bundle) runtime.restoreKnowledge(this.current(runtime, bundle));
         for (const signal of store.learningCapacity(runtime.thread.id)) {
           const content = signal.content as import('../agents/domain-librarian').LearningRecord & {
             domain: string;
           };
           if (content.owner && content.owner.projectId !== runtime.thread.meta.projectId)
             throw Error('Stored learning capacity owner mismatch');
+          // A Warden that no longer exists (a removed region, the retired roster) has nothing to close.
+          if (!runtime.domainLibrarians.has(content.domain)) continue;
           if (
             content.capacity === 'unknown' ||
             (content.eligibility === 'closed' && content.native?.admissionId)
@@ -206,6 +205,22 @@ export class KnowledgePersistence {
     store.onClose(this.detach);
   }
 
+  /**
+   * The stored bundle as this runtime can hold it: domains whose Warden no longer exists (a removed
+   * region, the retired hand-named roster) are left in the journal and not restored, so they don't
+   * block the thread's other knowledge. The rest is validated as stored.
+   */
+  private current(runtime: ThreadRuntime, bundle: ThreadKnowledgeBundle): ThreadKnowledgeBundle {
+    const domains = Object.fromEntries(
+      Object.entries(bundle.domains ?? {}).filter(([domain]) =>
+        runtime.domainLibrarians.has(domain),
+      ),
+    );
+    const live = { ...bundle, domains };
+    this.validate(runtime, live);
+    return live;
+  }
+
   private validate(runtime: ThreadRuntime, bundle: ThreadKnowledgeBundle): void {
     const owner = { threadId: runtime.thread.id, projectId: runtime.thread.meta.projectId };
     if (!bundle || bundle.threadId !== owner.threadId || bundle.projectId !== owner.projectId)
@@ -235,8 +250,7 @@ export class KnowledgePersistence {
       try {
         const bundle = this.store.knowledge(runtime.thread.id);
         if (!bundle) return;
-        this.validate(runtime, bundle);
-        runtime.restoreKnowledge(bundle);
+        runtime.restoreKnowledge(this.current(runtime, bundle));
         this.reconciliation.delete(runtime.thread.id);
       } catch (error) {
         console.error(

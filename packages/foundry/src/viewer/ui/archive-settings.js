@@ -8,6 +8,15 @@ import { html, useEffect, useState } from './lib.js';
 import { onLink, settingsPath } from './route.js';
 
 /** Settings → Archive: session archives only. The local Archive, hosted ones, and where each project publishes. */
+/**
+ * What went wrong, said plainly. A request that never reached Foundry (the browser's "Failed to
+ * fetch", as while the daemon restarts) is Foundry not answering, not the Archive failing.
+ */
+const failure = (error) =>
+  error instanceof TypeError
+    ? 'Foundry didn’t answer (it may be restarting). Try again in a moment.'
+    : error.message;
+
 export function ArchiveSettings({ projects = [] }) {
   const [status, setStatus] = useState(null);
   const [captureErrors, setCaptureErrors] = useState({});
@@ -28,7 +37,7 @@ export function ArchiveSettings({ projects = [] }) {
       setCaptureErrors(result.captureErrors);
       setError('');
     } catch (e) {
-      setError(e.message);
+      setError(failure(e));
     }
   };
   useEffect(() => {
@@ -53,7 +62,7 @@ export function ArchiveSettings({ projects = [] }) {
     <h2 class="settings-card-title">Session Archives</h2>
     <p class="settings-desc">Foundry captures every session into this machine's local Archive. Hosted Archives are set up in Kingdom; the local Archive publishes to them.</p>
     <h3>Local Archive</h3>
-    ${error && html`<p role="alert">${error}</p>`}
+    ${error && html`<p role="alert">${error} <button type="button" class="rp-link" onClick=${load}>Retry</button></p>`}
     ${
       !status
         ? html`<p>Checking the local Archive…</p>`
@@ -121,11 +130,11 @@ export function ProjectArchive({ projectId }) {
     setRouting(routed.status === 'fulfilled' ? routed.value : null);
     setError(
       listed.status === 'rejected'
-        ? listed.reason.message
+        ? failure(listed.reason)
         : !reachable
           ? `The local Archive is not answering at ${listed.value.status.url}.`
           : routed.status === 'rejected'
-            ? `Routing is unavailable: ${routed.reason.message}`
+            ? `Routing is unavailable: ${failure(routed.reason)}`
             : '',
     );
   };
@@ -167,7 +176,7 @@ export function ProjectArchive({ projectId }) {
       ),
   );
   return html`<section class="settings-card archive-settings">
-    ${error && html`<p role="alert">${error}</p>`}
+    ${error && html`<p role="alert">${error} <button type="button" class="rp-link" onClick=${load}>Retry</button></p>`}
     <h3>Publishes to</h3>
     <p class="settings-desc">The local Archive keeps every session. Hosted Archives are per organization: this project's sessions, and any session that touched it, go to its organization's Archives. With none, they stay on this machine.</p>
     ${
