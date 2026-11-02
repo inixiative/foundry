@@ -1780,7 +1780,7 @@ export class ConversationService implements ConversationWrapper {
    * the message that opened it, and it took in no other party's words (notes ride every turn, B1).
    * His own remote client's posts are his.
    */
-  private ownerInstructed(threadId: string): boolean {
+  ownerInstructed(threadId: string): boolean {
     const turnId = this.deps.turns()?.runningTurn?.(threadId);
     if (!turnId) return false;
     const seq = this.deps.store.turnMessageSeq(turnId);

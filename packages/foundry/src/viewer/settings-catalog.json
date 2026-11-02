@@ -55,6 +55,11 @@
     "description": "The feedback lifecycle: capture, tuning prompts and the role-file changes they apply (docs/FEEDBACK-LOOP.md)."
   },
   {
+    "path": "secrets",
+    "scope": "foundry",
+    "description": "`$$word` secrets lifted into the thread's scratch pad, and paths no agent reads (FEAT-005). Off by default."
+  },
+  {
     "path": "journal",
     "scope": "foundry",
     "description": "The local journal (docs/THREAD-TREE.md spec A)."
@@ -578,6 +583,11 @@
     "path": "feedback",
     "scope": "project",
     "description": "Project feedback settings: each field overrides the global one."
+  },
+  {
+    "path": "secrets",
+    "scope": "project",
+    "description": "Project secrets settings: `scratchPad` overrides the global one; `privatePaths` add up."
   },
   {
     "path": "agents",

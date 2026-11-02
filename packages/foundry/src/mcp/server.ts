@@ -36,6 +36,13 @@ import { ConversationTool } from '../tools/conversation';
 import { KingdomAccessTool } from '../tools/kingdom-access';
 import { KingdomPostTool } from '../tools/kingdom-post';
 import {
+  SECRET_PIPE_DESCRIPTION,
+  SECRET_SCRATCH_DESCRIPTION,
+  SecretScratchTool,
+  secretPipeSchema,
+  secretScratchShape,
+} from '../tools/secret-scratch';
+import {
   loopRoundSchema,
   loopSchema,
   loopStopSchema,
@@ -644,6 +651,34 @@ export function createFoundryMcp(config: FoundryMcpConfig): FoundryMcp {
       "Say where this thread stands when Foundry can't see it, before you hand back: 'needs-you' (you wait on the person: a question, a decision, a review), 'blocked' (you can't go on: a missing credential, permission or dependency), 'done' (the ask is finished; text says what), or 'clear'. text: one line the person reads on the board. Working, queued, failed, approvals and archived are Foundry's and never set here; the owner's next message clears the status.",
       statusSchema.shape,
       record('set_status'),
+    );
+  }
+  // -----------------------------------------------------------------------
+  // The secret scratch pad (FEAT-005): $$ secrets used by reference, never read
+  // -----------------------------------------------------------------------
+  const secrets = config.tools?.get('secrets');
+  if (secrets instanceof SecretScratchTool && secrets.enabled(config.thread.meta.projectId)) {
+    /** The bridge's thread working directory rides along; the agent never names it. */
+    const secretCall = (operation: string) =>
+      guarded<Record<string, unknown>>(operation, async (args) => {
+        const result = await config.tools!.dispatch(
+          'secrets_request',
+          { url: operation, method: 'POST', body: { ...args, cwd: config.thread.meta.cwd } },
+          { scope: authority.scope() },
+        );
+        return { status: result.ok ? 'ok' : 'error', text: result.summary };
+      });
+    server.tool(
+      'secret_scratch',
+      SECRET_SCRATCH_DESCRIPTION,
+      secretScratchShape,
+      secretCall('secret_scratch'),
+    );
+    server.tool(
+      'secret_pipe',
+      SECRET_PIPE_DESCRIPTION,
+      secretPipeSchema.shape,
+      secretCall('secret_pipe'),
     );
   }
   server.tool(
