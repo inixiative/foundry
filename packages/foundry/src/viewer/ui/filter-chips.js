@@ -6,7 +6,7 @@
 /**
  * Filter chips: a row of category chips (Project ▾, Kingdom ▾, …), each opening an inline list of
  * options to multi-select. Options OR within a group and AND across groups; each chip shows how many
- * of its options are on, and "Clear N" drops them all. One component for the Board and the Watchtower.
+ * of its options are on, each selection shows as a removable chip, and "Clear N" drops them all. One component for the Board and the Watchtower.
  */
 
 import { html, useState } from './lib.js';
@@ -37,6 +37,13 @@ export function FilterChips({ groups, selected, onChange, children }) {
         return html`<button key=${g.id} type="button" class="filter-chip ${on ? 'is-on' : ''}" aria-expanded=${open === g.id}
           onClick=${() => setOpen(open === g.id ? null : g.id)}>${g.label}${on ? html`<span class="filter-chip-count">${on}</span>` : null}<span class="filter-chip-caret">▾</span></button>`;
       })}
+      ${groups.flatMap((g) =>
+        [...(selected[g.id] ?? [])].map((value) => {
+          const label = g.options.find((o) => o.value === value)?.label ?? value;
+          return html`<button key=${`${g.id}:${value}`} type="button" class="filter-chip-active"
+            aria-label=${`Remove filter ${g.label}: ${label}`} title=${`Remove the ${g.label} filter: ${label}`} onClick=${() => toggle(g.id, value)}>${g.label}: ${label}<span aria-hidden="true">✕</span></button>`;
+        }),
+      )}
       ${total ? html`<button type="button" class="filter-chip-clear" onClick=${() => onChange({})}>Clear ${total}</button>` : null}
       <span class="filter-chips-spacer"></span>
       ${children}
