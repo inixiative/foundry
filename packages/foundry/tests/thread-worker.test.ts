@@ -322,10 +322,14 @@ test('POST /api/threads takes a worker; a refused one is a 400 with the reason',
   expect((created.body.meta as ThreadMeta).worker).toBe('codex');
   const launch = await call('GET', `/api/threads/${created.body.threadId}/launch`);
   expect(launch.body).toMatchObject({ worker: 'codex', provider: 'codex', model: 'gpt-6-astra' });
-  expect((launch.body.options as { workers: unknown }).workers).toEqual([
-    { id: 'claude-code', label: expect.any(String), default: true },
-    { id: 'codex', label: expect.any(String), default: false },
+  // Each worker carries its own models and default model, so a worker and its model go together.
+  const workers = (launch.body.options as { workers: Array<Record<string, unknown>> }).workers;
+  expect(workers).toEqual([
+    expect.objectContaining({ id: 'claude-code', label: expect.any(String), default: true }),
+    expect.objectContaining({ id: 'codex', label: expect.any(String), default: false }),
   ]);
+  const codex = workers[1] as { defaultModel: string; models: Array<{ id: string }> };
+  expect(codex.models.map((m) => m.id)).toContain(codex.defaultModel);
   const refused = await call('POST', '/api/threads', { projectId: 'claude', worker: 'openai' });
   expect(refused.status).toBe(400);
   expect(refused.body.error).toContain('not a subscription worker');
@@ -641,4 +645,20 @@ test('startup stamping reads every binding shape, and never guesses an unknown r
     orphan: 'claude-code',
   });
   expect(first.ambiguous).toEqual(['elsewhere']);
+});
+
+test('a project offers its workers, each with its own models and default model', async () => {
+  const { call } = await viewer();
+  const listed = await call('GET', '/api/projects/claude/workers');
+  expect(listed.status).toBe(200);
+  const workers = listed.body.workers as Array<{
+    id: string;
+    default: boolean;
+    defaultModel: string;
+    models: Array<{ id: string }>;
+  }>;
+  expect(workers.find((w) => w.default)?.id).toBe('claude-code');
+  for (const worker of workers)
+    expect(worker.models.map((m) => m.id)).toContain(worker.defaultModel);
+  expect((await call('GET', '/api/projects/missing/workers')).status).toBe(404);
 });

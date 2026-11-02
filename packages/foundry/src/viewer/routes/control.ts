@@ -19,9 +19,19 @@ import {
   type ConfigStore,
   createProject,
   type FoundryConfig,
-  steerOnSend,
+  personalOnlySetting,
+  REPOSITORY_SETTING_KEYS,
+  UNSAFE_SETTING_SEGMENTS,
 } from '../config';
-import { readRepositorySettings, settingLayer, writeRepositorySetting } from '../config-resolve';
+import {
+  effectiveProject,
+  readRepositorySettings,
+  repositorySettingsProblem,
+  SELF_LAYERED_SETTINGS,
+  setAtPath,
+  settingLayer,
+  writeRepositorySettings,
+} from '../config-resolve';
 import { ViewerFileAccess } from '../file-access';
 import { FoundrySelfChatStore, type SelfChatFocus } from '../foundry-self-chat';
 import { validateId } from '../http-helpers';
@@ -63,6 +73,20 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  * What an "always" answer covers: the capability and tool, and for a shell call the whole command
  * exactly (trimmed). Never a prefix: `ls && curl … | sh` must not ride on an "always" for `ls`.
  */
+
+/** The project setting roots PUT /api/projects/:id/setting writes: what the settings pages show. */
+const SETTABLE_PROJECT_ROOTS: ReadonlySet<string> = new Set<string>([
+  ...REPOSITORY_SETTING_KEYS,
+  'sources',
+  'toolRules',
+]);
+
+/** An object setting's keys that are this machine's or this person's alone. */
+const personalKeysOf = (path: string, value: unknown): string[] =>
+  value && typeof value === 'object' && !Array.isArray(value)
+    ? Object.keys(value).filter((key) => personalOnlySetting(`${path}.${key}`))
+    : [];
+
 export function alwaysKey(prompt: { capability?: string; meta?: Record<string, unknown> }) {
   const tool = prompt.meta?.toolName;
   if (typeof tool !== 'string' || !prompt.capability) return null;
@@ -460,20 +484,14 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps): void 
   app.patch('/api/projects/:id', async (c) => {
     const id = c.req.param('id');
     const body = await c.req.json<Record<string, unknown>>();
-    const { label, status, threadOnMerge } = body;
+    const { label, status } = body;
     if (label !== undefined && (typeof label !== 'string' || !label.trim() || label.length > 200))
       return c.json({ error: 'label must be a non-empty string (max 200 chars)' }, 400);
     if (status !== undefined && status !== 'archived' && status !== 'active')
       return c.json({ error: 'status must be archived or active' }, 400);
-    if (
-      threadOnMerge !== undefined &&
-      threadOnMerge !== null &&
-      threadOnMerge !== 'done' &&
-      threadOnMerge !== 'auto-archive'
-    )
-      return c.json({ error: 'threadOnMerge must be done, auto-archive or null' }, 400);
-    if (label === undefined && status === undefined && threadOnMerge === undefined)
-      return c.json({ error: 'nothing to change: send label, status or threadOnMerge' }, 400);
+    // A project's settings (threadOnMerge and the rest) are set through PUT /api/projects/:id/setting.
+    if (label === undefined && status === undefined)
+      return c.json({ error: 'nothing to change: send label or status' }, 400);
     await configStore.load();
     if (!Object.hasOwn(configStore.config.projects, id))
       return c.json({ error: 'project not found' }, 404);
@@ -482,9 +500,6 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps): void 
       if (typeof label === 'string') project.label = label.trim();
       if (status === 'archived') project.status = 'archived';
       else if (status === 'active') delete project.status;
-      // A project's own merge behaviour; null falls back to the Foundry-wide one.
-      if (threadOnMerge === null) delete project.threadOnMerge;
-      else if (threadOnMerge !== undefined) project.threadOnMerge = threadOnMerge;
     });
     const live = projectRegistry?.get(id);
     if (live) {
@@ -494,40 +509,90 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps): void 
     return c.json(next.projects[id]);
   });
 
-  // A project's `steer` (CORE-001): whether a send during a running turn steers into it. In effect,
-  // with the layer it came from; set for me (this machine's project settings, which win) or for
-  // everyone (the repository's committed `.foundry/project.json`); `null` drops that layer's value.
-  app.get('/api/projects/:id/steer', async (c) => {
+  // Any project setting at a dotted path (Aron 2026-10-16: every setting is set for me or for
+  // everyone): this machine's value (`projects[id]`), the repository's (`.foundry/project.json`),
+  // Foundry's at the same path where Foundry has one, the layer in effect, and why a machine or
+  // person setting has no "for everyone" form.
+  app.get('/api/projects/:id/setting', async (c) => {
+    const id = c.req.param('id');
+    const path = c.req.query('path') ?? '';
+    if (!/^[A-Za-z][\w-]*(\.[\w-]+)*$/.test(path))
+      return c.json({ error: 'path must be a dotted setting path' }, 400);
     await configStore.load();
     const config = configStore.config;
-    const project = config.projects[c.req.param('id')];
+    const project = config.projects[id];
     if (!project) return c.json({ error: 'project not found' }, 404);
-    const repository = readRepositorySettings(project.path);
+    const read = readRepositorySettings(project.path);
+    // The cascade decides whether the team's settings build here; its verdict is the problem.
+    effectiveProject(config, id);
+    const problem = repositorySettingsProblem(project.path);
+    // Unreadable: none of the file applies. Unbuildable here: only chorus, conversations and steer do.
+    const applies =
+      !problem ||
+      (problem.kind === 'unbuildable' && SELF_LAYERED_SETTINGS.has(path.split('.')[0]!));
+    const repository = applies ? read : undefined;
+    const at = (root: unknown) =>
+      path
+        .split('.')
+        .reduce<unknown>(
+          (node, key) =>
+            node && typeof node === 'object' ? (node as Record<string, unknown>)[key] : undefined,
+          root,
+        );
+    const mine = at(project);
+    const theirs = at(repository);
+    const foundry = at(config);
     return c.json({
-      steer: steerOnSend(config, c.req.param('id')),
+      path,
+      value: mine ?? theirs ?? foundry ?? null,
       from:
-        project.steer === undefined && repository?.steer === undefined && config.steer !== undefined
+        mine === undefined && theirs === undefined && foundry !== undefined
           ? 'foundry'
-          : settingLayer(project.steer !== undefined, repository?.steer !== undefined),
-      mine: project.steer ?? null,
-      repository: repository?.steer ?? null,
-      foundry: config.steer ?? null,
-      ...(repository ? { repositoryFile: repository.file } : {}),
-      ...(repository?.error ? { repositoryError: repository.error } : {}),
+          : settingLayer(mine !== undefined, theirs !== undefined),
+      mine: mine ?? null,
+      repository: theirs ?? null,
+      foundry: foundry ?? null,
+      personalOnly: personalOnlySetting(path) ?? null,
+      ...(read ? { repositoryFile: read.file } : {}),
+      ...(problem && !applies ? { repositoryError: problem.message } : {}),
+      // An object's keys that are this machine's or this person's alone (never set for everyone).
+      personalKeys: personalKeysOf(path, mine ?? theirs),
     });
   });
 
-  app.put('/api/projects/:id/steer', async (c) => {
+  // Set project settings for me (this machine's settings, validated like every settings change) or
+  // for everyone (the repository's committed file, checked by the same rules); `null` drops the value
+  // from that layer. Several paths in one call apply together (a worker and its model).
+  app.put('/api/projects/:id/setting', async (c) => {
     const body = (await c.req.json().catch(() => null)) as {
       scope?: unknown;
-      value?: unknown;
+      values?: unknown;
     } | null;
     const scope = body?.scope;
-    const value = body?.value ?? null;
     if (scope !== 'me' && scope !== 'everyone')
       return c.json({ error: 'scope must be me or everyone' }, 400);
-    if (value !== null && typeof value !== 'boolean')
-      return c.json({ error: 'value must be true, false or null' }, 400);
+    const values = body?.values;
+    if (
+      !values ||
+      typeof values !== 'object' ||
+      Array.isArray(values) ||
+      !Object.keys(values).length
+    )
+      return c.json({ error: 'values must map setting paths to values' }, 400);
+    const entries = Object.entries(values as Record<string, unknown>);
+    for (const [path] of entries) {
+      const parts = path.split('.');
+      if (
+        !/^[A-Za-z][\w-]*(\.[\w-]+)*$/.test(path) ||
+        parts.some((part) => UNSAFE_SETTING_SEGMENTS.has(part))
+      )
+        return c.json({ error: `${path} is not a dotted setting path` }, 400);
+      const personal = scope === 'everyone' ? personalOnlySetting(path) : undefined;
+      if (personal) return c.json({ error: `${path} can't be set for everyone: ${personal}` }, 400);
+      // Set here: what the settings pages show. Registration, capacity and Kingdom links have their own flows.
+      if (!SETTABLE_PROJECT_ROOTS.has(parts[0]!))
+        return c.json({ error: `${parts[0]} is not set here` }, 400);
+    }
     const id = c.req.param('id');
     await configStore.load();
     const project = configStore.config.projects[id];
@@ -537,14 +602,14 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps): void 
         await configStore.update((draft) => {
           const mine = draft.projects[id];
           if (!mine) throw Error('project not found');
-          if (value === null) delete mine.steer;
-          else mine.steer = value;
+          for (const [path, value] of entries)
+            setAtPath(mine as unknown as Record<string, unknown>, path.split('.'), value);
         });
-      else writeRepositorySetting(project.path, 'steer', value);
+      else writeRepositorySettings(project.path, entries);
     } catch (error) {
-      return c.json({ error: (error as Error).message }, 409);
+      return c.json({ error: (error as Error).message }, 400);
     }
-    return c.json({ ok: true, steer: steerOnSend(await configStore.load(), id) });
+    return c.json({ ok: true });
   });
 
   app.delete('/api/projects/:id', async (c) => {

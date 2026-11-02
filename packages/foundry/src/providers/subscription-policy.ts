@@ -527,7 +527,10 @@ export function resolveSubscriptionPolicy(
   };
   check(effective);
   for (const [id, project] of Object.entries(effective.projects))
-    check(resolveProjectView(effective, id)!.config, project.capacity === 'kingdom');
+    check(
+      resolveProjectView(effective, id, { repository: false })!.config,
+      project.capacity === 'kingdom',
+    );
   return structuredClone({
     policy,
     workers,
