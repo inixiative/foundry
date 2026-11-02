@@ -24,19 +24,46 @@ import {
 } from '@inixiative/foundry-core';
 
 /** Native harnesses that run a main thread on the user's own subscription login, and the profile each uses. */
-export const SUBSCRIPTION_WORKERS = { 'claude-code': 'claude', codex: 'codex' } as const;
+export const SUBSCRIPTION_WORKERS = {
+  'claude-code': 'claude',
+  codex: 'codex',
+  muse: 'muse',
+} as const;
 export type SubscriptionWorker = keyof typeof SUBSCRIPTION_WORKERS;
 /** The session-store bucket each worker's native binding is saved under (the session adapter's runtime). */
 export const WORKER_SESSION_RUNTIMES: Readonly<Record<SubscriptionWorker, string>> = {
   'claude-code': 'claude-code',
   codex: 'codex-app-server',
+  muse: 'muse-serve',
 };
 export const subscriptionWorker = (provider: string): provider is SubscriptionWorker =>
   Object.hasOwn(SUBSCRIPTION_WORKERS, provider);
 
 /**
+ * Whether a main thread on this provider can hold Foundry's MCP bridge (the `foundry` tools: set_plan,
+ * fork_thread, the conversation tools). Muse Code cannot: agent-session's MuseSession offers it no session
+ * MCP yet, so its threads run without the tools and without the standing note that teaches them.
+ */
+export const workerHostsFoundryTools = (provider: string | undefined): boolean =>
+  provider !== 'muse';
+
+/**
+ * Archive's `runtime` for a thread's snapshot, where the worker settles it. Muse Code bills only the
+ * user's own Muse login (no gateway, no API key), so its threads are `meta` on a subscription: Archive's
+ * `alwaysPersonal` keeps them out of every organization. Claude Code and Codex can also run through a
+ * gateway or an API key, which the thread record does not say, so they carry none.
+ */
+export function workerArchiveRuntime(
+  worker: string | undefined,
+): { provider: string; accessPath: 'subscription'; evidence: 'harness' } | undefined {
+  return worker === 'muse'
+    ? { provider: 'meta', accessPath: 'subscription', evidence: 'harness' }
+    : undefined;
+}
+
+/**
  * What a main thread on this provider still needs, or undefined when it can run. Main threads run on
- * Anthropic, OpenAI, Google, Meta and xAI models: subscription harnesses (Claude Code, Codex) in any
+ * Anthropic, OpenAI, Google, Meta and xAI models: subscription harnesses (Claude Code, Codex, Muse Code) in any
  * mode, API providers only with `apiTokens: true`.
  */
 export function mainThreadRequirement(provider: string, apiTokens: boolean): string | undefined {

@@ -326,6 +326,21 @@ with no subscription policy is the user's own Claude, which loads everything.
   copied), because it could set the provider. A Codex `rules` allow skips only
   Codex's own ask; Codex already refuses to start under Foundry structural rules.
 
+- **Muse Code** main threads load the user's own Muse setup (settings, skills,
+  plugins, workspace trust), always: its login and its config share one home
+  (`$XDG_CONFIG_HOME/muse`), and Muse has no switch to load a login without its
+  config. A Foundry-owned home would mean moving `XDG_CONFIG_HOME`, which every
+  command Muse runs inherits (git reads its config there), so `harnessSettings:
+  off` cannot apply to it. What could take the subscription away is closed
+  outside the config: the provider is always `meta` (agent-session refuses any
+  other on a resumed session), the model is Foundry's, and Meta's keys,
+  endpoints and Muse's billing and approval switches never reach it. A
+  contributor-mode setting in the user's own Muse settings is theirs and stays
+  on. agent-session launches `muse serve --trust-workspace`, so a workspace's
+  Muse skills and rules load in any working directory, registered project or
+  not, and Muse reads the repository's AGENTS.md (and CLAUDE.md) itself beside
+  what Foundry composes; neither has a switch through agent-session 0.8.0.
+
 A settings file that still lists CLAUDE.md as a `markdown` source next to an
 `instructions` source injects that file twice. Remove the `markdown` source.
 

@@ -6,7 +6,8 @@
  */
 /**
  * bun run test:live — the live tier. Runs every cassette-backed test against this machine's
- * real subscriptions (Claude on ~/.claude, Codex's ChatGPT login on ~/.codex, local Kingdom),
+ * real subscriptions (Claude on ~/.claude, Codex's ChatGPT login on ~/.codex, Muse Code's login on
+ * ~/.config/muse, local Kingdom),
  * re-records the cassettes, then replays them all. Structural drift from a committed cassette
  * is kept beside it as `.pending.json` and reported, never silently overwritten.
  *
@@ -139,7 +140,7 @@ for (const path of cassettes(fixturesDir)) {
 }
 
 const findings = checkFreshness(fixturesDir, {
-  installed: await installedVersions(['claude', 'codex']),
+  installed: await installedVersions(['claude', 'codex', 'muse']),
   agentSession: agentSessionVersion,
 });
 for (const finding of findings) console.log(`  stale: ${finding.cassette}: ${finding.problem}`);

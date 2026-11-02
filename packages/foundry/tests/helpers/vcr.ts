@@ -1,6 +1,8 @@
 // Recorded counterparts of subscription-transport.ts: the same observation surface
 // (launches, writes, statusChecks, live/peak), backed by cassettes of the real CLIs.
 import { join } from 'node:path';
+import type { MuseConnect } from '@inixiative/agent-session';
+import { Connection, type DuplexTransport } from '@muse-code/sdk';
 import { nativeTextEnvironment } from '../../src/providers/native-text-environment';
 import {
   cliVersion,
@@ -18,6 +20,8 @@ export const LIVE = {
   claudeModel: 'haiku',
   claudeObservedModel: 'claude-haiku-5-5',
   codexModel: 'gpt-5.6-luna',
+  /** Muse Code's default (and only Everyday Usage) model; every live Muse turn runs at low effort. */
+  museModel: 'muse-wonder-1.0',
   kingdomUrl: process.env.FOUNDRY_VCR_KINGDOM_URL ?? 'http://127.0.0.1:8200',
 } as const;
 
@@ -60,6 +64,14 @@ export const codexVcr = () =>
       service: 'codex',
       cli: 'codex',
       version: () => cliVersion('codex'),
+    }),
+  );
+export const museVcr = () =>
+  made(
+    new VCR(join(FIXTURES_DIR, 'muse'), {
+      service: 'muse',
+      cli: 'muse',
+      version: () => cliVersion('muse'),
     }),
   );
 export const kingdomVcr = () =>
@@ -169,4 +181,114 @@ export async function sameAsLive<T>(
 ): Promise<{ live: T; now: T }> {
   const live = await vcr.queue('outcome', name).outcome('outcome', value);
   return { live, now: JSON.parse(JSON.stringify(value)) as T };
+}
+
+/**
+ * `muse serve` as a cassette: agent-session's MuseSession takes a `connect` in place of the SDK's
+ * owned spawn, so this runs the same handshake (initialize, then `initialized`) over a recorded
+ * process. Command ids come from a counter, because replay compares every stdin line with the
+ * recording; one connection per launch keeps them unique within a live session.
+ */
+/** `usage/changed` names the plan by an opaque numeric id; the cassette keeps the windows, not the id. */
+export const museUsageTierHidden = (frames: Frame[]): Frame[] =>
+  frames.map((frame) => {
+    if (!frame.data.includes('"usage/changed"')) return frame;
+    try {
+      const value = JSON.parse(frame.data) as { params?: Record<string, unknown> };
+      if (value.params && 'tier' in value.params) value.params.tier = '{{tier}}';
+      return { ...frame, data: JSON.stringify(value) };
+    } catch {
+      return frame;
+    }
+  });
+
+export function recordedMuseConnect(names: string[], vcr = museVcr()) {
+  for (const name of names) vcr.queue('serve', name);
+  const server = new ProcessCassettes(vcr, 'serve', {
+    model: LIVE.museModel,
+    sanitize: museUsageTierHidden,
+  });
+  const connect: MuseConnect = async (launch) => {
+    const child = server.spawn([launch.museBin, ...launch.args], {
+      cwd: launch.cwd,
+      env: launch.env,
+    });
+    const transport: DuplexTransport = {
+      incoming: lines(child.stdout),
+      async write(chunk) {
+        child.stdin.write(chunk);
+        child.stdin.flush();
+      },
+      // The connection closes on the host's EOF. A live host exits on stdin EOF; a cassette ends
+      // only when killed, so the recording is killed too and both runs end the same way.
+      close() {
+        child.stdin.end();
+        child.kill();
+      },
+    };
+    let minted = 0;
+    const connection = new Connection(transport, {
+      mintCommandId: () => `01a19a00-0000-7000-8000-${(++minted).toString(16).padStart(12, '0')}`,
+    });
+    // The host's answer is the SDK's InitializeResult; MuseSession checks its version and schema.
+    const answer: unknown = await connection.request('initialize', { ...launch.initialize });
+    const initializeResult = answer as Awaited<ReturnType<MuseConnect>>['initializeResult'];
+    connection.notify('initialized');
+    const exited = child.exited;
+    return {
+      connection,
+      initializeResult,
+      exited,
+      close: async () => {
+        await connection.close().catch(() => undefined);
+        return exited;
+      },
+    };
+  };
+  return { vcr, connect, launches: server.launches };
+}
+
+/** The child's stdout as text chunks; the connection does its own newline framing. */
+async function* lines(stream: ReadableStream<Uint8Array>): AsyncIterable<string> {
+  const decoder = new TextDecoder();
+  for await (const chunk of stream) yield decoder.decode(chunk, { stream: true });
+}
+
+/** `muse usage --json` names the plan and its windows; keep only the tier Foundry reads (signed in or not). */
+export const museTierOnly = (frames: Frame[]): Frame[] => {
+  const stdout = frames
+    .filter((frame) => frame.stream === 'stdout')
+    .map((frame) => frame.data)
+    .join('\n');
+  try {
+    const tier = (JSON.parse(stdout) as { allowance?: { tier?: unknown } }).allowance?.tier;
+    return [
+      {
+        after: 0,
+        stream: 'stdout',
+        data: JSON.stringify({ allowance: typeof tier === 'string' ? { tier } : null }),
+      },
+    ];
+  } catch {
+    return [{ after: 0, stream: 'stdout', data: 'VCR: unparseable usage withheld' }];
+  }
+};
+
+/** The Muse worker's subscription gate: the real `muse usage --json` (no model turn) on the account's login. */
+export function recordedMuseStatus(names: string[], vcr = museVcr()) {
+  for (const name of names) vcr.queue('usage', name);
+  const status = new ProcessCassettes(vcr, 'usage', {
+    argv: ['muse', 'usage', '--json'],
+    sanitize: museTierOnly,
+    recordOnce: true,
+    model: () => undefined,
+    env: () => ({ ...nativeTextEnvironment(process.env), MUSE_NO_AUTO_UPDATE: '1' }),
+  });
+  return {
+    vcr,
+    get statusChecks() {
+      return status.launches.length;
+    },
+    statusSpawn: status.statusSpawn,
+  };
 }

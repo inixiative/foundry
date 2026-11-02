@@ -9,20 +9,45 @@ import {
   NativeAuthentication,
   type NativeAuthenticationLaunch,
   type NativeAuthenticationSource,
+  type NativeRuntime,
 } from './native-authentication';
 import { nativeTextEnvironment } from './native-text-environment';
 import {
   codexSubscriptionStatus,
+  museSubscriptionStatus,
   type StatusProcess,
   subscriptionStatus,
 } from './native-text-provider';
+
+/** Each runtime's read-only login check: no model turn, nothing about the account kept. */
+const STATUS: Record<
+  NativeRuntime,
+  { argv: string[]; read: (child: StatusProcess) => Promise<boolean>; refusal: string }
+> = {
+  claude: {
+    argv: ['claude', 'auth', 'status', '--json'],
+    read: subscriptionStatus,
+    refusal: 'Authenticated Claude subscription required',
+  },
+  codex: {
+    argv: ['codex', 'login', 'status'],
+    read: codexSubscriptionStatus,
+    refusal: 'Codex ChatGPT login required',
+  },
+  muse: {
+    argv: ['muse', 'usage', '--json'],
+    read: museSubscriptionStatus,
+    refusal: 'Muse Code subscription login required (run `muse login`)',
+  },
+};
 
 // `claude auth status` reaches the network; under launchd it takes several seconds.
 const STATUS_DEADLINE_MS = 20_000;
 const STATUS_TTL_MS = 5 * 60_000;
 
 /** The main-thread worker on its subscription login, a shared holder alongside decisions on the same login.
- * Codex runs on a Foundry-private CODEX_HOME, so the user's Codex config never applies. */
+ * Codex runs on a Foundry-private CODEX_HOME, so the user's Codex config never applies. Muse Code runs on
+ * the user's own login in place (`~/.config/muse`); see `MuseSessionAdapter` for what of its config loads. */
 export class SubscriptionAuthentication extends NativeAuthentication {
   private statusChild?: StatusProcess;
   private statusCheck?: Promise<void>;
@@ -45,7 +70,7 @@ export class SubscriptionAuthentication extends NativeAuthentication {
   }
   override async prepare(
     threadId: string,
-    runtime: 'claude' | 'codex',
+    runtime: NativeRuntime,
   ): Promise<NativeAuthenticationLaunch> {
     if (runtime !== this.workerSource.runtime) throw Error('Subscription worker runtime mismatch');
     if (this.statusClosed)
@@ -62,8 +87,9 @@ export class SubscriptionAuthentication extends NativeAuthentication {
     }
     const launch = await super.prepare(threadId, runtime);
     const configDirectory = this.workerSource.profileDirectory;
-    // Codex launch overrides are already limited to sandbox, approval and effort by the native binding.
-    if (runtime === 'codex')
+    // Codex launch overrides are already limited to sandbox, approval and effort by the native binding;
+    // Muse Code's are fixed by agent-session (`serve --trust-workspace`, the sandbox switch).
+    if (runtime === 'codex' || runtime === 'muse')
       return {
         ...launch,
         launch: (argv, env, harness) => launch.launch(argv, nativeTextEnvironment(env), harness),
@@ -88,24 +114,24 @@ export class SubscriptionAuthentication extends NativeAuthentication {
     let cleanupTimer: ReturnType<typeof setTimeout> | undefined;
     let exited = false;
     const { runtime, profileDirectory } = this.workerSource;
-    const environment = withProfile(
-      nativeTextEnvironment(process.env),
-      runtime,
-      runtime === 'codex' ? await this.codexHome(this.workerSource) : profileDirectory,
-    );
+    const environment = {
+      ...withProfile(
+        nativeTextEnvironment(process.env),
+        runtime,
+        runtime === 'codex' ? await this.codexHome(this.workerSource) : profileDirectory,
+      ),
+      // `muse usage` would otherwise update the CLI past the SDK's pinned version.
+      ...(runtime === 'muse' ? { MUSE_NO_AUTO_UPDATE: '1' } : {}),
+    };
+    const status = STATUS[runtime];
     const child = this.statusSpawn
       ? this.statusSpawn(environment)
-      : Bun.spawn(
-          runtime === 'codex'
-            ? ['codex', 'login', 'status']
-            : ['claude', 'auth', 'status', '--json'],
-          {
-            env: environment,
-            stdin: 'ignore',
-            stdout: 'pipe',
-            stderr: 'pipe',
-          },
-        );
+      : Bun.spawn(status.argv, {
+          env: environment,
+          stdin: 'ignore',
+          stdout: 'pipe',
+          stderr: 'pipe',
+        });
     this.statusChild = child;
     const exit = child.exited.then(
       () => {
@@ -114,8 +140,8 @@ export class SubscriptionAuthentication extends NativeAuthentication {
       () => {},
     );
     try {
-      const status = await Promise.race([
-        runtime === 'codex' ? codexSubscriptionStatus(child) : subscriptionStatus(child),
+      const signedIn = await Promise.race([
+        status.read(child),
         new Promise<never>((_, reject) => {
           timer = setTimeout(
             () => reject(Error('Subscription status deadline')),
@@ -123,12 +149,7 @@ export class SubscriptionAuthentication extends NativeAuthentication {
           );
         }),
       ]);
-      if (!status)
-        throw Error(
-          runtime === 'codex'
-            ? 'Codex ChatGPT login required'
-            : 'Authenticated Claude subscription required',
-        );
+      if (!signedIn) throw Error(status.refusal);
     } finally {
       clearTimeout(timer);
       if (!exited) {

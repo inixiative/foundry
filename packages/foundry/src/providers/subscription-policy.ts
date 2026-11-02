@@ -31,9 +31,13 @@ import {
 import { resolveProjectView } from '../viewer/config-resolve';
 import { DECISION_CALL_TIMEOUT_MAX_MS, DECISION_DEADLINE_MS } from './decision-budget';
 import { defaultProfileSource, type NativeProfileSource } from './default-profiles';
+import type { NativeRuntime } from './native-authentication';
 import { assertPrivateProfile, assertProfile } from './private-profile';
 
 export const SUBSCRIPTION_DECISIONS = 'subscription-decisions';
+/** A Kingdom-capacity project runs every thread on its pool; pools hold no Muse Code login yet (FEAT-006). */
+const KINGDOM_MUSE_REFUSAL =
+  "Kingdom pools hold no Muse Code logins yet, and a Kingdom-capacity project's threads never use this machine's login; run Muse threads in a project on this machine's capacity";
 const model = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,199}$/);
 /** Optional overrides of subscription mode. Every field has a default. */
 export const subscriptionSettingsSchema = z
@@ -142,12 +146,17 @@ export interface SubscriptionResolution {
   /** Every worker a thread may name: its vendor's subscription mode is on, or a project defaults to it.
    * Each gets an adapter; one without a login runs only a Kingdom-capacity project's threads. */
   offered: SubscriptionWorker[];
-  decision: NativeProfileSource;
+  decision: DecisionProfileSource;
   /** Effective configuration: every enabled decision role runs on the subscription decision profile. */
   config: FoundryConfig;
   /** Decision roles whose saved provider/model differed from the subscription decision profile. */
   rerouted: string[];
 }
+
+/** A login decisions run on: Claude's or Codex's (primed sessions); never Muse Code's. */
+export type DecisionProfileSource = NativeProfileSource & { runtime: 'claude' | 'codex' };
+const isDecisionSource = (source: NativeProfileSource): source is DecisionProfileSource =>
+  source.runtime === 'claude' || source.runtime === 'codex';
 
 /** The subscription worker each main thread runs on by default: the global default and every enabled project's. */
 export function defaultWorkers(
@@ -174,7 +183,7 @@ export function workerDefaultModel(config: FoundryConfig, worker: string): strin
  * runtime's, else the runtime's only configured native profile (unless that is the decision source),
  * else its default profile location. Several of one runtime with none named is ambiguous and refused.
  */
-function runtimeLogin(config: FoundryConfig, runtime: 'claude' | 'codex'): NativeProfileSource {
+function runtimeLogin(config: FoundryConfig, runtime: NativeRuntime): NativeProfileSource {
   const named = config.defaults.nativeAuthenticationId
     ? config.nativeAuthentication?.find(
         (item) => item.id === config.defaults.nativeAuthenticationId,
@@ -206,7 +215,7 @@ function runtimeLogin(config: FoundryConfig, runtime: 'claude' | 'codex'): Nativ
 
 /**
  * Subscription-only is the default. `apiTokens: true` is the only way to construct API
- * providers. Without it every main thread runs on a subscription worker (Claude Code or Codex, its
+ * providers. Without it every main thread runs on a subscription worker (Claude Code, Codex or Muse Code, its
  * project's default or the one chosen for the thread) and the decision profile (Claude by default,
  * `decisionRuntime` to change) on subscription logins, referenced in place, with no paid fallback.
  *
@@ -281,9 +290,15 @@ export function resolveSubscriptionPolicy(
     );
   const decisionRuntime =
     settings.decisionRuntime === 'claude-in-session' ? 'claude' : settings.decisionRuntime;
-  const decision = settings.decisionSourceId
+  const source = settings.decisionSourceId
     ? explicit(settings.decisionSourceId)
     : defaultProfileSource(decisionRuntime ?? 'claude');
+  // Decisions run on primed Claude or Codex sessions; Muse Code runs main threads only.
+  if (!isDecisionSource(source))
+    throw Error(
+      'subscriptionOnly.decisionSourceId must be a Claude or Codex login; Muse Code runs main threads only',
+    );
+  const decision = source;
   if (decisionRuntime && decisionRuntime !== decision.runtime)
     throw Error('subscriptionOnly.decisionRuntime does not match the decision source runtime');
   if (
@@ -352,6 +367,7 @@ export function resolveSubscriptionPolicy(
   // Each view is checked against its own worker: the global defaults, then every project's.
   const check = (view: FoundryConfig, pooled = false) => {
     const worker = view.defaults.provider;
+    if (pooled && worker === 'muse') throw Error(`Subscription-only mode: ${KINGDOM_MUSE_REFUSAL}`);
     if (!subscriptionWorker(worker) || !(pooled ? offered.includes(worker) : workers[worker]))
       throw Error(
         `Subscription-only mode: ${mainThreadRequirement(worker, false) ?? `the ${worker} worker has no usable login`}`,
@@ -439,7 +455,9 @@ export function threadWorkerRequirement(
   if (!resolution.offered.includes(worker))
     return `The ${worker} worker was not started with Foundry; restart Foundry`;
   // A Kingdom-capacity project's threads run on its pool, which refuses a runtime it has no login for.
-  if (projectId && view.projects[projectId]?.capacity === 'kingdom') return undefined;
+  // Kingdom pools hold no Muse Code logins yet, and a pooled thread never falls back to this machine's.
+  if (projectId && view.projects[projectId]?.capacity === 'kingdom')
+    return worker === 'muse' ? KINGDOM_MUSE_REFUSAL : undefined;
   if (!resolution.workers[worker])
     return `The ${worker} worker has no usable login${resolution.unavailable[worker] ? ` (${resolution.unavailable[worker]})` : ''}; log in with its CLI and restart Foundry`;
   return undefined;

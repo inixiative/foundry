@@ -27,6 +27,12 @@ export function nativeTextEnvironment(input: Record<string, string | undefined>)
     'CI',
     'CLAUDE_CONFIG_DIR',
     'CODEX_HOME',
+    // Where Muse Code reads its login (`$XDG_CONFIG_HOME/muse`) and keeps sessions (`$XDG_DATA_HOME/muse`);
+    // not credentials. Kept so a launch finds the same login and sessions the user's own `muse` does.
+    'XDG_CONFIG_HOME',
+    'XDG_DATA_HOME',
+    // Set by a Muse launch (withoutCompetingCredentials): the CLI stays on the SDK's pinned version.
+    'MUSE_NO_AUTO_UPDATE',
     // Native compaction policy set by claude-context-budget; not credentials.
     'CLAUDE_CODE_AUTO_COMPACT_WINDOW',
     'CLAUDE_AUTOCOMPACT_PCT_OVERRIDE',

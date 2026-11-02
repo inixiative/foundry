@@ -38,10 +38,16 @@ import {
   type CodexSessionConfig,
   codexPermissions,
   type HarnessSession,
+  type MuseConnect,
+  type MuseReasoningEffort,
+  MuseSession,
+  type MuseUserInputHandler,
+  musePermissions,
   type SessionEvent,
   type ToolGate,
 } from '@inixiative/agent-session';
 import { type NativeBridgeLease, newId, type SignalBus } from '@inixiative/foundry-core';
+import { spawnMspConnection } from '@muse-code/sdk';
 import { mkdir, readFile, rename, writeFile } from 'fs/promises';
 import { dirname, join } from 'path';
 import type { HarnessSettingSources } from './harness-settings';
@@ -1197,4 +1203,339 @@ export class CodexSessionAdapter implements SessionAdapter {
       return 'unknown';
     }
   }
+}
+
+// ---------------------------------------------------------------------------
+// MuseSessionAdapter
+// ---------------------------------------------------------------------------
+
+export interface MuseSessionAdapterConfig {
+  /** The thread's login: the user's own Muse login (subscription), never Kingdom's pool (refused there). */
+  authentication?: NativeAuthenticationProvider;
+  /** Where to persist the (thread, Muse session id) mapping. */
+  store: ExternalSessionStore;
+  /** Applied to every session. */
+  defaults?: {
+    model?: string;
+    effort?: MuseReasoningEffort;
+    museBin?: string;
+    timeout?: number;
+  };
+  /** Optional signal bus, as the other adapters take it. */
+  signals?: SignalBus;
+  /**
+   * The launch environment's final bound (subscription mode: the allowlist every native worker
+   * launches with). Muse's own tool runs inherit it, so nothing outside it reaches them either.
+   */
+  environment?: (env: Record<string, string | undefined>) => Record<string, string | undefined>;
+  /** Who answers a question the thread's session asks; absent (or a decline) cancels it with a reason. */
+  questions?: (threadId: string) => MuseUserInputHandler | undefined;
+  /** Test seam only: replaces the `muse serve` spawn and handshake. */
+  connect?: MuseConnect;
+}
+
+/**
+ * Muse Code (`muse serve`) through agent-session's MuseSession, on the user's own Muse login.
+ *
+ * - Access follows the host: a gated mode sends Muse's approvals to the thread's tool gate (and so to
+ *   Foundry's approval queue); full access (and no host mode) runs unrestricted and unsandboxed.
+ * - Like Codex, Muse has no pre-use stage Foundry can hold (its `preToolUse` is a vendor hook, and
+ *   middleware never runs in vendor hooks), so a thread with structural rules is refused at launch.
+ * - The Muse session id is the binding: a restart resumes it (`session/resume`); a missing one raises
+ *   `NativeBindingMissingError`, and the provider starts fresh, seeded from the journal.
+ * - Muse's config is the user's own: its login and settings share one home (`$XDG_CONFIG_HOME/muse`),
+ *   and moving that home would move the config of every command Muse runs. agent-session launches it
+ *   with `--trust-workspace`, so a workspace's Muse skills and rules load too.
+ * - No MCP: agent-session's MuseSession offers no session MCP, so Foundry's bridge and a host's MCP
+ *   servers do not reach a Muse thread (`workerHostsFoundryTools`).
+ */
+export class MuseSessionAdapter implements SessionAdapter {
+  readonly runtime = 'muse-serve';
+  readonly structuralRulesAtLaunch = true;
+  private _store: ExternalSessionStore;
+  private _authentication?: NativeAuthenticationProvider;
+  private _authLaunches = new WeakMap<HarnessSession, NativeAuthenticationLaunch>();
+  private _constructions = new WeakMap<HarnessSession, ConstructionBinding>();
+  private _live = new Set<HarnessSession>();
+  private _ended = new WeakMap<HarnessSession, Promise<void>>();
+  private _defaults: NonNullable<MuseSessionAdapterConfig['defaults']>;
+  private _signals: ThreadSignalBindings;
+  private _environment?: MuseSessionAdapterConfig['environment'];
+  private _questions?: MuseSessionAdapterConfig['questions'];
+  private _connect: MuseConnect;
+
+  constructor(config: MuseSessionAdapterConfig) {
+    this._store = config.store;
+    this._authentication = config.authentication;
+    this._defaults = Object.freeze({ ...config.defaults });
+    this._signals = new ThreadSignalBindings(config.signals);
+    this._environment = config.environment;
+    this._questions = config.questions;
+    this._connect = config.connect ?? spawnMuseHost;
+  }
+
+  attachSignals(signals: SignalBus): void {
+    this._signals.attachFallback(signals);
+  }
+
+  bindSignals(threadId: string, signals: SignalBus): () => void {
+    return this._signals.bind(threadId, signals);
+  }
+
+  async createSession(opts: CreateSessionOpts): Promise<HarnessSession> {
+    if (opts.nativeBridge)
+      throw Error(
+        "Muse Code sessions cannot hold Foundry's native bridge: agent-session offers Muse no session MCP",
+      );
+    if (opts.tools === false)
+      throw Error(
+        'Muse Code runs main threads only; it cannot enforce a text-only session, so decisions never run on it',
+      );
+    // Codex refuses the same way: there is no stage before a tool runs where the rules could hold.
+    if (opts.structuralRules)
+      throw Error(
+        'Structural tool rules are configured, and Muse Code cannot apply them before a tool runs (it has no pre-use stage Foundry holds). Run this thread on Claude, or remove the deny/prompt rules.',
+      );
+    if (opts.mcpServers?.length)
+      console.warn(
+        `[muse] ${opts.threadId}: the host's MCP servers (${opts.mcpServers.map((server) => server.name).join(', ')}) are not passed to Muse Code; agent-session offers it no session MCP`,
+      );
+    const auth = await this._authentication?.prepare(opts.threadId, 'muse');
+    const bindingId = auth?.bindingId ?? opts.threadId;
+    const existing = await this._store.load(bindingId, this.runtime);
+    // No host mode is full access, as the other adapters run it.
+    const permissionMode = opts.permissionMode ?? 'bypassPermissions';
+    // The login is held from here until the session ends (agent-session owns the process, so its
+    // exit is the session's end; a crashed Foundry leaves its shared registration for a person).
+    let launched: Record<string, string | undefined>;
+    try {
+      const inherited = { ...process.env };
+      const owned = auth ? auth.launch(['muse', 'serve'], inherited).env : inherited;
+      launched = this._environment ? this._environment(owned) : owned;
+    } catch (error) {
+      auth?.release();
+      throw error;
+    }
+    // A Kingdom launch names its effort as text; Muse never runs on one (refused before this).
+    const effort: MuseReasoningEffort | undefined = opts.effort ?? this._defaults.effort;
+    const model = auth?.model ?? opts.model ?? this._defaults.model;
+    // The host's own exit is what ends the session: the login is released only once `muse serve`
+    // has exited, so a relaunch never resumes the session while the old host still writes it.
+    let hostExit: Promise<unknown> | undefined;
+    const connect: MuseConnect = async (launch) => {
+      const host = await this._connect(launch);
+      hostExit = host.exited.catch(() => undefined);
+      return host;
+    };
+    const session = new MuseSession({
+      ...(this._defaults.museBin ? { museBin: this._defaults.museBin } : {}),
+      ...(this._defaults.timeout ? { timeout: this._defaults.timeout } : {}),
+      ...(model ? { model } : {}),
+      ...(effort ? { effort } : {}),
+      cwd: opts.cwd,
+      ...(opts.baseContext ? { baseContext: opts.baseContext } : {}),
+      ...(existing ? { externalSessionId: existing } : {}),
+      permissionMode,
+      env: exactEnvironment(launched),
+      onSessionReady: async (id) => {
+        await this._store.save(bindingId, this.runtime, id);
+      },
+      connect,
+    });
+    if (opts.toolGate && musePermissions(permissionMode).approvalMode !== 'allowAll')
+      session.onToolRequest(opts.toolGate);
+    const questions = this._questions?.(opts.threadId);
+    if (questions) session.onUserInput(questions);
+    if (auth) this._authLaunches.set(session, auth);
+    if (auth?.observeLimits)
+      session.onEvent((event) => {
+        if (event.kind === 'rate_limit' && event.limits) auth.observeLimits?.(event.limits);
+      });
+    // The login is released once, when the session ends or fails to start.
+    let released = false;
+    let ended!: () => void;
+    this._ended.set(
+      session,
+      new Promise<void>((resolve) => {
+        ended = resolve;
+      }),
+    );
+    const release = () => {
+      if (released) return;
+      released = true;
+      // No host (it never started): nothing to wait for.
+      void Promise.resolve(hostExit).then(() => {
+        this._live.delete(session);
+        try {
+          auth?.release();
+        } finally {
+          ended();
+        }
+      });
+    };
+    session.onEvent((event) => {
+      if (event.kind === 'session_end') release();
+    });
+    const start = session.start.bind(session);
+    session.start = async () => {
+      auth?.check();
+      this._live.add(session);
+      try {
+        await start();
+      } catch (error) {
+        release();
+        throw error;
+      }
+    };
+    const kill = session.kill.bind(session);
+    session.kill = () => {
+      kill();
+      release();
+    };
+    this._constructions.set(
+      session,
+      Object.freeze({
+        bindingId,
+        resumedBinding: existing ?? null,
+        ...(auth
+          ? {
+              authentication: {
+                sourceId: auth.sourceId,
+                integrationId: auth.integrationId,
+                mode: auth.mode,
+                model: auth.model,
+                effort: auth.effort,
+                capacityId: auth.capacityId,
+              },
+            }
+          : {}),
+        ...(effort ? { requestedEffort: effort } : {}),
+      }),
+    );
+    const originalSend = session.send.bind(session);
+    session.send = (message, options) => {
+      auth?.check();
+      return originalSend(
+        message,
+        auth
+          ? {
+              ...options,
+              onAdmission: async (attempt) => {
+                auth.check();
+                await options?.onAdmission?.(attempt);
+                auth.check();
+              },
+            }
+          : options,
+      );
+    };
+    const runtime = this.runtime;
+    const threadId = opts.threadId;
+    session.onEvent((event) => {
+      const signals = this._signals.get(threadId);
+      if (signals && event.kind === 'session_compact')
+        void signals.emit({
+          id: newId('sig-compact'),
+          kind: 'session_compacted',
+          source: `session-adapter:${runtime}`,
+          content: {
+            source: event.compactionSource ?? runtime,
+            externalSessionId: event.externalSessionId,
+            threadId,
+          },
+          timestamp: event.timestamp,
+        });
+    });
+    return session;
+  }
+
+  async getExternalSessionId(threadId: string): Promise<string | null> {
+    return this._store.load(
+      (await this._authentication?.resolveBindingId?.(threadId, 'muse')) ??
+        this._authentication?.bindingId(threadId, 'muse') ??
+        threadId,
+      this.runtime,
+    );
+  }
+
+  checkAuthentication(session: HarnessSession): void {
+    this._authLaunches.get(session)?.check();
+  }
+
+  describeConstruction(session: HarnessSession): ConstructionBinding | undefined {
+    return this._constructions.get(session);
+  }
+
+  async clearSession(threadId: string): Promise<void> {
+    return this._store.clear(
+      this._authentication?.bindingId(threadId, 'muse') ?? threadId,
+      this.runtime,
+    );
+  }
+
+  async releaseAll(): Promise<void> {
+    await Promise.all([...this._live].map((session) => this.releaseIdleSession(session)));
+  }
+
+  async releaseIdleSession(session: HarnessSession): Promise<'released' | 'unknown'> {
+    const ended = this._ended.get(session);
+    if (!ended) return 'unknown';
+    session.kill();
+    await ended;
+    return 'released';
+  }
+}
+
+/**
+ * `muse serve` through the SDK's owned-process handshake: agent-session's own default host, kept here
+ * only because MuseSession does not expose when its host has exited, and the adapter must not release
+ * the login (or report a session released) before it has. Remove when agent-session exposes the exit.
+ */
+const MUSE_STARTUP_TIMEOUT_MS = 30_000;
+async function spawnMuseHost(launch: Parameters<MuseConnect>[0]) {
+  const handshake = spawnMspConnection({
+    command: launch.museBin,
+    args: launch.args,
+    cwd: launch.cwd,
+    env: launch.env,
+    shutdownTimeoutMs: 10_000,
+  });
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const spawned = await Promise.race([
+      handshake.initialize(launch.initialize),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () => reject(Error(`muse serve did not initialize within ${MUSE_STARTUP_TIMEOUT_MS}ms`)),
+          MUSE_STARTUP_TIMEOUT_MS,
+        );
+      }),
+    ]);
+    return {
+      connection: spawned.connection,
+      initializeResult: spawned.initializeResult,
+      exited: spawned.exited,
+      stderrTail: () => handshake.child.stderrTail,
+      close: () => spawned.close(),
+    };
+  } catch (error) {
+    await handshake.close().catch(() => undefined);
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * MuseSession merges its `env` over `process.env`; a variable set to undefined is left out. So the
+ * bound environment is passed whole, with every other inherited variable unset: the child gets
+ * exactly what the launch bound, nothing the daemon happened to inherit.
+ */
+function exactEnvironment(
+  env: Record<string, string | undefined>,
+): Record<string, string | undefined> {
+  return {
+    ...Object.fromEntries(Object.keys(process.env).map((key) => [key, undefined])),
+    ...env,
+  };
 }

@@ -37,6 +37,7 @@
     "@inixiative/gloss": "0.1.1",
     "@inixiative/signet": "^0.11.1",
     "@modelcontextprotocol/sdk": "^1.29.0",
+    "@muse-code/sdk": "1.4.14",
     "@prisma/client": "^6.6.0",
     "hono": "^4.7.0",
     "prisma": "^6.6.0",

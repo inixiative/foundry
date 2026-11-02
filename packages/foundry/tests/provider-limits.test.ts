@@ -14,7 +14,7 @@ const account = (
   ready: true,
   uses: ['main thread'],
 });
-const snapshot = (runtime: 'claude' | 'codex'): LimitSnapshot => ({
+const snapshot = (runtime: 'claude' | 'codex' | 'muse'): LimitSnapshot => ({
   runtime,
   source: 'poll',
   observedAt: 1,
@@ -32,11 +32,16 @@ test('each subscription login is probed in its own home; a Kingdom pool and API 
       homes.push(['codex', home]);
       return undefined;
     },
+    muse: async (home: string | undefined) => {
+      homes.push(['muse', home]);
+      return snapshot('muse');
+    },
   };
   const limits = await providerLimits(
     [
       account('claude-code', 'login', '/Users/me/.claude'),
       account('codex', 'profile', '/Users/me/.foundry/codex-work'),
+      account('muse', 'login', '/Users/me/.config/muse'),
       account('gemini', 'api-key', 'GEMINI_API_KEY'),
     ],
     probes,
@@ -45,10 +50,12 @@ test('each subscription login is probed in its own home; a Kingdom pool and API 
   expect(homes).toEqual([
     ['claude', undefined],
     ['codex', '/Users/me/.foundry/codex-work'],
+    ['muse', undefined],
   ]);
   expect(limits).toEqual([
     { provider: 'claude-code', state: 'probed', snapshot: snapshot('claude') },
     { provider: 'codex', state: 'unavailable' },
+    { provider: 'muse', state: 'probed', snapshot: snapshot('muse') },
   ]);
 
   // A Kingdom pool's limits are Kingdom's; a fresh reading is reused, not probed again.

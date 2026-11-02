@@ -23,6 +23,7 @@ export type ProviderType =
   | 'gemini'
   | 'claude-code'
   | 'codex'
+  | 'muse'
   | 'xai'
   | 'typesafe'
   | 'custom';
@@ -210,6 +211,13 @@ const MUSE_REASONING: ModelReasoning = {
   fallback: 'medium',
   outputField: 'max_completion_tokens',
 };
+/** Muse Code's catalogue (`<muse data>/model-catalog`): the CLI sends `effort` on each turn, high by default.
+ * `minimal` is offered too; Foundry's effort ladder starts at low. */
+const MUSE_CODE_REASONING: ModelReasoning = {
+  param: 'reasoning_effort',
+  efforts: ['low', 'medium', 'high', 'xhigh', 'max'],
+  fallback: 'high',
+};
 
 export interface FoundryProviderInfo {
   id: string;
@@ -255,6 +263,7 @@ export const SUBSCRIPTION_DECISION_MODELS = {
 export const SUBSCRIPTION_WORKER_MODELS = {
   'claude-code': 'fable',
   codex: 'gpt-6-astra',
+  muse: 'muse-wonder-1.0',
 } as const;
 
 /** Tag rule: every model judges. Cheap models review and route; capable models execute and advise. */
@@ -741,6 +750,55 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
         runtimeKind: 'api',
         capabilities: FAST_REASONING,
         reasoning: GEMINI_REASONING,
+      },
+    ],
+  },
+  muse: {
+    id: 'muse',
+    lab: 'meta',
+    type: 'muse',
+    label: 'Muse Code (Meta subscription)',
+    description:
+      "Native Muse Code harness (`muse serve`) using the user's own Muse login. Separate from Meta's pay-as-you-go Model API.",
+    credential: 'subscription',
+    // Off until the user turns on Meta's subscription mode: few machines have Muse Code signed in.
+    enabledByDefault: false,
+    models: [
+      // From the Muse Code 1.4.14 catalogue a Muse Code Everyday Usage login is served
+      // (`<muse data>/model-catalog`, 2026-11-01). The -contributor ids are hidden there and not listed.
+      {
+        id: 'muse-wonder-1.0',
+        label: 'Muse Wonder 1.0',
+        tier: 'powerful',
+        costTier: 'high',
+        contextWindow: 1_007_997,
+        maxOutputTokens: 128_000,
+        runtimeKind: 'native-harness',
+        capabilities: POWERFUL_REASONING,
+        reasoning: MUSE_CODE_REASONING,
+        notes: 'The Muse Code default.',
+      },
+      {
+        id: 'muse-spark-1.3',
+        label: 'Muse Spark 1.3',
+        tier: 'powerful',
+        costTier: 'high',
+        contextWindow: 1_007_997,
+        maxOutputTokens: 128_000,
+        runtimeKind: 'native-harness',
+        capabilities: POWERFUL_REASONING,
+        reasoning: MUSE_CODE_REASONING,
+      },
+      {
+        id: 'muse-spark-1.2',
+        label: 'Muse Spark 1.2',
+        tier: 'powerful',
+        costTier: 'high',
+        contextWindow: 1_007_997,
+        maxOutputTokens: 128_000,
+        runtimeKind: 'native-harness',
+        capabilities: POWERFUL_REASONING,
+        reasoning: { ...MUSE_CODE_REASONING, efforts: ['low', 'medium', 'high', 'xhigh'] },
       },
     ],
   },
@@ -1692,7 +1750,7 @@ export const MODEL_VENDORS: readonly ModelVendor[] = [
     id: 'meta',
     label: 'Meta (Muse)',
     lab: 'meta',
-    subscription: { comingSoon: true },
+    subscription: { provider: 'muse' },
     api: { provider: 'meta' },
   },
   {

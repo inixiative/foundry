@@ -31,6 +31,7 @@ import {
   type NativeAuthenticationLaunch,
   type NativeAuthenticationProvider,
   type NativeLimitSnapshot,
+  type NativeRuntime,
   withoutCompetingCredentials,
 } from './native-authentication';
 import { assertPrivateProfile } from './private-profile';
@@ -252,6 +253,16 @@ export class KingdomSubscriptionAuthentication implements NativeAuthenticationPr
   }
 }
 
+/** Kingdom pools hold Claude and Codex logins; a Muse Code login in a pool waits on its own ticket. */
+const POOLED: ReadonlySet<NativeRuntime> = new Set(['claude', 'codex']);
+const pooled = (runtime: NativeRuntime): Runtime => {
+  if (!POOLED.has(runtime))
+    throw Error(
+      `This project runs on its Kingdom pool, which holds no ${runtime === 'muse' ? 'Muse Code' : runtime} logins yet; no local login is used. Run this thread in a project on this machine's capacity.`,
+    );
+  return runtime as Runtime;
+};
+
 /** Routes each thread to its project's capacity: this machine's login (`local`) or a Kingdom pool. */
 export class ProjectCapacityAuthentication implements NativeAuthenticationProvider {
   constructor(
@@ -261,22 +272,23 @@ export class ProjectCapacityAuthentication implements NativeAuthenticationProvid
       local?: NativeAuthenticationProvider;
     },
   ) {}
-  bindingId(threadId: string, runtime: Runtime): string {
+  bindingId(threadId: string, runtime: NativeRuntime): string {
     if (this.options.usesKingdom(threadId))
-      return this.options.kingdom.bindingId(threadId, runtime);
+      return this.options.kingdom.bindingId(threadId, pooled(runtime));
     return this.options.local?.bindingId(threadId, runtime) ?? threadId;
   }
-  async resolveBindingId(threadId: string, runtime: Runtime): Promise<string> {
+  async resolveBindingId(threadId: string, runtime: NativeRuntime): Promise<string> {
     if (this.options.usesKingdom(threadId))
-      return this.options.kingdom.resolveBindingId(threadId, runtime);
+      return this.options.kingdom.resolveBindingId(threadId, pooled(runtime));
     const local = this.options.local;
     if (!local) return threadId;
     return (
       (await local.resolveBindingId?.(threadId, runtime)) ?? local.bindingId(threadId, runtime)
     );
   }
-  async prepare(threadId: string, runtime: Runtime): Promise<NativeAuthenticationLaunch> {
-    if (this.options.usesKingdom(threadId)) return this.options.kingdom.prepare(threadId, runtime);
+  async prepare(threadId: string, runtime: NativeRuntime): Promise<NativeAuthenticationLaunch> {
+    if (this.options.usesKingdom(threadId))
+      return this.options.kingdom.prepare(threadId, pooled(runtime));
     if (this.options.local) return this.options.local.prepare(threadId, runtime);
     return Object.freeze({
       bindingId: threadId,
