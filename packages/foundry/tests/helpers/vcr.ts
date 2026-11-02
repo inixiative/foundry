@@ -254,19 +254,26 @@ async function* lines(stream: ReadableStream<Uint8Array>): AsyncIterable<string>
   for await (const chunk of stream) yield decoder.decode(chunk, { stream: true });
 }
 
-/** `muse usage --json` names the plan and its windows; keep only the tier Foundry reads (signed in or not). */
+/**
+ * `muse usage --json` names the plan and its windows; keep only what Foundry reads (signed in or not):
+ * the tier, or Meta's reason when a new window has no usage yet (it says nothing about the account).
+ */
 export const museTierOnly = (frames: Frame[]): Frame[] => {
   const stdout = frames
     .filter((frame) => frame.stream === 'stdout')
     .map((frame) => frame.data)
     .join('\n');
   try {
-    const tier = (JSON.parse(stdout) as { allowance?: { tier?: unknown } }).allowance?.tier;
+    const usage = JSON.parse(stdout) as { allowance?: { tier?: unknown }; reason?: unknown };
+    const tier = usage.allowance?.tier;
     return [
       {
         after: 0,
         stream: 'stdout',
-        data: JSON.stringify({ allowance: typeof tier === 'string' ? { tier } : null }),
+        data: JSON.stringify({
+          allowance: typeof tier === 'string' ? { tier } : null,
+          ...(usage.reason === 'server_sent_no_usage' ? { reason: usage.reason } : {}),
+        }),
       },
     ];
   } catch {
