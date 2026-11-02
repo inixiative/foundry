@@ -551,18 +551,24 @@ test('the upgrade is authorized like HTTP: loopback, or the tunnel credential, a
 
   const token = 't'.repeat(48);
   const tunneled = fixture({ tunnelToken: token });
+  // This machine opens the socket directly; tunnel traffic carries a public Host.
   expect(
-    (await tunneled.viewer.fetch(new Request('http://127.0.0.1/ws'), fakeServer))!.status,
+    await tunneled.viewer.fetch(new Request('http://127.0.0.1/ws'), fakeServer),
+  ).toBeUndefined();
+  expect(
+    (await tunneled.viewer.fetch(new Request('https://foundry-x.loca.lt/ws'), fakeServer))!.status,
   ).toBe(401);
   expect(
     (await tunneled.viewer.fetch(
-      new Request('http://127.0.0.1/ws', { headers: { authorization: 'Bearer wrong' } }),
+      new Request('https://foundry-x.loca.lt/ws', { headers: { authorization: 'Bearer wrong' } }),
       fakeServer,
     ))!.status,
   ).toBe(401);
   expect(
     await tunneled.viewer.fetch(
-      new Request('http://127.0.0.1/ws', { headers: { authorization: `Bearer ${token}` } }),
+      new Request('https://foundry-x.loca.lt/ws', {
+        headers: { authorization: `Bearer ${token}` },
+      }),
       fakeServer,
     ),
   ).toBeUndefined();
