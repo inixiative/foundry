@@ -15,6 +15,7 @@
 import { AboutSection } from './about-settings.js';
 import { AccessSettings } from './access-settings.js';
 import { ArchiveSettings, ProjectArchive } from './archive-settings.js';
+import { ComingSoon } from './coming-soon.js';
 import { ProjectConversations } from './conversation-members.js';
 import { devMode, setDevMode } from './dev-mode.js';
 import { DevicesSection } from './devices.js';
@@ -25,6 +26,7 @@ import { KingdomSettings } from './kingdom-settings.js';
 import { html, signal, useCallback, useEffect, useState } from './lib.js';
 import { MessageBoxSection } from './message-box.js';
 import { ProfileSection } from './profile-settings.js';
+import { ChorusSwitch, ProjectOverrides, ProjectSources } from './project-setting-rows.js';
 import { ProvidersSection } from './provider-settings.js';
 import {
   FOUNDRY_SETTINGS,
@@ -36,6 +38,7 @@ import {
 } from './route.js';
 import { ActivitySection, AgentsSection, LayersSection } from './runtime-panels.js';
 import { SelfChatPane } from './self-chat.js';
+import { SettingRow } from './setting-row.js';
 import { authFetch, modelRegistry, projects, showToast } from './store.js';
 import { Switch } from './switch.js';
 import { ProjectAgent, ProjectWork, ThreadSettings } from './thread-settings.js';
@@ -592,14 +595,6 @@ const saved = (next) => {
   settingsConfig.value = next;
 };
 
-/** A section that exists but is not built yet: it says so, and shows no controls. */
-function ComingSoon({ children }) {
-  return html`<section class="settings-card coming-soon-card">
-    <span class="coming-soon">Coming soon</span>
-    <p class="settings-desc">${children}</p>
-  </section>`;
-}
-
 function FoundrySection({ section, config }) {
   const projectList = Object.entries(config.projects ?? {}).map(([id, p]) => ({
     id,
@@ -667,7 +662,8 @@ function ProjectSection({ section, projectId, project, onFocusChange }) {
         why="Where your sessions are archived is yours; each teammate connects their own" />
       <${ProjectArchive} key=${projectId} projectId=${projectId} />`;
   if (section === 'gloss')
-    return html`<${ComingSoon}>Gloss: margin commentary kept beside the code instead of in it, for this project's agents to read. It arrives with Foundry's code viewer (ticket VIEWER-004).</${ComingSoon}>`;
+    return html`<${ComingSoon} card=${true} ticket="VIEWER-004"
+      what="Gloss: margin commentary kept beside the code instead of in it, for this project's agents to read. It arrives with Foundry's code viewer." />`;
   if (section === 'chorus')
     return html`<${ChorusSwitch} key=${`switch-${projectId}`} projectId=${projectId}
         onSaved=${async () => {

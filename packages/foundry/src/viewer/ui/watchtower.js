@@ -10,7 +10,7 @@
  * branch, linked PRs, shared conversation); nothing records "aligned", so that column stays empty.
  */
 
-import { ComingSoon } from './coming-soon.js';
+import { ComingSoon, ticketUrl } from './coming-soon.js';
 import { otherMachines } from './device-page.js';
 import { FilterChips, passesChips } from './filter-chips.js';
 import { html, useEffect, useState } from './lib.js';
@@ -210,7 +210,7 @@ export function Watchtower() {
       <span class="wt-counts" role="group" aria-label="Counts">
         <button type="button" class="wt-count" aria-pressed=${scope === 'mine'} onClick=${() => setScope(scope === 'mine' ? 'everyone' : 'mine')}><b>${involve}</b> involve you</button>
         <button type="button" class="wt-count is-red" aria-pressed=${blockedOnly} onClick=${() => setBlockedOnly(!blockedOnly)}><b>${blocked.length}</b> blocked (${blocked.filter((i) => i.mine).length} on you)</button>
-        <span class="wt-count is-soon" title="Two pieces of work touching the same files: the Heralds find them (AGENT-001)">collisions · coming soon</span>
+        <a class="wt-count is-soon" href=${ticketUrl('AGENT-001')} target="_blank" rel="noreferrer" title="Two pieces of work touching the same files, found by the Heralds">collisions · coming soon</a>
         <span class="wt-count is-dim"><b>${activeMachines}</b> of ${knownMachines.size} machine${knownMachines.size === 1 ? '' : 's'} active</span>
       </span>
       <span class="wt-head-spacer"></span>

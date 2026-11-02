@@ -181,7 +181,7 @@ export function DevicesSection({ projectIds, kingdomPaired }) {
       <${LocalDevicePanel} projectIds=${projectIds} />
       ${
         kingdomPaired
-          ? html`<${ComingSoon} what="Peers: your other machines paired with the same Kingdom, each with its projects and quota. Foundry doesn't read them from Kingdom yet." />`
+          ? html`<${ComingSoon} what="Peers: your other machines, each with its projects and quota." />`
           : html`<p class="settings-desc">Peers: pair a Kingdom to see your other machines.</p>`
       }
     </section>

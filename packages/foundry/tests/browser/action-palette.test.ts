@@ -80,7 +80,7 @@ test('"/" in an empty box opens the actions palette; it filters, runs, and names
     );
     await page.keyboard.type('revert');
     await page.keyboard.press('Enter');
-    await page.locator('.toast', { hasText: 'CORE-004' }).waitFor();
+    await page.locator('.toast', { hasText: 'rewind the conversation and its files' }).waitFor();
     expect(await palette.count()).toBe(1);
     await page.keyboard.press('Escape');
     expect(await palette.count()).toBe(0);
