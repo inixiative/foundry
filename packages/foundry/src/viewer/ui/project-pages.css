@@ -246,3 +246,48 @@
 .kreading {
   margin: 4px 0;
 }
+
+/* A machine's page (device-page.js) reuses the project home's boxes; its rows also name the project. */
+.device-page .ph-row {
+  grid-template-columns: 16px 1fr auto auto;
+}
+.ph-row-who {
+  font-size: 12px;
+  color: hsl(var(--muted-foreground));
+}
+.device-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.device-status i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: hsl(var(--muted-foreground));
+}
+.device-status.is-on i {
+  background: var(--ok);
+}
+
+/* The footer's machine name opens its page; other machines are rows with their open threads. */
+button.nav-footer-device {
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
+}
+button.nav-footer-device:hover,
+.nav-footer-other:hover .nav-footer-name {
+  color: var(--accent);
+}
+.nav-footer-others {
+  display: grid;
+  gap: 2px;
+}
+.nav-footer-others .coming-soon-note {
+  font-size: 11px;
+}
