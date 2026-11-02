@@ -186,7 +186,7 @@ export function withIsolatedFixture(argv: readonly string[], bridge: NativeBridg
 export const FOUNDRY_PLUGIN_DIR = fileURLToPath(new URL('../plugin', import.meta.url));
 
 /**
- * A main thread's Claude loads Foundry's skills (plan, threads, conversations, context, running) as a
+ * A main thread's Claude loads Foundry's skills (plan, loop, threads, heralds, steering, conversations, context, running) as a
  * session-only plugin (`--plugin-dir`): nothing is written into the user's home or the repository,
  * and the user's own skills and commands still load beside them (CORE-003).
  */

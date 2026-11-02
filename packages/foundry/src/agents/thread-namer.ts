@@ -136,7 +136,7 @@ type State = {
  * (`messageSent`), refreshed after completed turns (`turnCompleted`), then
  * re-checked once it has gone quiet, at most every `minIntervalMs` and `minTurns`; the decision
  * keeps the name unless the work moved, and a near-identical rename is dropped. A person's
- * name (`meta.name`) stops all of it. Runs off the turn path, at review priority.
+ * name (`meta.name`), or one the thread's agent gave (`rename_thread`), stops all of it. Runs off the turn path, at review priority.
  */
 export class ThreadNamer {
   private readonly states = new WeakMap<Thread, State>();
@@ -164,7 +164,14 @@ export class ThreadNamer {
   /** The refresh trigger: a turn on `thread` completed with this exchange. A turn whose message names
    * no work (a greeting) is skipped: the name waits for a turn that does. */
   turnCompleted(thread: Thread, exchange: { user: string; agent: string }): void {
-    if (thread.disposed || thread.meta.name || !hasWorkContent(exchange.user)) return;
+    // A name the person or the thread's agent gave outranks Foundry's own.
+    if (
+      thread.disposed ||
+      thread.meta.name ||
+      thread.meta.foundryName?.by === 'agent' ||
+      !hasWorkContent(exchange.user)
+    )
+      return;
     const state = this.states.get(thread) ?? { turns: 0, asked: [], replies: [], running: false };
     this.states.set(thread, state);
     state.turns++;
@@ -189,7 +196,13 @@ export class ThreadNamer {
   }
 
   private async decide(thread: Thread, state: State): Promise<void> {
-    if (state.running || thread.disposed || thread.meta.name) return;
+    if (
+      state.running ||
+      thread.disposed ||
+      thread.meta.name ||
+      thread.meta.foundryName?.by === 'agent'
+    )
+      return;
     state.running = true;
     const current = thread.meta.foundryName;
     const context = thread.meta.context;

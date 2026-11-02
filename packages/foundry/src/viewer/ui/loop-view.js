@@ -8,8 +8,8 @@
  *
  * A strip across the top places the thread on plan → build → review → land, from what is recorded
  * (a task list = planned; turns ran = building; guards ran or a pull request is linked = in review;
- * closed = landed). Below it, today's graph panel: the thread tree, each turn's flow and the learning
- * loop.
+ * closed = landed). Then the agent's recorded loop (its goal, steps, stop check and rounds). Below
+ * it, today's graph panel: the thread tree, each turn's flow and the learning loop.
  */
 import { GraphPanel, useFlowStream } from './graph-view.js';
 import { html, useState } from './lib.js';
@@ -88,6 +88,43 @@ function Pointers({ threadId }) {
   </section>`;
 }
 
+const ROUND_MARK = { pass: '✓', fail: '✗', partial: '◐' };
+const LOOP_STATE = { running: 'Running', done: 'Done', stopped: 'Stopped' };
+
+/** The agent's loop (set_loop / loop_round / stop_loop): its goal, one round's steps, the stop check, each round. */
+export function RecordedLoop({ loop }) {
+  if (!loop)
+    return html`<section class="loop-record loop-record--empty" aria-label="The loop">
+      <div class="rp-empty">No loop recorded. For work that takes several rounds of build, check and fix,
+        the agent records its loop here (goal, steps, the check that ends it, and each round).
+        Curated loops you can reuse are coming soon.</div>
+    </section>`;
+  const rounds = loop.rounds ?? [];
+  return html`<section class="loop-record" aria-label="The loop" data-state=${loop.state}>
+    <header class="plan-section-head">
+      <h3>${loop.goal}</h3>
+      <small>${LOOP_STATE[loop.state] ?? loop.state} · ${rounds.length}${loop.maxRounds ? ` of ${loop.maxRounds}` : ''} round${rounds.length === 1 ? '' : 's'}</small>
+    </header>
+    <ol class="loop-steps">${(loop.steps ?? []).map(
+      (step, i) =>
+        html`<li key=${i}><b>${step.text}</b>${step.detail ? html`<small>${step.detail}</small>` : null}</li>`,
+    )}</ol>
+    <div class="loop-until"><span class="plan-label">Until</span> ${loop.until}</div>
+    ${
+      rounds.length
+        ? html`<ul class="loop-rounds">${rounds.map(
+            (r) => html`<li key=${r.round} class="loop-round r-${r.result}">
+              <span class="loop-round-mark" title=${r.result}>${ROUND_MARK[r.result] ?? ''}</span>
+              <span class="loop-round-n">Round ${r.round}</span>
+              <span class="loop-round-note">${r.note}</span>
+            </li>`,
+          )}</ul>`
+        : null
+    }
+    ${loop.stopReason ? html`<div class="loop-stop"><span class="plan-label">${loop.state === 'done' ? 'Done' : 'Stopped'}</span> ${loop.stopReason}</div>` : null}
+  </section>`;
+}
+
 export function LoopView({ onLayerClick }) {
   // From the thread's own fields: the flow stream is held only while a turn graph is shown.
   const data = threadData.value;
@@ -97,6 +134,7 @@ export function LoopView({ onLayerClick }) {
     <${LifecycleStrip}
       turns=${last ? [{ status: last.status === 'running' ? 'active' : last.status }] : []}
       meta=${data?.meta} />
+    <${RecordedLoop} loop=${data?.meta?.loop} />
     <div class="loop-graph"><${GraphPanel} onLayerClick=${onLayerClick} /></div>
     <${Pointers} threadId=${activeThreadId.value} />
   </div>`;

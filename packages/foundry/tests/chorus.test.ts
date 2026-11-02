@@ -1,5 +1,6 @@
 // A project's chorus (`projects[id].chorus`): its Wardens generated from layers of concept regions, each
 // Warden's knowledge the region's knowledge.md in full, under the classifier charter, with a warm-cache key.
+
 import { afterEach, expect, test } from 'bun:test';
 import {
   chmodSync,
@@ -22,7 +23,11 @@ import {
   SignalBus,
   segmentsText,
 } from '@inixiative/foundry-core';
-import { CHORUS_RECEPTION, CHORUS_RECEPTION_LAYER } from '../src/agents/chorus-reception';
+import {
+  CHORUS_RECEPTION,
+  CHORUS_RECEPTION_LAYER,
+  PLAN_ASK_NOTE,
+} from '../src/agents/chorus-reception';
 import { configuredExperts, largestRoster } from '../src/agents/configured-experts';
 import { DomainLibrarian, oneCall } from '../src/agents/domain-librarian';
 import {
@@ -933,7 +938,9 @@ test('region Wardens run under the Warden charter, and their pointer reaches the
     .at(-1)!
     .messages.filter((m) => m.role === 'user')
     .at(-1)!.content;
-  expect(user).toEndWith(`The concurrency-locks Warden chimed in:\n- ${pointer}`);
+  expect(user).toEndWith(
+    `The concurrency-locks Warden chimed in:\n- ${pointer}\n\n${PLAN_ASK_NOTE}`,
+  );
   expect(user).not.toContain('lens-model Warden chimed in');
   // The advice protocol: NO_COMMENT only when the moment touches nothing, whatever it says to build.
   expect(locksCall.messages[1]!.content).toContain(

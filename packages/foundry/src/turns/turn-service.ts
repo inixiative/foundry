@@ -24,6 +24,7 @@ import {
 } from '@inixiative/foundry-core';
 import type { ConversationMember } from '@inixiative/signet';
 import { memberPostReception } from '../agents/chorus-reception';
+import type { PlanDrafter } from '../agents/plan-drafter';
 import type { ThreadFactory } from '../agents/thread-factory';
 import type { ThreadNamer } from '../agents/thread-namer';
 import type { FeedbackService } from '../feedback/service';
@@ -52,6 +53,8 @@ export interface TurnServiceDeps {
   configStore: ConfigStore;
   deviceIdentityPath?: string;
   namer?: ThreadNamer;
+  /** Drafts a plan when a turn that brought work ends with none recorded. */
+  planDrafter?: PlanDrafter;
   /** The feedback lifecycle: reads each accepted turn; a blocking tuning prompt holds the turn. */
   feedback?: FeedbackService | null;
   /**
@@ -775,8 +778,10 @@ export class TurnService {
       // Foundry names an unnamed thread from the first message that names work, as it is sent.
       if (ownerTyped) this.deps.namer?.messageSent(thread, payload);
       // The next task starts: the last one's done state (a merge, a milestone) is over.
-      if (ownerTyped && thread.meta.done) {
+      // The agent's word on where it stood (needs-you, blocked) is answered by the owner's message too.
+      if (ownerTyped && (thread.meta.done || thread.meta.agentStatus)) {
         delete thread.meta.done;
+        delete thread.meta.agentStatus;
         this.deps.localStore?.saveThread(thread);
         this.deps.streams.threadsChanged(threadId);
       }
@@ -805,8 +810,10 @@ export class TurnService {
       this.publishTerminal(threadId, clientId, turnId, 'done', { threadId, ...completed });
       buffer.complete(completed);
       if (completed.meta.persistence !== 'failed') {
-        if (ownerTyped)
+        if (ownerTyped) {
           this.deps.namer?.turnCompleted(thread, { user: payload, agent: completed.content });
+          this.deps.planDrafter?.turnCompleted(thread, { user: payload, agent: completed.content });
+        }
       }
       return { kind: 'completed', completed, result };
     } catch (err) {

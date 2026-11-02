@@ -11,6 +11,7 @@ import {
   type LLMMessage,
   type LLMProvider,
 } from '@inixiative/foundry-core';
+import { PLAN_ASK_NOTE } from '../src/agents/chorus-reception';
 import { oneCall } from '../src/agents/domain-librarian';
 import { regionInstructions } from '../src/agents/region-roster';
 import { invalidateComposition } from '../src/agents/role-layers';
@@ -430,7 +431,10 @@ test("a Warden that chimes in is appended to the end of the user's message, not 
     const messages = f.last('central').messages;
     const user = messages.filter((m) => m.role === 'user').at(-1)!.content;
     expect(user).toStartWith('Add a script');
-    expect(user).toEndWith('The conventions Warden chimed in:\n- Use the existing script runner.');
+    // The Warden's chime, then Foundry's plan ask (a fresh thread with no plan).
+    expect(user).toEndWith(
+      `The conventions Warden chimed in:\n- Use the existing script runner.\n\n${PLAN_ASK_NOTE}`,
+    );
     const system = messages
       .filter((m) => m.role === 'system')
       .map((m) => m.content)

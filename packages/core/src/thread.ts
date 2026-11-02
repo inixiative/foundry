@@ -19,6 +19,8 @@ export type ThreadStatus = 'idle' | 'active' | 'waiting' | 'archived';
 export interface ThreadName {
   readonly text: string;
   readonly updatedAt: number;
+  /** A Foundry name the thread's agent gave (`rename_thread`): Foundry's namer leaves it alone. */
+  readonly by?: 'agent';
 }
 
 /** Tracked work a thread links to, in Archive's integration-reference shape (`github` `owner/repo#12`, `linear` `ENG-4`). */
@@ -84,7 +86,56 @@ export interface ThreadPlan {
     readonly path?: string;
     readonly reason: string;
   }[];
+  /**
+   * Who wrote it: the thread's agent (`set_plan`), or Foundry's draft when a turn that brought new
+   * work ended with no plan recorded. A draft is shown as one and the agent's next `set_plan`
+   * replaces it whole.
+   */
+  readonly draftedBy?: 'agent' | 'foundry';
   readonly updatedAt: number;
+}
+
+/** One round of a thread's loop: how it went and what it found. */
+export interface ThreadLoopRound {
+  readonly round: number;
+  readonly result: 'pass' | 'fail' | 'partial';
+  readonly note: string;
+  readonly at: number;
+}
+
+/**
+ * The thread's loop: the process the agent repeats to reach the plan's outcomes (Aron, 2026-11-01:
+ * "The plan is the goals that you want to achieve. The loop is the process you're doing to achieve
+ * them"). Recorded by the agent (`set_loop`, `loop_round`, `stop_loop`) for work that needs several
+ * rounds of build, check and fix; shown in the Loop tab.
+ */
+export interface ThreadLoop {
+  /** What the loop drives toward, in a line. */
+  readonly goal: string;
+  /** One round, in order: e.g. build, run the check, fix what failed. */
+  readonly steps: readonly ThreadPlanItem[];
+  /** When it stops: the check that passing means done. */
+  readonly until: string;
+  /** Rounds at most before the agent stops and asks. */
+  readonly maxRounds?: number;
+  readonly rounds: readonly ThreadLoopRound[];
+  /** `done`: the stop condition held. `stopped`: ended without it (the reason says why). */
+  readonly state: 'running' | 'done' | 'stopped';
+  readonly stopReason?: string;
+  readonly startedAt: number;
+  readonly updatedAt: number;
+}
+
+/**
+ * What the thread's agent says about where it stands, when Foundry can't see it: it waits on the
+ * person (an orange "the agent asks"), or it is blocked (red). Working, queued, failed, approvals
+ * and archived are Foundry's to know and never set here; done is `ThreadMeta.done`. Cleared by the
+ * owner's next message.
+ */
+export interface ThreadAgentStatus {
+  readonly state: 'needs-you' | 'blocked';
+  readonly text: string;
+  readonly at: number;
 }
 
 /** Where a thread runs: the Foundry device it was recorded on, and that Foundry's name then. */
@@ -122,9 +173,13 @@ export interface ThreadContext {
 /** The name a thread shows: a person's name overrides the one Foundry gives it. */
 export function threadTitle(
   meta: Pick<ThreadMeta, 'name' | 'foundryName' | 'description'>,
-): { text: string; source: 'human' | 'foundry' | 'description' } | undefined {
+): { text: string; source: 'human' | 'agent' | 'foundry' | 'description' } | undefined {
   if (meta.name?.text) return { text: meta.name.text, source: 'human' };
-  if (meta.foundryName?.text) return { text: meta.foundryName.text, source: 'foundry' };
+  if (meta.foundryName?.text)
+    return {
+      text: meta.foundryName.text,
+      source: meta.foundryName.by === 'agent' ? 'agent' : 'foundry',
+    };
   return meta.description ? { text: meta.description, source: 'description' } : undefined;
 }
 
@@ -184,6 +239,10 @@ export interface ThreadMeta {
 
   /** The agent's plan for the thread's work (`set_plan`, the Plan view): what, why, and how. */
   plan?: ThreadPlan;
+  /** The process the agent repeats to reach the plan (`set_loop`, the Loop view). */
+  loop?: ThreadLoop;
+  /** Where the agent says it stands: waiting on the person or blocked (`set_status`). */
+  agentStatus?: ThreadAgentStatus;
   /** The machine (Foundry device identity, `~/.foundry/device.json`) the thread runs on. */
   machine?: ThreadMachine;
 

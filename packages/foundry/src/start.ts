@@ -101,7 +101,11 @@ import { registerKingdomAccess } from './tools/kingdom-access';
 import { registerKingdomPost } from './tools/kingdom-post';
 import { MemoryToolAdapter } from './tools/memory-adapter';
 import { rtk as rtkFilter } from './tools/output-filters';
-import { PLAN_TOOL_DESCRIPTION, type ThreadPlans, ThreadPlanTool } from './tools/thread-plan';
+import {
+  THREAD_RECORD_TOOL_DESCRIPTION,
+  type ThreadRecords,
+  ThreadRecordTool,
+} from './tools/thread-record';
 import { journalHistory } from './turns/journal-history';
 import { lateBoundToolGate, type ThreadToolGate } from './turns/tool-gate';
 import {
@@ -563,9 +567,9 @@ let conversationService: ConversationService | null = null;
 // post and the plain-text controls must reach an unpaired one too.
 tools.register(new ConversationTool(() => conversationService), CONVERSATION_TOOL_DESCRIPTION);
 registerKingdomPost(tools, config.kingdomAccess ?? [], () => conversationService);
-// The thread's own plan (set_plan), recorded on its meta by the viewer once it exists.
-let threadPlans: ThreadPlans | null = null;
-tools.register(new ThreadPlanTool(() => threadPlans), PLAN_TOOL_DESCRIPTION);
+// The thread's own record (plan, loop, name, status), written on its meta by the viewer once it exists.
+let threadRecords: ThreadRecords | null = null;
+tools.register(new ThreadRecordTool(() => threadRecords), THREAD_RECORD_TOOL_DESCRIPTION);
 
 // Memory as a queryable tool (agents search on demand, not just passive layers)
 const memoryTool = MemoryToolAdapter.fromFileMemory(memory);
@@ -931,7 +935,7 @@ const viewer = await startViewer({
 toolGateFor = viewer.toolGate;
 journalStore = viewer.localStore;
 conversationService = viewer.conversations;
-threadPlans = viewer.plans;
+threadRecords = viewer.records;
 
 console.log(`Viewer: http://localhost:${viewer.server.port ?? port}`);
 if (acpLaunch) {

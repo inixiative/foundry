@@ -41,8 +41,8 @@ import {
 import { projectKingdom, threadName } from './thread-labels.js';
 import {
   categoryOf,
-  doneText,
   isClosedThread,
+  statusText,
   subagentParentOf,
   threadState,
 } from './thread-status.js';
@@ -79,7 +79,7 @@ function Card({ thread, state }) {
   return html`<article class="board-card" data-thread=${thread.threadId}>
     <div class="board-card-head">
       <${StatusIcon} state=${state} />
-      <span class="board-card-kind">${(state === 'done' && doneText(thread)) || (s?.kind ?? s?.label)}</span>
+      <span class="board-card-kind">${statusText(thread, state) || (s?.kind ?? s?.label)}</span>
       <span class="board-card-project">${project}</span>
       <${DeviceBadge} thread=${thread} />
     </div>

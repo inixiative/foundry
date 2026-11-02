@@ -1,6 +1,6 @@
 ---
 name: plan
-description: Use before starting any task that will edit files in a Foundry thread, and again when it changes and before handing back. Foundry's set_plan tool (mcp__foundry__set_plan) records the thread's plan (outcomes with status, pains, strategy, reasons, and technical rows naming the existing system used per concern) so the person sees it in the Plan tab; without it the Plan tab is empty.
+description: Use before starting any task that will edit files in a Foundry thread, again when it changes, and before handing back; also when Foundry adds "this thread has no plan yet" to a message. Covers set_plan (record or update the plan, mark to move one outcome), get_plan (read it back after a compaction), clear_plan, and Foundry's own drafts; the person sees the plan in the Plan tab.
 ---
 
 # The thread's plan (`set_plan`)
@@ -14,6 +14,8 @@ The Plan tab shows what this thread is doing and why. It reads only what you rec
 3. **Hand-back:** before you give the turn back, make the statuses true.
 
 Skip it for questions, one-line fixes and chat.
+
+When a message brings new work to a thread with no plan, Foundry adds a line to it: "Foundry: this thread has no plan yet…". That is the moment to call `set_plan`. If you don't, Foundry drafts a plan from the conversation after the turn (`draftedBy: 'foundry'`, shown as a draft); your first `set_plan` replaces the draft whole.
 
 ## What goes in
 
@@ -37,7 +39,14 @@ For each concern (auth, permissions, db access, requests, locks, jobs, events, e
 
 ## Sections replace, others stay
 
-Each section you give replaces that section; sections you leave out keep their last value. To move one outcome to `done`, send the whole `outcomes` list with the new status.
+Each section you give replaces that section; sections you leave out keep their last value. To move outcomes without resending the list, use `mark`: `{"mark": [{"outcome": "Board shows each thread's machine", "status": "done"}]}` (the outcome's exact text, or its number from 1). An outcome newly `done` shows the thread as done with that text, until the person's next message.
+
+## Read, clear
+
+- `get_plan`: what Foundry shows for this thread (name and who gave it, status, plan and whether Foundry drafted it, loop). Use it after a compaction or when resuming, before changing the plan.
+- `clear_plan`: the work the plan described was dropped. Record the new one with `set_plan`.
+
+Work that needs several rounds of build, check and fix also gets a loop (the `loop` skill): the plan is what you want, the loop is how you get there.
 
 ## Example
 
