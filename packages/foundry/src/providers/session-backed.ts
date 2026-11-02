@@ -43,7 +43,7 @@ function steerHandle(session: HarnessSession): NativeSteer {
     return { push: (text) => session.push({ kind: 'steer', text }) };
   return {
     reason: transport
-      ? `${TRANSPORT_NAMES[transport.kind] ?? transport.kind} can't take a message into a running turn`
+      ? `${TRANSPORT_NAMES[transport.kind] ?? transport.kind} can’t take a message into a running turn`
       : 'this runtime does not say it can take a message into a running turn',
   };
 }

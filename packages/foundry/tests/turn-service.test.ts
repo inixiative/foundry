@@ -54,7 +54,9 @@ function heldViewer() {
             },
           });
         if (String(payload).startsWith('unsteerable'))
-          observation?.steerable?.({ reason: 'Fake runtime can’t take a message into a running turn' });
+          observation?.steerable?.({
+            reason: 'Fake runtime can’t take a message into a running turn',
+          });
         await new Promise<void>((resolve) => gates.set(String(payload), resolve));
         if (String(payload).startsWith('native') && observation) {
           try {
@@ -467,7 +469,11 @@ test('⌘↵ queues (delivery: queue); "Steer now" then sends the queued message
 
   const steer = await v.steer('later');
   expect(steer.status).toBe(200);
-  expect(await steer.json()).toEqual({ steered: true, into: 'steerable-running', native: 'steered' });
+  expect(await steer.json()).toEqual({
+    steered: true,
+    into: 'steerable-running',
+    native: 'steered',
+  });
   expect(v.steers).toEqual(['later']);
   expect(v.viewer.localStore!.turn('later')?.status).toBe('steered');
   // No longer queued: it can be neither steered nor stopped again.
@@ -491,8 +497,9 @@ test('with steering off a send queues; a queued message can still be steered in'
   await v.send('steerable-running');
   await until(() => v.started.length === 1, 'running started');
   const sent = await v.send('waits');
-  expect(await sent.json()).toMatchObject({ status: 'accepted', queued: true });
-  expect((await sent.clone().json()).steer).toBeUndefined();
+  const body = (await sent.json()) as Record<string, unknown>;
+  expect(body).toMatchObject({ status: 'accepted', queued: true });
+  expect(body.steer).toBeUndefined();
   expect(v.steers).toEqual([]);
   expect(await (await v.steer('waits')).json()).toMatchObject({ steered: true });
   expect(v.steers).toEqual(['waits']);
@@ -514,9 +521,9 @@ test('a runtime that can’t steer: the message queues with the reason, "Steer n
     reason: 'Fake runtime can’t take a message into a running turn',
   });
   // The running turn's live projection says so too, for the viewer's hint and button.
-  expect(v.client.data('thread:main').some((f) => f.payload?.turn?.steer?.available === false)).toBe(
-    true,
-  );
+  expect(
+    v.client.data('thread:main').some((f) => f.payload?.turn?.steer?.available === false),
+  ).toBe(true);
   v.release('unsteerable-running');
   await v.terminal('unsteerable-running');
   await until(() => v.started.length === 2, 'queued turn runs next');
@@ -552,4 +559,59 @@ test('a running turn that hasn’t reached its runtime yet, or whose runtime ref
   await until(() => v.started.length === 4, 'refused runs as its own turn');
   v.release('refused');
   expect((await v.terminal('refused')).type).toBe('done');
+});
+
+test('through the native provider: a send during a dispatched turn steers into its session', async () => {
+  const dir = await mkdtemp(resolve('.foundry/qa/turn-steer-'));
+  const f = await liveWatchFixture(dir);
+  try {
+    const first = f.send('native-running');
+    expect((await first.response).status).toBe(202);
+    await until(
+      () => f.attempts.length === 1 && f.attempts[0].native.dispatch === 'attempted',
+      'dispatched',
+    );
+    const second = f.send('native-steer', true, { message: 'Also check the tests' });
+    expect(await (await second.response).json()).toMatchObject({
+      status: 'steered',
+      steer: { steered: true, into: 'native-running', native: 'steered' },
+    });
+    expect(await second.done).toMatchObject({ type: 'steered', into: 'native-running' });
+    expect(f.pushes).toEqual(['Also check the tests']);
+    f.attempts[0].finish();
+    expect(await first.done).toMatchObject({ type: 'done', content: 'FINAL_ONLY' });
+    // One native turn: the steer opened none of its own.
+    expect(f.attempts).toHaveLength(1);
+    expect(f.viewer.localStore!.turn('native-steer')?.status).toBe('steered');
+  } finally {
+    await f.close();
+  }
+});
+
+test('through the native provider: a transport that can’t steer queues the send, saying so', async () => {
+  const dir = await mkdtemp(resolve('.foundry/qa/turn-steer-'));
+  const f = await liveWatchFixture(dir, { push: 'none' });
+  try {
+    const first = f.send('native-running');
+    await until(
+      () => f.attempts.length === 1 && f.attempts[0].native.dispatch === 'attempted',
+      'dispatched',
+    );
+    const second = f.send('native-queued');
+    expect(await (await second.response).json()).toMatchObject({
+      queued: true,
+      steer: {
+        steered: false,
+        reason: 'Claude through the Agent SDK can’t take a message into a running turn',
+      },
+    });
+    expect(f.pushes).toEqual([]);
+    f.attempts[0].finish();
+    await first.done;
+    await until(() => f.attempts.length === 2, 'queued turn runs as its own');
+    f.attempts[1].finish();
+    expect(await second.done).toMatchObject({ type: 'done' });
+  } finally {
+    await f.close();
+  }
 });

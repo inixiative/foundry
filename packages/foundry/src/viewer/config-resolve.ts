@@ -849,13 +849,13 @@ export function readRepositorySettings(projectPath: string):
 }
 
 /**
- * "Set for everyone": write one repository setting (`chorus` or `conversations`) into the project's
+ * "Set for everyone": write one repository setting (`chorus`, `conversations` or `steer`) into the project's
  * committed `.foundry/project.json`, keeping its other keys; `null` removes it. The file is
  * team-shared (0644) and replaced whole. Refuses when the file on disk is not a valid settings file.
  */
 export function writeRepositorySetting(
   projectPath: string,
-  key: 'chorus' | 'conversations',
+  key: 'chorus' | 'conversations' | 'steer',
   value: unknown,
 ): void {
   const file = join(projectPath, REPOSITORY_SETTINGS_FILE);

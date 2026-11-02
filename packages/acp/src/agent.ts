@@ -41,6 +41,7 @@ import {
   type ModeId,
   modeState,
   replayHistory,
+  type SteerChoice,
 } from './session-state';
 import { toolKind, toolLocations, toolTitle } from './tools';
 import { TurnFailedError, TurnProjection } from './turn';
@@ -80,6 +81,8 @@ interface Session {
   readonly connecting: Set<{ cancelled: boolean }>;
   /** Launch changes reach the daemon one at a time, in order, so a re-apply never overwrites a newer choice. */
   launching: Promise<unknown>;
+  /** The host's `steer` config option for this session; absent, the thread's setting decides. */
+  steer?: SteerChoice;
 }
 
 const PERMISSION_OPTIONS: PermissionOption[] = [
@@ -346,6 +349,10 @@ export function createFoundryAgent(options: FoundryAgentOptions = {}) {
         if (frame.kind === 'delta') return forTurn(frame.turnId)?.delta(frame.text);
         if (frame.kind === 'activity')
           return forTurn(frame.turnId)?.activity(frame.row, frame.appended);
+        if (frame.kind === 'steered')
+          return forTurn(frame.turnId)?.steeredInto(
+            forTurn(typeof frame.result.into === 'string' ? frame.result.into : ''),
+          );
         forTurn(frame.turnId)?.terminal(frame.kind, frame.result);
       },
       rejected: () => {
@@ -415,7 +422,7 @@ export function createFoundryAgent(options: FoundryAgentOptions = {}) {
         send(session, { sessionUpdate: 'available_commands_update', availableCommands: COMMANDS }),
       0,
     );
-    return { modes: modeState(view), configOptions: configOptions(view) };
+    return { modes: modeState(view), configOptions: configOptions(view, session.steer) };
   };
 
   // Outstanding `session/request_permission` calls by prompt id; aborted when someone else answers.
@@ -847,7 +854,10 @@ export function createFoundryAgent(options: FoundryAgentOptions = {}) {
         currentModeId: modeState(view).currentModeId,
       });
       // The `mode` config option shows the same mode.
-      send(session, { sessionUpdate: 'config_option_update', configOptions: configOptions(view) });
+      send(session, {
+        sessionUpdate: 'config_option_update',
+        configOptions: configOptions(view, session.steer),
+      });
       return {};
     })
     .onRequest('session/set_config_option', async (ctx) => {
@@ -861,12 +871,21 @@ export function createFoundryAgent(options: FoundryAgentOptions = {}) {
       const configId = ctx.params.configId;
       if (configId === 'mode' && !isModeId(value))
         throw RequestError.invalidParams({ configId, value }, 'Unknown mode');
+      // Steering is the host's choice for this session's prompts (CORE-001), not a launch setting.
+      if (configId === 'steer') {
+        if (value !== 'steer' && value !== 'queue')
+          throw RequestError.invalidParams({ configId, value }, 'Expected steer or queue');
+        session.steer = value;
+        const foundry = await ensureDaemon().catch(httpError);
+        const view = await foundry.http.launch(session.threadId).catch(httpError);
+        return { configOptions: configOptions(view, session.steer) };
+      }
       // The worker is the thread's, not a launch setting: chosen before its first turn (409 after).
       if (configId === 'worker') {
         const foundry = await ensureDaemon().catch(httpError);
         await foundry.http.updateThread(session.threadId, { worker: value }).catch(httpError);
         const view = await foundry.http.launch(session.threadId).catch(httpError);
-        return { configOptions: configOptions(view) };
+        return { configOptions: configOptions(view, session.steer) };
       }
       const patch: ThreadLaunchPatch =
         configId === 'mode'
@@ -885,7 +904,7 @@ export function createFoundryAgent(options: FoundryAgentOptions = {}) {
           sessionUpdate: 'current_mode_update',
           currentModeId: modeState(view).currentModeId,
         });
-      return { configOptions: configOptions(view) };
+      return { configOptions: configOptions(view, session.steer) };
     })
     .onRequest('session/prompt', async (ctx): Promise<{ stopReason: StopReason }> => {
       const session = sessionFor(ctx.params.sessionId);
@@ -944,8 +963,11 @@ export function createFoundryAgent(options: FoundryAgentOptions = {}) {
             message: text,
             clientId: foundry.streams.clientId,
             ...(images.length ? { images: images.map((image) => image.id) } : {}),
+            ...(session.steer ? { delivery: session.steer } : {}),
           });
           turn.accepted = true;
+          // Steered into the running turn: this prompt is answered when that turn ends.
+          if (sent.steer?.steered) turn.steeredInto(session.turns.get(sent.steer.into));
           if (sent.settingUp) turn.settingUp();
           // A cancel that arrived while the send was in flight could not name an accepted turn.
           if (turn.cancelRequested)

@@ -73,3 +73,46 @@ test('a project patch refuses an empty label, an unknown status, an empty body a
     expect((await f.request(`/api/projects/${id}`, body, 'PATCH')).status).toBe(400);
   expect((await f.request('/api/projects/proj_missing', { label: 'x' }, 'PATCH')).status).toBe(404);
 });
+
+test('a project’s steer setting (CORE-001): yours over the repository’s over Foundry’s, on by default', async () => {
+  const f = fixture();
+  const repo = mkdtempSync(join(tmpdir(), 'foundry-steer-repo-'));
+  dirs.push(repo);
+  const created = await f.request('/api/projects', { path: repo, label: 'Steer' });
+  const id = created.body.id as string;
+  const steer = async () => (await f.request(`/api/projects/${id}/steer`)).body;
+  expect(await steer()).toMatchObject({
+    steer: true,
+    from: 'default',
+    mine: null,
+    repository: null,
+  });
+
+  // Foundry-wide off: the project follows it.
+  expect((await f.request('/api/settings/threads', { steer: false }, 'PATCH')).status).toBe(200);
+  expect(await steer()).toMatchObject({ steer: false, from: 'foundry', foundry: false });
+
+  // For everyone: the repository's committed file.
+  expect(
+    (await f.request(`/api/projects/${id}/steer`, { scope: 'everyone', value: true }, 'PUT'))
+      .status,
+  ).toBe(200);
+  expect(JSON.parse(readFileSync(join(repo, '.foundry/project.json'), 'utf8'))).toEqual({
+    steer: true,
+  });
+  expect(await steer()).toMatchObject({ steer: true, from: 'repository', repository: true });
+
+  // For me: this machine's project settings win.
+  await f.request(`/api/projects/${id}/steer`, { scope: 'me', value: false }, 'PUT');
+  expect(f.saved(id).steer).toBe(false);
+  expect(await steer()).toMatchObject({ steer: false, from: 'settings', mine: false });
+  await f.request(`/api/projects/${id}/steer`, { scope: 'me', value: null }, 'PUT');
+  expect(await steer()).toMatchObject({ steer: true, from: 'repository', mine: null });
+
+  expect(
+    (await f.request(`/api/projects/${id}/steer`, { scope: 'team', value: true }, 'PUT')).status,
+  ).toBe(400);
+  expect(
+    (await f.request(`/api/projects/${id}/steer`, { scope: 'me', value: 'yes' }, 'PUT')).status,
+  ).toBe(400);
+});

@@ -45,7 +45,13 @@ export function modeState(view: ThreadLaunchView): SessionModeState {
 }
 
 /** The mode again as a `mode` config option, for hosts that drive modes through config options. */
-export function configOptions(view: ThreadLaunchView): SessionConfigOption[] {
+/**
+ * `steer` (CORE-001): what this host's prompt does when it arrives while a turn runs. Absent, the
+ * thread's `steer` setting decides (on by default); the host's choice holds for this session.
+ */
+export type SteerChoice = 'steer' | 'queue';
+
+export function configOptions(view: ThreadLaunchView, steer?: SteerChoice): SessionConfigOption[] {
   const models = view.options.models.map((model) => ({ value: model.id, name: model.label }));
   if (!models.some((model) => model.value === view.model))
     models.unshift({ value: view.model, name: view.model });
@@ -88,6 +94,17 @@ export function configOptions(view: ThreadLaunchView): SessionConfigOption[] {
       options: [
         { value: 'default', name: 'Default' },
         ...view.options.efforts.map((effort) => ({ value: effort, name: effort })),
+      ],
+    },
+    {
+      id: 'steer',
+      name: 'Prompt during a turn',
+      category: '_steer',
+      type: 'select',
+      currentValue: steer ?? (view.steer ? 'steer' : 'queue'),
+      options: [
+        { value: 'steer', name: 'Steer it into the turn' },
+        { value: 'queue', name: 'Queue it after' },
       ],
     },
   ];
