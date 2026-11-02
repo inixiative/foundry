@@ -199,3 +199,106 @@ test('Search: its own page, settings and docs first, preview, open a setting, Es
     await releaseAll(cleanup);
   }
 }, 60_000);
+
+// A message found in the Archive opens its Foundry thread. Another harness's session says plainly
+// it isn't a Foundry thread, and a hit from an older Archive (no session named) shows without Open.
+test('Search: a message opens its Foundry thread; other sessions say what they are', async () => {
+  const cleanup: ReleaseStep[] = [];
+  const dir = mkdtempSync(join(tmpdir(), 'foundry-search-messages-'));
+  cleanup.push(['dir', () => rmSync(dir, { recursive: true, force: true })]);
+  try {
+    const projects = new ProjectRegistry();
+    const shop = projects.register({
+      id: 'shop',
+      label: 'acme-shop',
+      path: join(dir, 'shop'),
+      tags: [],
+      runtime: 'claude-code',
+    });
+    shop.addThread(
+      new Thread('shop-1', new ContextStack(), {
+        description: 'Cap checkout retries',
+        projectId: 'shop',
+      }),
+    );
+    shop.addThread(
+      new Thread('shop-2', new ContextStack(), { description: 'Refund drift', projectId: 'shop' }),
+    );
+    const configStore = new ConfigStore(dir);
+    const config = starterConfig('controlled', 'controlled');
+    config.agents = defaultAgents();
+    config.setupComplete = true;
+    await configStore.save(config);
+    const viewer = createViewer({
+      harness: new Harness(new Thread('main', new ContextStack(), { description: 'Global' })),
+      eventStream: new EventStream(),
+      interventions: new InterventionLog(),
+      tokenTracker: new TokenTracker(),
+      configStore,
+      configDir: dir,
+      projectRegistry: projects,
+    });
+    cleanup.unshift(['store', () => viewer.localStore?.close()]);
+    const server = Bun.serve({
+      hostname: '127.0.0.1',
+      port: 0,
+      fetch: viewer.fetch,
+      websocket: viewer.websocket,
+    });
+    cleanup.unshift(['server', () => server.stop(true)]);
+    const browser = await chromium.launch({ headless: true });
+    cleanup.unshift(['browser', () => browser.close()]);
+    const page = await (
+      await browser.newContext({ viewport: { width: 1600, height: 900 } })
+    ).newPage();
+    page.setDefaultTimeout(15_000);
+    const errors: string[] = [];
+    page.on('pageerror', (e: Error) => errors.push(e.message));
+    const hit = (archiveId: string, title: string, extra: Record<string, unknown>) => ({
+      archiveId,
+      title,
+      projectId: 'shop',
+      models: [{ model: 'claude-opus-5-5', entries: 3 }],
+      chunks: [{ text: `${title}: the jitter cap` }],
+      tokenCount: 8,
+      ...extra,
+    });
+    await page.route('**/api/archives/search', (route: { fulfill: (r: object) => unknown }) =>
+      route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          archives: [
+            hit('a1', 'Cap checkout retries', { source: 'foundry', sessionId: 'shop-1' }),
+            hit('a2', 'Old terminal run', { source: 'claude-code', sessionId: 'native-9' }),
+            hit('a3', 'Before the session id', {}),
+          ],
+          tokenCount: 24,
+          nextCursor: null,
+        }),
+      }),
+    );
+
+    await page.goto(`http://127.0.0.1:${server.port}/#thread=shop-2`);
+    await page.locator('.context-bar-title', { hasText: 'Refund drift' }).waitFor();
+    await page.locator('body').click({ position: { x: 5, y: 5 } });
+    await page.keyboard.press('/');
+    const input = page.locator('.search-input');
+    await input.fill('jitter');
+    const messages = page.locator('.search-group', { hasText: 'Messages' });
+    const foundry = messages.locator('.search-hit', { hasText: 'Cap checkout retries' });
+    const native = messages.locator('.search-hit', { hasText: 'Old terminal run' });
+    const older = messages.locator('.search-hit', { hasText: 'Before the session id' });
+    await older.waitFor();
+    expect(await native.innerText()).toContain('A Claude Code session, not a Foundry thread');
+    expect(await native.getAttribute('class')).toContain('is-static');
+    expect(await older.getAttribute('class')).toContain('is-static');
+    expect(await older.innerText()).not.toContain('Foundry thread');
+    expect(await foundry.getAttribute('class')).not.toContain('is-static');
+    await foundry.click();
+    await page.locator('.context-bar-title', { hasText: 'Cap checkout retries' }).waitFor();
+    expect(new URL(page.url()).hash).toContain('thread=shop-1');
+    expect(errors).toEqual([]);
+  } finally {
+    await releaseAll(cleanup);
+  }
+}, 60_000);
