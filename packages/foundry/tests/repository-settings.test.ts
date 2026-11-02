@@ -200,3 +200,18 @@ test('a repository’s agents are executors on a model their worker runs; decisi
   expect(effectiveProject(offWorker, 'p')!.agents).toBeUndefined();
   expect(repositorySettingsProblem(offWorker.projects.p!.path)?.message).toContain('not a');
 });
+
+test('the verdict on the team’s settings follows the config asked about', () => {
+  const without = projectWith({ agents: { r: { extends: 'planner' } } });
+  delete without.agents.planner;
+  const path = without.projects.p!.path;
+  const withParent = structuredClone(without);
+  withParent.agents.planner = { ...withParent.agents.executor!, id: 'planner' };
+  effectiveProject(without, 'p');
+  expect(repositorySettingsProblem(path)?.kind).toBe('unbuildable');
+  effectiveProject(withParent, 'p');
+  expect(repositorySettingsProblem(path)).toBeUndefined();
+  // A memo hit restores its own verdict.
+  effectiveProject(without, 'p');
+  expect(repositorySettingsProblem(path)?.kind).toBe('unbuildable');
+});

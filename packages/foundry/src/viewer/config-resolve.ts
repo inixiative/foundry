@@ -939,7 +939,12 @@ export function effectiveProject(
     config.apiTokens,
   ]);
   const memo = appliedProjects.get(config)?.get(projectId);
-  if (memo?.key === key) return memo.project;
+  if (memo?.key === key) {
+    // The verdict comes back with the answer: another config object may have set it since.
+    if (memo.problem) unapplied.set(mine.path, memo.problem);
+    else unapplied.delete(mine.path);
+    return memo.project;
+  }
   const merged = mergeProject(mine, theirs);
   // The team's settings may name what this machine lacks (a parent agent it doesn't have): then
   // none of them apply here and why is reported, so a checkout never stops the daemon.
@@ -954,7 +959,7 @@ export function effectiveProject(
     project = mine;
   }
   const byId = appliedProjects.get(config) ?? new Map();
-  byId.set(projectId, { key, project });
+  byId.set(projectId, { key, project, problem: unapplied.get(mine.path) });
   appliedProjects.set(config, byId);
   return project;
 }
@@ -984,7 +989,7 @@ function checkRepositoryAgents(
 
 const appliedProjects = new WeakMap<
   FoundryConfig,
-  Map<string, { key: string; project: ProjectSettingsConfig }>
+  Map<string, { key: string; project: ProjectSettingsConfig; problem: string | undefined }>
 >();
 
 function mergeProject(
