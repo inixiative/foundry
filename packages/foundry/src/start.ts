@@ -72,7 +72,7 @@ import {
 import { resolveLearningSettings } from './agents/learning-config';
 import { describeChorus } from './agents/region-roster';
 import { atlasRootOf, configureHarness, createMainThread } from './agents/thread-factory';
-import { acpLaunchPath, newAcpCapability, removeAcpLaunch, writeAcpLaunch } from './client/launch';
+import { acpLaunchPath, removeAcpLaunch, writeAcpLaunch } from './client/launch';
 import type { ConversationService } from './conversations/service';
 import { lateConversationWrapper } from './conversations/types';
 import { LocalSessionStore } from './persistence/local-session-store';
@@ -917,7 +917,7 @@ const port = parseInt(process.env.VIEWER_PORT || '4500');
 // The daemon (or an explicitly named launch path) publishes where local ACP proxies find it.
 const acpLaunch =
   process.env.FOUNDRY_DAEMON === '1' || process.env.FOUNDRY_ACP_LAUNCH
-    ? { path: acpLaunchPath(), capability: newAcpCapability() }
+    ? { path: acpLaunchPath() }
     : undefined;
 
 const claudeProvider = workers.get('claude-code')?.provider;
@@ -939,7 +939,6 @@ const viewer = await startViewer({
   configStore,
   actionQueue,
   assistTools: tools,
-  acpCapability: acpLaunch?.capability,
   threadLaunch,
   // Every worker's subagents become observed child threads (docs/THREAD-TREE.md spec A).
   subagentSources: sessionProviders,
@@ -967,10 +966,7 @@ threadRecords = viewer.records;
 console.log(`Viewer: http://localhost:${viewer.server.port ?? port}`);
 if (acpLaunch) {
   try {
-    writeAcpLaunch(acpLaunch.path, {
-      port: viewer.server.port ?? port,
-      capability: acpLaunch.capability,
-    });
+    writeAcpLaunch(acpLaunch.path, { port: viewer.server.port ?? port });
     console.log(`ACP: launch file ${acpLaunch.path}`);
   } catch (error) {
     console.warn(`ACP: launch file not written: ${(error as Error).message}`);
@@ -1008,7 +1004,7 @@ console.log('Ready. Send messages through the harness API or viewer.');
 
 const shutdown = async () => {
   console.log('\nShutting down...');
-  // A launch file outliving its daemon would point ACP proxies (and their bearer) at whatever binds the port next.
+  // A launch file outliving its daemon would point ACP proxies at whatever binds the port next.
   if (acpLaunch) removeAcpLaunch(acpLaunch.path, process.pid);
   // Native processes must exit before their profile locks (in ~/.claude, ~/.codex) are released.
   await Promise.race([

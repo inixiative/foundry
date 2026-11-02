@@ -68,7 +68,7 @@ import { AIAssist } from './ai-assist';
 import { AnalyticsStore } from './analytics';
 import { ConfigStore, DEFAULT_RAW_MIDDLEWARE_DAYS, threadOnMerge } from './config';
 import { createViewerStreams } from './data-streams';
-import { authenticatedRequest, sameOrigin, sameSecret } from './request-auth';
+import { authenticatedRequest, sameOrigin } from './request-auth';
 import { registerControlRoutes } from './routes/control';
 import { registerConversationRoutes } from './routes/conversations';
 import { registerDeviceRoutes } from './routes/devices';
@@ -123,8 +123,6 @@ export interface ViewerConfig {
   assistTools?: ToolRegistry;
   /** Durable local journal; null opts out for an explicitly transient viewer. */
   localStore?: LocalSessionStore | null;
-  /** Bearer a local ACP proxy presents (from the ACP launch file) while a tunnel is active. */
-  acpCapability?: string;
   /** What hosts chose per thread (mode, model, effort, MCP servers); shared with the providers. */
   threadLaunch?: ThreadLaunchSettings;
   /**
@@ -225,33 +223,35 @@ export function createViewer(config: ViewerConfig) {
     );
   });
 
-  // A local ACP proxy holds the launch file's capability; with a tunnel active it is the only
-  // bearer it can present, since the tunnel token never leaves the viewer's own credential file.
-  // It is honoured only on a direct loopback request: never through the tunnel, which forwards
-  // the public Host and its proxy headers to this same port.
-  const acpAuthorized = (request: Request) => {
-    const authorization = request.headers.get('authorization');
-    return (
-      !!config.acpCapability &&
-      !!authorization &&
-      directLoopback(request) &&
-      sameSecret(authorization, `Bearer ${config.acpCapability}`)
+  // Where each paired Kingdom opens this Foundry: its devices page, else its API's /dashboard redirect.
+  const kingdomEntrances = async () => {
+    const urls = await Promise.all(
+      ((await configStore.load()).kingdomIntegrations ?? []).map(async (integration) => {
+        const described = await holders.get(integration, 1_500);
+        if (described.status === 'revoked') return null;
+        const url = described.holder
+          ? new URL('/devices', described.holder.webUrl)
+          : new URL('/dashboard', integration.url);
+        return ['https:', 'http:'].includes(url.protocol) ? url.toString() : null;
+      }),
     );
+    return [...new Set(urls.filter((url): url is string => !!url))];
   };
 
   // Auth middleware — checks tunnelHolder dynamically so it works
-  // even when tunnel is started/stopped at runtime
+  // even when tunnel is started/stopped at runtime. The tunnel's login guards its public address;
+  // a direct loopback request is this machine, tunnelled or not.
   app.use('*', async (c, next) => {
     const t = tunnelHolder.tunnel;
     if (!sameOrigin(c.req.raw, t?.url ?? undefined))
       return c.json({ error: 'Origin not allowed' }, 403);
-    if (t && acpAuthorized(c.req.raw)) return next();
     if (!t) {
-      if (!['localhost', '127.0.0.1', '[::1]'].includes(new URL(c.req.url).hostname))
+      if (!LOOPBACK_HOSTS.includes(new URL(c.req.url).hostname))
         return c.json({ error: 'Local viewer requires a loopback host' }, 403);
       return next();
     }
-    return tunnelAuth(t.token, t.url ?? undefined)(c, next);
+    if (directLoopback(c.req.raw)) return next();
+    return tunnelAuth(t.token, t.url ?? undefined, kingdomEntrances)(c, next);
   });
 
   app.use('*', async (c, next) => {
@@ -873,8 +873,8 @@ export function createViewer(config: ViewerConfig) {
     if (
       activeTunnel
         ? !authenticatedRequest(req, activeTunnel.token, activeTunnel.url ?? undefined) &&
-          !acpAuthorized(req)
-        : !['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)
+          !directLoopback(req)
+        : !LOOPBACK_HOSTS.includes(url.hostname)
     )
       return new Response('Unauthorized', { status: 401 });
     try {
@@ -1097,6 +1097,8 @@ const PROXY_HEADERS = [
   'x-real-ip',
   'cf-connecting-ip',
   'cf-ray',
+  'true-client-ip',
+  'via',
 ];
 
 /** Addressed to a loopback host and carrying no reverse-proxy headers. */

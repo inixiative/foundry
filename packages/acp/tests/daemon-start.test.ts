@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { client, type InitializeRequest } from '@agentclientprotocol/sdk';
-import { newAcpCapability, writeAcpLaunch } from '@inixiative/foundry/client';
+import { writeAcpLaunch } from '@inixiative/foundry/client';
 import {
   ContextStack,
   EventStream,
@@ -150,7 +150,7 @@ async function holdingDaemon(dir: string, launchPath: string, port = 0) {
     fetch: viewer.fetch,
     websocket: viewer.websocket,
   });
-  writeAcpLaunch(launchPath, { port: server.port!, capability: newAcpCapability() });
+  writeAcpLaunch(launchPath, { port: server.port! });
   let stopped = false;
   /** The daemon process goes away: its listener and sockets close; its turns are left as they were. */
   const halt = () => {
