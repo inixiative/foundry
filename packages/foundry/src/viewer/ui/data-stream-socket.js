@@ -210,6 +210,8 @@ export function createDataStreamSocket(
           }),
     /** Re-open every held stream for fresh snapshots. */
     resync: replayStreams,
+    /** Ask again for one held stream's snapshot (a new holder joined it); appends wait for it. */
+    snapshot: resyncStream,
     holds: (stream) => streams.has(stream),
     status: () => socket.status(),
   };

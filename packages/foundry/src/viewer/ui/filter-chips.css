@@ -65,3 +65,22 @@
   font-size: 12px;
   color: hsl(var(--muted-foreground));
 }
+/* A selection, shown on the row and removed with one click (a machine page opens the Board with one). */
+.filter-chip-active {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid hsl(var(--app-primary) / 0.6);
+  background: hsl(var(--app-primary) / 0.18);
+  color: inherit;
+  font: inherit;
+  font-size: 12.5px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.filter-chip-active span {
+  font-size: 10px;
+  color: hsl(var(--muted-foreground));
+}

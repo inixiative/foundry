@@ -21,7 +21,14 @@ import {
   otherMachine,
 } from './machine-icons.js';
 import { settingsConfig } from './settings.js';
-import { allThreads, projects, prompts, selectThread, watchtowerOpen } from './store.js';
+import {
+  allThreads,
+  projects,
+  prompts,
+  selectThread,
+  watchtowerFilter,
+  watchtowerOpen,
+} from './store.js';
 import { projectKingdom, threadName } from './thread-labels.js';
 import { categoryOf, isClosedThread, subagentParentOf, threadState } from './thread-status.js';
 import { WatchingSidebar } from './watching.js';
@@ -82,7 +89,10 @@ export function Watchtower() {
   const [scope, setScope] = useState('everyone');
   // What you watch (Kingdoms, projects, connectors, people) opens from the header (concept-v4).
   const [watchingOpen, setWatchingOpen] = useState(false);
-  const [chips, setChips] = useState({});
+  const chips = watchtowerFilter.value;
+  const setChips = (next) => {
+    watchtowerFilter.value = next;
+  };
   useEffect(() => {
     loadMachineProfile();
   }, []);

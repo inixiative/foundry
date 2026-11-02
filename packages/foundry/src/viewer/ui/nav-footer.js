@@ -5,12 +5,16 @@
  */
 /**
  * The rail's footer: this machine and its resources (Aron, 2026-11-01). The machine's name (this
- * Foundry's name, editable in place) and its tunnel; Kingdoms and Archives as two equal pills, each
- * linking to its settings; one Subscriptions row that opens to each subscription. Threads, Wardens
- * and Forge Master live elsewhere.
+ * Foundry's name, editable in place; the name opens this machine's page) and its tunnel; Kingdoms
+ * and Archives as two equal pills, each linking to its settings; your other machines, each with its
+ * open threads and no meters (subscriptions are per login and shared across machines, Aron
+ * 2026-11-02); one Subscriptions row that opens to each subscription. Threads, Wardens and Forge
+ * Master live elsewhere.
  */
 
 import { capacityByProvider } from './capacity.js';
+import { ComingSoon } from './coming-soon.js';
+import { openThreadsLabel, otherMachines } from './device-page.js';
 import { html, useEffect, useState } from './lib.js';
 import { DeviceIcon, MachineIconPicker, machineIcon, machineProfile } from './machine-icons.js';
 import { RenameModal } from './modal.js';
@@ -20,6 +24,7 @@ import {
   kingdomStatus,
   loadKingdomStatus,
   modelRegistryOnce,
+  openDevicePage,
   showToast,
   vendorName,
 } from './store.js';
@@ -186,8 +191,27 @@ function MachineName({ profile, onSaved }) {
             return save(next);
           }}><${MachineIconPicker} /><//>`
       : null;
-  return html`<${DeviceIcon} icon=${machineIcon()} size=${16} title="This machine's icon" /><span class="nav-footer-device" title="This machine's name">${name}</span>
+  return html`<${DeviceIcon} icon=${machineIcon()} size=${16} title="This machine's icon" /><button type="button" class="nav-footer-device" title="Open this machine's page" onClick=${() => openDevicePage('here')}>${name}</button>
     <button type="button" class="nav-footer-edit" title="Rename this machine" onClick=${() => setDraft(name)}>Edit</button>${modal}`;
+}
+
+/** Your other machines: each opens its page; listed with its open threads, never metered. */
+function OtherMachines() {
+  const machines = otherMachines();
+  return html`<div class="nav-footer-others">
+    <div class="nav-footer-label">Your other devices</div>
+    ${machines.map(
+      (
+        m,
+      ) => html`<button key=${m.id} type="button" class="nav-footer-row nav-footer-other" onClick=${() => openDevicePage(m.id)}
+        title=${`Open ${m.name}'s page. It uses the same subscriptions as this machine.`}>
+        <span class="nav-footer-name">${m.name}</span>
+        <span class=${`nav-footer-dot ${m.online ? 'is-ok' : ''}`} title=${m.online == null ? "Whether it's online comes from Kingdom (VIEWER-007)" : m.online ? 'Online' : 'Offline'}></span>
+        <span class="nav-footer-count">${openThreadsLabel(m.open)}</span>
+      </button>`,
+    )}
+    <${ComingSoon} inline=${true} what=${machines.length ? 'Status from Kingdom' : 'From Kingdom'} ticket="VIEWER-007" />
+  </div>`;
 }
 
 export function NavFooter() {
@@ -205,16 +229,17 @@ export function NavFooter() {
         tunnel
           ? html`<a class="nav-footer-link" href=${settingsPath(null, 'devices')} onClick=${go('devices')}
               title=${tunnel.active ? `Tunnel on: ${tunnel.url ?? ''}` : `Tunnel off (${tunnel.mode})`}>
-              <span class="nav-footer-dot ${tunnel.active ? 'is-ok' : 'is-off'}"></span>Tunnel ${tunnel.active ? 'on' : 'off'}
+              <span class="nav-footer-dot ${tunnel.active ? 'is-ok' : 'is-off'}"></span>tunnel ${tunnel.active ? 'on' : 'off'}
             </a>`
           : null
       }
     </div>
     <div class="nav-footer-pills">
-      <a class="nav-footer-pill" href=${settingsPath(null, 'kingdom')} onClick=${go('kingdom')}>Kingdoms ${kingdoms}</a>
+      <a class="nav-footer-pill" href=${settingsPath(null, 'kingdom')} onClick=${go('kingdom')}>Kingdoms <b>${kingdoms}</b></a>
       <a class="nav-footer-pill" href=${settingsPath(null, 'archive')} onClick=${go('archive')}
-        title=${archive?.reachable ? 'Local Archive running' : 'Local Archive not running'}>Archives ${archives}</a>
+        title=${archive?.reachable ? 'Local Archive running' : 'Local Archive not running'}>Archives <b>${archives}</b></a>
     </div>
+    <${OtherMachines} />
     <${Subscriptions} accounts=${accounts} registry=${registry} />
   </footer>`;
 }
