@@ -6,7 +6,6 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ActionQueue, ContextStack, Thread, ToolRegistry } from '@inixiative/foundry-core';
 import type { HostedSignet } from '@inixiative/signet';
-import type { HostedSignetWithBases } from '../src/conversations/grantReach';
 import { ConversationService } from '../src/conversations/service';
 import type { HeldRecord } from '../src/conversations/types';
 import { createFoundryMcp } from '../src/mcp/server';
@@ -50,7 +49,7 @@ async function until(predicate: () => boolean, label: string, ms = 3000) {
 
 const projectId = 'project-conversations';
 
-function hostedMember(threadId: string, outbound: 'review' | 'auto'): HostedSignetWithBases {
+function hostedMember(threadId: string, outbound: 'review' | 'auto'): HostedSignet {
   return {
     signetId: crypto.randomUUID(),
     integrationId: crypto.randomUUID(),

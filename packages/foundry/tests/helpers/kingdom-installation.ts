@@ -24,7 +24,7 @@ import type { ServerWebSocket } from 'bun';
 const threadsBaseId = baseLensId('foundry', 'threads');
 
 /**
- * The base lens records Kingdom lists beside a hosted Signet (signet 0.12.1 `baseLenses`): its
+ * The base lens records Kingdom lists beside a hosted Signet (`baseLenses`): its
  * catalog's base for a Foundry's main threads, by id, keyed by `baseLensId`, `parents: []`.
  */
 export const threadsBaseLenses = (): Record<string, StoredLens & Lens> => ({

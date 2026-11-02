@@ -13,7 +13,6 @@ import {
   Thread,
 } from '@inixiative/foundry-core';
 import type { HostedSignet, ThreadsTerms } from '@inixiative/signet';
-import type { HostedSignetWithBases } from '../src/conversations/grantReach';
 import type { LocalSessionStore } from '../src/persistence/local-session-store';
 import { pairKingdomIntegration } from '../src/providers/kingdom-pairing';
 import {
@@ -139,17 +138,11 @@ async function host(
 
   /**
    * Issue a Signet on this Foundry's `threads` resource: a member, as Kingdom lists it, with the
-   * base lens its rows compose under. Its socket snapshot is parsed by signet, so these tests wait on
-   * signet 0.12.1 (`hostedSignets[].baseLenses`); under 0.12.0 the base is stripped and no member
-   * reaches a thread.
+   * base lens its rows compose under (`baseLenses`).
    */
-  const member = async (
-    name: string,
-    grant: Grant = {},
-    revision = 1,
-  ): Promise<HostedSignetWithBases> => {
+  const member = async (name: string, grant: Grant = {}, revision = 1): Promise<HostedSignet> => {
     const { ids, operations, ...terms } = grant;
-    const signet: HostedSignetWithBases = {
+    const signet: HostedSignet = {
       signetId: crypto.randomUUID(),
       integrationId,
       name,

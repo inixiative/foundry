@@ -3,7 +3,7 @@ import { afterEach, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import type { HostedSignetWithBases } from '../src/conversations/grantReach';
+import type { HostedSignet } from '@inixiative/signet';
 import {
   type HeadlessHostCommand,
   headlessHostEnv,
@@ -140,7 +140,7 @@ test('the headless host pairs, admits a member note the Warden weighs in on, and
       await request({ type: 'inspect', requestId: crypto.randomUUID(), threadId: 'main' }),
     );
 
-  const member: HostedSignetWithBases = {
+  const member: HostedSignet = {
     signetId: crypto.randomUUID(),
     integrationId,
     name: 'JobCo',
@@ -155,7 +155,6 @@ test('the headless host pairs, admits a member note the Warden weighs in on, and
   };
   kingdom.host(member);
   const requestId = crypto.randomUUID();
-  // Its base lens rides the socket snapshot: this waits on signet 0.12.1 (`baseLenses`).
   await until(async () => (await inspect()).members.some((m) => m.listed), 'member listed');
   // A shared thread defaults to the conch (Aron, 2026-11-01); this note is about the talk path.
   await request({

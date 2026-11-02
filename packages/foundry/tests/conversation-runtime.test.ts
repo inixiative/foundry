@@ -15,7 +15,6 @@ import type { HostedSignet, ThreadRequestOf } from '@inixiative/signet';
 import { ProjectRegistry } from '../src/agents/project';
 import { buildAgents, ThreadFactory } from '../src/agents/thread-factory';
 import { ThreadRuntimeManager } from '../src/agents/thread-runtime';
-import type { HostedSignetWithBases } from '../src/conversations/grantReach';
 import { conversationFloor, conversationRoster } from '../src/conversations/roster';
 import { ConversationService } from '../src/conversations/service';
 import { lateConversationWrapper } from '../src/conversations/types';
@@ -125,7 +124,7 @@ function fixture(opts: { wardens: boolean; joined?: boolean }) {
   const store = new LocalSessionStore(':memory:');
   new KnowledgePersistence(manager, store, events, []);
   const thread = factory.create('thread_conversation', { cwd: root });
-  const member: HostedSignetWithBases = {
+  const member: HostedSignet = {
     signetId: crypto.randomUUID(),
     integrationId: crypto.randomUUID(),
     name: 'JobCo',
@@ -138,7 +137,7 @@ function fixture(opts: { wardens: boolean; joined?: boolean }) {
     resources: [threadsGrant({ threadIds: [thread.id], operations: ['thread.prompt'] })],
     baseLenses: threadsBaseLenses(),
   };
-  let hosted: HostedSignetWithBases[] = opts.joined === false ? [] : [member];
+  let hosted: HostedSignet[] = opts.joined === false ? [] : [member];
   service = new ConversationService({
     store,
     thread: (id) => (id === thread.id ? (thread as Thread) : undefined),
@@ -189,7 +188,7 @@ function fixture(opts: { wardens: boolean; joined?: boolean }) {
       input: { threadId: thread.id, postId: crypto.randomUUID(), text },
     } as ThreadRequestOf<'thread.prompt'>);
   /** Kingdom's snapshot changed: the hosted Signets are now these. */
-  const snapshot = (next: HostedSignetWithBases[]) => {
+  const snapshot = (next: HostedSignet[]) => {
     hosted = next;
     service!.hostedChanged(next, new Set());
   };

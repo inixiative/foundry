@@ -22,21 +22,13 @@ import {
   threadsResourceKind,
 } from '@inixiative/signet';
 
-/**
- * A hosted Signet as Kingdom lists it, with the base lens records its rows compose under, keyed
- * by `baseLensId(provider, kind)` (each `parents: []`).
- */
-export type HostedSignetWithBases = HostedSignet & {
-  baseLenses?: Readonly<Record<string, StoredLens>>;
-};
-
 export type ThreadsGrant = Extract<SignetGrant, { resourceModel: 'IntegrationResource' }>;
 
 const warned = new Set<string>();
 
 /** The grantor's composed lens for one row: its base, then its layers in order; null if unreadable. */
 function composedLens(
-  signet: HostedSignetWithBases,
+  signet: HostedSignet,
   grant: ThreadsGrant,
   warn: (message: string) => void,
 ): Lens | LensNarrowing | null {
@@ -54,9 +46,11 @@ function composedLens(
   if (!layers.success) return refuse('its lens layers do not parse');
   const baseId = layers.data[0]?.parents[0];
   if (!baseId) return refuse('its lens names no base lens');
-  const base = signet.baseLenses?.[baseId];
+  const base = signet.baseLenses[baseId];
   if (!base) return refuse(`the snapshot carries no base lens ${baseId}`);
-  const records: Record<string, StoredLens> = { [baseId]: { ...base, id: baseId, parents: [] } };
+  const records: Record<string, StoredLens> = {
+    [baseId]: { ...base, id: baseId, parents: [] },
+  };
   for (const layer of layers.data) records[layer.id] = layer as StoredLens;
   try {
     return composeLens(layers.data.at(-1)!.id, records);
@@ -72,7 +66,7 @@ function composedLens(
  * thread's row (`threadRow`). A row with a missing base or unreadable layers reaches nothing.
  */
 export function grantReaches(
-  signet: HostedSignetWithBases,
+  signet: HostedSignet,
   threadId: string,
   operations: readonly ThreadOperation[] = threadOperationSchema.options,
   warn: (message: string) => void = console.warn,
