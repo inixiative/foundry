@@ -16,11 +16,16 @@ import { LocalSessionStore } from '../src/persistence/local-session-store';
 import { defaultProfileSource, profileEnvironment } from '../src/providers/default-profiles';
 import {
   NativeAuthentication,
+  type NativeAuthenticationProvider,
   withoutCompetingCredentials,
 } from '../src/providers/native-authentication';
 import { boundLaunchEnvironment } from '../src/providers/native-text-environment';
 import { museSubscriptionStatus } from '../src/providers/native-text-provider';
-import { InMemoryExternalSessionStore, MuseSessionAdapter } from '../src/providers/session-adapter';
+import {
+  InMemoryExternalSessionStore,
+  MuseSessionAdapter,
+  type MuseSessionAdapterConfig,
+} from '../src/providers/session-adapter';
 import { SessionBackedProvider } from '../src/providers/session-backed';
 import { SubscriptionAuthentication } from '../src/providers/subscription-authentication';
 import {
@@ -224,7 +229,7 @@ function museConfig(): FoundryConfig {
   return c;
 }
 
-test('policy: muse runs main threads on its login; never decisions, never a Kingdom pool', () => {
+test('policy: muse runs main threads on its login or a Kingdom pool; never decisions', () => {
   const root = museHome();
   const c = museConfig();
   c.projects = {
@@ -246,14 +251,12 @@ test('policy: muse runs main threads on its login; never decisions, never a King
   const local = resolveThreadView(resolved.config, { projectId: 'local' }).config;
   expect(threadWorkerRequirement(resolved, local, 'muse', 'local')).toBeUndefined();
   const pooled = resolveThreadView(resolved.config, { projectId: 'pooled' }).config;
-  expect(threadWorkerRequirement(resolved, pooled, 'muse', 'pooled')).toContain(
-    'Kingdom pools hold no Muse Code logins yet',
-  );
-  // A Kingdom project defaulting to Muse is refused outright.
+  // A pooled Muse thread runs on the pool (Kingdom refuses it there if the pool holds no Muse login).
+  expect(threadWorkerRequirement(resolved, pooled, 'muse', 'pooled')).toBeUndefined();
+  // A Kingdom project may default to Muse, and needs no Muse login on this machine.
   c.projects.pooled!.defaults = { provider: 'muse', model: 'muse-wonder-1.0' };
-  expect(() => resolveSubscriptionPolicy(c, { cwd: root })).toThrow(
-    'Kingdom pools hold no Muse Code logins yet',
-  );
+  rmSync(join(root, '.config', 'muse', 'auth.json'));
+  expect(resolveSubscriptionPolicy(c, { cwd: root })!.offered).toContain('muse');
   // Decisions never run on Muse.
   const decisions = museConfig();
   const login = { ...defaultProfileSource('muse'), id: crypto.randomUUID() };
@@ -298,6 +301,101 @@ test('launch: full access is unrestricted and unsandboxed; the child gets only t
     permissionProfile: ':unrestricted',
     modelId: 'muse-wonder-1.0',
   });
+});
+
+/** A launch whose login provider counts the failures it is asked to confirm. */
+function failureCountingAdapter(connect?: MuseSessionAdapterConfig['connect'], rejected = false) {
+  museHome();
+  const fake = fakeMuse();
+  const failed: string[] = [];
+  const released: string[] = [];
+  const authentication: NativeAuthenticationProvider = {
+    bindingId: (threadId) => threadId,
+    prepare: async (threadId) => ({
+      bindingId: threadId,
+      sourceId: 'pool-login',
+      integrationId: 'pool-login',
+      mode: 'kingdom-subscription',
+      check() {},
+      launch: (argv, env) => ({ argv, env }),
+      release() {
+        released.push(threadId);
+      },
+      loginFailed: async () => {
+        failed.push(threadId);
+        return rejected;
+      },
+    }),
+  };
+  const adapter = new MuseSessionAdapter({
+    store: new InMemoryExternalSessionStore(),
+    authentication,
+    connect: connect ?? fake.connect,
+  });
+  cleanup.push(() => adapter.releaseAll());
+  return { fake, adapter, failed, released };
+}
+
+/** The host ends each turn with `terminal` (and, failed, Muse's auth error). */
+function ending(fake: ReturnType<typeof fakeMuse>, terminal: 'failed' | 'cancelled') {
+  fake.handlers['turn/start'] = (p) => {
+    queueMicrotask(() => {
+      fake.notify('turn/started', { turnId: TURN_ID });
+      fake.notify('turn/completed', {
+        turnId: TURN_ID,
+        terminal,
+        ...(terminal === 'failed'
+          ? { error: { kind: 'authRequired', message: 'sign in', retryable: false } }
+          : {}),
+      });
+    });
+    return {
+      commandId: p.commandId,
+      disposition: 'started',
+      startedNewTurn: true,
+      status: 'accepted',
+      turnId: TURN_ID,
+    };
+  };
+}
+
+test('a failed turn asks the login provider to confirm a rejected login', async () => {
+  const { fake, adapter, failed } = failureCountingAdapter();
+  const session = await adapter.createSession({ threadId: 'main', cwd: '/workspace' });
+  await session.start();
+  ending(fake, 'failed');
+  await session.send('hi').catch(() => undefined);
+  expect(failed).toEqual(['main']);
+});
+
+test('a confirmed rejected login ends the session, so the next turn launches on another login', async () => {
+  const { fake, adapter, failed, released } = failureCountingAdapter(undefined, true);
+  const session = await adapter.createSession({ threadId: 'main', cwd: '/workspace' });
+  await session.start();
+  ending(fake, 'failed');
+  await session.send('hi').catch(() => undefined);
+  const deadline = Date.now() + 5000;
+  while (!released.length && Date.now() < deadline) await Bun.sleep(10);
+  expect(failed).toEqual(['main']);
+  expect(released).toEqual(['main']);
+});
+
+test('a cancelled turn is not a login failure', async () => {
+  const { fake, adapter, failed } = failureCountingAdapter();
+  const session = await adapter.createSession({ threadId: 'main', cwd: '/workspace' });
+  await session.start();
+  ending(fake, 'cancelled');
+  await session.send('hi').catch(() => undefined);
+  expect(failed).toEqual([]);
+});
+
+test('a host that will not start asks the login provider to confirm too', async () => {
+  const { adapter, failed } = failureCountingAdapter(async () => {
+    throw Error('muse serve did not initialize');
+  });
+  const session = await adapter.createSession({ threadId: 'main', cwd: '/workspace' });
+  await expect(session.start()).rejects.toThrow('did not initialize');
+  expect(failed).toEqual(['main']);
 });
 
 test('launch: a gated host mode asks a person, never Muse’s AI reviewer', async () => {

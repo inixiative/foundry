@@ -11,8 +11,8 @@
  * closed = landed). Then the agent's recorded loop (its goal, steps, stop check and rounds). Below
  * it, today's graph panel: the thread tree, each turn's flow and the learning loop.
  */
-import { GraphPanel, useFlowStream } from './graph-view.js';
-import { html, useState } from './lib.js';
+import { GraphPanel } from './graph-view.js';
+import { html } from './lib.js';
 import { lifecycle } from './lifecycle.js';
 import { activeThreadId, allThreads, commentOn, focusTurnId, threadData } from './store.js';
 
@@ -32,7 +32,7 @@ export function LifecycleStrip({ turns, meta, onOpen }) {
 }
 
 /** Warden pointers that reached this thread: one row per contributing domain per turn. */
-function pointerRows(flow) {
+export function pointerRows(flow) {
   const rows = [];
   for (const turn of flow.turns ?? []) {
     const contributions = Array.isArray(turn.plan?.contributions) ? turn.plan.contributions : [];
@@ -52,7 +52,7 @@ function pointerRows(flow) {
   return rows.reverse();
 }
 
-function PointerLedger({ rows }) {
+export function PointerLedger({ rows }) {
   if (!rows.length)
     return html`<div class="rp-empty loop-pointers-empty">
       No Warden has pointed at anything on this thread’s recent turns. When one does, its pointer
@@ -75,17 +75,6 @@ function PointerLedger({ rows }) {
       </li>`,
     )}
   </ul>`;
-}
-
-/** The pointer ledger, folded by default: it holds the flow stream only while it's open. */
-function Pointers({ threadId }) {
-  const [open, setOpen] = useState(false);
-  const flow = useFlowStream(threadId, open && !!threadId);
-  return html`<section class="loop-pointers">
-    <button type="button" class="rp-section-title loop-pointers-toggle" aria-expanded=${open}
-      onClick=${() => setOpen(!open)}>${open ? '▾' : '▸'} Pointers</button>
-    ${open ? html`<${PointerLedger} rows=${pointerRows(flow)} />` : null}
-  </section>`;
 }
 
 const ROUND_MARK = { pass: '✓', fail: '✗', partial: '◐' };
@@ -136,6 +125,5 @@ export function LoopView({ onLayerClick }) {
       meta=${data?.meta} />
     <${RecordedLoop} loop=${data?.meta?.loop} />
     <div class="loop-graph"><${GraphPanel} onLayerClick=${onLayerClick} /></div>
-    <${Pointers} threadId=${activeThreadId.value} />
   </div>`;
 }

@@ -2843,7 +2843,7 @@ body {
 .settings-page {
   grid-row: 2 / 4;
   display: grid;
-  grid-template-columns: 220px minmax(0, 1fr) 380px;
+  grid-template-columns: 220px minmax(0, 1fr);
   min-height: 0;
   min-width: 0;
 }
@@ -3024,10 +3024,25 @@ body {
   min-height: 0;
   flex: 1;
 }
+/* Forge Master beside a settings page: closed until the header opens it (Aron 11-02). */
 @media (min-width: 1001px) {
-  .settings-page:has(> .settings-chat.collapsed) {
-    grid-template-columns: 220px minmax(0, 1fr) 40px;
+  .settings-page.settings-show-chat {
+    grid-template-columns: 220px minmax(0, 1fr) 380px;
   }
+}
+.settings-chat-close {
+  margin-left: auto;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: none;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 11px;
+  padding: 1px 6px;
+  cursor: pointer;
+}
+.settings-chat-close:hover {
+  color: var(--accent);
 }
 
 .forge-master > .settings-chat {
@@ -4638,28 +4653,6 @@ body {
   min-height: 0;
 }
 
-.settings-chat.collapsed {
-  align-items: center;
-  padding-top: 10px;
-}
-
-.settings-chat-toggle {
-  writing-mode: vertical-rl;
-  transform: rotate(180deg);
-  background: none;
-  border: none;
-  color: var(--text-dim);
-  font-size: 11px;
-  font-family: var(--font);
-  letter-spacing: 0.15em;
-  padding: 8px 6px;
-  cursor: pointer;
-  text-transform: uppercase;
-}
-.settings-chat-toggle:hover {
-  color: var(--accent);
-}
-
 .settings-chat-header {
   display: flex;
   align-items: center;
@@ -5276,7 +5269,7 @@ body {
   gap: 8px;
 }
 .settings-chat-view {
-  display: none;
+  margin-left: auto;
 }
 @media (max-width: 600px) {
   .access-editor .settings-row {
@@ -5294,9 +5287,6 @@ body {
   }
   .settings-page > .settings-chat {
     display: none;
-  }
-  .settings-chat-view {
-    display: inline-block;
   }
   .settings-page.settings-show-chat {
     grid-template-columns: minmax(0, 1fr);
@@ -6408,11 +6398,12 @@ a.thread-ref:hover {
 /* ---- Settings: nav groups, dev mode, coming soon ---- */
 
 .settings-group {
-  font-size: 10px;
-  color: var(--text-dimmer);
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--text-dim);
   text-transform: uppercase;
-  letter-spacing: 0.08em;
-  padding: 10px 10px 2px;
+  letter-spacing: 0.09em;
+  padding: 10px 8px 2px;
 }
 .settings-grouped .settings-section {
   padding-left: 16px;
@@ -7688,88 +7679,151 @@ a.thread-ref:hover {
   flex-direction: column;
   height: 100%;
   min-height: 0;
-  padding: 10px;
-  gap: 10px;
+  padding: 16px 22px 22px;
+  gap: 12px;
 }
+/* Title, Yours/Shared and the filters on one row (concept-v4 .bhead). */
 .board-band {
   display: flex;
-  flex-direction: column;
-  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
   flex-shrink: 0;
+}
+.board-band .filter-chips {
+  flex: 1;
+  min-width: 0;
 }
 .board-title {
   font-family: var(--display);
-  font-size: 20px;
+  font-size: 24px;
   font-weight: 650;
   letter-spacing: -0.02em;
+  line-height: 36px;
   margin: 0;
 }
+.board-zone {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+}
+.board-zone > button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 10px;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: var(--text-dim);
+  font: 500 12.5px var(--ui);
+  cursor: pointer;
+}
+.board-zone > button[aria-pressed="true"] {
+  background: hsl(var(--app-primary) / 0.22);
+  color: var(--text);
+}
+.board-zone-count {
+  color: var(--dim);
+  font-weight: 500;
+}
+.board-filter-label {
+  font: 600 10.5px var(--mono);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+/* Lanes never wrap: they scroll sideways inside one bordered frame. */
 .board-columns {
   flex: 1;
   min-height: 0;
   display: grid;
   grid-auto-flow: column;
-  grid-auto-columns: minmax(220px, 1fr);
-  gap: 10px;
+  grid-auto-columns: minmax(250px, 1fr);
+  gap: 12px;
   overflow-x: auto;
+  padding: 14px;
+  border: 1px solid var(--line2);
+  border-radius: 12px;
+  background: hsl(var(--card) / 0.55);
 }
 .board-column {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  gap: 6px;
+  gap: 0;
 }
 .board-column-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   margin: 0;
-  padding: 0 4px;
-  font-family: var(--mono);
-  font-size: 10.5px;
-  font-weight: 500;
-  letter-spacing: 0.12em;
+  padding: 6px 2px;
+  font: 600 11px / 11px var(--ui);
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--text-dim);
 }
 .board-column-head .rail-pane-count {
-  margin-left: auto;
+  font: 500 11px var(--ui);
+  color: var(--dim);
 }
 .board-column-swatch {
-  width: 9px;
-  height: 9px;
+  width: 12px;
+  height: 12px;
   border-radius: 3px;
 }
 .board-column--problem .board-column-swatch {
   background: var(--st-problem);
 }
+.board-column--problem .board-column-title {
+  color: var(--st-problem);
+}
 .board-column--attention .board-column-swatch {
   background: var(--st-attention);
+}
+.board-column--attention .board-column-title {
+  color: var(--st-attention);
 }
 .board-column--working .board-column-swatch {
   background: var(--st-working);
 }
+.board-column--working .board-column-title {
+  color: var(--st-working);
+}
 .board-column--queued .board-column-swatch {
   background: var(--st-queued);
 }
+.board-column--queued .board-column-title {
+  color: var(--st-queued);
+}
 .board-column--done .board-column-swatch {
   background: var(--st-done);
+}
+.board-column--done .board-column-title {
+  color: var(--st-done);
 }
 .board-frame {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  background: var(--surface);
-  border-radius: 0.75rem;
-  box-shadow: var(--frame-shadow);
-  padding: 6px;
+  border: 1px solid var(--line2);
+  border-radius: 12px;
+  background: hsl(var(--card) / 0.55);
+  padding: 8px;
   display: flex;
   flex-direction: column;
   gap: 6px;
 }
 .board-card {
-  background: var(--surface2);
-  border-radius: 10px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 9px;
   padding: 8px 10px;
   display: flex;
   flex-direction: column;
@@ -7778,12 +7832,22 @@ a.thread-ref:hover {
 .board-card-head {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 11.5px;
+  gap: 5px;
+  font-size: 11px;
+  line-height: 16.5px;
   color: var(--text-dim);
 }
 .board-card-project {
-  margin-left: auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.board-card-spacer {
+  flex: 1;
+}
+.board-card-head .thread-actions {
+  display: flex;
 }
 .board-card-title {
   background: none;
@@ -7791,14 +7855,54 @@ a.thread-ref:hover {
   padding: 0;
   text-align: left;
   font: inherit;
-  font-size: 13.5px;
+  font-size: 13px;
   font-weight: 600;
+  line-height: 16.9px;
   color: var(--text);
   cursor: pointer;
 }
+.board-card-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text);
+}
+.board-card-age {
+  font-weight: 500;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
 .board-card-ask {
   margin: 0;
-  font-size: 12.5px;
+  font-size: 12px;
+  line-height: 18px;
+}
+.board-card-subs {
+  margin-top: 2px;
+  padding-top: 6px;
+  border-top: 1px solid var(--line);
+  font-size: 12px;
+  color: var(--text-dim);
+}
+/* One-tap answers: the first is the primary, filled lime (concept-v4 .btn.go). */
+.board-card-actions .proj-btn {
+  padding: 3px 9px;
+  border: 1px solid var(--line2);
+  border-radius: 8px;
+  background: none;
+  color: var(--text);
+  font: 600 12px / 18px var(--ui);
+}
+.board-card-actions .proj-btn.proj-btn-ok {
+  border-color: var(--yours);
+  background: var(--yours);
+  color: var(--bg);
+}
+.device-badge.is-here {
+  border-color: var(--line);
+  color: var(--text-dim);
 }
 .board-card-actions,
 .board-card-foot {
@@ -7819,48 +7923,70 @@ a.thread-ref:hover {
 }
 
 /* ---- Pages (Settings, Analytics, Feedback inbox): Kingdom panels and segmented tabs ---- */
+/* Settings, sized as concept-v4's .sset3: nav buttons at 13.5 px, the body in one bordered frame of
+   bordered cards, the crumb with the section in display type. */
 .settings-nav {
   background: var(--bg);
   border-right: none;
-  padding: 14px 10px 14px 14px;
+  padding: 14px 12px;
 }
 .settings-scope {
-  border: none;
-  background: var(--surface2);
-  border-radius: 10px;
+  border: 1px solid var(--line-strong);
+  background: var(--bg);
+  border-radius: 9px;
 }
 .settings-scope-tab {
   border-radius: 8px;
-  font-size: 12.5px;
+  padding: 6px 10px;
+  font-size: 13.5px;
 }
 .settings-scope-tab.active {
-  background: var(--surface);
-  box-shadow: var(--frame-shadow);
+  background: hsl(var(--app-primary) / 0.15);
+  box-shadow: none;
 }
 .settings-section {
-  font-size: 13px;
+  font-size: 13.5px;
+  line-height: 20px;
   padding: 6px 10px;
   border-radius: 8px;
 }
 .settings-section.active {
-  background: hsl(var(--app-primary) / 0.1);
+  background: hsl(var(--app-primary) / 0.15);
   color: var(--text);
 }
 .settings-main {
-  margin: 10px 0;
-  background: var(--surface);
-  border-radius: 1rem;
-  box-shadow: var(--frame-shadow);
+  margin: 10px 10px 10px 0;
+  background: hsl(var(--card) / 0.55);
+  border: 1px solid var(--line-strong);
+  border-radius: 12px;
+  box-shadow: none;
 }
 .settings-page-header {
   font-family: var(--display);
   letter-spacing: -0.02em;
+  padding: 14px 18px 4px;
+  border-bottom: 0;
+}
+.settings-breadcrumb {
+  font: 12px var(--font);
+  color: var(--text-dim);
+}
+.settings-title {
+  font: 650 16px var(--display);
+}
+.settings-body {
+  padding: 4px 18px 14px;
+}
+.settings-body > .settings-desc,
+.settings-body > div > .settings-desc:first-child {
+  font-size: 13px;
+  line-height: 19.5px;
 }
 .settings-card {
-  border: none;
-  border-radius: 0.75rem;
-  background: var(--surface2);
-  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  padding: 12px 14px;
 }
 .settings-card-header {
   color: var(--text);
@@ -9285,6 +9411,39 @@ a.thread-ref:hover {
   align-self: flex-start;
   text-decoration: none;
 }
+
+/* Settings content: one centred column (concept-v4 .scol). Rows lead with a 13 px label; the
+   providers are one bordered list of rows, not a stack of cards. */
+.settings-page-header,
+.settings-body {
+  width: 100%;
+  max-width: 916px;
+  margin-inline: auto;
+}
+.model-selection-row .settings-label {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--text);
+}
+.vendor-list {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.vendor-list > .settings-card.vendor-row {
+  margin: 0;
+  padding: 9px 12px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  background: none;
+  font-size: 13.5px;
+}
+.vendor-list > .settings-card.vendor-row:last-child {
+  border-bottom: 0;
+}
 .nav-footer-pill b {
   color: var(--text);
   font-weight: 600;
@@ -9349,4 +9508,132 @@ a.thread-ref:hover {
     padding: 3px 5px;
     font-size: 12px;
   }
+}
+
+/* ---- Right panel (concept-v4 .insp): a band on the card colour with the eyebrow, the tab's one-line
+   summary and underlined icon tabs (the selected one names itself); the content in one bordered
+   frame of boxes; Running at the foot. ---- */
+.right-panel {
+  /* The foot keeps the rail's 10 px, so Running lines up with the left footer. */
+  padding: 0 0 10px;
+  gap: 0;
+}
+.rp-band {
+  padding: 10px 12px 0;
+  gap: 4px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+}
+.rp-eyebrow {
+  font: 600 10.5px var(--mono);
+  letter-spacing: 0.1em;
+  color: var(--text-dimmer);
+}
+.rp-band .rp-title {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+.rp-info {
+  font-size: 12px;
+  line-height: 18px;
+}
+.rp-tabs {
+  margin-top: 2px;
+  padding: 0;
+  gap: 2px;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  background: none;
+  border-radius: 0;
+  scrollbar-width: none;
+}
+.rp-tabs .rp-tab,
+.rp-tabs .rp-tab.is-active {
+  padding: 5px 7px;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  font-size: 12px;
+  line-height: 18px;
+}
+.rp-tabs .rp-tab.is-active {
+  border-bottom-color: var(--accent);
+  color: var(--text);
+}
+.rp-tabs .rp-tab:not(.is-active) .rp-tab-label {
+  display: none;
+}
+.rp-frame {
+  margin: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: hsl(var(--card) / 0.55);
+  box-shadow: none;
+  font-size: 12.5px;
+  line-height: 18.75px;
+}
+.rp-frame .rp-stack {
+  gap: 14px;
+}
+.rp-frame .rp-section {
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+}
+.rp-frame .rp-section-title {
+  font: 600 11px var(--font);
+  letter-spacing: 0.08em;
+  margin: 0 0 8px;
+}
+.running {
+  padding: 6px 12px 8px;
+  border-top: 1px solid var(--line);
+}
+
+/* A tab's count beside its icon; orange when it needs you (open feedback). */
+.rp-tab-count {
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--surface2);
+  color: var(--text-dim);
+  font: 600 10.5px / 16px var(--font);
+  text-align: center;
+}
+.rp-tab-count.is-attention {
+  background: var(--st-attention);
+  color: var(--bg);
+}
+.nav-footer-pill b {
+  color: var(--text);
+  font-weight: 600;
+}
+
+/* The narrow-screen rule (panel-sizes.js panelFit): the right panel floats over the centre as a
+   drawer, its width kept, while its grid column keeps only the icon strip's width. */
+.panel-right {
+  /* The drawer's width, set from the panel's chosen size (app.js). */
+  --right-overlay-width: 360px;
+}
+.panels--right-overlay > .panel-right {
+  position: relative;
+  overflow: visible;
+}
+.panels--right-overlay > .panel-right > .right-panel:not(.right-panel--collapsed) {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 25;
+  width: var(--right-overlay-width);
+  background: var(--bg);
+  border-left: 1px solid var(--line-strong);
+  box-shadow: -18px 0 36px hsl(0 0% 0% / 0.45);
 }

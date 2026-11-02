@@ -79,24 +79,21 @@ export function Running({ threadId }) {
     railView.value = 'open';
     railExpanded.value = new Set([...railExpanded.value, threadId]);
   };
-  // Running sits level with the left footer block: same height, so the two bottoms line up.
-  useEffect(() => {
-    const footer = document.querySelector('.nav-footer');
-    const panel = document.querySelector('.running');
-    if (!footer || !panel || typeof ResizeObserver === 'undefined') return;
-    const sync = () =>
-      panel.style.setProperty('--footer-h', `${footer.getBoundingClientRect().height}px`);
-    const watch = new ResizeObserver(sync);
-    watch.observe(footer);
-    sync();
-    return () => watch.disconnect();
-  }, []);
-  return html`<section class="running" aria-label="Running">
-    <header class="running-head"><b>Running</b><span>${live + subagents.length} live</span></header>
-    ${processes.map(
-      (
-        p,
-      ) => html`<div key=${p.taskId} class="running-row ${p.state === 'running' ? 's-running' : 's-ended'}" title=${[p.command, p.summary].filter(Boolean).join('\n')}>
+  // Running folds to one line, sized to its content (design review 11-02); it opens by itself while
+  // something is live, and a click keeps it the way you left it.
+  const [chosen, setChosen] = useState(null);
+  const count = live + subagents.length;
+  const open = chosen ?? processes.length + subagents.length > 0;
+  return html`<section class="running ${open ? '' : 'is-folded'}" aria-label="Running">
+    <button type="button" class="running-head" aria-expanded=${open} onClick=${() => setChosen(!open)}>
+      <span class="running-caret">${open ? '▾' : '▸'}</span><b>Running</b><span>${count} live</span>
+    </button>
+    ${
+      open
+        ? processes.map(
+            (
+              p,
+            ) => html`<div key=${p.taskId} class="running-row ${p.state === 'running' ? 's-running' : 's-ended'}" title=${[p.command, p.summary].filter(Boolean).join('\n')}>
         <span class="running-kind">$</span>
         <span class="running-label"><b>${p.label || p.command || p.taskType}</b><code>${p.taskType}${p.command && p.label ? ` · ${p.command}` : ''}</code></span>
         <span class="running-state"><i>${p.state === 'running' ? since(p.startedAt) : p.state}</i>
@@ -108,11 +105,15 @@ export function Running({ threadId }) {
               : null
           }</span>
       </div>`,
-    )}
-    ${subagents.map(
-      (
-        t,
-      ) => html`<div key=${t.threadId} class="running-row s-running" role="button" tabindex="0" title="Show it under this thread in the list"
+          )
+        : null
+    }
+    ${
+      open
+        ? subagents.map(
+            (
+              t,
+            ) => html`<div key=${t.threadId} class="running-row s-running" role="button" tabindex="0" title="Show it under this thread in the list"
         onClick=${reveal}>
         <span class="running-kind">↳</span>
         <span class="running-label"><b>${threadName(t)}</b><code>subagent${t.meta?.spawn?.agentType ? ` · ${t.meta.spawn.agentType}` : ''}</code></span>
@@ -122,8 +123,10 @@ export function Running({ threadId }) {
             selectThread(t.threadId);
           }}>Open</button></span>
       </div>`,
-    )}
-    ${processes.length || subagents.length ? null : html`<div class="running-none">Nothing running.</div>`}
-    <div class="running-none" title="Foundry has no scheduler for threads yet">Scheduled and background jobs: not tracked yet.</div>
+          )
+        : null
+    }
+    ${open && !processes.length && !subagents.length ? html`<div class="running-none">Nothing running.</div>` : null}
+    ${open ? html`<div class="running-none" title="Foundry has no scheduler for threads yet">Scheduled and background jobs: not tracked yet.</div>` : null}
   </section>`;
 }

@@ -1,8 +1,20 @@
 import { afterEach, expect, test } from 'bun:test';
 import { existsSync } from 'node:fs';
-import { chmod, copyFile, mkdir, mkdtemp, readdir, readFile, rm } from 'node:fs/promises';
+import {
+  chmod,
+  copyFile,
+  lstat,
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  readlink,
+  rm,
+  stat,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
+import { kingdomLimitReadingSchema } from '../src/providers/kingdom-client';
 import { kingdomInstallationPaths } from '../src/providers/kingdom-installation-connection';
 import {
   KingdomSubscriptionAuthentication,
@@ -13,6 +25,7 @@ import {
 import {
   kingdomLogin,
   maskedOutput,
+  museDeviceLogin,
   selectOwner,
   setKingdomProject,
   setProjectCapacity,
@@ -33,11 +46,18 @@ const temporary = async () => {
 };
 
 const setupToken = `sk-ant-oat01-${'a'.repeat(40)}`;
+/** An opaque Muse bearer, as Meta's device sign-in returns it (no refresh token, no expiry). */
+const museToken = `muse-${'m'.repeat(40)}`;
 
 async function kingdomWithLogin(
-  runtime: 'claude' | 'codex',
+  runtime: 'claude' | 'codex' | 'muse',
   userClaudeDirectory?: string,
   userCodexDirectory?: string,
+  muse: {
+    userConfigDirectory?: string;
+    museStatus?: ConstructorParameters<typeof KingdomSubscriptionAuthentication>[0]['museStatus'];
+    warn?: (message: string) => void;
+  } = {},
 ) {
   const directory = await temporary();
   const owner = `OrganizationUser:${crypto.randomUUID()}:${crypto.randomUUID()}:`;
@@ -45,6 +65,7 @@ async function kingdomWithLogin(
     loginId = crypto.randomUUID(),
     capacityId = crypto.randomUUID();
   const calls: { action: string; body: Record<string, unknown> }[] = [];
+  const executionIds: string[] = [];
   const kingdom = mockKingdom({
     onSignet: (action, body, presented) => {
       calls.push({ action, body });
@@ -63,18 +84,28 @@ async function kingdomWithLogin(
           expiresAt: new Date(Date.now() + 3600000).toISOString(),
           gatewayPath: '/api/v1/access/releaseSubscription',
         };
-      if (action === 'releaseSubscription')
+      if (action === 'releaseSubscription') {
+        const executionId = crypto.randomUUID();
+        executionIds.push(executionId);
         return {
           bindingId,
           integrationId: loginId,
           capacityId,
-          executionId: crypto.randomUUID(),
+          executionId,
           runtime,
-          accessToken: runtime === 'claude' ? setupToken : 'chatgpt-access-token',
+          accessToken:
+            runtime === 'claude'
+              ? setupToken
+              : runtime === 'codex'
+                ? 'chatgpt-access-token'
+                : museToken,
           idToken: runtime === 'codex' ? 'chatgpt-id-token' : null,
           accountId: runtime === 'codex' ? 'account-1' : null,
           expiresAt: null,
+          credentialVersion: 3,
         };
+      }
+      if (action === 'reportCredentialRejected') return { integrationId: loginId, recorded: true };
       return { capacityId };
     },
   });
@@ -92,8 +123,10 @@ async function kingdomWithLogin(
     }),
     ...(userClaudeDirectory ? { userClaudeDirectory } : {}),
     ...(userCodexDirectory ? { userCodexDirectory } : {}),
+    ...muse,
   });
   return {
+    executionIds,
     directory,
     auth,
     calls,
@@ -459,4 +492,367 @@ test('a Foundry project links to one Kingdom project; a Kingdom-capacity login b
   const unlinked = await setKingdomProject(store, projectId, null);
   expect(unlinked.projects[projectId]!.kingdomProject).toBeUndefined();
   expect(capacityKingdomProject(unlinked, unlinked.projects[projectId]!)).toBeUndefined();
+});
+
+/** The user's own config home: git config, a gh login, and their Muse login and settings. */
+async function userConfigHome() {
+  const home = await temporary();
+  await mkdir(join(home, 'git'));
+  await Bun.write(join(home, 'git', 'config'), '[user]\n\tname = me\n');
+  await mkdir(join(home, 'muse'), { recursive: true });
+  await Bun.write(join(home, 'muse', 'auth.json'), '{"the":"user’s own login"}');
+  await Bun.write(join(home, 'muse', 'settings.json'), '{"schema_version":1}');
+  await Bun.write(join(home, 'muse', 'trust.json'), '{"trusted":[]}');
+  await Bun.write(join(home, 'muse', '.auth.json.lock'), '');
+  await mkdir(join(home, 'muse', 'skills'));
+  return home;
+}
+
+/** `muse usage --json` exiting `code` with `stderr`. */
+const museUsage = (code: number, stderr: string, seen?: Record<string, string | undefined>[]) =>
+  ((environment: Record<string, string | undefined>) => {
+    seen?.push(environment);
+    return {
+      stdout: new Response('').body!,
+      stderr: new Response(stderr).body!,
+      exited: Promise.resolve(code),
+      kill() {},
+    };
+  }) as unknown as ConstructorParameters<typeof KingdomSubscriptionAuthentication>[0]['museStatus'];
+
+test('a Kingdom-capacity Muse thread runs on its own config home: the released login, the user’s config linked in', async () => {
+  const user = await userConfigHome();
+  const { directory, auth, loginId, calls } = await kingdomWithLogin('muse', undefined, undefined, {
+    userConfigDirectory: user,
+  });
+  const launch = await auth.prepare('thread-1', 'muse');
+  expect(calls[0]!.body.selection).toMatchObject({ runtime: 'muse' });
+  const child = launch.launch(['muse', 'serve'], {
+    PATH: '/usr/bin',
+    META_API_KEY: 'metered',
+    XDG_CONFIG_HOME: '/somewhere/else',
+    XDG_DATA_HOME: '/my/data',
+  });
+  const home = join(directory, 'subscriptions', loginId, 'muse', 'muse-config');
+  expect(child.argv).toEqual(['muse', 'serve']);
+  expect(child.env).toMatchObject({
+    XDG_CONFIG_HOME: home,
+    XDG_DATA_HOME: '/my/data',
+    MUSE_NO_AUTO_UPDATE: '1',
+  });
+  expect(child.env.META_API_KEY).toBeUndefined();
+  const login = join(home, 'muse', 'auth.json');
+  expect(JSON.parse(await readFile(login, 'utf8'))).toEqual({
+    schema_version: 1,
+    providers: {
+      meta: {
+        mechanism: 'oauth',
+        storage: 'file',
+        obtained_via: 'device_code',
+        api_base_url: 'https://api.meta.ai/v1',
+        access_token: museToken,
+      },
+    },
+  });
+  expect((await stat(login)).mode & 0o777).toBe(0o600);
+  // The user's other config is reached by link; their Muse settings by private copy; their login never.
+  expect(await readlink(join(home, 'git'))).toBe(join(user, 'git'));
+  expect(await readFile(join(home, 'git', 'config'), 'utf8')).toContain('name = me');
+  expect((await lstat(join(home, 'muse', 'settings.json'))).isSymbolicLink()).toBe(false);
+  expect(await readFile(join(home, 'muse', 'settings.json'), 'utf8')).toBe('{"schema_version":1}');
+  expect(await readlink(join(home, 'muse', 'skills'))).toBe(join(user, 'muse', 'skills'));
+  // A file Muse writes is a private copy, never a link into the user's own.
+  expect((await lstat(join(home, 'muse', 'trust.json'))).isSymbolicLink()).toBe(false);
+  expect(await readFile(join(home, 'muse', 'trust.json'), 'utf8')).toBe('{"trusted":[]}');
+  expect(existsSync(join(home, 'muse', '.auth.json.lock'))).toBe(false);
+  expect(await readFile(join(user, 'muse', 'auth.json'), 'utf8')).toBe(
+    '{"the":"user’s own login"}',
+  );
+  // The CLI adds its subscription key to the file; a second holder on the same token keeps it.
+  await Bun.write(
+    login,
+    JSON.stringify({
+      ...JSON.parse(await readFile(login, 'utf8')),
+      providers: {
+        meta: { ...JSON.parse(await readFile(login, 'utf8')).providers.meta, api_key: 'k' },
+      },
+    }),
+  );
+  await chmod(login, 0o600);
+  const second = await auth.prepare('thread-2', 'muse');
+  second.launch(['muse', 'serve'], {});
+  expect(JSON.parse(await readFile(login, 'utf8')).providers.meta.api_key).toBe('k');
+  // An entry the user removed loses its link at the next launch.
+  await rm(join(user, 'git'), { recursive: true });
+  launch.release();
+  expect(existsSync(login)).toBe(true);
+  second.release();
+  expect(existsSync(login)).toBe(false);
+  const third = await auth.prepare('thread-3', 'muse');
+  third.launch(['muse', 'serve'], {});
+  expect(existsSync(join(home, 'git'))).toBe(false);
+  third.release();
+});
+
+test('a rejected Muse login is confirmed with `muse usage` in its own home, then reported once', async () => {
+  const user = await userConfigHome();
+  const seen: Record<string, string | undefined>[] = [];
+  const warnings: string[] = [];
+  const { directory, auth, calls, executionIds, loginId } = await kingdomWithLogin(
+    'muse',
+    undefined,
+    undefined,
+    {
+      userConfigDirectory: user,
+      museStatus: museUsage(1, 'muse usage: usage refresh failed (credential_rejected)\n', seen),
+      warn: (message) => warnings.push(message),
+    },
+  );
+  const launch = await auth.prepare('thread-1', 'muse');
+  launch.launch(['muse', 'serve'], {});
+  const home = join(directory, 'subscriptions', loginId, 'muse', 'muse-config');
+  // Another thread now runs on a newer token in the shared home: the check must not rewrite it.
+  const shared = join(home, 'muse', 'auth.json');
+  const newer = (await readFile(shared, 'utf8')).replace(museToken, 'newer-token');
+  await Bun.write(shared, newer);
+  expect(await launch.loginFailed?.()).toBe(true);
+  expect(await launch.loginFailed?.()).toBe(true);
+  expect(await readFile(shared, 'utf8')).toBe(newer);
+  expect(seen).toHaveLength(1);
+  // Checked in a throwaway config home beside the login's, removed afterwards.
+  const checked = seen[0]!.XDG_CONFIG_HOME!;
+  expect(checked.startsWith(join(directory, 'subscriptions', loginId, 'muse', 'check-'))).toBe(
+    true,
+  );
+  expect(existsSync(checked)).toBe(false);
+  expect(seen[0]!.MUSE_NO_AUTO_UPDATE).toBe('1');
+  const reports = calls.filter((call) => call.action === 'reportCredentialRejected');
+  expect(reports.map((call) => call.body)).toEqual([
+    { executionId: executionIds[0], credentialVersion: 3 },
+  ]);
+  expect(warnings.join('\n')).toContain('bun run kingdom login muse');
+  expect(warnings.join('\n')).not.toContain(museToken);
+  // The next launch resolves again, so Kingdom can choose another login in the pool.
+  launch.release();
+  await auth.prepare('thread-1', 'muse');
+  expect(calls.filter((call) => call.action === 'resolveRun')).toHaveLength(2);
+});
+
+test('a Muse failure that is not a rejected login is never reported, and is not re-checked at once', async () => {
+  const user = await userConfigHome();
+  const seen: Record<string, string | undefined>[] = [];
+  const { auth, calls, directory, loginId } = await kingdomWithLogin('muse', undefined, undefined, {
+    userConfigDirectory: user,
+    museStatus: museUsage(1, 'muse usage: network unreachable\n', seen),
+  });
+  const launch = await auth.prepare('thread-1', 'muse');
+  // Checked even for a launch that never ran: the check has its own config home.
+  expect(await launch.loginFailed?.()).toBe(false);
+  expect(await launch.loginFailed?.()).toBe(false);
+  expect(seen).toHaveLength(1);
+  expect(calls.some((call) => call.action === 'reportCredentialRejected')).toBe(false);
+  expect(
+    existsSync(
+      join(directory, 'subscriptions', loginId, 'muse', 'muse-config', 'muse', 'auth.json'),
+    ),
+  ).toBe(false);
+});
+
+test('a Muse pool with no login left says which login Meta rejected', async () => {
+  const directory = await temporary();
+  const user = await userConfigHome();
+  const owner = `User:${crypto.randomUUID()}::`;
+  const loginId = crypto.randomUUID();
+  let resolves = 0;
+  const kingdom = mockKingdom({
+    onSignet: (action, body, presented) => {
+      if (action === 'resolveRun') {
+        if (++resolves > 1)
+          return Response.json({ error: 'No authorized capacity matches' }, { status: 409 });
+        return {
+          id: crypto.randomUUID(),
+          owner: presented.owner,
+          signetEnrollmentId: presented.enrollmentId,
+          runId: body.runId,
+          integrationId: loginId,
+          capacityId: crypto.randomUUID(),
+          model: body.selection.model,
+          effort: body.selection.effort,
+          runtime: 'muse',
+          authentication: 'subscription',
+          expiresAt: new Date(Date.now() + 3600000).toISOString(),
+          gatewayPath: '/api/v1/access/releaseSubscription',
+        };
+      }
+      if (action === 'releaseSubscription')
+        return {
+          bindingId: body.bindingId,
+          integrationId: loginId,
+          capacityId: crypto.randomUUID(),
+          executionId: crypto.randomUUID(),
+          runtime: 'muse',
+          accessToken: museToken,
+          idToken: null,
+          accountId: null,
+          expiresAt: null,
+          credentialVersion: 1,
+        };
+      return { integrationId: loginId, recorded: true };
+    },
+  });
+  cleanups.push(async () => kingdom.stop());
+  const { credentialFile } = await heldSignet(kingdom, directory, owner);
+  const auth = new KingdomSubscriptionAuthentication({
+    directory: join(directory, 'subscriptions'),
+    capacity: async () => ({
+      url: kingdom.url,
+      credentialFile,
+      model: 'muse-wonder-1.0',
+      effort: 'default',
+    }),
+    userConfigDirectory: user,
+    museStatus: museUsage(1, 'usage refresh failed (credential_rejected)'),
+    warn: () => {},
+  });
+  const launch = await auth.prepare('thread-1', 'muse');
+  await launch.loginFailed?.();
+  await expect(auth.prepare('thread-1', 'muse')).rejects.toThrow(
+    `No authorized capacity matches. Meta rejected this pool's Muse Code login (${loginId})`,
+  );
+});
+
+test('a Muse limit reading reaches Kingdom as windows only (its strict reading has no tier or plan)', () => {
+  const reading = limitReading({
+    runtime: 'muse',
+    source: 'stream',
+    observedAt: 0,
+    blocked: false,
+    windows: [
+      { id: 'window', usedPercent: 16, resetsAt: 1_000, windowMinutes: 300 },
+      { id: 'weekly', usedPercent: 4, windowMinutes: 10_080 },
+    ],
+    ...({ plan: 'Muse Code Everyday Usage', tier: 2, reachedType: 'quota' } as object),
+  } as Parameters<typeof limitReading>[0]);
+  expect(kingdomLimitReadingSchema.parse(reading)).toEqual({
+    rateLimited: false,
+    retryAfterMs: null,
+    windows: [
+      { id: 'window', usedPercent: 16, resetsAt: 1_000 },
+      { id: 'weekly', usedPercent: 4, resetsAt: null },
+    ],
+  });
+});
+
+test('kingdom login muse signs in with Meta’s device flow and hands the token to Kingdom', async () => {
+  const { directory, kingdom, owner, keyFile, integrationId } = await kingdomWithLogin('muse');
+  const configDir = join(directory, 'config');
+  const store = new ConfigStore(configDir);
+  const config = starterConfig('claude-code', 'fable');
+  const { keyFile: installationKey } = kingdomInstallationPaths(configDir, kingdom.url);
+  await mkdir(dirname(installationKey), { recursive: true, mode: 0o700 });
+  await copyFile(keyFile, installationKey);
+  await chmod(installationKey, 0o600);
+  config.kingdomIntegrations = [
+    { url: kingdom.url, integrationId, owner, signetId: crypto.randomUUID() },
+  ];
+  await store.save(config);
+  const stored = await kingdomLogin({
+    configDir,
+    runtime: 'muse',
+    store,
+    login: async (runtime) => {
+      expect(runtime).toBe('muse');
+      return { accessToken: museToken };
+    },
+  });
+  expect(stored.status).toBe('stored');
+  expect(kingdom.logins).toEqual([{ integrationId, runtime: 'muse', accessToken: museToken }]);
+});
+
+/** Meta's device endpoints, scripted: the start, then each poll's answer in turn. */
+function deviceFlow(polls: Array<{ status: number; body: unknown }>, start?: Partial<Response>) {
+  const requests: { url: string; form: URLSearchParams; redirect?: RequestInit['redirect'] }[] = [];
+  const fetcher = (async (input: string | URL | Request, init?: RequestInit) => {
+    requests.push({
+      url: String(input),
+      form: new URLSearchParams(String(init?.body)),
+      redirect: init?.redirect,
+    });
+    if (String(input).endsWith('/oidc/device/authorization/'))
+      return start
+        ? new Response(null, { status: start.status ?? 500 })
+        : Response.json({
+            device_code: 'device-1',
+            user_code: 'ABCD-EFGH',
+            verification_uri: 'https://auth.meta.com/device',
+            verification_uri_complete: 'http://auth.meta.com/device?code=ABCD-EFGH',
+            expires_in: 600,
+            interval: 2,
+          });
+    const next = polls.shift() ?? { status: 400, body: { error: 'expired_token' } };
+    return Response.json(next.body, { status: next.status });
+  }) as typeof fetch;
+  return { fetcher, requests };
+}
+
+test('Muse device sign-in: shows the page and code, waits, slows down when asked, and never prints the token', async () => {
+  const { fetcher, requests } = deviceFlow([
+    { status: 400, body: { error: 'authorization_pending' } },
+    { status: 400, body: { error: 'slow_down' } },
+    { status: 200, body: { access_token: museToken, token_type: 'Bearer' } },
+  ]);
+  const written: string[] = [];
+  const opened: string[] = [];
+  const waits: number[] = [];
+  const login = await museDeviceLogin({
+    fetch: fetcher,
+    write: (text) => written.push(text),
+    open: (url) => opened.push(url),
+    sleep: async (ms) => waits.push(ms),
+    now: () => 0,
+  });
+  expect(login).toEqual({ accessToken: museToken });
+  expect(requests[0]!.url).toBe('https://auth.meta.com/oidc/device/authorization/');
+  expect(requests[0]!.form.get('client_id')).toBe('1031625952748946');
+  expect(requests[1]!.form.get('grant_type')).toBe('urn:ietf:params:oauth:grant-type:device_code');
+  expect(requests[1]!.form.get('device_code')).toBe('device-1');
+  expect(requests.every((request) => request.redirect === 'manual')).toBe(true);
+  // The http page is upgraded to https, as the launcher does.
+  expect(opened).toEqual(['https://auth.meta.com/device?code=ABCD-EFGH']);
+  expect(written.join('')).toContain('ABCD-EFGH');
+  expect(written.join('')).not.toContain(museToken);
+  expect(waits).toEqual([2000, 2000, 7000]);
+});
+
+test('Muse device sign-in fails plainly on denial, expiry, an unstarted flow or a redirect', async () => {
+  const quiet = { write: () => {}, open: () => {}, sleep: async () => {}, now: () => 0 };
+  await expect(
+    museDeviceLogin({
+      ...quiet,
+      fetch: deviceFlow([{ status: 400, body: { error: 'access_denied' } }]).fetcher,
+    }),
+  ).rejects.toThrow('was denied');
+  await expect(
+    museDeviceLogin({
+      ...quiet,
+      fetch: deviceFlow([{ status: 400, body: { error: 'expired_token' } }]).fetcher,
+    }),
+  ).rejects.toThrow('expired');
+  let clock = 0;
+  await expect(
+    museDeviceLogin({
+      ...quiet,
+      now: () => clock,
+      sleep: async () => {
+        clock += 3_600_000;
+      },
+      fetch: deviceFlow([]).fetcher,
+    }),
+  ).rejects.toThrow('expired before it was approved');
+  await expect(
+    museDeviceLogin({ ...quiet, fetch: deviceFlow([], { status: 404 }).fetcher }),
+  ).rejects.toThrow('not available yet');
+  await expect(
+    museDeviceLogin({ ...quiet, fetch: deviceFlow([], { status: 302 }).fetcher }),
+  ).rejects.toThrow('redirected');
 });

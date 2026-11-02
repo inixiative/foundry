@@ -23,7 +23,7 @@ import { KnowledgePage } from './knowledge.js';
 import { html, render, useEffect, useRef, useState } from './lib.js';
 import { loadMachineProfile } from './machine-icons.js';
 import { NavRail } from './nav-rail.js';
-import { panelColumns, RestoreTab } from './panel-sizes.js';
+import { panelColumns, panelFit, RestoreTab } from './panel-sizes.js';
 import { ProjectHome } from './project-home.js';
 import { RightPanel } from './right-panel.js';
 import {
@@ -378,7 +378,7 @@ function App() {
   const inbox = feedbackInboxOpen.value;
   const page = route.value.page;
 
-  const panelClass = `panels panels--proj-${projOpen ? 'open' : 'closed'} panels--detail-${detailOpen ? 'open' : 'closed'}${forge || inbox ? ' panels--forge' : ''}${boardOpen.value || watchtowerOpen.value ? ' panels--board' : ''}`;
+  const panelClass = `panels panels--proj-${projOpen ? 'open' : 'closed'} panels--detail-${detailOpen ? 'open' : 'closed'}${forge || inbox ? ' panels--forge' : ''}${boardOpen.value || watchtowerOpen.value ? ' panels--board' : ''}${panelFit.value.leftFolded ? ' panels--left-folded' : ''}${panelFit.value.rightOverlay && !(forge || inbox) ? ' panels--right-overlay' : ''}`;
 
   if (page !== 'workspace')
     return html`
@@ -410,7 +410,7 @@ function App() {
         <div class="panel-center" id="workspace-conversation" tabIndex="0">
           ${
             forge
-              ? html`<div class="forge-master"><${SelfChatPane} docked=${false} /></div>`
+              ? html`<div class="forge-master"><${SelfChatPane} /></div>`
               : inbox
                 ? html`<${FeedbackInbox} />`
                 : html`
@@ -436,7 +436,7 @@ function App() {
         </div>
 
         <!-- Right: reference about the thread, or the inspector -->
-        <div class="panel-right" id="workspace-detail" tabIndex="0">
+        <div class="panel-right" id="workspace-detail" tabIndex="0" style=${`--right-overlay-width:${panelFit.value.right}px`}>
           <${RightPanel} onSpanSelect=${handleSpanSelect} />
         </div>
       </div>

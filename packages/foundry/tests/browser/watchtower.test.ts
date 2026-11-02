@@ -72,7 +72,8 @@ test('h opens the Watchtower: every stage is a column, a thread is a card, a car
     const filters = tower.getByRole('toolbar', { name: 'Filters' });
     await filters.getByRole('button', { name: /^Actors/ }).waitFor();
     expect(await filters.getByRole('button', { name: /^People/ }).count()).toBe(0);
-    // The Watching sidebar: Kingdoms, projects, connectors (Manage), people and their machines.
+    // Watching, opened from the header: Kingdoms, projects, connectors (Manage), people and their machines.
+    await tower.getByRole('button', { name: 'Watching ▾' }).click();
     const watching = tower.getByRole('complementary', { name: 'Watching' });
     for (const name of ['Kingdoms', 'Projects', 'Connectors', 'People and their machines'])
       await watching.getByRole('region', { name }).waitFor();
