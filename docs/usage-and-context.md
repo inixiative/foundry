@@ -498,15 +498,33 @@ name too (`"source": "regions"` becomes `"enabled": true`; `"roster"` has no
 replacement). There is no alias, migration or fallback.
 
 ```
-<project>/.foundry/project.json   the repository's own Foundry settings, committed:
-                                  { "$comment"?: "…", "chorus"?: { enabled?, regions? | layers?,
-                                    consumed?, reception?, wardens?: { stages }, heralds?: { stages } } }
+<project>/.foundry/project.json   the repository's own Foundry settings, committed: any project
+                                  setting the team shares (REPOSITORY_SETTING_KEYS): threadOnMerge,
+                                  steer, gloss, defaults, feedback, agents, layers, sources,
+                                  chorus, conversations, and an ignored $comment
 ```
 
-The repository file carries only `chorus` (and an ignored `$comment`); any other
-key, or an invalid chorus, is reported (view `chorus.repository.error`, the
-doctor's `repository-settings-unreadable` error) and the file is ignored: a
-checkout never stops the daemon or turns its chorus on. The machine's
+Every project setting is set for me or for everyone (Aron 2026-10-16): this
+machine's `projects[id]` over the repository's file over Foundry's over the
+default, read and written at a dotted path through `GET`/`PUT
+/api/projects/:id/setting` (`effectiveProject`, `config-resolve.ts`). Records
+(`agents`, `layers`, `sources`) merge by id, the machine's entry replacing the
+repository's whole; objects (`gloss`, `feedback`) merge field by field; a worker
+and its model are one unit, taken from the layer that names the worker (FEAT-007).
+Settings that belong to this machine or this person have no "for everyone" form,
+and the file may not carry them: registration (`id`, `path`, `label`, `tags`,
+`description`, `enabled`, `status`), your subscriptions and Kingdom
+(`capacity`, `kingdomCapacity`, `kingdomProject`, `defaults.nativeAuthenticationId`,
+`defaults.kingdomOwnerKey`), and `toolRules`, which gate what agents may run on
+this machine, so a cloned repository can't loosen them (`personalOnlySetting`).
+The file is checked by the same rules as the machine's settings
+(`validateRepositoryProject`); a file that breaks one is reported (view
+`chorus.repository.error`, the doctor's `repository-settings-unreadable` error)
+and none of it applies: a checkout never stops the daemon or changes how its
+threads run. settings.json is validated without the repository's layer
+(`resolveProjectView(…, { repository: false })`), so a worker a teammate commits
+that this machine has no login for is refused when a thread starts, with why,
+not when settings load. The machine's
 `projects[id].chorus` wins key by key: its `enabled` over the repository's, and
 its directories (`regions` or `layers`, one unit) over the repository's. It is
 not named `.foundry/settings.json` because that is a Foundry install's own

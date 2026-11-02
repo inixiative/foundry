@@ -200,6 +200,25 @@ test('done threads, the merge setting, the Kingdom project link and the region p
       false,
     );
     await page.keyboard.press('Escape');
+    // Overrides lists each group the project sets, the team's included, with where it comes from.
+    await fetch(`${origin}/api/projects/shop/setting`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ scope: 'everyone', values: { 'feedback.capture': true } }),
+    });
+    await page.goto(`${origin}/projects/shop/settings/overrides`);
+    await page
+      .locator('[data-setting="feedback"] .setting-source', { hasText: 'Team · .foundry/' })
+      .waitFor();
+    // Conversations: one row per field, each with its layer and ⋯.
+    await page.goto(`${origin}/projects/shop/settings/conversations`);
+    const floor = page.locator('[data-setting="conversations.floor"]');
+    await floor.locator('.setting-source', { hasText: 'Default' }).waitFor();
+    await floor.locator('select').selectOption('conch');
+    await floor.locator('.setting-source', { hasText: 'Yours' }).waitFor();
+    // Chorus: on or off, yours or the team's.
+    await page.goto(`${origin}/projects/shop/settings/chorus`);
+    await page.locator('[data-setting="chorus.enabled"] .setting-source').waitFor();
     // A person setting says why it has no "for everyone".
     await page.goto(`${origin}/projects/shop/settings/integrations`);
     const grants = page.locator('[data-setting="kingdomAccess"]');

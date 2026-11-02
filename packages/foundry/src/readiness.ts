@@ -659,7 +659,7 @@ export async function inspectReadiness(
         'error',
         scope,
         'repository-settings-unreadable',
-        `${c.repository.file} was not read (${c.repository.error}); its chorus setting is ignored.`,
+        `${c.repository.file} was not read (${c.repository.error}); none of its settings apply.`,
       );
   chorus = await Promise.all(
     choruses.map(([scope, c]) =>
