@@ -233,6 +233,7 @@ test('loopback HTTP SDK client retrieves scoped records, sees fresh knowledge, a
   const f = await fixture();
   const client = await httpClient(f.bridge, f.capability);
   expect((await client.listTools()).tools.map((t: any) => t.name).sort()).toEqual([
+    'ask_herald',
     'foundry_conventions',
     'foundry_device',
     'foundry_memory',

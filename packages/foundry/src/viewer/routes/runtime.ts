@@ -15,6 +15,7 @@ import type {
 import { MODEL_REGISTRY, newId, Thread, threadTitle, timeFromId } from '@inixiative/foundry-core';
 import type { Hono } from 'hono';
 import { chorusRetries, chorusRows, turnChorus } from '../../agents/chorus-degraded';
+import type { PlanDrafter } from '../../agents/plan-drafter';
 import type { ProjectRegistry } from '../../agents/project';
 import { type ThreadFactory, WorkerRefusedError } from '../../agents/thread-factory';
 import type { ThreadNamer } from '../../agents/thread-namer';
@@ -72,6 +73,7 @@ export interface RuntimeRoutesDeps {
   projectRegistry?: ProjectRegistry;
   /** Agent-maintained thread names (optional). */
   namer?: ThreadNamer;
+  planDrafter?: PlanDrafter;
   /** Re-derives a thread's branch/worktree/linked work when its worktree changes. */
   threadContext?: ThreadContextTracker;
   localStore?: LocalSessionStore | null;
@@ -145,6 +147,7 @@ export function registerRuntimeRoutes(
     configStore: deps.configStore,
     deviceIdentityPath: deps.deviceIdentityPath,
     namer,
+    planDrafter: deps.planDrafter,
     localStore,
     directory,
     streams,

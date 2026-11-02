@@ -10,6 +10,7 @@ import {
   SignalBus,
 } from '@inixiative/foundry-core';
 import { Cartographer } from '../src/agents/cartographer';
+import { PLAN_ASK_NOTE } from '../src/agents/chorus-reception';
 import { DomainLibrarian, oneCall, type ToolObservation } from '../src/agents/domain-librarian';
 import { FlowOrchestrator } from '../src/agents/flow-orchestrator';
 import { Librarian } from '../src/agents/librarian';
@@ -246,7 +247,8 @@ test('a NO_COMMENT adds nothing to the message delivered to the native session',
   expect(delivered).not.toContain('no-comment');
   expect(delivered).not.toContain(NO_COMMENT);
   const user = silent.inputs[0]!.filter((m) => m.role === 'user').at(-1)!;
-  expect(user.content).toBe(message);
+  // Only Foundry's plan ask (a fresh thread with no plan) rides with it.
+  expect(user.content).toBe(`${message}\n\n---\n\n${PLAN_ASK_NOTE}`);
 
   // The same turn with something to say does reach the session, so the silence above is the protocol's.
   const vocal = runtimeFixture(
