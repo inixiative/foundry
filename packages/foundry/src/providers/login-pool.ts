@@ -26,6 +26,7 @@ import {
 } from '@inixiative/agent-session';
 import { writePrivateJson } from '../client/private-file';
 import { isDefaultProfile, type NativeProfileSource } from './default-profiles';
+import { type LoginAccount, loginAccount, PLAN_UNKNOWN } from './login-account';
 import type {
   NativeAuthenticationLaunch,
   NativeAuthenticationProvider,
@@ -148,6 +149,12 @@ export type LoginStatus = 'ready' | 'signing-in' | 'expired' | 'exhausted';
 export interface PoolLoginState {
   id: string;
   name: string;
+  /** "Claude Ultra (Max 20x)", "ChatGPT Pro", or "plan unknown" (login-account.ts). */
+  plan: string;
+  /** The email it is signed in as, else its organization's name. */
+  account?: string;
+  /** Whose subscription it is, as the person set it. */
+  owner?: string;
   /** This machine's own login location (`~/.claude`, `~/.codex`), not one Foundry made. */
   own: boolean;
   status: LoginStatus;
@@ -231,6 +238,7 @@ export interface LoginPoolOptions {
   /** Test seams. */
   authentication?: (login: NativeProfileSource) => SubscriptionAuthentication;
   probe?: (login: NativeProfileSource) => Promise<LimitSnapshot | undefined>;
+  account?: (login: NativeProfileSource, limits?: LimitSnapshot) => Promise<LoginAccount>;
   /** Whether a login is the runtime's own default location. */
   own?: (login: NativeProfileSource) => boolean;
   now?: () => number;
@@ -247,6 +255,8 @@ export class LoginPoolAuthentication implements NativeAuthenticationProvider {
   private assigned = new Map<string, { loginId: string; why: LoginChoice }>();
   /** Logins whose status check failed, with the refusal, until a later check passes. */
   private expired = new Map<string, string>();
+  /** Each login's plan and account, as last read (login-account.ts). */
+  private accounts = new Map<string, LoginAccount>();
   /** Launches holding each login (a native process running on it). */
   private holders = new Map<string, number>();
   constructor(private options: LoginPoolOptions) {}
@@ -258,7 +268,7 @@ export class LoginPoolAuthentication implements NativeAuthenticationProvider {
     return this.options.logins().filter((login) => login.runtime === this.runtime);
   }
   private authFor(login: NativeProfileSource): SubscriptionAuthentication {
-    const { name: _label, ...identity } = login;
+    const { name: _label, owner: _owner, ...identity } = login;
     const key = JSON.stringify(identity);
     const held = this.auths.get(login.id);
     if (held?.key === key) return held.auth;
@@ -491,6 +501,22 @@ export class LoginPoolAuthentication implements NativeAuthenticationProvider {
       .map((instance) => instance.id);
     if (stale.length) await pool.refreshLimits(stale).catch(() => {});
   }
+  /** Reads each login's plan and account (no model turn; cached a few minutes per login). */
+  async readAccounts(): Promise<void> {
+    const readings = new Map(
+      this.ranking()
+        .instances()
+        .map((i) => [i.id, i.limits]),
+    );
+    await Promise.all(
+      this.logins().map(async (login) => {
+        this.accounts.set(
+          login.id,
+          await (this.options.account ?? loginAccount)(login, readings.get(login.id)),
+        );
+      }),
+    );
+  }
   /** Checks each login's sign-in (no model turn; cached a few minutes per login). */
   async checkLogins(): Promise<void> {
     await Promise.all(
@@ -538,9 +564,13 @@ export class LoginPoolAuthentication implements NativeAuthenticationProvider {
           ? 'exhausted'
           : 'ready';
       const limits = readings.get(login.id);
+      const account = this.accounts.get(login.id);
       return {
         id: login.id,
         name: loginName(login, own),
+        plan: account?.plan ?? PLAN_UNKNOWN,
+        ...(account?.account ? { account: account.account } : {}),
+        ...(login.owner ? { owner: login.owner } : {}),
         own,
         status,
         ...(expired ? { issue: expired } : excluded ? { issue: excluded } : {}),

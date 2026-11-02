@@ -784,6 +784,8 @@ export function createViewer(config: ViewerConfig) {
       configStore,
       foundryDir: config.configDir ?? '.foundry',
     });
+  // A viewer without this machine's logins (API tokens, tests) has no pools to show.
+  else app.get('/api/providers/pools', (c) => c.json({ pools: [], setups: [], kingdom: [] }));
 
   // The browser and offline verifier execute the same import-free proof module.
   app.get('/ui/delivery-evidence.js', async (c) =>

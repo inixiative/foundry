@@ -12,8 +12,9 @@
  */
 import { rmSync } from 'node:fs';
 import type { Hono } from 'hono';
+import { PLAN_UNKNOWN } from '../../providers/login-account';
 import type { LoginPoolAuthentication, LoginRunLog, PoolState } from '../../providers/login-pool';
-import { type LoginSetup, removeLogin, renameLogin } from '../../providers/login-setup';
+import { type LoginSetup, removeLogin, updateLogin } from '../../providers/login-setup';
 import {
   LOGIN_ROUTINGS,
   type LoginPoolSettings,
@@ -49,6 +50,7 @@ export function registerLoginRoutes(app: Hono, deps: LoginRoutesDeps): void {
       const pool = pools[runtime];
       if (!pool) continue;
       await Promise.all([pool.refresh(), pool.checkLogins()]);
+      await pool.readAccounts();
       const state = pool.state(loginPoolSettings(configStore.config, runtime, project));
       // A sign-in in progress shows as a login signing in.
       for (const pending of setup.list())
@@ -56,6 +58,7 @@ export function registerLoginRoutes(app: Hono, deps: LoginRoutesDeps): void {
           state.logins.push({
             id: pending.id,
             name: pending.name,
+            plan: PLAN_UNKNOWN,
             own: false,
             status: 'signing-in',
             runs: 0,
@@ -152,9 +155,19 @@ export function registerLoginRoutes(app: Hono, deps: LoginRoutesDeps): void {
   });
 
   app.patch('/api/providers/logins/:id', async (c) => {
-    const body = (await c.req.json().catch(() => ({}))) as { name?: string };
+    const body = (await c.req.json().catch(() => ({}))) as {
+      name?: string;
+      owner?: string | null;
+    };
+    if (body.name === undefined && body.owner === undefined)
+      return c.json({ error: 'Send a name or an owner' }, 400);
     try {
-      await configStore.update((draft) => renameLogin(draft, c.req.param('id'), body.name ?? ''));
+      await configStore.update((draft) =>
+        updateLogin(draft, c.req.param('id'), {
+          ...(body.name !== undefined ? { name: body.name } : {}),
+          ...(body.owner !== undefined ? { owner: body.owner } : {}),
+        }),
+      );
       return c.json({ ok: true });
     } catch (error) {
       return c.json({ error: (error as Error).message }, 400);

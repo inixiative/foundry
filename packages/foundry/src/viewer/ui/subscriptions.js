@@ -175,15 +175,43 @@ export function LastRuns({ pool, limit = 6 }) {
   </div>`;
 }
 
-/** A login row: status dot, name, its meters and the turns it served in the last five hours. */
+const runsText = (n) => `${n} run${n === 1 ? '' : 's'}`;
+
+/** "resets in 1 h 12 m": the 5-hour window's next reset. */
+export function resetsIn(limits, now = Date.now()) {
+  const at = (limits?.windows ?? []).find((w) => (w.windowMinutes ?? 0) < 1440)?.resetsAt;
+  if (!at) return null;
+  const minutes = Math.max(0, Math.round((new Date(at).getTime() - now) / 60_000));
+  return minutes < 60
+    ? `resets in ${minutes} m`
+    : `resets in ${Math.floor(minutes / 60)} h ${String(minutes % 60).padStart(2, '0')} m`;
+}
+
+/** "Claude Ultra (Max 20x) · personal · aron@…": the plan as the provider names it, whose, as whom. */
+export function LoginFacts({ login }) {
+  return html`<span class="pool-login-facts">
+    <span class=${`pool-plan${login.plan === 'plan unknown' ? ' is-unknown' : ''}`} title="The plan, as the provider names it">${login.plan}</span>
+    ${login.owner ? html` · <span class="pool-owner" title="Whose subscription it is">${login.owner}</span>` : null}
+    ${login.account ? html` · <span class="pool-account" title="Signed in as">${login.account}</span>` : null}
+  </span>`;
+}
+
+/** A login row: status dot, name, its plan, owner and account, meters with the reset, and turns this window. */
 export function LoginRow({ login }) {
+  const reset = resetsIn(login.limits);
   return html`<li class="pool-login" data-status=${login.status}>
     <div class="pool-login-head" title=${[STATUS_LABEL[login.status], login.issue].filter(Boolean).join(' · ')}>
       <span class=${`nav-footer-dot ${STATUS_TONE[login.status]}`}></span>
       <span class="pool-login-name">${login.name}${login.preferred ? html` <span class="pool-pref" title="The preferred login">★</span>` : null}</span>
-      <span class="pool-login-runs" title="Turns it served in the last five hours">${login.runs} in 5h</span>
+      <span class="pool-login-runs" title=${`${runsText(login.runs)} this 5-hour window`}>${runsText(login.runs)}</span>
     </div>
-    ${login.status === 'signing-in' ? null : html`<${LoginMeters} limits=${login.limits} />`}
+    ${
+      login.status === 'signing-in'
+        ? html`<div class="pool-login-sub">Signing in…</div>`
+        : html`<div class="pool-login-sub"><${LoginFacts} login=${login} /></div>
+          <${LoginMeters} limits=${login.limits} />
+          ${reset ? html`<div class="pool-login-sub pool-reset">${reset}</div>` : null}`
+    }
   </li>`;
 }
 
@@ -276,7 +304,7 @@ function PoolCard({ pool, setups }) {
       ${pool.from === 'project' ? html`<span class="settings-desc">This project sets its own balancing.</span>` : null}
     </div>
     <table class="settings-table pool-table">
-      <thead><tr><th>Login</th><th>Status</th><th>Usage</th><th>Turns (5h)</th><th></th></tr></thead>
+      <thead><tr><th>Login</th><th>Status</th><th>Usage</th><th>This window</th><th></th></tr></thead>
       <tbody>${pool.logins.map((l) => html`<${LoginTableRow} key=${l.id} login=${l} />`)}</tbody>
     </table>
     <${LastRuns} pool=${pool} limit=${10} />
@@ -284,18 +312,23 @@ function PoolCard({ pool, setups }) {
   </div>`;
 }
 
+const OWNER_SUGGESTIONS = ['personal', 'inixiative', 'work'];
+
 function LoginTableRow({ login }) {
-  const [name, setName] = useState(null);
-  const rename = async () => {
-    const next = name?.trim();
-    setName(null);
-    if (!next || next === login.name) return;
+  // Which label is being edited: the login's name or its owner.
+  const [edit, setEdit] = useState(null);
+  const save = async () => {
+    const field = edit?.field;
+    const next = edit?.value.trim();
+    setEdit(null);
+    if (!field || next === (login[field] ?? '')) return;
+    if (field === 'name' && !next) return;
     try {
       await json(
         await authFetch(`/api/providers/logins/${login.id}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name: next }),
+          body: JSON.stringify({ [field]: next || null }),
         }),
       );
       await readPools();
@@ -317,18 +350,35 @@ function LoginTableRow({ login }) {
   };
   if (login.status === 'signing-in')
     return html`<tr data-status="signing-in"><td>${login.name}</td><td><span class="nav-footer-dot is-busy"></span> Signing in</td><td colspan="3"></td></tr>`;
+  const reset = resetsIn(login.limits);
+  const editor = edit
+    ? html`<input class="settings-input small" value=${edit.value} maxlength="40" autofocus
+        aria-label=${edit.field === 'name' ? 'Login name' : 'Whose subscription it is'}
+        list=${edit.field === 'owner' ? 'pool-owner-suggestions' : undefined}
+        placeholder=${edit.field === 'owner' ? 'personal, inixiative, work…' : ''}
+        onInput=${(e) => setEdit({ ...edit, value: e.target.value })}
+        onKeyDown=${(e) => (e.key === 'Enter' ? save() : e.key === 'Escape' ? setEdit(null) : null)} onBlur=${save} />
+      <datalist id="pool-owner-suggestions">${OWNER_SUGGESTIONS.map((o) => html`<option key=${o} value=${o} />`)}</datalist>`
+    : null;
   return html`<tr data-status=${login.status}>
-    <td>${
-      name === null
-        ? html`<span>${login.name}</span>${login.preferred ? html` <span class="pool-pref" title="The preferred login">★</span>` : null}`
-        : html`<input class="settings-input small" value=${name} maxlength="40" aria-label="Login name"
-            onInput=${(e) => setName(e.target.value)} onKeyDown=${(e) => e.key === 'Enter' && rename()} onBlur=${rename} />`
-    }</td>
+    <td>
+      ${
+        edit?.field === 'name'
+          ? editor
+          : html`<strong>${login.name}</strong>${login.preferred ? html` <span class="pool-pref" title="The preferred login">★</span>` : null}`
+      }
+      <div class="pool-login-sub">${
+        edit?.field === 'owner'
+          ? editor
+          : html`<${LoginFacts} login=${login} />${reset ? ` · ${reset}` : ''}`
+      }</div>
+    </td>
     <td title=${login.issue ?? ''}><span class=${`nav-footer-dot ${STATUS_TONE[login.status]}`}></span> ${STATUS_LABEL[login.status]}</td>
     <td><${LoginMeters} limits=${login.limits} /></td>
-    <td>${login.runs}</td>
+    <td>${runsText(login.runs)} this window</td>
     <td class="pool-actions">
-      <button class="action-btn subtle" onClick=${() => setName(login.name)}>Name</button>
+      <button class="action-btn subtle" onClick=${() => setEdit({ field: 'name', value: login.name })}>Name</button>
+      <button class="action-btn subtle" onClick=${() => setEdit({ field: 'owner', value: login.owner ?? '' })}>Owner</button>
       <button class="action-btn subtle" onClick=${remove}>${login.own ? 'Forget' : 'Remove'}</button>
     </td>
   </tr>`;

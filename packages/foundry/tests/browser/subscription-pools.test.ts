@@ -33,6 +33,9 @@ const window5h = (used: number) => ({
 const login = (id: string, name: string, used: number, runs: number, status = 'ready') => ({
   id,
   name,
+  plan: name === 'work' ? 'plan unknown' : 'Claude Ultra (Max 20x)',
+  ...(name === 'work' ? {} : { account: `${name}@example.com` }),
+  owner: name === 'inixiative' ? 'inixiative' : 'personal',
   own: false,
   status,
   limits: window5h(used),
@@ -118,7 +121,14 @@ test('the footer scale shows balancing and toggles the load balancer; Settings l
     const rows = footer.locator('.pool-login');
     expect(await rows.count()).toBe(3);
     await footer.locator('.pool-login[data-status="exhausted"]', { hasText: 'work' }).waitFor();
-    await footer.locator('.pool-login', { hasText: '5 in 5h' }).waitFor();
+    await footer.locator('.pool-login', { hasText: '5 runs' }).waitFor();
+    // Expanded, each login says its plan, whose it is and who it is signed in as.
+    await footer
+      .locator('.pool-login', {
+        hasText: 'Claude Ultra (Max 20x) · inixiative · inixiative@example.com',
+      })
+      .waitFor();
+    await footer.locator('.pool-login[data-status="exhausted"] .pool-plan.is-unknown').waitFor();
     await footer.locator('.pool-last', { hasText: 'Last runs: personal, inixiative' }).waitFor();
 
     // The scale turns balancing off (pinned to the preferred login), then back on.
@@ -137,6 +147,10 @@ test('the footer scale shows balancing and toggles the load balancer; Settings l
     const card = page.locator('.login-pools .pool-card[data-runtime="claude"]');
     await card.locator('.pool-table tbody tr').first().waitFor();
     expect(await card.locator('.pool-table tbody tr').count()).toBe(3);
+    await card
+      .locator('tr', { hasText: 'personal@example.com' })
+      .locator('button', { hasText: 'Owner' })
+      .waitFor();
     await card.locator('button', { hasText: 'Add a Claude login' }).waitFor();
     await card.locator('.pool-last', { hasText: 'Last runs: personal, inixiative' }).waitFor();
     expect(errors).toEqual([]);

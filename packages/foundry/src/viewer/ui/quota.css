@@ -165,6 +165,7 @@
   font-size: 12px;
 }
 .pool-controls label {
+  white-space: nowrap;
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -217,4 +218,20 @@
   margin: 0 0 3px 18px;
   font-size: 11px;
   color: var(--text-dim);
+}
+.pool-login-sub {
+  margin-left: 12px;
+  font-size: 11px;
+  color: var(--text-dim);
+  overflow-wrap: anywhere;
+}
+.pool-table .pool-login-sub {
+  margin: 2px 0 0;
+  white-space: normal;
+}
+.pool-plan.is-unknown {
+  font-style: italic;
+}
+.pool-plan {
+  color: var(--text);
 }

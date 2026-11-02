@@ -54,6 +54,10 @@ async function fixture() {
       observedAt: Date.now(),
       windows: [{ id: 'five_hour', usedPercent: l.name === 'work' ? 70 : 20, windowMinutes: 300 }],
     }),
+    account: async (l) =>
+      l.name === 'work'
+        ? { plan: 'plan unknown' }
+        : { plan: 'Claude Ultra (Max 20x)', account: `${l.name}@example.com` },
     authentication: (l) =>
       new SubscriptionAuthentication(join(root, 'runtime-profiles'), l, () =>
         subscriptionStatusProcess(),
@@ -104,6 +108,12 @@ test('the pools read: balancing across the ready logins, each with its meters an
     ['work', 'ready', 0],
   ]);
   expect(claude.logins[0]!.limits?.windows[0]?.usedPercent).toBe(20);
+  // Each login's plan and account as the provider tells it; "plan unknown" where it doesn't.
+  expect(claude.logins.map((l) => [l.plan, l.account])).toEqual([
+    ['Claude Ultra (Max 20x)', 'inixiative@example.com'],
+    ['Claude Ultra (Max 20x)', 'personal@example.com'],
+    ['plan unknown', undefined],
+  ]);
   expect(claude.lastRuns.map((r) => r.name)).toEqual(['inixiative']);
   expect((await f.call('GET', '/api/providers/runs?thread=thread-1')).body.runs).toHaveLength(1);
 });
@@ -171,6 +181,13 @@ test('name and remove a login from the API', async () => {
     'job',
   ]);
   expect((await f.call('PATCH', `/api/providers/logins/${work}`, { name: '' })).status).toBe(400);
+  // Whose subscription it is: set, shown, cleared.
+  expect((await f.call('PATCH', `/api/providers/logins/${work}`, { owner: 'work' })).status).toBe(
+    200,
+  );
+  expect((await f.pools()).pools[0]!.logins.find((l) => l.name === 'job')!.owner).toBe('work');
+  await f.call('PATCH', `/api/providers/logins/${work}`, { owner: null });
+  expect((await f.pools()).pools[0]!.logins.find((l) => l.name === 'job')!.owner).toBeUndefined();
   expect((await f.call('DELETE', `/api/providers/logins/${work}`)).status).toBe(200);
   expect((await f.pools()).pools[0]!.logins.map((l) => l.name)).toEqual(['inixiative', 'personal']);
 });

@@ -288,13 +288,25 @@ export function addLogin(draft: FoundryConfig, login: NativeProfileSource): void
   sources.push(login);
 }
 
-/** Renames a login (the label only: its native sessions and history stay where they are). */
-export function renameLogin(draft: FoundryConfig, id: string, name: string): void {
-  const label = name.trim();
-  if (!NAME.test(label)) throw Error('Name the login in 1 to 40 characters');
+/** Names a login or sets whose it is (labels only: its native sessions and history stay where they are). */
+export function updateLogin(
+  draft: FoundryConfig,
+  id: string,
+  change: { name?: string; owner?: string | null },
+): void {
   const login = draft.nativeAuthentication?.find((s) => s.id === id);
   if (!login) throw Error('No such login');
-  login.name = label;
+  if (change.name !== undefined) {
+    const label = change.name.trim();
+    if (!NAME.test(label)) throw Error('Name the login in 1 to 40 characters');
+    login.name = label;
+  }
+  if (change.owner === null || change.owner?.trim() === '') delete login.owner;
+  else if (change.owner !== undefined) {
+    const owner = change.owner.trim();
+    if (!NAME.test(owner)) throw Error('Name its owner in 1 to 40 characters');
+    login.owner = owner;
+  }
 }
 
 /**

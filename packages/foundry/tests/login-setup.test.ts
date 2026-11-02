@@ -7,8 +7,8 @@ import { isFoundryLogin } from '../src/providers/default-profiles';
 import {
   LoginSetup,
   removeLogin,
-  renameLogin,
   type SignInProcess,
+  updateLogin,
 } from '../src/providers/login-setup';
 import { readSetupToken } from '../src/providers/native-authentication';
 import { ConfigStore, defaultConfig } from '../src/viewer/config';
@@ -126,7 +126,7 @@ test("the first login added keeps this machine's own login in the pool; rename a
   expect(saved.map((s) => s.name ?? 'own')).toEqual(['own', 'inixiative']);
 
   const own = saved[0]!.id;
-  await store.update((draft) => renameLogin(draft, own, 'personal'));
+  await store.update((draft) => updateLogin(draft, own, { name: 'personal', owner: 'personal' }));
   await store.update((draft) => {
     draft.subscriptionPools = { claude: { pinned: true, preferredLoginId: started.id } };
   });

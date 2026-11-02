@@ -80,6 +80,8 @@ export function useLogins() {
             provider: POOLED_PROVIDER[pool.runtime],
             runs: l.runs,
             status: l.status,
+            plan: l.plan,
+            account: l.account,
             limit: l.limits?.windows?.length
               ? { state: 'probed', snapshot: l.limits }
               : { state: 'unavailable' },
@@ -138,7 +140,7 @@ export function CapacityBand({ logins }) {
           ? logins.map((l, i) => {
               const five = windowOf(l.limit, 300);
               const week = windowOf(l.limit, 10_080);
-              const plan = l.limit?.snapshot?.plan;
+              const plan = l.plan ?? l.limit?.snapshot?.plan;
               return html`<div key=${i} class="an-cap-row">
                 <span class="an-cap-name"><b>${plan ? `${plan} · ` : ''}${l.name}</b><small>${vendorName(l.provider) ?? l.provider}${typeof l.runs === 'number' ? ` · ${l.runs} turns in 5h` : ''}</small></span>
                 ${

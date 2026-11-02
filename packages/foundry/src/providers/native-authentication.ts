@@ -42,6 +42,8 @@ export type NativeAuthenticationSource = {
   runtime: NativeRuntime;
   /** The person's own label for this login ("inixiative", "work"): never the provider account's name. */
   name?: string;
+  /** Whose subscription it is, in the person's words (personal, inixiative, work). */
+  owner?: string;
 } & (
   | {
       mode: 'native-profile';
@@ -72,6 +74,13 @@ const identity = {
   integrationId: z.string(),
   runtime: z.enum(NATIVE_RUNTIMES),
   name: z
+    .string()
+    .trim()
+    .min(1)
+    .max(40)
+    .regex(/^[^\r\n\0]+$/)
+    .optional(),
+  owner: z
     .string()
     .trim()
     .min(1)
@@ -335,7 +344,7 @@ export class NativeAuthentication {
     return source;
   }
   bindingId(threadId: string, runtime: NativeRuntime): string {
-    const { name: _label, ...source } = this.source(threadId, runtime);
+    const { name: _label, owner: _owner, ...source } = this.source(threadId, runtime);
     // The label is the person's own and may change; the native binding (and its history) does not.
     return `${threadId}:auth:${source.id}:${hash(JSON.stringify(source))}`;
   }
