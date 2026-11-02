@@ -99,10 +99,23 @@
   cursor: not-allowed;
 }
 
-/* Level with the left footer block (its height, measured): the two bottoms line up. */
-.running {
-  min-height: var(--footer-h, auto);
-  box-sizing: border-box;
+/* One header line that folds; sized to its content. */
+.running .running-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 2px 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.running-caret {
+  font-size: 10px;
+  color: var(--text-dim);
 }
 .running-row.s-ended {
   opacity: 0.6;

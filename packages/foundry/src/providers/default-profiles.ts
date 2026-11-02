@@ -65,9 +65,9 @@ export function isDefaultProfile(directory: string, runtime: Runtime): boolean {
 
 /** Child environment selecting a profile. The default location is selected by omission:
  * setting CLAUDE_CONFIG_DIR, even to ~/.claude, makes Claude use a different credential entry.
- * A Muse Code login is only the user's own: moving it means moving XDG_CONFIG_HOME, which every
- * command Muse runs inherits (git and the rest read their config there), so another Muse profile
- * waits for the Kingdom-pool Muse login and its own home layout (FEAT-006). */
+ * A local Muse Code login is only the user's own: moving it means moving XDG_CONFIG_HOME, which every
+ * command Muse runs inherits (git and the rest read their config there). Only a Kingdom-pool Muse
+ * login moves it, with the user's other config linked in (`shareMuseUserConfig`, FEAT-006). */
 export function profileEnvironment(runtime: Runtime, directory: string): Record<string, string> {
   if (isDefaultProfile(directory, runtime)) return {};
   if (runtime === 'muse')

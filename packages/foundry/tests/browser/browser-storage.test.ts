@@ -51,7 +51,9 @@ for (const errorName of ['QuotaExceededError', 'SecurityError']) {
       const report: any = { errorName, committed, passed: false, errors };
       page.on('pageerror', (error: Error) => errors.push(error.message));
       try {
-        await page.goto(`http://127.0.0.1:${server.port}/#thread=main`);
+        // The right panel stays folded so the list keeps its room at 1100 px (the narrow-screen
+        // rule folds the list first when both sides are open).
+        await page.goto(`http://127.0.0.1:${server.port}/#thread=main&detail=0`);
         await page.locator('.chat-input').waitFor();
         await page.waitForFunction(() => localStorage.getItem('foundry:msgs:main') !== null);
         // Include a real prior browser record, not just an empty key. Written before the next

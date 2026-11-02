@@ -1,6 +1,6 @@
 # FEAT-006: Muse Code worker: Aron's Muse subscription in Foundry threads
 
-**Status**: 🔨 Built (2026-11-02) on agent-session 0.8.0 (`MuseSession`) and FEAT-007; PR open, not merged. See "As built" below; it overrides the design sections where they differ.
+**Status**: 🔨 Built (2026-11-02) on agent-session 0.8.0 (`MuseSession`) and FEAT-007 (#260, merged). The Kingdom-held Muse login is built on Kingdom #204 (PR open). See "As built" below; it overrides the design sections where they differ.
 **Assignee**: inixiative-b9 (handed over by inixiative-da, 2026-11-01)
 **Priority**: High (Aron asked for it, 2026-11-01)
 **Created**: 2026-11-01
@@ -33,7 +33,7 @@ Decisions made while building, and why:
 - **Only the user's default Muse login.** Another profile directory is refused (`profileEnvironment`, `assertProfile`) for the same reason; it comes with the Kingdom-pool ticket.
 - **No Foundry tools on Muse threads.** agent-session 0.8.0 offers Muse no session MCP, so `SessionBackedProvider` gives a Muse session no native bridge and the thread gets no `foundry-tools` note (`workerHostsFoundryTools`). A host's MCP servers are not passed either (logged).
 - **Muse is never a decision runtime.** A Muse `decisionSourceId` and choosing `muse` as the decision model are refused.
-- **Kingdom-capacity projects refuse Muse threads** (and a Muse default) with the reason, never falling back to this machine's login (FEAT-007's rule).
+- ~~**Kingdom-capacity projects refuse Muse threads**~~: superseded by "Kingdom-held Muse login" below. A pooled Muse thread still never falls back to this machine's login (FEAT-007's rule).
 - **Muse is off by default** (`enabledByDefault: false`): few machines have it signed in. The daemon resolves `muse` on its PATH when installed but does not require it.
 - **No version probe updates the CLI.** Every `muse --version` / `muse usage` Foundry runs sets `MUSE_NO_AUTO_UPDATE=1`: the launcher otherwise updates itself hourly, past the SDK pin.
 
@@ -48,10 +48,40 @@ Still open:
 - **Archive claims.** Archive's claim sources are Claude Code and Codex only; adding `muse` there would let Foundry claim its Muse sessions (Archive ticket).
 
 - **New-arrival attention.** A Muse-started turn lands on its thread and the thread reads as done; an orange "new arrival" needs `meta.attention` (attention-board data lane, not built). The recorder exposes `arrived` for it.
-- **Kingdom pool for Muse** (separate ticket, pending Aron).
 - **Session MCP** (Foundry's tools, host MCP servers) and **workspace trust** (agent-session always passes `--trust-workspace`): agent-session changes.
 - **agent-session evidence gap:** a Muse turn after the first carries no `nativeSessionId` (only `externalSessionId`).
 - **The login lock** has no child pid (the SDK's child exposes none), so a crashed Foundry's shared registration on `~/.config/muse` is not reclaimed automatically; it blocks only exclusive holders, and nothing holds a Muse login exclusively.
+
+## As built: the Kingdom-held Muse login (2026-11-02)
+
+Aron, 2026-11-02: "Kingdom can definitely hold [Muse]… we should build that." Kingdom #204 made `muse` a subscription runtime: a `bearer` Credential with no expiry and no refresh, personal owners only, released per run with its `credentialVersion`, and `access/reportCredentialRejected`.
+
+| Concern | Existing primitive used |
+|---|---|
+| Storing the login | `foundry kingdom login muse` beside `claude`/`codex`: `nativeLogin` → `museDeviceLogin` (Meta's device flow, the launcher's `device_login`: client `1031625952748946`, `interval`, `slow_down` +5 s, `access_denied`, `expired_token`, redirects refused), then `uploadSubscriptionLogin` (`setSubscriptionLogin`, runtime `muse`, access token only) |
+| Release per launch | `KingdomSubscriptionAuthentication` (resolve, release, holders, one home per integration); `ProjectCapacityAuthentication` no longer refuses `muse` |
+| The login's home | `XDG_CONFIG_HOME = <subscriptions>/<integrationId>/muse/muse-config`, a file-backed login in `muse/auth.json` (0600, `writePrivateFile`, `assertPrivateProfile`), kept while it holds the same token (the CLI adds its api key), deleted by the last holder |
+| The user's config | `shareMuseUserConfig` on CORE-003's `linkUserFolders` / settings copy (`harness-settings.ts`): every other entry of the user's config home linked; in `muse/` the user's files (`settings.json`, `trust.json`) private copies, their folders links, `auth.json` and lock files never; `XDG_DATA_HOME` untouched |
+| Competing env | `withoutCompetingCredentials(env, 'muse')` on the Kingdom launch too |
+| Rejected login | `NativeAuthenticationLaunch.loginFailed` (new, optional), called by `MuseSessionAdapter` on a failed (not cancelled) turn or a host that would not start; confirmed with `muse usage --json` in a throwaway config home beside the login's (so the check never rewrites a newer token another thread runs on) (`museLoginRejected`, beside `museSubscriptionStatus`: only `credential_rejected` counts), five-minute cooldown, reported once and retried if the report fails (`KingdomClient.reportCredentialRejected`), cached run dropped, the session ended so its next turn launches on another login, a later refusal names the rejected login |
+| Limits | `limitReading` already sends only windows; Muse's tier never reached the reading (agent-session does not read it), now tested against `kingdomLimitReadingSchema` |
+| Release schema | `kingdomSubscriptionReleaseSchema` gains `credentialVersion` (Kingdom #204 sends it; the strict schema refused every release without it) and `muse` in every runtime enum (`subscriptionRuntimeSchema`) |
+| Policy | `threadWorkerRequirement`, the startup policy check and `validateProject` accept Muse on a Kingdom-capacity project |
+
+Decisions and why:
+
+- **`XDG_CONFIG_HOME` moves, not `MUSE_AUTH_PATH`.** The launcher honours `MUSE_AUTH_PATH`, the 1.4.14 binary does not (measured: "not logged in" with it set; `credential_rejected` from a file at `$XDG_CONFIG_HOME/muse/auth.json`).
+- **Confirm before reporting.** agent-session folds a failed turn's `error.kind` (`authRequired`) into the terminal's reason only, so the adapter cannot tell an auth failure from others; every failed turn asks, and the read-only `muse usage` decides. A wrong report would lock the user out of a working login until a new sign-in.
+- **No local block after a rejection.** Kingdom stops releasing the marked login; Foundry re-resolves so the pool can pick another one.
+- **Signet.** The rejection report goes through `SignetClient.post('reportCredentialRejected', …)`, allowed from signet 0.12.2 (signet#26); Foundry requires `^0.12.2`.
+
+Still open (Kingdom login):
+
+- Muse's own writes to its settings or trust file in a login's home are overwritten by the user's copy at the next launch when they differ.
+- The rejection check runs `muse` from PATH, not the adapter's `museBin` (unset in production).
+- A project switched to Kingdom capacity while the daemon runs uses the local login until restart (routing is built at startup; pre-existing, now also for Muse).
+- Claude and Codex have no read-only rejection check; their rejected logins are not reported yet.
+- agent-session could carry `error.kind` on the terminal, so only an `authRequired` failure asks.
 
 ## Why
 
