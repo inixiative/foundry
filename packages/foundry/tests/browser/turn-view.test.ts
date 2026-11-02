@@ -64,6 +64,15 @@ test('full trace opens the turn view: grouped steps, filters, arrow keys, Raw, E
     // The chorus step lists each region's answer.
     const chorus = view.locator('.tv-step', { hasText: 'Chorus' });
     expect(await chorus.locator('.tv-regions li').count()).toBeGreaterThan(0);
+    const summary = view.locator('.tv-summary');
+    expect(await summary.locator('dt').allTextContents()).toEqual([
+      'Got',
+      'Did',
+      'Wardens',
+      'Cost',
+    ]);
+    expect(await view.locator('.tv-wardens tbody tr').count()).toBeGreaterThan(0);
+    expect(await view.getByText(/Layer 1 · detection/).count()).toBeGreaterThan(0);
     expect(await view.locator('.tv-step').count()).toBeGreaterThan(2);
 
     // This turn made no tool calls: Tools shows nothing; All brings the steps back.

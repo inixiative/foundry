@@ -17,7 +17,7 @@ import { lifecycle } from './lifecycle.js';
 import { activeThreadId, allThreads, commentOn, focusTurnId, threadData } from './store.js';
 
 /** The plan → build → review → land strip. `onOpen` (optional) makes it a link to the Loop tab. */
-export function LifecycleStrip({ turns, meta, onOpen }) {
+export function LifecycleStrip({ turns, meta, onOpen, showNow = false }) {
   const steps = lifecycle(turns, meta);
   return html`<ol class="lifecycle ${onOpen ? 'lifecycle--link' : ''}" aria-label="Where the work stands"
     onClick=${onOpen} title=${onOpen ? 'Open the Loop' : undefined}>
@@ -25,9 +25,10 @@ export function LifecycleStrip({ turns, meta, onOpen }) {
       (
         s,
       ) => html`<li key=${s.id} class="lifecycle-step ${s.done ? 'is-done' : ''} ${s.current ? 'is-current' : ''}">
-        <span class="lifecycle-mark"></span>${s.label}
+        <span class="lifecycle-mark"></span>${s.label}${showNow && s.current ? ' · now' : ''}
       </li>`,
     )}
+    ${onOpen ? html`<li class="lifecycle-open" aria-hidden="true">Loop →</li>` : null}
   </ol>`;
 }
 
