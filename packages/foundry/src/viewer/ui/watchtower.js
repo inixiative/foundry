@@ -55,7 +55,6 @@ const SCOPES = [
     'What everyone is working on and talking about, by stage, so nobody duplicates it',
   ],
   ['mine', 'Involves me', "Work you're on, on any machine"],
-  ['here', 'This Mac', 'Work running on this machine'],
 ];
 
 function Card({ item, machine }) {
@@ -81,6 +80,8 @@ function Card({ item, machine }) {
 
 export function Watchtower() {
   const [scope, setScope] = useState('everyone');
+  // What you watch (Kingdoms, projects, connectors, people) opens from the header (concept-v4).
+  const [watchingOpen, setWatchingOpen] = useState(false);
   const [chips, setChips] = useState({});
   useEffect(() => {
     loadMachineProfile();
@@ -136,9 +137,7 @@ export function Watchtower() {
     actors: (i) => i.people.filter((p) => !p.startsWith('+')),
     device: (i) => i.device,
   };
-  const inScope = all.filter(
-    (i) => scope === 'everyone' || (scope === 'mine' ? i.mine : i.device === machine),
-  );
+  const inScope = all.filter((i) => scope === 'everyone' || i.mine);
   const items = inScope.filter((i) => passesChips(chips, valuesOf, i));
   const count = (group, value) =>
     inScope.filter((i) => [valuesOf[group](i)].flat().includes(value)).length;
@@ -168,7 +167,7 @@ export function Watchtower() {
     { id: 'actors', label: 'Actors', options: options('actors', inScope.flatMap(valuesOf.actors)) },
     {
       id: 'device',
-      label: 'Device',
+      label: 'Machine',
       options: options(
         'device',
         inScope.map((i) => i.device),
@@ -180,11 +179,15 @@ export function Watchtower() {
 
   return html`<section class="watchtower" aria-label="Watchtower">
     <header class="wt-head">
-      <h2>Watchtower</h2><span class="wt-chip" title="A proposal: the name isn't decided">working name</span>
+      <h2>Watchtower</h2>
       <span class="wt-meta">${subtitle}</span>
+      <span class="wt-head-spacer"></span>
+      <span class="wt-watching-anchor">
+        <button type="button" class="wt-watching-btn" aria-expanded=${watchingOpen} onClick=${() => setWatchingOpen(!watchingOpen)}>Watching ▾</button>
+        ${watchingOpen ? html`<div class="wt-watching-pop"><${WatchingSidebar} machine=${machine} /></div>` : null}
+      </span>
     </header>
     <div class="wt-wrap">
-    <${WatchingSidebar} machine=${machine} />
     <div class="wt-main">
     <div class="wt-filters">
       <div class="wt-scope" role="tablist" aria-label="Whose work">
@@ -196,6 +199,7 @@ export function Watchtower() {
           onClick=${() => setScope(id)}>${title}</button>`,
         )}
       </div>
+      <span class="wt-filter-label">Filter</span>
       <${FilterChips} groups=${groups} selected=${chips} onChange=${setChips} />
     </div>
     <${ComingSoon} what="Threads on your other machines, and Slack, Linear and teammates' work, as cards on this map, brought in by the Heralds." ticket="AGENT-001" />
