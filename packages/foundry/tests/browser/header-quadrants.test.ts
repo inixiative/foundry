@@ -238,9 +238,14 @@ test('the thread header stays two rows from 1024 to 1920 wide', async () => {
     // At 1024 the long branch doesn't fit: "…" lists every pill in the group.
     expect(squeezed).toBe(true);
     const more = grid.locator('.band-where .band-more-button');
-    await more.hover();
     const list = grid.locator('.band-where .band-more-list');
-    await list.waitFor();
+    // Only one copy of each pill exists until "…" is opened.
+    expect(await list.count()).toBe(0);
+    await more.hover();
+    expect(await list.innerText()).toContain('fix/checkout-retry-limit-and-refund-reconciliation');
+    await page.mouse.move(0, 0);
+    await list.waitFor({ state: 'detached' });
+    await more.focus();
     expect(await list.innerText()).toContain('fix/checkout-retry-limit-and-refund-reconciliation');
     expect(errors).toEqual([]);
   } finally {

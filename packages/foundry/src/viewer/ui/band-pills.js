@@ -12,10 +12,11 @@
 
 import { html, useLayoutEffect, useRef, useState } from './lib.js';
 
-/** `render` returns the pills; it runs again for the "…" list, so each copy gets its own nodes. */
+/** `render` returns the pills; it runs again for the "…" list while that is open. */
 export function PillGroup({ className, label, render }) {
   const scroller = useRef(null);
   const [fit, setFit] = useState({ tight: false, over: false });
+  const [listed, setListed] = useState(false);
 
   useLayoutEffect(() => {
     const el = scroller.current;
@@ -44,9 +45,10 @@ export function PillGroup({ className, label, render }) {
     <span ref=${scroller} class="band-pills ${fit.tight ? 'is-tight' : ''}" onWheel=${onWheel}>${render()}</span>
     ${
       fit.over
-        ? html`<span class="band-more">
-            <button type="button" class="band-more-button" aria-label=${`Show everything in ${label}`}>…</button>
-            <span class="band-more-list" role="tooltip">${render()}</span>
+        ? html`<span class="band-more" onMouseEnter=${() => setListed(true)} onMouseLeave=${() => setListed(false)}>
+            <button type="button" class="band-more-button" aria-label=${`Show everything in ${label}`} aria-expanded=${listed}
+              onFocus=${() => setListed(true)} onBlur=${() => setListed(false)}>…</button>
+            ${listed ? html`<span class="band-more-list" role="tooltip">${render()}</span>` : null}
           </span>`
         : null
     }

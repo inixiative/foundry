@@ -94,7 +94,7 @@
   cursor: pointer;
 }
 .band-more-list {
-  display: none;
+  display: flex;
   position: absolute;
   right: 0;
   top: calc(100% + 6px);
@@ -108,8 +108,4 @@
   border-radius: 10px;
   background: hsl(var(--card));
   box-shadow: 0 12px 30px hsl(0 0% 0% / 0.5);
-}
-.band-more:hover .band-more-list,
-.band-more:focus-within .band-more-list {
-  display: flex;
 }
