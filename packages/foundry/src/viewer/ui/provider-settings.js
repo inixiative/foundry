@@ -7,12 +7,14 @@
  * Settings → Providers: one row per vendor (Anthropic, OpenAI, Google, ...) with its on/off switch.
  * A vendor reaches its models in a subscription mode (a native CLI on the person's own login) and an
  * API mode (an API key); either or both may be on. Expanding a vendor shows each mode's models with
- * "Set as default model" and "Set as decision model".
+ * "Set as default model" and "Set as decision model". Subscription logins (several per runtime,
+ * added and balanced here) are `ProviderLogins` (subscriptions.js).
  */
 
 import { devMode } from './dev-mode.js';
 import { html, signal, useEffect, useState } from './lib.js';
 import { authFetch, showToast } from './store.js';
+import { ProviderLogins } from './subscriptions.js';
 import { Switch } from './switch.js';
 
 const registry = signal(null);
@@ -281,6 +283,7 @@ export function ProvidersSection({ vendors, onSaved }) {
   return html`
     <p class="settings-desc">The providers this Foundry uses. A provider runs in subscription mode on your own login (Claude Code, Codex), in API mode with an API key, or both.</p>
     <${SelectionCard} current=${current} providersById=${providersById} />
+    <${ProviderLogins} />
     <div class="vendor-list">
       ${on.map(row)}
       ${on.length ? null : html`<div class="settings-empty">No provider is on yet. Add one below.</div>`}

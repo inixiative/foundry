@@ -3,13 +3,14 @@
  * @kind service
  * @partOf feature:nativeAuth
  */
-import { withProfile } from './default-profiles';
-import { claudeSettingsFiles, subscriptionSettingsGuard } from './harness-settings';
+import { defaultProfileDirectory, isDefaultProfile, withProfile } from './default-profiles';
+import { claudeSettingsFiles, shareUserSetup, subscriptionSettingsGuard } from './harness-settings';
 import {
   NativeAuthentication,
   type NativeAuthenticationLaunch,
   type NativeAuthenticationSource,
   type NativeRuntime,
+  readSetupToken,
 } from './native-authentication';
 import { nativeTextEnvironment } from './native-text-environment';
 import {
@@ -58,6 +59,8 @@ export class SubscriptionAuthentication extends NativeAuthentication {
     private workerSource: Extract<NativeAuthenticationSource, { mode: 'native-profile' }>,
     private statusSpawn?: (environment: Record<string, string | undefined>) => StatusProcess,
     private statusDeadlineMs = STATUS_DEADLINE_MS,
+    /** The user's own Claude home, shared into a login's separate home; default ~/.claude. */
+    private userClaudeDirectory = defaultProfileDirectory('claude'),
   ) {
     super({
       directory,
@@ -68,25 +71,36 @@ export class SubscriptionAuthentication extends NativeAuthentication {
     });
     this.workerSource = structuredClone(workerSource);
   }
+  /** The login this authentication launches on. */
+  get login(): Readonly<Extract<NativeAuthenticationSource, { mode: 'native-profile' }>> {
+    return this.workerSource;
+  }
+  /**
+   * Whether the login is signed in, by its runtime's read-only check (no model turn), at most once
+   * per few minutes. Throws the check's refusal; a status process that would not exit closes the login.
+   */
+  async verify(): Promise<void> {
+    if (this.statusClosed)
+      throw Error('Subscription status admission unavailable; no API fallback');
+    if (Date.now() - this.statusVerifiedAt <= STATUS_TTL_MS) return;
+    this.statusCheck ??= this.verifyStatus().finally(() => {
+      this.statusCheck = undefined;
+    });
+    await this.statusCheck;
+  }
   override async prepare(
     threadId: string,
     runtime: NativeRuntime,
   ): Promise<NativeAuthenticationLaunch> {
     if (runtime !== this.workerSource.runtime) throw Error('Subscription worker runtime mismatch');
-    if (this.statusClosed)
-      throw Error('Subscription status admission unavailable; no API fallback');
-    if (Date.now() - this.statusVerifiedAt > STATUS_TTL_MS) {
-      this.statusCheck ??= this.verifyStatus().finally(() => {
-        this.statusCheck = undefined;
-      });
-      try {
-        await this.statusCheck;
-      } catch {
-        throw Error('Subscription worker unavailable; no API fallback');
-      }
+    try {
+      await this.verify();
+    } catch {
+      throw Error('Subscription worker unavailable; no API fallback');
     }
     const launch = await super.prepare(threadId, runtime);
     const configDirectory = this.workerSource.profileDirectory;
+    const userClaudeDirectory = this.userClaudeDirectory;
     // Codex launch overrides are already limited to sandbox, approval and effort by the native binding;
     // Muse Code's are fixed by agent-session (`serve --trust-workspace`, the sandbox switch).
     if (runtime === 'codex' || runtime === 'muse')
@@ -101,6 +115,9 @@ export class SubscriptionAuthentication extends NativeAuthentication {
           throw Error('Subscription launch override refused');
         const owned = launch.launch(argv, nativeTextEnvironment(env));
         if (!harness) return { argv: [...owned.argv, '--setting-sources', ''], env: owned.env };
+        // A login with its own home (one of several) gets the user's own setup, as a Kingdom pool login does.
+        if (!isDefaultProfile(configDirectory, 'claude'))
+          shareUserSetup(configDirectory, userClaudeDirectory);
         const guard = subscriptionSettingsGuard(claudeSettingsFiles(configDirectory, harness));
         return {
           argv: [...owned.argv, '--setting-sources', harness.sources, '--settings', guard],
@@ -120,6 +137,9 @@ export class SubscriptionAuthentication extends NativeAuthentication {
         runtime,
         runtime === 'codex' ? await this.codexHome(this.workerSource) : profileDirectory,
       ),
+      ...(this.workerSource.tokenFile
+        ? { CLAUDE_CODE_OAUTH_TOKEN: readSetupToken(this.workerSource) }
+        : {}),
       // `muse usage` would otherwise update the CLI past the SDK's pinned version.
       ...(runtime === 'muse' ? { MUSE_NO_AUTO_UPDATE: '1' } : {}),
     };

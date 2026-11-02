@@ -138,6 +138,8 @@ export interface SubscriptionResolution {
   policy: SubscriptionPolicy;
   /** Each usable subscription worker's login: its vendor's subscription mode is on and (at startup) the login exists. */
   workers: Partial<Record<SubscriptionWorker, NativeProfileSource>>;
+  /** Each usable worker's logins, its primary (`workers`) among them: several are balanced (login-pool.ts). */
+  pools: Partial<Record<SubscriptionWorker, NativeProfileSource[]>>;
   /** Why each other worker is not usable (its vendor's subscription mode is on, its login is not). */
   unavailable: Partial<Record<SubscriptionWorker, string>>;
   /** Every worker a thread may name: its vendor's subscription mode is on, or a project defaults to it.
@@ -175,12 +177,74 @@ export function workerDefaultModel(config: FoundryConfig, worker: string): strin
         config.defaults.model);
 }
 
+/** How a runtime with several logins chooses one (agent-session's routing strategies; `pinned` is balancing off). */
+export const LOGIN_ROUTINGS = [
+  'quartile-balanced',
+  'owner-first',
+  'priority-balanced',
+  'pinned',
+] as const;
+export type LoginRouting = (typeof LOGIN_ROUTINGS)[number];
+/** The pooled runtimes: Muse Code keeps one login (agent-session does not pool Muse yet). */
+export const POOLED_RUNTIMES = ['claude', 'codex'] as const;
+export type PooledRuntime = (typeof POOLED_RUNTIMES)[number];
+
+/** One runtime's balancing: the routing and, for `owner-first` and `pinned`, the login it prefers. */
+export interface LoginPoolSettings {
+  routing?: LoginRouting;
+  preferredLoginId?: string;
+}
+export type LoginPoolsSettings = Partial<Record<PooledRuntime, LoginPoolSettings>>;
+
+export function validateLoginPools(where: string, pools: unknown): void {
+  if (pools === undefined) return;
+  if (!pools || typeof pools !== 'object' || Array.isArray(pools))
+    throw Error(`${where} must be an object keyed by runtime (claude, codex)`);
+  for (const [runtime, pool] of Object.entries(pools as Record<string, unknown>)) {
+    if (!(POOLED_RUNTIMES as readonly string[]).includes(runtime))
+      throw Error(`${where}.${runtime}: only ${POOLED_RUNTIMES.join(' and ')} logins are pooled`);
+    if (!pool || typeof pool !== 'object' || Array.isArray(pool))
+      throw Error(`${where}.${runtime} must be { routing?, preferredLoginId? }`);
+    for (const key of Object.keys(pool))
+      if (key !== 'routing' && key !== 'preferredLoginId')
+        throw Error(`${where}.${runtime}.${key} is not a pool setting (routing, preferredLoginId)`);
+    const { routing, preferredLoginId } = pool as LoginPoolSettings;
+    if (routing !== undefined && !LOGIN_ROUTINGS.includes(routing))
+      throw Error(`${where}.${runtime}.routing must be one of ${LOGIN_ROUTINGS.join(', ')}`);
+    if (preferredLoginId !== undefined && typeof preferredLoginId !== 'string')
+      throw Error(`${where}.${runtime}.preferredLoginId must be a login id`);
+  }
+}
+
+/** A runtime's pool settings: the project's (yours) over the Foundry-wide ones. */
+export function loginPoolSettings(
+  config: Pick<FoundryConfig, 'subscriptionPools' | 'projects'>,
+  runtime: PooledRuntime,
+  projectId?: string,
+): LoginPoolSettings & { from: 'project' | 'foundry' | 'default' } {
+  const project = projectId
+    ? config.projects?.[projectId]?.subscriptionPools?.[runtime]
+    : undefined;
+  const global = config.subscriptionPools?.[runtime];
+  const routing = project?.routing ?? global?.routing;
+  const preferredLoginId = project?.preferredLoginId ?? global?.preferredLoginId;
+  return {
+    ...(routing ? { routing } : {}),
+    ...(preferredLoginId ? { preferredLoginId } : {}),
+    from: project ? 'project' : global ? 'foundry' : 'default',
+  };
+}
+
 /**
- * One login per runtime: the native profile `defaults.nativeAuthenticationId` names when it is that
- * runtime's, else the runtime's only configured native profile (unless that is the decision source),
- * else its default profile location. Several of one runtime with none named is ambiguous and refused.
+ * Every login of a runtime, in the order they were added: each configured native profile of that
+ * runtime (not the decision login when it is the only one), else the runtime's default profile
+ * location. The first is the primary login: `defaults.nativeAuthenticationId` when it names one of
+ * them, else the first. Several logins are a pool (Aron, 2026-11-02: "I have 3 subs").
  */
-function runtimeLogin(config: FoundryConfig, runtime: NativeRuntime): NativeProfileSource {
+export function runtimeLogins(
+  config: FoundryConfig,
+  runtime: NativeRuntime,
+): { primary: NativeProfileSource; logins: NativeProfileSource[] } {
   const named = config.defaults.nativeAuthenticationId
     ? config.nativeAuthentication?.find(
         (item) => item.id === config.defaults.nativeAuthenticationId,
@@ -188,26 +252,48 @@ function runtimeLogin(config: FoundryConfig, runtime: NativeRuntime): NativeProf
     : undefined;
   if (config.defaults.nativeAuthenticationId && !named)
     throw Error('Subscription-only execution requires native profile sources');
-  if (named?.runtime === runtime) {
-    if (named.mode !== 'native-profile')
-      throw Error('Subscription-only execution requires native profile sources');
-    assertProfile(named.profileDirectory, named.runtime);
-    return named;
-  }
+  if (named?.runtime === runtime && named.mode !== 'native-profile')
+    throw Error('Subscription-only execution requires native profile sources');
   const configured = (config.nativeAuthentication ?? []).filter(
     (item): item is NativeProfileSource =>
       item.runtime === runtime && item.mode === 'native-profile',
   );
-  if (configured.length > 1)
-    throw Error(
-      `Several ${runtime} logins are configured (${configured.map((item) => item.id).join(', ')}); name the one main threads use with defaults.nativeAuthenticationId`,
-    );
-  const only = configured[0];
   // A runtime whose only configured source is the decision login runs main threads on its default profile.
-  if (!only || only.id === config.subscriptionOnly?.decisionSourceId)
-    return defaultProfileSource(runtime);
-  assertProfile(only.profileDirectory, only.runtime);
-  return only;
+  const only = configured.length === 1 ? configured[0] : undefined;
+  if (!configured.length || (only && only.id === config.subscriptionOnly?.decisionSourceId)) {
+    const fallback = defaultProfileSource(runtime);
+    return { primary: fallback, logins: [fallback] };
+  }
+  // Muse Code runs only the user's own login; more than one is not a pool.
+  if (runtime === 'muse' && configured.length > 1)
+    throw Error(
+      `Several Muse Code logins are configured (${configured.map((item) => item.id).join(', ')}); Muse Code runs one login`,
+    );
+  const primary = named?.runtime === runtime ? (named as NativeProfileSource) : configured[0]!;
+  return { primary, logins: configured };
+}
+
+/**
+ * A runtime's logins that can run now (read live, so a login added or removed in Settings applies to
+ * the next launch): each configured one whose profile is usable, its primary first when usable.
+ */
+export function usableLogins(
+  config: FoundryConfig,
+  runtime: NativeRuntime,
+): { primary: NativeProfileSource; logins: NativeProfileSource[] } {
+  const { primary, logins } = runtimeLogins(config, runtime);
+  const usable = logins.filter((login) => {
+    try {
+      assertProfile(login.profileDirectory, login.runtime);
+      return true;
+    } catch {
+      return false;
+    }
+  });
+  return {
+    primary: usable.includes(primary) ? primary : (usable[0] ?? primary),
+    logins: usable,
+  };
 }
 
 /**
@@ -257,6 +343,7 @@ export function resolveSubscriptionPolicy(
   // runs threads on its runtime's one login. A default worker of a thread that runs on this machine
   // must have that login; a Kingdom-capacity project's threads run on its pool, never on it.
   const workers: Partial<Record<SubscriptionWorker, NativeProfileSource>> = {};
+  const pools: Partial<Record<SubscriptionWorker, NativeProfileSource[]>> = {};
   const unavailable: Partial<Record<SubscriptionWorker, string>> = {};
   const offered: SubscriptionWorker[] = [];
   const required = new Set(defaultWorkers(config, { onThisMachine: true }).values());
@@ -265,16 +352,25 @@ export function resolveSubscriptionPolicy(
     if (!projectDefaults.has(worker) && !providerEnabled(config, worker)) continue;
     offered.push(worker);
     try {
-      const login = runtimeLogin(config, SUBSCRIPTION_WORKERS[worker]);
-      if (options.startup)
+      const { primary, logins } = runtimeLogins(config, SUBSCRIPTION_WORKERS[worker]);
+      const configured = new Set((config.nativeAuthentication ?? []).map((item) => item.id));
+      // Configured logins are checked on every save, the default location only at startup. A login
+      // whose profile is unusable is left out of the pool; the worker needs at least one usable.
+      const usable: NativeProfileSource[] = [];
+      const refusals: string[] = [];
+      for (const login of logins)
         try {
-          assertProfile(login.profileDirectory, login.runtime);
+          if (options.startup || configured.has(login.id))
+            assertProfile(login.profileDirectory, login.runtime);
+          usable.push(login);
         } catch (error) {
-          throw Error(
+          refusals.push(
             `${login.runtime} subscription profile unavailable at ${login.profileDirectory}: ${(error as Error).message}`,
           );
         }
-      workers[worker] = login;
+      if (!usable.length) throw Error(refusals.join('; '));
+      workers[worker] = usable.includes(primary) ? primary : usable[0]!;
+      pools[worker] = usable;
     } catch (error) {
       if (required.has(worker)) throw error;
       unavailable[worker] = (error as Error).message;
@@ -358,7 +454,9 @@ export function resolveSubscriptionPolicy(
   }
   if (options.startup || settings.directory) assertPrivateProfile(policy.directory);
   // Workers and decisions are shared holders of their logins, like interactive sessions on them.
-  const logins = new Set(Object.values(workers).map((login) => login.id));
+  const logins = new Set(
+    Object.values(pools).flatMap((pool) => (pool ?? []).map((login) => login.id)),
+  );
 
   const { config: effective, rerouted } = routeDecisions(config, policy.model);
   // Each view is checked against its own worker: the global defaults, then every project's.
@@ -422,6 +520,7 @@ export function resolveSubscriptionPolicy(
   return structuredClone({
     policy,
     workers,
+    pools,
     unavailable,
     offered,
     decision,

@@ -102,9 +102,16 @@ test("a Codex source is the Codex worker's login; the named Claude source stays 
     'claude-code': { id: f.worker.id },
     codex: { id: codex.id },
   });
-  // Naming the Codex source leaves two Claude sources unnamed: ambiguous, refused, never ~/.claude.
+  // Naming the Codex source leaves two Claude sources unnamed: they are the Claude pool, never
+  // ~/.claude, its first login the primary (Aron 2026-11-02: several logins are balanced).
   f.c.defaults.nativeAuthenticationId = codex.id;
-  expect(() => resolveSubscriptionPolicy(f.c)).toThrow('Several claude logins are configured');
+  const pooled = resolveSubscriptionPolicy(f.c)!;
+  expect(pooled.pools['claude-code']!.map((login) => login.id).sort()).toEqual(
+    [f.worker.id, f.decision.id].sort(),
+  );
+  expect(pooled.workers['claude-code']!.id).toBe(
+    f.c.nativeAuthentication!.find((s) => s.runtime === 'claude')!.id,
+  );
 });
 
 test('Codex-default and Claude-default projects resolve together, each checked on its own worker', () => {

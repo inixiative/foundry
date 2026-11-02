@@ -807,6 +807,7 @@ export class ClaudeCodeSessionAdapter implements SessionAdapter {
                 auth.check();
                 await options?.onAdmission?.(attempt);
                 auth.check();
+                auth.admitted?.();
               },
             }
           : options,
@@ -1127,6 +1128,7 @@ export class CodexSessionAdapter implements SessionAdapter {
                 auth.check();
                 await options?.onAdmission?.(attempt);
                 auth.check();
+                auth.admitted?.();
               },
             }
           : options,
@@ -1440,6 +1442,7 @@ export class MuseSessionAdapter implements SessionAdapter {
                 auth.check();
                 await options?.onAdmission?.(attempt);
                 auth.check();
+                auth.admitted?.();
               },
             }
           : options,
