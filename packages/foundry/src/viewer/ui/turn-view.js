@@ -12,7 +12,7 @@
  */
 
 import { html, useEffect, useRef, useState } from './lib.js';
-import { authFetch, closeTurnView, openTurnDetail, turnViewTarget } from './store.js';
+import { authFetch, chorusAction, closeTurnView, openTurnDetail, turnViewTarget } from './store.js';
 
 const FILTERS = [
   ['all', 'All'],
@@ -146,7 +146,7 @@ function ChorusBody({ step }) {
         ${r.served ? html` <span class="tv-dim">${r.served.model}${r.served.effort ? ` · ${r.served.effort}` : ''}</span>` : null}
         ${r.layers.map(
           (layer) =>
-            html`<div key=${layer.layer} class="tv-layer">Layer ${layer.layer} · ${layer.task === 'recognise' ? 'recognise' : 'confirm and pick'}: ${layer.outcome ?? (layer.timedOut ? 'timed out' : layer.error ? 'error' : '—')}${layer.why ? ` — ${layer.why}` : ''}</div>`,
+            html`<div key=${layer.layer} class="tv-layer">Layer ${layer.layer} · ${layer.layer === 1 ? 'detection' : 'confirm and pick'}: ${layer.outcome ?? (layer.timedOut ? 'timed out' : layer.error ? 'error' : '—')}${layer.why ? ` — ${layer.why}` : ''}</div>`,
         )}
         ${r.pointer?.pointer ? html`<div class="tv-pointer">† ${r.pointer.shape === 'choose-one' ? 'Choose one: ' : ''}${r.pointer.pointer}${r.pointer.where ? ` · ${r.pointer.where}` : ''}${r.pointer.why ? ` — ${r.pointer.why}` : ''}</div>` : null}
         ${r.said.map((line, i) => html`<div key=${i} class="tv-said">${line}</div>`)}
@@ -219,6 +219,98 @@ export function turnSteps(timeline) {
     label: step.kind === 'tool' ? step.tool : (LABELS[step.kind] ?? step.kind),
     step,
   }));
+}
+
+/** The thread's recorded calls inside the turn's window: its tokens, as Analytics records them. */
+function useTurnTokens(target, timeline) {
+  const [calls, setCalls] = useState(undefined);
+  useEffect(() => {
+    if (!target || !timeline?.startedAt) return;
+    let live = true;
+    authFetch(`/api/analytics/calls?field=threadId&value=${encodeURIComponent(target.threadId)}`)
+      .then((r) => (r.ok ? r.json() : []))
+      .catch(() => [])
+      .then((all) => {
+        if (!live) return;
+        const end = timeline.endedAt ?? Date.now();
+        setCalls(
+          (Array.isArray(all) ? all : []).filter(
+            (c) => c.timestamp >= timeline.startedAt && c.timestamp <= end,
+          ),
+        );
+      });
+    return () => {
+      live = false;
+    };
+  }, [target?.threadId, timeline?.startedAt, timeline?.endedAt]);
+  return calls;
+}
+
+const callTokens = (c) =>
+  (c.input ?? 0) + (c.output ?? 0) + (c.cacheRead ?? 0) + (c.cacheWrite ?? 0);
+const kTokens = (n) => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n));
+
+/** The turn at a glance (design review 11-02): what it got, what it did, the Wardens, the cost. */
+function TurnSummary({ steps, calls, took }) {
+  const input = steps.find((s) => s.kind === 'input');
+  const tools = steps.filter((s) => s.kind === 'tool');
+  const edits = tools.filter((t) => /^(Edit|MultiEdit|Write|apply_patch)$/i.test(t.tool)).length;
+  const reads = tools.filter((t) => /^(Read|View|Grep|Glob)$/i.test(t.tool)).length;
+  const commands = tools.filter((t) =>
+    /^(Bash|shell|exec_command|local_shell)$/i.test(t.tool),
+  ).length;
+  const handoffs = steps.filter((s) => s.kind === 'handoff').length;
+  const chorus = steps.find((s) => s.kind === 'chorus');
+  const regions = chorus?.regions ?? [];
+  const spoke = regions.filter((r) => r.decision === 'contribute').length;
+  const timedOut = regions.filter((r) => r.layers.some((l) => l.timedOut)).length;
+  const tokens = (calls ?? []).reduce((n, c) => n + callTokens(c), 0);
+  const did = [
+    edits ? `${edits} edit${edits === 1 ? '' : 's'}` : null,
+    reads ? `${reads} read${reads === 1 ? '' : 's'}` : null,
+    commands ? `${commands} command${commands === 1 ? '' : 's'}` : null,
+    handoffs ? `${handoffs} subagent${handoffs === 1 ? '' : 's'}` : null,
+  ].filter(Boolean);
+  return html`<dl class="tv-summary" aria-label="Turn summary">
+    <dt>Got</dt><dd>${input?.text ? clip(input.text, 160) : '—'}</dd>
+    <dt>Did</dt><dd>${did.length ? did.join(' · ') : tools.length ? `${tools.length} tool calls` : 'No tool calls'}</dd>
+    <dt>Wardens</dt><dd>${regions.length ? `${regions.length} asked · ${spoke} chimed in${timedOut ? ` · ${timedOut} timed out` : ''}` : 'No chorus on this turn'}</dd>
+    <dt>Cost</dt><dd>${calls === undefined ? 'Reading…' : calls.length ? `${kTokens(tokens)} tokens · ${calls.length} call${calls.length === 1 ? '' : 's'}${took ? ` · ${took}` : ''}` : `No recorded calls${took ? ` · ${took}` : ''}`}</dd>
+  </dl>`;
+}
+
+/** Every Warden asked on the turn, one row each: its layers, what it said, timeouts with Retry. */
+function WardenTable({ step, target }) {
+  const regions = step?.regions ?? [];
+  if (!regions.length) return null;
+  const timedOut = regions.some((r) => r.layers.some((l) => l.timedOut));
+  const order = { contribute: 0, error: 1 };
+  const rows = [...regions].sort((a, b) => (order[a.decision] ?? 2) - (order[b.decision] ?? 2));
+  const cell = (r, n) => {
+    const l = r.layers.find((x) => x.layer === n);
+    if (!l) return n === 1 && !r.layers.length ? r.decision : '—';
+    return `${l.timedOut ? 'timed out' : (l.outcome ?? (l.error ? 'error' : '—'))}${l.elapsedMs != null ? ` · ${(l.elapsedMs / 1000).toFixed(1)} s` : ''}`;
+  };
+  return html`<section class="tv-wardens" aria-label="Wardens">
+    <header><b>Wardens</b>${
+      timedOut && target
+        ? html`<button type="button" class="proj-btn" onClick=${() => chorusAction(target.threadId, target.turnId, 'retry')}
+            title="Ask the Wardens that timed out again; what they say rides with your next message">Retry timed out</button>`
+        : null
+    }</header>
+    <table>
+      <thead><tr><th>Region</th><th>Layer 1 · detection</th><th>Layer 2 · confirm and pick</th><th>Pointer</th></tr></thead>
+      <tbody>${rows.map(
+        (
+          r,
+        ) => html`<tr key=${r.region} data-decision=${r.decision} class=${r.layers.some((l) => l.timedOut) ? 'is-timeout' : ''}>
+          <td>${r.region}</td><td>${cell(r, 1)}</td><td>${cell(r, 2)}</td>
+          <td>${r.pointer?.pointer ? `† ${r.pointer.pointer}${r.pointer.where ? ` · ${r.pointer.where}` : ''}` : ''}</td>
+        </tr>`,
+      )}</tbody>
+    </table>
+    <div class="tv-dim">Tokens per Warden and per step aren't recorded yet; the turn's total is above.</div>
+  </section>`;
 }
 
 export function TurnView() {
@@ -294,6 +386,7 @@ export function TurnView() {
       return next;
     });
   const input = timeline?.steps?.find((s) => s.kind === 'input');
+  const calls = useTurnTokens(target, timeline);
   const took =
     timeline?.startedAt && timeline?.endedAt
       ? `${((timeline.endedAt - timeline.startedAt) / 1000).toFixed(1)} s`
@@ -321,6 +414,8 @@ export function TurnView() {
       <span class="tv-hint"><kbd>↑</kbd><kbd>↓</kbd> steps · <kbd>Esc</kbd> close</span>
     </div>
     ${timeline?.error ? html`<div class="tv-error">${timeline.error}</div>` : null}
+    ${timeline?.steps ? html`<${TurnSummary} steps=${all.map((s) => s.step)} calls=${calls} took=${took} />` : null}
+    ${timeline?.steps ? html`<${WardenTable} step=${all.find((s) => s.step.kind === 'chorus')?.step} target=${target} />` : null}
     ${
       timeline === undefined
         ? html`<div class="rp-empty">Reading the turn…</div>`
