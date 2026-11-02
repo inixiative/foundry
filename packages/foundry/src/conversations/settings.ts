@@ -4,7 +4,7 @@
  * @partOf feature:conversations, primitive:settings
  */
 import type { ProjectSettingsConfig } from '../viewer/config';
-import { readRepositorySettings, type SettingLayer } from '../viewer/config-resolve';
+import { readRepositorySettings, type SettingLayer, settingLayer } from '../viewer/config-resolve';
 import {
   type ConversationSettings,
   type ConversationSettingsInput,
@@ -63,8 +63,7 @@ export function conversationSettingSources(
 ): Record<'floor' | 'maxAgentTurns' | 'holdSeconds' | 'agentMayPass', SettingLayer> {
   const repository = readRepositorySettings(project.path)?.conversations;
   const mine = project.conversations;
-  const from = (mineSet: boolean, theirsSet: boolean): SettingLayer =>
-    mineSet ? 'settings' : theirsSet ? 'repository' : 'default';
+  const from = settingLayer;
   return {
     floor: from(mine?.floor !== undefined, repository?.floor !== undefined),
     maxAgentTurns: from(mine?.maxAgentTurns !== undefined, repository?.maxAgentTurns !== undefined),

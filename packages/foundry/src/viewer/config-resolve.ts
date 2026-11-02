@@ -3,8 +3,8 @@
  * @kind config
  * @partOf feature:viewer, primitive:settings
  */
-import { existsSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { registryModel, SUBSCRIPTION_WORKER_MODELS } from '@inixiative/foundry-core';
 import {
   type ChorusLayerRegions,
@@ -20,6 +20,7 @@ import {
   regionWardens,
 } from '../agents/region-roster';
 import { defaultStages, type StageConfig, validateStages } from '../classify';
+import { writeFileAtomic } from '../client/private-file';
 import {
   type ConversationSettingsInput,
   validateConversationSettings,
@@ -85,6 +86,10 @@ export interface ResolvedAgentDefinition {
 
 /** Which layer a project setting's value came from: personal settings cascade over the repository's, over the default. */
 export type SettingLayer = 'settings' | 'repository' | 'default';
+
+/** Which layer a setting came from: this machine's settings over the repository's file over the default. */
+export const settingLayer = (mineSet: boolean, theirsSet: boolean): SettingLayer =>
+  mineSet ? 'settings' : theirsSet ? 'repository' : 'default';
 
 /** The chorus a project view carries: whether its region Wardens run, what they were built from, and why. */
 export interface ResolvedChorus {
@@ -839,6 +844,28 @@ export function readRepositorySettings(projectPath: string):
 }
 
 /**
+ * "Set for everyone": write one repository setting (`chorus` or `conversations`) into the project's
+ * committed `.foundry/project.json`, keeping its other keys; `null` removes it. The file is
+ * team-shared (0644) and replaced whole. Refuses when the file on disk is not a valid settings file.
+ */
+export function writeRepositorySetting(
+  projectPath: string,
+  key: 'chorus' | 'conversations',
+  value: unknown,
+): void {
+  const file = join(projectPath, REPOSITORY_SETTINGS_FILE);
+  const repository = readRepositorySettings(projectPath);
+  if (repository?.error) throw Error(`${file}: ${repository.error}`);
+  const current: Record<string, unknown> = existsSync(file)
+    ? (JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>)
+    : {};
+  if (value === null) delete current[key];
+  else current[key] = value;
+  mkdirSync(dirname(file), { recursive: true });
+  writeFileAtomic(file, `${JSON.stringify(current, null, 2)}\n`, 0o644);
+}
+
+/**
  * A project's chorus setting: the machine's project settings over the repository's `chorus`, key by
  * key. `enabled` from whichever says it; the directories (`regions` or `layers`, one unit) likewise.
  */
@@ -863,8 +890,7 @@ export function projectChorus(project: Pick<ProjectSettingsConfig, 'path' | 'cho
   const consumed =
     mine.consumed || theirs.consumed ? { ...theirs.consumed, ...mine.consumed } : undefined;
   const reception = mine.reception ?? theirs.reception;
-  const from = (mineSet: boolean, theirsSet: boolean): SettingLayer =>
-    mineSet ? 'settings' : theirsSet ? 'repository' : 'default';
+  const from = settingLayer;
   // A role's stages are one unit: the machine's list replaces the repository's whole.
   const wardens = mine.wardens?.stages ?? theirs.wardens?.stages;
   const heralds = mine.heralds?.stages ?? theirs.heralds?.stages;
