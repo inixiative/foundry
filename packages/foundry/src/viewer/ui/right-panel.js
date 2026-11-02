@@ -231,7 +231,7 @@ function ContextTab() {
             <dt>Effort</dt><dd>
               <select class="rp-select" value=${launch.effort ?? ''}
                 onChange=${(e) => setLaunch(threadId, { effort: e.target.value || null })}>
-                <option value="">Harness default</option>
+                <option value="">${launch.effortDefault ? `${launch.effortDefault} (default)` : 'Default'}</option>
                 ${(launch.options?.efforts ?? []).map((e) => html`<option key=${e} value=${e}>${e}</option>`)}
               </select>
             </dd>

@@ -17,6 +17,7 @@ import {
   modelEfforts,
   newId,
   REASONING_EFFORTS,
+  registryModel,
   Thread,
   threadTitle,
   timeFromId,
@@ -786,18 +787,72 @@ export function registerRuntimeRoutes(
         label: MODEL_REGISTRY[worker]?.label ?? worker,
         default: worker === fallback,
         defaultModel: workerDefaultModel(deps.configStore.config, worker),
+        // Each model with the efforts it takes and the one it runs at when none is chosen (N-series vocabulary).
         models: (MODEL_REGISTRY[worker]?.models ?? []).map((model) => ({
           id: model.id,
           label: model.label,
+          efforts: modelEfforts(worker, model.id) ?? [],
+          defaultEffort: defaultEffort(worker, model.id),
         })),
       }));
+
+  /** The subscription workers a thread here cannot start on, each with why (no login, vendor mode off). */
+  const unavailableWorkers = (projectId: string | undefined, fallback: string) =>
+    Object.keys(SUBSCRIPTION_WORKERS)
+      .filter((worker) => worker !== fallback)
+      .flatMap((worker) => {
+        const reason = threadFactory?.workerRefusal(projectId, worker);
+        return reason
+          ? [{ id: worker, label: MODEL_REGISTRY[worker]?.label ?? worker, reason }]
+          : [];
+      });
+
+  /**
+   * The effort a thread runs at when it chose none: the configured Codex effort on Codex (what its
+   * adapter launches with), else the model's own default (the registry's `fallback`).
+   */
+  function defaultEffort(worker: string, model: string): string | null {
+    return (
+      (worker === 'codex' ? deps.configStore.config.defaults.codexEffort : undefined) ??
+      registryModel(worker, model)?.reasoning?.fallback ??
+      null
+    );
+  }
+
+  /** The scope's worker choices: for a new thread's picker (a project's, or the global scope's). */
+  const scopeWorkers = (projectId: string | undefined) => {
+    const fallback =
+      threadFactory?.defaultWorker(projectId) ?? deps.configStore.config.defaults.provider;
+    return {
+      workers: workerChoices(projectId, fallback),
+      unavailable: unavailableWorkers(projectId, fallback),
+    };
+  };
 
   app.get('/api/projects/:id/workers', (c) => {
     const id = c.req.param('id');
     if (!deps.configStore.config.projects[id]) return c.json({ error: 'project not found' }, 404);
-    const fallback = threadFactory?.defaultWorker(id) ?? deps.configStore.config.defaults.provider;
-    return c.json({ workers: workerChoices(id, fallback) });
+    return c.json(scopeWorkers(id));
   });
+
+  app.get('/api/workers', (c) => c.json(scopeWorkers(undefined)));
+
+  /**
+   * Why this thread's worker can no longer change, or null while it can: a worker is chosen before
+   * the first turn, because the native session it starts belongs to that worker (FEAT-007).
+   */
+  const workerLock = (thread: Thread): string | null => {
+    if (thread === harness.thread) return "the main thread runs on its project's default worker";
+    if (!threadFactory || !thread.meta.worker) return 'choosing a worker needs the thread factory';
+    if (
+      thread.disposed ||
+      thread.meta.status === 'active' ||
+      turns.hasTurns(thread.id) ||
+      (localStore?.recentTurnIds(thread.id, 1).length ?? 0) > 0
+    )
+      return `the thread has started on ${thread.meta.worker}; its worker is fixed`;
+    return null;
+  };
 
   const launchView = (thread: Thread) => {
     const launch = threadLaunch.get(thread.id);
@@ -807,14 +862,19 @@ export function registerRuntimeRoutes(
     const projectId = thread.meta.projectId;
     const fallback = threadFactory?.defaultWorker(projectId) ?? provider;
     const workers = workerChoices(projectId, fallback);
+    const model = launch.model ?? configuredModel;
     return {
       threadId: thread.id,
       provider,
       worker: thread.meta.worker ?? provider,
       permissionMode: launch.permissionMode ?? null,
-      model: launch.model ?? configuredModel,
+      model,
       modelOverride: launch.model ?? null,
       effort: launch.effort ?? null,
+      /** The effort it runs at while it chose none, so the header always names one. */
+      effortDefault: defaultEffort(provider, model),
+      /** Why the worker can't change any more (null before the first turn). */
+      workerLock: workerLock(thread),
       mcpServers: describeMcpServers(launch.mcpServers),
       revision: launch.revision,
       /** Whether a send during a running turn steers into it (CORE-001), and where that came from. */
@@ -827,8 +887,9 @@ export function registerRuntimeRoutes(
           id: model.id,
           label: model.label,
         })),
-        efforts: modelEfforts(provider, launch.model ?? configuredModel) ?? REASONING_EFFORTS,
+        efforts: modelEfforts(provider, model) ?? REASONING_EFFORTS,
         workers,
+        unavailableWorkers: unavailableWorkers(projectId, fallback),
       },
     };
   };
@@ -850,11 +911,27 @@ export function registerRuntimeRoutes(
     if ('effort' in body) patch.effort = body.effort as EffortLevel | null;
     if ('mcpServers' in body) patch.mcpServers = body.mcpServers as ThreadLaunchPatch['mcpServers'];
     // A thread's model is the same choice as an executor's: any model its subscription worker runs.
-    const { provider } = launchView(thread);
+    const { provider, model: current, effort } = launchView(thread);
     if (typeof patch.model === 'string' && subscriptionWorker(provider)) {
       const refusal = workerModelRequirement(provider, patch.model);
       if (refusal) return c.json({ error: refusal }, 400);
     }
+    // An effort is one the model takes; a model change drops a chosen effort the new model doesn't.
+    const model =
+      typeof patch.model === 'string'
+        ? patch.model
+        : patch.model === null
+          ? (resolveThreadView(deps.configStore.config, thread.meta).config.defaults.model ??
+            current)
+          : current;
+    const accepted = modelEfforts(provider, model);
+    if (typeof patch.effort === 'string' && accepted && !accepted.includes(patch.effort))
+      return c.json(
+        { error: `${model} takes effort ${accepted.join(', ') || 'none'}, not ${patch.effort}` },
+        400,
+      );
+    if (!('effort' in patch) && effort && accepted && !accepted.includes(effort))
+      patch.effort = null;
     try {
       threadLaunch.update(thread.id, patch);
     } catch (error) {
@@ -1046,6 +1123,18 @@ export function registerRuntimeRoutes(
     if (body.worker !== undefined && typeof body.worker !== 'string')
       return c.json({ error: 'worker must be a string' }, 400);
     const worker = body.worker as string | undefined;
+    // The new thread's model and effort (the New thread picker), held where a later change goes.
+    const start: ThreadLaunchPatch = {};
+    if (body.model !== undefined) {
+      if (typeof body.model !== 'string' || !body.model.trim())
+        return c.json({ error: 'model must be a non-empty string' }, 400);
+      start.model = body.model;
+    }
+    if (body.effort !== undefined) {
+      if (!(REASONING_EFFORTS as readonly unknown[]).includes(body.effort))
+        return c.json({ error: `effort must be one of ${REASONING_EFFORTS.join(', ')}` }, 400);
+      start.effort = body.effort as EffortLevel;
+    }
 
     // Resolve ownership before building anything: an unknown project or a
     // live duplicate id must not leave an unreachable thread and runtime.
@@ -1059,6 +1148,27 @@ export function registerRuntimeRoutes(
 
     // A project thread works in its project's directory unless a worktree is given.
     const cwd = worktreePath ?? project?.path;
+
+    if (start.model !== undefined || start.effort !== undefined) {
+      const runsOn =
+        worker ??
+        threadFactory?.defaultWorker(project?.id) ??
+        deps.configStore.config.defaults.provider;
+      if (start.model && subscriptionWorker(runsOn)) {
+        const refusal = workerModelRequirement(runsOn, start.model);
+        if (refusal) return c.json({ error: refusal }, 400);
+      }
+      const model =
+        start.model ??
+        resolveThreadView(deps.configStore.config, { projectId: project?.id, worker: runsOn })
+          .config.defaults.model;
+      const takes = modelEfforts(runsOn, model);
+      if (start.effort && takes && !takes.includes(start.effort))
+        return c.json(
+          { error: `${model} takes effort ${takes.join(', ') || 'none'}, not ${start.effort}` },
+          400,
+        );
+    }
 
     if (worker && !threadFactory)
       return c.json({ error: 'choosing a worker needs the thread factory' }, 400);
@@ -1079,6 +1189,7 @@ export function registerRuntimeRoutes(
     }
 
     if (typeof body.name === 'string') thread.rename(body.name.slice(0, 200));
+    if (start.model !== undefined || start.effort !== undefined) threadLaunch.update(id, start);
     registerThread(thread, project);
     return c.json(threadToJSON(thread), 201);
   });
@@ -1098,18 +1209,8 @@ export function registerRuntimeRoutes(
       if (typeof body.worker !== 'string') return c.json({ error: 'worker must be a string' }, 400);
       if (!threadFactory || !thread.meta.worker)
         return c.json({ error: 'choosing a worker needs the thread factory' }, 400);
-      if (thread === harness.thread)
-        return c.json({ error: "the main thread runs on its project's default worker" }, 409);
-      if (
-        thread.disposed ||
-        thread.meta.status === 'active' ||
-        turns.hasTurns(id) ||
-        (localStore?.recentTurnIds(id, 1).length ?? 0) > 0
-      )
-        return c.json(
-          { error: `the thread has started on ${thread.meta.worker}; its worker is fixed` },
-          409,
-        );
+      const locked = workerLock(thread);
+      if (locked) return c.json({ error: locked }, 409);
       const refusal = threadFactory.workerRefusal(thread.meta.projectId, body.worker);
       if (refusal) return c.json({ error: refusal }, 400);
       // Checked and rebuilt with no await between, so no turn lands on the old thread meanwhile.
@@ -1122,6 +1223,10 @@ export function registerRuntimeRoutes(
       const chosen = threadLaunch.get(id).model;
       if (chosen && workerModelRequirement(body.worker as SubscriptionWorkerId, chosen))
         threadLaunch.update(id, { model: null });
+      // Nor an effort the new worker's model doesn't take.
+      const { model: next, effort } = launchView(thread);
+      const takes = modelEfforts(body.worker, next);
+      if (effort && takes && !takes.includes(effort)) threadLaunch.update(id, { effort: null });
       // The old worker's in-session host goes; the rebuilt thread is already the live one.
       await deps.threadSetup?.release?.(id);
     }
