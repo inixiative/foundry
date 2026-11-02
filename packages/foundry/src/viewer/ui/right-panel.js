@@ -33,6 +33,7 @@ import {
   launchLabels,
   loadLaunch,
   openRightTab,
+  projects,
   RIGHT_TAB_KEYS,
   RIGHT_TABS,
   rightSize,
@@ -151,8 +152,10 @@ async function setLaunch(threadId, patch) {
 /** The project's hosted repository ({ integration, ref }), from its About record. */
 function useRepository(projectId) {
   const [repo, setRepo] = useState(undefined);
+  // Only a registered project has an About; an unregistered folder has no repository to show.
+  const registered = !!projectId && projects.value.some((p) => p.id === projectId);
   useEffect(() => {
-    if (!projectId) return setRepo(null);
+    if (!registered) return setRepo(null);
     let live = true;
     authFetch(`/api/projects/${encodeURIComponent(projectId)}/about`)
       .then((r) => (r.ok ? r.json() : null))
@@ -161,7 +164,7 @@ function useRepository(projectId) {
     return () => {
       live = false;
     };
-  }, [projectId]);
+  }, [projectId, registered]);
   return repo;
 }
 
@@ -174,6 +177,10 @@ function ContextLinks() {
   const repo = useRepository(meta.projectId ?? null);
   const refs = meta.context?.references ?? [];
   const tickets = refs.filter((r) => r.integration === 'linear' || r.kind === 'issue');
+  const pulls = refs.filter((r) => r.integration === 'github' && !tickets.includes(r));
+  const other = refs.filter((r) => !tickets.includes(r) && !pulls.includes(r));
+  const chips = (references) =>
+    html`<div class="rp-refs"><${ReferenceChips} meta=${{ context: { references } }} /></div>`;
   const branch = threadPlace(meta).branch;
   const github = repo?.integration === 'github' ? repo.ref : null;
   return html`
@@ -184,20 +191,24 @@ function ContextLinks() {
           ? html`<a class="rp-link-chip" href=${`https://github.com/${github}${branch ? `/tree/${encodeURIComponent(branch)}` : ''}`} target="_blank" rel="noopener noreferrer">${github}${branch ? ` · ${branch}` : ''} ↗</a>`
           : html`<div class="rp-dim">${repo === undefined ? 'Reading the project…' : 'No GitHub repository recorded for this project.'}</div>`
       }
+      ${pulls.length ? chips(pulls) : null}
     </section>
     <section class="rp-section" aria-label="Ticket">
       <h3 class="rp-section-title">Ticket</h3>
-      ${
-        tickets.length
-          ? html`<div class="rp-refs"><${ReferenceChips} meta=${{ context: { references: tickets } }} /></div>`
-          : html`<div class="rp-dim">No ticket yet.</div>`
-      }
+      ${tickets.length ? chips(tickets) : html`<div class="rp-dim">No ticket yet.</div>`}
       <${ComingSoon} inline=${true} what="New ticket: open one in Linear from this thread." ticket="BOARD-003" />
     </section>
     <section class="rp-section" aria-label="Slack">
       <h3 class="rp-section-title">Slack</h3>
       <${ComingSoon} what="The Slack conversation behind this thread, a short excerpt, and Go to Slack to talk to these people or read it there." ticket="BOARD-003" />
-    </section>`;
+    </section>
+    ${
+      other.length
+        ? html`<section class="rp-section" aria-label="Other links">
+            <h3 class="rp-section-title">Other links</h3>${chips(other)}
+          </section>`
+        : null
+    }`;
 }
 
 function ContextTab() {
@@ -244,14 +255,6 @@ function ContextTab() {
       <${ComingSoon}
         what="For a Slack, Linear or GitHub item that opened this thread: what the agent read before you opened it (the message, the ticket, the files, the sender)."
         ticket="BOARD-003" />
-    </section>
-    <section class="rp-section">
-      <h3 class="rp-section-title">Linked work</h3>
-      ${
-        (threadData.value?.meta?.context?.references ?? []).length
-          ? html`<div class="rp-refs"><${ReferenceChips} meta=${threadData.value?.meta || {}} /></div>`
-          : html`<div class="rp-dim">No linked tickets or pull requests.</div>`
-      }
     </section>
     <${TokenBar} />
     <${ContextStats} />
