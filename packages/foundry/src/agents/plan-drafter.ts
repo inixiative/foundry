@@ -72,11 +72,18 @@ export class PlanDrafter {
       });
       const patch = parseDraft(result.content);
       // The agent may have recorded its own plan while the draft was being written: its plan stands.
-      if (!patch || thread.disposed || thread.meta.plan !== before) return;
+      if (!patch || thread.disposed || thread.meta.plan !== before) {
+        console.log(
+          `[PlanDrafter] ${thread.id}: no draft (${patch ? 'the agent recorded one' : 'skipped'})`,
+        );
+        return;
+      }
       recordPlan(thread, patch, 'foundry');
       this.options.changed(thread);
-    } catch {
+      console.log(`[PlanDrafter] ${thread.id}: drafted ${patch.outcomes?.length ?? 0} outcomes`);
+    } catch (error) {
       // Non-critical: the next turn that brings work asks again.
+      console.warn(`[PlanDrafter] ${thread.id}: draft failed: ${(error as Error).message}`);
     }
   }
 }

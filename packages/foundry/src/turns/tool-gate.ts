@@ -13,6 +13,7 @@ import {
   toolCapability,
 } from '@inixiative/foundry-core';
 import type { PermissionMode } from '../providers/thread-launch';
+import { THREAD_RECORD_OPERATIONS } from '../tools/thread-record';
 
 /**
  * The user's structural tool rules: the only thing in Foundry that can deny a tool call. They
@@ -59,6 +60,27 @@ export function classifyTool(
   // A fetch or an API call names no local path.
   const paths = capability === 'net:fetch' || capability === 'net:api' ? [] : toolPaths(request);
   return { capability, paths };
+}
+
+/**
+ * Foundry's own tools that only write the thread's own record (plan, loop, name, status) or read
+ * Foundry's context: bookkeeping the briefing asks for, not an action on the user's world, so they
+ * never wait on an approval in any mode. A user's structural rule naming one still holds. Sends,
+ * the conch, forks and Kingdom access are not here: they keep their own owner gates and the host's mode.
+ */
+export const FOUNDRY_OWN_TOOLS: ReadonlySet<string> = new Set([
+  ...THREAD_RECORD_OPERATIONS,
+  'ask_herald',
+  'foundry_threads',
+  'foundry_query',
+  'foundry_conventions',
+  'foundry_memory',
+  'foundry_device',
+]);
+
+/** The operation of a call to this thread's Foundry MCP bridge (`mcp__foundry_<id>__<operation>`), if it is one. */
+export function foundryOperation(toolName: string): string | undefined {
+  return /^(?:mcp__)?foundry_[0-9a-f]{32}(?:__|\.|\/)([a-z_]+)$/.exec(toolName)?.[1];
 }
 
 const RANK: Record<PermissionLevel, number> = { allow: 0, prompt: 1, deny: 2 };
@@ -165,6 +187,10 @@ export function createToolGate(deps: ToolGateDeps): ToolGate {
         },
         'structure',
       );
+    // Foundry's own bookkeeping and reads are never the user's to approve (FOUNDRY_OWN_TOOLS).
+    const operation = foundryOperation(request.toolName);
+    if (operation && FOUNDRY_OWN_TOOLS.has(operation))
+      return outcome({ behavior: 'allow' }, 'foundry-own');
     // The native ask for a call approved at pre-use comes once; the approval is used up by it.
     if (request.stage === 'permission' && request.callId && approved.delete(request.callId))
       return outcome({ behavior: 'allow' }, 'pre-use approval');
