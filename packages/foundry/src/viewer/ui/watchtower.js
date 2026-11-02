@@ -11,6 +11,7 @@
  */
 
 import { ComingSoon } from './coming-soon.js';
+import { otherMachines } from './device-page.js';
 import { FilterChips, passesChips } from './filter-chips.js';
 import { html, useEffect, useState } from './lib.js';
 import {
@@ -72,6 +73,7 @@ function Card({ item, machine }) {
       selectThread(thread.threadId);
     }}>
     <b>${threadName(thread)}</b>
+    ${item.blockedAt ? html`<span class="wt-stage-tag" title="The stage it was blocked at">at ${STAGES.find(([id]) => id === item.blockedAt)?.[1] ?? item.blockedAt}</span>` : null}
     <span class="wt-sources">${Object.entries(sources)
       .filter(([, n]) => n)
       .map(
@@ -139,6 +141,8 @@ export function Watchtower() {
         mine: true,
         device: otherMachine(thread)?.deviceName ?? machine,
         here: !otherMachine(thread),
+        // Blocked work keeps the stage it was blocked at, shown as a tag in the Blocked column.
+        blockedAt: categoryOf(state) === 'problem' ? stageOf(thread, null) : null,
       };
     });
   const valuesOf = {
@@ -148,7 +152,21 @@ export function Watchtower() {
     device: (i) => i.device,
   };
   const inScope = all.filter((i) => scope === 'everyone' || i.mine);
-  const items = inScope.filter((i) => passesChips(chips, valuesOf, i));
+  const [blockedOnly, setBlockedOnly] = useState(false);
+  const items = inScope.filter(
+    (i) => passesChips(chips, valuesOf, i) && (!blockedOnly || i.stage === 'blocked'),
+  );
+  // The counts line (concept-v4): each count filters the map; collisions need the Heralds.
+  const involve = all.filter((i) => i.mine).length;
+  const blocked = all.filter((i) => i.stage === 'blocked');
+  const machines = [...new Set(all.map((i) => i.device))];
+  const activeMachines = new Set(all.map((i) => i.device)).size;
+  const knownMachines = new Set([machine, ...otherMachines().map((m) => m.name)]);
+  const pickMachine = (name) => {
+    const current = new Set(chips.device ?? []);
+    current.has(name) ? current.delete(name) : current.add(name);
+    setChips({ ...chips, device: current });
+  };
   const count = (group, value) =>
     inScope.filter((i) => [valuesOf[group](i)].flat().includes(value)).length;
   const options = (group, values) =>
@@ -185,12 +203,16 @@ export function Watchtower() {
     },
   ];
   const lanes = [...new Set(items.map((i) => i.lane))].sort();
-  const subtitle = SCOPES.find(([id]) => id === scope)[2];
 
   return html`<section class="watchtower" aria-label="Watchtower">
     <header class="wt-head">
       <h2>Watchtower</h2>
-      <span class="wt-meta">${subtitle}</span>
+      <span class="wt-counts" role="group" aria-label="Counts">
+        <button type="button" class="wt-count" aria-pressed=${scope === 'mine'} onClick=${() => setScope(scope === 'mine' ? 'everyone' : 'mine')}><b>${involve}</b> involve you</button>
+        <button type="button" class="wt-count is-red" aria-pressed=${blockedOnly} onClick=${() => setBlockedOnly(!blockedOnly)}><b>${blocked.length}</b> blocked (${blocked.filter((i) => i.mine).length} on you)</button>
+        <span class="wt-count is-soon" title="Two pieces of work touching the same files: the Heralds find them (AGENT-001)">collisions · coming soon</span>
+        <span class="wt-count is-dim"><b>${activeMachines}</b> of ${knownMachines.size} machine${knownMachines.size === 1 ? '' : 's'} active</span>
+      </span>
       <span class="wt-head-spacer"></span>
       <span class="wt-watching-anchor">
         <button type="button" class="wt-watching-btn" aria-expanded=${watchingOpen} onClick=${() => setWatchingOpen(!watchingOpen)}>Watching ▾</button>
@@ -199,13 +221,23 @@ export function Watchtower() {
     </header>
     <div class="wt-wrap">
     <div class="wt-main">
+    <div class="wt-machines" role="group" aria-label="Machines">
+      <span class="wt-filter-label">Machines</span>
+      ${[...knownMachines].map(
+        (
+          name,
+        ) => html`<button key=${name} type="button" class="wt-machine ${machines.includes(name) ? '' : 'is-off'}" aria-pressed=${!!chips.device?.has(name)}
+          title=${machines.includes(name) ? `Show only ${name}` : `${name}: nothing open on it here`} onClick=${() => pickMachine(name)}>${name === machine ? 'this machine' : name}</button>`,
+      )}
+    </div>
     <div class="wt-filters">
       <div class="wt-scope" role="tablist" aria-label="Whose work">
         ${SCOPES.map(
           ([
             id,
             title,
-          ]) => html`<button key=${id} type="button" role="tab" aria-selected=${scope === id}
+            about,
+          ]) => html`<button key=${id} type="button" role="tab" aria-selected=${scope === id} title=${about}
           onClick=${() => setScope(id)}>${title}</button>`,
         )}
       </div>

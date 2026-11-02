@@ -138,7 +138,7 @@ test('thread names: the Foundry name shows until a person names the thread; bran
     expect(await header.locator('.context-bar-chip--branch').innerText()).toBe(
       'feat/thread-names-and-context',
     );
-    // Linked work lives on the right panel's Context tab.
+    // Pull requests and tickets lead the right panel's Context tab.
     const refs = page.locator('.rp-refs');
     if (!(await refs.count())) await page.locator('.rp-strip-tab', { hasText: 'Context' }).click();
     const pr = refs.locator('a.thread-ref--github');

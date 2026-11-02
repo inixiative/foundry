@@ -100,9 +100,24 @@ test('h opens the Watchtower: every stage is a column, a thread is a card, a car
     await page.keyboard.press('h');
     await tower.waitFor();
 
+    // The counts line filters; the machine strip names this machine.
+    await tower
+      .getByRole('group', { name: 'Counts' })
+      .locator('.wt-count', { hasText: 'involve you' })
+      .waitFor();
+    await tower
+      .getByRole('group', { name: 'Machines' })
+      .getByRole('button', { name: 'this machine' })
+      .waitFor();
+
     // The scope switch names whose work is shown; Esc leaves.
     await tower.getByRole('tab', { name: 'Involves me' }).click();
-    expect(await tower.locator('.wt-meta').innerText()).toBe("Work you're on, on any machine");
+    expect(
+      await tower.getByRole('tab', { name: 'Involves me' }).getAttribute('aria-selected'),
+    ).toBe('true');
+    expect(
+      await tower.locator('.wt-count', { hasText: 'involve you' }).getAttribute('aria-pressed'),
+    ).toBe('true');
     await page.keyboard.press('Escape');
     await page.waitForFunction(() => !location.hash.includes('view=watch'));
     await page.keyboard.press('h');
