@@ -478,7 +478,7 @@ export async function runStages(options: ClassifyRunOptions): Promise<ClassifyRe
     carried = {
       stage: index,
       outcome: reading.outcome as Exclude<ClassifyOutcome, 'no'>,
-      ...(why ? { why } : {}),
+      ...(why && base.stage.carryWhy !== false ? { why } : {}),
       ...(call.served?.model ? { model: call.served.model } : {}),
     };
   }

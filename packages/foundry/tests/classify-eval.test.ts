@@ -176,9 +176,9 @@ describe('the three-way arms, on stub providers', () => {
 describe('carrying stage 1 from an earlier run', () => {
   const carryRun = async (
     earlier: Awaited<ReturnType<typeof arm>>['answers'],
-    carryWhy?: boolean,
+    stagesConfig: readonly Record<string, unknown>[] = ARMS.B,
   ) => {
-    const config = runOf({ stages: ARMS.B });
+    const config = runOf({ stages: stagesConfig });
     const { haiku, sonnet, calls } = hosts();
     const byCell = new Map(earlier.map((a) => [`${a.probeId}|${a.domain}`, a]));
     const run = await runCharterEval({
@@ -193,7 +193,6 @@ describe('carrying stage 1 from an earlier run', () => {
       charters: config.charters,
       triggers: ['user-message'],
       carry: (probeId, domain) => byCell.get(`${probeId}|${domain}`),
-      ...(carryWhy === undefined ? {} : { carryWhy }),
     });
     return { ...run, calls };
   };
@@ -228,16 +227,36 @@ describe('carrying stage 1 from an earlier run', () => {
     expect(byId.unseen).toMatchObject({ error: 'no earlier stage 1 to carry' });
   });
 
-  test('carryWhy false hands stage 2 the outcome without stage 1’s why', async () => {
-    const earlier = (await arm(ARMS.B)).answers;
-    const { calls } = await carryRun(earlier, false);
-    const vague = calls.find(
-      (c) => c.host === 'claude-sonnet-5-5' && text(c.messages).includes('nightly thing'),
-    )!;
-    expect(text(vague.messages)).toContain(
-      'Stage 1 (claude-haiku-5-5) was unsure this moment is in your region.',
+  test('carryWhy false on stage 1 hands stage 2 the outcome without its why, live and carried alike', async () => {
+    const noWhy = [{ ...ARMS.B[0]!, carryWhy: false }, ARMS.B[1]!];
+    const live = await arm(noWhy);
+    const { calls } = await carryRun(live.answers, noWhy);
+    for (const run of [live.calls, calls]) {
+      const vague = run.find(
+        (c) => c.host === 'claude-sonnet-5-5' && text(c.messages).includes('nightly thing'),
+      )!;
+      expect(text(vague.messages)).toContain(
+        'Stage 1 (claude-haiku-5-5) was unsure this moment is in your region.',
+      );
+      expect(text(vague.messages)).not.toContain('may mean no overlap');
+    }
+    // Stage 1's own trace still records its why; only the hand-on drops it.
+    expect(JSON.stringify(live.answers.find((a) => a.probeId === 'vague')!.stages![0])).toContain(
+      'may mean no overlap',
     );
-    expect(text(vague.messages)).not.toContain('may mean no overlap');
+  });
+
+  test('carryWhy is a setting of a stage that hands on, and only a boolean', () => {
+    expect(validateStages('s', [{ escalate: ['yes'], carryWhy: false }, {}])[0]!.carryWhy).toBe(
+      false,
+    );
+    expect(validateStages('s', [{ escalate: ['yes'] }, {}])[0]!.carryWhy).toBeUndefined();
+    expect(() => validateStages('s', [{ escalate: ['yes'] }, { carryWhy: false }])).toThrow(
+      's[1].carryWhy: the last stage hands nothing on',
+    );
+    expect(() => validateStages('s', [{ escalate: ['yes'], carryWhy: 'no' }, {}])).toThrow(
+      's[0].carryWhy must be true or false',
+    );
   });
 });
 
