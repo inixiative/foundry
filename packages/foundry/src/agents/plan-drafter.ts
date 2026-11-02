@@ -37,9 +37,23 @@ export class PlanDrafter {
 
   constructor(private readonly options: PlanDrafterOptions) {}
 
-  /** A turn on `thread` completed with this exchange; draft when it brought work and left no plan. */
-  turnCompleted(thread: Thread, exchange: { user: string; agent: string }): void {
-    if (thread.disposed || !wantsDraft(thread.meta) || !hasWorkContent(exchange.user)) return;
+  /**
+   * A turn on `thread` completed with this exchange; draft when it brought work and its agent
+   * recorded no plan during it. `planAtStart` is the plan as the turn began: a plan the agent
+   * recorded or marked done during the turn is a different object, and it stands.
+   */
+  turnCompleted(
+    thread: Thread,
+    exchange: { user: string; agent: string },
+    planAtStart: Thread['meta']['plan'],
+  ): void {
+    if (
+      thread.disposed ||
+      thread.meta.plan !== planAtStart ||
+      !wantsDraft(thread.meta) ||
+      !hasWorkContent(exchange.user)
+    )
+      return;
     if (this.running.has(thread)) return;
     this.running.add(thread);
     void this.draft(thread, exchange).finally(() => this.running.delete(thread));
