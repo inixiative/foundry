@@ -228,9 +228,7 @@ export async function kingdomLogin(options: KingdomLoginOptions) {
 export async function setProjectCapacity(
   store: ConfigStore,
   projectId: string,
-  capacity:
-    | { source: 'local' }
-    | { source: 'kingdom'; kingdom: string; signetId: string; projectId?: string },
+  capacity: { source: 'local' } | { source: 'kingdom'; kingdom: string; signetId: string },
 ) {
   const config = await store.load();
   if (!config.projects[projectId]) throw Error(`No Foundry project ${projectId}`);
@@ -244,5 +242,20 @@ export async function setProjectCapacity(
     const { source: _source, ...kingdomCapacity } = capacity;
     project.capacity = 'kingdom';
     project.kingdomCapacity = kingdomCapacity;
+  });
+}
+
+/** `foundry kingdom project`: link a Foundry project to its one Kingdom project, or unlink it (null). */
+export async function setKingdomProject(
+  store: ConfigStore,
+  projectId: string,
+  link: { kingdom: string; projectId: string } | null,
+) {
+  const config = await store.load();
+  if (!config.projects[projectId]) throw Error(`No Foundry project ${projectId}`);
+  return store.update((draft) => {
+    const project = draft.projects[projectId]!;
+    if (link) project.kingdomProject = link;
+    else delete project.kingdomProject;
   });
 }

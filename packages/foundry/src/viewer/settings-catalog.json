@@ -757,11 +757,21 @@
   {
     "path": "kingdomCapacity.signetId",
     "scope": "project",
-    "description": "The Kingdom Signet that grants this project its subscription pool (`subscription.use`)."
+    "description": ""
   },
   {
-    "path": "kingdomCapacity.projectId",
+    "path": "kingdomProject",
     "scope": "project",
-    "description": "The Kingdom project this Foundry project's usage is recorded against."
+    "description": "The one Kingdom project this Foundry project links to (Aron, 2026-11-01); its pool chooses a Kingdom-capacity login."
+  },
+  {
+    "path": "kingdomProject.kingdom",
+    "scope": "project",
+    "description": "Paired Kingdom id or API origin (`bun run kingdom status`)."
+  },
+  {
+    "path": "kingdomProject.projectId",
+    "scope": "project",
+    "description": ""
   }
 ]

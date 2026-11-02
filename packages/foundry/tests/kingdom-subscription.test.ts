@@ -14,10 +14,11 @@ import {
   kingdomLogin,
   maskedOutput,
   selectOwner,
+  setKingdomProject,
   setProjectCapacity,
 } from '../src/providers/kingdom-subscription-login';
 import { subscriptionStatus } from '../src/providers/native-text-provider';
-import { ConfigStore, starterConfig } from '../src/viewer/config';
+import { ConfigStore, capacityKingdomProject, starterConfig } from '../src/viewer/config';
 import { heldSignet, mockKingdom, ownerOf } from './helpers/kingdom-installation';
 
 const cleanups: (() => Promise<unknown>)[] = [];
@@ -415,4 +416,47 @@ test('the setup-token Claude prints is captured but never echoed, even split by 
   expect(captured).toBe(setupToken);
   expect(written.join('')).not.toContain(setupToken.slice(14));
   expect(written.join('')).toContain('[token captured]');
+});
+
+test('a Foundry project links to one Kingdom project; a Kingdom-capacity login bills it on the same Kingdom', async () => {
+  const { directory, kingdom, owner, integrationId } = await kingdomWithLogin('claude');
+  const store = new ConfigStore(join(directory, 'config'));
+  const config = starterConfig('claude-code', 'fable');
+  config.kingdomIntegrations = [
+    { url: kingdom.url, integrationId, owner, signetId: crypto.randomUUID() },
+  ];
+  const projectId = crypto.randomUUID();
+  config.projects = { [projectId]: { id: projectId, path: directory } };
+  await store.save(config);
+  const kingdomProjectId = crypto.randomUUID();
+  await setProjectCapacity(store, projectId, {
+    source: 'kingdom',
+    kingdom: kingdom.url,
+    signetId: crypto.randomUUID(),
+  });
+  const linked = await setKingdomProject(store, projectId, {
+    kingdom: kingdom.url,
+    projectId: kingdomProjectId,
+  });
+  expect(linked.projects[projectId]!.kingdomProject).toEqual({
+    kingdom: kingdom.url,
+    projectId: kingdomProjectId,
+  });
+  expect(capacityKingdomProject(linked, linked.projects[projectId]!)).toBe(kingdomProjectId);
+  // The old place for it is refused by name, with the fix.
+  await expect(
+    store.update((draft) => {
+      (draft.projects[projectId]!.kingdomCapacity as unknown as Record<string, unknown>).projectId =
+        kingdomProjectId;
+    }),
+  ).rejects.toThrow('kingdomCapacity.projectId is gone');
+  await expect(
+    setKingdomProject(store, projectId, {
+      kingdom: 'https://elsewhere.example',
+      projectId: kingdomProjectId,
+    }),
+  ).rejects.toThrow();
+  const unlinked = await setKingdomProject(store, projectId, null);
+  expect(unlinked.projects[projectId]!.kingdomProject).toBeUndefined();
+  expect(capacityKingdomProject(unlinked, unlinked.projects[projectId]!)).toBeUndefined();
 });
