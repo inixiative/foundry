@@ -19,7 +19,11 @@ import { mkdirSync, realpathSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { writePrivateJson } from '../client/private-file';
 import type { ConfigStore, FoundryConfig } from '../viewer/config';
-import { defaultProfileSource, type NativeProfileSource } from './default-profiles';
+import {
+  defaultProfileSource,
+  FOUNDRY_LOGIN_MARKER,
+  type NativeProfileSource,
+} from './default-profiles';
 import { maskedOutput, prepareCodexLoginHome, readCodexLogin } from './kingdom-subscription-login';
 import { withoutCompetingCredentials } from './native-authentication';
 import { assertProfile } from './private-profile';
@@ -143,6 +147,8 @@ export class LoginSetup {
     mkdirSync(root, { recursive: true, mode: 0o700 });
     const directory = join(root, id);
     mkdirSync(directory, { mode: 0o700 });
+    // This home holds only the sign-in: a main thread on it takes the user's own setup.
+    writePrivateJson(join(directory, FOUNDRY_LOGIN_MARKER), { runtime, name: label });
     const view: LoginSetupView = {
       id,
       runtime,

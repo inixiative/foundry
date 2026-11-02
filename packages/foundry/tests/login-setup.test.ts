@@ -3,6 +3,7 @@ import { afterEach, beforeEach, expect, test } from 'bun:test';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { isFoundryLogin } from '../src/providers/default-profiles';
 import {
   LoginSetup,
   removeLogin,
@@ -101,6 +102,9 @@ test('Add a Claude login: setup-token in its own home, the code typed in, the to
   if (login.mode !== 'native-profile') throw Error('expected a native profile');
   expect(statSync(login.tokenFile!).mode & 0o777).toBe(0o600);
   expect(readSetupToken(login)).toBe(TOKEN);
+  // A home Foundry made: a main thread on it takes the user's own setup (isFoundryLogin).
+  expect(isFoundryLogin(login.profileDirectory)).toBe(true);
+  expect(isFoundryLogin(join(process.env.HOME!, '.claude'))).toBe(false);
   // Settings hold the path, never the token.
   expect(readFileSync(join(root, 'foundry', 'settings.json'), 'utf8')).not.toContain(TOKEN);
 });

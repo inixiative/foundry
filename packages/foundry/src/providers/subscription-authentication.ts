@@ -3,7 +3,7 @@
  * @kind service
  * @partOf feature:nativeAuth
  */
-import { defaultProfileDirectory, isDefaultProfile, withProfile } from './default-profiles';
+import { defaultProfileDirectory, isFoundryLogin, withProfile } from './default-profiles';
 import { claudeSettingsFiles, shareUserSetup, subscriptionSettingsGuard } from './harness-settings';
 import {
   NativeAuthentication,
@@ -116,8 +116,7 @@ export class SubscriptionAuthentication extends NativeAuthentication {
         const owned = launch.launch(argv, nativeTextEnvironment(env));
         if (!harness) return { argv: [...owned.argv, '--setting-sources', ''], env: owned.env };
         // A login with its own home (one of several) gets the user's own setup, as a Kingdom pool login does.
-        if (!isDefaultProfile(configDirectory, 'claude'))
-          shareUserSetup(configDirectory, userClaudeDirectory);
+        if (isFoundryLogin(configDirectory)) shareUserSetup(configDirectory, userClaudeDirectory);
         const guard = subscriptionSettingsGuard(claudeSettingsFiles(configDirectory, harness));
         return {
           argv: [...owned.argv, '--setting-sources', harness.sources, '--settings', guard],

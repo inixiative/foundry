@@ -18,7 +18,7 @@ import { dirname, isAbsolute, join } from 'node:path';
 import { sha256Hex } from '@inixiative/foundry-core';
 import { z } from 'zod';
 import { readPrivateJson } from '../client/private-file';
-import { defaultProfileDirectory, isDefaultProfile, profileEnvironment } from './default-profiles';
+import { defaultProfileDirectory, isFoundryLogin, profileEnvironment } from './default-profiles';
 import {
   codexUserConfig,
   type HarnessSettingsLaunch,
@@ -412,7 +412,7 @@ export class NativeAuthentication {
         const home = privateHome && harness ? `${privateHome}-user` : privateHome;
         // The user's own Codex setup is in their own home, also when this login is another one.
         const userCodex =
-          runtime === 'codex' && !isDefaultProfile(directory, 'codex')
+          runtime === 'codex' && isFoundryLogin(directory)
             ? defaultProfileDirectory('codex')
             : directory;
         const homeConfig =
