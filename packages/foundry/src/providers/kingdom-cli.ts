@@ -20,7 +20,7 @@ import {
   pairKingdomIntegration,
   viewerRunning,
 } from './kingdom-pairing';
-import { kingdomLogin, setProjectCapacity } from './kingdom-subscription-login';
+import { kingdomLogin, setKingdomProject, setProjectCapacity } from './kingdom-subscription-login';
 
 export const defaultInstallationName = () => `Foundry on ${hostname()}`.slice(0, 120);
 /** This Foundry's name (Settings → Profile), or the default when none is set. */
@@ -143,7 +143,8 @@ export const defaultKingdomUrl = () => process.env.KINGDOM_URL ?? HOSTED_KINGDOM
 const usage = [
   'Usage: bun run kingdom <pair|status|disconnect> [--url KINGDOM_API_ORIGIN] [--name NAME] [--organization SLUG|ID] [--replace] [--kingdom ID|URL] [--no-open] [--config-dir DIR]',
   '       bun run kingdom login <claude|codex> [--owner PAIRED_ID|OWNER_KEY|ORG_OR_USER_ID] [--kingdom ID|URL] [--name NAME]',
-  '       bun run kingdom capacity <FOUNDRY_PROJECT_ID> <local|kingdom> [--kingdom ID|URL] [--signet SIGNET_ID] [--project KINGDOM_PROJECT_ID]',
+  '       bun run kingdom capacity <FOUNDRY_PROJECT_ID> <local|kingdom> [--kingdom ID|URL] [--signet SIGNET_ID]',
+  '       bun run kingdom project <FOUNDRY_PROJECT_ID> <KINGDOM_PROJECT_ID|none> --kingdom ID|URL',
 ].join('\n');
 
 async function main() {
@@ -160,7 +161,6 @@ async function main() {
       replace: { type: 'boolean' },
       owner: { type: 'string' },
       signet: { type: 'string' },
-      project: { type: 'string' },
       'no-open': { type: 'boolean' },
       help: { type: 'boolean' },
     },
@@ -169,7 +169,7 @@ async function main() {
   if (
     v.help ||
     !command ||
-    !['pair', 'status', 'disconnect', 'login', 'capacity'].includes(command)
+    !['pair', 'status', 'disconnect', 'login', 'capacity', 'project'].includes(command)
   ) {
     console.log(usage);
     if (!v.help) process.exitCode = 1;
@@ -196,6 +196,25 @@ async function main() {
     );
     return;
   }
+  if (command === 'project') {
+    const [, projectId, kingdomProjectId] = positionals;
+    if (!projectId || !kingdomProjectId || (kingdomProjectId !== 'none' && !v.kingdom)) {
+      console.log(usage);
+      process.exitCode = 1;
+      return;
+    }
+    const updated = await setKingdomProject(
+      new ConfigStore(configDir),
+      projectId,
+      kingdomProjectId === 'none' ? null : { kingdom: v.kingdom!, projectId: kingdomProjectId },
+    );
+    output({
+      project: projectId,
+      kingdomProject: updated.projects[projectId]?.kingdomProject ?? null,
+    });
+    if (await viewerRunning()) console.error(restartHint);
+    return;
+  }
   if (command === 'capacity') {
     const [, projectId, source] = positionals;
     if (!projectId || (source !== 'local' && source !== 'kingdom')) {
@@ -216,7 +235,6 @@ async function main() {
             source,
             kingdom: v.kingdom!,
             signetId: v.signet!,
-            ...(v.project ? { projectId: v.project } : {}),
           },
     );
     output({ project: projectId, capacity: updated.projects[projectId]?.capacity });

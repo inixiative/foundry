@@ -314,6 +314,8 @@ export interface ProjectSettingsConfig {
   capacity?: 'local' | 'kingdom';
   /** Required when `capacity` is `kingdom`. */
   kingdomCapacity?: ProjectKingdomCapacity;
+  /** The one Kingdom project this Foundry project links to (Aron, 2026-11-01); its pool chooses a Kingdom-capacity login. */
+  kingdomProject?: ProjectKingdomLink;
 }
 
 /** One layer of a project's chorus: a regions directory (`<dir>/<region id>/{region.json,knowledge.md}`). */
@@ -382,15 +384,19 @@ export interface ConsumedSettings {
   maxChars?: number;
 }
 
-/** A Kingdom-capacity project: the paired Kingdom, the Signet (`subscription.use`) it runs under, and the
- * Kingdom project whose pool chooses the login (absent: the Signet's own project). */
+/** A Kingdom-capacity project: the paired Kingdom and the Signet (`subscription.use`) it runs under. The
+ * Kingdom project whose pool chooses the login is the project's `kingdomProject` (absent: the Signet's own). */
 export interface ProjectKingdomCapacity {
   /** Paired Kingdom id or API origin (`bun run kingdom status`). */
   kingdom: string;
-  /** The Kingdom Signet that grants this project its subscription pool (`subscription.use`). */
   signetId: string;
-  /** The Kingdom project this Foundry project's usage is recorded against. */
-  projectId?: string;
+}
+
+/** A Foundry project's link to its Kingdom project: one per Foundry project. */
+export interface ProjectKingdomLink {
+  /** Paired Kingdom id or API origin (`bun run kingdom status`). */
+  kingdom: string;
+  projectId: string;
 }
 
 /**
@@ -1020,18 +1026,23 @@ export function validateChorusSettings(where: string, chorus: unknown): void {
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function validateProjectCapacity(config: FoundryConfig, project: ProjectSettingsConfig) {
+  if (project.kingdomCapacity && 'projectId' in project.kingdomCapacity)
+    throw Error(
+      `Project ${project.id}: kingdomCapacity.projectId is gone; the Kingdom project is the project's own link, kingdomProject { kingdom, projectId }`,
+    );
+  if (project.kingdomProject) {
+    if (!uuidPattern.test(project.kingdomProject.projectId))
+      throw Error(`Project ${project.id}: kingdomProject.projectId must be a Kingdom project id`);
+    selectKingdomIntegration(config.kingdomIntegrations, project.kingdomProject.kingdom);
+  }
   if (project.capacity === undefined && project.kingdomCapacity === undefined) return;
   if (project.capacity !== 'local' && project.capacity !== 'kingdom')
     throw Error(`Project ${project.id} capacity must be local or kingdom`);
   if (project.capacity === 'local') return;
   const capacity = project.kingdomCapacity;
-  if (
-    !capacity ||
-    !uuidPattern.test(capacity.signetId) ||
-    (capacity.projectId !== undefined && !uuidPattern.test(capacity.projectId))
-  )
+  if (!capacity || !uuidPattern.test(capacity.signetId))
     throw Error(
-      `Project ${project.id} uses Kingdom capacity: set kingdomCapacity { kingdom, signetId, projectId? }`,
+      `Project ${project.id} uses Kingdom capacity: set kingdomCapacity { kingdom, signetId }`,
     );
   selectKingdomIntegration(config.kingdomIntegrations, capacity.kingdom);
   if (!['claude-code', 'codex'].includes(project.defaults?.provider ?? config.defaults.provider))
@@ -1610,4 +1621,17 @@ function validateJournalSettings(journal: JournalSettings | undefined): void {
   const days = journal.rawMiddlewareDays;
   if (days !== undefined && (!Number.isFinite(days) || days < 0))
     throw Error('journal.rawMiddlewareDays must be a number of days, 0 or more');
+}
+
+/** The Kingdom project a Kingdom-capacity login bills: the project's link, when it is on the same Kingdom. */
+export function capacityKingdomProject(
+  config: Pick<FoundryConfig, 'kingdomIntegrations'>,
+  project: Pick<ProjectSettingsConfig, 'kingdomCapacity' | 'kingdomProject'>,
+): string | undefined {
+  const capacity = project.kingdomCapacity;
+  const link = project.kingdomProject;
+  if (!capacity || !link) return undefined;
+  const url = (kingdom: string) =>
+    selectKingdomIntegration(config.kingdomIntegrations, kingdom).url;
+  return url(link.kingdom) === url(capacity.kingdom) ? link.projectId : undefined;
 }
