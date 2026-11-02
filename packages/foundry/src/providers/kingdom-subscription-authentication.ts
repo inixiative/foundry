@@ -8,7 +8,7 @@ import { mkdirSync, unlinkSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
 import { kingdomUrl } from '@inixiative/signet';
 import { writePrivateFile } from '../client/private-file';
-import type { FoundryConfig } from '../viewer/config';
+import { capacityKingdomProject, type FoundryConfig } from '../viewer/config';
 import { resolveThreadView } from '../viewer/config-resolve';
 import { defaultProfileDirectory } from './default-profiles';
 import {
@@ -311,9 +311,11 @@ export function projectCapacity(options: {
   const kingdom = new KingdomSubscriptionAuthentication({
     directory: join(options.foundryDir, 'kingdom', 'subscriptions'),
     capacity: async (threadId) => {
-      const capacity = projectOf(threadId)?.kingdomCapacity;
-      if (!capacity) throw Error('This project has no Kingdom capacity configured');
+      const project = projectOf(threadId);
+      const capacity = project?.kingdomCapacity;
+      if (!project || !capacity) throw Error('This project has no Kingdom capacity configured');
       const config = options.config();
+      const kingdomProject = capacityKingdomProject(config, project);
       const { url } = selectKingdomIntegration(config.kingdomIntegrations, capacity.kingdom);
       const view = resolveThreadView(config, metaOf(threadId) ?? {}).config;
       return {
@@ -322,7 +324,7 @@ export function projectCapacity(options: {
           options.credentialFile ??
           ((at, signetId) => heldSignetFile(options.foundryDir, at, signetId))
         )(url, capacity.signetId),
-        ...(capacity.projectId ? { projectId: capacity.projectId } : {}),
+        ...(kingdomProject ? { projectId: kingdomProject } : {}),
         model: view.defaults.model,
         effort: view.defaults.codexEffort ?? 'default',
       };
