@@ -248,10 +248,7 @@ test('an open native inspector receives late journal terminal without changing h
   try {
     const observer = await f.page();
     await observer.goto(`${f.origin}/#thread=main`);
-    await observer
-      .locator('.status-text')
-      .filter({ hasText: /^connected$/ })
-      .waitFor();
+    await observer.locator('.header .status-dot.on').waitFor();
     await f.send('main', 'native-history');
     const message = observer.locator('.chat-agent').filter({ hasText: 'OBSERVED_WORK_1' });
     await message.locator('.chat-trace-btn').click();
@@ -284,10 +281,7 @@ test('pre-dispatch failure on an inactive thread is fetched on return and visibl
         ownedRefresh++;
     });
     await page.goto(`${f.origin}/#thread=no-executor`);
-    await page
-      .locator('.status-text')
-      .filter({ hasText: /^connected$/ })
-      .waitFor();
+    await page.locator('.header .status-dot.on').waitFor();
     await page.waitForFunction(() => localStorage.getItem('foundry:msgs:no-executor') !== null);
     await page.evaluate(() => {
       location.hash = '#thread=main';
@@ -326,10 +320,7 @@ test('an open observer sees externally admitted work without reload, without dup
   try {
     const observer = await f.page();
     await observer.goto(`${f.origin}/#thread=main`);
-    await observer
-      .locator('.status-text')
-      .filter({ hasText: /^connected$/ })
-      .waitFor();
+    await observer.locator('.header .status-dot.on').waitFor();
     await observer.locator('.chat-input').waitFor();
     // Externally admitted work appears in the open tab without reload.
     await f.send('main', 'external-one');
@@ -405,10 +396,7 @@ test('browser storage failure keeps externally observed work visible and honestl
   try {
     const observer = await f.page();
     await observer.goto(`${f.origin}/#thread=main`);
-    await observer
-      .locator('.status-text')
-      .filter({ hasText: /^connected$/ })
-      .waitFor();
+    await observer.locator('.header .status-dot.on').waitFor();
     await observer.waitForFunction(() => localStorage.getItem('foundry:msgs:main') !== null);
     await observer.evaluate(() => {
       const set = Storage.prototype.setItem;

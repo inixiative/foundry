@@ -16,6 +16,7 @@ import {
   commandPaletteOpen,
   createThread,
   helpOpen,
+  watchtowerOpen,
 } from './store.js';
 
 // ---------------------------------------------------------------------------
@@ -408,6 +409,7 @@ export function registerDefaults(actions) {
     category: 'panels',
     action: () => {
       boardOpen.value = false;
+      watchtowerOpen.value = false;
     },
   });
   bind('[', {
