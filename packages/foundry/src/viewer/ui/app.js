@@ -59,14 +59,15 @@ import {
   inspectLayer,
   inspectTarget,
   loadTraces,
+  openRightTab,
   projectHomeOpen,
   projectPage,
   projectSidebarOpen,
   projects,
   prompts,
+  RIGHT_TAB_KEYS,
   RIGHT_TABS,
   resyncStreams,
-  rightTab,
   scopeProjectId,
   selectedEvent,
   selectedSpanId,
@@ -336,11 +337,11 @@ function App() {
       toggleRightPanel: () => {
         detailDrawerOpen.value = !detailDrawerOpen.value;
       },
-      rightTabs: RIGHT_TABS.map((t) => t[0].toUpperCase() + t.slice(1)),
-      showRightTab: (i) => {
-        rightTab.value = RIGHT_TABS[i];
-        detailDrawerOpen.value = true;
-      },
+      rightTabKeys: Object.fromEntries(RIGHT_TABS.map((t) => [t, RIGHT_TAB_KEYS[t]])),
+      rightTabLabels: Object.fromEntries(
+        RIGHT_TABS.map((t) => [t, t[0].toUpperCase() + t.slice(1)]),
+      ),
+      showRightTab: (tab) => openRightTab(tab, { toggle: true }),
     });
     initHotkeys();
     loadMachineProfile();
