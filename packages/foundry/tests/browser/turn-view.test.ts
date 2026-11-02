@@ -54,8 +54,8 @@ test('full trace opens the turn view: grouped steps, filters, arrow keys, Raw, E
         Math.round(w),
       before,
     );
-    // "full trace" opens the same panel.
-    await page.locator('.chat-fulltrace-btn').first().click();
+    // Inspect on the speaker line opens the same panel.
+    await page.locator('.chat-user .inspect-link').first().click();
     // The turn arrives over the flow stream after the view opens.
     await view.locator('.tv-group').first().waitFor();
     const groups = await view.locator('.tv-group h3').allTextContents();
