@@ -271,6 +271,17 @@ export function initHotkeys() {
       return;
     }
 
+    // ⌘ + a number key acts like the number key, even while typing.
+    if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && e.code?.startsWith('Digit')) {
+      const action = bindings.get(e.code.slice(5))?.action;
+      if (action) {
+        e.preventDefault();
+        e.stopPropagation();
+        action();
+      }
+      return;
+    }
+
     if (typing) {
       // Esc leaves the message box (overlays still close through the escape binding).
       if (e.key === 'Escape') {
@@ -314,7 +325,8 @@ export function initHotkeys() {
 
 export function registerDefaults(actions) {
   // Navigation
-  for (const [i, key] of ['1', '2', '3', '4'].entries())
+  // Number keys, plain, ⌘ or ⌥ (Aron 11-02): 1–3 the centre's tabs, 4–0 the right panel's.
+  for (const [i, key] of ['1', '2', '3'].entries())
     bind(key, {
       description: `Centre: ${actions.centerTabs[i]}`,
       category: 'navigation',
@@ -418,10 +430,10 @@ export function registerDefaults(actions) {
     category: 'panels',
     action: () => stepSize('right', 1),
   });
-  for (const [i, key] of ['5', '6', '7', '8', '9'].entries())
+  for (const [tab, key] of Object.entries(actions.rightTabKeys))
     bind(key, {
-      description: `Right panel: ${actions.rightTabs[i]}`,
+      description: `Right panel: ${actions.rightTabLabels[tab]} (again folds it)`,
       category: 'panels',
-      action: () => actions.showRightTab(i),
+      action: () => actions.showRightTab(tab),
     });
 }
