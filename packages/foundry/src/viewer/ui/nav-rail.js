@@ -15,7 +15,7 @@ import { Attention } from './attention.js';
 import { IncomingRows } from './incoming.js';
 import { html } from './lib.js';
 import { NavFooter } from './nav-footer.js';
-import { SizeControls } from './panel-sizes.js';
+import { panelFit, SizeControls } from './panel-sizes.js';
 import { ProjectSidebar } from './project-sidebar.js';
 import {
   activeThreadId,
@@ -76,7 +76,8 @@ function OpenRail() {
 export function NavRail() {
   if (leftSize.value === 'hidden') return html`<div class="panel-hidden" aria-hidden="true"></div>`;
   // Folded, the rail is today's thin strip of project dots.
-  if (!projectSidebarOpen.value) return html`<${ProjectSidebar} />`;
+  if (!projectSidebarOpen.value || panelFit.value.leftFolded)
+    return html`<${ProjectSidebar} folded=${true} />`;
   return html`<div class="nav-rail">
     <div class="rail-head-row"><${RailToggle} /><${SizeControls} side="left" /></div>
     ${railView.value === 'open' ? html`<${OpenRail} />` : html`<${ProjectSidebar} />`}

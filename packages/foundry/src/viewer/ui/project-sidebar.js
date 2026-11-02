@@ -289,8 +289,9 @@ function CollapsedStrip() {
 // ProjectSidebar (exported)
 // ---------------------------------------------------------------------------
 
-export function ProjectSidebar() {
-  const isOpen = projectSidebarOpen.value;
+/** `folded`: the narrow-screen rule folded the rail to its strip, whatever size was chosen. */
+export function ProjectSidebar({ folded = false } = {}) {
+  const isOpen = projectSidebarOpen.value && !folded;
   const all = projects.value;
   const active = activeProjectId.value;
   const [adding, setAdding] = useState(false);
