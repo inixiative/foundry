@@ -16,6 +16,7 @@
  * Archive; threads, linked PRs and tickets, and feedback from what the viewer already holds.
  */
 
+import { ComingSoon } from './coming-soon.js';
 import { html, useEffect, useRef, useState } from './lib.js';
 import { closeSearch, navigate, settingSection, settingsPath } from './route.js';
 import { settingsHighlight } from './settings.js';
@@ -306,7 +307,7 @@ export function SearchPage() {
     groups.push({
       title: 'Heralds',
       items: ranked(heraldHits, query),
-      empty: 'Nothing matches. Teammates’ work arrives with the Heralds.',
+      empty: html`Nothing matches. <${ComingSoon} inline what="Teammates’ work, with the Heralds." ticket="AGENT-001" />`,
     });
 
     const threadHits = allThreads.value
@@ -333,7 +334,12 @@ export function SearchPage() {
       return {
         key: `message:${a.archiveId}`,
         title: text,
-        sub: text === a.title ? a.source : `${a.title} · ${a.source}`,
+        sub: [
+          text === a.title ? null : a.title,
+          a.source ?? [...new Set((a.models ?? []).map((m) => m.model))].join(', '),
+        ]
+          .filter(Boolean)
+          .join(' · '),
         where: a.projectId ? projectLabel(a.projectId) : '',
         preview: () =>
           html`<div class="sp-message"><h3>${a.title}</h3><pre>${(a.chunks ?? []).map((c) => c.text).join('\n\n…\n\n')}</pre></div>`,
@@ -393,8 +399,10 @@ export function SearchPage() {
     groups.push({
       title: 'People',
       items: [],
-      empty:
-        'Not indexed yet: Foundry has no people directory (teammates come with Heralds and Kingdom).',
+      empty: html`<${ComingSoon}
+        inline
+        what="People: teammates and what each is working on, through Kingdom and the Heralds."
+        ticket="AGENT-001" />`,
     });
   }
 

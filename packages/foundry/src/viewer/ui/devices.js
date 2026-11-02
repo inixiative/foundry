@@ -9,6 +9,7 @@
  * knows, and the tunnel's address is what this Foundry advertises to it.
  */
 
+import { ComingSoon } from './coming-soon.js';
 import { html, useEffect, useState } from './lib.js';
 import { onLink, settingsPath } from './route.js';
 import { authFetch, showToast } from './store.js';
@@ -178,7 +179,11 @@ export function DevicesSection({ projectIds, kingdomPaired }) {
     <section class="settings-card" data-setting="tunnel">
       <div class="settings-card-header"><span class="settings-card-title">This machine</span></div>
       <${LocalDevicePanel} projectIds=${projectIds} />
-      <p class="settings-desc">Peers: ${kingdomPaired ? 'none connected yet; other machines appear here once they pair with the same Kingdom.' : 'pair a Kingdom to see your other machines.'}</p>
+      ${
+        kingdomPaired
+          ? html`<${ComingSoon} what="Peers: your other machines paired with the same Kingdom, each with its projects and quota. Foundry doesn't read them from Kingdom yet." />`
+          : html`<p class="settings-desc">Peers: pair a Kingdom to see your other machines.</p>`
+      }
     </section>
     <${TunnelCard} />
   `;
