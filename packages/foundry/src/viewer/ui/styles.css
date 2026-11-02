@@ -9279,18 +9279,48 @@ a.thread-ref:hover {
 .project-home {
   height: 100%;
   overflow: auto;
-  padding: 22px 26px;
+  padding: 16px 22px 26px;
 }
 .ph-head {
   display: flex;
-  align-items: baseline;
-  gap: 12px;
-  margin-bottom: 16px;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 12px;
   flex-wrap: wrap;
 }
 .ph-head h2 {
   margin: 0;
-  font-size: 1.35rem;
+  font-family: var(--display);
+  font-size: 24px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  line-height: 36px;
+}
+/* A page's boxes sit in one bordered frame, as the mockup's .pframe does. */
+.project-home > .ph-grid {
+  padding: 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: 12px;
+  background: hsl(var(--card) / 0.55);
+}
+.ph-head-actions .proj-btn {
+  padding: 5px 12px;
+  border-radius: 8px;
+  background: none;
+  color: var(--text);
+  font: 600 12.5px var(--font);
+}
+.ph-head-actions .proj-btn.is-go {
+  background: var(--accent);
+  color: var(--accent-ink);
+  border-color: transparent;
+}
+.ph-box .proj-btn.ph-link {
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: none;
+  font: 11px var(--mono);
+  color: var(--text-dim);
 }
 .ph-grid {
   display: grid;
@@ -9301,6 +9331,7 @@ a.thread-ref:hover {
 .ph-box {
   border: 1px solid hsl(var(--border));
   border-radius: 12px;
+  background: var(--surface);
   padding: 12px 14px;
   display: flex;
   flex-direction: column;
@@ -9310,8 +9341,9 @@ a.thread-ref:hover {
 .ph-box h4 {
   margin: 0 0 4px;
   font-size: 11px;
+  font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.08em;
   color: hsl(var(--muted-foreground));
 }
 .ph-threads {
