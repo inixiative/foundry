@@ -25,8 +25,9 @@ const HERE = '11111111-1111-4111-8111-111111111111';
 const STUDIO = '22222222-2222-4222-8222-222222222222';
 
 // A thread on another of your machines (meta.machine) carries a device badge in the list and on the
-// board, joins the Board's Device filter and shows as you on that machine in the Watchtower; a thread
-// whose agent recorded its plan (meta.plan) shows it in Plan.
+// board, joins the Board's Machine filter and shows as you on that machine in the Watchtower; the
+// footer lists that machine, whose page leads to its threads; a thread whose agent recorded its plan
+// (meta.plan) shows it in Plan.
 test('threads on another machine are badged and filterable; a recorded plan fills Plan', async () => {
   const cleanup: ReleaseStep[] = [];
   const dir = mkdtempSync(join(tmpdir(), 'foundry-machines-'));
@@ -76,6 +77,8 @@ test('threads on another machine are badged and filterable; a recorded plan fill
     config.agents = defaultAgents();
     config.setupComplete = true;
     config.installationName = 'MacBook Pro';
+    // Registered in settings too, so this machine's inventory lists it as a checkout.
+    config.projects.shop = { id: 'shop', path: dir, label: 'acme-shop', tags: [] };
     await configStore.save(config);
     const viewer = createViewer({
       harness: new Harness(new Thread('main', new ContextStack(), { description: 'Global' })),
@@ -131,7 +134,7 @@ test('threads on another machine are badged and filterable; a recorded plan fill
     await plan.locator('.plan-tech-row', { hasText: 'withRetry' }).waitFor();
     await plan.locator('.plan-intro', { hasText: 'recorded by the agent' }).waitFor();
 
-    // Board: the badge on the card, and Device narrows to the studio Mac.
+    // Board: the badge on the card, and Machine narrows to the studio Mac.
     await page.locator('.board-button').click();
     const board = page.locator('.board');
     // Both threads are idle: quiet, off the board until shown.
@@ -142,10 +145,10 @@ test('threads on another machine are badged and filterable; a recorded plan fill
       .waitFor();
     await board
       .getByRole('toolbar', { name: 'Filters' })
-      .getByRole('button', { name: /^Device/ })
+      .getByRole('button', { name: /^Machine/ })
       .click();
     await page
-      .getByRole('group', { name: 'Device' })
+      .getByRole('group', { name: 'Machine' })
       .getByRole('button', { name: /^studio Mac/ })
       .click();
     await board.locator('.board-card', { hasText: 'Rebuild regions' }).waitFor();
@@ -162,6 +165,37 @@ test('threads on another machine are badged and filterable; a recorded plan fill
       .locator('.wt-card', { hasText: 'Cap checkout retries' })
       .locator('.actor', { hasText: 'You · this machine' })
       .waitFor();
+
+    // Footer: your other machine with its open threads (no meter); its page lists its threads and
+    // opens the Watchtower filtered to it, with a removable chip.
+    await page.keyboard.press('Escape');
+    const other = page.locator('.nav-footer-other', { hasText: 'studio Mac' });
+    await other.locator('.nav-footer-count', { hasText: '1 open thread' }).waitFor();
+    expect(await other.locator('.bar2').count()).toBe(0);
+    await other.click();
+    const devicePage = page.locator('.device-page');
+    await devicePage.locator('h2', { hasText: 'studio Mac' }).waitFor();
+    await devicePage.locator('.ph-row', { hasText: 'Rebuild regions' }).waitFor();
+    expect(await devicePage.locator('.ph-row', { hasText: 'Cap checkout retries' }).count()).toBe(
+      0,
+    );
+    await devicePage.locator('.coming-soon-note', { hasText: 'checked out' }).waitFor();
+    await devicePage.getByRole('button', { name: 'Show in the Watchtower →' }).click();
+    const chip = tower.locator('.filter-chip-active', { hasText: 'Machine: studio Mac' });
+    await chip.waitFor();
+    await tower.locator('.wt-card', { hasText: 'Rebuild regions' }).waitFor();
+    expect(await tower.locator('.wt-card', { hasText: 'Cap checkout retries' }).count()).toBe(0);
+    await chip.click();
+    await tower.locator('.wt-card', { hasText: 'Cap checkout retries' }).waitFor();
+
+    // This machine's page: its own threads and checkouts, read from this Foundry.
+    await page.keyboard.press('Escape');
+    await page.locator('button.nav-footer-device').click();
+    await devicePage.locator('h2', { hasText: 'MacBook Pro' }).waitFor();
+    await devicePage.locator('.ph-row', { hasText: 'Cap checkout retries' }).waitFor();
+    await devicePage.locator('.ph-line', { hasText: 'acme-shop' }).waitFor();
+    await devicePage.getByRole('button', { name: 'Its threads on the Board →' }).click();
+    await board.locator('.filter-chip-active', { hasText: 'Machine: MacBook Pro' }).waitFor();
     expect(errors).toEqual([]);
   } finally {
     await releaseAll(cleanup);

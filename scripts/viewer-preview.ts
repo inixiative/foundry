@@ -38,7 +38,12 @@ type Seed = {
   status?: 'idle' | 'active' | 'waiting' | 'archived';
   parent?: string;
   branch?: string;
+  /** Runs on another of your machines (`meta.machine`). */
+  machine?: string;
 };
+
+/** Another of your machines: a thread there shows its badge, and the footer lists the machine. */
+const STUDIO = { deviceId: '5f0c2c7e-3a51-4d6e-9b1a-2f6d8c4e7a90', deviceName: 'studio Mac' };
 
 const PROJECTS: { id: string; label: string; tags: string[]; threads: Seed[] }[] = [
   {
@@ -86,7 +91,10 @@ const PROJECTS: { id: string; label: string; tags: string[]; threads: Seed[] }[]
     id: 'archive',
     label: 'Archive',
     tags: ['inixiative'],
-    threads: [{ id: 'r-routing', name: 'Archive routing: agentic pass', status: 'active' }],
+    threads: [
+      { id: 'r-routing', name: 'Archive routing: agentic pass', status: 'active' },
+      { id: 'r-retention', name: 'Retention: summarize before prune', machine: 'studio' },
+    ],
   },
 ];
 
@@ -125,6 +133,7 @@ export async function createViewerPreview(port = 0) {
       });
       // Seeded children are subagents (only subagents nest in the rail).
       if (s.parent) thread.meta.spawn = { via: 'native-claude', observed: true };
+      if (s.machine) thread.meta.machine = STUDIO;
       if (s.status === 'archived') thread.archive();
       else if (s.status) thread.meta.status = s.status;
       project.addThread(thread);

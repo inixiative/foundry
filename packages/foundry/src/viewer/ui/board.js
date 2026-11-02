@@ -222,7 +222,7 @@ export function Board() {
     },
     {
       id: 'device',
-      label: 'Device',
+      label: 'Machine',
       options: [...new Set([machine, ...open.map(valuesOf.device)])].map((d) =>
         option('device', d, d),
       ),

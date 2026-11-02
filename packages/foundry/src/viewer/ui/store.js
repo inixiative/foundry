@@ -100,12 +100,48 @@ export const actionPaletteOpen = signal(false);
 export const composerFill = signal(null);
 /** The Watchtower fills the centre (key h); the board and it are never both open. */
 export const watchtowerOpen = signal(false);
-/** The selected project's home page (or Global's) fills the centre: opened from the Projects list. */
+/** A page fills the centre: the selected project's home (or Global's), or a machine's page. */
 export const projectHomeOpen = signal(false);
-/** Which project page is open: its home, or its Knowledge and chorus page. */
+/** Which page is open: a project's home, its Knowledge and chorus page, or a machine's page ('device'). */
 export const projectPage = signal('home');
+/** The machine whose page is open (projectPage 'device'): its device id, or 'here' for this one. */
+export const devicePageId = signal(null);
 /** The board's chip filter: { project?: Set, kingdom?: Set, device?: Set } (FilterChips' selection). */
 export const boardFilter = signal({});
+/** The Watchtower's chip filter, same shape; a machine's page opens it filtered to that machine. */
+export const watchtowerFilter = signal({});
+
+/** Open a machine's page ('here' = this machine): its threads, checkouts and tunnel. */
+export function openDevicePage(deviceId) {
+  batch(() => {
+    boardOpen.value = false;
+    watchtowerOpen.value = false;
+    incomingOpenId.value = null;
+    devicePageId.value = deviceId;
+    projectPage.value = 'device';
+    projectHomeOpen.value = true;
+  });
+}
+
+/** Open the board filtered to one machine (by the name its cards carry). */
+export function openMachineBoard(machineName) {
+  batch(() => {
+    boardFilter.value = { device: new Set([machineName]) };
+    projectHomeOpen.value = false;
+    watchtowerOpen.value = false;
+    boardOpen.value = true;
+  });
+}
+
+/** Open the Watchtower filtered to one machine. */
+export function openMachineWatchtower(machineName) {
+  batch(() => {
+    watchtowerFilter.value = { device: new Set([machineName]) };
+    projectHomeOpen.value = false;
+    boardOpen.value = false;
+    watchtowerOpen.value = true;
+  });
+}
 
 /** Open the board filtered to one project. */
 export function openProjectBoard(projectId) {
@@ -2188,6 +2224,7 @@ const VIEW_KEYS = [
   'lsize',
   'rsize',
   'home',
+  'device',
 ];
 
 function readHash() {
@@ -2213,8 +2250,11 @@ function writeHash() {
   if (railView.value !== 'open' || activeProjectId.value) params.set('rail', railView.value);
   if (boardOpen.value) params.set('view', 'board');
   else if (watchtowerOpen.value) params.set('view', 'watch');
-  if (projectHomeOpen.value && !boardOpen.value)
-    params.set('home', projectPage.value === 'knowledge' ? 'knowledge' : '1');
+  if (projectHomeOpen.value && !boardOpen.value) {
+    params.set('home', projectPage.value === 'home' ? '1' : projectPage.value);
+    if (projectPage.value === 'device' && devicePageId.value)
+      params.set('device', devicePageId.value);
+  }
   const hash = params.toString();
   // Replace silently — no history entry per state change
   history.replaceState(null, '', hash ? `#${hash}` : location.pathname);
@@ -2258,8 +2298,10 @@ function restoreFromHash() {
   if (RIGHT_TABS.includes(h.rtab)) rightTab.value = h.rtab;
   boardOpen.value = h.view === 'board';
   watchtowerOpen.value = h.view === 'watch';
-  projectHomeOpen.value = h.home === '1' || h.home === 'knowledge';
-  projectPage.value = h.home === 'knowledge' ? 'knowledge' : 'home';
+  const device = h.home === 'device' && h.device;
+  projectHomeOpen.value = h.home === '1' || h.home === 'knowledge' || !!device;
+  projectPage.value = h.home === 'knowledge' ? 'knowledge' : device ? 'device' : 'home';
+  devicePageId.value = device || null;
   // A link to a project (and no rail named) opens the Projects rail on it.
   railView.value = h.rail === 'projects' || (h.rail !== 'open' && h.project) ? 'projects' : 'open';
 }
@@ -2349,6 +2391,7 @@ export function init() {
     boardOpen.value;
     projectHomeOpen.value;
     projectPage.value;
+    devicePageId.value;
     writeHash();
   });
 
