@@ -213,8 +213,6 @@ interface LiveTurn {
   steering?: Promise<unknown>;
   /** What a planned restart keeps of the turn while it is queued, so the next boot runs it. */
   readonly resume: RestartHeldRequest;
-  /** Waiting at the front of its queue for a planned restart. */
-  waitingForRestart?: boolean;
   /** Settle a queued turn now, without running it. */
   cancelQueued(): void;
   /** Settle a queued turn as steered into the running turn `into`. */
@@ -355,11 +353,6 @@ export class TurnService {
     let count = 0;
     for (const state of this.live.values()) if (state.phase === 'queued') count++;
     return count;
-  }
-
-  /** Whether this queued turn is waiting for a planned restart. */
-  waitingForRestart(turnId: string): boolean {
-    return this.live.get(turnId)?.waitingForRestart === true;
   }
 
   /**
@@ -603,9 +596,22 @@ export class TurnService {
         resolveSettled(this.settleSteered(harness.thread, turnId, into, native, buffer, clientId)),
     };
     this.live.set(turnId, state);
+    // Accepted while spinning down: held in the journal now, so a restart that lands before the
+    // sweep (`holdQueuedForRestart`) still runs it after boot.
+    if (this.deps.restartGate?.holding())
+      try {
+        localStore?.holdForRestart(harness.thread, turnId, state.resume);
+      } catch (error) {
+        console.warn(`[Turns] could not hold ${turnId} for the restart: ${String(error)}`);
+      }
     const thread = queue;
     void thread
       .run(async () => {
+        // Spinning down for a restart: it waits here, still queued, before anything of it starts
+        // (no tuning prompt, no Warden setup); the next boot runs it, or it goes on here if the
+        // update is postponed.
+        while (state.phase !== 'settled' && this.deps.restartGate?.holding())
+          await this.deps.restartGate.whenOpen();
         // A blocking tuning prompt holds the turn (still queued, so a stop cancels it) until answered.
         await this.deps.feedback?.held(turnId);
         // A thread setting up its in-session Wardens holds the turn (still queued) until they are held.
@@ -620,17 +626,6 @@ export class TurnService {
             );
         // A steer of it being sent decides first: if the running turn took it, it is settled.
         if (state.steering) await state.steering.catch(() => {});
-        // Spinning down for a restart: it waits here, still queued; the restart holds it in the
-        // journal and the next boot runs it (or it starts here if the update is postponed).
-        while (state.phase !== 'settled' && this.deps.restartGate?.holding()) {
-          state.waitingForRestart = true;
-          this.deps.streams.threadsChanged(threadId);
-          await this.deps.restartGate.whenOpen();
-        }
-        if (state.waitingForRestart) {
-          state.waitingForRestart = false;
-          this.deps.streams.threadsChanged(threadId);
-        }
         // A queued turn cancelled (or steered) while it waited has already settled.
         if (state.phase !== 'settled') {
           // Out of the queue: the live turn reads running from here, not once the runtime first answers.

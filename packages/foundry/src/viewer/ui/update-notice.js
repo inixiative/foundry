@@ -22,7 +22,9 @@ export function updateLine(state) {
   if (state.phase === 'spinning-down')
     return state.running.length
       ? `Update ready: restarting when ${turns(state.running.length)} finish${state.running.length === 1 ? 'es' : ''}`
-      : 'Update ready: restarting now';
+      : state.finishing
+        ? 'Update ready: restarting when the last plan draft is written'
+        : 'Update ready: restarting now';
   if (state.phase === 'restarting') return 'Restarting onto the update…';
   if (state.phase === 'postponed') return `Update ${short(state.candidate)} postponed`;
   return null;
@@ -38,8 +40,13 @@ function RestartConfirm({ state, onClose }) {
             <ul class="update-confirm-list">
               ${running.map((t) => html`<li key=${t.turnId}>${t.name ?? t.threadId}</li>`)}
             </ul>
-            <p>After the restart Foundry reads each one's native session record to see how far it got, and the next message resumes it. Turns waiting to start run after the restart.</p>`
+            <p>After the restart Foundry reads each one's native session record to see how far it got; one it can't tell shows Continue and Retry on its thread. Turns waiting to start run after the restart; one queued behind a cut turn may need sending again.</p>`
           : html`<p>Nothing is running. Turns waiting to start run after the restart.</p>`
+      }
+      ${
+        state.background?.length
+          ? html`<p>${state.background.length} background process${state.background.length === 1 ? '' : 'es'} an agent started will stop: ${state.background.map((b) => b.label).join(', ')}.</p>`
+          : null
       }
     </div>
     <div class="loop-actions">
@@ -61,8 +68,8 @@ export function UpdateNotice() {
   const waiting = state.waiting
     ? ` · ${turns(state.waiting)} waiting to start after the restart`
     : '';
-  return html`<span class="update-notice" role="status" title=${`Update ${short(state.candidate)}${waiting}`}>
-    <span class="update-notice-text">${line}</span>
+  return html`<span class="update-notice" title=${`Update ${short(state.candidate)}${waiting}`}>
+    <span class="update-notice-text" role="status">${line}</span>
     ${
       state.phase === 'spinning-down'
         ? html`<button type="button" class="update-notice-btn" onClick=${() => setConfirming(true)}>Restart now</button>

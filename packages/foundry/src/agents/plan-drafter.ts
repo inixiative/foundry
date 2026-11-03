@@ -13,6 +13,8 @@ export interface PlanDrafterOptions {
   provider: LLMProvider;
   /** A thread's plan changed; persist and publish it. */
   changed(thread: Thread): void;
+  /** A draft finished (written or not): a restart waiting on drafts looks again. */
+  settled?(): void;
 }
 
 export const DRAFTING_INSTRUCTIONS =
@@ -34,6 +36,12 @@ const CLIP = 1_500;
  */
 export class PlanDrafter {
   private readonly running = new WeakSet<Thread>();
+  private inFlight = 0;
+
+  /** Drafts being written now: a restart waits for them (`daemon/restart-roll.ts`). */
+  drafting(): number {
+    return this.inFlight;
+  }
 
   constructor(private readonly options: PlanDrafterOptions) {}
 
@@ -56,7 +64,12 @@ export class PlanDrafter {
       return;
     if (this.running.has(thread)) return;
     this.running.add(thread);
-    void this.draft(thread, exchange).finally(() => this.running.delete(thread));
+    this.inFlight++;
+    void this.draft(thread, exchange).finally(() => {
+      this.running.delete(thread);
+      this.inFlight--;
+      this.options.settled?.();
+    });
   }
 
   private async draft(thread: Thread, exchange: { user: string; agent: string }): Promise<void> {

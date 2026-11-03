@@ -83,6 +83,16 @@ export class RunningTasks {
     ].map((e) => this.view(threadId, e));
   }
 
+  /** Background processes still running, across threads: a restart stops them. */
+  active(): Array<{ threadId: string; label: string }> {
+    const found: Array<{ threadId: string; label: string }> = [];
+    for (const threadId of this.threads.keys())
+      for (const process of this.list(threadId))
+        if (process.endedAt === null)
+          found.push({ threadId, label: process.label ?? process.command ?? process.taskType });
+    return found;
+  }
+
   /** Ask the task's session to stop it; its end arrives as the task's lifecycle. */
   async stop(
     threadId: string,

@@ -97,11 +97,11 @@ export const startUpdateWatcher = (options: WatchOptions): (() => void) => {
       if (hook?.offerUpdate) {
         // Offered once per candidate: the daemon spins down, or keeps it postponed ("Not now").
         if (offered === candidate) return;
-        offered = candidate;
         log(
           `offering ${candidate.slice(0, 8)} to the daemon: it restarts once running turns finish`,
         );
         hook.offerUpdate({ candidate, timeoutMs, restart: () => void restart(candidate) });
+        offered = candidate;
         return;
       }
       const drained = await drain(

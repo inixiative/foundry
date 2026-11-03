@@ -1426,7 +1426,7 @@ export async function loadUpdateState() {
   }
   // Every few seconds while a restart is coming, so the count and the reconnect follow it.
   const fast = restartHolding.value;
-  if (fast !== (updatePoll?.fast ?? false)) {
+  if (!updatePoll || fast !== updatePoll.fast) {
     if (updatePoll) clearInterval(updatePoll.timer);
     updatePoll = { fast, timer: setInterval(loadUpdateState, fast ? 3000 : 30000) };
   }

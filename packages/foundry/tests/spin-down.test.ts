@@ -101,13 +101,15 @@ test('running turns finish, new ones wait, the restart holds them, and the next 
   const c = first.turns.accept({ threadId: 'main', payload: 'C' });
   expect(b.ok && c.ok).toBe(true);
   expect(first.restarts).toEqual([]);
+  if (!b.ok || !c.ok) throw Error('unreachable');
+  // Held in the journal as they arrive, so a restart landing before the sweep still runs them.
+  expect(first.store.heldForRestart().map((held) => held.turnId)).toEqual([b.turnId, c.turnId]);
 
   // The last running turn finishes: B reaches the front, waits for the restart, the restart happens.
   finishA();
   await until(() => first.restarts.length === 1);
   if (!b.ok || !c.ok || !a.ok) throw Error('unreachable');
   expect(first.store.turn(a.turnId)?.status).toBe('completed');
-  expect(first.turns.waitingForRestart(b.turnId)).toBe(true);
   expect(first.ran).toEqual(['A']);
   expect(first.store.heldForRestart().map((held) => held.turnId)).toEqual([b.turnId, c.turnId]);
   first.store.close();

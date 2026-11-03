@@ -49,10 +49,20 @@ const release = await selectRelease(repoRoot, configDir);
 
 // The release's own watcher when it has one (it speaks to the daemon it ships with); this checkout's otherwise.
 const releaseWatcher = `${release.dir}/scripts/daemon/watch.ts`;
-const startUpdateWatcher: typeof checkoutWatcher = (await Bun.file(releaseWatcher).exists())
-  ? (((await import(releaseWatcher)) as { startUpdateWatcher?: typeof checkoutWatcher })
-      .startUpdateWatcher ?? checkoutWatcher)
-  : checkoutWatcher;
+const loadReleaseWatcher = async (): Promise<typeof checkoutWatcher> => {
+  if (!(await Bun.file(releaseWatcher).exists())) return checkoutWatcher;
+  try {
+    const loaded = (await import(releaseWatcher)) as {
+      startUpdateWatcher?: typeof checkoutWatcher;
+    };
+    return loaded.startUpdateWatcher ?? checkoutWatcher;
+  } catch (error) {
+    // A release whose watcher won't load still boots, watched by this checkout's.
+    log(`release watcher did not load, using the checkout's — ${String(error)}`);
+    return checkoutWatcher;
+  }
+};
+const startUpdateWatcher = await loadReleaseWatcher();
 const settings = await readSettings();
 const checkSeconds = Number(settings?.daemon?.updateCheckSeconds ?? 300);
 const spinDownSeconds = Number(settings?.daemon?.drainTimeoutSeconds);

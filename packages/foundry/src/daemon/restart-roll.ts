@@ -18,6 +18,8 @@
  * record (`turns/native-outcome-recovery.ts`). The owner can restart now or postpone the update.
  */
 
+import type { ActionQueue } from '@inixiative/foundry-core';
+
 export interface RunningTurnRef {
   threadId: string;
   turnId: string;
@@ -43,6 +45,10 @@ export interface RollStatus {
   deadline?: number;
   /** Turns the restart waits for. */
   running: RunningTurnRef[];
+  /** Other work the restart waits for (plan drafts being written after a turn). */
+  finishing: number;
+  /** Background processes agents started; a restart stops them. */
+  background: Array<{ threadId: string; label: string }>;
   /** Accepted turns waiting for the restart (they run after it). */
   waiting: number;
 }
@@ -52,6 +58,10 @@ export interface RestartRollDeps {
   running(): RunningTurnRef[];
   /** Accepted turns not yet running. */
   waiting(): number;
+  /** Work a turn left behind that the restart also waits for (a plan draft being written). */
+  finishing?(): number;
+  /** Background processes agents started, which a restart stops (shown, not waited for). */
+  background?(): Array<{ threadId: string; label: string }>;
   /** Hold every waiting turn in the journal so the next boot runs it. */
   prepare(): void;
   log?: (message: string) => void;
@@ -62,6 +72,20 @@ export interface RestartRollDeps {
 
 export const DEFAULT_SPIN_DOWN_TIMEOUT_MS = 60 * 60_000;
 
+/**
+ * Whether a running turn is blocked on a person: its own agent asked an approval or a question
+ * (the tool gate and native questions ask as `artificer`). Other prompts on its thread (a held send,
+ * a raised hand, a tuning prompt) don't block the turn, so it still counts as running.
+ */
+export function blockedOnPerson(
+  queue: Pick<ActionQueue, 'forThread'> | undefined,
+  turn: RunningTurnRef,
+): boolean {
+  return !!queue
+    ?.forThread(turn.threadId)
+    .some((prompt) => prompt.status === 'pending' && prompt.agentId === 'artificer');
+}
+
 export class RestartRoll {
   private phase: RollPhase = 'idle';
   private offer?: UpdateOffer;
@@ -69,7 +93,6 @@ export class RestartRoll {
   private deadline?: number;
   private timer?: ReturnType<typeof setInterval>;
   private opened: Array<() => void> = [];
-  private readonly listeners = new Set<(status: RollStatus) => void>();
 
   constructor(private readonly deps: RestartRollDeps) {}
 
@@ -83,13 +106,10 @@ export class RestartRoll {
       ...(this.offer ? { candidate: this.offer.candidate } : {}),
       ...(this.phase === 'spinning-down' ? { since: this.since, deadline: this.deadline } : {}),
       running: this.phase === 'spinning-down' ? this.deps.running() : [],
+      finishing: this.phase === 'spinning-down' ? (this.deps.finishing?.() ?? 0) : 0,
+      background: this.phase === 'idle' ? [] : (this.deps.background?.() ?? []),
       waiting: this.phase === 'idle' ? 0 : this.deps.waiting(),
     };
-  }
-
-  onChange(listener: (status: RollStatus) => void): () => void {
-    this.listeners.add(listener);
-    return () => this.listeners.delete(listener);
   }
 
   /** Whether a turn that would start now must wait for the restart. */
@@ -108,7 +128,12 @@ export class RestartRoll {
     if (this.phase === 'restarting') return;
     const same = this.offer?.candidate === offer.candidate;
     this.offer = offer;
+    // A postponed update stays postponed; a newer one while spinning down keeps the same deadline,
+    // so merges landing faster than the backstop never put it off for good.
     if (same && this.phase !== 'idle') return;
+    if (this.phase === 'spinning-down') {
+      return;
+    }
     this.spinDown();
   }
 
@@ -126,7 +151,6 @@ export class RestartRoll {
     this.stopTimer();
     this.open();
     this.deps.log?.(`update ${this.offer?.candidate.slice(0, 8)} postponed`);
-    this.changed();
     return true;
   }
 
@@ -140,11 +164,10 @@ export class RestartRoll {
   /** A turn settled: the last one to finish triggers the restart. */
   check(): void {
     if (this.phase !== 'spinning-down') return;
-    const running = this.deps.running().length;
+    const running = this.deps.running().length + (this.deps.finishing?.() ?? 0);
     if (running === 0) this.restart('every running turn finished');
     else if (this.deadline !== undefined && this.now() >= this.deadline)
       this.restart(`${running} turn(s) still running at the spin-down timeout`);
-    else this.changed();
   }
 
   private spinDown() {
@@ -159,7 +182,6 @@ export class RestartRoll {
     this.stopTimer();
     this.timer = setInterval(() => this.check(), this.deps.pollMs ?? 5_000);
     this.timer.unref?.();
-    this.changed();
     this.check();
   }
 
@@ -167,7 +189,6 @@ export class RestartRoll {
     if (!this.offer) return;
     this.phase = 'restarting';
     this.stopTimer();
-    this.changed();
     try {
       this.deps.prepare();
     } catch (error) {
@@ -184,15 +205,5 @@ export class RestartRoll {
   private stopTimer() {
     if (this.timer) clearInterval(this.timer);
     this.timer = undefined;
-  }
-
-  private changed() {
-    const status = this.status();
-    for (const listener of this.listeners)
-      try {
-        listener(status);
-      } catch {
-        /* a listener's failure never stops the roll */
-      }
   }
 }

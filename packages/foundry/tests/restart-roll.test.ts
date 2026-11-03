@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test';
-import { RestartRoll, type RunningTurnRef } from '../src/daemon/restart-roll';
+import { ActionQueue } from '@inixiative/foundry-core';
+import { blockedOnPerson, RestartRoll, type RunningTurnRef } from '../src/daemon/restart-roll';
 
 // Aron, 2026-11-02: "Pause: finish all open threads. Don't stop them. Everything else waits. Once
 // the last one finishes, restart, then reopen."
@@ -92,4 +93,50 @@ test('a newer update after Not now spins down again; Restart now cuts what runs'
   expect(r.restartNow()).toBe(true);
   expect(restarts).toEqual(['c2']);
   expect(r.postpone()).toBe(false);
+});
+
+test('a newer update while spinning down keeps the deadline; work a turn left behind is waited for', () => {
+  const now = { t: 0 };
+  const running = [{ threadId: 'a', turnId: 't1' }];
+  let drafts = 1;
+  const restarts: string[] = [];
+  const r = new RestartRoll({
+    running: () => running,
+    waiting: () => 0,
+    finishing: () => drafts,
+    prepare: () => {},
+    now: () => now.t,
+    pollMs: 60_000,
+  });
+  r.offerUpdate({ candidate: 'c1', timeoutMs: 1_000, restart: () => restarts.push('c1') });
+  now.t = 900;
+  r.offerUpdate({ candidate: 'c2', timeoutMs: 1_000, restart: () => restarts.push('c2') });
+  expect(r.status()).toMatchObject({ candidate: 'c2', deadline: 1_000, finishing: 1 });
+  running.pop();
+  r.check();
+  expect(restarts).toEqual([]);
+  drafts = 0;
+  r.check();
+  expect(restarts).toEqual(['c2']);
+});
+
+test("only the turn's own approval or question makes it not running; a held send or raised hand doesn't", () => {
+  const queue = new ActionQueue();
+  const turn = { threadId: 'a', turnId: 't1' };
+  void queue.prompt({
+    kind: 'approval',
+    message: 'send to member?',
+    agentId: 'conversation',
+    threadId: 'a',
+  });
+  expect(blockedOnPerson(queue, turn)).toBe(false);
+  void queue.prompt({
+    kind: 'approval',
+    message: 'Bash rm -rf',
+    agentId: 'artificer',
+    threadId: 'a',
+  });
+  expect(blockedOnPerson(queue, turn)).toBe(true);
+  expect(blockedOnPerson(queue, { threadId: 'b', turnId: 't2' })).toBe(false);
+  expect(blockedOnPerson(undefined, turn)).toBe(false);
 });
