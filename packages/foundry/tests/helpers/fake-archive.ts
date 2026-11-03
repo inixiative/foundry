@@ -17,7 +17,7 @@ type Revision = { revision: number; digest: string; snapshot: ArchiveSnapshot };
  * search, settings/read), so tests never need Postgres or the real local Archive.
  */
 export function startFakeArchive(token = 'fake-archive-token-0000000000000000') {
-  const sourceId = crypto.randomUUID();
+  const sourceId = Bun.randomUUIDv7();
   const archives = new Map<string, Revision[]>();
   const requests: string[] = [];
   /** Claims Foundry holds on the native sessions it drives (Archive 0.20 claims). */

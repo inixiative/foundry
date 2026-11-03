@@ -130,9 +130,12 @@ async function setup(options: { retrieved?: () => string } = {}) {
     const configured = cfg.sources[id];
     if (!configured) return null;
     if (options.retrieved && id === SOURCE) {
+      // Says it changed on every check, so the Warden's slot re-reads it each turn (a Warden's cache is
+      // not refocused per message; before 11-02 an empty ladder re-read every turn by accident).
       const source: ContextSource = {
         id,
         focusable: true,
+        changed: () => true,
         load: async () => options.retrieved!(),
       };
       return source;

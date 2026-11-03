@@ -34,6 +34,7 @@ import {
   isOpenTurn,
   type LocalSessionStore,
   NATIVE_OUTCOME_UNRESOLVED,
+  type RestartHeldRequest,
 } from '../persistence/local-session-store';
 import { serializeTrace } from '../persistence/trace-record';
 import type { SecretScratch } from '../secrets/scratch';
@@ -71,6 +72,11 @@ export interface TurnServiceDeps {
    */
   threadSetup?: ThreadSetupHost;
   localStore?: LocalSessionStore | null;
+  /**
+   * The spin-down (`daemon/restart-roll.ts`): while it holds, a turn reaching the front of its
+   * queue waits there ("waiting for Foundry to restart") instead of starting.
+   */
+  restartGate?: { holding(): boolean; whenOpen(): Promise<void> };
   /** Settles a turn lost to a restart from the native session's own record before the next admission. */
   nativeRecovery?: NativeOutcomeRecovery;
   directory: ViewerThreadDirectory;
@@ -205,6 +211,8 @@ interface LiveTurn {
   steerRefusal?: string;
   /** A steer of this queued turn is being sent: it neither runs, stops nor is steered twice meanwhile. */
   steering?: Promise<unknown>;
+  /** What a planned restart keeps of the turn while it is queued, so the next boot runs it. */
+  readonly resume: RestartHeldRequest;
   /** Settle a queued turn now, without running it. */
   cancelQueued(): void;
   /** Settle a queued turn as steered into the running turn `into`. */
@@ -213,6 +221,8 @@ interface LiveTurn {
 
 const STOP_TIMEOUT_MS = 5_000;
 export const CANCELLED_BEFORE_START = 'Turn cancelled before it started';
+export const TURN_NEVER_SENT_AFTER_RESTART =
+  'Held across a restart but could not run again; nothing reached the runtime, safe to send again';
 export const CANCELLED_BEFORE_DISPATCH = 'Turn cancelled before native dispatch';
 
 function configureHarness(harness: Harness, configStore: ConfigStore): void {
@@ -331,6 +341,82 @@ export class TurnService {
     return this.live.size;
   }
 
+  /** Turns running now (out of their queue), across threads. */
+  runningTurns(): Array<{ threadId: string; turnId: string }> {
+    return [...this.live]
+      .filter(([, state]) => state.phase === 'running')
+      .map(([turnId, state]) => ({ threadId: state.threadId, turnId }));
+  }
+
+  /** Accepted turns not yet running: waiting behind another, on a person, or for the restart. */
+  queuedCount(): number {
+    let count = 0;
+    for (const state of this.live.values()) if (state.phase === 'queued') count++;
+    return count;
+  }
+
+  /**
+   * A planned restart is about to happen: every queued turn is kept in the journal as it is, so the
+   * next boot runs it (`resumeHeld`) in the order it arrived, instead of failing it as never sent.
+   */
+  holdQueuedForRestart(): number {
+    const { localStore } = this.deps;
+    if (!localStore) return 0;
+    let held = 0;
+    for (const [turnId, state] of this.live) {
+      if (state.phase !== 'queued') continue;
+      const thread = this.deps.directory.get(state.threadId);
+      if (!thread) continue;
+      localStore.holdForRestart(thread, turnId, state.resume);
+      held++;
+    }
+    return held;
+  }
+
+  /** After boot: run the turns a planned restart held, in the order they arrived. */
+  async resumeHeld(
+    loadImages?: (ids: string[]) => Promise<TurnRequest['images']>,
+  ): Promise<{ resumed: number; failed: Array<{ turnId: string; error: string }> }> {
+    const { localStore } = this.deps;
+    const result = { resumed: 0, failed: [] as Array<{ turnId: string; error: string }> };
+    if (!localStore) return result;
+    for (const held of localStore.heldForRestart()) {
+      let images: TurnRequest['images'];
+      try {
+        images = held.request.imageIds?.length
+          ? await loadImages?.(held.request.imageIds)
+          : undefined;
+      } catch (error) {
+        images = undefined;
+        console.warn(`[Turns] held turn ${held.turnId}: images not loaded: ${String(error)}`);
+      }
+      const accepted = this.accept(
+        {
+          threadId: held.threadId,
+          turnId: held.turnId,
+          payload: held.request.payload,
+          ...(held.request.origin ? { origin: held.request.origin as unknown as TurnOrigin } : {}),
+          ...(images?.length ? { images } : {}),
+        },
+        { resumed: true },
+      );
+      if (accepted.ok) result.resumed++;
+      else {
+        const error = String(accepted.body.error);
+        result.failed.push({ turnId: held.turnId, error });
+        // Never left queued with nothing to run it: it fails as never sent, safe to send again.
+        try {
+          const thread = this.deps.directory.get(held.threadId);
+          if (thread)
+            localStore.failTurn(thread, held.turnId, `${TURN_NEVER_SENT_AFTER_RESTART}: ${error}`);
+        } catch {
+          /* recovery at the next boot fails it as never sent */
+        }
+      }
+    }
+    return result;
+  }
+
   /** Whether the thread has a turn queued or running here. */
   hasTurns(threadId: string): boolean {
     for (const turn of this.live.values()) if (turn.threadId === threadId) return true;
@@ -374,16 +460,20 @@ export class TurnService {
     return [...this.harnesses.values()];
   }
 
-  /** Accept a turn durably, then run it after any turn already on its thread. */
-  accept(request: TurnRequest): TurnAcceptance {
+  /**
+   * Accept a turn durably, then run it after any turn already on its thread. `resumed`: a turn held
+   * across a planned restart, already in the journal (`heldForRestart`), runs again as it was.
+   */
+  accept(request: TurnRequest, options: { resumed?: boolean } = {}): TurnAcceptance {
     const { clientId, origin } = request;
     const { localStore, streams } = this.deps;
     const turnId = request.turnId ?? newId('turn');
     const threadId = request.threadId;
+    const resumed = options.resumed === true && localStore?.turn(turnId)?.status === 'queued';
     // An archived thread comes back when a message or a member's post arrives for it: its native
     // session is gone, and the turn below resumes it or starts it fresh from the journal. Only a turn
     // that can be taken reopens it: a refused one leaves it archived.
-    if (localStore?.turn(turnId) || !streams.turns.canOpen(turnId))
+    if ((!resumed && localStore?.turn(turnId)) || !streams.turns.canOpen(turnId))
       return {
         ok: false,
         status: 409,
@@ -417,7 +507,10 @@ export class TurnService {
     };
     // The owner's `$$` secrets leave the message now, once the turn can be taken and before anything
     // records or reads it. A lift that fails refuses the turn, so a secret never goes through raw.
-    const lifted = this.liftSecrets(harness.thread, { ...request, turnId });
+    // A resumed turn's message was lifted when it was first accepted.
+    const lifted = resumed
+      ? { request: { ...request, turnId }, refs: [] as string[] }
+      : this.liftSecrets(harness.thread, { ...request, turnId });
     if ('refusal' in lifted) {
       restoreArchived();
       return lifted.refusal;
@@ -448,7 +541,7 @@ export class TurnService {
         ? memberPostReception(origin.displayName, payload)
         : payload;
     try {
-      localStore?.beginTurn(harness.thread, turnId, payload, userMeta);
+      if (!resumed) localStore?.beginTurn(harness.thread, turnId, payload, userMeta);
     } catch (err) {
       // The secrets of a message that was never accepted leave the pad with it.
       this.deps.secrets?.forget(threadId, lifted.refs);
@@ -465,7 +558,7 @@ export class TurnService {
     // The accepted message is journalled: readers that follow the journal (a conversation's members) see it now.
     this.journalChanged(harness.thread, turnId);
     try {
-      if (!origin) this.deps.feedback?.turnAccepted(harness.thread, turnId, payload);
+      if (!origin && !resumed) this.deps.feedback?.turnAccepted(harness.thread, turnId, payload);
     } catch (error) {
       console.warn('[Feedback] capture not started:', (error as Error).message);
     }
@@ -486,6 +579,11 @@ export class TurnService {
       cancelRequested: false,
       admitted: false,
       nativeSettled: false,
+      resume: {
+        payload: request.payload,
+        ...(origin ? { origin: { ...origin } as unknown as Record<string, unknown> } : {}),
+        ...(images.length ? { imageIds: images.map((image) => image.id) } : {}),
+      },
       // Only the owner's own message can go into a running turn: verbatim, as the executor gets it.
       ...(origin
         ? { steerRefusal: 'a post from someone else waits its turn' }
@@ -498,9 +596,22 @@ export class TurnService {
         resolveSettled(this.settleSteered(harness.thread, turnId, into, native, buffer, clientId)),
     };
     this.live.set(turnId, state);
+    // Accepted while spinning down: held in the journal now, so a restart that lands before the
+    // sweep (`holdQueuedForRestart`) still runs it after boot.
+    if (this.deps.restartGate?.holding())
+      try {
+        localStore?.holdForRestart(harness.thread, turnId, state.resume);
+      } catch (error) {
+        console.warn(`[Turns] could not hold ${turnId} for the restart: ${String(error)}`);
+      }
     const thread = queue;
     void thread
       .run(async () => {
+        // Spinning down for a restart: it waits here, still queued, before anything of it starts
+        // (no tuning prompt, no Warden setup); the next boot runs it, or it goes on here if the
+        // update is postponed.
+        while (state.phase !== 'settled' && this.deps.restartGate?.holding())
+          await this.deps.restartGate.whenOpen();
         // A blocking tuning prompt holds the turn (still queued, so a stop cancels it) until answered.
         await this.deps.feedback?.held(turnId);
         // A thread setting up its in-session Wardens holds the turn (still queued) until they are held.

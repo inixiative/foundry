@@ -147,20 +147,20 @@ test('Kingdom holders are read once, again after the Installation changes, and a
   let refuse = false;
   const integration = {
     url: 'https://api.kingdom.test',
-    integrationId: crypto.randomUUID(),
-    owner: `Organization::${crypto.randomUUID()}:`,
-    signetId: crypto.randomUUID(),
+    integrationId: Bun.randomUUIDv7(),
+    owner: `Organization::${Bun.randomUUIDv7()}:`,
+    signetId: Bun.randomUUIDv7(),
   };
   const holder = {
     integration: { id: integration.integrationId, name: 'Studio', provider: null },
     owner: {
       ownerModel: 'Organization',
       name: 'Acme',
-      organization: { id: crypto.randomUUID(), name: 'Acme', slug: 'acme' },
+      organization: { id: Bun.randomUUIDv7(), name: 'Acme', slug: 'acme' },
       space: null,
       user: null,
     },
-    issuedBy: { id: crypto.randomUUID(), name: null, email: 'grace@acme.test' },
+    issuedBy: { id: Bun.randomUUIDv7(), name: null, email: 'grace@acme.test' },
     webUrl: 'https://kingdom.acme.test',
     manageUrl: `https://kingdom.acme.test/dashboard?integration=${integration.integrationId}`,
   };

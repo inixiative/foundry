@@ -8,6 +8,8 @@ import { resolve as resolveFilePath } from 'node:path';
 import type { ActionQueue, Harness, TokenTracker, ToolRegistry } from '@inixiative/foundry-core';
 import type { Context, Hono } from 'hono';
 import { fromSettingsConfig, type ProjectRegistry } from '../../agents/project';
+import { readWardenBrief } from '../../agents/warden-brief';
+import { WARDEN_CHARTER } from '../../classify';
 import { providerAccounts } from '../../providers/provider-accounts';
 import { providerLimits } from '../../providers/provider-limits';
 import { describeReadinessChorus, inspectNativeClis } from '../../readiness';
@@ -703,7 +705,17 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps): void 
     await configStore.load();
     const view = configStore.resolveProjectView(id);
     if (!view) return c.json({ error: 'project not found' }, 404);
-    return c.json({ projectId: id, chorus: await describeReadinessChorus(id, view.chorus) });
+    const path = configStore.config.projects[id]?.path;
+    return c.json({
+      projectId: id,
+      chorus: await describeReadinessChorus(id, view.chorus),
+      // What every Warden of the project composes from, in order (Aron, 2026-11-02): no CLAUDE.md ladder.
+      wardens: {
+        charter: { tokens: Math.round(WARDEN_CHARTER.length / 4) },
+        brief: path ? readWardenBrief(path) : null,
+        ignored: view.chorus.ignoredComposition ?? [],
+      },
+    });
   });
 
   app.get('/api/settings/history', async (c) => {

@@ -1,6 +1,6 @@
 {
   "name": "@inixiative/foundry",
-  "version": "0.5.7",
+  "version": "0.5.8",
   "type": "module",
   "main": "src/index.ts",
   "types": "src/index.ts",
@@ -30,7 +30,7 @@
   },
   "dependencies": {
     "@anthropic-ai/claude-code": "^2.1.92",
-    "@inixiative/agent-session": "^0.10.0",
+    "@inixiative/agent-session": "^0.11.0",
     "@inixiative/archive": "^0.33.0",
     "@inixiative/config": "^0.5.177",
     "@inixiative/foundry-core": "workspace:*",

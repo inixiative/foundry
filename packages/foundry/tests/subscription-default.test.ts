@@ -139,8 +139,8 @@ test('Codex decisions are a setting: decisionRuntime selects the Codex login and
   config.nativeAuthentication = [
     {
       ...defaultProfileSource('claude'),
-      id: crypto.randomUUID(),
-      integrationId: crypto.randomUUID(),
+      id: Bun.randomUUIDv7(),
+      integrationId: Bun.randomUUIDv7(),
     },
   ];
   config.subscriptionOnly = {

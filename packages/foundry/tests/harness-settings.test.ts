@@ -192,8 +192,8 @@ test('a main thread on the subscription loads the user’s settings under the gu
   const auth = new SubscriptionAuthentication(
     root,
     {
-      id: crypto.randomUUID(),
-      integrationId: crypto.randomUUID(),
+      id: Bun.randomUUIDv7(),
+      integrationId: Bun.randomUUIDv7(),
       runtime: 'claude',
       mode: 'native-profile',
       profileDirectory: profile,
@@ -392,8 +392,8 @@ test('a Codex main thread on the subscription runs on its own home with the user
   const auth = new SubscriptionAuthentication(
     root,
     {
-      id: crypto.randomUUID(),
-      integrationId: crypto.randomUUID(),
+      id: Bun.randomUUIDv7(),
+      integrationId: Bun.randomUUIDv7(),
       runtime: 'codex',
       mode: 'native-profile',
       profileDirectory: profile,

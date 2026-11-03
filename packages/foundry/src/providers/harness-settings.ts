@@ -286,7 +286,7 @@ function linkUserFolders(home: string, userDirectory: string, names: readonly st
       if (current?.isSymbolicLink()) unlinkSync(link);
       continue;
     }
-    const temporary = join(home, `.${name}-${crypto.randomUUID()}`);
+    const temporary = join(home, `.${name}-${Bun.randomUUIDv7()}`);
     symlinkSync(target, temporary);
     renameSync(temporary, link);
   }
@@ -478,7 +478,7 @@ function composeSkills(folder: string, userSkills: string, foundrySkills: string
     const link = join(folder, name);
     // Kept above when it already points at its target; anything else there is the user's to keep.
     if (present(link)) continue;
-    const temporary = join(folder, `.${name}-${crypto.randomUUID()}`);
+    const temporary = join(folder, `.${name}-${Bun.randomUUIDv7()}`);
     symlinkSync(target, temporary);
     renameSync(temporary, link);
   }

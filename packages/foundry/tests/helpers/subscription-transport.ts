@@ -56,7 +56,7 @@ export function subscriptionTransport(
         if (!launch.exited)
           controller.enqueue(new TextEncoder().encode(JSON.stringify(event) + '\n'));
       };
-      const id = crypto.randomUUID();
+      const id = Bun.randomUUIDv7();
       return {
         stdout,
         stderr: new ReadableStream<Uint8Array>({

@@ -4,6 +4,8 @@
 
 **Stop repeating yourself to Claude.**
 
+I'm Aron Greenspan. I packaged a decade of lessons into the [building blocks](https://www.inixiative.com/building-blocks/) so I would stop solving the same problems on every project, and coding agents kept writing their own versions beside them. Foundry exists so your agent uses what your codebase already has.
+
 Every agent session starts half-amnesiac, so you pay a re-alignment tax: you re-explain your conventions, your decisions and your taste. The model and the harness are outside your control. Your docs, rules and `CLAUDE.md` are the one layer you do control, and Foundry is the workspace around your agent that puts that layer to work.
 
 The agent does what you want when it is told the right thing. Our bet is that your corrections compile into docs that tell it automatically. In early runs, when the corrections reached the agent before it planned, its plans came out right.
@@ -11,16 +13,16 @@ The agent does what you want when it is told the right thing. Our bet is that yo
 ## What you get
 
 1. **Stop repeating yourself to Claude.** What you've already decided reaches every session. Wardens notice what your request touches and point at what your codebase already has and where it's written down. They never block; your agent decides. (The chorus is off on a fresh install; turn it on per project.)
-2. **Every agent you pay for, in one place.** Claude Code, Codex and Muse on your own subscriptions, a worker per thread, and every session captured. ACP apps such as Paseo and T3 Code can drive Foundry too.
+2. **Every agent you pay for, in one place.** Claude Code and Codex on your own subscriptions, a worker per thread, and every session captured. ACP apps such as Paseo and T3 Code can drive Foundry too.
 3. **Stop being a meat proxy.** Your agent, their agent and the people in one thread, hashing out the work. *(Host side built; joiner view in progress.)*
-4. **Stop checking a dozen apps.** Work comes to you, already understood. *(In progress: Kingdom streams GitHub, Slack and Linear events; the Foundry inbox is not wired yet.)*
+4. **Stop checking a dozen apps.** Whatever comes in (a Slack DM, a review request, an email) reaches you already researched and in context. It's read as data, so it can't instruct your agent. *(In progress: Kingdom streams GitHub, Slack and Linear events; the Foundry inbox is not wired yet.)*
 5. **Set up your repo.** Foundry reads your repo and builds the docs and Wardens. *(In progress.)*
 
 The voice of the codebase.
 
 ## How it works
 
-1. **You work with your own agent.** Threads run Claude Code, Codex or Muse on the logins already on your machine, from Foundry's viewer or an ACP app. No API key needed.
+1. **You work with your own agent.** Threads run Claude Code or Codex on the logins already on your machine, from Foundry's viewer or an ACP app. No API key needed.
 2. **Wardens point.** Your docs are split into regions, one Warden per region. Each turn, every Warden asks "does this touch my region?" and, if so, names the existing thing and where it's written. The pointer goes to your agent, which decides what to do with it.
 3. **Corrections are captured.** `/feedback` records a correction with its context so it can go into your docs, where every later session sees it.
 4. **Every session is kept.** Sessions land in your local [Archive](https://github.com/inixiative/archive), and `foundry repeats` shows the corrections you keep giving, so you can see whether one stuck.
@@ -124,7 +126,7 @@ curl -X POST http://localhost:4500/api/messages \
 
 `bun run daemon:install` runs Foundry as a LaunchAgent. Before boot it starts the docker-compose services your `DATABASE_URL` and `MUNINN_URL` point at on this machine.
 
-The daemon runs a release, not your working checkout: an exported commit with its own install under `.foundry/releases/<sha>`. With `"daemon": { "autoUpdate": "apply" }` in settings, it builds `origin/main` as a candidate (at startup and every `updateCheckSeconds`, default 300) and restarts onto it once no turn is queued or running (it waits up to `drainTimeoutSeconds`, default 3600, then restarts anyway). A turn a restart cuts off is settled on the next boot from the native session's own record (the Claude Code transcript or Codex rollout); one that record can't settle shows Continue and Retry on the thread. A candidate that boots becomes stable; one that fails to boot is marked failed, never retried, and the daemon relaunches on stable. `"check"` only logs that `origin/main` moved. Release state is in `.foundry/releases/state.json`.
+The daemon runs a release, not your working checkout: an exported commit with its own install under `.foundry/releases/<sha>`. With `"daemon": { "autoUpdate": "apply" }` in settings, it builds `origin/main` as a candidate (at startup and every `updateCheckSeconds`, default 300) and spins down to restart onto it: turns already running finish normally, new messages are still accepted but wait ("waiting for restart"), and nothing new starts. A turn waiting on you (an approval or a question) doesn't hold it up. When the last running turn finishes the daemon restarts, and the waiting turns run in the order they arrived, each thread resuming its native session. The header shows "Update ready: restarting when N turns finish", with **Restart now** (it names the turns that would be cut) and **Not now** (postpone this update; Settings › About offers **Update now**). `drainTimeoutSeconds` (default 3600) is only a backstop. A turn a restart does cut off is settled on the next boot from the native session's own record (the Claude Code transcript or Codex rollout); one that record can't settle shows Continue and Retry on the thread. The update watcher ships with the release (the supervisor loads it from the booted release), so a change to how updates restart takes effect with the release itself. A candidate that boots becomes stable; one that fails to boot is marked failed, never retried, and the daemon relaunches on stable. `"check"` only logs that `origin/main` moved. Release state is in `.foundry/releases/state.json`.
 
 A boot of stable that fails on changed settings sets them aside as `.foundry/settings.rejected-<ts>.json` and restores the last settings that booted.
 

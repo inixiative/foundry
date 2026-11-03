@@ -52,7 +52,7 @@ async function fixture(
     runtime,
     launchRoot: root,
     descriptor: {
-      armId: crypto.randomUUID(),
+      armId: Bun.randomUUIDv7(),
       inventoryHash: 'a'.repeat(64),
       image: `sha256:${'b'.repeat(64)}`,
       maxCalls: 5,
@@ -255,7 +255,7 @@ test('disposal during acquisition closes transport and private directories', asy
     runtime,
     launchRoot: root,
     descriptor: {
-      armId: crypto.randomUUID(),
+      armId: Bun.randomUUIDv7(),
       inventoryHash: 'a'.repeat(64),
       image: `sha256:${'b'.repeat(64)}`,
       maxCalls: 1,

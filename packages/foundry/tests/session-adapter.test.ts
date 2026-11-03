@@ -878,8 +878,8 @@ describe('Native authentication adapter integration', () => {
       previous = process.env[variable];
     process.env[variable] = 'synthetic-adapter-token';
     const source = {
-      id: crypto.randomUUID(),
-      integrationId: crypto.randomUUID(),
+      id: Bun.randomUUIDv7(),
+      integrationId: Bun.randomUUIDv7(),
       runtime: 'claude' as const,
       mode: 'gateway' as const,
       baseUrl: 'http://127.0.0.1:34567',
@@ -926,14 +926,14 @@ describe('Native authentication adapter integration', () => {
     const { NativeAuthentication } = await import('../src/providers/native-authentication');
     const directory = mkdtempSync(join(tmpdir(), 'foundry-auth-codex-'));
     const source = {
-      id: crypto.randomUUID(),
-      integrationId: crypto.randomUUID(),
+      id: Bun.randomUUIDv7(),
+      integrationId: Bun.randomUUIDv7(),
       runtime: 'codex' as const,
       mode: 'gateway' as const,
       baseUrl: 'http://127.0.0.1:34567',
       credential: { type: 'command' as const, command: '/usr/bin/false' },
     };
-    const next = { ...source, id: crypto.randomUUID() };
+    const next = { ...source, id: Bun.randomUUIDv7() };
     const auth = new NativeAuthentication({
       directory,
       sources: [source, next],
@@ -972,8 +972,8 @@ test('revocation during admission prevents current and queued native writes', as
   const { NativeAuthentication } = await import('../src/providers/native-authentication');
   const directory = mkdtempSync(join(tmpdir(), 'foundry-auth-queue-'));
   const source = {
-    id: crypto.randomUUID(),
-    integrationId: crypto.randomUUID(),
+    id: Bun.randomUUIDv7(),
+    integrationId: Bun.randomUUIDv7(),
     runtime: 'claude' as const,
     mode: 'gateway' as const,
     baseUrl: 'http://127.0.0.1:34567',
@@ -1020,8 +1020,8 @@ test('authentication cleanup failure prevents reporting a fully released process
   const { writeFileSync } = await import('node:fs');
   const directory = mkdtempSync(join(tmpdir(), 'foundry-auth-cleanup-'));
   const source = {
-    id: crypto.randomUUID(),
-    integrationId: crypto.randomUUID(),
+    id: Bun.randomUUIDv7(),
+    integrationId: Bun.randomUUIDv7(),
     runtime: 'claude' as const,
     mode: 'gateway' as const,
     baseUrl: 'http://127.0.0.1:34567',

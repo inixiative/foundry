@@ -50,6 +50,7 @@ import {
   ThreadFactory,
 } from '../src/agents/thread-factory';
 import { ThreadRuntimeManager } from '../src/agents/thread-runtime';
+import { WARDEN_BRIEF_NODE } from '../src/agents/warden-brief';
 import { AuditLog } from '../src/audit/audit-log';
 import { CompositionAuditor } from '../src/audit/compositions';
 import {
@@ -299,17 +300,135 @@ test("a project's chorus is one generated Warden per region of .foundry/regions,
     join(regions, 'concurrency-locks', 'region.json'),
   );
   expect(view.config.projects.P!.agents!['concurrency-locks']).toEqual(locks);
-  // Its instructions read no general files (CLAUDE.md and the like); the region is its knowledge.
+  // Neither slot reads general files (CLAUDE.md and the like); the region is its knowledge.
   expect(view.config.composition!.roles!['concurrency-locks']).toEqual({
     instructions: { general: [] },
+    domainKnowledge: { general: [] },
   });
-  // A role entry in settings for the region still wins, field by field.
+  // The Warden brief is a ladder node of its own, for exactly the project's Wardens.
+  expect(view.config.composition!.nodes![WARDEN_BRIEF_NODE]!.when).toEqual({
+    roles: ['concurrency-locks', 'lens-model'],
+    slots: ['instructions'],
+  });
+  // A role entry in settings keeps its other picks; the ladder never comes back.
   c.composition!.roles = {
-    'lens-model': { budget: 50_000, instructions: { general: ['project'] } },
+    'lens-model': { budget: 50_000, instructions: { exclude: ['project'] } },
   };
   const tuned = resolveProjectView(c, 'P')!.config.composition!.roles!;
-  expect(tuned['lens-model']).toEqual({ budget: 50_000, instructions: { general: ['project'] } });
-  expect(tuned['concurrency-locks']).toEqual({ instructions: { general: [] } });
+  expect(tuned['lens-model']).toEqual({
+    budget: 50_000,
+    instructions: { exclude: ['project'], general: [] },
+    domainKnowledge: { general: [] },
+  });
+  // A `general` naming nodes is never applied to a Warden (Aron, 2026-11-02: no opt-out) and is
+  // reported, not thrown: a teammate's new region never stops this machine's settings loading.
+  for (const slot of ['instructions', 'domainKnowledge'] as const) {
+    c.composition!.roles = { 'lens-model': { [slot]: { general: ['project'] } } };
+    const ignoredView = resolveProjectView(c, 'P')!;
+    expect(ignoredView.config.composition!.roles!['lens-model']![slot]).toEqual({ general: [] });
+    expect(ignoredView.chorus.ignoredComposition).toEqual([
+      expect.stringContaining(`composition.roles.lens-model.${slot}.general is not applied`),
+    ]);
+  }
+  // `general: []`, what a Warden composes anyway, is no problem.
+  c.composition!.roles = { 'lens-model': { instructions: { general: [] } } };
+  expect(resolveProjectView(c, 'P')!.chorus.ignoredComposition).toBeUndefined();
+  c.composition!.roles = {};
+  c.composition!.nodes = {
+    ...c.composition!.nodes,
+    [WARDEN_BRIEF_NODE]: { scope: 'project', personal: false, sources: [] },
+  };
+  expect(() => resolveProjectView(c, 'P')).toThrow('the project Warden brief');
+});
+
+test("a region may not take the main thread's or the Cartographer's composition role", () => {
+  for (const id of ['main', 'cartographer']) {
+    const { project, regions } = projectWithRegions();
+    write(
+      join(regions, id, 'region.json'),
+      JSON.stringify({ id, title: id, routing: 'r', concepts: [id] }),
+    );
+    write(join(regions, id, 'knowledge.md'), knowledge(id, 'r', 'K'));
+    expect(() => resolveProjectView(config(project), 'P')).toThrow(
+      `has the reserved role id "${id}"`,
+    );
+  }
+});
+
+test("a region Warden composes the charter's instructions, the project's Warden brief and its region, never CLAUDE.md", async () => {
+  const { project } = projectWithRegions();
+  write(join(project, 'CLAUDE.md'), 'CLAUDE_MD_RULE');
+  write(join(project, 'AGENTS.md'), 'AGENTS_MD_RULE');
+  // An import of CLAUDE.md from the brief is not a way in: a Warden takes no general file by any route.
+  write(
+    join(project, '.foundry', 'warden-brief.md'),
+    '# BRIEF_PROJECT\nWhat this repo is. @../CLAUDE.md @../docs/shape.md',
+  );
+  write(join(project, 'docs', 'shape.md'), 'SHAPE_DOC');
+  write(join(project, '.foundry', 'warden-brief.local.md'), 'BRIEF_PERSONAL');
+  write(join(project, '.foundry', 'roles', 'lens-model', 'instructions.md'), 'ROLE_FILE_LENS');
+  const c = config(project);
+  // The project node also reads the directory's general files, as Claude Code's own ladder does.
+  c.composition!.nodes!.project!.sources = [
+    {
+      walk: [
+        { path: 'CLAUDE.md' },
+        { path: 'AGENTS.md' },
+        {
+          path: '.foundry/roles/{role}/{slot}.md',
+          when: { slots: ['instructions', 'domainKnowledge'] },
+        },
+      ],
+      span: { within: ['{project}'] },
+    },
+  ];
+  validateConfig(c);
+  const view = resolveProjectView(c, 'P')!;
+  const resolveSource = createSourceResolver({
+    memory: new FileMemory(join(tempDir('memory'), 'm')),
+  });
+  const scope = { threadId: 't', projectId: 'P', cwd: project };
+  const lens = buildRoleLayers(view.config, 'lens-model', { resolveSource, scope });
+  await Promise.all([lens.instructions.warm(), lens.domainKnowledge.warm()]);
+  const instructions = lens.instructions.content;
+  expect(instructions).toContain('BRIEF_PROJECT');
+  expect(instructions).toContain('BRIEF_PERSONAL');
+  expect(instructions).toContain('ROLE_FILE_LENS');
+  expect(instructions).toContain('SHAPE_DOC');
+  // The brief sits at the project's level, after the region's role file there; shared before personal.
+  expect(instructions.indexOf('ROLE_FILE_LENS')).toBeLessThan(
+    instructions.indexOf('BRIEF_PROJECT'),
+  );
+  expect(instructions.indexOf('BRIEF_PROJECT')).toBeLessThan(
+    instructions.indexOf('BRIEF_PERSONAL'),
+  );
+  for (const text of [instructions, lens.domainKnowledge.content]) {
+    expect(text).not.toContain('CLAUDE_MD_RULE');
+    expect(text).not.toContain('AGENTS_MD_RULE');
+    // No Claude Code preamble over the charter: the Warden takes no CLAUDE.md-style files.
+    expect(text).not.toContain('OVERRIDE any default behavior');
+  }
+  // The brief is audited as the file it is.
+  expect(
+    lens.instructions
+      .segments()!
+      .some(
+        (s) =>
+          typeof s !== 'string' &&
+          s.subject === `file:${join(project, '.foundry', 'warden-brief.md')}`,
+      ),
+  ).toBe(true);
+  // A Warden without a role file still gets the brief.
+  const locks = buildRoleLayers(view.config, 'concurrency-locks', { resolveSource, scope });
+  await locks.instructions.warm();
+  expect(locks.instructions.content).toContain('BRIEF_PROJECT');
+  expect(locks.instructions.content).not.toContain('ROLE_FILE_LENS');
+  // The main thread is not a Warden: it reads CLAUDE.md under the preamble, never the brief.
+  const main = buildRoleLayers(view.config, 'worker', { resolveSource, scope });
+  await main.instructions.warm();
+  expect(main.instructions.content).toContain('CLAUDE_MD_RULE');
+  expect(main.instructions.content).toContain('OVERRIDE any default behavior');
+  expect(main.instructions.content).not.toContain('BRIEF_PROJECT');
 });
 
 test('enabled without regions, the project has no chorus and the view says why; enabled false turns it off; regions points the layer elsewhere', () => {

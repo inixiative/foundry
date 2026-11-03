@@ -56,7 +56,7 @@ export class DataStreamClient {
   private pinger: ReturnType<typeof setInterval> | null = null;
 
   constructor(private readonly options: DataStreamClientOptions) {
-    this.clientId = options.clientId ?? `acp-${crypto.randomUUID().replaceAll('-', '')}`;
+    this.clientId = options.clientId ?? `acp-${Bun.randomUUIDv7().replaceAll('-', '')}`;
   }
 
   private url(): string {

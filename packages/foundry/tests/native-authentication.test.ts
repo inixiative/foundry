@@ -33,8 +33,8 @@ const gateway = (
   runtime: 'claude' | 'codex',
   variable = 'FOUNDRY_TEST_AUTH_A',
 ): NativeAuthenticationSource => ({
-  id: crypto.randomUUID(),
-  integrationId: crypto.randomUUID(),
+  id: Bun.randomUUIDv7(),
+  integrationId: Bun.randomUUIDv7(),
   runtime,
   mode: 'gateway',
   baseUrl: 'http://127.0.0.1:34567/v1',
@@ -130,8 +130,8 @@ describe('Foundry native authentication', () => {
       profile = join(directory, 'native');
     mkdirSync(profile, { mode: 0o700 });
     const source: NativeAuthenticationSource = {
-      id: crypto.randomUUID(),
-      integrationId: crypto.randomUUID(),
+      id: Bun.randomUUIDv7(),
+      integrationId: Bun.randomUUIDv7(),
       runtime: 'claude',
       mode: 'native-profile',
       profileDirectory: profile,
@@ -162,8 +162,8 @@ describe('Foundry native authentication', () => {
       profile = join(directory, 'native');
     mkdirSync(profile, { mode: 0o700 });
     const source: NativeAuthenticationSource = {
-      id: crypto.randomUUID(),
-      integrationId: crypto.randomUUID(),
+      id: Bun.randomUUIDv7(),
+      integrationId: Bun.randomUUIDv7(),
       runtime: 'claude',
       mode: 'native-profile',
       profileDirectory: profile,
@@ -185,7 +185,7 @@ describe('Foundry native authentication', () => {
       writeFileSync(join(lock, 'owner.json'), JSON.stringify({ id: 'crashed', ...owner }));
     };
     const attempt = async () =>
-      track(await auth.prepare(crypto.randomUUID(), 'claude')).launch(['claude'], {});
+      track(await auth.prepare(Bun.randomUUIDv7(), 'claude')).launch(['claude'], {});
     crashed({ pid: deadPid() });
     await expect(attempt()).rejects.toThrow('in use');
     rmSync(lock, { recursive: true });
@@ -309,7 +309,7 @@ test('settings validate source assignments and reject inline secrets', async () 
   config.apiTokens = true;
   config.nativeAuthenticationSelections = { thread: source.id };
   expect(() => validateConfig(config)).not.toThrow();
-  config.nativeAuthenticationSelections.thread = crypto.randomUUID();
+  config.nativeAuthenticationSelections.thread = Bun.randomUUIDv7();
   expect(() => validateConfig(config)).toThrow('Unknown authentication source');
   const inline = { ...source, token: 'must-not-be-stored' };
   expect(() => new NativeAuthentication({ directory: root(), sources: [inline] })).toThrow(
@@ -351,8 +351,8 @@ test('native profile onboarding refuses exposed directories, credential links an
     profile = join(directory, 'native');
   mkdirSync(profile, { mode: 0o755 });
   const source: NativeAuthenticationSource = {
-    id: crypto.randomUUID(),
-    integrationId: crypto.randomUUID(),
+    id: Bun.randomUUIDv7(),
+    integrationId: Bun.randomUUIDv7(),
     runtime: 'codex',
     mode: 'native-profile',
     profileDirectory: profile,
@@ -408,8 +408,8 @@ test("a private Codex home holds only the profile's login, linked so refreshes l
   writeFileSync(join(profile, 'config.toml'), 'model = "user-model"\n', { mode: 0o600 });
   mkdirSync(join(profile, 'memories'));
   const source: NativeAuthenticationSource = {
-    id: crypto.randomUUID(),
-    integrationId: crypto.randomUUID(),
+    id: Bun.randomUUIDv7(),
+    integrationId: Bun.randomUUIDv7(),
     runtime: 'codex',
     mode: 'native-profile',
     profileDirectory: profile,
@@ -452,8 +452,8 @@ test("a private Codex home holds only the profile's login, linked so refreshes l
 
 test('a private home is refused for Claude and gateway sources', () => {
   const claude: NativeAuthenticationSource = {
-    id: crypto.randomUUID(),
-    integrationId: crypto.randomUUID(),
+    id: Bun.randomUUIDv7(),
+    integrationId: Bun.randomUUIDv7(),
     runtime: 'claude',
     mode: 'native-profile',
     profileDirectory: '/tmp/claude',

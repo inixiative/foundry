@@ -26,6 +26,7 @@ import { batch, computed, effect, signal } from './lib.js';
 import { applyTurnFrame, mergeLiveSnapshot } from './live-state.js';
 import { route } from './route.js';
 import { threadState } from './thread-status.js';
+import { uuidv7 } from './uuidv7.js';
 
 // ---------------------------------------------------------------------------
 // Auth — cookie-based auth handles most cases. authFetch is a fallback
@@ -381,7 +382,7 @@ export function layerColor(layerId) {
 
 let socket = null;
 // This tab's id on the socket, stable across reconnects: the server addresses a send's full result to it.
-const clientId = crypto.randomUUID();
+const clientId = uuidv7();
 let pendingFrames = [];
 let frameScheduled = false;
 let activeStream = null,
@@ -1408,6 +1409,55 @@ export async function loadIncoming() {
 /** Paired Kingdoms as /api/kingdom/status describes them (owners, holders); null until read. */
 export const kingdomStatus = signal(null);
 
+/** The daemon's update state (`/api/daemon/update`): idle, spinning down for a restart, postponed, restarting. */
+export const updateState = signal(null);
+
+/** Whether turns that would start now wait for a restart. */
+export const restartHolding = computed(
+  () => updateState.value?.phase === 'spinning-down' || updateState.value?.phase === 'restarting',
+);
+
+let updatePoll = null;
+export async function loadUpdateState() {
+  try {
+    const res = await authFetch('/api/daemon/update');
+    if (res.ok) updateState.value = await res.json();
+  } catch {
+    /* restarting: the next poll after reconnect reads the new daemon */
+  }
+  // Every few seconds while a restart is coming, so the count and the reconnect follow it.
+  const fast = restartHolding.value;
+  if (!updatePoll || fast !== updatePoll.fast) {
+    if (updatePoll) clearInterval(updatePoll.timer);
+    updatePoll = { fast, timer: setInterval(loadUpdateState, fast ? 3000 : 30000) };
+  }
+}
+
+/** The owner's choice on a staged update: `restart-now`, `postpone` or `update-now`. */
+export async function updateAction(action) {
+  try {
+    const res = await authFetch('/api/daemon/update', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action }),
+    });
+    const body = await res.json();
+    if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`);
+    updateState.value = body;
+    showToast(
+      action === 'postpone'
+        ? 'Update postponed: waiting turns start now'
+        : action === 'update-now'
+          ? 'Restarting when running turns finish'
+          : 'Restarting now',
+      'ok',
+    );
+    void loadUpdateState();
+  } catch (err) {
+    showToast(`Update: ${err.message}`, 'error');
+  }
+}
+
 export async function loadKingdomStatus() {
   try {
     const res = await authFetch('/api/kingdom/status');
@@ -2007,7 +2057,7 @@ export async function sendMessage(text, images = [], { delivery } = {}) {
   const tid = await threadForSend();
   if (!tid) return false;
 
-  const turnId = `turn_${crypto.randomUUID()}`;
+  const turnId = `turn_${uuidv7()}`;
   const refs = images.map(({ id, mediaType, bytes }) => ({ id, mediaType, bytes }));
   _appendToThread(tid, {
     actor: 'user',
@@ -2418,6 +2468,7 @@ export function init() {
   loadTokenUsage();
   loadIncoming();
   loadKingdomStatus();
+  loadUpdateState();
   // Polling for state that has no data stream
   setInterval(loadTraces, 15000);
   setInterval(loadDefinitions, 30000);

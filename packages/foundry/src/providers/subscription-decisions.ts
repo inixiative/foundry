@@ -304,7 +304,7 @@ export function buildSubscriptionDecisions(
       attempts++;
       run = createRun({
         ...config,
-        runId: crypto.randomUUID(),
+        runId: Bun.randomUUIDv7(),
         maxCalls: 1,
         callTimeoutMs: pending.deadline - Date.now(),
       });
@@ -545,7 +545,7 @@ export function buildSubscriptionDecisions(
           (!Number.isSafeInteger(opts.timeout) || (opts.timeout !== 0 && opts.timeout < 100)))
       )
         return Promise.reject(reject('Subscription decision scope or model refused'));
-      const id = crypto.randomUUID(),
+      const id = Bun.randomUUIDv7(),
         threadId = opts.threadId ?? `decision:${id}`;
       const owner = freezeEvidence({
         ...(opts.nativeObservation?.owner ?? { threadId, generation: id, dispatchId: id }),

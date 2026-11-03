@@ -261,7 +261,7 @@ export function createPrimedDecisionHost(config: PrimedDecisionHostConfig) {
     throw Error('Invalid primed decision configuration');
   assertPrivateProfile(config.directory);
   assertProfile(source.profileDirectory, runtime);
-  const hostId = crypto.randomUUID();
+  const hostId = Bun.randomUUIDv7();
   const root = join(config.directory, `primed-${hostId}`);
   mkdirSync(root, { mode: 0o700 });
   // Its sessions run below this root: Archive drops them as Foundry's own, never a person's work.
@@ -550,7 +550,7 @@ export function createPrimedDecisionHost(config: PrimedDecisionHostConfig) {
           throw Error('Decision scope or model override refused');
         if (JSON.stringify(messages).length > (config.inputCap ?? DECISION_INPUT_CAP))
           throw Error('Decision input cap exceeded');
-        const id = crypto.randomUUID(),
+        const id = Bun.randomUUIDv7(),
           fallbackThread = `primed:${hostId}:${id}`;
         const owner = freezeEvidence({
           ...(opts.nativeObservation?.owner ?? {

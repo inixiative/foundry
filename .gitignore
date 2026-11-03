@@ -4,6 +4,7 @@ dist
 **/.foundry/*
 !/.foundry/roles/
 !/.foundry/regions/
+!/.foundry/warden-brief.md
 
 # Environment files (keep .example files)
 .env

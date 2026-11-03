@@ -86,6 +86,12 @@ test('done threads, the merge setting, the Kingdom project link and the region p
     merged.meta.done = { kind: 'merged', text: 'Merged into main', at: Date.now() };
     shop.addThread(merged);
 
+    // The project's Warden brief, which the Knowledge page shows with each Warden's layers.
+    mkdirSync(join(dir, '.foundry'), { recursive: true });
+    writeFileSync(
+      join(dir, '.foundry', 'warden-brief.md'),
+      '# acme-shop, for its Wardens\n\nA shop.',
+    );
     const configStore = new ConfigStore(dir);
     const config = starterConfig('controlled', 'controlled');
     config.agents = defaultAgents();
@@ -94,9 +100,9 @@ test('done threads, the merge setting, the Kingdom project link and the region p
     config.kingdomIntegrations = [
       {
         url: 'http://127.0.0.1:9',
-        owner: `OrganizationUser:${crypto.randomUUID()}:${crypto.randomUUID()}:`,
-        integrationId: crypto.randomUUID(),
-        signetId: crypto.randomUUID(),
+        owner: `OrganizationUser:${Bun.randomUUIDv7()}:${Bun.randomUUIDv7()}:`,
+        integrationId: Bun.randomUUIDv7(),
+        signetId: Bun.randomUUIDv7(),
       },
     ];
     config.projects.shop = {
@@ -248,6 +254,13 @@ test('done threads, the merge setting, the Kingdom project link and the region p
     await page.getByRole('button', { name: 'Knowledge and chorus' }).click();
     const know = page.locator('.knowledge');
     await know.locator('.kbuilds tr', { hasText: 'abc1234def' }).waitFor();
+    // What each Warden is given: the charter, the brief, its region, the thread; never CLAUDE.md.
+    const layers = know.getByRole('table', { name: 'Warden layers' });
+    await layers.locator('tr', { hasText: '.foundry/warden-brief.md' }).waitFor();
+    expect(await layers.locator('tr').count()).toBe(4);
+    await know.getByText('No CLAUDE.md or AGENTS.md', { exact: false }).waitFor();
+    await know.locator('summary', { hasText: 'Read the Warden brief' }).click();
+    await know.locator('.kbrief pre', { hasText: 'acme-shop, for its Wardens' }).waitFor();
     await know.locator('.kdetect', { hasText: 'Recall holds the bar.' }).waitFor();
     await know.locator('.kdetect td', { hasText: '0.027' }).waitFor();
     expect(

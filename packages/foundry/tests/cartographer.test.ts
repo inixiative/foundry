@@ -68,7 +68,7 @@ describe('Cartographer', () => {
 
   describe('map building', () => {
     it('routes UUID layer IDs through their configured domain', () => {
-      const id = crypto.randomUUID();
+      const id = Bun.randomUUIDv7();
       const layer = new ContextLayer({ id, definition: { id, domain: 'architecture' } });
       const carto = new Cartographer({
         stack: new ContextStack([layer]),

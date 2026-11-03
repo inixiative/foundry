@@ -37,9 +37,9 @@ test('internals stay unreachable', async () => {
 test('settings parse through the published schema, and a bad one is refused', () => {
   const settings = {
     url: 'https://kingdom.invalid',
-    integrationId: crypto.randomUUID(),
-    owner: `User:${crypto.randomUUID()}::`,
-    signetId: crypto.randomUUID(),
+    integrationId: Bun.randomUUIDv7(),
+    owner: `User:${Bun.randomUUIDv7()}::`,
+    signetId: Bun.randomUUIDv7(),
   };
   expect(() => runtime.kingdomIntegrationSchema.parse(settings)).not.toThrow();
   // The owner is Kingdom's owner key and the Signet a uuid; anything else is refused.

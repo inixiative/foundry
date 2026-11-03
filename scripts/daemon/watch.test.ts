@@ -40,3 +40,34 @@ test('drain gives up at the timeout; a daemon not yet booted has nothing to drai
   ).toBe(true);
   expect(await drain(undefined, 20, 5, () => {})).toBe(true);
 });
+
+test('a daemon that can spin down is offered the update once; it calls back to restart', async () => {
+  const { mkdtempSync, mkdirSync, writeFileSync } = await import('node:fs');
+  const { join } = await import('node:path');
+  const { tmpdir } = await import('node:os');
+  const { startUpdateWatcher } = await import('./watch');
+  const configDir = mkdtempSync(join(tmpdir(), 'watch-offer-'));
+  mkdirSync(join(configDir, 'releases'), { recursive: true });
+  writeFileSync(
+    join(configDir, 'releases', 'state.json'),
+    JSON.stringify({ stable: 'a'.repeat(40), candidate: 'b'.repeat(40), failed: [] }),
+  );
+  const offers: Array<{ candidate: string; restart: () => void }> = [];
+  const exits: number[] = [];
+  const stop = startUpdateWatcher({
+    // Not a git repo: staging fails and is logged; the staged candidate is still offered.
+    repoRoot: configDir,
+    configDir,
+    intervalMs: 10,
+    runtime: () => ({ liveTurns: () => 3, offerUpdate: (offer) => offers.push(offer) }),
+    exit: (code) => exits.push(code),
+  });
+  for (let i = 0; i < 100 && offers.length === 0; i++) await Bun.sleep(10);
+  await Bun.sleep(50);
+  stop();
+  expect(offers.map((offer) => offer.candidate)).toEqual(['b'.repeat(40)]);
+  expect(exits).toEqual([]);
+  offers[0]!.restart();
+  for (let i = 0; i < 50 && exits.length === 0; i++) await Bun.sleep(5);
+  expect(exits).toEqual([75]);
+});
