@@ -24,9 +24,12 @@ that drives the local Foundry daemon) is licensed under the MIT License. See
 The opinionated framework (compaction strategies, built-in hooks, session
 management, planner, herald, reactive middleware, LLM providers, viewer
 dashboard, logger, tunnel, and heavy-infra adapters) is licensed under the
-Business Source License 1.1. You may use, copy, and modify this code freely for
-any purpose **except** production commercial use. The BSL automatically converts
-to MIT on the Change Date.
+Business Source License 1.1. Its Additional Use Grant lets you use the Licensed
+Work, except for a Commercial Purpose: use in a product or service that is sold,
+offered for sale, or made available as a commercial offering to third parties.
+Internal use within your organization, non-commercial research and education,
+personal projects and contributions back to this project are permitted. The
+Licensed Work converts to the MIT License on the Change Date, April 6, 2030.
 
 See [LICENSE-BSL](./LICENSE-BSL) for the full text.
 
