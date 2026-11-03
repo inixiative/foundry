@@ -55,7 +55,7 @@
       },
       "dependencies": {
         "@anthropic-ai/claude-code": "^2.1.92",
-        "@inixiative/agent-session": "^0.10.0",
+        "@inixiative/agent-session": "^0.11.0",
         "@inixiative/archive": "^0.33.0",
         "@inixiative/config": "^0.5.177",
         "@inixiative/foundry-core": "workspace:*",
@@ -117,7 +117,7 @@
 
     "@hono/node-server": ["@hono/node-server@2.1.1", "", { "peerDependencies": { "hono": "^4" } }, "sha512-ELuehkj5VCBdgEw9zs+ivkKwyzzUCSQuE96YmiPvn1ECBoZCczbFXJLeEGMTYjphP6gydh4pHMqEYPVMYUVgQg=="],
 
-    "@inixiative/agent-session": ["@inixiative/agent-session@0.10.0", "", { "dependencies": { "@inixiative/json-rules": "^3.16.0", "@muse-code/sdk": "1.4.14" } }, "sha512-rDgzPMZeRmPYBsL8mDlVBdv5VNErvsM0boT1wb9OptNQJe7m4wr1Cn4QrkW7eAsWEtnvKROnLPqTAFwQNDn4IA=="],
+    "@inixiative/agent-session": ["@inixiative/agent-session@0.11.0", "", { "dependencies": { "@inixiative/json-rules": "^3.16.0", "@muse-code/sdk": "1.4.14" } }, "sha512-mUnwjmSsrd1Gk17sHVDJsmTFjl7UBhvcStZsQfyWMZpG93tlwVDsDcduRguzZYgwvEn3/RC6yIjkW2LB5JJSIA=="],
 
     "@inixiative/archive": ["@inixiative/archive@0.33.0", "", { "dependencies": { "@inixiative/agent-session": "^0.9.0", "@inixiative/signet": "^0.12.2", "@prisma/client": "^6.6.0", "js-tiktoken": "1.0.21", "prisma": "^6.6.0", "zod": "^4.3.6" }, "bin": { "archive": "src/cli.ts" } }, "sha512-LNHiQdhQD/hFE5kKWTvpDMHYcDUdttPjljj+mycPYGtUi1Ql/X4q5+cUOPB5oAUtWz7d80IBUteGPCHa71umYw=="],
 
