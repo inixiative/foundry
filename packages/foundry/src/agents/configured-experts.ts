@@ -69,14 +69,14 @@ export function configuredExperts(config: FoundryConfig): {
     );
     if (disabled.length)
       throw Error(`Expert ${id} domainKnowledge names disabled sources: ${disabled.join(', ')}`);
-    // Instruction files reach a Warden through its own role in the composition view, with its own
-    // picks and audience; an instructions source here would compose the main thread's instead.
+    // Instruction files never reach a region Warden (Aron, 2026-11-02); for another role they come
+    // through its own picks in the composition view, never as an instructions source here.
     const composed = (agent.domainKnowledge ?? []).filter(
       (source) => config.sources[source]!.type === 'instructions',
     );
     if (composed.length)
       throw Error(
-        `Expert ${id} domainKnowledge names instructions sources (${composed.join(', ')}); pick instruction files with composition.roles.${id}.domainKnowledge.general`,
+        `Expert ${id} domainKnowledge names instructions sources (${composed.join(', ')}); an expert reads its role files and region, never instruction files`,
       );
     if (domains.has(agent.domain)) throw Error(`Duplicate expert domain: ${agent.domain}`);
     domains.set(agent.domain, id);

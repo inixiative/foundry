@@ -187,7 +187,9 @@ export interface CartographerConfig {
  * What the Cartographer picks from the ladder unless settings say otherwise: its prompt and its role
  * files, not the CLAUDE.md stack. It routes a message to layers; the project's coding rules are the
  * main thread's instructions, and composed in they put a routing call far over its budget (the
- * inixiative org CLAUDE.md alone is ~113,000 characters). Region Wardens default the same way.
+ * inixiative org CLAUDE.md alone is ~113,000 characters). With no general file in either slot, none
+ * reaches it by an import or slotted source either (`composeRoleView`), and its role files carry no
+ * Claude Code preamble. Region Wardens are held to the same, with no setting that changes it.
  */
 export const CARTOGRAPHER_PICKS: RoleComposition = { instructions: { general: [] } };
 
