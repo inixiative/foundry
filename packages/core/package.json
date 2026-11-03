@@ -41,6 +41,6 @@
     }
   },
   "devDependencies": {
-    "@inixiative/archive": "^0.33.0"
+    "@inixiative/archive": "^0.33.1"
   }
 }
