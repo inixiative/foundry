@@ -5,10 +5,11 @@
  */
 import {
   type PrivatePathOptions,
+  parseScratchRef,
   type ScratchPadSummary,
   SecretScratchPad,
 } from '@inixiative/agent-session';
-import { SHAPED_SECRET_PATTERNS, scrubSecrets, type Thread } from '@inixiative/foundry-core';
+import { contextSecretHits, SHAPED_SECRET_PATTERNS, type Thread } from '@inixiative/foundry-core';
 import { foundryOperation } from '../turns/tool-gate';
 
 /**
@@ -146,8 +147,9 @@ export class SecretScratch {
     return this.pad.threads().filter((id) => id === threadId || !this.refusal(threadId, id));
   }
 
-  /** Remove the secrets lifted from a message that was never accepted. */
+  /** Remove the secrets lifted from a message that was never accepted, and its reminder. */
   forget(threadId: string, refs: readonly string[]): void {
+    for (const ref of refs.slice(0, 1)) this._notes.delete(parseScratchRef(ref, threadId).message);
     for (const ref of refs)
       try {
         this.pad.consume(ref, threadId);
@@ -175,7 +177,8 @@ export class SecretScratch {
     if (lifted.refs.length) this.watch(thread);
     const note = secretNote({
       lifted: lifted.recognised,
-      plain: scrubSecrets(lifted.text).hits > 0,
+      // Judged with the lifted references taken out: `API_KEY=†m.1` is a lifted key, not one in plain text.
+      plain: contextSecretHits(lifted.text.replace(/†[A-Za-z0-9_.:/-]+\.\d+/g, '')) > 0,
     });
     if (note) {
       this._notes.set(messageId, note);

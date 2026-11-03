@@ -186,6 +186,7 @@ export {
   type CorrectionDetection,
   type CorrectionEvent,
   type CorrectionSignal,
+  contextSecretHits,
   correctionClassifyMessages,
   correctionId,
   detectCorrection,
