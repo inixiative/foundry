@@ -16,7 +16,8 @@ No API provider is constructed in this mode. There is no paid fallback, no autom
 | `defaults.nativeAuthenticationId` | absent: each runtime's first configured `native-profile` source, else `~/.claude` or `~/.codex` | Names a runtime's primary login. Every configured `native-profile` source of a runtime is a login of its worker, except the decision source (`subscriptionOnly.decisionSourceId`, the Wardens' login) unless it is also the named primary; several are a pool, balanced (below). With none configured besides the decision source, the worker runs on the default location. Naming a Codex source never moves the Claude worker to `~/.claude`. |
 | `subscriptionPools.<claude\|codex>` | absent: `quartile-balanced`, balancing on | How a runtime with several logins balances them (below): `routing` (`quartile-balanced`, `owner-first`, `priority-balanced`), `preferredLoginId` (the login `owner-first` prefers and pinning runs on) and `pinned` (`true` is balancing off: every launch runs on the preferred login; the routing is kept for when it is turned back on). A project's `projects[id].subscriptionPools` overrides it for that project's threads. |
 | `defaults.classifierProvider` / `classifierModel` | `subscription-decisions` / `claude-haiku-5-5` | New configurations record the decision profile here; `classifierModel` selects the decision model. A model registered only on the other runtime is refused rather than substituted. |
-| `subscriptionOnly.decisionRuntime` | `claude` | Decision runtime when no explicit source is named: `claude` (`~/.claude`) or `codex` (`~/.codex`). `claude-in-session` runs Claude decisions too, but holds each Claude Code thread's Wardens as subagents inside the thread's own process (below); it needs a usable Claude login. Threads on another worker use primed Wardens and have no setup step. |
+| `subscriptionOnly.decisionRuntime` | `claude` | Decision runtime when no explicit source is named: `claude` (`~/.claude`) or `codex` (`~/.codex`). `claude-in-session` runs Claude decisions too, but holds each Claude Code thread's Wardens as subagents inside the thread's own process (below); it needs a usable Claude login. Threads on another worker use primed Wardens and have no setup step. `claude-project` holds every Warden of a project, warm, in one Foundry-owned Claude Code process per project, asked for advice by every thread of the project, whatever its worker (below). |
+| `subscriptionOnly.projectHost` | absent: the defaults below | `claude-project` only (refused with any other runtime): `sparesPerWarden` (1), `concurrentTurns` (2), `maxRssMb` (1536), `hardRssMb` (4096), `maxRecyclesPerHour` (20), `recycleTokens` (140000), `setupDeadlineMs` (30 s + 0.6 s per held spare), `restartBackoffMs` (5000), `maxRestarts` (5). See "Project Warden host". |
 | `subscriptionOnly.decisionSourceId` | absent: the runtime's default login | Optional explicit `native-profile` source for decisions. It must match `decisionRuntime` when both are set. |
 | `subscriptionOnly.model` | `claude-haiku-5-5` for Claude, `gpt-5.6-luna` for Codex (a ChatGPT login on an older Codex CLI, 0.153.4, is refused `gpt-6-luna`) | Decision model; overrides `classifierModel`. Heavier roles can name `claude-opus-5-5` or `claude-fable-5-1`. |
 | `subscriptionOnly.expectedObservedModel` | the requested model | Claude decision profiles only: the id the CLI must report serving (for example the full id behind an alias). Codex does not acknowledge a different model. |
@@ -132,6 +133,47 @@ Off by default (docs/THREAD-TREE.md spec C; numbers in §C.9). With `decisionRun
 - **Fallback.** A thread whose Warden tree is not running (setup failed, or too many orphaned members) sends its Wardens to primed sessions, as if the setting were off.
 - **Subagents.** In this runtime only, the main thread's subagents' tool calls get the root thread's guard Wardens, journalled on the subagent's node.
 
+## Project Warden host (`claude-project`)
+
+Off by default. Aron, 2026-11-02: "All of these wardens should always be warm… run and then output and then reset." Spec: Oracle `docs/foundry/PROJECT-WARDEN-HOST.md` (rev 2) and its review. With `decisionRuntime: "claude-project"`:
+
+- **One host per project.** One Foundry-owned Claude Code session per project with a chorus, on the decision login, built by the decision host (`createPrimedDecisionHost`): a private directory below its stamped root (Archive drops it), `--setting-sources ""`, `persistSession: false`, `--effort` at the decision effort, `--strict-mcp-config` with only the host's own server, `--disable-slash-commands`, CLAUDE.md off (`CLAUDE_CODE_DISABLE_CLAUDE_MDS`). It is extended with agent-session's `ClaudeInSessionDecisions` (spec C's held, fresh-per-call members). It is never built through the session adapter, so main threads keep the user's harness settings.
+- **Warm before any thread.** At daemon start, on every settings change and every minute, the project's roster is composed from a hidden thread of the project (`composeProjectRoster`, `agents/chorus-thread.ts`, the same hidden thread `chorus-advise` uses) and held (`InSessionWardens.openProject`). The same roster again changes nothing. A changed roster of the same size is held in place (spares holding the old text are retired as replacements hold). A larger roster starts a new host.
+- **Stateless Wardens.** A held spare holds a Warden's system (charter, region instructions) and its stable prefix (the region's knowledge), nothing of any thread: the split is at `stablePrefix` with an empty standby. The thread's own part (its understanding, the thread state, the moment, the protocol) rides in the moment. Every thread of the project matches the same spares. Threads never pre-start or release the host.
+- **Composition at the project root.** In this runtime a thread's Wardens compose at the project's path, worktree threads included (`projectWardenRoot`, `ThreadRuntimeDeps.wardenRoot`), so a worktree's unmerged role-file edit (`.foundry/roles/<region>/`) reaches Wardens once it merges. A region Warden's instructions already leave the CLAUDE.md ladder out (`resolveProjectView` gives each region role `instructions.general: []`); `composition.roles.<region>.instructions.general` turns it back on for that region.
+- **Run, output, reset.** Each held spare serves one decision and ends; its replacement starts at once from the same prefix (cache reads, not writes).
+- **Routing.** A thread's advice calls (`<thread>:aux:domain:<d>` at turn priority) go to its project's host while it serves (`inSessionTarget`, by `threadMeta(thread).projectId`, the login pool's lookup); they take none of the `maxConcurrent` slots. Guards (guard priority), reviews (`review:<g>:domain:<d>`) and Layer 2 (`domain:<d>:stage:<n>`) stay on primed sessions. A project with no serving host, a thread without a project, and every call when the host is down go to primed (fail-open); host state changes are logged and failures pushed to the viewer's decision warnings.
+- **Login.** The host runs on the decision login (`subscription.decision`), like primed decisions, not on the thread's login or Kingdom pool (spec C's in-session runtime used the thread's).
+
+**Bounds.** A used spare's replacement starts while it still answers, so the subagent bound is `roster × (spares + 1) × concurrentTurns + 4` (root and dispatchers), raised on top of the user's own cap (`CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS`). `maxOrphans` is one dispatcher's members, `roster × (spares + 1)`. The setup deadline scales with the roster. One spare per Warden to start; more spares, or several dispatchers each owning a slice of the roster, only on measurement.
+
+**Health and reset.** The host is Foundry's own process, so its whole state can be thrown away. Every 2 s the supervisor reads the host's process tree memory (`ps`) and whether it serves:
+
+| Condition | Action |
+|---|---|
+| Process ended | Routing leaves it at once; a new host starts. |
+| Not serving for two reads (orphaned out, root gone) | A new host starts (blue/green). |
+| Memory over `maxRssMb` for three reads in a row | A new host starts while the old one serves; routing switches once it serves; the old one stops once its calls in flight settle. |
+| Memory over `hardRssMb` on one read | Routing leaves it at once (primed serves), a new host starts, the old one stops once its calls settle. |
+| More than `maxRecyclesPerHour` dispatcher recycles | A new host starts (blue/green). |
+| A start fails (setup not serving by the deadline) | Retried after `restartBackoffMs`, doubling to 5 minutes; after `maxRestarts` failures in a row the project stays on primed Wardens until restart. |
+
+Why both memory bounds: a 15-round run of one process holding 75 Wardens (48 KB each, agent-session `scripts/measure-in-session.ts`, 2026-11-02) sat at about 1.0 to 1.4 GB between rounds, every fan-out peaked at 1.5 to 2.5 GB for about two seconds and fell back, and twice memory climbed at about 400 MB/s (to 5.9 GB, which fell back, and to 12.5 GB at the end, which did not). A single read over 1.5 GB is a normal fan-out; three in a row is growth; past 4 GB a replacement's ~30 s setup is too slow to wait for. Those readings were of the measuring script's whole process tree, the Bun parent included.
+
+**Why (measured 2026-11-02, spec "Why").**
+
+| | Primed (one CLI per Warden) | One process, 75 held Wardens |
+|---|---|---|
+| Processes, memory | 79, ~15 GB | 1, 650 MB idle → 1.9 GB after 4 rounds |
+| Whole-chorus Layer 1, warm | 9–10 s (16 slots); 2 of 75 timed out in a live advise | 3.4–6.0 s per round, p95 call 5.6 s |
+| Failures | — | 0 of 300 |
+
+Queue position drove primed latency (2.5 s → 15 s); each Haiku CLI process takes about 35% of a core, so 75 processes need about 26 cores on a 10-core laptop.
+
+**Refill.** A fan-out uses every spare; replacements go out through one dispatcher, one Agent call each, and the measured refill of 75 is about 20 s. A second turn inside that window finds most Wardens unheld: they start their own member on the host (`prime: cold`), slower but still in-process.
+
+**Evals.** `scripts/evals/chorus-advise.ts --decision-runtime claude-project` sets the host up as the daemon does and records it in `<out>/host.json`: setup, per message held (`warm`), own-member (`cold`) and primed counts with latencies, and memory every 2 s. `--message-file` may repeat (`--gap-ms` between, 0 back to back). `scripts/evals/warden-charter.ts --decision-runtime claude-project --session <s> --projects <one>` asks the first stage through a project host. `decisionHost(model, 'claude-project', …, { project })` and `liveDecisionHosts(…, { project })` build it.
+
 ## Codex decisions
 
 With `decisionRuntime: "codex"`, decisions run on one warm `codex app-server` process per decision profile, through agent-session's `CodexPrimedSessions`. Every middleware role keeps its own live, primed session on that process: the Cartographer, each classifier and router, and each domain's advice, guard and review. A role is keyed by its auxiliary session id (`<thread>:aux:<role>`) plus a hash of its instructions, so a domain's advice and guard stay separate.
@@ -233,4 +275,4 @@ Local profile references are not Kingdom capacity grants. A project execution co
 
 ## Validation
 
-Run `bun run test` and `bun run typecheck`. Focused tests are `packages/foundry/tests/subscription-default.test.ts`, `subscription-scheduling.test.ts`, `primed-decisions.test.ts`, `primed-claude-decisions.test.ts`, `subscription-policy.test.ts` and `subscription-decisions.test.ts`; they use controlled Claude and app-server doubles and a temporary `HOME`. The startup tests deny external requests and set synthetic API keys to verify they are never used.
+Run `bun run test` and `bun run typecheck`. Focused tests are `packages/foundry/tests/subscription-default.test.ts`, `subscription-scheduling.test.ts`, `primed-decisions.test.ts`, `primed-claude-decisions.test.ts`, `subscription-policy.test.ts`, `subscription-decisions.test.ts` and `project-warden-host.test.ts`; they use controlled Claude and app-server doubles and a temporary `HOME`. The startup tests deny external requests and set synthetic API keys to verify they are never used.

@@ -43,8 +43,36 @@ export const subscriptionSettingsSchema = z
      * Decision runtime when no explicit source is named. Default claude. `claude-in-session` runs
      * Claude decisions too, but holds each thread's Wardens as subagents inside the thread's own
      * Claude Code process (docs/THREAD-TREE.md spec C); it needs the Claude Code main thread.
+     * `claude-project` holds every Warden of a project, warm, in one Foundry-owned Claude Code
+     * process per project, which every thread of the project asks for advice
+     * (docs/subscription-decisions.md, "Project Warden host").
      */
-    decisionRuntime: z.enum(['claude', 'codex', 'claude-in-session']).optional(),
+    decisionRuntime: z.enum(['claude', 'codex', 'claude-in-session', 'claude-project']).optional(),
+    /** `claude-project` only: the project host's composition and bounds (PROJECT_HOST_DEFAULTS). */
+    projectHost: z
+      .object({
+        /** Held spares per Warden. */
+        sparesPerWarden: z.number().int().min(1).max(4),
+        /** Threads of one project advising at once, for the subagent bound. */
+        concurrentTurns: z.number().int().min(1).max(16),
+        /** Resident memory the host process tree may hold for a few seconds before it is replaced. */
+        maxRssMb: z.number().int().min(256).max(65_536),
+        /** Resident memory at which routing leaves the host at once and it is replaced. */
+        hardRssMb: z.number().int().min(256).max(65_536),
+        /** Dispatcher recycles per hour past which the host is replaced. */
+        maxRecyclesPerHour: z.number().int().min(1).max(1_000),
+        /** A dispatcher whose context passes this many tokens is recycled. */
+        recycleTokens: z.number().int().min(10_000).max(190_000),
+        /** Setup deadline. Default: scaled with the roster. */
+        setupDeadlineMs: z.number().int().min(5_000).max(600_000),
+        /** First wait before a failed host is started again; doubles to 5 minutes. */
+        restartBackoffMs: z.number().int().min(100).max(300_000),
+        /** Failed starts in a row before the project stays on primed Wardens until restart. */
+        maxRestarts: z.number().int().min(1).max(100),
+      })
+      .partial()
+      .strict()
+      .optional(),
     decisionSourceId: z.string().uuid().optional(),
     model: model.optional(),
     expectedObservedModel: model.optional(),
@@ -112,9 +140,40 @@ export interface SubscriptionPolicy {
   effort?: ReasoningEffort;
   /** Codex decisions still running after this long are hedged on a second branch. */
   hedgeAfterMs?: number;
-  /** Where a thread's Wardens run: primed sessions (default), or inside the thread's own process. */
-  wardens: 'primed' | 'in-session';
+  /**
+   * Where a thread's Wardens run: primed sessions (default), inside the thread's own process, or held
+   * in its project's host (advice only; guard, review and later stages stay primed).
+   */
+  wardens: 'primed' | 'in-session' | 'project';
+  /** `claude-project`: the project host's composition and bounds, defaults filled. */
+  projectHost?: ProjectHostPolicy;
 }
+
+export type ProjectHostPolicy = Required<
+  Omit<NonNullable<SubscriptionSettings['projectHost']>, 'setupDeadlineMs'>
+> &
+  Pick<NonNullable<SubscriptionSettings['projectHost']>, 'setupDeadlineMs'>;
+
+/**
+ * The project host's defaults (oracle docs/foundry/PROJECT-WARDEN-HOST.md, "Memory and health"). One
+ * spare per Warden to start (75 held measured in 31 s). Two threads of a project advising at once size
+ * the subagent bound. Memory, measured 2026-11-02 (75 Wardens, 48 KB each, 15 rounds, one process):
+ * ~1.0-1.4 GB between rounds, every fan-out peaking 1.5-2.5 GB for about two seconds, and twice a
+ * climb at ~400 MB/s (to 5.9 GB, which fell back, and to 12.5 GB, which did not). So 1.5 GB held for
+ * a few seconds starts a replacement while the old host serves, and 4 GB takes routing off the host at
+ * once. A dispatcher grows ~400-600 tokens per member it starts (75 per advice fan-out), so 140k
+ * recycles about every three turns, inside Haiku's window.
+ */
+export const PROJECT_HOST_DEFAULTS = {
+  sparesPerWarden: 1,
+  concurrentTurns: 2,
+  maxRssMb: 1_536,
+  hardRssMb: 4_096,
+  maxRecyclesPerHour: 20,
+  recycleTokens: 140_000,
+  restartBackoffMs: 5_000,
+  maxRestarts: 5,
+} as const satisfies Omit<ProjectHostPolicy, 'setupDeadlineMs'>;
 /**
  * Sized for a full chorus: every Warden is asked on every user message, and every
  * guard-triggered Warden on every action, so one turn fans out ~25 advice calls plus the
@@ -392,8 +451,14 @@ export function resolveSubscriptionPolicy(
     throw Error(
       'subscriptionOnly.decisionRuntime claude-in-session holds Wardens inside Claude Code main threads; it needs a usable Claude Code login',
     );
+  const project = settings.decisionRuntime === 'claude-project';
+  if (settings.projectHost && !project)
+    throw Error('subscriptionOnly.projectHost applies only to decisionRuntime claude-project');
   const decisionRuntime =
-    settings.decisionRuntime === 'claude-in-session' ? 'claude' : settings.decisionRuntime;
+    settings.decisionRuntime === 'claude-in-session' ||
+    settings.decisionRuntime === 'claude-project'
+      ? 'claude'
+      : settings.decisionRuntime;
   const source = settings.decisionSourceId
     ? explicit(settings.decisionSourceId)
     : defaultProfileSource(decisionRuntime ?? 'claude');
@@ -436,7 +501,8 @@ export function resolveSubscriptionPolicy(
     ...(decision.runtime === 'codex'
       ? { hedgeAfterMs: settings.hedgeAfterMs ?? SUBSCRIPTION_DEFAULTS.hedgeAfterMs }
       : {}),
-    wardens: inSession ? 'in-session' : 'primed',
+    wardens: inSession ? 'in-session' : project ? 'project' : 'primed',
+    ...(project ? { projectHost: { ...PROJECT_HOST_DEFAULTS, ...settings.projectHost } } : {}),
   };
   // A model registered only on the other runtime cannot run here, e.g. a recorded Claude model after switching to Codex.
   const runtimeProvider = { claude: 'claude-code', codex: 'codex' } as const;

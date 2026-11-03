@@ -43,6 +43,8 @@ import {
   type StageConfig,
   type StageDebug,
 } from '../classify';
+import type { Roster } from '../providers/in-session-wardens';
+import { isStageSession, isWardenSession, primedRequest } from '../providers/primed-decisions';
 
 /** Mark this process and its state directory as an eval run: Archive and the repeat report leave its sessions out. */
 export function markEvalRun(state: string): void {
@@ -496,6 +498,42 @@ async function ask(
       );
     }),
   );
+}
+
+/**
+ * `decisionRuntime: claude-project`: what each eval Warden's first stage holds in the project host
+ * (its system and stable prefix, no standby), recorded from a pre-start of the same Wardens the run
+ * asks; nothing is sent. The Wardens need session keys of a thread's form (`<s>:aux:domain:<d>`).
+ */
+export async function evalProjectRoster(
+  options: Pick<CharterEvalOptions, 'stages' | 'charters' | 'regionInstructions'>,
+  wardens: readonly EvalWarden[],
+): Promise<Roster> {
+  const held = new Map<string, Roster[number]>();
+  const recording: LLMProvider = {
+    id: 'project-roster',
+    complete: async () => {
+      throw Error('composing a project roster makes no model call');
+    },
+    prestart: (messages, opts) => {
+      const key = opts.threadId;
+      if (!key || !isWardenSession(key) || isStageSession(key)) return;
+      const { spec } = primedRequest(messages, opts, key);
+      held.set(spec.hash ?? spec.key, { spec, standby: '' });
+    },
+  };
+  const stages = options.stages ?? SINGLE_STAGE;
+  for (const warden of wardens) {
+    const lib = librarian(
+      { ...options, probes: [], wardensFor: () => [], warden: recording },
+      warden,
+      stages,
+      (provider) => provider,
+    );
+    await lib.warm();
+    lib.prestart();
+  }
+  return [...held.values()];
 }
 
 /** A Warden as live builds it, bound to the eval's providers: one stage per config, each its own doc. */

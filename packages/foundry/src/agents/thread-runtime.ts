@@ -110,6 +110,7 @@ import {
   buildRoleLayer,
   buildRoleLayers,
   buildStageKnowledge,
+  projectWardenRoot,
   type ResolveSource,
   type RoleLayers,
   replaceRoleSources,
@@ -394,6 +395,12 @@ function wardenStages(
 }
 
 export interface ThreadRuntimeDeps {
+  /**
+   * `decisionRuntime: claude-project`: the project root a thread's Wardens compose at
+   * (`projectWardenRoot`), so every thread holds what its project's host holds. Set by the manager
+   * from its own settings; absent, Wardens compose at the thread's cwd.
+   */
+  wardenRoot?: (projectId: string | undefined) => string | undefined;
   /** Runtime config; agent kinds decide which dispatches get pre-message routing. */
   config: FoundryConfig;
   /** Cheap, fast LLM shared by the Cartographer and Wardens. Scoped per thread and role. */
@@ -783,7 +790,15 @@ export class ThreadRuntimeManager {
     );
     const runtime: ThreadRuntimeImpl = new ThreadRuntimeImpl(
       thread,
-      { ...this._deps, config, resolveSource: resolveSource ?? this._deps.resolveSource },
+      {
+        ...this._deps,
+        config,
+        resolveSource: resolveSource ?? this._deps.resolveSource,
+        // The decision runtime is a daemon setting, absent from a project's view.
+        ...(projectWardenRoot(this._deps.config)
+          ? { wardenRoot: projectWardenRoot(this._deps.config) }
+          : {}),
+      },
       domains,
       (job, candidate, signal) =>
         this._knowledgeCommitter
@@ -924,6 +939,8 @@ class ThreadRuntimeImpl implements ThreadRuntime {
   private _onDisposed: () => void;
   private _knowledgeLayers: ContextLayer[] = [];
   private _scope!: OwnershipScope;
+  /** Where Warden slots compose: the thread's scope, or (claude-project) its project's root. */
+  private _wardenScope!: OwnershipScope;
   private _resolveSource: ResolveSource | undefined;
   private _cartographerRole!: string;
   private _cartographerInstructions!: ContextLayer;
@@ -1074,6 +1091,21 @@ class ThreadRuntimeImpl implements ThreadRuntime {
         return thread.meta.cwd;
       },
     };
+    // claude-project: Wardens compose at the project's root, so every thread of the project holds
+    // what the project host holds.
+    const projectRoot = deps.wardenRoot;
+    const wardenScope: OwnershipScope = projectRoot
+      ? {
+          threadId: thread.id,
+          get projectId() {
+            return thread.meta.projectId as string | undefined;
+          },
+          get cwd() {
+            return projectRoot(thread.meta.projectId as string | undefined) ?? thread.meta.cwd;
+          },
+        }
+      : this._scope;
+    this._wardenScope = wardenScope;
     this._resolveSource = deps.resolveSource;
     const cartographerRole = cartographerRoleId(deps.config);
     this._cartographerRole = cartographerRole;
@@ -1113,7 +1145,7 @@ class ThreadRuntimeImpl implements ThreadRuntime {
       const slots = role
         ? buildRoleLayers(deps.config, role, {
             resolveSource: deps.resolveSource,
-            scope: this._scope,
+            scope: wardenScope,
           })
         : undefined;
       const cache = slots?.domainKnowledge ?? (dc.layerId ? stack.getLayer(dc.layerId) : undefined);
@@ -1138,7 +1170,7 @@ class ThreadRuntimeImpl implements ThreadRuntime {
           const sourceId = regionDocSourceId(role!, config.doc);
           const layer = buildStageKnowledge(deps.config, role!, config.doc, sourceId, {
             resolveSource: deps.resolveSource,
-            scope: this._scope,
+            scope: wardenScope,
           });
           stageDocs.push({ layer, sourceId });
           return layer;
@@ -3717,7 +3749,7 @@ class ThreadRuntimeImpl implements ThreadRuntime {
           }),
         ] as const);
       swaps.push(() => {
-        for (const [layer, sources] of fresh) replaceRoleSources(layer, sources, this._scope);
+        for (const [layer, sources] of fresh) replaceRoleSources(layer, sources, this._wardenScope);
         lib.reconfigure(dc);
       });
     }
