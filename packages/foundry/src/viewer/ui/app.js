@@ -13,6 +13,7 @@ import { AnalyticsPage } from './analytics.js';
 import { Attention, openRoots } from './attention.js';
 import { Board, IncomingCard } from './board.js';
 import { CommandPalette, HelpOverlay } from './command-palette.js';
+import { initComposerFocus } from './composer-focus.js';
 import { Conversation } from './conversation.js';
 import { DevicePage } from './device-page.js';
 import { FeedbackInbox } from './feedback.js';
@@ -43,6 +44,7 @@ import {
   activeProjectId,
   boardOpen,
   CENTER_PANELS,
+  closeTurnView,
   compactPanel,
   connected,
   currentTrace,
@@ -77,6 +79,7 @@ import {
   toggleBoard,
   toggleGraphPanel,
   toggleWatchtower,
+  turnViewTarget,
   watchtowerOpen,
 } from './store.js';
 import { Watchtower } from './watchtower.js';
@@ -327,6 +330,10 @@ function App() {
           projectPage.value = 'home';
           return;
         }
+        if (turnViewTarget.value) {
+          closeTurnView();
+          return;
+        }
         selectedEvent.value = null;
         inspectTarget.value = null;
         selectedSpanId.value = null;
@@ -359,6 +366,7 @@ function App() {
       showRightTab: (tab) => openRightTab(tab, { toggle: true }),
     });
     initHotkeys();
+    initComposerFocus();
     loadMachineProfile();
   }, []);
 

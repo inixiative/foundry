@@ -217,7 +217,7 @@ test('graph panel: thread graph, live turn flow, learning loop, inspect, pan/zoo
     // ---- Stream lifecycle: closed with the view, re-opened (fresh snapshot) when it returns ----
     await page.locator('.center-view', { hasText: 'Thread' }).click();
     await until(() => !flowOpen(), 'flow:a closed when the graph panel is hidden');
-    await page.keyboard.press('g');
+    await page.keyboard.press('Alt+KeyG');
     await until(flowOpen, 'flow:a re-opened by the g hotkey');
     await page.locator(".graph-node[data-node-id='now:architecture']").waitFor();
 

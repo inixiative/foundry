@@ -65,21 +65,21 @@ test('tab icons and number keys open the right panel on their tab', async () => 
 
     // The selected tab's own icon reopens the folded panel on it.
     await page.locator('body').click({ position: { x: 800, y: 300 } });
-    await page.keyboard.press(']');
+    await page.keyboard.press('Alt+BracketRight');
     await collapsed.waitFor();
     await collapsed.getByRole('button', { name: 'Open Context' }).click();
     await title.filter({ hasText: 'Context' }).waitFor();
 
     // A number key opens its tab; the same key again folds the panel.
-    await page.keyboard.press('4');
+    await page.keyboard.press('Alt+Digit4');
     await title.filter({ hasText: 'Work' }).waitFor();
-    await page.keyboard.press('4');
+    await page.keyboard.press('Alt+Digit4');
     await collapsed.waitFor();
     // 0 is Feedback.
-    await page.keyboard.press('0');
+    await page.keyboard.press('Alt+Digit0');
     await title.filter({ hasText: 'Feedback' }).waitFor();
     // 9 is Pointers, the Wardens' pointers (moved here from Loop).
-    await page.keyboard.press('9');
+    await page.keyboard.press('Alt+Digit9');
     await title.filter({ hasText: 'Pointers' }).waitFor();
     await page.locator('.right-panel .loop-pointers-empty').waitFor();
 
@@ -95,15 +95,15 @@ test('tab icons and number keys open the right panel on their tab', async () => 
 
     // From the Watchtower, a number key brings the thread back with the panel on that tab.
     await page.locator('body').click({ position: { x: 800, y: 300 } });
-    await page.keyboard.press('h');
+    await page.keyboard.press('Alt+KeyH');
     await page.locator('.watchtower').waitFor();
-    await page.keyboard.press('4');
+    await page.keyboard.press('Alt+Digit4');
     await title.filter({ hasText: 'Work' }).waitFor();
     expect(await page.locator('.watchtower').count()).toBe(0);
 
     // 2 is the centre's Plan.
     await page.locator('body').click({ position: { x: 800, y: 300 } });
-    await page.keyboard.press('2');
+    await page.keyboard.press('Alt+Digit2');
     await page.locator('.plan').waitFor();
     expect(errors).toEqual([]);
   } finally {

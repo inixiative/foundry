@@ -195,10 +195,11 @@ const KEY_GROUPS = [
   [
     'Moving around',
     [
-      ['T · B', 'Threads · Board'],
-      ['1 · 2 · 3', 'Thread · Plan · Loop'],
-      ['[ · {', 'Left list smaller · larger'],
-      ['] · }', 'Right panel smaller · larger'],
+      ['⌥T · ⌥B · ⌥H', 'Threads · Board · Watchtower'],
+      ['⌥1 · ⌥2 · ⌥3', 'Thread · Plan · Loop (⌘ works too)'],
+      ['⌥[ · ⌥⇧[', 'Left list smaller · larger'],
+      ['⌥] · ⌥⇧]', 'Right panel smaller · larger'],
+      ['⌥↑ · ⌥↓', 'Step through the turn view'],
       ['⌥← · ⌥→', 'Previous · next card in the waiting stack'],
     ],
   ],
@@ -206,15 +207,16 @@ const KEY_GROUPS = [
     'Doing things',
     [
       ['⌘K', 'Command palette: run any action by name'],
+      ['⌥⇧F', 'Search everything (/ where there is no message box)'],
       ['⌥↵ · ⌥⌫', 'Approve · reject the waiting card (a long command opens first)'],
-      ['/', 'Back to the message box'],
-      ['Esc', 'Leave the message box, close a menu or window'],
-      ['?', 'This window'],
+      ['Esc', 'Close a menu or window; you stay in the message box'],
+      ['⌥?', 'This window'],
     ],
   ],
   [
     'While typing',
     [
+      ['typing', 'Always goes to the message box; app commands are ⌥ chords'],
       ['hold ⌥', 'Show these shortcuts; every ⌥ shortcut works while typing'],
       ['Tab · ⇧Tab', 'Next / previous message box, and the waiting stack'],
       ['⌥F · ⌥V', 'Attach a file · start voice'],
