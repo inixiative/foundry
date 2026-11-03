@@ -221,7 +221,11 @@ export function extractCorrections(
   return { corrections, secretsScrubbed };
 }
 
-const SECRET_PATTERNS: ReadonlyArray<readonly [RegExp, string]> = [
+/**
+ * Credentials by their own shape (a provider's token prefix, a key block): specific enough that a
+ * match is a secret. Foundry lifts these from a message even when the person forgot `$$` (FEAT-005).
+ */
+const SHAPED_SECRETS: ReadonlyArray<readonly [RegExp, string]> = [
   [/sk-ant-[A-Za-z0-9_-]{20,}/g, '[REDACTED:anthropic-key]'],
   [/sk-[A-Za-z0-9_-]{20,}/g, '[REDACTED:api-key]'],
   [/gh[pousr]_[A-Za-z0-9]{20,}/g, '[REDACTED:github-token]'],
@@ -245,6 +249,10 @@ const SECRET_PATTERNS: ReadonlyArray<readonly [RegExp, string]> = [
   ],
   [/hooks\.slack\.com\/services\/[A-Za-z0-9/]+/g, '[REDACTED:slack-webhook]'],
   [/\bASIA[A-Z0-9]{16}/g, '[REDACTED:aws-key]'],
+];
+
+/** Credentials by context (an assignment, a header, a URL): a match may be a secret, so it is scrubbed but never lifted. */
+const CONTEXT_SECRETS: ReadonlyArray<readonly [RegExp, string]> = [
   [/\b(Bearer|Basic|DPoP)\s+[A-Za-z0-9._~+/=-]{16,}/g, '$1 [REDACTED:credential]'],
   [/\b([a-z][a-z0-9+.-]*:\/\/[^\s:/@]+:)[^\s@/]+@/gi, '$1[REDACTED:password]@'],
   [
@@ -256,6 +264,14 @@ const SECRET_PATTERNS: ReadonlyArray<readonly [RegExp, string]> = [
     '$1$2$1$3[REDACTED:value]',
   ],
 ];
+
+const SECRET_PATTERNS: ReadonlyArray<readonly [RegExp, string]> = [
+  ...SHAPED_SECRETS,
+  ...CONTEXT_SECRETS,
+];
+
+/** The shaped credential patterns (global), for lifting a secret the person forgot to mark. */
+export const SHAPED_SECRET_PATTERNS: readonly RegExp[] = SHAPED_SECRETS.map(([pattern]) => pattern);
 
 /** Replace credential-shaped substrings. Transcripts are exactly where leaked keys live. */
 export function scrubSecrets(text: string): { text: string; hits: number } {

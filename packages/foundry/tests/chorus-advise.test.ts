@@ -204,6 +204,34 @@ test('prime warms every Warden with one decision on its own session before the m
   ]);
 });
 
+test('a secret sent without $$: the reminder rides the turn after the message, once', async () => {
+  const dir = project();
+  const asked: string[] = [];
+  const advice = await adviseOnce({
+    config: config(dir),
+    projectId: 'P',
+    cwd: dir,
+    message: 'deploy with †turn_x.1',
+    decisions: decisions([]),
+    resolveSource: createSourceResolver({
+      memory: new FileMemory(join(tempDir('memory'), 'm')),
+    }),
+    threadId: 'secret-thread',
+    secretNote: (messageId) => {
+      asked.push(messageId);
+      return 'Foundry: this message held a secret the person sent without $$.';
+    },
+    log() {},
+    warn() {},
+  });
+  expect(asked).toHaveLength(1);
+  expect(advice.notes).toContain('Foundry: this message held a secret the person sent without $$.');
+  expect(advice.message).toContain('deploy with †turn_x.1');
+  expect(advice.message).toContain(
+    'Foundry: this message held a secret the person sent without $$.',
+  );
+});
+
 test("the composed message is the executor's own for the same decoration", async () => {
   const decoration: MessageDecoration = {
     input: { hash: 'h', capturedAt: 0 },

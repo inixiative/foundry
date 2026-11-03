@@ -194,6 +194,7 @@ export {
   type FeedbackTag,
   parseCorrectionClassifications,
   proseOf,
+  SHAPED_SECRET_PATTERNS,
   scrubSecrets,
   type TranscriptTurn,
 } from './feedback/correction';

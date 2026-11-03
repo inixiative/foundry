@@ -8,7 +8,7 @@ import {
   type ScratchPadSummary,
   SecretScratchPad,
 } from '@inixiative/agent-session';
-import type { Thread } from '@inixiative/foundry-core';
+import { SHAPED_SECRET_PATTERNS, scrubSecrets, type Thread } from '@inixiative/foundry-core';
 import { foundryOperation } from '../turns/tool-gate';
 
 /**
@@ -80,9 +80,36 @@ export interface SecretScratchDeps {
   ownerInstructed?: (threadId: string) => boolean;
 }
 
+/**
+ * The line Foundry adds to a turn whose message held a secret the person didn't mark: the agent tells
+ * them, as a colleague would, what happened and how `$$` works next time.
+ */
+export function secretNote(found: { lifted: number; plain: boolean }): string | undefined {
+  const lines: string[] = [];
+  if (found.lifted) {
+    const one = found.lifted === 1;
+    lines.push(
+      `Foundry: this message held ${one ? 'a secret' : `${found.lifted} secrets`} the person sent without $$. Foundry lifted ${one ? 'it' : 'them'} into the scratch pad, so ${one ? 'it is' : 'they are'} not in the transcript; use ${one ? 'it' : 'them'} by reference like any $$ secret.`,
+    );
+  }
+  if (found.plain)
+    lines.push(
+      'Foundry: this message also seems to hold a secret in plain text (a password, key or token assignment). It is in the transcript now.',
+    );
+  if (!lines.length) return undefined;
+  lines.push(
+    'Tell the person in one line, the way a colleague would: what happened, and that writing $$ right before a secret (one word: $$value) keeps it out of the chat on purpose.',
+  );
+  return lines.join(' ');
+}
+
+/** Reminders waiting for their turn's preparation, at most this many (oldest dropped). */
+const MAX_NOTES = 200;
+
 export class SecretScratch {
   readonly pad: SecretScratchPad;
   private readonly _watched = new WeakSet<Thread>();
+  private readonly _notes = new Map<string, string>();
   private readonly settings: SecretScratchDeps['settings'];
 
   constructor(
@@ -133,12 +160,35 @@ export class SecretScratch {
     return this.settings(projectId).scratchPad;
   }
 
-  /** The owner's message with its `$$` secrets lifted, when the setting is on for the thread's project. */
+  /**
+   * The owner's message with its secrets lifted, when the setting is on for the thread's project:
+   * every `$$` word, and every credential recognised by its shape that the person forgot to mark. A
+   * forgotten one, or one by context that stays (a `PASSWORD=` line), leaves a reminder for the turn.
+   */
   lift(thread: Thread, messageId: string, text: string): { text: string; refs: string[] } {
     if (!this.enabled(thread.meta.projectId)) return { text, refs: [] };
-    const lifted = this.pad.lift(text, { thread: thread.id, message: messageId });
+    const lifted = this.pad.lift(
+      text,
+      { thread: thread.id, message: messageId },
+      { patterns: SHAPED_SECRET_PATTERNS },
+    );
     if (lifted.refs.length) this.watch(thread);
-    return lifted;
+    const note = secretNote({
+      lifted: lifted.recognised,
+      plain: scrubSecrets(lifted.text).hits > 0,
+    });
+    if (note) {
+      this._notes.set(messageId, note);
+      if (this._notes.size > MAX_NOTES) this._notes.delete(this._notes.keys().next().value!);
+    }
+    return { text: lifted.text, refs: lifted.refs };
+  }
+
+  /** The reminder for a turn, once: its preparation takes it. */
+  note(messageId: string): string | undefined {
+    const note = this._notes.get(messageId);
+    this._notes.delete(messageId);
+    return note;
   }
 
   /**
