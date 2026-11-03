@@ -1,4 +1,4 @@
-// The per-project Warden host (subscriptionOnly.decisionRuntime claude-project): one Foundry-owned
+// The per-project Warden host (the default for Claude decisions, `claude-project`): one Foundry-owned
 // Claude Code process per project holds every Warden warm; every thread of the project asks it for
 // advice; it is supervised (restart with backoff, blue/green past its bounds) and fails open to primed.
 
@@ -18,18 +18,18 @@ import { createSourceResolver } from '../src/agents/thread-factory';
 import { DECISION_PRIORITY } from '../src/providers/decision-priority';
 import { defaultProfileSource } from '../src/providers/default-profiles';
 import {
-  followProjectActivity,
-  InSessionWardens,
-  type ProjectHostState,
-  type Roster,
-} from '../src/providers/in-session-wardens';
-import {
   createPrimedDecisionHost,
-  inSessionTarget,
   isStageSession,
   isWardenSession,
   primedRequest,
+  projectHostTarget,
 } from '../src/providers/primed-decisions';
+import {
+  followProjectActivity,
+  type ProjectHostState,
+  ProjectWardenHosts,
+  type Roster,
+} from '../src/providers/project-warden-hosts';
 import {
   PROJECT_HOST_DEFAULTS,
   resolveSubscriptionPolicy,
@@ -75,8 +75,7 @@ function projectHosts(options: { noRoot?: boolean; maxRestarts?: number; idleMs?
   const tree = fakeClaudeTree({ noRoot: options.noRoot });
   const rss = new Map<number, number>();
   const states: Array<ProjectHostState & { projectId: string }> = [];
-  const wardens = new InSessionWardens({
-    mode: 'project',
+  const wardens = new ProjectWardenHosts({
     model: 'claude-haiku-5-5',
     effort: 'low',
     timeoutMs: 3_000,
@@ -135,10 +134,8 @@ test('a project host holds the roster before any thread; every thread of the pro
   expect(result.prime).toBe('warm');
   expect(result.content).toBe('ANS:\n## Your understanding\nA2 only\n## Message\nadd a lock');
   expect(tree.memberPrompts.some((p) => p.includes('A2 only'))).toBe(false);
-  // The same roster again changes nothing; threads never pre-start or release the project host.
+  // The same roster again changes nothing.
   wardens.openProject('P', roster('lens', 'locks'));
-  wardens.prestart('A1', roster('other'));
-  await wardens.release('A1');
   expect(tree.processes.length).toBe(1);
   expect(wardens.serving('A1')).toBe(host);
   // A refreshed roster of the same size is held in place.
@@ -257,29 +254,22 @@ test('a host that never sets up is retried with backoff, then the project stays 
   expect(states.at(-1)!.reason).toMatch(/2 starts failed in a row/);
 }, 20_000);
 
-test('routing: a project host takes advice only; guards, reviews and later stages stay primed, as thread mode keeps guards', () => {
+test('routing: a project host takes advice only; guards, reviews and later stages stay primed', () => {
   const host = { serving: () => true } as unknown;
-  const project = {
-    mode: 'project',
-    serving: () => host,
-  } as unknown as InSessionWardens;
-  const thread = { mode: 'thread', serving: () => host } as unknown as InSessionWardens;
-  expect(inSessionTarget(project, 'A1:aux:domain:locks')).toBe(host as never);
+  const project = { serving: () => host } as unknown as ProjectWardenHosts;
+  expect(projectHostTarget(project, 'A1:aux:domain:locks')).toBe(host as never);
   expect(
-    inSessionTarget(project, 'A1:aux:domain:locks', { priority: DECISION_PRIORITY.turn }),
+    projectHostTarget(project, 'A1:aux:domain:locks', { priority: DECISION_PRIORITY.turn }),
   ).toBe(host as never);
   expect(
-    inSessionTarget(project, 'A1:aux:domain:locks', { priority: DECISION_PRIORITY.guard }),
+    projectHostTarget(project, 'A1:aux:domain:locks', { priority: DECISION_PRIORITY.guard }),
   ).toBeUndefined();
-  expect(inSessionTarget(project, 'A1:aux:review:g1:domain:locks')).toBeUndefined();
-  expect(inSessionTarget(project, 'A1:aux:domain:locks:stage:1')).toBeUndefined();
-  expect(inSessionTarget(project, 'A1:aux:cartographer')).toBeUndefined();
-  expect(
-    inSessionTarget(thread, 'A1:aux:domain:locks', { priority: DECISION_PRIORITY.guard }),
-  ).toBe(host as never);
+  expect(projectHostTarget(project, 'A1:aux:review:g1:domain:locks')).toBeUndefined();
+  expect(projectHostTarget(project, 'A1:aux:domain:locks:stage:1')).toBeUndefined();
+  expect(projectHostTarget(project, 'A1:aux:cartographer')).toBeUndefined();
 });
 
-test('settings: claude-project resolves to project Wardens with the host defaults; projectHost is refused on another runtime', () => {
+test('settings: Claude decisions resolve to project Wardens with the host defaults, by default or named; projectHost is refused on primed Wardens', () => {
   const root = tempDir('policy');
   mkdirSync(join(root, '.claude'), { recursive: true });
   writeFileSync(join(root, '.claude', '.credentials.json'), '{}');
@@ -295,9 +285,14 @@ test('settings: claude-project resolves to project Wardens with the host default
   expect(resolved.decision.runtime).toBe('claude');
   expect(resolved.policy.wardens).toBe('project');
   expect(resolved.policy.projectHost).toEqual({ ...PROJECT_HOST_DEFAULTS, sparesPerWarden: 2 });
+  // No runtime named: Claude decisions, project Wardens.
+  config.subscriptionOnly = { directory: join(root, 'receipts'), projectHost: { maxRssMb: 2_048 } };
+  const unnamed = resolveSubscriptionPolicy(config, { cwd: root })!;
+  expect(unnamed.policy.wardens).toBe('project');
+  expect(unnamed.policy.projectHost?.maxRssMb).toBe(2_048);
   config.subscriptionOnly = { decisionRuntime: 'claude', projectHost: { maxRssMb: 2_048 } };
   expect(() => resolveSubscriptionPolicy(config, { cwd: root })).toThrow(
-    /projectHost applies only to decisionRuntime claude-project/,
+    /projectHost applies only to project Warden hosts/,
   );
 });
 
@@ -310,8 +305,7 @@ test('the decision host launches the project host on the decision login: its own
   const directory = join(root, 'receipts');
   mkdirSync(directory, { mode: 0o700 });
   const tree = fakeClaudeTree();
-  const wardens = new InSessionWardens({
-    mode: 'project',
+  const wardens = new ProjectWardenHosts({
     model: 'claude-haiku-5-5',
     effort: 'low',
     timeoutMs: 3_000,
@@ -328,15 +322,12 @@ test('the decision host launches the project host on the decision login: its own
     callTimeoutMs: 3_000,
     spawn: tree.spawn,
     statusSpawn: () => subscriptionStatusProcess(true),
-    inSession: wardens,
+    projectHosts: wardens,
   });
   cleanup.push(async () => {
     await wardens.close();
     await primed.close();
   });
-  // Threads never pre-start or release a project host.
-  expect(primed.prestart).toBeUndefined();
-  expect(primed.releaseThread).toBeUndefined();
   const cache = '## Domain cache (locks)\nuse createLock\n';
   const messages = (thread: string): LLMMessage[] => [
     { role: 'system', content: 'LOCKS WARDEN' },
@@ -522,7 +513,7 @@ test('claude-project: a handoff brief (flow.brief) asks every Warden through the
   });
   const held = new Set(roster.map((e) => e.spec.hash));
   const host = { serving: () => true } as unknown;
-  const hosts = { mode: 'project', serving: () => host } as unknown as InSessionWardens;
+  const hosts = { serving: () => host } as unknown as ProjectWardenHosts;
   const calls: Array<{ routed: boolean; held: boolean }> = [];
   const recording: LLMProvider = {
     id: 'flow',
@@ -530,7 +521,7 @@ test('claude-project: a handoff brief (flow.brief) asks every Warden through the
       const key = opts.threadId ?? '';
       if (isWardenSession(key) && !isStageSession(key))
         calls.push({
-          routed: inSessionTarget(hosts, key, opts) === host,
+          routed: projectHostTarget(hosts, key, opts) === host,
           held: held.has(primedRequest(messages, opts, key).spec.hash),
         });
       return { model: 'none', content: 'NO_COMMENT' };

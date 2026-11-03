@@ -16,7 +16,6 @@ import {
 import { ProjectRegistry } from '../src/agents/project';
 import { createMainThread, ThreadFactory, WorkerRefusedError } from '../src/agents/thread-factory';
 import { LocalSessionStore, UNSTAMPED_RECORD } from '../src/persistence/local-session-store';
-import { InSessionWardens, inSessionThreadSetup } from '../src/providers/in-session-wardens';
 import {
   ClaudeCodeSessionAdapter,
   CodexSessionAdapter,
@@ -261,31 +260,6 @@ test("an executor model the thread's worker does not run gives way, and the view
   expect(codex.setAside).toEqual([{ agent: 'executor', model: 'opus' }]);
 });
 
-test('under claude-in-session only Claude Code threads set up; Codex threads never show as setting up', async () => {
-  const wardens = new InSessionWardens({ model: 'claude-haiku-5-5', timeoutMs: 1_000 });
-  cleanup.push(() => wardens.close());
-  const opened: string[] = [];
-  const workers: Record<string, string> = { claude: 'claude-code', codex: 'codex' };
-  const setup = inSessionThreadSetup({
-    wardens,
-    provider: {
-      open: async (threadId) => {
-        opened.push(threadId);
-      },
-    },
-    worker: (threadId) => workers[threadId],
-    onSetup: () => {},
-  });
-  expect(setup.applies('claude')).toBe(true);
-  expect(setup.applies('codex')).toBe(false);
-  expect(setup.pending('claude')).toBe(true);
-  expect(setup.pending('codex')).toBe(false);
-  await setup.open('codex', {});
-  expect(opened).toEqual([]);
-  await setup.open('claude', {});
-  expect(opened).toEqual(['claude']);
-});
-
 /** The viewer over a configured factory, as the daemon serves it. */
 async function viewer(
   extra: Partial<Parameters<typeof createViewer>[0]> = {},
@@ -508,7 +482,7 @@ test("a fork carries its source's worker", async () => {
 });
 
 for (const worker of ['claude-code', 'codex'] as const)
-  test(`under claude-in-session, a ${worker} thread's subagent ${worker === 'codex' ? 'sends no in-session guard signal' : 'is guarded in-session'}; the child carries its worker`, async () => {
+  test(`a ${worker} thread's subagent is guarded from the main thread's Wardens in every runtime (2026-11-02); the child carries its worker`, async () => {
     let sink!: (threadId: string, evidence: NativeEvidence) => void;
     const { served, main } = await viewer(
       {
@@ -520,12 +494,6 @@ for (const worker of ['claude-code', 'codex'] as const)
             },
           },
         ],
-        threadSetup: {
-          applies: (threadId) => served.directory.get(threadId)?.meta.worker === 'claude-code',
-          open: async () => {},
-          pending: () => false,
-          onSetup: () => {},
-        },
       },
       worker,
     );
@@ -557,39 +525,10 @@ for (const worker of ['claude-code', 'codex'] as const)
       toolError: false,
     });
     await Bun.sleep(20);
-    expect(observed).toEqual(worker === 'codex' ? [] : ['tool']);
+    expect(observed).toEqual(['tool']);
     const child = served.directory.all().find((t) => t.meta.parentThreadId === 'main')!;
     expect(child.meta.worker).toBe(worker);
   });
-
-test('a turn sent while a worker change closes the old in-session host lands on the rebuilt thread', async () => {
-  let release!: () => void;
-  const gate = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  const { call, served, f } = await viewer({
-    threadSetup: {
-      applies: () => false,
-      open: async () => {},
-      pending: () => false,
-      release: () => gate,
-      onSetup: () => {},
-    },
-  });
-  const created = await call('POST', '/api/threads', { projectId: 'claude' });
-  const id = created.body.threadId as string;
-  const patch = call('PATCH', `/api/threads/${id}`, { worker: 'codex' });
-  await until(() => served.directory.get(id)?.meta.worker === 'codex', 'rebuilt on codex');
-  // The old host is still closing: a turn sent now runs on the live, rebuilt thread.
-  const sent = await call('POST', '/api/messages', { threadId: id, message: 'hello' });
-  expect(sent.status).toBe(200);
-  expect(f.codex.models).toEqual(['gpt-6-astra']);
-  release();
-  expect((await patch).status).toBe(200);
-  const thread = served.directory.get(id)!;
-  expect(thread.disposed).toBe(false);
-  expect(thread.meta.worker).toBe('codex');
-});
 
 test('startup gives stored records from before FEAT-007 the worker they ran on, once', () => {
   const dir = temporary('thread-worker-stamp-');

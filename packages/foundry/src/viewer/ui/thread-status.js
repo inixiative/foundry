@@ -12,7 +12,6 @@
  *
  * Inputs:
  *   thread.meta.status       idle | active | waiting | archived (+ legacy completed / done)
- *   thread.meta.setup        { status: 'starting' | 'ready' | 'degraded' }
  *   thread.meta.agentStatus  { state: 'needs-you' | 'blocked', text } (the agent's set_status)
  *   thread.meta.plan         an outcome with status 'you' waits on the person
  *   thread.meta.seenAt       when the owner last looked (epoch ms)
@@ -71,7 +70,6 @@ export function threadState(thread, context = {}) {
   }
   // A snooze quiets the calm states; a problem or a request for you still shows.
   if (snoozeRunning(thread?.meta?.snooze)) return 'snoozed';
-  if (meta.setup?.status === 'starting') return 'starting';
   if (turn === 'running' || meta.status === 'active') return 'working';
   if (context.childrenWorking) return 'subagents';
   if (turn === 'queued') return 'queued';

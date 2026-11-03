@@ -13,12 +13,6 @@ import {
 } from './providers/decision-host';
 import { createDecisionProvider } from './providers/decision-provider';
 import { harnessSettingSources } from './providers/harness-settings';
-import {
-  followProjectActivity,
-  InSessionWardens,
-  inSessionThreadSetup,
-  type ProjectHostState,
-} from './providers/in-session-wardens';
 import { KingdomAuthentication } from './providers/kingdom-authentication';
 import { projectCapacity } from './providers/kingdom-subscription-authentication';
 import { LoginPoolAuthentication, LoginRunLog } from './providers/login-pool';
@@ -32,6 +26,7 @@ import {
   projectRunsOnKingdom,
 } from './providers/native-authentication-mode';
 import { boundLaunchEnvironment } from './providers/native-text-environment';
+import { followProjectActivity, type ProjectHostState } from './providers/project-warden-hosts';
 import { SubscriptionAuthentication } from './providers/subscription-authentication';
 import {
   loginPoolSettings,
@@ -65,7 +60,6 @@ import {
   type MemoryEntry,
   type NativeBridgeSource,
   type ThreadMeta,
-  type ThreadSetup,
   ToolRegistry,
 } from '@inixiative/foundry-core';
 import { existsSync, mkdirSync } from 'fs';
@@ -227,28 +221,6 @@ for (const [projectId, project] of Object.entries(config.projects ?? {})) {
   if (!view || (!view.chorus.enabled && !view.chorus.reason)) continue;
   console.log(describeChorus(project.label ?? projectId, view.chorus));
 }
-// decisionRuntime claude-in-session: each thread's Wardens are held inside its own Claude Code
-// process (docs/THREAD-TREE.md spec C). Off by default.
-const setupListeners: Array<(threadId: string, setup: ThreadSetup) => void> = [];
-const inSession =
-  subscription?.policy.wardens === 'in-session'
-    ? new InSessionWardens({
-        model: subscription.policy.model,
-        ...(subscription.policy.effort ? { effort: subscription.policy.effort } : {}),
-        timeoutMs: subscription.policy.callTimeoutMs,
-        onSetup: (threadId, setup) => {
-          for (const listener of setupListeners) listener(threadId, setup);
-          if (setup.status !== 'starting')
-            console.log(
-              `[in-session] thread ${threadId} ${setup.status}: ${setup.wardens.held}/${setup.wardens.expected} Wardens held in ${(setup.readyAt ?? Date.now()) - setup.startedAt} ms`,
-            );
-        },
-      })
-    : undefined;
-if (inSession)
-  console.log(
-    "Wardens: held inside each Claude Code thread's own process (claude-in-session); threads on other workers use primed Wardens",
-  );
 /** Pressure and recycles of every decision host (the decision host and each stage host) reach the viewer. */
 const decisionEvents: DecisionEvents = {
   onPressure: (event: Parameters<NonNullable<DecisionEvents['onPressure']>>[0]) => {
@@ -278,9 +250,9 @@ const decisionEvents: DecisionEvents = {
 // have no per-stage host: such a stage is refused.
 const live = subscription
   ? liveDecisionHosts(config, subscription, {
-      ...(inSession ? { inSession } : {}),
-      // claude-project: each project's Wardens held warm in one host per project, asked for advice by
-      // every thread of the project (the thread's project: the login pool's late-bound lookup).
+      // Project Warden hosts (Claude decisions by default): each project's Wardens held warm in one
+      // host per project, asked for advice by every thread of the project (the thread's project: the
+      // login pool's late-bound lookup).
       ...(subscription.policy.wardens === 'project'
         ? {
             project: {
@@ -301,7 +273,7 @@ const live = subscription
   : undefined;
 if (live?.projectHosts)
   console.log(
-    "Wardens: each project's held warm in one Foundry-owned process (claude-project); guards, reviews and later stages stay primed",
+    "Wardens: each project's held warm in one Foundry-owned process; guards, reviews and later stages stay primed",
   );
 const decisions = live?.decisions;
 const flowLlm = decisions?.provider ?? createDecisionProvider(config);
@@ -491,7 +463,6 @@ function createProvider(
         contextBudget: providerContextBudget(config, providerId),
         store: sessionStore,
         authentication: routed,
-        ...(inSession ? { inSession } : {}),
         harnessSettings,
         defaults: {
           model: defaultModel,
@@ -811,7 +782,7 @@ configStore.onChange(async (next) => {
 });
 configStore.watch();
 
-// claude-project: a project's Wardens are held only while someone works in it (Aron, 2026-11-02).
+// Project Warden hosts: a project's Wardens are held only while someone works in it (Aron, 2026-11-02).
 // Its host opens on the project's first activity (a turn journalled in it, a thread of it opened:
 // `followProjectActivity`, subscribed once startup is done) and closes after `projectHost.idleMs`
 // without any. Its roster is composed from a hidden thread at the project's root, as a thread of the
@@ -1057,7 +1028,6 @@ const acpLaunch =
     ? { path: acpLaunchPath() }
     : undefined;
 
-const claudeProvider = workers.get('claude-code')?.provider;
 const viewer = await startViewer({
   autoTunnel: true,
   logins: {
@@ -1098,18 +1068,6 @@ const viewer = await startViewer({
   taskSources: sessionProviders,
   // Turns a worker's session starts itself (Muse crons, monitors, goals) land in their thread.
   nativeTurnSources: sessionProviders,
-  ...(inSession && claudeProvider instanceof SessionBackedProvider
-    ? {
-        threadSetup: inSessionThreadSetup({
-          wardens: inSession,
-          provider: claudeProvider,
-          worker: (threadId) => threadMeta?.(threadId)?.worker,
-          onSetup: (listener) => {
-            setupListeners.push(listener);
-          },
-        }),
-      }
-    : {}),
 });
 toolGateFor = viewer.toolGate;
 journalStore = viewer.localStore;
@@ -1158,7 +1116,7 @@ publishDaemonRuntime({
 // Turns a planned restart held (the spin-down) run now, in the order they arrived.
 void viewer.resumeHeldTurns();
 
-// claude-project: from here on, a project's activity opens its Warden host (threads restored at
+// Project Warden hosts: from here on, a project's activity opens its Warden host (threads restored at
 // startup are not work).
 if (projectHosts)
   followProjectActivity({
@@ -1184,7 +1142,6 @@ const shutdown = async () => {
     Promise.all([
       ...[...sessionAdapters.values()].map((adapter) => adapter.releaseAll?.()),
       live?.shutdown(),
-      inSession?.close(),
     ]),
     Bun.sleep(5_000),
   ]);

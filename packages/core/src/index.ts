@@ -425,7 +425,6 @@ export {
   type ThreadPlan,
   type ThreadPlanItem,
   type ThreadReference,
-  type ThreadSetup,
   type ThreadSnooze,
   type ThreadSpawn,
   type ThreadStatus,

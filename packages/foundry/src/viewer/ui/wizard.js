@@ -493,7 +493,9 @@ export function Wizard() {
       await patchSettings('apiTokens', { enabled: !subscription });
       if (subscription)
         await patchSettings('subscriptionOnly', {
-          decisionRuntime: classifierProvider === 'codex' ? 'codex' : 'claude',
+          // Claude decisions hold Wardens in project hosts (the default runtime, named so a saved
+          // `codex` or `claude` is replaced).
+          decisionRuntime: classifierProvider === 'codex' ? 'codex' : 'claude-project',
           model: classifierModel,
         });
 

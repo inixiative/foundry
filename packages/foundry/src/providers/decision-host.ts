@@ -10,7 +10,7 @@ import type { LLMProvider } from '@inixiative/foundry-core';
 import { largestRoster, largestStageCount } from '../agents/configured-experts';
 import type { StageConfig, StageEffort } from '../classify';
 import { type FoundryConfig, starterConfig } from '../viewer/config';
-import { InSessionWardens, type ProjectHostState } from './in-session-wardens';
+import { type ProjectHostState, ProjectWardenHosts } from './project-warden-hosts';
 import {
   createSubscriptionDecisions,
   type SubscriptionDecisionConfig,
@@ -31,15 +31,14 @@ export interface ProjectHostOptions {
   onEvent?: (event: PrimedEvent) => void;
 }
 
-/** `claude-project`: the registry of project Warden hosts, on the decision model and effort. */
+/** The registry of project Warden hosts, on the decision model and effort. */
 export function projectWardenHosts(
   policy: SubscriptionPolicy,
   options: ProjectHostOptions,
-): InSessionWardens {
+): ProjectWardenHosts {
   if (policy.wardens !== 'project' || !policy.projectHost)
-    throw Error('Project Warden hosts run with subscriptionOnly.decisionRuntime claude-project');
-  return new InSessionWardens({
-    mode: 'project',
+    throw Error('Project Warden hosts run only with Claude decisions held in project hosts');
+  return new ProjectWardenHosts({
     model: policy.model,
     ...(policy.effort ? { effort: policy.effort } : {}),
     timeoutMs: policy.callTimeoutMs,
@@ -107,7 +106,7 @@ export function decisionHost(
     ...(overrides.inputCap !== undefined ? { inputCap: overrides.inputCap } : {}),
     ...(overrides.primedSessions !== undefined ? { primedSessions: overrides.primedSessions } : {}),
     ...(overrides.subagents ? { subagents: overrides.subagents } : {}),
-    ...(projectHosts ? { inSession: projectHosts } : {}),
+    ...(projectHosts ? { projectHosts } : {}),
   });
   return {
     ...host,
@@ -155,8 +154,7 @@ export function liveDecisionHosts(
   config: FoundryConfig,
   subscription: SubscriptionResolution,
   opts: {
-    inSession?: InSessionWardens;
-    /** `claude-project`: required; the project hosts are built here, on the decision host's login. */
+    /** Project hosts (Claude decisions by default): required; built here, on the decision host's login. */
     project?: ProjectHostOptions;
     events?: DecisionEvents;
     log?: (line: string) => void;
@@ -164,7 +162,7 @@ export function liveDecisionHosts(
 ) {
   const { policy } = subscription;
   if (policy.wardens === 'project' && !opts.project)
-    throw Error('claude-project decisions need the thread → project lookup');
+    throw Error('Project Warden hosts need the thread → project lookup');
   const projectHosts =
     policy.wardens === 'project'
       ? projectWardenHosts(policy, {
@@ -172,7 +170,6 @@ export function liveDecisionHosts(
           ...opts.project!,
         })
       : undefined;
-  const inSession = opts.inSession ?? projectHosts;
   /** Whether a classify stage runs on the decision host (its model and effort are the decision ones). */
   const onDecisionHost = (stage: StageConfig) =>
     (stage.model ?? policy.model) === policy.model &&
@@ -180,7 +177,7 @@ export function liveDecisionHosts(
   const decisions = createSubscriptionDecisions({
     ...policy,
     source: subscription.decision,
-    ...(inSession ? { inSession } : {}),
+    ...(projectHosts ? { projectHosts } : {}),
     // Every decision role stays primed: a key per classify stage and a review key per Warden, plus
     // the Cartographer, the router roles and the feedback lifecycle. An evicted key re-primes cold.
     // Sized for the largest chorus any project runs (region Wardens are per project).
@@ -226,7 +223,7 @@ export function liveDecisionHosts(
   return {
     decisions,
     stageHost,
-    /** `claude-project`: every project's Warden host (open one with `openProject`). */
+    /** Every project's Warden host (open one with `openProject`). */
     ...(projectHosts ? { projectHosts } : {}),
     /** Stops the decision host, every stage host and every project host. */
     shutdown: async () => {

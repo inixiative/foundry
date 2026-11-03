@@ -27,7 +27,10 @@ import {
   buildSubscriptionDecisions,
   type SubscriptionDecisionConfig,
 } from '../src/providers/subscription-decisions';
-import { resolveSubscriptionPolicy } from '../src/providers/subscription-policy';
+import {
+  PROJECT_HOST_DEFAULTS,
+  resolveSubscriptionPolicy,
+} from '../src/providers/subscription-policy';
 import { ConfigStore, defaultConfig, starterConfig, validateConfig } from '../src/viewer/config';
 import { resolveProjectView } from '../src/viewer/config-resolve';
 import { writeRegions } from './helpers/regions';
@@ -86,7 +89,9 @@ test("a fresh configuration is subscription-only: Claude worker and Claude Haiku
     maxConcurrent: 16,
     callTimeoutMs: 60000,
     effort: 'low',
-    wardens: 'primed',
+    // Claude decisions hold Wardens in project hosts by default (Aron, 2026-11-03).
+    wardens: 'project',
+    projectHost: PROJECT_HOST_DEFAULTS,
   });
   expect(statSync(resolved.policy.directory).mode & 0o777).toBe(0o700);
   expect(resolved.config.defaults).toMatchObject({

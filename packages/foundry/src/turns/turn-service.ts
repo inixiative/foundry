@@ -66,11 +66,6 @@ export interface TurnServiceDeps {
   planDrafter?: PlanDrafter;
   /** The feedback lifecycle: reads each accepted turn; a blocking tuning prompt holds the turn. */
   feedback?: FeedbackService | null;
-  /**
-   * In-session Wardens (docs/THREAD-TREE.md spec C): opens the thread's native session and waits
-   * (bounded) until its Wardens are held. The turn stays queued meanwhile, so a stop cancels it.
-   */
-  threadSetup?: ThreadSetupHost;
   localStore?: LocalSessionStore | null;
   /**
    * The spin-down (`daemon/restart-roll.ts`): while it holds, a turn reaching the front of its
@@ -83,17 +78,6 @@ export interface TurnServiceDeps {
   streams: ViewerStreams;
   /** `$$word` secrets are lifted into the thread's scratch pad before anything reads the message (FEAT-005). */
   secrets?: SecretScratch | null;
-}
-
-/** Opens a thread's native session ahead of its turn and waits for its in-session Wardens. */
-export interface ThreadSetupHost {
-  open(threadId: string, opts: { cwd?: string; bridge?: NativeBridgeSource }): Promise<void>;
-  /** The thread's Wardens are not held yet (setup not run, or still starting). */
-  pending(threadId: string): boolean;
-  /** Whether this thread holds its Wardens in its own process (its worker runs them); others use primed Wardens. */
-  applies(threadId: string): boolean;
-  /** Close the thread's in-session host (its worker changed before its first turn). */
-  release?(threadId: string): Promise<void>;
 }
 
 export interface TurnRequest {
@@ -608,22 +592,12 @@ export class TurnService {
     void thread
       .run(async () => {
         // Spinning down for a restart: it waits here, still queued, before anything of it starts
-        // (no tuning prompt, no Warden setup); the next boot runs it, or it goes on here if the
+        // (no tuning prompt); the next boot runs it, or it goes on here if the
         // update is postponed.
         while (state.phase !== 'settled' && this.deps.restartGate?.holding())
           await this.deps.restartGate.whenOpen();
         // A blocking tuning prompt holds the turn (still queued, so a stop cancels it) until answered.
         await this.deps.feedback?.held(turnId);
-        // A thread setting up its in-session Wardens holds the turn (still queued) until they are held.
-        if (state.phase !== 'settled' && this.deps.threadSetup?.applies(threadId))
-          await this.deps.threadSetup
-            .open(threadId, {
-              ...(harness.thread.meta.cwd ? { cwd: harness.thread.meta.cwd } : {}),
-              bridge: this.nativeBridge(harness.thread),
-            })
-            .catch((error) =>
-              console.warn(`[Turns] thread setup failed: ${(error as Error).message ?? error}`),
-            );
         // A steer of it being sent decides first: if the running turn took it, it is settled.
         if (state.steering) await state.steering.catch(() => {});
         // A queued turn cancelled (or steered) while it waited has already settled.

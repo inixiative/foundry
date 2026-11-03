@@ -217,8 +217,6 @@ export interface LLMProvider {
    * `threadPrefix` starts at once. `messages` end at those prefixes; no decision is made. Optional.
    */
   prestart?(messages: LLMMessage[], opts: CompletionOpts): void;
-  /** A thread closed: release whatever the provider holds for it. Optional. */
-  releaseThread?(threadId: string): Promise<void>;
 }
 
 export interface EmbeddingProvider {

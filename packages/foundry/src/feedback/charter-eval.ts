@@ -43,8 +43,8 @@ import {
   type StageConfig,
   type StageDebug,
 } from '../classify';
-import type { Roster } from '../providers/in-session-wardens';
 import { isStageSession, isWardenSession, primedRequest } from '../providers/primed-decisions';
+import type { Roster } from '../providers/project-warden-hosts';
 
 /** Mark this process and its state directory as an eval run: Archive and the repeat report leave its sessions out. */
 export function markEvalRun(state: string): void {

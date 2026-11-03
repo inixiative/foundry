@@ -84,7 +84,7 @@ import {
 type PrimedEvent = Parameters<NonNullable<DecisionEvents['onPrimedEvent']>>[0];
 
 import { isDefaultProfile } from '../../packages/foundry/src/providers/default-profiles';
-import { processTreeRssMb } from '../../packages/foundry/src/providers/in-session-wardens';
+import { processTreeRssMb } from '../../packages/foundry/src/providers/project-warden-hosts';
 import { resolveSubscriptionPolicy } from '../../packages/foundry/src/providers/subscription-policy';
 import { resolvePrefilterSettings } from '../../packages/foundry/src/providers/warden-prefilter';
 import { ConfigStore } from '../../packages/foundry/src/viewer/config';
@@ -127,9 +127,7 @@ const gapMs = values['gap-ms'] === undefined ? 0 : Number(values['gap-ms']);
 if (!Number.isSafeInteger(gapMs) || gapMs < 0) throw Error('--gap-ms must be a whole number of ms');
 const runtime = values['decision-runtime'];
 if (runtime !== undefined && runtime !== 'claude' && runtime !== 'claude-project')
-  throw Error(
-    '--decision-runtime is claude or claude-project (claude-in-session needs live threads)',
-  );
+  throw Error('--decision-runtime is claude or claude-project');
 // A few messages are never a wide run; a named design is checked and recorded.
 const experiment = requireExperiment(values.experiment, messages.length > 3);
 

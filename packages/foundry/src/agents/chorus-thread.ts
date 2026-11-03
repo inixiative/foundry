@@ -9,8 +9,8 @@
 // host composes its roster from it, so the host holds exactly what a thread of the project sends.
 
 import { ContextStack, type LLMMessage, type LLMProvider, newId } from '@inixiative/foundry-core';
-import type { Roster } from '../providers/in-session-wardens';
 import { isStageSession, isWardenSession, primedRequest } from '../providers/primed-decisions';
+import type { Roster } from '../providers/project-warden-hosts';
 import type { FoundryConfig } from '../viewer/config';
 import { buildAgents, buildLayers, type SourceResolver, ThreadFactory } from './thread-factory';
 import {

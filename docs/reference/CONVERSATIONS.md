@@ -79,7 +79,7 @@ This is the **first time Foundry hosts a resource**. In every earlier case the h
 |---|---|---|---|
 | The owner, in the viewer or a local ACP host | This machine | None: local is local (FOUNDRY-ACP §7.1) | No |
 | The thread's own subagents, e.g. Codex doing computer use | Inside the thread's tree (THREAD-TREE spec A) | None: they are nodes, not members | No |
-| Wardens | In-session (THREAD-TREE spec C) | None: they are the chorus | No |
+| Wardens | Their project's host on this machine (subscription-decisions.md, "Project Warden host"), else primed | None: they are the chorus | No |
 | Local Heralds (**not built**) | This Foundry | None: `chorus.heralds` (§4.6) | No |
 | The owner from another machine | Elsewhere | A Signet with `view: 'thread'` and `prompt.resolve`, which only an owner recipient may hold | **Yes** |
 | Outside agents | Elsewhere | Their own Signet with their own terms | **Yes** |
@@ -166,7 +166,7 @@ Foundry answers `{accepted, seq}`, or a refusal code, straight away. Floor decis
 The owner's turns never pass through the relay. They are never floor-gated, and each one resets depth.
 
 **Revival: a post on an idle thread.** A thread may sit idle for days, with its native session closed and its harness not loaded. Threads persist and are restored on daemon restart (FOUNDRY-ACP §7.3). Admission is the same as above. Delivery adapts:
-- **`turn`:** `TurnService.accept` creates the thread's `Harness` on first use (`harness(threadId)`), and the executor's provider opens the native session, resuming the thread's binding, while the turn waits `queued` (`ThreadSetupHost.open` does it ahead of the turn when in-session Wardens are on). So a member post wakes an idle thread exactly as an owner message would, and the main agent answers. When the native session is gone (its process died, the transcript or rollout was cleaned up, the thread was archived) the thread still comes back: see "Revival when the native session is gone" under F1 as built.
+- **`turn`:** `TurnService.accept` creates the thread's `Harness` on first use (`harness(threadId)`), and the executor's provider opens the native session, resuming the thread's binding, while the turn waits `queued`. So a member post wakes an idle thread exactly as an owner message would, and the main agent answers. When the native session is gone (its process died, the transcript or rollout was cleaned up, the thread was archived) the thread still comes back: see "Revival when the native session is gone" under F1 as built.
 - **`note`:** no owner turn is coming, so the post would wait unseen. The wrapper **notifies the owner**: the thread rises to the top of the sessions list with an unread member post. Foundry has no unread or notification surface today, so the spec adds no new state. "Unread" is derived from unconsumed `member-post` rows, which already exist. It is pushed through the existing `streams.threadsChanged`, and the viewer and ACP hosts show it. This is load-bearing for test 1's revival with the default `note` delivery, so it is in F1. The post rides with the owner's next turn whenever that comes.
 - **Depth and floor don't reset with time.** A conversation that was paused stays paused until the owner acts. A conch that expired while the thread was idle belongs to the host.
 
@@ -340,7 +340,7 @@ The outbound rule of §4.5 stands, and is reaffirmed.
 | Piece | Extends | Path |
 |---|---|---|
 | Post-in point: admission transaction (thread exists, dedupe, depth, floor, record), routed to the existing note or turn path | Installation socket client; local store transactions | `pf/providers/kingdom-installation-connection.ts`, `pf/persistence/local-session-store.ts` |
-| Revival: wake an idle thread on `turn`; on `note`, show "unread" derived from unconsumed `member-post` rows and pushed through `streams.threadsChanged` | `TurnService.harness()` + `ThreadSetupHost.open`; viewer streams | `pf/turns/turn-service.ts`, `pf/viewer/data-streams.ts` |
+| Revival: wake an idle thread on `turn`; on `note`, show "unread" derived from unconsumed `member-post` rows and pushed through `streams.threadsChanged` | `TurnService.harness()`; viewer streams | `pf/turns/turn-service.ts`, `pf/viewer/data-streams.ts` |
 | A Warden pass on a note: `_between` with `consumed` when the note is admitted | Flow orchestrator | `pf/agents/flow-orchestrator.ts` |
 | `thread.floor` handler: request the conch, pass it, release it, all in the admission transaction | Relay handler | `pf/providers/kingdom-installation-connection.ts` |
 | `thread.subscribe` answered as one operation (the view snapshot plus its `journalSeq`, with the subscription starting there); `thread.unsubscribe`; a subscription lease (dropped unless re-asserted every 45 s, and all dropped on reconnect); push `thread.append` filtered by each subscriber's view | Relay handler; journal reads | `pf/providers/kingdom-installation-connection.ts`, `pf/persistence/local-session-store.ts` |

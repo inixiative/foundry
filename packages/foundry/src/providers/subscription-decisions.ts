@@ -17,9 +17,9 @@ import {
 } from '@inixiative/foundry-core';
 import { DECISION_CALL_TIMEOUT_MAX_MS } from './decision-budget';
 import { DECISION_PRIORITY } from './decision-priority';
-import type { InSessionWardens } from './in-session-wardens';
 import type { NativeTextCall, NativeTextConfig } from './native-text-provider';
-import { createPrimedDecisionHost, inSessionTarget } from './primed-decisions';
+import { createPrimedDecisionHost, projectHostTarget } from './primed-decisions';
+import type { ProjectWardenHosts } from './project-warden-hosts';
 
 export interface SubscriptionDecisionConfig extends Omit<NativeTextConfig, 'runId' | 'maxCalls'> {
   maxCalls: number;
@@ -45,11 +45,8 @@ export interface SubscriptionDecisionConfig extends Omit<NativeTextConfig, 'runI
   hedgeAfterMs?: number;
   /** Characters a decision's input may take. Default DECISION_INPUT_CAP; raised only by offline evals. */
   inputCap?: number;
-  /**
-   * `claude-in-session`: each thread's Wardens are held inside its own Claude Code process;
-   * `claude-project`: in one Claude Code process per project.
-   */
-  inSession?: InSessionWardens;
+  /** Project Warden hosts: each project's Wardens held in one Claude Code process (advice only). */
+  projectHosts?: ProjectWardenHosts;
 }
 export type DecisionPressure =
   | { kind: 'shed'; threadId: string; priority: number; queued: number }
@@ -103,24 +100,21 @@ export function createSubscriptionDecisions(config: SubscriptionDecisionConfig) 
     callTimeoutMs: config.callTimeoutMs,
     ...(config.inputCap !== undefined ? { inputCap: config.inputCap } : {}),
     onEvent: onPrimedEvent,
-    ...(config.inSession ? { inSession: config.inSession } : {}),
+    ...(config.projectHosts ? { projectHosts: config.projectHosts } : {}),
   });
-  const { inSession, ...bounds } = options;
+  const { projectHosts, ...bounds } = options;
   const decisions = buildSubscriptionDecisions(
     {
       ...bounds,
-      ...(inSession
+      ...(projectHosts
         ? {
             unbounded: (key: string, opts: CompletionOpts) =>
-              !!inSessionTarget(inSession, key, opts),
+              !!projectHostTarget(projectHosts, key, opts),
           }
         : {}),
     },
     primed.createRun,
   );
-  // Pre-starting is not a decision: it bypasses the queue and costs no admission.
-  if (primed.prestart) decisions.provider.prestart = primed.prestart;
-  if (primed.releaseThread) decisions.provider.releaseThread = primed.releaseThread;
   return {
     ...decisions,
     close: () => {
@@ -135,14 +129,14 @@ export function createSubscriptionDecisions(config: SubscriptionDecisionConfig) 
     snapshot: () => ({
       ...decisions.snapshot(),
       primed: primed.host.snapshot(),
-      ...(inSession ? { inSession: inSession.snapshot() } : {}),
+      ...(projectHosts ? { projectHosts: projectHosts.snapshot() } : {}),
     }),
   };
 }
 
 export function buildSubscriptionDecisions(
-  options: Omit<SubscriptionDecisionConfig, 'inSession'> & {
-    /** Calls (by provider session key and options) served in an in-session host: no shared slot. */
+  options: Omit<SubscriptionDecisionConfig, 'projectHosts'> & {
+    /** Calls (by provider session key and options) served in a project host: no shared slot. */
     unbounded?: (sessionKey: string, opts: CompletionOpts) => boolean;
   },
   createRun: (config: NativeTextConfig) => TextRun,

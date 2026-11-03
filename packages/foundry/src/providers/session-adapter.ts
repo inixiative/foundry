@@ -52,7 +52,6 @@ import { readFileSync } from 'fs';
 import { mkdir, readFile, rename, writeFile } from 'fs/promises';
 import { dirname, join } from 'path';
 import type { HarnessSettingSources } from './harness-settings';
-import type { InSessionWardens } from './in-session-wardens';
 import {
   appServerBridgeConfiguration,
   appServerClientMcpConfiguration,
@@ -556,11 +555,6 @@ export interface ClaudeCodeSessionAdapterConfig {
    */
   signals?: SignalBus;
   /**
-   * `decisionRuntime: claude-in-session`: each executor session hosts its thread's Wardens as
-   * subagents inside its own process (docs/THREAD-TREE.md spec C).
-   */
-  inSession?: InSessionWardens;
-  /**
    * Which of the user's own Claude settings a main thread loads (CORE-003), by its working
    * directory; absent, none. Decision and fixture sessions never load them.
    */
@@ -578,7 +572,6 @@ export class ClaudeCodeSessionAdapter implements SessionAdapter {
   private _ownedExits = new WeakMap<HarnessSession, () => Promise<number> | undefined>();
   private _live = new Set<HarnessSession>();
   private _ownedBridges = new WeakMap<HarnessSession, NativeBridgeLease>();
-  private _inSession?: InSessionWardens;
   private _defaults: ClaudeCodeSessionAdapterConfig['defaults'];
   private _controlledFixtureSpawn?: ClaudeCodeSessionAdapterConfig['controlledFixtureSpawn'];
   private _signals: ThreadSignalBindings;
@@ -606,7 +599,6 @@ export class ClaudeCodeSessionAdapter implements SessionAdapter {
       },
     };
     this._controlledFixtureSpawn = config.controlledFixtureSpawn;
-    this._inSession = config.inSession;
     this._signals = new ThreadSignalBindings(config.signals);
   }
 
@@ -670,10 +662,7 @@ export class ClaudeCodeSessionAdapter implements SessionAdapter {
       );
     let ownedExit: Promise<number> | undefined;
     // A main thread is the user's own Claude: their settings, commands, skills and hooks load.
-    // Not with in-session Wardens: they run as subagents in this process, and the user's hooks,
-    // denies and env (CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS) would reach every Warden call.
-    const mainThread =
-      opts.tools !== false && !fixture && !opts.threadId.includes(':aux:') && !this._inSession;
+    const mainThread = opts.tools !== false && !fixture && !opts.threadId.includes(':aux:');
     const sources = mainThread ? this._harnessSettings?.(opts.cwd) : undefined;
     const trackedSpawn: NonNullable<ClaudeCodeSessionConfig['spawn']> = (cmd, options) => {
       const launch = auth?.launch(
@@ -767,15 +756,6 @@ export class ClaudeCodeSessionAdapter implements SessionAdapter {
       if (!session.onToolRequest)
         throw Error('Installed agent-session lacks onToolRequest; no process started');
       session.onToolRequest(opts.toolGate);
-    }
-    // The thread's Wardens live in its executor's own process: the host attaches before it starts.
-    if (this._inSession && opts.tools !== false && !fixture && !opts.threadId.includes(':aux:')) {
-      const inSession = this._inSession;
-      const host = inSession.attach(opts.threadId);
-      session.extend(host);
-      session.onEvent((event) => {
-        if (event.kind === 'session_end') inSession.detached(opts.threadId, host);
-      });
     }
     this._constructions.set(
       session,

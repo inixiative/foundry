@@ -5,7 +5,7 @@ import { EventStream, type NativeEvidence, type ThreadMeta } from '@inixiative/f
 import { ArchiveCapture, captureThread } from '../src/archives/capture';
 import { REDUCED_PHASE } from '../src/archives/reduced-middleware';
 import { LocalSessionStore } from '../src/persistence/local-session-store';
-import { SubagentRecorder } from '../src/turns/subagents';
+import { SubagentRecorder, type SubagentToolCall } from '../src/turns/subagents';
 import { startFakeArchive } from './helpers/fake-archive';
 
 const cleanup: (() => void)[] = [];
@@ -576,4 +576,67 @@ test("a fork archives with Archive's fork lineage, its source and no root: it is
     kind: 'fork',
     parentSessionId: 'main',
   });
+});
+
+test("a subagent's tool calls go to the root thread's guard Wardens, on the subagent's node, in every runtime", () => {
+  const store = new LocalSessionStore(':memory:');
+  cleanup.push(() => store.close());
+  const root = {
+    id: 'main',
+    meta: {
+      description: 'Main',
+      tags: [],
+      status: 'active',
+      createdAt: 1,
+      lastActiveAt: 1,
+    } satisfies ThreadMeta,
+  };
+  store.saveThread(root);
+  store.beginTurn(root, 'turn-1', 'Explore');
+  const calls: Array<{ root: string; call: SubagentToolCall }> = [];
+  const recorder = new SubagentRecorder({
+    store,
+    thread: (id) => store.threads().find((t) => t.id === id),
+    observeTool: (rootId, call) => calls.push({ root: rootId, call }),
+  });
+  const base = { schema: 1 as const, nativeOutcome: 'unknown' as const };
+  recorder.observe('main', {
+    ...base,
+    kind: 'subagent',
+    subagent: {
+      phase: 'started',
+      taskId: 'task-1',
+      toolUseId: 'toolu_spawn',
+      agentType: 'general-purpose',
+      prompt: 'Look around',
+    },
+  });
+  recorder.observe('main', {
+    ...base,
+    kind: 'tool_use',
+    parentToolUseId: 'toolu_spawn',
+    callId: 'toolu_w',
+    toolName: 'Write',
+    toolInput: { file_path: 'a.ts' },
+  });
+  expect(calls).toEqual([]);
+  recorder.observe('main', {
+    ...base,
+    kind: 'tool_result',
+    parentToolUseId: 'toolu_spawn',
+    callId: 'toolu_w',
+    toolOutput: 'written',
+    toolError: false,
+  });
+  expect(calls.length).toBe(1);
+  expect(calls[0]!.root).toBe('main');
+  expect(calls[0]!.call).toMatchObject({
+    callId: 'toolu_w',
+    tool: 'Write',
+    input: { file_path: 'a.ts' },
+    output: 'written',
+    ok: true,
+  });
+  expect(calls[0]!.call.node.meta.parentThreadId).toBe('main');
+  expect(calls[0]!.call.turnId).toBeTruthy();
 });

@@ -32,7 +32,6 @@ import { CLAUDE_HARNESS_INSTRUCTIONS_OFF } from '../prompts/instruction-stack';
 import { DECISION_CALL_TIMEOUT_MAX_MS, DECISION_INPUT_CAP } from './decision-budget';
 import { DECISION_PRIORITY } from './decision-priority';
 import { type NativeProfileSource, profileEnvironment, withProfile } from './default-profiles';
-import type { InSessionWardens } from './in-session-wardens';
 import { NativeAuthentication } from './native-authentication';
 import { nativeTextEnvironment } from './native-text-environment';
 import {
@@ -42,6 +41,7 @@ import {
   subscriptionStatus,
 } from './native-text-provider';
 import { assertPrivateProfile, assertProfile } from './private-profile';
+import type { ProjectWardenHosts } from './project-warden-hosts';
 import { formatMessagesForNativeSession } from './session-backed';
 
 type DecisionProcess = ReturnType<CodexSpawn>;
@@ -49,8 +49,6 @@ type DecisionProcess = ReturnType<CodexSpawn>;
 /** Primed Claude keys kept warm by default; each holds one spare CLI process (~130-230 MB). */
 const CLAUDE_PRIMED_SESSIONS = 16;
 const STATUS_DEADLINE_MS = 20_000;
-/** A thread's Wardens ask to be pre-started within this window of each other. */
-const PRESTART_BATCH_MS = 25;
 /** Re-check the Claude login at most this often, like the subscription worker. */
 const STATUS_TTL_MS = 5 * 60_000;
 
@@ -94,12 +92,11 @@ export interface PrimedDecisionHostConfig {
   statusSpawn?: (env: Record<string, string | undefined>) => StatusProcess;
   onEvent?: (event: PrimedEvent) => void;
   /**
-   * `decisionRuntime: claude-in-session`: each thread's Wardens are held inside its own Claude Code
-   * process; `claude-project`: every Warden of a project is held in one Claude Code process this host
-   * launches on the decision login. Their calls go there while it serves, and to the primed host
-   * otherwise.
+   * Project Warden hosts (Claude decisions by default): every Warden of a project held in one Claude
+   * Code process this host launches on the decision login. Their advice goes there while it serves,
+   * and to the primed host otherwise.
    */
-  inSession?: InSessionWardens;
+  projectHosts?: ProjectWardenHosts;
   /**
    * Claude: serve decisions as subagents of a bounded pool of side processes (agent-session
    * ClaudeSubagentSessions) instead of one primed process per key: `processes` side sessions, each
@@ -117,7 +114,7 @@ export function primedRequest(
   messages: LLMMessage[],
   opts: CompletionOpts,
   sessionKey: string,
-): { spec: PrimeSpec; input: string; standby?: string } {
+): { spec: PrimeSpec; input: string } {
   const instructions = messages
     .filter((m) => m.role === 'system')
     .map((m) => m.content.trim())
@@ -138,11 +135,6 @@ export function primedRequest(
     : turns;
   const input = rest.length === 1 ? rest[0]!.content : formatMessagesForNativeSession(rest);
   const context = primed ? prefix! : '';
-  // The per-thread part right after the stable prefix: a pre-started Warden holds it.
-  const standby =
-    primed && opts.threadPrefix && rest.length === 1 && input.startsWith(opts.threadPrefix)
-      ? opts.threadPrefix
-      : undefined;
   return {
     spec: {
       key: `${sessionKey}#${hash(instructions).slice(0, 16)}`,
@@ -151,7 +143,6 @@ export function primedRequest(
       hash: hash(`${instructions}\0${context}`),
     },
     input,
-    ...(standby !== undefined ? { standby } : {}),
   };
 }
 
@@ -170,7 +161,7 @@ export function isWardenSession(sessionKey: string): boolean {
   return role.startsWith('domain:') || /^review:[^:]+:domain:/.test(role);
 }
 
-/** A later classify stage of a Warden (`domain:<d>:stage:<n>`): its own primed session, never in-session. */
+/** A later classify stage of a Warden (`domain:<d>:stage:<n>`): its own primed session, never a project host's. */
 export function isStageSession(sessionKey: string): boolean {
   const at = sessionKey.indexOf(AUXILIARY);
   return at > 0 && /^domain:.+:stage:\d+$/.test(sessionKey.slice(at + AUXILIARY.length));
@@ -183,26 +174,27 @@ export function isReviewSession(sessionKey: string): boolean {
 }
 
 /**
- * The in-session host serving this decision, when its thread's Wardens run in-session or in their
- * project's host. A later classify stage is not: the host holds one subagent per Warden, on the
- * decision model (a stage on another model, held beside it, is not built). A project host serves
- * advice only (the pre-hook): a guard (its call's priority) and a review stay primed.
+ * The project host serving this decision, when it is a Warden's advice and its project's host serves.
+ * A later classify stage is not: the host holds one subagent per Warden, on the decision model (a
+ * stage on another model, held beside it, is not built). A project host serves advice only (the
+ * pre-hook): a guard (its call's priority) and a review stay primed.
  */
-export function inSessionTarget(
-  inSession: InSessionWardens | undefined,
+export function projectHostTarget(
+  projectHosts: ProjectWardenHosts | undefined,
   sessionKey: string | undefined,
   opts: Pick<CompletionOpts, 'priority'> = {},
 ): ClaudeInSessionDecisions | undefined {
-  if (!inSession || !sessionKey || !isWardenSession(sessionKey) || isStageSession(sessionKey))
-    return undefined;
   if (
-    inSession.mode === 'project' &&
-    (isReviewSession(sessionKey) ||
-      (opts.priority ?? DECISION_PRIORITY.turn) < DECISION_PRIORITY.turn)
+    !projectHosts ||
+    !sessionKey ||
+    !isWardenSession(sessionKey) ||
+    isStageSession(sessionKey) ||
+    isReviewSession(sessionKey) ||
+    (opts.priority ?? DECISION_PRIORITY.turn) < DECISION_PRIORITY.turn
   )
     return undefined;
   const thread = decisionThread(sessionKey);
-  return thread ? inSession.serving(thread) : undefined;
+  return thread ? projectHosts.serving(thread) : undefined;
 }
 
 /**
@@ -586,26 +578,17 @@ export function createPrimedDecisionHost(config: PrimedDecisionHostConfig) {
           result: DecisionResult | undefined,
           failedHedge = false;
         try {
-          let standby: string | undefined;
-          ({ spec, input, standby } = primedRequest(messages, opts, sessionKey));
+          ({ spec, input } = primedRequest(messages, opts, sessionKey));
           await opts.nativeObservation?.preflight?.(owner);
           await claude?.ready();
           if (closed) throw Error('Decision admission closed');
-          // A Warden of an in-session thread: a spare holding the standby context gets only the rest.
           // A project host's spares hold no thread state (every thread of the project shares them):
           // they split at the stable prefix, and the thread section rides with the moment.
-          const inSession = inSessionTarget(config.inSession, sessionKey, opts);
-          if (inSession) target = inSession;
-          const held = !inSession
-            ? undefined
-            : config.inSession!.mode === 'project'
-              ? spec.context
-                ? ''
-                : undefined
-              : standby;
+          const projectHost = projectHostTarget(config.projectHosts, sessionKey, opts);
+          if (projectHost) target = projectHost;
           result = await target.decide(spec, {
-            ...(held !== undefined ? { standby: held } : {}),
-            input: held !== undefined ? input.slice(held.length) : input,
+            ...(projectHost && spec.context ? { standby: '' } : {}),
+            input,
             timeoutMs: Math.min(opts.timeout ?? timeout, timeout),
             signal: abort.signal,
             onAdmission: async (a) => {
@@ -717,10 +700,10 @@ export function createPrimedDecisionHost(config: PrimedDecisionHostConfig) {
     };
   };
 
-  // claude-project: this host starts each project's host process on its own decision login.
-  if (config.inSession?.mode === 'project') {
+  // Project Warden hosts: this host starts each project's host process on its own decision login.
+  if (config.projectHosts) {
     if (!claude) throw Error('Project Warden hosts run on a Claude decision login');
-    config.inSession.bindLauncher(async (projectId, extension) => {
+    config.projectHosts.bindLauncher(async (projectId, extension) => {
       await claude.ready();
       // Below the stamped root: Archive drops it as Foundry's own run.
       const dir = join(
@@ -776,61 +759,13 @@ export function createPrimedDecisionHost(config: PrimedDecisionHostConfig) {
     });
   }
 
-  /** Keep a thread's Wardens pre-started in its own process (in-session threads only). */
-  const prestart = (messages: LLMMessage[], opts: CompletionOpts) => {
-    const sessionKey = opts.threadId;
-    if (
-      config.inSession?.mode !== 'thread' ||
-      !sessionKey ||
-      !isWardenSession(sessionKey) ||
-      isStageSession(sessionKey)
-    )
-      return;
-    const thread = decisionThread(sessionKey)!;
-    const { spec, standby } = primedRequest(messages, opts, sessionKey);
-    if (standby === undefined) return;
-    let batch = prestarting.get(thread);
-    if (!batch) {
-      const entries = new Map<string, { spec: PrimeSpec; standby: string }>();
-      batch = {
-        entries,
-        // A thread's Wardens ask together: they go out as one roster.
-        timer: setTimeout(() => {
-          prestarting.delete(thread);
-          config.inSession?.prestart(thread, [...entries.values()]);
-        }, PRESTART_BATCH_MS),
-      };
-      prestarting.set(thread, batch);
-    }
-    batch.entries.set(sessionKey, { spec, standby });
-  };
-  const prestarting = new Map<
-    string,
-    {
-      entries: Map<string, { spec: PrimeSpec; standby: string }>;
-      timer: ReturnType<typeof setTimeout>;
-    }
-  >();
-  const releaseThread = async (thread: string) => {
-    const batch = prestarting.get(thread);
-    if (batch) {
-      clearTimeout(batch.timer);
-      prestarting.delete(thread);
-    }
-    await config.inSession?.release(thread);
-  };
-
   return {
     host,
     hostId,
     receiptsPath,
     createRun,
-    // A project host's roster is the project's: threads never pre-start or release it.
-    ...(config.inSession?.mode === 'thread' ? { prestart, releaseThread } : {}),
     releaseFailures: () => releaseFailures,
     close: async () => {
-      for (const batch of prestarting.values()) clearTimeout(batch.timer);
-      prestarting.clear();
       try {
         await host.close();
       } finally {
