@@ -4,6 +4,8 @@
 
 **Stop repeating yourself to Claude.**
 
+I'm Aron Greenspan. I packaged a decade of lessons into the [building blocks](https://www.inixiative.com/building-blocks/) so I would stop solving the same problems on every project, and coding agents kept writing their own versions beside them. Foundry exists so your agent uses what your codebase already has.
+
 Every agent session starts half-amnesiac, so you pay a re-alignment tax: you re-explain your conventions, your decisions and your taste. The model and the harness are outside your control. Your docs, rules and `CLAUDE.md` are the one layer you do control, and Foundry is the workspace around your agent that puts that layer to work.
 
 The agent does what you want when it is told the right thing. Our bet is that your corrections compile into docs that tell it automatically. In early runs, when the corrections reached the agent before it planned, its plans came out right.
