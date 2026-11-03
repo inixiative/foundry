@@ -50,6 +50,7 @@ import { ThreadLaunchSettings } from '../providers/thread-launch';
 import { resolveSecretsSettings, SecretScratch } from '../secrets/scratch';
 import { kingdomPostDelivery } from '../tools/kingdom-post';
 import type { ThreadRecords } from '../tools/thread-record';
+import { withHandoffBrief } from '../turns/handoff-brief';
 import {
   NATIVE_RECORD_QUIET_MS,
   NATIVE_TOOL_QUIET_MS,
@@ -392,6 +393,7 @@ export function createViewer(config: ViewerConfig) {
       events: eventStream,
       // Every runtime: the root thread's Wardens brief a handoff when the subagent starts (the
       // subagent-spawn trigger); the brief is journalled on the parent and rides with its next turn.
+      // A Claude handoff already briefed at its call (`withHandoffBrief`) is skipped by the runtime.
       onSpawn: (rootThreadId, spawn) => {
         const root = directory.get(rootThreadId);
         if (!root) return;
@@ -406,6 +408,12 @@ export function createViewer(config: ViewerConfig) {
               parent: spawn.parent,
               parentTurnId: spawn.parentTurnId,
               handoffId: spawn.handoffId,
+              ...(spawn.node.meta.spawn?.toolCallId
+                ? { toolCallId: spawn.node.meta.spawn.toolCallId }
+                : {}),
+              ...(spawn.node.meta.spawn?.nativeTaskId
+                ? { nativeTaskId: spawn.node.meta.spawn.nativeTaskId }
+                : {}),
               ...(spawn.description ? { description: spawn.description } : {}),
               ...(spawn.agentType ? { agentType: spawn.agentType } : {}),
               prompt: spawn.prompt,
@@ -1054,7 +1062,17 @@ export function createViewer(config: ViewerConfig) {
       },
     });
     // Private paths are not structural rules: Codex and Muse still start, and get them when they ask.
-    const bound: ThreadToolGate = { gate, hasRules: () => enforces(rules()) };
+    // A handoff the gate allows is briefed by the thread's chorus before it runs (Claude's pre-use),
+    // so the chimes ride into what the subagent reads.
+    const briefed = withHandoffBrief(
+      gate,
+      (call) => config.threadFactory?.runtime?.get(threadId)?.briefHandoff(call),
+      {
+        turnId: () => turns.runningTurn(threadId),
+        warn: (line) => console.warn(`[Gate] ${threadId}: ${line}`),
+      },
+    );
+    const bound: ThreadToolGate = { gate: briefed, hasRules: () => enforces(rules()) };
     gates.set(threadId, bound);
     forgetOnDispose(thread);
     secrets.watch(thread);
