@@ -24,7 +24,7 @@ export function createTestSocket(data?: Partial<WSData>) {
       connectionId: data?.connectionId ?? `conn-${++seq}`,
       clientId:
         data?.clientId === undefined
-          ? `client-${seq}-${crypto.randomUUID().slice(0, 8)}`
+          ? `client-${seq}-${Bun.randomUUIDv7().slice(-8)}`
           : data.clientId,
       streams: data?.streams ?? new Map<string, number>(),
       lastPing: data?.lastPing ?? Date.now(),

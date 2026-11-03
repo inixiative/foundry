@@ -169,16 +169,16 @@ export async function createViewerPreview(port = 0) {
     capability: 'git.push',
     urgency: 'high',
   });
-  const signetId = crypto.randomUUID();
+  const signetId = Bun.randomUUIDv7();
   viewer.conversations?.admit({
     type: 'thread.request',
-    requestId: crypto.randomUUID(),
+    requestId: Bun.randomUUIDv7(),
     signetId,
     acceptedRevision: 1,
     member: { signetId, displayName: "Sam's agent" },
     terms: { view: 'thread', delivery: 'note', outbound: 'review', floor: { mayTake: false } },
     operation: 'thread.prompt',
-    input: { threadId: 'main', postId: crypto.randomUUID(), text: 'Can you keep our test name?' },
+    input: { threadId: 'main', postId: Bun.randomUUIDv7(), text: 'Can you keep our test name?' },
   } as Parameters<ConversationService['admit']>[0]);
   const server = Bun.serve({
     hostname: '127.0.0.1',

@@ -27,7 +27,7 @@
 // application boundary, not an OS sandbox.
 // ---------------------------------------------------------------------------
 
-import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
+import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { chmodSync, closeSync, constants, mkdtempSync, openSync, rmSync, writeSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -344,7 +344,7 @@ export async function createLiveBridge(options: LiveBridgeOptions): Promise<Live
         return reject('connect', rpcError(500, -32000, 'Bridge session could not be allocated'));
       }
       const transport = new WebStandardStreamableHTTPServerTransport({
-        sessionIdGenerator: () => randomUUID(),
+        sessionIdGenerator: () => Bun.randomUUIDv7(),
         allowedHosts: [expectedHost],
         onsessioninitialized: (id) => {
           if (!owned || owned.closed) return;

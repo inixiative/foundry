@@ -18,8 +18,8 @@ afterEach(() => {
 
 const login = (profileDirectory: string, runtime: 'claude' | 'codex' = 'claude') =>
   ({
-    id: crypto.randomUUID(),
-    integrationId: crypto.randomUUID(),
+    id: Bun.randomUUIDv7(),
+    integrationId: Bun.randomUUIDv7(),
     runtime,
     mode: 'native-profile',
     profileDirectory,

@@ -126,7 +126,7 @@ export class KingdomSubscriptionAuthentication implements NativeAuthenticationPr
         if (client.origin !== kingdomUrl(capacity.url))
           throw Error('Kingdom Signet belongs to another Kingdom');
         const envelope = await client
-          .resolve(crypto.randomUUID(), {
+          .resolve(Bun.randomUUIDv7(), {
             model: capacity.model,
             effort: capacity.effort,
             authentication: 'subscription',

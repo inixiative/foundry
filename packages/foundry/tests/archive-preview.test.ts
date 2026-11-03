@@ -71,7 +71,7 @@ test('file import streams a source beyond the old 64 MB cap and preserves UTF-8 
     closeSync(fd);
   }
   try {
-    const archive = importTranscriptFile(file, { source: 'codex', sourceId: crypto.randomUUID() });
+    const archive = importTranscriptFile(file, { source: 'codex', sourceId: Bun.randomUUIDv7() });
     expect(archive.entries).toHaveLength(1);
     expect(archive.entries[0].text).toBe('🏰 Migration evidence 文本'.repeat(4000));
     expect(archive.entries[0].sourceRef).toBe('line:1026');

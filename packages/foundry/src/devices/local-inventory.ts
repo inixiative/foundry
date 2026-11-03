@@ -3,7 +3,7 @@
  * @kind service
  * @partOf feature:devices
  */
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash } from 'node:crypto';
 import { linkSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
@@ -29,7 +29,7 @@ export function readLocalDevice(path = localDevicePath()): LocalDevice | null {
     if (
       value.version !== 1 ||
       typeof value.id !== 'string' ||
-      !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(value.id) ||
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(value.id) ||
       typeof value.name !== 'string' ||
       !value.name.trim() ||
       value.name.length > 120
@@ -48,8 +48,8 @@ export function enrollLocalDevice(name: string, path = localDevicePath()): Local
   const existing = readLocalDevice(path);
   if (existing) return existing;
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
-  const device: LocalDevice = { version: 1, id: randomUUID(), name: name.trim() };
-  const temporary = `${path}.${randomUUID()}.tmp`;
+  const device: LocalDevice = { version: 1, id: Bun.randomUUIDv7(), name: name.trim() };
+  const temporary = `${path}.${Bun.randomUUIDv7()}.tmp`;
   writeFileSync(temporary, JSON.stringify(device), { flag: 'wx', mode: 0o600 });
   try {
     // Publish a complete file without replacing another process's enrollment.

@@ -70,8 +70,8 @@ function fixture() {
     const profileDirectory = join(root, runtime);
     mkdirSync(profileDirectory, { mode: 0o700 });
     return {
-      id: crypto.randomUUID(),
-      integrationId: crypto.randomUUID(),
+      id: Bun.randomUUIDv7(),
+      integrationId: Bun.randomUUIDv7(),
       runtime,
       mode: 'native-profile' as const,
       profileDirectory,

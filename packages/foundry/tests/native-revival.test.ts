@@ -323,7 +323,7 @@ test("the owner's message to an archived thread brings it back: same id and jour
 
 test('archive, then a message in the same daemon run, on the real provider: the thread is rebuilt and its native session resumes', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'native-revival-same-run-'));
-  const cli = claudeCli(new Set(), `claude-${crypto.randomUUID()}`);
+  const cli = claudeCli(new Set(), `claude-${Bun.randomUUIDv7()}`);
   const adapter = new ClaudeCodeSessionAdapter({
     store: new FileExternalSessionStore(join(dir, 'sessions.json')),
     contextBudget: false,

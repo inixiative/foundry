@@ -38,7 +38,7 @@ function fixture(transport = subscriptionTransport()) {
   let closed = false,
     acquisitions = 0;
   const lease: NativeBridgeLease = {
-    id: crypto.randomUUID(),
+    id: Bun.randomUUIDv7(),
     name: 'fixture_owned',
     owner,
     toolPolicy,
