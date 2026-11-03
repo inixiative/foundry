@@ -3,7 +3,9 @@
  * @kind route
  * @partOf feature:viewer, primitive:settings
  */
-import { isAbsolute } from 'node:path';
+import { readFileSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { isAbsolute, join } from 'node:path';
 import type {
   EventStream,
   Harness,
@@ -41,7 +43,7 @@ import {
   type ImageAttachmentStore,
 } from '../../persistence/image-attachments';
 import type { LocalSessionStore } from '../../persistence/local-session-store';
-import { workerDefaultModel, workerModelRequirement } from '../../providers/subscription-policy';
+import { workerModelRequirement } from '../../providers/subscription-policy';
 import {
   describeMcpServers,
   type EffortLevel,
@@ -831,7 +833,7 @@ export function registerRuntimeRoutes(
         id: worker,
         label: MODEL_REGISTRY[worker]?.label ?? worker,
         default: worker === fallback,
-        defaultModel: workerDefaultModel(deps.configStore.config, worker),
+        defaultModel: scopeModel(projectId, worker),
         // Each model with the efforts it takes and the one it runs at when none is chosen (N-series vocabulary).
         models: (MODEL_REGISTRY[worker]?.models ?? []).map((model) => ({
           id: model.id,
@@ -840,6 +842,14 @@ export function registerRuntimeRoutes(
           defaultEffort: defaultEffort(worker, model.id),
         })),
       }));
+
+  /**
+   * The model a thread here starts on with this worker: what the thread factory resolves (the
+   * project's own default on its default worker, else the worker's), so the picker's default is
+   * what actually runs.
+   */
+  const scopeModel = (projectId: string | undefined, worker: string) =>
+    resolveThreadView(deps.configStore.config, { projectId, worker }).config.defaults.model;
 
   /** The subscription workers a thread here cannot start on, each with why (no login, vendor mode off). */
   const unavailableWorkers = (projectId: string | undefined, fallback: string) =>
@@ -857,8 +867,15 @@ export function registerRuntimeRoutes(
    * adapter launches with), else the model's own default (the registry's `fallback`).
    */
   function defaultEffort(worker: string, model: string): string | null {
+    const accepted = modelEfforts(worker, model);
+    const configured =
+      worker === 'codex'
+        ? deps.configStore.config.defaults.codexEffort
+        : worker === 'claude-code' && deps.configStore.config.composition?.harnessSettings !== 'off'
+          ? claudeUserEffort()
+          : undefined;
     return (
-      (worker === 'codex' ? deps.configStore.config.defaults.codexEffort : undefined) ??
+      (configured && (!accepted || accepted.includes(configured)) ? configured : undefined) ??
       registryModel(worker, model)?.reasoning?.fallback ??
       null
     );
@@ -1199,6 +1216,11 @@ export function registerRuntimeRoutes(
         worker ??
         threadFactory?.defaultWorker(project?.id) ??
         deps.configStore.config.defaults.provider;
+      // A worker it can't run on is refused with its reason before its view is resolved.
+      const refused = worker ? threadFactory?.workerRefusal(project?.id, worker) : undefined;
+      if (refused) return c.json({ error: refused }, 400);
+      if (worker && !subscriptionWorker(worker))
+        return c.json({ error: `${worker} is not a subscription worker` }, 400);
       if (start.model && subscriptionWorker(runsOn)) {
         const refusal = workerModelRequirement(runsOn, start.model);
         if (refusal) return c.json({ error: refusal }, 400);
@@ -1516,4 +1538,20 @@ function deliveryOf(body: Record<string, unknown>): 'steer' | 'queue' | undefine
   const value = body.delivery;
   if (value === undefined) return undefined;
   return value === 'steer' || value === 'queue' ? value : null;
+}
+
+/**
+ * The effort a Claude Code main thread runs at when Foundry sends none: the user's own Claude
+ * settings' `effortLevel`, which a main thread loads (`composition.harnessSettings`, default load).
+ */
+function claudeUserEffort(): EffortLevel | undefined {
+  try {
+    const directory = process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude');
+    const level = JSON.parse(readFileSync(join(directory, 'settings.json'), 'utf8')).effortLevel;
+    return (REASONING_EFFORTS as readonly unknown[]).includes(level)
+      ? (level as EffortLevel)
+      : undefined;
+  } catch {
+    return undefined;
+  }
 }

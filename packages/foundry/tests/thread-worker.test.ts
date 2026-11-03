@@ -1,6 +1,6 @@
 import './helpers/isolate-archive';
 import { afterEach, expect, test } from 'bun:test';
-import { existsSync, mkdirSync, mkdtempSync, rmSync, statSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -701,6 +701,14 @@ test('a new thread starts on a chosen model and effort; each must be one its wor
 
 test('the launch view always names an effort, says when the worker is fixed, and lists who is unavailable', async () => {
   const { call, served } = await viewer();
+  // An empty Claude home: no effortLevel of the user's, so the model's own default.
+  const claudeHome = temporary('claude-home-');
+  const priorHome = process.env.CLAUDE_CONFIG_DIR;
+  process.env.CLAUDE_CONFIG_DIR = claudeHome;
+  cleanup.push(() => {
+    if (priorHome === undefined) delete process.env.CLAUDE_CONFIG_DIR;
+    else process.env.CLAUDE_CONFIG_DIR = priorHome;
+  });
   const created = await call('POST', '/api/threads', { projectId: 'claude' });
   const id = created.body.threadId as string;
   const view = (await call('GET', `/api/threads/${id}/launch`)).body as Record<string, unknown> & {
@@ -712,9 +720,12 @@ test('the launch view always names an effort, says when the worker is fixed, and
       unavailableWorkers: Array<{ id: string; label: string; reason: string }>;
     };
   };
-  // No effort chosen: the header still names the one it runs at (the model's own default).
+  // No effort chosen: the header still names the one it runs at, the user's Claude settings'
+  // effortLevel (a main thread loads them), else the model's own default.
   expect(view.effort).toBeNull();
   expect(view.effortDefault).toBe('high');
+  writeFileSync(join(claudeHome, 'settings.json'), JSON.stringify({ effortLevel: 'medium' }));
+  expect((await call('GET', `/api/threads/${id}/launch`)).body.effortDefault).toBe('medium');
   expect(view.workerLock).toBeNull();
   const haiku = view.options.workers[0]!.models.find((m) => m.id === 'haiku')!;
   expect(haiku).toMatchObject({ efforts: ['low', 'medium', 'high'], defaultEffort: 'high' });
@@ -726,7 +737,7 @@ test('the launch view always names an effort, says when the worker is fixed, and
   // An effort the model doesn't take is refused; a model change drops a chosen effort it doesn't take.
   expect((await call('PATCH', `/api/threads/${id}/launch`, { effort: 'max' })).status).toBe(200);
   const narrowed = await call('PATCH', `/api/threads/${id}/launch`, { model: 'haiku' });
-  expect(narrowed.body).toMatchObject({ model: 'haiku', effort: null, effortDefault: 'high' });
+  expect(narrowed.body).toMatchObject({ model: 'haiku', effort: null, effortDefault: 'medium' });
   const refused = await call('PATCH', `/api/threads/${id}/launch`, { effort: 'max' });
   expect(refused.status).toBe(400);
   expect(refused.body.error).toContain('takes effort low, medium, high');
@@ -739,4 +750,26 @@ test('the launch view always names an effort, says when the worker is fixed, and
   const global = await call('GET', '/api/workers');
   expect(global.status).toBe(200);
   expect((global.body.workers as Array<{ default: boolean }>).some((w) => w.default)).toBe(true);
+});
+
+test("the picker's default model is the project's own, and a refused worker with an effort is a 400", async () => {
+  const { call, f } = await viewer();
+  const saved = await call('PATCH', '/api/settings/projects', {
+    claude: { id: 'claude', path: f.root, tags: [], defaults: { model: 'sonnet' } },
+  });
+  expect(saved.status).toBe(200);
+  const workers = (await call('GET', '/api/projects/claude/workers')).body.workers as Array<{
+    id: string;
+    defaultModel: string;
+  }>;
+  // The project's default worker starts on the project's model; another worker on its own default.
+  expect(workers.find((w) => w.id === 'claude-code')?.defaultModel).toBe('sonnet');
+  expect(workers.find((w) => w.id === 'codex')?.defaultModel).toBe('gpt-6-astra');
+  const refused = await call('POST', '/api/threads', {
+    projectId: 'claude',
+    worker: 'openai',
+    effort: 'high',
+  });
+  expect(refused.status).toBe(400);
+  expect(refused.body.error).toContain('not a subscription worker');
 });

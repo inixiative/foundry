@@ -138,13 +138,15 @@ export const openThreadRun = () => {
 
 function ThreadRunModal({ launch, onClose }) {
   const threadId = activeThreadId.value;
+  const workers = launch.options?.workers ?? [];
+  // What the picker shows is what Apply sends: a model its worker doesn't list reads as the default.
+  const current = workers.find((w) => w.id === launch.worker);
   const [value, setValue] = useState({
     worker: launch.worker,
-    model: launch.model,
+    model: modelOf(current, launch.model) ? launch.model : (current?.defaultModel ?? launch.model),
     effort: launch.effort ?? '',
   });
   const [busy, setBusy] = useState(false);
-  const workers = launch.options?.workers ?? [];
   const switching = value.worker !== launch.worker;
   const save = async () => {
     setBusy(true);
@@ -160,6 +162,9 @@ function ThreadRunModal({ launch, onClose }) {
       onClose();
     } catch (error) {
       showToast(`Could not change it: ${error.message}`, 'error');
+      // A worker switch may have landed before the model or effort was refused: show what is true now.
+      await loadLaunch(threadId);
+      onClose();
     } finally {
       setBusy(false);
     }
