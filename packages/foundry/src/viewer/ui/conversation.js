@@ -121,6 +121,7 @@ import {
   startDictation,
   toggleSpeakReplies,
 } from './voice.js';
+import { WorkerSwitchMarker, withSwitchMarkers } from './worker-switch.js';
 import { BranchIcon, FolderIcon, WorktreePill } from './worktree-pill.js';
 
 // ---------------------------------------------------------------------------
@@ -1655,12 +1656,18 @@ export function Conversation({ onTraceSelect, onLayerClick }) {
         `
             : null
         }
-        ${msgList.map((msg, i) =>
-          msg.actor === 'user'
-            ? html`<${UserMessage} key=${msg.turnId ? `${msg.actor}:${msg.turnId}` : (msg.id ?? i)} msg=${msg} index=${i} />`
-            : msg.kind === 'thinking'
-              ? html`<${ThinkingMessage} key=${msg.id ?? i} msg=${msg} />`
-              : html`<${AgentMessage} key=${msg.turnId ? `${msg.actor}:${msg.turnId}` : (msg.id ?? i)} msg=${msg} index=${i}
+        ${withSwitchMarkers(
+          msgList,
+          threadLaunch.value?.threadId === threadId ? threadLaunch.value.switches : null,
+          historyPaging.value[threadId]?.hasMore ?? false,
+        ).map(({ msg, marker, index: i }) =>
+          marker
+            ? html`<${WorkerSwitchMarker} key=${`switch:${marker.at}`} marker=${marker} />`
+            : msg.actor === 'user'
+              ? html`<${UserMessage} key=${msg.turnId ? `${msg.actor}:${msg.turnId}` : (msg.id ?? i)} msg=${msg} index=${i} />`
+              : msg.kind === 'thinking'
+                ? html`<${ThinkingMessage} key=${msg.id ?? i} msg=${msg} />`
+                : html`<${AgentMessage} key=${msg.turnId ? `${msg.actor}:${msg.turnId}` : (msg.id ?? i)} msg=${msg} index=${i}
                   onTraceClick=${handleTraceClick} />`,
         )}
       </div>

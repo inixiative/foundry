@@ -1001,6 +1001,43 @@ export class SessionBackedProvider implements LLMProvider {
   }
 
   /**
+   * The thread moved to another worker (a mid-thread switch): end every executor session it holds
+   * here and forget its binding (`_forget`, the same retirement a gone native conversation gets), so
+   * coming back to this worker starts a fresh session seeded from the journal and never resumes
+   * this one. False when a session is busy or could not be ended (it stays; nothing resumes it
+   * once the thread runs elsewhere, but its process is reported).
+   */
+  async retireThread(threadId: string): Promise<boolean> {
+    let ended = true;
+    for (const key of [...this._sessions.keys()]) {
+      const [cwd, owner] = JSON.parse(key) as [string, string];
+      if (owner !== threadId) continue;
+      if (this._activeCalls.get(key) || this._releasing.has(key)) {
+        ended = false;
+        continue;
+      }
+      const session = await this._sessions.get(key)?.catch(() => undefined);
+      if (!session) {
+        this._drop(key, undefined);
+        continue;
+      }
+      if (!(await this._forget(threadId, cwd, session))) ended = false;
+    }
+    this._ledgerBindings.delete(threadId);
+    // No live session (or one already ended): the stored binding is forgotten all the same.
+    await this._adapter.clearSession(threadId).catch((error) => {
+      console.warn(`[Sessions] ${threadId}: binding not cleared: ${(error as Error).message}`);
+      ended = false;
+    });
+    return ended;
+  }
+
+  /** The native session this thread's binding names on this worker, for the record (null: none). */
+  async bindingOf(threadId: string): Promise<string | null> {
+    return this._adapter.getExternalSessionId(threadId).catch(() => null);
+  }
+
+  /**
    * Retire a thread's executor session in another cwd: released when idle and settled, or simply
    * dropped when its process is already gone (no work can still be running there).
    */

@@ -585,6 +585,8 @@ export interface PhaseRecordInput {
     | 'steered'
     /** A queued turn kept across a planned restart (spin-down), run again on boot (`record.request`). */
     | 'restart-hold'
+    /** The thread moved to another worker here (`record`: WorkerSwitchRecord, turns/journal-history.ts). */
+    | 'worker-switch'
     | FeedbackPhase
     | ConversationPhase;
   readonly record: Record<string, unknown>;

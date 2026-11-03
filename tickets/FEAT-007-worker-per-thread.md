@@ -98,7 +98,7 @@ Today `resolveSubscriptionPolicy` takes one worker from `config.defaults.provide
 - In a Kingdom project, a Codex thread whose pool has no Codex login is refused with Kingdom's reason, and never billed locally.
 - Under `claude-in-session`, Codex threads never show as "setting up".
 - A Codex local member joins a Claude host.
-- ACP `_meta` and the option before the first turn, and 409 after.
+- ACP `_meta` and the option before the first turn, and after it (a mid-thread switch, 2026-11-02; 409 only while a turn runs).
 - Live: Claude and Codex threads side by side.
 
 ## Risks

@@ -111,8 +111,8 @@ test('Analytics leads with each login’s windows and charts tokens over the cho
     await page.waitForFunction(() =>
       document.querySelector('.an-tokens h3')?.textContent?.includes('Today'),
     );
-    await hourly;
-    expect(asked).toContain('period=hourly');
+    // Check the request that was awaited, not the shared `asked` (a later daily refetch can overwrite it).
+    expect((await hourly).url()).toContain('period=hourly');
     // What isn't recorded yet says so.
     await page
       .locator('.an-tile', { hasText: 'Chorus overhead' })

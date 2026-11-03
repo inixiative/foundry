@@ -24,6 +24,7 @@ import {
 import { workerArchiveRuntime } from '../models/registry';
 import { contentHash } from '../persistence/journal-content';
 import type { LocalSessionStore } from '../persistence/local-session-store';
+import { WORKER_SWITCH_PHASE } from '../turns/journal-history';
 import type { ArchiveWriter } from './local';
 import { RAW_MIDDLEWARE_PHASES, REDUCED_PHASE, type ReducedMiddleware } from './reduced-middleware';
 
@@ -64,6 +65,19 @@ function phaseServed(record: unknown): ServedModel | undefined {
   };
   walk(record);
   return found.size === 1 ? [...found.values()][0] : undefined;
+}
+
+/** The runtime that keeps a thread personal: its worker's, or Muse's once it ever ran on Muse. */
+function personalRuntime(journal: LocalSessionStore, threadId: string, worker: string | undefined) {
+  const workers = new Set([
+    worker,
+    ...journal.phasesOf(threadId, WORKER_SWITCH_PHASE).map((row) => String(row.record.from)),
+  ]);
+  for (const each of workers) {
+    const runtime = workerArchiveRuntime(each);
+    if (runtime) return runtime;
+  }
+  return undefined;
 }
 
 /**
@@ -259,9 +273,10 @@ export function captureThread(
     sessionId: threadId,
     title: threadTitle(thread.meta)?.text.slice(0, 500) || threadId,
     projectId: thread.meta.projectId,
-    // A Muse Code thread is `meta` on a subscription, which Archive keeps personal (alwaysPersonal).
-    ...(workerArchiveRuntime(thread.meta.worker)
-      ? { runtime: workerArchiveRuntime(thread.meta.worker) }
+    // A Muse Code thread is `meta` on a subscription, which Archive keeps personal (alwaysPersonal),
+    // and stays so after it moves to another worker: one snapshot carries the whole thread.
+    ...(personalRuntime(journal, threadId, thread.meta.worker)
+      ? { runtime: personalRuntime(journal, threadId, thread.meta.worker) }
       : {}),
     ...(actor ? { actor } : {}),
     ...(lineageOf(journal, thread.meta) ?? {}),
