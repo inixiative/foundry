@@ -17,6 +17,8 @@ export function fakeClaudeTree(behavior: { noRoot?: boolean } = {}) {
   const processes: FakeTreeProcess[] = [];
   const moments: string[] = [];
   const memberPrompts: string[] = [];
+  /** Agent types started, in order (root, dispatchers, members). */
+  const started: string[] = [];
   let pid = 90_000;
   const spawn = (argv: string[], options: { env: Record<string, string | undefined> }) => {
     let out!: ReadableStreamDefaultController<Uint8Array>;
@@ -95,6 +97,7 @@ export function fakeClaudeTree(behavior: { noRoot?: boolean } = {}) {
       const taskId = `task_${++seq}`;
       const prompt = output.updatedInput?.prompt ?? '';
       tasks.set(taskId, { toolUseId });
+      started.push(type);
       emit({
         type: 'system',
         subtype: 'task_started',
@@ -234,5 +237,5 @@ export function fakeClaudeTree(behavior: { noRoot?: boolean } = {}) {
       },
     };
   };
-  return { spawn, processes, moments, memberPrompts };
+  return { spawn, processes, moments, memberPrompts, started };
 }

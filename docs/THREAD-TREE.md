@@ -1,6 +1,6 @@
 # Thread tree: stitching, composition audit, start-up
 
-> **APPROVED by Aron (2026-10-14), with the answers recorded under each spec's open questions.** B is built (#72); A is built (§A.8). C is built for Claude behind `subscriptionOnly.decisionRuntime: 'claude-in-session'`, **off by default** until Aron has seen the numbers (§C.9). Each part ships as its own PR. Queue items 2, 7 and 8 on `COORDINATION.md` (2026-10-13).
+> **APPROVED by Aron (2026-10-14), with the answers recorded under each spec's open questions.** B is built (#72); A is built (§A.8). C was built for Claude behind `subscriptionOnly.decisionRuntime: 'claude-in-session'` (§C.9) and is **superseded** (2026-11-03) by the per-project Warden host: its runtime is removed, and spec C stays here as history. Each part ships as its own PR. Queue items 2, 7 and 8 on `COORDINATION.md` (2026-10-13).
 
 **Cited designs.** `SUBAGENTS.md` and the FEEDBACK-LOOP L-sections cited below are design docs in Oracle (`docs/foundry/reference/SUBAGENTS.md`, `docs/foundry/FEEDBACK-LOOP.md`).
 
@@ -22,7 +22,7 @@ flowchart TB
   J -- "one snapshot per node, linked by lineage (spec A)" --> A["Archive"]
 ```
 
-- **Spec C** puts the whole tree (main thread, subagents at any depth, every Warden) in one native process per main thread.
+- **Spec C** put the whole tree (main thread, subagents at any depth, every Warden) in one native process per main thread. Superseded by the per-project Warden host (2026-11-03); kept as history.
 - **Spec A** says what Foundry writes to Archive for that tree, and that a Warden call is a small entry, not a copy of its input.
 - **Spec B** is what makes the small entry enough. A call records the *versions* of its instructions and domain knowledge, and the audit trail can recompose the exact text from them.
 
@@ -374,6 +374,8 @@ And on provenance, 2026-10-12, 00:44: *"Okay your feedback, and then what warden
 
 # C. Thread start-up
 
+> **SUPERSEDED (Aron, 2026-11-03): "the Claude project is the only thing that actually makes sense. Maybe we clean that up."** The per-thread runtime this spec built (`decisionRuntime: 'claude-in-session'`, `providers/in-session-wardens.ts`, the setup turn, `ThreadMeta.setup`, the queued turn while a thread set up) is removed. Wardens are held in one Foundry-owned process per project instead, the default for Claude decisions ([subscription-decisions.md](subscription-decisions.md), "Project Warden host"; Oracle `docs/foundry/PROJECT-WARDEN-HOST.md`), which reuses this spec's held, fresh-per-call members (agent-session `ClaudeInSessionDecisions`). A saved `claude-in-session` setting is refused by name. A subagent's turns are guarded from the main thread's Wardens in every runtime. Everything below is the design and its measurements as they stood.
+
 ## C.1 Spec
 
 When a thread opens, Foundry launches every Warden up front. A slower start is fine. The user can type meanwhile: each message waits as a `queued` turn (`pf/persistence/local-session-store.ts` `TurnStatus`) until setup is done. The viewer and the ACP host show *"Setting up your thread; feel free to start typing; we'll tell you when it's ready."*
@@ -539,7 +541,7 @@ At 15:36: *"When you start a new thread, start all of them. When you get a messa
 
 ## C.9 As built (2026-10-15)
 
-Built for Claude behind `subscriptionOnly.decisionRuntime: 'claude-in-session'`, **off by default**. agent-session 0.6.6 (`ClaudeInSessionDecisions`), Foundry (`providers/in-session-wardens.ts`).
+Built for Claude behind `subscriptionOnly.decisionRuntime: 'claude-in-session'`, **off by default**. agent-session 0.6.6 (`ClaudeInSessionDecisions`), Foundry (`providers/in-session-wardens.ts`). Removed 2026-11-03 (see the note at the top of spec C).
 
 **Shape.**
 - **Setup.** The thread's session opens when its first turn is accepted, through `SessionBackedProvider.open`.

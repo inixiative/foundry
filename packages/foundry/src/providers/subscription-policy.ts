@@ -40,19 +40,20 @@ const model = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,199}$/);
 export const subscriptionSettingsSchema = z
   .object({
     /**
-     * Decision runtime when no explicit source is named. Default claude. `claude-in-session` runs
-     * Claude decisions too, but holds each thread's Wardens as subagents inside the thread's own
-     * Claude Code process (docs/THREAD-TREE.md spec C); it needs the Claude Code main thread.
-     * `claude-project` holds every Warden of a project, warm, in one Foundry-owned Claude Code
-     * process per project, which every thread of the project asks for advice
-     * (docs/subscription-decisions.md, "Project Warden host").
+     * Decision runtime when no explicit source is named: Claude (`~/.claude`) by default, or Codex.
+     * With Claude decisions, Wardens' advice is held in each project's host (`claude-project`, the
+     * default: every Warden of a project warm in one Foundry-owned Claude Code process, which every
+     * thread of the project asks; docs/subscription-decisions.md, "Project Warden host"). `claude`
+     * keeps every Warden on its own primed session (the evals' baseline).
      */
-    decisionRuntime: z.enum(['claude', 'codex', 'claude-in-session', 'claude-project']).optional(),
-    /** `claude-project` only: the project host's composition and bounds (PROJECT_HOST_DEFAULTS). */
+    decisionRuntime: z.enum(['claude', 'codex', 'claude-project']).optional(),
+    /** Project hosts only: the host's composition and bounds (PROJECT_HOST_DEFAULTS). */
     projectHost: z
       .object({
         /** Held spares per Warden. */
         sparesPerWarden: z.number().int().min(1).max(4),
+        /** Wardens per dispatcher: the roster is cut into slices this size, each refilled at once by its own dispatcher. */
+        wardensPerDispatcher: z.number().int().min(1).max(64),
         /** Threads of one project advising at once, for the subagent bound. */
         concurrentTurns: z.number().int().min(1).max(16),
         /** Resident memory the host process tree may hold for a few seconds before it is replaced. */
@@ -143,11 +144,12 @@ export interface SubscriptionPolicy {
   /** Codex decisions still running after this long are hedged on a second branch. */
   hedgeAfterMs?: number;
   /**
-   * Where a thread's Wardens run: primed sessions (default), inside the thread's own process, or held
-   * in its project's host (advice only; guard, review and later stages stay primed).
+   * Where a thread's Wardens advise: held in its project's host (Claude decisions by default; guard,
+   * review and later stages stay primed, and primed serves while no host does), or primed sessions
+   * (Codex decisions, or `decisionRuntime: claude`).
    */
-  wardens: 'primed' | 'in-session' | 'project';
-  /** `claude-project`: the project host's composition and bounds, defaults filled. */
+  wardens: 'primed' | 'project';
+  /** Project hosts: their composition and bounds, defaults filled. */
   projectHost?: ProjectHostPolicy;
 }
 
@@ -168,6 +170,8 @@ export type ProjectHostPolicy = Required<
  */
 export const PROJECT_HOST_DEFAULTS = {
   sparesPerWarden: 1,
+  // why: one dispatcher refilled 75 held Wardens in ~20 s (2026-11-02).
+  wardensPerDispatcher: 8,
   concurrentTurns: 2,
   maxRssMb: 1_536,
   hardRssMb: 4_096,
@@ -371,6 +375,50 @@ export function usableLogins(
 }
 
 /**
+ * Whether Claude Wardens advise from their project's host: the default for Claude decisions (Aron,
+ * 2026-11-03: "the Claude project is the only thing that actually makes sense"), and what
+ * `claude-project` names. `claude` keeps primed Wardens; Codex decisions have no project host.
+ */
+export function wardensInProjectHosts(
+  decisionRuntime: SubscriptionSettings['decisionRuntime'],
+  decisionSourceRuntime: NativeRuntime,
+): boolean {
+  return (
+    decisionSourceRuntime === 'claude' &&
+    (decisionRuntime === undefined || decisionRuntime === 'claude-project')
+  );
+}
+
+/**
+ * The same answer from settings alone (where Wardens compose, `projectWardenRoot`): `claude-project`
+ * named, or, with none named, subscription mode on Claude decisions.
+ */
+export function configuredProjectWardens(
+  config: Pick<FoundryConfig, 'apiTokens' | 'subscriptionOnly' | 'nativeAuthentication'>,
+): boolean {
+  const settings = config.subscriptionOnly ?? {};
+  if (settings.decisionRuntime === 'claude-project') return true;
+  if (config.apiTokens) return false;
+  const named = settings.decisionSourceId
+    ? config.nativeAuthentication?.find((item) => item.id === settings.decisionSourceId)?.runtime
+    : undefined;
+  const runtime = named ?? (settings.decisionRuntime === 'codex' ? 'codex' : 'claude');
+  return wardensInProjectHosts(settings.decisionRuntime, runtime);
+}
+
+/**
+ * `claude-in-session` (a thread's Wardens held inside its own Claude Code process) was removed on
+ * 2026-11-03 for the per-project host. A saved setting naming it is refused with the fix (no alias).
+ */
+function refuseRemovedDecisionRuntime(settings: unknown): void {
+  const runtime = (settings as { decisionRuntime?: unknown } | undefined)?.decisionRuntime;
+  if (runtime === 'claude-in-session')
+    throw Error(
+      'subscriptionOnly.decisionRuntime "claude-in-session" is gone: Claude Wardens are held in each project\'s host (claude-project), the default for Claude decisions. Remove "decisionRuntime" (or write "claude-project"); "claude" keeps primed Wardens (docs/subscription-decisions.md, "Project Warden host")',
+    );
+}
+
+/**
  * Subscription-only is the default. `apiTokens: true` is the only way to construct API
  * providers. Without it every main thread runs on a subscription worker (Claude Code, Codex or Muse Code, its
  * project's default or the one chosen for the thread) and the decision profile (Claude by default,
@@ -390,6 +438,7 @@ export function resolveSubscriptionPolicy(
       throw Error('apiTokens and subscriptionOnly are exclusive; remove one of them');
     return undefined;
   }
+  refuseRemovedDecisionRuntime(config.subscriptionOnly);
   const settings = subscriptionSettingsSchema.parse(config.subscriptionOnly ?? {});
   if (
     config.kingdomInference?.length ||
@@ -450,19 +499,8 @@ export function resolveSubscriptionPolicy(
       unavailable[worker] = (error as Error).message;
     }
   }
-  const inSession = settings.decisionRuntime === 'claude-in-session';
-  if (inSession && !workers['claude-code'])
-    throw Error(
-      'subscriptionOnly.decisionRuntime claude-in-session holds Wardens inside Claude Code main threads; it needs a usable Claude Code login',
-    );
-  const project = settings.decisionRuntime === 'claude-project';
-  if (settings.projectHost && !project)
-    throw Error('subscriptionOnly.projectHost applies only to decisionRuntime claude-project');
   const decisionRuntime =
-    settings.decisionRuntime === 'claude-in-session' ||
-    settings.decisionRuntime === 'claude-project'
-      ? 'claude'
-      : settings.decisionRuntime;
+    settings.decisionRuntime === 'claude-project' ? 'claude' : settings.decisionRuntime;
   const source = settings.decisionSourceId
     ? explicit(settings.decisionSourceId)
     : defaultProfileSource(decisionRuntime ?? 'claude');
@@ -474,6 +512,11 @@ export function resolveSubscriptionPolicy(
   const decision = source;
   if (decisionRuntime && decisionRuntime !== decision.runtime)
     throw Error('subscriptionOnly.decisionRuntime does not match the decision source runtime');
+  const project = wardensInProjectHosts(settings.decisionRuntime, decision.runtime);
+  if (settings.projectHost && !project)
+    throw Error(
+      'subscriptionOnly.projectHost applies only to project Warden hosts (Claude decisions without decisionRuntime "claude")',
+    );
   if (
     decision.runtime === 'codex' &&
     settings.expectedObservedModel !== undefined &&
@@ -505,7 +548,7 @@ export function resolveSubscriptionPolicy(
     ...(decision.runtime === 'codex'
       ? { hedgeAfterMs: settings.hedgeAfterMs ?? SUBSCRIPTION_DEFAULTS.hedgeAfterMs }
       : {}),
-    wardens: inSession ? 'in-session' : project ? 'project' : 'primed',
+    wardens: project ? 'project' : 'primed',
     ...(project ? { projectHost: { ...PROJECT_HOST_DEFAULTS, ...settings.projectHost } } : {}),
   };
   // A model registered only on the other runtime cannot run here, e.g. a recorded Claude model after switching to Codex.

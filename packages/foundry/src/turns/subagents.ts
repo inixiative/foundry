@@ -13,7 +13,7 @@ import type { LocalSessionStore } from '../persistence/local-session-store';
  * `handoff` row in the parent when it starts and a `handoff-return` row when it ends. Its own
  * activity is recorded on the child, never on the parent's turn. The child runs no Wardens of its
  * own: the root thread's chorus briefs the handoff when it starts (`onSpawn`, the subagent-spawn
- * trigger) and, in the in-session runtime, guards each of its turns once when the turn ends
+ * trigger) and guards each of its turns once when the turn ends, in every runtime
  * (`observeTool` holds the calls, `onTurnEnd` fires the guard), on the child's node.
  */
 

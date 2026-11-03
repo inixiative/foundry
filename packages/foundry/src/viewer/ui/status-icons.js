@@ -103,7 +103,6 @@ export const STATES = {
     kind: 'Coworker request',
   },
   working: { cat: 'working', cut: 'bars', label: 'Working' },
-  starting: { cat: 'working', cut: 'bars', label: 'Starting' },
   subagents: { cat: 'working', cut: 'branch', label: 'Subagents working' },
   waitother: { cat: 'working', cut: 'notch', label: 'In motion, not by you' },
   queued: { cat: 'queued', cut: 'lines', label: 'Queued' },

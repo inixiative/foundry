@@ -286,6 +286,11 @@ if (projectMode) {
     );
   // In memory only: Wardens compose as a thread of a claude-project daemon composes them.
   config.subscriptionOnly = { ...config.subscriptionOnly, decisionRuntime: 'claude-project' };
+} else {
+  // In memory only: every Warden primed and composed at its thread, as `decisionRuntime: claude`
+  // runs them (a daemon with none named holds Wardens in project hosts).
+  config.subscriptionOnly = { ...config.subscriptionOnly, decisionRuntime: 'claude' };
+  delete config.subscriptionOnly.projectHost;
 }
 const resolveSource = createSourceResolver({ memory: new FileMemory(join(foundryDir, 'memory')) });
 /** The registered project a probe's project name (its directory's basename) refers to. */

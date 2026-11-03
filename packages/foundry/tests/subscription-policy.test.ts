@@ -18,7 +18,10 @@ import { MAIN_THREAD_LABS, MODEL_REGISTRY, mainThreadLab } from '@inixiative/fou
 import { registryForViewer } from '../src/models/registry';
 import { NativeAuthentication } from '../src/providers/native-authentication';
 import { SubscriptionAuthentication } from '../src/providers/subscription-authentication';
-import { resolveSubscriptionPolicy } from '../src/providers/subscription-policy';
+import {
+  configuredProjectWardens,
+  resolveSubscriptionPolicy,
+} from '../src/providers/subscription-policy';
 import { defaultConfig, starterConfig, validateConfig } from '../src/viewer/config';
 import { resolveProjectView } from '../src/viewer/config-resolve';
 import { routedAgents } from './helpers/routed-agents';
@@ -519,8 +522,8 @@ test("a fresh Codex main thread defaults to the user's own ~/.codex login; decis
   }
 });
 
-test('claude-in-session runs Claude decisions with Wardens held in the Claude Code main thread', () => {
-  const root = mkdtempSync(join(tmpdir(), 'in-session-'));
+test('Claude decisions hold Wardens in project hosts by default; claude keeps them primed; claude-in-session is refused by name', () => {
+  const root = mkdtempSync(join(tmpdir(), 'project-wardens-'));
   roots.push(root);
   mkdirSync(join(root, '.claude'), { mode: 0o755 });
   mkdirSync(join(root, '.codex'), { mode: 0o755 });
@@ -529,21 +532,28 @@ test('claude-in-session runs Claude decisions with Wardens held in the Claude Co
   process.env.HOME = root;
   try {
     const c = defaultConfig();
-    // Off by default: Wardens run on primed sessions.
-    expect(resolveSubscriptionPolicy(c, { cwd: root })!.policy.wardens).toBe('primed');
-    c.subscriptionOnly = { decisionRuntime: 'claude-in-session' };
+    // The default: Claude decisions, every project's Wardens in its host.
     const resolved = resolveSubscriptionPolicy(c, { cwd: root })!;
-    expect(resolved.policy.wardens).toBe('in-session');
+    expect(resolved.policy.wardens).toBe('project');
+    expect(resolved.policy.projectHost).toBeDefined();
     expect(resolved.decision.runtime).toBe('claude');
-    expect(resolved.policy.model).toBe('claude-haiku-5-5');
-    // A Codex-default Foundry still holds Claude threads' Wardens in-session; its Codex threads use
-    // primed Wardens. It needs only a usable Claude login.
-    c.defaults.provider = 'codex';
-    c.defaults.model = 'gpt-6-astra';
-    expect(resolveSubscriptionPolicy(c, { cwd: root })!.policy.wardens).toBe('in-session');
-    c.vendors = { ...c.vendors, anthropic: { enabled: false } };
+    expect(configuredProjectWardens(c)).toBe(true);
+    c.subscriptionOnly = { decisionRuntime: 'claude-project' };
+    expect(resolveSubscriptionPolicy(c, { cwd: root })!.policy.wardens).toBe('project');
+    // `claude` names the primed path, the evals' baseline.
+    c.subscriptionOnly = { decisionRuntime: 'claude' };
+    expect(resolveSubscriptionPolicy(c, { cwd: root })!.policy.wardens).toBe('primed');
+    expect(configuredProjectWardens(c)).toBe(false);
+    // Codex decisions have no project host.
+    c.subscriptionOnly = { decisionRuntime: 'codex' };
+    c.defaults.classifierModel = 'gpt-5.6-luna';
+    expect(resolveSubscriptionPolicy(c, { cwd: root })!.policy.wardens).toBe('primed');
+    expect(configuredProjectWardens(c)).toBe(false);
+    c.defaults.classifierModel = 'claude-haiku-5-5';
+    // The per-thread runtime is gone: refused with the fix, no alias.
+    c.subscriptionOnly = { decisionRuntime: 'claude-in-session' } as never;
     expect(() => resolveSubscriptionPolicy(c, { cwd: root })).toThrow(
-      'it needs a usable Claude Code login',
+      'subscriptionOnly.decisionRuntime "claude-in-session" is gone',
     );
   } finally {
     process.env.HOME = home;

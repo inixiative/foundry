@@ -13,7 +13,6 @@ import type {
   LLMProvider,
   Thread,
   ThreadMachine,
-  ThreadSetup,
   TokenTracker,
   ToolRegistry,
 } from '@inixiative/foundry-core';
@@ -67,7 +66,6 @@ import {
   type ThreadToolGate,
   UNBOUND_GATE,
 } from '../turns/tool-gate';
-import type { ThreadSetupHost } from '../turns/turn-service';
 import { createWebSocketServer } from '../ws/handler';
 import { closeAllConnections } from '../ws/lifecycle';
 import type { WSData } from '../ws/types';
@@ -138,13 +136,6 @@ export interface ViewerConfig {
   localStore?: LocalSessionStore | null;
   /** What hosts chose per thread (mode, model, effort, MCP servers); shared with the providers. */
   threadLaunch?: ThreadLaunchSettings;
-  /**
-   * In-session Wardens (docs/THREAD-TREE.md spec C): opens a thread's session ahead of its turn,
-   * and reports its setup, which becomes `ThreadMeta.setup`.
-   */
-  threadSetup?: ThreadSetupHost & {
-    onSetup(listener: (threadId: string, setup: ThreadSetup) => void): void;
-  };
   /** This machine's subscription logins, their balancing and sign-ins (providers/login-pool.ts). */
   logins?: Omit<import('./routes/logins').LoginRoutesDeps, 'configStore' | 'foundryDir'>;
   /** Executor providers whose sessions report their background tasks (shells, monitors). */
@@ -427,62 +418,57 @@ export function createViewer(config: ViewerConfig) {
             ),
           );
       },
-      // In-session runtime only: a subagent's turn gets the root thread's guard Wardens once, over
-      // its tool calls, when the turn ends (one pool per main thread). Subagents' own Wardens are
-      // parked (docs/THREAD-TREE.md §C.10).
-      onTurnEnd: !config.threadSetup
-        ? undefined
-        : (rootThreadId, turn) => {
-            const root = directory.get(rootThreadId);
-            // Only a thread whose worker holds its Wardens in-session; the others' are primed.
-            if (!root || !config.threadSetup?.applies(rootThreadId)) return;
-            void root.signals
-              .emit({
-                id: newId('sig-subturn'),
-                kind: 'subagent_turn',
-                source: `subagent:${turn.node.id}`,
-                content: {
-                  threadId: rootThreadId,
-                  node: turn.node,
-                  turnId: turn.turnId,
-                  outcome: turn.outcome,
-                },
-                timestamp: Date.now(),
-              })
-              .catch((error: unknown) =>
-                console.warn(
-                  `[Subagents] guard of ${turn.node.id} not started: ${(error as Error).message}`,
-                ),
-              );
-          },
-      observeTool: !config.threadSetup
-        ? undefined
-        : (rootThreadId, call) => {
-            const root = directory.get(rootThreadId);
-            if (!root || !config.threadSetup?.applies(rootThreadId)) return;
-            void root.signals
-              .emit({
-                id: newId('sig-tool'),
-                kind: 'tool_observation',
-                source: `subagent:${call.node.id}`,
-                content: {
-                  threadId: rootThreadId,
-                  tool: call.tool,
-                  input: call.input,
-                  ...(call.output !== undefined ? { output: call.output } : {}),
-                  ...(call.ok !== undefined ? { ok: call.ok } : {}),
-                  callId: call.callId,
-                  agentId: 'subagent',
-                  subagent: { node: call.node, turnId: call.turnId },
-                },
-                timestamp: Date.now(),
-              })
-              .catch((error: unknown) =>
-                console.warn(
-                  `[Subagents] guard of ${call.node.id} not started: ${(error as Error).message}`,
-                ),
-              );
-          },
+      // Every runtime: a subagent's turn gets the root thread's guard Wardens once, over its tool
+      // calls, when the turn ends, as a main thread's turn does (Aron, 2026-11-02: subagents call the
+      // Wardens; this replaces "subagents' own Wardens are parked", docs/THREAD-TREE.md §C.10).
+      onTurnEnd: (rootThreadId, turn) => {
+        const root = directory.get(rootThreadId);
+        if (!root) return;
+        void root.signals
+          .emit({
+            id: newId('sig-subturn'),
+            kind: 'subagent_turn',
+            source: `subagent:${turn.node.id}`,
+            content: {
+              threadId: rootThreadId,
+              node: turn.node,
+              turnId: turn.turnId,
+              outcome: turn.outcome,
+            },
+            timestamp: Date.now(),
+          })
+          .catch((error: unknown) =>
+            console.warn(
+              `[Subagents] guard of ${turn.node.id} not started: ${(error as Error).message}`,
+            ),
+          );
+      },
+      observeTool: (rootThreadId, call) => {
+        const root = directory.get(rootThreadId);
+        if (!root) return;
+        void root.signals
+          .emit({
+            id: newId('sig-tool'),
+            kind: 'tool_observation',
+            source: `subagent:${call.node.id}`,
+            content: {
+              threadId: rootThreadId,
+              tool: call.tool,
+              input: call.input,
+              ...(call.output !== undefined ? { output: call.output } : {}),
+              ...(call.ok !== undefined ? { ok: call.ok } : {}),
+              callId: call.callId,
+              agentId: 'subagent',
+              subagent: { node: call.node, turnId: call.turnId },
+            },
+            timestamp: Date.now(),
+          })
+          .catch((error: unknown) =>
+            console.warn(
+              `[Subagents] guard of ${call.node.id} not started: ${(error as Error).message}`,
+            ),
+          );
+      },
     });
     for (const source of config.taskSources ?? [])
       source.observeTasks((threadId, task, at, stop) =>
@@ -798,7 +784,6 @@ export function createViewer(config: ViewerConfig) {
     feedback,
     secrets,
     images: imageStore,
-    ...(config.threadSetup ? { threadSetup: config.threadSetup } : {}),
   });
   turnsReady = turns;
   turns.onSettled(() => restartRoll.check());
@@ -871,14 +856,6 @@ export function createViewer(config: ViewerConfig) {
       service.dispose();
     });
   }
-  // "Setting up your thread": the thread's setup streams on `threads` with its meta.
-  config.threadSetup?.onSetup((threadId, setup) => {
-    const thread = directory.get(threadId);
-    if (!thread) return;
-    thread.meta.setup = setup;
-    threadChanged(thread);
-  });
-
   registerControlRoutes(app, {
     harness,
     actions,

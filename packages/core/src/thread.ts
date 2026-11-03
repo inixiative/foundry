@@ -276,12 +276,6 @@ export interface ThreadMeta {
   /** 1 for a child of a main thread. */
   depth?: number;
 
-  /**
-   * Start-up of a thread whose Wardens are held in its own process (docs/THREAD-TREE.md spec C):
-   * turns typed meanwhile wait as `queued` until it is `ready` (or `degraded`).
-   */
-  setup?: ThreadSetup;
-
   /** Project that owns this thread. Scopes memory sources and tool calls. */
   projectId?: string;
 
@@ -296,15 +290,6 @@ export interface ThreadMeta {
 
   /** When the thread was archived (if applicable). */
   archivedAt?: number;
-}
-
-export interface ThreadSetup {
-  status: 'starting' | 'ready' | 'degraded';
-  startedAt: number;
-  readyAt?: number;
-  /** Every configured Warden, those holding a spare, and those that did not by the deadline. */
-  wardens: { expected: number; held: number; failed: string[] };
-  runtime: 'claude-in-session' | 'codex-in-process' | 'side-session';
 }
 
 export interface Dispatch<T = unknown> {

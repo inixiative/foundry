@@ -39,10 +39,7 @@ describe('threadState', () => {
     expect(threadState(t({ conversation: { unread: 2 } }))).toBe('request');
     expect(threadState(t({ conversation: { held: 1, unread: 2 } }))).toBe('held');
   });
-  test('starting, running and active are green', () => {
-    expect(threadState(t({ meta: { status: 'idle', setup: { status: 'starting' } } }))).toBe(
-      'starting',
-    );
+  test('running and active are green', () => {
     expect(threadState(t({ lastTurn: { status: 'running' } }))).toBe('working');
     expect(threadState(t({ meta: { status: 'active' } }))).toBe('working');
     expect(threadState(t(), { childrenWorking: true })).toBe('subagents');

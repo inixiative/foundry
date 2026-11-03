@@ -28,7 +28,7 @@ import {
   validateStages,
   WARDEN_CHARTER,
 } from '../src/classify';
-import { inSessionTarget, isStageSession } from '../src/providers/primed-decisions';
+import { isStageSession, projectHostTarget } from '../src/providers/primed-decisions';
 import { type FoundryConfig, starterConfig } from '../src/viewer/config';
 
 const dirs: string[] = [];
@@ -424,11 +424,11 @@ test('a stage naming a model no host serves is refused by name; the default stag
   expect(plain.factory.create('plain', { projectId: 'P' })).toBeDefined();
 });
 
-test('a later stage is its own primed session, never an in-session Warden', () => {
+test('a later stage is its own primed session, never held in a project host', () => {
   expect(isStageSession('T:aux:domain:locks:stage:1')).toBe(true);
   expect(isStageSession('T:aux:domain:locks')).toBe(false);
   expect(isStageSession('T:aux:review:g1:domain:locks')).toBe(false);
-  const serving = { serving: () => ({}) } as unknown as Parameters<typeof inSessionTarget>[0];
-  expect(inSessionTarget(serving, 'T:aux:domain:locks')).toBeDefined();
-  expect(inSessionTarget(serving, 'T:aux:domain:locks:stage:1')).toBeUndefined();
+  const serving = { serving: () => ({}) } as unknown as Parameters<typeof projectHostTarget>[0];
+  expect(projectHostTarget(serving, 'T:aux:domain:locks')).toBeDefined();
+  expect(projectHostTarget(serving, 'T:aux:domain:locks:stage:1')).toBeUndefined();
 });

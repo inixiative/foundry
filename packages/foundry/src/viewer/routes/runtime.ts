@@ -61,7 +61,7 @@ import type { SecretScratch } from '../../secrets/scratch';
 import { WORKER_SWITCH_PHASE, type WorkerSwitchRecord } from '../../turns/journal-history';
 import type { NativeOutcomeRecovery } from '../../turns/native-outcome-recovery';
 import type { RunningTasks } from '../../turns/running-tasks';
-import { type ThreadSetupHost, TurnService, type TurnServiceDeps } from '../../turns/turn-service';
+import { TurnService, type TurnServiceDeps } from '../../turns/turn-service';
 import { type ConfigStore, steerOnSend } from '../config';
 import { resolveThreadView } from '../config-resolve';
 import type { ViewerStreams } from '../data-streams';
@@ -79,8 +79,6 @@ import { resolveSnooze, type SnoozeRequest } from '../thread-snooze';
 import { turnTimeline } from '../turn-timeline';
 
 export interface RuntimeRoutesDeps {
-  /** In-session Wardens: a turn waits (queued) while its thread sets up. */
-  threadSetup?: ThreadSetupHost;
   harness: Harness;
   eventStream: EventStream;
   interventions: InterventionLog;
@@ -197,7 +195,6 @@ export function registerRuntimeRoutes(
     streams,
     feedback: deps.feedback ?? null,
     secrets: deps.secrets ?? null,
-    ...(deps.threadSetup ? { threadSetup: deps.threadSetup } : {}),
   });
 
   /** The installed @inixiative/foundry version (the About page shows it). */
@@ -385,7 +382,6 @@ export function registerRuntimeRoutes(
         queued: accepted.queued && !accepted.steer?.steered,
         // Sent during a running turn: steered into it (`into`), or why it queued (`reason`).
         ...(accepted.steer ? { steer: accepted.steer } : {}),
-        ...(deps.threadSetup?.pending(accepted.threadId) ? { settingUp: true } : {}),
       },
       202,
     );
@@ -1388,8 +1384,6 @@ export function registerRuntimeRoutes(
       const { model: next, effort } = launchView(thread);
       const takes = modelEfforts(body.worker, next);
       if (effort && takes && !takes.includes(effort)) threadLaunch.update(id, { effort: null });
-      // The old worker's in-session host goes; the rebuilt thread is already the live one.
-      await deps.threadSetup?.release?.(id);
     }
 
     // Update worktree assignment

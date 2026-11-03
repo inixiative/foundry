@@ -14,7 +14,10 @@ import {
 import { scopedProvider, ThreadRuntimeManager } from '../src/agents/thread-runtime';
 import { KnowledgePersistence } from '../src/persistence/knowledge-persistence';
 import { LocalSessionStore } from '../src/persistence/local-session-store';
-import { buildNativeTextProvider } from '../src/providers/native-text-provider';
+import {
+  buildNativeTextProvider,
+  type NativeTextConfig,
+} from '../src/providers/native-text-provider';
 import {
   buildSubscriptionDecisions,
   type SubscriptionDecisionConfig,
@@ -533,3 +536,85 @@ test('unproved native process exit closes admission and retains unknown ownershi
     f.close();
   }
 }, 5000);
+
+test('decisions served in a project host take no shared decision slot', async () => {
+  const gates: Array<() => void> = [];
+  const runs: string[] = [];
+  const createRun = (_config: NativeTextConfig) => {
+    const calls: Array<Record<string, unknown>> = [];
+    let closed = false;
+    return {
+      provider: {
+        id: 'fake',
+        async complete(
+          _messages: unknown,
+          opts: {
+            nativeObservation?: {
+              owner: { providerSessionKey?: string };
+              register(e: NativeEvidence): Promise<void>;
+              observe(e: NativeEvidence): Promise<void>;
+            };
+          } = {},
+        ) {
+          const key = opts.nativeObservation!.owner.providerSessionKey!;
+          runs.push(key);
+          const admission: NativeEvidence = {
+            schema: 1,
+            owner: opts.nativeObservation!.owner as NativeEvidence['owner'],
+            admissionId: Bun.randomUUIDv7(),
+            nativeOutcome: 'unknown',
+            localOutcome: 'pending',
+            dispatch: 'not-dispatched',
+          };
+          await opts.nativeObservation!.register(admission);
+          await new Promise<void>((resolve) => gates.push(resolve));
+          const native = {
+            ...admission,
+            nativeOutcome: 'completed' as const,
+            localOutcome: 'resolved' as const,
+            dispatch: 'attempted' as const,
+          };
+          calls.push({ valid: true, release: 'released', transport: 'primed', settled: true });
+          return { content: 'ok', model: 'm', native };
+        },
+      },
+      snapshot: () => ({ closed, calls: calls as never }),
+      close: () => {
+        closed = true;
+      },
+    };
+  };
+  const decisions = buildSubscriptionDecisions(
+    {
+      source: {
+        id: 's',
+        runtime: 'claude',
+        mode: 'native-profile',
+        profileDirectory: '/x',
+      } as never,
+      directory: '/tmp',
+      model: 'm',
+      maxCalls: 100,
+      maxQueued: 100,
+      callTimeoutMs: 20_000,
+      maxConcurrent: 1,
+      unbounded: (key) => key.includes(':aux:domain:'),
+    },
+    createRun as never,
+  );
+  const ask = (key: string) =>
+    decisions.provider.complete([{ role: 'user', content: 'x' }], { threadId: key });
+  const warden1 = ask('t1:aux:domain:a');
+  const warden2 = ask('t1:aux:domain:b');
+  const router1 = ask('t1:aux:router');
+  const router2 = ask('t1:aux:router2');
+  await until(() => runs.length === 3);
+  // Both Wardens and one router run at once; the second router waits for the one shared slot.
+  expect(runs.sort()).toEqual(['t1:aux:domain:a', 't1:aux:domain:b', 't1:aux:router']);
+  for (const release of gates.splice(0)) release();
+  await Promise.all([warden1, warden2, router1]);
+  await until(() => runs.length === 4);
+  for (const release of gates.splice(0)) release();
+  await router2;
+  decisions.close();
+});
