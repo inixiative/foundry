@@ -15,6 +15,7 @@ import {
   inlineSource,
   type LLMMessage,
   type LLMProvider,
+  type MessageDecoration,
   type NativeEvidence,
   type NativeOwner,
   newId,
@@ -439,6 +440,8 @@ export interface ThreadRuntimeDeps {
    * wrapped, and the member notes admitted since the owner last spoke ride the agent's next turn, whoever opened it.
    */
   conversations?: ConversationWrapper;
+  /** The secret scratch pad's reminder for a turn whose message held an unmarked secret (FEAT-005), taken once. */
+  secretNote?: (messageId: string) => string | undefined;
   log?: (line: string) => void;
   warn?: (line: string) => void;
 }
@@ -1367,6 +1370,18 @@ class ThreadRuntimeImpl implements ThreadRuntime {
             text: PLAN_ASK_NOTE,
           },
         ]);
+      // A secret the person sent without $$: the agent tells them, once, how to mark it next time.
+      const secretNote = identity?.messageId ? deps.secretNote?.(identity.messageId) : undefined;
+      if (secretNote)
+        flow.queueNotes([
+          {
+            role: 'content',
+            id: `secret-note:${identity?.messageId}`,
+            source: 'foundry',
+            placement: 'after-message',
+            text: secretNote,
+          },
+        ]);
       await refreshRoster();
       let plan: InjectionPlan | undefined, failure: Error | undefined;
       try {
@@ -1433,6 +1448,29 @@ class ThreadRuntimeImpl implements ThreadRuntime {
           ) ||
           !!deps.conversations?.wraps(thread.id);
         this.librarian.setDelivered(wrapped);
+        // Unwrapped, nothing prepares the turn, so the secret reminder rides the message itself, laid
+        // out as a wrapped turn's notes are; wrapped, the preparation queued it.
+        if (!wrapped && ctx.messageId) {
+          const secretNote = deps.secretNote?.(ctx.messageId);
+          if (secretNote) {
+            const decoration: MessageDecoration = {
+              input: { hash: computeHash(ctx.payload), capturedAt: Date.now() },
+              blocks: [
+                {
+                  role: 'content',
+                  id: `secret-note:${ctx.messageId}`,
+                  source: 'foundry',
+                  placement: 'after-message',
+                  text: secretNote,
+                },
+              ],
+              participants: [],
+              omissions: [],
+              conflicts: [],
+            };
+            ctx.annotations.decoration = decoration;
+          }
+        }
         const {
           barrier,
           plan: preparedPlan,

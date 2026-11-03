@@ -167,6 +167,7 @@ async function main() {
     resolveSource: sourceResolver,
     learning: { enabled: false },
     conversations: lateConversationWrapper(() => viewer?.conversations ?? undefined),
+    secretNote: (messageId) => viewer?.secrets.note(messageId),
     log() {},
     warn: (line) => console.warn(line),
   });
