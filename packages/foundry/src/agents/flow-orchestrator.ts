@@ -718,7 +718,8 @@ export class FlowOrchestrator {
    * The agent handed a task to a subagent: ask the chorus, once, what the subagent must know that
    * the task text leaves out. Every Warden decides under the charter through the advice protocol
    * (NO_COMMENT expected); the pre-filter, when on, rules out the ones it is confident the task is
-   * outside of. The brief never blocks the handoff, which the harness has already made.
+   * outside of. Asked at the call (Claude's pre-use, `ThreadRuntime.briefHandoff`), it is awaited up to
+   * its deadline and rides into the subagent's text; asked when the subagent starts, it never blocks.
    */
   async brief(handoff: HandoffMoment): Promise<BriefReport> {
     return this._between('subagent-spawn', handoffText(handoff));

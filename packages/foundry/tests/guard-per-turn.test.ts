@@ -45,7 +45,14 @@ interface Call {
   output?: string;
 }
 
-function fixture(opts: { guard?: FoundryConfig['guard']; brief?: string } = {}) {
+function fixture(
+  opts: {
+    guard?: FoundryConfig['guard'];
+    brief?: string;
+    briefDelayMs?: number;
+    deadlineMs?: number;
+  } = {},
+) {
   const config = starterConfig('controlled', 'controlled');
   if (opts.guard) config.guard = opts.guard;
   config.agents = {
@@ -80,6 +87,7 @@ function fixture(opts: { guard?: FoundryConfig['guard']; brief?: string } = {}) 
       }
       if (text.includes(BRIEF)) {
         briefCalls.push(structuredClone(messages));
+        if (opts.briefDelayMs) await Bun.sleep(opts.briefDelayMs);
         return {
           model: 'controlled',
           content:
@@ -97,6 +105,7 @@ function fixture(opts: { guard?: FoundryConfig['guard']; brief?: string } = {}) 
   };
   const manager = new ThreadRuntimeManager({
     config,
+    ...(opts.deadlineMs !== undefined ? { handoffBriefDeadlineMs: opts.deadlineMs } : {}),
     log() {},
     warn() {},
     eventStream: events,
@@ -533,5 +542,152 @@ test('the moment is bounded: each call clipped, the middle of a long turn elided
   expect(text).toContain('… [2000 more chars]'); // the output past 1 000 chars
   expect(renderTurnActivity(oneCall({ tool: 'Bash', input: { command: 'ls' }, ok: false }))).toBe(
     '### Call 1: Bash — FAILED\nInput: {"command":"ls"}',
+  );
+});
+
+// Every turn that would get injection calls the Wardens, subagents included (Aron, 2026-11-02). A
+// Claude handoff is briefed at its tool call, before the subagent starts, and the chimes ride into
+// the text the subagent reads; its task_started is then not briefed again.
+
+const SPAWN = {
+  callId: 'toolu_spawn_1',
+  toolName: 'Agent',
+  toolInput: {
+    description: 'audit scalar snapshots',
+    subagent_type: 'general-purpose',
+    prompt: 'Make the audit snapshots column-only and drop relations.',
+  },
+  turnId: 'turn-1',
+};
+
+test("a handoff is briefed at its call: the chimes ride into the subagent's prompt, journalled on the parent, never queued for it", async () => {
+  const f = fixture();
+  await f.turn('turn-1', 'Audit the snapshots');
+  const text = await f.runtime.briefHandoff(SPAWN);
+  expect(text).toStartWith('Make the audit snapshots column-only and drop relations.\n\n---\n\n');
+  // The subagent reads chimes the way the main thread does: the reception charter, then each chime.
+  expect(text).toContain('# Chimes from the Warden chorus');
+  expect(text).toEndWith(
+    'The architecture Warden chimed in on the handoff to audit scalar snapshots:\n- Snapshots are column-only: use pickColumns (fb_7).',
+  );
+  expect(f.briefCalls).toHaveLength(1);
+  const asked = f.briefCalls[0]!.map((m) => m.content).join('\n');
+  expect(asked).toContain('general-purpose "audit scalar snapshots"');
+  const row = f
+    .rows('turn-1')
+    .find((r) => r.phase === 'advice' && r.record.trigger === 'subagent-spawn')!;
+  expect(row.record).toMatchObject({
+    wraps: 'handoff-call:toolu_spawn_1',
+    handoff: { toolCallId: 'toolu_spawn_1', tool: 'Agent', before: true },
+    participants: [{ domain: 'architecture', decision: 'contribute' }],
+  });
+  // Nothing rides the parent's next turn: the subagent already has it.
+  expect(f.runtime.flowOrchestrator.pendingNotes).toHaveLength(0);
+  // The subagent starts (task_started, the same call): not briefed a second time.
+  await f.thread.signals.emit({
+    id: 'sig-spawn-briefed',
+    kind: 'subagent_spawn',
+    source: 'subagent:sub_child',
+    timestamp: Date.now(),
+    content: {
+      threadId: f.thread.id,
+      childThreadId: 'sub_child',
+      parent: { id: f.thread.id, meta: f.thread.meta },
+      parentTurnId: 'turn-1',
+      handoffId: 'handoff:sub_child',
+      toolCallId: 'toolu_spawn_1',
+      prompt: SPAWN.toolInput.prompt,
+    },
+  });
+  await Bun.sleep(20);
+  expect(f.briefCalls).toHaveLength(1);
+  // A spawn whose call was not briefed (Codex, Muse) still is, when it starts.
+  await f.thread.signals.emit({
+    id: 'sig-spawn-unbriefed',
+    kind: 'subagent_spawn',
+    source: 'subagent:sub_other',
+    timestamp: Date.now(),
+    content: {
+      threadId: f.thread.id,
+      childThreadId: 'sub_other',
+      parent: { id: f.thread.id, meta: f.thread.meta },
+      parentTurnId: 'turn-1',
+      handoffId: 'handoff:sub_other',
+      toolCallId: 'call_codex_1',
+      prompt: 'Something else.',
+    },
+  });
+  await until(() => f.briefCalls.length === 2, 'the unbriefed spawn is briefed when it starts');
+  // A started subagent is addressable by its native task id: a SendMessage to it is briefed.
+  await f.thread.signals.emit({
+    id: 'sig-spawn-task',
+    kind: 'subagent_spawn',
+    source: 'subagent:sub_task',
+    timestamp: Date.now(),
+    content: {
+      threadId: f.thread.id,
+      childThreadId: 'sub_task',
+      parent: { id: f.thread.id, meta: f.thread.meta },
+      parentTurnId: 'turn-1',
+      handoffId: 'handoff:sub_task',
+      toolCallId: 'toolu_spawn_1',
+      nativeTaskId: 'a87dabf13003544c5',
+      prompt: SPAWN.toolInput.prompt,
+    },
+  });
+  const sent = await f.runtime.briefHandoff({
+    callId: 'toolu_msg_task',
+    toolName: 'SendMessage',
+    toolInput: { to: 'a87dabf13003544c5', message: 'One more file.' },
+    turnId: 'turn-1',
+  });
+  expect(sent).toStartWith('One more file.\n\n---\n\n');
+});
+
+test('a silent handoff brief leaves the prompt as written; a SendMessage is briefed into its message; other tools are not handoffs', async () => {
+  const quiet = fixture({ brief: 'NO_COMMENT' });
+  await quiet.turn('turn-1', 'Audit');
+  expect(await quiet.runtime.briefHandoff(SPAWN)).toBeUndefined();
+  expect(quiet.briefCalls).toHaveLength(1);
+  const f = fixture();
+  await f.turn('turn-1', 'Audit');
+  // A SendMessage to someone who is not this thread's subagent (another session) is not briefed here.
+  expect(
+    await f.runtime.briefHandoff({
+      callId: 'toolu_msg_0',
+      toolName: 'SendMessage',
+      toolInput: { to: 'inixiative-19', message: 'Coordinate with me.' },
+      turnId: 'turn-1',
+    }),
+  ).toBeUndefined();
+  expect(f.briefCalls).toHaveLength(0);
+  // The thread spawned a subagent named "auditor" (its Agent call), so a SendMessage to it is its turn.
+  await f.runtime.briefHandoff({ ...SPAWN, toolInput: { ...SPAWN.toolInput, name: 'auditor' } });
+  const sent = await f.runtime.briefHandoff({
+    callId: 'toolu_msg_1',
+    toolName: 'SendMessage',
+    toolInput: { to: 'auditor', message: 'Now do the relations too.' },
+    turnId: 'turn-1',
+  });
+  expect(sent).toStartWith('Now do the relations too.\n\n---\n\n');
+  expect(sent).toContain('chimed in on the handoff to auditor');
+  expect(
+    await f.runtime.briefHandoff({
+      callId: 'toolu_bash',
+      toolName: 'Bash',
+      toolInput: { command: 'ls' },
+      turnId: 'turn-1',
+    }),
+  ).toBeUndefined();
+  expect(f.briefCalls).toHaveLength(2);
+});
+
+test("a brief past its deadline lets the handoff run as written, and what it says rides the parent's next turn", async () => {
+  const f = fixture({ briefDelayMs: 80, deadlineMs: 10 });
+  await f.turn('turn-1', 'Audit the snapshots');
+  expect(await f.runtime.briefHandoff(SPAWN)).toBeUndefined();
+  await until(() => f.runtime.flowOrchestrator.pendingNotes.length === 1, 'late brief queued');
+  expect(f.runtime.flowOrchestrator.pendingNotes[0]!.text).toContain(
+    'chimed in on the handoff to audit scalar snapshots',
   );
 });

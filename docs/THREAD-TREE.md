@@ -565,7 +565,7 @@ Built for Claude behind `subscriptionOnly.decisionRuntime: 'claude-in-session'`,
   - Past 40 orphans the thread stops serving in-session.
   - A root that dies is set up again at most twice per session; each setup is a main turn.
 - **Close.** Members and dispatchers are drained; the root is never ended.
-- **Subagents.** Their own Wardens are parked (§C.10). In this runtime only, the main thread's subagents' tool calls are guarded from the main thread's Wardens, and the rows are journalled on the subagent's node.
+- **Subagents.** No warm set of their own (§C.10). Their tool calls are guarded from the main thread's Wardens, and the rows are journalled on the subagent's node. Since 2026-11-02 this holds in every runtime, and a Claude handoff is briefed at its call (FLOW.md, "The handoff brief").
 - **Launch.**
   - Claude Code runs 20 subagents at once by default, so the launch raises `CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS` by 76 on top of the user's own cap.
   - The SDK MCP server is declared in `initialize` (no extra `--mcp-config`) and answers its connect before `initialize` returns. An unanswered connect cost a 30 s retry, which was the first build's ~28 s stall.
@@ -609,5 +609,5 @@ Wardens are now built per concept region (the 23 fixed, hand-named Wardens were 
 - **Slots.** Claude Code runs 20 subagents per session by default, and the main thread's own subagents count against the same cap. In-session use is: root + 1–2 dispatchers + the warm set + a replacement while a used spare finishes (up to 2 × warm set). With a warm set of 8 that is at most about 20, so instead of today's flat `CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS=96`, the launch should raise the cap by exactly that: the user's own cap (default 20) plus `2 + 2 × warmWardens`. The main thread's own subagents then keep all of their slots.
 - **Cold regions.** A routed region outside the warm set starts its member with the moment inline (the existing direct path, 2–4 s at normal load, measured by its prime `cold`), then joins the warm set.
 - **Orphans.** A smaller warm set also bounds the cost of a dispatcher dying (§C.9): at most a warm set's worth of orphans per dead generation, against `maxOrphans`.
-- **Subagents' own Wardens stay parked.** Subagents get no warm set of their own. In the `claude-in-session` runtime their tool calls are guarded from the main thread's set (§C.9) and this is not extended. The handoff trigger (plan step 10) uses the main thread's warm set to brief a subagent at spawn.
+- **Subagents call the main thread's Wardens** (Aron, 2026-11-02, replacing "subagents' own Wardens stay parked"). Subagents get no warm set of their own: every runtime guards their turns from the main thread's set, and a Claude handoff is briefed from it at its call, the chimes riding into the subagent's prompt (FLOW.md, "The handoff brief").
 - **Open:** the warm-set size, from the R1 re-test (how many regions a moment routes to at k = 1, 2, 4); whether review calls (post-turn) should take warm spares or always start cold.
