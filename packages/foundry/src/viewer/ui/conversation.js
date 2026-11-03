@@ -45,6 +45,7 @@ import {
 import { MessageMenu } from './message-menu.js';
 import { Modal, RenameModal } from './modal.js';
 import { Plan } from './plan.js';
+import { openThreadRun } from './run-picker.js';
 import { settingsConfig } from './settings.js';
 import { isDangerous, MODES, ModeIcon, STATES, StatusIcon } from './status-icons.js';
 import { QueuedRows, SendHint, turnRunning } from './steering.js';
@@ -321,7 +322,11 @@ function ContextBar() {
     ? Math.min(100, (threadContextTokens.value / contextWindow) * 100)
     : null;
   const named = launchLabels(launch?.provider, launch?.model);
-  const runs = [named.provider, named.model, launch?.effort].filter(Boolean);
+  // Worker · model · effort (Aron 11-02): the worker goes first when space is tight, never the
+  // model or the effort; an effort the thread didn't choose is the one it runs at by default.
+  const worker = harnessName(launch?.worker ?? launch?.provider) ?? named.provider;
+  const effort = launch?.effort ?? launch?.effortDefault ?? null;
+  const runs = [named.model, effort].filter(Boolean);
 
   return html`
     <div class="context-bar thread-band thread-band--pills">
@@ -394,11 +399,10 @@ function ContextBar() {
         <${PillGroup} className="band-runs" label="How it runs" render=${() => html`
           ${
             runs.length
-              ? html`<span class="band-pill band-run" title=${`${runs.join(' · ')}${harness ? ` · runs through ${harness}` : ''}`}>${
-                  named.provider && runs.length > 1
-                    ? html`<span class="band-drop">${named.provider}\u00a0·\u00a0</span>`
-                    : null
-                }${(named.provider && runs.length > 1 ? runs.slice(1) : runs).join(' · ')}</span>`
+              ? html`<button type="button" class="band-pill band-run" data-run="pill" onClick=${openThreadRun}
+                  title=${`${[worker, ...runs].filter(Boolean).join(' · ')}${launch?.effort ? '' : ' (default effort)'} · change for this thread`}>${
+                    worker ? html`<span class="band-drop">${worker}\u00a0·\u00a0</span>` : null
+                  }${runs.join(' · ')}</button>`
               : null
           }
           ${

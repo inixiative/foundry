@@ -21,7 +21,7 @@ import { GlossReview } from './gloss.js';
 import { initHotkeys, registerDefaults } from './hotkeys.js';
 import { RequestView } from './incoming.js';
 import { KnowledgePage } from './knowledge.js';
-import { html, render, useEffect, useRef, useState } from './lib.js';
+import { html, render, useEffect, useLayoutEffect, useRef, useState } from './lib.js';
 import { loadMachineProfile } from './machine-icons.js';
 import { NavRail } from './nav-rail.js';
 import { panelColumns, panelFit, RestoreTab } from './panel-sizes.js';
@@ -36,6 +36,7 @@ import {
   route,
   settingsPath,
 } from './route.js';
+import { RunPickers } from './run-picker.js';
 import { SearchPage } from './search.js';
 import { SelfChatPane } from './self-chat.js';
 import { loadSettings, SettingsPage, settingsConfig } from './settings.js';
@@ -269,11 +270,59 @@ function PanelNavigation() {
 // Toast
 // ---------------------------------------------------------------------------
 
+/** The centre area a toast sits in: the thread's, else the view's (Board, Watchtower, Settings, …). */
+const CENTRE_AREAS = [
+  '.panel-center',
+  '.board',
+  '.watchtower',
+  '.settings-main',
+  '.analytics-page',
+  '.search-page',
+];
+const shown = (el) => !!el && el.getBoundingClientRect().width > 0;
+
+/**
+ * Where a toast goes (Aron 11-02): the top of the centre area, just under the thread's header and
+ * tabs, centred in it and no wider: never over the message box, the header pills or the side panels.
+ */
+function toastPlace() {
+  const area = CENTRE_AREAS.map((s) => document.querySelector(s)).find(shown);
+  if (!area) return null;
+  const box = area.getBoundingClientRect();
+  const header = ['.center-tab-row', '.context-bar']
+    .map((s) => area.querySelector(s))
+    .find(shown)
+    ?.getBoundingClientRect();
+  return {
+    top: Math.round((header ? header.bottom : box.top) + 8),
+    left: Math.round(box.left + box.width / 2),
+    maxWidth: Math.max(160, Math.round(Math.min(520, box.width - 32))),
+  };
+}
+
 function Toast() {
   const t = toast.value;
+  const [place, setPlace] = useState(null);
+  useLayoutEffect(() => {
+    if (!t) return undefined;
+    const measure = () => setPlace(toastPlace());
+    measure();
+    // The header may still be laying out (or grow later): follow it and the centre while shown.
+    const watch = new ResizeObserver(measure);
+    for (const sel of [...CENTRE_AREAS, '.center-tab-row', '.context-bar'])
+      for (const el of document.querySelectorAll(sel)) watch.observe(el);
+    window.addEventListener('resize', measure);
+    return () => {
+      watch.disconnect();
+      window.removeEventListener('resize', measure);
+    };
+  }, [t]);
   if (!t) return null;
+  const style = place
+    ? `top:${place.top}px;left:${place.left}px;max-width:${place.maxWidth}px`
+    : undefined;
   return html`
-    <div class="toast ${t.type} ${t.persistent ? 'toast--persistent' : ''}">
+    <div class="toast ${t.type} ${t.persistent ? 'toast--persistent' : ''}" style=${style} role=${t.type === 'error' ? 'alert' : 'status'}>
       <span class="toast-message">${t.message}</span>
       ${
         t.undo
@@ -455,6 +504,7 @@ function App() {
       <${Wizard} />
       <${Toast} />
       <${GlossReview} />
+      <${RunPickers} />
     </div>
   `;
 }
