@@ -4,6 +4,8 @@
 
 **Stop repeating yourself to Claude.**
 
+I'm Aron Greenspan. I packaged a decade of lessons into the [building blocks](https://www.inixiative.com/building-blocks/) so I would stop solving the same problems on every project, and coding agents kept writing their own versions beside them. Foundry exists so your agent uses what your codebase already has.
+
 Every agent session starts half-amnesiac, so you pay a re-alignment tax: you re-explain your conventions, your decisions and your taste. The model and the harness are outside your control. Your docs, rules and `CLAUDE.md` are the one layer you do control, and Foundry is the workspace around your agent that puts that layer to work.
 
 The agent does what you want when it is told the right thing. Our bet is that your corrections compile into docs that tell it automatically. In early runs, when the corrections reached the agent before it planned, its plans came out right.
@@ -13,7 +15,7 @@ The agent does what you want when it is told the right thing. Our bet is that yo
 1. **Stop repeating yourself to Claude.** What you've already decided reaches every session. Wardens notice what your request touches and point at what your codebase already has and where it's written down. They never block; your agent decides. (The chorus is off on a fresh install; turn it on per project.)
 2. **Every agent you pay for, in one place.** Claude Code, Codex and Muse on your own subscriptions, a worker per thread, and every session captured. ACP apps such as Paseo and T3 Code can drive Foundry too.
 3. **Stop being a meat proxy.** Your agent, their agent and the people in one thread, hashing out the work. *(Host side built; joiner view in progress.)*
-4. **Stop checking a dozen apps.** Work comes to you, already understood. *(In progress: Kingdom streams GitHub, Slack and Linear events; the Foundry inbox is not wired yet.)*
+4. **Stop checking a dozen apps.** Whatever comes in (a Slack DM, a review request, an email) reaches you already researched and in context. It's read as data, so it can't instruct your agent. *(In progress: Kingdom streams GitHub, Slack and Linear events; the Foundry inbox is not wired yet.)*
 5. **Set up your repo.** Foundry reads your repo and builds the docs and Wardens. *(In progress.)*
 
 The voice of the codebase.
