@@ -7,16 +7,18 @@
 /**
  * Daemon entrypoint. Stages an update before launching, then boots a release (see
  * update.ts) and keeps watching, because a daemon left running for days would
- * otherwise never see main move. A restart onto a new release waits for running
- * turns to finish (watch.ts). Local services come up first. A candidate
+ * otherwise never see main move. The watcher comes from the booted release, so a
+ * change to how updates restart ships with the release instead of waiting for this
+ * checkout to move: a staged update spins the daemon down (running turns finish,
+ * new ones wait) and it restarts when the last one finishes (watch.ts,
+ * packages/foundry/src/daemon/restart-roll.ts). Local services come up first. A candidate
  * that fails to boot falls back to stable; a stable boot that fails on changed
  * settings restores the last settings that booted.
  */
-import { daemonRuntime } from '../../packages/foundry/src/daemon/runtime-hook';
 import { recordBooted, restoreAfterFailedBoot } from './last-good';
 import { ensureServices } from './services';
 import { recordBoot, rejectCandidate, selectRelease, stageUpdate } from './update';
-import { startUpdateWatcher } from './watch';
+import { startUpdateWatcher as checkoutWatcher } from './watch';
 
 const repoRoot = new URL('../..', import.meta.url).pathname.replace(/\/$/, '');
 const configDir = `${repoRoot}/.foundry`;
@@ -39,27 +41,31 @@ if (update.action === 'reported')
 if (update.action === 'skipped') log(`not staging ${short(update.target)}: ${update.detail}`);
 if (update.action === 'failed') log(`update skipped — ${update.detail}`);
 
-const settings = await readSettings();
-const checkSeconds = Number(settings?.daemon?.updateCheckSeconds ?? 300);
-const drainSeconds = Number(settings?.daemon?.drainTimeoutSeconds);
-if (Number.isSafeInteger(checkSeconds) && checkSeconds >= 30)
-  startUpdateWatcher({
-    repoRoot,
-    configDir,
-    intervalMs: checkSeconds * 1000,
-    // The booted daemon (a release) publishes its live turns; the watcher drains them before a restart.
-    liveTurns: () => daemonRuntime()?.liveTurns(),
-    ...(Number.isSafeInteger(drainSeconds) && drainSeconds >= 0
-      ? { drainTimeoutMs: drainSeconds * 1000 }
-      : {}),
-    log,
-  });
-
 const services = await ensureServices(repoRoot);
 if (services.started.length) log(`services up: ${services.started.join(', ')}`);
 if (services.detail) log(`services not started — ${services.detail}`);
 
 const release = await selectRelease(repoRoot, configDir);
+
+// The release's own watcher when it has one (it speaks to the daemon it ships with); this checkout's otherwise.
+const releaseWatcher = `${release.dir}/scripts/daemon/watch.ts`;
+const startUpdateWatcher: typeof checkoutWatcher = (await Bun.file(releaseWatcher).exists())
+  ? (((await import(releaseWatcher)) as { startUpdateWatcher?: typeof checkoutWatcher })
+      .startUpdateWatcher ?? checkoutWatcher)
+  : checkoutWatcher;
+const settings = await readSettings();
+const checkSeconds = Number(settings?.daemon?.updateCheckSeconds ?? 300);
+const spinDownSeconds = Number(settings?.daemon?.drainTimeoutSeconds);
+if (Number.isSafeInteger(checkSeconds) && checkSeconds >= 30)
+  startUpdateWatcher({
+    repoRoot,
+    configDir,
+    intervalMs: checkSeconds * 1000,
+    ...(Number.isSafeInteger(spinDownSeconds) && spinDownSeconds >= 0
+      ? { drainTimeoutMs: spinDownSeconds * 1000 }
+      : {}),
+    log,
+  });
 log(
   `starting ${release.trial ? 'candidate' : 'stable'} ${short(release.sha)} on port ${process.env.VIEWER_PORT ?? '4500'}`,
 );

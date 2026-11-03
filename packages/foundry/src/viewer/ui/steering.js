@@ -13,7 +13,14 @@
 
 import { html, useState } from './lib.js';
 import { liveExecutionStatus } from './live-state.js';
-import { composerFill, messages, steerTurn, stopTurn, threadLaunch } from './store.js';
+import {
+  composerFill,
+  messages,
+  restartHolding,
+  steerTurn,
+  stopTurn,
+  threadLaunch,
+} from './store.js';
 
 /** This thread's queued sends, oldest first: each queued turn with the text that was sent. */
 export function queuedSends(rows) {
@@ -68,6 +75,8 @@ export function QueuedRows({ threadId }) {
   const queued = queuedSends(messages.value);
   if (!queued.length) return null;
   const steer = runningSteer(messages.value);
+  // Spinning down for a restart: queued messages start after it.
+  const restart = restartHolding.value;
   return html`<div class="queued-rows" aria-label="Queued messages">
     ${queued.map((q) => {
       const why = q.images
@@ -78,7 +87,7 @@ export function QueuedRows({ threadId }) {
             ? null
             : steer.reason;
       return html`<div key=${q.turnId} class="queued-row">
-        <span class="queued-label">Queued</span>
+        <span class="queued-label">${restart ? 'Queued · waiting for restart' : 'Queued'}</span>
         <span class="queued-text" title=${q.text}>${q.text}</span>
         <button type="button" disabled=${!!why || busy === q.turnId}
           title=${why ? `Can’t steer: ${why}` : 'Send it into the running turn now'}

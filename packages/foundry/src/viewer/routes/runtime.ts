@@ -55,7 +55,7 @@ import {
 import type { SecretScratch } from '../../secrets/scratch';
 import type { NativeOutcomeRecovery } from '../../turns/native-outcome-recovery';
 import type { RunningTasks } from '../../turns/running-tasks';
-import { type ThreadSetupHost, TurnService } from '../../turns/turn-service';
+import { type ThreadSetupHost, TurnService, type TurnServiceDeps } from '../../turns/turn-service';
 import { type ConfigStore, steerOnSend } from '../config';
 import { resolveThreadView } from '../config-resolve';
 import type { ViewerStreams } from '../data-streams';
@@ -91,6 +91,8 @@ export interface RuntimeRoutesDeps {
   localStore?: LocalSessionStore | null;
   /** Settles turns lost to a restart (`turns/native-outcome-recovery.ts`). */
   nativeRecovery?: NativeOutcomeRecovery;
+  /** The spin-down: turns reaching the front of their queue wait for a planned restart. */
+  restartGate?: TurnServiceDeps['restartGate'];
   /** Background processes each thread's agent started (`turns/running-tasks.ts`). */
   runningTasks?: RunningTasks;
   /** Usage window readings: a `quota-reset` snooze resolves to the reached window's reset. */
@@ -111,6 +113,10 @@ export interface RuntimeRoutesDeps {
 }
 
 type SubscriptionWorkerId = keyof typeof SUBSCRIPTION_WORKERS;
+
+/** Nothing new starts while the daemon spins down for an update (`daemon/restart-roll.ts`). */
+const RESTARTING =
+  'Foundry is restarting onto an update once running turns finish; try again after it';
 
 /** Opaque history cursor: base64url of {t: threadId, s: oldest seq of the issued page}. */
 function encodeHistoryCursor(threadId: string, seq: number): string {
@@ -166,6 +172,7 @@ export function registerRuntimeRoutes(
     planDrafter: deps.planDrafter,
     localStore,
     ...(deps.nativeRecovery ? { nativeRecovery: deps.nativeRecovery } : {}),
+    ...(deps.restartGate ? { restartGate: deps.restartGate } : {}),
     directory,
     streams,
     feedback: deps.feedback ?? null,
@@ -719,6 +726,7 @@ export function registerRuntimeRoutes(
   // A degraded chorus (FEAT-008): ask the Wardens that were kept quiet on a turn again, or dismiss the notice.
   app.post('/api/threads/:threadId/turns/:turnId/chorus/retry', (c) => {
     if (!localStore) return c.json({ error: 'history journal unavailable' }, 503);
+    if (deps.restartGate?.holding()) return c.json({ error: RESTARTING }, 409);
     const threadId = c.req.param('threadId'),
       turnId = c.req.param('turnId');
     const detail = localStore.turnDetail(threadId, turnId);
@@ -1374,6 +1382,7 @@ export function registerRuntimeRoutes(
     });
   });
   app.post('/api/regions/pipeline/runs', async (c) => {
+    if (deps.restartGate?.holding()) return c.json({ error: RESTARTING }, 409);
     const body: { step?: unknown; commit?: unknown } = await c.req
       .json<{ step?: unknown; commit?: unknown }>()
       .catch(() => ({}));

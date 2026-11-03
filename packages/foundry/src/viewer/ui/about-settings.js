@@ -10,6 +10,7 @@
 import { REPO_URL } from './coming-soon.js';
 import { html, useEffect, useState } from './lib.js';
 import { authFetch } from './store.js';
+import { UpdateFact } from './update-notice.js';
 
 const T3_CODE_URL = 'https://github.com/pingdotgg/t3code';
 const PASEO_URL = 'https://github.com/getpaseo/paseo';
@@ -37,6 +38,8 @@ export function AboutSection() {
         <dl class="about-facts">
           <dt>Version</dt>
           <dd class="mono">${version ?? '—'}</dd>
+          <dt>Updates</dt>
+          <dd data-about="update"><${UpdateFact} /></dd>
           <dt>Source</dt>
           <dd><a href=${REPO_URL} target="_blank" rel="noreferrer">github.com/inixiative/foundry ↗</a></dd>
           <dt>Licence</dt>

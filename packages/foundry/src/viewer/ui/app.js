@@ -83,6 +83,7 @@ import {
   turnViewTarget,
   watchtowerOpen,
 } from './store.js';
+import { UpdateNotice } from './update-notice.js';
 import { Watchtower } from './watchtower.js';
 import { checkSetupNeeded, Wizard, wizardOpen } from './wizard.js';
 
@@ -211,6 +212,7 @@ function Header() {
         ${route.value.page === 'workspace' ? html`<${WorkspaceSwitch} />` : null}
       </div>
       <div class="header-right">
+        <${UpdateNotice} />
         <${OpenPill} />
         <span class="header-divider"></span>
         <${IncomingIndicator} />
