@@ -198,7 +198,7 @@ export function buildNativeTextProvider(
       if (JSON.stringify(messages).length > DECISION_INPUT_CAP)
         throw Error('Native text input cap exceeded');
       busy = true;
-      const id = crypto.randomUUID(),
+      const id = Bun.randomUUIDv7(),
         threadId = `native-text:${config.runId}:${id}`;
       const owner = freezeEvidence({
         ...(opts.nativeObservation?.owner ?? {

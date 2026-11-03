@@ -25,8 +25,8 @@ async function fixture() {
     const profileDirectory = join(root, name);
     mkdirSync(profileDirectory, { mode: 0o700 });
     return {
-      id: crypto.randomUUID(),
-      integrationId: crypto.randomUUID(),
+      id: Bun.randomUUIDv7(),
+      integrationId: Bun.randomUUIDv7(),
       runtime: 'claude',
       mode: 'native-profile',
       profileDirectory,
@@ -36,7 +36,7 @@ async function fixture() {
   const store = new ConfigStore(join(root, 'foundry'));
   const config = defaultConfig();
   config.nativeAuthentication = [login('inixiative'), login('personal'), login('work')];
-  const projectId = crypto.randomUUID();
+  const projectId = Bun.randomUUIDv7();
   config.projects[projectId] = { id: projectId, label: 'Template', path: root };
   await store.save(config);
   const runs = new LoginRunLog();
@@ -159,7 +159,7 @@ test('the scale: pinned turns balancing off and says on which login; clearing tu
   expect(
     (
       await f.call('PATCH', '/api/providers/pools/claude', {
-        preferredLoginId: crypto.randomUUID(),
+        preferredLoginId: Bun.randomUUIDv7(),
       })
     ).status,
   ).toBe(400);

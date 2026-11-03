@@ -113,6 +113,7 @@ import {
   shownViews,
   ThreadViewSegments,
 } from './thread-views.js';
+import { uuidv7 } from './uuidv7.js';
 import {
   dictationSupported,
   speakReplies,
@@ -598,8 +599,7 @@ function ChatInput() {
     if (!sendable) return;
     // An aside goes to the people here, never an agent. One id per message: a retry records once.
     if (destination === 'aside') {
-      if (asidePost.current?.text !== sent)
-        asidePost.current = { text: sent, id: crypto.randomUUID() };
+      if (asidePost.current?.text !== sent) asidePost.current = { text: sent, id: uuidv7() };
       const posted = await postAside(activeThreadId.value, sent, asidePost.current.id);
       if (posted.error) return setAsideError(posted.error);
       asidePost.current = null;

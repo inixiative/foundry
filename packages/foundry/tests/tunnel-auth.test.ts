@@ -242,7 +242,7 @@ test("the viewer's login page links to the paired Kingdom's devices page", async
       action === 'describe'
         ? {
             signetId: body.signetId,
-            integrationId: crypto.randomUUID(),
+            integrationId: Bun.randomUUIDv7(),
             provider: null,
             name: 'Host Foundry',
             expiresAt: null,
@@ -252,15 +252,15 @@ test("the viewer's login page links to the paired Kingdom's devices page", async
             remainingRequests: null,
             operations: [],
             holder: {
-              integration: { id: crypto.randomUUID(), name: 'Host Foundry', provider: null },
+              integration: { id: Bun.randomUUIDv7(), name: 'Host Foundry', provider: null },
               owner: {
                 ownerModel: 'User',
                 name: 'Grace',
                 organization: null,
                 space: null,
-                user: { id: crypto.randomUUID(), name: 'Grace', email: 'grace@acme.test' },
+                user: { id: Bun.randomUUIDv7(), name: 'Grace', email: 'grace@acme.test' },
               },
-              issuedBy: { id: crypto.randomUUID(), name: null, email: 'grace@acme.test' },
+              issuedBy: { id: Bun.randomUUIDv7(), name: null, email: 'grace@acme.test' },
               webUrl: 'https://kingdom.acme.test',
               manageUrl: 'https://kingdom.acme.test/dashboard',
             },

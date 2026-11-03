@@ -65,7 +65,7 @@ export function readPrivateJson(path: string, label: string): Record<string, unk
  * Readers see the old content or the new, never a partial write.
  */
 export function writeFileAtomic(path: string, content: string | Uint8Array, mode: number): void {
-  const temporary = `${path}.${process.pid}.${crypto.randomUUID()}.tmp`;
+  const temporary = `${path}.${process.pid}.${Bun.randomUUIDv7()}.tmp`;
   const fd = openSync(
     temporary,
     constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW,

@@ -308,7 +308,7 @@ export class ArchiveCapture {
   /** Flushes and renewals run one at a time, in order. */
   private readonly chain = createSerializedQueue();
   /** Stands in for the Archive's source id while it is unreachable; such snapshots are never written. */
-  private readonly unsentSourceId = crypto.randomUUID();
+  private readonly unsentSourceId = Bun.randomUUIDv7();
   private closed = false;
   private readonly renewal: ReturnType<typeof setInterval>;
   /** This Foundry's name on its claims: one per journal, so two Foundries never share one. */

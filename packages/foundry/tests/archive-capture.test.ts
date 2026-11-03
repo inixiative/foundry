@@ -164,7 +164,7 @@ test('public native commentary survives an interrupted response with its observa
     observedAt: 2,
   });
   try {
-    const archived = captureThread(journal, crypto.randomUUID(), t.id);
+    const archived = captureThread(journal, Bun.randomUUIDv7(), t.id);
     const partial = archived.entries.find((entry) => entry.kind === 'assistant');
     expect(partial?.text).toContain('Partial answer');
     expect(JSON.parse(partial!.text).form).toBe('delta');

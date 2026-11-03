@@ -23,13 +23,13 @@ const { InMemoryTransport } = await import(
 const { StdioClientTransport } = await import(
   require.resolve('@modelcontextprotocol/sdk/client/stdio.js')
 );
-const projectId = crypto.randomUUID(),
-  otherProjectId = crypto.randomUUID();
-const scope = { projectId, threadId: crypto.randomUUID() };
+const projectId = Bun.randomUUIDv7(),
+  otherProjectId = Bun.randomUUIDv7();
+const scope = { projectId, threadId: Bun.randomUUIDv7() };
 
 async function fixture() {
   const directory = await mkdtemp(join(tmpdir(), 'foundry-access-'));
-  const resourceId = crypto.randomUUID();
+  const resourceId = Bun.randomUUIDv7();
   const requests: Array<{ action: string; body: any; authorized: boolean }> = [];
   let revoked = false,
     wrongGrant = false,
@@ -47,7 +47,7 @@ async function fixture() {
       if (action === 'describe')
         return {
           signetId: presented.signetId,
-          integrationId: wrongGrant ? crypto.randomUUID() : integrationId,
+          integrationId: wrongGrant ? Bun.randomUUIDv7() : integrationId,
           name: 'Team integration',
           expiresAt: new Date(Date.now() + 60000).toISOString(),
           provider: 'linear',
@@ -71,7 +71,7 @@ async function fixture() {
       if (action === 'execute') {
         await onExecute?.();
         if (failExecution) return new Response('PRIVATE_UNCERTAIN_BODY', { status: 503 });
-        return { executionId: crypto.randomUUID(), result: { title: 'CONTROLLED_ISSUE' } };
+        return { executionId: Bun.randomUUIDv7(), result: { title: 'CONTROLLED_ISSUE' } };
       }
       return new Response(null, { status: 404 });
     },
@@ -80,7 +80,7 @@ async function fixture() {
   integrationId = held.integrationId;
   const { signetId, credentialFile } = held;
   const source: KingdomAccessSource = {
-    id: crypto.randomUUID(),
+    id: Bun.randomUUIDv7(),
     name: 'Team issues',
     integrationId,
     signetId,
@@ -186,7 +186,7 @@ test('foreign, missing and model-forged scopes cannot discover or use a grant; c
         (await f.tools.dispatch('kingdom_request', { method: 'POST', ...input }, { scope })).ok,
       ).toBe(false);
     expect(f.requests).toHaveLength(0);
-    registerKingdomAccess(f.tools, [{ ...f.source, threadIds: [crypto.randomUUID()] }]);
+    registerKingdomAccess(f.tools, [{ ...f.source, threadIds: [Bun.randomUUIDv7()] }]);
     expect((await f.call('integrations')).data).toMatchObject({ body: [] });
   } finally {
     await f.close();
@@ -207,7 +207,7 @@ test('authorization is fresh for every read; wrong grants and unknown resources 
         await f.call('read', {
           accessId: f.source.id,
           operation: 'issues.read',
-          resourceId: crypto.randomUUID(),
+          resourceId: Bun.randomUUIDv7(),
         })
       ).ok,
     ).toBe(false);
@@ -247,7 +247,7 @@ test('private credentials, response bounds, redirect refusal and uncertain failu
 test('concurrent thread calls keep distinct owners and stable per-thread UUID run attribution', async () => {
   const f = await fixture();
   try {
-    const owners = [scope, { ...scope, threadId: crypto.randomUUID() }];
+    const owners = [scope, { ...scope, threadId: Bun.randomUUIDv7() }];
     const read = (owner: typeof scope) =>
       f.call(
         'read',
@@ -305,8 +305,8 @@ test('native SDK tools require admission for reads, journal attribution, and ref
     thread,
     tools: f.tools,
     captureOperation: () => ({
-      id: crypto.randomUUID(),
-      bridgeId: crypto.randomUUID(),
+      id: Bun.randomUUIDv7(),
+      bridgeId: Bun.randomUUIDv7(),
       association: admitted
         ? {
             kind: 'registered-admission-window',
@@ -393,11 +393,11 @@ test('the native launch bridge transports integration reads and persists their o
     await client.connect(
       new StdioClientTransport({ command: launch.command, args: launch.args, stderr: 'pipe' }),
     );
-    const messageId = crypto.randomUUID();
+    const messageId = Bun.randomUUIDv7();
     store.beginTurn(thread, messageId, 'Read controlled integration');
     const admission = {
       schema: 1 as const,
-      admissionId: crypto.randomUUID(),
+      admissionId: Bun.randomUUIDv7(),
       nativeOutcome: 'unknown' as const,
       dispatch: 'not-dispatched' as const,
       owner: {
@@ -405,7 +405,7 @@ test('the native launch bridge transports integration reads and persists their o
         projectId,
         generation: runtime.get(thread.id)!.generation,
         messageId,
-        dispatchId: crypto.randomUUID(),
+        dispatchId: Bun.randomUUIDv7(),
       },
     };
     store.registerNative(thread, admission);

@@ -125,15 +125,15 @@ function fixture(opts: { wardens: boolean; joined?: boolean }) {
   new KnowledgePersistence(manager, store, events, []);
   const thread = factory.create('thread_conversation', { cwd: root });
   const member: HostedSignet = {
-    signetId: crypto.randomUUID(),
-    integrationId: crypto.randomUUID(),
+    signetId: Bun.randomUUIDv7(),
+    integrationId: Bun.randomUUIDv7(),
     name: 'JobCo',
     revision: 1,
     lifecycle: 'ongoing',
     expiresAt: null,
     maxRequests: null,
     maxConcurrent: 1,
-    recipient: { recipientModel: 'User', id: crypto.randomUUID(), displayName: 'JobCo' },
+    recipient: { recipientModel: 'User', id: Bun.randomUUIDv7(), displayName: 'JobCo' },
     resources: [threadsGrant({ threadIds: [thread.id], operations: ['thread.prompt'] })],
     baseLenses: threadsBaseLenses(),
   };
@@ -179,13 +179,13 @@ function fixture(opts: { wardens: boolean; joined?: boolean }) {
   const admitNote = (text: string) =>
     service!.admit({
       type: 'thread.request',
-      requestId: crypto.randomUUID(),
+      requestId: Bun.randomUUIDv7(),
       signetId: member.signetId,
       acceptedRevision: 1,
       member: { signetId: member.signetId, displayName: 'JobCo' },
       terms: termsOf(member),
       operation: 'thread.prompt',
-      input: { threadId: thread.id, postId: crypto.randomUUID(), text },
+      input: { threadId: thread.id, postId: Bun.randomUUIDv7(), text },
     } as ThreadRequestOf<'thread.prompt'>);
   /** Kingdom's snapshot changed: the hosted Signets are now these. */
   const snapshot = (next: HostedSignet[]) => {
@@ -401,13 +401,13 @@ test('an archived thread comes back on a post: rebuilt with its id, journal and 
   service.setFloor(f.thread.id, 'talk');
   const outcome = service.admit({
     type: 'thread.request',
-    requestId: crypto.randomUUID(),
+    requestId: Bun.randomUUIDv7(),
     signetId: member.signetId,
     acceptedRevision: 1,
     member: { signetId: member.signetId, displayName: 'JobCo' },
     terms: termsOf(member),
     operation: 'thread.prompt',
-    input: { threadId: f.thread.id, postId: crypto.randomUUID(), text: 'the role opened' },
+    input: { threadId: f.thread.id, postId: Bun.randomUUIDv7(), text: 'the role opened' },
   } as ThreadRequestOf<'thread.prompt'>);
   expect(outcome.ok).toBe(true);
   expect(reopened).toEqual([f.thread.id]);
@@ -446,13 +446,13 @@ test('an archived thread that cannot be rebuilt stays closed to posts, and recor
   service.setFloor(f.thread.id, 'talk');
   const outcome = service.admit({
     type: 'thread.request',
-    requestId: crypto.randomUUID(),
+    requestId: Bun.randomUUIDv7(),
     signetId: member.signetId,
     acceptedRevision: 1,
     member: { signetId: member.signetId, displayName: 'JobCo' },
     terms: termsOf(member),
     operation: 'thread.prompt',
-    input: { threadId: f.thread.id, postId: crypto.randomUUID(), text: 'hello?' },
+    input: { threadId: f.thread.id, postId: Bun.randomUUIDv7(), text: 'hello?' },
   } as ThreadRequestOf<'thread.prompt'>);
   expect(outcome).toMatchObject({ ok: false, refusal: 'thread_closed' });
   expect(f.store.journalSeq(f.thread.id)).toBe(before);

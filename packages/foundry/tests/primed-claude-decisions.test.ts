@@ -76,7 +76,7 @@ function claudeTransport(options: { model?: string } = {}) {
       const exited = new Promise<number>((resolve) => {
         exit = resolve;
       });
-      const id = crypto.randomUUID(),
+      const id = Bun.randomUUIDv7(),
         model = options.model ?? 'claude-haiku-5-5';
       const emit = (event: unknown) => {
         if (!launch.exited)

@@ -932,7 +932,7 @@ export function createFoundryAgent(options: FoundryAgentOptions = {}) {
         await session.outbox;
         return { stopReason: 'end_turn' };
       }
-      const turnId = `turn_${crypto.randomUUID()}`;
+      const turnId = `turn_${Bun.randomUUIDv7()}`;
       const turn = new TurnProjection(
         turnId,
         session.threadId,

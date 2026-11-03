@@ -51,15 +51,15 @@ const projectId = 'project-conversations';
 
 function hostedMember(threadId: string, outbound: 'review' | 'auto'): HostedSignet {
   return {
-    signetId: crypto.randomUUID(),
-    integrationId: crypto.randomUUID(),
+    signetId: Bun.randomUUIDv7(),
+    integrationId: Bun.randomUUIDv7(),
     name: 'JobCo',
     revision: 1,
     lifecycle: 'ongoing',
     expiresAt: null,
     maxRequests: null,
     maxConcurrent: 1,
-    recipient: { recipientModel: 'User', id: crypto.randomUUID(), displayName: 'JobCo' },
+    recipient: { recipientModel: 'User', id: Bun.randomUUIDv7(), displayName: 'JobCo' },
     resources: [
       threadsGrant({
         threadIds: [threadId],
@@ -178,7 +178,7 @@ test('kingdom_post holds the post for the owner before anything leaves, then pos
                   integrationId,
                   lens: [
                     {
-                      id: crypto.randomUUID(),
+                      id: Bun.randomUUIDv7(),
                       parents: ['foundry:threads'],
                       root: { where: { field: 'id', operator: 'in', value: [remoteThread] } },
                     },
@@ -192,7 +192,7 @@ test('kingdom_post holds the post for the owner before anything leaves, then pos
       if (action === 'execute') {
         executions.push(body);
         return {
-          executionId: crypto.randomUUID(),
+          executionId: Bun.randomUUIDv7(),
           result: { accepted: true, journalSeq: 1, duplicate: false },
         };
       }
@@ -206,9 +206,9 @@ test('kingdom_post holds the post for the owner before anything leaves, then pos
   });
   const held = await heldSignet(kingdom, dir, userOwner());
   integrationId = held.integrationId;
-  resourceId = crypto.randomUUID();
+  resourceId = Bun.randomUUIDv7();
   const source = {
-    id: crypto.randomUUID(),
+    id: Bun.randomUUIDv7(),
     name: 'Host conversation',
     url: kingdom.url,
     credentialFile: held.credentialFile,

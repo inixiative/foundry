@@ -143,7 +143,7 @@ async function host(
   const member = async (name: string, grant: Grant = {}, revision = 1): Promise<HostedSignet> => {
     const { ids, operations, ...terms } = grant;
     const signet: HostedSignet = {
-      signetId: crypto.randomUUID(),
+      signetId: Bun.randomUUIDv7(),
       integrationId,
       name,
       revision,
@@ -151,7 +151,7 @@ async function host(
       expiresAt: null,
       maxRequests: null,
       maxConcurrent: 1,
-      recipient: { recipientModel: 'User', id: crypto.randomUUID(), displayName: name },
+      recipient: { recipientModel: 'User', id: Bun.randomUUIDv7(), displayName: name },
       resources: [
         threadsGrant({
           threadIds: ids ?? ['main'],
@@ -173,7 +173,7 @@ async function host(
     return signet;
   };
   const relayed = (signet: HostedSignet) => ({
-    requestId: crypto.randomUUID(),
+    requestId: Bun.randomUUIDv7(),
     signetId: signet.signetId,
     acceptedRevision: signet.revision,
     member: { signetId: signet.signetId, displayName: signet.recipient.displayName },
@@ -195,7 +195,7 @@ async function host(
       operation: 'thread.prompt',
       input: {
         threadId: extra.threadId ?? 'main',
-        postId: extra.postId ?? crypto.randomUUID(),
+        postId: extra.postId ?? Bun.randomUUIDv7(),
         text,
         ...(extra.inReplyTo ? { inReplyTo: extra.inReplyTo } : {}),
         ...(extra.aside ? { aside: true } : {}),
@@ -223,7 +223,7 @@ async function host(
   };
   /** The owner types a message on the thread (the viewer's synchronous send); its turn id. */
   const ownerSays = async (text: string) => {
-    const id = `turn_${crypto.randomUUID()}`;
+    const id = `turn_${Bun.randomUUIDv7()}`;
     const response = await viewer.app.request('/api/messages', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -368,7 +368,7 @@ test('turn delivery wakes the thread with the post labelled as data; the journal
 test('an exact retry is one post: the same postId under a new request id answers duplicate with the original seq', async () => {
   const h = await host();
   const jobco = await h.member('JobCo');
-  const postId = crypto.randomUUID();
+  const postId = Bun.randomUUIDv7();
   const first = await h.post(jobco, 'once', { postId });
   const retry = await h.post(jobco, 'once', { postId });
   expect(retry).toEqual({
@@ -741,7 +741,7 @@ test('a member granted after the latest snapshot is reviewed: its frames are adm
   // A Signet Kingdom granted and admitted a frame for, before any snapshot lists it.
   const fresh = {
     ...withTerms(listed, { outbound: 'auto' }),
-    signetId: crypto.randomUUID(),
+    signetId: Bun.randomUUIDv7(),
     recipient: { ...listed.recipient, displayName: 'Fresh' },
   };
   expect((await h.post(fresh, 'first post before the snapshot')).ok).toBe(true);
@@ -759,11 +759,11 @@ test('a member granted after the latest snapshot is reviewed: its frames are adm
 
 type Runtime = 'claude-code' | 'codex-app-server';
 function nativeRuntime(runtime: Runtime, dir: string, gone: string[] = []) {
-  const claude = claudeCli(new Set(gone), `claude-${crypto.randomUUID()}`);
+  const claude = claudeCli(new Set(gone), `claude-${Bun.randomUUIDv7()}`);
   const codex = appServerTransport({
     missingThreads: gone,
     response: 'codex answered',
-    threadId: `codex-${crypto.randomUUID()}`,
+    threadId: `codex-${Bun.randomUUIDv7()}`,
   });
   const store = new FileExternalSessionStore(join(dir, 'native-sessions.json'));
   const adapter =
@@ -1196,7 +1196,7 @@ async function withLocal(h: Awaited<ReturnType<typeof host>>, id = 'codex', name
     const response = await h.viewer.app.request('/api/messages', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ id: `turn_${crypto.randomUUID()}`, threadId, message: text }),
+      body: JSON.stringify({ id: `turn_${Bun.randomUUIDv7()}`, threadId, message: text }),
     });
     expect(response.status).toBe(200);
   };
@@ -1597,7 +1597,7 @@ test("a teammate's person sends an aside through thread.prompt: recorded once, s
   const jobco = await h.member('JobCo');
   const watcher = await h.member('Watcher');
   const before = h.executed.length;
-  const postId = crypto.randomUUID();
+  const postId = Bun.randomUUIDv7();
   const first = await h.post(jobco, 'off the record: budget is tight', { aside: true, postId });
   expect(first).toMatchObject({ ok: true, result: { accepted: true, duplicate: false } });
   expect(
