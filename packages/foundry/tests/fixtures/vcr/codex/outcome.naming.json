@@ -2,7 +2,7 @@
   "version": "0.162.1",
   "status": 200,
   "body": {
-    "title": "Add Settings Dark Mode Toggle",
+    "title": "Add settings dark mode toggle",
     "short": true,
     "aboutTheWork": true,
     "launches": 1,
@@ -16,8 +16,8 @@
   "recorded": {
     "service": "codex",
     "cli": "codex",
-    "recordedAt": "2026-11-02T23:01:54.404Z",
-    "agentSession": "0.10.0",
+    "recordedAt": "2026-11-03T02:02:29.941Z",
+    "agentSession": "0.11.0",
     "environment": "terminal"
   }
 }
