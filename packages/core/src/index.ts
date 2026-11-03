@@ -186,6 +186,7 @@ export {
   type CorrectionDetection,
   type CorrectionEvent,
   type CorrectionSignal,
+  contextSecretHits,
   correctionClassifyMessages,
   correctionId,
   detectCorrection,
@@ -194,6 +195,7 @@ export {
   type FeedbackTag,
   parseCorrectionClassifications,
   proseOf,
+  SHAPED_SECRET_PATTERNS,
   scrubSecrets,
   type TranscriptTurn,
 } from './feedback/correction';

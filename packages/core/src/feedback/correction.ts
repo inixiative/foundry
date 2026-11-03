@@ -221,7 +221,11 @@ export function extractCorrections(
   return { corrections, secretsScrubbed };
 }
 
-const SECRET_PATTERNS: ReadonlyArray<readonly [RegExp, string]> = [
+/**
+ * Credentials by their own shape (a provider's token prefix, a key block): specific enough that a
+ * match is a secret. Foundry lifts these from a message even when the person forgot `$$` (FEAT-005).
+ */
+const SHAPED_SECRETS: ReadonlyArray<readonly [RegExp, string]> = [
   [/sk-ant-[A-Za-z0-9_-]{20,}/g, '[REDACTED:anthropic-key]'],
   [/sk-[A-Za-z0-9_-]{20,}/g, '[REDACTED:api-key]'],
   [/gh[pousr]_[A-Za-z0-9]{20,}/g, '[REDACTED:github-token]'],
@@ -245,6 +249,10 @@ const SECRET_PATTERNS: ReadonlyArray<readonly [RegExp, string]> = [
   ],
   [/hooks\.slack\.com\/services\/[A-Za-z0-9/]+/g, '[REDACTED:slack-webhook]'],
   [/\bASIA[A-Z0-9]{16}/g, '[REDACTED:aws-key]'],
+];
+
+/** Credentials by context (an assignment, a header, a URL): a match may be a secret, so it is scrubbed but never lifted. */
+const CONTEXT_SECRETS: ReadonlyArray<readonly [RegExp, string]> = [
   [/\b(Bearer|Basic|DPoP)\s+[A-Za-z0-9._~+/=-]{16,}/g, '$1 [REDACTED:credential]'],
   [/\b([a-z][a-z0-9+.-]*:\/\/[^\s:/@]+:)[^\s@/]+@/gi, '$1[REDACTED:password]@'],
   [
@@ -256,6 +264,32 @@ const SECRET_PATTERNS: ReadonlyArray<readonly [RegExp, string]> = [
     '$1$2$1$3[REDACTED:value]',
   ],
 ];
+
+const SECRET_PATTERNS: ReadonlyArray<readonly [RegExp, string]> = [
+  ...SHAPED_SECRETS,
+  ...CONTEXT_SECRETS,
+];
+
+/**
+ * The shaped credentials safe to lift from a message the person forgot to mark: each never starts
+ * inside a word (`task-runner-…` holds `sk-…`), and the two loosest shapes (`sk-…` and
+ * `<word>_live_<…>`, which long hyphenated or snake_case names also fit) must carry a digit. Fresh
+ * regex objects, so lifting never shares match state with `scrubSecrets`. Scrubbing a false match is
+ * harmless; lifting one would take words out of the person's message.
+ */
+export const SHAPED_SECRET_PATTERNS: readonly RegExp[] = SHAPED_SECRETS.map(([pattern]) => {
+  const loose =
+    pattern.source.startsWith('sk-[') || pattern.source.includes('(?:live|test|prod|runtime)');
+  const digit = loose ? '(?=[A-Za-z0-9_-]*\\d)' : '';
+  return new RegExp(`(?<![A-Za-z0-9_-])${digit}(?:${pattern.source})`, pattern.flags);
+});
+
+/** How many credentials known only by context (`PASSWORD=…`, `Bearer …`, a URL password) the text holds. */
+export function contextSecretHits(text: string): number {
+  let hits = 0;
+  for (const [pattern] of CONTEXT_SECRETS) hits += [...text.matchAll(pattern)].length;
+  return hits;
+}
 
 /** Replace credential-shaped substrings. Transcripts are exactly where leaked keys live. */
 export function scrubSecrets(text: string): { text: string; hits: number } {

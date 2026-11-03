@@ -751,6 +751,8 @@ const runtimeManager = new ThreadRuntimeManager({
   sessionAdapters,
   // Conversation threads are always wrapped and carry their members' notes; bound once the viewer exists.
   conversations: lateConversationWrapper(() => conversationService ?? undefined),
+  // The secret scratch pad's reminders, from the viewer's pads once it exists.
+  secretNote: (messageId) => secretScratch?.note(messageId),
 });
 
 const factory = new ThreadFactory({

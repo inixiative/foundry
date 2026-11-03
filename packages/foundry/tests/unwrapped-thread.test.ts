@@ -23,7 +23,7 @@ function fresh(): FoundryConfig {
   return config;
 }
 
-function harness(config: FoundryConfig) {
+function harness(config: FoundryConfig, secretNote?: (messageId: string) => string | undefined) {
   const decisions: string[] = [];
   const central: Array<{ messages: LLMMessage[]; opts?: CompletionOpts }> = [];
   const decision: LLMProvider = {
@@ -51,6 +51,7 @@ function harness(config: FoundryConfig) {
     config,
     llm: decision,
     providers,
+    ...(secretNote ? { secretNote } : {}),
     log() {},
     warn() {},
   });
@@ -101,6 +102,35 @@ test('an unwrapped thread sends the message as typed with only the session brief
     expect(thread.stack.layers.map((layer) => layer.id)).toEqual(['foundry-tools']);
     // No pre-message plan was sealed, so the turn records no routing.
     expect(result.result.meta?.phases).toEqual({ guards: [] });
+  } finally {
+    manager.disposeAll();
+  }
+});
+
+test('an unwrapped thread still carries the secret reminder after the message, once, with no decision call', async () => {
+  const notes = new Map([
+    ['m1', 'Foundry: this message held a secret the person sent without $$.'],
+  ]);
+  const {
+    harness: h,
+    manager,
+    decisions,
+    central,
+  } = harness(fresh(), (id) => {
+    const note = notes.get(id);
+    notes.delete(id);
+    return note;
+  });
+  try {
+    await h.send({ id: 'm1', payload: 'deploy with †m1.1' });
+    await h.send({ id: 'm2', payload: 'and again' });
+    expect(decisions).toEqual([]);
+    expect(central[0]!.messages.at(-1)).toEqual({
+      role: 'user',
+      content:
+        'deploy with †m1.1\n\n---\n\nFoundry: this message held a secret the person sent without $$.',
+    });
+    expect(central[1]!.messages.at(-1)).toEqual({ role: 'user', content: 'and again' });
   } finally {
     manager.disposeAll();
   }

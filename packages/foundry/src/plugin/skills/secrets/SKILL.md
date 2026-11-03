@@ -7,6 +7,8 @@ description: Use in a Foundry thread when a message holds a reference like †<m
 
 The person hands you a secret by writing `$$` before it. Foundry lifts it out of the message before you, the journal or Archive see it, keeps it in the thread's scratch pad, and leaves a reference in its place: `†<message>.<n>` (another thread's is `†<thread>/<message>.<n>`). You never see the value. Use it; never try to read it.
 
+If the person pastes a secret without `$$`, Foundry lifts what it recognises by shape (a GitHub, Anthropic, OpenAI, AWS, Slack or Kingdom token, a private key) the same way, and adds a note to that turn. Tell them in one line, as a colleague would: it's held, it's out of the chat, and `$$value` does that on purpose next time. If the note says a secret stayed in plain text (a `PASSWORD=` line), tell them it's in the transcript now.
+
 ## Use it
 
 1. **Put it in an env file** (the normal path): `secret_scratch` with `action: "env"`, the `ref`, the file (`.env.local`) and the `key`. Pass `consume: true` when that is its last use.

@@ -67,6 +67,8 @@ export interface ChorusAdviseOptions {
   readonly prime?: boolean;
   /** Called once priming is done, before the message is sent (a caller attributing usage by phase). */
   readonly onPrimed?: () => void;
+  /** The secret scratch pad's reminder for the message (`ThreadRuntimeDeps.secretNote`). */
+  readonly secretNote?: ThreadRuntimeDeps['secretNote'];
   readonly log?: (line: string) => void;
   readonly warn?: (line: string) => void;
 }
@@ -214,6 +216,7 @@ export async function adviseOnce(opts: ChorusAdviseOptions): Promise<ChorusAdvic
     resolveSource: opts.resolveSource,
     ...(opts.stageHost ? { stageHost: opts.stageHost } : {}),
     ...(opts.atlasRoot ? { atlasRoot: opts.atlasRoot } : {}),
+    ...(opts.secretNote ? { secretNote: opts.secretNote } : {}),
     log: opts.log ?? (() => {}),
     warn: opts.warn ?? ((line) => console.warn(line)),
   });
