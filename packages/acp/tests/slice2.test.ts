@@ -70,7 +70,7 @@ async function turn(
   return attempt;
 }
 
-test("a host names the thread's worker in _meta, or as the worker option before the first turn; after it the worker is fixed", async () => {
+test("a host names the thread's worker in _meta, or as the worker option, before or after the first turn", async () => {
   const { f, dir, host } = await nativeHost();
   const h = host();
   await h.agent.request('initialize', INITIALIZE);
@@ -93,10 +93,15 @@ test("a host names the thread's worker in _meta, or as the worker option before 
     currentValue: 'claude-code',
   });
   await turn(h, f, sessionId, 'first');
-  const late = await h.agent
-    .request('session/set_config_option', { sessionId, configId: 'worker', value: 'codex' })
-    .catch((e: Error) => e);
-  expect(String((late as Error).message)).toContain('its worker is fixed');
+  // After it the thread continues on the new worker (a fresh session seeded from its journal).
+  const late = await h.agent.request('session/set_config_option', {
+    sessionId,
+    configId: 'worker',
+    value: 'codex',
+  });
+  expect(late.configOptions.find((o) => o.id === 'worker')).toMatchObject({
+    currentValue: 'codex',
+  });
 });
 
 test("modes and config options are the host's: they reach the executor launch and a change relaunches it", async () => {

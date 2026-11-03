@@ -30,6 +30,14 @@ export const SUBSCRIPTION_WORKERS = {
   muse: 'muse',
 } as const;
 export type SubscriptionWorker = keyof typeof SUBSCRIPTION_WORKERS;
+/** What a person calls each worker ("continued on Codex from here"), as the viewer names them. */
+export const WORKER_NAMES: Readonly<Record<SubscriptionWorker, string>> = {
+  'claude-code': 'Claude Code',
+  codex: 'Codex',
+  muse: 'Muse',
+};
+export const workerName = (worker: string): string =>
+  (WORKER_NAMES as Record<string, string>)[worker] ?? MODEL_REGISTRY[worker]?.label ?? worker;
 /** The session-store bucket each worker's native binding is saved under (the session adapter's runtime). */
 export const WORKER_SESSION_RUNTIMES: Readonly<Record<SubscriptionWorker, string>> = {
   'claude-code': 'claude-code',

@@ -1441,14 +1441,21 @@ export class LocalSessionStore {
       !prior.spawn?.observed
     )
       throw new Error(unstampedRecord(thread.id));
-    // A thread's worker is never changed silently: only before its first turn, when no native session holds it.
+    // A thread's worker is never changed silently: before its first turn, when no native session
+    // holds it, or after it only with a journalled switch to it (its "continued on" marker, written
+    // first: `turns/journal-history.ts`), whose newest row names exactly this change.
     if (prior?.worker !== undefined && prior.worker !== thread.meta.worker) {
       if (thread.meta.worker === undefined)
         throw new Error(`Thread worker cannot be removed: ${thread.id}`);
-      if (this.query('SELECT 1 FROM session_turns WHERE thread_id=? LIMIT 1').get(thread.id))
-        throw new Error(
-          `Thread worker cannot change after its first turn: ${thread.id} runs on ${prior.worker}`,
-        );
+      if (this.query('SELECT 1 FROM session_turns WHERE thread_id=? LIMIT 1').get(thread.id)) {
+        const marker = this.query(
+          "SELECT json_extract(record, '$.from') AS from_worker, json_extract(record, '$.to') AS to_worker FROM session_phase WHERE thread_id=? AND phase='worker-switch' ORDER BY seq DESC LIMIT 1",
+        ).get(thread.id) as { from_worker: string | null; to_worker: string | null } | null;
+        if (marker?.from_worker !== prior.worker || marker?.to_worker !== thread.meta.worker)
+          throw new Error(
+            `Thread worker cannot change after its first turn without a recorded switch: ${thread.id} runs on ${prior.worker}`,
+          );
+      }
     }
     this.query(
       'INSERT INTO session_threads(id, meta) VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET meta=excluded.meta',
@@ -2836,6 +2843,9 @@ export const JOURNAL_ORDERED_PHASES = [
   'shared-entry',
   // A person-to-person aside: in every person's view of the log, never an agent's (M6).
   'aside',
+  // The thread moved to another worker here (`turns/journal-history.ts`, WORKER_SWITCH_PHASE): its
+  // marker sits in the conversation's order, so a fresh session's seed shows where it changed.
+  'worker-switch',
 ] as const;
 
 /** One entry of a main thread's journal in order: a message, or an ordered phase row. */

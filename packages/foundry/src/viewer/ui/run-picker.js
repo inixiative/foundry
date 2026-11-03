@@ -33,13 +33,15 @@ const modelOf = (worker, modelId) => worker?.models?.find((m) => m.id === modelI
 
 /**
  * The three choices, controlled. `value` is `{ worker, model, effort }`; an empty effort is the
- * model's own default (named, so the choice is never blank). `lock` is why the worker is fixed.
+ * model's own default (named, so the choice is never blank). `lock` is why the worker can't change
+ * now; `musePersonal` replaces the Muse note with what a mid-thread switch means for the Archive.
  */
 export function RunPicker({
   value,
   workers,
   unavailable = [],
   lock = null,
+  musePersonal = null,
   onChange,
   onNewThread,
 }) {
@@ -80,13 +82,14 @@ export function RunPicker({
       </select>
     </label>
     ${
-      worker?.id === 'muse'
+      worker?.id === 'muse' && !musePersonal
         ? html`<p class="run-picker-note" data-note="muse-personal">Muse is personal: this thread goes to your personal Archive, whatever project it's in.</p>`
         : null
     }
+    ${musePersonal ? html`<p class="run-picker-note" data-note="muse-personal">${musePersonal}</p>` : null}
     ${
       lock
-        ? html`<p class="run-picker-note" data-note="worker-lock">The worker is fixed: ${lock}. Another worker needs a new thread.
+        ? html`<p class="run-picker-note" data-note="worker-lock">The worker can't change right now: ${lock}.
             ${onNewThread ? html` <button type="button" class="run-picker-link" onClick=${onNewThread}>New thread…</button>` : null}</p>`
         : null
     }
@@ -101,9 +104,10 @@ export function RunPicker({
 // --- The thread header's picker ---------------------------------------------------------------
 
 /**
- * Apply a picked run to a thread. A worker change goes first (allowed only before the first turn:
- * the thread is rebuilt on the new worker, and its native session starts fresh there); then the
- * model and effort, which its idle session picks up on the next turn.
+ * Apply a picked run to a thread. A worker change goes first: the thread is rebuilt on the new
+ * worker, whose native session starts fresh (after the first turn, seeded with the conversation and
+ * marked "continued on" in the transcript); then the model and effort, which its idle session picks
+ * up on the next turn.
  */
 async function applyRun(threadId, launch, next) {
   const json = { 'Content-Type': 'application/json' };
@@ -148,6 +152,16 @@ function ThreadRunModal({ launch, onClose }) {
   });
   const [busy, setBusy] = useState(false);
   const switching = value.worker !== launch.worker;
+  // What a mid-thread switch means for where the thread is archived (Muse is always personal).
+  const ranOnMuse =
+    launch.worker === 'muse' || (launch.switches ?? []).some((s) => s.from === 'muse');
+  const musePersonal = !launch.started
+    ? null
+    : switching && value.worker === 'muse' && !ranOnMuse
+      ? `Muse is personal: from here this thread goes to your personal Archive${launch.projectLabel ? `, not ${launch.projectLabel}'s` : ''}.`
+      : switching && ranOnMuse
+        ? 'This thread stays personal: it ran on Muse, so it keeps going to your personal Archive.'
+        : null;
   const save = async () => {
     setBusy(true);
     try {
@@ -155,7 +169,9 @@ function ThreadRunModal({ launch, onClose }) {
       await loadLaunch(threadId);
       showToast(
         switching
-          ? `This thread now runs on ${workerName(value.worker)}`
+          ? launch.started
+            ? `Continued on ${workerName(value.worker)} from here`
+            : `This thread now runs on ${workerName(value.worker)}`
           : 'Applies from the next turn',
         'ok',
       );
@@ -171,13 +187,19 @@ function ThreadRunModal({ launch, onClose }) {
   };
   return html`<${Modal} title="Runs on" onClose=${onClose} class="run-modal">
     <${RunPicker} value=${value} workers=${workers} unavailable=${launch.options?.unavailableWorkers ?? []}
-      lock=${launch.workerLock} onChange=${setValue}
+      lock=${launch.workerLock} musePersonal=${musePersonal} onChange=${setValue}
       onNewThread=${() => {
         onClose();
         openNewThread();
       }} />
-    <p class="run-picker-note run-picker-note--dim">
-      ${switching ? `Nothing has run yet: the thread restarts on ${workerName(value.worker)} with a fresh session.` : 'A change applies from the next turn.'}
+    <p class="run-picker-note run-picker-note--dim" data-note="carry-over">
+      ${
+        !switching
+          ? 'A change applies from the next turn.'
+          : launch.started
+            ? `Continues on a fresh ${workerName(value.worker)} session that carries the conversation and plan, not the old session's files read or tool state.`
+            : `Nothing has run yet: the thread restarts on ${workerName(value.worker)} with a fresh session.`
+      }
     </p>
     <div class="rename-actions">
       <button type="button" class="action-btn" onClick=${onClose}>✕ Cancel</button>
