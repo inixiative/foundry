@@ -11,7 +11,6 @@
 // nothing. Oracle's `chorus` replay arm reads the result (scripts/evals/chorus-advise.ts).
 
 import {
-  ContextStack,
   Harness,
   type InjectionArtifact,
   type LLMMessage,
@@ -23,20 +22,11 @@ import {
   withAfterMessageNotes,
 } from '@inixiative/foundry-core';
 import { CHORUS_RECEPTION_LAYER } from '../agents/chorus-reception';
+import { withChorusThread } from '../agents/chorus-thread';
 import { threadKnowledgeLayerId } from '../agents/domain-librarian';
 import type { DomainContribution, InjectionPlan } from '../agents/flow-orchestrator';
-import {
-  buildAgents,
-  buildLayers,
-  configureHarness,
-  type SourceResolver,
-  ThreadFactory,
-} from '../agents/thread-factory';
-import {
-  type PhaseRecordInput,
-  type ThreadRuntimeDeps,
-  ThreadRuntimeManager,
-} from '../agents/thread-runtime';
+import { configureHarness, type SourceResolver } from '../agents/thread-factory';
+import type { PhaseRecordInput, ThreadRuntimeDeps } from '../agents/thread-runtime';
 import { formatMessagesForNativeSession } from '../providers/session-backed';
 import { baseContextOf, sessionTurn } from '../providers/session-delivery';
 import type { FoundryConfig } from '../viewer/config';
@@ -65,8 +55,11 @@ export interface ChorusAdviseOptions {
    * turn primes as it decides, and may time out doing so). Nothing of it reaches the thread.
    */
   readonly prime?: boolean;
-  /** Called once priming is done, before the message is sent (a caller attributing usage by phase). */
-  readonly onPrimed?: () => void;
+  /**
+   * Called once priming is done, before the message is sent (a caller attributing usage by phase,
+   * or waiting for a project host to hold its spares again).
+   */
+  readonly onPrimed?: () => void | Promise<void>;
   /** The secret scratch pad's reminder for the message (`ThreadRuntimeDeps.secretNote`). */
   readonly secretNote?: ThreadRuntimeDeps['secretNote'];
   readonly log?: (line: string) => void;
@@ -195,156 +188,124 @@ export async function adviseOnce(opts: ChorusAdviseOptions): Promise<ChorusAdvic
       return { model: 'chorus-advise-capture', content: '' };
     },
   });
-  // Every agent provider but the decision host captures; the decision roles stay on the decision host.
-  const providers = new Map<string, LLMProvider>([[opts.decisions.id, opts.decisions]]);
-  for (const agent of Object.values(config.agents)) {
-    const id = agent.provider || config.defaults.provider;
-    if (!providers.has(id)) providers.set(id, capture(id));
-  }
-  if (!providers.has(config.defaults.provider))
-    providers.set(config.defaults.provider, capture(config.defaults.provider));
-  const central = providers.get(config.defaults.provider)!;
-
-  const stack = new ContextStack(buildLayers(config, { sourceResolver: opts.resolveSource }));
-  await stack.warmAll();
-  const runtime = new ThreadRuntimeManager({
-    config,
-    llm: opts.decisions,
-    providers,
-    // One turn: the post-work review (learning) would only spend calls after the delivery.
-    learning: { enabled: false },
-    resolveSource: opts.resolveSource,
-    ...(opts.stageHost ? { stageHost: opts.stageHost } : {}),
-    ...(opts.atlasRoot ? { atlasRoot: opts.atlasRoot } : {}),
-    ...(opts.secretNote ? { secretNote: opts.secretNote } : {}),
-    log: opts.log ?? (() => {}),
-    warn: opts.warn ?? ((line) => console.warn(line)),
-  });
-  if (opts.journal) {
-    const journal = opts.journal;
-    runtime.setPhaseJournal((_runtime, record) => journal(record));
-  }
-  const agents = { provider: central, providers };
-  const factory = new ThreadFactory({
-    stack,
-    runtime,
-    agents: buildAgents(config, stack, agents),
-    configuration: { config, layers: { sourceResolver: opts.resolveSource }, agents },
-  });
-  const thread = factory.create(threadId, {
-    description: 'chorus-advise',
-    projectId: opts.projectId,
-    cwd: opts.cwd,
-  });
-  try {
-    const live = runtime.get(thread.id);
-    if (!live) throw Error('the thread has no runtime');
-    if (!live.domainLibrarians.size)
-      throw Error(`project ${opts.projectId} runs no Wardens: its chorus is off or empty`);
-    await live.ready;
-    const primed = opts.prime
-      ? await Promise.all(
-          [...live.domainLibrarians.values()].map(async (lib): Promise<ChorusPrime> => {
-            const started = Date.now();
-            try {
-              await lib.warm();
-              lib.prestart();
-              const result = await lib.advise(PRIME_MESSAGE, live.librarian.layer.content, {
-                cache: lib.cache.content,
-                cacheComposition: lib.cacheComposition(),
-                threadKnowledge: lib.threadKnowledge.content,
-                trigger: 'user-message',
-              });
-              const failed = result.error ?? result.skipped ?? result.notStarted;
-              return {
-                domain: lib.domain,
-                outcome: result.error ? 'error' : failed ? 'skipped' : 'answered',
-                ...(failed ? { reason: failed } : {}),
-                elapsedMs: Date.now() - started,
-              };
-            } catch (error) {
-              return {
-                domain: lib.domain,
-                outcome: 'error',
-                reason: (error as Error).message,
-                elapsedMs: Date.now() - started,
-              };
-            }
-          }),
-        )
-      : undefined;
-    opts.onPrimed?.();
-    const harness = new Harness(thread);
-    configureHarness(harness, config);
-    const started = Date.now();
-    const sent = await harness.send({ id: newId('msg'), payload: opts.message });
-    const elapsedMs = Date.now() - started;
-    const artifact = sent.result.meta?.injection as InjectionArtifact | undefined;
-    const plan = artifact?.plan as InjectionPlan | undefined;
-    const decoration = artifact?.decoration;
-    if (!captured || !artifact || !plan || !decoration)
-      throw Error('the turn reached no executor with a sealed plan: nothing was decorated');
-    const user = captured.messages.filter((m) => m.role === 'user').at(-1);
-    const executorMessage = typeof user?.content === 'string' ? user.content : undefined;
-    const { notes, message } = chorusMessage(opts.message, decoration);
-    if (executorMessage !== message)
-      throw Error('the executor sent another message than the decoration composes');
-    const delivery = captured.delivery;
-    if (!delivery) throw Error('the executor gave no session delivery');
-    const domains = [...live.domainLibrarians.keys()];
-    const standing: StandingPart[] = [...delivery.standing];
-    const fresh = freshSessionTurn(delivery, captured.messages);
-    return {
-      systemAppend: baseContextOf({
-        standing: standing.filter((part) => chorusPart(part.id, domains)),
-        turn: '',
-        held: {},
-      }),
-      standing: standing.map(({ id, hash }) => ({ id, hash, chorus: chorusPart(id, domains) })),
-      turnText: delivery.turn,
-      payload: opts.message,
-      notes,
-      message,
-      nativePrompt: fresh.prompt,
-      liveSystemPrompt: fresh.systemPrompt,
-      decisions: plan.contributions.map((c) => ({
-        domain: c.domain,
-        decision: c.decision,
-        ...(c.reason ? { reason: c.reason } : {}),
-        snippets: [...c.snippets],
-        ...(c.pointer ? { pointer: c.pointer } : {}),
-        ...(c.provenance.elapsedMs !== undefined ? { elapsedMs: c.provenance.elapsedMs } : {}),
-        ...(c.classified ? { classified: c.classified } : {}),
-        ...(c.request.status === 'supplied' && c.request.served
-          ? { served: c.request.served }
-          : {}),
-        request: c.request,
-        ...(c.stageRequests ? { stageRequests: c.stageRequests } : {}),
-      })),
-      omissions: plan.omissions,
-      routing: {
-        status: plan.routing.status,
-        domains: plan.routing.domains,
-        confidence: plan.routing.confidence,
-        ...(plan.routing.reason ? { reason: plan.routing.reason } : {}),
-      },
-      elapsedMs,
-      decoration,
-      composed: domains,
-      timing: (({ maxAdviseParallel, contributionBudget, planTimeoutMs, ...deadlines }) => ({
-        ...deadlines,
-        // Unbounded values (every Warden at once, no budget, no plan deadline) are null in JSON.
-        maxAdviseParallel:
-          Number.isSafeInteger(maxAdviseParallel) && maxAdviseParallel < Number.MAX_SAFE_INTEGER
-            ? maxAdviseParallel
-            : null,
-        contributionBudget: Number.isFinite(contributionBudget) ? contributionBudget : null,
-        planTimeoutMs: planTimeoutMs ?? null,
-      }))(live.flowOrchestrator.timing),
-      ...(primed ? { primed } : {}),
-    };
-  } finally {
-    runtime.disposeAll();
-    thread.dispose();
-  }
+  return withChorusThread(
+    {
+      config,
+      projectId: opts.projectId,
+      cwd: opts.cwd,
+      decisions: opts.decisions,
+      agentProvider: capture,
+      ...(opts.stageHost ? { stageHost: opts.stageHost } : {}),
+      resolveSource: opts.resolveSource,
+      ...(opts.atlasRoot ? { atlasRoot: opts.atlasRoot } : {}),
+      ...(opts.journal ? { journal: opts.journal } : {}),
+      ...(opts.secretNote ? { secretNote: opts.secretNote } : {}),
+      threadId,
+      ...(opts.log ? { log: opts.log } : {}),
+      ...(opts.warn ? { warn: opts.warn } : {}),
+    },
+    async ({ thread, live }) => {
+      const primed = opts.prime
+        ? await Promise.all(
+            [...live.domainLibrarians.values()].map(async (lib): Promise<ChorusPrime> => {
+              const started = Date.now();
+              try {
+                await lib.warm();
+                lib.prestart();
+                const result = await lib.advise(PRIME_MESSAGE, live.librarian.layer.content, {
+                  cache: lib.cache.content,
+                  cacheComposition: lib.cacheComposition(),
+                  threadKnowledge: lib.threadKnowledge.content,
+                  trigger: 'user-message',
+                });
+                const failed = result.error ?? result.skipped ?? result.notStarted;
+                return {
+                  domain: lib.domain,
+                  outcome: result.error ? 'error' : failed ? 'skipped' : 'answered',
+                  ...(failed ? { reason: failed } : {}),
+                  elapsedMs: Date.now() - started,
+                };
+              } catch (error) {
+                return {
+                  domain: lib.domain,
+                  outcome: 'error',
+                  reason: (error as Error).message,
+                  elapsedMs: Date.now() - started,
+                };
+              }
+            }),
+          )
+        : undefined;
+      await opts.onPrimed?.();
+      const harness = new Harness(thread);
+      configureHarness(harness, config);
+      const started = Date.now();
+      const sent = await harness.send({ id: newId('msg'), payload: opts.message });
+      const elapsedMs = Date.now() - started;
+      const artifact = sent.result.meta?.injection as InjectionArtifact | undefined;
+      const plan = artifact?.plan as InjectionPlan | undefined;
+      const decoration = artifact?.decoration;
+      if (!captured || !artifact || !plan || !decoration)
+        throw Error('the turn reached no executor with a sealed plan: nothing was decorated');
+      const user = captured.messages.filter((m) => m.role === 'user').at(-1);
+      const executorMessage = typeof user?.content === 'string' ? user.content : undefined;
+      const { notes, message } = chorusMessage(opts.message, decoration);
+      if (executorMessage !== message)
+        throw Error('the executor sent another message than the decoration composes');
+      const delivery = captured.delivery;
+      if (!delivery) throw Error('the executor gave no session delivery');
+      const domains = [...live.domainLibrarians.keys()];
+      const standing: StandingPart[] = [...delivery.standing];
+      const fresh = freshSessionTurn(delivery, captured.messages);
+      return {
+        systemAppend: baseContextOf({
+          standing: standing.filter((part) => chorusPart(part.id, domains)),
+          turn: '',
+          held: {},
+        }),
+        standing: standing.map(({ id, hash }) => ({ id, hash, chorus: chorusPart(id, domains) })),
+        turnText: delivery.turn,
+        payload: opts.message,
+        notes,
+        message,
+        nativePrompt: fresh.prompt,
+        liveSystemPrompt: fresh.systemPrompt,
+        decisions: plan.contributions.map((c) => ({
+          domain: c.domain,
+          decision: c.decision,
+          ...(c.reason ? { reason: c.reason } : {}),
+          snippets: [...c.snippets],
+          ...(c.pointer ? { pointer: c.pointer } : {}),
+          ...(c.provenance.elapsedMs !== undefined ? { elapsedMs: c.provenance.elapsedMs } : {}),
+          ...(c.classified ? { classified: c.classified } : {}),
+          ...(c.request.status === 'supplied' && c.request.served
+            ? { served: c.request.served }
+            : {}),
+          request: c.request,
+          ...(c.stageRequests ? { stageRequests: c.stageRequests } : {}),
+        })),
+        omissions: plan.omissions,
+        routing: {
+          status: plan.routing.status,
+          domains: plan.routing.domains,
+          confidence: plan.routing.confidence,
+          ...(plan.routing.reason ? { reason: plan.routing.reason } : {}),
+        },
+        elapsedMs,
+        decoration,
+        composed: domains,
+        timing: (({ maxAdviseParallel, contributionBudget, planTimeoutMs, ...deadlines }) => ({
+          ...deadlines,
+          // Unbounded values (every Warden at once, no budget, no plan deadline) are null in JSON.
+          maxAdviseParallel:
+            Number.isSafeInteger(maxAdviseParallel) && maxAdviseParallel < Number.MAX_SAFE_INTEGER
+              ? maxAdviseParallel
+              : null,
+          contributionBudget: Number.isFinite(contributionBudget) ? contributionBudget : null,
+          planTimeoutMs: planTimeoutMs ?? null,
+        }))(live.flowOrchestrator.timing),
+        ...(primed ? { primed } : {}),
+      };
+    },
+  );
 }

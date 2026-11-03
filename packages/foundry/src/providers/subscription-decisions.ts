@@ -45,7 +45,10 @@ export interface SubscriptionDecisionConfig extends Omit<NativeTextConfig, 'runI
   hedgeAfterMs?: number;
   /** Characters a decision's input may take. Default DECISION_INPUT_CAP; raised only by offline evals. */
   inputCap?: number;
-  /** `claude-in-session`: each thread's Wardens are held inside its own Claude Code process. */
+  /**
+   * `claude-in-session`: each thread's Wardens are held inside its own Claude Code process;
+   * `claude-project`: in one Claude Code process per project.
+   */
   inSession?: InSessionWardens;
 }
 export type DecisionPressure =
@@ -106,7 +109,12 @@ export function createSubscriptionDecisions(config: SubscriptionDecisionConfig) 
   const decisions = buildSubscriptionDecisions(
     {
       ...bounds,
-      ...(inSession ? { unbounded: (key: string) => !!inSessionTarget(inSession, key) } : {}),
+      ...(inSession
+        ? {
+            unbounded: (key: string, opts: CompletionOpts) =>
+              !!inSessionTarget(inSession, key, opts),
+          }
+        : {}),
     },
     primed.createRun,
   );
@@ -134,8 +142,8 @@ export function createSubscriptionDecisions(config: SubscriptionDecisionConfig) 
 
 export function buildSubscriptionDecisions(
   options: Omit<SubscriptionDecisionConfig, 'inSession'> & {
-    /** Calls (by provider session key) served in their thread's own process: no shared slot. */
-    unbounded?: (sessionKey: string) => boolean;
+    /** Calls (by provider session key and options) served in an in-session host: no shared slot. */
+    unbounded?: (sessionKey: string, opts: CompletionOpts) => boolean;
   },
   createRun: (config: NativeTextConfig) => TextRun,
 ) {
@@ -572,7 +580,7 @@ export function buildSubscriptionDecisions(
             Math.min(opts.timeout || config.callTimeoutMs, config.callTimeoutMs),
           ),
         };
-        if (unbounded?.(threadId)) {
+        if (unbounded?.(threadId, options)) {
           pending.unbounded = true;
           void start(pending);
           return;

@@ -118,6 +118,7 @@ import {
 } from '../../packages/foundry/src/classify';
 import {
   type EvalWarden,
+  evalProjectRoster,
   judge,
   markEvalRun,
   runCharterEval,
@@ -166,6 +167,7 @@ const { values } = parseArgs({
     effort: { type: 'string' },
     experiment: { type: 'string' },
     carry: { type: 'string' },
+    'decision-runtime': { type: 'string' },
   },
   strict: true,
 });
@@ -205,6 +207,15 @@ if ((stages.length > 1 || membersDir) && !values.regions)
 /** A stage's model and effort: its own, else the run's (--model / --effort). */
 const modelOf = (stage: StageConfig) => stage.model ?? wardenModel;
 const effortOf = (stage: StageConfig) => stage.effort ?? wardenEffort;
+
+const decisionRuntime = values['decision-runtime'];
+if (
+  decisionRuntime !== undefined &&
+  decisionRuntime !== 'claude' &&
+  decisionRuntime !== 'claude-project'
+)
+  throw Error('--decision-runtime is claude or claude-project');
+const projectMode = decisionRuntime === 'claude-project';
 
 const onlyRoles = values.roles?.split(',').filter(Boolean);
 if (!values.probes) {
@@ -268,6 +279,14 @@ const foundryDir = resolve(
   values['foundry-dir'] ?? join(homedir(), 'code', 'inixiative', 'foundry', '.foundry'),
 );
 const config = await new ConfigStore(foundryDir).load();
+if (projectMode) {
+  if (!values.session || projects?.length !== 1 || values.subagents)
+    throw Error(
+      '--decision-runtime claude-project needs --session and one --projects entry, without --subagents',
+    );
+  // In memory only: Wardens compose as a thread of a claude-project daemon composes them.
+  config.subscriptionOnly = { ...config.subscriptionOnly, decisionRuntime: 'claude-project' };
+}
 const resolveSource = createSourceResolver({ memory: new FileMemory(join(foundryDir, 'memory')) });
 /** The registered project a probe's project name (its directory's basename) refers to. */
 const projectEntry = (name: string | undefined) =>
@@ -384,7 +403,14 @@ for (const probe of probes) {
       ...(Object.keys(docs).length ? { docs } : {}),
       ...(members ? { members } : {}),
       budget,
-      ...(values.session ? { session: `${values.session}:${agentId}` } : {}),
+      // A project host serves a thread's Warden keys (`<thread>:aux:domain:<d>`) only.
+      ...(values.session
+        ? {
+            session: projectMode
+              ? `${values.session}:aux:domain:${domain}`
+              : `${values.session}:${agentId}`,
+          }
+        : {}),
     });
   }
   composed.set(key, wardens);
@@ -571,6 +597,11 @@ if (values.rejudge) {
 }
 
 /**
+ * --decision-runtime claude-project runs the first stage as the daemon does under that runtime: the
+ * Wardens composed at the project's root (each probe of the project already runs there), held warm
+ * in one project host and asked there; later stages stay primed. It needs --session and exactly one
+ * --projects entry; the host's state lands in <out>/host.json.
+ *
  * --carry <run dir>: test the later stages with stage 1 held fixed. Each cell's stage 1 is the earlier
  * run's (same stage 1 config); only cells it escalated are asked, from stage 2, carrying its reading.
  * Whether stage 2 is handed stage 1's why is the run config's `carryWhy` on stage 1, as live.
@@ -608,20 +639,38 @@ const subagents = subagentProcesses
   : undefined;
 /** One decision host per model and effort, shared by the stages that name the same pair. */
 const hosts = new Map<string, ReturnType<typeof decisionHost>>();
-const hostOf = (model: string, effort: (typeof EFFORTS)[number] | undefined) => {
+const projectId = projectMode ? projectEntry(projects![0])?.[0] : undefined;
+if (projectMode && !projectId)
+  throw Error(`project ${projects![0]} is not registered in ${foundryDir}`);
+const hostOf = (model: string, effort: (typeof EFFORTS)[number] | undefined, first = false) => {
   const key = `${model}|${effort ?? ''}`;
   let host = hosts.get(key);
   if (!host) {
-    host = decisionHost(model, 'claude', concurrency, state, {
-      ...(inputCap !== undefined ? { inputCap } : {}),
-      ...(subagents ? { subagents } : primedSessions !== undefined ? { primedSessions } : {}),
-      ...(effort !== undefined ? { effort } : {}),
-    });
+    host = decisionHost(
+      model,
+      projectMode && first ? 'claude-project' : 'claude',
+      concurrency,
+      state,
+      {
+        ...(projectMode && first
+          ? {
+              project: {
+                projectOf: () => projectId,
+                onProject: (id: string, s: { status: string; held: number; expected: number }) =>
+                  console.error(`[project-wardens] ${id} ${s.status} ${s.held}/${s.expected}`),
+              },
+            }
+          : {}),
+        ...(inputCap !== undefined ? { inputCap } : {}),
+        ...(subagents ? { subagents } : primedSessions !== undefined ? { primedSessions } : {}),
+        ...(effort !== undefined ? { effort } : {}),
+      },
+    );
     hosts.set(key, host);
   }
   return host;
 };
-const wardens = hostOf(modelOf(stages[0]!), effortOf(stages[0]!));
+const wardens = hostOf(modelOf(stages[0]!), effortOf(stages[0]!), true);
 const stageProviders = stages.map((s) => hostOf(modelOf(s), effortOf(s)).provider);
 if (subagents)
   console.error(
@@ -763,6 +812,28 @@ if (debug)
 if (values.resume) console.error(`resuming: ${finished.size} turns already done`);
 let done = 0;
 try {
+  if (projectMode) {
+    const projectHosts = wardens.projectHosts!;
+    const roster = await evalProjectRoster(
+      {
+        stages,
+        charters,
+        ...(runConfig ? { regionInstructions: runConfig.regionInstructions } : {}),
+      },
+      [...new Map([...composed.values()].flat().map((w) => [w.domain, w])).values()],
+    );
+    const t0 = Date.now();
+    projectHosts.openProject(projectId!, roster);
+    const ready = await projectHosts.projectReady(projectId!, 600_000);
+    const setup = {
+      roster: roster.length,
+      ready,
+      ms: Date.now() - t0,
+      state: projectHosts.projectState(projectId!),
+    };
+    console.error(`[project-wardens] setup ${JSON.stringify(setup)}`);
+    writeFileSync(join(out, 'host.json'), JSON.stringify({ setup }, null, 1), { mode: 0o600 });
+  }
   const run = await runCharterEval({
     probes,
     wardensFor,

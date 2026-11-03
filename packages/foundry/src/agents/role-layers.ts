@@ -333,3 +333,18 @@ export function chunkSource(
     },
   };
 }
+
+/**
+ * `decisionRuntime: claude-project`: where a Warden's slots compose, so that every thread of the
+ * project holds the same text as the project host (oracle docs/foundry/PROJECT-WARDEN-HOST.md,
+ * Lifecycle 4): the project's root for every thread, worktree threads included. Wardens never get
+ * CLAUDE.md; what would otherwise follow the cwd is the walk for role files
+ * (`.foundry/roles/<region>/`) and the paths their text names.
+ * Undefined in any other runtime: a Warden composes at its thread's cwd.
+ */
+export function projectWardenRoot(
+  config: FoundryConfig,
+): ((projectId: string | undefined) => string | undefined) | undefined {
+  if (config.subscriptionOnly?.decisionRuntime !== 'claude-project') return undefined;
+  return (projectId) => (projectId ? config.projects?.[projectId]?.path : undefined);
+}

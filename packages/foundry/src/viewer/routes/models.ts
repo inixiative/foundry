@@ -83,15 +83,22 @@ export function registerModelRoutes(app: Hono, configStore: ConfigStore) {
     if (provider === 'muse')
       throw Error('Muse Code runs main threads only; decisions run on Claude or Codex');
     if (subscriptionWorker(provider)) {
-      // A subscription login runs decisions: Claude (in its own sessions, or in-session) or Codex.
+      // A subscription login runs decisions: Claude (in its own sessions, in-session or in a project
+      // host) or Codex.
       const current = draft.subscriptionOnly?.decisionRuntime;
       const decisionRuntime =
         provider === 'codex'
           ? 'codex'
-          : current === 'claude-in-session'
-            ? 'claude-in-session'
+          : current === 'claude-in-session' || current === 'claude-project'
+            ? current
             : 'claude';
-      draft.subscriptionOnly = { ...draft.subscriptionOnly, decisionRuntime, model };
+      const { projectHost, ...kept } = draft.subscriptionOnly ?? {};
+      draft.subscriptionOnly = {
+        ...kept,
+        ...(decisionRuntime === 'claude-project' && projectHost ? { projectHost } : {}),
+        decisionRuntime,
+        model,
+      };
       draft.defaults.classifierProvider = SUBSCRIPTION_DECISIONS;
       draft.defaults.classifierModel = model;
       return;

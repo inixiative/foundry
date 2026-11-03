@@ -13,7 +13,12 @@ import {
 } from './providers/decision-host';
 import { createDecisionProvider } from './providers/decision-provider';
 import { harnessSettingSources } from './providers/harness-settings';
-import { InSessionWardens, inSessionThreadSetup } from './providers/in-session-wardens';
+import {
+  followProjectActivity,
+  InSessionWardens,
+  inSessionThreadSetup,
+  type ProjectHostState,
+} from './providers/in-session-wardens';
 import { KingdomAuthentication } from './providers/kingdom-authentication';
 import { projectCapacity } from './providers/kingdom-subscription-authentication';
 import { LoginPoolAuthentication, LoginRunLog } from './providers/login-pool';
@@ -78,6 +83,7 @@ import {
   ThreadRuntimeManager,
   TokenTracker,
 } from './agents';
+import { composeProjectRoster } from './agents/chorus-thread';
 import { resolveLearningSettings } from './agents/learning-config';
 import { describeChorus } from './agents/region-roster';
 import { atlasRootOf, configureHarness, createMainThread } from './agents/thread-factory';
@@ -273,10 +279,30 @@ const decisionEvents: DecisionEvents = {
 const live = subscription
   ? liveDecisionHosts(config, subscription, {
       ...(inSession ? { inSession } : {}),
+      // claude-project: each project's Wardens held warm in one host per project, asked for advice by
+      // every thread of the project (the thread's project: the login pool's late-bound lookup).
+      ...(subscription.policy.wardens === 'project'
+        ? {
+            project: {
+              projectOf: (threadId: string) => threadMeta?.(threadId)?.projectId,
+              onProject: (projectId: string, state: ProjectHostState) => {
+                const line = `[project-wardens] ${projectId} ${state.status}: ${state.held}/${state.expected} held${state.setupMs !== undefined ? `, set up in ${state.setupMs} ms` : ''}${state.rssMb !== undefined ? `, ${state.rssMb} MB` : ''}${state.reason ? ` (${state.reason})` : ''}`;
+                console.log(line);
+                // Its calls fall back to primed Wardens meanwhile; say so where decision warnings go.
+                if (state.status === 'failed' || (state.reason && state.status !== 'serving'))
+                  eventStream.pushError('subscription-decisions', line, 'warn');
+              },
+            },
+          }
+        : {}),
       events: decisionEvents,
       log: (line) => console.log(line),
     })
   : undefined;
+if (live?.projectHosts)
+  console.log(
+    "Wardens: each project's held warm in one Foundry-owned process (claude-project); guards, reviews and later stages stay primed",
+  );
 const decisions = live?.decisions;
 const flowLlm = decisions?.provider ?? createDecisionProvider(config);
 /** Wired only with subscription decisions: without it, a chorus that writes no stages runs one. */
@@ -785,6 +811,61 @@ configStore.onChange(async (next) => {
 });
 configStore.watch();
 
+// claude-project: a project's Wardens are held only while someone works in it (Aron, 2026-11-02).
+// Its host opens on the project's first activity (a turn journalled in it, a thread of it opened:
+// `followProjectActivity`, subscribed once startup is done) and closes after `projectHost.idleMs`
+// without any. Its roster is composed from a hidden thread at the project's root, as a thread of the
+// project composes its Wardens; settings changes and a minute's timer refresh open hosts only (a
+// region's files may change on disk; the same roster changes nothing). Until a host serves, calls
+// go to primed Wardens.
+const projectHosts = live?.projectHosts;
+const holdProjectRoster = async (projectId: string) => {
+  if (!projectHosts || !decisions) return;
+  const current = liveConfig;
+  const project = current.projects?.[projectId];
+  const view =
+    !project || project.enabled === false ? undefined : resolveProjectView(current, projectId);
+  if (!view?.chorus.on || !project?.path) {
+    await projectHosts.closeProject(projectId);
+    return;
+  }
+  try {
+    const roster = await composeProjectRoster({
+      config: current,
+      projectId,
+      decisions: decisions.provider,
+      ...(stageHost ? { stageHost } : {}),
+      resolveSource: sourceResolver,
+      atlasRoot,
+      warn: (line) => console.warn(line),
+    });
+    projectHosts.openProject(
+      projectId,
+      roster.map(({ spec }) => ({ spec, standby: '' })),
+    );
+  } catch (error) {
+    console.warn(
+      `[project-wardens] ${projectId}: roster not composed (${(error as Error).message}); primed Wardens serve it`,
+    );
+  }
+};
+/** One refresh at a time: one asked for while one runs is covered by the next minute's. */
+let refreshingRosters = false;
+const refreshProjectRosters = () => {
+  if (!projectHosts || refreshingRosters) return;
+  refreshingRosters = true;
+  void (async () => {
+    for (const projectId of projectHosts.openProjects()) await holdProjectRoster(projectId);
+  })().finally(() => {
+    refreshingRosters = false;
+  });
+};
+if (projectHosts) {
+  configStore.onChange(() => refreshProjectRosters());
+  const rosterTimer = setInterval(refreshProjectRosters, 60_000);
+  (rosterTimer as { unref?: () => void }).unref?.();
+}
+
 // ---------------------------------------------------------------------------
 // Create main thread (lightweight handle over shared project state)
 // ---------------------------------------------------------------------------
@@ -1076,6 +1157,16 @@ publishDaemonRuntime({
 });
 // Turns a planned restart held (the spin-down) run now, in the order they arrived.
 void viewer.resumeHeldTurns();
+
+// claude-project: from here on, a project's activity opens its Warden host (threads restored at
+// startup are not work).
+if (projectHosts)
+  followProjectActivity({
+    hosts: projectHosts,
+    events: eventStream,
+    projectOf: (threadId) => threadMeta?.(threadId.split(':aux:')[0]!)?.projectId,
+    open: holdProjectRoster,
+  });
 
 console.log();
 console.log('Ready. Send messages through the harness API or viewer.');
