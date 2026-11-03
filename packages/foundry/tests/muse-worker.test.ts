@@ -632,6 +632,31 @@ test("a turn Muse starts itself lands on its thread's journal and live stream", 
     status: 'unqueued',
   });
   expect(store.archiveRecords('main').turns).toHaveLength(1);
+
+  // Muse's own reminders (skill, goal, verify) that ran and said nothing leave nothing either.
+  for (const reminder of ['skill-reminder', 'goal-reminder', 'verify-reminder']) {
+    const lifecycle = { taskId: reminder, taskType: 'muse-reminder', description: reminder };
+    recorder.observe('main', evidence({ kind: 'task', turnId: reminder }), {
+      ...lifecycle,
+      phase: 'started',
+    });
+    recorder.observe('main', evidence({ kind: 'task', turnId: reminder }), {
+      ...lifecycle,
+      phase: 'ended',
+      status: 'completed',
+    });
+  }
+  expect(store.archiveRecords('main').turns).toHaveLength(1);
+
+  // One that failed with nothing to show is still recorded, so the failure is visible.
+  recorder.observe('main', evidence({ kind: 'task', turnId: 'verify-2' }), {
+    taskId: 'verify-2',
+    taskType: 'muse-reminder',
+    description: 'verify-reminder',
+    phase: 'ended',
+    status: 'failed',
+  });
+  expect(store.archiveRecords('main').turns.map((t) => t.status)).toEqual(['completed', 'failed']);
 });
 
 test('Archive: a Muse thread is captured as meta on a subscription, so it stays personal', () => {
