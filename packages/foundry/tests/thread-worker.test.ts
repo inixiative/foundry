@@ -18,10 +18,23 @@ import { createMainThread, ThreadFactory, WorkerRefusedError } from '../src/agen
 import { LocalSessionStore, UNSTAMPED_RECORD } from '../src/persistence/local-session-store';
 import { InSessionWardens, inSessionThreadSetup } from '../src/providers/in-session-wardens';
 import {
+  ClaudeCodeSessionAdapter,
+  CodexSessionAdapter,
+  FileExternalSessionStore,
+} from '../src/providers/session-adapter';
+import { SessionBackedProvider } from '../src/providers/session-backed';
+import {
   resolveSubscriptionPolicy,
   type SubscriptionResolution,
   threadWorkerRequirement,
 } from '../src/providers/subscription-policy';
+import { recordPlan } from '../src/tools/thread-record';
+import {
+  HISTORY_SUMMARY_PHASE,
+  journalHistory,
+  WORKER_SWITCH_PHASE,
+  workerHistoryBudget,
+} from '../src/turns/journal-history';
 import {
   ConfigStore,
   defaultAgents,
@@ -32,7 +45,9 @@ import {
 import { resolveThreadView } from '../src/viewer/config-resolve';
 import { createViewer } from '../src/viewer/server';
 import { ViewerThreadDirectory } from '../src/viewer/thread-directory';
+import { claudeCli } from './helpers/claude-cli';
 import { until } from './helpers/live-watch-fixture';
+import { appServerTransport } from './helpers/subscription-transport';
 
 /**
  * FEAT-007: a project has a default subscription worker, and any thread may run on another worker
@@ -335,22 +350,52 @@ test('POST /api/threads takes a worker; a refused one is a 400 with the reason',
   expect(refused.body.error).toContain('not a subscription worker');
 });
 
-test("PATCH /api/threads/:id changes the worker only before the thread's first turn; 409 after", async () => {
+test('PATCH /api/threads/:id changes the worker; after the first turn behind a recorded switch, never mid-turn', async () => {
   const { call, served } = await viewer();
   const created = await call('POST', '/api/threads', { projectId: 'claude' });
   const id = created.body.threadId as string;
   expect((created.body.meta as ThreadMeta).worker).toBe('claude-code');
+  // Before the first turn: the thread is rebuilt on the new worker, with nothing to mark.
   const moved = await call('PATCH', `/api/threads/${id}`, { worker: 'codex' });
   expect(moved.status).toBe(200);
   expect((moved.body.meta as ThreadMeta).worker).toBe('codex');
   expect((await call('GET', `/api/threads/${id}/launch`)).body).toMatchObject({
     worker: 'codex',
     provider: 'codex',
+    started: false,
+    switches: [],
   });
-  served.localStore!.beginTurn({ id, meta: moved.body.meta as ThreadMeta }, 'turn-1', 'hello');
+  const store = served.localStore!;
+  const record = { id, meta: moved.body.meta as ThreadMeta };
+  store.beginTurn(record, 'turn-1', 'hello');
+  store.completeTurn(
+    record,
+    'turn-1',
+    'hi there',
+    {},
+    {
+      id: 'trace-1',
+      messageId: 'turn-1',
+      startedAt: 1,
+      root: {},
+      summary: {},
+      spans: [],
+    },
+  );
+  // After it: the switch is journalled first ("continued on"), and only then is the worker saved.
   const late = await call('PATCH', `/api/threads/${id}`, { worker: 'claude-code' });
-  expect(late.status).toBe(409);
-  expect(late.body.error).toContain('its worker is fixed');
+  expect(late.status).toBe(200);
+  expect((late.body.meta as ThreadMeta).worker).toBe('claude-code');
+  const launch = (await call('GET', `/api/threads/${id}/launch`)).body;
+  expect(launch).toMatchObject({ worker: 'claude-code', started: true });
+  expect(launch.switches).toEqual([
+    expect.objectContaining({ from: 'codex', to: 'claude-code', at: expect.any(Number) }),
+  ]);
+  expect(store.threadMeta(id)?.worker).toBe('claude-code');
+  // The store refuses a change after the first turn that no marker names.
+  expect(() =>
+    store.saveThread({ id, meta: { ...store.threadMeta(id)!, worker: 'codex' } } as never),
+  ).toThrow('without a recorded switch');
   // The main thread runs on its project's default.
   expect((await call('PATCH', '/api/threads/main', { worker: 'codex' })).status).toBe(409);
 });
@@ -741,11 +786,13 @@ test('the launch view always names an effort, says when the worker is fixed, and
   const refused = await call('PATCH', `/api/threads/${id}/launch`, { effort: 'max' });
   expect(refused.status).toBe(400);
   expect(refused.body.error).toContain('takes effort low, medium, high');
-  // After its first turn the worker is fixed, and the view says so before anyone tries.
+  // After its first turn the worker can still change (a switch carries the conversation over).
   served.localStore!.beginTurn({ id, meta: created.body.meta as ThreadMeta }, 'turn-1', 'hello');
-  expect((await call('GET', `/api/threads/${id}/launch`)).body.workerLock).toContain(
-    'its worker is fixed',
-  );
+  expect((await call('GET', `/api/threads/${id}/launch`)).body).toMatchObject({
+    workerLock: null,
+    started: true,
+    switches: [],
+  });
   // The global scope's workers, for a new thread outside every project.
   const global = await call('GET', '/api/workers');
   expect(global.status).toBe(200);
@@ -772,4 +819,201 @@ test("the picker's default model is the project's own, and a refused worker with
   });
   expect(refused.status).toBe(400);
   expect(refused.body.error).toContain('not a subscription worker');
+});
+
+/** Real Claude and Codex providers over controlled CLIs (recorded behaviour), sharing one binding file. */
+function switchingWorkers(dir: string, journal: () => LocalSessionStore) {
+  const bindings = new FileExternalSessionStore(join(dir, 'sessions.json'));
+  const cli = claudeCli(new Set());
+  const server = appServerTransport({ threadId: 'codex-thread-1', response: 'codex answered' });
+  const history = (worker: string) => (threadId: string, turnId?: string) =>
+    journalHistory(journal(), threadId, turnId, workerHistoryBudget(worker));
+  const claudeAdapter = new ClaudeCodeSessionAdapter({
+    store: bindings,
+    contextBudget: false,
+    defaults: { spawn: (argv) => cli.spawn(argv) },
+  });
+  const codexAdapter = new CodexSessionAdapter({
+    store: bindings,
+    defaults: { spawn: server.spawn },
+  });
+  const claude = new SessionBackedProvider({
+    id: 'claude-code',
+    adapter: claudeAdapter,
+    defaultModel: 'haiku',
+    defaultCwd: dir,
+    history: history('claude-code'),
+  });
+  const codex = new SessionBackedProvider({
+    id: 'codex',
+    adapter: codexAdapter,
+    defaultModel: 'controlled-model',
+    defaultCwd: dir,
+    history: history('codex'),
+  });
+  cleanup.push(() => claudeAdapter.releaseAll());
+  cleanup.push(() => codexAdapter.releaseAll());
+  const workerSessions = {
+    retire: (worker: string, threadId: string) =>
+      (worker === 'codex' ? codex : claude).retireThread(threadId),
+  };
+  return { cli, server, claude, codex, claudeAdapter, codexAdapter, workerSessions };
+}
+
+test('a thread switches Claude Code → Codex mid-conversation: a fresh Codex session seeded from the journal, behind a "continued on" marker, and back again fresh', async () => {
+  const dir = temporary('worker-switch-');
+  let store: LocalSessionStore | undefined;
+  const w = switchingWorkers(dir, () => store!);
+  const summaries: string[] = [];
+  const summariser: LLMProvider = {
+    id: 'decisions',
+    async complete(messages, opts) {
+      summaries.push(`${opts?.threadId}\n${messages.map((m) => m.content).join('\n')}`);
+      return {
+        content: '- The person asked for staff roles in Lisbon, remote-friendly only.',
+        model: 'haiku',
+      };
+    },
+  };
+  const { call, served } = await viewer({
+    workerSessions: w.workerSessions,
+    namingProvider: summariser,
+  });
+  store = served.localStore!;
+  const created = await call('POST', '/api/threads', { projectId: 'claude' });
+  const id = created.body.threadId as string;
+  // Turns are journalled against the thread as stored now (its worker changes below).
+  const said = (turnId: string, user: string, answer: string) => {
+    const record = { id, meta: store!.threadMeta(id)! };
+    store!.beginTurn(record, turnId, user);
+    store!.completeTurn(
+      record,
+      turnId,
+      answer,
+      {},
+      {
+        id: `trace-${turnId}`,
+        messageId: turnId,
+        startedAt: 1,
+        root: {},
+        summary: {},
+        spans: [],
+      },
+    );
+  };
+  // Three long early turns (past the Codex seed's budget), then a short recent one.
+  for (const n of [1, 2, 3])
+    said(`turn-${n}`, `early question ${n} ${'x'.repeat(14_000)}`, `early answer ${n}`);
+  said('turn-4', 'Only remote-friendly ones.', 'Noted: remote-friendly only.');
+  served.records.update(id, (thread) =>
+    recordPlan(thread, {
+      outcomes: [{ text: 'Lisbon roles tracked', status: 'doing' }],
+      strategy: [{ text: 'Watch the boards daily' }],
+    }),
+  );
+  // The thread ran on Claude Code: it holds a native session there.
+  await w.claude.complete([{ role: 'user', content: 'Only remote-friendly ones.' }], {
+    threadId: id,
+  });
+  await Bun.sleep(20);
+  expect(await w.claudeAdapter.getExternalSessionId(id)).toBe('claude-session-1');
+
+  const switched = await call('PATCH', `/api/threads/${id}`, { worker: 'codex' });
+  expect(switched.status).toBe(200);
+  expect((switched.body.meta as ThreadMeta).worker).toBe('codex');
+  // The binding: the Claude session ended and is forgotten, so nothing resumes it; it stays on record.
+  expect(await w.claudeAdapter.getExternalSessionId(id)).toBeNull();
+  const [marker] = store.phasesOf(id, WORKER_SWITCH_PHASE);
+  expect(marker!.record).toEqual({
+    from: 'claude-code',
+    to: 'codex',
+    fromLabel: 'Claude Code',
+    toLabel: 'Codex',
+    fromSession: 'claude-session-1',
+  });
+  expect(store.threadMeta(id)?.worker).toBe('codex');
+  // The older turns the seed can't quote were summarised once, on the decision provider.
+  expect(summaries).toHaveLength(1);
+  expect(summaries[0]).toContain(`${id}:aux:history-summary`);
+  expect(summaries[0]).toContain('early question 1');
+  expect(summaries[0]).not.toContain('Only remote-friendly ones.');
+  expect(store.phasesOf(id, HISTORY_SUMMARY_PHASE)).toHaveLength(1);
+  // The transcript's marker.
+  const launch = (await call('GET', `/api/threads/${id}/launch`)).body;
+  expect(launch.switches).toEqual([
+    expect.objectContaining({ from: 'claude-code', to: 'codex', toLabel: 'Codex' }),
+  ]);
+
+  // The next turn starts a fresh Codex thread, seeded once.
+  said('turn-5', 'Anything new?', 'codex answered');
+  await w.codex.complete([{ role: 'user', content: 'Anything new?' }], { threadId: id });
+  expect(w.server.requests.map((r) => r.method).filter((m) => m.startsWith('thread/'))).toEqual([
+    'thread/start',
+  ]);
+  const seed = w.server.turns[0]!;
+  expect(seed).toContain('# The conversation so far');
+  expect(seed).toContain('This thread moved from Claude Code to Codex mid-conversation');
+  expect(seed).toContain('did not carry over');
+  expect(seed).toContain('## Earlier in the thread (a summary)');
+  expect(seed).toContain('remote-friendly only.');
+  expect(seed).toContain('## User\nOnly remote-friendly ones.');
+  expect(seed).toContain('## Continued on Codex from here (it ran on Claude Code before)');
+  expect(seed.indexOf('Noted: remote-friendly only.')).toBeLessThan(
+    seed.indexOf('## Continued on Codex'),
+  );
+  expect(seed).toContain("# The thread's plan");
+  expect(seed).toContain('[doing] Lisbon roles tracked');
+  expect(seed).toContain('Anything new?');
+  await Bun.sleep(20);
+  expect(await w.codexAdapter.getExternalSessionId(id)).toBe('codex-thread-1');
+
+  // Back to Claude Code: another fresh, seeded session, never the stale claude-session-1.
+  expect((await call('PATCH', `/api/threads/${id}`, { worker: 'claude-code' })).status).toBe(200);
+  expect(await w.codexAdapter.getExternalSessionId(id)).toBeNull();
+  expect(store.phasesOf(id, WORKER_SWITCH_PHASE).map((row) => row.record.fromSession)).toEqual([
+    'claude-session-1',
+    'codex-thread-1',
+  ]);
+  await w.claude.complete([{ role: 'user', content: 'and now?' }], { threadId: id });
+  const back = w.cli.launches.at(-1)!;
+  expect(w.cli.launches).toHaveLength(2);
+  expect(back.argv).not.toContain('--resume');
+  expect(back.turns[0]).toContain('This thread moved from Codex to Claude Code mid-conversation');
+  expect(back.turns[0]).toContain('## Continued on Codex from here');
+  expect(back.turns[0]).toContain('## Continued on Claude Code from here');
+});
+
+test('a worker switch waits while a turn runs: the route says so, and the old session is never torn down under a call', async () => {
+  const { call, served } = await viewer();
+  const created = await call('POST', '/api/threads', { projectId: 'claude' });
+  const id = created.body.threadId as string;
+  served.records.update(id, (thread) => {
+    thread.meta.status = 'active';
+  });
+  const busy = await call('PATCH', `/api/threads/${id}`, { worker: 'codex' });
+  expect(busy.status).toBe(409);
+  expect(busy.body.error).toContain('a turn is running or queued');
+  expect((await call('GET', `/api/threads/${id}/launch`)).body.workerLock).toContain(
+    'a turn is running',
+  );
+
+  const dir = temporary('worker-switch-busy-');
+  const server = appServerTransport({ threadId: 'codex-busy', hang: true });
+  const adapter = new CodexSessionAdapter({
+    store: new FileExternalSessionStore(join(dir, 'sessions.json')),
+    defaults: { spawn: server.spawn },
+  });
+  cleanup.push(() => adapter.releaseAll());
+  const provider = new SessionBackedProvider({
+    id: 'codex',
+    adapter,
+    defaultModel: 'controlled-model',
+    defaultCwd: dir,
+  });
+  void provider
+    .complete([{ role: 'user', content: 'long job' }], { threadId: 'busy' })
+    .catch(() => {});
+  await until(() => server.turns.length > 0, 'the long job is running');
+  expect(await provider.retireThread('busy')).toBe(false);
+  expect(server.launches[0]!.exited).toBe(false);
 });

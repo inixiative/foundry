@@ -870,7 +870,8 @@ export function createFoundryAgent(options: FoundryAgentOptions = {}) {
         const view = await foundry.http.launch(session.threadId).catch(httpError);
         return { configOptions: configOptions(view, session.steer) };
       }
-      // The worker is the thread's, not a launch setting: chosen before its first turn (409 after).
+      // The worker is the thread's, not a launch setting. After the first turn a change starts a fresh
+      // session on the new worker, seeded from the thread's journal (409 only while a turn runs).
       if (configId === 'worker') {
         const foundry = await ensureDaemon().catch(httpError);
         await foundry.http.updateThread(session.threadId, { worker: value }).catch(httpError);

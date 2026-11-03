@@ -120,7 +120,7 @@ import {
   type ThreadRecords,
   ThreadRecordTool,
 } from './tools/thread-record';
-import { journalHistory } from './turns/journal-history';
+import { journalHistory, workerHistoryBudget } from './turns/journal-history';
 import { nativeQuestions } from './turns/native-questions';
 import { lateBoundToolGate, type ThreadToolGate } from './turns/tool-gate';
 import {
@@ -307,8 +307,16 @@ const hostSettings = {
   launch: threadLaunch,
   // Bound lazily per call: a session created before the viewer exists still fails closed, never open.
   toolGate: lateBoundToolGate(() => toolGateFor),
+  // Sized to the thread's worker, so the seed fits whichever of its models runs.
   history: (threadId: string, turnId?: string) =>
-    journalStore ? journalHistory(journalStore, threadId, turnId) : undefined,
+    journalStore
+      ? journalHistory(
+          journalStore,
+          threadId,
+          turnId,
+          workerHistoryBudget(threadMeta?.(threadId)?.worker),
+        )
+      : undefined,
 };
 
 // A thread's (or its auxiliary session's) record; bound once the runtimes exist.
@@ -982,6 +990,13 @@ const viewer = await startViewer({
   assistProvider: provider,
   assistModel: config.defaults.model,
   namingProvider: flowLlm,
+  // A thread switching worker leaves its session on the old one behind (ended, never resumed).
+  workerSessions: {
+    retire: async (worker, threadId) => {
+      const built = workers.get(worker)?.provider;
+      return built instanceof SessionBackedProvider ? built.retireThread(threadId) : undefined;
+    },
+  },
   feedbackProvider: flowLlm,
   tokenTracker,
   analyticsDir: `${FOUNDRY_DIR}/analytics`,

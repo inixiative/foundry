@@ -230,7 +230,81 @@ test('the header names worker · model · effort; its picker switches this threa
   }
 }, 120_000);
 
-test('a started thread keeps its worker; the picker says so and offers a new thread', async () => {
+test('a started thread switches worker mid-conversation: what carries over, Muse goes personal, and the transcript marks it', async () => {
+  const { cleanup, page, errors, origin } = await open();
+  try {
+    let launch: Record<string, unknown> = launchOf('shop-2', {
+      effort: 'xhigh',
+      started: true,
+      switches: [],
+      projectId: 'shop',
+    });
+    const sent: Array<Record<string, unknown>> = [];
+    await page.route('**/api/threads/shop-2/launch', (route: Route) =>
+      route.fulfill({ contentType: 'application/json', body: JSON.stringify(launch) }),
+    );
+    await page.route('**/api/threads/shop-2', (route: Route) => {
+      if (route.request().method() !== 'PATCH') return route.continue();
+      sent.push(route.request().postDataJSON());
+      launch = {
+        ...launch,
+        worker: 'muse',
+        provider: 'muse',
+        model: 'muse-wonder-1.0',
+        effort: null,
+        switches: [
+          {
+            at: Date.now(),
+            from: 'claude-code',
+            to: 'muse',
+            fromLabel: 'Claude Code',
+            toLabel: 'Muse',
+          },
+        ],
+      };
+      return route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({ threadId: 'shop-2', meta: { projectId: 'shop', worker: 'muse' } }),
+      });
+    });
+    await page.goto(`${origin}/#thread=shop-2`);
+    const pill = page.locator('.band-runs .band-pills .band-run');
+    await pill.waitFor();
+    await pill.click();
+    const modal = page.locator('.run-modal');
+    await modal.waitFor();
+    // After the first turn the worker still changes; one line says what carries over.
+    expect(await modal.locator('[data-run="worker"]').isDisabled()).toBe(false);
+    expect(await modal.locator('[data-note="worker-lock"]').count()).toBe(0);
+    await modal.locator('[data-run="worker"]').selectOption('muse');
+    expect(await modal.locator('[data-note="carry-over"]').innerText()).toBe(
+      "Continues on a fresh Muse session that carries the conversation and plan, not the old session's files read or tool state.",
+    );
+    expect(await modal.locator('[data-note="muse-personal"]').innerText()).toBe(
+      "Muse is personal: from here this thread goes to your personal Archive, not shop's.",
+    );
+    await modal.locator('[data-run="apply"]').click();
+    await modal.waitFor({ state: 'detached' });
+    expect(sent).toEqual([{ worker: 'muse' }]);
+    await page.locator('.toast', { hasText: 'Continued on Muse from here' }).first().waitFor();
+    // The transcript marks where it moved.
+    const marker = page.locator('.worker-switch-marker');
+    await marker.waitFor();
+    expect(await marker.innerText()).toContain('Continued on Muse from here');
+    // Moving off Muse later: the thread stays personal.
+    await pill.click();
+    await modal.waitFor();
+    await modal.locator('[data-run="worker"]').selectOption('claude-code');
+    expect(await modal.locator('[data-note="muse-personal"]').innerText()).toContain(
+      'This thread stays personal: it ran on Muse',
+    );
+    expect(errors).toEqual([]);
+  } finally {
+    expect(await releaseAll(cleanup)).toEqual([]);
+  }
+}, 120_000);
+
+test('while a turn runs the worker waits; the picker says why and still offers a new thread', async () => {
   const { cleanup, page, errors, origin } = await open();
   try {
     await page.route('**/api/threads/shop-2/launch', (route: Route) =>
@@ -239,7 +313,9 @@ test('a started thread keeps its worker; the picker says so and offers a new thr
         body: JSON.stringify(
           launchOf('shop-2', {
             effort: 'xhigh',
-            workerLock: 'the thread has started on claude-code; its worker is fixed',
+            started: true,
+            switches: [],
+            workerLock: 'a turn is running or queued; switch once it ends',
           }),
         ),
       }),
@@ -258,7 +334,7 @@ test('a started thread keeps its worker; the picker says so and offers a new thr
     const modal = page.locator('.run-modal');
     expect(await modal.locator('[data-run="worker"]').isDisabled()).toBe(true);
     expect(await modal.locator('[data-note="worker-lock"]').innerText()).toContain(
-      'its worker is fixed',
+      "can't change right now: a turn is running",
     );
     await modal.locator('.run-picker-link', { hasText: 'New thread' }).click();
     await page.locator('.new-thread-modal [data-run="worker"]').waitFor();

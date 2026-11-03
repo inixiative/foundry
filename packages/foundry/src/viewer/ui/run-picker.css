@@ -48,3 +48,18 @@ button.band-run:focus-visible {
   cursor: pointer;
   text-decoration: underline;
 }
+/* Where a thread moved to another worker mid-conversation (worker-switch.js). */
+.worker-switch-marker {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 10px 0;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.worker-switch-marker::before,
+.worker-switch-marker::after {
+  content: "";
+  flex: 1;
+  border-top: 1px dashed hsl(var(--border, var(--muted)));
+}

@@ -10,6 +10,7 @@ import type {
   EventStream,
   Harness,
   InterventionLog,
+  LLMProvider,
   StreamEvent,
   ThreadConfig,
   TokenTracker,
@@ -36,7 +37,12 @@ import { type FeedbackService, localOperator } from '../../feedback/service';
 import type { FeedbackAbout } from '../../feedback/types';
 import { byAttention, feedbackView, newestFirst } from '../../feedback/view';
 import { branchCommits, listWorktrees } from '../../git';
-import { registryForViewer, SUBSCRIPTION_WORKERS, subscriptionWorker } from '../../models/registry';
+import {
+  registryForViewer,
+  SUBSCRIPTION_WORKERS,
+  subscriptionWorker,
+  workerName,
+} from '../../models/registry';
 import {
   IMAGE_MAX_BYTES,
   ImageAttachmentError,
@@ -53,6 +59,13 @@ import {
   ThreadLaunchSettings,
 } from '../../providers/thread-launch';
 import type { SecretScratch } from '../../secrets/scratch';
+import {
+  HISTORY_SUMMARY_PHASE,
+  summariseLeftOut,
+  WORKER_SWITCH_PHASE,
+  type WorkerSwitchRecord,
+  workerHistoryBudget,
+} from '../../turns/journal-history';
 import type { NativeOutcomeRecovery } from '../../turns/native-outcome-recovery';
 import type { RunningTasks } from '../../turns/running-tasks';
 import { type ThreadSetupHost, TurnService, type TurnServiceDeps } from '../../turns/turn-service';
@@ -91,6 +104,10 @@ export interface RuntimeRoutesDeps {
   localStore?: LocalSessionStore | null;
   /** Settles turns lost to a restart (`turns/native-outcome-recovery.ts`). */
   nativeRecovery?: NativeOutcomeRecovery;
+  /** Each worker's native sessions: a thread switching worker retires its session on the one it leaves. */
+  workerSessions?: WorkerSessions;
+  /** The decision provider (the namer's): summarises the turns a switched thread's seed can't quote. */
+  summaryProvider?: LLMProvider;
   /** The spin-down: turns reaching the front of their queue wait for a planned restart. */
   restartGate?: TurnServiceDeps['restartGate'];
   /** Background processes each thread's agent started (`turns/running-tasks.ts`). */
@@ -117,6 +134,15 @@ type SubscriptionWorkerId = keyof typeof SUBSCRIPTION_WORKERS;
 /** Nothing new starts while the daemon spins down for an update (`daemon/restart-roll.ts`). */
 const RESTARTING =
   'Foundry is restarting onto an update once running turns finish; try again after it';
+
+/**
+ * Each worker's native sessions, as a mid-thread worker switch needs them (Aron, 2026-11-02): the
+ * thread leaves its old worker's session behind (ended, its binding forgotten so nothing resumes
+ * it), and its record names that session. Undefined for a worker with no native sessions.
+ */
+export interface WorkerSessions {
+  retire(worker: string, threadId: string): Promise<{ binding: string | null } | false | undefined>;
+}
 
 /** Opaque history cursor: base64url of {t: threadId, s: oldest seq of the issued page}. */
 function encodeHistoryCursor(threadId: string, seq: number): string {
@@ -908,21 +934,34 @@ export function registerRuntimeRoutes(
   app.get('/api/workers', (c) => c.json(scopeWorkers(undefined)));
 
   /**
-   * Why this thread's worker can no longer change, or null while it can: a worker is chosen before
-   * the first turn, because the native session it starts belongs to that worker (FEAT-007).
+   * Why this thread's worker can't change now, or null while it can. Before the first turn the
+   * thread is simply rebuilt on the new worker; after it, the switch starts a fresh session there,
+   * seeded from the journal (Aron, 2026-11-02), so it waits for a running or queued turn.
    */
   const workerLock = (thread: Thread): string | null => {
     if (thread === harness.thread) return "the main thread runs on its project's default worker";
     if (!threadFactory || !thread.meta.worker) return 'choosing a worker needs the thread factory';
-    if (
-      thread.disposed ||
-      thread.meta.status === 'active' ||
-      turns.hasTurns(thread.id) ||
-      (localStore?.recentTurnIds(thread.id, 1).length ?? 0) > 0
-    )
-      return `the thread has started on ${thread.meta.worker}; its worker is fixed`;
+    if (thread.disposed) return 'the thread is archived';
+    if (thread.meta.status === 'active' || turns.hasTurns(thread.id))
+      return 'a turn is running or queued; switch once it ends';
     return null;
   };
+
+  /** Whether the thread has run a turn: a worker switch then carries its conversation over. */
+  const started = (thread: Thread) => (localStore?.recentTurnIds(thread.id, 1).length ?? 0) > 0;
+
+  /** The thread's worker switches, oldest first, for the transcript's "continued on" markers. */
+  const workerSwitches = (thread: Thread) =>
+    (localStore?.phasesOf(thread.id, WORKER_SWITCH_PHASE) ?? []).map((row) => {
+      const record = row.record as unknown as WorkerSwitchRecord;
+      return {
+        at: row.storedAt,
+        from: record.from,
+        to: record.to,
+        fromLabel: record.fromLabel,
+        toLabel: record.toLabel,
+      };
+    });
 
   const launchView = (thread: Thread) => {
     const launch = threadLaunch.get(thread.id);
@@ -943,8 +982,12 @@ export function registerRuntimeRoutes(
       effort: launch.effort ?? null,
       /** The effort it runs at while it chose none, so the header always names one. */
       effortDefault: defaultEffort(provider, model),
-      /** Why the worker can't change any more (null before the first turn). */
+      /** Why the worker can't change right now (null while it can). */
       workerLock: workerLock(thread),
+      /** The thread has run: a worker switch starts a fresh session seeded with its conversation. */
+      started: started(thread),
+      switches: workerSwitches(thread),
+      projectId: thread.meta.projectId ?? null,
       mcpServers: describeMcpServers(launch.mcpServers),
       revision: launch.revision,
       /** Whether a send during a running turn steers into it (CORE-001), and where that came from. */
@@ -1278,21 +1321,79 @@ export function registerRuntimeRoutes(
     let thread = directory.get(id);
     if (!thread) return c.json({ error: 'thread not found' }, 404);
 
-    // A thread's worker is chosen before its first turn (an ACP host that cannot send it on create);
-    // after that it is fixed. The thread is rebuilt on the new worker.
+    // A thread's worker may change at any time it is idle. Before its first turn the thread is just
+    // rebuilt on the new worker; after it, the new worker starts a fresh session seeded from the
+    // journal (CORE-004's seeding), behind a "continued on" marker (Aron, 2026-11-02).
     if (body.worker !== undefined && body.worker !== thread.meta.worker) {
       if (typeof body.worker !== 'string') return c.json({ error: 'worker must be a string' }, 400);
       if (!threadFactory || !thread.meta.worker)
         return c.json({ error: 'choosing a worker needs the thread factory' }, 400);
+      const from = thread.meta.worker;
+      const to = body.worker;
       const locked = workerLock(thread);
       if (locked) return c.json({ error: locked }, 409);
-      const refusal = threadFactory.workerRefusal(thread.meta.projectId, body.worker);
+      const refusal = threadFactory.workerRefusal(thread.meta.projectId, to);
       if (refusal) return c.json({ error: refusal }, 400);
-      // Checked and rebuilt with no await between, so no turn lands on the old thread meanwhile.
+      const carries = started(thread);
+      let switched: WorkerSwitchRecord | undefined;
+      let summary: Awaited<ReturnType<typeof summariseLeftOut>>;
+      if (carries) {
+        // A turn lost to a restart is settled from the old worker's record, or decided, first.
+        if (deps.nativeRecovery?.settle(id).undecided.length)
+          return c.json(
+            { error: 'a lost turn is waiting on Continue or Retry; decide it before switching' },
+            409,
+          );
+        // What the new worker's seed can't quote, summarised once, here.
+        if (deps.summaryProvider && localStore)
+          summary = await summariseLeftOut(localStore, id, deps.summaryProvider, {
+            maxChars: workerHistoryBudget(to),
+            ...(thread.meta.cwd ? { cwd: thread.meta.cwd } : {}),
+          });
+        // Nothing of the thread is left on the new worker (a session from an earlier stay there
+        // is never resumed), and the old worker's session ends, its binding forgotten.
+        const leftover = await deps.workerSessions?.retire(to, id);
+        const left = leftover === false ? false : await deps.workerSessions?.retire(from, id);
+        if (leftover === false || left === false)
+          return c.json({ error: 'a turn is running or queued; switch once it ends' }, 409);
+        // The awaits above let a turn in: check again, and switch with no await from here.
+        thread = directory.get(id) ?? thread;
+        const again = workerLock(thread);
+        if (again || thread.meta.worker !== from)
+          return c.json({ error: again ?? 'the worker changed meanwhile' }, 409);
+        switched = {
+          from,
+          to,
+          fromLabel: workerName(from),
+          toLabel: workerName(to),
+          fromSession: left?.binding ?? null,
+        };
+      }
+      // The record as it stood: the marker is written against it, before the new worker is saved.
+      const before = { id, meta: structuredClone(thread.meta) };
       try {
-        thread = directory.rebuild(id, { ...structuredClone(thread.meta), worker: body.worker });
+        thread = directory.rebuild(id, { ...structuredClone(thread.meta), worker: to });
       } catch (error) {
         return c.json({ error: (error as Error).message }, 409);
+      }
+      // Written with the rebuild, no await between: the new worker's first turn finds them, and the
+      // store accepts the new worker only behind its marker.
+      if (switched && localStore) {
+        if (summary)
+          localStore.appendPhase(before, {
+            id: newId('phase'),
+            phase: HISTORY_SUMMARY_PHASE,
+            turnId: null,
+            dispatchId: null,
+            record: { ...summary, for: WORKER_SWITCH_PHASE },
+          });
+        localStore.appendPhase(before, {
+          id: newId('phase'),
+          phase: WORKER_SWITCH_PHASE,
+          turnId: null,
+          dispatchId: null,
+          record: { ...switched },
+        });
       }
       // A model chosen for the old worker is not carried to the new one.
       const chosen = threadLaunch.get(id).model;

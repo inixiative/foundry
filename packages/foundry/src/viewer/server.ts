@@ -87,7 +87,7 @@ import { registerKingdomRoutes } from './routes/kingdom';
 import { registerLoginRoutes } from './routes/logins';
 import { registerModelRoutes } from './routes/models';
 import { registerProfileRoutes } from './routes/profile';
-import { registerRuntimeRoutes } from './routes/runtime';
+import { registerRuntimeRoutes, type WorkerSessions } from './routes/runtime';
 import { ViewerThreadDirectory } from './thread-directory';
 import { expireSnoozes } from './thread-snooze';
 import { FoundryTunnel, type TunnelConfig, type TunnelHolder, tunnelAuth } from './tunnel';
@@ -107,6 +107,8 @@ export interface ViewerConfig {
   assistModel?: string;
   /** Decision provider that keeps agent thread names (optional; no naming without it). */
   namingProvider?: LLMProvider;
+  /** Each worker's native sessions, for a thread switching worker mid-conversation. */
+  workerSessions?: WorkerSessions;
   /** Decision provider for the feedback lifecycle (optional; no capture without it). */
   feedbackProvider?: LLMProvider;
   /** Token tracker for analytics (optional but recommended). */
@@ -773,6 +775,8 @@ export function createViewer(config: ViewerConfig) {
   const imageStore = new ImageAttachmentStore(join(configDir, 'attachments', 'images'));
   const { turns, fork } = registerRuntimeRoutes(app, {
     nativeRecovery,
+    ...(config.workerSessions ? { workerSessions: config.workerSessions } : {}),
+    ...(config.namingProvider ? { summaryProvider: config.namingProvider } : {}),
     restartGate: restartRoll,
     threadLaunch,
     harness,
