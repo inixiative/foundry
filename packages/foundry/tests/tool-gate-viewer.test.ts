@@ -100,3 +100,35 @@ test("a disposed thread drops its gate and its hosts' launch settings (client MC
     await after.gate({ stage: 'pre-use', toolName: 'Read', toolInput: { file_path: 'a' } }),
   ).toMatchObject({ behavior: 'deny' });
 });
+
+test("a pre-use handoff the rules allow is briefed by the thread's runtime, and its prompt rewritten, through the production wiring", async () => {
+  const f = await fixture();
+  const runtime = f.manager.get(f.thread.id)!;
+  const asked: Array<{ toolName: string; callId?: string; signal?: AbortSignal }> = [];
+  runtime.briefHandoff = async (call) => {
+    asked.push(call);
+    return `${String(call.toolInput.prompt)}\n\n---\n\nThe x Warden chimed in on the handoff to audit:\n- y`;
+  };
+  const gate = lateBoundToolGate(() => f.viewer.toolGate)(f.thread.id).gate;
+  const abort = new AbortController();
+  const spawn: ToolRequest = {
+    stage: 'pre-use',
+    toolName: 'Agent',
+    toolInput: { description: 'audit', prompt: 'Audit it.' },
+    callId: 'toolu_spawn',
+    signal: abort.signal,
+  };
+  expect(await gate(spawn)).toEqual({
+    behavior: 'allow',
+    updatedInput: {
+      description: 'audit',
+      prompt: 'Audit it.\n\n---\n\nThe x Warden chimed in on the handoff to audit:\n- y',
+    },
+  });
+  expect(asked).toMatchObject([{ toolName: 'Agent', callId: 'toolu_spawn', signal: abort.signal }]);
+  // A structural deny still wins, and is never briefed.
+  const store = f.viewer.configStore;
+  await store.save({ ...store.config, toolRules: { capabilities: { 'tool:Agent': 'deny' } } });
+  expect((await gate({ ...spawn, callId: 'toolu_2' })).behavior).toBe('deny');
+  expect(asked).toHaveLength(1);
+});

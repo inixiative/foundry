@@ -35,7 +35,13 @@ export interface HandoffCall {
   readonly turnId: string | null;
   /** Claude's subagent id when a subagent (not the main thread) makes the call. */
   readonly agentId?: string;
+  /** Aborted when the runtime withdraws the call (an interrupt): the brief stops waiting for it. */
+  readonly signal?: AbortSignal;
 }
+
+/** An agent address as Claude resolves SendMessage's `to`: NFKC, trimmed, lower case, spaces to `-`. */
+export const subagentAddress = (address: string): string =>
+  address.normalize('NFKC').trim().toLowerCase().replace(/\s+/g, '-');
 
 const text = (value: unknown) => (typeof value === 'string' && value.trim() ? value : undefined);
 
@@ -105,6 +111,7 @@ export function withHandoffBrief(
         toolInput: input,
         turnId: options.turnId(),
         ...(request.agentId ? { agentId: request.agentId } : {}),
+        ...(request.signal ? { signal: request.signal } : {}),
       });
       if (!briefed || briefed === input[field]) return decision;
       return { behavior: 'allow', updatedInput: { ...input, [field]: briefed } };

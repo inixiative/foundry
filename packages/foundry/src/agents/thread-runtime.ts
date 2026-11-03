@@ -57,6 +57,7 @@ import {
   HANDOFF_BRIEF_DEADLINE_MS,
   type HandoffCall,
   handoffMoment,
+  subagentAddress,
 } from '../turns/handoff-brief';
 import type { FoundryConfig } from '../viewer/config';
 import { projectChorus, resolveThreadView } from '../viewer/config-resolve';
@@ -1007,7 +1008,9 @@ class ThreadRuntimeImpl implements ThreadRuntime {
    * call gave it). A SendMessage to anyone else (another session, a teammate) is not a subagent's turn:
    * that thread's own chorus advises it there.
    */
-  private readonly _subagentAddresses = new Set<string>();
+  private readonly _subagents = new Map<string, { id: string; meta: ThreadMeta } | undefined>();
+  /** Subagents a SendMessage resumed, briefed at the call: their resumed task_started is skipped once. */
+  private readonly _briefedResumes = new Set<string>();
   /** The thread holds the reception charter, so a briefed subagent gets it with its chimes. */
   private _reception = false;
   private readonly _handoffDeadlineMs: number;
@@ -1889,9 +1892,22 @@ class ThreadRuntimeImpl implements ThreadRuntime {
             })
           | undefined;
         if (!content?.handoffId || !content.childThreadId) return;
-        if (content.nativeTaskId) this._rememberSubagent(content.nativeTaskId);
+        // The child's own node, so a call it makes later is journalled there.
+        if (content.nativeTaskId)
+          this._rememberSubagent(content.nativeTaskId, {
+            id: content.childThreadId,
+            meta: {
+              ...(content.parent?.meta ?? this.thread.meta),
+              parentThreadId: content.parent?.id ?? this.thread.id,
+            },
+          });
         // Briefed at the call, before it ran: the chimes are already in what the subagent read.
         if (content.toolCallId && this._briefedCalls.delete(content.toolCallId)) return;
+        if (
+          content.nativeTaskId &&
+          this._briefedResumes.delete(subagentAddress(content.nativeTaskId))
+        )
+          return;
         await this._briefHandoff(signal.id, content);
       }),
     );
@@ -2308,17 +2324,20 @@ class ThreadRuntimeImpl implements ThreadRuntime {
   }
 
   async briefHandoff(call: HandoffCall): Promise<string | undefined> {
-    if (this._disposed || !this.domainLibrarians.size) return undefined;
+    if (this._disposed || !this.domainLibrarians.size || call.signal?.aborted) return undefined;
     const made = handoffMoment(call);
     if (!made) return undefined;
-    const to = typeof call.toolInput.to === 'string' ? call.toolInput.to : undefined;
-    if (made.field === 'message' && !(to && this._subagentAddresses.has(to))) return undefined;
+    const to = typeof call.toolInput.to === 'string' ? subagentAddress(call.toolInput.to) : '';
+    if (made.field === 'message' && !this._subagents.has(to)) return undefined;
     const named = typeof call.toolInput.name === 'string' ? call.toolInput.name : undefined;
     if (made.field === 'prompt' && named) this._rememberSubagent(named);
     const { moment } = made;
+    // A call a subagent made is journalled on that subagent's node, as its other rows are.
+    const node = call.agentId ? this._subagents.get(subagentAddress(call.agentId)) : undefined;
     let late = false;
     const asked = this._askBetweenTurns({
       trigger: 'subagent-spawn',
+      ...(node ? { node } : {}),
       turnId: call.turnId,
       wraps: moment.handoffId,
       label: `handoff brief ${moment.handoffId}`,
@@ -2336,38 +2355,47 @@ class ThreadRuntimeImpl implements ThreadRuntime {
         },
       },
       notes: (report) => briefNotes(moment, report),
-      // Past the deadline the call has run without it: what the Wardens said rides the parent's next turn.
+      // Past the deadline, or withdrawn, the call did not take it: it rides the parent's next turn.
       deliver: () => (late ? 'next-turn' : 'return'),
     });
     let timer: ReturnType<typeof setTimeout> | undefined;
+    let onAbort: (() => void) | undefined;
     const notes = await Promise.race([
       asked,
-      new Promise<'late'>((resolve) => {
+      new Promise<'late' | 'withdrawn'>((resolve) => {
         timer = setTimeout(() => resolve('late'), this._handoffDeadlineMs);
+        onAbort = () => resolve('withdrawn');
+        call.signal?.addEventListener('abort', onAbort, { once: true });
       }),
-    ]).finally(() => clearTimeout(timer));
-    // A spawn's subagent starts next (task_started): mark it so it is not briefed again there, also when
-    // the brief is late (it rides the parent's next turn). A SendMessage starts no new subagent.
-    if ((notes === 'late' || notes) && call.callId && made.field === 'prompt') {
-      if (this._briefedCalls.size >= MAX_SUBAGENT_TURNS) this._briefedCalls.clear();
-      this._briefedCalls.add(call.callId);
+    ]).finally(() => {
+      clearTimeout(timer);
+      if (onAbort) call.signal?.removeEventListener('abort', onAbort);
+    });
+    // The subagent's task_started comes next (a spawn's, or a resumed subagent's after a SendMessage):
+    // mark the call so it is not briefed again there, also when the brief is late (it rides the
+    // parent's next turn). A withdrawn call never ran: nothing waits for it.
+    if (notes !== 'withdrawn' && notes) {
+      if (call.callId) this._briefedCalls.add(call.callId);
+      if (made.field === 'message') this._briefedResumes.add(to);
+      if (this._briefedCalls.size > MAX_SUBAGENT_TURNS) this._briefedCalls.clear();
+      if (this._briefedResumes.size > MAX_SUBAGENT_TURNS) this._briefedResumes.clear();
     }
-    if (notes === 'late') {
+    if (notes === 'late' || notes === 'withdrawn') {
       late = true;
       this._warn(
-        `  [flow:${this.thread.id}] ${moment.handoffId}: brief past its deadline; the handoff runs without it`,
+        `  [flow:${this.thread.id}] ${moment.handoffId}: ${notes === 'late' ? 'brief past its deadline' : 'call withdrawn'}; the handoff runs without it`,
       );
       return undefined;
     }
-    if (!notes) return undefined;
-    return notes.length
-      ? briefedText(moment.prompt, notes, this._reception ? CHORUS_RECEPTION : undefined)
-      : undefined;
+    if (!notes?.length) return undefined;
+    return briefedText(moment.prompt, notes, this._reception ? CHORUS_RECEPTION : undefined);
   }
 
-  private _rememberSubagent(address: string): void {
-    if (this._subagentAddresses.size >= MAX_SUBAGENT_TURNS * 4) this._subagentAddresses.clear();
-    this._subagentAddresses.add(address);
+  /** One of this thread's subagents, by every address a SendMessage may use (its name, its task id). */
+  private _rememberSubagent(address: string, node?: { id: string; meta: ThreadMeta }): void {
+    if (this._subagents.size >= MAX_SUBAGENT_TURNS * 4) this._subagents.clear();
+    const key = subagentAddress(address);
+    this._subagents.set(key, node ?? this._subagents.get(key));
   }
 
   /** What a degraded record needs from the live chorus: each Warden's layer count, who was not warm. */

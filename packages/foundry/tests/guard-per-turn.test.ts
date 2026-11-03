@@ -691,3 +691,105 @@ test("a brief past its deadline lets the handoff run as written, and what it say
     'chimed in on the handoff to audit scalar snapshots',
   );
 });
+
+test('a withdrawn handoff call stops waiting: nothing is marked, what was said rides the next turn', async () => {
+  const f = fixture({ briefDelayMs: 60 });
+  await f.turn('turn-1', 'Audit the snapshots');
+  const abort = new AbortController();
+  const pending = f.runtime.briefHandoff({ ...SPAWN, signal: abort.signal });
+  abort.abort();
+  expect(await pending).toBeUndefined();
+  await until(() => f.runtime.flowOrchestrator.pendingNotes.length === 1, 'withdrawn brief queued');
+  // Never marked: if the subagent does start, it is briefed then.
+  await f.thread.signals.emit({
+    id: 'sig-spawn-withdrawn',
+    kind: 'subagent_spawn',
+    source: 'subagent:sub_w',
+    timestamp: Date.now(),
+    content: {
+      threadId: f.thread.id,
+      childThreadId: 'sub_w',
+      parent: { id: f.thread.id, meta: f.thread.meta },
+      parentTurnId: 'turn-1',
+      handoffId: 'handoff:sub_w',
+      toolCallId: SPAWN.callId,
+      prompt: SPAWN.toolInput.prompt,
+    },
+  });
+  await until(() => f.briefCalls.length === 2, 'briefed when it starts');
+});
+
+test("a SendMessage that resumes a subagent is briefed once: its resumed task_started is skipped; addresses match as Claude's do", async () => {
+  const f = fixture();
+  await f.turn('turn-1', 'Audit');
+  const start = (id: string, taskId: string, toolCallId: string) =>
+    f.thread.signals.emit({
+      id,
+      kind: 'subagent_spawn',
+      source: 'subagent:sub_r',
+      timestamp: Date.now(),
+      content: {
+        threadId: f.thread.id,
+        childThreadId: 'sub_r',
+        parent: { id: f.thread.id, meta: f.thread.meta },
+        parentTurnId: 'turn-1',
+        handoffId: 'handoff:sub_r',
+        toolCallId,
+        nativeTaskId: taskId,
+        prompt: 'resumed',
+      },
+    });
+  await f.runtime.briefHandoff({
+    ...SPAWN,
+    toolInput: { ...SPAWN.toolInput, name: 'Snapshot Auditor' },
+  });
+  await start('sig-r1', 'task_r', SPAWN.callId);
+  expect(f.briefCalls).toHaveLength(1);
+  // `to` written another way still names the same subagent (NFKC, case, spaces).
+  const sent = await f.runtime.briefHandoff({
+    callId: 'toolu_resume',
+    toolName: 'SendMessage',
+    toolInput: { to: '  snapshot auditor ', message: 'And the relations.' },
+    turnId: 'turn-1',
+  });
+  expect(sent).toStartWith('And the relations.');
+  expect(f.briefCalls).toHaveLength(2);
+  await f.runtime.briefHandoff({
+    callId: 'toolu_resume_2',
+    toolName: 'SendMessage',
+    toolInput: { to: 'task_r', message: 'One more.' },
+    turnId: 'turn-1',
+  });
+  expect(f.briefCalls).toHaveLength(3);
+  // The resume's own task_started (same task id, no spawning call of its own) is not briefed again.
+  await start('sig-r2', 'task_r', 'toolu_unrelated');
+  await Bun.sleep(20);
+  expect(f.briefCalls).toHaveLength(3);
+});
+
+test("a call a subagent makes is journalled on that subagent's node", async () => {
+  const f = fixture();
+  await f.turn('turn-1', 'Audit');
+  await f.thread.signals.emit({
+    id: 'sig-n',
+    kind: 'subagent_spawn',
+    source: 'subagent:sub_n',
+    timestamp: Date.now(),
+    content: {
+      threadId: f.thread.id,
+      childThreadId: 'sub_n',
+      parent: { id: f.thread.id, meta: f.thread.meta },
+      parentTurnId: 'turn-1',
+      handoffId: 'handoff:sub_n',
+      toolCallId: 'toolu_n',
+      nativeTaskId: 'task_n',
+      prompt: 'Outer task.',
+    },
+  });
+  await until(() => f.briefCalls.length === 1, 'outer brief');
+  await f.runtime.briefHandoff({ ...SPAWN, callId: 'toolu_inner', agentId: 'task_n' });
+  const inner = f
+    .rows(undefined, 'sub_n')
+    .find((r) => r.phase === 'advice' && r.record.wraps === 'handoff-call:toolu_inner');
+  expect(inner?.record).toMatchObject({ handoff: { before: true, fromSubagent: 'task_n' } });
+});
