@@ -17,10 +17,10 @@ import { html } from './lib.js';
 import { NavFooter } from './nav-footer.js';
 import { panelFit, SizeControls } from './panel-sizes.js';
 import { ProjectSidebar } from './project-sidebar.js';
+import { openNewThread } from './run-picker.js';
 import {
   activeThreadId,
   allThreads,
-  createThread,
   leftSize,
   projectSidebarOpen,
   railView,
@@ -68,7 +68,7 @@ function OpenRail() {
     );
   return html`<div class="active-rail">
     <${Pane} title="Yours" count=${yours.length} nodes=${yours} empty="No open threads of your own."
-      action=${html`<button type="button" class="rail-new-thread" onClick=${() => createThread()}>+ New thread</button>`}>${rows(yours)}</${Pane}>
+      action=${html`<button type="button" class="rail-new-thread" onClick=${() => openNewThread()}>+ New thread</button>`}>${rows(yours)}</${Pane}>
     <${Pane} title="Shared" count=${shared.length} nodes=${shared} empty="No thread is shared with anyone." lead=${html`<${IncomingRows} />`}>${rows(shared)}</${Pane}>
   </div>`;
 }
