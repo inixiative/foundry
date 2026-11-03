@@ -9,7 +9,7 @@ import {
   type PrimedEvent,
   type PrimeSpec,
 } from '@inixiative/agent-session';
-import type { NativeBridgeSource, ThreadSetup } from '@inixiative/foundry-core';
+import type { EventStream, NativeBridgeSource, ThreadSetup } from '@inixiative/foundry-core';
 import type { ThreadSetupHost } from '../turns/turn-service';
 import type { ProjectHostPolicy } from './subscription-policy';
 
@@ -126,6 +126,8 @@ interface ProjectEntry {
   readonly resets: Record<string, number>;
   /** Dispatcher recycles of the serving host, by time. */
   recycles: number[];
+  /** The project's last turn or thread activity. */
+  lastActive: number;
 }
 
 /** Resident memory (MB) of `pid` and every process below it, read from `ps` (scripts/measure-in-session.ts). */
@@ -301,6 +303,7 @@ export class InSessionWardens {
         generation: 0,
         resets: {},
         recycles: [],
+        lastActive: Date.now(),
       };
       this._projects.set(projectId, entry);
       this._watchHealth();
@@ -326,7 +329,19 @@ export class InSessionWardens {
     this._replace(projectId, live ? 'roster grew' : 'start');
   }
 
-  /** Stop holding this project's Wardens (its chorus is off or gone). */
+  /** The project was active (a turn or a thread of it): true when its host is open. */
+  touchProject(projectId: string): boolean {
+    const entry = this._projects.get(projectId);
+    if (entry) entry.lastActive = Date.now();
+    return !!entry;
+  }
+
+  /** Projects whose host is open (starting, serving, or failed until idle). */
+  openProjects(): string[] {
+    return [...this._projects.keys()];
+  }
+
+  /** Stop holding this project's Wardens (its chorus is off or gone, or it went idle). */
   async closeProject(projectId: string): Promise<void> {
     const entry = this._projects.get(projectId);
     if (!entry) return;
@@ -509,6 +524,12 @@ export class InSessionWardens {
     this._health = setInterval(() => {
       const bounds = this.config.projectHost!;
       for (const [projectId, entry] of this._projects) {
+        // Only while someone works in the project (Aron, 2026-11-02): idle, its host closes.
+        if (Date.now() - entry.lastActive > bounds.idleMs) {
+          this._report(projectId, 'idle');
+          void this.closeProject(projectId);
+          continue;
+        }
         // Read while a replacement starts too: the ceiling must still take routing off a host
         // growing past it (`_replace` starts nothing while one is starting).
         const live = entry.live;
@@ -570,6 +591,37 @@ export class InSessionWardens {
       }),
     ]);
   }
+}
+
+/**
+ * `claude-project`: a project's host opens when the project becomes active and stays while it is.
+ * Activity is what the daemon's event stream already says: a turn journalled in the project
+ * (`journal`, which carries the project) or a thread of it opened (`thread:added`). The first
+ * activity of a project with no open host asks `open` for one (composing its roster); later activity
+ * keeps it from going idle (`projectHost.idleMs`). Returns the unsubscribe.
+ */
+export function followProjectActivity(options: {
+  hosts: InSessionWardens;
+  events: EventStream;
+  /** A thread's project (the daemon's `threadMeta(thread).projectId`). */
+  projectOf: (threadId: string) => string | undefined;
+  /** Compose the project's roster and open its host; failures are the caller's to report. */
+  open: (projectId: string) => Promise<void>;
+}): () => void {
+  const opening = new Set<string>();
+  const active = (projectId: string | undefined) => {
+    if (!projectId || options.hosts.touchProject(projectId) || opening.has(projectId)) return;
+    opening.add(projectId);
+    void options
+      .open(projectId)
+      .catch(() => undefined)
+      .finally(() => opening.delete(projectId));
+  };
+  return options.events.subscribe((event) => {
+    if (event.kind === 'journal') active(event.projectId);
+    else if (event.kind === 'session' && event.event.type === 'thread:added')
+      active(options.projectOf(event.event.threadId));
+  });
 }
 
 /**

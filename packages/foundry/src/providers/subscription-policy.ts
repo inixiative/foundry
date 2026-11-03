@@ -67,6 +67,8 @@ export const subscriptionSettingsSchema = z
         setupDeadlineMs: z.number().int().min(5_000).max(600_000),
         /** First wait before a failed host is started again; doubles to 5 minutes. */
         restartBackoffMs: z.number().int().min(100).max(300_000),
+        /** A project with no turn or thread activity for this long has its host closed. */
+        idleMs: z.number().int().min(60_000).max(86_400_000),
         /** Failed starts in a row before the project stays on primed Wardens until restart. */
         maxRestarts: z.number().int().min(1).max(100),
       })
@@ -173,6 +175,8 @@ export const PROJECT_HOST_DEFAULTS = {
   recycleTokens: 140_000,
   restartBackoffMs: 5_000,
   maxRestarts: 5,
+  /** As primed roles are evicted after 30 minutes idle. */
+  idleMs: 1_800_000,
 } as const satisfies Omit<ProjectHostPolicy, 'setupDeadlineMs'>;
 /**
  * Sized for a full chorus: every Warden is asked on every user message, and every

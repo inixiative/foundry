@@ -14,6 +14,7 @@ import {
 import { createDecisionProvider } from './providers/decision-provider';
 import { harnessSettingSources } from './providers/harness-settings';
 import {
+  followProjectActivity,
   InSessionWardens,
   inSessionThreadSetup,
   type ProjectHostState,
@@ -800,51 +801,58 @@ configStore.onChange(async (next) => {
 });
 configStore.watch();
 
-// claude-project: compose each project's roster (a hidden thread at the project's root, as a thread of
-// the project composes its Wardens) and hold it in the project's host. At startup, on every settings
-// change, and every minute (a region's files may change on disk; the same roster changes nothing).
+// claude-project: a project's Wardens are held only while someone works in it (Aron, 2026-11-02).
+// Its host opens on the project's first activity (a turn journalled in it, a thread of it opened:
+// `followProjectActivity`, subscribed once startup is done) and closes after `projectHost.idleMs`
+// without any. Its roster is composed from a hidden thread at the project's root, as a thread of the
+// project composes its Wardens; settings changes and a minute's timer refresh open hosts only (a
+// region's files may change on disk; the same roster changes nothing). Until a host serves, calls
+// go to primed Wardens.
 const projectHosts = live?.projectHosts;
-/** One pass at a time: a pass asked for while one runs is covered by the next minute's. */
-let holdingRosters = false;
-const holdProjectRosters = () => {
-  if (!projectHosts || !decisions || holdingRosters) return;
-  holdingRosters = true;
+const holdProjectRoster = async (projectId: string) => {
+  if (!projectHosts || !decisions) return;
+  const current = liveConfig;
+  const project = current.projects?.[projectId];
+  const view =
+    !project || project.enabled === false ? undefined : resolveProjectView(current, projectId);
+  if (!view?.chorus.on || !project?.path) {
+    await projectHosts.closeProject(projectId);
+    return;
+  }
+  try {
+    const roster = await composeProjectRoster({
+      config: current,
+      projectId,
+      decisions: decisions.provider,
+      ...(stageHost ? { stageHost } : {}),
+      resolveSource: sourceResolver,
+      atlasRoot,
+      warn: (line) => console.warn(line),
+    });
+    projectHosts.openProject(
+      projectId,
+      roster.map(({ spec }) => ({ spec, standby: '' })),
+    );
+  } catch (error) {
+    console.warn(
+      `[project-wardens] ${projectId}: roster not composed (${(error as Error).message}); primed Wardens serve it`,
+    );
+  }
+};
+/** One refresh at a time: one asked for while one runs is covered by the next minute's. */
+let refreshingRosters = false;
+const refreshProjectRosters = () => {
+  if (!projectHosts || refreshingRosters) return;
+  refreshingRosters = true;
   void (async () => {
-    const current = liveConfig;
-    for (const [projectId, project] of Object.entries(current.projects ?? {})) {
-      const view = project.enabled === false ? undefined : resolveProjectView(current, projectId);
-      if (!view?.chorus.on || !project.path) {
-        await projectHosts.closeProject(projectId);
-        continue;
-      }
-      try {
-        const roster = await composeProjectRoster({
-          config: current,
-          projectId,
-          decisions: decisions.provider,
-          ...(stageHost ? { stageHost } : {}),
-          resolveSource: sourceResolver,
-          atlasRoot,
-          warn: (line) => console.warn(line),
-        });
-        projectHosts.openProject(
-          projectId,
-          roster.map(({ spec }) => ({ spec, standby: '' })),
-        );
-      } catch (error) {
-        console.warn(
-          `[project-wardens] ${projectId}: roster not composed (${(error as Error).message}); primed Wardens serve it`,
-        );
-      }
-    }
+    for (const projectId of projectHosts.openProjects()) await holdProjectRoster(projectId);
   })().finally(() => {
-    holdingRosters = false;
+    refreshingRosters = false;
   });
 };
 if (projectHosts) {
-  holdProjectRosters();
-  configStore.onChange(() => holdProjectRosters());
-  const rosterTimer = setInterval(holdProjectRosters, 60_000);
+  configStore.onChange(() => refreshProjectRosters());
+  const rosterTimer = setInterval(refreshProjectRosters, 60_000);
   (rosterTimer as { unref?: () => void }).unref?.();
 }
 
@@ -1128,6 +1136,16 @@ publishDaemonRuntime({
 });
 // Turns a planned restart held (the spin-down) run now, in the order they arrived.
 void viewer.resumeHeldTurns();
+
+// claude-project: from here on, a project's activity opens its Warden host (threads restored at
+// startup are not work).
+if (projectHosts)
+  followProjectActivity({
+    hosts: projectHosts,
+    events: eventStream,
+    projectOf: (threadId) => threadMeta?.(threadId.split(':aux:')[0]!)?.projectId,
+    open: holdProjectRoster,
+  });
 
 console.log();
 console.log('Ready. Send messages through the harness API or viewer.');

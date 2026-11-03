@@ -7,12 +7,18 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { ClaudeCodeSession, type PrimeSpec } from '@inixiative/agent-session';
-import { FileMemory, type LLMMessage, type LLMProvider } from '@inixiative/foundry-core';
+import {
+  EventStream,
+  FileMemory,
+  type LLMMessage,
+  type LLMProvider,
+} from '@inixiative/foundry-core';
 import { composeProjectRoster, warmWardens, withChorusThread } from '../src/agents/chorus-thread';
 import { createSourceResolver } from '../src/agents/thread-factory';
 import { DECISION_PRIORITY } from '../src/providers/decision-priority';
 import { defaultProfileSource } from '../src/providers/default-profiles';
 import {
+  followProjectActivity,
   InSessionWardens,
   type ProjectHostState,
   type Roster,
@@ -65,7 +71,7 @@ const spec = (role: string): PrimeSpec => ({
 const roster = (...roles: string[]): Roster => roles.map((r) => ({ spec: spec(r), standby: '' }));
 
 /** A project-mode registry whose hosts run on the fake CLI: per-pid memory readings set by the test. */
-function projectHosts(options: { noRoot?: boolean; maxRestarts?: number } = {}) {
+function projectHosts(options: { noRoot?: boolean; maxRestarts?: number; idleMs?: number } = {}) {
   const tree = fakeClaudeTree({ noRoot: options.noRoot });
   const rss = new Map<number, number>();
   const states: Array<ProjectHostState & { projectId: string }> = [];
@@ -80,6 +86,7 @@ function projectHosts(options: { noRoot?: boolean; maxRestarts?: number } = {}) 
       setupDeadlineMs: options.noRoot ? 5_000 : 5_000,
       restartBackoffMs: 20,
       maxRestarts: options.maxRestarts ?? 5,
+      ...(options.idleMs !== undefined ? { idleMs: options.idleMs } : {}),
     },
     healthIntervalMs: 10,
     rss: (pid) => rss.get(pid) ?? 100,
@@ -156,6 +163,45 @@ test('a roster that grows while its host starts gets a host sized for it', async
   expect(await wardens.projectReady('P', 5_000)).toBe(true);
   expect(wardens.projectState('P')).toMatchObject({ expected: 3, held: 3 });
   expect(wardens.projectState('P')!.resets).toEqual({ 'roster grew': 1 });
+});
+
+test('only while someone works in the project: activity opens its host, idleness closes it', async () => {
+  const { tree, wardens } = projectHosts({ idleMs: 300 });
+  const events = new EventStream();
+  const opened: string[] = [];
+  followProjectActivity({
+    hosts: wardens,
+    events,
+    projectOf: (threadId) => (threadId === 'A1' ? 'P' : undefined),
+    open: async (projectId) => {
+      opened.push(projectId);
+      wardens.openProject(projectId, roster('locks'));
+    },
+  });
+  // Nothing opens a host before the project is active.
+  expect(wardens.openProjects()).toEqual([]);
+  // A thread of another project, or none, opens nothing.
+  events.push({ kind: 'session', event: { type: 'thread:added', threadId: 'B1', timestamp: 1 } });
+  expect(opened).toEqual([]);
+  // A thread of the project opened: its host opens, once.
+  events.push({ kind: 'session', event: { type: 'thread:added', threadId: 'A1', timestamp: 1 } });
+  events.push({ kind: 'journal', threadId: 'A1', projectId: 'P', turnId: 't1', timestamp: 2 });
+  expect(opened).toEqual(['P']);
+  expect(await wardens.projectReady('P', 5_000)).toBe(true);
+  // Turns keep it open past the idle bound.
+  for (let i = 0; i < 4; i++) {
+    await Bun.sleep(150);
+    events.push({ kind: 'journal', threadId: 'A1', projectId: 'P', turnId: `t${i}`, timestamp: 3 });
+  }
+  expect(wardens.openProjects()).toEqual(['P']);
+  // No activity for the bound: the host closes, and routing falls back to primed.
+  expect(await until(() => wardens.openProjects().length === 0, 2_000)).toBe(true);
+  expect(wardens.serving('A1')).toBeUndefined();
+  expect(await until(() => tree.processes[0]!.exited)).toBe(true);
+  // The next turn opens it again.
+  events.push({ kind: 'journal', threadId: 'A1', projectId: 'P', turnId: 't9', timestamp: 4 });
+  expect(opened).toEqual(['P', 'P']);
+  expect(await wardens.projectReady('P', 5_000)).toBe(true);
 });
 
 test('a host process that dies: routing falls back at once, and a new host is started and serves', async () => {
@@ -354,6 +400,7 @@ function project(): string {
   write(join(dir, '.foundry', 'project.json'), JSON.stringify({ chorus: { enabled: true } }));
   write(join(dir, 'CLAUDE.md'), 'ROOT_CLAUDE_MD\n');
   write(join(dir, '.foundry', 'roles', 'lens-model', 'instructions.md'), 'ROOT_ROLE_FILE\n');
+  write(join(dir, '.foundry', 'warden-brief.md'), 'ROOT_WARDEN_BRIEF\n');
   const worktree = join(dir, '.worktrees', 'feat');
   write(join(worktree, '.git'), 'gitdir: ../../.git/worktrees/feat\n');
   write(join(worktree, 'CLAUDE.md'), 'WORKTREE_CLAUDE_MD\n');
@@ -361,6 +408,7 @@ function project(): string {
     join(worktree, '.foundry', 'roles', 'lens-model', 'instructions.md'),
     'WORKTREE_ROLE_FILE\n',
   );
+  write(join(worktree, '.foundry', 'warden-brief.md'), 'WORKTREE_WARDEN_BRIEF\n');
   for (const id of ['concurrency-locks', 'lens-model']) {
     write(
       join(dir, '.foundry', 'regions', id, 'region.json'),
@@ -440,8 +488,11 @@ test('claude-project: the roster is every region Warden composed at the project 
   });
   expect(roster.map((e) => e.domain).sort()).toEqual(['concurrency-locks', 'lens-model']);
   for (const { spec: held } of roster) {
-    // Region Wardens leave the CLAUDE.md ladder out (resolveProjectView's role default).
+    // Wardens never get CLAUDE.md: the charter, the warden brief and the region. The brief is the
+    // registered checkout's, whatever branch a worktree thread is on.
     expect(held.instructions).not.toContain('CLAUDE_MD');
+    expect(held.instructions).toContain('ROOT_WARDEN_BRIEF');
+    expect(held.instructions).not.toContain('WORKTREE_WARDEN_BRIEF');
     expect(held.context).toContain('KNOWLEDGE_');
   }
   const lens = roster.find((e) => e.domain === 'lens-model')!.spec;
