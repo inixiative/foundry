@@ -3,7 +3,7 @@
  * @kind service
  * @partOf feature:mcpBridge
  */
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash } from 'node:crypto';
 import {
   freezeEvidence,
   type NativeBridgeLease,
@@ -47,7 +47,7 @@ export function nativeBridgeSource(
       throw Error('Native bridge owner is stale; no replacement or replay was admitted');
   };
   return Object.freeze<NativeBridgeSource>({
-    key: randomUUID(),
+    key: Bun.randomUUIDv7(),
     check: (candidate) => {
       check();
       if (
@@ -59,7 +59,7 @@ export function nativeBridgeSource(
     },
     async acquire(): Promise<NativeBridgeLease> {
       check();
-      const id = randomUUID(),
+      const id = Bun.randomUUIDv7(),
         name = `foundry_${id.replaceAll('-', '')}`;
       let active: NativeEvidence | undefined;
       const admissions = new Set<string>();
@@ -84,7 +84,7 @@ export function nativeBridgeSource(
             deviceIdentityPath,
             captureOperation: () =>
               freezeEvidence({
-                id: randomUUID(),
+                id: Bun.randomUUIDv7(),
                 bridgeId: id,
                 association: active
                   ? {

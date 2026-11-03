@@ -88,9 +88,9 @@ export class KingdomAccessTool implements ApiTool {
         else if (req.url === 'close') body = await client.closeTask(closeInput.parse(input).reason);
         else {
           const read = readInput.parse(input);
-          requestId = crypto.randomUUID();
+          requestId = Bun.randomUUIDv7();
           const owner = JSON.stringify([this.scope.projectId, this.scope.threadId]);
-          runId = this.runIds.get(owner) ?? crypto.randomUUID();
+          runId = this.runIds.get(owner) ?? Bun.randomUUIDv7();
           this.runIds.set(owner, runId);
           body = {
             requestId,

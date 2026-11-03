@@ -47,8 +47,8 @@ test('subscription mode reports the main-thread and decision profiles where they
   const worker = privateProfile();
   config.nativeAuthentication = [
     {
-      id: crypto.randomUUID(),
-      integrationId: crypto.randomUUID(),
+      id: Bun.randomUUIDv7(),
+      integrationId: Bun.randomUUIDv7(),
       runtime: 'claude',
       mode: 'native-profile',
       profileDirectory: worker,
@@ -157,7 +157,7 @@ test('a missing CLI makes a login unready', () => {
 test('a broken decision profile on the main runtime is never reported ready', () => {
   const config = defaultConfig();
   const worker = privateProfile();
-  const id = () => crypto.randomUUID();
+  const id = () => Bun.randomUUIDv7();
   config.nativeAuthentication = [
     {
       id: id(),

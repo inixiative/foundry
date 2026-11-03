@@ -66,7 +66,7 @@ test("Paseo's sequence: new session in a project, streamed turn with tools, canc
   const before = f.attempts.length;
   const prompt = paseo.agent.request('session/prompt', {
     sessionId,
-    messageId: crypto.randomUUID(),
+    messageId: Bun.randomUUIDv7(),
     prompt: [
       { type: 'text', text: 'Read the file' },
       { type: 'resource_link', uri: `file://${cwd}/a.ts`, name: 'a.ts' },

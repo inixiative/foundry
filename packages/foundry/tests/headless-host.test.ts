@@ -137,11 +137,11 @@ test('the headless host pairs, admits a member note the Warden weighs in on, and
   };
   const inspect = async () =>
     headlessThreadStateSchema.parse(
-      await request({ type: 'inspect', requestId: crypto.randomUUID(), threadId: 'main' }),
+      await request({ type: 'inspect', requestId: Bun.randomUUIDv7(), threadId: 'main' }),
     );
 
   const member: HostedSignet = {
-    signetId: crypto.randomUUID(),
+    signetId: Bun.randomUUIDv7(),
     integrationId,
     name: 'JobCo',
     revision: 1,
@@ -149,17 +149,17 @@ test('the headless host pairs, admits a member note the Warden weighs in on, and
     expiresAt: null,
     maxRequests: null,
     maxConcurrent: 1,
-    recipient: { recipientModel: 'User', id: crypto.randomUUID(), displayName: 'JobCo' },
+    recipient: { recipientModel: 'User', id: Bun.randomUUIDv7(), displayName: 'JobCo' },
     resources: [threadsGrant({ operations: ['thread.prompt', 'thread.read'] })],
     baseLenses: threadsBaseLenses(),
   };
   kingdom.host(member);
-  const requestId = crypto.randomUUID();
+  const requestId = Bun.randomUUIDv7();
   await until(async () => (await inspect()).members.some((m) => m.listed), 'member listed');
   // A shared thread defaults to the conch (Aron, 2026-11-01); this note is about the talk path.
   await request({
     type: 'http',
-    requestId: crypto.randomUUID(),
+    requestId: Bun.randomUUIDv7(),
     method: 'POST',
     path: '/api/threads/main/conversation/floor',
     body: { mode: 'talk' },
@@ -172,7 +172,7 @@ test('the headless host pairs, admits a member note the Warden weighs in on, and
     member: { signetId: member.signetId, displayName: 'JobCo' },
     terms: termsOf(member),
     operation: 'thread.prompt',
-    input: { threadId: 'main', postId: crypto.randomUUID(), text: 'A role opened.' },
+    input: { threadId: 'main', postId: Bun.randomUUIDv7(), text: 'A role opened.' },
   });
   expect((await kingdom.threadResponse(requestId)).outcome).toMatchObject({
     ok: true,
@@ -190,10 +190,10 @@ test('the headless host pairs, admits a member note the Warden weighs in on, and
 
   const answered = (await request({
     type: 'http',
-    requestId: crypto.randomUUID(),
+    requestId: Bun.randomUUIDv7(),
     method: 'POST',
     path: '/api/messages',
-    body: { id: `turn_${crypto.randomUUID()}`, threadId: 'main', message: 'Reply to them.' },
+    body: { id: `turn_${Bun.randomUUIDv7()}`, threadId: 'main', message: 'Reply to them.' },
   })) as { output?: string };
   expect(answered.output).toBe('Replied.');
   state = await inspect();

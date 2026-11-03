@@ -913,6 +913,12 @@ export function createViewer(config: ViewerConfig) {
       { 'Content-Type': 'application/javascript' },
     ),
   );
+  // The browser mints ids with the same uuidv7 package the daemon does; it ships as one import-free ES module.
+  app.get('/ui/uuidv7.js', async (c) =>
+    c.body(await Bun.file(new URL(import.meta.resolve('uuidv7'))).text(), 200, {
+      'Content-Type': 'application/javascript',
+    }),
+  );
   // The look is @inixiative/config's shared theme (public.css, status.css and the fonts they load),
   // read from the package at runtime so Foundry and Kingdom never drift apart.
   const themeDir = dirname(

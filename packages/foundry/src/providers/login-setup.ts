@@ -142,7 +142,7 @@ export class LoginSetup {
       throw Error('Only Claude and Codex logins can be added here');
     if ([...this.running.values()].some((r) => r.view.state === 'signing-in'))
       throw Error('Finish or cancel the sign-in in progress first');
-    const id = crypto.randomUUID();
+    const id = Bun.randomUUIDv7();
     const root = join(this.options.foundryDir, 'logins');
     mkdirSync(root, { recursive: true, mode: 0o700 });
     const directory = join(root, id);
@@ -219,7 +219,7 @@ export class LoginSetup {
     const real = realpathSync(directory);
     const login: NativeProfileSource = {
       id: view.id,
-      integrationId: crypto.randomUUID(),
+      integrationId: Bun.randomUUIDv7(),
       runtime: view.runtime,
       mode: 'native-profile',
       profileDirectory: real,

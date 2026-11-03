@@ -109,7 +109,7 @@ test('shared pairing collects the Signet privately once the owner is confirmed, 
       { integrationId: settings.integrationId, token: 't'.repeat(48) },
     ]);
     await expect(
-      saveKingdomIntegration(store, dir, { ...settings, signetId: crypto.randomUUID() }),
+      saveKingdomIntegration(store, dir, { ...settings, signetId: Bun.randomUUIDv7() }),
     ).rejects.toThrow('--replace');
 
     expect((await disconnectKingdom(store, dir))?.integrationId).toBe(settings.integrationId);

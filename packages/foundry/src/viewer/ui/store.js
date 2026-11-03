@@ -26,6 +26,7 @@ import { batch, computed, effect, signal } from './lib.js';
 import { applyTurnFrame, mergeLiveSnapshot } from './live-state.js';
 import { route } from './route.js';
 import { threadState } from './thread-status.js';
+import { uuidv7 } from './uuidv7.js';
 
 // ---------------------------------------------------------------------------
 // Auth — cookie-based auth handles most cases. authFetch is a fallback
@@ -381,7 +382,7 @@ export function layerColor(layerId) {
 
 let socket = null;
 // This tab's id on the socket, stable across reconnects: the server addresses a send's full result to it.
-const clientId = crypto.randomUUID();
+const clientId = uuidv7();
 let pendingFrames = [];
 let frameScheduled = false;
 let activeStream = null,
@@ -2056,7 +2057,7 @@ export async function sendMessage(text, images = [], { delivery } = {}) {
   const tid = await threadForSend();
   if (!tid) return false;
 
-  const turnId = `turn_${crypto.randomUUID()}`;
+  const turnId = `turn_${uuidv7()}`;
   const refs = images.map(({ id, mediaType, bytes }) => ({ id, mediaType, bytes }));
   _appendToThread(tid, {
     actor: 'user',

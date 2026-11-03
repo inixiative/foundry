@@ -15,6 +15,7 @@
 
 import { html, signal, useRef, useState } from './lib.js';
 import { activeThreadId, postAside } from './store.js';
+import { uuidv7 } from './uuidv7.js';
 
 export const DESTINATIONS = [
   ['thread', 'Thread'],
@@ -70,7 +71,7 @@ function AsideBox() {
   const send = async () => {
     const sent = text.trim();
     if (!sent) return;
-    if (post.current?.text !== sent) post.current = { text: sent, id: crypto.randomUUID() };
+    if (post.current?.text !== sent) post.current = { text: sent, id: uuidv7() };
     const result = await postAside(activeThreadId.value, sent, post.current.id);
     if (result.error) return setError(result.error);
     post.current = null;
