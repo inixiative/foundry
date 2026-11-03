@@ -105,10 +105,13 @@ test('Analytics leads with each login’s windows and charts tokens over the cho
     await page.locator('.an-tile', { hasText: '3.0K' }).waitFor();
     expect(await page.locator('.an-chart .an-col').count()).toBe(2);
     expect(asked).toContain('period=daily');
+    // The series is fetched in an effect after the heading paints: wait for the request itself.
+    const hourly = page.waitForRequest(/\/api\/analytics\/timeseries\?period=hourly/);
     await page.getByRole('group', { name: 'Range' }).getByRole('button', { name: 'Today' }).click();
     await page.waitForFunction(() =>
       document.querySelector('.an-tokens h3')?.textContent?.includes('Today'),
     );
+    await hourly;
     expect(asked).toContain('period=hourly');
     // What isn't recorded yet says so.
     await page
