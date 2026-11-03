@@ -17,7 +17,7 @@ import type {
   TokenTracker,
   ToolRegistry,
 } from '@inixiative/foundry-core';
-import { newId } from '@inixiative/foundry-core';
+import { newId, threadTitle } from '@inixiative/foundry-core';
 import type { Server } from 'bun';
 import { Hono } from 'hono';
 import { serveStatic } from 'hono/bun';
@@ -28,6 +28,7 @@ import { registerArchiveRoutes } from '../archives/routes';
 import { ThreadContextTracker } from '../archives/thread-context';
 import { CompositionAuditor } from '../audit/compositions';
 import { ConversationService } from '../conversations/service';
+import { blockedOnPerson, RestartRoll } from '../daemon/restart-roll';
 import { readLocalDevice } from '../devices/local-inventory';
 import { feedbackRoots } from '../feedback/apply';
 import { MAIN_ROLE } from '../feedback/routing';
@@ -79,6 +80,7 @@ import { createViewerStreams } from './data-streams';
 import { authenticatedRequest, sameOrigin } from './request-auth';
 import { registerControlRoutes } from './routes/control';
 import { registerConversationRoutes } from './routes/conversations';
+import { registerDaemonUpdateRoutes } from './routes/daemon-update';
 import { registerDeviceRoutes } from './routes/devices';
 import { registerGlossRoutes } from './routes/gloss';
 import { registerKingdomRoutes } from './routes/kingdom';
@@ -526,7 +528,11 @@ export function createViewer(config: ViewerConfig) {
     : undefined;
   // The same decision provider drafts a plan when a turn that brought work ended without one.
   const planDrafter = config.namingProvider
-    ? new PlanDrafter({ provider: config.namingProvider, changed: threadChanged })
+    ? new PlanDrafter({
+        provider: config.namingProvider,
+        changed: threadChanged,
+        settled: () => restartRoll.check(),
+      })
     : undefined;
   const runningTasks = new RunningTasks((threadId, callId) =>
     localStore?.nativeToolUse(threadId, callId),
@@ -746,8 +752,28 @@ export function createViewer(config: ViewerConfig) {
     const pruner = setInterval(() => queue.prune(3_600_000), 600_000);
     (pruner as { unref?: () => void }).unref?.();
   }
+  // The spin-down before a restart onto an update (`daemon/restart-roll.ts`): built before the turn
+  // path so a turn reaching the front of its queue can wait for it.
+  let turnsReady: ReturnType<typeof registerRuntimeRoutes>['turns'] | undefined;
+  const restartRoll = new RestartRoll({
+    // A turn blocked on a person (its agent's approval or question) isn't running: the restart doesn't wait for it.
+    running: () =>
+      (turnsReady?.runningTurns() ?? []).filter(
+        (turn) => !blockedOnPerson(config.actionQueue, turn),
+      ),
+    waiting: () => turnsReady?.queuedCount() ?? 0,
+    finishing: () => planDrafter?.drafting() ?? 0,
+    background: () => runningTasks.active(),
+    prepare: () => {
+      const held = turnsReady?.holdQueuedForRestart() ?? 0;
+      if (held) console.log(`[Restart] ${held} waiting turn(s) held; they run after the restart`);
+    },
+    log: (message) => console.log(`[Restart] ${message}`),
+  });
+  const imageStore = new ImageAttachmentStore(join(configDir, 'attachments', 'images'));
   const { turns, fork } = registerRuntimeRoutes(app, {
     nativeRecovery,
+    restartGate: restartRoll,
     threadLaunch,
     harness,
     eventStream,
@@ -768,9 +794,27 @@ export function createViewer(config: ViewerConfig) {
     streams,
     feedback,
     secrets,
-    images: new ImageAttachmentStore(join(configDir, 'attachments', 'images')),
+    images: imageStore,
     ...(config.threadSetup ? { threadSetup: config.threadSetup } : {}),
   });
+  turnsReady = turns;
+  turns.onSettled(() => restartRoll.check());
+  registerDaemonUpdateRoutes(app, restartRoll, (threadId) => {
+    const thread = directory.get(threadId);
+    return thread ? threadTitle(thread.meta)?.text : undefined;
+  });
+  // Turns a planned restart held run again, in the order they arrived, once the daemon has booted
+  // (start.ts calls it); their threads resume their native sessions through their bindings.
+  const resumeHeldTurns = () =>
+    turns
+      .resumeHeld((ids) => imageStore.resolve(ids))
+      .then(({ resumed, failed }) => {
+        if (resumed)
+          console.log(`[Restart] ${resumed} held turn(s) started again after the restart`);
+        for (const { turnId, error } of failed)
+          console.warn(`[Restart] held turn ${turnId} could not run again: ${error}`);
+      })
+      .catch((error) => console.warn(`[Restart] held turns not resumed: ${String(error)}`));
   // Agent conversations: Kingdom's relayed frames reach this wrapper over each Installation socket
   // (served before the sockets start), and held sends survive a restart (raised again here).
   if (localStore) {
@@ -1034,8 +1078,11 @@ export function createViewer(config: ViewerConfig) {
   return {
     toolGate,
     threadLaunch,
-    /** Turns queued or running on this daemon; the auto-updater waits for none before it restarts. */
+    /** Turns queued or running on this daemon (a supervisor without the spin-down drains on it). */
     liveTurns: () => turns.liveCount(),
+    /** The spin-down a staged update goes through (`offerUpdate` on the daemon hook). */
+    restartRoll,
+    resumeHeldTurns,
     app,
     fetch: handleRequest,
     websocket: socket.websocket,
@@ -1166,6 +1213,8 @@ export async function startViewer(config: ViewerConfig) {
   return {
     toolGate: viewer.toolGate,
     liveTurns: viewer.liveTurns,
+    restartRoll: viewer.restartRoll,
+    resumeHeldTurns: viewer.resumeHeldTurns,
     server,
     actions,
     analyticsStore,

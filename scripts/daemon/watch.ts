@@ -7,25 +7,30 @@
  * Periodic update check for a daemon that is already running.
  *
  * The supervisor only stages updates at startup, so a daemon left running for
- * days never sees main move. This stages the candidate while running, then
- * exits 75 so launchd relaunches onto it. It drains first: it restarts only
- * once no turn is queued or running, because a restart mid-turn loses track of
- * the native session's work (Aron, 2026-11-02). Past the drain timeout it
- * restarts anyway, and the next boot settles each lost turn from the native
- * session's own record (`turns/native-outcome-recovery.ts`).
+ * days never sees main move. This stages the candidate while running and offers
+ * it to the daemon, which spins down (Aron, 2026-11-02: "finish all open
+ * threads… once the last one finishes, restart, then reopen"): running turns
+ * finish, new ones wait, and it calls back to restart when the last running turn
+ * finishes or the backstop timeout passes (packages/foundry/src/daemon/restart-roll.ts).
+ * Restarting is exiting 75 so launchd relaunches onto the candidate. A daemon
+ * that can't spin down (an older release) is drained on its live turns instead.
  */
 
+import {
+  type DaemonRuntimeHook,
+  daemonRuntime,
+} from '../../packages/foundry/src/daemon/runtime-hook';
 import { RESTART_EXIT_CODE, readState, stageUpdate } from './update';
 
 export interface WatchOptions {
   repoRoot: string;
   configDir: string;
   intervalMs: number;
-  /** Turns queued or running in this process; undefined until the daemon has booted. */
-  liveTurns?: () => number | undefined;
-  /** How long to wait for running turns before restarting anyway (default 60 minutes). */
+  /** The booted daemon's hook (default: the one it published in this process). */
+  runtime?: () => DaemonRuntimeHook | undefined;
+  /** Backstop: restart anyway after running turns have had this long (default 60 minutes). */
   drainTimeoutMs?: number;
-  /** How often to look again while draining. */
+  /** How often to look again while draining a daemon that can't spin down. */
   drainPollMs?: number;
   /** Told how long the runtime expects to be gone, so presence reads "restarting" rather than "offline". */
   closeForUpdate?: (expectedBackWithinMs: number) => Promise<void> | void;
@@ -59,10 +64,26 @@ export const drain = async (
 export const startUpdateWatcher = (options: WatchOptions): (() => void) => {
   const log = options.log ?? (() => {});
   const exit = options.exit ?? ((code: number) => process.exit(code));
+  const runtime = options.runtime ?? daemonRuntime;
+  const timeoutMs = options.drainTimeoutMs ?? DEFAULT_DRAIN_TIMEOUT_MS;
   let checking = false;
+  let offered: string | undefined;
+  let restarting = false;
+
+  const restart = async (candidate: string) => {
+    if (restarting) return;
+    restarting = true;
+    log(`restarting onto candidate ${candidate.slice(0, 8)}`);
+    try {
+      await options.closeForUpdate?.(EXPECTED_BACK_WITHIN_MS);
+    } catch (error) {
+      log(`close-for-update failed, restarting anyway — ${String(error)}`);
+    }
+    exit(RESTART_EXIT_CODE);
+  };
 
   const tick = async () => {
-    if (checking) return;
+    if (checking || restarting) return;
     checking = true;
     try {
       const result = await stageUpdate(options.repoRoot, options.configDir);
@@ -72,23 +93,28 @@ export const startUpdateWatcher = (options: WatchOptions): (() => void) => {
       const { candidate } = await readState(options.configDir);
       if (!candidate) return;
 
+      const hook = runtime();
+      if (hook?.offerUpdate) {
+        // Offered once per candidate: the daemon spins down, or keeps it postponed ("Not now").
+        if (offered === candidate) return;
+        log(
+          `offering ${candidate.slice(0, 8)} to the daemon: it restarts once running turns finish`,
+        );
+        hook.offerUpdate({ candidate, timeoutMs, restart: () => void restart(candidate) });
+        offered = candidate;
+        return;
+      }
       const drained = await drain(
-        options.liveTurns,
-        options.drainTimeoutMs ?? DEFAULT_DRAIN_TIMEOUT_MS,
+        () => hook?.liveTurns(),
+        timeoutMs,
         options.drainPollMs ?? 5_000,
         log,
       );
       if (!drained)
         log(
-          `turns still running after the drain timeout; restarting anyway (each is settled from its native record on boot)`,
+          'turns still running after the drain timeout; restarting anyway (each is settled from its native record on boot)',
         );
-      log(`restarting onto candidate ${candidate.slice(0, 8)}`);
-      try {
-        await options.closeForUpdate?.(EXPECTED_BACK_WITHIN_MS);
-      } catch (error) {
-        log(`close-for-update failed, restarting anyway — ${String(error)}`);
-      }
-      exit(RESTART_EXIT_CODE);
+      await restart(candidate);
     } catch (error) {
       log(`update check failed — ${String(error)}`);
     } finally {

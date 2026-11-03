@@ -46,6 +46,13 @@ import type { PersistedTraceRecord } from './trace-record';
 export const NATIVE_OUTCOME_UNRESOLVED =
   'Foundry lost track of the last turn after a restart. Check the files it touched, then Continue (or Retry the turn).';
 
+/** What a turn held across a restart needs to run again: the message as the executor gets it. */
+export interface RestartHeldRequest {
+  payload: string;
+  origin?: Record<string, unknown>;
+  imageIds?: string[];
+}
+
 export interface UnsettledAdmission {
   admissionId: string;
   /** The logical turn the admission ran. */
@@ -1901,13 +1908,49 @@ export class LocalSessionStore {
   }
 
   /**
+   * A queued turn kept across a planned restart (the spin-down, `daemon/restart-roll.ts`): it stays
+   * queued, and the next boot runs it (`heldForRestart`) instead of failing it as never sent.
+   */
+  holdForRestart(
+    thread: Pick<Thread, 'id' | 'meta'>,
+    turnId: string,
+    request: RestartHeldRequest,
+  ): void {
+    if (this.turn(turnId)?.status !== 'queued') return;
+    this.appendPhase(thread, {
+      id: `restart-hold:${turnId}`,
+      turnId,
+      dispatchId: null,
+      phase: 'restart-hold',
+      record: { request: { ...request } },
+    });
+  }
+
+  /** Queued turns kept across a planned restart, in the order they were accepted. */
+  heldForRestart(): Array<{ threadId: string; turnId: string; request: RestartHeldRequest }> {
+    return (
+      this.query(
+        `SELECT t.thread_id AS threadId, t.id AS turnId, p.record AS record FROM session_turns t
+          JOIN session_phase p ON p.turn_id = t.id AND p.phase = 'restart-hold'
+          WHERE t.status = 'queued' ORDER BY t.started_at, p.seq`,
+      ).all() as Array<{ threadId: string; turnId: string; record: string }>
+    ).map((row) => ({
+      threadId: row.threadId,
+      turnId: row.turnId,
+      request: this.decode<{ request: RestartHeldRequest }>(row.record).request,
+    }));
+  }
+
+  /**
    * Call only at server startup. An active turn becomes `interrupted`: native work may have
    * continued and its outcome is unknown. A queued turn was never sent, so it fails cleanly.
    */
   recoverInterrupted(): { interrupted: number; neverSent: number } {
     return this.db.transaction(() => {
+      // A turn held across a planned restart stays queued: the boot runs it (`heldForRestart`).
       const rows = this.query(
-        "SELECT id, thread_id AS threadId, status FROM session_turns WHERE status IN ('queued', 'active')",
+        `SELECT id, thread_id AS threadId, status FROM session_turns WHERE status IN ('queued', 'active')
+          AND NOT (status = 'queued' AND EXISTS (SELECT 1 FROM session_phase p WHERE p.turn_id = session_turns.id AND p.phase = 'restart-hold'))`,
       ).all() as Array<{ id: string; threadId: string; status: 'queued' | 'active' }>;
       for (const row of rows) {
         if (row.status === 'queued')

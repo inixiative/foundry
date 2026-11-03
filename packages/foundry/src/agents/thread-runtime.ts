@@ -580,6 +580,8 @@ export interface PhaseRecordInput {
     | 'chorus-dismiss'
     /** A queued turn whose message went into the running turn (`record.into`, CORE-001). */
     | 'steered'
+    /** A queued turn kept across a planned restart (spin-down), run again on boot (`record.request`). */
+    | 'restart-hold'
     | FeedbackPhase
     | ConversationPhase;
   readonly record: Record<string, unknown>;

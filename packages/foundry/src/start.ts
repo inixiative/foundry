@@ -1047,8 +1047,14 @@ await runStartupSelfTest({
   error: console.error,
 });
 
-// The supervisor's auto-updater drains: it restarts only once no turn is queued or running.
-publishDaemonRuntime({ liveTurns: viewer.liveTurns });
+// A staged update spins the daemon down: running turns finish, new ones wait, then it restarts
+// and runs them (`daemon/restart-roll.ts`).
+publishDaemonRuntime({
+  liveTurns: viewer.liveTurns,
+  offerUpdate: (offer) => viewer.restartRoll.offerUpdate(offer),
+});
+// Turns a planned restart held (the spin-down) run now, in the order they arrived.
+void viewer.resumeHeldTurns();
 
 console.log();
 console.log('Ready. Send messages through the harness API or viewer.');
