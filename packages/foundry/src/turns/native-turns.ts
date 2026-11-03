@@ -100,14 +100,16 @@ export class NativeTurnRecorder {
   }
 
   private end(thread: ThreadRecord, key: string, task: Lifecycle): void {
-    // A turn Muse dropped from its queue before it ran left nothing to record.
-    if (task.status === 'unqueued' && !this.open.has(key)) {
+    const outcome = task.status && FAILED.has(task.status) ? 'failed' : 'completed';
+    // A turn Muse dropped from its queue before it ran, or one that finished having emitted and said
+    // nothing (Muse's skill, goal and verify reminders after every turn), left nothing to record.
+    const empty = !this.open.has(key) && !task.summary;
+    if (empty && (task.status === 'unqueued' || outcome === 'completed')) {
       this.woke.delete(key);
       this.described.delete(key);
       return;
     }
     const run = this.start(thread, key);
-    const outcome = task.status && FAILED.has(task.status) ? 'failed' : 'completed';
     const text = task.summary ?? run.lastText ?? task.reason ?? '';
     this.deps.store.endObservedTurn(thread, run.turnId, text, outcome);
     this.open.delete(key);
