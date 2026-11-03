@@ -98,7 +98,7 @@ try {
 
     // Write wrapper to a temp file — more portable than `bun eval` which
     // isn't available in all Bun versions.
-    const tmpFile = `/tmp/foundry-script-${Date.now()}-${Math.random().toString(36).slice(2)}.mjs`;
+    const tmpFile = `/tmp/foundry-script-${Bun.randomUUIDv7()}.mjs`;
     await Bun.write(tmpFile, wrapper);
 
     // --env-file=/dev/null stops Bun from auto-loading .env/.env.local from

@@ -16,16 +16,16 @@ import { heldSignet, mockKingdom, userOwner } from './helpers/kingdom-installati
 
 test('Kingdom Integration selection/envelope use canonical wire fields and reject old or ambiguous names', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'integration-envelope-'));
-  const integrationId = crypto.randomUUID(),
-    runId = crypto.randomUUID(),
-    bindingId = crypto.randomUUID();
+  const integrationId = Bun.randomUUIDv7(),
+    runId = Bun.randomUUIDv7(),
+    bindingId = Bun.randomUUIDv7();
   const envelope = (enrollmentId: string) => ({
     id: bindingId,
-    owner: { ownerModel: 'User', userId: crypto.randomUUID(), organizationId: null, spaceId: null },
+    owner: { ownerModel: 'User', userId: Bun.randomUUIDv7(), organizationId: null, spaceId: null },
     signetEnrollmentId: enrollmentId,
     runId,
     integrationId,
-    capacityId: crypto.randomUUID(),
+    capacityId: Bun.randomUUIDv7(),
     model: 'controlled',
     effort: 'low',
     runtime: 'claude',
@@ -43,18 +43,14 @@ test('Kingdom Integration selection/envelope use canonical wire fields and rejec
     },
   });
   try {
-    const { credentialFile } = await heldSignet(
-      kingdom,
-      directory,
-      `User:${crypto.randomUUID()}::`,
-    );
+    const { credentialFile } = await heldSignet(kingdom, directory, `User:${Bun.randomUUIDv7()}::`);
     const client = await KingdomClient.fromFile(credentialFile);
     expect(client.origin).toBe(kingdom.url);
     expect((await client.resolve(runId, { integrationIds: [integrationId] })).integrationId).toBe(
       integrationId,
     );
     // A binding for another enrollment of the Signet is not this Foundry's.
-    presentedBy = crypto.randomUUID();
+    presentedBy = Bun.randomUUIDv7();
     await expect(client.resolve(runId, { integrationIds: [integrationId] })).rejects.toThrow(
       'mismatched run binding',
     );
@@ -67,7 +63,7 @@ test('Kingdom Integration selection/envelope use canonical wire fields and rejec
         connectionIds: [integrationId],
       }).success,
     ).toBe(false);
-    const valid = envelope(crypto.randomUUID());
+    const valid = envelope(Bun.randomUUIDv7());
     expect(kingdomEnvelopeSchema.safeParse(valid).success).toBe(true);
     const { integrationId: _, ...withoutIntegration } = valid;
     expect(
@@ -78,7 +74,7 @@ test('Kingdom Integration selection/envelope use canonical wire fields and rejec
       false,
     );
     expect(
-      kingdomEnvelopeSchema.safeParse({ ...valid, installationId: crypto.randomUUID() }).success,
+      kingdomEnvelopeSchema.safeParse({ ...valid, installationId: Bun.randomUUIDv7() }).success,
     ).toBe(false);
     expect(calls).toBe(2);
   } finally {
@@ -89,8 +85,8 @@ test('Kingdom Integration selection/envelope use canonical wire fields and rejec
 
 test('read routes the exact discovered resource Integration and rejects foreign grant identity before execute', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'integration-contract-'));
-  const resourceIntegrationId = crypto.randomUUID(),
-    resourceId = crypto.randomUUID();
+  const resourceIntegrationId = Bun.randomUUIDv7(),
+    resourceId = Bun.randomUUIDv7();
   const executions: Record<string, unknown>[] = [];
   let foreign = false;
   let integrationId = '';
@@ -99,12 +95,12 @@ test('read routes the exact discovered resource Integration and rejects foreign 
       if (action === 'describe')
         return {
           signetId: presented.signetId,
-          integrationId: foreign ? crypto.randomUUID() : integrationId,
+          integrationId: foreign ? Bun.randomUUIDv7() : integrationId,
           provider: 'archive',
           name: 'Controlled',
           expiresAt: null,
           lifecycle: 'task',
-          taskId: crypto.randomUUID(),
+          taskId: Bun.randomUUIDv7(),
           currentRevision: 1,
           remainingRequests: 2,
           operations: [
@@ -126,14 +122,14 @@ test('read routes the exact discovered resource Integration and rejects foreign 
       expect(Object.keys(body as object).sort()).toEqual(
         ['requestId', 'runId', 'integrationId', 'signetId', 'taskId', 'operation', 'input'].sort(),
       );
-      return { executionId: crypto.randomUUID(), result: { title: 'Controlled' } };
+      return { executionId: Bun.randomUUIDv7(), result: { title: 'Controlled' } };
     },
   });
   try {
     const held = await heldSignet(kingdom, directory, userOwner());
     integrationId = held.integrationId;
     const source = {
-      id: crypto.randomUUID(),
+      id: Bun.randomUUIDv7(),
       name: 'Controlled',
       url: kingdom.url,
       credentialFile: held.credentialFile,
@@ -143,8 +139,8 @@ test('read routes the exact discovered resource Integration and rejects foreign 
     };
     const client = new KingdomAccessClient(source);
     const input = {
-      requestId: crypto.randomUUID(),
-      runId: crypto.randomUUID(),
+      requestId: Bun.randomUUIDv7(),
+      runId: Bun.randomUUIDv7(),
       operation: 'documents.read',
       resourceId,
       limit: 1,
@@ -153,7 +149,7 @@ test('read routes the exact discovered resource Integration and rejects foreign 
     expect(executions[0]?.integrationId).toBe(resourceIntegrationId);
     expect(executions[0]).not.toHaveProperty('connectionId');
     foreign = true;
-    await expect(client.read({ ...input, requestId: crypto.randomUUID() })).rejects.toThrow(
+    await expect(client.read({ ...input, requestId: Bun.randomUUIDv7() })).rejects.toThrow(
       'another grant',
     );
     expect(executions).toHaveLength(1);
@@ -172,16 +168,16 @@ test('read routes the exact discovered resource Integration and rejects foreign 
 });
 
 test('signet 0.5: a describe resource this package cannot read costs that resource, never the grant or its holder', () => {
-  const integrationId = crypto.randomUUID();
+  const integrationId = Bun.randomUUIDv7();
   const resource = (lens?: unknown) => ({
-    id: crypto.randomUUID(),
+    id: Bun.randomUUIDv7(),
     name: 'Library',
     kind: 'archiveLibrary',
     integrationId,
     ...(lens === undefined ? {} : { lens }),
   });
   const described = parseHeldSignetDescription({
-    signetId: crypto.randomUUID(),
+    signetId: Bun.randomUUIDv7(),
     integrationId,
     provider: 'archive',
     name: 'Held',

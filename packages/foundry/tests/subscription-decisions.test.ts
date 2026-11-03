@@ -54,8 +54,8 @@ function fixture<T extends Transport>(
   const config: SubscriptionDecisionConfig = {
     directory,
     source: {
-      id: crypto.randomUUID(),
-      integrationId: crypto.randomUUID(),
+      id: Bun.randomUUIDv7(),
+      integrationId: Bun.randomUUIDv7(),
       runtime: 'claude',
       mode: 'native-profile',
       profileDirectory,

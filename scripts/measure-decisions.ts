@@ -95,7 +95,7 @@ await first.stop();
 // The main thread runs in the first enabled project: register the throwaway one.
 const settingsPath = join(project, '.foundry', 'settings.json');
 const settings = JSON.parse(readFileSync(settingsPath, 'utf8'));
-const projectId = crypto.randomUUID();
+const projectId = Bun.randomUUIDv7();
 settings.projects = {
   ...settings.projects,
   [projectId]: { id: projectId, label: 'Measurement project', path: project },

@@ -64,7 +64,7 @@ export const threadsGrant = (
   } = {},
 ): SignetGrant => ({
   resourceModel: 'IntegrationResource',
-  integrationResourceId: crypto.randomUUID(),
+  integrationResourceId: Bun.randomUUIDv7(),
   kind: 'threads',
   ...(opts.full
     ? { full: true, lens: [] }
@@ -126,8 +126,8 @@ export const ownerOf = (key: string): OwnerRef => {
     spaceId: spaceId || null,
   };
 };
-export const userOwner = () => `User:${crypto.randomUUID()}::`;
-export const organizationOwner = () => `Organization::${crypto.randomUUID()}:`;
+export const userOwner = () => `User:${Bun.randomUUIDv7()}::`;
+export const organizationOwner = () => `Organization::${Bun.randomUUIDv7()}:`;
 
 const random = (bytes = 32) =>
   Buffer.from(crypto.getRandomValues(new Uint8Array(bytes))).toString('base64url');
@@ -237,7 +237,7 @@ export function mockKingdom(
   };
   const issue = (signet: Signet, thumbprint: string) => {
     const accessToken = `kingdom_${random()}`,
-      enrollmentId = crypto.randomUUID();
+      enrollmentId = Bun.randomUUIDv7();
     enrollments.set(accessToken, {
       signetId: signet.signetId,
       enrollmentId,
@@ -317,7 +317,7 @@ export function mockKingdom(
         if (installation?.revoked) return refuse(403);
         if (!installation)
           installations.set(thumbprint, {
-            installationId: crypto.randomUUID(),
+            installationId: Bun.randomUUIDv7(),
             thumbprint,
             name: body.name,
             pending: null,
@@ -382,17 +382,17 @@ export function mockKingdom(
           if (paired?.thumbprint !== thumbprint) return refuse(403);
           logins.push(body);
           return data({
-            integrationId: crypto.randomUUID(),
-            credentialId: crypto.randomUUID(),
-            resourceId: crypto.randomUUID(),
-            capacityId: crypto.randomUUID(),
+            integrationId: Bun.randomUUIDv7(),
+            credentialId: Bun.randomUUIDv7(),
+            resourceId: Bun.randomUUIDv7(),
+            capacityId: Bun.randomUUIDv7(),
             owner: paired.owner,
           });
         }
         case 'setInstallationCredential': {
           if (integrations.get(body.integrationId)?.thumbprint !== thumbprint) return refuse(403);
           credentials.push({ integrationId: body.integrationId, token: body.token });
-          return data({ credentialId: crypto.randomUUID() });
+          return data({ credentialId: Bun.randomUUIDv7() });
         }
         default:
           return refuse(404);
@@ -401,7 +401,7 @@ export function mockKingdom(
     websocket: {
       open(ws) {
         sockets.set(ws, undefined);
-        ws.send(JSON.stringify({ type: 'connected', connectionId: crypto.randomUUID() }));
+        ws.send(JSON.stringify({ type: 'connected', connectionId: Bun.randomUUIDv7() }));
       },
       async message(ws, raw) {
         const frame = JSON.parse(String(raw));
@@ -432,8 +432,8 @@ export function mockKingdom(
     options: { ownerName?: string; installation?: Installation } = {},
   ) {
     const installation = options.installation ?? latest();
-    const integrationId = crypto.randomUUID(),
-      signetId = crypto.randomUUID(),
+    const integrationId = Bun.randomUUIDv7(),
+      signetId = Bun.randomUUIDv7(),
       ref = ownerOf(owner);
     integrations.set(integrationId, {
       integrationId,
@@ -449,7 +449,7 @@ export function mockKingdom(
     });
     installation.pending = null;
     installation.inquiries.unshift({
-      id: crypto.randomUUID(),
+      id: Bun.randomUUIDv7(),
       type: 'registerIntegration',
       status: 'approved',
       createdAt: new Date().toISOString(),
@@ -476,7 +476,7 @@ export function mockKingdom(
     /** A person claims the waiting code for an owner they can't manage: the inquiry awaits approval. */
     claim() {
       const installation = latest();
-      const id = crypto.randomUUID();
+      const id = Bun.randomUUIDv7();
       installation.pending = null;
       installation.inquiries.unshift({
         id,
@@ -505,7 +505,7 @@ export function mockKingdom(
     /** Grants an integration a further Signet. */
     grant(integrationId: string) {
       const integration = integrations.get(integrationId)!;
-      const signetId = crypto.randomUUID();
+      const signetId = Bun.randomUUIDv7();
       signets.set(signetId, {
         signetId,
         integrationId,
@@ -587,7 +587,7 @@ export type MockKingdom = ReturnType<typeof mockKingdom>;
 
 /** A Signet credential file a Foundry holds, for tests that start from an already paired Foundry. */
 export async function heldSignet(kingdom: MockKingdom, directory: string, owner: string) {
-  const keyFile = join(directory, `key-${crypto.randomUUID()}.json`);
+  const keyFile = join(directory, `key-${Bun.randomUUIDv7()}.json`);
   await writePrivateJson(keyFile, generateSignetKey());
   await registerInstallation(kingdom.url, keyFile, { kind: 'foundry', name: 'Test Foundry' });
   await requestRegistration(kingdom.url, keyFile, {

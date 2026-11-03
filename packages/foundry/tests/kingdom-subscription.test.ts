@@ -60,10 +60,10 @@ async function kingdomWithLogin(
   } = {},
 ) {
   const directory = await temporary();
-  const owner = `OrganizationUser:${crypto.randomUUID()}:${crypto.randomUUID()}:`;
-  const bindingId = crypto.randomUUID(),
-    loginId = crypto.randomUUID(),
-    capacityId = crypto.randomUUID();
+  const owner = `OrganizationUser:${Bun.randomUUIDv7()}:${Bun.randomUUIDv7()}:`;
+  const bindingId = Bun.randomUUIDv7(),
+    loginId = Bun.randomUUIDv7(),
+    capacityId = Bun.randomUUIDv7();
   const calls: { action: string; body: Record<string, unknown> }[] = [];
   const executionIds: string[] = [];
   const kingdom = mockKingdom({
@@ -85,7 +85,7 @@ async function kingdomWithLogin(
           gatewayPath: '/api/v1/access/releaseSubscription',
         };
       if (action === 'releaseSubscription') {
-        const executionId = crypto.randomUUID();
+        const executionId = Bun.randomUUIDv7();
         executionIds.push(executionId);
         return {
           bindingId,
@@ -111,7 +111,7 @@ async function kingdomWithLogin(
   });
   cleanups.push(async () => kingdom.stop());
   const { credentialFile, keyFile, integrationId } = await heldSignet(kingdom, directory, owner);
-  const projectId = crypto.randomUUID();
+  const projectId = Bun.randomUUIDv7();
   const auth = new KingdomSubscriptionAuthentication({
     directory: join(directory, 'subscriptions'),
     capacity: async () => ({
@@ -310,7 +310,7 @@ test('threads of a kingdom project route to Kingdom; every other thread keeps th
 
 test("a Kingdom project's Codex thread whose pool has no Codex login is refused with Kingdom's reason, never run locally", async () => {
   const directory = await temporary();
-  const owner = `OrganizationUser:${crypto.randomUUID()}:${crypto.randomUUID()}:`;
+  const owner = `OrganizationUser:${Bun.randomUUIDv7()}:${Bun.randomUUIDv7()}:`;
   const asked: Array<{ runtime: string; model: string }> = [];
   // The pool holds only a Claude login: Kingdom refuses a Codex run.
   const kingdom = mockKingdom({
@@ -324,7 +324,7 @@ test("a Kingdom project's Codex thread whose pool has no Codex login is refused 
   const { credentialFile, signetId } = await heldSignet(kingdom, directory, owner);
   const config = starterConfig('claude-code', 'fable');
   config.kingdomIntegrations = [
-    { url: kingdom.url, owner, integrationId: crypto.randomUUID(), signetId },
+    { url: kingdom.url, owner, integrationId: Bun.randomUUIDv7(), signetId },
   ];
   config.projects = {
     pooled: {
@@ -368,7 +368,7 @@ test('kingdom login hands the native login to the chosen owner and leaves nothin
   await copyFile(keyFile, installationKey);
   await chmod(installationKey, 0o600);
   config.kingdomIntegrations = [
-    { url: kingdom.url, integrationId, owner, signetId: crypto.randomUUID() },
+    { url: kingdom.url, integrationId, owner, signetId: Bun.randomUUIDv7() },
   ];
   await store.save(config);
   let loginDirectory = '';
@@ -393,7 +393,7 @@ test('kingdom login hands the native login to the chosen owner and leaves nothin
     },
   ]);
   expect(existsSync(loginDirectory)).toBe(false);
-  expect(() => selectOwner(config.kingdomIntegrations, crypto.randomUUID())).toThrow(
+  expect(() => selectOwner(config.kingdomIntegrations, Bun.randomUUIDv7())).toThrow(
     'No paired Kingdom owner',
   );
 });
@@ -403,12 +403,12 @@ test('a project switches between local and Kingdom capacity, and Kingdom capacit
   const store = new ConfigStore(join(directory, 'config'));
   const config = starterConfig('claude-code', 'fable');
   config.kingdomIntegrations = [
-    { url: kingdom.url, integrationId, owner, signetId: crypto.randomUUID() },
+    { url: kingdom.url, integrationId, owner, signetId: Bun.randomUUIDv7() },
   ];
-  const projectId = crypto.randomUUID();
+  const projectId = Bun.randomUUIDv7();
   config.projects = { [projectId]: { id: projectId, path: directory } };
   await store.save(config);
-  const signetId = crypto.randomUUID();
+  const signetId = Bun.randomUUIDv7();
   const updated = await setProjectCapacity(store, projectId, {
     source: 'kingdom',
     kingdom: kingdom.url,
@@ -456,16 +456,16 @@ test('a Foundry project links to one Kingdom project; a Kingdom-capacity login b
   const store = new ConfigStore(join(directory, 'config'));
   const config = starterConfig('claude-code', 'fable');
   config.kingdomIntegrations = [
-    { url: kingdom.url, integrationId, owner, signetId: crypto.randomUUID() },
+    { url: kingdom.url, integrationId, owner, signetId: Bun.randomUUIDv7() },
   ];
-  const projectId = crypto.randomUUID();
+  const projectId = Bun.randomUUIDv7();
   config.projects = { [projectId]: { id: projectId, path: directory } };
   await store.save(config);
-  const kingdomProjectId = crypto.randomUUID();
+  const kingdomProjectId = Bun.randomUUIDv7();
   await setProjectCapacity(store, projectId, {
     source: 'kingdom',
     kingdom: kingdom.url,
-    signetId: crypto.randomUUID(),
+    signetId: Bun.randomUUIDv7(),
   });
   const linked = await setKingdomProject(store, projectId, {
     kingdom: kingdom.url,
@@ -661,8 +661,8 @@ test('a Muse failure that is not a rejected login is never reported, and is not 
 test('a Muse pool with no login left says which login Meta rejected', async () => {
   const directory = await temporary();
   const user = await userConfigHome();
-  const owner = `User:${crypto.randomUUID()}::`;
-  const loginId = crypto.randomUUID();
+  const owner = `User:${Bun.randomUUIDv7()}::`;
+  const loginId = Bun.randomUUIDv7();
   let resolves = 0;
   const kingdom = mockKingdom({
     onSignet: (action, body, presented) => {
@@ -670,12 +670,12 @@ test('a Muse pool with no login left says which login Meta rejected', async () =
         if (++resolves > 1)
           return Response.json({ error: 'No authorized capacity matches' }, { status: 409 });
         return {
-          id: crypto.randomUUID(),
+          id: Bun.randomUUIDv7(),
           owner: presented.owner,
           signetEnrollmentId: presented.enrollmentId,
           runId: body.runId,
           integrationId: loginId,
-          capacityId: crypto.randomUUID(),
+          capacityId: Bun.randomUUIDv7(),
           model: body.selection.model,
           effort: body.selection.effort,
           runtime: 'muse',
@@ -688,8 +688,8 @@ test('a Muse pool with no login left says which login Meta rejected', async () =
         return {
           bindingId: body.bindingId,
           integrationId: loginId,
-          capacityId: crypto.randomUUID(),
-          executionId: crypto.randomUUID(),
+          capacityId: Bun.randomUUIDv7(),
+          executionId: Bun.randomUUIDv7(),
           runtime: 'muse',
           accessToken: museToken,
           idToken: null,
@@ -753,7 +753,7 @@ test('kingdom login muse signs in with Meta’s device flow and hands the token 
   await copyFile(keyFile, installationKey);
   await chmod(installationKey, 0o600);
   config.kingdomIntegrations = [
-    { url: kingdom.url, integrationId, owner, signetId: crypto.randomUUID() },
+    { url: kingdom.url, integrationId, owner, signetId: Bun.randomUUIDv7() },
   ];
   await store.save(config);
   const stored = await kingdomLogin({

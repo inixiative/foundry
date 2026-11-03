@@ -109,7 +109,7 @@ export const createWebSocketServer = ({
     accept: (req, server) => {
       const clientId = new URL(req.url).searchParams.get('client');
       const data: WSData = {
-        connectionId: crypto.randomUUID(),
+        connectionId: Bun.randomUUIDv7(),
         clientId: clientId && CLIENT_ID.test(clientId) ? clientId : null,
         streams: new Map(),
         lastPing: Date.now(),

@@ -168,7 +168,7 @@ export class KingdomAuthentication {
             throw Error('Kingdom run intent changed; use a new thread');
           runId = intent.runId;
         } else {
-          runId = crypto.randomUUID();
+          runId = Bun.randomUUIDv7();
           await writePrivateJson(intentFile, { runId, fingerprint });
         }
         envelope = await client.resolve(runId, selection, spreadId);

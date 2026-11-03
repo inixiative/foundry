@@ -100,9 +100,9 @@ test('done threads, the merge setting, the Kingdom project link and the region p
     config.kingdomIntegrations = [
       {
         url: 'http://127.0.0.1:9',
-        owner: `OrganizationUser:${crypto.randomUUID()}:${crypto.randomUUID()}:`,
-        integrationId: crypto.randomUUID(),
-        signetId: crypto.randomUUID(),
+        owner: `OrganizationUser:${Bun.randomUUIDv7()}:${Bun.randomUUIDv7()}:`,
+        integrationId: Bun.randomUUIDv7(),
+        signetId: Bun.randomUUIDv7(),
       },
     ];
     config.projects.shop = {

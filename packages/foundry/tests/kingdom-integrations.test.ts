@@ -21,8 +21,8 @@ const user = 'User:22222222-2222-4222-8222-222222222222::';
 const integration = (url: string, owner: string): KingdomIntegration => ({
   url,
   owner,
-  integrationId: crypto.randomUUID(),
-  signetId: crypto.randomUUID(),
+  integrationId: Bun.randomUUIDv7(),
+  signetId: Bun.randomUUIDv7(),
 });
 
 test('settings hold one integration per Kingdom + owner; duplicates and malformed entries are invalid', () => {

@@ -3,7 +3,6 @@
  * @kind service
  * @partOf feature:mcpBridge
  */
-import { randomUUID } from 'node:crypto';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import {
@@ -150,7 +149,7 @@ export function fixtureBridgeSource(options: FixtureBridgeOptions) {
     }
   };
   const source: NativeBridgeSource = Object.freeze({
-    key: randomUUID(),
+    key: Bun.randomUUIDv7(),
     toolPolicy,
     check(candidate: NativeOwner) {
       check();
@@ -165,7 +164,7 @@ export function fixtureBridgeSource(options: FixtureBridgeOptions) {
       check();
       if (acquired) throw Error('Fixture source already owns a native process; use a fresh arm');
       acquired = true;
-      const id = randomUUID(),
+      const id = Bun.randomUUIDv7(),
         name = `fixture_${id.replaceAll('-', '')}`;
       const cwd = mkdtempSync(join(launchRoot, 'fixture-native-'));
       const records = new Map<string, NativeToolEvidence>(),
@@ -189,7 +188,7 @@ export function fixtureBridgeSource(options: FixtureBridgeOptions) {
           })),
         }));
         server.server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
-          const invocationId = randomUUID(),
+          const invocationId = Bun.randomUUIDv7(),
             startedAt = Date.now(),
             captured = active ? freezeEvidence(active) : undefined;
           const operation = request.params.name;

@@ -203,8 +203,8 @@ test("a Muse login is the user's own: the default profile, never a gateway or an
         directory: root,
         sources: [
           {
-            id: crypto.randomUUID(),
-            integrationId: crypto.randomUUID(),
+            id: Bun.randomUUIDv7(),
+            integrationId: Bun.randomUUIDv7(),
             runtime: 'muse',
             mode: 'gateway',
             baseUrl: 'https://gateway.example',
@@ -271,7 +271,7 @@ test('policy: muse runs main threads on its login or a Kingdom pool; never decis
   expect(resolveSubscriptionPolicy(c, { cwd: root })!.offered).toContain('muse');
   // Decisions never run on Muse.
   const decisions = museConfig();
-  const login = { ...defaultProfileSource('muse'), id: crypto.randomUUID() };
+  const login = { ...defaultProfileSource('muse'), id: Bun.randomUUIDv7() };
   decisions.nativeAuthentication = [login];
   decisions.subscriptionOnly = { decisionSourceId: login.id };
   expect(() => resolveSubscriptionPolicy(decisions, { cwd: root })).toThrow(
@@ -646,12 +646,12 @@ test('Archive: a Muse thread is captured as meta on a subscription, so it stays 
   };
   store.saveThread({ id: 'muse-thread', meta: { ...meta, worker: 'muse' } });
   store.saveThread({ id: 'claude-thread', meta: { ...meta, worker: 'claude-code' } });
-  expect(captureThread(store, crypto.randomUUID(), 'muse-thread').runtime).toEqual({
+  expect(captureThread(store, Bun.randomUUIDv7(), 'muse-thread').runtime).toEqual({
     provider: 'meta',
     accessPath: 'subscription',
     evidence: 'harness',
   });
-  expect(captureThread(store, crypto.randomUUID(), 'claude-thread').runtime).toBeUndefined();
+  expect(captureThread(store, Bun.randomUUIDv7(), 'claude-thread').runtime).toBeUndefined();
 });
 
 test('readiness: an enabled Muse needs the CLI on the pinned version, signed in', async () => {

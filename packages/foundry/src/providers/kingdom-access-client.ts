@@ -183,7 +183,7 @@ export class KingdomAccessClient {
     const resource = resources[0]!;
     return this.execute(
       {
-        requestId: crypto.randomUUID(),
+        requestId: Bun.randomUUIDv7(),
         integrationId: resource.integrationId,
         operation: 'thread.prompt',
         input: {

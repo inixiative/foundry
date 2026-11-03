@@ -373,7 +373,7 @@ export class NativeAuthentication {
       source.mode === 'native-profile'
         ? await realpath(source.profileDirectory)
         : join(this.options.directory, source.id, hash(bindingId));
-    const ownerId = crypto.randomUUID();
+    const ownerId = Bun.randomUUIDv7();
     const shared = source.mode === 'native-profile' && this.options.shared === true;
     const sharedLocks = join(directory, '.foundry-auth-shared');
     const privateHome = this.options.privateHome ? this.privateHomePath(source.id) : undefined;

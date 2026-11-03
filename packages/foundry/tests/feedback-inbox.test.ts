@@ -224,7 +224,7 @@ test("feedback reaches the thread's archive snapshot as entries with its text an
     item: Item;
   };
   await json('/api/feedback/status', { itemIds: [item.id], status: 'archived' });
-  const snapshot = captureThread(f.viewer.localStore!, crypto.randomUUID(), f.thread.id);
+  const snapshot = captureThread(f.viewer.localStore!, Bun.randomUUIDv7(), f.thread.id);
   const entries = snapshot.entries.filter((entry) => entry.text?.includes(item.id));
   expect(entries.map((entry) => JSON.parse(entry.text!).phase)).toEqual([
     'feedback-capture',

@@ -46,16 +46,16 @@ test('an unread member post marks the thread; the panel shows the member and its
     actionQueue: queue,
   });
   const conversations = viewer.conversations!;
-  const signetId = crypto.randomUUID();
+  const signetId = Bun.randomUUIDv7();
   const admitted = conversations.admit({
     type: 'thread.request',
-    requestId: crypto.randomUUID(),
+    requestId: Bun.randomUUIDv7(),
     signetId,
     acceptedRevision: 1,
     member: { signetId, displayName: 'JobCo' },
     terms: { view: 'own', delivery: 'note', outbound: 'review', floor: { mayTake: false } },
     operation: 'thread.prompt',
-    input: { threadId: 'main', postId: crypto.randomUUID(), text: 'The role you wanted opened.' },
+    input: { threadId: 'main', postId: Bun.randomUUIDv7(), text: 'The role you wanted opened.' },
   } as ThreadRequestOf<'thread.prompt'>);
   expect(admitted.ok).toBe(true);
   const server = Bun.serve({

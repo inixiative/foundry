@@ -17,9 +17,9 @@ const secret = (prefix: string) => `${prefix}${'x'.repeat(43)}`;
 test('Kingdom resolves once through the Signet, persists source identity, and delegates only one-run renewal authority', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'foundry-kingdom-'));
   cleanups.push(() => rm(directory, { recursive: true, force: true }));
-  const ownerKey = `Organization::${crypto.randomUUID()}:`,
-    bindingId = crypto.randomUUID(),
-    integrationId = crypto.randomUUID();
+  const ownerKey = `Organization::${Bun.randomUUIDv7()}:`,
+    bindingId = Bun.randomUUIDv7(),
+    integrationId = Bun.randomUUIDv7();
   const calls: string[] = [];
   const kingdom = mockKingdom({
     onSignet: (action, body, presented) => {
@@ -30,7 +30,7 @@ test('Kingdom resolves once through the Signet, persists source identity, and de
           owner: presented.owner,
           signetEnrollmentId: presented.enrollmentId,
           runId: body.runId,
-          capacityId: crypto.randomUUID(),
+          capacityId: Bun.randomUUIDv7(),
           integrationId,
           model: 'bound-model',
           effort: 'low',
@@ -86,7 +86,7 @@ test('Kingdom resolves once through the Signet, persists source identity, and de
     sources: [{ ...options.sources[0]!, selection: { model: 'other-model', effort: 'low' } }],
   });
   await expect(changed.prepare('thread', 'claude')).rejects.toThrow('selection changed');
-  const foreign = `Organization::${crypto.randomUUID()}:`;
+  const foreign = `Organization::${Bun.randomUUIDv7()}:`;
   await expect(
     new KingdomAuthentication({
       ...options,
@@ -99,7 +99,7 @@ test('Kingdom resolves once through the Signet, persists source identity, and de
 test('concurrent helper invocations renew once and cache only the scoped access token', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'foundry-kingdom-token-'));
   cleanups.push(() => rm(directory, { recursive: true, force: true }));
-  const bindingId = crypto.randomUUID();
+  const bindingId = Bun.randomUUIDv7();
   let calls = 0;
   const server = Bun.serve({
     hostname: '127.0.0.1',
@@ -110,7 +110,7 @@ test('concurrent helper invocations renew once and cache only the scoped access 
       expect(await request.json()).toEqual({ bindingId });
       return Response.json({
         data: {
-          id: crypto.randomUUID(),
+          id: Bun.randomUUIDv7(),
           secret: secret('kingdom_run_'),
           expiresAt: new Date(Date.now() + 600000).toISOString(),
         },
@@ -143,11 +143,11 @@ test('Kingdom clients reject credential URLs, remote HTTP and public credential 
       new SignetClient(
         'https://user:secret@example.com',
         '/private/signet.json',
-        crypto.randomUUID(),
+        Bun.randomUUIDv7(),
       ),
   ).toThrow();
   expect(
-    () => new SignetClient('http://example.com', '/private/signet.json', crypto.randomUUID()),
+    () => new SignetClient('http://example.com', '/private/signet.json', Bun.randomUUIDv7()),
   ).toThrow();
   const directory = await mkdtemp(join(tmpdir(), 'foundry-kingdom-mode-'));
   cleanups.push(() => rm(directory, { recursive: true, force: true }));
@@ -160,8 +160,8 @@ test('Kingdom clients reject credential URLs, remote HTTP and public credential 
 test('a transient resolution failure can retry the same durable run intent', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'foundry-kingdom-retry-'));
   cleanups.push(() => rm(directory, { recursive: true, force: true }));
-  const ownerKey = `Organization::${crypto.randomUUID()}:`,
-    bindingId = crypto.randomUUID(),
+  const ownerKey = `Organization::${Bun.randomUUIDv7()}:`,
+    bindingId = Bun.randomUUIDv7(),
     runIds: string[] = [];
   const kingdom = mockKingdom({
     onSignet: (action, body, presented) => {
@@ -173,8 +173,8 @@ test('a transient resolution failure can retry the same durable run intent', asy
           owner: ownerOf(ownerKey),
           signetEnrollmentId: presented.enrollmentId,
           runId: body.runId,
-          capacityId: crypto.randomUUID(),
-          integrationId: crypto.randomUUID(),
+          capacityId: Bun.randomUUIDv7(),
+          integrationId: Bun.randomUUIDv7(),
           model: 'model',
           effort: 'low',
           runtime: 'claude',
@@ -213,8 +213,8 @@ test('a transient resolution failure can retry the same durable run intent', asy
 test("a crashed resolver's lock is reclaimed instead of failing the thread forever", async () => {
   const directory = await mkdtemp(join(tmpdir(), 'foundry-kingdom-stale-'));
   cleanups.push(() => rm(directory, { recursive: true, force: true }));
-  const ownerKey = `Organization::${crypto.randomUUID()}:`,
-    bindingId = crypto.randomUUID();
+  const ownerKey = `Organization::${Bun.randomUUIDv7()}:`,
+    bindingId = Bun.randomUUIDv7();
   const kingdom = mockKingdom({
     onSignet: (action, body, presented) =>
       action === 'resolveRun'
@@ -223,8 +223,8 @@ test("a crashed resolver's lock is reclaimed instead of failing the thread forev
             owner: ownerOf(ownerKey),
             signetEnrollmentId: presented.enrollmentId,
             runId: body.runId,
-            capacityId: crypto.randomUUID(),
-            integrationId: crypto.randomUUID(),
+            capacityId: Bun.randomUUIDv7(),
+            integrationId: Bun.randomUUIDv7(),
             model: 'model',
             effort: 'low',
             runtime: 'claude',
