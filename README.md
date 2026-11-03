@@ -13,7 +13,7 @@ The agent does what you want when it is told the right thing. Our bet is that yo
 ## What you get
 
 1. **Stop repeating yourself to Claude.** What you've already decided reaches every session. Wardens notice what your request touches and point at what your codebase already has and where it's written down. They never block; your agent decides. (The chorus is off on a fresh install; turn it on per project.)
-2. **Every agent you pay for, in one place.** Claude Code, Codex and Muse on your own subscriptions, a worker per thread, and every session captured. ACP apps such as Paseo and T3 Code can drive Foundry too.
+2. **Every agent you pay for, in one place.** Claude Code and Codex on your own subscriptions, a worker per thread, and every session captured. ACP apps such as Paseo and T3 Code can drive Foundry too.
 3. **Stop being a meat proxy.** Your agent, their agent and the people in one thread, hashing out the work. *(Host side built; joiner view in progress.)*
 4. **Stop checking a dozen apps.** Whatever comes in (a Slack DM, a review request, an email) reaches you already researched and in context. It's read as data, so it can't instruct your agent. *(In progress: Kingdom streams GitHub, Slack and Linear events; the Foundry inbox is not wired yet.)*
 5. **Set up your repo.** Foundry reads your repo and builds the docs and Wardens. *(In progress.)*
@@ -22,7 +22,7 @@ The voice of the codebase.
 
 ## How it works
 
-1. **You work with your own agent.** Threads run Claude Code, Codex or Muse on the logins already on your machine, from Foundry's viewer or an ACP app. No API key needed.
+1. **You work with your own agent.** Threads run Claude Code or Codex on the logins already on your machine, from Foundry's viewer or an ACP app. No API key needed.
 2. **Wardens point.** Your docs are split into regions, one Warden per region. Each turn, every Warden asks "does this touch my region?" and, if so, names the existing thing and where it's written. The pointer goes to your agent, which decides what to do with it.
 3. **Corrections are captured.** `/feedback` records a correction with its context so it can go into your docs, where every later session sees it.
 4. **Every session is kept.** Sessions land in your local [Archive](https://github.com/inixiative/archive), and `foundry repeats` shows the corrections you keep giving, so you can see whether one stuck.
