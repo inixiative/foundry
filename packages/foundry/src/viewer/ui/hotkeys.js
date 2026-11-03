@@ -153,9 +153,12 @@ const ALT_CODES = {
   Slash: '/',
 };
 function altTwin(e) {
+  // ⌥⇧F finds (Search); checked before ⌥F (attach) reads the bare letter.
+  if (e.shiftKey && e.code === 'KeyF') return 'search';
   if (e.code?.startsWith('Key')) return e.code.slice(3).toLowerCase();
   if (e.code?.startsWith('Digit')) return e.code.slice(5);
-  // ⌥⇧[ and ⌥⇧] are the "larger" twins ({ and }).
+  // ⌥⇧[ and ⌥⇧] are the "larger" twins ({ and }); ⌥⇧/ is ⌥?.
+  if (e.shiftKey && e.code === 'Slash') return '?';
   if (e.shiftKey && e.code === 'BracketLeft') return '{';
   if (e.shiftKey && e.code === 'BracketRight') return '}';
   return ALT_CODES[e.code];
@@ -171,6 +174,11 @@ const ALT_ONLY = {
     actionPaletteOpen.value = !actionPaletteOpen.value;
   },
   n: () => createThread(),
+  '?': () => {
+    helpOpen.value = !helpOpen.value;
+  },
+  // / is typed in a message box (and opens the action palette there), so Search is ⌥⇧F.
+  search: () => openSearch(),
 };
 
 // The hold-⌥ overlay: what ⌥ does, without leaving the message box.
@@ -179,15 +187,17 @@ function showHoldKeys(on) {
   document.querySelector('.hold-keys')?.remove();
   if (!on) return;
   const rows = [
-    ['⌥T ⌥B', 'Threads · Board'],
+    ['⌥T ⌥B ⌥H', 'Threads · Board · Watchtower'],
     ['⌥1 ⌥2 ⌥3', 'Thread · Plan · Loop'],
     ['⌥[ ⌥]', 'Left list · right panel'],
+    ['⌥↑ ⌥↓', 'Step through the turn view'],
     ['⌥↵ ⌥⌫', 'Approve · reject the waiting card'],
     ['⌥← ⌥→', 'Previous · next waiting card'],
     ['⌥F ⌥V', 'Attach a file · start voice'],
+    ['⌥⇧F', 'Search everything'],
     ['⌥K ⌘K', 'Command palette'],
     ['Tab ⇧Tab', 'Message boxes and the waiting stack'],
-    ['Esc · /', 'Leave the message box · come back'],
+    ['Esc', 'Close what is open; you stay in the message box'],
   ];
   const el = document.createElement('div');
   el.className = 'hold-keys';
@@ -284,9 +294,10 @@ export function initHotkeys() {
     }
 
     if (typing) {
-      // Esc leaves the message box (overlays still close through the escape binding).
+      // Esc closes what is open. The message box keeps focus (focus lives there); another place to
+      // type lets it go, and composer-focus.js hands it back to the message box.
       if (e.key === 'Escape') {
-        e.target.blur();
+        if (!e.target.classList?.contains('chat-input')) e.target.blur();
         bindings.get('escape')?.action();
       }
       return;

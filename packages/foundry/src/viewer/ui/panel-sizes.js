@@ -87,13 +87,22 @@ export function panelColumns({ forge }) {
   return `${fit.left}px minmax(0, 1fr) ${right}px`;
 }
 
-/** A panel edge with a chevron: `edge` is the side the panel sits on, `toward` where it moves. */
-function EdgeIcon({ edge, toward }) {
-  const x = edge === 'left' ? 2.5 : 13.5;
-  const chevron = toward === 'left' ? 'M10 4.5 6.5 8 10 11.5' : 'M6 4.5 9.5 8 6 11.5';
-  return html`<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-    <path d=${`M${x} 2.5v11`} /><path d=${chevron} /></svg>`;
+/**
+ * A panel's inner edge with a chevron (the mockup's bracket): the bracket is the edge the panel
+ * shares with the centre, and the chevron points where that edge moves. On the left list larger
+ * points right, on the right panel larger points left: toward the centre the panel grows into.
+ */
+function EdgeIcon({ side, toward }) {
+  const bar = side === 'left' ? 11.5 : 2.5;
+  const hook = side === 'left' ? -1.5 : 1.5;
+  const cx = toward === 'right' ? [6, 8, 6] : [8, 6, 8];
+  return html`<svg class="edge-icon" data-toward=${toward} viewBox="0 0 14 14" width="14" height="14" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+    <path d=${`M${bar + hook} 2 H${bar} V12 H${bar + hook}`} /><path d=${`M${cx[0]} 4.5 L${cx[1]} 7 L${cx[2]} 9.5`} /></svg>`;
 }
+
+/** Larger moves a panel's inner edge toward the centre; smaller toward its screen edge. */
+const growsToward = (side) => (side === 'left' ? 'right' : 'left');
+const shrinksToward = (side) => side;
 
 /**
  * A side's size controls, rendered once inside the panel (never patched in afterwards). Smaller
@@ -107,22 +116,23 @@ export function SizeControls({ side }) {
   const collapsed = i <= 1;
   const smaller = !collapsed && i > 0;
   const larger = i < levels.length - 1;
-  const keySmall = side === 'left' ? '[' : ']';
-  const keyLarge = side === 'left' ? '{' : '}';
+  const keySmall = side === 'left' ? '⌥[' : '⌥]';
+  const keyLarge = side === 'left' ? '⌥⇧[' : '⌥⇧]';
   const name = side === 'left' ? 'left list' : 'right panel';
+  // At its normal size the right panel's smaller step folds it to its icon column (the mockup's words).
+  const smallerWord = side === 'right' && size === 'normal' ? 'Collapse to icons' : 'Narrow';
+  const smallerBtn = smaller
+    ? html`<button type="button" class="size-btn size-btn--smaller" aria-label=${`Make the ${name} smaller`} title=${`${smallerWord} · ${keySmall}`} onClick=${() => stepSize(side, -1)}>
+      <${EdgeIcon} side=${side} toward=${shrinksToward(side)} /></button>`
+    : null;
+  const largerBtn = larger
+    ? html`<button type="button" class="size-btn size-btn--larger" aria-label=${`Make the ${name} larger`} title=${`Widen · ${keyLarge}`} onClick=${() => stepSize(side, 1)}>
+      <${EdgeIcon} side=${side} toward=${growsToward(side)} /></button>`
+    : null;
+  // Each control sits on the side it points to: the left list narrows left of widening, the right
+  // panel widens left of narrowing.
   return html`<span class="size-controls size-controls--${side}">
-    ${
-      smaller
-        ? html`<button type="button" class="size-btn" aria-label=${`Make the ${name} smaller`} title=${`Smaller (${keySmall})`} onClick=${() => stepSize(side, -1)}>
-      <${EdgeIcon} edge=${side} toward=${side} /></button>`
-        : null
-    }
-    ${
-      larger
-        ? html`<button type="button" class="size-btn" aria-label=${`Make the ${name} larger`} title=${`Larger (${keyLarge})`} onClick=${() => stepSize(side, 1)}>
-      <${EdgeIcon} edge=${side} toward=${side === 'left' ? 'right' : 'left'} /></button>`
-        : null
-    }
+    ${side === 'left' ? smallerBtn : largerBtn}${side === 'left' ? largerBtn : smallerBtn}
   </span>`;
 }
 
@@ -131,6 +141,6 @@ export function RestoreTab({ side }) {
   const size = (side === 'left' ? leftSize : rightSize).value;
   if (size !== 'hidden') return null;
   return html`<button type="button" class="restore-tab restore-tab--${side}" aria-label=${side === 'left' ? 'Show the left list' : 'Show the right panel'}
-    title=${side === 'left' ? 'Show the left list ({)' : 'Show the right panel (})'} onClick=${() => stepSize(side, 1)}>
-    <${EdgeIcon} edge=${side} toward=${side === 'left' ? 'right' : 'left'} /></button>`;
+    title=${side === 'left' ? 'Show the left list · ⌥⇧[' : 'Show the right panel · ⌥⇧]'} onClick=${() => stepSize(side, 1)}>
+    <${EdgeIcon} side=${side} toward=${growsToward(side)} /></button>`;
 }

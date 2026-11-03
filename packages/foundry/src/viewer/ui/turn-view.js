@@ -369,9 +369,19 @@ export function TurnView() {
           : s.group !== 'work',
   );
   const close = closeTurnView;
+  // The message box keeps focus (Aron 11-02); ⌥↑ ⌥↓ step from there, ↑ ↓ when the view is focused.
   useEffect(() => {
-    root.current?.focus();
-  }, [target?.turnId]);
+    const onKey = (e) => {
+      if (!e.altKey || (e.key !== 'ArrowUp' && e.key !== 'ArrowDown')) return;
+      e.preventDefault();
+      e.stopPropagation();
+      setAt((i) =>
+        e.key === 'ArrowDown' ? Math.min(steps.length - 1, i + 1) : Math.max(0, i - 1),
+      );
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [steps.length]);
   useEffect(() => {
     root.current?.querySelector(`[data-step-index="${at}"]`)?.scrollIntoView({ block: 'nearest' });
   }, [at]);

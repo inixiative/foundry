@@ -102,7 +102,11 @@ export function Watchtower() {
     machineProfile.value?.installationName ?? settingsConfig.value?.installationName ?? 'this Mac';
   useEffect(() => {
     const onKey = (e) => {
-      if (e.key !== 'Escape' || e.target.closest?.('input, textarea, select, [contenteditable]'))
+      // The message box is where focus lives: Esc there closes Watchtower; another field keeps it.
+      if (
+        e.key !== 'Escape' ||
+        e.target.closest?.('input, textarea:not(.chat-input), select, [contenteditable]')
+      )
         return;
       watchtowerOpen.value = false;
     };
