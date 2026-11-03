@@ -55,13 +55,13 @@ The core engine (`@inixiative/foundry-core`) and the ACP adapter (`@inixiative/f
 
 Foundry runs on your machine. It reaches Kingdom for identity, integrations and Signets, captures sessions into the local Archive, and runs native sessions through agent-session ([anatomy](docs/ANATOMY.md), [session archives](docs/session-archives.md), [Kingdom access](docs/kingdom-access.md), [subscription-only setup](docs/subscription-decisions.md), [native runtime authentication](docs/native-authentication.md)).
 
-Underneath, Foundry is a framework for agent systems where you control the context, permissions and routing, not just the prompt.
+Underneath, Foundry is a framework for agent systems in which you set the context, permissions and routing each agent gets.
 
 - **Context layers:** stackable context slices with staleness and caching. Agents see what you decide they should see.
 - **Wardens (the chorus):** one small, fresh model call per region of your docs. Layer 1 (Haiku) asks every region "is this mine?"; Layer 2 (Sonnet) confirms each yes and picks the primitive. A Warden answers with a pointer or `NO_COMMENT`; a timeout leaves the turn to proceed without it.
 - **Tool gate:** structural tool rules decide each native tool request (allow, ask or deny). Asks surface in the viewer, or go to the ACP host, for approval. Core's capability gate is the underlying primitive.
 - **Thread tree:** subagents are their own threads tied to their parent, stitched into Archive as one artifact.
-- **Viewer:** the operator surface, in Kingdom's look. Not a log viewer.
+- **Viewer:** where you run threads, answer approvals and change settings, in Kingdom's look.
 
 ## Structure
 
@@ -80,7 +80,7 @@ Foundry adds opinions: native Claude Code, Codex and Muse sessions via `@inixiat
 
 Requires [Bun](https://bun.sh) 1.4.4 (the version in `packageManager`).
 
-Setup (`bun run setup`) is interactive — picks your worker and model and creates `.foundry/settings.json` with one executor and nothing else. A fresh install's thread is **unwrapped**: your message goes to the native session (Claude Code or Codex) as typed, with no Foundry layers, classifier, router or thread state composed into it. Layers, sources and decision roles are opt-in settings; Wardens come from a project's regions (`.foundry/regions`) once its chorus is enabled (`"chorus": { "enabled": true }` in its `.foundry/project.json`). The default worker is the Claude Code subscription, which needs no key; only an API-key provider (with `apiTokens`) writes its key to `.env.local`.
+Setup (`bun run setup`) is interactive: it picks your worker and model and creates `.foundry/settings.json` with one executor and nothing else. A fresh install's thread is **unwrapped**: your message goes to the native session (Claude Code or Codex) as typed, with no Foundry layers, classifier, router or thread state composed into it. Layers, sources and decision roles are opt-in settings; Wardens come from a project's regions (`.foundry/regions`) once its chorus is enabled (`"chorus": { "enabled": true }` in its `.foundry/project.json`). The default worker is the Claude Code subscription, which needs no key; only an API-key provider (with `apiTokens`) writes its key to `.env.local`.
 
 An install set up before this default carries the old starter stack (system / conventions / memory layers, classifier → router → three prompt-only executors). `bun run doctor` flags it (`legacy-starter-defaults`), and `bun run setup --remove-legacy-defaults` (or the **Legacy defaults** item in `bun run setup`) removes whatever is still exactly as seeded; edited items are kept.
 
