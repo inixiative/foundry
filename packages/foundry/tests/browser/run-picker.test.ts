@@ -238,6 +238,7 @@ test('a started thread switches worker mid-conversation: what carries over, Muse
       started: true,
       switches: [],
       projectId: 'shop',
+      projectLabel: 'acme-shop',
     });
     const sent: Array<Record<string, unknown>> = [];
     await page.route('**/api/threads/shop-2/launch', (route: Route) =>
