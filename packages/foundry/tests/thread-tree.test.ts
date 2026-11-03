@@ -122,7 +122,7 @@ test('each Warden call reaches Archive as a small reduced entry: state and resul
   // Before the turn ends nothing is reduced, and capture holds no middleware entry for it.
   expect(store.phaseHistory(t.id).some((p) => p.phase === REDUCED_PHASE)).toBe(false);
   expect(
-    captureThread(store, crypto.randomUUID(), t.id).entries.some((e) => e.id.startsWith('mw:')),
+    captureThread(store, Bun.randomUUIDv7(), t.id).entries.some((e) => e.id.startsWith('mw:')),
   ).toBe(false);
   store.completeTurn(t, 'turn-1', 'Done', {}, trace('turn-1'));
 
@@ -132,7 +132,7 @@ test('each Warden call reaches Archive as a small reduced entry: state and resul
   const reduced = phases.filter((p) => p.phase === REDUCED_PHASE);
   expect(reduced).toHaveLength(5);
 
-  const snapshot = captureThread(store, crypto.randomUUID(), t.id);
+  const snapshot = captureThread(store, Bun.randomUUIDv7(), t.id);
   const mw = snapshot.entries.filter((e) => e.id.startsWith('mw:'));
   expect(mw).toHaveLength(5);
   expect(snapshot.entries.some((e) => e.sourceRef.startsWith('phase:advice'))).toBe(false);
@@ -341,7 +341,7 @@ test('subagents to any depth become child threads tied to their real parent, sti
     usage: { totalTokens: 1711 },
   });
 
-  const snapA = captureThread(store, crypto.randomUUID(), a.id);
+  const snapA = captureThread(store, Bun.randomUUIDv7(), a.id);
   const snapB = captureThread(store, snapA.sourceId, b.id);
   expect(snapB.lineage).toMatchObject({
     kind: 'subagent',
@@ -403,7 +403,7 @@ test('a Codex sub-agent is its own thread, claimed by its own id; a later child 
   );
   const child = store.threads().find((x) => x.meta.spawn?.nativeTaskId === 'codex-child')!;
   expect(child.meta.spawn?.via).toBe('native-codex');
-  const snapshot = captureThread(store, crypto.randomUUID(), child.id);
+  const snapshot = captureThread(store, Bun.randomUUIDv7(), child.id);
   expect(snapshot.entries.filter((e) => e.kind === 'assistant').map((e) => e.text)).toEqual(
     expect.arrayContaining(['READY', 'NO_COMMENT']),
   );
@@ -572,7 +572,7 @@ test("a fork archives with Archive's fork lineage, its source and no root: it is
     ...fork,
     meta: { ...fork.meta, forkedFrom: { threadId: 'main', journalSeq: 3 } },
   });
-  expect(captureThread(store, crypto.randomUUID(), 'fork').lineage).toEqual({
+  expect(captureThread(store, Bun.randomUUIDv7(), 'fork').lineage).toEqual({
     kind: 'fork',
     parentSessionId: 'main',
   });

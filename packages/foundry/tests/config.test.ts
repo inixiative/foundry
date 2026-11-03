@@ -296,17 +296,17 @@ describe('ConfigStore persistence', () => {
     expect(store.config.layers.docs).toBeUndefined();
     expect((await new ConfigStore(dir).load()).layers.docs).toBeUndefined();
 
-    const projectId = crypto.randomUUID();
+    const projectId = Bun.randomUUIDv7();
     await store.update((draft) => {
       draft.projects[projectId] = { id: projectId, label: 'Team', path: dir };
       draft.kingdomAccess = [
         {
-          id: crypto.randomUUID(),
+          id: Bun.randomUUIDv7(),
           name: 'Team issues',
           url: 'http://127.0.0.1:1',
           credentialFile: join(dir, 'access.json'),
-          integrationId: crypto.randomUUID(),
-          signetId: crypto.randomUUID(),
+          integrationId: Bun.randomUUIDv7(),
+          signetId: Bun.randomUUIDv7(),
           projectIds: [projectId],
         },
       ];

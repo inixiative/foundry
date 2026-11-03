@@ -25,18 +25,18 @@ async function fixture() {
   const dir = await mkdtemp(join(tmpdir(), 'foundry-access-settings-'));
   const store = new ConfigStore(dir),
     config = defaultConfig(),
-    projectId = crypto.randomUUID();
+    projectId = Bun.randomUUIDv7();
   config.projects[projectId] = { id: projectId, label: 'Team', path: dir };
   await store.save(config);
   const app = new Hono();
   registerAccessRoutes(app, store);
   const source = {
-    id: crypto.randomUUID(),
+    id: Bun.randomUUIDv7(),
     name: 'Team issues',
     url: 'http://127.0.0.1:1',
     credentialFile: join(dir, 'access.json'),
-    integrationId: crypto.randomUUID(),
-    signetId: crypto.randomUUID(),
+    integrationId: Bun.randomUUIDv7(),
+    signetId: Bun.randomUUIDv7(),
     projectIds: [projectId],
   };
   const get = async () =>
@@ -83,7 +83,7 @@ test('grant editing preserves unrelated settings, reports missing private files,
       JSON.stringify({
         url: f.source.url,
         signetId: f.source.signetId,
-        enrollmentId: crypto.randomUUID(),
+        enrollmentId: Bun.randomUUIDv7(),
         lifecycle: 'ongoing',
         taskId: null,
         keyFile: join(f.dir, 'key.json'),
@@ -128,7 +128,7 @@ test('stale or competing saves cannot silently overwrite grants; invalid authori
     const current = await f.get();
     for (const source of [
       { ...f.source, projectIds: [] },
-      { ...f.source, projectIds: [crypto.randomUUID()] },
+      { ...f.source, projectIds: [Bun.randomUUIDv7()] },
       { ...f.source, secret: 'PRIVATE' },
       { ...f.source, url: 'https://user:password@example.com' },
     ]) {
@@ -178,7 +178,7 @@ test('explicit checks use only the saved origin and enrolled Signet, expose meta
             name: 'Read issue',
             resources: [
               {
-                id: crypto.randomUUID(),
+                id: Bun.randomUUIDv7(),
                 name: 'Issue',
                 kind: 'issue',
                 integrationId: f.source.integrationId,

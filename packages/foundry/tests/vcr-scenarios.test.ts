@@ -89,8 +89,8 @@ function source(runtime: 'claude' | 'codex', directory: string) {
   const profileDirectory = join(directory, 'profile');
   mkdirSync(profileDirectory, { mode: 0o700 });
   return {
-    id: crypto.randomUUID(),
-    integrationId: crypto.randomUUID(),
+    id: Bun.randomUUIDv7(),
+    integrationId: Bun.randomUUIDv7(),
     runtime,
     mode: 'native-profile' as const,
     profileDirectory,
@@ -146,7 +146,7 @@ test(
         {
           directory,
           source: source('claude', directory),
-          runId: crypto.randomUUID(),
+          runId: Bun.randomUUIDv7(),
           model: LIVE.claudeModel,
           expectedObservedModel: LIVE.claudeObservedModel,
           maxCalls: 1,
@@ -201,7 +201,7 @@ test(
         {
           directory,
           source: source('claude', directory),
-          runId: crypto.randomUUID(),
+          runId: Bun.randomUUIDv7(),
           model: LIVE.claudeModel,
           expectedObservedModel: LIVE.claudeObservedModel,
           maxCalls: 1,

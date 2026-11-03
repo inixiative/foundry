@@ -96,7 +96,7 @@ export function writeCredentialHome(home: string, profile: string, config: strin
   } catch {
     /* Missing, or not a link: replaced below. */
   }
-  const temporary = join(home, `.auth-${crypto.randomUUID()}`);
+  const temporary = join(home, `.auth-${Bun.randomUUIDv7()}`);
   symlinkSync(target, temporary);
   try {
     renameSync(temporary, link);

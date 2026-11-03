@@ -6,6 +6,7 @@
 import { FilePicker } from './file-picker.js';
 import { html, useEffect, useRef, useState } from './lib.js';
 import { authFetch } from './store.js';
+import { uuidv7 } from './uuidv7.js';
 
 async function request(path, method = 'GET', body) {
   const response = await authFetch(`/api/access/sources${path}`, {
@@ -20,7 +21,7 @@ async function request(path, method = 'GET', body) {
   return value;
 }
 const emptyGrant = (projectId) => ({
-  id: crypto.randomUUID(),
+  id: uuidv7(),
   name: '',
   url: '',
   credentialFile: '',

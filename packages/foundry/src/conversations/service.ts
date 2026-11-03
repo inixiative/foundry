@@ -720,7 +720,7 @@ export class ConversationService implements ConversationWrapper {
       outbound: 'review',
       accessId: post.accessId,
       remoteThreadId: post.remoteThreadId,
-      postId: crypto.randomUUID(),
+      postId: Bun.randomUUIDv7(),
       ...(post.inReplyTo ? { inReplyTo: post.inReplyTo } : {}),
     });
     return "Held for the owner's review; it is posted once released.";

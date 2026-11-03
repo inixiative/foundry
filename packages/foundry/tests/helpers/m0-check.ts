@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 
@@ -8,7 +8,7 @@ const phase = process.argv[2] ?? 'scenario';
 const base = join(
   root,
   '.foundry/qa',
-  `m0-${phase}-${new Date().toISOString().replaceAll(':', '-')}-${randomUUID()}`,
+  `m0-${phase}-${new Date().toISOString().replaceAll(':', '-')}-${Bun.randomUUIDv7()}`,
 );
 await mkdir(base, { recursive: true });
 const own = [

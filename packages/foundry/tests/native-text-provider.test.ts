@@ -38,13 +38,13 @@ function config(): NativeTextConfig {
   return {
     directory,
     source: {
-      id: crypto.randomUUID(),
-      integrationId: crypto.randomUUID(),
+      id: Bun.randomUUIDv7(),
+      integrationId: Bun.randomUUIDv7(),
       runtime: 'claude',
       mode: 'native-profile',
       profileDirectory,
     },
-    runId: crypto.randomUUID(),
+    runId: Bun.randomUUIDv7(),
     model: 'synthetic-model',
     maxCalls: 2,
     callTimeoutMs: 500,

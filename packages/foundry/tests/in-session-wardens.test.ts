@@ -133,7 +133,7 @@ test('decisions served in-session take no shared decision slot', async () => {
           const admission: NativeEvidence = {
             schema: 1,
             owner: opts.nativeObservation!.owner as NativeEvidence['owner'],
-            admissionId: crypto.randomUUID(),
+            admissionId: Bun.randomUUIDv7(),
             nativeOutcome: 'unknown',
             localOutcome: 'pending',
             dispatch: 'not-dispatched',

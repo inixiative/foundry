@@ -138,8 +138,8 @@ test('Kingdom inspection enforces the same private-file schema as launch and nev
       secret = `kingdom_${'a'.repeat(43)}`;
     const signet = {
       url: 'http://127.0.0.1:1',
-      signetId: crypto.randomUUID(),
-      enrollmentId: crypto.randomUUID(),
+      signetId: Bun.randomUUIDv7(),
+      enrollmentId: Bun.randomUUIDv7(),
       lifecycle: 'ongoing',
       taskId: null,
       keyFile: join(directory, 'installation-key.json'),
@@ -151,7 +151,7 @@ test('Kingdom inspection enforces the same private-file schema as launch and nev
       tokenType: 'DPoP',
     };
     const config = team(),
-      id = `User:${crypto.randomUUID()}::`;
+      id = `User:${Bun.randomUUIDv7()}::`;
     config.kingdomInference = [
       {
         id,
@@ -173,7 +173,7 @@ test('Kingdom inspection enforces the same private-file schema as launch and nev
     expect(await readdir(directory)).toEqual(inventory);
     await writeFile(file, JSON.stringify({ ...signet, unexpected: true }));
     expect((await inspectReadiness(config, local)).configurationReady).toBe(false);
-    config.projects.P!.defaults = { kingdomOwnerKey: `Organization::${crypto.randomUUID()}:` };
+    config.projects.P!.defaults = { kingdomOwnerKey: `Organization::${Bun.randomUUIDv7()}:` };
     expect(
       (await inspectReadiness(config, local)).issues.some(
         (item) => item.code === 'project-authentication-override',
@@ -203,12 +203,12 @@ test('readiness refuses wrong-runtime sources and missing or non-executable help
   const directory = await mkdtemp(join(tmpdir(), 'foundry-helper-check-'));
   try {
     const config = team(),
-      sourceId = crypto.randomUUID(),
+      sourceId = Bun.randomUUIDv7(),
       helper = join(directory, 'helper');
     config.nativeAuthentication = [
       {
         id: sourceId,
-        integrationId: crypto.randomUUID(),
+        integrationId: Bun.randomUUIDv7(),
         runtime: 'codex',
         mode: 'gateway',
         baseUrl: 'http://127.0.0.1:1',
@@ -272,13 +272,13 @@ test('a native profile on API tokens needs the configured decision provider key,
   const directory = await mkdtemp(join(tmpdir(), 'foundry-native-profile-'));
   try {
     const config = defaultConfig(),
-      sourceId = crypto.randomUUID();
+      sourceId = Bun.randomUUIDv7();
     config.apiTokens = true;
     config.defaults = { provider: 'claude-code', model: 'fable' };
     config.nativeAuthentication = [
       {
         id: sourceId,
-        integrationId: crypto.randomUUID(),
+        integrationId: Bun.randomUUIDv7(),
         runtime: 'claude',
         mode: 'native-profile',
         profileDirectory: directory,

@@ -111,8 +111,8 @@ test("a project's publish target is read from and set through the local Archive"
   });
   cleanup.unshift(() => capture.close());
   const library = {
-    integrationId: crypto.randomUUID(),
-    resourceId: crypto.randomUUID(),
+    integrationId: Bun.randomUUIDv7(),
+    resourceId: Bun.randomUUIDv7(),
     name: 'inixiative',
   };
   const route = {

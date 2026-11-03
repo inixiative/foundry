@@ -103,7 +103,7 @@ test('a message with images reaches the native session in the same turn; the jou
   expect(history.messages.find((m) => m.actor === 'user')?.meta?.images).toEqual(user.meta?.images);
 
   // Archive capture names the image in the user's entry and carries no bytes.
-  const snapshot = captureThread(store, crypto.randomUUID(), f.thread.id);
+  const snapshot = captureThread(store, Bun.randomUUIDv7(), f.thread.id);
   const entry = snapshot.entries.find((e) => e.kind === 'user')!;
   expect(entry.text).toBe(
     `What is in this?\n\n[image ${stored.id} (image/png, ${png().byteLength} bytes)]`,

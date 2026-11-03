@@ -146,7 +146,7 @@ export class RegionPipelineRuns {
       `build-${new Date().toISOString().slice(0, 10)}-${commit.slice(0, 8)}`,
     );
     const run: PipelineRun = {
-      id: crypto.randomUUID(),
+      id: Bun.randomUUIDv7(),
       step: 'region-build',
       commit,
       out,

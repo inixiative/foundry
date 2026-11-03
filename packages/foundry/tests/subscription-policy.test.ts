@@ -40,16 +40,16 @@ function fixture() {
   };
   const c = defaultConfig();
   const worker = {
-    id: crypto.randomUUID(),
-    integrationId: crypto.randomUUID(),
+    id: Bun.randomUUIDv7(),
+    integrationId: Bun.randomUUIDv7(),
     runtime: 'claude' as 'claude' | 'codex',
     mode: 'native-profile' as const,
     profileDirectory: profile('worker'),
   };
   const decision = {
     ...worker,
-    id: crypto.randomUUID(),
-    integrationId: crypto.randomUUID(),
+    id: Bun.randomUUIDv7(),
+    integrationId: Bun.randomUUIDv7(),
     profileDirectory: profile('decision'),
   };
   c.nativeAuthentication = [worker, decision];
@@ -90,8 +90,8 @@ test('subscription policy resolves explicit models and sources without API acces
 test("a Codex source is the Codex worker's login; the named Claude source stays the Claude worker's", () => {
   const f = fixture();
   const codex = {
-    id: crypto.randomUUID(),
-    integrationId: crypto.randomUUID(),
+    id: Bun.randomUUIDv7(),
+    integrationId: Bun.randomUUIDv7(),
     runtime: 'codex' as const,
     mode: 'native-profile' as const,
     profileDirectory: join(f.root, 'codex-login'),
@@ -109,7 +109,7 @@ test("a Codex source is the Codex worker's login; the named Claude source stays 
   expect(pooled.pools['claude-code']!.map((login) => login.id)).toEqual([f.worker.id]);
   expect(pooled.workers['claude-code']!.id).toBe(f.worker.id);
   // A second main-thread login joins the pool; the decision login still doesn't.
-  const second = { ...f.worker, id: crypto.randomUUID(), integrationId: crypto.randomUUID() };
+  const second = { ...f.worker, id: Bun.randomUUIDv7(), integrationId: Bun.randomUUIDv7() };
   second.profileDirectory = join(f.root, 'second');
   mkdirSync(second.profileDirectory, { mode: 0o700 });
   f.c.nativeAuthentication!.push(second);
