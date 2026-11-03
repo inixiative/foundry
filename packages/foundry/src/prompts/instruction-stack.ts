@@ -273,6 +273,12 @@ export interface RoleView {
   readonly slots: Readonly<Record<CompositionSlot, ComposedInstructions>>;
   /** Nodes whose general files the role pulled into a slot they do not compose by default. */
   readonly included: Readonly<Record<CompositionSlot, readonly string[]>>;
+  /**
+   * Whether a slot carries Claude Code's instruction preamble: only an instructions slot that composes
+   * general files (CLAUDE.md and the like). A role that takes none (a region Warden) reads its role
+   * files and brief without "these instructions OVERRIDE any default behavior" over its charter.
+   */
+  readonly framed: Readonly<Record<CompositionSlot, boolean>>;
   /** Every path both slots consulted. */
   readonly probes: readonly string[];
   /** Their state when composed; empty when one changed while it was read (`roleViewChanged`). */
@@ -310,13 +316,13 @@ function viewFingerprint(probes: readonly string[], startedAt: number): string {
   return hierarchyFingerprint(probes);
 }
 
-/** A slot's files as one block. Instructions carry Claude Code's preamble; domain knowledge does not. */
+/** A slot's files as one block. A framed slot carries Claude Code's preamble (`RoleView.framed`). */
 function renderSlot(
-  slot: CompositionSlot,
   files: readonly InstructionStackFile[],
   labels: Readonly<Record<string, string>>,
+  framed: boolean,
 ): string {
-  return segmentsText(slotSegments(slot, files, labels));
+  return segmentsText(slotSegments(files, labels, framed));
 }
 
 /**
@@ -325,9 +331,9 @@ function renderSlot(
  * form of it. Headings, the preamble and separators are glue.
  */
 export function slotSegments(
-  slot: CompositionSlot,
   files: readonly InstructionStackFile[],
   labels: Readonly<Record<string, string>>,
+  framed: boolean,
 ): SourceSegment[] {
   const sections = files
     .filter((file) => file.content.trim())
@@ -346,7 +352,7 @@ export function slotSegments(
       ];
     });
   if (!sections.length) return [];
-  const blocks = slot === 'instructions' ? [[PREAMBLE], ...sections] : sections;
+  const blocks = framed ? [[PREAMBLE], ...sections] : sections;
   return blocks.flatMap((block, i) => (i ? ['\n\n', ...block] : block));
 }
 
@@ -369,9 +375,11 @@ export async function composeRoleView(
   const audience = picks.audience ?? 'personal_private';
   const stacks = {} as Record<CompositionSlot, InstructionStack>;
   const included = {} as Record<CompositionSlot, readonly string[]>;
+  const framed = {} as Record<CompositionSlot, boolean>;
   for (const slot of COMPOSITION_SLOTS) {
     const pick = picks[slot];
     const general = (pick ? pick.general : undefined) ?? (slot === 'instructions' ? 'all' : []);
+    framed[slot] = slot === 'instructions' && (general === 'all' || general.length > 0);
     included[slot] = slot === 'instructions' || general === 'all' ? [] : [...general];
     stacks[slot] =
       pick === false
@@ -398,7 +406,7 @@ export async function composeRoleView(
   COMPOSITION_SLOTS.forEach((slot, i) => {
     const files = deduped.slots[i]!.filter((file) => file.content.trim());
     slots[slot] = {
-      text: renderSlot(slot, files, stacks[slot].labels),
+      text: renderSlot(files, stacks[slot].labels, framed[slot]),
       files,
       hidden: parts[i]!.hidden,
       excluded: parts[i]!.excluded,
@@ -420,6 +428,7 @@ export async function composeRoleView(
     stacks,
     slots,
     included,
+    framed,
     probes,
     fingerprint: viewFingerprint(probes, startedAt),
   };
@@ -607,7 +616,11 @@ export function instructionStackSource(
     segments: () => {
       if (!loaded) return undefined;
       const slot = options.slot ?? 'instructions';
-      return slotSegments(slot, loaded.view.slots[slot].files, loaded.view.stacks[slot].labels);
+      return slotSegments(
+        loaded.view.slots[slot].files,
+        loaded.view.stacks[slot].labels,
+        loaded.view.framed[slot],
+      );
     },
   };
 }

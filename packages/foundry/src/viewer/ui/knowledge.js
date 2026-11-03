@@ -71,6 +71,32 @@ function SizeBar({ region }) {
   </div>`;
 }
 
+/**
+ * What every Warden of the project is given, in order (Aron, 2026-11-02): Foundry's charter, the
+ * project's Warden brief, its region, the thread context of the call. Never the CLAUDE.md ladder.
+ */
+function WardenLayers({ wardens }) {
+  if (!wardens) return null;
+  const brief = wardens.brief;
+  return html`<h4 class="ksub">What each Warden is given</h4>
+    <table class="ktable" aria-label="Warden layers">
+      <tr><td>1. Charter</td><td>What a Warden is. Part of Foundry, the same for every project.</td><td class="kok">≈${k(wardens.charter.tokens)} tokens</td></tr>
+      <tr><td>2. Warden brief</td><td class="mono">${brief?.path ?? '.foundry/warden-brief.md'}</td>${
+        brief?.exists
+          ? html`<td class="kok">≈${brief.tokens < 1000 ? brief.tokens : k(brief.tokens)} tokens</td>`
+          : html`<td class="kwarn">missing: Wardens get no project brief</td>`
+      }</tr>
+      <tr><td>3. Its region</td><td>The region's knowledge, sized above.</td><td></td></tr>
+      <tr><td>4. Thread context</td><td>The moment and what the thread holds, per call.</td><td></td></tr>
+    </table>
+    <div class="rp-dim">No CLAUDE.md or AGENTS.md: those are written for the agent doing the work.</div>
+    ${
+      brief?.exists
+        ? html`<details class="kbrief"><summary>Read the Warden brief</summary><pre class="mono">${brief.text}</pre></details>`
+        : null
+    }`;
+}
+
 export function KnowledgePage() {
   const projectId = activeProjectId.value;
   const project = projects.value.find((p) => p.id === projectId);
@@ -140,6 +166,7 @@ export function KnowledgePage() {
               <div class="ksizes">${regions.map((r) => html`<${SizeBar} key=${r.id} region=${r} />`)}</div>`
             : html`<span class="rp-dim">No regions in ${name}'s chorus.</span>`
         }
+        <${WardenLayers} wardens=${body?.wardens} />
         <h4 class="ksub">Builds on this machine</h4>
         <${BuildHistory} pipeline=${pipeline} />
         <${BuildRegions} pipeline=${pipeline} reread=${reread} />

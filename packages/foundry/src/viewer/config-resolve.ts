@@ -19,6 +19,7 @@ import {
   type RegionSummary,
   regionWardens,
 } from '../agents/region-roster';
+import { WARDEN_BRIEF_NODES, wardenBriefNodes, wardenComposition } from '../agents/warden-brief';
 import { defaultStages, type StageConfig, validateStages } from '../classify';
 import { writeFileAtomic } from '../client/private-file';
 import {
@@ -1302,13 +1303,24 @@ function buildProjectView(
       agents.set(agent.id, generatedAgent({ ...agent, ...decision }, region));
       for (const source of sources) resolved.sources[source.id] = source;
     }
-    // A region Warden's instructions are its prompt and the role files for its region, not the whole
-    // CLAUDE.md stack (the ladder's default for the instructions slot); its knowledge is the region.
-    // A role entry written in settings for the region wins, field by field.
+    // A region Warden composes from the charter, the project's Warden brief and its region, never the
+    // CLAUDE.md / AGENTS.md ladder (Aron, 2026-11-02): no node's general files reach either slot, the
+    // role files for its region still do, and the brief is a ladder node of its own for exactly these
+    // roles. A role entry written in settings keeps its other picks; one naming `general` is refused.
     const roles = { ...resolved.composition?.roles };
     for (const { agent } of generated)
-      roles[agent.id] = { instructions: { general: [] }, ...roles[agent.id] };
-    resolved.composition = { ...resolved.composition, roles };
+      roles[agent.id] = wardenComposition(agent.id, roles[agent.id]);
+    const nodes = { ...resolved.composition?.nodes };
+    for (const id of WARDEN_BRIEF_NODES)
+      if (nodes[id])
+        throw new Error(
+          `[config] composition.nodes.${id} is the project Warden brief's own node; settings may not define it`,
+        );
+    resolved.composition = {
+      ...resolved.composition,
+      roles,
+      nodes: { ...nodes, ...wardenBriefNodes(generated.map(({ agent }) => agent.id)) },
+    };
   }
   // The view's project carries the effective chorus and the generated agents, so a region's settings
   // prompt is attributed per project (`prompt:agent:<region>@project:<id>`) like any project agent's.

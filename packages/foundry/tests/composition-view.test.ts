@@ -212,10 +212,13 @@ interface Call {
 }
 
 /**
- * A region Warden takes no general files by default (`instructions.general: []` in its view); these
- * tests give it the whole ladder (`instructions: {}`), as any other role has, unless they pick.
+ * A region Warden never takes general files (CLAUDE.md and the like; Aron, 2026-11-02): its
+ * instructions are the charter, the project's Warden brief and its role files; its knowledge, the
+ * region and its role files. The main thread keeps the whole ladder.
  */
-function config(picks: RoleComposition = { instructions: {} }): FoundryConfig {
+const BRIEF = (dir: string, local = false) =>
+  join(dir, '.foundry', `warden-brief${local ? '.local' : ''}.md`);
+function config(picks: RoleComposition = {}): FoundryConfig {
   const c = starterConfig('central', 'central-model');
   c.agents = {
     worker: {
@@ -321,18 +324,22 @@ function setup(
 test('a Warden and the main thread take their slots from the view; the Warden slots stay private', async () => {
   ladderFiles();
   write(roleFile(repo, WARDEN, 'domainKnowledge'), 'PROJECT_WARDEN_KNOWLEDGE');
+  write(BRIEF(repo), '# Repo\n\nWARDEN_BRIEF');
   const f = setup(config());
   try {
     await f.thread.dispatch('worker', 'Add a script', undefined, { messageId: 'm1' });
     const advise = f.last('advise');
     expect(advise.messages[0]!.content).toStartWith(chartered(REGION_RULES));
-    expect(advise.messages[0]!.content).toContain('PROJECT_RULES');
+    expect(advise.messages[0]!.content).toContain('WARDEN_BRIEF');
+    for (const general of ['PERSONAL_GLOBAL', 'ORG_RULES', 'PROJECT_RULES', 'PROJECT_PERSONAL'])
+      expect(JSON.stringify(advise.messages)).not.toContain(general);
     expect(advise.messages[1]!.content).toContain('REGION_KNOWLEDGE');
     expect(advise.messages[1]!.content).toContain('PROJECT_WARDEN_KNOWLEDGE');
     const central = JSON.stringify(f.last('central').messages);
     expect(central).toContain('PROJECT_RULES');
-    // Role files and Warden slots never reach the executor.
+    // Role files, the Warden brief and Warden slots never reach the executor.
     expect(central).not.toContain('PROJECT_WARDEN_KNOWLEDGE');
+    expect(central).not.toContain('WARDEN_BRIEF');
     expect(central).not.toContain('REGION_KNOWLEDGE');
     expect(central).not.toContain(REGION_RULES);
     expect(f.thread.stack.layers.some((layer) => layer.id.startsWith('role:'))).toBe(false);
@@ -343,16 +350,15 @@ test('a Warden and the main thread take their slots from the view; the Warden sl
 
 test('a composition over the role budget is a clear reported error in every phase; nothing is sent', async () => {
   ladderFiles();
-  write(join(org, 'CLAUDE.md'), `# Org\n\n${'ORG_POLICY '.repeat(400)}`);
-  const f = setup(config({ budget: 3_000, domainKnowledge: { general: ['org'] } }));
+  write(roleFile(org, WARDEN, 'domainKnowledge'), `# Org\n\n${'ORG_POLICY '.repeat(400)}`);
+  const f = setup(config({ budget: 3_000 }));
   try {
     await f.thread.dispatch('worker', 'Add a script', undefined, { messageId: 'm1' });
     expect(f.calls.filter((call) => call.phase === 'advise')).toHaveLength(0);
     const advice = await f.lib.advise('Add a script');
     expect(advice.error).toContain('exceed its budget of 3000');
     expect(advice.error).toContain(`composition.roles.${WARDEN}.budget`);
-    expect(advice.error).toContain(`${join(org, 'CLAUDE.md')} (domainKnowledge`);
-    expect(advice.error).toContain('opted in');
+    expect(advice.error).toContain(`${roleFile(org, WARDEN, 'domainKnowledge')} (domainKnowledge`);
     const guard = await f.lib.guard(oneCall({ tool: 'Write', input: { file_path: 'a.ts' } }));
     expect(guard.status).toBe('not-admitted');
     expect(guard.error).toContain('exceed its budget');
@@ -416,6 +422,7 @@ test('the Cartographer composes too, and over its budget routing reports an erro
 test('a Warden primes its composed prefix and re-primes only when the composition changes', async () => {
   ladderFiles();
   write(roleFile(repo, WARDEN, 'domainKnowledge'), 'KNOWLEDGE_V1');
+  write(BRIEF(repo), 'WARDEN_BRIEF');
   const f = setup(config());
   const primed = () => {
     const call = f.last('advise');
@@ -425,7 +432,7 @@ test('a Warden primes its composed prefix and re-primes only when the compositio
     await f.thread.dispatch('worker', 'First', undefined, { messageId: 'm1' });
     const first = primed();
     // The primed prefix is the composed instructions and domain knowledge; the turn is the input.
-    expect(first.spec.instructions).toContain('PROJECT_RULES');
+    expect(first.spec.instructions).toContain('WARDEN_BRIEF');
     expect(first.spec.context).toContain('KNOWLEDGE_V1');
     expect(first.input).toContain('First');
     expect(first.input).not.toContain('KNOWLEDGE_V1');
@@ -466,27 +473,19 @@ test("a Warden that chimes in is appended to the end of the user's message, not 
   }
 });
 
-test("the Convention Warden's knowledge is unchanged under the default config: org and project CLAUDE.md", async () => {
-  // Today: a conventions-src markdown source (the org CLAUDE.md) on the Warden's owned layer, and
-  // each project's project-claude-md through its extension. The view reads the same files.
-  write(join(org, 'CLAUDE.md'), '# inixiative\n\nMerge once green. @docs/ports.md');
-  write(join(org, 'docs', 'ports.md'), 'Ports come from the registry.');
-  write(join(repo, 'CLAUDE.md'), '# Foundry\n\nThe daemon runs from the shared checkout.');
-  const before = [
-    await claudemdSource('conventions-src', join(org, 'CLAUDE.md')).load(),
-    await claudemdSource('project-claude-md', join(repo, 'CLAUDE.md')).load(),
-  ];
-  const f = setup(config({ domainKnowledge: { general: ['org', 'project'] } }));
+test('the Warden brief composes like any ladder file: its imports load, the personal copy follows the shared one', async () => {
+  ladderFiles();
+  write(BRIEF(repo), '# Repo\n\nWhat this repo is. @../docs/shape.md');
+  write(join(repo, 'docs', 'shape.md'), 'SHAPE_OF_THE_REPO');
+  write(BRIEF(repo, true), 'MY_OWN_BRIEF_NOTES');
+  const f = setup(config());
   try {
     await f.thread.dispatch('worker', 'Add a script', undefined, { messageId: 'm1' });
-    const knowledge = f.last('advise').messages[1]!.content;
-    // Every line the old sources loaded, imports included; only the per-file headings differ.
-    const lines = before
-      .flatMap((text) => text.split('\n'))
-      .filter((line) => line.trim() && !line.startsWith('Contents of '));
-    expect(lines.length).toBeGreaterThan(3);
-    for (const line of lines) expect(knowledge).toContain(line);
-    expect(knowledge).toContain('Ports come from the registry.');
+    const system = f.last('advise').messages[0]!.content;
+    expect(system).toContain('SHAPE_OF_THE_REPO');
+    expect(system.indexOf('What this repo is.')).toBeLessThan(system.indexOf('MY_OWN_BRIEF_NOTES'));
+    // A Warden takes no CLAUDE.md-style files, so its instructions carry no Claude Code preamble.
+    expect(system).not.toContain('OVERRIDE any default behavior');
   } finally {
     await f.close();
   }
@@ -495,6 +494,9 @@ test("the Convention Warden's knowledge is unchanged under the default config: o
 test("a role never reads more personal files than the main thread's audience allows", async () => {
   ladderFiles();
   write(roleFile(repo, WARDEN, 'domainKnowledge'), 'KNOWLEDGE');
+  write(BRIEF(repo), 'SHARED_BRIEF');
+  write(BRIEF(repo, true), 'PERSONAL_BRIEF');
+  write(join(home, '.foundry', 'roles', WARDEN, 'instructions.md'), 'PERSONAL_WARDEN_NOTES');
   // The Warden's notes reach main's message, so a team main thread makes the Warden team too.
   const c = config();
   c.composition = { roles: { ...c.composition!.roles, main: { audience: 'team' } } };
@@ -502,9 +504,9 @@ test("a role never reads more personal files than the main thread's audience all
   try {
     await f.thread.dispatch('worker', 'Add a script', undefined, { messageId: 'm1' });
     const advise = JSON.stringify(f.last('advise').messages);
-    expect(advise).toContain('ORG_RULES');
-    expect(advise).not.toContain('PERSONAL_GLOBAL');
-    expect(advise).not.toContain('PROJECT_PERSONAL');
+    expect(advise).toContain('SHARED_BRIEF');
+    expect(advise).not.toContain('PERSONAL_BRIEF');
+    expect(advise).not.toContain('PERSONAL_WARDEN_NOTES');
   } finally {
     await f.close();
   }
@@ -573,9 +575,10 @@ test('a composition edit reaches the main thread on its next turn', async () => 
   }
 });
 
-test('an edited CLAUDE.md, a new MEMORY.md and an edited role file reach a running thread and its Warden on the next turn', async () => {
+test('an edited CLAUDE.md, a new MEMORY.md, an edited Warden brief and role file reach a running thread and its Warden on the next turn', async () => {
   ladderFiles();
   write(roleFile(repo, WARDEN, 'domainKnowledge'), 'KNOWLEDGE_V1');
+  write(BRIEF(repo), 'BRIEF_V1');
   const f = setup(config());
   const primed = () => {
     const call = f.last('advise');
@@ -592,12 +595,14 @@ test('an edited CLAUDE.md, a new MEMORY.md and an edited role file reach a runni
       'REMEMBERED_FACT',
     );
     write(roleFile(repo, WARDEN, 'domainKnowledge'), 'KNOWLEDGE_V2');
+    write(BRIEF(repo), 'BRIEF_V2');
     await f.thread.dispatch('worker', 'Second', undefined, { messageId: 'm2' });
     const central = JSON.stringify(f.last('central').messages);
     expect(central).toContain('PROJECT_RULES_V2');
     expect(central).toContain('REMEMBERED_FACT');
     const second = primed();
-    expect(second.spec.instructions).toContain('PROJECT_RULES_V2');
+    expect(second.spec.instructions).toContain('BRIEF_V2');
+    expect(second.spec.instructions).not.toContain('PROJECT_RULES');
     expect(second.spec.context).toContain('KNOWLEDGE_V2');
     expect(second.spec.hash).not.toBe(first.spec.hash);
     // Nothing changed: the next turn neither re-composes into a new hash nor re-primes.
