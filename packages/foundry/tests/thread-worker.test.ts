@@ -30,7 +30,7 @@ import {
 } from '../src/providers/subscription-policy';
 import { recordPlan } from '../src/tools/thread-record';
 import {
-  HISTORY_SUMMARY_PHASE,
+  JOURNAL_HISTORY_CHARS,
   journalHistory,
   WORKER_SWITCH_PHASE,
   workerHistoryBudget,
@@ -854,6 +854,8 @@ function switchingWorkers(dir: string, journal: () => LocalSessionStore) {
   cleanup.push(() => claudeAdapter.releaseAll());
   cleanup.push(() => codexAdapter.releaseAll());
   const workerSessions = {
+    binding: (worker: string, threadId: string) =>
+      (worker === 'codex' ? codex : claude).bindingOf(threadId),
     retire: (worker: string, threadId: string) =>
       (worker === 'codex' ? codex : claude).retireThread(threadId),
   };
@@ -864,21 +866,7 @@ test('a thread switches Claude Code → Codex mid-conversation: a fresh Codex se
   const dir = temporary('worker-switch-');
   let store: LocalSessionStore | undefined;
   const w = switchingWorkers(dir, () => store!);
-  const summaries: string[] = [];
-  const summariser: LLMProvider = {
-    id: 'decisions',
-    async complete(messages, opts) {
-      summaries.push(`${opts?.threadId}\n${messages.map((m) => m.content).join('\n')}`);
-      return {
-        content: '- The person asked for staff roles in Lisbon, remote-friendly only.',
-        model: 'haiku',
-      };
-    },
-  };
-  const { call, served } = await viewer({
-    workerSessions: w.workerSessions,
-    namingProvider: summariser,
-  });
+  const { call, served } = await viewer({ workerSessions: w.workerSessions });
   store = served.localStore!;
   const created = await call('POST', '/api/threads', { projectId: 'claude' });
   const id = created.body.threadId as string;
@@ -901,10 +889,8 @@ test('a thread switches Claude Code → Codex mid-conversation: a fresh Codex se
       },
     );
   };
-  // Three long early turns (past the Codex seed's budget), then a short recent one.
-  for (const n of [1, 2, 3])
-    said(`turn-${n}`, `early question ${n} ${'x'.repeat(14_000)}`, `early answer ${n}`);
-  said('turn-4', 'Only remote-friendly ones.', 'Noted: remote-friendly only.');
+  said('turn-1', 'Find me a staff role in Lisbon.', 'Watching for staff roles in Lisbon.');
+  said('turn-2', 'Only remote-friendly ones.', 'Noted: remote-friendly only.');
   served.records.update(id, (thread) =>
     recordPlan(thread, {
       outcomes: [{ text: 'Lisbon roles tracked', status: 'doing' }],
@@ -932,12 +918,6 @@ test('a thread switches Claude Code → Codex mid-conversation: a fresh Codex se
     fromSession: 'claude-session-1',
   });
   expect(store.threadMeta(id)?.worker).toBe('codex');
-  // The older turns the seed can't quote were summarised once, on the decision provider.
-  expect(summaries).toHaveLength(1);
-  expect(summaries[0]).toContain(`${id}:aux:history-summary`);
-  expect(summaries[0]).toContain('early question 1');
-  expect(summaries[0]).not.toContain('Only remote-friendly ones.');
-  expect(store.phasesOf(id, HISTORY_SUMMARY_PHASE)).toHaveLength(1);
   // The transcript's marker.
   const launch = (await call('GET', `/api/threads/${id}/launch`)).body;
   expect(launch.switches).toEqual([
@@ -945,8 +925,8 @@ test('a thread switches Claude Code → Codex mid-conversation: a fresh Codex se
   ]);
 
   // The next turn starts a fresh Codex thread, seeded once.
-  said('turn-5', 'Anything new?', 'codex answered');
   await w.codex.complete([{ role: 'user', content: 'Anything new?' }], { threadId: id });
+  said('turn-3', 'Anything new?', 'codex answered');
   expect(w.server.requests.map((r) => r.method).filter((m) => m.startsWith('thread/'))).toEqual([
     'thread/start',
   ]);
@@ -954,8 +934,10 @@ test('a thread switches Claude Code → Codex mid-conversation: a fresh Codex se
   expect(seed).toContain('# The conversation so far');
   expect(seed).toContain('This thread moved from Claude Code to Codex mid-conversation');
   expect(seed).toContain('did not carry over');
-  expect(seed).toContain('## Earlier in the thread (a summary)');
-  expect(seed).toContain('remote-friendly only.');
+  expect(seed).not.toContain('left out to fit');
+  expect(seed.indexOf('Find me a staff role in Lisbon.')).toBeLessThan(
+    seed.indexOf('Only remote-friendly ones.'),
+  );
   expect(seed).toContain('## User\nOnly remote-friendly ones.');
   expect(seed).toContain('## Continued on Codex from here (it ran on Claude Code before)');
   expect(seed.indexOf('Noted: remote-friendly only.')).toBeLessThan(
@@ -966,6 +948,11 @@ test('a thread switches Claude Code → Codex mid-conversation: a fresh Codex se
   expect(seed).toContain('Anything new?');
   await Bun.sleep(20);
   expect(await w.codexAdapter.getExternalSessionId(id)).toBe('codex-thread-1');
+  // A later fresh seed on Codex (its rollout gone) keeps the marker but doesn't say it just moved.
+  const later = journalHistory(store, id, undefined, workerHistoryBudget('codex'))!;
+  expect(later).toContain('## Continued on Codex from here');
+  expect(later).toContain('could not be resumed');
+  expect(later).not.toContain('mid-conversation');
 
   // Back to Claude Code: another fresh, seeded session, never the stale claude-session-1.
   expect((await call('PATCH', `/api/threads/${id}`, { worker: 'claude-code' })).status).toBe(200);
@@ -981,6 +968,15 @@ test('a thread switches Claude Code → Codex mid-conversation: a fresh Codex se
   expect(back.turns[0]).toContain('This thread moved from Codex to Claude Code mid-conversation');
   expect(back.turns[0]).toContain('## Continued on Codex from here');
   expect(back.turns[0]).toContain('## Continued on Claude Code from here');
+});
+
+test("a seed's budget is a tenth of the worker's smallest context window", () => {
+  for (const worker of ['claude-code', 'codex', 'muse']) {
+    const budget = workerHistoryBudget(worker);
+    expect(budget).toBeGreaterThanOrEqual(JOURNAL_HISTORY_CHARS);
+    expect(budget % 1).toBe(0);
+  }
+  expect(workerHistoryBudget('no-such-worker')).toBe(JOURNAL_HISTORY_CHARS);
 });
 
 test('a worker switch waits while a turn runs: the route says so, and the old session is never torn down under a call', async () => {

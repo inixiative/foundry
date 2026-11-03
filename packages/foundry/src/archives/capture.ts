@@ -67,11 +67,6 @@ function phaseServed(record: unknown): ServedModel | undefined {
   return found.size === 1 ? [...found.values()][0] : undefined;
 }
 
-/**
- * A child thread's lineage (spec A): its direct parent, the tree's root, and the parent's entry that
- * spawned it (the parent's `handoff` row). A fork is Archive's `fork` lineage: its source, no root,
- * since a fork is a top-level thread of its own. A main thread has none.
- */
 /** The runtime that keeps a thread personal: its worker's, or Muse's once it ever ran on Muse. */
 function personalRuntime(journal: LocalSessionStore, threadId: string, worker: string | undefined) {
   const workers = new Set([
@@ -85,6 +80,11 @@ function personalRuntime(journal: LocalSessionStore, threadId: string, worker: s
   return undefined;
 }
 
+/**
+ * A child thread's lineage (spec A): its direct parent, the tree's root, and the parent's entry that
+ * spawned it (the parent's `handoff` row). A fork is Archive's `fork` lineage: its source, no root,
+ * since a fork is a top-level thread of its own. A main thread has none.
+ */
 function lineageOf(
   journal: LocalSessionStore,
   meta: ThreadMeta,

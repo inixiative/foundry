@@ -992,6 +992,10 @@ const viewer = await startViewer({
   namingProvider: flowLlm,
   // A thread switching worker leaves its session on the old one behind (ended, never resumed).
   workerSessions: {
+    binding: async (worker, threadId) => {
+      const built = workers.get(worker)?.provider;
+      return built instanceof SessionBackedProvider ? built.bindingOf(threadId) : undefined;
+    },
     retire: async (worker, threadId) => {
       const built = workers.get(worker)?.provider;
       return built instanceof SessionBackedProvider ? built.retireThread(threadId) : undefined;

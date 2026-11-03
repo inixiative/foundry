@@ -281,7 +281,7 @@ test('a started thread switches worker mid-conversation: what carries over, Muse
       "Continues on a fresh Muse session that carries the conversation and plan, not the old session's files read or tool state.",
     );
     expect(await modal.locator('[data-note="muse-personal"]').innerText()).toBe(
-      "Muse is personal: from here this thread goes to your personal Archive, not shop's.",
+      "Muse is personal: from here this thread goes to your personal Archive, not acme-shop's.",
     );
     await modal.locator('[data-run="apply"]').click();
     await modal.waitFor({ state: 'detached' });

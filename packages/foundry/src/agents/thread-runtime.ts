@@ -584,8 +584,6 @@ export interface PhaseRecordInput {
     | 'restart-hold'
     /** The thread moved to another worker here (`record`: WorkerSwitchRecord, turns/journal-history.ts). */
     | 'worker-switch'
-    /** A summary of the turns a switched thread's seed can't quote (HistorySummaryRecord). */
-    | 'history-summary'
     | FeedbackPhase
     | ConversationPhase;
   readonly record: Record<string, unknown>;

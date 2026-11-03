@@ -776,7 +776,6 @@ export function createViewer(config: ViewerConfig) {
   const { turns, fork } = registerRuntimeRoutes(app, {
     nativeRecovery,
     ...(config.workerSessions ? { workerSessions: config.workerSessions } : {}),
-    ...(config.namingProvider ? { summaryProvider: config.namingProvider } : {}),
     restartGate: restartRoll,
     threadLaunch,
     harness,

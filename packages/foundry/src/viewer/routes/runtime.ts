@@ -10,7 +10,6 @@ import type {
   EventStream,
   Harness,
   InterventionLog,
-  LLMProvider,
   StreamEvent,
   ThreadConfig,
   TokenTracker,
@@ -59,13 +58,7 @@ import {
   ThreadLaunchSettings,
 } from '../../providers/thread-launch';
 import type { SecretScratch } from '../../secrets/scratch';
-import {
-  HISTORY_SUMMARY_PHASE,
-  summariseLeftOut,
-  WORKER_SWITCH_PHASE,
-  type WorkerSwitchRecord,
-  workerHistoryBudget,
-} from '../../turns/journal-history';
+import { WORKER_SWITCH_PHASE, type WorkerSwitchRecord } from '../../turns/journal-history';
 import type { NativeOutcomeRecovery } from '../../turns/native-outcome-recovery';
 import type { RunningTasks } from '../../turns/running-tasks';
 import { type ThreadSetupHost, TurnService, type TurnServiceDeps } from '../../turns/turn-service';
@@ -106,8 +99,6 @@ export interface RuntimeRoutesDeps {
   nativeRecovery?: NativeOutcomeRecovery;
   /** Each worker's native sessions: a thread switching worker retires its session on the one it leaves. */
   workerSessions?: WorkerSessions;
-  /** The decision provider (the namer's): summarises the turns a switched thread's seed can't quote. */
-  summaryProvider?: LLMProvider;
   /** The spin-down: turns reaching the front of their queue wait for a planned restart. */
   restartGate?: TurnServiceDeps['restartGate'];
   /** Background processes each thread's agent started (`turns/running-tasks.ts`). */
@@ -137,11 +128,14 @@ const RESTARTING =
 
 /**
  * Each worker's native sessions, as a mid-thread worker switch needs them (Aron, 2026-11-02): the
- * thread leaves its old worker's session behind (ended, its binding forgotten so nothing resumes
- * it), and its record names that session. Undefined for a worker with no native sessions.
+ * switch's record names the session the thread held on the old worker (`binding`), and the thread
+ * leaves it behind (`retire`: ended, its binding forgotten, so a return never resumes it). Each is
+ * undefined for a worker with no native sessions; `retire` is false when the session could not be
+ * ended.
  */
 export interface WorkerSessions {
-  retire(worker: string, threadId: string): Promise<{ binding: string | null } | false | undefined>;
+  binding(worker: string, threadId: string): Promise<string | null | undefined>;
+  retire(worker: string, threadId: string): Promise<boolean | undefined>;
 }
 
 /** Opaque history cursor: base64url of {t: threadId, s: oldest seq of the issued page}. */
@@ -988,6 +982,9 @@ export function registerRuntimeRoutes(
       started: started(thread),
       switches: workerSwitches(thread),
       projectId: thread.meta.projectId ?? null,
+      projectLabel: thread.meta.projectId
+        ? (deps.configStore.config.projects[thread.meta.projectId]?.label ?? thread.meta.projectId)
+        : null,
       mcpServers: describeMcpServers(launch.mcpServers),
       revision: launch.revision,
       /** Whether a send during a running turn steers into it (CORE-001), and where that came from. */
@@ -1336,7 +1333,6 @@ export function registerRuntimeRoutes(
       if (refusal) return c.json({ error: refusal }, 400);
       const carries = started(thread);
       let switched: WorkerSwitchRecord | undefined;
-      let summary: Awaited<ReturnType<typeof summariseLeftOut>>;
       if (carries) {
         // A turn lost to a restart is settled from the old worker's record, or decided, first.
         if (deps.nativeRecovery?.settle(id).undecided.length)
@@ -1344,19 +1340,9 @@ export function registerRuntimeRoutes(
             { error: 'a lost turn is waiting on Continue or Retry; decide it before switching' },
             409,
           );
-        // What the new worker's seed can't quote, summarised once, here.
-        if (deps.summaryProvider && localStore)
-          summary = await summariseLeftOut(localStore, id, deps.summaryProvider, {
-            maxChars: workerHistoryBudget(to),
-            ...(thread.meta.cwd ? { cwd: thread.meta.cwd } : {}),
-          });
-        // Nothing of the thread is left on the new worker (a session from an earlier stay there
-        // is never resumed), and the old worker's session ends, its binding forgotten.
-        const leftover = await deps.workerSessions?.retire(to, id);
-        const left = leftover === false ? false : await deps.workerSessions?.retire(from, id);
-        if (leftover === false || left === false)
-          return c.json({ error: 'a turn is running or queued; switch once it ends' }, 409);
-        // The awaits above let a turn in: check again, and switch with no await from here.
+        // The session it held there, kept on the switch's record (read-only: nothing changes yet).
+        const fromSession = (await deps.workerSessions?.binding(from, id)) ?? null;
+        // The await let a turn in: check again; from here to the save there is no await.
         thread = directory.get(id) ?? thread;
         const again = workerLock(thread);
         if (again || thread.meta.worker !== from)
@@ -1366,27 +1352,17 @@ export function registerRuntimeRoutes(
           to,
           fromLabel: workerName(from),
           toLabel: workerName(to),
-          fromSession: left?.binding ?? null,
+          fromSession,
         };
       }
-      // The record as it stood: the marker is written against it, before the new worker is saved.
+      // The record as it stood: the marker is written against it, then the new worker is saved.
       const before = { id, meta: structuredClone(thread.meta) };
       try {
         thread = directory.rebuild(id, { ...structuredClone(thread.meta), worker: to });
       } catch (error) {
         return c.json({ error: (error as Error).message }, 409);
       }
-      // Written with the rebuild, no await between: the new worker's first turn finds them, and the
-      // store accepts the new worker only behind its marker.
       if (switched && localStore) {
-        if (summary)
-          localStore.appendPhase(before, {
-            id: newId('phase'),
-            phase: HISTORY_SUMMARY_PHASE,
-            turnId: null,
-            dispatchId: null,
-            record: { ...summary, for: WORKER_SWITCH_PHASE },
-          });
         localStore.appendPhase(before, {
           id: newId('phase'),
           phase: WORKER_SWITCH_PHASE,
@@ -1394,7 +1370,16 @@ export function registerRuntimeRoutes(
           dispatchId: null,
           record: { ...switched },
         });
+        // The store takes the new worker only behind its marker; saved with it, so a crash never
+        // leaves a marker on a thread still recorded on the old worker.
+        localStore.saveThread(thread);
       }
+      // Every turn from here runs on the new worker, so the old session can go: ended, its binding
+      // forgotten. The next session on the new worker starts fresh, seeded from the journal.
+      if (switched && (await deps.workerSessions?.retire(from, id)) === false)
+        console.warn(
+          `[Threads] ${id}: its ${from} session could not be ended after the switch; it is not resumed`,
+        );
       // A model chosen for the old worker is not carried to the new one.
       const chosen = threadLaunch.get(id).model;
       if (chosen && workerModelRequirement(body.worker as SubscriptionWorkerId, chosen))

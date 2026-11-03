@@ -158,7 +158,7 @@ function ThreadRunModal({ launch, onClose }) {
   const musePersonal = !launch.started
     ? null
     : switching && value.worker === 'muse' && !ranOnMuse
-      ? `Muse is personal: from here this thread goes to your personal Archive${launch.projectId ? `, not ${launch.projectId}'s` : ''}.`
+      ? `Muse is personal: from here this thread goes to your personal Archive${launch.projectLabel ? `, not ${launch.projectLabel}'s` : ''}.`
       : switching && ranOnMuse
         ? 'This thread stays personal: it ran on Muse, so it keeps going to your personal Archive.'
         : null;

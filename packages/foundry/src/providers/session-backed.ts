@@ -1002,33 +1002,39 @@ export class SessionBackedProvider implements LLMProvider {
 
   /**
    * The thread moved to another worker (a mid-thread switch): end every executor session it holds
-   * here and forget its binding, so coming back to this worker starts a fresh session seeded from
-   * the journal and never resumes this one. Returns the native session it held (kept on record by
-   * the caller), or false while a call is running on it (nothing is touched).
+   * here and forget its binding (`_forget`, the same retirement a gone native conversation gets), so
+   * coming back to this worker starts a fresh session seeded from the journal and never resumes
+   * this one. False when a session is busy or could not be ended (it stays; nothing resumes it
+   * once the thread runs elsewhere, but its process is reported).
    */
-  async retireThread(threadId: string): Promise<{ binding: string | null } | false> {
-    const keys = [...this._sessions.keys()].filter(
-      (key) => (JSON.parse(key) as [string, string])[1] === threadId,
-    );
-    if (keys.some((key) => this._activeCalls.get(key) || this._releasing.has(key))) return false;
-    const binding = await this._adapter.getExternalSessionId(threadId).catch(() => null);
-    for (const key of keys) {
-      const pending = this._sessions.get(key);
-      const session = pending ? await pending.catch(() => undefined) : undefined;
-      if (this._activeCalls.get(key)) return false;
-      if (session) {
-        const released = this._adapter.releaseIdleSession
-          ? await this._adapter.releaseIdleSession(session).catch(() => 'unknown' as const)
-          : 'unknown';
-        if (released !== 'released') session.kill();
-        for (const [id, entry] of this._registeredAdmissions)
-          if (entry.session === session) this._registeredAdmissions.delete(id);
+  async retireThread(threadId: string): Promise<boolean> {
+    let ended = true;
+    for (const key of [...this._sessions.keys()]) {
+      const [cwd, owner] = JSON.parse(key) as [string, string];
+      if (owner !== threadId) continue;
+      if (this._activeCalls.get(key) || this._releasing.has(key)) {
+        ended = false;
+        continue;
       }
-      this._drop(key, session);
+      const session = await this._sessions.get(key)?.catch(() => undefined);
+      if (!session) {
+        this._drop(key, undefined);
+        continue;
+      }
+      if (!(await this._forget(threadId, cwd, session))) ended = false;
     }
     this._ledgerBindings.delete(threadId);
-    await this._adapter.clearSession(threadId);
-    return { binding };
+    // No live session (or one already ended): the stored binding is forgotten all the same.
+    await this._adapter.clearSession(threadId).catch((error) => {
+      console.warn(`[Sessions] ${threadId}: binding not cleared: ${(error as Error).message}`);
+      ended = false;
+    });
+    return ended;
+  }
+
+  /** The native session this thread's binding names on this worker, for the record (null: none). */
+  async bindingOf(threadId: string): Promise<string | null> {
+    return this._adapter.getExternalSessionId(threadId).catch(() => null);
   }
 
   /**
