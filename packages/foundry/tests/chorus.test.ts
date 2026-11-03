@@ -320,13 +320,19 @@ test("a project's chorus is one generated Warden per region of .foundry/regions,
     instructions: { exclude: ['project'], general: [] },
     domainKnowledge: { general: [] },
   });
-  // Naming `general` for a Warden is refused (Aron, 2026-11-02: no opt-out).
+  // A `general` naming nodes is never applied to a Warden (Aron, 2026-11-02: no opt-out) and is
+  // reported, not thrown: a teammate's new region never stops this machine's settings loading.
   for (const slot of ['instructions', 'domainKnowledge'] as const) {
     c.composition!.roles = { 'lens-model': { [slot]: { general: ['project'] } } };
-    expect(() => resolveProjectView(c, 'P')).toThrow(
-      `composition.roles.lens-model.${slot}.general: a region Warden never composes the CLAUDE.md`,
-    );
+    const ignoredView = resolveProjectView(c, 'P')!;
+    expect(ignoredView.config.composition!.roles!['lens-model']![slot]).toEqual({ general: [] });
+    expect(ignoredView.chorus.ignoredComposition).toEqual([
+      expect.stringContaining(`composition.roles.lens-model.${slot}.general is not applied`),
+    ]);
   }
+  // `general: []`, what a Warden composes anyway, is no problem.
+  c.composition!.roles = { 'lens-model': { instructions: { general: [] } } };
+  expect(resolveProjectView(c, 'P')!.chorus.ignoredComposition).toBeUndefined();
   c.composition!.roles = {};
   c.composition!.nodes = {
     ...c.composition!.nodes,
@@ -335,11 +341,30 @@ test("a project's chorus is one generated Warden per region of .foundry/regions,
   expect(() => resolveProjectView(c, 'P')).toThrow('the project Warden brief');
 });
 
+test("a region may not take the main thread's or the Cartographer's composition role", () => {
+  for (const id of ['main', 'cartographer']) {
+    const { project, regions } = projectWithRegions();
+    write(
+      join(regions, id, 'region.json'),
+      JSON.stringify({ id, title: id, routing: 'r', concepts: [id] }),
+    );
+    write(join(regions, id, 'knowledge.md'), knowledge(id, 'r', 'K'));
+    expect(() => resolveProjectView(config(project), 'P')).toThrow(
+      `has the reserved role id "${id}"`,
+    );
+  }
+});
+
 test("a region Warden composes the charter's instructions, the project's Warden brief and its region, never CLAUDE.md", async () => {
   const { project } = projectWithRegions();
   write(join(project, 'CLAUDE.md'), 'CLAUDE_MD_RULE');
   write(join(project, 'AGENTS.md'), 'AGENTS_MD_RULE');
-  write(join(project, '.foundry', 'warden-brief.md'), '# BRIEF_PROJECT\nWhat this repo is.');
+  // An import of CLAUDE.md from the brief is not a way in: a Warden takes no general file by any route.
+  write(
+    join(project, '.foundry', 'warden-brief.md'),
+    '# BRIEF_PROJECT\nWhat this repo is. @../CLAUDE.md @../docs/shape.md',
+  );
+  write(join(project, 'docs', 'shape.md'), 'SHAPE_DOC');
   write(join(project, '.foundry', 'warden-brief.local.md'), 'BRIEF_PERSONAL');
   write(join(project, '.foundry', 'roles', 'lens-model', 'instructions.md'), 'ROLE_FILE_LENS');
   const c = config(project);
@@ -369,12 +394,13 @@ test("a region Warden composes the charter's instructions, the project's Warden 
   expect(instructions).toContain('BRIEF_PROJECT');
   expect(instructions).toContain('BRIEF_PERSONAL');
   expect(instructions).toContain('ROLE_FILE_LENS');
-  // The brief comes before the region's own role file, the project's before the personal one.
+  expect(instructions).toContain('SHAPE_DOC');
+  // The brief sits at the project's level, after the region's role file there; shared before personal.
+  expect(instructions.indexOf('ROLE_FILE_LENS')).toBeLessThan(
+    instructions.indexOf('BRIEF_PROJECT'),
+  );
   expect(instructions.indexOf('BRIEF_PROJECT')).toBeLessThan(
     instructions.indexOf('BRIEF_PERSONAL'),
-  );
-  expect(instructions.indexOf('BRIEF_PERSONAL')).toBeLessThan(
-    instructions.indexOf('ROLE_FILE_LENS'),
   );
   for (const text of [instructions, lens.domainKnowledge.content]) {
     expect(text).not.toContain('CLAUDE_MD_RULE');

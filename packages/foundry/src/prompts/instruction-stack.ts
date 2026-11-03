@@ -62,6 +62,20 @@ const LEVEL_LABEL: Readonly<Record<InstructionLevel, string>> = {
 };
 
 /** Claude Code's own preamble for its instruction files. */
+/** Claude Code's own instruction files (CLAUDE.md, AGENTS.md and the like, and `.claude/rules`): the ladder's general files. */
+const GENERAL_FILE_NAMES = new Set([
+  'CLAUDE.md',
+  'CLAUDE.local.md',
+  'AGENTS.md',
+  'AGENTS.override.md',
+]);
+export function isGeneralFile(path: string): boolean {
+  const parts = path.split(/[\\/]/);
+  if (GENERAL_FILE_NAMES.has(parts.at(-1) ?? '')) return true;
+  const claude = parts.lastIndexOf('.claude');
+  return claude !== -1 && parts[claude + 1] === 'rules';
+}
+
 const PREAMBLE =
   'Codebase and user instructions are shown below. Be sure to adhere to these instructions. IMPORTANT: These instructions OVERRIDE any default behavior and you MUST follow them exactly as written.';
 
@@ -279,6 +293,8 @@ export interface RoleView {
    * files and brief without "these instructions OVERRIDE any default behavior" over its charter.
    */
   readonly framed: Readonly<Record<CompositionSlot, boolean>>;
+  /** False for a role that takes no general files in any slot: none reach it by import or slotted source either. */
+  readonly takesGeneral: boolean;
   /** Every path both slots consulted. */
   readonly probes: readonly string[];
   /** Their state when composed; empty when one changed while it was read (`roleViewChanged`). */
@@ -376,9 +392,11 @@ export async function composeRoleView(
   const stacks = {} as Record<CompositionSlot, InstructionStack>;
   const included = {} as Record<CompositionSlot, readonly string[]>;
   const framed = {} as Record<CompositionSlot, boolean>;
+  const generals = {} as Record<CompositionSlot, 'all' | readonly string[]>;
   for (const slot of COMPOSITION_SLOTS) {
     const pick = picks[slot];
     const general = (pick ? pick.general : undefined) ?? (slot === 'instructions' ? 'all' : []);
+    generals[slot] = pick === false ? [] : general;
     framed[slot] = slot === 'instructions' && (general === 'all' || general.length > 0);
     included[slot] = slot === 'instructions' || general === 'all' ? [] : [...general];
     stacks[slot] =
@@ -386,12 +404,20 @@ export async function composeRoleView(
         ? EMPTY_STACK
         : await discoverInstructionStack({ ...discover, slot, unslotted: general });
   }
+  // A role that takes no general files in any slot (a region Warden, the Cartographer) takes none by
+  // any other route either: not as an `@` import of its role files or brief, not as a slotted source.
+  const takesNoGeneral = COMPOSITION_SLOTS.every((slot) => {
+    const general = generals[slot];
+    return general !== 'all' && !general.length;
+  });
   const parts = COMPOSITION_SLOTS.map((slot) => {
     const pick = picks[slot];
     const exclude = new Set(pick ? (pick.exclude ?? []) : []);
     const files = stacks[slot].files;
-    const excluded = files.filter((file) => exclude.has(file.level));
-    const kept = files.filter((file) => !exclude.has(file.level));
+    const out = (file: InstructionStackFile) =>
+      exclude.has(file.level) || (takesNoGeneral && isGeneralFile(file.path));
+    const excluded = files.filter(out);
+    const kept = files.filter((file) => !out(file));
     return {
       excluded,
       hidden: kept.filter((file) => !visibleTo(file.tier, audience)),
@@ -429,6 +455,7 @@ export async function composeRoleView(
     slots,
     included,
     framed,
+    takesGeneral: !takesNoGeneral,
     probes,
     fingerprint: viewFingerprint(probes, startedAt),
   };
@@ -468,7 +495,10 @@ export function instructionStackReport(
     omitted: [
       ...composed.excluded.map((file) => ({
         id: file.path,
-        reason: `excluded from ${slot} by composition.roles.${view.role}`,
+        reason:
+          !view.takesGeneral && isGeneralFile(file.path)
+            ? `a general file (CLAUDE.md and the like); ${view.role} takes none by any route`
+            : `excluded from ${slot} by composition.roles.${view.role}`,
         chars: file.content.length,
         kind: file.level,
       })),

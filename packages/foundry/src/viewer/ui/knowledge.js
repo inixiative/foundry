@@ -77,6 +77,7 @@ function SizeBar({ region }) {
  */
 function WardenLayers({ wardens }) {
   if (!wardens) return null;
+  const ignored = wardens.ignored;
   const brief = wardens.brief;
   return html`<h4 class="ksub">What each Warden is given</h4>
     <table class="ktable" aria-label="Warden layers">
@@ -89,7 +90,12 @@ function WardenLayers({ wardens }) {
       <tr><td>3. Its region</td><td>The region's knowledge, sized above.</td><td></td></tr>
       <tr><td>4. Thread context</td><td>The moment and what the thread holds, per call.</td><td></td></tr>
     </table>
-    <div class="rp-dim">No CLAUDE.md or AGENTS.md: those are written for the agent doing the work.</div>
+    <div class="rp-dim">No CLAUDE.md or AGENTS.md: those are written for the agent doing the work. The brief is shown as the registered checkout has it; a worktree's threads read their branch's copy.</div>
+    ${
+      ignored?.length
+        ? html`<div class="kwarn">${ignored.map((line) => html`<div key=${line}>${line}</div>`)}</div>`
+        : null
+    }
     ${
       brief?.exists
         ? html`<details class="kbrief"><summary>Read the Warden brief</summary><pre class="mono">${brief.text}</pre></details>`

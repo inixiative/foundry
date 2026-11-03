@@ -22,6 +22,7 @@ import {
 import { WARDEN_BRIEF_NODES, wardenBriefNodes, wardenComposition } from '../agents/warden-brief';
 import { defaultStages, type StageConfig, validateStages } from '../classify';
 import { writeFileAtomic } from '../client/private-file';
+import { MAIN_ROLE } from '../prompts/instruction-settings';
 import {
   type AgentExtension,
   type AgentSettingsConfig,
@@ -128,6 +129,8 @@ export interface ResolvedChorus {
   regions: ChorusRegion[];
   /** Why no Warden runs although regions were asked for or are present: nothing is skipped silently. */
   reason?: string;
+  /** Settings picks for a region Warden that were not applied (a `general` naming nodes), and why. */
+  ignoredComposition?: string[];
 }
 
 export interface ResolvedLayerDefinition {
@@ -1287,6 +1290,12 @@ function buildProjectView(
         throw new Error(
           `[config] region ${region.id} (${region.path}) has the id of global agent ${JSON.stringify(agent.id)}`,
         );
+      // The main thread's and the Cartographer's composition roles are not a Warden's to take (a
+      // configured cartographer agent's id is a global agent's, refused above).
+      if (agent.id === MAIN_ROLE || agent.id === 'cartographer')
+        throw new Error(
+          `[config] region ${region.id} (${region.path}) has the reserved role id ${JSON.stringify(agent.id)} (the main thread's or the Cartographer's composition role); rename the region`,
+        );
       const taken = sources.find((source) => resolved.sources[source.id]);
       if (project.agents?.[agent.id] || taken)
         throw new Error(
@@ -1308,8 +1317,13 @@ function buildProjectView(
     // role files for its region still do, and the brief is a ladder node of its own for exactly these
     // roles. A role entry written in settings keeps its other picks; one naming `general` is refused.
     const roles = { ...resolved.composition?.roles };
-    for (const { agent } of generated)
-      roles[agent.id] = wardenComposition(agent.id, roles[agent.id]);
+    const ignored: string[] = [];
+    for (const { agent } of generated) {
+      const warden = wardenComposition(agent.id, roles[agent.id]);
+      roles[agent.id] = warden.picks;
+      ignored.push(...warden.ignored);
+    }
+    if (ignored.length) chorus = { ...chorus, ignoredComposition: ignored };
     const nodes = { ...resolved.composition?.nodes };
     for (const id of WARDEN_BRIEF_NODES)
       if (nodes[id])

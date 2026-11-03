@@ -3,8 +3,7 @@
 Foundry is a local harness around native coding agents. A person works in a thread; the thread's
 worker is a real Claude Code, Codex or Muse Code session on their own subscription (the Artificer).
 Foundry wraps it with context, memory and a chorus of Wardens, and keeps a journal of every turn.
-It runs as a daemon on the person's machine with a web viewer (port 4500 on this machine), and
-hosts reach it over ACP.
+It runs as a daemon on the person's machine with a web viewer, and hosts reach it over ACP.
 
 ## Shape of the repository
 

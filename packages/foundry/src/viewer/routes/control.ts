@@ -713,6 +713,7 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps): void 
       wardens: {
         charter: { tokens: Math.round(WARDEN_CHARTER.length / 4) },
         brief: path ? readWardenBrief(path) : null,
+        ignored: view.chorus.ignoredComposition ?? [],
       },
     });
   });

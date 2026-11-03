@@ -38,38 +38,54 @@ export function wardenBriefNodes(roles: readonly string[]): Record<string, Instr
       personal: false,
       label: 'project Warden brief, checked into the codebase',
       when,
-      sources: [{ path: `{project}/${WARDEN_BRIEF_FILE}` }],
+      // At the project's own directory, so it orders with the project's files, not before the org's.
+      anchor: '{project}',
+      sources: [{ path: WARDEN_BRIEF_FILE }],
     },
     [WARDEN_BRIEF_LOCAL_NODE]: {
       scope: 'project',
       personal: true,
       label: "project Warden brief, the user's private additions",
       when,
-      sources: [{ path: `{project}/${WARDEN_BRIEF_LOCAL_FILE}` }],
+      anchor: '{project}',
+      sources: [{ path: WARDEN_BRIEF_LOCAL_FILE }],
     },
   };
 }
 
 /**
  * A region Warden's picks from the ladder: no node's general files (CLAUDE.md, AGENTS.md, rules,
- * auto memory) reach either slot. Role files and the Warden brief are slotted, so they still compose.
- * `exclude` and every other pick a setting makes are kept; a setting naming `general` for a Warden is
- * refused. There is no switch that brings the ladder back (Aron, 2026-11-02: "none").
+ * auto memory) reach either slot, and a role that takes none takes none by any route (an `@` import
+ * from a role file or the brief, a slotted settings source: `composeRoleView`). Role files and the
+ * Warden brief still compose. `exclude`, `budget` and `audience` stay as set. There is no switch that
+ * brings the ladder back (Aron, 2026-11-02: "none"): a `general` naming nodes is not applied and is
+ * reported (`ignored`), never thrown, so a teammate's committed region never stops settings loading.
  */
-export function wardenComposition(role: string, own: RoleComposition | undefined): RoleComposition {
+export function wardenComposition(
+  role: string,
+  own: RoleComposition | undefined,
+): { picks: RoleComposition; ignored: string[] } {
+  const ignored: string[] = [];
   for (const slot of ['instructions', 'domainKnowledge'] as const) {
     const pick = own?.[slot];
-    if (pick && pick.general !== undefined)
-      throw new Error(
-        `[config] composition.roles.${role}.${slot}.general: a region Warden never composes the CLAUDE.md / AGENTS.md ladder (Aron, 2026-11-02); its instructions are the charter, the project's Warden brief (${WARDEN_BRIEF_FILE}) and its region. Remove "general".`,
+    if (
+      pick &&
+      pick.general !== undefined &&
+      !(Array.isArray(pick.general) && !pick.general.length)
+    )
+      ignored.push(
+        `composition.roles.${role}.${slot}.general is not applied: a region Warden never composes the CLAUDE.md / AGENTS.md ladder (Aron, 2026-11-02); it reads the charter, the project's Warden brief (${WARDEN_BRIEF_FILE}) and its region`,
       );
   }
   const slot = (pick: RoleComposition['instructions']) =>
     pick === false ? false : { ...pick, general: [] };
   return {
-    ...own,
-    instructions: slot(own?.instructions),
-    domainKnowledge: slot(own?.domainKnowledge),
+    picks: {
+      ...own,
+      instructions: slot(own?.instructions),
+      domainKnowledge: slot(own?.domainKnowledge),
+    },
+    ignored,
   };
 }
 
