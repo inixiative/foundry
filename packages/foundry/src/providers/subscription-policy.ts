@@ -52,6 +52,8 @@ export const subscriptionSettingsSchema = z
       .object({
         /** Held spares per Warden. */
         sparesPerWarden: z.number().int().min(1).max(4),
+        /** Wardens per dispatcher: the roster is cut into slices this size, each refilled at once by its own dispatcher. */
+        wardensPerDispatcher: z.number().int().min(1).max(64),
         /** Threads of one project advising at once, for the subagent bound. */
         concurrentTurns: z.number().int().min(1).max(16),
         /** Resident memory the host process tree may hold for a few seconds before it is replaced. */
@@ -168,6 +170,8 @@ export type ProjectHostPolicy = Required<
  */
 export const PROJECT_HOST_DEFAULTS = {
   sparesPerWarden: 1,
+  // why: one dispatcher refilled 75 held Wardens in ~20 s (2026-11-02).
+  wardensPerDispatcher: 8,
   concurrentTurns: 2,
   maxRssMb: 1_536,
   hardRssMb: 4_096,

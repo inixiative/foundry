@@ -71,7 +71,14 @@ const spec = (role: string): PrimeSpec => ({
 const roster = (...roles: string[]): Roster => roles.map((r) => ({ spec: spec(r), standby: '' }));
 
 /** A project-mode registry whose hosts run on the fake CLI: per-pid memory readings set by the test. */
-function projectHosts(options: { noRoot?: boolean; maxRestarts?: number; idleMs?: number } = {}) {
+function projectHosts(
+  options: {
+    noRoot?: boolean;
+    maxRestarts?: number;
+    idleMs?: number;
+    wardensPerDispatcher?: number;
+  } = {},
+) {
   const tree = fakeClaudeTree({ noRoot: options.noRoot });
   const rss = new Map<number, number>();
   const states: Array<ProjectHostState & { projectId: string }> = [];
@@ -86,6 +93,9 @@ function projectHosts(options: { noRoot?: boolean; maxRestarts?: number; idleMs?
       restartBackoffMs: 20,
       maxRestarts: options.maxRestarts ?? 5,
       ...(options.idleMs !== undefined ? { idleMs: options.idleMs } : {}),
+      ...(options.wardensPerDispatcher !== undefined
+        ? { wardensPerDispatcher: options.wardensPerDispatcher }
+        : {}),
     },
     healthIntervalMs: 10,
     rss: (pid) => rss.get(pid) ?? 100,
@@ -150,6 +160,16 @@ test('a project host holds the roster before any thread; every thread of the pro
   expect(await wardens.projectReady('P', 5_000)).toBe(true);
   expect(wardens.projectState('P')).toMatchObject({ expected: 3, held: 3 });
   expect(await until(() => tree.processes[0]!.exited)).toBe(true);
+});
+
+test('the roster is cut into slices of wardensPerDispatcher, each refilled by its own dispatcher', async () => {
+  const { tree, wardens } = projectHosts({ wardensPerDispatcher: 2 });
+  wardens.openProject('P', roster('a', 'b', 'c', 'd', 'e'));
+  expect(await wardens.projectReady('P', 5_000)).toBe(true);
+  expect(wardens.projectState('P')).toMatchObject({ expected: 5, held: 5 });
+  // Five Wardens at two a slice: three dispatchers under the one root.
+  expect(tree.started.filter((t) => t === 'foundry-root').length).toBe(1);
+  expect(tree.started.filter((t) => t === 'foundry-dispatch').length).toBe(3);
 });
 
 test('a roster that grows while its host starts gets a host sized for it', async () => {

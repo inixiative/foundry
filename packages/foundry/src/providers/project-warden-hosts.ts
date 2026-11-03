@@ -332,9 +332,14 @@ export class ProjectWardenHosts {
       baseInstructions: PROJECT_HOST_DECISION_CONTEXT,
       timeoutMs: this.config.timeoutMs,
       sparesPerRole: spares,
+      // Slices refilled at once, each by its own dispatcher (agent-session 0.12.0).
+      dispatchers: Math.max(1, Math.ceil(size / bounds.wardensPerDispatcher)),
       // A used spare's replacement starts while it still answers: every Warden can hold its spares
       // and a replacement per thread advising at once, plus the root and its dispatchers.
-      maxSubagents: size * (spares + 1) * bounds.concurrentTurns + 4,
+      maxSubagents:
+        size * (spares + 1) * bounds.concurrentTurns +
+        2 +
+        2 * Math.max(1, Math.ceil(size / bounds.wardensPerDispatcher)),
       // One dispatcher's members: past it the host stops serving and is replaced.
       maxOrphans: size * (spares + 1),
       setupDeadlineMs,
