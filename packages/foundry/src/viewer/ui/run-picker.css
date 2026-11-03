@@ -1,0 +1,50 @@
+/* What a thread runs on: the header's run pill opens the picker; "+ New thread" opens it too. */
+button.band-run {
+  border: none;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+button.band-run:hover,
+button.band-run:focus-visible {
+  background: hsl(var(--accent, var(--muted)));
+  outline: 1px solid hsl(var(--app-primary) / 0.6);
+}
+.run-modal {
+  width: 400px;
+  padding-bottom: 14px;
+}
+.run-picker {
+  display: grid;
+  gap: 8px;
+  margin: 4px 16px 0;
+}
+.run-picker-row {
+  display: grid;
+  grid-template-columns: 64px 1fr;
+  align-items: center;
+  gap: 10px;
+  font-size: 12.5px;
+  color: var(--text-dim);
+}
+.run-picker-note {
+  margin: 4px 16px 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text);
+}
+.run-picker .run-picker-note {
+  margin: 2px 0 0;
+}
+.run-picker-note--dim {
+  color: var(--text-dim);
+}
+.run-picker-link {
+  padding: 0;
+  border: none;
+  background: none;
+  color: hsl(var(--app-primary));
+  font: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+}

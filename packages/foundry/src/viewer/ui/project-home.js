@@ -11,11 +11,11 @@
 import { feedbackIn } from './feedback.js';
 import { html, useEffect, useState } from './lib.js';
 import { navigate } from './route.js';
+import { openNewThread } from './run-picker.js';
 import { STATES, StatusIcon } from './status-icons.js';
 import {
   activeProjectId,
   allThreads,
-  createThread,
   openProjectBoard,
   openProjectKnowledge,
   projects,
@@ -140,7 +140,7 @@ export function ProjectHome() {
         ${open.length ? open.map((t) => html`<${ThreadRow} key=${t.threadId} thread=${t} />`) : html`<div class="ph-meta">Nothing open.</div>`}
         ${inactive.length ? html`<div class="ph-sub">Inactive · ${inactive.length}</div>${inactive.map((t) => html`<${ThreadRow} key=${t.threadId} thread=${t} />`)}` : null}
         ${closed.length ? html`<div class="ph-meta">${closed.length} closed</div>` : null}
-        <div class="ph-actions"><button type="button" class="proj-btn" onClick=${() => createThread()}>+ New thread</button></div>
+        <div class="ph-actions"><button type="button" class="proj-btn" onClick=${() => openNewThread()}>+ New thread</button></div>
       </section>`
           : null
       }

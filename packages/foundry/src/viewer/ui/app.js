@@ -36,6 +36,7 @@ import {
   route,
   settingsPath,
 } from './route.js';
+import { RunPickers } from './run-picker.js';
 import { SearchPage } from './search.js';
 import { SelfChatPane } from './self-chat.js';
 import { loadSettings, SettingsPage, settingsConfig } from './settings.js';
@@ -503,6 +504,7 @@ function App() {
       <${Wizard} />
       <${Toast} />
       <${GlossReview} />
+      <${RunPickers} />
     </div>
   `;
 }
