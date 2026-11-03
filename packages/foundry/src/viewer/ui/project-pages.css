@@ -439,3 +439,10 @@ button.nav-footer-device:hover,
   gap: 6px;
   flex-wrap: wrap;
 }
+
+.kbrief pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 24rem;
+  overflow: auto;
+}

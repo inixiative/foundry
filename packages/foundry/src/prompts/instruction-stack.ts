@@ -62,6 +62,20 @@ const LEVEL_LABEL: Readonly<Record<InstructionLevel, string>> = {
 };
 
 /** Claude Code's own preamble for its instruction files. */
+/** Claude Code's own instruction files (CLAUDE.md, AGENTS.md and the like, and `.claude/rules`): the ladder's general files. */
+const GENERAL_FILE_NAMES = new Set([
+  'CLAUDE.md',
+  'CLAUDE.local.md',
+  'AGENTS.md',
+  'AGENTS.override.md',
+]);
+export function isGeneralFile(path: string): boolean {
+  const parts = path.split(/[\\/]/);
+  if (GENERAL_FILE_NAMES.has(parts.at(-1) ?? '')) return true;
+  const claude = parts.lastIndexOf('.claude');
+  return claude !== -1 && parts[claude + 1] === 'rules';
+}
+
 const PREAMBLE =
   'Codebase and user instructions are shown below. Be sure to adhere to these instructions. IMPORTANT: These instructions OVERRIDE any default behavior and you MUST follow them exactly as written.';
 
@@ -273,6 +287,14 @@ export interface RoleView {
   readonly slots: Readonly<Record<CompositionSlot, ComposedInstructions>>;
   /** Nodes whose general files the role pulled into a slot they do not compose by default. */
   readonly included: Readonly<Record<CompositionSlot, readonly string[]>>;
+  /**
+   * Whether a slot carries Claude Code's instruction preamble: only an instructions slot that composes
+   * general files (CLAUDE.md and the like). A role that takes none (a region Warden) reads its role
+   * files and brief without "these instructions OVERRIDE any default behavior" over its charter.
+   */
+  readonly framed: Readonly<Record<CompositionSlot, boolean>>;
+  /** False for a role that takes no general files in any slot: none reach it by import or slotted source either. */
+  readonly takesGeneral: boolean;
   /** Every path both slots consulted. */
   readonly probes: readonly string[];
   /** Their state when composed; empty when one changed while it was read (`roleViewChanged`). */
@@ -310,13 +332,13 @@ function viewFingerprint(probes: readonly string[], startedAt: number): string {
   return hierarchyFingerprint(probes);
 }
 
-/** A slot's files as one block. Instructions carry Claude Code's preamble; domain knowledge does not. */
+/** A slot's files as one block. A framed slot carries Claude Code's preamble (`RoleView.framed`). */
 function renderSlot(
-  slot: CompositionSlot,
   files: readonly InstructionStackFile[],
   labels: Readonly<Record<string, string>>,
+  framed: boolean,
 ): string {
-  return segmentsText(slotSegments(slot, files, labels));
+  return segmentsText(slotSegments(files, labels, framed));
 }
 
 /**
@@ -325,9 +347,9 @@ function renderSlot(
  * form of it. Headings, the preamble and separators are glue.
  */
 export function slotSegments(
-  slot: CompositionSlot,
   files: readonly InstructionStackFile[],
   labels: Readonly<Record<string, string>>,
+  framed: boolean,
 ): SourceSegment[] {
   const sections = files
     .filter((file) => file.content.trim())
@@ -346,7 +368,7 @@ export function slotSegments(
       ];
     });
   if (!sections.length) return [];
-  const blocks = slot === 'instructions' ? [[PREAMBLE], ...sections] : sections;
+  const blocks = framed ? [[PREAMBLE], ...sections] : sections;
   return blocks.flatMap((block, i) => (i ? ['\n\n', ...block] : block));
 }
 
@@ -369,21 +391,33 @@ export async function composeRoleView(
   const audience = picks.audience ?? 'personal_private';
   const stacks = {} as Record<CompositionSlot, InstructionStack>;
   const included = {} as Record<CompositionSlot, readonly string[]>;
+  const framed = {} as Record<CompositionSlot, boolean>;
+  const generals = {} as Record<CompositionSlot, 'all' | readonly string[]>;
   for (const slot of COMPOSITION_SLOTS) {
     const pick = picks[slot];
     const general = (pick ? pick.general : undefined) ?? (slot === 'instructions' ? 'all' : []);
+    generals[slot] = pick === false ? [] : general;
+    framed[slot] = slot === 'instructions' && (general === 'all' || general.length > 0);
     included[slot] = slot === 'instructions' || general === 'all' ? [] : [...general];
     stacks[slot] =
       pick === false
         ? EMPTY_STACK
         : await discoverInstructionStack({ ...discover, slot, unslotted: general });
   }
+  // A role that takes no general files in any slot (a region Warden, the Cartographer) takes none by
+  // any other route either: not as an `@` import of its role files or brief, not as a slotted source.
+  const takesNoGeneral = COMPOSITION_SLOTS.every((slot) => {
+    const general = generals[slot];
+    return general !== 'all' && !general.length;
+  });
   const parts = COMPOSITION_SLOTS.map((slot) => {
     const pick = picks[slot];
     const exclude = new Set(pick ? (pick.exclude ?? []) : []);
     const files = stacks[slot].files;
-    const excluded = files.filter((file) => exclude.has(file.level));
-    const kept = files.filter((file) => !exclude.has(file.level));
+    const out = (file: InstructionStackFile) =>
+      exclude.has(file.level) || (takesNoGeneral && isGeneralFile(file.path));
+    const excluded = files.filter(out);
+    const kept = files.filter((file) => !out(file));
     return {
       excluded,
       hidden: kept.filter((file) => !visibleTo(file.tier, audience)),
@@ -398,7 +432,7 @@ export async function composeRoleView(
   COMPOSITION_SLOTS.forEach((slot, i) => {
     const files = deduped.slots[i]!.filter((file) => file.content.trim());
     slots[slot] = {
-      text: renderSlot(slot, files, stacks[slot].labels),
+      text: renderSlot(files, stacks[slot].labels, framed[slot]),
       files,
       hidden: parts[i]!.hidden,
       excluded: parts[i]!.excluded,
@@ -420,6 +454,8 @@ export async function composeRoleView(
     stacks,
     slots,
     included,
+    framed,
+    takesGeneral: !takesNoGeneral,
     probes,
     fingerprint: viewFingerprint(probes, startedAt),
   };
@@ -459,7 +495,10 @@ export function instructionStackReport(
     omitted: [
       ...composed.excluded.map((file) => ({
         id: file.path,
-        reason: `excluded from ${slot} by composition.roles.${view.role}`,
+        reason:
+          !view.takesGeneral && isGeneralFile(file.path)
+            ? `a general file (CLAUDE.md and the like); ${view.role} takes none by any route`
+            : `excluded from ${slot} by composition.roles.${view.role}`,
         chars: file.content.length,
         kind: file.level,
       })),
@@ -607,7 +646,11 @@ export function instructionStackSource(
     segments: () => {
       if (!loaded) return undefined;
       const slot = options.slot ?? 'instructions';
-      return slotSegments(slot, loaded.view.slots[slot].files, loaded.view.stacks[slot].labels);
+      return slotSegments(
+        loaded.view.slots[slot].files,
+        loaded.view.stacks[slot].labels,
+        loaded.view.framed[slot],
+      );
     },
   };
 }

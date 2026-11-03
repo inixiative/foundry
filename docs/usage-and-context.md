@@ -421,20 +421,19 @@ out, per slot:
 `general` names the nodes whose general files (unslotted: CLAUDE.md, AGENTS.md,
 rules, auto memory) compose into the slot. The default is `"all"` for
 instructions and none for domain knowledge, and role files compose either way.
-So a narrow Warden sets `"instructions": {"general": ["global"]}`: it keeps its
+So a narrow role sets `"instructions": {"general": ["global"]}`: it keeps its
 role files at every rung and reads only the personal global CLAUDE.md, not the
-whole org and project stack. The naming Warden sets `"domainKnowledge":
-{"general": ["org", "project"]}`, so the org and project CLAUDE.md are its
-domain knowledge.
+whole org and project stack. A region Warden takes no general files at all, in
+either slot, and a `general` pick for one is not applied (Aron, 2026-11-02; see
+Chorus, "Generated Wardens").
 
 **Tiers, per role.** A file reaches a role only if its tier is visible to the
 role's `audience`, in both slots, whether it was found, imported or opted in.
 So a personal node never reaches a `team` or `org` audience. A middleware
 role's output reaches the main thread (a Warden chiming in), so a role's
 audience is never wider in what it reads than `main`'s. If main is `team`,
-every role is at least `team`. Instruction files reach a Warden only through
-its own role: a Warden's `domainKnowledge` sources may not be `instructions`
-sources (use `general`). They must also be enabled. Role files under
+every role is at least `team`. A Warden's `domainKnowledge` sources may not
+be `instructions` sources. They must also be enabled. Role files under
 `~/.foundry` belong to the personal computer node wherever a symlink places
 them.
 
@@ -469,7 +468,7 @@ The message names the role, the sizes, the setting and the three largest
 files, and marks those a role opted in. For example: "naming Warden (role
 naming): instructions 4010 + domain knowledge 86182 = 90192 chars exceed its
 budget of 120000 (composition.roles.naming.budget); largest:
-.../CLAUDE.md (domainKnowledge, 50000 chars, opted in)".
+.../.foundry/roles/naming/domainKnowledge.md (domainKnowledge, 50000 chars)".
 
 ### Chorus (`projects[id].chorus`)
 
@@ -637,10 +636,39 @@ regions never run (Heralds are not built) and the view says so.
   standalone project agent per region: kind `domain-librarian`, domain
   `<region id>`, `invocation: always`, `guardTriggers` the write and exec tools
   (`REGION_GUARD_TRIGGERS`), its prompt the generic region instructions
-  (`REGION_WARDEN_INSTRUCTIONS`) plus the region's title and routing line. Its
-  composition defaults to `instructions: {general: []}` (the region is its
-  knowledge; it does not read the CLAUDE.md stack), and a
-  `composition.roles.<region id>` entry in settings still wins field by field.
+  (`REGION_WARDEN_INSTRUCTIONS`) plus the region's title and routing line.
+- **What a Warden composes from (Aron, 2026-11-02).** In order: Foundry's
+  charter (what a Warden is; fixed, never settings), its instructions (the
+  generated prompt, then the project's **Warden brief**, then its role files),
+  its region's knowledge (plus its `domainKnowledge` role files), and the
+  thread context of the call. Never the CLAUDE.md / AGENTS.md ladder: that is
+  written for the agent doing the work. `resolveProjectView` gives every region
+  role `general: []` in both slots (`agents/warden-brief.ts`,
+  `wardenComposition`); a `composition.roles.<region id>` entry keeps its other
+  picks (`exclude`, `budget`, `audience`); one naming nodes in `general` is not
+  applied and is reported (`view.chorus.ignoredComposition`, the Knowledge
+  page), never thrown, so a teammate's committed region never stops settings
+  loading. A role with no general file in either slot (a Warden, the
+  Cartographer) takes none by any other route either: an `@` import of
+  CLAUDE.md from its role files or the brief, or a slotted settings source
+  naming one, is dropped (`isGeneralFile`). The ids `main` and `cartographer`
+  are reserved: a region may not take them. There is no switch that brings the
+  ladder back. With no general files a
+  Warden's instructions carry no Claude Code preamble ("these instructions
+  OVERRIDE…"), which only frames CLAUDE.md-style files (`RoleView.framed`).
+- **The Warden brief.** A short, high-level explanation of the project for its
+  Wardens: what it is, its shape, its words. Committed at
+  `.foundry/warden-brief.md`, with a personal `.foundry/warden-brief.local.md`
+  beside it. It composes through the ladder like any md file (imports, tiers,
+  dedupe, `file:<path>` versions): the view adds two nodes,
+  `warden-brief` and `warden-brief-local` (reserved ids), for exactly the
+  project's region roles, instructions slot only, anchored at `{project}` (the
+  repository root of the thread's working directory, so a worktree reads its
+  branch's brief). They order with the project's level: after the region's
+  role file there, the shared brief before the personal one. The Knowledge
+  page shows the brief as the registered checkout has it. The Knowledge page shows it and the layer list;
+  `scripts/evals/warden-composition.ts` prints a project's composed Warden
+  prompts layer by layer with no model call.
   A region id that collides with a settings agent or source is an error;
   overlays go through role files. The view reports the result (`view.chorus`:
   `on` (Wardens run), what was asked (`enabled`, `enabledBy`), each layer as
@@ -777,27 +805,19 @@ nothing to the message. Every Warden runs under the fixed Warden charter
 
 **An example setup.** Main plus one region Warden, `naming` (the repository's
 `.foundry/regions/naming/`, its chorus enabled in `.foundry/project.json`; no
-Warden is written in settings), reading the org and project CLAUDE.md as extra
-domain knowledge, across computer, org, org personal, project and project
-personal. (Until 2026-10-17 this example was a hand-named Convention Warden in
-settings; the roster is retired.)
-
-```jsonc
-"composition": {
-  "harnessLoading": "suppress",
-  "roles": {
-    "naming": { "domainKnowledge": { "general": ["org", "project"] } }
-  }
-}
-```
+Warden is written in settings), across computer, org, org personal, project and
+project personal. (Until 2026-10-17 this example was a hand-named Convention
+Warden in settings; until 2026-11-02 it read the org and project CLAUDE.md as
+domain knowledge, which a Warden no longer can.)
 
 | Rung | main: instructions | naming Warden: instructions | naming Warden: domain knowledge |
 |---|---|---|---|
-| computer | `~/.claude/CLAUDE.md` (+ rules, `RTK.md`), `~/.foundry/roles/main/instructions.md` | `~/.foundry/roles/naming/instructions.md` (a region Warden's instructions read no general files: `general: []`) | `~/.foundry/roles/naming/domainKnowledge.md` |
-| org | `~/code/inixiative/CLAUDE.md`, `.foundry/roles/main/instructions.md` there | its own role file there | `~/code/inixiative/CLAUDE.md`, `.foundry/roles/naming/domainKnowledge.md` there |
+| (Foundry) | | the Warden charter, then the region's generated prompt | the region's `knowledge.md` |
+| computer | `~/.claude/CLAUDE.md` (+ rules, `RTK.md`), `~/.foundry/roles/main/instructions.md` | `~/.foundry/roles/naming/instructions.md` | `~/.foundry/roles/naming/domainKnowledge.md` |
+| org | `~/code/inixiative/CLAUDE.md`, `.foundry/roles/main/instructions.md` there | its own role file there | `.foundry/roles/naming/domainKnowledge.md` there |
 | org personal | `~/code/inixiative/CLAUDE.local.md` | `.foundry/roles/naming/instructions.local.md` there | `.foundry/roles/naming/domainKnowledge.local.md` there |
-| project | `<repo>/CLAUDE.md`, `AGENTS.md`, `.claude/rules` | role file only | `<repo>/CLAUDE.md` and the rest of the project node |
-| project personal | `<repo>/CLAUDE.local.md`, auto memory | `.foundry/roles/naming/instructions.local.md` | `.foundry/roles/naming/domainKnowledge.local.md` |
+| project | `<repo>/CLAUDE.md`, `AGENTS.md`, `.claude/rules` | its role file, then `<repo>/.foundry/warden-brief.md` | its role file |
+| project personal | `<repo>/CLAUDE.local.md`, auto memory | `.foundry/roles/naming/instructions.local.md`, then `<repo>/.foundry/warden-brief.local.md` | `.foundry/roles/naming/domainKnowledge.local.md` |
 
 **Test cases** (`tests/composition-view.test.ts`, core
 `markdown-hierarchy.test.ts`):
