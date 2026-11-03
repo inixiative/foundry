@@ -489,14 +489,21 @@ function ComposerImage({ image, onRemove }) {
 const drafts = new Map();
 
 function ChatInput() {
-  const [text, setText] = useState(() => drafts.get(activeThreadId.peek()) ?? '');
+  const [text, setTextState] = useState(() => drafts.get(activeThreadId.peek()) ?? '');
+  // The one writer of the draft: kept at once, so a view that replaces the box (Search, the board)
+  // before the next render keeps every keystroke. An effect would run after paint, stale.
+  const setText = (next) =>
+    setTextState((current) => {
+      const value = typeof next === 'function' ? next(current) : next;
+      drafts.set(activeThreadId.peek(), value);
+      return value;
+    });
   const [asideError, setAsideError] = useState(null);
   const asidePost = useRef(null);
   // Mirror the draft so a waiting card can send it with its answer (which then empties the box
   // through composerFill).
   useEffect(() => {
     composerNote.value = text;
-    drafts.set(activeThreadId.peek(), text);
   }, [text]);
   const fill = composerFill.value;
   useEffect(() => {

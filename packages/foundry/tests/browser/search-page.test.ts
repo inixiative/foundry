@@ -104,8 +104,8 @@ test('Search: its own page, settings and docs first, preview, open a setting, Es
 
     await page.goto(`http://127.0.0.1:${server.port}/#thread=shop-1`);
     await page.locator('.context-bar-title', { hasText: 'Cap checkout retries' }).waitFor();
-    await page.locator('body').click({ position: { x: 5, y: 5 } });
-    await page.keyboard.press('/');
+    // / types in the message box; ⌥⇧F opens Search from anywhere.
+    await page.keyboard.press('Alt+Shift+KeyF');
 
     // Its own page: the top bar and Search, no rail, thread panel or composer.
     const search = page.locator('.search-page');
@@ -280,8 +280,8 @@ test('Search: a message opens its Foundry thread; other sessions say what they a
 
     await page.goto(`http://127.0.0.1:${server.port}/#thread=shop-2`);
     await page.locator('.context-bar-title', { hasText: 'Refund drift' }).waitFor();
-    await page.locator('body').click({ position: { x: 5, y: 5 } });
-    await page.keyboard.press('/');
+    // / types in the message box; ⌥⇧F opens Search from anywhere.
+    await page.keyboard.press('Alt+Shift+KeyF');
     const input = page.locator('.search-input');
     await input.fill('jitter');
     const messages = page.locator('.search-group', { hasText: 'Messages' });

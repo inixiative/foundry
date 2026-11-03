@@ -57,15 +57,55 @@ test('panel sizes step with [ { ] }; hidden keeps its column at 0 with a restore
     await page.locator('.running.is-folded').waitFor();
     await page.locator('body').click({ position: { x: 800, y: 5 } });
 
+    // Each control points where it moves the panel's inner edge: larger toward the centre (left list
+    // right, right panel left), smaller toward the screen edge; and sits on the side it points to.
+    const toward = (name: string) =>
+      page.getByRole('button', { name }).locator('svg').getAttribute('data-toward');
+    expect(await toward('Make the left list larger')).toBe('right');
+    expect(await toward('Make the left list smaller')).toBe('left');
+    expect(await toward('Make the right panel larger')).toBe('left');
+    expect(await toward('Make the right panel smaller')).toBe('right');
+    const order = (side: string) =>
+      page
+        .locator(`.size-controls--${side} .size-btn`)
+        .evaluateAll((els: Element[]) =>
+          els.map((el) => (el.classList.contains('size-btn--larger') ? 'larger' : 'smaller')),
+        );
+    expect(await order('left')).toEqual(['smaller', 'larger']);
+    expect((await order('right')).slice(0, 2)).toEqual(['larger', 'smaller']);
+    // And resizes that way.
+    const right = async () => Number.parseFloat((await columns()).split(' ').at(-1)!);
+    const before = await right();
+    await page.getByRole('button', { name: 'Make the right panel larger' }).first().click();
+    await page.waitForFunction(
+      (w: number) =>
+        Number.parseFloat(
+          getComputedStyle(document.querySelector('.panels')!)
+            .gridTemplateColumns.split(' ')
+            .at(-1)!,
+        ) > w,
+      before,
+    );
+    await page.getByRole('button', { name: 'Make the right panel smaller' }).first().click();
+    await page.waitForFunction(
+      (w: number) =>
+        Number.parseFloat(
+          getComputedStyle(document.querySelector('.panels')!)
+            .gridTemplateColumns.split(' ')
+            .at(-1)!,
+        ) === w,
+      before,
+    );
+
     // Left: normal → strip → hidden; the column stays, at 0, and the centre doesn't move left of it.
-    await page.keyboard.press('[');
+    await page.keyboard.press('Alt+BracketLeft');
     await page.waitForFunction(() =>
       getComputedStyle(document.querySelector('.panels')!).gridTemplateColumns.startsWith('32px'),
     );
     // A strip shows only "larger".
     expect(await page.getByRole('button', { name: 'Make the left list smaller' }).count()).toBe(0);
     expect(await page.getByRole('button', { name: 'Make the left list larger' }).count()).toBe(1);
-    await page.keyboard.press('[');
+    await page.keyboard.press('Alt+BracketLeft');
     await page.waitForFunction(() =>
       getComputedStyle(document.querySelector('.panels')!).gridTemplateColumns.startsWith('0px'),
     );
@@ -77,16 +117,16 @@ test('panel sizes step with [ { ] }; hidden keeps its column at 0 with a restore
     );
 
     // Up to wide: no "larger" left at the limit.
-    await page.keyboard.press('{');
-    await page.keyboard.press('{');
+    await page.keyboard.press('Alt+Shift+BracketLeft');
+    await page.keyboard.press('Alt+Shift+BracketLeft');
     await page.waitForFunction(() =>
       getComputedStyle(document.querySelector('.panels')!).gridTemplateColumns.startsWith('360px'),
     );
     expect(await page.getByRole('button', { name: 'Make the left list larger' }).count()).toBe(0);
 
     // Right: hidden gets its own restore tab on the right edge.
-    await page.keyboard.press(']');
-    await page.keyboard.press(']');
+    await page.keyboard.press('Alt+BracketRight');
+    await page.keyboard.press('Alt+BracketRight');
     await page.waitForFunction(() =>
       getComputedStyle(document.querySelector('.panels')!).gridTemplateColumns.endsWith(' 0px'),
     );

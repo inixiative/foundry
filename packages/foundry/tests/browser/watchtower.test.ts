@@ -49,7 +49,7 @@ test('h opens the Watchtower: every stage is a column, a thread is a card, a car
     await page.goto(`${origin}/#thread=main`);
     await page.locator('textarea.chat-input').waitFor();
     await page.locator('body').click();
-    await page.keyboard.press('h');
+    await page.keyboard.press('Alt+KeyH');
     const tower = page.locator('.watchtower');
     await tower.waitFor();
     await page.waitForFunction(() => location.hash.includes('view=watch'));
@@ -97,7 +97,7 @@ test('h opens the Watchtower: every stage is a column, a thread is a card, a car
     ).toBe('true');
     await page.keyboard.press('Escape');
     await page.locator('body').click();
-    await page.keyboard.press('h');
+    await page.keyboard.press('Alt+KeyH');
     await tower.waitFor();
 
     // The counts line filters; the machine strip names this machine.
@@ -120,7 +120,7 @@ test('h opens the Watchtower: every stage is a column, a thread is a card, a car
     ).toBe('true');
     await page.keyboard.press('Escape');
     await page.waitForFunction(() => !location.hash.includes('view=watch'));
-    await page.keyboard.press('h');
+    await page.keyboard.press('Alt+KeyH');
 
     await page.reload();
     await tower.waitFor();
