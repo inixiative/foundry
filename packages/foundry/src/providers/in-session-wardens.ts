@@ -476,13 +476,18 @@ export class InSessionWardens {
     };
     entry.live = running;
     entry.recycles = [];
-    // A roster that changed while this host started is held now.
-    if (entry.rosterKey !== started) host.prestart(projectId, entry.roster);
     void proc.ended.then((why) => {
       if (entry.live === running) this._replace(projectId, `process ended (${why})`);
     });
     this._report(projectId);
     if (previous) void this._retire(previous);
+    // A roster that changed while this host started: held in place, or by a new host when it
+    // outgrew this one's bounds.
+    if (entry.rosterKey !== started) {
+      if (entry.roster.length <= size) host.prestart(projectId, entry.roster);
+      // Once this start has settled (`_replace` starts nothing while one is starting).
+      else setTimeout(() => this._replace(projectId, 'roster grew'), 0);
+    }
   }
 
   /** Stop a host routing no longer reaches, once its calls in flight have settled (bounded). */

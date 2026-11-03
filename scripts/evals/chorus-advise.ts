@@ -40,7 +40,9 @@
  * advice asked there, guards, reviews and later stages primed. --message-file may be given several
  * times: the messages go through one set of hosts in order, --gap-ms apart (0: back to back), each
  * into `<out>/<n>/`; host.json then records per message how many Warden calls a held spare served
- * (`warm`) or started their own member (`cold`), their latencies, and the host's memory over the run.
+ * (`warm`) or started their own member (`cold`), their latencies, how long after the message every
+ * Warden was held again (`refillMs`, null when the next message came first), and the host's memory
+ * over the run.
  */
 import { createHash } from 'node:crypto';
 import { appendFileSync, existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -574,6 +576,25 @@ const writeChorus = (
   console.log(join(dir, 'chorus.json'));
 };
 let sampler: ReturnType<typeof setInterval> | undefined;
+/** Refills being timed: from a message's end until every Warden is held again, or the next message. */
+const refills: Promise<void>[] = [];
+let messagesSent = 0;
+const timeRefill = (record: Record<string, unknown>, from: number, index: number) =>
+  (async () => {
+    for (;;) {
+      const state = projectHosts?.projectState(projectId);
+      if (state && state.held === state.expected) {
+        record.refillMs = Date.now() - from;
+        return;
+      }
+      if (messagesSent > index + 1 || Date.now() - from > 120_000) {
+        record.refillMs = null;
+        record.heldWhenInterrupted = state?.held ?? null;
+        return;
+      }
+      await Bun.sleep(100);
+    }
+  })();
 try {
   if (projectHosts) {
     const t0 = Date.now();
@@ -624,9 +645,12 @@ try {
     hostCalls.push(primeCalls);
     let refillMs: number | undefined;
     await quota();
-    const before = await recordWindows('before');
+    // Back to back, a window probe between messages would itself be a gap: only the run's ends.
+    const probe = gapMs > 0 || messages.length === 1;
+    const before = probe || n === 0 ? await recordWindows('before') : undefined;
     const startedAt = new Date().toISOString();
     let heldAtStart = projectHosts?.projectState(projectId)?.held;
+    messagesSent = n + 1;
     const advice = await adviseOnce({
       config,
       projectId,
@@ -651,7 +675,8 @@ try {
       journal: (record) => appendFileSync(journalFile, `${JSON.stringify(record)}\n`),
       warn: (line) => console.error(line),
     });
-    const after = await recordWindows('after');
+    const adviceEnd = Date.now();
+    const after = probe || n === messages.length - 1 ? await recordWindows('after') : undefined;
     const calls = hostCalls.at(-1) ?? [];
     // Layer 1 per Warden: the advice decisions' own elapsed time, whatever served them.
     const layer1 = advice.decisions
@@ -676,8 +701,10 @@ try {
       layer1Ms: pcts(layer1),
       windows: { before: before ?? null, after: after ?? null },
     });
+    if (projectHosts) refills.push(timeRefill(perMessage.at(-1)!, adviceEnd, n));
     writeChorus(dir, n, advice, startedAt, before, after);
   }
+  await Promise.all(refills);
 } finally {
   clearInterval(sampler);
   hostReport.final = projectHosts?.projectState(projectId) ?? null;

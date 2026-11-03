@@ -206,16 +206,33 @@ export function inSessionTarget(
 }
 
 /**
- * Launch flags of a project host (beside `--setting-sources ''`): no MCP server but the host's own,
- * no slash commands, no session written to disk (`persistSession: false`).
+ * Launch flags of a project host (beside `--setting-sources ''`), as bare as a subscription launch
+ * goes (Aron, 2026-11-02: "wardens should be as bare as possible"; `--bare` and
+ * `CLAUDE_CODE_SIMPLE` refuse subscription logins): no MCP server but the host's own, no slash
+ * commands or skills, the per-machine prompt sections out of the system prompt, no session written
+ * to disk (`persistSession: false`).
  */
 export const PROJECT_HOST_ARGS: readonly string[] = [
   '--strict-mcp-config',
   '--mcp-config',
   JSON.stringify({ mcpServers: { 'foundry-wardens': { type: 'sdk', name: 'foundry-wardens' } } }),
   '--disable-slash-commands',
+  '--exclude-dynamic-system-prompt-sections',
   '--no-chrome',
 ];
+
+/**
+ * A project host's environment over the login's: no CLAUDE.md, no telemetry or other
+ * non-essential traffic, no autoupdate. A `claude setup-token` login reaches it as
+ * `CLAUDE_CODE_OAUTH_TOKEN` through the login's own launch (`NativeAuthentication`), so the CLI
+ * reads no keychain; the default login is read by the CLI as usual.
+ */
+export const PROJECT_HOST_ENV: Readonly<Record<string, string>> = Object.freeze({
+  ...CLAUDE_HARNESS_INSTRUCTIONS_OFF,
+  CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1',
+  DISABLE_TELEMETRY: '1',
+  DISABLE_AUTOUPDATER: '1',
+});
 
 /**
  * One primed decision host per decision profile. Every middleware role keeps its own primed
@@ -719,14 +736,12 @@ export function createPrimedDecisionHost(config: PrimedDecisionHostConfig) {
         maxTurns: null,
         persistSession: false,
         // The login's profile; the Wardens are their own instructions, never the user's CLAUDE.md.
-        env: {
-          ...profileEnvironment('claude', source.profileDirectory),
-          ...CLAUDE_HARNESS_INSTRUCTIONS_OFF,
-        },
+        env: { ...profileEnvironment('claude', source.profileDirectory), ...PROJECT_HOST_ENV },
         spawn: (argv, options) => {
           child = claudeSpawn([...argv, ...PROJECT_HOST_ARGS], options, {
             ...options.env,
             ...claude.env(),
+            ...PROJECT_HOST_ENV,
           });
           return child;
         },

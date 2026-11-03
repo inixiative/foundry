@@ -148,6 +148,16 @@ test('a project host holds the roster before any thread; every thread of the pro
   expect(await until(() => tree.processes[0]!.exited)).toBe(true);
 });
 
+test('a roster that grows while its host starts gets a host sized for it', async () => {
+  const { wardens } = projectHosts();
+  wardens.openProject('P', roster('locks'));
+  wardens.openProject('P', roster('locks', 'lens', 'naming'));
+  expect(await until(() => wardens.projectState('P')?.generation === 2)).toBe(true);
+  expect(await wardens.projectReady('P', 5_000)).toBe(true);
+  expect(wardens.projectState('P')).toMatchObject({ expected: 3, held: 3 });
+  expect(wardens.projectState('P')!.resets).toEqual({ 'roster grew': 1 });
+});
+
 test('a host process that dies: routing falls back at once, and a new host is started and serves', async () => {
   const { tree, wardens } = projectHosts();
   wardens.openProject('P', roster('locks'));
@@ -302,7 +312,13 @@ test('the decision host launches the project host on the decision login: its own
   expect(launch.argv).toContain('--strict-mcp-config');
   expect(launch.argv[launch.argv.indexOf('--effort') + 1]).toBe('low');
   expect(launch.argv.slice(-2)).toEqual(['--setting-sources', '']);
-  expect(launch.env.CLAUDE_CODE_DISABLE_CLAUDE_MDS).toBe('1');
+  expect(launch.argv).toContain('--exclude-dynamic-system-prompt-sections');
+  expect(launch.env).toMatchObject({
+    CLAUDE_CODE_DISABLE_CLAUDE_MDS: '1',
+    CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1',
+    DISABLE_TELEMETRY: '1',
+    DISABLE_AUTOUPDATER: '1',
+  });
   expect(Object.keys(launch.env).filter((key) => /API_KEY|AUTH_TOKEN/.test(key))).toEqual([]);
   const run = primed.createRun({
     source: defaultProfileSource('claude'),
@@ -441,4 +457,55 @@ test('other runtimes keep composing at the thread: a worktree thread reads its o
   const dir = project();
   const fromWorktree = await threadHeld(config(dir, 'claude'), join(dir, '.worktrees', 'feat'));
   expect(fromWorktree.get('lens-model')!.instructions).toContain('WORKTREE_ROLE_FILE');
+});
+
+test('claude-project: a handoff brief (flow.brief) asks every Warden through the advice path, routed to the project host', async () => {
+  isolatedHome();
+  const dir = project();
+  const c = config(dir, 'claude-project');
+  const roster = await composeProjectRoster({
+    config: c,
+    projectId: 'P',
+    decisions: nothing,
+    resolveSource: createSourceResolver({ memory: new FileMemory(join(tempDir('mem'), 'm')) }),
+  });
+  const held = new Set(roster.map((e) => e.spec.hash));
+  const host = { serving: () => true } as unknown;
+  const hosts = { mode: 'project', serving: () => host } as unknown as InSessionWardens;
+  const calls: Array<{ routed: boolean; held: boolean }> = [];
+  const recording: LLMProvider = {
+    id: 'flow',
+    complete: async (messages, opts = {}) => {
+      const key = opts.threadId ?? '';
+      if (isWardenSession(key) && !isStageSession(key))
+        calls.push({
+          routed: inSessionTarget(hosts, key, opts) === host,
+          held: held.has(primedRequest(messages, opts, key).spec.hash),
+        });
+      return { model: 'none', content: 'NO_COMMENT' };
+    },
+  };
+  await withChorusThread(
+    {
+      config: c,
+      projectId: 'P',
+      cwd: join(dir, '.worktrees', 'feat'),
+      decisions: recording,
+      agentProvider: (id) => ({ id, complete: async () => ({ model: 'none', content: '' }) }),
+      resolveSource: createSourceResolver({ memory: new FileMemory(join(tempDir('mem'), 'm')) }),
+    },
+    async ({ live }) => {
+      await warmWardens(live);
+      await live.flowOrchestrator.brief({
+        childThreadId: 'child',
+        handoffId: 'h1',
+        description: 'add the lock',
+        prompt: 'Add a lock around the sync job.',
+      });
+    },
+  );
+  expect(calls.length).toBe(2);
+  expect(calls.every((c) => c.routed)).toBe(true);
+  // The handoff's charter is the advice charter: the brief is served by a held spare.
+  expect(calls.every((c) => c.held)).toBe(true);
 });
