@@ -29,6 +29,7 @@ import { createFoundryMcp } from '../src/mcp/server';
 import {
   resolveSecretsSettings,
   SecretScratch,
+  secretNote,
   validateSecretsSettings,
 } from '../src/secrets/scratch';
 import { SECRET_SCRATCH_DESCRIPTION, SecretScratchTool } from '../src/tools/secret-scratch';
@@ -133,6 +134,60 @@ test('the tools never return a value: env into a file, pipe from it, list and co
   );
   expect((await run('secret_scratch', { action: 'consume', ref: '†turn_a.1' })).isError).toBe(true);
   expect(results.join('\n')).not.toContain(SECRET);
+});
+
+test('a token sent without $$ is lifted by its shape and leaves a one-time reminder; a plain password line only a reminder', async () => {
+  const b = await bridge();
+  const token = `ghp_${'Z'.repeat(36)}`;
+  const lifted = b.secrets.lift(b.thread, 'turn_r', `here is ${token} and $$marked-value`);
+  expect(lifted.text).toBe('here is †turn_r.1 and †turn_r.2');
+  const note = b.secrets.note('turn_r');
+  expect(note).toContain('a secret the person sent without $$');
+  expect(note).toContain('$$value');
+  expect(b.secrets.note('turn_r')).toBeUndefined();
+  b.secrets.lift(b.thread, 'turn_p', 'the db is DB_PASSWORD=hunter2hunter2');
+  expect(b.secrets.note('turn_p')).toContain('plain text');
+  b.secrets.lift(b.thread, 'turn_q', 'only $$marked-value here');
+  expect(b.secrets.note('turn_q')).toBeUndefined();
+  expect(secretNote({ lifted: 2, plain: false })).toContain('2 secrets');
+});
+
+test('ordinary words are never lifted, and a lifted key in an assignment is not called plain text', async () => {
+  const b = await bridge();
+  const ordinary =
+    'branch feat/task-secret-recognise-lift, file task-runner-configuration-file.md, test should_test_handlesEveryCaseGracefully';
+  expect(b.secrets.lift(b.thread, 'turn_w', ordinary).text).toBe(ordinary);
+  expect(b.secrets.note('turn_w')).toBeUndefined();
+  // A Stripe key fits the snake_case shape and carries digits: lifted.
+  expect(b.secrets.lift(b.thread, 'turn_s', `sk_live_51Hq${'x9'.repeat(12)}`).text).toBe(
+    '†turn_s.1',
+  );
+  const key = `sk-ant-api03-${'Ab1'.repeat(10)}`;
+  const assigned = b.secrets.lift(b.thread, 'turn_k', `export ANTHROPIC_API_KEY=${key}`);
+  expect(assigned.text).toBe('export ANTHROPIC_API_KEY=†turn_k.1');
+  expect(b.secrets.note('turn_k')).not.toContain('plain text');
+  b.secrets.lift(b.thread, 'turn_m', 'PASSWORD= $$hunter2hunter2');
+  expect(b.secrets.note('turn_m')).toBeUndefined();
+  // `$$` mid-word is no marker, so that secret stays in plain text, and the reminder says so.
+  expect(b.secrets.lift(b.thread, 'turn_n', 'PASSWORD=$$hunter2hunter2').text).toBe(
+    'PASSWORD=$$hunter2hunter2',
+  );
+  expect(b.secrets.note('turn_n')).toContain('plain text');
+});
+
+test('a message refused after its lift leaves no reminder behind', async () => {
+  const b = await bridge();
+  const lifted = b.secrets.lift(b.thread, 'turn_f', `ghp_${'Q'.repeat(36)}`);
+  b.secrets.forget(b.thread.id, lifted.refs);
+  expect(b.secrets.note('turn_f')).toBeUndefined();
+  expect(b.secrets.list(b.thread.id)).toEqual([]);
+});
+
+test('with the setting off a pasted token is left alone and no reminder is made', async () => {
+  const b = await bridge(false);
+  const token = `ghp_${'Y'.repeat(36)}`;
+  expect(b.secrets.lift(b.thread, 'turn_o', token).text).toBe(token);
+  expect(b.secrets.note('turn_o')).toBeUndefined();
 });
 
 test('a leftover pad of another thread of the same project is reached with the full reference', async () => {

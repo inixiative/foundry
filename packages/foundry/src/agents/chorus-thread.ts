@@ -36,6 +36,8 @@ export interface ChorusThreadOptions {
   readonly atlasRoot?: string;
   /** Every phase record (route, advice) the runtime journals, as the daemon's journal receives it. */
   readonly journal?: (record: PhaseRecordInput) => void;
+  /** The secret scratch pad's reminder for a message (`ThreadRuntimeDeps.secretNote`). */
+  readonly secretNote?: ThreadRuntimeDeps['secretNote'];
   /** The thread's id; its Wardens' sessions are keyed by it (`<thread>:aux:domain:<d>`). */
   readonly threadId?: string;
   readonly log?: (line: string) => void;
@@ -81,6 +83,7 @@ export async function withChorusThread<T>(
     resolveSource: opts.resolveSource,
     ...(opts.stageHost ? { stageHost: opts.stageHost } : {}),
     ...(opts.atlasRoot ? { atlasRoot: opts.atlasRoot } : {}),
+    ...(opts.secretNote ? { secretNote: opts.secretNote } : {}),
     log: opts.log ?? (() => {}),
     warn: opts.warn ?? ((line) => console.warn(line)),
   });

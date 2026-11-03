@@ -60,6 +60,8 @@ export interface ChorusAdviseOptions {
    * or waiting for a project host to hold its spares again).
    */
   readonly onPrimed?: () => void | Promise<void>;
+  /** The secret scratch pad's reminder for the message (`ThreadRuntimeDeps.secretNote`). */
+  readonly secretNote?: ThreadRuntimeDeps['secretNote'];
   readonly log?: (line: string) => void;
   readonly warn?: (line: string) => void;
 }
@@ -197,6 +199,7 @@ export async function adviseOnce(opts: ChorusAdviseOptions): Promise<ChorusAdvic
       resolveSource: opts.resolveSource,
       ...(opts.atlasRoot ? { atlasRoot: opts.atlasRoot } : {}),
       ...(opts.journal ? { journal: opts.journal } : {}),
+      ...(opts.secretNote ? { secretNote: opts.secretNote } : {}),
       threadId,
       ...(opts.log ? { log: opts.log } : {}),
       ...(opts.warn ? { warn: opts.warn } : {}),
