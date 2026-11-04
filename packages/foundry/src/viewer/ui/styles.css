@@ -7621,9 +7621,13 @@ a.thread-ref:hover {
 .tree-node:hover {
   background: hsl(var(--foreground) / 0.04);
 }
+/* The open thread: the accent selection the project list uses (tint + bar), name in full weight. */
 .tree-node.selected {
-  background: var(--raise);
-  box-shadow: none;
+  background: var(--accent-dim);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+.tree-node.selected .row-text .tree-label {
+  font-weight: 650;
 }
 .row-text {
   display: flex;
@@ -9435,8 +9439,16 @@ a.thread-ref:hover {
 .ph-line.is-warn > i {
   background: hsl(38 87% 69%);
 }
-.ph-actions {
-  margin-top: 6px;
+/* The first thing on a project's page: one large primary New thread button, full width. */
+.project-home > .ph-new-thread {
+  display: block;
+  width: 100%;
+  margin: 0 0 14px;
+  padding: 14px 18px;
+  border-radius: 12px;
+  font: 650 17px var(--font);
+  letter-spacing: -0.01em;
+  text-align: center;
 }
 .ph-link {
   align-self: flex-start;
@@ -9515,6 +9527,23 @@ a.thread-ref:hover {
 }
 .rail-new-thread:hover {
   border-color: hsl(var(--app-primary) / 0.6);
+}
+/* In a scope's thread list, New thread is the first row, above the project's Feedback. */
+.rail-new-thread--block {
+  display: block;
+  width: calc(100% - 16px);
+  margin: 4px 8px 6px;
+  padding: 7px 10px;
+  border-color: transparent;
+  border-radius: 8px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font: 600 13px var(--font);
+  text-align: center;
+}
+.rail-new-thread--block:hover {
+  border-color: transparent;
+  filter: brightness(1.08);
 }
 .header-divider + .header-divider {
   display: none;

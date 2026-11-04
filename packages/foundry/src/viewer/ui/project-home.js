@@ -4,7 +4,7 @@
  * @partOf feature:viewer
  */
 /**
- * A project's home page (and Global's): its threads with their status, the chorus, feedback, the
+ * A project's home page (and Global's): first a large New thread button, then its threads with their status, the chorus, feedback, the
  * Archive and its links. Opened from the Projects list; a thread row opens the thread.
  */
 
@@ -131,6 +131,7 @@ export function ProjectHome() {
             </span>`
       }
     </header>
+    <button type="button" class="proj-btn is-go ph-new-thread" onClick=${() => openNewThread()}>+ New thread</button>
     <div class="ph-grid">
       ${isGlobal ? null : html`<section class="ph-box ph-about"><h4>About</h4><${About} projectId=${projectId} project=${project} /></section>`}
       ${
@@ -140,7 +141,6 @@ export function ProjectHome() {
         ${open.length ? open.map((t) => html`<${ThreadRow} key=${t.threadId} thread=${t} />`) : html`<div class="ph-meta">Nothing open.</div>`}
         ${inactive.length ? html`<div class="ph-sub">Inactive · ${inactive.length}</div>${inactive.map((t) => html`<${ThreadRow} key=${t.threadId} thread=${t} />`)}` : null}
         ${closed.length ? html`<div class="ph-meta">${closed.length} closed</div>` : null}
-        <div class="ph-actions"><button type="button" class="proj-btn" onClick=${() => openNewThread()}>+ New thread</button></div>
       </section>`
           : null
       }

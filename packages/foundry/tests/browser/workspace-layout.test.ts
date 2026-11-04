@@ -204,9 +204,16 @@ test('a new thread is selected and takes the first send; one status line while i
     await threads.filter({ hasText: 'Watched work' }).waitFor();
     const before = await threads.count();
 
-    // "+" creates the thread and selects it: an unnamed thread reads "New thread · HH:MM", its id in the tooltip.
-    await page.getByTitle('New thread').click();
-    await page.locator('.thread-add-form').getByRole('button', { name: 'create' }).click();
+    // New thread is the list's first row, above the project's Feedback, and opens the New thread picker.
+    const listRows: string[] = await page
+      .locator('.thread-list > *')
+      .evaluateAll((els: Element[]) => els.map((el) => el.className));
+    expect(listRows.findIndex((c) => c.includes('rail-new-thread'))).toBeLessThan(
+      listRows.findIndex((c) => c.includes('feedback-strip')),
+    );
+    // Starting it creates the thread and selects it: an unnamed thread reads "New thread · HH:MM", its id in the tooltip.
+    await page.locator('.thread-list .rail-new-thread--block').click();
+    await page.locator('.new-thread-modal [data-run="start"]:not([disabled])').click();
     const selected = page.locator('.nav-threads .tree-node.selected .tree-label');
     await selected.filter({ hasText: /^New thread · \d{1,2}:\d{2}/ }).waitFor();
     expect(await selected.getAttribute('class')).toContain('tree-label--unnamed');
