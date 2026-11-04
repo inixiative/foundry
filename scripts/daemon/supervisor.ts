@@ -13,7 +13,8 @@
  * new ones wait) and it restarts when the last one finishes (watch.ts,
  * packages/foundry/src/daemon/restart-roll.ts). Local services come up first. A candidate
  * that fails to boot (it throws, or is still booting at the boot deadline) falls back to
- * stable; a stable boot that fails on changed settings restores the last settings that booted.
+ * stable; a stable boot still booting at the deadline relaunches; a stable boot that fails on
+ * changed settings restores the last settings that booted.
  */
 import { recordBooted, restoreAfterFailedBoot } from './last-good';
 import { ensureServices } from './services';
@@ -91,13 +92,17 @@ if (Number.isSafeInteger(checkSeconds) && checkSeconds >= 30)
 log(
   `starting ${release.trial ? 'candidate' : 'stable'} ${short(release.sha)} on port ${process.env.VIEWER_PORT ?? '4500'}`,
 );
-// A candidate still booting at the deadline is a failed boot; stable has nothing to fall back to.
+// A boot still running at the deadline is a failed boot: a candidate is marked failed and the
+// relaunch runs stable; a stable boot just relaunches (and picks up a newer candidate if one is staged).
+let bootSettled = false;
 const bootDeadline =
-  release.trial && Number.isSafeInteger(bootTimeoutSeconds) && bootTimeoutSeconds > 0
+  Number.isSafeInteger(bootTimeoutSeconds) && bootTimeoutSeconds > 0
     ? setTimeout(async () => {
-        await rejectCandidate(configDir, release.sha);
+        if (bootSettled) return;
+        bootSettled = true;
+        if (release.trial) await rejectCandidate(configDir, release.sha);
         log(
-          `candidate ${short(release.sha)} was still booting after ${bootTimeoutSeconds}s; marked failed, relaunching on stable`,
+          `${release.trial ? 'candidate' : 'stable'} ${short(release.sha)} was still booting after ${bootTimeoutSeconds}s; ${release.trial ? 'marked failed, relaunching on stable' : 'relaunching'}`,
         );
         process.exit(1);
       }, bootTimeoutSeconds * 1000)
@@ -119,6 +124,9 @@ try {
   throw error;
 }
 clearTimeout(bootDeadline);
+// The deadline already ruled (it is rejecting and exiting): don't also record this boot.
+if (bootSettled) await new Promise(() => {});
+bootSettled = true;
 await recordBoot(configDir, release);
 if (release.trial) log(`candidate ${short(release.sha)} booted; it is now stable`);
 await recordBooted(configDir);
