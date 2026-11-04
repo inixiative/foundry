@@ -8,8 +8,13 @@
  * checkout: it runs a release, an exported commit with its own install under
  * <config>/releases/<sha>. An update builds origin/main as the candidate; the
  * next boot runs it on trial, and a boot that completes makes it stable. A
- * candidate that fails to boot is marked failed, never retried, and the
- * relaunch runs stable. Only stable and the release before it are kept.
+ * candidate that fails to boot (it throws, or runs past the supervisor's boot
+ * deadline) is marked failed and the relaunch runs stable; the same commit is
+ * not tried again, the next commit on main is. A boot cut off before any
+ * verdict (a restart, a kill, a reboot) is not a failure: it is tried again,
+ * and only a third boot in a row that dies without a verdict marks it failed,
+ * since a crash on boot repeats and an interruption doesn't. Only stable and
+ * the release before it are kept.
  */
 
 import { mkdir, readdir, rename, rm } from 'node:fs/promises';
@@ -25,8 +30,10 @@ export interface ReleaseState {
   stable?: string;
   previous?: string;
   candidate?: string;
-  /** Set while a candidate boots; still set on the next launch means that boot died. */
+  /** Set while a candidate boots; still set on the next launch means that boot was cut off. */
   booting?: string;
+  /** Boots of `booting` cut off before a verdict, so far. */
+  interruptedBoots?: number;
   failed: string[];
 }
 
@@ -34,6 +41,8 @@ export interface Release {
   sha: string;
   dir: string;
   trial: boolean;
+  /** Set on a trial whose earlier boots were cut off: how many were. */
+  interruptedBoots?: number;
 }
 
 export interface UpdateResult {
@@ -47,6 +56,8 @@ export type PrepareRelease = (dir: string) => Promise<void>;
 
 const READY_MARKER = '.release-ready';
 const KEEP_FAILED = 20;
+/** A third boot in a row that dies without a verdict marks the candidate failed. */
+export const MAX_INTERRUPTED_BOOTS = 3;
 
 const releasesRoot = (configDir: string) => join(configDir, 'releases');
 const statePath = (configDir: string) => join(releasesRoot(configDir), 'state.json');
@@ -116,7 +127,10 @@ export const rejectCandidate = async (configDir: string, sha: string): Promise<v
   const state = await readState(configDir);
   state.failed = [...state.failed.filter((failed) => failed !== sha), sha].slice(-KEEP_FAILED);
   if (state.candidate === sha) state.candidate = undefined;
-  if (state.booting === sha) state.booting = undefined;
+  if (state.booting === sha) {
+    state.booting = undefined;
+    state.interruptedBoots = undefined;
+  }
   await writeState(configDir, state);
   await prune(configDir, state);
 };
@@ -160,8 +174,8 @@ export const stageUpdate = async (
 
 /**
  * The release to boot: the candidate on trial, else stable. A candidate whose
- * previous boot never completed is rejected first. The first run seeds stable
- * from the checkout's HEAD.
+ * previous boot was cut off is tried again, up to MAX_INTERRUPTED_BOOTS cut-off
+ * boots in a row, then rejected. The first run seeds stable from the checkout's HEAD.
  */
 export const selectRelease = async (
   repoRoot: string,
@@ -169,19 +183,29 @@ export const selectRelease = async (
   prepare = installRelease,
 ): Promise<Release> => {
   let state = await readState(configDir);
-  if (state.candidate && state.booting === state.candidate) {
+  const interrupted =
+    state.candidate && state.booting === state.candidate ? (state.interruptedBoots ?? 0) + 1 : 0;
+  if (state.candidate && interrupted >= MAX_INTERRUPTED_BOOTS) {
     await rejectCandidate(configDir, state.candidate);
     state = await readState(configDir);
   }
   if (state.candidate) {
     state.booting = state.candidate;
+    state.interruptedBoots = interrupted || undefined;
     await writeState(configDir, state);
-    return { sha: state.candidate, dir: releaseDir(configDir, state.candidate), trial: true };
+    return {
+      sha: state.candidate,
+      dir: releaseDir(configDir, state.candidate),
+      trial: true,
+      ...(interrupted ? { interruptedBoots: interrupted } : {}),
+    };
   }
   const stable = state.stable ?? (await $`git -C ${repoRoot} rev-parse HEAD`.quiet().text()).trim();
   const dir = await buildRelease(repoRoot, configDir, stable, prepare);
-  if (state.stable !== stable) {
+  if (state.stable !== stable || state.booting) {
     state.stable = stable;
+    state.booting = undefined;
+    state.interruptedBoots = undefined;
     await writeState(configDir, state);
   }
   return { sha: stable, dir, trial: false };
@@ -196,6 +220,7 @@ export const recordBoot = async (configDir: string, release: Release): Promise<v
   state.stable = release.sha;
   state.candidate = undefined;
   state.booting = undefined;
+  state.interruptedBoots = undefined;
   await writeState(configDir, state);
   await prune(configDir, state);
 };
