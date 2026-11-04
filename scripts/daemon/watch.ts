@@ -14,6 +14,13 @@
  * finishes or the backstop timeout passes (packages/foundry/src/daemon/restart-roll.ts).
  * Restarting is exiting 75 so launchd relaunches onto the candidate. A daemon
  * that can't spin down (an older release) is drained on its live turns instead.
+ *
+ * Nothing happens until the daemon has booted (it publishes its runtime hook at
+ * the end of boot). A boot can take many minutes on a loaded machine, and a
+ * restart in the middle of one used to read on relaunch as a failed boot: the
+ * candidate was marked failed and never retried (2026-11-04, 8c9dc7a0 booting
+ * for 19 minutes at load 90–200). The boot's own verdict comes from the
+ * supervisor: it boots, throws, or runs past the boot deadline.
  */
 
 import {
@@ -69,6 +76,7 @@ export const startUpdateWatcher = (options: WatchOptions): (() => void) => {
   let checking = false;
   let offered: string | undefined;
   let restarting = false;
+  let toldBooting = false;
 
   const restart = async (candidate: string) => {
     if (restarting) return;
@@ -84,17 +92,23 @@ export const startUpdateWatcher = (options: WatchOptions): (() => void) => {
 
   const tick = async () => {
     if (checking || restarting) return;
+    const hook = runtime();
+    if (!hook) {
+      if (!toldBooting) log('the daemon is still booting; update checks wait until it is up');
+      toldBooting = true;
+      return;
+    }
     checking = true;
     try {
       const result = await stageUpdate(options.repoRoot, options.configDir);
       if (result.action === 'failed') log(`update skipped — ${result.detail}`);
       if (result.action === 'staged')
         log(`staged origin/main ${result.target?.slice(0, 8)} as the candidate`);
-      const { candidate } = await readState(options.configDir);
-      if (!candidate) return;
+      const { candidate, booting } = await readState(options.configDir);
+      // The candidate this process is booting (its boot not yet recorded) is not one to restart onto.
+      if (!candidate || candidate === booting) return;
 
-      const hook = runtime();
-      if (hook?.offerUpdate) {
+      if (hook.offerUpdate) {
         // Offered once per candidate: the daemon spins down, or keeps it postponed ("Not now").
         if (offered === candidate) return;
         log(
@@ -105,7 +119,7 @@ export const startUpdateWatcher = (options: WatchOptions): (() => void) => {
         return;
       }
       const drained = await drain(
-        () => hook?.liveTurns(),
+        () => hook.liveTurns(),
         timeoutMs,
         options.drainPollMs ?? 5_000,
         log,

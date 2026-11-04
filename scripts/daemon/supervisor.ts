@@ -12,12 +12,19 @@
  * checkout to move: a staged update spins the daemon down (running turns finish,
  * new ones wait) and it restarts when the last one finishes (watch.ts,
  * packages/foundry/src/daemon/restart-roll.ts). Local services come up first. A candidate
- * that fails to boot falls back to stable; a stable boot that fails on changed
- * settings restores the last settings that booted.
+ * that fails to boot (it throws, or is still booting at the boot deadline) falls back to
+ * stable; a stable boot still booting at the deadline relaunches; a stable boot that fails on
+ * changed settings restores the last settings that booted.
  */
 import { recordBooted, restoreAfterFailedBoot } from './last-good';
 import { ensureServices } from './services';
-import { recordBoot, rejectCandidate, selectRelease, stageUpdate } from './update';
+import {
+  MAX_INTERRUPTED_BOOTS,
+  recordBoot,
+  rejectCandidate,
+  selectRelease,
+  stageUpdate,
+} from './update';
 import { startUpdateWatcher as checkoutWatcher } from './watch';
 
 const repoRoot = new URL('../..', import.meta.url).pathname.replace(/\/$/, '');
@@ -46,6 +53,10 @@ if (services.started.length) log(`services up: ${services.started.join(', ')}`);
 if (services.detail) log(`services not started — ${services.detail}`);
 
 const release = await selectRelease(repoRoot, configDir);
+if (release.interruptedBoots)
+  log(
+    `candidate ${short(release.sha)}'s last boot was cut off before it finished; trying again (${release.interruptedBoots + 1} of ${MAX_INTERRUPTED_BOOTS})`,
+  );
 
 // The release's own watcher when it has one (it speaks to the daemon it ships with); this checkout's otherwise.
 const releaseWatcher = `${release.dir}/scripts/daemon/watch.ts`;
@@ -66,6 +77,8 @@ const startUpdateWatcher = await loadReleaseWatcher();
 const settings = await readSettings();
 const checkSeconds = Number(settings?.daemon?.updateCheckSeconds ?? 300);
 const spinDownSeconds = Number(settings?.daemon?.drainTimeoutSeconds);
+// Generous: a boot took 19 minutes at load 90–200 (2026-11-04).
+const bootTimeoutSeconds = Number(settings?.daemon?.bootTimeoutSeconds ?? 3600);
 if (Number.isSafeInteger(checkSeconds) && checkSeconds >= 30)
   startUpdateWatcher({
     repoRoot,
@@ -79,9 +92,25 @@ if (Number.isSafeInteger(checkSeconds) && checkSeconds >= 30)
 log(
   `starting ${release.trial ? 'candidate' : 'stable'} ${short(release.sha)} on port ${process.env.VIEWER_PORT ?? '4500'}`,
 );
+// A boot still running at the deadline is a failed boot: a candidate is marked failed and the
+// relaunch runs stable; a stable boot just relaunches (and picks up a newer candidate if one is staged).
+let bootSettled = false;
+const bootDeadline =
+  Number.isSafeInteger(bootTimeoutSeconds) && bootTimeoutSeconds > 0
+    ? setTimeout(async () => {
+        if (bootSettled) return;
+        bootSettled = true;
+        if (release.trial) await rejectCandidate(configDir, release.sha);
+        log(
+          `${release.trial ? 'candidate' : 'stable'} ${short(release.sha)} was still booting after ${bootTimeoutSeconds}s; ${release.trial ? 'marked failed, relaunching on stable' : 'relaunching'}`,
+        );
+        process.exit(1);
+      }, bootTimeoutSeconds * 1000)
+    : undefined;
 try {
   await import(`${release.dir}/packages/foundry/src/start.ts`);
 } catch (error) {
+  clearTimeout(bootDeadline);
   if (release.trial) {
     await rejectCandidate(configDir, release.sha);
     log(`candidate ${short(release.sha)} failed to boot; relaunching on stable`);
@@ -94,6 +123,10 @@ try {
   }
   throw error;
 }
+clearTimeout(bootDeadline);
+// The deadline already ruled (it is rejecting and exiting): don't also record this boot.
+if (bootSettled) await new Promise(() => {});
+bootSettled = true;
 await recordBoot(configDir, release);
 if (release.trial) log(`candidate ${short(release.sha)} booted; it is now stable`);
 await recordBooted(configDir);

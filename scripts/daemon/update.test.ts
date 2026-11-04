@@ -4,7 +4,14 @@ import { mkdtemp, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { $ } from 'bun';
-import { readState, recordBoot, releaseDir, selectRelease, stageUpdate } from './update';
+import {
+  readState,
+  recordBoot,
+  rejectCandidate,
+  releaseDir,
+  selectRelease,
+  stageUpdate,
+} from './update';
 
 const prepare = async () => {};
 const identity = {
@@ -63,7 +70,7 @@ test('first boot runs stable seeded from HEAD; a staged candidate boots on trial
   }
 });
 
-test('a candidate whose boot never completed is rejected, the relaunch runs stable, and it is never staged again', async () => {
+test('a boot cut off before its verdict is tried again; the third cut-off boot in a row marks it failed, and it is never staged again', async () => {
   const f = await fixture();
   try {
     const a = await f.commit('a');
@@ -71,21 +78,71 @@ test('a candidate whose boot never completed is rejected, the relaunch runs stab
     await f.autoUpdate('apply');
     const bad = await f.commit('bad');
     await stageUpdate(f.repo, f.config, 'main', prepare);
-    expect((await selectRelease(f.repo, f.config, prepare)).trial).toBe(true);
+    expect(await selectRelease(f.repo, f.config, prepare)).toEqual({
+      sha: bad,
+      dir: releaseDir(f.config, bad),
+      trial: true,
+    });
 
-    // The trial boot died without reaching recordBoot; launchd relaunches.
+    // The trial boot is cut off (a restart, a kill) before recordBoot; launchd relaunches. Not a failure yet.
+    for (const interruptedBoots of [1, 2]) {
+      expect(await selectRelease(f.repo, f.config, prepare)).toEqual({
+        sha: bad,
+        dir: releaseDir(f.config, bad),
+        trial: true,
+        interruptedBoots,
+      });
+      expect((await readState(f.config)).failed).toEqual([]);
+    }
+
+    // A boot that dies without a verdict every time is a crash on boot: the third marks it failed.
     expect(await selectRelease(f.repo, f.config, prepare)).toEqual({
       sha: a,
       dir: releaseDir(f.config, a),
       trial: false,
     });
-    expect((await readState(f.config)).failed).toEqual([bad]);
+    expect(await readState(f.config)).toEqual({ stable: a, failed: [bad] });
     expect(existsSync(releaseDir(f.config, bad))).toBe(false);
     expect(await stageUpdate(f.repo, f.config, 'main', prepare)).toEqual({
       action: 'skipped',
       target: bad,
       detail: 'it failed to boot before',
     });
+  } finally {
+    await rm(f.root, { recursive: true, force: true });
+  }
+});
+
+test('a cut-off boot that then completes becomes stable with nothing marked failed', async () => {
+  const f = await fixture();
+  try {
+    const a = await f.commit('a');
+    await selectRelease(f.repo, f.config, prepare);
+    await f.autoUpdate('apply');
+    const b = await f.commit('b');
+    await stageUpdate(f.repo, f.config, 'main', prepare);
+    await selectRelease(f.repo, f.config, prepare);
+    const retried = await selectRelease(f.repo, f.config, prepare);
+    expect(retried.interruptedBoots).toBe(1);
+    await recordBoot(f.config, retried);
+    expect(await readState(f.config)).toEqual({ stable: b, previous: a, failed: [] });
+  } finally {
+    await rm(f.root, { recursive: true, force: true });
+  }
+});
+
+test('a boot that throws is rejected at once', async () => {
+  const f = await fixture();
+  try {
+    const a = await f.commit('a');
+    await selectRelease(f.repo, f.config, prepare);
+    await f.autoUpdate('apply');
+    const bad = await f.commit('bad');
+    await stageUpdate(f.repo, f.config, 'main', prepare);
+    await selectRelease(f.repo, f.config, prepare);
+    await rejectCandidate(f.config, bad);
+    expect(await readState(f.config)).toEqual({ stable: a, failed: [bad] });
+    expect((await selectRelease(f.repo, f.config, prepare)).sha).toBe(a);
   } finally {
     await rm(f.root, { recursive: true, force: true });
   }
