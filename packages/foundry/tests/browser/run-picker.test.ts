@@ -383,10 +383,13 @@ test('"+ New thread" picks worker, model and effort before the first message, fr
     expect(await modal.locator('[data-run="model"]').inputValue()).toBe('muse-wonder-1.0');
     expect(await modal.locator('[data-note="muse-personal"]').count()).toBe(1);
     await modal.locator('[data-run="effort"]').selectOption('low');
+    await modal.locator('[data-run="name"]').fill('  Checkout flow  ');
     await modal.locator('[data-run="start"]').click();
     await modal.waitFor({ state: 'detached' });
-    // The default model is no choice (the thread follows its worker's default); the effort is.
-    expect(created).toEqual([{ projectId: 'shop', worker: 'muse', effort: 'low' }]);
+    // The default model is no choice (the thread follows its worker's default); the effort and a name are.
+    expect(created).toEqual([
+      { projectId: 'shop', name: 'Checkout flow', worker: 'muse', effort: 'low' },
+    ]);
     // Defaults all round send nothing extra.
     await page.locator('.rail-new-thread').click();
     await modal.locator('[data-run="start"]:not([disabled])').click();

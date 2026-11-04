@@ -221,12 +221,14 @@ export function NewThreadModal() {
   const preset = newThreadChooser.value;
   const [scope, setScope] = useState(null);
   const [value, setValue] = useState(null);
+  const [name, setName] = useState('');
   const projectId = activeProjectId.value || null;
   useEffect(() => {
     if (!preset) return undefined;
     let live = true;
     setScope(null);
     setValue(null);
+    setName('');
     authFetch(projectId ? `/api/projects/${encodeURIComponent(projectId)}/workers` : '/api/workers')
       .then((res) => (res.ok ? res.json() : Promise.reject(Error(res.statusText))))
       .then((body) => {
@@ -252,12 +254,19 @@ export function NewThreadModal() {
     const worker = scope.workers.find((w) => w.id === value.worker);
     close();
     await createThread({
+      ...(name.trim() ? { name: name.trim() } : {}),
       ...(worker && !worker.default ? { worker: worker.id } : {}),
       ...(value.model && value.model !== worker?.defaultModel ? { model: value.model } : {}),
       ...(value.effort ? { effort: value.effort } : {}),
     });
   };
   return html`<${Modal} title="New thread" onClose=${close} class="run-modal new-thread-modal">
+    <div class="run-picker">
+      <label class="run-picker-row">Name
+        <input class="rp-select" data-run="name" placeholder="Optional" value=${name}
+          onInput=${(e) => setName(e.target.value)} />
+      </label>
+    </div>
     ${
       scope?.error
         ? html`<p class="run-picker-note">Could not read the workers: ${scope.error}</p>`

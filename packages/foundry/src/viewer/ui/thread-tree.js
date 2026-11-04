@@ -12,6 +12,7 @@ import { FeedbackStrip, feedbackIn } from './feedback.js';
 import { html, useLayoutEffect, useRef, useState } from './lib.js';
 import { DeviceBadge } from './machine-icons.js';
 import { RenameModal } from './modal.js';
+import { openNewThread } from './run-picker.js';
 import {
   isSnoozed,
   snooze,
@@ -27,7 +28,6 @@ import {
   activeProjectId,
   activeThreadId,
   allThreads,
-  createThread,
   executeAction,
   feedbackInboxOpen,
   forgeMasterOpen,
@@ -38,7 +38,6 @@ import {
   renameThread,
   selectScope,
   selectThread,
-  worktrees,
 } from './store.js';
 import {
   harnessName,
@@ -316,59 +315,6 @@ export function ThreadNode({ thread, depth = 0, selectedId, onSelect, inactive =
 // Collapsible section with optional [+] button
 // ---------------------------------------------------------------------------
 
-function AddThreadForm({ onDone }) {
-  const [name, setName] = useState('');
-  const [selectedWorktree, setSelectedWorktree] = useState('');
-  const [saving, setSaving] = useState(false);
-
-  const wts = worktrees.value;
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setSaving(true);
-    const wt = wts.find((w) => w.path === selectedWorktree);
-    const result = await createThread({
-      name: name.trim() || undefined,
-      worktreePath: selectedWorktree || undefined,
-      branch: wt?.branch || undefined,
-    });
-    setSaving(false);
-    if (result) onDone();
-  };
-
-  return html`
-    <form class="thread-add-form" onSubmit=${handleSubmit}>
-      <input class="proj-input" placeholder="name (optional)" value=${name}
-        onInput=${(e) => setName(e.target.value)} />
-      ${
-        wts.length > 1
-          ? html`
-        <select class="proj-input" value=${selectedWorktree}
-          onChange=${(e) => setSelectedWorktree(e.target.value)}>
-          <option value="">main worktree</option>
-          ${wts
-            .filter((w) => !w.isMain)
-            .map(
-              (w) => html`
-            <option key=${w.path} value=${w.path}>
-              ${w.branch || w.path.split('/').pop()}
-            </option>
-          `,
-            )}
-        </select>
-      `
-          : null
-      }
-      <div class="proj-form-actions">
-        <button type="submit" class="proj-btn proj-btn-ok" disabled=${saving}>
-          ${saving ? '...' : 'create'}
-        </button>
-        <button type="button" class="proj-btn" onClick=${onDone}>cancel</button>
-      </div>
-    </form>
-  `;
-}
-
 // Signals for creation mode (consumed by detail-drawer)
 /** Forge Master is one persistent thread; it shows here when Forge Master is selected. */
 function ForgeMasterThread() {
@@ -422,7 +368,6 @@ function FeedbackByProject() {
 }
 
 export function ThreadList() {
-  const [addingThread, setAddingThread] = useState(false);
   if (feedbackInboxOpen.value) return html`<${FeedbackByProject} />`;
   const forge = forgeMasterOpen.value;
   const selectedThread = activeThreadId.value;
@@ -440,15 +385,10 @@ export function ThreadList() {
       <div class="sidebar-header">
         <span class="sidebar-section-title">THREADS</span>
         <span class="sidebar-scope-chip ${activeProject && !forge ? 'scope-project' : 'scope-global'}" title=${scopeLabel}>${scopeLabel}</span>
-        ${
-          forge
-            ? null
-            : html`<button class="sidebar-add-btn" onClick=${() => setAddingThread(true)} title="New thread">+</button>`
-        }
       </div>
 
+      ${forge ? null : html`<button type="button" class="rail-new-thread rail-new-thread--block" onClick=${() => openNewThread()}>+ New thread</button>`}
       ${!forge && activeProject ? html`<${FeedbackStrip} projectId=${activeProject} />` : null}
-      ${!forge && addingThread ? html`<${AddThreadForm} onDone=${() => setAddingThread(false)} />` : null}
 
       <div class="sidebar-threads-list">
         ${
