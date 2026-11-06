@@ -560,7 +560,15 @@ describe('ClaudeCodeSessionAdapter', () => {
         const s = await adapter.createSession({ threadId: 't1', cwd: '/tmp' });
         await s.start();
         await s.send('before crash');
-        await new Promise((r) => setTimeout(r, 5));
+        // The file store persists asynchronously: wait until a fresh reader sees the mapping on disk.
+        const persisted = () =>
+          new ClaudeCodeSessionAdapter({
+            store: new FileExternalSessionStore(storePath),
+            defaults: { bin: 'claude', maxTurns: 1, spawn },
+          }).getExternalSessionId('t1');
+        const deadline = Date.now() + 2_000;
+        while ((await persisted()) !== 'native-filebacked' && Date.now() < deadline)
+          await new Promise((r) => setTimeout(r, 5));
         // "Crash" — do NOT call s.kill() explicitly; simulate process death
         //  by simply dropping the references. The file store has persisted.
       }
