@@ -1,0 +1,94 @@
+{
+  "version": "2.1.281",
+  "status": 0,
+  "body": {
+    "kind": "process",
+    "argv": [
+      "claude",
+      "--print",
+      "--verbose",
+      "--input-format",
+      "stream-json",
+      "--output-format",
+      "stream-json",
+      "--model",
+      "haiku",
+      "--max-turns",
+      "1",
+      "--permission-mode",
+      "dontAsk",
+      "--include-hook-events",
+      "--append-system-prompt-file",
+      "{{tmp}}/agent-session-base-80114-y6vBHI/append-system-prompt.md",
+      "--safe-mode",
+      "--tools",
+      "",
+      "--strict-mcp-config",
+      "--mcp-config",
+      "{\"mcpServers\":{}}",
+      "--disable-slash-commands",
+      "--no-chrome"
+    ],
+    "cwd": "{{cwd}}",
+    "stdin": [
+      "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"# System Context\\n\\nClassify the user message. Respond with JSON only, exactly {\\\"category\\\":\\\"feature\\\"}, {\\\"category\\\":\\\"bug\\\"} or {\\\"category\\\":\\\"question\\\"}.\\n\\n# User Message\\n\\nprivate-input: add a dark mode toggle to the settings page\"}]}}"
+    ],
+    "stdinEnded": false,
+    "frames": [
+      {
+        "after": 1,
+        "stream": "stdout",
+        "data": "{\"type\":\"system\",\"subtype\":\"commands_changed\",\"commands\":[],\"uuid\":\"69cf82bb-3bb2-46d9-95d8-325a087d773e\",\"session_id\":\"66c88f4d-381f-4607-8f79-a4641a67c494\"}"
+      },
+      {
+        "after": 1,
+        "stream": "stdout",
+        "data": "{\"type\":\"system\",\"subtype\":\"init\",\"cwd\":\"{{cwd}}\",\"session_id\":\"66c88f4d-381f-4607-8f79-a4641a67c494\",\"tools\":[],\"mcp_servers\":[],\"model\":\"claude-haiku-4-5-20251001\",\"permissionMode\":\"dontAsk\",\"slash_commands\":[],\"apiKeySource\":\"none\",\"claude_code_version\":\"2.1.281\",\"output_style\":\"default\",\"agents\":[\"claude\",\"Explore\",\"general-purpose\",\"Plan\"],\"skills\":[],\"plugins\":[{\"name\":\"code-review\",\"path\":\"~/.claude/plugins/cache/claude-plugins-official/code-review/27d2b86d72da\",\"source\":\"code-review@claude-plugins-official\"},{\"name\":\"linear\",\"path\":\"~/.claude/plugins/cache/claude-plugins-official/linear/27d2b86d72da\",\"source\":\"linear@claude-plugins-official\"},{\"name\":\"playwright\",\"path\":\"~/.claude/plugins/cache/claude-plugins-official/playwright/27d2b86d72da\",\"source\":\"playwright@claude-plugins-official\"},{\"name\":\"pr-review-toolkit\",\"path\":\"~/.claude/plugins/cache/claude-plugins-official/pr-review-toolkit/27d2b86d72da\",\"source\":\"pr-review-toolkit@claude-plugins-official\"},{\"name\":\"vercel\",\"path\":\"~/.claude/plugins/cache/claude-plugins-official/vercel/1.0.0\",\"source\":\"vercel@claude-plugins-official\",\"version\":\"1.0.0\"},{\"name\":\"superpowers\",\"path\":\"~/.claude/plugins/cache/claude-plugins-official/superpowers/4.1.1\",\"source\":\"superpowers@claude-plugins-official\",\"version\":\"4.1.1\"},{\"name\":\"slack\",\"path\":\"~/.claude/plugins/cache/claude-plugins-official/slack/1.3.0\",\"source\":\"slack@claude-plugins-official\",\"version\":\"1.3.0\"},{\"name\":\"greptile\",\"path\":\"~/.claude/plugins/cache/claude-plugins-official/greptile/1.2.4\",\"source\":\"greptile@claude-plugins-official\",\"version\":\"1.2.4\"},{\"name\":\"agents-md\",\"path\":\"builtin\",\"source\":\"agents-md@builtin\"},{\"name\":\"telemetry\",\"path\":\"builtin\",\"source\":\"telemetry@builtin\"}],\"capabilities\":[\"interrupt_receipt_v1\",\"interrupt_cancel_queued_v1\",\"msg_lifecycle_v1\",\"mcp_read_resource_v1\",\"mcp_tool_ui_meta_v1\"],\"analytics_disabled\":false,\"product_feedback_disabled\":false,\"uuid\":\"5f9002af-19e7-45c9-bfc8-5b5be861667b\",\"messaging_socket_path\":\"/tmp/cc-socks/96029.sock\",\"fast_mode_state\":\"off\",\"fast_mode_disabled_reason\":\"sdk_opt_in_required\",\"per_turn_effort_active\":false,\"view_mode\":\"default\"}"
+      },
+      {
+        "after": 1,
+        "stream": "stdout",
+        "data": "{\"type\":\"system\",\"subtype\":\"thinking_tokens\",\"estimated_tokens\":50,\"estimated_tokens_delta\":50,\"session_id\":\"66c88f4d-381f-4607-8f79-a4641a67c494\",\"uuid\":\"dfd4cebc-628b-4a57-9866-f37e9ac3e2ff\"}"
+      },
+      {
+        "after": 1,
+        "stream": "stdout",
+        "data": "{\"type\":\"system\",\"subtype\":\"thinking_tokens\",\"estimated_tokens\":235,\"estimated_tokens_delta\":185,\"session_id\":\"66c88f4d-381f-4607-8f79-a4641a67c494\",\"uuid\":\"7a6a26ff-0e73-4d00-aee7-d9853aec5fa6\"}"
+      },
+      {
+        "after": 1,
+        "stream": "stdout",
+        "data": "{\"type\":\"assistant\",\"message\":{\"model\":\"claude-haiku-4-5-20251001\",\"id\":\"msg_011Cgn9fejdb341As7G9Roob\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"thinking\",\"thinking\":\"\",\"signature\":\"EqYHCtABCBMYAipA2iPMkZVuUz8EMSSBXwiLUTnGt+j3VsgikStqLu9cCZ7Gaw16TV8KVyk/q9EQoAo9JvyOZT0bHgXqXH7IEieKYzIZY2xhdWRlLWhhaWt1LTQtNS0yMDI1MTAwMTgAQgh0aGlua2luZ1okY2E4MmI5N2UtNTY2YS00M2ZlLWEwNDMtY2M5NTM4ZWM4MWFjchDNtzX01Oiuyzd4vZdp9MeniAEBmgEbChljbGF1ZGUtaGFpa3UtNC01LTIwMjUxMDAxqAG6ubjXBrABAhIMc9EIxpHK5u5STz5zGgxE7r+ae8TlWVt6HFwiMF2vO/mR/JPGJ9p0IGQ9E9BrMHu9ZjUZWqZFlpjWHQtdjRNIXBxM3nbxELm91S48vCqCBYKPraX/hme61by4uFeCk/U2yTZ9vOUO4mYmGpSQTvLFUxKSVupMn5uWZtyp5Hyxzrdw6xvWaWppkylrbxOUNR5KR8KeAHY6klgvQhzV2kNqUauj7rxPhE0QE8647DD9L25LfoUG8PQeY2Uln1F6OgV1vxyAjZSp+VXrh/cjCJTNDa3H3Qs44UPAGGfksXwFo5fPUfCh5ZtkVumwV5o0CJcjuZTnSzK/a7n9E0JTbBlPuy0bBu+keGH2A84AlZcSnMCA7YhqOwjPdMMIiH9w8I7y5sDKQQGq7e+U37WjAUu2FM69cUx//9qXWud9+JahHCeg5PPETqmZNKAFqNjlrmIrnvg+8R7JVTTKE+reXK269SNli54Hj383m4OP49/UaNThmzZGT1fPuNJghSXl/q62gDqOUJJzBSn718x/aE2f7ShGouTblLVbeeWYtdLPVsKZFCIFDHhptJ8xYuCzS9PoGokP6u5Js4h5zQW395b1vLACyIAxdwNbOAEWs2rwDhzus+Owt9ZjzsjK7WgWU2xd4i1EE6SZbCuWXM6qWO3t1hVYjFOP0Qvy0Lx0m/KQCiEL1JLrNZa6jJzDbtV4PkDD+uXbdi4ONjDGwuDZb/Kvb+iHzug5KGHXlDbd5Xt+OOpwws1kCmJWhF+8+7KOZBuTIh+UoanifWDhfhZC7NiOy7yxSIGK/hEV9Um1hJ4iiBcRoUhzrUAWJBi5lola/Rb+I/2UrGX22Xs4RFGPLU75rgtPg1JaaNfKpe93NsgoNl2GFmGv/jM11ZeW+3+HyDq24ghQoVIBn+AeQKyNiiyGeOdydwC3p8x4kVU+ETcCfUIEV0oTydj+EaRps9e3ie0dSxgB\"}],\"container\":null,\"stop_reason\":null,\"stop_sequence\":null,\"stop_details\":null,\"usage\":{\"input_tokens\":3680,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":0},\"output_tokens\":4,\"service_tier\":\"standard\",\"inference_geo\":\"not_available\",\"speed\":\"standard\"},\"input_transformations\":[],\"diagnostics\":null,\"context_management\":null},\"parent_tool_use_id\":null,\"session_id\":\"66c88f4d-381f-4607-8f79-a4641a67c494\",\"uuid\":\"97134382-4f6a-4b2e-bfc6-8931ce97e9f7\",\"timestamp\":\"2026-11-06T18:30:18.042Z\",\"request_id\":\"req_011Cgn9feXyknUh7ybWPV6ry\"}"
+      },
+      {
+        "after": 1,
+        "stream": "stdout",
+        "data": "{\"type\":\"assistant\",\"message\":{\"model\":\"claude-haiku-4-5-20251001\",\"id\":\"msg_011Cgn9fejdb341As7G9Roob\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"```json\\n{\\\"category\\\":\\\"feature\\\"}\\n```\"}],\"container\":null,\"stop_reason\":null,\"stop_sequence\":null,\"stop_details\":null,\"usage\":{\"input_tokens\":3680,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":0},\"output_tokens\":4,\"service_tier\":\"standard\",\"inference_geo\":\"not_available\",\"speed\":\"standard\"},\"input_transformations\":[],\"diagnostics\":null,\"context_management\":null},\"parent_tool_use_id\":null,\"session_id\":\"66c88f4d-381f-4607-8f79-a4641a67c494\",\"uuid\":\"fd83b780-e3f9-41cd-a9e9-f8908f663055\",\"timestamp\":\"2026-11-06T18:30:18.118Z\",\"request_id\":\"req_011Cgn9feXyknUh7ybWPV6ry\"}"
+      },
+      {
+        "after": 1,
+        "stream": "stdout",
+        "data": "{\"type\":\"rate_limit_event\",\"rate_limit_info\":{\"status\":\"allowed\",\"resetsAt\":1794006000,\"rateLimitType\":\"five_hour\",\"overageStatus\":\"rejected\",\"overageDisabledReason\":\"out_of_credits\",\"isUsingOverage\":false,\"unifiedWindows\":{\"five_hour\":{\"utilization\":0.05,\"resetsAt\":1794006000},\"seven_day\":{\"utilization\":0.7,\"resetsAt\":1794333600}}},\"uuid\":\"266001b6-1322-47b8-ac4e-68fc7fd6dbfd\",\"session_id\":\"66c88f4d-381f-4607-8f79-a4641a67c494\"}"
+      },
+      {
+        "after": 1,
+        "stream": "stdout",
+        "data": "{\"duration_api_ms\":2304,\"stop_reason\":\"end_turn\",\"session_id\":\"66c88f4d-381f-4607-8f79-a4641a67c494\",\"total_cost_usd\":0.004555,\"usage\":{\"input_tokens\":3680,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":175,\"output_tokens_details\":{\"thinking_tokens\":159},\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{\"ephemeral_1h_input_tokens\":0,\"ephemeral_5m_input_tokens\":0},\"inference_geo\":\"not_available\",\"iterations\":[{\"input_tokens\":3680,\"output_tokens\":175,\"cache_read_input_tokens\":0,\"cache_creation_input_tokens\":0,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":0},\"type\":\"message\"}],\"speed\":\"standard\"},\"modelUsage\":{\"claude-haiku-4-5-20251001\":{\"inputTokens\":3680,\"outputTokens\":175,\"cacheReadInputTokens\":0,\"cacheCreationInputTokens\":0,\"webSearchRequests\":0,\"costUSD\":0.004555,\"contextWindow\":200000,\"maxOutputTokens\":32000,\"thinkingTokens\":159,\"canonicalModel\":\"claude-haiku-4-5\",\"provider\":\"firstParty\",\"costBasis\":\"list\"}},\"permission_denials\":[],\"terminal_reason\":\"completed\",\"fast_mode_state\":\"off\",\"fast_mode_disabled_reason\":\"sdk_opt_in_required\",\"subagent_stats\":{\"spawned\":0,\"requested\":{\"background\":0,\"foreground\":0,\"unset\":0},\"started_in_background\":0,\"max_depth\":0,\"spawned_by_subagents\":0,\"completed\":0,\"failed\":0,\"killed\":{\"parent\":0,\"user\":0,\"system\":0},\"refused\":{\"depth_limit\":0,\"concurrency_limit\":0,\"budget\":0},\"by_type\":{}},\"is_error\":false,\"num_turns\":1,\"subtype\":\"success\",\"api_error_status\":null,\"result\":\"```json\\n{\\\"category\\\":\\\"feature\\\"}\\n```\",\"ttft_ms\":2350,\"type\":\"result\",\"duration_ms\":2452,\"uuid\":\"83d1d38f-bd76-4ec6-b11e-d40f79780a89\",\"ttft_stream_ms\":814,\"time_to_request_ms\":146,\"first_content_frame_ms\":814,\"queued_turn_count\":0,\"result_index\":0}"
+      }
+    ],
+    "exit": {
+      "after": 1,
+      "code": null,
+      "killed": true
+    }
+  },
+  "recorded": {
+    "service": "claude",
+    "cli": "claude",
+    "recordedAt": "2026-11-06T18:30:19.173Z",
+    "agentSession": "0.12.0",
+    "environment": "terminal",
+    "durationMs": 3814,
+    "model": "claude-haiku-4-5-20251001"
+  }
+}

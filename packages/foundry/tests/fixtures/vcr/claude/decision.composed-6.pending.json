@@ -1,0 +1,107 @@
+{
+  "version": "2.1.281",
+  "status": 0,
+  "body": {
+    "kind": "process",
+    "argv": [
+      "claude",
+      "--print",
+      "--verbose",
+      "--input-format",
+      "stream-json",
+      "--output-format",
+      "stream-json",
+      "--model",
+      "claude-haiku-5-5",
+      "--effort",
+      "low",
+      "--max-turns",
+      "1",
+      "--permission-mode",
+      "bypassPermissions",
+      "--include-hook-events",
+      "--safe-mode",
+      "--tools",
+      "",
+      "--strict-mcp-config",
+      "--mcp-config",
+      "{\"mcpServers\":{}}",
+      "--disable-slash-commands",
+      "--no-chrome",
+      "--no-session-persistence",
+      "--resume",
+      "e071d936-8ffe-42d1-9912-e6001dfe0620",
+      "--fork-session",
+      "--append-system-prompt-file",
+      "{{tmp}}/agent-session-base-80114-YeGu7r/append-system-prompt.md",
+      "--setting-sources",
+      ""
+    ],
+    "cwd": "{{cwd}}",
+    "stdin": [
+      "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"\\n\\n\\n## Message\\nDo toggles persist?\\n\\n## Response protocol (advice phase, trigger: user-message)\\nNothing to add is the expected answer, and the most common one. Then respond with exactly NO_COMMENT and nothing else: no JSON, no explanation, no punctuation. It adds nothing to the thread. Here it means the moment touches nothing in your domain, whatever it says to build or not to use.\\nOnly when it touches something your domain says already exists, respond with JSON only, exactly this shape: { \\\"snippets\\\": string[], \\\"layers\\\": string[], \\\"confidence\\\": number }.\\n\\\"snippets\\\" are the remarks of your pointer, one per line of the charter's shape, in its order; \\\"layers\\\" are IDs of your domain's layers to inject; at least one of them is non-empty. \\\"confidence\\\" is a number from 0 to 1.\\nAny other answer, including JSON with empty lists or extra fields, is an error, not a comment.\"}]}}"
+    ],
+    "stdinEnded": true,
+    "frames": [
+      {
+        "after": 1,
+        "stream": "stdout",
+        "data": "{\"type\":\"system\",\"subtype\":\"init\",\"cwd\":\"{{cwd}}\",\"session_id\":\"b84bdc44-b93c-4d22-b6af-e56920461834\",\"tools\":[],\"mcp_servers\":[],\"model\":\"claude-haiku-5-5\",\"permissionMode\":\"bypassPermissions\",\"slash_commands\":[],\"apiKeySource\":\"none\",\"claude_code_version\":\"2.1.281\",\"output_style\":\"default\",\"agents\":[\"claude\",\"Explore\",\"general-purpose\",\"Plan\"],\"skills\":[],\"plugins\":[{\"name\":\"agents-md\",\"path\":\"builtin\",\"source\":\"agents-md@builtin\"},{\"name\":\"telemetry\",\"path\":\"builtin\",\"source\":\"telemetry@builtin\"}],\"capabilities\":[\"interrupt_receipt_v1\",\"interrupt_cancel_queued_v1\",\"msg_lifecycle_v1\",\"mcp_read_resource_v1\",\"mcp_tool_ui_meta_v1\"],\"analytics_disabled\":false,\"product_feedback_disabled\":false,\"uuid\":\"2fd8bd9c-d556-409b-b34f-055793f2d8d9\",\"messaging_socket_path\":\"/tmp/cc-socks/84924.sock\",\"fast_mode_state\":\"off\",\"fast_mode_disabled_reason\":\"sdk_opt_in_required\",\"per_turn_effort_active\":true,\"view_mode\":\"default\"}"
+      },
+      {
+        "after": 1,
+        "stream": "stderr",
+        "data": "[claude-code:unrecognized_model] {\"model\":\"claude-haiku-5-5\",\"query_source\":\"sdk\"}"
+      },
+      {
+        "after": 1,
+        "stream": "stdout",
+        "data": "{\"type\":\"system\",\"subtype\":\"thinking_tokens\",\"estimated_tokens\":50,\"estimated_tokens_delta\":50,\"session_id\":\"b84bdc44-b93c-4d22-b6af-e56920461834\",\"uuid\":\"00c4cb62-8cd1-4cad-97e1-807e1c41b4e2\"}"
+      },
+      {
+        "after": 1,
+        "stream": "stdout",
+        "data": "{\"type\":\"system\",\"subtype\":\"thinking_tokens\",\"estimated_tokens\":250,\"estimated_tokens_delta\":200,\"session_id\":\"b84bdc44-b93c-4d22-b6af-e56920461834\",\"uuid\":\"ba8ddc7e-6689-4009-8459-28dd38c12651\"}"
+      },
+      {
+        "after": 1,
+        "stream": "stdout",
+        "data": "{\"type\":\"system\",\"subtype\":\"thinking_tokens\",\"estimated_tokens\":362,\"estimated_tokens_delta\":112,\"session_id\":\"b84bdc44-b93c-4d22-b6af-e56920461834\",\"uuid\":\"616828cd-8ff1-4035-a0a8-387a8ba5616e\"}"
+      },
+      {
+        "after": 1,
+        "stream": "stdout",
+        "data": "{\"type\":\"assistant\",\"message\":{\"model\":\"claude-haiku-5-5\",\"id\":\"msg_011Cgn9YWPtYD43q3X85CV8z\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"thinking\",\"thinking\":\"\",\"signature\":\"CAQSnQsKEAgTGAI4AUIIdGhpbmtpbmcSDEVfgKX8+R7an3BVexoMJhKZe+UNpwwXilsOIjBr5kUnbvGjem9J7xbC3cT7tnNpcu1VLK4cNxolLRmo5hCBZV56JzTqOL0ZLnV4U04qugqUroQsxLAModBnSDkzLwwfZui8IqPEW8DWhJeoiObw1ljzdJPAjqU+DfTr8S5RE/gGsAn8YIN7OM3Q69wVhHih74Rgc41/PxsPg5VIzMdYeQ/0FX1PYP0MrOx0k/PPnyPm48ygCTSJolIq6DSW3yMyqAP6eMKSUQD9Qb3aM1ShOWcYl/DjGDxPl4R6VJlNkc90322i5ql7AO2CmPF49KWBLCBvAl5BiARg1kTZLpXb4oPGuSzZou8hz7WXIyugIhuXwlGj0zl79asiMea/7f8WENhgfx9Mu9u5bxSGo/JkgyEs3hTGDXe0far/nEoHuID3XHp18Of2aoW9G/IFLSev4kaZd+ltQGJjZyBeLukkYOe6WHqD4tCWL0uUobmEZNdl7+f7gYt183OYCwbCAygkP76NbiLmlLNRlwaGOMhmH2tTTabfHGqPDrSdnp2x9voCvZH3FDkLnO91Qi1FOCBIlUEsP763Gsg/KNL68a9Yv/L6oEkjAVRvJKp90oKsZYa4FGhcAGmOUqkFZInx2rrWfL41f6N0CMFLKBIdfVpMy6RQccp2tTjGupI1TSkTLvI+9z87KRLGEyJEfx617kAefEPL3iocLqYkeKwasxIDtBQYY8pK1PX5rxzoETehIy5nocrhlR2wXRM0QK+Ogu8KHwpCuUMZ/s6Z87BJ864Ke3cQ2ogn0O2dmy/J4KHeyRrT8bWMwOhS6/rozN05C95AdOru5M8NegmsB5TwUXS4xGfXaJN5QnE9oYIDkVc9pWFAOfreT7/CaYLNEtGDQe4KgYgv1r8JGvfNhhr7CuuMnm2OpXmgqT+jiknAA0Pb0Z3oEXeg6ggqJ68ByTHfoCf8kvAGG3H1cCdEh0NdGLI4cqjWXhwRZ7MP7W5Lz1daJ6PJvIjzgXWpFPw1UVz1hOdEmsiDQqFCvICuFmAypZLcPmUl6a1lAw6oDQlHvJutGI708lvfjYPph1TnQvKSSsSD5q4UQtihWVsrTxRpDHaatLSDKAgQmmjHFJm9DNz96Php7lu4rrH3VGXF7UjtA66NIx5BhDOPnZ9uezFqCXklsfQBFHXCm4StewM6GrzG7kQzrJ/SKG1dKMtttitumDjnVaBY2bUeFOZjlMhQi0mauF2tXnfBaPuYlPJeAYjCsUA0IvSlb9x+snxy8teo4AKyw+ZRLtfwyLlMZ9IIWFcGjD9A4UqTNgT2DBdpoj1qMCKaZ+KQoRaHsGI5AyCo5YhSIZW/AxI77UA2Uqlg0gqi03Gx5V2FE0z/fFRGyLCxyDvJ4RutZvBUmCLlOY6jmqKKbbYpxHhfs/MWJSCaiDnpD/9kNqKi7hz0Mdf92i81ViJ4na6FpyXL10qb90sD7RvOsL6tnm3V22jy07AhV3fm6U8DEBqel0mrPhm6h866BDgt/PDM3exJdQzjV5xcOJ2UKTSZYWhhF9Ss2YcrJKze88+QeS+mv2dnyqflv3HuZsq2D5PZZAU1gFWIn9RdrHpul8c3h96jU+rkbRw+VQSZ26CO7HTJtf8FsjCXdl+te9qW6FYHpDjmEHnPaC+TqhiAldizxMOH7O6ankE/RZ0oLWr08BOWB5dbKFMR2dSS4c88umym8//erQuZP9MWf1BiH2vtPrDazg9CwfWhgmjKEGQ4SlNeN0gASvrjHpU6cyci2DRAPcA650D4vDh62cYcYSYF7CuAp3tLJ5QZCEH3KcwQYOxvx/y9CBHJn8J9I42G6sTnXf88xLe9sj2C/WiNqdx7pFaDN14R7Oou4iBH5LZroMM1OJ7FAuoYAQ==\"}],\"container\":null,\"stop_reason\":null,\"stop_sequence\":null,\"stop_details\":null,\"usage\":{\"input_tokens\":2,\"cache_creation_input_tokens\":569,\"cache_read_input_tokens\":6475,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":569},\"output_tokens\":9,\"service_tier\":\"standard\",\"inference_geo\":\"global\",\"speed\":\"standard\"},\"input_transformations\":[],\"diagnostics\":{\"cache_miss_reason\":{\"type\":\"messages_changed\",\"cache_missed_input_tokens\":575}},\"context_management\":null},\"parent_tool_use_id\":null,\"session_id\":\"b84bdc44-b93c-4d22-b6af-e56920461834\",\"uuid\":\"43113204-d196-48b2-8570-50bd6eca9b34\",\"timestamp\":\"2026-11-06T18:28:40.886Z\",\"request_id\":\"req_011Cgn9YWCV3Ss6ophMGJAnU\"}"
+      },
+      {
+        "after": 1,
+        "stream": "stdout",
+        "data": "{\"type\":\"assistant\",\"message\":{\"model\":\"claude-haiku-5-5\",\"id\":\"msg_011Cgn9YWPtYD43q3X85CV8z\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"{\\\"snippets\\\":[\\\"Look over here: settings toggles (src/settings, .foundry/roles/settings-warden/domainKnowledge.md) — the question is about whether toggles persist, and that knowledge says toggles persist per project.\\\"],\\\"layers\\\":[],\\\"confidence\\\":0.8}\"}],\"container\":null,\"stop_reason\":null,\"stop_sequence\":null,\"stop_details\":null,\"usage\":{\"input_tokens\":2,\"cache_creation_input_tokens\":569,\"cache_read_input_tokens\":6475,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":569},\"output_tokens\":9,\"service_tier\":\"standard\",\"inference_geo\":\"global\",\"speed\":\"standard\"},\"input_transformations\":[],\"diagnostics\":{\"cache_miss_reason\":{\"type\":\"messages_changed\",\"cache_missed_input_tokens\":575}},\"context_management\":null},\"parent_tool_use_id\":null,\"session_id\":\"b84bdc44-b93c-4d22-b6af-e56920461834\",\"uuid\":\"20a702ad-c0f2-4108-8a5d-27973aaacd45\",\"timestamp\":\"2026-11-06T18:28:41.249Z\",\"request_id\":\"req_011Cgn9YWCV3Ss6ophMGJAnU\"}"
+      },
+      {
+        "after": 1,
+        "stream": "stdout",
+        "data": "{\"type\":\"rate_limit_event\",\"rate_limit_info\":{\"status\":\"allowed\",\"resetsAt\":1794006000,\"rateLimitType\":\"five_hour\",\"overageStatus\":\"rejected\",\"overageDisabledReason\":\"out_of_credits\",\"isUsingOverage\":false,\"unifiedWindows\":{\"five_hour\":{\"utilization\":0.05,\"resetsAt\":1794006000},\"seven_day\":{\"utilization\":0.7,\"resetsAt\":1794333600}}},\"uuid\":\"1d0f04d9-9699-4f1f-861d-fffe7f384a06\",\"session_id\":\"b84bdc44-b93c-4d22-b6af-e56920461834\"}"
+      },
+      {
+        "after": 1,
+        "stream": "stdout",
+        "data": "{\"duration_api_ms\":3492,\"stop_reason\":\"end_turn\",\"session_id\":\"b84bdc44-b93c-4d22-b6af-e56920461834\",\"total_cost_usd\":0.0203252,\"usage\":{\"input_tokens\":2,\"cache_creation_input_tokens\":569,\"cache_read_input_tokens\":6475,\"output_tokens\":384,\"output_tokens_details\":{\"thinking_tokens\":291},\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{\"ephemeral_1h_input_tokens\":569,\"ephemeral_5m_input_tokens\":0},\"inference_geo\":\"global\",\"iterations\":[{\"input_tokens\":2,\"output_tokens\":384,\"cache_read_input_tokens\":6475,\"cache_creation_input_tokens\":569,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":569},\"type\":\"message\"}],\"speed\":\"standard\"},\"modelUsage\":{\"claude-haiku-5-5\":{\"inputTokens\":4,\"outputTokens\":388,\"thinkingTokens\":291,\"cacheReadInputTokens\":12506,\"cacheCreationInputTokens\":1256,\"webSearchRequests\":0,\"costUSD\":0.0203252,\"contextWindow\":200000,\"maxOutputTokens\":128000,\"canonicalModel\":\"claude-haiku-5-5\",\"provider\":\"firstParty\",\"costBasis\":\"unknown\"}},\"permission_denials\":[],\"terminal_reason\":\"completed\",\"fast_mode_state\":\"off\",\"fast_mode_disabled_reason\":\"sdk_opt_in_required\",\"subagent_stats\":{\"spawned\":0,\"requested\":{\"background\":0,\"foreground\":0,\"unset\":0},\"started_in_background\":0,\"max_depth\":0,\"spawned_by_subagents\":0,\"completed\":0,\"failed\":0,\"killed\":{\"parent\":0,\"user\":0,\"system\":0},\"refused\":{\"depth_limit\":0,\"concurrency_limit\":0,\"budget\":0},\"by_type\":{}},\"is_error\":false,\"num_turns\":1,\"subtype\":\"success\",\"api_error_status\":null,\"result\":\"{\\\"snippets\\\":[\\\"Look over here: settings toggles (src/settings, .foundry/roles/settings-warden/domainKnowledge.md) — the question is about whether toggles persist, and that knowledge says toggles persist per project.\\\"],\\\"layers\\\":[],\\\"confidence\\\":0.8}\",\"ttft_ms\":2067,\"type\":\"result\",\"duration_ms\":2670,\"uuid\":\"77ec846b-2cbc-4e89-8dbb-184006f70fc0\",\"ttft_stream_ms\":773,\"time_to_request_ms\":97,\"first_content_frame_ms\":773,\"queued_turn_count\":0,\"result_index\":0}"
+      }
+    ],
+    "exit": {
+      "after": 2,
+      "code": null,
+      "killed": true
+    }
+  },
+  "recorded": {
+    "service": "claude",
+    "cli": "claude",
+    "recordedAt": "2026-11-06T18:28:42.601Z",
+    "agentSession": "0.12.0",
+    "environment": "terminal",
+    "durationMs": 6861,
+    "model": "claude-haiku-5-5"
+  }
+}

@@ -1,0 +1,119 @@
+{
+  "version": "2.1.281",
+  "status": 0,
+  "body": {
+    "kind": "process",
+    "argv": [
+      "claude",
+      "--print",
+      "--verbose",
+      "--input-format",
+      "stream-json",
+      "--output-format",
+      "stream-json",
+      "--model",
+      "haiku",
+      "--max-turns",
+      "1",
+      "--permission-mode",
+      "dontAsk",
+      "--include-hook-events",
+      "--append-system-prompt-file",
+      "{{tmp}}/agent-session-base-80114-xXoaNS/append-system-prompt.md",
+      "--safe-mode",
+      "--tools",
+      "",
+      "--strict-mcp-config",
+      "--mcp-config",
+      "{\"mcpServers\":{}}",
+      "--disable-slash-commands",
+      "--no-chrome"
+    ],
+    "cwd": "{{cwd}}",
+    "stdin": [
+      "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"# System Context\\n\\nYou classify messages a person typed to an AI coding agent. Each message comes with the agent's previous message, and each is judged on its own.\\n\\nA CORRECTION is feedback about how the agent works: the person redirects, fixes or rejects what the agent did, or states a rule or preference the agent should keep following beyond this task. These are NOT corrections: a new task or question, an answer to the agent's question, approving or reviewing one specific item, design discussion, status chatter.\\n\\nFor a correction, write each rule it carries as a statement: one imperative sentence of at most 160 characters that says when it applies (\\\"When X, do Y.\\\" or \\\"Never X.\\\"), general enough to hold next time, in plain words without quoting the message. At most three statements per message. Use names (products, tools, terms) only when the rule is about them.\\n\\nRespond with JSON only, one result per message id:\\n{ \\\"results\\\": { \\\"<id>\\\": { \\\"isCorrection\\\": boolean, \\\"category\\\": \\\"approach\\\" | \\\"scope\\\" | \\\"convention\\\" | \\\"fact\\\" | \\\"other\\\", \\\"statements\\\": string[], \\\"sharp\\\": boolean } } }\\ncategory: approach = how to do the work; scope = what to do or not do; convention = naming, style, process or tooling rules; fact = something about the world or the codebase the agent got wrong; other = anything else.\\nsharp: false when it is a correction but no crisp rule can be stated; then statements is empty.\\n\\n# User Message\\n\\nClassify each message below.\\n\\n## M1\\n### Agent's prior message\\nThe change is ready and the check is green. Shall I open a PR for you to review and merge?\\n\\n### Person's message\\nNo, don't open a PR for me to merge. I told you already: on the agentic repos you merge it yourself once the full check is green.\"}]}}"
+    ],
+    "stdinEnded": false,
+    "frames": [
+      {
+        "after": 1,
+        "stream": "stdout",
+        "data": "{\"type\":\"system\",\"subtype\":\"commands_changed\",\"commands\":[],\"uuid\":\"55f4fd33-5757-41b8-9fbc-26ce73129bb4\",\"session_id\":\"3bd0de20-d464-4f94-bfdf-dd5aa73d1375\"}"
+      },
+      {
+        "after": 1,
+        "stream": "stdout",
+        "data": "{\"type\":\"system\",\"subtype\":\"init\",\"cwd\":\"{{cwd}}\",\"session_id\":\"3bd0de20-d464-4f94-bfdf-dd5aa73d1375\",\"tools\":[],\"mcp_servers\":[],\"model\":\"claude-haiku-4-5-20251001\",\"permissionMode\":\"dontAsk\",\"slash_commands\":[],\"apiKeySource\":\"none\",\"claude_code_version\":\"2.1.281\",\"output_style\":\"default\",\"agents\":[\"claude\",\"Explore\",\"general-purpose\",\"Plan\"],\"skills\":[],\"plugins\":[{\"name\":\"code-review\",\"path\":\"~/.claude/plugins/cache/claude-plugins-official/code-review/27d2b86d72da\",\"source\":\"code-review@claude-plugins-official\"},{\"name\":\"linear\",\"path\":\"~/.claude/plugins/cache/claude-plugins-official/linear/27d2b86d72da\",\"source\":\"linear@claude-plugins-official\"},{\"name\":\"playwright\",\"path\":\"~/.claude/plugins/cache/claude-plugins-official/playwright/27d2b86d72da\",\"source\":\"playwright@claude-plugins-official\"},{\"name\":\"pr-review-toolkit\",\"path\":\"~/.claude/plugins/cache/claude-plugins-official/pr-review-toolkit/27d2b86d72da\",\"source\":\"pr-review-toolkit@claude-plugins-official\"},{\"name\":\"vercel\",\"path\":\"~/.claude/plugins/cache/claude-plugins-official/vercel/1.0.0\",\"source\":\"vercel@claude-plugins-official\",\"version\":\"1.0.0\"},{\"name\":\"superpowers\",\"path\":\"~/.claude/plugins/cache/claude-plugins-official/superpowers/4.1.1\",\"source\":\"superpowers@claude-plugins-official\",\"version\":\"4.1.1\"},{\"name\":\"slack\",\"path\":\"~/.claude/plugins/cache/claude-plugins-official/slack/1.3.0\",\"source\":\"slack@claude-plugins-official\",\"version\":\"1.3.0\"},{\"name\":\"greptile\",\"path\":\"~/.claude/plugins/cache/claude-plugins-official/greptile/1.2.4\",\"source\":\"greptile@claude-plugins-official\",\"version\":\"1.2.4\"},{\"name\":\"agents-md\",\"path\":\"builtin\",\"source\":\"agents-md@builtin\"},{\"name\":\"telemetry\",\"path\":\"builtin\",\"source\":\"telemetry@builtin\"}],\"capabilities\":[\"interrupt_receipt_v1\",\"interrupt_cancel_queued_v1\",\"msg_lifecycle_v1\",\"mcp_read_resource_v1\",\"mcp_tool_ui_meta_v1\"],\"analytics_disabled\":false,\"product_feedback_disabled\":false,\"uuid\":\"ee52bee0-eb97-4d24-8c7d-9c9fddd261a0\",\"messaging_socket_path\":\"/tmp/cc-socks/80315.sock\",\"fast_mode_state\":\"off\",\"fast_mode_disabled_reason\":\"sdk_opt_in_required\",\"per_turn_effort_active\":false,\"view_mode\":\"default\"}"
+      },
+      {
+        "after": 1,
+        "stream": "stdout",
+        "data": "{\"type\":\"system\",\"subtype\":\"thinking_tokens\",\"estimated_tokens\":50,\"estimated_tokens_delta\":50,\"session_id\":\"3bd0de20-d464-4f94-bfdf-dd5aa73d1375\",\"uuid\":\"79d4854a-be3f-4ba2-9e6d-d88b629ce4ca\"}"
+      },
+      {
+        "after": 1,
+        "stream": "stdout",
+        "data": "{\"type\":\"system\",\"subtype\":\"thinking_tokens\",\"estimated_tokens\":150,\"estimated_tokens_delta\":100,\"session_id\":\"3bd0de20-d464-4f94-bfdf-dd5aa73d1375\",\"uuid\":\"d6b17fe5-47fc-416b-896e-7b7de0d64c9c\"}"
+      },
+      {
+        "after": 1,
+        "stream": "stdout",
+        "data": "{\"type\":\"system\",\"subtype\":\"thinking_tokens\",\"estimated_tokens\":250,\"estimated_tokens_delta\":100,\"session_id\":\"3bd0de20-d464-4f94-bfdf-dd5aa73d1375\",\"uuid\":\"47a0d8f7-4f2f-45d7-911b-4054a4512050\"}"
+      },
+      {
+        "after": 1,
+        "stream": "stdout",
+        "data": "{\"type\":\"system\",\"subtype\":\"thinking_tokens\",\"estimated_tokens\":350,\"estimated_tokens_delta\":100,\"session_id\":\"3bd0de20-d464-4f94-bfdf-dd5aa73d1375\",\"uuid\":\"43e11c98-7d0b-47b1-b962-542f8cceee51\"}"
+      },
+      {
+        "after": 1,
+        "stream": "stdout",
+        "data": "{\"type\":\"system\",\"subtype\":\"thinking_tokens\",\"estimated_tokens\":450,\"estimated_tokens_delta\":100,\"session_id\":\"3bd0de20-d464-4f94-bfdf-dd5aa73d1375\",\"uuid\":\"04861fff-5bc0-480c-a219-9071a8d02197\"}"
+      },
+      {
+        "after": 1,
+        "stream": "stdout",
+        "data": "{\"type\":\"system\",\"subtype\":\"thinking_tokens\",\"estimated_tokens\":600,\"estimated_tokens_delta\":150,\"session_id\":\"3bd0de20-d464-4f94-bfdf-dd5aa73d1375\",\"uuid\":\"927e8015-374e-450d-95a1-b819effff188\"}"
+      },
+      {
+        "after": 1,
+        "stream": "stdout",
+        "data": "{\"type\":\"system\",\"subtype\":\"thinking_tokens\",\"estimated_tokens\":708,\"estimated_tokens_delta\":108,\"session_id\":\"3bd0de20-d464-4f94-bfdf-dd5aa73d1375\",\"uuid\":\"2400efd8-5300-4483-92ab-19fdb26f4196\"}"
+      },
+      {
+        "after": 1,
+        "stream": "stdout",
+        "data": "{\"type\":\"assistant\",\"message\":{\"model\":\"claude-haiku-4-5-20251001\",\"id\":\"msg_011Cgn9Uh6xYJoZTe1qAP4GC\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"thinking\",\"thinking\":\"\",\"signature\":\"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\"}],\"container\":null,\"stop_reason\":null,\"stop_sequence\":null,\"stop_details\":null,\"usage\":{\"input_tokens\":4044,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":0},\"output_tokens\":4,\"service_tier\":\"standard\",\"inference_geo\":\"not_available\",\"speed\":\"standard\"},\"input_transformations\":[],\"diagnostics\":null,\"context_management\":null},\"parent_tool_use_id\":null,\"session_id\":\"3bd0de20-d464-4f94-bfdf-dd5aa73d1375\",\"uuid\":\"ec0bc9b2-90c5-45e8-8a8a-6121b04f61b8\",\"timestamp\":\"2026-11-06T18:27:54.040Z\",\"request_id\":\"req_011Cgn9UgvnrnvnTnTLyTGxp\"}"
+      },
+      {
+        "after": 1,
+        "stream": "stdout",
+        "data": "{\"type\":\"assistant\",\"message\":{\"model\":\"claude-haiku-4-5-20251001\",\"id\":\"msg_011Cgn9Uh6xYJoZTe1qAP4GC\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"```json\\n{\\n  \\\"results\\\": {\\n    \\\"M1\\\": {\\n      \\\"isCorrection\\\": true,\\n      \\\"category\\\": \\\"approach\\\",\\n      \\\"statements\\\": [\\n        \\\"On agentic repos, merge code yourself once the full check is green instead of opening a PR.\\\"\\n      ],\\n      \\\"sharp\\\": true\\n    }\\n  }\\n}\\n```\"}],\"container\":null,\"stop_reason\":null,\"stop_sequence\":null,\"stop_details\":null,\"usage\":{\"input_tokens\":4044,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":0},\"output_tokens\":4,\"service_tier\":\"standard\",\"inference_geo\":\"not_available\",\"speed\":\"standard\"},\"input_transformations\":[],\"diagnostics\":null,\"context_management\":null},\"parent_tool_use_id\":null,\"session_id\":\"3bd0de20-d464-4f94-bfdf-dd5aa73d1375\",\"uuid\":\"f0220838-1f26-430f-a645-2cefbeb4e195\",\"timestamp\":\"2026-11-06T18:27:54.581Z\",\"request_id\":\"req_011Cgn9UgvnrnvnTnTLyTGxp\"}"
+      },
+      {
+        "after": 1,
+        "stream": "stdout",
+        "data": "{\"type\":\"rate_limit_event\",\"rate_limit_info\":{\"status\":\"allowed\",\"resetsAt\":1794006000,\"rateLimitType\":\"five_hour\",\"overageStatus\":\"rejected\",\"overageDisabledReason\":\"out_of_credits\",\"isUsingOverage\":false,\"unifiedWindows\":{\"five_hour\":{\"utilization\":0.05,\"resetsAt\":1794006000},\"seven_day\":{\"utilization\":0.7,\"resetsAt\":1794333600}}},\"uuid\":\"14377862-af53-4b63-9f83-1012679e8efa\",\"session_id\":\"3bd0de20-d464-4f94-bfdf-dd5aa73d1375\"}"
+      },
+      {
+        "after": 1,
+        "stream": "stdout",
+        "data": "{\"duration_api_ms\":7633,\"stop_reason\":\"end_turn\",\"session_id\":\"3bd0de20-d464-4f94-bfdf-dd5aa73d1375\",\"total_cost_usd\":0.007619,\"usage\":{\"input_tokens\":4044,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":715,\"output_tokens_details\":{\"thinking_tokens\":626},\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{\"ephemeral_1h_input_tokens\":0,\"ephemeral_5m_input_tokens\":0},\"inference_geo\":\"not_available\",\"iterations\":[{\"input_tokens\":4044,\"output_tokens\":715,\"cache_read_input_tokens\":0,\"cache_creation_input_tokens\":0,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":0},\"type\":\"message\"}],\"speed\":\"standard\"},\"modelUsage\":{\"claude-haiku-4-5-20251001\":{\"inputTokens\":4044,\"outputTokens\":715,\"cacheReadInputTokens\":0,\"cacheCreationInputTokens\":0,\"webSearchRequests\":0,\"costUSD\":0.007619,\"contextWindow\":200000,\"maxOutputTokens\":32000,\"thinkingTokens\":626,\"canonicalModel\":\"claude-haiku-4-5\",\"provider\":\"firstParty\",\"costBasis\":\"list\"}},\"permission_denials\":[],\"terminal_reason\":\"completed\",\"fast_mode_state\":\"off\",\"fast_mode_disabled_reason\":\"sdk_opt_in_required\",\"subagent_stats\":{\"spawned\":0,\"requested\":{\"background\":0,\"foreground\":0,\"unset\":0},\"started_in_background\":0,\"max_depth\":0,\"spawned_by_subagents\":0,\"completed\":0,\"failed\":0,\"killed\":{\"parent\":0,\"user\":0,\"system\":0},\"refused\":{\"depth_limit\":0,\"concurrency_limit\":0,\"budget\":0},\"by_type\":{}},\"is_error\":false,\"num_turns\":1,\"subtype\":\"success\",\"api_error_status\":null,\"result\":\"```json\\n{\\n  \\\"results\\\": {\\n    \\\"M1\\\": {\\n      \\\"isCorrection\\\": true,\\n      \\\"category\\\": \\\"approach\\\",\\n      \\\"statements\\\": [\\n        \\\"On agentic repos, merge code yourself once the full check is green instead of opening a PR.\\\"\\n      ],\\n      \\\"sharp\\\": true\\n    }\\n  }\\n}\\n```\",\"ttft_ms\":7218,\"type\":\"result\",\"duration_ms\":7790,\"uuid\":\"e265503b-3f25-4b66-9c45-76c7f9a8cb17\",\"ttft_stream_ms\":816,\"time_to_request_ms\":155,\"first_content_frame_ms\":817,\"queued_turn_count\":0,\"result_index\":0}"
+      }
+    ],
+    "exit": {
+      "after": 1,
+      "code": null,
+      "killed": true
+    }
+  },
+  "recorded": {
+    "service": "claude",
+    "cli": "claude",
+    "recordedAt": "2026-11-06T18:27:55.415Z",
+    "agentSession": "0.12.0",
+    "environment": "terminal",
+    "durationMs": 8913,
+    "model": "claude-haiku-4-5-20251001"
+  }
+}

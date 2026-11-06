@@ -1,0 +1,88 @@
+{
+  "version": "2.1.281",
+  "status": 0,
+  "body": {
+    "kind": "process",
+    "argv": [
+      "claude",
+      "--print",
+      "--verbose",
+      "--input-format",
+      "stream-json",
+      "--output-format",
+      "stream-json",
+      "--model",
+      "claude-haiku-5-5",
+      "--effort",
+      "low",
+      "--max-turns",
+      "1",
+      "--permission-mode",
+      "bypassPermissions",
+      "--include-hook-events",
+      "--safe-mode",
+      "--tools",
+      "",
+      "--strict-mcp-config",
+      "--mcp-config",
+      "{\"mcpServers\":{}}",
+      "--disable-slash-commands",
+      "--no-chrome",
+      "--append-system-prompt-file",
+      "{{tmp}}/agent-session-base-80114-l2xMns/append-system-prompt.md",
+      "--setting-sources",
+      ""
+    ],
+    "cwd": "{{cwd}}",
+    "stdin": [
+      "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"## Domain cache (locks)\\n# Region locks: Locks\\n\\nCovers mutual exclusion across processes and instances: making sure one job or one write never runs twice at once.\\n\\nNot this region: queues that only order work, retries, scheduling times.\\n\\n\\nThe above is standing context for the decisions that follow. Reply with OK only.\"}]}}"
+    ],
+    "stdinEnded": true,
+    "frames": [
+      {
+        "after": 1,
+        "stream": "stdout",
+        "data": "{\"type\":\"system\",\"subtype\":\"commands_changed\",\"commands\":[],\"uuid\":\"1a7f6994-9812-433d-bb03-9c9b83e1f034\",\"session_id\":\"446ce9e0-ea83-4427-b393-f249ab90ddfa\"}"
+      },
+      {
+        "after": 1,
+        "stream": "stdout",
+        "data": "{\"type\":\"system\",\"subtype\":\"init\",\"cwd\":\"{{cwd}}\",\"session_id\":\"446ce9e0-ea83-4427-b393-f249ab90ddfa\",\"tools\":[],\"mcp_servers\":[],\"model\":\"claude-haiku-5-5\",\"permissionMode\":\"bypassPermissions\",\"slash_commands\":[],\"apiKeySource\":\"none\",\"claude_code_version\":\"2.1.281\",\"output_style\":\"default\",\"agents\":[\"claude\",\"Explore\",\"general-purpose\",\"Plan\"],\"skills\":[],\"plugins\":[{\"name\":\"agents-md\",\"path\":\"builtin\",\"source\":\"agents-md@builtin\"},{\"name\":\"telemetry\",\"path\":\"builtin\",\"source\":\"telemetry@builtin\"}],\"capabilities\":[\"interrupt_receipt_v1\",\"interrupt_cancel_queued_v1\",\"msg_lifecycle_v1\",\"mcp_read_resource_v1\",\"mcp_tool_ui_meta_v1\"],\"analytics_disabled\":false,\"product_feedback_disabled\":false,\"uuid\":\"c0c221e4-7086-451a-9864-7a993b2ba8f8\",\"messaging_socket_path\":\"/tmp/cc-socks/85631.sock\",\"fast_mode_state\":\"off\",\"fast_mode_disabled_reason\":\"sdk_opt_in_required\",\"per_turn_effort_active\":true,\"view_mode\":\"default\"}"
+      },
+      {
+        "after": 1,
+        "stream": "stderr",
+        "data": "[claude-code:unrecognized_model] {\"model\":\"claude-haiku-5-5\",\"query_source\":\"sdk\"}"
+      },
+      {
+        "after": 1,
+        "stream": "stdout",
+        "data": "{\"type\":\"assistant\",\"message\":{\"model\":\"claude-haiku-5-5\",\"id\":\"msg_011Cgn9YsbbpmNoi2Y8MsgUW\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"OK\"}],\"container\":null,\"stop_reason\":null,\"stop_sequence\":null,\"stop_details\":null,\"usage\":{\"input_tokens\":2,\"cache_creation_input_tokens\":2206,\"cache_read_input_tokens\":3396,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":2206},\"output_tokens\":4,\"service_tier\":\"standard\",\"inference_geo\":\"global\",\"speed\":\"standard\"},\"input_transformations\":[],\"diagnostics\":null,\"context_management\":null},\"parent_tool_use_id\":null,\"session_id\":\"446ce9e0-ea83-4427-b393-f249ab90ddfa\",\"uuid\":\"ebaf77eb-4e9e-4add-bb2f-e8781078f672\",\"timestamp\":\"2026-11-06T18:28:45.680Z\",\"request_id\":\"req_011Cgn9YsGzdy1umW9Aha28m\"}"
+      },
+      {
+        "after": 1,
+        "stream": "stdout",
+        "data": "{\"type\":\"rate_limit_event\",\"rate_limit_info\":{\"status\":\"allowed\",\"resetsAt\":1794006000,\"rateLimitType\":\"five_hour\",\"overageStatus\":\"rejected\",\"overageDisabledReason\":\"out_of_credits\",\"isUsingOverage\":false,\"unifiedWindows\":{\"five_hour\":{\"utilization\":0.05,\"resetsAt\":1794006000},\"seven_day\":{\"utilization\":0.7,\"resetsAt\":1794333600}}},\"uuid\":\"0c9fbe2a-6f9b-4e02-b969-850d111fe854\",\"session_id\":\"446ce9e0-ea83-4427-b393-f249ab90ddfa\"}"
+      },
+      {
+        "after": 1,
+        "stream": "stdout",
+        "data": "{\"duration_api_ms\":1899,\"stop_reason\":\"end_turn\",\"session_id\":\"446ce9e0-ea83-4427-b393-f249ab90ddfa\",\"total_cost_usd\":0.0184152,\"usage\":{\"input_tokens\":2,\"cache_creation_input_tokens\":2206,\"cache_read_input_tokens\":3396,\"output_tokens\":4,\"output_tokens_details\":{\"thinking_tokens\":0},\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{\"ephemeral_1h_input_tokens\":2206,\"ephemeral_5m_input_tokens\":0},\"inference_geo\":\"global\",\"iterations\":[{\"input_tokens\":2,\"output_tokens\":4,\"cache_read_input_tokens\":3396,\"cache_creation_input_tokens\":2206,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":2206},\"type\":\"message\"}],\"speed\":\"standard\"},\"modelUsage\":{\"claude-haiku-5-5\":{\"inputTokens\":2,\"outputTokens\":4,\"cacheReadInputTokens\":3396,\"cacheCreationInputTokens\":2206,\"webSearchRequests\":0,\"costUSD\":0.0184152,\"contextWindow\":200000,\"maxOutputTokens\":128000,\"thinkingTokens\":0,\"canonicalModel\":\"claude-haiku-5-5\",\"provider\":\"firstParty\",\"costBasis\":\"unknown\"}},\"permission_denials\":[],\"terminal_reason\":\"completed\",\"fast_mode_state\":\"off\",\"fast_mode_disabled_reason\":\"sdk_opt_in_required\",\"subagent_stats\":{\"spawned\":0,\"requested\":{\"background\":0,\"foreground\":0,\"unset\":0},\"started_in_background\":0,\"max_depth\":0,\"spawned_by_subagents\":0,\"completed\":0,\"failed\":0,\"killed\":{\"parent\":0,\"user\":0,\"system\":0},\"refused\":{\"depth_limit\":0,\"concurrency_limit\":0,\"budget\":0},\"by_type\":{}},\"is_error\":false,\"num_turns\":1,\"subtype\":\"success\",\"api_error_status\":null,\"result\":\"OK\",\"ttft_ms\":1941,\"type\":\"result\",\"duration_ms\":2008,\"uuid\":\"87d9b9a3-dc3d-492d-aba2-758c5e0281cf\",\"ttft_stream_ms\":1938,\"time_to_request_ms\":104,\"first_content_frame_ms\":1938,\"queued_turn_count\":0,\"result_index\":0}"
+      }
+    ],
+    "exit": {
+      "after": 2,
+      "code": null,
+      "killed": true
+    }
+  },
+  "recorded": {
+    "service": "claude",
+    "cli": "claude",
+    "recordedAt": "2026-11-06T18:28:46.773Z",
+    "agentSession": "0.12.0",
+    "environment": "terminal",
+    "durationMs": 4040,
+    "model": "claude-haiku-5-5"
+  }
+}

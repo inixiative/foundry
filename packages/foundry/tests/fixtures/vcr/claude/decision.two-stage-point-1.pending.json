@@ -1,0 +1,88 @@
+{
+  "version": "2.1.281",
+  "status": 0,
+  "body": {
+    "kind": "process",
+    "argv": [
+      "claude",
+      "--print",
+      "--verbose",
+      "--input-format",
+      "stream-json",
+      "--output-format",
+      "stream-json",
+      "--model",
+      "claude-sonnet-5-5",
+      "--effort",
+      "low",
+      "--max-turns",
+      "1",
+      "--permission-mode",
+      "bypassPermissions",
+      "--include-hook-events",
+      "--safe-mode",
+      "--tools",
+      "",
+      "--strict-mcp-config",
+      "--mcp-config",
+      "{\"mcpServers\":{}}",
+      "--disable-slash-commands",
+      "--no-chrome",
+      "--append-system-prompt-file",
+      "{{tmp}}/agent-session-base-80114-4XUUTf/append-system-prompt.md",
+      "--setting-sources",
+      ""
+    ],
+    "cwd": "{{cwd}}",
+    "stdin": [
+      "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"## Domain cache (locks)\\n# Locks\\n\\n- createLock (docs/CONCURRENCY.md § Distributed Lock): a Redis lock with a heartbeat lease; one holder across every instance.\\n- db.findForUpdate (docs/CONCURRENCY.md § Row locks): one row, inside a transaction.\\n\\n\\nThe above is standing context for the decisions that follow. Reply with OK only.\"}]}}"
+    ],
+    "stdinEnded": true,
+    "frames": [
+      {
+        "after": 1,
+        "stream": "stdout",
+        "data": "{\"type\":\"system\",\"subtype\":\"commands_changed\",\"commands\":[],\"uuid\":\"5e45c03d-ea76-4ffa-ad58-c78f72962d25\",\"session_id\":\"a26f0521-2855-4029-8a7f-40240f50a8bc\"}"
+      },
+      {
+        "after": 1,
+        "stream": "stdout",
+        "data": "{\"type\":\"system\",\"subtype\":\"init\",\"cwd\":\"{{cwd}}\",\"session_id\":\"a26f0521-2855-4029-8a7f-40240f50a8bc\",\"tools\":[],\"mcp_servers\":[],\"model\":\"claude-sonnet-5-5\",\"permissionMode\":\"bypassPermissions\",\"slash_commands\":[],\"apiKeySource\":\"none\",\"claude_code_version\":\"2.1.281\",\"output_style\":\"default\",\"agents\":[\"claude\",\"Explore\",\"general-purpose\",\"Plan\"],\"skills\":[],\"plugins\":[{\"name\":\"agents-md\",\"path\":\"builtin\",\"source\":\"agents-md@builtin\"},{\"name\":\"telemetry\",\"path\":\"builtin\",\"source\":\"telemetry@builtin\"}],\"capabilities\":[\"interrupt_receipt_v1\",\"interrupt_cancel_queued_v1\",\"msg_lifecycle_v1\",\"mcp_read_resource_v1\",\"mcp_tool_ui_meta_v1\"],\"analytics_disabled\":false,\"product_feedback_disabled\":false,\"uuid\":\"98e1ad96-0282-4f30-8582-1535039304e7\",\"messaging_socket_path\":\"/tmp/cc-socks/86695.sock\",\"fast_mode_state\":\"off\",\"fast_mode_disabled_reason\":\"sdk_opt_in_required\",\"per_turn_effort_active\":false,\"view_mode\":\"default\"}"
+      },
+      {
+        "after": 1,
+        "stream": "stderr",
+        "data": "[claude-code:unrecognized_model] {\"model\":\"claude-sonnet-5-5\",\"query_source\":\"sdk\"}"
+      },
+      {
+        "after": 1,
+        "stream": "stdout",
+        "data": "{\"type\":\"assistant\",\"message\":{\"model\":\"claude-sonnet-5-5\",\"id\":\"msg_011Cgn9ZGH6TmXMpfG7bxitK\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"OK\"}],\"container\":null,\"stop_reason\":null,\"stop_sequence\":null,\"stop_details\":null,\"usage\":{\"input_tokens\":2,\"cache_creation_input_tokens\":3024,\"cache_read_input_tokens\":3396,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":3024},\"output_tokens\":4,\"service_tier\":\"standard\",\"inference_geo\":\"global\",\"speed\":\"standard\"},\"input_transformations\":[],\"diagnostics\":null,\"context_management\":null},\"parent_tool_use_id\":null,\"session_id\":\"a26f0521-2855-4029-8a7f-40240f50a8bc\",\"uuid\":\"321c6824-c50f-4229-be89-78c772e6ec77\",\"timestamp\":\"2026-11-06T18:28:50.569Z\",\"request_id\":\"req_011Cgn9ZG6SPuE6bob3Fraqk\"}"
+      },
+      {
+        "after": 1,
+        "stream": "stdout",
+        "data": "{\"type\":\"rate_limit_event\",\"rate_limit_info\":{\"status\":\"allowed\",\"resetsAt\":1794006000,\"rateLimitType\":\"five_hour\",\"overageStatus\":\"rejected\",\"overageDisabledReason\":\"out_of_credits\",\"isUsingOverage\":false,\"unifiedWindows\":{\"five_hour\":{\"utilization\":0.05,\"resetsAt\":1794006000},\"seven_day\":{\"utilization\":0.7,\"resetsAt\":1794333600}}},\"uuid\":\"092eb48b-ed6c-4163-8151-6a6683967783\",\"session_id\":\"a26f0521-2855-4029-8a7f-40240f50a8bc\"}"
+      },
+      {
+        "after": 1,
+        "stream": "stdout",
+        "data": "{\"duration_api_ms\":1411,\"stop_reason\":\"end_turn\",\"session_id\":\"a26f0521-2855-4029-8a7f-40240f50a8bc\",\"total_cost_usd\":0.0249592,\"usage\":{\"input_tokens\":2,\"cache_creation_input_tokens\":3024,\"cache_read_input_tokens\":3396,\"output_tokens\":4,\"output_tokens_details\":{\"thinking_tokens\":0},\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{\"ephemeral_1h_input_tokens\":3024,\"ephemeral_5m_input_tokens\":0},\"inference_geo\":\"global\",\"iterations\":[{\"input_tokens\":2,\"output_tokens\":4,\"cache_read_input_tokens\":3396,\"cache_creation_input_tokens\":3024,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":3024},\"type\":\"message\"}],\"speed\":\"standard\"},\"modelUsage\":{\"claude-sonnet-5-5\":{\"inputTokens\":2,\"outputTokens\":4,\"cacheReadInputTokens\":3396,\"cacheCreationInputTokens\":3024,\"webSearchRequests\":0,\"costUSD\":0.0249592,\"contextWindow\":200000,\"maxOutputTokens\":128000,\"thinkingTokens\":0,\"canonicalModel\":\"claude-sonnet-5-5\",\"provider\":\"firstParty\",\"costBasis\":\"unknown\"}},\"permission_denials\":[],\"terminal_reason\":\"completed\",\"fast_mode_state\":\"off\",\"fast_mode_disabled_reason\":\"sdk_opt_in_required\",\"subagent_stats\":{\"spawned\":0,\"requested\":{\"background\":0,\"foreground\":0,\"unset\":0},\"started_in_background\":0,\"max_depth\":0,\"spawned_by_subagents\":0,\"completed\":0,\"failed\":0,\"killed\":{\"parent\":0,\"user\":0,\"system\":0},\"refused\":{\"depth_limit\":0,\"concurrency_limit\":0,\"budget\":0},\"by_type\":{}},\"is_error\":false,\"num_turns\":1,\"subtype\":\"success\",\"api_error_status\":null,\"result\":\"OK\",\"ttft_ms\":1470,\"type\":\"result\",\"duration_ms\":1498,\"uuid\":\"b03c596e-bc56-496b-81d7-9b82e7a2483e\",\"ttft_stream_ms\":1470,\"time_to_request_ms\":91,\"first_content_frame_ms\":1470,\"queued_turn_count\":0,\"result_index\":0}"
+      }
+    ],
+    "exit": {
+      "after": 2,
+      "code": null,
+      "killed": true
+    }
+  },
+  "recorded": {
+    "service": "claude",
+    "cli": "claude",
+    "recordedAt": "2026-11-06T18:28:51.626Z",
+    "agentSession": "0.12.0",
+    "environment": "terminal",
+    "durationMs": 3222,
+    "model": "claude-sonnet-5-5"
+  }
+}

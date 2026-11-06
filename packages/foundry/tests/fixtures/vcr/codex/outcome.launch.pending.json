@@ -1,0 +1,15 @@
+{
+  "version": "0.153.4",
+  "status": 200,
+  "body": {
+    "decided": true,
+    "native": "completed"
+  },
+  "recorded": {
+    "service": "codex",
+    "cli": "codex",
+    "recordedAt": "2026-11-06T18:30:43.522Z",
+    "agentSession": "0.12.0",
+    "environment": "terminal"
+  }
+}

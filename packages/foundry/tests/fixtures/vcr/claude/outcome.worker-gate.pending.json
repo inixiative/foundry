@@ -1,0 +1,17 @@
+{
+  "version": "2.1.281",
+  "status": 200,
+  "body": {
+    "denied": true,
+    "bashRequested": true,
+    "fileWritten": false,
+    "answered": true
+  },
+  "recorded": {
+    "service": "claude",
+    "cli": "claude",
+    "recordedAt": "2026-11-06T18:29:08.535Z",
+    "agentSession": "0.12.0",
+    "environment": "terminal"
+  }
+}

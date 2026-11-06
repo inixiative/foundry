@@ -1,0 +1,58 @@
+{
+  "version": "2.1.281",
+  "status": 0,
+  "body": {
+    "kind": "process",
+    "argv": [
+      "claude",
+      "--print",
+      "--verbose",
+      "--input-format",
+      "stream-json",
+      "--output-format",
+      "stream-json",
+      "--model",
+      "claude-haiku-5-5",
+      "--effort",
+      "low",
+      "--max-turns",
+      "1",
+      "--permission-mode",
+      "bypassPermissions",
+      "--include-hook-events",
+      "--safe-mode",
+      "--tools",
+      "",
+      "--strict-mcp-config",
+      "--mcp-config",
+      "{\"mcpServers\":{}}",
+      "--disable-slash-commands",
+      "--no-chrome",
+      "--no-session-persistence",
+      "--resume",
+      "96e9d3b5-73ad-4122-9bd2-41dd5bc78585",
+      "--fork-session",
+      "--append-system-prompt-file",
+      "{{tmp}}/agent-session-base-80114-kKVWfL/append-system-prompt.md",
+      "--setting-sources",
+      ""
+    ],
+    "cwd": "{{cwd}}",
+    "stdin": [],
+    "stdinEnded": true,
+    "frames": [],
+    "exit": {
+      "after": 1,
+      "code": null,
+      "killed": true
+    }
+  },
+  "recorded": {
+    "service": "claude",
+    "cli": "claude",
+    "recordedAt": "2026-11-06T18:28:32.667Z",
+    "agentSession": "0.12.0",
+    "environment": "terminal",
+    "durationMs": 560
+  }
+}
