@@ -17,33 +17,40 @@ kanban
     VIEWER-003-diff-viewer
     VIEWER-004-gloss-viewer
     VIEWER-005-heralds-view
-    VIEWER-006-theme-from-config
     VIEWER-007-your-other-machines
     BOARD-001-shared-threads
     BOARD-002-sidecar-joining-side
     BOARD-003-inbound-items
     BOARD-004-outside-requests
     BOARD-005-g1-untrusted-content
-    FEAT-003-rejections-ledger
+    FEAT-009-rejections-ledger
     CORE-002-idle-and-dispose-release
     FEAT-001-acp-session-list
     FEAT-002-codex-login-auth-command
-    FEAT-005-secret-placeholders
+    FEAT-004-delegation-placements
   In Progress
+    FEAT-003-worktree-lifecycle
+    CORE-004-fork-and-rewind
   Done
     CORE-001-explicit-steer-path
+    CORE-003-native-settings-load-normally
+    FEAT-005-secret-placeholders
+    FEAT-006-muse-code-worker
+    FEAT-007-worker-per-thread
+    FEAT-008-chorus-degraded-notice
+    VIEWER-006-theme-from-config
 ```
 
 ## Tickets
 
 ### Backlog — Last-Mile Wiring
 
-These tickets capture the connections between components that are individually built but not yet wired together. Each loop in FLOW.md has its pieces at 80-90% — the remaining 10-20% is the wiring between them.
+These four tickets date from 2026-04-09. MCP-001 and AGENT-003 describe code that no longer exists and are marked stale in their own files; AGENT-001 and AGENT-002 still describe real gaps (the Herald and the writeback pipeline are placeholders with no caller).
 
 | Ticket | Loop | Gap | Priority |
 |--------|------|-----|----------|
-| [MCP-001](./MCP-001-harness-integration.md) | Loop 2 | MCP runs standalone, not alongside live harness | High |
-| [AGENT-003](./AGENT-003-tool-observation-signals.md) | Loop 3 | Hook script generated but not written to disk; no callback endpoint | High |
+| [MCP-001](./MCP-001-harness-integration.md) | Loop 2 | Stale: the MCP server now runs with the live harness (`mcp/native-bridge.ts`) | — |
+| [AGENT-003](./AGENT-003-tool-observation-signals.md) | Loop 3 | Stale: there is no hook; tool calls are observed on the native event stream | — |
 | [AGENT-002](./AGENT-002-writeback-pipeline.md) | Loop 4 | CorpusCompiler pipeline works but Librarian doesn't feed it | Medium |
 | [AGENT-001](./AGENT-001-herald-cross-thread.md) | Cross-thread | Herald class exists but isn't instantiated | Medium |
 
@@ -56,7 +63,7 @@ These tickets capture the connections between components that are individually b
 | [VIEWER-003](./VIEWER-003-diff-viewer.md) | Per-turn and per-thread diffs, branch-vs-base Compare; GitHub link-out is the interim | Low |
 | [VIEWER-004](./VIEWER-004-gloss-viewer.md) | Gloss in the code viewer; the top-bar button returns with it | Low |
 | [VIEWER-005](./VIEWER-005-heralds-view.md) | A workspace view like the Board: how threads are represented to the Heralds (needs AGENT-001) | Medium |
-| [VIEWER-006](./VIEWER-006-theme-from-config.md) | One theme for Kingdom and Foundry from `@inixiative/config` (`theme/public`, `theme/agentic`), loaded at runtime from the package (Aron 11-01) | Medium |
+| [VIEWER-006](./VIEWER-006-theme-from-config.md) | ✅ Done in Foundry. One theme for Kingdom and Foundry from `@inixiative/config` (`theme/public`, `theme/agentic`), loaded at runtime from the package (Aron 11-01) | Medium |
 | [VIEWER-007](./VIEWER-007-your-other-machines.md) | Your other machines and their pages, read through Foundry's Kingdom Signet (an entitlement anchored at your user); the viewer side is built | Medium |
 
 ### Backlog — Attention board (Foundry Version 4)
@@ -68,7 +75,7 @@ These tickets capture the connections between components that are individually b
 | [BOARD-003](./BOARD-003-inbound-items.md) | Slack/Linear/GitHub tags and DMs arrive as threads already investigating; held replies (Kingdom INTEG-002/003 first) | High |
 | [BOARD-004](./BOARD-004-outside-requests.md) | Parties off the machine: requests, standing Signets, teammate sessions that wait for Aron (Kingdom FEAT-023 first) | High |
 | [BOARD-005](./BOARD-005-g1-untrusted-content.md) | G1: content nobody typed is data on every thread | High |
-| [FEAT-003](./FEAT-003-rejections-ledger.md) | A rejections ledger: every action the agent wasn't allowed to take (gate, runtime, owner, model), to leave full-access mode on evidence | Medium |
+| [FEAT-009](./FEAT-009-rejections-ledger.md) | A rejections ledger: every action the agent wasn't allowed to take (gate, runtime, owner, model), to leave full-access mode on evidence | Medium |
 | [FEAT-005](./FEAT-005-secret-placeholders.md) | Paste secrets as `$$word`: lifted into the thread's scratch pad (agent-session AS-009), used through a tool that returns nothing; `.private` paths never read. Setting `secrets.scratchPad`, off by default (Aron 11-01, 11-02). ✅ Built 11-02 | High |
 
 ---
@@ -98,4 +105,4 @@ Ideas Aron raised that need a design before they become tickets.
 
 ---
 
-_Last updated: 2026-11-01_
+_Last updated: 2026-11-09_

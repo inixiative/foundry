@@ -1,6 +1,6 @@
 # AGENT-003: Tool Observation Signal Emission
 
-**Status**: 🆕 Not Started
+**Status**: ⚠️ Stale (checked 2026-11-09). The design below is the April architecture: `ClaudeCodeRuntime.generateHookScript` and `.foundry-hook.mjs` no longer exist, and Foundry uses no vendor hook. Tool calls are observed on the native event stream and guarded once per turn (`turns/tool-gate.ts`, `FlowOrchestrator.postAction`). Close it, or rewrite it for what is still missing.
 **Assignee**: TBD
 **Priority**: High
 **Created**: 2026-04-09

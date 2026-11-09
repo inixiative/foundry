@@ -1,6 +1,6 @@
 # MCP-001: MCP Server Harness Integration (Loop 2 Last Mile)
 
-**Status**: 🆕 Not Started
+**Status**: ⚠️ Stale (checked 2026-11-09). The design below is the April architecture: `mcp/cli.ts` and the standalone five-tool server no longer exist. The `foundry` MCP server now runs with the live harness through the native bridge (`mcp/native-bridge.ts`, `mcp/server.ts`). Close it, or rewrite it for what is still missing.
 **Assignee**: TBD
 **Priority**: High
 **Created**: 2026-04-09

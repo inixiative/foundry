@@ -1,4 +1,4 @@
-# FEAT-003: A rejections ledger: every action the agent wasn't allowed to take, in one place
+# FEAT-009: A rejections ledger: every action the agent wasn't allowed to take, in one place
 
 **Status**: 🆕 Not Started (to design when it's close; Aron, 2026-11-01)
 **Assignee**: TBD
