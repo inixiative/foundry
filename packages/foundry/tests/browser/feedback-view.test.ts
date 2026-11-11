@@ -62,7 +62,9 @@ test('a correction becomes a tuning card in chat; edit applies it; the Feedback 
 
     const card = page.locator('.feedback-prompt');
     await card.waitFor();
-    await expect(card.locator('.feedback-lines').innerText()).resolves.toContain('What we intend');
+    await expect(card.locator('.feedback-lines').innerText()).resolves.toContain(
+      'What happens next',
+    );
     await card.getByRole('button', { name: 'Edit, then apply' }).click();
     await card.getByLabel('Rule').fill(EDITED);
     await card.getByLabel('Level').selectOption('project-personal');

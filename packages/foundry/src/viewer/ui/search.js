@@ -246,7 +246,7 @@ export function SearchPage() {
           sub: d.pointer,
           where: projectLabel(id),
           preview: () =>
-            html`<div class="sp-doc"><h3>${d.heading}</h3><p class="sp-pointer">${d.pointer} · region ${d.region}</p><pre>${d.text || '(no text under this heading)'}</pre></div>`,
+            html`<div class="sp-doc"><h3>${d.heading}</h3><p class="sp-pointer">${d.pointer} · topic ${d.region}</p><pre>${d.text || '(no text under this heading)'}</pre></div>`,
           open: () => setReading({ title: d.heading, pointer: d.pointer, text: d.text }),
         })),
     );
@@ -254,7 +254,7 @@ export function SearchPage() {
       title: 'Docs',
       items: ranked(docHits, query),
       empty: docs.every((d) => !d?.sections?.length)
-        ? 'Not indexed yet: no project in scope has chorus regions with docs.'
+        ? 'Not indexed yet: no project in scope has Warden topics with docs.'
         : 'No doc section matches.',
     });
 

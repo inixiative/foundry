@@ -97,7 +97,7 @@
   {
     "path": "defaults",
     "scope": "foundry",
-    "description": "Global defaults — executor provider/model + classifier provider/model."
+    "description": "Global defaults: executor provider/model + classifier provider/model."
   },
   {
     "path": "defaults.provider",
@@ -207,7 +207,7 @@
   {
     "path": "agents.*.provider",
     "scope": "foundry",
-    "description": "LLM settings — provider/model default to global if omitted."
+    "description": "LLM settings: provider/model default to global if omitted."
   },
   {
     "path": "agents.*.model",
@@ -217,7 +217,7 @@
   {
     "path": "agents.*.temperature",
     "scope": "foundry",
-    "description": "Temperature — set per agent. Classifiers/routers want 0, creative agents want higher."
+    "description": "Temperature, set per agent. Classifiers/routers want 0, creative agents want higher."
   },
   {
     "path": "agents.*.visibleLayers",
@@ -367,7 +367,7 @@
   {
     "path": "layers.*.contentShape",
     "scope": "foundry",
-    "description": "What shape the warmed content takes — helps humans and agents understand what's inside. E.g., \"JSON array of convention objects\", \"Markdown documentation index\", \"Compact thread-state JSON\"."
+    "description": "What shape the warmed content takes; helps humans and agents understand what's inside. E.g., \"JSON array of convention objects\", \"Markdown documentation index\", \"Compact thread-state JSON\"."
   },
   {
     "path": "layers.*.prompt",
@@ -427,7 +427,7 @@
   {
     "path": "sources",
     "scope": "foundry",
-    "description": "Global data source templates (keyed by source ID). On a fresh install this is empty — sources are project-scoped."
+    "description": "Global data source templates (keyed by source ID). On a fresh install this is empty: sources are project-scoped."
   },
   {
     "path": "sources.*.id",
@@ -467,7 +467,7 @@
   {
     "path": "sources.*.uri",
     "scope": "foundry",
-    "description": "Connection string, file path, URL — depends on type."
+    "description": "Connection string, file path or URL, depending on type."
   },
   {
     "path": "sources.*.enabled",
@@ -492,7 +492,7 @@
   {
     "path": "tunnel",
     "scope": "foundry",
-    "description": "Tunnel configuration — expose the viewer over a public URL."
+    "description": "Tunnel configuration: expose the viewer over a public URL."
   },
   {
     "path": "tunnel.enabled",
@@ -657,7 +657,7 @@
   {
     "path": "sources.*.uri",
     "scope": "project",
-    "description": "Connection string, file path, URL — depends on type."
+    "description": "Connection string, file path or URL, depending on type."
   },
   {
     "path": "sources.*.enabled",
@@ -692,22 +692,22 @@
   {
     "path": "chorus",
     "scope": "project",
-    "description": "This project's chorus: the region Wardens its threads run. Merged over the repository's own `<project>/.foundry/project.json` `chorus`, these settings winning. Region Wardens run only when `enabled` is true; absent, the project has no chorus and regions present are reported as off. In a resolved project view this is normalized (`enabled` effective, `layers` absolute); see docs/usage-and-context.md, \"Chorus\"."
+    "description": "This project's Wardens: each knows one topic of the project and reminds its threads what already exists and where it's written down. Merged over the repository's own `<project>/.foundry/project.json` `chorus`, these settings winning. Wardens run only when `enabled` is true; absent, the project has no Wardens and topics present are reported as off. In a resolved project view this is normalized (`enabled` effective, `layers` absolute); see docs/usage-and-context.md, \"Chorus\"."
   },
   {
     "path": "chorus.enabled",
     "scope": "project",
-    "description": "Run this project's region Wardens. Off by default."
+    "description": "Run this project's Wardens. Off by default."
   },
   {
     "path": "chorus.regions",
     "scope": "project",
-    "description": "The one regions directory the chorus reads (absolute or relative to the project; default `.foundry/regions`)."
+    "description": "The one topics folder the Wardens read (absolute or relative to the project; default `.foundry/regions`)."
   },
   {
     "path": "chorus.layers",
     "scope": "project",
-    "description": "Several regions directories in order, a later layer's region replacing an earlier one (e.g. template base, then this project)."
+    "description": "Several topics folders in order, a later layer's topic replacing an earlier one (e.g. template base, then this project)."
   },
   {
     "path": "chorus.consumed",
@@ -737,12 +737,12 @@
   {
     "path": "chorus.reception",
     "scope": "project",
-    "description": "The reception charter (`CHORUS_RECEPTION`): how the main thread reads a chime, held once as a standing layer. On with the chorus (itself opt-in); `false` leaves it out, e.g. for a baseline."
+    "description": "The reception charter (`CHORUS_RECEPTION`): how the main thread reads a Warden's reminder, held once as a standing layer. On with the Wardens (themselves opt-in); `false` leaves it out, e.g. for a baseline."
   },
   {
     "path": "chorus.wardens",
     "scope": "project",
-    "description": "How the chorus's Warden regions classify (classify/): their stages, at most three. Omitted, the two-layer chain: Haiku 5.5 low points with its why inline and escalates each yes, without the why, to Sonnet 5.5 low on the same knowledge.md (Oracle finding 2026-11-01-l2-nowhy); with API-token decisions, one stage. The machine's list replaces the repository's whole."
+    "description": "How the Wardens classify (classify/): their stages, at most three. Omitted, the two-layer chain: Haiku 5.5 low answers with its why inline and escalates each yes, without the why, to Sonnet 5.5 low on the same knowledge.md (Oracle finding 2026-11-01-l2-nowhy); with API-token decisions, one stage. The machine's list replaces the repository's whole."
   },
   {
     "path": "chorus.wardens.stages",
@@ -752,7 +752,7 @@
   {
     "path": "chorus.heralds",
     "scope": "project",
-    "description": "How Herald regions would classify: the socket only. Heralds are not built; their regions do not run."
+    "description": "How Herald topics would classify: the socket only. Heralds are not built; their topics do not run."
   },
   {
     "path": "chorus.heralds.stages",

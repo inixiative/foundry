@@ -58,7 +58,7 @@ const TAB_LABELS = {
   participants: 'Participants',
   permissions: 'Permissions',
   heralds: 'Heralds',
-  pointers: 'Pointers',
+  pointers: 'Reminders',
   feedback: 'Feedback',
 };
 
@@ -94,7 +94,7 @@ function tabFacts(tab, threadId) {
     case 'heralds':
       return { info: 'Coming soon' };
     case 'pointers':
-      return { info: "Where the Wardens pointed on this thread's turns, newest first" };
+      return { info: 'What the Wardens reminded the agent of on this thread, newest first' };
     case 'feedback': {
       const open = openFeedback(threadId);
       return { info: `${feedbackIn({ threadId }).length} given · ${open} open`, count: open };

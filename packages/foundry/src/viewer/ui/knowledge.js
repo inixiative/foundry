@@ -87,7 +87,7 @@ function WardenLayers({ wardens }) {
           ? html`<td class="kok">≈${brief.tokens < 1000 ? brief.tokens : k(brief.tokens)} tokens</td>`
           : html`<td class="kwarn">missing: Wardens get no project brief</td>`
       }</tr>
-      <tr><td>3. Its region</td><td>The region's knowledge, sized above.</td><td></td></tr>
+      <tr><td>3. Its topic</td><td>The topic's knowledge, sized above.</td><td></td></tr>
       <tr><td>4. Thread context</td><td>The moment and what the thread holds, per call.</td><td></td></tr>
     </table>
     <div class="rp-dim">No CLAUDE.md or AGENTS.md: those are written for the agent doing the work. The brief is shown as the registered checkout has it; a worktree's threads read their branch's copy.</div>
@@ -119,48 +119,48 @@ export function KnowledgePage() {
   const [pipeline, reread] = usePipeline();
   const build = latestBuild(pipeline);
   const builtNote = build
-    ? html`<span class="rp-dim">Last done as part of the region build of ${build.builtAt ? new Date(build.builtAt).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : 'an unknown date'} (template ${build.templateCommit?.slice(0, 10) ?? '—'}).</span>`
-    : html`<span class="rp-dim">Runs as part of the region build (step 4); no build on this machine yet.</span>`;
+    ? html`<span class="rp-dim">Last done as part of the topic build of ${build.builtAt ? new Date(build.builtAt).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : 'an unknown date'} (template ${build.templateCommit?.slice(0, 10) ?? '—'}).</span>`
+    : html`<span class="rp-dim">Runs as part of the topic build (step 4); no build on this machine yet.</span>`;
 
-  return html`<section class="knowledge" aria-label=${`${name}: Knowledge and chorus`}>
+  return html`<section class="knowledge" aria-label=${`${name}: Knowledge and Wardens`}>
     <header class="ph-head">
       <button type="button" class="proj-btn" onClick=${() => {
         projectPage.value = 'home';
       }}>‹ ${name}</button>
-      <h2>Knowledge and chorus</h2>
-      <span class="ph-meta">How Foundry learns ${name}: its docs, its regions and the Wardens built from them</span>
+      <h2>Knowledge and Wardens</h2>
+      <span class="ph-meta">How Foundry learns ${name}: its docs, its topics and the Wardens built from them</span>
     </header>
-    ${body === undefined ? html`<div class="ph-meta">Reading the chorus…</div>` : null}
+    ${body === undefined ? html`<div class="ph-meta">Reading the Wardens…</div>` : null}
     <div class="know">
       <${Step} n="1" title="Set up"
         desc="Reads the project's docs and code once and initialises the levels Wardens compose from. Project is required; the others are optional."
-        actions=${html`<span class="rp-dim">part of Build regions</span>`}>
+        actions=${html`<span class="rp-dim">part of Build topics</span>`}>
         ${
           chorus?.layers?.length
             ? html`<table class="ktable">${chorus.layers.map(
                 (l) =>
-                  html`<tr key=${l.label}><td>${l.label}</td><td class="mono">${l.regionsDir}</td><td class="kok">${l.regions} region${l.regions === 1 ? '' : 's'}</td></tr>`,
+                  html`<tr key=${l.label}><td>${l.label}</td><td class="mono">${l.regionsDir}</td><td class="kok">${l.regions} topic${l.regions === 1 ? '' : 's'}</td></tr>`,
               )}</table>`
-            : html`<span class="kwarn">No chorus levels set up${chorus?.reason ? `: ${chorus.reason}` : ''}.</span>`
+            : html`<span class="kwarn">No Warden levels set up${chorus?.reason ? `: ${chorus.reason}` : ''}.</span>`
         }
         <div>${builtNote}</div>
       <//>
       <${Step} n="2" title="Update since the last setup"
-        desc="Re-reads only what changed, so regions and Wardens stay current without a full rebuild."
-        actions=${html`<span class="rp-dim">part of Build regions</span>`}>
+        desc="Re-reads only what changed, so topics and Wardens stay current without a full rebuild."
+        actions=${html`<span class="rp-dim">part of Build topics</span>`}>
         ${builtNote}
       <//>
       <${Step} n="3" title="Analyse the docs"
         desc="Checks every doc: its kind (system, pattern, guidance, feedback), anything it names that no longer exists, and code that changed without its doc. Reports only; nothing is rewritten."
-        actions=${html`<span class="rp-dim">part of Build regions</span>`}>
+        actions=${html`<span class="rp-dim">part of Build topics</span>`}>
         ${builtNote}
       <//>
-      <${Step} n="4" title="Build regions"
-        desc="Splits docs, rules and primitives into regions by concept, each a healthy size for one Warden. Each region gets the short text Wardens recognise from and the full catalog they pick from."
-        actions=${html`<button type="button" class="proj-btn" onClick=${() => navigate(`/projects/${id}/settings/chorus`)}>See regions</button>`}>
+      <${Step} n="4" title="Build topics"
+        desc="Splits docs, rules and primitives into topics by concept, each a healthy size for one Warden. Each topic gets the short text its Warden recognises moments from and the full catalog it reminds the agent from."
+        actions=${html`<button type="button" class="proj-btn" onClick=${() => navigate(`/projects/${id}/settings/chorus`)}>See topics</button>`}>
         ${
           regions.length
-            ? html`<div>${regions.length} regions · ≈20k tokens each · cap 40k${
+            ? html`<div>${regions.length} topics · ≈20k tokens each · cap 40k${
                 over.length || large.length || missing.length
                   ? html`<br /><span class="kwarn">${[
                       ...over.map((r) => `${r.id}: ${k(tokensOf(r))} · over the cap`),
@@ -170,7 +170,7 @@ export function KnowledgePage() {
                   : null
               }</div>
               <div class="ksizes">${regions.map((r) => html`<${SizeBar} key=${r.id} region=${r} />`)}</div>`
-            : html`<span class="rp-dim">No regions in ${name}'s chorus.</span>`
+            : html`<span class="rp-dim">No Warden topics in ${name} yet.</span>`
         }
         <${WardenLayers} wardens=${body?.wardens} />
         <h4 class="ksub">Builds on this machine</h4>
@@ -178,12 +178,12 @@ export function KnowledgePage() {
         <${BuildRegions} pipeline=${pipeline} reread=${reread} />
       <//>
       <${Step} n="5" title="Tune Wardens"
-        desc="Tests whether each region's Warden recognises its moments. A change to docs, regions or Wardens ships only if detection holds the bar, with false yeses no worse."
+        desc="Tests whether each Warden recognises its moments. A change to docs, topics or Wardens ships only if detection holds the bar, with false yeses no worse."
         actions=${html`<${NotBuilt} label="Run the detection test" why="No committed runner: the detection test is an eval script that spends quota" />`}>
         <${DetectionTests} pipeline=${pipeline} bar=${DETECTION_BAR} />
       <//>
       <${Step} n="6" title="Oracle"
-        desc="Oracle measures whether corrections stick: replays real work with and without the chorus and reports what changed. It reads this project's sessions from its Archives through Kingdom."
+        desc="Oracle measures whether corrections stick: replays real work with and without the Wardens and reports what changed. It reads this project's sessions from its Archives through Kingdom."
         actions=${html`<${NotBuilt} label="Connect Oracle" why="Foundry has no Oracle connection yet" />`}>
         <div>Kingdom: <b>${about === undefined ? '…' : kingdoms.length ? kingdoms.join(', ') : 'not linked'}</b> · Archives: local Archive</div>
         <span class="kwarn">Oracle isn't connected for ${name}.</span>

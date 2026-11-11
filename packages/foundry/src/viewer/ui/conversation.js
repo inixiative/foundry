@@ -441,7 +441,7 @@ function ChorusBarLine({ threadId }) {
   if (!message) return null;
   const { count } = chorusNotice(message.chorus);
   return html`<div class="context-bar-setup context-bar-setup--degraded" role="status" data-chorus-bar="open">
-    Chorus degraded on the last turn: ${count} Warden${count === 1 ? '' : 's'} went unheard.
+    On the last turn, ${count} Warden${count === 1 ? '' : 's'} went unheard.
     <button class="chorus-bar-retry" onClick=${() => chorusAction(threadId, message.turnId, 'retry')}>Retry</button>
   </div>`;
 }

@@ -31,9 +31,9 @@ export function AboutSection() {
         <div class="settings-card-header"><span class="settings-card-title">About Foundry</span></div>
         <p class="about-text">
           Foundry is a local harness for coding agents (Claude Code, Codex). It keeps your agents working the way
-          your project already works: a chorus of small expert agents points the main thread at the rules, docs and
-          code you already have, and every thread is captured, so a correction you give once sticks instead of being
-          repeated.
+          your project already works: small agents called Wardens each hold one part of what your project knows and
+          remind the main thread what already exists and where it's written down, and every thread is captured, so a
+          correction you give once sticks instead of being repeated.
         </p>
         <dl class="about-facts">
           <dt>Version</dt>

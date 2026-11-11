@@ -62,7 +62,7 @@ test('full trace opens the turn view: grouped steps, filters, arrow keys, Raw, E
     expect(groups[0]).toBe('Foundry, before');
     expect(groups.at(-1)).toBe('Foundry, after');
     // The chorus step lists each region's answer.
-    const chorus = view.locator('.tv-step', { hasText: 'Chorus' });
+    const chorus = view.locator('.tv-step', { hasText: 'Wardens' });
     expect(await chorus.locator('.tv-regions li').count()).toBeGreaterThan(0);
     const summary = view.locator('.tv-summary');
     expect(await summary.locator('dt').allTextContents()).toEqual([

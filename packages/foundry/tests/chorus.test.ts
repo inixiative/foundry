@@ -444,14 +444,14 @@ test('enabled without regions, the project has no chorus and the view says why; 
   expect(q.chorus.layers).toEqual([
     { label: 'project', regionsDir: join(empty, '.foundry', 'regions'), regions: [] },
   ]);
-  expect(q.chorus.reason).toContain(`no regions at ${join(empty, '.foundry', 'regions')}`);
-  expect(q.chorus.reason).toContain('this project has no chorus');
+  expect(q.chorus.reason).toContain(`no topics at ${join(empty, '.foundry', 'regions')}`);
+  expect(q.chorus.reason).toContain('this project has no Wardens');
   expect(q.config.projects.Q!.chorus).toEqual({ enabled: false });
   // The view's project entry is a valid setting that resolves to the same chorus.
   expect(resolveProjectView(q.config, 'Q')!.chorus.on).toBe(false);
   expect(configuredExperts(q.config).experts).toEqual([]);
   expect(q.agents.map((a) => a.scope)).not.toContain('project-generated');
-  expect(describeChorus('Q', q.chorus)).toContain('enabled its chorus but no regions at');
+  expect(describeChorus('Q', q.chorus)).toContain('enabled its chorus but no topics at');
 
   // The machine's settings may turn a repository's chorus off; a layer list may stay written.
   c.projects.P!.chorus = { enabled: false, layers: [{ regions: '.foundry/regions' }] };
@@ -467,7 +467,7 @@ test('enabled without regions, the project has no chorus and the view says why; 
     layers: [],
     regions: [],
   });
-  expect(off.chorus.reason).toContain(`the chorus is off: 2 regions at ${regions}`);
+  expect(off.chorus.reason).toContain(`Wardens are off: 2 topics at ${regions}`);
   expect(configuredExperts(off.config).experts).toEqual([]);
   expect(off.config.projects.P!.chorus).toEqual({ enabled: false });
   delete c.projects.P!.chorus;
@@ -539,7 +539,7 @@ test("the chorus is opt-in: regions present but not enabled are off; the reposit
     regions: [],
   });
   expect(off.chorus.repository).toBeUndefined();
-  expect(off.chorus.reason).toContain(`the chorus is off: 2 regions at ${regions}`);
+  expect(off.chorus.reason).toContain(`Wardens are off: 2 topics at ${regions}`);
   expect(off.chorus.reason).toContain(`"chorus": { "enabled": true } in ${repositoryFile}`);
   expect(off.config.projects.P!.chorus).toEqual({ enabled: false });
   expect(configuredExperts(off.config).experts).toEqual([]);

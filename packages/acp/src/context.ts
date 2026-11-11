@@ -28,7 +28,7 @@ export function degradedOf(record: unknown): Record_[] {
   return isRecord(record) && Array.isArray(record.degraded) ? record.degraded.filter(isRecord) : [];
 }
 
-/** "Chorus degraded …" in words: which Wardens went unheard, at which layer, and why. */
+/** "Some Wardens went unheard …" in words: which Wardens went unheard, at which layer, and why. */
 export function degradedLine(degraded: readonly Record_[]): string | null {
   if (!degraded.length) return null;
   const what = degraded.map((d) => {
@@ -38,7 +38,7 @@ export function degradedLine(degraded: readonly Record_[]): string | null {
     const spoke = d.silent === false ? '; spoke from Layer 1 only, unconfirmed' : '';
     return `${String(d.domain)} (${layer}${kind}${spoke})`;
   });
-  return `Chorus degraded; the turn went on without them: ${what.join(', ')}. Retry is in the Foundry viewer.`;
+  return `Some Wardens went unheard; the turn went on without them: ${what.join(', ')}. Retry is in the Foundry viewer.`;
 }
 
 /** The summary for one flow-stream turn, or null while neither phase row has been recorded. */

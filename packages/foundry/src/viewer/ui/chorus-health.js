@@ -42,14 +42,14 @@ export function chorusNotice(chorus) {
     return {
       state: 'open',
       count: wardens.size,
-      text: `The chorus was degraded on this turn: ${parts.join('; ')}. The turn went on without ${silent ? 'them' : 'their confirmation'}.`,
+      text: `Some Wardens went unheard on this turn: ${parts.join('; ')}. The turn went on without ${silent ? 'them' : 'their confirmation'}.`,
     };
   }
   if (notices.some((n) => n.retriedBy))
     return {
       state: 'retried',
       count: 0,
-      text: 'The degraded Wardens were asked again; anything they said rides with your next message.',
+      text: 'The unheard Wardens were asked again; any reminder they gave rides with your next message.',
     };
   return null;
 }

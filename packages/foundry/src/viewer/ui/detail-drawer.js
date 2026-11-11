@@ -1059,7 +1059,7 @@ function ScopeBar({ section, itemId }) {
       });
       if (res.ok) {
         settingsConfig.value = await res.json();
-        showToast(`Removed project override — using global ${itemId}`, 'ok');
+        showToast(`Removed project override; using global ${itemId}`, 'ok');
       }
     } catch {
       showToast('Failed to remove project copy', 'error');

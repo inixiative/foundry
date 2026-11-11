@@ -24,7 +24,7 @@ test('an open notice names each Warden, its layer and the moment; the turn went 
   ).toEqual({
     state: 'open',
     count: 2,
-    text: "The chorus was degraded on this turn: on the message security (Layer 1 timed out); on the turn's actions locks (Layer 2 timed out; spoke from Layer 1 only, unconfirmed). The turn went on without them.",
+    text: "Some Wardens went unheard on this turn: on the message security (Layer 1 timed out); on the turn's actions locks (Layer 2 timed out; spoke from Layer 1 only, unconfirmed). The turn went on without them.",
   });
 });
 
