@@ -79,7 +79,7 @@ packages/
 
 Core is usable standalone. It includes context layers, agents, middleware, signals, thread, harness, tracing, hooks, and lightweight adapters (file, sqlite, http, markdown).
 
-Foundry adds opinions: native Claude Code, Codex and Muse sessions via `@inixiative/agent-session`, API providers behind `apiTokens` (Anthropic, OpenAI, Gemini), the viewer, heavy-infra adapters (Postgres, Redis), and the middleware roles (Wardens, routing, thread state).
+Foundry adds opinions: native Claude Code and Codex sessions via `@inixiative/agent-session`, API providers behind `apiTokens` (Anthropic, OpenAI, Gemini), the viewer, heavy-infra adapters (Postgres, Redis), and the middleware roles (Wardens, routing, thread state).
 
 ## Setup
 
@@ -89,7 +89,7 @@ Setup (`bun run setup`) is interactive: it picks your worker and model and creat
 
 An install set up before this default carries the old starter stack (system / conventions / memory layers, classifier → router → three prompt-only executors). `bun run doctor` flags it (`legacy-starter-defaults`), and `bun run setup --remove-legacy-defaults` (or the **Legacy defaults** item in `bun run setup`) removes whatever is still exactly as seeded; edited items are kept.
 
-Provider choices come from the shared registry. The default worker is Claude Code through the subscription; Codex, Muse and API-key providers are settings, and each thread can run on any worker you have a login for.
+Provider choices come from the shared registry. The default worker is Claude Code through the subscription; Codex and API-key providers are settings, and each thread can run on any worker you have a login for.
 
 Foundry is subscription-only by default: the Claude Code (or Codex) worker and Claude Haiku 5.5 decisions (through the same Claude login) use the logins already on the machine, so no API key is needed. Log in with `claude` first (and `codex login` for a Codex worker or Codex decisions). API-key providers require `"apiTokens": true` in `.foundry/settings.json`; see [subscription decisions](docs/subscription-decisions.md).
 
