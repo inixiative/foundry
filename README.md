@@ -4,19 +4,22 @@
 
 **Stop repeating yourself to Claude.**
 
-I'm Aron Greenspan. I packaged a decade of lessons into the [building blocks](https://www.inixiative.com/building-blocks/) so I would stop solving the same problems on every project, and coding agents kept writing their own versions beside them. Foundry exists so your agent uses what your codebase already has.
+Aron Greenspan packaged a decade of lessons into the [building blocks](https://www.inixiative.com/building-blocks/) so he would stop solving the same problems on every project, and coding agents kept writing their own versions beside them. Foundry exists so your agent uses what your codebase already has.
 
 Every agent session starts half-amnesiac, so you pay a re-alignment tax: you re-explain your conventions, your decisions and your taste. The model and the harness are outside your control. Your docs, rules and `CLAUDE.md` are the one layer you do control, and Foundry is the workspace around your agent that puts that layer to work.
 
 The agent does what you want when it is told the right thing. Our bet is that your corrections compile into docs that tell it automatically. In early runs, when the corrections reached the agent before it planned, its plans came out right.
 
-## What you get
+## What it does today
 
-1. **Stop repeating yourself to Claude.** What you've already decided reaches every session. Foundry splits what your project knows across small agents called Wardens, each holding one part. When your request touches a Warden's part, it reminds your agent what already exists and where it's written down. They never block; your agent decides. (The chorus is off on a fresh install; turn it on per project.)
-2. **Every agent you pay for, in one place.** Claude Code and Codex on your own subscriptions, a worker per thread, and every session captured. ACP apps such as Paseo and T3 Code can drive Foundry too.
-3. **Stop being a meat proxy.** Your agent, their agent and the people in one thread, hashing out the work. *(Host side built; joiner view in progress.)*
-4. **Stop checking a dozen apps.** Whatever comes in (a Slack DM, a review request, an email) reaches you already researched and in context. It's read as data, so it can't instruct your agent. *(In progress: Kingdom streams GitHub, Slack and Linear events; the Foundry inbox is not wired yet.)*
-5. **Set up your repo.** Foundry reads your repo and builds the docs and Wardens. *(In progress.)*
+1. **Stop repeating yourself to Claude.** What you've already decided reaches every session. Foundry splits what your project knows across small agents called Wardens, each holding one part. When your request touches a Warden's part, it reminds your agent what already exists and where it's written down. They never block; your agent decides. Wardens are off on a fresh install. Turn them on per project with `"chorus": { "enabled": true }` in the repo's `.foundry/project.json`, or with the project's Chorus switch in Foundry's settings. Repos started from template come with their Wardens built and turned on.
+2. **Every agent you pay for, in one place.** Claude Code and Codex on your own subscriptions, a worker per thread, and every session captured. Agent apps such as Paseo and T3 Code that speak the Agent Client Protocol (ACP) can drive Foundry too.
+
+## In progress
+
+1. **Stop being a meat proxy.** Your agent, their agent and the people in one thread, hashing out the work. *(Hosting a shared thread works; the view for people who join is in progress.)*
+2. **Stop checking a dozen apps.** Whatever comes in (a Slack DM, a review request, an email) reaches you already researched and in context. It's read as data, so it can't instruct your agent. *(In progress: Kingdom streams GitHub, Slack and Linear events; the Foundry inbox is not wired yet.)*
+3. **Set up your repo.** Foundry reads your repo and builds the docs and Wardens. *(In progress.)*
 
 The voice of your project.
 
@@ -82,7 +85,7 @@ Foundry adds opinions: native Claude Code, Codex and Muse sessions via `@inixiat
 
 Requires [Bun](https://bun.sh) 1.4.4 (the version in `packageManager`).
 
-Setup (`bun run setup`) is interactive: it picks your worker and model and creates `.foundry/settings.json` with one executor and nothing else. A fresh install's thread is **unwrapped**: your message goes to the native session (Claude Code or Codex) as typed, with no Foundry layers, classifier, router or thread state composed into it. Layers, sources and decision roles are opt-in settings; Wardens come from a project's regions (`.foundry/regions`) once its chorus is enabled (`"chorus": { "enabled": true }` in its `.foundry/project.json`). The default worker is the Claude Code subscription, which needs no key; only an API-key provider (with `apiTokens`) writes its key to `.env.local`.
+Setup (`bun run setup`) is interactive: it picks your worker and model and creates `.foundry/settings.json` with one executor and nothing else. A fresh install's thread is **unwrapped**: your message goes to the native session (Claude Code or Codex) as typed, with no Foundry layers, classifier, router or thread state composed into it. Layers, sources and decision roles are opt-in settings; Wardens come from a project's regions (`.foundry/regions`) once they are turned on for it (`"chorus": { "enabled": true }` in its `.foundry/project.json`, or the project's Chorus switch in settings). The default worker is the Claude Code subscription, which needs no key; only an API-key provider (with `apiTokens`) writes its key to `.env.local`.
 
 An install set up before this default carries the old starter stack (system / conventions / memory layers, classifier → router → three prompt-only executors). `bun run doctor` flags it (`legacy-starter-defaults`), and `bun run setup --remove-legacy-defaults` (or the **Legacy defaults** item in `bun run setup`) removes whatever is still exactly as seeded; edited items are kept.
 
