@@ -80,7 +80,7 @@ test('tab icons and number keys open the right panel on their tab', async () => 
     await title.filter({ hasText: 'Feedback' }).waitFor();
     // 9 is Pointers, the Wardens' pointers (moved here from Loop).
     await page.keyboard.press('Alt+Digit9');
-    await title.filter({ hasText: 'Pointers' }).waitFor();
+    await title.filter({ hasText: 'Reminders' }).waitFor();
     await page.locator('.right-panel .loop-pointers-empty').waitFor();
 
     // ⌘ works while typing; ⌥ too; neither types the digit.

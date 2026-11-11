@@ -29,7 +29,7 @@ const FALLBACK_PROVIDERS = [
   {
     id: 'claude-code',
     label: 'Claude Code (recommended)',
-    desc: 'CLI subscription — no API key needed, works out of the box',
+    desc: 'CLI subscription: no API key needed, works out of the box',
     envKey: '',
     models: [
       { id: 'fable', label: 'Fable 5.1', tier: 'powerful' },
@@ -42,7 +42,7 @@ const FALLBACK_PROVIDERS = [
   {
     id: 'codex',
     label: 'Codex CLI',
-    desc: 'Native Codex harness — use Astra through your authenticated Codex session',
+    desc: 'Native Codex harness: use Astra through your authenticated Codex session',
     envKey: '',
     models: [
       { id: 'gpt-6-astra', label: 'GPT-6 Astra', tier: 'powerful' },
@@ -54,7 +54,7 @@ const FALLBACK_PROVIDERS = [
   {
     id: 'gemini',
     label: 'Google Gemini',
-    desc: 'Fast, affordable API access — best for high-volume agent work',
+    desc: 'Fast, affordable API access, best for high-volume agent work',
     envKey: 'GEMINI_API_KEY',
     models: [
       { id: 'gemini-3.1-flash-lite', label: 'Gemini 3.1 Flash Lite', tier: 'fast' },
@@ -66,7 +66,7 @@ const FALLBACK_PROVIDERS = [
   {
     id: 'anthropic',
     label: 'Anthropic',
-    desc: 'Direct API — for programmatic access without Claude Code CLI',
+    desc: 'Direct API, for programmatic access without the Claude Code CLI',
     envKey: 'ANTHROPIC_API_KEY',
     models: [
       { id: 'claude-fable-5-1', label: 'Claude Fable 5.1', tier: 'powerful' },
@@ -78,7 +78,7 @@ const FALLBACK_PROVIDERS = [
   {
     id: 'openai',
     label: 'OpenAI',
-    desc: 'GPT models — alternative provider',
+    desc: 'GPT models, an alternative provider',
     envKey: 'OPENAI_API_KEY',
     models: [
       { id: 'gpt-6-astra', label: 'GPT-6 Astra', tier: 'powerful' },
@@ -118,7 +118,7 @@ function ProvidersStep({ providers, enabled, onToggle, onNext, onBack }) {
     <div class="wizard-step">
       <h2 class="wizard-heading">Enable Providers</h2>
       <p class="wizard-desc">
-        Which LLM providers will you use? Enable all that apply —
+        Which LLM providers will you use? Enable all that apply;
         different agents can use different providers.
       </p>
       <p class="wizard-desc dim">
@@ -209,7 +209,7 @@ function ExecutorModelStep({ providers, provider, selected, onSelect, onNext, on
       <h2 class="wizard-heading">Executor Model</h2>
       <p class="wizard-desc">
         The executor is the native session your messages go to, as typed.
-        Pick a capable model — this is where quality matters most.
+        Pick a capable model: this is where quality matters most.
       </p>
 
       <div class="wizard-options">
@@ -270,7 +270,7 @@ function ClassifierModelStep({
       <h2 class="wizard-heading">Decision Model</h2>
       <p class="wizard-desc">
         Your messages go straight to the executor: nothing runs before it by default.
-        This model is for decision roles: a classifier or router you add later, and a project's region Wardens.
+        This model is for decision roles: a classifier or router you add later, and a project's Wardens.
         A fast, cheap model works best there.
       </p>
 
@@ -516,7 +516,7 @@ export function Wizard() {
 
       setSaving(false);
       setStep(5);
-      showToast('Setup complete — add a project to get started', 'ok');
+      showToast('Setup complete. Add a project to get started', 'ok');
 
       // Close wizard after a brief pause
       setTimeout(close, 1500);

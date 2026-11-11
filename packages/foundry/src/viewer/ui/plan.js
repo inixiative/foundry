@@ -212,7 +212,7 @@ export function Plan() {
     </section>
 
     <${PlanSection} title="Pain and friction" sub="what this removes" items=${recorded.pains} />
-    <${PlanSection} title="Strategy" sub="how we’ll get there"
+    <${PlanSection} title="Strategy" sub="how to get there"
       items=${recorded.strategy?.length ? recorded.strategy : checklist.goals.filter((g) => g.goal).map((g) => ({ text: g.goal }))} />
     <${PlanSection} title="Reasons" sub="why this way, and not the alternatives" items=${recorded.reasons} />
 

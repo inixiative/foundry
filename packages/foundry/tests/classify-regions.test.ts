@@ -102,7 +102,7 @@ test('a stage whose doc a region lacks fails the chorus build, naming the region
     { region: 'queues', role: 'warden', doc: 'recognise.md', stages: [0] },
   ]);
   expect(off.chorus.reason).toStartWith(
-    'the chorus is not built: region queues has no recognise.md (stage 1 of chorus.wardens.stages)',
+    'the Wardens are not built: topic queues has no recognise.md (stage 1 of chorus.wardens.stages)',
   );
   expect(off.agents.map((a) => a.scope)).not.toContain('project-generated');
 
@@ -147,7 +147,7 @@ test('settings resolve per role: the machineâ€™s stages replace the repositoryâ€
   const heralds = resolveProjectView(config, 'P')!;
   expect(heralds.chorus.on).toBe(true);
   expect(heralds.chorus.roles.herald).toMatchObject({ regions: 1, built: false });
-  expect(heralds.chorus.reason).toBe('1 Herald region (queues) not run: Heralds are not built');
+  expect(heralds.chorus.reason).toBe('1 Herald topic (queues) not run: Heralds are not built');
   expect(Object.keys(heralds.config.agents)).toEqual(['locks']);
 });
 
@@ -302,6 +302,6 @@ test('with API-token decisions, a stage on its own model is named in the view: n
   const view = resolveProjectView(config, 'P')!;
   expect(view.chorus.on).toBe(false);
   expect(view.chorus.reason).toStartWith(
-    'the chorus is not built: chorus.wardens.stages [1] name their own model or effort, which only subscription decisions serve (apiTokens is on)',
+    'the Wardens are not built: chorus.wardens.stages [1] name their own model or effort, which only subscription decisions serve (apiTokens is on)',
   );
 });

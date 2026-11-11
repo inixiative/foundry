@@ -275,13 +275,27 @@ function seedPlanAndWork(
       ],
     ],
   ];
+  // Turn 2 carries one Warden reminder, so the Reminders tab has a row.
+  const reminder = {
+    plan: {
+      contributions: [
+        {
+          domain: 'permissions',
+          decision: 'contribute',
+          snippets: [
+            'Grants already split view from prompt.resolve in the rebac schema; see docs/claude/PERMISSIONS.md, "Thread grants".',
+          ],
+        },
+      ],
+    },
+  };
   turns.forEach(([id, ask, history], i) => {
     store.beginTurn(lead, id, ask);
     store.completeTurn(
       lead,
       id,
       'Done.',
-      { nativeHistory: history },
+      { nativeHistory: history, ...(id === 'kt-2' ? { injection: reminder } : {}) },
       { id: `trace-${id}`, messageId: id, startedAt: i + 1, root: {}, summary: {}, spans: [] },
     );
   });

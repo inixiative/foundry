@@ -410,39 +410,39 @@ function ProjectChorus({ projectId }) {
       live = false;
     };
   }, [projectId]);
-  if (chorus === undefined) return html`<div class="settings-empty">Reading the chorus…</div>`;
+  if (chorus === undefined) return html`<div class="settings-empty">Reading the Wardens…</div>`;
   if (chorus === null)
-    return html`<div class="settings-empty">The chorus could not be read; check the project's settings.</div>`;
+    return html`<div class="settings-empty">The Wardens could not be read; check the project's settings.</div>`;
   const total = chorus.regions.reduce((sum, r) => sum + r.bytes, 0);
   return html`
     <div class="settings-card" data-setting="chorus">
       <div class="settings-card-header">
-        <span class="settings-card-title">Chorus</span>
+        <span class="settings-card-title">Wardens</span>
         <span class="settings-desc">${
           chorus.on
-            ? `${chorus.regions.length} region Wardens, ${kb(total)} of knowledge`
+            ? `${chorus.regions.length} Wardens, ${kb(total)} of knowledge`
             : chorus.available
-              ? `Off: ${chorus.available} regions present, not enabled; no Wardens run`
+              ? `Off: ${chorus.available} topics present, not enabled; no Wardens run`
               : 'Off: no Wardens run'
         }</span>
       </div>
       ${
         chorus.reason
-          ? html`<p class="settings-desc">${chorus.enabled ? 'The chorus is enabled, but ' : ''}${chorus.reason}.</p>`
+          ? html`<p class="settings-desc">${chorus.enabled ? 'Wardens are on, but ' : ''}${chorus.reason}.</p>`
           : null
       }
       ${
         chorus.consumed && chorus.reception
-          ? html`<p class="settings-desc">Work items (<code>chorus.consumed</code>): ${chorus.consumed.enabled ? 'on' : 'off'}${chorus.consumed.from === 'default' ? ', the default' : `, set in ${chorus.consumed.from === 'settings' ? 'your settings' : 'the repository'}`}. Reception charter (<code>chorus.reception</code>): ${chorus.reception.on ? 'on' : 'off'}${chorus.reception.from === 'default' ? (chorus.on ? ', with the chorus' : ', only with a running chorus') : `, set in ${chorus.reception.from === 'settings' ? 'your settings' : 'the repository'}`}.</p>`
+          ? html`<p class="settings-desc">Work items (<code>chorus.consumed</code>): ${chorus.consumed.enabled ? 'on' : 'off'}${chorus.consumed.from === 'default' ? ', the default' : `, set in ${chorus.consumed.from === 'settings' ? 'your settings' : 'the repository'}`}. Reception charter (<code>chorus.reception</code>): ${chorus.reception.on ? 'on' : 'off'}${chorus.reception.from === 'default' ? (chorus.on ? ', with the Wardens' : ', only while Wardens run') : `, set in ${chorus.reception.from === 'settings' ? 'your settings' : 'the repository'}`}.</p>`
           : null
       }
-      <p class="settings-desc">Read-only. A project's chorus is its set of region Wardens, built from layers of regions in order: a later layer's region replaces an earlier one with the same id, whole. Region Wardens are the only Wardens, and run only when enabled: <code>"chorus": { "enabled": true }</code> in the repository's <code>.foundry/project.json</code>, or <code>projects[id].chorus</code> in settings.json, which wins.</p>
+      <p class="settings-desc">Read-only. Each Warden knows one topic of the project. Topics come from layers read in order: a later layer's topic replaces an earlier one with the same id, whole. Wardens run only when turned on: <code>"chorus": { "enabled": true }</code> in the repository's <code>.foundry/project.json</code>, or <code>projects[id].chorus</code> in settings.json, which wins.</p>
       ${
         chorus.missingDocs?.length
           ? html`<p class="settings-desc">Missing docs: ${chorus.missingDocs
               .map(
                 (m) =>
-                  `region ${m.region} has no ${m.doc} (layer ${m.stages.map((i) => i + 1).join(', ')})`,
+                  `topic ${m.region} has no ${m.doc} (stage ${m.stages.map((i) => i + 1).join(', ')})`,
               )
               .join('; ')}.</p>`
           : null
@@ -453,7 +453,7 @@ function ProjectChorus({ projectId }) {
           ? html`
         <div class="settings-section-label">Layers (${chorus.layers.length}, in order)</div>
         <table class="settings-table chorus-table">
-          <thead><tr><th>#</th><th>Label</th><th>Regions directory</th><th>Regions</th></tr></thead>
+          <thead><tr><th>#</th><th>Label</th><th>Folder</th><th>Topics</th></tr></thead>
           <tbody>
             ${chorus.layers.map(
               (layer, i) => html`<tr key=${layer.label}>
@@ -469,9 +469,9 @@ function ProjectChorus({ projectId }) {
       ${
         chorus.regions.length
           ? html`
-        <div class="settings-section-label">Regions (${chorus.regions.length})</div>
+        <div class="settings-section-label">Topics (${chorus.regions.length})</div>
         <table class="settings-table chorus-table">
-          <thead><tr><th>Region</th><th>Layer</th><th>Size</th><th>Key</th></tr></thead>
+          <thead><tr><th>Topic</th><th>Layer</th><th>Size</th><th>Key</th></tr></thead>
           <tbody>
             ${chorus.regions.map(
               (region) => html`<tr key=${region.id}>
@@ -528,7 +528,7 @@ function ChorusStages({ roles, decision }) {
     );
   return html`
     <div class="settings-section-label">Classification (<code>chorus.wardens.stages</code>)</div>
-    <p class="settings-desc">Wardens: ${roles.warden.stages.length} stage${roles.warden.stages.length === 1 ? '' : 's'}, from ${layerName(roles.warden.from)}. Heralds: not built${roles.herald.regions ? `; ${roles.herald.regions} Herald region${roles.herald.regions === 1 ? '' : 's'} not run` : ''}.</p>
+    <p class="settings-desc">Wardens: ${roles.warden.stages.length} stage${roles.warden.stages.length === 1 ? '' : 's'}, from ${layerName(roles.warden.from)}. Heralds: not built${roles.herald.regions ? `; ${roles.herald.regions} Herald topic${roles.herald.regions === 1 ? '' : 's'} not run` : ''}.</p>
     <table class="settings-table chorus-table">
       <thead><tr><th>#</th><th>Task</th><th>Doc</th><th>Outcomes</th><th>Model</th><th>Escalates</th><th>Deadline</th><th>Charter / protocols</th></tr></thead>
       <tbody>${rows(roles.warden)}</tbody>

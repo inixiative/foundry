@@ -24,7 +24,7 @@ const { chromium } = createRequire(import.meta.url)(
 // A done thread (its branch merged) reads light blue with its text on the row, the header and the
 // Board; Settings › Threads sets what a merge does, Foundry-wide and per project; the project's
 // About names its Kingdom project; the Knowledge page shows this machine's region builds and the
-// last detection test, and Build regions runs one after a confirm, with its log.
+// last detection test, and Build topics runs one after a confirm, with its log.
 test('done threads, the merge setting, the Kingdom project link and the region pipeline', async () => {
   const cleanup: ReleaseStep[] = [];
   const dir = mkdtempSync(join(tmpdir(), 'foundry-done-'));
@@ -250,8 +250,8 @@ test('done threads, the merge setting, the Kingdom project link and the region p
     await page.goto(`${origin}/#project=shop&home=1`);
     await about.waitFor();
 
-    // Knowledge: the build and the last detection test; Build regions asks first, then runs.
-    await page.getByRole('button', { name: 'Knowledge and chorus' }).click();
+    // Knowledge: the build and the last detection test; Build topics asks first, then runs.
+    await page.getByRole('button', { name: 'Knowledge and Wardens' }).click();
     const know = page.locator('.knowledge');
     await know.locator('.kbuilds tr', { hasText: 'abc1234def' }).waitFor();
     // What each Warden is given: the charter, the brief, its region, the thread; never CLAUDE.md.
@@ -266,8 +266,8 @@ test('done threads, the merge setting, the Kingdom project link and the region p
     expect(
       await know.getByRole('button', { name: 'Run the detection test · not built' }).isDisabled(),
     ).toBe(true);
-    await know.getByRole('button', { name: 'Build regions', exact: true }).click();
-    const confirm = know.getByRole('group', { name: 'Confirm the region build' });
+    await know.getByRole('button', { name: 'Build topics', exact: true }).click();
+    const confirm = know.getByRole('group', { name: 'Confirm the topic build' });
     await confirm.locator('b', { hasText: 'This spends model calls.' }).waitFor();
     expect(await confirm.locator('input').inputValue()).toBe('abc1234def');
     await confirm.getByRole('button', { name: 'Spend model calls and build' }).click();

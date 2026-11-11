@@ -56,16 +56,16 @@ export function pointerRows(flow) {
 export function PointerLedger({ rows }) {
   if (!rows.length)
     return html`<div class="rp-empty loop-pointers-empty">
-      No Warden has pointed at anything on this thread’s recent turns. When one does, its pointer
-      (the rule or doc, and where it’s written) is listed here with the turn it came in.
+      No Warden has reminded the agent of anything on this thread’s recent turns. When one does,
+      the reminder (what already exists, and where it’s written down) is listed here with its turn.
     </div>`;
   return html`<ul class="rp-list">
     ${rows.map(
       (r) => html`<li key=${r.key} class="rp-pointer">
         <div class="rp-pointer-head">
           <span class="rp-pointer-domain">† ${r.domain}</span>
-          <button type="button" class="comment-btn" title="Comment on this pointer"
-            onClick=${() => commentOn({ kind: 'loop-item', label: `Loop › pointer: ${r.domain}`, turnId: r.turnId })}>Comment</button>
+          <button type="button" class="comment-btn" title="Comment on this reminder"
+            onClick=${() => commentOn({ kind: 'loop-item', label: `Loop › reminder: ${r.domain}`, turnId: r.turnId })}>Comment</button>
           <button class="rp-link" onClick=${() => {
             focusTurnId.value = r.turnId;
           }} title="Show the turn">turn ›</button>

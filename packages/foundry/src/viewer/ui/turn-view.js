@@ -30,7 +30,7 @@ const GROUPS = [
 const LABELS = {
   input: 'Your message',
   route: 'Routing',
-  chorus: 'Chorus',
+  chorus: 'Wardens',
   plan: 'Plan sealed',
   delivery: 'Delivered to the session',
   handoff: 'Handed to a subagent',
@@ -73,13 +73,13 @@ function summary(step) {
         : [step.status, step.domains.join(', ')].filter(Boolean).join(' · ');
     case 'chorus': {
       const spoke = step.regions.filter((r) => r.decision === 'contribute').length;
-      return `${step.regions.length} regions asked · ${spoke} chimed in`;
+      return `${step.regions.length} Wardens asked · ${spoke} reminded`;
     }
     case 'plan':
       return `${step.layers.length} layers${step.confidence != null ? ` · confidence ${step.confidence}` : ''}`;
     case 'delivery': {
       const sent = step.parts.filter((p) => p.outcome === 'sent').length;
-      return `${sent} sent · ${step.parts.length - sent} already held · ${step.chimes.length} chimes`;
+      return `${sent} sent · ${step.parts.length - sent} already held · ${step.chimes.length} reminders`;
     }
     case 'tool':
       return text(step.input?.file_path ?? step.input?.command ?? step.input?.path ?? '').slice(
@@ -152,9 +152,9 @@ function ChorusBody({ step }) {
         ${r.served ? html` <span class="tv-dim">${r.served.model}${r.served.effort ? ` · ${r.served.effort}` : ''}</span>` : null}
         ${r.layers.map(
           (layer) =>
-            html`<div key=${layer.layer} class="tv-layer">Layer ${layer.layer} · ${layer.layer === 1 ? 'detection' : 'confirm and pick'}: ${layer.outcome ?? (layer.timedOut ? 'timed out' : layer.error ? 'error' : '—')}${layer.why ? ` — ${layer.why}` : ''}</div>`,
+            html`<div key=${layer.layer} class="tv-layer">Layer ${layer.layer} · ${layer.layer === 1 ? 'detection' : 'confirm and pick'}: ${layer.outcome ?? (layer.timedOut ? 'timed out' : layer.error ? 'error' : '—')}${layer.why ? ` · ${layer.why}` : ''}</div>`,
         )}
-        ${r.pointer?.pointer ? html`<div class="tv-pointer">† ${r.pointer.shape === 'choose-one' ? 'Choose one: ' : ''}${r.pointer.pointer}${r.pointer.where ? ` · ${r.pointer.where}` : ''}${r.pointer.why ? ` — ${r.pointer.why}` : ''}</div>` : null}
+        ${r.pointer?.pointer ? html`<div class="tv-pointer">† ${r.pointer.shape === 'choose-one' ? 'Choose one: ' : ''}${r.pointer.pointer}${r.pointer.where ? ` · ${r.pointer.where}` : ''}${r.pointer.why ? ` · ${r.pointer.why}` : ''}</div>` : null}
         ${r.said.map((line, i) => html`<div key=${i} class="tv-said">${line}</div>`)}
         ${!r.layers.length && r.reason ? html`<div class="tv-dim">${r.reason}</div>` : null}
       </li>`,
@@ -284,7 +284,7 @@ function TurnSummary({ steps, calls, took }) {
   return html`<dl class="tv-summary" aria-label="Turn summary">
     <dt>Got</dt><dd>${input?.text ? clip(input.text, 160) : '—'}</dd>
     <dt>Did</dt><dd>${did.length ? did.join(' · ') : tools.length ? `${tools.length} tool call${tools.length === 1 ? '' : 's'}` : 'No tool calls'}</dd>
-    <dt>Wardens</dt><dd>${regions.length ? `${regions.length} asked · ${spoke} chimed in${timedOut ? ` · ${timedOut} timed out` : ''}` : 'No chorus on this turn'}</dd>
+    <dt>Wardens</dt><dd>${regions.length ? `${regions.length} asked · ${spoke} reminded${timedOut ? ` · ${timedOut} timed out` : ''}` : 'No Wardens on this turn'}</dd>
     <dt>Cost</dt><dd>${calls === undefined ? 'Reading…' : calls.length ? `${kTokens(tokens)} tokens · ${calls.length} call${calls.length === 1 ? '' : 's'}${took ? ` · ${took}` : ''}` : `No recorded calls${took ? ` · ${took}` : ''}`}</dd>
   </dl>`;
 }
@@ -309,7 +309,7 @@ function WardenTable({ step, target }) {
         : null
     }</header>
     <table>
-      <thead><tr><th>Region</th><th>Layer 1 · detection</th><th>Layer 2 · confirm and pick</th><th>Pointer</th></tr></thead>
+      <thead><tr><th>Warden</th><th>Layer 1 · detection</th><th>Layer 2 · confirm and pick</th><th>Reminder</th></tr></thead>
       <tbody>${rows.map(
         (
           r,

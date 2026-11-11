@@ -115,10 +115,10 @@ test('Analytics leads with each login’s windows and charts tokens over the cho
     expect((await hourly).url()).toContain('period=hourly');
     // What isn't recorded yet says so.
     await page
-      .locator('.an-tile', { hasText: 'Chorus overhead' })
+      .locator('.an-tile', { hasText: 'Warden overhead' })
       .locator('.coming-soon')
       .waitFor();
-    await page.locator('.analytics-tab', { hasText: 'Chorus' }).click();
+    await page.locator('.analytics-tab', { hasText: 'Wardens' }).click();
     await page.locator('.an-box', { hasText: 'Layer 1 and Layer 2' }).waitFor();
     expect(errors).toEqual([]);
   } finally {

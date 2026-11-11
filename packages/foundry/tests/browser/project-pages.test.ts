@@ -34,9 +34,9 @@ function sized(regionsDir: string, id: string, tokens: number) {
 }
 
 // A project's home: About (description, hosted repo, worktree mode, Kingdom), no Threads or Archive
-// box, and two header actions. Knowledge and chorus lists the six steps with the regions' sizes;
+// box, and two header actions. Knowledge and Wardens lists the six steps with the regions' sizes;
 // Esc returns home; the board action opens the board on this project.
-test('Project home shows About and opens Knowledge and chorus and its board', async () => {
+test('Project home shows About and opens Knowledge and Wardens and its board', async () => {
   const cleanup: ReleaseStep[] = [];
   const dir = mkdtempSync(join(tmpdir(), 'foundry-project-pages-'));
   cleanup.push(['dir', () => rmSync(dir, { recursive: true, force: true })]);
@@ -117,32 +117,32 @@ test('Project home shows About and opens Knowledge and chorus and its board', as
 
     const activeRow = page.locator('.proj-item.proj-active');
     expect(await activeRow.innerText()).toContain('acme-shop');
-    await home.getByRole('button', { name: 'Knowledge and chorus' }).click();
+    await home.getByRole('button', { name: 'Knowledge and Wardens' }).click();
     const know = page.locator('.knowledge');
-    await know.locator('h2', { hasText: 'Knowledge and chorus' }).waitFor();
+    await know.locator('h2', { hasText: 'Knowledge and Wardens' }).waitFor();
     await page.waitForFunction(() => location.hash.includes('home=knowledge'));
     expect(await know.locator('.kstep h3').allInnerTexts()).toEqual([
       'Set up',
       'Update since the last setup',
       'Analyse the docs',
-      'Build regions',
+      'Build topics',
       'Tune Wardens',
       'Oracle',
     ]);
-    const build = know.locator('.kstep', { hasText: 'Build regions' });
+    const build = know.locator('.kstep', { hasText: 'Build topics' });
     await build.locator('.kwarn', { hasText: 'database: 41k · over the cap' }).waitFor();
     expect(
       await build
         .locator('.ksize')
         .evaluateAll((els: Element[]) => els.map((e: Element) => e.getAttribute('data-level'))),
     ).toEqual(['over', 'large', 'ok']);
-    // Build regions runs from here now (after a confirm); done-and-pipeline covers the run.
-    await know.getByRole('button', { name: 'Build regions', exact: true }).waitFor();
+    // Build topics runs from here now (after a confirm); done-and-pipeline covers the run.
+    await know.getByRole('button', { name: 'Build topics', exact: true }).waitFor();
 
     expect(await activeRow.innerText()).toContain('acme-shop');
     // Reload keeps the page; Esc goes back to the project's home.
     await page.reload();
-    await know.locator('h2', { hasText: 'Knowledge and chorus' }).waitFor();
+    await know.locator('h2', { hasText: 'Knowledge and Wardens' }).waitFor();
     await page.keyboard.press('Escape');
     await about.waitFor();
 

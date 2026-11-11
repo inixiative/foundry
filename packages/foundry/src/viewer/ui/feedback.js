@@ -73,8 +73,8 @@ export function FeedbackPrompt({ prompt }) {
     </div>
     <dl class="feedback-lines">
       <dt>What happened</dt><dd>${meta.shown.happened}</dd>
-      <dt>What we did</dt><dd>${meta.shown.did}</dd>
-      <dt>What we intend</dt><dd>${meta.shown.intend}</dd>
+      <dt>What was done</dt><dd>${meta.shown.did}</dd>
+      <dt>What happens next</dt><dd>${meta.shown.intend}</dd>
     </dl>
     ${
       editing

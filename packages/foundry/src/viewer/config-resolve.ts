@@ -1206,7 +1206,7 @@ function buildProjectView(
     // Checked on the composed chorus: a later layer's region replaces an earlier one whole, docs included.
     const missingDocs = missingRegionDocs(wardenRegions, () => roles.warden.stages);
     const heralds = heraldRegions.length
-      ? `; ${heraldRegions.length} Herald region${heraldRegions.length === 1 ? '' : 's'} (${heraldRegions.map((r) => r.id).join(', ')}) not run: Heralds are not built`
+      ? `; ${heraldRegions.length} Herald topic${heraldRegions.length === 1 ? '' : 's'} (${heraldRegions.map((r) => r.id).join(', ')}) not run: Heralds are not built`
       : '';
     // A stage on its own model or effort needs its own decision host, which only subscription
     // decisions start: with API-token decisions it is named here, not found when a thread starts.
@@ -1222,7 +1222,7 @@ function buildProjectView(
           ...asked,
           roles,
           ...composed,
-          reason: `the chorus is not built: chorus.wardens.stages ${unserved.map((i) => `[${i}]`).join(', ')} name their own model or effort, which only subscription decisions serve (apiTokens is on)${unread}`,
+          reason: `the Wardens are not built: chorus.wardens.stages ${unserved.map((i) => `[${i}]`).join(', ')} name their own model or effort, which only subscription decisions serve (apiTokens is on)${unread}`,
         }
       : missingDocs.length
         ? {
@@ -1231,7 +1231,7 @@ function buildProjectView(
             roles,
             ...composed,
             missingDocs,
-            reason: `the chorus is not built: ${missingDocs.map((m) => `region ${m.region} has no ${m.doc} (stage ${m.stages.map((i) => i + 1).join(', ')} of chorus.wardens.stages)`).join('; ')}${heralds}${unread}`,
+            reason: `the Wardens are not built: ${missingDocs.map((m) => `topic ${m.region} has no ${m.doc} (stage ${m.stages.map((i) => i + 1).join(', ')} of chorus.wardens.stages)`).join('; ')}${heralds}${unread}`,
           }
         : wardenRegions.length
           ? {
@@ -1246,7 +1246,7 @@ function buildProjectView(
               ...asked,
               roles,
               ...composed,
-              reason: `${heraldRegions.length ? `no Warden regions at ${dirs}${heralds}` : `no regions at ${dirs} (no <id>/region.json)`}; this project has no chorus${unread}`,
+              reason: `${heraldRegions.length ? `no Warden topics at ${dirs}${heralds}` : `no topics at ${dirs} (no <id>/region.json)`}; this project has no Wardens${unread}`,
             };
     generated = chorus.on ? regionWardens(wardenRegions, roles.warden.stages) : [];
   } else {
@@ -1256,8 +1256,8 @@ function buildProjectView(
         ...chorus,
         ...(available ? { available } : {}),
         reason: available
-          ? `the chorus is off: ${available} regions at ${dirs} are not enabled (set "chorus": { "enabled": true } in ${join(project.path, REPOSITORY_SETTINGS_FILE)} or in this project's settings)${unread}`
-          : `this project has no chorus${unread}`,
+          ? `Wardens are off: ${available} topics at ${dirs} are not turned on (set "chorus": { "enabled": true } in ${join(project.path, REPOSITORY_SETTINGS_FILE)} or in this project's settings)${unread}`
+          : `this project has no Wardens${unread}`,
       };
   }
   // The view's project entry carries the effective chorus, normalized. The setting is valid and, on a

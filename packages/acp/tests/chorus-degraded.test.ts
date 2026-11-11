@@ -31,7 +31,7 @@ test('the context item names the unheard Wardens and reads the sealed row, not a
   expect(summary.participants).toEqual([{ domain: 'security', decision: 'timeout' }]);
   expect(summary.degraded).toEqual(degraded);
   expect(summary.text).toContain(
-    'Chorus degraded; the turn went on without them: security (Layer 1 timed out).',
+    'Some Wardens went unheard; the turn went on without them: security (Layer 1 timed out).',
   );
 });
 

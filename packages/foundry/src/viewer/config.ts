@@ -212,7 +212,7 @@ export interface FoundryConfig {
    * instructions and domain knowledge of every role; see docs/usage-and-context.md.
    */
   composition?: CompositionSettings;
-  /** Global defaults — executor provider/model + classifier provider/model. */
+  /** Global defaults: executor provider/model + classifier provider/model. */
   defaults: {
     /** The provider new threads run on (e.g. `claude-code`, `codex`). */
     provider: string;
@@ -267,14 +267,14 @@ export interface FoundryConfig {
 
   /**
    * Global data source templates (keyed by source ID).
-   * On a fresh install this is empty — sources are project-scoped.
+   * On a fresh install this is empty: sources are project-scoped.
    */
   sources: Record<string, DataSourceConfig>;
 
   /** Registered projects (keyed by project ID). */
   projects: Record<string, ProjectSettingsConfig>;
 
-  /** Tunnel configuration — expose the viewer over a public URL. */
+  /** Tunnel configuration: expose the viewer over a public URL. */
   tunnel?: TunnelSettingsConfig;
   /** Every Kingdom integration this Foundry is paired as, once per Kingdom + owner; Signets stay in private files. */
   kingdomIntegrations?: KingdomIntegration[];
@@ -345,9 +345,10 @@ export interface ProjectSettingsConfig {
    */
   status?: 'archived';
   /**
-   * This project's chorus: the region Wardens its threads run. Merged over the repository's own
-   * `<project>/.foundry/project.json` `chorus`, these settings winning. Region Wardens run only when
-   * `enabled` is true; absent, the project has no chorus and regions present are reported as off. In
+   * This project's Wardens: each knows one topic of the project and reminds its threads what
+   * already exists and where it's written down. Merged over the repository's own
+   * `<project>/.foundry/project.json` `chorus`, these settings winning. Wardens run only when `enabled`
+   * is true; absent, the project has no Wardens and topics present are reported as off. In
    * a resolved project view this is normalized (`enabled` effective, `layers` absolute); see
    * docs/usage-and-context.md, "Chorus".
    */
@@ -385,27 +386,27 @@ export interface ChorusLayerSettings {
  * found, the project has no chorus and the view says why; `regions`/`layers` may stay written, unread.
  */
 export interface ChorusSettings {
-  /** Run this project's region Wardens. Off by default. */
+  /** Run this project's Wardens. Off by default. */
   enabled?: boolean;
-  /** The one regions directory the chorus reads (absolute or relative to the project; default `.foundry/regions`). */
+  /** The one topics folder the Wardens read (absolute or relative to the project; default `.foundry/regions`). */
   regions?: string;
-  /** Several regions directories in order, a later layer's region replacing an earlier one (e.g. template base, then this project). */
+  /** Several topics folders in order, a later layer's topic replacing an earlier one (e.g. template base, then this project). */
   layers?: ChorusLayerSettings[];
   /** The `consumed` trigger: Wardens are asked when a thread takes in a work item. Off by default. */
   consumed?: ConsumedSettings;
   /**
-   * The reception charter (`CHORUS_RECEPTION`): how the main thread reads a chime, held once as a
-   * standing layer. On with the chorus (itself opt-in); `false` leaves it out, e.g. for a baseline.
+   * The reception charter (`CHORUS_RECEPTION`): how the main thread reads a Warden's
+   * reminder, held once as a standing layer. On with the Wardens (themselves opt-in); `false` leaves it out, e.g. for a baseline.
    */
   reception?: boolean;
   /**
-   * How the chorus's Warden regions classify (classify/): their stages, at most three. Omitted, the
-   * two-layer chain: Haiku 5.5 low points with its why inline and escalates each yes, without the why,
+   * How the Wardens classify (classify/): their stages, at most three. Omitted, the
+   * two-layer chain: Haiku 5.5 low answers with its why inline and escalates each yes, without the why,
    * to Sonnet 5.5 low on the same knowledge.md (Oracle finding 2026-11-01-l2-nowhy); with API-token
    * decisions, one stage. The machine's list replaces the repository's whole.
    */
   wardens?: ChorusRoleSettings;
-  /** How Herald regions would classify: the socket only. Heralds are not built; their regions do not run. */
+  /** How Herald topics would classify: the socket only. Heralds are not built; their topics do not run. */
   heralds?: ChorusRoleSettings;
 }
 
@@ -538,11 +539,11 @@ export interface AgentSettingsConfig {
   description?: string;
   /** System prompt for this agent. Empty for an executor: a main thread's instructions come from its thread role. */
   prompt: string;
-  /** LLM settings — provider/model default to global if omitted. */
+  /** LLM settings: provider/model default to global if omitted. */
   provider?: string;
   /** The model this agent runs on; omitted, the global default model. */
   model?: string;
-  /** Temperature — set per agent. Classifiers/routers want 0, creative agents want higher. */
+  /** Temperature, set per agent. Classifiers/routers want 0, creative agents want higher. */
   temperature?: number;
   /**
    * Which layers this agent can READ (empty = all).
@@ -667,7 +668,7 @@ export interface LayerSettingsConfig {
    */
   description?: string;
   /**
-   * What shape the warmed content takes — helps humans and agents understand what's inside.
+   * What shape the warmed content takes; helps humans and agents understand what's inside.
    * E.g., "JSON array of convention objects", "Markdown documentation index", "Compact thread-state JSON".
    */
   contentShape?: string;
@@ -758,7 +759,7 @@ export interface DataSourceConfig {
   };
   /** The source's display name in Settings and the layer view. */
   label: string;
-  /** Connection string, file path, URL — depends on type. */
+  /** Connection string, file path or URL, depending on type. */
   uri: string;
   /** Whether this source is enabled. */
   enabled: boolean;

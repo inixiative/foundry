@@ -57,13 +57,13 @@ function ThreadRow({ thread }) {
 function Chorus({ projectId }) {
   const body = useJson(`/api/projects/${encodeURIComponent(projectId)}/chorus`);
   const chorus = body?.chorus;
-  if (body === undefined) return html`<div class="ph-meta">Reading the chorus…</div>`;
-  if (!chorus) return html`<div class="ph-meta">No chorus for this project.</div>`;
+  if (body === undefined) return html`<div class="ph-meta">Reading the Wardens…</div>`;
+  if (!chorus) return html`<div class="ph-meta">No Wardens for this project.</div>`;
   const ready = chorus.on && chorus.enabled;
   const regions = chorus.regions?.length ?? 0;
   const stages = chorus.roles?.warden?.stages ?? [];
   return html`
-    <div class="ph-line ${ready ? '' : 'is-warn'}"><i></i>${ready ? `Ready · ${regions} region Wardens` : `Off${chorus.reason ? ` · ${chorus.reason}` : ''}`}</div>
+    <div class="ph-line ${ready ? '' : 'is-warn'}"><i></i>${ready ? `Ready · ${regions} Wardens` : `Off${chorus.reason ? ` · ${chorus.reason}` : ''}`}</div>
     ${stages.length ? html`<div class="ph-meta">${stages.map((s) => `${s.task}: ${s.model === 'decision' ? 'the decision model' : s.model}`).join(' · ')}</div>` : null}
     ${chorus.missingDocs?.length ? html`<div class="ph-line is-warn"><i></i>${chorus.missingDocs.length} docs missing</div>` : null}`;
 }
@@ -127,7 +127,7 @@ export function ProjectHome() {
           ? null
           : html`<span class="ph-head-actions">
               <button type="button" class="proj-btn" onClick=${() => openProjectBoard(projectId)}>Board for this project</button>
-              <button type="button" class="proj-btn is-go" onClick=${() => openProjectKnowledge(projectId)}>Knowledge and chorus</button>
+              <button type="button" class="proj-btn is-go" onClick=${() => openProjectKnowledge(projectId)}>Knowledge and Wardens</button>
             </span>`
       }
     </header>
@@ -147,9 +147,9 @@ export function ProjectHome() {
       ${
         isGlobal
           ? null
-          : html`<section class="ph-box"><h4>Chorus</h4><${Chorus} projectId=${projectId} />
-          <button type="button" class="proj-btn ph-link" onClick=${() => openProjectKnowledge(projectId)}>Setup, regions and Wardens →</button>
-          <button type="button" class="proj-btn ph-link" onClick=${() => navigate(`/projects/${encodeURIComponent(projectId)}/settings/chorus`)}>Settings › Chorus →</button></section>`
+          : html`<section class="ph-box"><h4>Wardens</h4><${Chorus} projectId=${projectId} />
+          <button type="button" class="proj-btn ph-link" onClick=${() => openProjectKnowledge(projectId)}>Setup, topics and Wardens →</button>
+          <button type="button" class="proj-btn ph-link" onClick=${() => navigate(`/projects/${encodeURIComponent(projectId)}/settings/chorus`)}>Settings › Wardens →</button></section>`
       }
       <section class="ph-box">
         <h4>Feedback</h4>

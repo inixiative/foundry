@@ -148,7 +148,7 @@ export function SelfChatPane({ focus, onClose }) {
           messages.length === 0
             ? html`
           <div class="settings-chat-msg system">
-            Ask about customizing Foundry — agents, layers, providers, sources, or how anything works. I can see the full Foundry repo${focus ? " and the settings you're looking at" : ''}.
+            Ask about customizing Foundry: agents, layers, providers, sources, or how anything works. The assistant can see the full Foundry repo${focus ? " and the settings you're looking at" : ''}.
           </div>
         `
             : messages.map(

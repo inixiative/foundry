@@ -21,10 +21,10 @@ import {
 /** Settings › Project › Chorus: whether region Wardens run, set for me or for everyone. */
 export function ChorusSwitch({ projectId, onSaved }) {
   return html`<section class="settings-card setting-rows">
-    <${ProjectChoiceRow} projectId=${projectId} path="chorus.enabled" label="Chorus"
+    <${ProjectChoiceRow} projectId=${projectId} path="chorus.enabled" label="Wardens"
       choices=${[[true, 'On'], [false, 'Off']]}
       fallback=${false} onSaved=${onSaved}
-      help=${(on) => (on ? 'Region Wardens point at what exists on every turn.' : 'Off: threads in this project run without Wardens.')} />
+      help=${(on) => (on ? 'On every turn, Wardens remind the agent what already exists in this project and where it is written down.' : 'Off: threads in this project run without Wardens.')} />
   </section>`;
 }
 

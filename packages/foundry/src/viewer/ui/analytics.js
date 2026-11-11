@@ -91,8 +91,8 @@ function Headline({ logins, series }) {
       <b>${used == null ? '—' : `${used}%`}</b><small>of the busiest login's 5-hour window</small></div>
     <div class="an-tile"><span class="an-tile-label">Tokens · ${range[1]}</span>
       <b>${series === undefined ? '…' : fmtTokens(seriesTokens(series))}</b><small>${settingsConfig.value?.apiTokens ? 'subscriptions and API keys' : 'included in your subscriptions'}</small></div>
-    <div class="an-tile"><span class="an-tile-label">Chorus overhead</span>
-      <${ComingSoon} inline=${true} what="The Wardens' share of your tokens, and the pointers that were followed." /></div>
+    <div class="an-tile"><span class="an-tile-label">Warden overhead</span>
+      <${ComingSoon} inline=${true} what="The Wardens' share of your tokens, and the reminders the agent followed." /></div>
     <div class="an-tile"><span class="an-tile-label">Corrections recurred</span>
       <${ComingSoon} inline=${true} what="Applied corrections that came back, from Oracle." /></div>
   </div>`;
@@ -101,8 +101,8 @@ function Headline({ logins, series }) {
 /** The chorus: what the Wardens cost against what they were worth, region by region. */
 function Chorus() {
   return html`<section class="an-box">
-    <h3>Chorus</h3>
-    <${ComingSoon} what="Layer 1 and Layer 2 calls and tokens per region, the pointers each region gave and how many the agent followed, and the regions that timed out." />
+    <h3>Wardens</h3>
+    <${ComingSoon} what="Layer 1 and Layer 2 calls and tokens per Warden, the reminders each gave and how many the agent followed, and the Wardens that timed out." />
   </section>`;
 }
 
@@ -436,7 +436,7 @@ export function AnalyticsPage() {
 
   const tabs = [
     { id: 'overview', label: 'Overview' },
-    { id: 'chorus', label: 'Chorus' },
+    { id: 'chorus', label: 'Wardens' },
     { id: 'threads', label: 'Threads' },
     { id: 'calls', label: 'Call Log' },
     { id: 'models', label: 'Models' },

@@ -52,7 +52,7 @@ export const PROJECT_SETTINGS = [
   ['integrations', 'Integrations', null, false, ['kingdomAccess']],
   ['work', 'Work', null, false, ['threadOnMerge']],
   ['agent', 'Agent', null, false, ['steer']],
-  ['chorus', 'Chorus', null, false, ['chorus']],
+  ['chorus', 'Wardens', null, false, ['chorus']],
   ['conversations', 'Conversations', null, false, ['conversations']],
   ['archive', 'Archive'],
   ['sources', 'Sources', null, false, ['sources']],

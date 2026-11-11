@@ -55,10 +55,10 @@ export const latestBuild = (pipeline) => pipeline?.builds?.[0] ?? null;
 
 export function BuildHistory({ pipeline }) {
   const builds = pipeline?.builds ?? [];
-  if (pipeline === undefined) return html`<span class="rp-dim">Reading the region builds…</span>`;
-  if (!builds.length) return html`<span class="rp-dim">No region build on this machine yet.</span>`;
+  if (pipeline === undefined) return html`<span class="rp-dim">Reading the topic builds…</span>`;
+  if (!builds.length) return html`<span class="rp-dim">No topic build on this machine yet.</span>`;
   return html`<table class="ktable kbuilds">
-    <tr><th>Built</th><th>Template commit</th><th>Regions</th><th>Largest</th><th>Over 20k</th></tr>
+    <tr><th>Built</th><th>Template commit</th><th>Topics</th><th>Largest</th><th>Over 20k</th></tr>
     ${builds.slice(0, 5).map(
       (b) => html`<tr key=${b.dir}>
         <td>${when(b.builtAt)}</td><td class="mono">${b.templateCommit?.slice(0, 10) ?? '—'}</td>
@@ -95,8 +95,8 @@ export function BuildRegions({ pipeline, reread }) {
   return html`<div class="kbuild">
     ${
       confirming
-        ? html`<div class="kconfirm" role="group" aria-label="Confirm the region build">
-            <p><b>This spends model calls.</b> The build reads the template at this commit, splits its docs, rules and primitives into regions and describes each with the model.</p>
+        ? html`<div class="kconfirm" role="group" aria-label="Confirm the topic build">
+            <p><b>This spends model calls.</b> The build reads the template at this commit, splits its docs, rules and primitives into topics and describes each with the model.</p>
             <label class="settings-field">Template commit
               <input class="settings-input mono" value=${commit} placeholder="a commit SHA" onInput=${(e) => setCommit(e.target.value)} />
             </label>
@@ -119,11 +119,11 @@ export function BuildRegions({ pipeline, reread }) {
       confirming
         ? null
         : html`<button type="button" class="proj-btn is-go kbuild-start" disabled=${!!running}
-            title=${running ? 'A build is running; one at a time' : 'Build regions (spends model calls)'}
+            title=${running ? 'A build is running; one at a time' : 'Build topics (spends model calls)'}
             onClick=${() => {
               setCommit(latestBuild(pipeline)?.templateCommit ?? '');
               setConfirming(true);
-            }}>${running ? 'Building…' : 'Build regions'}</button>`
+            }}>${running ? 'Building…' : 'Build topics'}</button>`
     }
   </div>`;
 }
