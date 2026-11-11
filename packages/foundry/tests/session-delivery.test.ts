@@ -335,7 +335,8 @@ test('a thread delivers standing context once, sends a post-hoc learning update 
       expect(created.baseContext).toContain(domainKnowledge(d));
       expect(session().sent[0]).not.toContain(instructions(d));
     }
-    expect(created.baseContext).toContain('Perform the requested bounded migration.');
+    // An executor contributes no standing instructions (its prompt is retired).
+    expect(created.baseContext).not.toContain('Active agent');
     expect(first.delivery.session).toMatchObject({ session: 'started', sent: [] });
     expect(Object.keys(ledger()).sort()).toEqual(
       first.delivery.session!.base.map((part) => part.id).sort(),

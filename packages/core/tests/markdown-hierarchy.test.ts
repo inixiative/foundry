@@ -480,6 +480,61 @@ test('roles and slots: one ladder serves every role and slot; unslotted files co
   expect(plain.files.map((file) => file.content)).toEqual(['ORG_GENERAL']);
 });
 
+test('base roles: a {role} source is read for each base role, in order, then for the role itself', async () => {
+  write(join(org, 'ORG.md'), 'ORG_GENERAL');
+  write(join(org, 'roles', 'main', 'instructions.md'), 'ORG_MAIN');
+  write(join(org, 'roles', 'coder', 'instructions.md'), 'ORG_CODER');
+  write(join(project, 'roles', 'main', 'instructions.md'), 'PROJECT_MAIN');
+  write(join(project, 'roles', 'coder', 'instructions.md'), 'PROJECT_CODER');
+  const roleFile = { path: 'roles/{role}/{slot}.md', when: { slots: ['instructions'] } };
+  const nodes: HierarchyNode[] = [
+    {
+      id: 'tree',
+      scope: 'org',
+      personal: false,
+      tier: 'org',
+      sources: [{ walk: [{ path: 'ORG.md' }, roleFile], span: { within: ['{orgRoot}'] } }],
+    },
+  ];
+  const read = async (extra: Partial<HierarchyLocation>) =>
+    (
+      await discoverHierarchy(nodes, at(project, { slot: 'instructions', ...extra }), { tierRank })
+    ).files.map((file) => file.content);
+  // At each directory: the base role's file, then the role's, each place in walk order.
+  expect(await read({ role: 'coder', baseRoles: ['main'] })).toEqual([
+    'ORG_GENERAL',
+    'ORG_MAIN',
+    'ORG_CODER',
+    'PROJECT_MAIN',
+    'PROJECT_CODER',
+  ]);
+  // Without base roles, only the role's own; a base role equal to the role reads once.
+  expect(await read({ role: 'coder' })).toEqual(['ORG_GENERAL', 'ORG_CODER', 'PROJECT_CODER']);
+  expect(await read({ role: 'main', baseRoles: ['main'] })).toEqual([
+    'ORG_GENERAL',
+    'ORG_MAIN',
+    'PROJECT_MAIN',
+  ]);
+  // A node for a base role serves every role over it.
+  write(join(home, 'base.md'), 'FOR_MAIN');
+  const forMain: HierarchyNode = {
+    id: 'for-main',
+    scope: 'computer',
+    personal: true,
+    tier: 'personal',
+    when: { roles: ['main'] },
+    sources: [{ path: '{home}/base.md' }],
+  };
+  const withBase = await discoverHierarchy(
+    [forMain],
+    at(project, { role: 'coder', baseRoles: ['main'] }),
+    { tierRank },
+  );
+  expect(withBase.files.map((file) => file.content)).toEqual(['FOR_MAIN']);
+  const without = await discoverHierarchy([forMain], at(project, { role: 'coder' }), { tierRank });
+  expect(without.files).toEqual([]);
+});
+
 test('slots dedupe together: a repeat in a later slot is kept there and cut from the earlier one', () => {
   const file = (path: string, node: string, content: string): HierarchyFile => ({
     path,

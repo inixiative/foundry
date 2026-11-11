@@ -360,8 +360,10 @@ formalized because that's how the whole system is working."
 computer, org, org personal, project, project personal) composes every slot of
 every role.
 
-- **Roles.** `main` is the thread's executor. Every model-backed middleware
-  role is its agent id: each Warden (a region Warden's id is its region id) and the
+- **Roles.** A main thread composes as its **thread role** (below): `coder`,
+  `assistant`, or one of the user's own. `main` is the shared base under every
+  thread role: its role files compose for every main thread, and it picks
+  nothing itself. Every model-backed middleware role is its agent id: each Warden (a region Warden's id is its region id) and the
   Cartographer (its agent id, or `cartographer`). The Librarian makes no model
   call and has nothing to compose. Classifier and router agents still use their
   settings prompt and visible layers.
@@ -396,8 +398,64 @@ part:
 | domainKnowledge | each source in the agent's `domainKnowledge` (source ids, any type; a project extension appends, or `override`s), under the source's label | the role's slotted files, plus the general files of any node the role names in `general` |
 
 The main thread's `instructions` source (type `instructions`; `slot` picks the
-slot, default `instructions`) is the `main` role's ladder part. Its own agent
-prompt stays the executor's `agent` part.
+slot, default `instructions`) is its thread role's ladder part, and the only
+path a main thread's instructions take. An executor has no settings part: its
+`prompt` is retired and a saved one is refused by name, with the fix (move it to
+`.foundry/roles/<role>/instructions.md`). Why: every main thread used to get the
+coding executor's prompt ("Active agent: artificer…"), so a Muse thread meant as
+a day-to-day assistant acted as a coder (Aron, 2026-11-10).
+
+**Thread roles** (Aron, 2026-11-10: "Muse should be an assistant, and Claude
+Codex should be coders… We have role types for threads, and they should probably
+have their own instruction set… maybe you can configure your own roles and
+default roles"). A thread role is a composition role a main thread runs as, so
+it needs no machinery beyond the ladder:
+
+- **Built in.** `coder`, the default for `claude-code` and `codex`, takes every
+  general file (CLAUDE.md, AGENTS.md, rules, auto memory), as Claude Code itself
+  reads them. `assistant`, the default for `muse`, takes general files only from
+  the computer-level nodes (`managed`, `global`), so a repository's coding rules
+  never reach it. A worker no role names composes as `coder`. Foundry ships no
+  role instructions: they are role files the user writes.
+- **Role files.** For thread role X, each rung reads `main`'s role file, then
+  X's (core `HierarchyLocation.baseRoles`). So `~/.foundry/roles/main/instructions.md`
+  reaches every main thread and `~/.foundry/roles/assistant/instructions.md` only
+  assistants.
+- **Harness.** The personal global file follows the thread's worker: a Claude
+  Code thread reads `~/.claude/CLAUDE.md`, a Codex thread `$CODEX_HOME/AGENTS.md`,
+  a Muse thread neither (it is neither harness).
+- **Per thread.** `ThreadMeta.role` is set when the thread is created: the role
+  chosen (New thread picker, `POST /api/threads` `role`), else its worker's
+  default. It changes any time (`PATCH /api/threads/:id` `role`, the header's
+  Runs on picker) and applies from the next turn: the role and worker reach the
+  instructions source through the thread's bound scope, so a change re-composes.
+  A record with no role (from before thread roles) resolves to its worker's
+  default when read; nothing rewrites it. A worker switch moves a thread on its
+  old worker's default role to the new worker's (a Claude Code coder switched
+  to Muse becomes an assistant); a role chosen otherwise stays.
+- **Your own.** A role entry with `thread` is a thread role. `defaultFor` moves
+  workers to it from the built-ins (a worker has one default; two settings roles
+  naming the same worker are refused). A built-in's entry merges over its built-in
+  picks slot by slot, and its `thread` field by field (a new label keeps its
+  default workers). Thread role ids, and `main`, are composition role ids: no
+  agent or region may take one.
+
+```jsonc
+"composition": {
+  "roles": {
+    "assistant": { "instructions": { "general": ["managed", "global", "project"] } },
+    "writer": {
+      "thread": { "label": "Writer", "defaultFor": ["muse"] },
+      "instructions": { "general": ["global"] }
+    },
+    "main": { "audience": "personal_private" }   // main takes only audience
+  }
+}
+```
+
+`/feedback` and `/correction` on a main thread write to that thread's role when
+no Warden owns the rule; the feedback edit form lists the thread roles, `main`
+and the project's Wardens.
 
 **Selection.** Everything that applies is on. `composition.roles.<role>` opts
 out, per slot:
@@ -428,10 +486,12 @@ Chorus, "Generated Wardens").
 
 **Tiers, per role.** A file reaches a role only if its tier is visible to the
 role's `audience`, in both slots, whether it was found, imported or opted in.
-So a personal node never reaches a `team` or `org` audience. A middleware
-role's output reaches the main thread (a Warden chiming in), so a role's
-audience is never wider in what it reads than `main`'s. If main is `team`,
-every role is at least `team`. A Warden's `domainKnowledge` sources may not
+So a personal node never reaches a `team` or `org` audience. A thread role's
+audience is its own, else `main`'s. A middleware role's output reaches the main
+thread (a Warden chiming in), and it serves every main thread of its project,
+so its audience is never wider in what it reads than the widest of `main`'s and
+the thread roles'. If any of them is `team`, every middleware role is at least
+`team`. A Warden's `domainKnowledge` sources may not
 be `instructions` sources. They must also be enabled. Role files under
 `~/.foundry` belong to the personal computer node wherever a symlink places
 them.
@@ -448,7 +508,7 @@ not receive is not composed, so dedupe never moves text into it:
 - the main thread receives the slots its enabled `instructions` sources name.
 
 **Budgets, per role.** `budget` bounds instructions plus domain knowledge, in
-characters. The default is none for `main` and 120,000 for middleware roles
+characters. The default is none for thread roles and 120,000 for middleware roles
 (`DEFAULT_ROLE_BUDGET`): a region Warden at the healthy-size test's hard cap,
 40k tokens of knowledge (about 100,000 characters; H itself is 20k), is
 admitted with its instructions. A decision call refuses more than 160,000
@@ -650,8 +710,8 @@ regions never run (Heralds are not built) and the view says so.
   loading. A role with no general file in either slot (a Warden, the
   Cartographer) takes none by any other route either: an `@` import of
   CLAUDE.md from its role files or the brief, or a slotted settings source
-  naming one, is dropped (`isGeneralFile`). The ids `main` and `cartographer`
-  are reserved: a region may not take them. There is no switch that brings the
+  naming one, is dropped (`isGeneralFile`). The ids `main`, `cartographer` and
+  every thread role's are reserved: a region may not take them. There is no switch that brings the
   ladder back. With no general files a
   Warden's instructions carry no Claude Code preamble ("these instructions
   OVERRIDE…"), which only frames CLAUDE.md-style files (`RoleView.framed`).
@@ -802,14 +862,14 @@ Most turns a Warden has nothing to add: it answers `NO_COMMENT`, which adds
 nothing to the message. Every Warden runs under the fixed Warden charter
 ([FLOW.md](FLOW.md#when-a-warden-weighs-in-the-charter-trigger-points-and-no_comment)).
 
-**An example setup.** Main plus one region Warden, `naming` (the repository's
+**An example setup.** A coder main thread plus one region Warden, `naming` (the repository's
 `.foundry/regions/naming/`, its chorus enabled in `.foundry/project.json`; no
 Warden is written in settings), across computer, org, org personal, project and
 project personal. (Until 2026-10-17 this example was a hand-named Convention
 Warden in settings; until 2026-11-02 it read the org and project CLAUDE.md as
 domain knowledge, which a Warden no longer can.)
 
-| Rung | main: instructions | naming Warden: instructions | naming Warden: domain knowledge |
+| Rung | coder main thread: instructions (`main` then `coder` role files) | naming Warden: instructions | naming Warden: domain knowledge |
 |---|---|---|---|
 | (Foundry) | | the Warden charter, then the region's generated prompt | the region's `knowledge.md` |
 | computer | `~/.claude/CLAUDE.md` (+ rules, `RTK.md`), `~/.foundry/roles/main/instructions.md` | `~/.foundry/roles/naming/instructions.md` | `~/.foundry/roles/naming/domainKnowledge.md` |

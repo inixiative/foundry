@@ -69,7 +69,7 @@ function baseConfig(): FoundryConfig {
     worker: {
       id: 'worker',
       kind: 'executor',
-      prompt: 'Work',
+      prompt: '',
       provider: 'central',
       model: 'central-model',
       visibleLayers: [],

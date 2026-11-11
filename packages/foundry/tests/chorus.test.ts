@@ -181,7 +181,7 @@ function config(project: string): FoundryConfig {
     worker: {
       id: 'worker',
       kind: 'executor',
-      prompt: 'WORKER_INSTRUCTIONS',
+      prompt: '',
       provider: 'central',
       model: 'central-model',
       visibleLayers: [],

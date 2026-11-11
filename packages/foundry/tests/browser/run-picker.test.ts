@@ -355,7 +355,17 @@ test('"+ New thread" picks worker, model and effort before the first message, fr
     await page.route('**/api/projects/shop/workers', (route: Route) =>
       route.fulfill({
         contentType: 'application/json',
-        body: JSON.stringify({ workers: WORKERS, unavailable: UNAVAILABLE }),
+        body: JSON.stringify({
+          workers: WORKERS.map((w) => ({
+            ...w,
+            defaultRole: w.id === 'muse' ? 'assistant' : 'coder',
+          })),
+          unavailable: UNAVAILABLE,
+          roles: [
+            { id: 'coder', label: 'Coder' },
+            { id: 'assistant', label: 'Assistant' },
+          ],
+        }),
       }),
     );
     const created: Record<string, unknown>[] = [];
@@ -379,9 +389,16 @@ test('"+ New thread" picks worker, model and effort before the first message, fr
     expect(await modal.locator('[data-run="worker"]').inputValue()).toBe('claude-code');
     expect(await modal.locator('[data-run="model"]').inputValue()).toBe('claude-opus-5-5');
     expect(await modal.locator('[data-run="effort"]').inputValue()).toBe('');
+    // The role row names the worker's default role, and follows the worker until one is chosen.
+    expect(await modal.locator('[data-run="role"] option').first().innerText()).toBe(
+      'Coder (default)',
+    );
     await modal.locator('[data-run="worker"]').selectOption('muse');
     expect(await modal.locator('[data-run="model"]').inputValue()).toBe('muse-wonder-1.0');
     expect(await modal.locator('[data-note="muse-personal"]').count()).toBe(1);
+    expect(await modal.locator('[data-run="role"] option').first().innerText()).toBe(
+      'Assistant (default)',
+    );
     await modal.locator('[data-run="effort"]').selectOption('low');
     await modal.locator('[data-run="name"]').fill('  Checkout flow  ');
     await modal.locator('[data-run="start"]').click();
@@ -395,6 +412,12 @@ test('"+ New thread" picks worker, model and effort before the first message, fr
     await modal.locator('[data-run="start"]:not([disabled])').click();
     await modal.waitFor({ state: 'detached' });
     expect(created[1]).toEqual({ projectId: 'shop' });
+    // A chosen role is sent.
+    await page.locator('.rail-new-thread').click();
+    await modal.locator('[data-run="role"]').selectOption('assistant');
+    await modal.locator('[data-run="start"]:not([disabled])').click();
+    await modal.waitFor({ state: 'detached' });
+    expect(created[2]).toEqual({ projectId: 'shop', role: 'assistant' });
     expect(errors).toEqual([]);
   } finally {
     expect(await releaseAll(cleanup)).toEqual([]);

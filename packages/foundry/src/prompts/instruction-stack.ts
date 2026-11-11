@@ -33,6 +33,7 @@ import {
   COMPOSITION_SLOTS,
   type CompositionSlot,
   DEFAULT_INSTRUCTION_LADDER,
+  effectiveThreadRole,
   HARNESS_GLOBAL_SOURCE,
   type InstructionNodeSettings,
   MAIN_ROLE,
@@ -49,6 +50,11 @@ import {
  * CLAUDE.md and a Claude session gets AGENTS.md; `composition.nodes` registers more.
  */
 export type InstructionHarness = 'claude' | 'codex';
+
+/** The harness whose own global file a worker's session reads: none for Muse or an API provider. */
+export function workerHarness(worker: string | undefined): InstructionHarness | undefined {
+  return worker === 'claude-code' ? 'claude' : worker === 'codex' ? 'codex' : undefined;
+}
 /** The default ladder's nodes. */
 export type InstructionLevel = 'managed' | 'global' | 'org' | 'project' | 'local' | 'memory';
 
@@ -100,8 +106,8 @@ export interface InstructionStack {
 export interface InstructionStackOptions {
   /** Where the session runs; discovery walks up from here. */
   cwd: string;
-  /** Picks the personal global file: `~/.claude/CLAUDE.md` or `$CODEX_HOME/AGENTS.md`. */
-  harness: InstructionHarness;
+  /** Picks the personal global file: `~/.claude/CLAUDE.md` or `$CODEX_HOME/AGENTS.md`; none without one. */
+  harness?: InstructionHarness;
   home?: string;
   /** Default: CLAUDE_CONFIG_DIR, else ~/.claude. */
   claudeConfigDir?: string;
@@ -119,6 +125,8 @@ export interface InstructionStackOptions {
   owner?: string;
   /** The role composed for (`{role}` in paths). Default: main. */
   role?: string;
+  /** Roles whose role files compose before `role`'s (a thread role's shared base, `main`). */
+  baseRoles?: readonly string[];
   /** The slot composed (`{slot}` in paths). Default: instructions. */
   slot?: CompositionSlot;
   /** Which nodes' unslotted files compose into the slot. Default: all for instructions, none otherwise. */
@@ -223,8 +231,9 @@ export async function discoverInstructionStack(
     {
       cwd,
       home,
-      harness: options.harness,
+      ...(options.harness ? { harness: options.harness } : {}),
       role: options.role ?? MAIN_ROLE,
+      ...(options.baseRoles?.length ? { baseRoles: options.baseRoles } : {}),
       slot: options.slot ?? 'instructions',
       unslotted:
         options.unslotted ?? ((options.slot ?? 'instructions') === 'instructions' ? 'all' : []),
@@ -579,6 +588,21 @@ export interface InstructionStackSourceOptions
   projectPath?: (projectId: string) => string | undefined;
   /** The thread project's owner, for nodes registered by owner. */
   owner?: (projectId: string | undefined) => string | undefined;
+  /**
+   * A main thread's composition, read from its bound scope on every check: its thread role over the
+   * shared base, that role's picks, and the harness its worker reads itself. Replaces `role`, `picks`,
+   * `harness` and the global-file rule.
+   */
+  thread?: (scope: OwnershipScope | undefined) => ThreadComposition;
+}
+
+/** What a main thread composes as, from its role and worker. */
+export interface ThreadComposition {
+  readonly role: string;
+  readonly baseRoles: readonly string[];
+  readonly picks: RoleComposition;
+  readonly harness?: InstructionHarness;
+  readonly harnessLoadsGlobal: boolean;
 }
 
 /**
@@ -603,13 +627,15 @@ export function instructionStackSource(
       ...(projectId ? { projectId } : {}),
       ...(projectPath ? { projectPath } : {}),
       ...(owner ? { owner } : {}),
+      ...(options.thread ? { thread: options.thread(scope) } : {}),
     };
   };
   return {
     id,
     bind: (next) => instructionStackSource(id, options, next),
     // Checked before every assembly: an edited, added or removed instruction or role file, a moved
-    // cwd or project, or an `invalidateComposition()` makes the slot re-read on the next turn.
+    // cwd or project, a changed thread role or worker, or an `invalidateComposition()` makes the
+    // slot re-read on the next turn.
     changed: () =>
       !!loaded &&
       (loaded.generation !== generation ||
@@ -618,25 +644,38 @@ export function instructionStackSource(
     async load() {
       const at = generation;
       const where = location();
+      const { thread, ...place } = where;
       const {
         projectPath: _path,
         owner: _owner,
+        thread: _thread,
         harnessLoadsGlobalFor,
+        harness,
         role = MAIN_ROLE,
         slot = 'instructions',
-        picks,
         dedupe,
         ...discover
       } = options;
+      const picks = thread ? thread.picks : options.picks;
       const view = await sharedRoleView({
         ...discover,
-        ...(harnessLoadsGlobalFor
-          ? { harnessLoadsGlobal: harnessLoadsGlobalFor(where.projectId) }
-          : {}),
-        role,
+        ...(thread
+          ? {
+              role: thread.role,
+              baseRoles: thread.baseRoles,
+              harnessLoadsGlobal: thread.harnessLoadsGlobal,
+              ...(thread.harness ? { harness: thread.harness } : {}),
+            }
+          : {
+              role,
+              ...(harness ? { harness } : {}),
+              ...(harnessLoadsGlobalFor
+                ? { harnessLoadsGlobal: harnessLoadsGlobalFor(place.projectId) }
+                : {}),
+            }),
         ...(picks ? { picks } : {}),
         ...(dedupe ? { dedupe } : {}),
-        ...where,
+        ...place,
       });
       last = instructionStackReport(view, slot, picks?.audience ?? 'personal_private');
       loaded = { view, generation: at, where: JSON.stringify(where) };
@@ -655,11 +694,40 @@ export function instructionStackSource(
   };
 }
 
+/** A role's picks for `config`, with only the slots it delivers composed. */
+function deliveredPicks(
+  config: FoundryConfig,
+  role: string,
+  delivered: readonly CompositionSlot[],
+  defaults?: RoleComposition,
+): RoleComposition {
+  const settings = config.composition;
+  const { budget: _budget, thread: _thread, ...picks } = roleComposition(settings, role);
+  for (const other of COMPOSITION_SLOTS)
+    if (settings?.roles?.[role]?.[other] === undefined && defaults?.[other] !== undefined)
+      picks[other] = defaults[other];
+  for (const other of COMPOSITION_SLOTS) if (!delivered.includes(other)) picks[other] = false;
+  return picks;
+}
+
+/** What `compositionSource` and `threadCompositionSource` share: the ladder, dedupe, project and owner. */
+function ladderOptions(config: FoundryConfig) {
+  const settings = config.composition;
+  return {
+    ladder: resolveInstructionLadder(settings),
+    ...(settings?.dedupe ? { dedupe: settings.dedupe } : {}),
+    projectPath: (projectId: string) => config.projects[projectId]?.path,
+    owner: (projectId: string | undefined) =>
+      (projectId ? config.projects[projectId]?.defaults?.kingdomOwnerKey : undefined) ??
+      config.defaults.kingdomOwnerKey,
+  };
+}
+
 /**
- * The source for one role's slot under `config`: the registered ladder, the role's picks and the
- * harness the global file follows. The main thread's `instructions` source and every middleware
- * role's slots are this one source. `delivered` names the slots the role actually receives: a slot
- * nobody delivers is not composed, so dedupe never moves text into it.
+ * The source for one middleware role's slot under `config`: the registered ladder, the role's picks
+ * and the harness the global file follows. Every middleware role's slots are this one source.
+ * `delivered` names the slots the role actually receives: a slot nobody delivers is not composed, so
+ * dedupe never moves text into it.
  */
 export function compositionSource(
   config: FoundryConfig,
@@ -670,24 +738,45 @@ export function compositionSource(
   /** The role's built-in picks; a slot the settings pick for wins whole. */
   defaults?: RoleComposition,
 ): ContextSource {
-  const settings = config.composition;
-  const { budget: _budget, ...picks } = roleComposition(settings, role);
-  for (const other of COMPOSITION_SLOTS)
-    if (settings?.roles?.[role]?.[other] === undefined && defaults?.[other] !== undefined)
-      picks[other] = defaults[other];
-  for (const other of COMPOSITION_SLOTS) if (!delivered.includes(other)) picks[other] = false;
+  const harness = workerHarness(config.defaults.provider);
   return instructionStackSource(id, {
-    harness: config.defaults.provider === 'codex' ? 'codex' : 'claude',
+    ...(harness ? { harness } : {}),
     harnessLoadsGlobalFor: (projectId) => codexReadsUserHome(config, projectId),
     role,
     slot,
-    ladder: resolveInstructionLadder(settings),
-    picks,
-    ...(settings?.dedupe ? { dedupe: settings.dedupe } : {}),
-    projectPath: (projectId) => config.projects[projectId]?.path,
-    owner: (projectId) =>
-      (projectId ? config.projects[projectId]?.defaults?.kingdomOwnerKey : undefined) ??
-      config.defaults.kingdomOwnerKey,
+    picks: deliveredPicks(config, role, delivered, defaults),
+    ...ladderOptions(config),
+  });
+}
+
+/**
+ * A main thread's `instructions` source: one slot of its thread role's composition (its role files
+ * over the shared base `main`'s, and the general files its role picks), for the thread's worker. The
+ * role and worker are read from the bound scope on every check, so a changed role re-composes on the
+ * next turn; unbound (the daemon's own composition), it is the default worker's default role.
+ */
+export function threadCompositionSource(
+  config: FoundryConfig,
+  id: string,
+  slot: CompositionSlot,
+  delivered: readonly CompositionSlot[],
+): ContextSource {
+  const settings = config.composition;
+  return instructionStackSource(id, {
+    slot,
+    ...ladderOptions(config),
+    thread: (scope) => {
+      const worker = scope?.worker ?? config.defaults.provider;
+      const role = effectiveThreadRole(settings, { role: scope?.role, worker });
+      const harness = workerHarness(worker);
+      return {
+        role,
+        baseRoles: [MAIN_ROLE],
+        picks: deliveredPicks(config, role, delivered),
+        ...(harness ? { harness } : {}),
+        harnessLoadsGlobal: codexReadsUserHome(config, scope?.projectId, worker),
+      };
+    },
   });
 }
 
@@ -733,8 +822,12 @@ export function harnessLoadsInstructions(config: FoundryConfig): boolean {
  * `$CODEX_HOME/AGENTS.md` itself with no way to turn it off. The same rule start.ts builds the
  * session's login with (`nativeAuthenticationMode`, `projectRunsOnKingdom`).
  */
-export function codexReadsUserHome(config: FoundryConfig, projectId?: string): boolean {
-  if (config.defaults.provider !== 'codex') return false;
+export function codexReadsUserHome(
+  config: FoundryConfig,
+  projectId?: string,
+  worker: string = config.defaults.provider,
+): boolean {
+  if (worker !== 'codex') return false;
   try {
     if (resolveSubscriptionPolicy(config)) return false;
   } catch {

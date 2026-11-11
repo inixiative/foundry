@@ -17,7 +17,7 @@
 import { localArchive } from '@inixiative/archive/remote';
 import { DECISION_PROVIDER, MODEL_REGISTRY, mainThreadLab } from '@inixiative/foundry-core';
 import { existsSync, mkdirSync } from 'fs';
-import { resolve } from 'path';
+import { join, resolve } from 'path';
 import { archiveStatus } from './archives/local';
 import { runArchiveSetup } from './archives/setup';
 import { mainThreadRequirement, subscriptionWorker } from './models/registry';
@@ -311,12 +311,16 @@ async function configureLegacyDefaults(config: FoundryConfig) {
 /** `bun run setup --remove-legacy-defaults [dir]`: the same removal, non-interactive, through ConfigStore. */
 async function removeLegacyDefaults() {
   const flags = process.argv.slice(2).filter((arg) => arg !== '--remove-legacy-defaults');
-  const store = new ConfigStore(flags[0] ?? FOUNDRY_DIR);
-  await store.load();
-  let result = { removed: [] as ReturnType<typeof findLegacyStarter>, addedExecutor: false };
-  await store.update((draft) => {
-    result = removeLegacyStarter(draft);
-  });
+  const dir = flags[0] ?? FOUNDRY_DIR;
+  const store = new ConfigStore(dir);
+  // Read as saved, not validated: a starter's prompt executors are refused at load (executor prompts
+  // are retired), and removing them is what makes the settings load again. The result is validated.
+  const path = join(dir, 'settings.json');
+  // Loaded when it can be, so the audit log records only what the removal changed.
+  await store.load().catch(() => undefined);
+  const draft = configFromSaved(existsSync(path) ? await Bun.file(path).json() : {});
+  const result = removeLegacyStarter(draft);
+  if (result.removed.length) await store.save(draft);
   if (!result.removed.length) console.log('No legacy starter defaults found; nothing changed.');
   else {
     console.log(`Removed ${result.removed.length} legacy starter defaults:`);
@@ -475,7 +479,8 @@ const agentEditor: ItemEditor<AgentSettingsConfig> = {
     console.log('\n  What does this agent do? (saved as a description file)');
     const roleDesc = await ask('Role description');
 
-    const prompt = await ask('System prompt', roleDesc);
+    // An executor adds no instructions: a main thread's come from its thread role's role files.
+    const prompt = kind === 'executor' ? '' : await ask('System prompt', roleDesc);
 
     // Model — explain cheap vs capable
     if (kind === 'executor') {
@@ -579,7 +584,7 @@ const agentEditor: ItemEditor<AgentSettingsConfig> = {
     if (item.peers?.length) console.log(`    Delegates to: ${item.peers.join(', ')}`);
     console.log();
 
-    item.prompt = await ask('System prompt', item.prompt);
+    if (item.kind !== 'executor') item.prompt = await ask('System prompt', item.prompt);
     item.model = await ask('Model', item.model || config.defaults.model);
     item.temperature = parseFloat(await ask('Temperature', String(item.temperature))) || 0;
     const enabled = await confirm('Enabled?', item.enabled);

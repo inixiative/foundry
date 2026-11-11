@@ -17,7 +17,12 @@ import { buildLayers, createSourceResolver } from '../src/agents/thread-factory'
 import {
   type CompositionSettings,
   DEFAULT_INSTRUCTION_LADDER,
+  defaultThreadRole,
+  effectiveThreadRole,
+  isThreadRole,
   resolveInstructionLadder,
+  roleComposition,
+  threadRoles,
 } from '../src/prompts/instruction-settings';
 import {
   CLAUDE_HARNESS_INSTRUCTIONS_OFF,
@@ -430,15 +435,75 @@ test('instruction settings are validated: tiers, parents, cycles, sources', () =
     [{ preset: 'cursor' }, 'composition.preset'],
     [{ dedupe: { lines: true } }, 'composition.dedupe'],
     [{ nodes: { a: { ...node, when: { slots: ['thread'] } } } }, 'when.slots names thread'],
-    [{ roles: { main: { instructions: { exclude: ['nope'] } } } }, 'unknown nodes: nope'],
-    [{ roles: { main: { budget: 0 } } }, 'budget must be a positive'],
+    [{ roles: { coder: { instructions: { exclude: ['nope'] } } } }, 'unknown nodes: nope'],
+    [{ roles: { coder: { budget: 0 } } }, 'budget must be a positive'],
     [{ roles: { main: { audience: 'public' } } }, 'audience must be one of'],
     [{ roles: { main: { slots: {} } } }, 'unknown field slots'],
+    // main is the shared base under every thread role: it picks nothing, so a pick is refused by name.
+    [{ roles: { main: { instructions: { exclude: ['org'] } } } }, 'main is the shared base'],
+    [{ roles: { mine: { thread: { defaultFor: 'muse' } } } }, 'defaultFor must be a list'],
+    [{ roles: { mine: { thread: { label: '' } } } }, 'thread.label must be'],
+    [{ roles: { mine: { thread: { icon: 'x' } } } }, 'thread: unknown field icon'],
+    [
+      {
+        roles: {
+          a: { thread: { defaultFor: ['muse'] } },
+          b: { thread: { defaultFor: ['muse'] } },
+        },
+      },
+      'a worker has one default role',
+    ],
   ] as const)
     expect(() => validateConfig(config(instructions))).toThrow(message);
   expect(() =>
     validateConfig({ ...starterConfig(), instructions: {} } as unknown as FoundryConfig),
   ).toThrow('is now "composition"');
+});
+
+test('thread roles: coder for Claude Code and Codex, assistant for Muse; settings add roles and move defaults', () => {
+  expect(threadRoles(undefined).map((role) => role.id)).toEqual(['coder', 'assistant']);
+  expect(defaultThreadRole(undefined, 'claude-code')).toBe('coder');
+  expect(defaultThreadRole(undefined, 'codex')).toBe('coder');
+  expect(defaultThreadRole(undefined, 'muse')).toBe('assistant');
+  // A worker no role names (an API provider) composes as coder.
+  expect(defaultThreadRole(undefined, 'anthropic')).toBe('coder');
+  const settings = {
+    roles: { writer: { thread: { label: 'Writer', defaultFor: ['muse'] } }, coder: { budget: 9 } },
+  };
+  // A settings role naming a worker takes it from the built-in; the built-in stays choosable.
+  expect(defaultThreadRole(settings, 'muse')).toBe('writer');
+  expect(threadRoles(settings).find((role) => role.id === 'assistant')!.defaultFor).toEqual([]);
+  expect(isThreadRole(settings, 'writer')).toBe(true);
+  // A role a thread stored that is no longer a thread role resolves to its worker's default.
+  expect(effectiveThreadRole(undefined, { role: 'writer', worker: 'muse' })).toBe('assistant');
+  expect(effectiveThreadRole(settings, { role: 'coder', worker: 'muse' })).toBe('coder');
+  // Built-in picks sit under settings, slot by slot; thread roles have no budget by default.
+  expect(roleComposition(undefined, 'assistant')).toMatchObject({
+    instructions: { general: ['managed', 'global'] },
+    budget: Number.POSITIVE_INFINITY,
+  });
+  expect(roleComposition(settings, 'coder').budget).toBe(9);
+  // On a built-in, a written thread field replaces only that field: a new label keeps Muse's default.
+  const relabelled = { roles: { assistant: { thread: { label: 'Helper' } } } };
+  expect(defaultThreadRole(relabelled, 'muse')).toBe('assistant');
+  expect(threadRoles(relabelled).find((role) => role.id === 'assistant')!.label).toBe('Helper');
+  // A Warden serves every main thread of its project: its audience cap is the widest thread role's.
+  expect(roleComposition({ roles: { coder: { audience: 'team' } } }, 'naming').audience).toBe(
+    'team',
+  );
+  expect(roleComposition(undefined, 'naming').audience).toBe('personal_private');
+});
+
+test('an agent may not take a thread role id or main: it would share that composition role', () => {
+  for (const id of ['coder', 'assistant', 'main']) {
+    const config = starterConfig();
+    config.agents[id] = { ...config.agents.executor!, id };
+    expect(() => validateConfig(config)).toThrow(`agents.${id}: "${id}" is a thread role`);
+  }
+  const own = starterConfig();
+  own.composition = { roles: { writer: { thread: {} } } };
+  own.agents.writer = { ...own.agents.executor!, id: 'writer' };
+  expect(() => validateConfig(own)).toThrow('agents.writer');
 });
 
 test("a registered ladder composes every applicable level, in order, for the thread's location", async () => {
@@ -588,7 +653,7 @@ test('an identified dispatch is not refused because the instructions layer repor
   const config = {
     defaults: { provider: 'mock', model: 'mock' },
     vendors: {},
-    agents: { worker: { ...agent, id: 'worker', kind: 'executor', prompt: 'Execute' } },
+    agents: { worker: { ...agent, id: 'worker', kind: 'executor', prompt: '' } },
     layers: {
       instructions: {
         id: 'instructions',

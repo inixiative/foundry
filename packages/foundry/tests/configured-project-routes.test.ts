@@ -45,7 +45,7 @@ for (const operation of ['create', 'fork'] as const) {
         worker: {
           id: 'worker',
           kind: 'executor',
-          prompt: 'Implement',
+          prompt: '',
           provider: 'controlled',
           model: 'controlled',
           visibleLayers: [],

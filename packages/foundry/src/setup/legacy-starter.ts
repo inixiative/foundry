@@ -19,6 +19,9 @@ import {
  * reading Foundry's own signal log back as "memory"). A fresh install now has one executor and
  * nothing else (viewer/config.ts, defaultAgents). Doctor flags what is left of them and setup removes
  * it, but only items that still match a starter shape exactly: anything a user edited is kept.
+ * Executor prompts are retired (2026-11-10: a main thread's instructions come from its thread role),
+ * so settings holding a starter's prompt executors are refused at load until this removes them; doctor
+ * reports them before validation and setup reads the file as saved to remove them.
  *
  * An item matches when it equals a starter shape apart from `provider`, `model` and `enabled`, which
  * setup filled in from the install's defaults. Paths the starter derived from a directory match any

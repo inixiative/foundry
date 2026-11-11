@@ -19,7 +19,7 @@ function team() {
   config.agents.worker = {
     id: 'worker',
     kind: 'executor',
-    prompt: 'PRIVATE_WORKER',
+    prompt: '',
     visibleLayers: [],
     peers: [],
     maxDepth: 1,

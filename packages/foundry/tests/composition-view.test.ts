@@ -29,10 +29,10 @@ import {
   composeRoleView,
   compositionSource,
   instructionStackReport,
+  threadCompositionSource,
 } from '../src/prompts/instruction-stack';
 import { primedRequest } from '../src/providers/primed-decisions';
 import { type FoundryConfig, starterConfig } from '../src/viewer/config';
-import { resolveThreadView } from '../src/viewer/config-resolve';
 import { writeRegions } from './helpers/regions';
 
 /**
@@ -224,7 +224,7 @@ function config(picks: RoleComposition = {}): FoundryConfig {
     worker: {
       id: 'worker',
       kind: 'executor',
-      prompt: 'WORKER',
+      prompt: '',
       provider: 'central',
       model: 'central-model',
       visibleLayers: [],
@@ -538,24 +538,128 @@ test('a slot the role does not receive is not composed, so dedupe never moves te
   expect(both.slots.domainKnowledge.text).toContain('KEEP_ME');
 });
 
-test("the main thread's harness follows the thread's worker: a Codex thread reads AGENTS.md, a Claude one CLAUDE.md", async () => {
+test("the main thread's harness follows the thread's worker: Codex reads AGENTS.md, Claude CLAUDE.md, Muse neither", async () => {
   write(join(claudeDir, 'CLAUDE.md'), '# Me\n\nCLAUDE_GLOBAL');
   write(join(home, '.codex', 'AGENTS.md'), '# Me\n\nCODEX_GLOBAL');
   const c = starterConfig('claude-code', 'fable');
   const load = (worker: string) =>
-    compositionSource(
-      resolveThreadView(c, { worker }).config,
-      'main-instructions',
-      'main',
-      'instructions',
-      ['instructions'],
-    ).bind!({ threadId: 't', cwd: repo }).load();
+    threadCompositionSource(c, 'main-instructions', 'instructions', ['instructions']).bind!({
+      threadId: 't',
+      cwd: repo,
+      worker,
+    }).load();
   const claude = await load('claude-code');
   expect(claude).toContain('CLAUDE_GLOBAL');
   expect(claude).not.toContain('CODEX_GLOBAL');
   const codex = await load('codex');
   expect(codex).toContain('CODEX_GLOBAL');
   expect(codex).not.toContain('CLAUDE_GLOBAL');
+  const muse = await load('muse');
+  expect(muse).not.toContain('CODEX_GLOBAL');
+  expect(muse).not.toContain('CLAUDE_GLOBAL');
+});
+
+test('a thread role composes its general files per its own picks: coder takes the ladder, assistant only the computer level', async () => {
+  ladderFiles();
+  write(
+    join(claudeDir, 'projects', claudeProjectDirName(repo), 'memory', 'MEMORY.md'),
+    'AUTO_MEMORY',
+  );
+  const c = starterConfig('claude-code', 'fable');
+  const load = (scope: { worker: string; role?: string }) =>
+    threadCompositionSource(c, 'main-instructions', 'instructions', ['instructions']).bind!({
+      threadId: 't',
+      cwd: repo,
+      ...scope,
+    }).load();
+  const coder = await load({ worker: 'claude-code' });
+  for (const text of [
+    'PERSONAL_GLOBAL',
+    'ORG_RULES',
+    'PROJECT_RULES',
+    'PROJECT_PERSONAL',
+    'AUTO_MEMORY',
+  ])
+    expect(coder).toContain(text);
+  // Muse defaults to the assistant: no harness global file, no org, project, local or memory files.
+  const assistant = await load({ worker: 'muse' });
+  for (const text of [
+    'PERSONAL_GLOBAL',
+    'ORG_RULES',
+    'PROJECT_RULES',
+    'PROJECT_PERSONAL',
+    'AUTO_MEMORY',
+  ])
+    expect(assistant).not.toContain(text);
+  // A Claude Code thread given the assistant role keeps its harness's own global file, nothing of the repo.
+  const claudeAssistant = await load({ worker: 'claude-code', role: 'assistant' });
+  expect(claudeAssistant).toContain('PERSONAL_GLOBAL');
+  expect(claudeAssistant).not.toContain('PROJECT_RULES');
+  // A Muse thread given the coder role reads the repository like any coder.
+  expect(await load({ worker: 'muse', role: 'coder' })).toContain('PROJECT_RULES');
+});
+
+test("a thread role's role files compose over the shared base main's, base first, at each rung", async () => {
+  write(roleFile(org, 'main', 'instructions'), 'ORG_MAIN');
+  write(roleFile(org, 'assistant', 'instructions'), 'ORG_ASSISTANT');
+  write(roleFile(repo, 'main', 'instructions'), 'REPO_MAIN');
+  write(roleFile(repo, 'assistant', 'instructions'), 'REPO_ASSISTANT');
+  write(roleFile(repo, 'coder', 'instructions'), 'REPO_CODER');
+  const c = starterConfig('claude-code', 'fable');
+  const source = threadCompositionSource(c, 'main-instructions', 'instructions', ['instructions']);
+  const assistant = await source.bind!({ threadId: 't', cwd: repo, worker: 'muse' }).load();
+  const order = ['ORG_MAIN', 'ORG_ASSISTANT', 'REPO_MAIN', 'REPO_ASSISTANT'].map((text) =>
+    assistant.indexOf(text),
+  );
+  expect(order.every((at) => at >= 0)).toBe(true);
+  expect([...order].sort((a, b) => a - b)).toEqual(order);
+  expect(assistant).not.toContain('REPO_CODER');
+  const coder = await source.bind!({ threadId: 't', cwd: repo, worker: 'codex' }).load();
+  expect(coder).toContain('REPO_MAIN');
+  expect(coder).toContain('REPO_CODER');
+  expect(coder).not.toContain('ASSISTANT');
+});
+
+test("changing a bound thread's role re-composes its instructions on the next check", async () => {
+  write(roleFile(repo, 'coder', 'instructions'), 'REPO_CODER');
+  write(roleFile(repo, 'assistant', 'instructions'), 'REPO_ASSISTANT');
+  // Files written in the same millisecond as the read leave the view unfingerprinted (always changed).
+  await Bun.sleep(10);
+  const meta: { role?: string } = {};
+  const source = threadCompositionSource(
+    starterConfig('claude-code', 'fable'),
+    'main-instructions',
+    'instructions',
+    ['instructions'],
+  ).bind!({
+    threadId: 't',
+    cwd: repo,
+    worker: 'claude-code',
+    get role() {
+      return meta.role;
+    },
+  });
+  expect(await source.load()).toContain('REPO_CODER');
+  expect(source.changed!()).toBe(false);
+  meta.role = 'assistant';
+  expect(source.changed!()).toBe(true);
+  const next = await source.load();
+  expect(next).toContain('REPO_ASSISTANT');
+  expect(next).not.toContain('REPO_CODER');
+});
+
+test("a thread's role change reaches its next turn: the factory binds the role to the instructions source", async () => {
+  ladderFiles();
+  const f = setup(config());
+  try {
+    await f.thread.dispatch('worker', 'First', undefined, { messageId: 'm1' });
+    expect(JSON.stringify(f.last('central').messages)).toContain('PROJECT_RULES');
+    f.thread.meta.role = 'assistant';
+    await f.thread.dispatch('worker', 'Second', undefined, { messageId: 'm2' });
+    expect(JSON.stringify(f.last('central').messages)).not.toContain('PROJECT_RULES');
+  } finally {
+    await f.close();
+  }
 });
 
 test('a composition edit reaches the main thread on its next turn', async () => {
@@ -564,12 +668,13 @@ test('a composition edit reaches the main thread on its next turn', async () => 
   const f = setup(c);
   try {
     await f.thread.dispatch('worker', 'First', undefined, { messageId: 'm1' });
-    expect(JSON.stringify(f.last('central').messages)).toContain('PERSONAL_GLOBAL');
+    expect(JSON.stringify(f.last('central').messages)).toContain('PROJECT_RULES');
     const next = structuredClone(c);
-    next.composition = { roles: { main: { instructions: { exclude: ['global'] } } } };
+    // The thread (no role chosen) composes as its worker's default role, coder.
+    next.composition = { roles: { coder: { instructions: { exclude: ['project'] } } } };
     await f.factory.reconfigure(next);
     await f.thread.dispatch('worker', 'Second', undefined, { messageId: 'm2' });
-    expect(JSON.stringify(f.last('central').messages)).not.toContain('PERSONAL_GLOBAL');
+    expect(JSON.stringify(f.last('central').messages)).not.toContain('PROJECT_RULES');
   } finally {
     await f.close();
   }

@@ -39,7 +39,7 @@ function config(): FoundryConfig {
       'executor-answer': {
         id: 'executor-answer',
         kind: 'executor',
-        prompt: 'You are a helpful assistant.',
+        prompt: '',
         provider: 'mock',
         model: 'mock-model',
         temperature: 0,

@@ -95,6 +95,8 @@ export function createViewerStreams(deps: {
   conversation?: (threadId: string) => Record<string, unknown> | undefined;
   /** The mode a thread's executor launches in (its list row marks Dangerous ones). */
   permissionMode?: (threadId: string) => string | undefined;
+  /** The thread role a thread composes as (its own, else its worker's default). */
+  threadRole?: (thread: Thread) => string;
 }) {
   const { directory, eventStream, actionQueue, deliverTo } = deps;
   const journal: FlowJournal = deps.journal ?? { store: null };
@@ -193,7 +195,7 @@ export function createViewerStreams(deps: {
           const turn = lastTurn(id);
           const permissionMode = deps.permissionMode?.(id);
           const json = {
-              ...threadToJSON(found),
+              ...threadToJSON(found, deps.threadRole?.(found)),
               ...(conversation ? { conversation } : {}),
               ...(turn ? { lastTurn: turn } : {}),
               ...(permissionMode ? { permissionMode } : {}),

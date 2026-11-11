@@ -41,7 +41,7 @@ for (const withTools of [true, false])
       worker: {
         id: 'worker',
         kind: 'executor',
-        prompt: 'Work',
+        prompt: '',
         provider: 'central',
         model: 'central-model',
         visibleLayers: [],

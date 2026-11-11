@@ -70,7 +70,7 @@ for (const streaming of [false, true]) {
         kind: 'executor',
         provider: 'mock',
         model: 'mock',
-        prompt: 'Execute',
+        prompt: '',
         temperature: 0,
         visibleLayers: [],
         peers: [],

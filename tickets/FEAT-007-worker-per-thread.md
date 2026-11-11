@@ -112,3 +112,9 @@ Today `resolveSubscriptionPolicy` takes one worker from `config.defaults.provide
 - Should the per-worker default model be a setting rather than a core map?
 
 Neither blocks: settings for now, and the map is what the decision side already does.
+
+## Thread roles (2026-11-10)
+
+Aron: "Muse should be an assistant, and Claude Codex should be coders… We have role types for threads, and they should probably have their own instruction set… maybe you can configure your own roles and default roles." Why: every main thread got the coding executor's prompt, so a Muse thread meant as a day-to-day assistant acted as a coder.
+
+A thread now carries a role beside its worker, modelled on it: `ThreadMeta.role`, set at creation (the chosen role, else the worker's default), changed any time with `PATCH /api/threads/:id` `role` (applies from the next turn), shown and picked in the New thread and Runs on pickers. Built in: `coder` (default for `claude-code` and `codex`) and `assistant` (default for `muse`); settings add their own (`composition.roles.<id>.thread`). A thread role is a composition role over the shared base `main`, and the personal global file follows the worker (Muse reads neither harness's). The executor `prompt` is retired and refused by name. Full description: [usage-and-context.md](../docs/usage-and-context.md), "Thread roles".

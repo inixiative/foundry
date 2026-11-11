@@ -94,7 +94,7 @@ function setup(scripts: Record<string, Step[]>) {
       kind: 'executor',
       provider: 'mock',
       model: 'mock',
-      prompt: 'Execute',
+      prompt: '',
       temperature: 0,
       visibleLayers: [],
       peers: [],

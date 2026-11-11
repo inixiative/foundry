@@ -1235,7 +1235,8 @@ export function CreateAgentForm({ onCreated }) {
     const data = {
       id: id.trim(),
       kind,
-      prompt,
+      // An executor adds no instructions: a main thread's come from its thread role's role files.
+      prompt: kind === 'executor' ? '' : prompt,
       visibleLayers: [],
       peers: [],
       maxDepth: 3,
@@ -1264,11 +1265,15 @@ export function CreateAgentForm({ onCreated }) {
             <option value="router">Router</option>
           </select>
         </div>
-        <div class="settings-field">
-          <label class="settings-label">System Prompt</label>
-          <textarea aria-label="System Prompt" class="settings-input" rows="4" placeholder="What this agent does..."
-            value=${prompt} onInput=${(e) => setPrompt(e.target.value)}></textarea>
-        </div>
+        ${
+          kind === 'executor'
+            ? html`<p class="settings-desc">An executor's instructions come from its thread's role: .foundry/roles/&lt;role&gt;/instructions.md.</p>`
+            : html`<div class="settings-field">
+                <label class="settings-label">System Prompt</label>
+                <textarea aria-label="System Prompt" class="settings-input" rows="4" placeholder="What this agent does..."
+                  value=${prompt} onInput=${(e) => setPrompt(e.target.value)}></textarea>
+              </div>`
+        }
         <div class="settings-row">
           <div class="settings-field"><label class="settings-label">Temperature</label>
             <input aria-label="Temperature" class="settings-input small" type="number" step="0.1" min="0" max="2"

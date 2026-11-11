@@ -51,6 +51,8 @@ export function FeedbackPrompt({ prompt }) {
   const [editing, setEditing] = useState(false);
   const [statement, setStatement] = useState(meta.statement ?? '');
   const [level, setLevel] = useState(meta.route?.level ?? 'project-personal');
+  // '' keeps the routed roles; a pick sends the rule to that one role (a thread role, main, a Warden).
+  const [role, setRole] = useState('');
   const [busy, setBusy] = useState(false);
   const act = async (action, input) => {
     setBusy(true);
@@ -82,8 +84,16 @@ export function FeedbackPrompt({ prompt }) {
           <select aria-label="Level" value=${level} onChange=${(e) => setLevel(e.target.value)}>
             ${LEVELS.map(([id, label]) => html`<option value=${id}>${label}</option>`)}
           </select>
+          ${
+            meta.roleChoices?.length
+              ? html`<select aria-label="Role" data-feedback="role" value=${role} onChange=${(e) => setRole(e.target.value)}>
+                  <option value="">${meta.route?.roles?.length ? `As routed (${meta.route.roles.join(', ')})` : 'As routed'}</option>
+                  ${meta.roleChoices.map((id) => html`<option key=${id} value=${id}>${id}</option>`)}
+                </select>`
+              : null
+          }
           <button class="prompt-btn prompt-btn-approve" disabled=${busy || !statement.trim()}
-            onClick=${() => act('edit', JSON.stringify({ statement: statement.trim(), level }))}>Apply</button>
+            onClick=${() => act('edit', JSON.stringify({ statement: statement.trim(), level, ...(role ? { roles: [role] } : {}) }))}>Apply</button>
           <button class="prompt-btn" onClick=${() => setEditing(false)}>Cancel</button>
         </div>`
         : html`<div class="prompt-card-actions">

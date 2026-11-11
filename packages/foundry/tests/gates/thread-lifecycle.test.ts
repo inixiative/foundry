@@ -27,7 +27,7 @@ function setup() {
   };
   config.agents = {
     classifier: { ...settings, id: 'classifier', kind: 'classifier', prompt: 'Classify' },
-    worker: { ...settings, id: 'worker', kind: 'executor', prompt: 'Execute' },
+    worker: { ...settings, id: 'worker', kind: 'executor', prompt: '' },
   };
   const layer = new ContextLayer({ id: 'system' });
   layer.set('Project baseline');

@@ -291,7 +291,7 @@ test('actual factory classification, routing, advice, guard and learning use the
       kind: 'executor',
       provider: 'central',
       model: 'worker-model',
-      prompt: 'Do work',
+      prompt: '',
       visibleLayers: [],
       peers: [],
       maxDepth: 1,

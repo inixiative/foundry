@@ -30,7 +30,6 @@ import {
   type OwnershipScope,
   type Route,
   Router,
-  standingPart,
   Thread,
   type ThreadConfig,
   type TokenTracker,
@@ -38,8 +37,8 @@ import {
 } from '@inixiative/foundry-core';
 import { ArchiveContextSource, archiveContextSchema } from '../archives/context-source';
 import { type NativeToolJournal, nativeBridgeSource } from '../mcp/native-bridge';
-import { type CompositionSlot, MAIN_ROLE } from '../prompts/instruction-settings';
-import { compositionSource } from '../prompts/instruction-stack';
+import type { CompositionSlot } from '../prompts/instruction-settings';
+import { threadCompositionSource } from '../prompts/instruction-stack';
 import { DECISION_DEADLINE_MS } from '../providers/decision-budget';
 import {
   type AgentSettingsConfig,
@@ -87,11 +86,11 @@ export function createSourceResolver(deps: SourceResolverDeps): SourceResolver {
       case 'inline':
         return inlineSource(srcCfg.id, srcCfg.uri);
       case 'instructions':
-        // The main thread's slot of the composition view, for the thread's cwd, project and owner.
-        return compositionSource(
+        // The main thread's slot of the composition view, for the thread's role, worker, cwd,
+        // project and owner.
+        return threadCompositionSource(
           cfg,
           srcCfg.id,
-          MAIN_ROLE,
           srcCfg.slot ?? 'instructions',
           mainSlots(cfg),
         );
@@ -416,6 +415,12 @@ export class ThreadFactory {
         get cwd() {
           return thread.meta.cwd;
         },
+        get role() {
+          return thread.meta.role;
+        },
+        get worker() {
+          return thread.meta.worker;
+        },
       };
       for (const id of new Set([...Object.keys(before.layers), ...Object.keys(after.layers)])) {
         const prior = before.layers[id],
@@ -506,6 +511,12 @@ export class ThreadFactory {
       },
       get cwd() {
         return thread ? thread.meta.cwd : opts?.cwd;
+      },
+      get role() {
+        return thread ? thread.meta.role : opts?.role;
+      },
+      get worker() {
+        return thread ? thread.meta.worker : (opts?.worker ?? worker);
       },
     };
     const base = this._configuration;
@@ -704,16 +715,12 @@ function buildAgent(
         id,
         stack,
         handler: async (ctx, payload, meta) => {
-          // An executor without instructions adds none: with no layers either, the session gets the
-          // user's message as typed (viewer/config.ts, defaultAgents). A native session runs its own
-          // tools, so Foundry's tool list is described only to a provider that runs Foundry's loop.
+          // An executor adds no instructions: a main thread's come from its thread role's composition
+          // (the `instructions` source). A native session runs its own tools, so Foundry's tool list
+          // is described only to a provider that runs Foundry's loop.
           const native = deps.provider.completionLifecycle?.kind === 'session';
-          const own = [
-            ...(agentCfg.prompt ? [agentCfg.prompt] : []),
-            ...(tools && tools.size > 0 && !native
-              ? [`\n## Available Tools\n${tools.summary()}`]
-              : []),
-          ];
+          const own =
+            tools && tools.size > 0 && !native ? [`\n## Available Tools\n${tools.summary()}`] : [];
           const system = [ctx, ...own].filter(Boolean).join('\n\n');
 
           const images = meta?.images ?? [];
@@ -724,19 +731,7 @@ function buildAgent(
             { role: 'user', content: payload, ...(images.length ? { images } : {}) },
           ];
           meta?.recordProviderInput?.(messages);
-          // For session providers: the layers and this agent's own instructions are standing parts.
-          const delivery = meta?.delivery
-            ? {
-                ...meta.delivery,
-                standing: [
-                  ...meta.delivery.standing,
-                  // One slot for the executor's instructions: switching agents replaces it.
-                  ...(own.length
-                    ? [standingPart('agent', [`Active agent: ${id}`, ...own].join('\n\n'))]
-                    : []),
-                ],
-              }
-            : undefined;
+          const delivery = meta?.delivery;
           // Owned public native tool events feed the dispatch's ordinary tool observation channel
           // (the same one the local tool loop uses), so post-review input sees what the native
           // engine ran. The raw journal write comes first and is independent of this projection.

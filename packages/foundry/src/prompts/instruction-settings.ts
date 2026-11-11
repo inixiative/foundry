@@ -15,7 +15,10 @@ import { CORPUS_TIERS, type CorpusTier } from '../agents/corpus-compiler';
 export const COMPOSITION_SLOTS = ['instructions', 'domainKnowledge'] as const;
 export type CompositionSlot = (typeof COMPOSITION_SLOTS)[number];
 
-/** The main thread's role id in the composition view. */
+/**
+ * The shared base under every thread role: its role files (`.foundry/roles/main/{slot}.md`) compose
+ * first for every main thread, then the thread role's own. It picks nothing itself.
+ */
 export const MAIN_ROLE = 'main';
 
 /**
@@ -64,8 +67,20 @@ export interface CompositionSettings {
   nodes?: Record<string, InstructionNodeConfig>;
   /** Remove repeated files and sections, keeping the most specific copy. Both default on. */
   dedupe?: CompositionDedupe;
-  /** What each role picks from the ladder, by role id (`main`, or a middleware agent's id). */
+  /**
+   * What each role picks from the ladder, by role id: a thread role (`coder`, `assistant`, or one
+   * with `thread` set), a middleware agent's id, or `main` (the shared base, which takes only
+   * `audience`). A built-in thread role's entry is merged over its built-in picks, slot by slot.
+   */
   roles?: Record<string, RoleComposition>;
+}
+
+/** What makes a role a thread role: a main thread can run as it. */
+export interface ThreadRoleSettings {
+  /** Shown in the viewer's role pickers. Default: the role id. */
+  label?: string;
+  /** Workers (`claude-code`, `codex`, `muse`) whose new threads take this role unless another is chosen. */
+  defaultFor?: string[];
 }
 
 /** One slot's pick from the ladder: everything that applies, minus `exclude`. */
@@ -91,9 +106,11 @@ export interface RoleComposition {
   dedupe?: CompositionDedupe;
   /**
    * Characters allowed for instructions plus domain knowledge. Over it, the role's phase reports an
-   * error and does not run. Default: none for main, DEFAULT_ROLE_BUDGET for middleware roles.
+   * error and does not run. Default: none for thread roles, DEFAULT_ROLE_BUDGET for middleware roles.
    */
   budget?: number;
+  /** Set on a thread role (see ThreadRoleSettings); on a built-in, each field written replaces the built-in's. */
+  thread?: ThreadRoleSettings;
 }
 
 /** One rung of the instruction hierarchy. */
@@ -251,6 +268,98 @@ export const DEFAULT_INSTRUCTION_LADDER: readonly InstructionNodeSettings[] = Ob
     ],
   },
 ] satisfies InstructionNodeSettings[]);
+
+/** The built-in thread role for coding workers: every general file, as Claude Code itself reads them. */
+export const CODER_ROLE = 'coder';
+/** The built-in thread role for Muse: a day-to-day assistant, not a coder in the repository. */
+export const ASSISTANT_ROLE = 'assistant';
+
+/**
+ * The thread roles Foundry ships (Aron, 2026-11-10: "Muse should be an assistant, and Claude Codex
+ * should be coders"). `coder` takes every general file (CLAUDE.md, AGENTS.md, rules, auto memory);
+ * `assistant` takes general files only from the computer-level nodes, so a repository's coding rules
+ * never reach it. Their instructions are role files the user writes; none ship here.
+ */
+export const BUILT_IN_THREAD_ROLES: Readonly<
+  Record<string, RoleComposition & { thread: Required<ThreadRoleSettings> }>
+> = Object.freeze({
+  [CODER_ROLE]: { thread: { label: 'Coder', defaultFor: ['claude-code', 'codex'] } },
+  [ASSISTANT_ROLE]: {
+    thread: { label: 'Assistant', defaultFor: ['muse'] },
+    instructions: { general: ['managed', 'global'] },
+  },
+});
+
+/** A thread role as it resolves: built-ins, then settings roles with `thread`. */
+export interface ThreadRole {
+  readonly id: string;
+  readonly label: string;
+  /** Workers whose new threads take it unless another is chosen. */
+  readonly defaultFor: readonly string[];
+  readonly builtIn: boolean;
+}
+
+/**
+ * Every thread role, built-ins first. A settings role naming a worker in `defaultFor` takes that
+ * worker from the built-ins, so each worker has one default.
+ */
+export function threadRoles(settings: CompositionSettings | undefined): ThreadRole[] {
+  const written = Object.entries(settings?.roles ?? {}).filter(
+    (entry): entry is [string, RoleComposition & { thread: ThreadRoleSettings }] =>
+      !!entry[1]?.thread,
+  );
+  const claimed = new Set(written.flatMap(([, picks]) => picks.thread.defaultFor ?? []));
+  const claimedByOthers = (id: string) =>
+    new Set(
+      written.flatMap(([other, picks]) => (other === id ? [] : (picks.thread.defaultFor ?? []))),
+    );
+  const roles = new Map<string, ThreadRole>();
+  for (const [id, { thread }] of Object.entries(BUILT_IN_THREAD_ROLES))
+    roles.set(id, {
+      id,
+      label: thread.label,
+      defaultFor: thread.defaultFor.filter((worker) => !claimed.has(worker)),
+      builtIn: true,
+    });
+  for (const [id, { thread }] of written) {
+    const builtIn = BUILT_IN_THREAD_ROLES[id]?.thread;
+    roles.set(id, {
+      id,
+      label: thread.label ?? builtIn?.label ?? id,
+      defaultFor:
+        thread.defaultFor ??
+        builtIn?.defaultFor.filter((worker) => !claimedByOthers(id).has(worker)) ??
+        [],
+      builtIn: !!builtIn,
+    });
+  }
+  return [...roles.values()];
+}
+
+/** Whether `role` is a thread role under `settings`. */
+export const isThreadRole = (settings: CompositionSettings | undefined, role: string): boolean =>
+  role in BUILT_IN_THREAD_ROLES || !!settings?.roles?.[role]?.thread;
+
+/** The role a new thread on `worker` takes unless another is chosen: the one defaulting it, else coder. */
+export function defaultThreadRole(
+  settings: CompositionSettings | undefined,
+  worker: string | undefined,
+): string {
+  return (
+    (worker && threadRoles(settings).find((role) => role.defaultFor.includes(worker))?.id) ||
+    CODER_ROLE
+  );
+}
+
+/** The role a thread composes as: its own while it is still a thread role, else its worker's default. */
+export function effectiveThreadRole(
+  settings: CompositionSettings | undefined,
+  meta: { role?: string; worker?: string },
+): string {
+  return meta.role && isThreadRole(settings, meta.role)
+    ? meta.role
+    : defaultThreadRole(settings, meta.worker);
+}
 
 /**
  * The registered ladder: the preset (`composition.preset`: "claude-code", the default, or "none"), with `composition.nodes` merged over it by id. A node with `enabled: false` is removed;
@@ -422,13 +531,42 @@ export function validateCompositionSettings(
       path.add(up);
     }
   }
+  const defaulted = new Map<string, string>();
   for (const [role, picks] of Object.entries(settings.roles ?? {})) {
     const where = `composition.roles.${role}`;
     if (!picks || typeof picks !== 'object' || Array.isArray(picks))
       throw Error(`${where} must be an object`);
     for (const key of Object.keys(picks))
-      if (![...COMPOSITION_SLOTS, 'audience', 'dedupe', 'budget'].includes(key))
+      if (![...COMPOSITION_SLOTS, 'audience', 'dedupe', 'budget', 'thread'].includes(key))
         throw Error(`${where}: unknown field ${key}`);
+    if (role === MAIN_ROLE) {
+      const picked = Object.keys(picks).filter((key) => key !== 'audience');
+      if (picked.length)
+        throw Error(
+          `${where}.${picked[0]}: main is the shared base under every thread role and picks nothing itself (only audience); pick per thread role instead: composition.roles.${CODER_ROLE}, composition.roles.${ASSISTANT_ROLE}, or a role of your own with "thread"`,
+        );
+    }
+    if (picks.thread !== undefined) {
+      const thread = picks.thread as unknown;
+      if (!thread || typeof thread !== 'object' || Array.isArray(thread))
+        throw Error(`${where}.thread must be an object: { label?, defaultFor? }`);
+      for (const key of Object.keys(thread))
+        if (key !== 'label' && key !== 'defaultFor')
+          throw Error(`${where}.thread: unknown field ${key} (label, defaultFor)`);
+      const { label, defaultFor } = thread as ThreadRoleSettings;
+      if (label !== undefined && (typeof label !== 'string' || !label.trim()))
+        throw Error(`${where}.thread.label must be a non-empty string`);
+      if (defaultFor !== undefined && !isStrings(defaultFor))
+        throw Error(`${where}.thread.defaultFor must be a list of workers`);
+      for (const worker of defaultFor ?? []) {
+        const other = defaulted.get(worker);
+        if (other !== undefined)
+          throw Error(
+            `${where}.thread.defaultFor names ${worker}, which composition.roles.${other} already defaults; a worker has one default role`,
+          );
+        defaulted.set(worker, role);
+      }
+    }
     for (const slot of COMPOSITION_SLOTS) {
       const pick = picks[slot];
       if (pick === undefined || pick === false) continue;
@@ -459,20 +597,29 @@ export function validateCompositionSettings(
 }
 
 /**
- * A role's picks with its defaults: budget none for main, DEFAULT_ROLE_BUDGET otherwise. A middleware
- * role's output reaches the main thread (a Warden chiming in), so its audience is never wider in what
- * it may read than main's: a team main thread makes every role team.
+ * A role's picks with its defaults: a built-in thread role's picks under what settings write, slot by
+ * slot; budget none for a thread role, DEFAULT_ROLE_BUDGET otherwise. `main.audience` is who every
+ * main thread's composition is for unless its thread role names its own. A middleware role's output
+ * reaches the main thread (a Warden chiming in), so its audience is never wider in what it may read
+ * than main's: a team main thread makes every role team.
  */
 export function roleComposition(
   settings: CompositionSettings | undefined,
   role: string,
 ): RoleComposition & { audience: CorpusTier; budget: number } {
-  const picks = settings?.roles?.[role] ?? {};
+  const { thread: _thread, ...builtIn } = BUILT_IN_THREAD_ROLES[role] ?? {};
+  const picks: RoleComposition = { ...builtIn, ...settings?.roles?.[role] };
   const main = settings?.roles?.[MAIN_ROLE]?.audience ?? 'personal_private';
-  const own = picks.audience ?? 'personal_private';
+  const thread = role === MAIN_ROLE || isThreadRole(settings, role);
+  const own = picks.audience ?? (thread ? main : 'personal_private');
+  // A middleware role serves every main thread of its project, whatever their roles: its cap is the
+  // widest audience any of them composes for.
+  const widest = threadRoles(settings)
+    .map((other) => settings?.roles?.[other.id]?.audience ?? main)
+    .reduce((a, b) => (AUDIENCE_RANK[b] > AUDIENCE_RANK[a] ? b : a), main);
   return {
     ...picks,
-    audience: role === MAIN_ROLE || AUDIENCE_RANK[own] >= AUDIENCE_RANK[main] ? own : main,
-    budget: picks.budget ?? (role === MAIN_ROLE ? Number.POSITIVE_INFINITY : DEFAULT_ROLE_BUDGET),
+    audience: thread || AUDIENCE_RANK[own] >= AUDIENCE_RANK[widest] ? own : widest,
+    budget: picks.budget ?? (thread ? Number.POSITIVE_INFINITY : DEFAULT_ROLE_BUDGET),
   };
 }

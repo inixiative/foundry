@@ -15,6 +15,10 @@ export interface ThreadLaunchView {
   provider: string;
   /** The subscription worker the thread runs on; fixed once its first turn starts. */
   worker: string;
+  /** The thread role it chose (null: it follows its worker's default). */
+  role: string | null;
+  /** The thread role its instructions compose as. */
+  effectiveRole: string;
   permissionMode: string | null;
   model: string;
   modelOverride: string | null;
@@ -26,7 +30,9 @@ export interface ThreadLaunchView {
     models: Array<{ id: string; label: string }>;
     efforts: readonly string[];
     /** The workers a thread here may run on: its project's default and each other one with a login. */
-    workers: Array<{ id: string; label: string; default: boolean }>;
+    workers: Array<{ id: string; label: string; default: boolean; defaultRole: string }>;
+    /** The thread roles a thread here may run as. */
+    roles: Array<{ id: string; label: string }>;
   };
   /** Executor models pinned in settings that this thread's worker does not run. */
   setAside: Array<{ agent: string; model: string }>;
@@ -126,6 +132,8 @@ export class FoundryClient {
     name?: string;
     /** The subscription worker; the project's default when absent. */
     worker?: string;
+    /** The thread role (coder, assistant, …); the worker's default when absent. */
+    role?: string;
   }): Promise<ThreadJSON> {
     return this.request('POST', '/api/threads', body);
   }
@@ -142,6 +150,8 @@ export class FoundryClient {
       name?: string | null;
       /** Before the thread's first turn only (409 after). */
       worker?: string;
+      /** Any time; applies from the next turn. Null follows the worker's default. */
+      role?: string | null;
     },
   ): Promise<ThreadJSON> {
     return this.request('PATCH', `/api/threads/${encodeURIComponent(threadId)}`, body);

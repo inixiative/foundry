@@ -37,7 +37,7 @@ export interface HierarchyMatch {
   readonly owners?: readonly string[];
   /** The harness the composed prompt is for. */
   readonly harness?: readonly string[];
-  /** The role composed for (e.g. "main", a Warden's agent id). */
+  /** The role composed for (e.g. a thread role, a Warden's agent id), or one of its base roles. */
   readonly roles?: readonly string[];
   /** The slot composed (e.g. "instructions", "domainKnowledge"). */
   readonly slots?: readonly string[];
@@ -124,6 +124,11 @@ export interface HierarchyLocation {
   readonly harnessLoads?: readonly string[];
   /** The role composed for; also `{role}` in paths. */
   readonly role?: string;
+  /**
+   * Roles whose files come first: a source whose path names `{role}` is read once per base role, in
+   * order, then for `role` (e.g. a shared base role under each thread role).
+   */
+  readonly baseRoles?: readonly string[];
   /** The slot composed; also `{slot}` in paths. */
   readonly slot?: string;
   /**
@@ -221,7 +226,14 @@ function matches(when: HierarchyMatch | undefined, location: HierarchyLocation):
   if (when.projects && !(location.projectId && when.projects.includes(location.projectId)))
     return false;
   if (when.owners && !(location.owner && when.owners.includes(location.owner))) return false;
-  if (when.roles && !(location.role && when.roles.includes(location.role))) return false;
+  // A base role counts as the role it sits under (a node for `main` serves every thread role).
+  if (
+    when.roles &&
+    ![...(location.baseRoles ?? []), ...(location.role ? [location.role] : [])].some((role) =>
+      when.roles!.includes(role),
+    )
+  )
+    return false;
   if (when.slots && !(location.slot && when.slots.includes(location.slot))) return false;
   if (when.paths && !matchedPath(when.paths, location)) return false;
   return true;
@@ -480,6 +492,22 @@ export async function discoverHierarchy(
   ) => {
     if (!matches(source.when, location) || (source.id && loadedNatively.has(source.id))) return;
     if (!slotted && !source.when?.slots && !unslottedApplies(entry.node, location)) return;
+    const templates = typeof source.path === 'string' ? [source.path] : source.path;
+    const roles =
+      location.baseRoles?.length && templates.some((path) => path.includes('{role}'))
+        ? [...new Set([...location.baseRoles, ...(location.role ? [location.role] : [])])]
+        : undefined;
+    for (const pass of roles ? roles.map((role) => ({ ...vars, role })) : [vars])
+      await collect(entry, source, position, base, pass);
+  };
+
+  const collect = async (
+    entry: SelectedHierarchyNode,
+    source: HierarchyFileSource,
+    position: number,
+    base: string | undefined,
+    vars: Readonly<Record<string, string | undefined>>,
+  ) => {
     const place = (path: string) => (isAbsolute(path) ? path : base ? join(base, path) : undefined);
     const literal = (template: string) => {
       const expanded = expandHierarchyPath(template, vars, location.home);

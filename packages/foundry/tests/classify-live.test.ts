@@ -70,7 +70,7 @@ function project(stages: unknown[] | undefined) {
     worker: {
       id: 'worker',
       kind: 'executor',
-      prompt: 'WORKER',
+      prompt: '',
       provider: 'central',
       model: 'central-model',
       visibleLayers: [],

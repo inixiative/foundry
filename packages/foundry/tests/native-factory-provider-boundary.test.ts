@@ -119,7 +119,7 @@ test('real SessionBackedProvider → factory → runtime: both expert reviews re
       kind: 'executor',
       provider: 'controlled-native',
       model: 'controlled',
-      prompt: 'Complete the requested work',
+      prompt: '',
       temperature: 0,
       visibleLayers: [],
       peers: [],

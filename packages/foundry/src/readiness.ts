@@ -343,19 +343,8 @@ export async function inspectReadiness(
     ...(chorus ? { chorus } : {}),
     ...(nativeClis ? { nativeClis } : {}),
   });
-  let subscription: SubscriptionResolution | undefined;
-  try {
-    validateConfig(saved);
-    subscription = resolveSubscriptionPolicy(saved);
-  } catch {
-    issue(
-      'error',
-      'global',
-      'invalid-configuration',
-      'Configuration validation failed. Check authentication references, learning settings and source policies.',
-    );
-    return result();
-  }
+  // Read before validation: a starter's prompt executors are refused now (executor prompts are
+  // retired), and its removal is the fix.
   const legacy = findLegacyStarter(saved);
   if (legacy.length)
     issue(
@@ -364,6 +353,19 @@ export async function inspectReadiness(
       'legacy-starter-defaults',
       `Starter defaults from an older install wrap every thread: ${legacy.map(describeLegacyItem).join(', ')}. Remove them with \`bun run setup --remove-legacy-defaults\` (edited items are kept).`,
     );
+  let subscription: SubscriptionResolution | undefined;
+  try {
+    validateConfig(saved);
+    subscription = resolveSubscriptionPolicy(saved);
+  } catch (error) {
+    issue(
+      'error',
+      'global',
+      'invalid-configuration',
+      `Configuration validation failed: ${(error as Error).message}`,
+    );
+    return result();
+  }
   // Subscription mode inspects the effective routing startup would construct.
   config = subscription?.config ?? saved;
   // A default worker's login (for threads run on this machine) and the decision login must be

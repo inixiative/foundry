@@ -44,6 +44,8 @@ import {
   COMPOSITION_SLOTS,
   type CompositionSettings,
   type CompositionSlot,
+  isThreadRole,
+  MAIN_ROLE,
   resolveInstructionLadder,
   validateCompositionSettings,
 } from '../prompts/instruction-settings';
@@ -534,7 +536,7 @@ export interface AgentSettingsConfig {
    * Explains: what this agent does, which layers it reads/writes, who it delegates to, why.
    */
   description?: string;
-  /** System prompt for this agent. */
+  /** System prompt for this agent. Empty for an executor: a main thread's instructions come from its thread role. */
   prompt: string;
   /** LLM settings — provider/model default to global if omitted. */
   provider?: string;
@@ -742,8 +744,9 @@ export interface DataSourceConfig {
     | 'archive'
     | 'instructions';
   /**
-   * Instruction sources only (`uri` is unused): which of the main role's slots the source returns.
-   * Default "instructions". Who it is for is `composition.roles.main.audience`.
+   * Instruction sources only (`uri` is unused): which slot of the thread's role composition the
+   * source returns. Default "instructions". Who it is for is the thread role's audience, else
+   * `composition.roles.main.audience`.
    */
   slot?: CompositionSlot;
   /** Searches the local Archive for this project; `uri` is unused. */
@@ -951,6 +954,12 @@ function validateAgentKinds(owner: string, agents: Record<string, Partial<AgentS
       );
     if (agent.kind === 'domain-librarian' && agent.flowRole !== 'domain-advising')
       throw Error(`${owner} agent ${JSON.stringify(id)}: a Warden's flowRole is domain-advising`);
+    // An executor no longer adds instructions (Aron, 2026-11-10): a main thread's come from its thread
+    // role's composition, so a saved prompt would reach nothing.
+    if (agent.kind === 'executor' && typeof agent.prompt === 'string' && agent.prompt.trim())
+      throw Error(
+        `${owner} agent ${JSON.stringify(id)}: an executor's prompt is retired; a main thread's instructions come from its thread role. Move it to the role file .foundry/roles/<role>/instructions.md (coder, assistant, or main for every role; ~/.foundry/roles/... for yours on every project) and remove "prompt" (a starter executor from an older install goes with \`bun run setup --remove-legacy-defaults\`)`,
+      );
     // Each phase supplies its response protocol; a second shape in the instructions contradicts it.
     if (
       ['cartographer', 'domain-librarian'].includes(agent.kind) &&
@@ -1262,6 +1271,18 @@ export function validateConfig(config: FoundryConfig): void {
       'settings key "instructions" is now "composition" (docs/usage-and-context.md, "Composition view")',
     );
   validateCompositionSettings(config.composition, resolveInstructionLadder(config.composition));
+  // An agent's id is its composition role: a thread role's (or main's) would be shared with it.
+  for (const [owner, agents] of [
+    ['agents', config.agents],
+    ...Object.entries(config.projects ?? {}).map(
+      ([pid, project]) => [`projects.${pid}.agents`, project?.agents] as const,
+    ),
+  ] as const)
+    for (const id of Object.keys(agents ?? {}))
+      if (id === MAIN_ROLE || isThreadRole(config.composition, id))
+        throw Error(
+          `${owner}.${id}: "${id}" is a thread role's composition role id (or main's); rename the agent`,
+        );
   for (const [id, layer] of Object.entries(config.layers ?? {}))
     validateLayerDefinition('global layers', id, layer);
   for (const [pid, project] of Object.entries(config.projects ?? {}))

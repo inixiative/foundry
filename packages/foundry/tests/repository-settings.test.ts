@@ -65,13 +65,13 @@ test('a project applies this machine’s settings over the repository’s, key b
       gloss: { enabled: true, display: 'hover' },
       feedback: { capture: true },
       agents: {
-        reviewer: { extends: 'planner', prompt: 'team' },
-        writer: { extends: 'executor', prompt: 'team' },
+        reviewer: { extends: 'planner', model: 'sonnet' },
+        writer: { extends: 'executor', model: 'sonnet' },
       },
     },
     {
       gloss: { enabled: false } as ProjectSettingsConfig['gloss'],
-      agents: { writer: { extends: 'executor', prompt: 'mine' } },
+      agents: { writer: { extends: 'executor', model: 'claude-opus-5-5' } },
     },
   );
   const project = effectiveProject(config, 'p')!;
@@ -79,15 +79,15 @@ test('a project applies this machine’s settings over the repository’s, key b
   expect(project.gloss).toEqual({ enabled: false, display: 'hover' });
   expect(project.feedback).toEqual({ capture: true });
   expect(project.agents).toEqual({
-    reviewer: { extends: 'planner', prompt: 'team' },
-    writer: { extends: 'executor', prompt: 'mine' },
+    reviewer: { extends: 'planner', model: 'sonnet' },
+    writer: { extends: 'executor', model: 'claude-opus-5-5' },
   });
   expect(repositorySettingsProblem(config.projects.p!.path)).toBeUndefined();
   // Two project agents extending one global agent can't be built: the team's settings don't apply.
   const clash = projectWith(
     { threadOnMerge: 'auto-archive', agents: { a: { extends: 'executor' } } },
     {
-      agents: { b: { extends: 'executor', prompt: 'mine' } },
+      agents: { b: { extends: 'executor', model: 'claude-opus-5-5' } },
     },
   );
   expect(effectiveProject(clash, 'p')!.threadOnMerge).toBeUndefined();

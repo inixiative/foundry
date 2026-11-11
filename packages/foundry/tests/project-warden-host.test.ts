@@ -436,7 +436,7 @@ function config(path: string, runtime: 'claude' | 'claude-project'): FoundryConf
     worker: {
       id: 'worker',
       kind: 'executor',
-      prompt: 'WORKER',
+      prompt: '',
       provider: 'central',
       model: 'central-model',
       visibleLayers: [],
