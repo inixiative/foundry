@@ -99,7 +99,7 @@ async function main() {
         kind: 'executor',
         provider: 'claude-code',
         model: 'claude-opus-5-5',
-        prompt: 'Work for the owner.',
+        prompt: '',
         temperature: 0,
         visibleLayers: [],
         peers: [],

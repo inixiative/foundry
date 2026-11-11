@@ -238,7 +238,7 @@ test('saved decision roles run on subscription decisions without rewriting the s
   config.agents.artificer = {
     id: 'artificer',
     kind: 'executor',
-    prompt: 'Work',
+    prompt: '',
     provider: 'claude-code',
     model: 'opus',
     tools: true,

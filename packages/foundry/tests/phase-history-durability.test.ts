@@ -68,7 +68,7 @@ function fixture(
       kind: 'executor',
       provider: 'controlled',
       model: 'controlled',
-      prompt: 'Work',
+      prompt: '',
       temperature: 0,
       visibleLayers: [],
       peers: [],

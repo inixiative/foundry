@@ -282,6 +282,9 @@ export interface ThreadMeta {
   /** The harness running this thread's main session (`claude-code`, `codex`). Set at creation; never changed silently. */
   worker?: string;
 
+  /** The thread role its instructions compose as (`coder`, `assistant`, …). Absent: its worker's default role. */
+  role?: string;
+
   /** When this thread was created. */
   readonly createdAt: number;
 
@@ -388,6 +391,8 @@ export interface ThreadConfig {
   projectId?: string;
   /** The harness running this thread's main session. */
   worker?: string;
+  /** The thread role its instructions compose as. */
+  role?: string;
   /** Optional token tracker — auto-records costs for every dispatch. */
   tokenTracker?: TokenTracker;
 }
@@ -441,6 +446,7 @@ export class Thread {
       ...(opts?.forkedFrom ? { forkedFrom: opts.forkedFrom } : {}),
       projectId: opts?.projectId,
       ...(opts?.worker ? { worker: opts.worker } : {}),
+      ...(opts?.role ? { role: opts.role } : {}),
       createdAt: now,
       lastActiveAt: now,
     };

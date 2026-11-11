@@ -301,7 +301,7 @@ async function viewer(
     });
     return { status: response.status, body: (await response.json()) as Record<string, unknown> };
   };
-  return { f, served, call, factory, main };
+  return { f, served, call, factory, main, store };
 }
 
 test('POST /api/threads takes a worker; a refused one is a 400 with the reason', async () => {
@@ -951,4 +951,56 @@ test('a worker switch waits while a turn runs: the route says so, and the old se
   await until(() => server.turns.length > 0, 'the long job is running');
   expect(await provider.retireThread('busy')).toBe(false);
   expect(server.launches[0]!.exited).toBe(false);
+});
+
+test("a new thread takes its worker's default role, or the one chosen; the role changes any time, and an unknown one is refused", async () => {
+  const { call } = await viewer();
+  const scope = await call('GET', '/api/projects/claude/workers');
+  expect(scope.body.roles).toEqual([
+    { id: 'coder', label: 'Coder' },
+    { id: 'assistant', label: 'Assistant' },
+  ]);
+  const workers = scope.body.workers as Array<{ id: string; defaultRole: string }>;
+  expect(workers.find((w) => w.id === 'claude-code')?.defaultRole).toBe('coder');
+  expect(workers.find((w) => w.id === 'codex')?.defaultRole).toBe('coder');
+
+  const coder = await call('POST', '/api/threads', { projectId: 'claude', worker: 'codex' });
+  expect((coder.body.meta as ThreadMeta).role).toBe('coder');
+  expect(coder.body.effectiveRole).toBe('coder');
+  const chosen = await call('POST', '/api/threads', { projectId: 'claude', role: 'assistant' });
+  expect((chosen.body.meta as ThreadMeta).role).toBe('assistant');
+  const id = chosen.body.threadId as string;
+  const launch = await call('GET', `/api/threads/${id}/launch`);
+  expect(launch.body).toMatchObject({ role: 'assistant', effectiveRole: 'assistant' });
+  expect((launch.body.options as { roles: unknown[] }).roles).toHaveLength(2);
+
+  const refused = await call('POST', '/api/threads', { projectId: 'claude', role: 'pilot' });
+  expect(refused.status).toBe(400);
+  expect(refused.body.error).toContain('pilot is not a thread role');
+
+  const changed = await call('PATCH', `/api/threads/${id}`, { role: 'coder' });
+  expect(changed.status).toBe(200);
+  expect((changed.body.meta as ThreadMeta).role).toBe('coder');
+  expect((await call('PATCH', `/api/threads/${id}`, { role: 'pilot' })).status).toBe(400);
+  // Null follows the worker's default again (a record with no role resolves at read time).
+  const cleared = await call('PATCH', `/api/threads/${id}`, { role: null });
+  expect((cleared.body.meta as ThreadMeta).role).toBeUndefined();
+  expect(cleared.body.effectiveRole).toBe('coder');
+});
+
+test('a settings role can default a worker and is offered beside the built-ins', async () => {
+  const { call, store } = await viewer();
+  await store.update((draft) => {
+    draft.composition = {
+      roles: { reviewer: { thread: { label: 'Reviewer', defaultFor: ['codex'] } } },
+    };
+  });
+  const scope = await call('GET', '/api/projects/claude/workers');
+  expect((scope.body.roles as Array<{ id: string }>).map((r) => r.id)).toEqual([
+    'coder',
+    'assistant',
+    'reviewer',
+  ]);
+  const created = await call('POST', '/api/threads', { projectId: 'claude', worker: 'codex' });
+  expect((created.body.meta as ThreadMeta).role).toBe('reviewer');
 });

@@ -9,7 +9,12 @@ import {
   findLegacyStarter,
   removeLegacyStarter,
 } from '../src/setup/legacy-starter';
-import { ConfigStore, defaultConfig, type FoundryConfig } from '../src/viewer/config';
+import {
+  ConfigStore,
+  configFromSaved,
+  defaultConfig,
+  type FoundryConfig,
+} from '../src/viewer/config';
 
 const SYSTEM_PROMPT =
   'You are a helpful engineering assistant.\nFollow project conventions. Ask clarifying questions when requirements are ambiguous.\nWrite clean, tested code.';
@@ -278,8 +283,13 @@ test('doctor flags the starter defaults as a warning and names the removal comma
     config.apiTokens = true;
     config.defaults = { provider: 'openai', model: 'gpt-6-luna' };
     for (const agent of Object.values(config.agents)) agent.provider = 'openai';
-    await new ConfigStore(directory).save(config);
-    const loaded = await new ConfigStore(directory).load();
+    // Its prompt executors are refused at load now (executor prompts are retired, 2026-11-10), so
+    // doctor reads the file as saved and names the removal before the validation error.
+    await Bun.write(join(directory, 'settings.json'), JSON.stringify(config));
+    await expect(new ConfigStore(directory).load()).rejects.toThrow(
+      "an executor's prompt is retired",
+    );
+    const loaded = configFromSaved(await Bun.file(join(directory, 'settings.json')).json());
     const report = await inspectReadiness(loaded, {
       environment: { OPENAI_API_KEY: 'key' },
       which: () => '/controlled/cli',
@@ -289,18 +299,18 @@ test('doctor flags the starter defaults as a warning and names the removal comma
     expect(issue?.severity).toBe('warning');
     expect(issue?.message).toContain('agents.classifier');
     expect(issue?.message).toContain('bun run setup --remove-legacy-defaults');
-
-    const clean = await inspectReadiness(
-      (() => {
-        removeLegacyStarter(loaded);
-        return loaded;
-      })(),
-      {
-        environment: { OPENAI_API_KEY: 'key' },
-        which: () => '/controlled/cli',
-        configDir: directory,
-      },
+    expect(report.issues.find((item) => item.code === 'invalid-configuration')?.message).toContain(
+      "an executor's prompt is retired",
     );
+
+    // The removal leaves settings that load again.
+    removeLegacyStarter(loaded);
+    await new ConfigStore(directory).save(loaded);
+    const clean = await inspectReadiness(await new ConfigStore(directory).load(), {
+      environment: { OPENAI_API_KEY: 'key' },
+      which: () => '/controlled/cli',
+      configDir: directory,
+    });
     expect(clean.issues.some((item) => item.code === 'legacy-starter-defaults')).toBe(false);
     // An unwrapped project is not nagged for Wardens it has no layers for.
     expect(clean.issues.some((item) => item.code === 'no-domain-experts')).toBe(false);

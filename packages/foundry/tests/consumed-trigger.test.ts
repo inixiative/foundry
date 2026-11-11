@@ -75,7 +75,7 @@ function fixture(opts: { consumed?: ConsumedSettings; answer?: string; domains?:
       kind: 'executor',
       provider: 'controlled',
       model: 'controlled',
-      prompt: 'Work',
+      prompt: '',
       temperature: 0,
       visibleLayers: [],
       peers: [],

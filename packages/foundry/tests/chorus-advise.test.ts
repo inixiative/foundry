@@ -65,7 +65,7 @@ function config(path: string): FoundryConfig {
     worker: {
       id: 'worker',
       kind: 'executor',
-      prompt: 'WORKER_INSTRUCTIONS',
+      prompt: '',
       provider: 'central',
       model: 'central-model',
       visibleLayers: [],
@@ -139,11 +139,10 @@ test('one message through a live-built thread: the chimes on the message, the re
     `Add a SET NX lock around the sync job\n\n---\n\nThe concurrency-locks Warden chimed in:\n- ${POINTER}\n\n${PLAN_ASK_NOTE}`,
   );
   // The chorus's standing context is the reception charter alone, framed as a live session's system
-  // prompt frames it; the executor's own instructions stay out (they are Foundry, not the chorus).
+  // prompt frames it; an executor adds no instructions of its own (they come from its thread role).
   expect(advice.systemAppend).toBe(`## Context: ${CHORUS_RECEPTION_LAYER}\n\n${CHORUS_RECEPTION}`);
   expect(advice.liveSystemPrompt).toContain(advice.systemAppend);
-  expect(advice.liveSystemPrompt).toContain('WORKER_INSTRUCTIONS');
-  expect(advice.systemAppend).not.toContain('WORKER_INSTRUCTIONS');
+  expect(advice.liveSystemPrompt).not.toContain('Active agent');
   expect(advice.standing.filter((p) => p.chorus).map((p) => p.id)).toEqual([
     CHORUS_RECEPTION_LAYER,
   ]);

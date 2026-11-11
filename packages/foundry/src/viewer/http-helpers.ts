@@ -28,11 +28,12 @@ export function traceToJSON(trace: Trace) {
   };
 }
 
-/** Serialize a thread for the API. */
-export function threadToJSON(thread: Thread) {
+/** Serialize a thread for the API; `effectiveRole` is the thread role it composes as (`meta.role` is what it chose). */
+export function threadToJSON(thread: Thread, effectiveRole?: string) {
   return {
     threadId: thread.id,
     meta: thread.meta,
+    ...(effectiveRole ? { effectiveRole } : {}),
     title: threadTitle(thread.meta) ?? null,
     agents: [...thread.agents.entries()].map(([id, agent]) => ({
       id,

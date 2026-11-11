@@ -19,13 +19,13 @@ import type { Cartographer } from '../agents/cartographer';
 import { REDUCED_PHASE } from '../archives/reduced-middleware';
 import type { AuditLog } from '../audit/audit-log';
 import type { LocalSessionStore } from '../persistence/local-session-store';
-import { resolveInstructionLadder } from '../prompts/instruction-settings';
+import { MAIN_ROLE, resolveInstructionLadder } from '../prompts/instruction-settings';
 import { DECISION_PRIORITY } from '../providers/decision-priority';
 import type { FoundryConfig } from '../viewer/config';
-import { effectiveProject } from '../viewer/config-resolve';
+import { effectiveProject, threadRoleOf } from '../viewer/config-resolve';
 import { applyChange, type LevelRoots, revertChange } from './apply';
 import { activeChanges, type FeedbackItem, FeedbackLifecycle } from './lifecycle';
-import { defaultLevel, MAIN_ROLE, routeFeedback, slotFor, wardenRoles } from './routing';
+import { defaultLevel, feedbackRoleChoices, routeFeedback, slotFor, wardenRoles } from './routing';
 import {
   lintStatement,
   type MatchResult,
@@ -421,6 +421,7 @@ export class FeedbackService {
     if (recurring && !activeChanges(recurring).length) return item;
     if (!recurring) {
       const cartographer = this.deps.cartographer(thread.id);
+      const threadRole = threadRoleOf(this.deps.config(), thread.meta);
       const route: FeedbackRouteRecord = cartographer
         ? await routeFeedback({
             cartographer,
@@ -429,11 +430,12 @@ export class FeedbackService {
             statement: record.statement,
             category: found.category,
             projectId,
+            threadRole,
             timeoutMs: opts.blocking ? this.settings(thread).blockTimeoutMs : 30_000,
           })
         : {
             itemId,
-            roles: [MAIN_ROLE],
+            roles: [threadRole],
             slot: slotFor(found.category),
             level: defaultLevel(found.category, !!projectId),
             route: { domains: [], source: 'empty-map', confidence: 0 },
@@ -569,6 +571,7 @@ export class FeedbackService {
           shown,
           statement: item.statement,
           route: item.route ?? null,
+          roleChoices: feedbackRoleChoices(this.deps.config(), item.projectId),
         },
       },
     });
@@ -643,7 +646,7 @@ export class FeedbackService {
   /** Where an answer writes, every role known before anything is written. */
   private target(item: FeedbackItem, edited?: FeedbackTuneRecord['edited']) {
     const roles = edited?.roles ?? item.route?.roles ?? [MAIN_ROLE];
-    const known = new Set([MAIN_ROLE, ...wardenRoles(this.deps.config(), item.projectId).values()]);
+    const known = new Set(feedbackRoleChoices(this.deps.config(), item.projectId));
     const unknown = roles.filter((role) => !known.has(role));
     if (unknown.length) throw Error(`Unknown role ${unknown.join(', ')}`);
     if (!roles.length) throw Error('No role to apply the rule to');

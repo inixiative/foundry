@@ -223,7 +223,7 @@ export async function liveWatchFixture(
       kind: 'executor',
       provider: provider.id,
       model: 'fable',
-      prompt: 'Perform owned work',
+      prompt: '',
       enabled: true,
       visibleLayers: [],
       peers: [],

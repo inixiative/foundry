@@ -56,7 +56,7 @@ function config(project: string): FoundryConfig {
     worker: {
       id: 'worker',
       kind: 'executor',
-      prompt: 'WORKER',
+      prompt: '',
       provider: 'central',
       model: 'central-model',
       visibleLayers: [],

@@ -49,7 +49,7 @@ function makeConfig(dir: string, sourceExtras: Record<string, unknown> = {}): Fo
   return {
     defaults: { provider: 'mock', model: 'mock' },
     vendors: {},
-    agents: { worker: { ...agentSettings, id: 'worker', kind: 'executor', prompt: 'Execute' } },
+    agents: { worker: { ...agentSettings, id: 'worker', kind: 'executor', prompt: '' } },
     layers: {
       system: {
         id: 'system',

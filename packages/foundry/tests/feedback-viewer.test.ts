@@ -113,13 +113,14 @@ test('a correction typed in a turn reaches the lifecycle view: captured, routed,
   const [item] = items;
   expect(item).toMatchObject({
     statement: RULE,
-    route: { roles: ['main'], level: 'org-personal' },
+    route: { roles: ['coder'], level: 'org-personal' },
     stage: 'applied',
     attention: 'in progress',
     confidence: { value: 0, basis: 'exposure' },
   });
-  // org-personal: the project's parent directory, a personal role file for the main thread.
-  expect(item!.changes[0]!.path).toBe(join(dir, '.foundry/roles/main/instructions.local.md'));
+  // org-personal: the project's parent directory, a personal role file for the thread's own role
+  // (no Warden owns the rule; a Claude Code thread is a coder by default).
+  expect(item!.changes[0]!.path).toBe(join(dir, '.foundry/roles/coder/instructions.local.md'));
   expect(await readFile(item!.changes[0]!.path, 'utf8')).toContain(`${RULE} (${item!.id})`);
 
   // The stream holder saw the item go from captured to applied.

@@ -126,7 +126,7 @@ export async function m0Scenario(options: ScenarioOptions = {}) {
         kind: 'executor',
         provider: 'controlled',
         model: 'controlled',
-        prompt: 'Perform the requested bounded migration.',
+        prompt: '',
         temperature: 0,
         visibleLayers: [],
         peers: [],

@@ -1555,6 +1555,7 @@ export async function createThread({
   worker,
   model,
   effort,
+  role,
 } = {}) {
   try {
     const projectId = activeProjectId.value || undefined;
@@ -1571,6 +1572,7 @@ export async function createThread({
         worker,
         model,
         effort,
+        role,
       }),
     });
     if (res.ok) {

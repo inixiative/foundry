@@ -48,7 +48,7 @@ function config(paths: { P?: string; Q?: string } = {}) {
     worker: {
       id: 'worker',
       kind: 'executor',
-      prompt: 'Implement the requested change',
+      prompt: '',
       provider: 'central',
       model: 'central-model',
       visibleLayers: [],

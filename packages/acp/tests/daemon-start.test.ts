@@ -127,7 +127,7 @@ async function holdingDaemon(dir: string, launchPath: string, port = 0) {
       kind: 'executor',
       provider: 'controlled',
       model: 'controlled',
-      prompt: 'Hold',
+      prompt: '',
       enabled: true,
       visibleLayers: [],
       peers: [],

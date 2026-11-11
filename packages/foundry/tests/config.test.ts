@@ -66,7 +66,7 @@ function buildConfig(): FoundryConfig {
     executor: {
       id: 'executor',
       kind: 'executor',
-      prompt: 'Execute tasks',
+      prompt: '',
       provider: 'anthropic',
       model: 'claude-sonnet-4-6',
       temperature: 0,

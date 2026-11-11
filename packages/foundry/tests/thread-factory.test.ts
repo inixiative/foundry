@@ -53,7 +53,7 @@ function minimalConfig(overrides?: Partial<FoundryConfig>): FoundryConfig {
       'executor-answer': {
         id: 'executor-answer',
         kind: 'executor',
-        prompt: 'You are a helpful assistant.',
+        prompt: '',
         provider: 'mock',
         model: 'mock-model',
         temperature: 0,
@@ -189,7 +189,7 @@ describe('buildAgents', () => {
         'my-executor': {
           id: 'my-executor',
           kind: 'executor',
-          prompt: 'Execute tasks',
+          prompt: '',
           provider: 'mock',
           model: 'mock-model',
           temperature: 0,
@@ -214,7 +214,7 @@ describe('buildAgents', () => {
         active: {
           id: 'active',
           kind: 'executor',
-          prompt: 'Active',
+          prompt: '',
           provider: 'mock',
           model: 'mock-model',
           temperature: 0,
@@ -226,7 +226,7 @@ describe('buildAgents', () => {
         inactive: {
           id: 'inactive',
           kind: 'executor',
-          prompt: 'Inactive',
+          prompt: '',
           provider: 'mock',
           model: 'mock-model',
           temperature: 0,
@@ -520,7 +520,7 @@ describe('ThreadFactory', () => {
     expect(optsLog.every((o) => o.threadId !== 'a' && o.threadId !== 'b')).toBe(true);
   });
 
-  test('executor agent calls provider with correct messages', async () => {
+  test('an executor adds no instructions of its own: the provider gets the user message alone', async () => {
     const provider = mockProvider('response text');
     const config = minimalConfig();
 
@@ -532,11 +532,7 @@ describe('ThreadFactory', () => {
     await thread.dispatch('executor-answer', 'user question');
 
     expect(provider.calls.length).toBe(1);
-    const messages = provider.calls[0];
-    expect(messages[0].role).toBe('system');
-    expect(messages[0].content).toContain('You are a helpful assistant.');
-    expect(messages[1].role).toBe('user');
-    expect(messages[1].content).toBe('user question');
+    expect(provider.calls[0]).toEqual([{ role: 'user', content: 'user question' }]);
   });
 });
 

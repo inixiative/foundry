@@ -61,7 +61,7 @@ test('thread names: the Foundry name shows until a person names the thread; bran
       kind: 'executor',
       provider: 'mock',
       model: 'mock',
-      prompt: 'Execute',
+      prompt: '',
       temperature: 0,
       visibleLayers: [],
       peers: [],

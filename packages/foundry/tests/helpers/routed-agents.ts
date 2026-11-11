@@ -41,8 +41,7 @@ export function routedAgents(
       id: 'artificer',
       kind: 'executor',
       flowRole: 'execution',
-      prompt:
-        "You are the Artificer — the engineering agent.\n\nYou receive tasks that have already been classified and routed to you with the right context layers. Your job is to execute: read code, write code, run tests, fix bugs, build features, answer questions.\n\nYour workflow:\n1. Understand the task from the routed context and user message\n2. Explore the codebase to build the mental model you need\n3. Implement incrementally — build, test, iterate\n4. Verify your changes don't break existing tests\n\nFollow project conventions. Write clean, tested code. Prefer editing existing files over creating new ones. Explain your reasoning when it's non-obvious.",
+      prompt: '',
       provider: workerProvider,
       temperature: 0,
       tools: true,

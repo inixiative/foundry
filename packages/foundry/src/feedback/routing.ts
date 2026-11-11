@@ -5,12 +5,26 @@
  */
 import type { Cartographer, RouteResult } from '../agents/cartographer';
 import { configuredExperts } from '../agents/configured-experts';
+import { MAIN_ROLE, threadRoles } from '../prompts/instruction-settings';
 import type { FoundryConfig } from '../viewer/config';
 import { resolveProjectView } from '../viewer/config-resolve';
 import type { FeedbackCategory, FeedbackLevel, FeedbackRouteRecord, FeedbackSlot } from './types';
 
-/** The thread's own instructions slot: the last resort when no Warden owns the rule. */
-export const MAIN_ROLE = 'main';
+/**
+ * Every role a feedback item may be applied to: the thread roles, the shared base `main`, and the
+ * project's region Wardens.
+ */
+export function feedbackRoleChoices(
+  config: FoundryConfig,
+  projectId: string | null | undefined,
+): string[] {
+  const view = (projectId ? resolveProjectView(config, projectId)?.config : undefined) ?? config;
+  return [
+    ...threadRoles(view.composition).map((role) => role.id),
+    MAIN_ROLE,
+    ...wardenRoles(config, projectId).values(),
+  ];
+}
 
 export const slotFor = (category: FeedbackCategory): FeedbackSlot =>
   category === 'fact' ? 'domainKnowledge' : 'instructions';
@@ -37,7 +51,8 @@ export function wardenRoles(
 
 /**
  * Route a sharpened rule to the Warden(s) whose domain it belongs to, with the thread's Cartographer.
- * No domain, or a keyword fallback, goes to `main`: weak routing is said, never dressed up.
+ * No domain, or a keyword fallback, goes to the thread's own role (`threadRole`): weak routing is
+ * said, never dressed up.
  */
 export async function routeFeedback(input: {
   cartographer: Pick<Cartographer, 'route'>;
@@ -46,6 +61,7 @@ export async function routeFeedback(input: {
   statement: string;
   category: FeedbackCategory;
   projectId: string | null | undefined;
+  threadRole: string;
   timeoutMs?: number;
 }): Promise<FeedbackRouteRecord> {
   const result: RouteResult = await input.cartographer.route(input.statement, undefined, {
@@ -59,7 +75,7 @@ export async function routeFeedback(input: {
       : [];
   return {
     itemId: input.itemId,
-    roles: roles.length ? roles : [MAIN_ROLE],
+    roles: roles.length ? roles : [input.threadRole],
     slot: slotFor(input.category),
     level: defaultLevel(input.category, !!input.projectId),
     route: { domains: result.domains, source, confidence: result.confidence },

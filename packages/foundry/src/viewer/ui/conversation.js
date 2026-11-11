@@ -45,7 +45,7 @@ import {
 import { MessageMenu } from './message-menu.js';
 import { Modal, RenameModal } from './modal.js';
 import { Plan } from './plan.js';
-import { openThreadRun } from './run-picker.js';
+import { openThreadRun, roleLabel } from './run-picker.js';
 import { settingsConfig } from './settings.js';
 import { isDangerous, MODES, ModeIcon, STATES, StatusIcon } from './status-icons.js';
 import { QueuedRows, SendHint, turnRunning } from './steering.js';
@@ -328,7 +328,9 @@ function ContextBar() {
   // model or the effort; an effort the thread didn't choose is the one it runs at by default.
   const worker = harnessName(launch?.worker ?? launch?.provider) ?? named.provider;
   const effort = launch?.effort ?? launch?.effortDefault ?? null;
-  const runs = [named.model, effort].filter(Boolean);
+  // Its thread role (coder, assistant, …) beside how it runs: what its instructions compose as.
+  const role = roleLabel(launch?.options?.roles, launch?.effectiveRole);
+  const runs = [named.model, effort, role].filter(Boolean);
 
   return html`
     <div class="context-bar thread-band thread-band--pills">

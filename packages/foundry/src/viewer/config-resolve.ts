@@ -22,7 +22,7 @@ import {
 import { WARDEN_BRIEF_NODES, wardenBriefNodes, wardenComposition } from '../agents/warden-brief';
 import { defaultStages, type StageConfig, validateStages } from '../classify';
 import { writeFileAtomic } from '../client/private-file';
-import { MAIN_ROLE } from '../prompts/instruction-settings';
+import { effectiveThreadRole, isThreadRole, MAIN_ROLE } from '../prompts/instruction-settings';
 import {
   type AgentExtension,
   type AgentSettingsConfig,
@@ -1290,11 +1290,15 @@ function buildProjectView(
         throw new Error(
           `[config] region ${region.id} (${region.path}) has the id of global agent ${JSON.stringify(agent.id)}`,
         );
-      // The main thread's and the Cartographer's composition roles are not a Warden's to take (a
+      // The main threads' and the Cartographer's composition roles are not a Warden's to take (a
       // configured cartographer agent's id is a global agent's, refused above).
-      if (agent.id === MAIN_ROLE || agent.id === 'cartographer')
+      if (
+        agent.id === MAIN_ROLE ||
+        agent.id === 'cartographer' ||
+        isThreadRole(resolved.composition, agent.id)
+      )
         throw new Error(
-          `[config] region ${region.id} (${region.path}) has the reserved role id ${JSON.stringify(agent.id)} (the main thread's or the Cartographer's composition role); rename the region`,
+          `[config] region ${region.id} (${region.path}) has the reserved role id ${JSON.stringify(agent.id)} (a main thread's, a thread role's or the Cartographer's composition role); rename the region`,
         );
       const taken = sources.find((source) => resolved.sources[source.id]);
       if (project.agents?.[agent.id] || taken)
@@ -1404,6 +1408,22 @@ function buildProjectView(
   resolved.layers = Object.fromEntries(layers.map((layer) => [layer.id, layer.config]));
 
   return { config: resolved, layers, agents: [...agents.values()], chorus };
+}
+
+/**
+ * The thread role a thread composes as: its own while that is still a thread role, else its worker's
+ * default, in its project's view (old records name no role and resolve here, never rewritten).
+ */
+export function threadRoleOf(
+  config: FoundryConfig,
+  meta: { projectId?: string; worker?: string; role?: string },
+): string {
+  const view =
+    (meta.projectId ? resolveProjectView(config, meta.projectId)?.config : undefined) ?? config;
+  return effectiveThreadRole(view.composition, {
+    ...(meta.role ? { role: meta.role } : {}),
+    worker: meta.worker ?? view.defaults.provider,
+  });
 }
 
 /** An executor's pinned model the thread's worker does not run: it gives way to the worker's default. */

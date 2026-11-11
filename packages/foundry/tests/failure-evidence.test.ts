@@ -43,7 +43,7 @@ function fixture(provider: LLMProvider, maxTraces = 1000) {
         kind: 'executor',
         provider: 'mock',
         model: 'mock',
-        prompt: 'Execute',
+        prompt: '',
         temperature: 0,
         visibleLayers: [],
         peers: [],

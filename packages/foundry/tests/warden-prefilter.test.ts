@@ -229,7 +229,7 @@ test('a thread skips a ruled-out Warden at advice and at review, each journalled
       kind: 'executor',
       provider: 'mock',
       model: 'mock',
-      prompt: 'Work',
+      prompt: '',
       temperature: 0,
       visibleLayers: [],
       peers: [],

@@ -182,7 +182,7 @@ function runtimeFixture(advice: string) {
       kind: 'executor',
       provider: 'mock',
       model: 'mock',
-      prompt: 'Work',
+      prompt: '',
       temperature: 0,
       visibleLayers: [],
       peers: [],

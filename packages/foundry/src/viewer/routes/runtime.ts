@@ -48,6 +48,7 @@ import {
   type ImageAttachmentStore,
 } from '../../persistence/image-attachments';
 import type { LocalSessionStore } from '../../persistence/local-session-store';
+import { defaultThreadRole, isThreadRole, threadRoles } from '../../prompts/instruction-settings';
 import { workerModelRequirement } from '../../providers/subscription-policy';
 import {
   describeMcpServers,
@@ -63,7 +64,7 @@ import type { NativeOutcomeRecovery } from '../../turns/native-outcome-recovery'
 import type { RunningTasks } from '../../turns/running-tasks';
 import { TurnService, type TurnServiceDeps } from '../../turns/turn-service';
 import { type ConfigStore, steerOnSend } from '../config';
-import { resolveThreadView } from '../config-resolve';
+import { resolveProjectView, resolveThreadView, threadRoleOf } from '../config-resolve';
 import type { ViewerStreams } from '../data-streams';
 import { docSections } from '../doc-sections';
 import { threadToJSON, traceToJSON, validateId } from '../http-helpers';
@@ -827,16 +828,16 @@ export function registerRuntimeRoutes(
   app.get('/api/threads', (c) => {
     const projectId = c.req.query('project');
     const projectThreads = projectId ? directory.scope(projectId) : undefined;
-    if (projectThreads) return c.json({ threads: projectThreads.map(threadToJSON), projectId });
+    if (projectThreads) return c.json({ threads: projectThreads.map(threadJSON), projectId });
 
     // Global scope = threads not owned by any project (orphan threads only).
     // Project-scoped threads show under their project view; don't double-count.
-    return c.json({ threads: directory.scope()!.map(threadToJSON) });
+    return c.json({ threads: directory.scope()!.map(threadJSON) });
   });
 
   app.get('/api/threads/:id', (c) => {
     const thread = directory.get(c.req.param('id'));
-    return thread ? c.json(threadToJSON(thread)) : c.json({ error: 'thread not found' }, 404);
+    return thread ? c.json(threadJSON(thread)) : c.json({ error: 'thread not found' }, 404);
   });
 
   // -- Launch settings: what a host chose for a thread's executor session --
@@ -858,6 +859,7 @@ export function registerRuntimeRoutes(
         label: MODEL_REGISTRY[worker]?.label ?? worker,
         default: worker === fallback,
         defaultModel: scopeModel(projectId, worker),
+        defaultRole: defaultThreadRole(scopeComposition(projectId), worker),
         // Each model with the efforts it takes and the one it runs at when none is chosen (N-series vocabulary).
         models: (MODEL_REGISTRY[worker]?.models ?? []).map((model) => ({
           id: model.id,
@@ -874,6 +876,31 @@ export function registerRuntimeRoutes(
    */
   const scopeModel = (projectId: string | undefined, worker: string) =>
     resolveThreadView(deps.configStore.config, { projectId, worker }).config.defaults.model;
+
+  /** A thread's API payload, with the role it composes as. */
+  const threadJSON = (thread: Thread) =>
+    threadToJSON(thread, threadRoleOf(deps.configStore.config, thread.meta));
+
+  /** The composition settings a thread here composes under: its project's view, else the global. */
+  const scopeComposition = (projectId: string | undefined) =>
+    (
+      (projectId ? resolveProjectView(deps.configStore.config, projectId)?.config : undefined) ??
+      deps.configStore.config
+    ).composition;
+
+  /** The thread roles a thread here may run as (Aron, 2026-11-10: coder, assistant, and the user's own). */
+  const roleChoices = (projectId: string | undefined) =>
+    threadRoles(scopeComposition(projectId)).map(({ id, label }) => ({ id, label }));
+
+  /** Why `role` is not a thread role here, or undefined when it is. */
+  const roleRefusal = (projectId: string | undefined, role: unknown) =>
+    typeof role !== 'string' || !role
+      ? 'role must be a thread role id'
+      : isThreadRole(scopeComposition(projectId), role)
+        ? undefined
+        : `${role} is not a thread role; choose one of ${roleChoices(projectId)
+            .map((r) => r.id)
+            .join(', ')} (or add one under composition.roles with "thread")`;
 
   /** The subscription workers a thread here cannot start on, each with why (no login, vendor mode off). */
   const unavailableWorkers = (projectId: string | undefined, fallback: string) =>
@@ -912,6 +939,7 @@ export function registerRuntimeRoutes(
     return {
       workers: workerChoices(projectId, fallback),
       unavailable: unavailableWorkers(projectId, fallback),
+      roles: roleChoices(projectId),
     };
   };
 
@@ -966,6 +994,10 @@ export function registerRuntimeRoutes(
       threadId: thread.id,
       provider,
       worker: thread.meta.worker ?? provider,
+      /** The thread role it chose (null: none stored, it follows its worker's default). */
+      role: thread.meta.role ?? null,
+      /** The thread role its instructions compose as now. */
+      effectiveRole: threadRoleOf(deps.configStore.config, thread.meta),
       permissionMode: launch.permissionMode ?? null,
       model,
       modelOverride: launch.model ?? null,
@@ -996,6 +1028,7 @@ export function registerRuntimeRoutes(
         efforts: modelEfforts(provider, model) ?? REASONING_EFFORTS,
         workers,
         unavailableWorkers: unavailableWorkers(projectId, fallback),
+        roles: roleChoices(projectId),
       },
     };
   };
@@ -1177,6 +1210,8 @@ export function registerRuntimeRoutes(
       projectId: project?.id,
       // A fork runs on its source's worker: its seeded history is that worker's conversation.
       ...(meta.worker ? { worker: meta.worker } : {}),
+      // And as its source's role: the same kind of conversation.
+      role: threadRoleOf(deps.configStore.config, meta),
     });
     const name = options.name?.slice(0, 200) ?? `Fork of ${sourceName}`;
     thread.rename(name);
@@ -1283,6 +1318,19 @@ export function registerRuntimeRoutes(
 
     if (worker && !threadFactory)
       return c.json({ error: 'choosing a worker needs the thread factory' }, 400);
+    // Its thread role: the one chosen, else its worker's default, stored so it never shifts silently.
+    if (body.role !== undefined) {
+      const refused = roleRefusal(project?.id, body.role);
+      if (refused) return c.json({ error: refused }, 400);
+    }
+    const role =
+      (body.role as string | undefined) ??
+      defaultThreadRole(
+        scopeComposition(project?.id),
+        worker ??
+          threadFactory?.defaultWorker(project?.id) ??
+          deps.configStore.config.defaults.provider,
+      );
     let thread: Thread;
     try {
       thread = constructThread(id, {
@@ -1293,6 +1341,7 @@ export function registerRuntimeRoutes(
         parentThreadId,
         projectId: project?.id,
         ...(worker ? { worker } : {}),
+        role,
       });
     } catch (error) {
       if (error instanceof WorkerRefusedError) return c.json({ error: error.message }, 400);
@@ -1302,7 +1351,7 @@ export function registerRuntimeRoutes(
     if (typeof body.name === 'string') thread.rename(body.name.slice(0, 200));
     if (start.model !== undefined || start.effort !== undefined) threadLaunch.update(id, start);
     registerThread(thread, project);
-    return c.json(threadToJSON(thread), 201);
+    return c.json(threadJSON(thread), 201);
   });
 
   // -- Thread update (worktree reassignment) --
@@ -1386,6 +1435,15 @@ export function registerRuntimeRoutes(
       if (effort && takes && !takes.includes(effort)) threadLaunch.update(id, { effort: null });
     }
 
+    // A thread's role may change at any time; its instructions re-compose from the next turn (the
+    // instructions source reads the role from the thread's scope). Null follows its worker's default.
+    if (body.role === null) delete thread.meta.role;
+    else if (body.role !== undefined && body.role !== thread.meta.role) {
+      const refused = roleRefusal(thread.meta.projectId, body.role);
+      if (refused) return c.json({ error: refused }, 400);
+      thread.meta.role = body.role as string;
+    }
+
     // Update worktree assignment
     const priorCwd = thread.meta.cwd;
     if (typeof body.worktreePath === 'string') {
@@ -1410,7 +1468,7 @@ export function registerRuntimeRoutes(
     streams.threadsChanged(thread.id);
     if ('worktreePath' in body || 'branch' in body) void threadContext?.refresh(thread.id);
 
-    return c.json(threadToJSON(thread));
+    return c.json(threadJSON(thread));
   });
 
   // -- Running: the thread's background processes and live subagents --
@@ -1499,7 +1557,7 @@ export function registerRuntimeRoutes(
     thread.meta.snooze = result.snooze;
     localStore?.saveThread(thread);
     streams.threadsChanged(thread.id);
-    return c.json(threadToJSON(thread));
+    return c.json(threadJSON(thread));
   });
 
   app.delete('/api/threads/:id/snooze', (c) => {
@@ -1510,7 +1568,7 @@ export function registerRuntimeRoutes(
       localStore?.saveThread(thread);
       streams.threadsChanged(thread.id);
     }
-    return c.json(threadToJSON(thread));
+    return c.json(threadJSON(thread));
   });
 
   // -- Recreate a released worktree with the project's worktree mode (FEAT-003) --
@@ -1524,7 +1582,7 @@ export function registerRuntimeRoutes(
     void result.started.catch((error: unknown) =>
       console.warn('[Viewer] worktree recreate failed:', (error as Error).message ?? error),
     );
-    return c.json(threadToJSON(directory.get(id)!), 202);
+    return c.json(threadJSON(directory.get(id)!), 202);
   });
 
   // -- Revert thread to a message --
@@ -1569,7 +1627,7 @@ export function registerRuntimeRoutes(
         atSeq,
         ...(typeof body.name === 'string' ? { name: body.name } : {}),
       });
-      return c.json(threadToJSON(directory.get(made.threadId)!), 201);
+      return c.json(threadJSON(directory.get(made.threadId)!), 201);
     } catch (error) {
       return c.json({ error: (error as Error).message }, 400);
     }

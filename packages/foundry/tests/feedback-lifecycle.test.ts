@@ -149,7 +149,7 @@ test('a match answer names a known candidate with a bounded confidence', () => {
   expect(parseMatch('not json', candidates)).toBeNull();
 });
 
-test('routing maps Cartographer domains to Warden roles, and weak routing goes to main', async () => {
+test("routing maps Cartographer domains to Warden roles, and weak routing goes to the thread's role", async () => {
   const route = (result: RouteResult) =>
     routeFeedback({
       cartographer: { route: async () => result },
@@ -158,6 +158,7 @@ test('routing maps Cartographer domains to Warden roles, and weak routing goes t
       statement: RULE,
       category: 'convention',
       projectId,
+      threadRole: 'assistant',
     });
   const project = regionProject(tempDir('feedback-routing-'));
   let projectId: string | null = 'P';
@@ -177,15 +178,15 @@ test('routing maps Cartographer domains to Warden roles, and weak routing goes t
         source: 'keyword-fallback',
       })
     ).roles,
-  ).toEqual(['main']);
+  ).toEqual(['assistant']);
   expect(
     (await route({ layers: [], domains: ['unknown'], confidence: 0.9, source: 'model' })).roles,
-  ).toEqual(['main']);
-  // A thread outside a project has no chorus: every rule goes to main.
+  ).toEqual(['assistant']);
+  // A thread outside a project has no chorus: every rule goes to the thread's role.
   projectId = null;
   expect(
     (await route({ layers: [], domains: ['convention'], confidence: 0.9, source: 'model' })).roles,
-  ).toEqual(['main']);
+  ).toEqual(['assistant']);
 });
 
 test('role files resolve per rung; personal repo files are kept out of git', () => {

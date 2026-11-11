@@ -59,7 +59,7 @@ function fixture(opts: { wardens: boolean; joined?: boolean }) {
       kind: 'executor',
       provider: 'controlled',
       model: 'controlled',
-      prompt: 'Work',
+      prompt: '',
       temperature: 0,
       visibleLayers: [],
       peers: [],

@@ -116,7 +116,7 @@ test('long history after-run: index pagination to the oldest record, lazy detail
         kind: 'executor',
         provider: 'controlled',
         model: 'controlled',
-        prompt: 'Answer the release-notes question briefly.',
+        prompt: '',
         temperature: 0,
         visibleLayers: ['conventions'],
         peers: [],

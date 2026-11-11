@@ -30,13 +30,13 @@ import { ConversationService } from '../conversations/service';
 import { blockedOnPerson, RestartRoll } from '../daemon/restart-roll';
 import { readLocalDevice } from '../devices/local-inventory';
 import { feedbackRoots } from '../feedback/apply';
-import { MAIN_ROLE } from '../feedback/routing';
 import { FeedbackService } from '../feedback/service';
 import { classifyCorrection, matchExisting } from '../feedback/sharpen';
 import { releaseWorktree } from '../git';
 import { ImageAttachmentStore } from '../persistence/image-attachments';
 import { KnowledgePersistence } from '../persistence/knowledge-persistence';
 import { LocalSessionStore } from '../persistence/local-session-store';
+import { isThreadRole, MAIN_ROLE } from '../prompts/instruction-settings';
 import { installationNameOf } from '../providers/kingdom-cli';
 import { KingdomHolders } from '../providers/kingdom-holder';
 import {
@@ -75,6 +75,7 @@ import { ActionHandler } from './actions';
 import { AIAssist } from './ai-assist';
 import { AnalyticsStore } from './analytics';
 import { ConfigStore, DEFAULT_RAW_MIDDLEWARE_DAYS, threadOnMerge } from './config';
+import { threadRoleOf } from './config-resolve';
 import { createViewerStreams } from './data-streams';
 import { authenticatedRequest, sameOrigin } from './request-auth';
 import { registerControlRoutes } from './routes/control';
@@ -320,6 +321,7 @@ export function createViewer(config: ViewerConfig) {
     feedback: () => feedback,
     conversation: (threadId) => conversations?.summary(threadId),
     permissionMode: (threadId) => threadLaunch.forLaunch(threadId).permissionMode,
+    threadRole: (thread) => threadRoleOf(configStore.config, thread.meta),
     journal: {
       store: localStore,
       learningState: (threadId) => config.threadFactory?.runtime?.get(threadId)?.learningState,
@@ -671,10 +673,11 @@ export function createViewer(config: ViewerConfig) {
                 matchExisting(feedbackProvider, statement, candidates, priority),
             }
           : {}),
-        // Role files compose on their next prepare; main's instructions are a stack layer of the thread.
+        // Role files compose on their next prepare; a thread role's (and main's) instructions are a
+        // stack layer of the thread.
         invalidate: (role, threadId) => {
           invalidateComposition();
-          if (role === MAIN_ROLE)
+          if (role === MAIN_ROLE || isThreadRole(configStore.config.composition, role))
             directory.get(threadId)?.stack.getLayer('instructions')?.invalidate();
         },
         roots: (thread) => feedbackRoots(thread, configStore.config),

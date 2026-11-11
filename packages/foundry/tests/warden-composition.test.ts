@@ -58,7 +58,7 @@ function config(project = regionProject()): FoundryConfig {
     worker: {
       id: 'worker',
       kind: 'executor',
-      prompt: 'WORKER_INSTRUCTIONS',
+      prompt: '',
       provider: 'central',
       model: 'central-model',
       visibleLayers: [],
@@ -215,23 +215,47 @@ test('settings declare no Wardens: a hand-named one is refused by name, with the
   expect(() => validateConfig(decider)).toThrow('"chorus": { "enabled": true }');
 });
 
+const SORTER: AgentSettingsConfig = {
+  id: 'sorter',
+  kind: 'classifier',
+  prompt: 'SORTER_INSTRUCTIONS',
+  visibleLayers: [],
+  peers: [],
+  maxDepth: 1,
+  enabled: true,
+};
+const CARTOGRAPHER: AgentSettingsConfig = {
+  id: 'cartographer',
+  kind: 'cartographer',
+  flowRole: 'context-routing',
+  prompt: 'CARTOGRAPHER_INSTRUCTIONS',
+  visibleLayers: [],
+  peers: [],
+  maxDepth: 1,
+  enabled: true,
+};
+
 test('project agents are standalone or extend a global agent; nothing in between', () => {
   const c = config();
+  c.agents.sorter = SORTER;
   c.projects.P!.agents = { worker: { extends: 'missing' } };
   expect(() => validateConfig(c)).toThrow('is not a global agent');
-  c.projects.P!.agents = { worker: { extends: 'worker', override: ['instructions'] } };
+  c.projects.P!.agents = { sorter: { extends: 'sorter', override: ['instructions'] } };
   expect(() => validateConfig(c)).toThrow('overrides instructions without a prompt');
+  // An executor adds no instructions (2026-11-10): an extension that gives one a prompt is refused.
   c.projects.P!.agents = { worker: { extends: 'worker', prompt: 'Use Bun' } };
+  expect(() => validateConfig(c)).toThrow("an executor's prompt is retired");
+  c.projects.P!.agents = { sorter: { extends: 'sorter', prompt: 'Use Bun' } };
   validateConfig(c);
   const view = resolveProjectView(c, 'P')!;
-  expect(view.config.agents.worker!.prompt).toBe(
-    '## Global instructions (worker)\n\nWORKER_INSTRUCTIONS\n\n## Project instructions (P)\n\nUse Bun',
+  expect(view.config.agents.sorter!.prompt).toBe(
+    '## Global instructions (sorter)\n\nSORTER_INSTRUCTIONS\n\n## Project instructions (P)\n\nUse Bun',
   );
-  expect(view.agents.find((a) => a.id === 'worker')!.fields.prompt).toMatchObject({
+  expect(view.agents.find((a) => a.id === 'sorter')!.fields.prompt).toMatchObject({
     origin: 'merged',
     strategy: 'extend',
   });
-  c.projects.P!.agents = { 'p-worker': { extends: 'worker', prompt: 'Use Bun' } };
+  c.projects.P!.agents = { 'p-worker': { extends: 'worker' } };
   const superseded = resolveProjectView(c, 'P')!.config;
   expect(superseded.agents.worker).toBeUndefined();
   expect(superseded.agents['p-worker']).toMatchObject({ id: 'p-worker', kind: 'executor' });
@@ -242,7 +266,9 @@ test('project agents are standalone or extend a global agent; nothing in between
 test('a settings edit reaches a running thread on its next turn, with a versioned before/after', async () => {
   const dir = tempDir('live-settings');
   const store = new ConfigStore(dir);
-  await store.save(config());
+  const initial = config();
+  initial.agents.cartographer = CARTOGRAPHER;
+  await store.save(initial);
   const f = setup(structuredClone(store.config));
   managers.push(f.manager);
   store.onChange((next) => f.factory.reconfigure(next));
@@ -250,22 +276,22 @@ test('a settings edit reaches a running thread on its next turn, with a versione
 
   await thread.dispatch('worker', 'First turn');
   expect(f.last('pre').messages[0]!.content).toBe(chartered(REGION_RULES));
-  expect(f.last('central').messages[0]!.content).toContain('WORKER_INSTRUCTIONS');
+  expect(f.last('route').messages[0]!.content).toBe('CARTOGRAPHER_INSTRUCTIONS');
 
   await store.update((draft) => {
-    draft.agents.worker!.prompt = 'EDITED_WORKER';
+    draft.agents.cartographer!.prompt = 'EDITED_CARTOGRAPHER';
   });
   await store.settled();
 
   await thread.dispatch('worker', 'Second turn');
   expect(f.last('pre').messages[0]!.content).toBe(chartered(REGION_RULES));
-  expect(f.last('central').messages[0]!.content).toContain('EDITED_WORKER');
+  expect(f.last('route').messages[0]!.content).toBe('EDITED_CARTOGRAPHER');
 
-  const [log] = await store.history('agent:worker');
+  const [log] = await store.history('agent:cartographer');
   const edit = log!.entries.at(-1)!;
   expect(edit.author).toBe('user');
-  expect(edit.snapshot.before).toMatchObject({ prompt: 'WORKER_INSTRUCTIONS' });
-  expect(edit.snapshot.after).toMatchObject({ prompt: 'EDITED_WORKER' });
+  expect(edit.snapshot.before).toMatchObject({ prompt: 'CARTOGRAPHER_INSTRUCTIONS' });
+  expect(edit.snapshot.after).toMatchObject({ prompt: 'EDITED_CARTOGRAPHER' });
 });
 
 test('the configured Cartographer instructions drive routing; runtime roles are never thread agents', async () => {
@@ -338,29 +364,32 @@ test('an edit that cannot be built changes nothing on live threads', async () =>
 test('a hand edit to settings.json is versioned as a file edit and applied', async () => {
   const dir = tempDir('file-edit');
   const store = new ConfigStore(dir);
-  await store.save(config());
+  const initial = config();
+  initial.agents.sorter = SORTER;
+  await store.save(initial);
   const seen: string[] = [];
   store.onChange((next) => {
-    seen.push(next.agents.worker!.prompt);
+    seen.push(next.agents.sorter!.prompt);
   });
   const edited = structuredClone(store.config);
-  edited.agents.worker!.prompt = 'HAND_EDITED';
+  edited.agents.sorter!.prompt = 'HAND_EDITED';
   await Bun.write(join(dir, 'settings.json'), JSON.stringify(edited));
   await store.load();
   await store.settled();
   expect(seen).toEqual(['HAND_EDITED']);
-  const entry = (await store.history('agent:worker'))[0]!.entries.at(-1)!;
+  const entry = (await store.history('agent:sorter'))[0]!.entries.at(-1)!;
   expect(entry.author).toBe('file');
 });
 
 test('ambiguous or unbuildable project agents are refused before they are saved', () => {
   const c = config();
-  c.agents.reviewer = { ...c.agents.worker!, id: 'reviewer', prompt: 'REVIEW' };
-  c.projects.P!.agents = { reviewer: { extends: 'worker', prompt: 'x' } };
+  c.agents.sorter = SORTER;
+  c.agents.reviewer = { ...SORTER, id: 'reviewer', prompt: 'REVIEW' };
+  c.projects.P!.agents = { reviewer: { extends: 'sorter', prompt: 'x' } };
   expect(() => validateConfig(c)).toThrow('names another agent');
   c.projects.P!.agents = {
-    'p-worker': { extends: 'worker', prompt: 'x' },
-    q: { extends: 'p-worker' },
+    'p-sorter': { extends: 'sorter', prompt: 'x' },
+    q: { extends: 'p-sorter' },
   };
   expect(() => validateConfig(c)).toThrow('names another agent');
   c.projects.P!.agents = {

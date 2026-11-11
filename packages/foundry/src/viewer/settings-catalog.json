@@ -202,7 +202,7 @@
   {
     "path": "agents.*.prompt",
     "scope": "foundry",
-    "description": "System prompt for this agent."
+    "description": "System prompt for this agent. Empty for an executor: a main thread's instructions come from its thread role."
   },
   {
     "path": "agents.*.provider",
@@ -442,7 +442,7 @@
   {
     "path": "sources.*.slot",
     "scope": "foundry",
-    "description": "Instruction sources only (`uri` is unused): which of the main role's slots the source returns. Default \"instructions\". Who it is for is `composition.roles.main.audience`."
+    "description": "Instruction sources only (`uri` is unused): which slot of the thread's role composition the source returns. Default \"instructions\". Who it is for is the thread role's audience, else `composition.roles.main.audience`."
   },
   {
     "path": "sources.*.archive",
@@ -632,7 +632,7 @@
   {
     "path": "sources.*.slot",
     "scope": "project",
-    "description": "Instruction sources only (`uri` is unused): which of the main role's slots the source returns. Default \"instructions\". Who it is for is `composition.roles.main.audience`."
+    "description": "Instruction sources only (`uri` is unused): which slot of the thread's role composition the source returns. Default \"instructions\". Who it is for is the thread role's audience, else `composition.roles.main.audience`."
   },
   {
     "path": "sources.*.archive",

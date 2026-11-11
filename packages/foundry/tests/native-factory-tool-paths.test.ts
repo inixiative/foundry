@@ -34,7 +34,7 @@ function fixture(central: LLMProvider, tools?: ToolRegistry) {
       kind: 'executor',
       provider: 'controlled-native',
       model: 'controlled',
-      prompt: 'Complete the requested work',
+      prompt: '',
       temperature: 0,
       visibleLayers: [],
       peers: [],
