@@ -144,19 +144,18 @@ async function host(
     const { ids, operations, ...terms } = grant;
     const signet: HostedSignet = {
       signetId: Bun.randomUUIDv7(),
-      integrationId,
       name,
       revision,
       lifecycle: 'ongoing',
       expiresAt: null,
       maxRequests: null,
-      maxConcurrent: 1,
       recipient: { recipientModel: 'User', id: Bun.randomUUIDv7(), displayName: name },
       resources: [
         threadsGrant({
           threadIds: ids ?? ['main'],
           ...(operations ? { operations } : {}),
           terms,
+          integrationId,
         }),
       ],
       baseLenses: threadsBaseLenses(),

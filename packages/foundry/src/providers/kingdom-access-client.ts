@@ -30,6 +30,10 @@ export const kingdomAccessSourceSchema = z
       }
     }),
     credentialFile: z.string().refine(isAbsolute),
+    /**
+     * The integration this source works on. A Signet has no integration of its own (its resources
+     * may sit on several); a joined conversation posts to the `threads` resource on this one.
+     */
     integrationId: z.string().uuid(),
     signetId: z.string().uuid(),
     projectIds: z.array(z.string().min(1)).min(1),
@@ -72,10 +76,7 @@ export class KingdomAccessClient {
       this.source.credentialFile,
       this.source.signetId,
     ).describe();
-    if (
-      description.integrationId !== this.source.integrationId ||
-      description.signetId !== this.source.signetId
-    )
+    if (description.signetId !== this.source.signetId)
       throw Error('Kingdom access credential belongs to another grant');
     if (description.expiresAt && Date.parse(description.expiresAt) <= Date.now())
       throw Error('Kingdom access expired');
@@ -125,11 +126,9 @@ export class KingdomAccessClient {
       {
         requestId: input.requestId,
         runId: input.runId,
-        integrationId:
-          description.operations
-            .flatMap((operation) => operation.resources)
-            .find((resource) => resource.id === input.resourceId)?.integrationId ??
-          this.source.integrationId,
+        integrationId: description.operations
+          .flatMap((operation) => operation.resources)
+          .find((resource) => resource.id === input.resourceId)!.integrationId,
         operation: readOperationSchema.parse(input.operation),
         input: { resourceId: input.resourceId, limit: input.limit },
       },
@@ -163,7 +162,8 @@ export class KingdomAccessClient {
 
   /**
    * Post into a conversation this Foundry joined (the joining side, `kingdom_post`): the held
-   * Signet's `thread.prompt` on the host Foundry's `threads` resource. Which threads the grant
+   * Signet's `thread.prompt` on the `threads` resource of the host Foundry this source names
+   * (`integrationId`). Which threads the grant
    * reaches is its lens, which only Kingdom applies (signet 0.12), so Kingdom answers whether this
    * thread is one of them, refusing the call if not. `postId` is the post's own id, kept across a
    * retry; each call is a new request id.
@@ -176,9 +176,13 @@ export class KingdomAccessClient {
     const resources =
       description.operations
         .find((operation) => operation.key === 'thread.prompt')
-        ?.resources.filter((candidate) => candidate.kind === threadsResourceKind) ?? [];
+        ?.resources.filter(
+          (candidate) =>
+            candidate.kind === threadsResourceKind &&
+            candidate.integrationId === this.source.integrationId,
+        ) ?? [];
     if (!resources.length) throw Error('This Signet does not reach that conversation thread');
-    // One `threads` resource per host Foundry, and a Signet is issued on one integration.
+    // One `threads` resource per host Foundry.
     if (resources.length > 1) throw Error('This Signet names more than one conversation resource');
     const resource = resources[0]!;
     return this.execute(

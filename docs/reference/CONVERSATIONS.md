@@ -190,7 +190,7 @@ These bounds are what "so they can't go too deep" means here. They are all struc
 
 1. **Agent turns without the owner.** Every member post counts as one. So does every main-agent turn woken by a post. At `maxAgentTurns` (default **6**) the conversation pauses with reason `depth`, and members get `conversation_paused` until the owner sends a message or resumes. This is the analogue of auto mode's stop-and-ask.
 2. **Per-member rate and lifetime** use Kingdom's existing limits:
-   - the Signet's `maxRequests`, `maxConcurrent` (default 1) and `expiresAt`;
+   - the Signet's `maxRequests` and `expiresAt` (a Signet has no concurrency term: Kingdom limits concurrency per run binding and per capacity with one limiter, Aron 2026-11-11);
    - the presenter rate limit (`ka/middleware/rateLimit/accessPresenterRateLimit.ts`);
    - for an hourly cap, an `AllocationPolicy` on the member's usage tag, enforced by `reserveAccess` through `enforceAllocationPolicies`.
 3. **No nested members.** One Signet is one presenter, and a member's own subagents count against it. Only a party with permission on the host integration issues Signets on `threads`. In SIGNETS.md's words, "a Signet must not imply permission to issue another Signet".

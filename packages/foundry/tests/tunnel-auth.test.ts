@@ -242,8 +242,6 @@ test("the viewer's login page links to the paired Kingdom's devices page", async
       action === 'describe'
         ? {
             signetId: body.signetId,
-            integrationId: Bun.randomUUIDv7(),
-            provider: null,
             name: 'Host Foundry',
             expiresAt: null,
             lifecycle: 'ongoing',

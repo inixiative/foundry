@@ -379,27 +379,17 @@ export class KingdomInstallationConnection {
     if (this.latest) void this.hold().then(() => this.changed());
   }
   /**
-   * Holds every Signet Kingdom lists on an integration paired here (enrolling when this key has no
-   * current enrollment). A listed Signet on an integration not paired here is held only if a file
-   * already exists (a pairing in another process may have just collected it).
+   * Holds every Signet Kingdom lists for this installation (enrolling when this key has no current
+   * enrollment). Kingdom lists only Signets issued to an integration paired with this key; a
+   * Signet has no integration of its own to filter on.
    */
   private hold(): Promise<void> {
     this.holding = this.holding.then(async () => {
       const snapshot = this.latest;
       if (!snapshot || this.pairing || !this.socket) return;
-      const integrationIds = new Set(this.all().map((integration) => integration.integrationId));
       try {
         const { keyFile, directory } = await kingdomInstallation(this.options.configDir, this.url);
-        this.held = await holdInstallationSignets(
-          this.url,
-          keyFile,
-          directory,
-          snapshot.signets.filter(
-            (signet) =>
-              integrationIds.has(signet.integrationId) ||
-              existsSync(signetCredentialFile(directory, signet.signetId)),
-          ),
-        );
+        this.held = await holdInstallationSignets(this.url, keyFile, directory, snapshot.signets);
       } catch (error) {
         this.warn(`[Kingdom] ${this.url} Signets not refreshed: ${(error as Error).message}`);
       }

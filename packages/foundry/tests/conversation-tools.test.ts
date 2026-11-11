@@ -52,13 +52,11 @@ const projectId = 'project-conversations';
 function hostedMember(threadId: string, outbound: 'review' | 'auto'): HostedSignet {
   return {
     signetId: Bun.randomUUIDv7(),
-    integrationId: Bun.randomUUIDv7(),
     name: 'JobCo',
     revision: 1,
     lifecycle: 'ongoing',
     expiresAt: null,
     maxRequests: null,
-    maxConcurrent: 1,
     recipient: { recipientModel: 'User', id: Bun.randomUUIDv7(), displayName: 'JobCo' },
     resources: [
       threadsGrant({
@@ -158,10 +156,8 @@ test('kingdom_post holds the post for the owner before anything leaves, then pos
       if (action === 'describe')
         return {
           signetId: presented.signetId,
-          integrationId,
           name: 'Host conversation',
           expiresAt: null,
-          provider: 'foundry',
           lifecycle: 'ongoing',
           taskId: null,
           currentRevision: 1,
@@ -176,6 +172,7 @@ test('kingdom_post holds the post for the owner before anything leaves, then pos
                   name: 'threads',
                   kind: 'threads',
                   integrationId,
+                  provider: 'foundry',
                   lens: [
                     {
                       id: Bun.randomUUIDv7(),
