@@ -515,6 +515,24 @@ test('base roles: a {role} source is read for each base role, in order, then for
     'ORG_MAIN',
     'PROJECT_MAIN',
   ]);
+  // A node for a base role serves every role over it.
+  write(join(home, 'base.md'), 'FOR_MAIN');
+  const forMain: HierarchyNode = {
+    id: 'for-main',
+    scope: 'computer',
+    personal: true,
+    tier: 'personal',
+    when: { roles: ['main'] },
+    sources: [{ path: '{home}/base.md' }],
+  };
+  const withBase = await discoverHierarchy(
+    [forMain],
+    at(project, { role: 'coder', baseRoles: ['main'] }),
+    { tierRank },
+  );
+  expect(withBase.files.map((file) => file.content)).toEqual(['FOR_MAIN']);
+  const without = await discoverHierarchy([forMain], at(project, { role: 'coder' }), { tierRank });
+  expect(without.files).toEqual([]);
 });
 
 test('slots dedupe together: a repeat in a later slot is kept there and cut from the earlier one', () => {

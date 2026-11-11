@@ -1363,6 +1363,12 @@ export function registerRuntimeRoutes(
     let thread = directory.get(id);
     if (!thread) return c.json({ error: 'thread not found' }, 404);
 
+    // A role is checked before anything changes, so a refused one never leaves a worker switched.
+    if (body.role !== undefined && body.role !== null) {
+      const refused = roleRefusal(thread.meta.projectId, body.role);
+      if (refused) return c.json({ error: refused }, 400);
+    }
+
     // A thread's worker may change at any time it is idle. Before its first turn the thread is just
     // rebuilt on the new worker; after it, the new worker starts a fresh session seeded from the
     // journal (CORE-004's seeding), behind a "continued on" marker (Aron, 2026-11-02).
@@ -1402,8 +1408,14 @@ export function registerRuntimeRoutes(
       }
       // The record as it stood: the marker is written against it, then the new worker is saved.
       const before = { id, meta: structuredClone(thread.meta) };
+      // A thread on its old worker's default role moves to the new worker's default (a Claude Code
+      // coder switched to Muse becomes its assistant), unless a role comes with the switch.
+      const meta = structuredClone(thread.meta);
+      const composition = scopeComposition(thread.meta.projectId);
+      if (body.role === undefined && meta.role === defaultThreadRole(composition, from))
+        meta.role = defaultThreadRole(composition, to);
       try {
-        thread = directory.rebuild(id, { ...structuredClone(thread.meta), worker: to });
+        thread = directory.rebuild(id, { ...meta, worker: to });
       } catch (error) {
         return c.json({ error: (error as Error).message }, 409);
       }
@@ -1438,11 +1450,7 @@ export function registerRuntimeRoutes(
     // A thread's role may change at any time; its instructions re-compose from the next turn (the
     // instructions source reads the role from the thread's scope). Null follows its worker's default.
     if (body.role === null) delete thread.meta.role;
-    else if (body.role !== undefined && body.role !== thread.meta.role) {
-      const refused = roleRefusal(thread.meta.projectId, body.role);
-      if (refused) return c.json({ error: refused }, 400);
-      thread.meta.role = body.role as string;
-    }
+    else if (body.role !== undefined) thread.meta.role = body.role as string;
 
     // Update worktree assignment
     const priorCwd = thread.meta.cwd;

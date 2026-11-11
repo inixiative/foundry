@@ -430,11 +430,15 @@ it needs no machinery beyond the ladder:
   Runs on picker) and applies from the next turn: the role and worker reach the
   instructions source through the thread's bound scope, so a change re-composes.
   A record with no role (from before thread roles) resolves to its worker's
-  default when read; nothing rewrites it.
+  default when read; nothing rewrites it. A worker switch moves a thread on its
+  old worker's default role to the new worker's (a Claude Code coder switched
+  to Muse becomes an assistant); a role chosen otherwise stays.
 - **Your own.** A role entry with `thread` is a thread role. `defaultFor` moves
   workers to it from the built-ins (a worker has one default; two settings roles
   naming the same worker are refused). A built-in's entry merges over its built-in
-  picks, slot by slot.
+  picks slot by slot, and its `thread` field by field (a new label keeps its
+  default workers). Thread role ids, and `main`, are composition role ids: no
+  agent or region may take one.
 
 ```jsonc
 "composition": {
@@ -483,10 +487,11 @@ Chorus, "Generated Wardens").
 **Tiers, per role.** A file reaches a role only if its tier is visible to the
 role's `audience`, in both slots, whether it was found, imported or opted in.
 So a personal node never reaches a `team` or `org` audience. A thread role's
-audience is its own, else `main`'s. A middleware
-role's output reaches the main thread (a Warden chiming in), so a role's
-audience is never wider in what it reads than `main`'s. If main is `team`,
-every role is at least `team`. A Warden's `domainKnowledge` sources may not
+audience is its own, else `main`'s. A middleware role's output reaches the main
+thread (a Warden chiming in), and it serves every main thread of its project,
+so its audience is never wider in what it reads than the widest of `main`'s and
+the thread roles'. If any of them is `team`, every middleware role is at least
+`team`. A Warden's `domainKnowledge` sources may not
 be `instructions` sources. They must also be enabled. Role files under
 `~/.foundry` belong to the personal computer node wherever a symlink places
 them.

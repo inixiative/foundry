@@ -479,7 +479,8 @@ const agentEditor: ItemEditor<AgentSettingsConfig> = {
     console.log('\n  What does this agent do? (saved as a description file)');
     const roleDesc = await ask('Role description');
 
-    const prompt = await ask('System prompt', roleDesc);
+    // An executor adds no instructions: a main thread's come from its thread role's role files.
+    const prompt = kind === 'executor' ? '' : await ask('System prompt', roleDesc);
 
     // Model — explain cheap vs capable
     if (kind === 'executor') {
@@ -583,7 +584,7 @@ const agentEditor: ItemEditor<AgentSettingsConfig> = {
     if (item.peers?.length) console.log(`    Delegates to: ${item.peers.join(', ')}`);
     console.log();
 
-    item.prompt = await ask('System prompt', item.prompt);
+    if (item.kind !== 'executor') item.prompt = await ask('System prompt', item.prompt);
     item.model = await ask('Model', item.model || config.defaults.model);
     item.temperature = parseFloat(await ask('Temperature', String(item.temperature))) || 0;
     const enabled = await confirm('Enabled?', item.enabled);

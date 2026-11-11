@@ -16,9 +16,9 @@ export interface OwnershipScope {
   readonly projectId?: string;
   /** Where the thread's native session runs. Not ownership: sources that read the workspace resolve against it. */
   readonly cwd?: string;
-  /** The thread role it composes as (`coder`, `assistant`, …); absent: its worker's default. Not ownership. */
+  /** The thread role it composes as; absent: its worker's default. Not ownership. */
   readonly role?: string;
-  /** The worker running its main session (`claude-code`, `codex`, `muse`). Not ownership. */
+  /** The worker running its main session. Not ownership. */
   readonly worker?: string;
 }
 

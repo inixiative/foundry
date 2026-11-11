@@ -37,7 +37,7 @@ export interface HierarchyMatch {
   readonly owners?: readonly string[];
   /** The harness the composed prompt is for. */
   readonly harness?: readonly string[];
-  /** The role composed for (e.g. "main", a Warden's agent id). */
+  /** The role composed for (e.g. a thread role, a Warden's agent id), or one of its base roles. */
   readonly roles?: readonly string[];
   /** The slot composed (e.g. "instructions", "domainKnowledge"). */
   readonly slots?: readonly string[];
@@ -226,7 +226,14 @@ function matches(when: HierarchyMatch | undefined, location: HierarchyLocation):
   if (when.projects && !(location.projectId && when.projects.includes(location.projectId)))
     return false;
   if (when.owners && !(location.owner && when.owners.includes(location.owner))) return false;
-  if (when.roles && !(location.role && when.roles.includes(location.role))) return false;
+  // A base role counts as the role it sits under (a node for `main` serves every thread role).
+  if (
+    when.roles &&
+    ![...(location.baseRoles ?? []), ...(location.role ? [location.role] : [])].some((role) =>
+      when.roles!.includes(role),
+    )
+  )
+    return false;
   if (when.slots && !(location.slot && when.slots.includes(location.slot))) return false;
   if (when.paths && !matchedPath(when.paths, location)) return false;
   return true;

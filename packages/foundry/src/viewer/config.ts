@@ -44,6 +44,8 @@ import {
   COMPOSITION_SLOTS,
   type CompositionSettings,
   type CompositionSlot,
+  isThreadRole,
+  MAIN_ROLE,
   resolveInstructionLadder,
   validateCompositionSettings,
 } from '../prompts/instruction-settings';
@@ -1269,6 +1271,18 @@ export function validateConfig(config: FoundryConfig): void {
       'settings key "instructions" is now "composition" (docs/usage-and-context.md, "Composition view")',
     );
   validateCompositionSettings(config.composition, resolveInstructionLadder(config.composition));
+  // An agent's id is its composition role: a thread role's (or main's) would be shared with it.
+  for (const [owner, agents] of [
+    ['agents', config.agents],
+    ...Object.entries(config.projects ?? {}).map(
+      ([pid, project]) => [`projects.${pid}.agents`, project?.agents] as const,
+    ),
+  ] as const)
+    for (const id of Object.keys(agents ?? {}))
+      if (id === MAIN_ROLE || isThreadRole(config.composition, id))
+        throw Error(
+          `${owner}.${id}: "${id}" is a thread role's composition role id (or main's); rename the agent`,
+        );
   for (const [id, layer] of Object.entries(config.layers ?? {}))
     validateLayerDefinition('global layers', id, layer);
   for (const [pid, project] of Object.entries(config.projects ?? {}))

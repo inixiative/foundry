@@ -483,6 +483,27 @@ test('thread roles: coder for Claude Code and Codex, assistant for Muse; setting
     budget: Number.POSITIVE_INFINITY,
   });
   expect(roleComposition(settings, 'coder').budget).toBe(9);
+  // On a built-in, a written thread field replaces only that field: a new label keeps Muse's default.
+  const relabelled = { roles: { assistant: { thread: { label: 'Helper' } } } };
+  expect(defaultThreadRole(relabelled, 'muse')).toBe('assistant');
+  expect(threadRoles(relabelled).find((role) => role.id === 'assistant')!.label).toBe('Helper');
+  // A Warden serves every main thread of its project: its audience cap is the widest thread role's.
+  expect(roleComposition({ roles: { coder: { audience: 'team' } } }, 'naming').audience).toBe(
+    'team',
+  );
+  expect(roleComposition(undefined, 'naming').audience).toBe('personal_private');
+});
+
+test('an agent may not take a thread role id or main: it would share that composition role', () => {
+  for (const id of ['coder', 'assistant', 'main']) {
+    const config = starterConfig();
+    config.agents[id] = { ...config.agents.executor!, id };
+    expect(() => validateConfig(config)).toThrow(`agents.${id}: "${id}" is a thread role`);
+  }
+  const own = starterConfig();
+  own.composition = { roles: { writer: { thread: {} } } };
+  own.agents.writer = { ...own.agents.executor!, id: 'writer' };
+  expect(() => validateConfig(own)).toThrow('agents.writer');
 });
 
 test("a registered ladder composes every applicable level, in order, for the thread's location", async () => {

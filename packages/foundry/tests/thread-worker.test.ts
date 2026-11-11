@@ -1004,3 +1004,31 @@ test('a settings role can default a worker and is offered beside the built-ins',
   const created = await call('POST', '/api/threads', { projectId: 'claude', worker: 'codex' });
   expect((created.body.meta as ThreadMeta).role).toBe('reviewer');
 });
+
+test("a worker switch moves a thread on its old worker's default role to the new worker's; a chosen role stays", async () => {
+  const { call, store } = await viewer();
+  // Muse needs a login here; a settings role defaulting codex stands in for the assistant.
+  await store.update((draft) => {
+    draft.composition = { roles: { reviewer: { thread: { defaultFor: ['codex'] } } } };
+  });
+  const defaulted = await call('POST', '/api/threads', { projectId: 'claude' });
+  const id = defaulted.body.threadId as string;
+  expect((defaulted.body.meta as ThreadMeta).role).toBe('coder');
+  const switched = await call('PATCH', `/api/threads/${id}`, { worker: 'codex' });
+  expect(switched.status).toBe(200);
+  expect((switched.body.meta as ThreadMeta).role).toBe('reviewer');
+
+  const chosen = await call('POST', '/api/threads', { projectId: 'claude', role: 'assistant' });
+  const other = chosen.body.threadId as string;
+  const kept = await call('PATCH', `/api/threads/${other}`, { worker: 'codex' });
+  expect((kept.body.meta as ThreadMeta).role).toBe('assistant');
+  // A refused role leaves the worker as it was.
+  const refused = await call('PATCH', `/api/threads/${other}`, {
+    worker: 'claude-code',
+    role: 'pilot',
+  });
+  expect(refused.status).toBe(400);
+  expect(((await call('GET', `/api/threads/${other}`)).body.meta as ThreadMeta).worker).toBe(
+    'codex',
+  );
+});

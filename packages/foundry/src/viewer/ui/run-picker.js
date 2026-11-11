@@ -57,7 +57,12 @@ export function RunPicker({
   const pickWorker = (id) => {
     const next = workers.find((w) => w.id === id);
     // A worker and its model are chosen together: the new worker starts on its own default model.
-    onChange({ worker: id, model: next?.defaultModel ?? '', effort: '', role: value.role ?? '' });
+    // A role that was the old worker's default follows the worker to its own default.
+    const role =
+      value.role && value.role === worker?.defaultRole
+        ? (next?.defaultRole ?? '')
+        : (value.role ?? '');
+    onChange({ worker: id, model: next?.defaultModel ?? '', effort: '', role });
   };
   const pickModel = (id) => {
     const next = modelOf(worker, id);
@@ -121,27 +126,23 @@ export function RunPicker({
 // --- The thread header's picker ---------------------------------------------------------------
 
 /**
- * Apply a picked run to a thread. A worker change goes first: the thread is rebuilt on the new
- * worker, whose native session starts fresh (after the first turn, seeded with the conversation and
+ * Apply a picked run to a thread. A worker or role change goes first: the thread is rebuilt on the
+ * new worker, whose native session starts fresh (after the first turn, seeded with the conversation and
  * marked "continued on" in the transcript); then the model and effort, which its idle session picks
  * up on the next turn.
  */
 async function applyRun(threadId, launch, next) {
   const json = { 'Content-Type': 'application/json' };
-  if (next.worker !== launch.worker) {
+  // The worker and role go together, so a refused role never leaves the worker switched.
+  const thread = {
+    ...(next.worker !== launch.worker ? { worker: next.worker } : {}),
+    ...((next.role || null) !== (launch.role ?? null) ? { role: next.role || null } : {}),
+  };
+  if (Object.keys(thread).length) {
     const res = await authFetch(`/api/threads/${encodeURIComponent(threadId)}`, {
       method: 'PATCH',
       headers: json,
-      body: JSON.stringify({ worker: next.worker }),
-    });
-    const body = await res.json().catch(() => ({}));
-    if (!res.ok) throw Error(body.error ?? res.statusText);
-  }
-  if ((next.role || null) !== (launch.role ?? null)) {
-    const res = await authFetch(`/api/threads/${encodeURIComponent(threadId)}`, {
-      method: 'PATCH',
-      headers: json,
-      body: JSON.stringify({ role: next.role || null }),
+      body: JSON.stringify(thread),
     });
     const body = await res.json().catch(() => ({}));
     if (!res.ok) throw Error(body.error ?? res.statusText);
@@ -282,6 +283,9 @@ export function NewThreadModal() {
   if (!preset) return null;
   const close = () => {
     newThreadChooser.value = null;
+    // The next open reads its scope afresh, never picking from this one's choices.
+    setScope(null);
+    setValue(null);
   };
   const start = async () => {
     const worker = scope.workers.find((w) => w.id === value.worker);

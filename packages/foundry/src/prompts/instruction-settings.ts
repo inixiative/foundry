@@ -109,7 +109,7 @@ export interface RoleComposition {
    * error and does not run. Default: none for thread roles, DEFAULT_ROLE_BUDGET for middleware roles.
    */
   budget?: number;
-  /** Set on a thread role (see ThreadRoleSettings); a built-in one's replaces its built-in whole. */
+  /** Set on a thread role (see ThreadRoleSettings); on a built-in, each field written replaces the built-in's. */
   thread?: ThreadRoleSettings;
 }
 
@@ -309,6 +309,10 @@ export function threadRoles(settings: CompositionSettings | undefined): ThreadRo
       !!entry[1]?.thread,
   );
   const claimed = new Set(written.flatMap(([, picks]) => picks.thread.defaultFor ?? []));
+  const claimedByOthers = (id: string) =>
+    new Set(
+      written.flatMap(([other, picks]) => (other === id ? [] : (picks.thread.defaultFor ?? []))),
+    );
   const roles = new Map<string, ThreadRole>();
   for (const [id, { thread }] of Object.entries(BUILT_IN_THREAD_ROLES))
     roles.set(id, {
@@ -317,13 +321,18 @@ export function threadRoles(settings: CompositionSettings | undefined): ThreadRo
       defaultFor: thread.defaultFor.filter((worker) => !claimed.has(worker)),
       builtIn: true,
     });
-  for (const [id, { thread }] of written)
+  for (const [id, { thread }] of written) {
+    const builtIn = BUILT_IN_THREAD_ROLES[id]?.thread;
     roles.set(id, {
       id,
-      label: thread.label ?? id,
-      defaultFor: thread.defaultFor ?? [],
-      builtIn: id in BUILT_IN_THREAD_ROLES,
+      label: thread.label ?? builtIn?.label ?? id,
+      defaultFor:
+        thread.defaultFor ??
+        builtIn?.defaultFor.filter((worker) => !claimedByOthers(id).has(worker)) ??
+        [],
+      builtIn: !!builtIn,
     });
+  }
   return [...roles.values()];
 }
 
@@ -603,9 +612,14 @@ export function roleComposition(
   const main = settings?.roles?.[MAIN_ROLE]?.audience ?? 'personal_private';
   const thread = role === MAIN_ROLE || isThreadRole(settings, role);
   const own = picks.audience ?? (thread ? main : 'personal_private');
+  // A middleware role serves every main thread of its project, whatever their roles: its cap is the
+  // widest audience any of them composes for.
+  const widest = threadRoles(settings)
+    .map((other) => settings?.roles?.[other.id]?.audience ?? main)
+    .reduce((a, b) => (AUDIENCE_RANK[b] > AUDIENCE_RANK[a] ? b : a), main);
   return {
     ...picks,
-    audience: thread || AUDIENCE_RANK[own] >= AUDIENCE_RANK[main] ? own : main,
+    audience: thread || AUDIENCE_RANK[own] >= AUDIENCE_RANK[widest] ? own : widest,
     budget: picks.budget ?? (thread ? Number.POSITIVE_INFINITY : DEFAULT_ROLE_BUDGET),
   };
 }
