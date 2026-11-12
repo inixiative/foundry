@@ -32,7 +32,7 @@ import { CLAUDE_HARNESS_INSTRUCTIONS_OFF } from '../prompts/instruction-stack';
 import { DECISION_CALL_TIMEOUT_MAX_MS, DECISION_INPUT_CAP } from './decision-budget';
 import { DECISION_PRIORITY } from './decision-priority';
 import { type NativeProfileSource, profileEnvironment, withProfile } from './default-profiles';
-import { NativeAuthentication } from './native-authentication';
+import { NativeAuthentication, withoutCompetingCredentials } from './native-authentication';
 import { nativeTextEnvironment } from './native-text-environment';
 import {
   type NativeTextCall,
@@ -329,8 +329,12 @@ export function createPrimedDecisionHost(config: PrimedDecisionHostConfig) {
           maxSessionsPerGroup: config.subagents.processes,
           timeoutMs: config.callTimeoutMs,
           onEvent: config.onEvent,
-          // The side session's own environment (autoupdate off, held moment calls), over the login's.
-          spawn: (argv, options) => claudeSpawn(argv, options, { ...options.env, ...claude.env() }),
+          // The side session's own environment (autoupdate off, held moment calls) without inherited keys or endpoints: a Claude decision runs on the subscription login.
+          spawn: (argv, options) =>
+            claudeSpawn(argv, options, {
+              ...withoutCompetingCredentials(options.env),
+              ...claude.env(),
+            }),
         })
       : claude
         ? new ClaudePrimedSessions({
@@ -722,7 +726,7 @@ export function createPrimedDecisionHost(config: PrimedDecisionHostConfig) {
         env: { ...profileEnvironment('claude', source.profileDirectory), ...PROJECT_HOST_ENV },
         spawn: (argv, options) => {
           child = claudeSpawn([...argv, ...PROJECT_HOST_ARGS], options, {
-            ...options.env,
+            ...withoutCompetingCredentials(options.env),
             ...claude.env(),
             ...PROJECT_HOST_ENV,
           });

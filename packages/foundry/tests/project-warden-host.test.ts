@@ -409,7 +409,11 @@ test('the decision host launches the project host on the decision login: its own
     DISABLE_TELEMETRY: '1',
     DISABLE_AUTOUPDATER: '1',
   });
-  expect(Object.keys(launch.env).filter((key) => /API_KEY|AUTH_TOKEN/.test(key))).toEqual([]);
+  expect(
+    Object.entries(launch.env).flatMap(([key, value]) =>
+      value && /API_KEY|AUTH_TOKEN|BASE_URL/.test(key) ? [key] : [],
+    ),
+  ).toEqual([]);
   const run = primed.createRun({
     source: defaultProfileSource('claude'),
     directory,
