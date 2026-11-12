@@ -245,7 +245,7 @@ export interface ModelSweepOption {
   label: string;
 }
 
-export const MODEL_REGISTRY_UPDATED_AT = '2026-09-24';
+export const MODEL_REGISTRY_UPDATED_AT = '2026-11-11';
 
 /**
  * Decision default: Claude Haiku 5.5, the cheapest current Claude model tagged `judgment`. Held here
@@ -292,7 +292,7 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
     models: [
       {
         id: 'fable',
-        label: 'Fable 5.1',
+        label: 'Fable 5.2',
         tier: 'powerful',
         costTier: 'high',
         contextWindow: 1_000_000,
@@ -301,7 +301,7 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
         nativeAlias: true,
         capabilities: POWERFUL_REASONING,
         reasoning: CLAUDE_REASONING,
-        notes: 'Claude Code alias for claude-fable-5-1.',
+        notes: 'Claude Code alias for claude-fable-5-2.',
       },
       {
         id: 'opus',
@@ -349,6 +349,17 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
         reasoning: CLAUDE_REASONING,
       },
       {
+        id: 'claude-fable-5-2',
+        label: 'Fable 5.2',
+        tier: 'powerful',
+        costTier: 'high',
+        contextWindow: 1_000_000,
+        maxOutputTokens: 128_000,
+        runtimeKind: 'native-harness',
+        capabilities: POWERFUL_REASONING,
+        reasoning: CLAUDE_REASONING,
+      },
+      {
         id: 'claude-fable-5-1',
         label: 'Fable 5.1',
         tier: 'powerful',
@@ -383,6 +394,18 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
     enabledByDefault: true,
     models: [
       {
+        id: 'claude-fable-5-2',
+        label: 'Claude Fable 5.2',
+        tier: 'powerful',
+        costTier: 'high',
+        contextWindow: 1_000_000,
+        maxOutputTokens: 128_000,
+        runtimeKind: 'api',
+        capabilities: POWERFUL_REASONING,
+        reasoning: CLAUDE_REASONING,
+        notes: 'Thinking is always on; steer with effort.',
+      },
+      {
         id: 'claude-fable-5-1',
         label: 'Claude Fable 5.1',
         tier: 'powerful',
@@ -414,6 +437,17 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
         maxOutputTokens: 128_000,
         runtimeKind: 'api',
         capabilities: POWERFUL_REASONING,
+        reasoning: CLAUDE_REASONING,
+      },
+      {
+        id: 'claude-sonnet-5-5',
+        label: 'Claude Sonnet 5.5',
+        tier: 'standard',
+        costTier: 'medium',
+        contextWindow: 1_000_000,
+        maxOutputTokens: 128_000,
+        runtimeKind: 'api',
+        capabilities: STANDARD_REASONING,
         reasoning: CLAUDE_REASONING,
       },
       {

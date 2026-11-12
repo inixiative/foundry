@@ -182,7 +182,7 @@ When debugging:
 
 1. **Don't reinvent Claude Code.** It already has tool use, file discovery, and codebase reasoning. Wrap it, don't replace it.
 2. **Middleware = LLM-backed decision slices.** Each middleware consumes a warm cache + the message and produces a decision. That's an LLM call, not a boolean check. The warm cache is the *input* to the call, not a substitute for it.
-3. **Cheap models for decisions, capable models for work.** Context routing, domain advising, and correctness checking all use Claude Haiku 5.5 through the subscription. The executor session uses whatever the native CLI is running (Opus 5.5 or Fable 5.1 for heavy work).
+3. **Cheap models for decisions, capable models for work.** Context routing, domain advising, and correctness checking all use Claude Haiku 5.5 through the subscription. The executor session uses whatever the native CLI is running (Opus 5.5 or Fable 5.2 for heavy work).
 4. **Pull over push.** Don't frontload every possible context. Inject what the middleware predicts is needed, let the session pull the rest via MCP.
 5. **Progressive depth, not blanket evaluation.** Basic layers run every message. Deeper layers run only when something changes — domain shift, confidence drop, new trigger. Most steady-state messages hit only classification + map match. The system escalates to deeper middleware and guards based on what the basic layers detect.
 6. **Backpropagation is the whole point.** Every execution updates caches, memory, and maps. The system improves after every interaction, not just when someone edits a config.
@@ -196,7 +196,7 @@ When debugging:
 |-----------|-----------|----------|-----|
 | Context routing | Fast/Cheap | Claude Haiku 5.5 (subscription); configurable | Map lookup + routing decision |
 | Domain advising | Fast/Cheap | Claude Haiku 5.5 (subscription); configurable | Small context, structured output |
-| Execution | Capable | Whatever the native CLI runs (Opus 5.5, Fable 5.1) | The real work |
+| Execution | Capable | Whatever the native CLI runs (Opus 5.5, Fable 5.2) | The real work |
 | On-demand context (MCP) | Fast/Cheap | Claude Haiku 5.5 (subscription); configurable | Cache lookup + formatting |
 | Correctness checking | Fast/Cheap | Claude Haiku 5.5 (subscription); configurable | Narrow slice, yes/no + reasoning |
 | Signal reconciliation | Mostly programmatic | (rarely) Claude Haiku 5.5 | Reducer logic, LLM only on genuine conflicts |
