@@ -9,7 +9,7 @@ const { chromium } = createRequire(import.meta.url)(
   process.env.FOUNDRY_QA_PLAYWRIGHT ?? 'playwright',
 );
 
-test('actual conversation keeps a completed-but-unsaved result it sent through reload', async () => {
+test('a completed-but-unsaved result stays in the sending tab, labelled, with nothing written to the browser', async () => {
   const reportDir = resolve(
     '.foundry/qa',
     `completion-browser-${new Date().toISOString().replaceAll(':', '-')}`,
@@ -49,88 +49,27 @@ test('actual conversation keeps a completed-but-unsaved result it sent through r
         expect(await page.getByText('Partial output (unconfirmed)', { exact: true }).count()).toBe(
           0,
         );
-        const stored = await page.evaluate(() =>
-          JSON.parse(localStorage.getItem('foundry:msgs:main') || '[]'),
-        );
-        const message = stored.find((m: any) => m.actor === 'agent');
-        expect(message.output).toBe(fixture.output);
-        expect(message.traceSnapshot.root.status).toBe('ok');
-        expect(message.traceSnapshot.messageId).toBe(message.turnId);
-        expect(message.meta.executionOutcome).toBe('completed');
-        expect(message.meta.persistence).toBe('failed');
+        expect(await page.getByText('Only in this tab', { exact: true }).count()).toBe(1);
+        // The server journal is the only store: nothing of the thread is written to the browser.
+        expect(
+          await page.evaluate(() =>
+            Object.keys(localStorage).filter((key) => key.startsWith('foundry:msgs:')),
+          ),
+        ).toEqual([]);
+        const turnId = await page
+          .locator('.chat-agent')
+          .filter({ hasText: fixture.output })
+          .getAttribute('data-turn-id');
         expect(runtime.failureWrites()).toBe(0);
         expect(fixture.calls()).toBe(1);
-        expect(runtime.localStore!.turn(message.turnId)?.status).toBe('active');
+        expect(runtime.localStore!.turn(turnId!)?.status).toBe('active');
         await page.screenshot({ path: `${reportDir}/${transport}-live.png` });
-        await page.reload();
-        await output.waitFor();
-        await page
-          .getByText(/Execution completed; result was not saved to local journal/)
-          .waitFor();
-        expect(await page.getByText('Partial output (unconfirmed)', { exact: true }).count()).toBe(
-          0,
-        );
-        // Supply a later unresolved journal row to exercise actual browser reconciliation.
-        // This is a history response fixture (index and full routes), not a server restart or native assertion.
-        const journal = [
-          {
-            actor: 'user',
-            turnId: message.turnId,
-            content: `Complete once via ${transport}`,
-            timestamp: message.timestamp - 1,
-          },
-          {
-            actor: 'agent',
-            turnId: message.turnId,
-            content: 'Journal outcome unresolved',
-            timestamp: message.timestamp,
-            kind: 'error',
-            meta: {
-              turnStatus: 'interrupted',
-              persistence: 'committed',
-              inputEvidence: 'unavailable',
-              nativeOutcome: 'unknown',
-            },
-          },
-        ];
-        await page.route('**/api/messages?threadId=main', (route: any) =>
-          route.fulfill({ json: { messages: journal } }),
-        );
-        await page.route('**/api/threads/main/history*', (route: any) =>
-          route.fulfill({
-            json: {
-              threadId: 'main',
-              source: 'journal',
-              messages: journal,
-              hasMore: false,
-              oldestReached: true,
-              nextCursor: null,
-            },
-          }),
-        );
-        await page.reload();
-        await output.waitFor();
-        await page.getByText(/Server journal: interrupted/).waitFor();
-        expect(await page.getByText('Welcome to Foundry', { exact: true }).count()).toBe(0);
-        const reconciled = await page.evaluate(() =>
-          JSON.parse(localStorage.getItem('foundry:msgs:main') || '[]').find(
-            (m: any) => m.actor === 'agent',
-          ),
-        );
-        expect(reconciled.traceSnapshot).toEqual(message.traceSnapshot);
-        expect(reconciled.output).toBe(fixture.output);
-        expect(reconciled.journalRecord.meta.turnStatus).toBe('interrupted');
-        expect(reconciled.traceId).toBeUndefined();
-        expect(await page.getByText('Partial output (unconfirmed)', { exact: true }).count()).toBe(
-          0,
-        );
-        await page.screenshot({ path: `${reportDir}/${transport}-reconciled.png` });
         expect(errors).toEqual([]);
         expect(fixture.calls()).toBe(1);
         results.push({
           transport,
           passed: true,
-          turnId: message.turnId,
+          turnId,
           calls: fixture.calls(),
           errors,
         });

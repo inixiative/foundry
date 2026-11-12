@@ -107,7 +107,7 @@ test('long history after-run: index pagination to the oldest record, lazy detail
   try {
     const config = starterConfig('controlled', 'controlled');
     // The fixture lives inside the checkout: keep the machine's and the repo's instruction files out of
-    // the Cartographer's composed instructions, so row sizes stay what the quota cases assume.
+    // the Cartographer's composed instructions, so row sizes stay what the paging cases assume.
     config.composition = { preset: 'none' };
     config.setupComplete = true;
     config.agents = {
@@ -611,16 +611,19 @@ test('long history after-run: index pagination to the oldest record, lazy detail
       await p.locator('.chat-history-oldest').waitFor();
       return clicks;
     };
-    const localBytes = (p: any, thread: string) =>
-      p.evaluate((t: string) => {
-        const raw = localStorage.getItem(`foundry:msgs:${t}`) ?? '';
-        const rows = raw ? JSON.parse(raw) : [];
-        return {
-          bytes: raw.length,
-          rows: rows.length,
-          withInjection: rows.filter((m: any) => m.meta && 'injection' in m.meta).length,
-        };
-      }, thread);
+    const uniqueRows = (p: any) =>
+      p.evaluate(
+        () =>
+          new Set(
+            [...document.querySelectorAll('.chat-msg')].map(
+              (el) => `${el.getAttribute('data-turn-id')}:${el.getAttribute('data-actor')}`,
+            ),
+          ).size,
+      );
+    const browserKeys = (p: any) =>
+      p.evaluate(
+        () => Object.keys(localStorage).filter((k) => k.startsWith('foundry:msgs:')).length,
+      );
 
     const desk = await browser.newContext({ viewport: { width: 1440, height: 960 } });
     const page = await desk.newPage();
@@ -631,9 +634,7 @@ test('long history after-run: index pagination to the oldest record, lazy detail
     report.timing = { initialLoadMs: Math.round(performance.now() - t0) };
     const initial = {
       visible: await count(page, '.chat-msg'),
-      warnings: await count(page, '.chat-storage-warning'),
-      cacheStatus: await count(page, '.chat-cache-status'),
-      local: await localBytes(page, 'release-notes'),
+      browserKeys: await browserKeys(page),
     };
     await page.evaluate(() => {
       const el = document.querySelector('.chat-messages');
@@ -641,11 +642,8 @@ test('long history after-run: index pagination to the oldest record, lazy detail
     });
     await shot(page, '1440-initial-top-with-older-control');
     check(
-      '1440 initial: exactly 50 index rows, an older control, zero storage warnings, browser copy without injection payloads',
-      initial.visible === 50 &&
-        initial.warnings === 0 &&
-        initial.local.withInjection === 0 &&
-        initial.local.rows === 50,
+      '1440 initial: exactly 50 index rows, an older control, nothing written to browser storage',
+      initial.visible === 50 && initial.browserKeys === 0,
       initial,
     );
     // scroll anchoring: the top-visible row must stay in place when older rows arrive above
@@ -712,15 +710,7 @@ test('long history after-run: index pagination to the oldest record, lazy detail
         .getByText('ARTIFACT_MARKER_OLDEST_release_md', { exact: false })
         .count(),
       oldestLabel: await page.locator('.chat-history-oldest').innerText(),
-      uniqueTurns: await page.evaluate(
-        () =>
-          new Set(
-            JSON.parse(localStorage.getItem('foundry:msgs:release-notes')!).map(
-              (m: any) => `${m.turnId}:${m.actor}`,
-            ),
-          ).size,
-      ),
-      local: await localBytes(page, 'release-notes'),
+      uniqueTurns: await uniqueRows(page),
     };
     await page.evaluate(() => {
       const el = document.querySelector('.chat-messages');
@@ -804,145 +794,31 @@ test('long history after-run: index pagination to the oldest record, lazy detail
     report.browser.narrowDesktopOverflow = await overflow(page);
     await shot(page, '1024-drawer-wrapping');
     await page.setViewportSize({ width: 1440, height: 960 });
-    // completed-unsaved through the real composer, then reload
+    // completed-unsaved through the real composer: labelled as held only by this tab, never written to browser storage
     await page.locator('.chat-input').fill('Draft the grouped release notes (unsaved)');
     await page.locator('.chat-input').press('Enter');
-    await page
-      .locator('.chat-agent > .chat-msg-content')
+    const unsavedRow = page
+      .locator('.chat-agent')
       .filter({ hasText: 'CONTROLLED_UNSAVED_RESULT' })
-      .first()
-      .waitFor();
-    const unsavedNotice = await page.getByText(/result was not saved to local journal/).count();
+      .first();
+    await unsavedRow.waitFor();
+    const unsaved = {
+      notice: await page.getByText(/result was not saved to local journal/).count(),
+      tabOnly: await unsavedRow.getByText('Only in this tab', { exact: true }).count(),
+      visible: await count(page, '.chat-msg'),
+      browserKeys: await browserKeys(page),
+    };
     await shot(page, '1440-completed-unsaved');
-    await page.reload();
-    await page.locator('.chat-history-older, .chat-history-oldest').first().waitFor();
-    const afterReload = {
-      unsavedVisible: await page
-        .locator('.chat-agent')
-        .filter({ hasText: 'CONTROLLED_UNSAVED_RESULT' })
-        .count(),
-      visible: await count(page, '.chat-msg'),
-      warnings: await count(page, '.chat-storage-warning'),
-      cacheStatus: await count(page, '.chat-cache-status'),
-      local: await localBytes(page, 'release-notes'),
-    };
-    await shot(page, '1440-after-reload');
     check(
-      'completed-unsaved result is labelled and survives reload with the walked history intact',
-      unsavedNotice > 0 && afterReload.unsavedVisible === 1 && afterReload.visible >= 322,
-      afterReload,
+      'completed-unsaved result is labelled as only in this tab, the walked history stays intact, nothing is written to browser storage',
+      unsaved.notice > 0 &&
+        unsaved.tabOnly === 1 &&
+        unsaved.visible >= 322 &&
+        unsaved.browserKeys === 0,
+      unsaved,
     );
-    // quota case A: durable snapshot refused, transient snapshot fits → one scoped status, evidence survives reload
-    // Quota relative to the current snapshot: a full write (all rows) is refused, a transient-only write
-    // (the unsaved completion with its inline evidence plus new browser-only rows) fits at any row size.
-    const quotaLimit = await page.evaluate(() => {
-      const set = Storage.prototype.setItem;
-      const limit = Math.floor(
-        (localStorage.getItem('foundry:msgs:release-notes') ?? '').length * 0.5,
-      );
-      Storage.prototype.setItem = function (k: string, v: string) {
-        if (
-          this === localStorage &&
-          k.startsWith('foundry:msgs:') &&
-          !k.includes('legacy-backup') &&
-          v.length > limit
-        )
-          throw new DOMException('Controlled quota rejection', 'QuotaExceededError');
-        return set.call(this, k, v);
-      };
-      return limit;
-    });
-    await page.locator('.chat-input').fill('Second controlled question after quota denial');
-    await page.locator('.chat-input').press('Enter');
-    await page
-      .locator('.chat-agent > .chat-msg-content')
-      .filter({ hasText: 'CONTROLLED_LIVE_RESULT' })
-      .first()
-      .waitFor();
-    const quotaA = {
-      quotaLimit,
-      warnings: await count(page, '.chat-storage-warning'),
-      cacheStatus: await count(page, '.chat-cache-status'),
-      statusText: await page
-        .locator('.chat-cache-status')
-        .first()
-        .innerText()
-        .catch(() => ''),
-      visible: await count(page, '.chat-msg'),
-      local: await localBytes(page, 'release-notes'),
-    };
-    await page.evaluate(() => {
-      const el = document.querySelector('.chat-messages');
-      if (el) el.scrollTop = 0;
-    });
-    await shot(page, '1440-quota-scoped-status');
-    check(
-      'quota (durable refused): one scoped status, no per-row storage warnings on durable rows, prior history intact, transient copy written',
-      quotaA.cacheStatus === 1 &&
-        quotaA.warnings <= 1 &&
-        /server-saved rows are not cached/.test(quotaA.statusText) &&
-        quotaA.visible >= 324 &&
-        quotaA.local.rows > 0 &&
-        quotaA.local.rows < 20,
-      quotaA,
-    );
-    // quota persists across reload for this context: the browser copy now holds transient rows only; the server supplies the rest
-    await page.reload();
-    await page.locator('.chat-history-older, .chat-history-oldest').first().waitFor();
-    // Expected rows: the newest index page (50, which already contains the quota send's own journalled rows
-    // and the unsaved turn's user row) plus the one browser-only unsaved completion = 51.
-    const quotaReload = {
-      unsavedVisible: await page
-        .locator('.chat-agent')
-        .filter({ hasText: 'CONTROLLED_UNSAVED_RESULT' })
-        .count(),
-      visible: await count(page, '.chat-msg'),
-      olderControl: await count(page, '.chat-history-older'),
-    };
-    check(
-      'after quota-limited write and reload, the browser-only unsaved completion is still present alongside the newest server page (50 + 1) with the older control available',
-      quotaReload.unsavedVisible === 1 &&
-        quotaReload.visible === 51 &&
-        quotaReload.olderControl === 1,
-      quotaReload,
-    );
-    // quota case B: every browser write refused → per-row honesty as before, prior history intact, not 100 notices
-    await page.evaluate(() => {
-      const set = Storage.prototype.setItem;
-      Storage.prototype.setItem = function (k: string, v: string) {
-        if (this === localStorage && k.startsWith('foundry:msgs:'))
-          throw new DOMException('Controlled quota rejection', 'QuotaExceededError');
-        return set.call(this, k, v);
-      };
-    });
-    await page.locator('.chat-input').fill('Third controlled question, all writes denied');
-    await page.locator('.chat-input').press('Enter');
-    await page
-      .locator('.chat-agent > .chat-msg-content')
-      .filter({ hasText: 'CONTROLLED_LIVE_RESULT' })
-      .nth(quotaReload.visible > 100 ? 1 : 0)
-      .waitFor()
-      .catch(() => {});
-    await page.waitForFunction(
-      () => document.querySelectorAll('.chat-agent .chat-msg-content').length >= 2,
-    );
-    const quotaB = {
-      warnings: await count(page, '.chat-storage-warning'),
-      cacheStatus: await count(page, '.chat-cache-status'),
-      visible: await count(page, '.chat-msg'),
-      text: await page.locator('.chat-agent').last().innerText(),
-    };
-    await shot(page, '1440-quota-all-denied');
-    check(
-      'quota (all refused): the new rows carry honest per-row notices, the rest of the history is untouched, and notices stay bounded',
-      quotaB.warnings >= 1 && quotaB.warnings <= 6 && quotaB.visible >= quotaReload.visible + 2,
-      quotaB,
-    );
-    // offline: index, full route and thread list unreachable → browser copy with explicit status
-    const offline = await browser.newContext({
-      viewport: { width: 1440, height: 960 },
-      storageState: await desk.storageState(),
-    });
+    // offline: index, full route and thread list unreachable → an explicit status, nothing invented from browser storage
+    const offline = await browser.newContext({ viewport: { width: 1440, height: 960 } });
     const off = await offline.newPage();
     attach(off, 'offline');
     await off.route('**/api/threads/*/history*', (r: any) => r.abort());
@@ -952,19 +828,16 @@ test('long history after-run: index pagination to the oldest record, lazy detail
     await off.locator('.chat-history-pager').waitFor();
     report.browser.offline = {
       rows: await count(off, '.chat-msg'),
-      unsaved: await off
-        .locator('.chat-agent')
-        .filter({ hasText: 'CONTROLLED_UNSAVED_RESULT' })
-        .count(),
       pager: await off.locator('.chat-history-pager').innerText(),
     };
     await shot(off, '1440-offline-fallback');
     await offline.close();
     check(
-      "offline: browser copy renders (including the unsaved completion) with an explicit 'server history unavailable' status, never an empty history",
-      report.browser.offline.rows > 0 &&
-        report.browser.offline.unsaved === 1 &&
-        /Server history unavailable/.test(report.browser.offline.pager),
+      "offline: a fresh tab shows an explicit 'server history unavailable' status and no rows",
+      report.browser.offline.rows === 0 &&
+        /Server history unavailable; showing what this tab holds \(0 rows\)/.test(
+          report.browser.offline.pager,
+        ),
       report.browser.offline,
     );
     // delayed older page across a thread switch: the response lands in the owning thread's cache
@@ -1005,27 +878,14 @@ test('long history after-run: index pagination to the oldest record, lazy detail
     const backOnMain = {
       visible: await count(p2, '.chat-msg'),
       liveUnsaved: await liveUnsaved(),
-      unique: await p2.evaluate(
-        () =>
-          new Set(
-            JSON.parse(localStorage.getItem('foundry:msgs:release-notes')!).map(
-              (m: any) => `${m.turnId}:${m.actor}`,
-            ),
-          ).size,
-      ),
-      sideUntouched: await p2.evaluate(() =>
-        JSON.parse(localStorage.getItem('foundry:msgs:release-notes-side') ?? '[]').every(
-          (m: any) => m.threadId === 'release-notes-side',
-        ),
-      ),
+      unique: await uniqueRows(p2),
     };
     check(
       'delayed older page issued for release-notes lands in that thread only, after a switch to the side thread and back, without duplicates',
       sideView.visible === 50 &&
         backOnMain.liveUnsaved <= 1 &&
         backOnMain.visible === 100 + backOnMain.liveUnsaved &&
-        backOnMain.unique === backOnMain.visible &&
-        backOnMain.sideUntouched,
+        backOnMain.unique === backOnMain.visible,
       { sideView, backOnMain },
     );
     // inactive-thread work while the side thread is active: the inactive thread's stream is closed, so
@@ -1098,7 +958,6 @@ test('long history after-run: index pagination to the oldest record, lazy detail
         .getByText('ARTIFACT_MARKER_OLDEST_release_md', { exact: false })
         .count(),
       overflow: await overflow(m),
-      warnings: await count(m, '.chat-storage-warning'),
     };
     await m.evaluate(() => {
       const el = document.querySelector('.chat-messages');
@@ -1134,11 +993,11 @@ test('long history after-run: index pagination to the oldest record, lazy detail
       nativeObservations,
       nativeProcesses: 0,
       modelCalls: 0,
-      note: 'three controlled executor calls (unsaved, quota A, quota B sends); no adapter, spawn or bridge exists in this fixture',
+      note: 'one controlled executor call (the unsaved send); no adapter, spawn or bridge exists in this fixture',
     };
     check(
-      'zero native/model calls; exactly three controlled executor completions',
-      nativeObservations === 0 && providerCalls === 3,
+      'zero native/model calls; exactly one controlled executor completion',
+      nativeObservations === 0 && providerCalls === 1,
       report.controlled,
     );
     // Console error attribution from recorded responses: analytics 400s (fixture configures no analytics)

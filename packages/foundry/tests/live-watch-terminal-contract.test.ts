@@ -39,7 +39,7 @@ test("stale active snapshot cannot revive or truncate the sender's unsaved compl
   };
 
   // This is the production store's order: the SSE terminal is applied before
-  // its latest already-cached watch snapshot is merged by _persistLocal.
+  // its latest already-cached watch snapshot is merged by _setThreadMessages.
   const afterStale = mergeLiveSnapshot([full], fixture.snapshot);
   expect(afterStale).toHaveLength(1);
   expect(afterStale[0].content).toBe(output);

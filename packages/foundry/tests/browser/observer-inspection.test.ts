@@ -280,9 +280,12 @@ test('pre-dispatch failure on an inactive thread is fetched on return and visibl
       )
         ownedRefresh++;
     });
+    const historyLoaded = page.waitForResponse(
+      (response: any) => new URL(response.url()).pathname === '/api/threads/no-executor/history',
+    );
     await page.goto(`${f.origin}/#thread=no-executor`);
     await page.locator('.header .status-dot.on').waitFor();
-    await page.waitForFunction(() => localStorage.getItem('foundry:msgs:no-executor') !== null);
+    await historyLoaded;
     await page.evaluate(() => {
       location.hash = '#thread=main';
     });
@@ -390,40 +393,6 @@ test('an open observer sees externally admitted work without reload, without dup
     await f.close();
   }
 }, 90_000);
-
-test('browser storage failure keeps externally observed work visible and honestly labeled', async () => {
-  const f = await fixture('observer-storage-failure');
-  try {
-    const observer = await f.page();
-    await observer.goto(`${f.origin}/#thread=main`);
-    await observer.locator('.header .status-dot.on').waitFor();
-    await observer.waitForFunction(() => localStorage.getItem('foundry:msgs:main') !== null);
-    await observer.evaluate(() => {
-      const set = Storage.prototype.setItem;
-      Storage.prototype.setItem = function (key, value) {
-        if (this === localStorage && key.startsWith('foundry:msgs:'))
-          throw new DOMException('Controlled browser write rejection', 'QuotaExceededError');
-        return set.call(this, key, value);
-      };
-    });
-    await f.send('main', 'external-under-storage-failure');
-    await observer
-      .locator('.chat-agent')
-      .filter({ hasText: 'OBSERVED_WORK_1' })
-      .waitFor({ timeout: 4_000 });
-    await observer
-      .locator('.chat-msg-time')
-      .filter({ hasText: 'Browser copy not saved' })
-      .first()
-      .waitFor();
-    expect(await observer.locator('.chat-agent:not(.chat-thinking)').count()).toBe(1);
-    f.report.checks.push({ case: 'storage-failure-visible', passed: true });
-    expect(f.report.errors).toEqual([]);
-    f.report.passed = true;
-  } finally {
-    await f.close();
-  }
-}, 60_000);
 
 test('Turn Context shows historical pending learning that stays fixed after commit, and the thread view inspects current knowledge', async () => {
   const f = await fixture('observer-inspection');
