@@ -56,25 +56,30 @@ import {
 } from './thread-status.js';
 
 // ---------------------------------------------------------------------------
-// Completed-runs fold: a thin toggle row over the subagents that are not running
+// Subagent toggle: a counter on the row that steps closed → active → active + finished → closed
 // ---------------------------------------------------------------------------
 
-/** A subagent row stays in view while it runs or waits on the person; the rest fold away. */
-const staysInView = (child) => ['working', 'attention'].includes(categoryOf(nodeState(child)));
+/** A subagent is active while it runs or waits on the person; otherwise it has finished. */
+const isActive = (child) => ['working', 'attention'].includes(categoryOf(nodeState(child)));
 
-function InactiveFold({ count, label, defaultOpen = false, children }) {
-  const [open, setOpen] = useState(defaultOpen);
-  if (count === 0) return null;
+const CLOSED = 0;
+const ACTIVE = 1;
+const ALL = 2;
 
-  return html`
-    <div class="inactive-fold">
-      <div class="inactive-fold-header" onClick=${() => setOpen(!open)}>
-        <span class="inactive-caret">${open ? '▼' : '▶'}</span>
-        <span class="inactive-label">${count} ${label}</span>
-      </div>
-      ${open ? html`<div class="inactive-fold-body">${children}</div>` : null}
-    </div>
-  `;
+/** The next step, skipping one with nothing new to show. */
+export function nextSubagentStep(step, active, finished) {
+  if (step === CLOSED) return active ? ACTIVE : finished ? ALL : CLOSED;
+  if (step === ACTIVE) return finished ? ALL : CLOSED;
+  return CLOSED;
+}
+
+const contains = (node, id) => (node.children || []).some((c) => c.id === id || contains(c, id));
+
+/** Where a row starts: closed, unless the selected thread sits under it. */
+function startingStep(children, selectedId) {
+  const holder = children.find((c) => c.id === selectedId || contains(c, selectedId));
+  if (!holder) return CLOSED;
+  return isActive(holder) ? ACTIVE : ALL;
 }
 
 // ---------------------------------------------------------------------------
@@ -206,22 +211,32 @@ export function nodeState(node) {
   });
 }
 
-/** Subagents nest at most this many levels before they fold under "+N subagents". */
-const VISIBLE_DEPTH = 1;
-
-const descendants = (node) =>
-  (node.children || []).reduce((n, child) => n + 1 + descendants(child), 0);
-
 export function ThreadNode({ thread, depth = 0, selectedId, onSelect, inactive = false }) {
-  // Two levels show (a thread and its subagents); deeper subagents fold until asked for.
-  const [open, setExpanded] = useState(!inactive && depth < VISIBLE_DEPTH);
-  const expanded = open || railExpanded.value.has(thread.id);
-  const isSelected = selectedId === thread.id;
   const children = thread.children || [];
-  const activeChildren = children.filter(staysInView);
-  const inactiveChildren = children.filter((c) => !staysInView(c));
-  const failedRuns = inactiveChildren.filter((c) => nodeState(c) === 'error').length;
+  // Subagents start folded; the Running panel's reveal (railExpanded) opens the active ones.
+  const [chosen, setStep] = useState(() => startingStep(children, selectedId));
+  const step = chosen === CLOSED && railExpanded.value.has(thread.id) ? ACTIVE : chosen;
+  const isSelected = selectedId === thread.id;
+  const activeChildren = children.filter(isActive);
+  const finishedChildren = children.filter((c) => !isActive(c));
+  const failedRuns = finishedChildren.filter((c) => nodeState(c) === 'error').length;
   const hasChildren = children.length > 0;
+  const next = nextSubagentStep(step, activeChildren.length, finishedChildren.length);
+  const shown =
+    step === ALL ? [...activeChildren, ...finishedChildren] : step === ACTIVE ? activeChildren : [];
+  const counter = [
+    activeChildren.length ? `${activeChildren.length} active` : null,
+    finishedChildren.length ? `${finishedChildren.length} finished` : null,
+    failedRuns ? `${failedRuns} failed` : null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+  const nextTitle =
+    next === ACTIVE
+      ? 'Show active subagents'
+      : next === ALL
+        ? 'Show finished subagents too'
+        : 'Fold subagents';
 
   return html`
     <div class="tree-level" style="padding-left: ${depth ? 8 : 0}px">
@@ -257,54 +272,33 @@ export function ThreadNode({ thread, depth = 0, selectedId, onSelect, inactive =
               ? html`<span class="row-count prompt-badge ${count > 2 ? 'urgent' : ''}" title="${count} pending prompt${count > 1 ? 's' : ''}">${count}</span>`
               : null;
           })()}
-          ${
-            hasChildren
-              ? html`<span class="tree-caret" title=${expanded ? 'Fold subagents' : 'Show subagents'}
-                  onClick=${(e) => {
-                    e.stopPropagation();
-                    if (expanded)
-                      railExpanded.value = new Set(
-                        [...railExpanded.value].filter((id) => id !== thread.id),
-                      );
-                    setExpanded(!expanded);
-                  }}>${expanded ? '▾' : '▸'}</span>`
-              : null
-          }
         </div>
       </div>
 
       ${
-        !expanded && hasChildren && depth >= VISIBLE_DEPTH
-          ? html`<button class="tree-more" type="button" onClick=${(e) => {
-              e.stopPropagation();
-              setExpanded(true);
-            }}>+${descendants(thread)} subagent${descendants(thread) === 1 ? '' : 's'}</button>`
+        hasChildren
+          ? html`<button type="button" class="subagent-toggle" data-step=${step}
+              aria-expanded=${step !== CLOSED} title=${nextTitle}
+              onClick=${(e) => {
+                e.stopPropagation();
+                if (next === CLOSED)
+                  railExpanded.value = new Set(
+                    [...railExpanded.value].filter((id) => id !== thread.id),
+                  );
+                setStep(next);
+              }}>
+              <span class="subagent-toggle-caret">${step === CLOSED ? '▸' : step === ACTIVE ? '▾' : '▴'}</span>
+              <span class="subagent-toggle-count">${counter}</span>
+            </button>`
           : null
       }
-      ${
-        expanded && hasChildren
-          ? html`
-        ${activeChildren.map(
-          (child) =>
-            html`<${ThreadNode}
+      ${shown.map(
+        (child) =>
+          html`<${ThreadNode}
             key=${child.id} thread=${child} depth=${depth + 1}
-            selectedId=${selectedId} onSelect=${onSelect}
+            selectedId=${selectedId} onSelect=${onSelect} inactive=${!isActive(child)}
           />`,
-        )}
-        <${InactiveFold} count=${inactiveChildren.length}
-          label=${`completed run${inactiveChildren.length === 1 ? '' : 's'}${failedRuns ? ` · ${failedRuns} failed` : ''}`}
-          defaultOpen=${inactiveChildren.some((c) => c.id === selectedId)}>
-          ${inactiveChildren.map(
-            (child) =>
-              html`<${ThreadNode}
-              key=${child.id} thread=${child} depth=${depth + 1}
-              selectedId=${selectedId} onSelect=${onSelect} inactive=${true}
-            />`,
-          )}
-        </${InactiveFold}>
-      `
-          : null
-      }
+      )}
     </div>
   `;
 }

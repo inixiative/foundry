@@ -489,37 +489,35 @@ body {
   font-size: 10px;
 }
 
-/* ---- Inactive fold ---- */
+/* ---- Subagent toggle: closed → active → active + finished → closed ---- */
 
-.inactive-fold {
-  margin: 2px 0;
-}
-
-.inactive-fold-header {
+.subagent-toggle {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 3px 10px;
-  cursor: pointer;
-  font-size: 10px;
+  gap: 5px;
+  margin: 0 0 2px 14px;
+  padding: 1px 6px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
   color: var(--text-dimmer);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
 }
-
-.inactive-fold-header:hover {
+.subagent-toggle:hover,
+.subagent-toggle[aria-expanded="true"] {
   color: var(--text-dim);
+}
+.subagent-toggle:hover {
   background: var(--surface2);
 }
-
-.inactive-caret {
-  font-size: 8px;
-  width: 10px;
+.subagent-toggle:focus-visible {
+  outline: 1px solid var(--accent);
 }
-
-.inactive-label {
-  font-style: italic;
-}
-
-.inactive-fold-body {
+.subagent-toggle-caret {
+  font-size: 9px;
+  width: 9px;
 }
 
 /* Dimmed items (inactive threads, layers, agents) */
@@ -8479,21 +8477,6 @@ a.thread-ref:hover {
 }
 
 /* Folded deeper subagents: one line, indented like a child row. */
-.tree-more {
-  display: block;
-  margin: 0 0 2px 14px;
-  padding: 1px 6px;
-  border: 0;
-  background: transparent;
-  color: var(--text-dim);
-  font: inherit;
-  font-size: 11.5px;
-  cursor: pointer;
-}
-.tree-more:hover {
-  color: var(--text);
-}
-
 /* The centre tabs, with the thread's views (/thread · /btw · /aside) at the row's right end. */
 .center-tab-row {
   display: flex;
