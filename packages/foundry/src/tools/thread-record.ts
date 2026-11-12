@@ -9,6 +9,7 @@ import type {
   ApiTool,
   OwnershipScope,
   Thread,
+  ThreadArtifact,
   ThreadLoop,
   ThreadMeta,
   ThreadPlan,
@@ -22,6 +23,8 @@ import { z } from 'zod';
  * `get_plan`, `clear_plan`), the loop (`set_loop`, `loop_round`, `stop_loop`), its name
  * (`rename_thread`) and where it stands (`set_status`). Each operation is a function of the thread
  * here; the viewer finds the live thread, runs it, then persists and publishes (`ThreadRecords`).
+ * Artifacts (`set_artifact`) are what the agent makes to show the person: the thread lists them, and
+ * each version's content is a journal row (`ARTIFACT_PHASE`), so the list stays small.
  * A technical row is the CLAUDE.md rule made visible: per concern, the existing primitive it uses
  * (reuse / extend / combine / refactor / migrate, with where it lives) or, for `new`, why none fits
  * and what would have made the closest one fit.
@@ -94,6 +97,78 @@ export const statusSchema = z.strictObject({
   status: z.enum(['needs-you', 'blocked', 'done', 'clear']),
   text: z.string().trim().min(1).max(300).optional(),
 });
+
+/** The journal phase an artifact version is written to; its record is an `ArtifactVersionRecord`. */
+export const ARTIFACT_PHASE = 'artifact' as const;
+/** Bound on one version's content, in characters. */
+export const ARTIFACT_CONTENT_LIMIT = 200_000;
+
+export const artifactSchema = z.strictObject({
+  id: z
+    .string()
+    .regex(/^[a-z0-9][a-z0-9-]{0,63}$/, 'a short slug: lowercase letters, digits and hyphens'),
+  title: z
+    .string()
+    .trim()
+    .min(1)
+    .max(120)
+    .refine((text) => !/\p{Cc}/u.test(text), 'No control characters'),
+  kind: z.enum(['markdown', 'mermaid', 'html', 'code']),
+  language: z.string().trim().min(1).max(40).optional(),
+  content: z.string().min(1).max(ARTIFACT_CONTENT_LIMIT),
+});
+export type ArtifactInput = z.infer<typeof artifactSchema>;
+
+/** One version of an artifact as the journal holds it. */
+export interface ArtifactVersionRecord extends ArtifactInput {
+  version: number;
+}
+
+/** Where artifact versions are kept: the thread's journal. */
+export interface ArtifactJournal {
+  /** Write one version; the turn that is running, if any, is recorded with it and returned. */
+  write(thread: Thread, record: ArtifactVersionRecord): { turnId: string | null };
+}
+
+/** The journal row id of one artifact version. */
+export const artifactVersionId = (threadId: string, artifactId: string, version: number) =>
+  `${threadId}:artifact:${artifactId}:v${version}`;
+
+/**
+ * Write a version of an artifact: a new one, or the next version of the one with this id. The same
+ * content, title and kind again is not a new version. The journal row is written before the list
+ * changes, so the list never names a version the journal lacks.
+ */
+export function recordArtifact(
+  thread: Thread,
+  input: ArtifactInput,
+  journal: ArtifactJournal,
+  last?: ArtifactVersionRecord,
+): { artifact: ThreadArtifact; written: boolean } {
+  const artifacts = thread.meta.artifacts ?? [];
+  const current = artifacts.find((a) => a.id === input.id);
+  if (
+    current &&
+    last &&
+    last.content === input.content &&
+    last.title === input.title &&
+    last.kind === input.kind &&
+    last.language === input.language
+  )
+    return { artifact: current, written: false };
+  const version = (current?.versions.at(-1)?.version ?? 0) + 1;
+  const { turnId } = journal.write(thread, { ...input, version });
+  const at = Date.now();
+  const artifact: ThreadArtifact = {
+    id: input.id,
+    title: input.title,
+    kind: input.kind,
+    versions: [...(current?.versions ?? []), { version, turnId, at }],
+    updatedAt: at,
+  };
+  thread.meta.artifacts = [...artifacts.filter((a) => a.id !== input.id), artifact];
+  return { artifact, written: true };
+}
 
 /** Apply a patch to a thread's plan: given sections replace, others stay; empty sections start empty. */
 export function applyPlanPatch(
@@ -243,7 +318,7 @@ export function setAgentStatus(thread: Thread, change: z.infer<typeof statusSche
   return `Status: ${status === 'needs-you' ? 'needs the person' : 'blocked'} (${text}). The owner's next message clears it.`;
 }
 
-/** The thread as Foundry shows it: name, status, plan and loop. */
+/** The thread as Foundry shows it: name, status, plan, loop and its artifacts (ids and newest versions). */
 export function describeRecord(thread: Thread): string {
   const meta = thread.meta;
   const title = threadTitle(meta);
@@ -254,6 +329,12 @@ export function describeRecord(thread: Thread): string {
     status: meta.agentStatus ?? (meta.done ? { state: 'done', text: meta.done.text } : null),
     plan: meta.plan ?? null,
     loop: meta.loop ?? null,
+    artifacts: (meta.artifacts ?? []).map((a) => ({
+      id: a.id,
+      title: a.title,
+      kind: a.kind,
+      version: a.versions.at(-1)?.version ?? 1,
+    })),
   });
 }
 
@@ -261,15 +342,24 @@ export function describeRecord(thread: Thread): string {
 export interface ThreadRecords {
   update<T>(threadId: string, change: (thread: Thread) => T): T;
   read(threadId: string): Thread;
+  /** The journal artifact versions go to; absent where nothing is journalled. */
+  artifacts?: ArtifactJournal & {
+    /** The newest version of one artifact, when it has one. */
+    latest(threadId: string, artifactId: string): ArtifactVersionRecord | undefined;
+  };
 }
 
 export const THREAD_RECORD_TOOL_DESCRIPTION =
-  "The thread's own record: plan, loop, name and status. url = the operation (set_plan, get_plan, clear_plan, set_loop, loop_round, stop_loop, rename_thread, set_status), body = its arguments.";
+  "The thread's own record: plan, loop, name, status and artifacts. url = the operation (set_plan, get_plan, clear_plan, set_loop, loop_round, stop_loop, rename_thread, set_status, set_artifact), body = its arguments.";
 
 /** Each operation: its argument schema and what it does to the thread, as the sentence the agent reads back. */
 const OPERATIONS: Record<
   string,
-  { schema: z.ZodType; write: boolean; run: (thread: Thread, body: never) => string }
+  {
+    schema: z.ZodType;
+    write: boolean;
+    run: (thread: Thread, body: never, records: ThreadRecords) => string;
+  }
 > = {
   set_plan: {
     schema: planPatchSchema,
@@ -325,6 +415,24 @@ const OPERATIONS: Record<
     write: true,
     run: (thread, change: z.infer<typeof statusSchema>) => setAgentStatus(thread, change),
   },
+  set_artifact: {
+    schema: artifactSchema,
+    write: true,
+    run: (thread, input: ArtifactInput, records) => {
+      const journal = records.artifacts;
+      if (!journal) throw Error('This Foundry keeps no journal, so it cannot hold artifacts');
+      const { artifact, written } = recordArtifact(
+        thread,
+        input,
+        journal,
+        journal.latest(thread.id, input.id),
+      );
+      const version = artifact.versions.at(-1)!.version;
+      return written
+        ? `Artifact "${artifact.title}" saved as version ${version}; the person sees it in the Artifacts view and as a card on this turn.`
+        : `Artifact "${artifact.title}" is unchanged at version ${version}.`;
+    },
+  },
 };
 
 export const THREAD_RECORD_OPERATIONS = Object.keys(OPERATIONS);
@@ -373,7 +481,7 @@ export class ThreadRecordTool implements ApiTool {
         throw Error(
           `Not recorded: ${parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`,
         );
-      const run = (thread: Thread) => operation.run(thread, parsed.data as never);
+      const run = (thread: Thread) => operation.run(thread, parsed.data as never, records);
       const summary = operation.write ? records.update(threadId, run) : run(records.read(threadId));
       return {
         ok: true,

@@ -12,6 +12,7 @@
  */
 
 import { ActionPalette } from './action-palette.js';
+import { ArtifactCards, Artifacts } from './artifacts.js';
 import { PillGroup } from './band-pills.js';
 import { chorusNotice, lastDegraded } from './chorus-health.js';
 import { HeldPromptCard, useConversationView } from './conversation-members.js';
@@ -1231,6 +1232,7 @@ function AgentMessage({ msg, index, onTraceClick }) {
       <div class="chat-msg-content chat-msg-md"><${Markdown} text=${msg.content} streaming=${isStreaming} />${isStreaming ? html`<span class="stream-cursor">▍</span>` : null}</div>
       ${failure.notices.map((notice) => html`<div class="chat-msg-time">${notice}</div>`)}
       <${LostTurnCard} msg=${msg} />
+      <${ArtifactCards} turnId=${msg.turnId} />
       ${msg.journalRecord ? html`<div class="chat-msg-time">Server journal: ${msg.journalRecord.meta?.turnStatus}; this tab's observed result is separate.</div>` : null}
       ${
         isUnsavedCompletion(msg)
@@ -1606,6 +1608,7 @@ function HistoryPager({ threadId, count, onLoadOlder }) {
 const CENTER_TABS = [
   ['conversation', 'Thread', 1],
   ['plan', 'Plan', 2],
+  ['artifacts', 'Artifacts', null],
   ['graph', 'Loop', 3],
 ];
 
@@ -1615,10 +1618,10 @@ function CenterTabs() {
     ${CENTER_TABS.map(
       ([id, label, key]) => html`<button key=${id} role="tab"
         class="center-view ${current === id ? 'center-view--active' : ''}" aria-selected=${current === id}
-        title=${`${label} (${key})`}
+        title=${key ? `${label} (${key})` : label}
         onClick=${() => {
           activePanel.value = id;
-        }}>${label}</button>`,
+        }}>${label}${id === 'artifacts' && threadData.value?.meta?.artifacts?.length ? html` <span class="center-view-count">${threadData.value.meta.artifacts.length}</span>` : null}</button>`,
     )}
   </nav>
   ${current === 'conversation' ? html`<${ThreadViewSegments} conversation=${threadData.value?.conversation} />` : null}
@@ -1685,7 +1688,9 @@ export function Conversation({ onTraceSelect, onLayerClick }) {
           ? html`<div class="center-frame"><${Plan} /></div>`
           : view === 'graph'
             ? html`<div class="center-frame center-frame--loop"><${LoopView} onLayerClick=${onLayerClick} /></div>`
-            : null
+            : view === 'artifacts'
+              ? html`<div class="center-frame center-frame--artifacts"><${Artifacts} /></div>`
+              : null
       }
       ${
         view === 'conversation'

@@ -5,7 +5,7 @@
  */
 /**
  * The right panel's tab icons, shown at every size: beside the label when the panel is open, alone
- * in the icons strip. Work is a briefcase (it holds the thread's artifacts and file changes).
+ * in the icons strip. Work is a briefcase (it holds the thread's file changes, commits and pull requests).
  */
 
 import { html } from './lib.js';

@@ -13,10 +13,13 @@ import { PlanDrafter, parseDraft } from '../src/agents/plan-drafter';
 import { ThreadNamer } from '../src/agents/thread-namer';
 import { createFoundryMcp } from '../src/mcp/server';
 import {
+  type ArtifactVersionRecord,
   applyPlanPatch,
   needsPlan,
+  recordArtifact,
   recordPlan,
   THREAD_RECORD_TOOL_DESCRIPTION,
+  type ThreadRecords,
   ThreadRecordTool,
   wantsDraft,
 } from '../src/tools/thread-record';
@@ -42,7 +45,7 @@ const technical = {
 };
 
 /** A thread with Foundry's MCP bridge over the record tool; `call` returns the tool's sentence. */
-async function bridge() {
+async function bridge(artifacts?: ThreadRecords['artifacts']) {
   const thread = new Thread('t', new ContextStack(), { description: '' });
   let writes = 0;
   const tools = new ToolRegistry();
@@ -57,6 +60,7 @@ async function bridge() {
         writes++;
         return change(thread);
       },
+      ...(artifacts ? { artifacts } : {}),
     })),
     THREAD_RECORD_TOOL_DESCRIPTION,
   );
@@ -88,6 +92,7 @@ test('the agent sees every record tool and the Herald placeholder', async () => 
     'stop_loop',
     'rename_thread',
     'set_status',
+    'set_artifact',
     'ask_herald',
   ])
     expect(names).toContain(name);
@@ -385,4 +390,105 @@ test("the viewer's records service writes on the thread's journalled meta", asyn
   expect(plan.outcomes).toHaveLength(1);
   expect(s.current.localStore!.threads().find((t) => t.id === 'a')?.meta.plan).toEqual(plan);
   expect(() => s.current.records.read('nope')).toThrow('This thread is not live here');
+});
+
+/** An in-memory journal of artifact versions, standing in for the thread's phase rows. */
+function artifactJournal(turnId: string | null = 'turn-1') {
+  const rows: ArtifactVersionRecord[] = [];
+  return {
+    rows,
+    write: (_thread: Thread, record: ArtifactVersionRecord) => {
+      rows.push(record);
+      return { turnId };
+    },
+    latest: (_threadId: string, artifactId: string) =>
+      rows.filter((r) => r.id === artifactId).at(-1),
+  };
+}
+
+test('set_artifact keeps versions in the journal and only an index on the thread; the same content again is no new version', async () => {
+  const journal = artifactJournal();
+  const { thread, call } = await bridge(journal);
+  const first = await call('set_artifact', {
+    id: 'checkout-flow',
+    title: 'Checkout flow',
+    kind: 'mermaid',
+    content: 'graph TD; Cart-->Pay',
+  });
+  expect(first).toEqual({
+    isError: false,
+    text: 'Artifact "Checkout flow" saved as version 1; the person sees it in the Artifacts view and as a card on this turn.',
+  });
+  expect(
+    (
+      await call('set_artifact', {
+        id: 'checkout-flow',
+        title: 'Checkout flow',
+        kind: 'mermaid',
+        content: 'graph TD; Cart-->Pay',
+      })
+    ).text,
+  ).toBe('Artifact "Checkout flow" is unchanged at version 1.');
+  await call('set_artifact', {
+    id: 'checkout-flow',
+    title: 'Checkout flow',
+    kind: 'mermaid',
+    content: 'graph TD; Cart-->Pay-->Done',
+  });
+  expect(journal.rows.map((r) => [r.version, r.content])).toEqual([
+    [1, 'graph TD; Cart-->Pay'],
+    [2, 'graph TD; Cart-->Pay-->Done'],
+  ]);
+  const [artifact] = thread.meta.artifacts!;
+  expect(artifact).toMatchObject({ id: 'checkout-flow', title: 'Checkout flow', kind: 'mermaid' });
+  expect(artifact!.versions.map((v) => [v.version, v.turnId])).toEqual([
+    [1, 'turn-1'],
+    [2, 'turn-1'],
+  ]);
+  // The index never carries content: the thread's meta goes to every listing.
+  expect(JSON.stringify(thread.meta)).not.toContain('Cart-->Pay');
+  // get_plan names the artifacts, so the agent can find them again after a compaction.
+  expect(JSON.parse((await call('get_plan')).text).artifacts).toEqual([
+    { id: 'checkout-flow', title: 'Checkout flow', kind: 'mermaid', version: 2 },
+  ]);
+});
+
+test('set_artifact refuses a bad id or kind, and says so where no journal is kept', async () => {
+  const { call } = await bridge(artifactJournal());
+  const base = { title: 'T', kind: 'markdown', content: 'x' };
+  expect((await call('set_artifact', { ...base, id: 'Has Spaces' })).isError).toBe(true);
+  expect((await call('set_artifact', { ...base, id: 'ok', kind: 'pdf' })).isError).toBe(true);
+  const bare = await bridge();
+  expect(await bare.call('set_artifact', { ...base, id: 'ok' })).toEqual({
+    isError: true,
+    text: 'This Foundry keeps no journal, so it cannot hold artifacts',
+  });
+});
+
+test('recordArtifact writes the journal before the index, and a failed write leaves the index alone', () => {
+  const thread = new Thread('t', new ContextStack(), { description: '' });
+  const failing = {
+    write: () => {
+      throw Error('disk full');
+    },
+  };
+  expect(() =>
+    recordArtifact(thread, { id: 'a', title: 'A', kind: 'markdown', content: 'x' }, failing),
+  ).toThrow('disk full');
+  expect(thread.meta.artifacts).toBeUndefined();
+  const journal = artifactJournal(null);
+  recordArtifact(
+    thread,
+    { id: 'a', title: 'A', kind: 'code', language: 'ts', content: 'x' },
+    journal,
+  );
+  // A new title or language is a new version even with the same content.
+  const { written } = recordArtifact(
+    thread,
+    { id: 'a', title: 'A', kind: 'code', language: 'js', content: 'x' },
+    journal,
+    journal.rows.at(-1),
+  );
+  expect(written).toBe(true);
+  expect(thread.meta.artifacts![0]!.versions.map((v) => v.turnId)).toEqual([null, null]);
 });

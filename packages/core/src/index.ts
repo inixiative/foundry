@@ -418,6 +418,8 @@ export {
   type FanResult,
   Thread,
   type ThreadAgentStatus,
+  type ThreadArtifact,
+  type ThreadArtifactKind,
   type ThreadCheckout,
   type ThreadConfig,
   type ThreadContext,
