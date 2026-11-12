@@ -1406,16 +1406,22 @@ class ThreadRuntimeImpl implements ThreadRuntime {
       const experts = domains.filter((d) => d.expert);
       // A starting project host: advice waits for it rather than fanning out to primed Wardens.
       const projectId = thread.meta.projectId as string | undefined;
-      const hostReady = experts.length && projectId ? deps.wardenHostReady?.(projectId) : undefined;
-      const warmShortfalls = await flow.warmWithin(
-        experts.map((d) => ({
-          id: d.domain,
-          warm: () => Promise.all([domainLibrarians.get(d.domain)!.warm(), hostReady]),
-        })),
-      );
-      for (const shortfall of warmShortfalls)
+      const hostReady = experts.length && projectId ? deps.wardenHostReady : undefined;
+      const [warmShortfalls, hostShortfalls] = await Promise.all([
+        flow.warmWithin(
+          experts.map((d) => ({
+            id: d.domain,
+            warm: () => domainLibrarians.get(d.domain)!.warm(),
+          })),
+        ),
+        // The host is one wait, not a shortfall of each Warden's cache: past it, primed serves.
+        hostReady
+          ? flow.warmWithin([{ id: 'project Warden host', warm: () => hostReady(projectId!) }])
+          : [],
+      ]);
+      for (const shortfall of [...warmShortfalls, ...hostShortfalls])
         warn(
-          `  [flow:${thread.id}] ${shortfall.id} Warden cache not warm (${shortfall.outcome}): ${shortfall.reason}`,
+          `  [flow:${thread.id}] ${shortfall.id} not warm (${shortfall.outcome}): ${shortfall.reason}`,
         );
       // Member posts delivered as notes ride the agent's turn, labelled, after the fresh advice.
       const memberNotes = deps.conversations?.deliverNotes(thread.id, identity?.messageId) ?? [];
