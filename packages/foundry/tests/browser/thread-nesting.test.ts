@@ -107,17 +107,36 @@ test('the rail nests subagents only; a user-started child thread lists flat', as
         Number.parseFloat(getComputedStyle(el.parentElement!).paddingLeft),
       );
     };
-    const top = await indent('Fix the cart total');
-    expect(await indent('Explore the cart module')).toBeGreaterThan(top);
-    expect(await indent('Follow-up: refund rounding')).toBe(top);
-
-    // A running subagent shows under its parent; a finished one folds into a thin
-    // "completed runs" toggle, and expanding it lists the run to open.
+    // Subagents start folded behind a counter; one toggle steps through active, then
+    // active + finished, then closed.
+    const activeRow = page.locator('.nav-threads .tree-node', {
+      hasText: 'Explore the cart module',
+    });
     const doneRow = page.locator('.nav-threads .tree-node', { hasText: 'Read the tax rules' });
+    const toggle = page.locator('.nav-threads .subagent-toggle', {
+      hasText: '1 active · 1 finished',
+    });
+    const top = await indent('Fix the cart total');
+    expect(await indent('Follow-up: refund rounding')).toBe(top);
+    await toggle.waitFor();
+    expect(await activeRow.count()).toBe(0);
     expect(await doneRow.count()).toBe(0);
-    await page
-      .locator('.nav-threads .inactive-fold-header', { hasText: '1 completed run' })
-      .click();
+
+    await toggle.click();
+    expect(await indent('Explore the cart module')).toBeGreaterThan(top);
+    expect(await doneRow.count()).toBe(0);
+
+    await toggle.click();
+    await doneRow.first().waitFor();
+    expect(await doneRow.first().getAttribute('class')).toContain('dimmed');
+
+    await toggle.click();
+    await activeRow.first().waitFor({ state: 'detached' });
+    expect(await doneRow.count()).toBe(0);
+
+    // A finished run opens from the second step.
+    await toggle.click();
+    await toggle.click();
     await doneRow.first().click();
     await page.locator('.subagent-record').waitFor();
 
