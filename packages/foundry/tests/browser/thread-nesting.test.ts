@@ -101,6 +101,19 @@ test('the rail nests subagents only; a user-started child thread lists flat', as
     const top = await indent('Fix the cart total');
     expect(await indent('Explore the cart module')).toBeGreaterThan(top);
     expect(await indent('Follow-up: refund rounding')).toBe(top);
+
+    // An observed subagent takes no turns: its thread shows a record notice, not a composer,
+    // and the notice opens the parent thread.
+    await page
+      .locator('.nav-threads .tree-node', { hasText: 'Explore the cart module' })
+      .first()
+      .click();
+    const notice = page.locator('.subagent-record');
+    await notice.waitFor();
+    expect(await page.locator('.chat-input textarea, .conversation textarea').count()).toBe(0);
+    await notice.locator('.subagent-record-parent', { hasText: 'Fix the cart total' }).click();
+    await page.locator('.conversation textarea').first().waitFor();
+    expect(await notice.count()).toBe(0);
     expect(errors).toEqual([]);
   } finally {
     const failures = await releaseAll(cleanup);

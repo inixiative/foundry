@@ -918,6 +918,24 @@ function SubagentStrip({ threadId }) {
   </div>`;
 }
 
+/**
+ * In place of the composer on an observed subagent thread: it is a record of the subagent's work and
+ * takes no turns (the server refuses them), so it points at the parent thread that does.
+ */
+function SubagentRecordNotice({ meta }) {
+  const parentId = subagentParentOf(meta);
+  const parent = parentId ? allThreads.value.find((t) => t.threadId === parentId) : null;
+  return html`<div class="subagent-record" role="note">
+    <span>A record of this subagent's work. It takes no messages; talk to the thread that started it.</span>
+    ${
+      parentId
+        ? html`<button type="button" class="subagent-record-parent" onClick=${() => selectThread(parentId)}>
+            Open ${parent ? threadName(parent) : 'the parent thread'} →</button>`
+        : null
+    }
+  </div>`;
+}
+
 /** "10:35 AM, Mon 2 Nov": a message's time, shown on hover (concept-v4 keeps no time inline). */
 const sentAt = (msg) =>
   new Date(msg.timestamp).toLocaleString([], {
@@ -1701,7 +1719,11 @@ export function Conversation({ onTraceSelect, onLayerClick }) {
       <${SystemStrip} threadId=${threadId} />
       <${ThreadNowStrip} />
       <${PromptList} threadId=${threadId} />
-      <${ChatInput} />
+      ${
+        threadData.value?.meta?.spawn?.observed
+          ? html`<${SubagentRecordNotice} meta=${threadData.value.meta} />`
+          : html`<${ChatInput} />`
+      }
     </div>
   `;
 }
