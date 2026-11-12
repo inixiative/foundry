@@ -14,6 +14,7 @@
 import { GraphPanel } from './graph-view.js';
 import { html } from './lib.js';
 import { lifecycle } from './lifecycle.js';
+import { InlineMarkdown } from './markdown.js';
 import { activeThreadId, allThreads, commentOn, focusTurnId, threadData } from './store.js';
 
 /** The plan → build → review → land strip. `onOpen` (optional) makes it a link to the Loop tab. */
@@ -92,21 +93,21 @@ export function RecordedLoop({ loop }) {
   const rounds = loop.rounds ?? [];
   return html`<section class="loop-record" aria-label="The loop" data-state=${loop.state}>
     <header class="plan-section-head">
-      <h3>${loop.goal}</h3>
+      <h3><${InlineMarkdown} text=${loop.goal} /></h3>
       <small>${LOOP_STATE[loop.state] ?? loop.state} · ${rounds.length}${loop.maxRounds ? ` of ${loop.maxRounds}` : ''} round${rounds.length === 1 ? '' : 's'}</small>
     </header>
     <ol class="loop-steps">${(loop.steps ?? []).map(
       (step, i) =>
-        html`<li key=${i}><b>${step.text}</b>${step.detail ? html`<small>${step.detail}</small>` : null}</li>`,
+        html`<li key=${i}><b><${InlineMarkdown} text=${step.text} /></b>${step.detail ? html`<small><${InlineMarkdown} text=${step.detail} /></small>` : null}</li>`,
     )}</ol>
-    <div class="loop-until"><span class="plan-label">Until</span> ${loop.until}</div>
+    <div class="loop-until"><span class="plan-label">Until</span> <${InlineMarkdown} text=${loop.until} /></div>
     ${
       rounds.length
         ? html`<ul class="loop-rounds">${rounds.map(
             (r) => html`<li key=${r.round} class="loop-round r-${r.result}">
               <span class="loop-round-mark" title=${r.result}>${ROUND_MARK[r.result] ?? ''}</span>
               <span class="loop-round-n">Round ${r.round}</span>
-              <span class="loop-round-note">${r.note}</span>
+              <${InlineMarkdown} className="loop-round-note" text=${r.note} />
             </li>`,
           )}</ul>`
         : null

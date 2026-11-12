@@ -4,7 +4,7 @@
  * @partOf feature:viewer
  */
 /**
- * Agent text as Markdown. Raw HTML in the text is shown as text, never parsed, and links and
+ * Agent and user text as Markdown. Raw HTML in the text is shown as text, never parsed, and links and
  * images keep only http(s), mailto, anchor and relative targets. A ```mermaid block renders as a
  * diagram once its message has finished streaming; Mermaid loads only when one appears.
  */
@@ -55,9 +55,17 @@ const marked = new Marked({
   },
 });
 
-/** Markdown to HTML with raw HTML escaped and unsafe link targets dropped. */
-export function renderMarkdown(text) {
-  return marked.parse(String(text ?? ''), { async: false });
+/**
+ * Markdown to HTML with raw HTML escaped and unsafe link targets dropped. `breaks` keeps every
+ * newline as a line break, for text a person typed.
+ */
+export function renderMarkdown(text, { breaks = false } = {}) {
+  return marked.parse(String(text ?? ''), { async: false, breaks });
+}
+
+/** One line of text (a plan item, a loop step): links, emphasis and code, no blocks. */
+export function renderInlineMarkdown(text) {
+  return marked.parseInline(String(text ?? ''), { async: false });
 }
 
 let mermaidLoad;
@@ -96,12 +104,17 @@ async function renderDiagrams(root) {
 }
 
 /** One message's Markdown; `streaming` holds diagrams back until the text is whole. */
-export function Markdown({ text, streaming = false, className = '' }) {
+export function Markdown({ text, streaming = false, breaks = false, className = '' }) {
   const ref = useRef(null);
-  const markup = renderMarkdown(text);
+  const markup = renderMarkdown(text, { breaks });
   useEffect(() => {
     if (streaming || !ref.current) return;
     renderDiagrams(ref.current).catch(() => {});
   }, [markup, streaming]);
   return html`<div ref=${ref} class="md ${className}" dangerouslySetInnerHTML=${{ __html: markup }}></div>`;
+}
+
+/** Inline Markdown in a span, for short agent-written labels. */
+export function InlineMarkdown({ text, className = '' }) {
+  return html`<span class="md-inline ${className}" dangerouslySetInnerHTML=${{ __html: renderInlineMarkdown(text) }}></span>`;
 }

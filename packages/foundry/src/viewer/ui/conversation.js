@@ -881,14 +881,21 @@ function useGiveFeedback(msg) {
 
 const RE_LINE = /^Re: ((Plan|Loop) › [^\n]+)\n\n?/;
 
-/** A user message; one about a Plan step or Loop item opens with a "Re: …" link back to it. */
+/**
+ * A user message, as Markdown with every newline kept; one about a Plan step or Loop item opens
+ * with a "Re: …" link back to it.
+ */
 function UserContent({ content }) {
   const re = RE_LINE.exec(content);
-  if (!re) return html`<div class="chat-msg-content">${content}</div>`;
-  return html`<div class="chat-msg-content"><button type="button" class="re-link" title="Open it"
+  const body = re ? content.slice(re[0].length) : content;
+  return html`<div class="chat-msg-content chat-msg-md">${
+    re
+      ? html`<button type="button" class="re-link" title="Open it"
       onClick=${() => {
         activePanel.value = re[2] === 'Plan' ? 'plan' : 'graph';
-      }}>Re: ${re[1]}</button>${content.slice(re[0].length)}</div>`;
+      }}>Re: ${re[1]}</button>`
+      : null
+  }<${Markdown} text=${body} breaks=${true} /></div>`;
 }
 
 /** Every message: Inspect opens its turn in the turn view (the right panel, widened). */

@@ -9950,7 +9950,7 @@ a.thread-ref:hover {
   background: var(--hover);
   font: 12.5px / 18.75px var(--mono);
 }
-/* Agent text rendered as Markdown (ui/markdown.js). */
+/* Agent and user text rendered as Markdown (ui/markdown.js). */
 .chat-msg-md {
   white-space: normal;
 }
@@ -10004,10 +10004,17 @@ a.thread-ref:hover {
 .md li > p {
   margin: 0;
 }
-.md a {
+.md a,
+.md-inline a {
   color: var(--accent);
   text-decoration: underline;
   text-underline-offset: 2px;
+}
+.md-inline code {
+  padding: 0 4px;
+  border-radius: 4px;
+  background: var(--hover);
+  font: 0.92em var(--mono);
 }
 .md blockquote {
   padding: 2px 10px;

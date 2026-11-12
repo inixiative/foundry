@@ -18,6 +18,7 @@ import { useFlowStream } from './graph-view.js';
 import { html, useState } from './lib.js';
 import { liveThreadStatus, liveWorkLabel } from './live-state.js';
 import { LifecycleStrip } from './loop-view.js';
+import { InlineMarkdown } from './markdown.js';
 import { buildChecklist, progress } from './plan-checklist.js';
 import { STATES, StatusIcon } from './status-icons.js';
 import {
@@ -66,7 +67,7 @@ function Step({ step, turnLabel }) {
           : html`<span class="plan-caret-space"></span>`
       }
       <${StatusIcon} state=${step.state} still=${true} />
-      <span class="plan-step-text">${step.text}</span>
+      <${InlineMarkdown} className="plan-step-text" text=${step.text} />
       ${
         step.when
           ? html`<button class="plan-when" title="Open this turn in Thread" onClick=${() => openTurn(step.when)}>${turnLabel(step.when)}</button>`
@@ -94,7 +95,7 @@ const MARK = { done: '✓', doing: '◐', you: '!' };
 function PlanItem({ item, status }) {
   return html`<li class="plan-item">
     ${status ? html`<span class="plan-box s-${status}" title=${status === 'you' ? 'needs you' : status}>${MARK[status] ?? ''}</span>` : html`<span class="plan-dot"></span>`}
-    <div><b>${item.text}</b>${item.detail ? html`<small>${item.detail}</small>` : null}</div>
+    <div><b><${InlineMarkdown} text=${item.text} /></b>${item.detail ? html`<small><${InlineMarkdown} text=${item.detail} /></small>` : null}</div>
   </li>`;
 }
 
@@ -225,7 +226,7 @@ export function Plan() {
                 <span class="plan-tech-concern">${r.concern}</span>
                 <span class="plan-decision d-${r.decision}" title=${DECISIONS[r.decision]?.[1] ?? ''}>${DECISIONS[r.decision]?.[0] ?? r.decision}</span>
                 <span class="plan-tech-system"><code class="cmd">${r.system}</code>${r.path ? html`<small>${r.path}</small>` : null}</span>
-                <span class="plan-tech-reason">${r.reason}</span>
+                <${InlineMarkdown} className="plan-tech-reason" text=${r.reason} />
               </div>`,
             )}</div>`
           : html`<div class="rp-dim">Not recorded yet. Each concern will show its decision (${Object.values(

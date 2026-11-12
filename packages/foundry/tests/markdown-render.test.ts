@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { renderMarkdown, safeHref } from '../src/viewer/ui/markdown.js';
+import { renderInlineMarkdown, renderMarkdown, safeHref } from '../src/viewer/ui/markdown.js';
 
 test('agent Markdown renders emphasis, lists, code and tables', () => {
   const out = renderMarkdown(
@@ -41,4 +41,28 @@ test('links and images keep only safe targets', () => {
 test('a mermaid block is held as escaped source for the diagram renderer', () => {
   const out = renderMarkdown('```mermaid\ngraph TD; A-->B\n```');
   expect(out).toBe('<pre class="md-mermaid" data-mermaid>graph TD; A--&gt;B</pre>');
+});
+
+test('typed text keeps every newline as a line break', () => {
+  const out = renderMarkdown('first line\nsecond line', { breaks: true });
+  expect(out).toContain('first line<br>second line');
+  expect(renderMarkdown('first line\nsecond line')).not.toContain('<br>');
+});
+
+test('inline Markdown renders safe links and code with no block wrapper', () => {
+  const out = renderInlineMarkdown('See [the doc](https://example.com/a) and `x`');
+  expect(out).not.toContain('<p>');
+  expect(out).toContain(
+    '<a href="https://example.com/a" target="_blank" rel="noreferrer noopener">the doc</a>',
+  );
+  expect(out).toContain('<code>x</code>');
+});
+
+test('inline Markdown drops unsafe links and escapes raw HTML', () => {
+  const out = renderInlineMarkdown('[click](javascript:alert(1)) <img src=x onerror=alert(1)>');
+  expect(out).not.toContain('<a');
+  expect(out).not.toContain('javascript:');
+  expect(out).not.toContain('<img');
+  expect(out).toContain('click');
+  expect(out).toContain('&lt;img');
 });
