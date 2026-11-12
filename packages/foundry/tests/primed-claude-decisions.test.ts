@@ -224,7 +224,9 @@ test('Claude decisions run text-only on the shared Claude login, primed once per
       expect(launch.argv.join(' ')).not.toContain('Message');
       // The default login is selected by omission; paid credentials never reach a decision.
       expect(
-        Object.keys(launch.env).filter((key) => /API_KEY|AUTH_TOKEN|CLAUDE_CONFIG_DIR/.test(key)),
+        Object.entries(launch.env).flatMap(([key, value]) =>
+          value && /API_KEY|AUTH_TOKEN|BASE_URL|CLAUDE_CONFIG_DIR/.test(key) ? [key] : [],
+        ),
       ).toEqual([]);
     }
     // agent-session hands the base context over in a private file, never on argv.
@@ -324,7 +326,9 @@ test('subagents: decisions are served by a bounded pool of dispatcher side sessi
       expect(flag(launch.argv, '--model')).toBe('claude-haiku-5-5');
       expect(launch.argv.slice(-2)).toEqual(['--setting-sources', '']);
       expect(
-        Object.keys(launch.env).filter((key) => /API_KEY|AUTH_TOKEN|CLAUDE_CONFIG_DIR/.test(key)),
+        Object.entries(launch.env).flatMap(([key, value]) =>
+          value && /API_KEY|AUTH_TOKEN|BASE_URL|CLAUDE_CONFIG_DIR/.test(key) ? [key] : [],
+        ),
       ).toEqual([]);
     }
     // Each role's prompt is the decision base, its instructions and its stable context, as primed.
