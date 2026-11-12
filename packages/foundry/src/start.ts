@@ -6,6 +6,7 @@ import { AGENT_CLIS, ensureAgentClisOnPath } from './daemon/agent-clis';
 import { publishDaemonRuntime } from './daemon/runtime-hook';
 import { subscriptionWorker, WORKER_SESSION_RUNTIMES } from './models/registry';
 import { providerBaseUrl, providerContextBudget, providerEnabled } from './models/vendors';
+import { DECISION_DEADLINE_MS } from './providers/decision-budget';
 import {
   type DecisionEvents,
   liveDecisionHosts,
@@ -26,7 +27,11 @@ import {
   projectRunsOnKingdom,
 } from './providers/native-authentication-mode';
 import { boundLaunchEnvironment } from './providers/native-text-environment';
-import { followProjectActivity, type ProjectHostState } from './providers/project-warden-hosts';
+import {
+  followProjectActivity,
+  type ProjectActivity,
+  type ProjectHostState,
+} from './providers/project-warden-hosts';
 import { SubscriptionAuthentication } from './providers/subscription-authentication';
 import {
   loginPoolSettings,
@@ -335,6 +340,8 @@ const hostSettings = {
 
 // A thread's (or its auxiliary session's) record; bound once the runtimes exist.
 let threadMeta: ((threadId: string) => ThreadMeta | undefined) | undefined;
+/** Bound once startup is done (`followProjectActivity`): threads restored at startup are not work. */
+let projectActivity: ProjectActivity | undefined;
 let liveConfig = config;
 // One binding store for every worker: it is keyed by runtime.
 const sessionStore = new FileExternalSessionStore(join(FOUNDRY_DIR, 'sessions.json'));
@@ -736,6 +743,15 @@ const atlasRoot = atlasRootOf(config);
 // persistence sinks; archiving the thread disposes them.
 const runtimeManager = new ThreadRuntimeManager({
   config,
+  // A turn's advice waits for its project's host while it starts (opening it if none is open).
+  ...(live?.projectHosts
+    ? {
+        wardenHostReady: async (projectId: string) => {
+          await projectActivity?.activate(projectId);
+          return live.projectHosts?.whenServing(projectId, DECISION_DEADLINE_MS) ?? false;
+        },
+      }
+    : {}),
   llm: flowLlm,
   providers,
   // Review uses its explicit phase profile, otherwise the configured flow policy.
@@ -1055,6 +1071,8 @@ const viewer = await startViewer({
   interventions,
   port,
   configDir: FOUNDRY_DIR,
+  // Opening a thread of a project opens its Warden host, so it is warm by the first turn.
+  projectActive: (projectId) => void projectActivity?.activate(projectId),
   assistProvider: provider,
   assistModel: config.defaults.model,
   namingProvider: flowLlm,
@@ -1134,7 +1152,7 @@ void viewer.resumeHeldTurns();
 // Project Warden hosts: from here on, a project's activity opens its Warden host (threads restored at
 // startup are not work).
 if (projectHosts)
-  followProjectActivity({
+  projectActivity = followProjectActivity({
     hosts: projectHosts,
     events: eventStream,
     projectOf: (threadId) => threadMeta?.(threadId.split(':aux:')[0]!)?.projectId,

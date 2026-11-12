@@ -570,3 +570,21 @@ test('a turn outside a full window is not sent; quarantined learning is withheld
   expect(turnAppends(client)).toEqual([['t17', 'active']]);
   client.disconnect();
 });
+
+test("opening a thread's stream reports its project active (its Warden host opens before the first turn)", () => {
+  const thread = new Thread('main', new ContextStack(), { projectId: 'P' });
+  const loose = new Thread('loose', new ContextStack());
+  const directory = new ViewerThreadDirectory(thread);
+  directory.add(loose);
+  const active: string[] = [];
+  const streams = createViewerStreams({
+    directory,
+    eventStream: new EventStream(),
+    deliverTo: () => {},
+    projectActive: (projectId) => active.push(projectId),
+  });
+  const family = streams.families.find((f) => f.matches('thread:main'))!;
+  family.start('thread:main', () => {}).stop();
+  family.start('thread:loose', () => {}).stop();
+  expect(active).toEqual(['P']);
+});

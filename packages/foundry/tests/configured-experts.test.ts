@@ -18,7 +18,7 @@ import {
   type SourceResolver,
   ThreadFactory,
 } from '../src/agents/thread-factory';
-import { ThreadRuntimeManager } from '../src/agents/thread-runtime';
+import { type ThreadRuntimeDeps, ThreadRuntimeManager } from '../src/agents/thread-runtime';
 import { KnowledgePersistence } from '../src/persistence/knowledge-persistence';
 import { LocalSessionStore } from '../src/persistence/local-session-store';
 import { SessionBackedProvider } from '../src/providers/session-backed';
@@ -33,6 +33,12 @@ const dirs: string[] = [];
 afterEach(async () => {
   for (const dir of dirs.splice(0)) await rm(dir, { recursive: true, force: true });
 });
+const until = async (cond: () => boolean, ms = 5_000) => {
+  const end = Date.now() + ms;
+  while (!cond() && Date.now() < end) await Bun.sleep(5);
+  return cond();
+};
+
 /** A project directory whose repository enables a chorus of `regions`. */
 async function regionProject(regions: TestRegion[], options: { enabled?: boolean } = {}) {
   const dir = await mkdtemp(join(tmpdir(), 'e1-region-project-'));
@@ -73,6 +79,7 @@ function setup(
   store?: LocalSessionStore,
   review?: (call: Call) => Promise<string> | string,
   extra?: LLMProvider,
+  runtime: Partial<ThreadRuntimeDeps> = {},
 ) {
   const calls: Call[] = [];
   const provider = (id: string): LLMProvider => ({
@@ -135,6 +142,7 @@ function setup(
     log() {},
     warn() {},
     learning: { timeoutMs: 20, hardTimeoutMs: 1000 },
+    ...runtime,
   });
   const persistence = store && new KnowledgePersistence(manager, store, new EventStream(), []);
   const deps = { provider: central, providers };
@@ -302,6 +310,47 @@ test("each project's chorus is its own regions; learning.review applies to them;
     expect(resolveProjectView(c, 'P')!.config.learning).toEqual(c.learning);
   } finally {
     await f?.close();
+  }
+});
+
+test("a project's starting Warden host: the turn's advice waits for it; thread:added can read the thread's project", async () => {
+  const p = await regionProject([COMPAT]);
+  const events = new EventStream();
+  const asked: string[] = [];
+  let release!: (serving: boolean) => void;
+  const serving = new Promise<boolean>((resolve) => {
+    release = resolve;
+  });
+  const f = setup(config({ P: p }), undefined, undefined, undefined, {
+    eventStream: events,
+    wardenHostReady: (projectId) => {
+      asked.push(projectId);
+      return serving;
+    },
+  });
+  const added: Array<string | undefined> = [];
+  events.subscribe((event) => {
+    if (event.kind === 'session' && event.event.type === 'thread:added')
+      added.push(f.manager.get(event.event.threadId)?.thread.meta.projectId as string | undefined);
+  });
+  try {
+    const thread = f.factory.create('P-thread', { projectId: 'P' });
+    const global = f.factory.create('global-thread');
+    expect(added).toEqual(['P', undefined]);
+    const turn = thread.dispatch('worker', 'Work');
+    expect(await until(() => asked.length === 1)).toBe(true);
+    await Bun.sleep(50);
+    expect(f.calls.some((call) => call.phase === 'pre' || call.phase === 'central')).toBe(false);
+    release(true);
+    await turn;
+    const phases = f.calls.map((call) => call.phase);
+    expect(phases.indexOf('pre')).toBeGreaterThanOrEqual(0);
+    expect(phases.indexOf('pre')).toBeLessThan(phases.indexOf('central'));
+    // A thread with no Wardens never waits for a host.
+    await global.dispatch('worker', 'Work');
+    expect(asked).toEqual(['P']);
+  } finally {
+    await f.close();
   }
 });
 

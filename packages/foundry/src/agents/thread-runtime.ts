@@ -401,6 +401,11 @@ export interface ThreadRuntimeDeps {
    * from its own settings; absent, Wardens compose at the thread's cwd.
    */
   wardenRoot?: (projectId: string | undefined) => string | undefined;
+  /**
+   * Project Warden hosts: resolves once the project's host serves (true), or when none is on its way
+   * (false). A turn's Wardens are not warm while their host starts; the wait is bounded by `warmWithin`.
+   */
+  wardenHostReady?: (projectId: string) => Promise<boolean>;
   /** Runtime config; agent kinds decide which dispatches get pre-message routing. */
   config: FoundryConfig;
   /** How long a handoff waits for its brief before the call runs without it (`HANDOFF_BRIEF_DEADLINE_MS`). */
@@ -852,6 +857,11 @@ export class ThreadRuntimeManager {
     this._stacks.set(thread.id, thread.stack);
     for (const sink of this._sinks) this._subscribeSink(sink, runtime);
     this._restoreRuntime?.(runtime);
+    // Once registered, so a listener can read the thread (its project) through the manager.
+    this._deps.eventStream?.push({
+      kind: 'session',
+      event: { type: 'thread:added', threadId: thread.id, timestamp: Date.now() },
+    });
     return runtime;
   }
 
@@ -1393,10 +1403,15 @@ class ThreadRuntimeImpl implements ThreadRuntime {
       // Newly resolved project experts read their actual owned sources on the first pre-hook, not
       // only the global template. Wardens never block: a warm that is late or fails is recorded and
       // the turn goes on (that Warden advises from what it holds, or is skipped with a cold cache).
+      const experts = domains.filter((d) => d.expert);
+      // A starting project host: advice waits for it rather than fanning out to primed Wardens.
+      const projectId = thread.meta.projectId as string | undefined;
+      const hostReady = experts.length && projectId ? deps.wardenHostReady?.(projectId) : undefined;
       const warmShortfalls = await flow.warmWithin(
-        domains
-          .filter((d) => d.expert)
-          .map((d) => ({ id: d.domain, warm: () => domainLibrarians.get(d.domain)!.warm() })),
+        experts.map((d) => ({
+          id: d.domain,
+          warm: () => Promise.all([domainLibrarians.get(d.domain)!.warm(), hostReady]),
+        })),
       );
       for (const shortfall of warmShortfalls)
         warn(
@@ -2027,10 +2042,6 @@ class ThreadRuntimeImpl implements ThreadRuntime {
           eventStream.push({ kind: 'signal', threadId, signal });
         }),
       );
-      eventStream.push({
-        kind: 'session',
-        event: { type: 'thread:added', threadId, timestamp: Date.now() },
-      });
     }
 
     // Archiving the thread tears down this runtime.

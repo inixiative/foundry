@@ -186,7 +186,7 @@ test('only while someone works in the project: activity opens its host, idleness
   const { tree, wardens } = projectHosts({ idleMs: 300 });
   const events = new EventStream();
   const opened: string[] = [];
-  followProjectActivity({
+  const activity = followProjectActivity({
     hosts: wardens,
     events,
     projectOf: (threadId) => (threadId === 'A1' ? 'P' : undefined),
@@ -195,6 +195,7 @@ test('only while someone works in the project: activity opens its host, idleness
       wardens.openProject(projectId, roster('locks'));
     },
   });
+  cleanup.push(() => activity.stop());
   // Nothing opens a host before the project is active.
   expect(wardens.openProjects()).toEqual([]);
   // A thread of another project, or none, opens nothing.
@@ -219,6 +220,14 @@ test('only while someone works in the project: activity opens its host, idleness
   events.push({ kind: 'journal', threadId: 'A1', projectId: 'P', turnId: 't9', timestamp: 4 });
   expect(opened).toEqual(['P', 'P']);
   expect(await wardens.projectReady('P', 5_000)).toBe(true);
+  // Idle again; a thread of it opened in the viewer (`activate`) opens it, once however many ask.
+  expect(await until(() => wardens.openProjects().length === 0, 2_000)).toBe(true);
+  await Promise.all([activity.activate('P'), activity.activate('P')]);
+  expect(opened).toEqual(['P', 'P', 'P']);
+  expect(await wardens.whenServing('P', 5_000)).toBe(true);
+  // Activity on an open host only keeps it open.
+  await activity.activate('P');
+  expect(opened).toEqual(['P', 'P', 'P']);
 });
 
 test('a host process that dies: routing falls back at once, and a new host is started and serves', async () => {
@@ -272,7 +281,31 @@ test('a host that never sets up is retried with backoff, then the project stays 
   expect(tree.processes.every((p) => p.exited)).toBe(true);
   expect(wardens.serving('A1')).toBeUndefined();
   expect(states.at(-1)!.reason).toMatch(/2 starts failed in a row/);
+  // A failed project has no host on its way: nothing waits for one.
+  const at = Date.now();
+  expect(await wardens.whenServing('P', 5_000)).toBe(false);
+  expect(Date.now() - at).toBeLessThan(1_000);
 }, 20_000);
+
+test('whenServing: a turn waits for a starting host, not for a closed one, an empty roster or a replacement', async () => {
+  const { tree, rss, wardens } = projectHosts();
+  // No host open: nothing on its way.
+  expect(await wardens.whenServing('P', 5_000)).toBe(false);
+  // Starting: resolves once it serves.
+  wardens.openProject('P', roster('locks', 'lens'));
+  expect(wardens.projectState('P')!.status).toBe('starting');
+  expect(await wardens.whenServing('P', 5_000)).toBe(true);
+  expect(wardens.serving('A1')).toBeDefined();
+  // A replacement starting beside the serving host is not waited for.
+  rss.set(tree.processes[0]!.pid, 2_000);
+  expect(await until(() => wardens.projectState('P')?.generation === 2)).toBe(true);
+  const at = Date.now();
+  expect(await wardens.whenServing('P', 5_000)).toBe(true);
+  expect(Date.now() - at).toBeLessThan(100);
+  // A project with no Wardens holds nothing to wait for.
+  wardens.openProject('Q', []);
+  expect(await wardens.whenServing('Q', 5_000)).toBe(false);
+});
 
 test('routing: a project host takes advice only; guards, reviews and later stages stay primed', () => {
   const host = { serving: () => true } as unknown;
