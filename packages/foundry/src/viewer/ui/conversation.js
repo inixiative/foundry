@@ -15,11 +15,7 @@ import { ActionPalette } from './action-palette.js';
 import { PillGroup } from './band-pills.js';
 import { chorusNotice, lastDegraded } from './chorus-health.js';
 import { HeldPromptCard, useConversationView } from './conversation-members.js';
-import {
-  browserStorageNotice,
-  browserStorageSummary,
-  isUnsavedCompletion,
-} from './conversation-state.js';
+import { isUnsavedCompletion } from './conversation-state.js';
 import { FeedbackPrompt, GiveFeedback, TurnFeedback } from './feedback.js';
 import { ForkLink } from './fork-link.js';
 import {
@@ -35,6 +31,7 @@ import { kingdomOwnerOf } from './kingdom-holder.js';
 import { html, useEffect, useRef, useState } from './lib.js';
 import { liveExecutionStatus, liveThreadStatus, liveWorkLabel, workLog } from './live-state.js';
 import { LoopView } from './loop-view.js';
+import { Markdown } from './markdown.js';
 import {
   composerDestination,
   DestinationLabel,
@@ -845,16 +842,8 @@ function ChatInput() {
 // Chat messages
 // ---------------------------------------------------------------------------
 
-function BrowserStorageWarning({ msg }) {
-  const notice = browserStorageNotice(msg);
-  return notice
-    ? html`<div class="chat-storage-warning" role="status" style="color: var(--warn); margin: 8px 0;">${notice}</div>`
-    : null;
-}
-
-function browserHistoryLabel(msg) {
-  if (msg.browserStorage?.status === 'volatile') return ' | Browser copy not saved';
-  return msg.storage === 'browser-only' ? ' | Browser-only history' : '';
+function tabOnlyLabel(msg) {
+  return msg.storage === 'browser-only' ? 'Only in this tab' : '';
 }
 
 function evidenceText(value) {
@@ -969,8 +958,7 @@ function UserMessage({ msg, index }) {
           : null
       }
       <${FoundryAdded} turnId=${msg.turnId} />
-      <${BrowserStorageWarning} msg=${msg} />
-      ${browserHistoryLabel(msg) ? html`<div class="chat-msg-time">${browserHistoryLabel(msg).replace(/^\s*\|\s*/, '')}</div>` : null}
+      ${tabOnlyLabel(msg) ? html`<div class="chat-msg-time">${tabOnlyLabel(msg)}</div>` : null}
       ${give.form}
     </div>
   `;
@@ -1163,7 +1151,6 @@ function AgentMessage({ msg, index, onTraceClick }) {
   const isStreaming = !!msg.streaming;
   const injectedLayers = msg.meta?.injectedLayers;
   const failure = failurePresentation(msg.meta);
-  const volatile = msg.browserStorage?.status === 'volatile';
   const give = useGiveFeedback(msg);
 
   // Split stages into pre-execution (classify, route, middleware) and post (guards, writeback).
@@ -1216,21 +1203,15 @@ function AgentMessage({ msg, index, onTraceClick }) {
 
       <${LiveWork} msg=${msg} />
 
-      <div class="chat-msg-content">${msg.content}${isStreaming ? html`<span class="stream-cursor">▍</span>` : null}</div>
-      <${BrowserStorageWarning} msg=${msg} />
-      ${failure.notices
-        .filter(
-          (notice) =>
-            !volatile || (!notice.includes('browser-only') && !notice.includes('Browser-only')),
-        )
-        .map((notice) => html`<div class="chat-msg-time">${notice}</div>`)}
+      <div class="chat-msg-content chat-msg-md"><${Markdown} text=${msg.content} streaming=${isStreaming} />${isStreaming ? html`<span class="stream-cursor">▍</span>` : null}</div>
+      ${failure.notices.map((notice) => html`<div class="chat-msg-time">${notice}</div>`)}
       <${LostTurnCard} msg=${msg} />
-      ${msg.journalRecord ? html`<div class="chat-msg-time">Server journal: ${msg.journalRecord.meta?.turnStatus}; this browser's observed result is separate.</div>` : null}
+      ${msg.journalRecord ? html`<div class="chat-msg-time">Server journal: ${msg.journalRecord.meta?.turnStatus}; this tab's observed result is separate.</div>` : null}
       ${
         isUnsavedCompletion(msg)
           ? html`
         <details>
-          <summary>${volatile ? 'Tab-only completed evidence' : 'Browser-only completed evidence'}</summary>
+          <summary>Completed evidence (only in this tab)</summary>
           <div class="chat-msg-content">${evidenceText({ trace: msg.traceSnapshot ?? msg.trace, input: msg.meta?.injection })}</div>
         </details>
       `
@@ -1241,7 +1222,7 @@ function AgentMessage({ msg, index, onTraceClick }) {
           ? html`
         <details open>
           <summary>Partial output (unconfirmed)</summary>
-          <div class="chat-msg-content">${failure.partialOutput}</div>
+          <div class="chat-msg-content chat-msg-md"><${Markdown} text=${failure.partialOutput} /></div>
         </details>
       `
           : null
@@ -1250,7 +1231,7 @@ function AgentMessage({ msg, index, onTraceClick }) {
         failure.browserEvidence
           ? html`
         <details>
-          <summary>${volatile ? 'Tab-only failure evidence' : 'Browser-only failure evidence'}</summary>
+          <summary>Failure evidence (only in this tab)</summary>
           <div class="chat-msg-content">${evidenceText(failure.browserEvidence)}</div>
         </details>
       `
@@ -1269,8 +1250,8 @@ function AgentMessage({ msg, index, onTraceClick }) {
       />
 
       ${
-        browserHistoryLabel(msg) || msg.connectionStatus === 'unconfirmed'
-          ? html`<div class="chat-msg-time">${[browserHistoryLabel(msg).replace(/^\s*\|\s*/, ''), msg.connectionStatus === 'unconfirmed' ? 'Connection interrupted; server outcome unconfirmed' : ''].filter(Boolean).join(' · ')}</div>`
+        tabOnlyLabel(msg) || msg.connectionStatus === 'unconfirmed'
+          ? html`<div class="chat-msg-time">${[tabOnlyLabel(msg), msg.connectionStatus === 'unconfirmed' ? 'Connection interrupted; server outcome unconfirmed' : ''].filter(Boolean).join(' · ')}</div>`
           : null
       }
       <${TurnFeedback} threadId=${activeThreadId.value} turnId=${msg.turnId} />
@@ -1298,7 +1279,7 @@ function ThinkingMessage({ msg }) {
       ${
         open
           ? html`
-        <div class="chat-msg-content thinking-content">${content}</div>
+        <div class="chat-msg-content chat-msg-md thinking-content"><${Markdown} text=${content} /></div>
       `
           : null
       }
@@ -1577,7 +1558,7 @@ function HistoryPager({ threadId, count, onLoadOlder }) {
   if (paging.indexUnavailable)
     return html`<div class="chat-history-pager" role="status">Older history is not available from this server; showing the rows it returned (${count}).</div>`;
   if (paging.offline)
-    return html`<div class="chat-history-pager" role="status">Server history unavailable; showing this browser's saved copy (${count} rows). Older records were not fetched.</div>`;
+    return html`<div class="chat-history-pager" role="status">Server history unavailable; showing what this tab holds (${count} rows). Reload when the server is back.</div>`;
   // An empty thread has no conversation to mark the start of.
   if (count === 0 && !paging.hasMore && !paging.error) return null;
   return html`
@@ -1594,14 +1575,6 @@ function HistoryPager({ threadId, count, onLoadOlder }) {
       ${paging.error ? html`<span class="chat-history-error">${paging.error}</span>` : null}
     </div>
   `;
-}
-
-/** One scoped notice for the thread's optional browser cache instead of one per durable row. */
-function CacheStatus({ msgList }) {
-  const summary = browserStorageSummary(msgList);
-  if (!summary || (summary.notCached === 0 && summary.volatile === 0)) return null;
-  if (summary.notCached === 0) return null; // volatile rows carry their own per-row notices
-  return html`<div class="chat-cache-status" role="status">${summary.message}</div>`;
 }
 
 /** The centre's tabs, on the band's lower edge. Ids are the store's `activePanel` values. */
@@ -1697,7 +1670,6 @@ export function Conversation({ onTraceSelect, onLayerClick }) {
       <div class="thread-views ${shownViews().length > 1 ? `thread-views--columns thread-views--${shownViews().length}` : ''}" hidden=${view !== 'conversation'}>
       <div class="chat-messages center-frame" ref=${scrollRef} hidden=${!shownViews().includes('thread')}>
         <${HistoryPager} threadId=${threadId} count=${msgList.length} onLoadOlder=${handleLoadOlder} />
-        <${CacheStatus} msgList=${msgList} />
         ${
           msgList.length === 0
             ? html`

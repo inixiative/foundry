@@ -913,6 +913,23 @@ export function createViewer(config: ViewerConfig) {
       'Content-Type': 'application/javascript',
     }),
   );
+  // Agent text is Markdown (ui/markdown.js): marked ships one import-free ES module.
+  app.get('/ui/marked.js', async (c) =>
+    c.body(await Bun.file(new URL(import.meta.resolve('marked'))).text(), 200, {
+      'Content-Type': 'application/javascript',
+    }),
+  );
+  // Mermaid's ES build and its relative chunks, loaded only when a message holds a diagram.
+  const mermaidDir = dirname(
+    fileURLToPath(import.meta.resolve('mermaid/dist/mermaid.esm.min.mjs')),
+  );
+  app.get('/ui/mermaid/*', async (c) => {
+    const file = resolve(mermaidDir, c.req.path.slice('/ui/mermaid/'.length));
+    if (!file.startsWith(`${mermaidDir}${sep}`) || !file.endsWith('.mjs')) return c.notFound();
+    const body = Bun.file(file);
+    if (!(await body.exists())) return c.notFound();
+    return new Response(body, { headers: { 'Content-Type': 'application/javascript' } });
+  });
   // The look is @inixiative/config's shared theme (public.css, status.css and the fonts they load),
   // read from the package at runtime so Foundry and Kingdom never drift apart.
   const themeDir = dirname(

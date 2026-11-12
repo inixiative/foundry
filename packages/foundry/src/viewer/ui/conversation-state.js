@@ -10,169 +10,8 @@ export function updateTurnMessage(messages, turnId, patch) {
   );
   if (index === -1) return messages;
   const next = [...messages];
-  // A saved earlier delta does not establish that this version reached storage.
-  next[index] = { ...next[index], ...patch, browserStorage: undefined };
+  next[index] = { ...next[index], ...patch };
   return next;
-}
-
-/** Write one browser snapshot; publish saved status only after setItem returns.
- * A rejected write never removes the previous snapshot or discards live evidence.
- * Unchanged saved rows keep their status; a later ordinary write clears volatility.
- */
-export function persistBrowserMessages(messages, write) {
-  const saved = messages.map((message) =>
-    message.browserStorage?.status === 'saved'
-      ? message
-      : { ...message, browserStorage: { status: 'saved' } },
-  );
-  try {
-    write(JSON.stringify(saved));
-    return saved;
-  } catch (error) {
-    const name = error?.name || 'Error';
-    // Durable rows are an optional cache: retry with only what exists nowhere else
-    // (browser-only, completed-unsaved, streaming, legacy rows without a journal id, and the
-    // browser-only evidence fields riding on a server row, written as a projection).
-    const transient = messages
-      .filter((message) => !isDurableRow(message))
-      .map((message) => ({
-        ...(message.storage === 'server' ? browserEvidenceProjection(message) : message),
-        browserStorage: { status: 'saved' },
-      }));
-    if (transient.length && transient.length < messages.length) {
-      try {
-        write(JSON.stringify(transient));
-        return messages.map((message) =>
-          isDurableRow(message)
-            ? { ...message, browserStorage: { status: 'not-cached', error: name } }
-            : { ...message, browserStorage: { status: 'saved' } },
-        );
-      } catch {
-        /* fall through: nothing could be written */
-      }
-    }
-    return messages.map((message) =>
-      message.browserStorage?.status === 'saved'
-        ? message
-        : { ...message, browserStorage: { status: 'volatile', error: name } },
-    );
-  }
-}
-
-/** Fields that exist only in this browser even when the row itself is a server record:
- * failure evidence kept beside an interrupted journal row, a browser trace id, a journal record
- * kept beside a browser-only completion, or an unconfirmed partial. Ownership is per field. */
-export function hasBrowserOnlyEvidence(message) {
-  const evidence = message.meta?.browserFailureEvidence;
-  return (
-    (evidence !== undefined && evidence !== null && typeof evidence === 'object') ||
-    message.journalRecord !== undefined ||
-    message.browserTraceId !== undefined ||
-    message.connectionStatus === 'unconfirmed'
-  );
-}
-
-/** A row the server journal holds in full; the browser copy is optional. A row carrying
- * browser-only evidence is never disposable, whatever its storage label says. */
-export function isDurableRow(message) {
-  if (message.streaming || isUnsavedCompletion(message)) return false;
-  if (message.storage === 'browser-only' || hasBrowserOnlyEvidence(message)) return false;
-  return message.storage === 'server' || message.meta?.persistence === 'committed';
-}
-
-// Metadata worth keeping in the evidence projection: semantic status and the browser-only evidence.
-// Server-owned heavy detail (injection, native payloads, provider transcripts) is re-fetched, not copied.
-const EVIDENCE_PROJECTION_META = new Set([
-  'turnStatus',
-  'persistence',
-  'executionOutcome',
-  'nativeOutcome',
-  'attemptOutcome',
-  'providerOutcome',
-  'inputEvidence',
-  'deliveryAcknowledgment',
-  'injectedLayers',
-  'error',
-  'browserFailureEvidence',
-]);
-
-/** The part of a server row that only this browser holds, plus the identity needed to merge it back. */
-export function browserEvidenceProjection(message) {
-  const { trace, meta, ...rest } = message;
-  const kept = {};
-  for (const [key, value] of Object.entries(meta ?? {}))
-    if (EVIDENCE_PROJECTION_META.has(key)) kept[key] = value;
-  return {
-    ...rest,
-    ...(Object.keys(kept).length ? { meta: kept } : {}),
-    browserEvidenceProjection: true,
-  };
-}
-
-/** One thread-level status for the optional cache; null when every row is saved. */
-export function browserStorageSummary(messages) {
-  const list = Array.isArray(messages) ? messages : [];
-  const notCached = list.filter((message) => message.browserStorage?.status === 'not-cached');
-  const volatile = list.filter((message) => message.browserStorage?.status === 'volatile');
-  if (!notCached.length && !volatile.length) return null;
-  const error = (notCached[0] ?? volatile[0]).browserStorage.error;
-  const transientSaved = list.filter(
-    (message) => !isDurableRow(message) && message.browserStorage?.status === 'saved',
-  ).length;
-  const evidenceAtRisk = list.filter(
-    (message) => hasBrowserOnlyEvidence(message) && message.browserStorage?.status !== 'saved',
-  ).length;
-  const message = notCached.length
-    ? `Optional browser cache unavailable (${error}): ${notCached.length} server-saved row${notCached.length === 1 ? '' : 's'} are not cached in this browser and reload from the server. ` +
-      `${transientSaved} browser-only item${transientSaved === 1 ? '' : 's'} (unsaved completions, legacy rows, partial output) ${transientSaved === 1 ? 'is' : 'are'} saved in this browser.`
-    : `Browser storage failed (${error}) for ${volatile.length} row${volatile.length === 1 ? '' : 's'}; see the notices on those rows.`;
-  return {
-    error,
-    notCached: notCached.length,
-    volatile: volatile.length,
-    transientSaved,
-    evidenceAtRisk,
-    message: evidenceAtRisk
-      ? `${message} ${evidenceAtRisk} row${evidenceAtRisk === 1 ? '' : 's'} with browser-only evidence ${evidenceAtRisk === 1 ? 'is' : 'are'} not saved in this browser.`
-      : message,
-  };
-}
-
-/** Browser write outcome is independent of the server journal's outcome. */
-export function browserStorageNotice(message) {
-  if (message.browserStorage?.status === 'not-cached') {
-    // A not-cached server row is recoverable from the server only for its server-owned fields.
-    if (!hasBrowserOnlyEvidence(message)) return null;
-    return (
-      `Optional browser copy of the server record was not saved (${message.browserStorage.error}). ` +
-      'Additional failure evidence for this row is only in this tab and may be lost on reload or close.'
-    );
-  }
-  if (message.browserStorage?.status !== 'volatile') return null;
-  const prefix = `Browser storage failed (${message.browserStorage.error}). `;
-  const committed = message.meta?.persistence === 'committed' || message.storage === 'server';
-  if (committed && message.meta?.browserFailureEvidence) {
-    return (
-      prefix +
-      'Server record is saved. Additional failure evidence is only in this tab and may be lost on reload or close.'
-    );
-  }
-  if (committed) {
-    return (
-      prefix +
-      'This result is saved on the server; only its optional browser copy could not be saved.'
-    );
-  }
-  if (isUnsavedCompletion(message)) {
-    return (
-      prefix +
-      'This completed result and its evidence exist only in this tab and may be lost on reload or close. They are not saved on the server. Do not replay completed work to repair storage.'
-    );
-  }
-  return (
-    prefix +
-    "This tab's latest copy was not saved in browser storage and may be lost on reload or close. Server persistence is unconfirmed."
-  );
 }
 
 function identityKeys(message) {
@@ -310,7 +149,6 @@ export function mergeMessageHistory(local, server) {
           error: saved.error ?? false,
           connectionStatus: undefined,
           storage: 'server',
-          browserStorage: undefined,
         });
         used.add(match);
       }
@@ -368,86 +206,6 @@ function orderHistory(merged) {
   });
 }
 
-const rowKeys = (message) => {
-  const keys = identityKeys(message);
-  // A legacy row without identity is matched one-for-one by what it says and when; the
-  // labels a merge adds (storage, browserStorage) never change it.
-  return keys.length
-    ? keys
-    : [`row:${message.actor}:${message.timestamp}:${JSON.stringify(message.content)}`];
-};
-const isServerRow = (message) => message.storage === 'server' && !message.browserEvidenceProjection;
-const carriesBrowserEvidence = (message) =>
-  message.terminalSource === 'response' ||
-  isUnsavedCompletion(message) ||
-  hasBrowserOnlyEvidence(message);
-
-/** Identity keys of rows the user discarded, so no tab's merge brings them back. */
-export function discardKeys(messages) {
-  return messages.flatMap(rowKeys);
-}
-
-/** One row as two tabs hold it. A server-saved copy reconciles the other as a history load does;
- * otherwise browser-only evidence, then completeness, then the newer timestamp wins; ties keep mine.
- * This tab's running stream yields only to the sender's full terminal. */
-function preferRow(mine, theirs) {
-  if (mine.streaming && theirs.terminalSource !== 'response') return mine;
-  if (isServerRow(mine) !== isServerRow(theirs)) {
-    const [saved, local] = isServerRow(mine) ? [mine, theirs] : [theirs, mine];
-    const merged = mergeMessageHistory([local], [saved]);
-    if (merged.length !== 1) return saved;
-    for (const row of [mine, theirs])
-      if (stableMessageKey(row) === stableMessageKey(merged[0])) return row;
-    return merged[0];
-  }
-  const rank = (message) => [
-    Number(carriesBrowserEvidence(message)),
-    Number(!message.browserEvidenceProjection),
-    Number(!message.streaming),
-    message.timestamp ?? 0,
-  ];
-  const a = rank(mine),
-    b = rank(theirs);
-  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return b[i] > a[i] ? theirs : mine;
-  return mine;
-}
-
-/**
- * Merge this tab's rows for a thread with what is stored for it (possibly written by another tab).
- * Union by identity: a stored row this tab lacks is kept, never dropped for that reason. A row
- * leaves only by reconciling into its saved server record or when its keys are in `discarded`.
- * Returns `mine` itself when storage adds and changes nothing.
- */
-export function mergeStoredMessages(stored, mine, discarded = new Set()) {
-  const own = Array.isArray(mine) ? mine : [];
-  const gone = (message) => rowKeys(message).some((key) => discarded.has(key));
-  const result = own.filter((message) => !gone(message));
-  let changed = result.length !== own.length;
-  const slots = new Map();
-  result.forEach((message, i) => {
-    for (const key of rowKeys(message)) slots.set(key, [...(slots.get(key) ?? []), i]);
-  });
-  const claimed = new Set();
-  for (const message of Array.isArray(stored) ? stored : []) {
-    if (gone(message)) continue;
-    const i = rowKeys(message)
-      .flatMap((key) => slots.get(key) ?? [])
-      .find((index) => !claimed.has(index));
-    if (i === undefined) {
-      result.push(message);
-      changed = true;
-      continue;
-    }
-    claimed.add(i);
-    const chosen = preferRow(result[i], message);
-    if (chosen !== result[i]) {
-      result[i] = chosen;
-      changed = true;
-    }
-  }
-  return changed ? orderHistory(result) : own;
-}
-
 /**
  * Which thread's durable state an owned event (from its thread data stream) may have changed.
  * Completed or failed work changes the message journal; learning decisions
@@ -489,9 +247,6 @@ export function selectedDetailTarget(event, selected, activeThread) {
 }
 
 function stableMessageKey(message) {
-  // Ordered, identity-relevant fields only; browser storage status is a local
-  // write outcome and does not make the durable history different.
-  const { browserStorage, ...rest } = message;
   const canonical = (value) =>
     Array.isArray(value)
       ? value.map(canonical)
@@ -502,7 +257,7 @@ function stableMessageKey(message) {
               .map((key) => [key, canonical(value[key])]),
           )
         : value;
-  return JSON.stringify(canonical(rest));
+  return JSON.stringify(canonical(message));
 }
 
 /**

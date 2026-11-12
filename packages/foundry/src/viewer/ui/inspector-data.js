@@ -43,7 +43,7 @@ export function failurePresentation(meta) {
     return {
       notices: [
         `Execution completed; result was not saved to local journal${meta.persistenceError ? `: ${meta.persistenceError}` : '.'}`,
-        'Completed output and evidence are browser-only. Do not replay completed work to repair storage.',
+        'Completed output and evidence are only in this tab. Do not replay completed work to repair storage.',
         nativeNotice ??
           'Native terminal acknowledgment unavailable; native outcome remains unknown.',
       ],
@@ -84,7 +84,7 @@ export function failurePresentation(meta) {
   const browserEvidence = meta.browserFailureEvidence;
   if (browserEvidence)
     notices.push(
-      'Browser-only failure evidence; these details were not saved to the server journal.',
+      'Failure evidence only in this tab; these details were not saved to the server journal.',
     );
   return {
     notices,

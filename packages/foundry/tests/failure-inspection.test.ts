@@ -75,7 +75,7 @@ test('unsaved browser evidence remains visible and separate after interruption h
   expect(live.notices.join(' ')).toContain('Failure was not saved to local journal: disk full');
   const recovered = inspection.failurePresentation(merged[0].meta);
   expect(recovered.partialOutput).toBe('only in browser');
-  expect(recovered.notices.join(' ')).toContain('Browser-only failure evidence');
+  expect(recovered.notices.join(' ')).toContain('Failure evidence only in this tab');
   expect(recovered.notices.join(' ')).toContain('Input unavailable');
   expect(recovered.browserEvidence.injection.userMessage).toBe('browser input');
   expect(merged[0].traceId).toBeUndefined();

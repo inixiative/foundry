@@ -242,11 +242,6 @@ async function fixture(name: string) {
         page.evaluate((id: string) => {
           location.hash = `#thread=${id}`;
         }, threadId),
-      messages: (threadId: string) =>
-        page.evaluate(
-          (id: string) => JSON.parse(localStorage.getItem(`foundry:msgs:${id}`) ?? '[]'),
-          threadId,
-        ),
       active: () =>
         page.evaluate(async () => {
           const s = await import(`${location.origin}/ui/store.js`);
@@ -262,20 +257,6 @@ async function fixture(name: string) {
               .__historyPending?.[id],
           threadId,
         ),
-      // Rows a prior session left in browser storage, present before the next document's viewer boots,
-      // so no write from the live tab can race them.
-      seedBeforeBoot: (rows: Record<string, unknown[]>) =>
-        page.addInitScript((seed: Record<string, unknown[]>) => {
-          if (sessionStorage.getItem('fixture:seeded')) return;
-          sessionStorage.setItem('fixture:seeded', '1');
-          for (const [id, add] of Object.entries(seed)) {
-            const key = `foundry:msgs:${id}`;
-            localStorage.setItem(
-              key,
-              JSON.stringify([...JSON.parse(localStorage.getItem(key) ?? '[]'), ...add]),
-            );
-          }
-        }, rows),
       settle: () =>
         page.evaluate(
           () => new Promise<void>((r) => setTimeout(() => requestAnimationFrame(() => r()), 50)),
@@ -578,28 +559,6 @@ test('a late history response after a thread switch writes only into its own thr
     }));
     await f.page.goto(`${f.origin}/#thread=a`);
     await f.page.getByText('A_REPLY_1').waitFor();
-    // Browser-only evidence in both threads: legacy rows without identity and a completed-unsaved result.
-    // Seeded under the next document: the live tab still writes its own copy of this key.
-    await f.store.seedBeforeBoot({
-      a: [
-        { actor: 'user', content: 'A legacy browser-only', timestamp: 3 },
-        {
-          actor: 'agent',
-          turnId: 'a-unsaved',
-          content: 'A_COMPLETED_UNSAVED',
-          timestamp: 4,
-          storage: 'browser-only',
-          meta: { executionOutcome: 'completed', persistence: 'failed' },
-        },
-      ],
-      b: [{ actor: 'user', content: 'B legacy browser-only', timestamp: 3 }],
-    });
-    await f.page.reload();
-    await f.page.getByText('A_COMPLETED_UNSAVED').waitFor();
-    await f.store.select('b');
-    await f.page.getByText('B legacy browser-only').waitFor();
-    await f.store.select('a');
-    await f.page.getByText('A_REPLY_1').waitFor();
     // Hold A's late reconcile (with new external work), switch to B, then release: only A's cache changes.
     const lateA = f.held({
       messages: [
@@ -621,17 +580,17 @@ test('a late history response after a thread switch writes only into its own thr
     await f.store.historyIdle('a');
     const activeB = await f.store.active();
     expect(activeB.active).toBe('b');
-    expect(activeB.contents).toEqual(['B first', 'B_REPLY_1', 'B legacy browser-only']);
+    expect(activeB.contents).toEqual(['B first', 'B_REPLY_1']);
     expect(activeB.contents).not.toContain('A_REPLY_2_LATE');
-    const cacheA = await f.store.messages('a');
-    expect(cacheA.map((m: any) => m.content)).toContain('A_REPLY_2_LATE');
-    expect(cacheA.map((m: any) => m.content)).toContain('A legacy browser-only');
-    expect(cacheA.find((m: any) => m.content === 'A_COMPLETED_UNSAVED')).toMatchObject({
-      storage: 'browser-only',
-    });
     await f.store.select('a');
     await f.page.getByText('A_REPLY_2_LATE').waitFor();
-    expect(await f.page.locator('.chat-agent:not(.chat-thinking)').count()).toBe(3);
+    expect((await f.store.active()).contents).toEqual([
+      'A first',
+      'A_REPLY_1',
+      'A second',
+      'A_REPLY_2_LATE',
+    ]);
+    expect(await f.page.locator('.chat-agent:not(.chat-thinking)').count()).toBe(2);
     f.report.checks.push({ case: 'late-history-own-thread-only', passed: true });
     // Older history response resolving after a newer one does not regress the cache.
     const olderA = f.held({
@@ -664,7 +623,7 @@ test('a late history response after a thread switch writes only into its own thr
     olderA.release();
     await f.store.historyIdle('a');
     expect((await f.store.active()).contents).toContain('A_REPLY_3');
-    expect(await f.page.locator('.chat-agent:not(.chat-thinking)').count()).toBe(4);
+    expect(await f.page.locator('.chat-agent:not(.chat-thinking)').count()).toBe(3);
     f.report.checks.push({ case: 'older-history-response-dropped', passed: true });
     await f.page.screenshot({ path: join(f.output, 'history-order.png'), fullPage: true });
     expect(f.errors).toEqual([]);

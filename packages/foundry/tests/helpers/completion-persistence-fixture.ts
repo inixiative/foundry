@@ -14,9 +14,10 @@ import { buildAgents, ThreadFactory } from '../../src/agents/thread-factory';
 import { ConfigStore, starterConfig } from '../../src/viewer/config';
 import { createViewer } from '../../src/viewer/server';
 
-export async function completionFixture() {
+export async function completionFixture(
+  output = 'COMPLETED-OUTPUT: the executor finished this work once.',
+) {
   const dir = mkdtempSync(join(tmpdir(), 'foundry-completion-persistence-'));
-  const output = 'COMPLETED-OUTPUT: the executor finished this work once.';
   let calls = 0;
   const inputs: unknown[] = [];
   const provider: LLMProvider = {

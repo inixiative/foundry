@@ -11,10 +11,7 @@
  */
 
 import {
-  discardKeys,
   mergeMessageHistory,
-  mergeStoredMessages,
-  persistBrowserMessages,
   reconcileTargets,
   reconcileThreadMessages,
   selectedDetailTarget,
@@ -630,7 +627,7 @@ function refreshLiveRows(threadId) {
   const turns = liveTurns.get(threadId);
   const rows = _threadMessages[threadId];
   if (!turns || !rows) return;
-  _persistLocal(
+  _setThreadMessages(
     threadId,
     rows.map((m) =>
       m.actor === 'agent' && m.connectionStatus && turns.has(m.turnId)
@@ -777,7 +774,7 @@ function connectStreams() {
       for (const threadId of liveTurns.keys()) {
         const rows = _threadMessages[threadId];
         if (rows)
-          _persistLocal(
+          _setThreadMessages(
             threadId,
             rows.map((m) =>
               m.live && m.streaming ? { ...m, connectionStatus: 'unconfirmed' } : m,
@@ -918,7 +915,7 @@ async function _reconcileThread(threadId) {
     const next = reconcileThreadMessages(cache, rows, threadId);
     if (next === cache) return;
     // Written into this thread's own cache; mirrored to `messages` only when it is active.
-    _persistLocal(threadId, next);
+    _setThreadMessages(threadId, next);
   } catch {
     /* Live events stay visible; the next owned event or visibility change retries. */
   }
@@ -998,7 +995,7 @@ export async function loadOlderMessages(threadId = activeThreadId.value) {
     const cache = _threadMessages[threadId] ?? [];
     // Older rows merge by identity; a repeated page adds nothing and moves nothing.
     const next = mergeMessageHistory(cache, result.data.messages);
-    _persistLocal(threadId, next);
+    _setThreadMessages(threadId, next);
     _setPaging(threadId, {
       loading: false,
       error: null,
@@ -1634,10 +1631,8 @@ export async function revertThread(messageIndex) {
   const msgs = messages.value;
   if (messageIndex < 0 || messageIndex >= msgs.length) return;
 
-  // Truncate locally first (optimistic); discarded rows leave every tab's copy.
-  const kept = msgs.slice(0, messageIndex + 1);
-  _discardLocal(tid, msgs.slice(messageIndex + 1));
-  _persistLocal(tid, kept);
+  // Truncate this tab first (optimistic); the server's revert is what other tabs and reloads read.
+  _setThreadMessages(tid, msgs.slice(0, messageIndex + 1));
 
   // Tell server to clean up DB
   try {
@@ -1682,10 +1677,7 @@ export async function forkThread(messageIndex) {
     showToast(`Forked → ${newThread.title?.text || newThread.threadId}`, 'ok');
 
     // Pre-populate new thread's messages so switching is instant
-    _persistLocal(
-      newThread.threadId,
-      forkedMessages.map((msg) => ({ ...msg, browserStorage: undefined })),
-    );
+    _setThreadMessages(newThread.threadId, forkedMessages);
     // The thread list stream already carries the fork.
     selectThread(newThread.threadId);
   } catch (err) {
@@ -1885,91 +1877,20 @@ export function selectThread(threadId) {
   else if (threadId) requestReconcile(threadId, 0);
 }
 
-/** Keep write outcomes with the thread's live messages, including while inactive.
- * The write merges with what other tabs stored for the thread instead of replacing it. */
-function _persistLocal(threadId, msgs) {
-  // A sender may just have applied its full terminal. Merge only the watch-owned
-  // projection in that case; failed persistence does not revoke local completion.
-  const observed = mergeStoredMessages(
-    _loadLocal(threadId),
-    mergeLiveSnapshot(msgs, liveView(threadId)),
-    _loadDiscarded(threadId),
-  );
-  const next = persistBrowserMessages(observed, (value) =>
-    localStorage.setItem(`foundry:msgs:${threadId}`, value),
-  );
+/** Set a thread's rows in this tab (active or not), with its live turns merged in. The server
+ * journal is the only store: a reload or another tab reads history from it. */
+function _setThreadMessages(threadId, msgs) {
+  const next = mergeLiveSnapshot(msgs, liveView(threadId));
   _threadMessages[threadId] = next;
   if (activeThreadId.value === threadId) messages.value = next;
 }
 
-/** Another tab wrote a loaded thread's rows (or discarded some): adopt them without a write. */
-function _adoptStored(event) {
-  if (event.storageArea !== localStorage || !event.key?.startsWith('foundry:msgs:')) return;
-  const rest = event.key.slice('foundry:msgs:'.length);
-  if (rest.startsWith('legacy-backup:')) return;
-  const threadId = rest.startsWith('discarded:') ? rest.slice('discarded:'.length) : rest;
-  const rows = _threadMessages[threadId];
-  if (!rows) return; // its first load reads storage
-  const next = mergeStoredMessages(_loadLocal(threadId), rows, _loadDiscarded(threadId));
-  if (next === rows) return;
-  _threadMessages[threadId] = next;
-  if (activeThreadId.value === threadId) messages.value = next;
-}
-
-/** Read messages from localStorage fallback. */
-function _loadLocal(threadId) {
-  try {
-    const raw = localStorage.getItem(`foundry:msgs:${threadId}`);
-    const cached = raw ? JSON.parse(raw) : [];
-    // Reading this snapshot establishes a browser copy, never a server commit.
-    return Array.isArray(cached)
-      ? cached.map((msg) => ({ ...msg, browserStorage: { status: 'saved' } }))
-      : [];
-  } catch {
-    return [];
-  }
-}
-
-function _loadDiscarded(threadId) {
-  try {
-    const keys = JSON.parse(localStorage.getItem(`foundry:msgs:discarded:${threadId}`) ?? '[]');
-    return new Set(Array.isArray(keys) ? keys : []);
-  } catch {
-    return new Set();
-  }
-}
-
-function _discardLocal(threadId, rows) {
-  if (!rows.length) return;
-  try {
-    localStorage.setItem(
-      `foundry:msgs:discarded:${threadId}`,
-      JSON.stringify([..._loadDiscarded(threadId), ...discardKeys(rows)]),
-    );
-  } catch {
-    showToast(
-      'Browser storage could not record the revert; other tabs may keep the removed rows',
-      'warn',
-    );
-  }
-}
-
-/** Reconcile durable history without erasing pre-journal browser-only messages. */
+/** A thread's first load: the journal's newest page, merged with any rows this tab already holds. */
 async function _loadThreadMessages(threadId) {
   const initial = _threadMessages[threadId];
-  const local = _loadLocal(threadId);
   const adopt = (serverRows, paging) => {
-    // Keep the original cache before its first reconciliation with server records.
-    try {
-      const backupKey = `foundry:msgs:legacy-backup:${threadId}`;
-      if (Array.isArray(local) && local.length && localStorage.getItem(backupKey) === null) {
-        localStorage.setItem(backupKey, JSON.stringify(local));
-      }
-    } catch {
-      showToast('Browser history backup could not be saved', 'warn');
-    }
     _setPaging(threadId, paging);
-    _persistLocal(threadId, mergeMessageHistory(_threadMessages[threadId] ?? local, serverRows));
+    _setThreadMessages(threadId, mergeMessageHistory(_threadMessages[threadId] ?? [], serverRows));
   };
   try {
     // Newest index page: identity, content and status only. Detail is fetched per turn on demand.
@@ -2005,17 +1926,11 @@ async function _loadThreadMessages(threadId) {
       }
     }
   } catch {
-    /* fall through to localStorage */
+    /* the server did not answer */
   }
-
-  // Fallback: localStorage. The server did not answer; this is the browser's copy, not an empty history.
+  // No history from the server: this tab shows nothing it cannot load, and the thread retries on its next selection.
   if (_threadMessages[threadId] !== initial) return;
   _setPaging(threadId, { offline: true, hasMore: false, oldestReached: false, loading: false });
-  const fallback = mergeMessageHistory(local, []);
-  if (fallback.length > 0) {
-    _threadMessages[threadId] = fallback;
-    if (activeThreadId.value === threadId) messages.value = fallback;
-  }
 }
 
 /** Append a message to a specific thread's cache, and mirror to `messages` if that thread is active. */
@@ -2023,7 +1938,7 @@ function _appendToThread(threadId, msg) {
   const existing =
     _threadMessages[threadId] ?? (activeThreadId.value === threadId ? messages.value : []);
   const next = [...existing, msg];
-  _persistLocal(threadId, next);
+  _setThreadMessages(threadId, next);
 }
 
 /** Update only the response owned by this request, including overlapping sends. */
@@ -2032,7 +1947,7 @@ function _updateAgentMessage(threadId, turnId, patch) {
     _threadMessages[threadId] ?? (activeThreadId.value === threadId ? messages.value : []);
   const next = updateTurnMessage(list, turnId, patch);
   if (next === list) return;
-  _persistLocal(threadId, next);
+  _setThreadMessages(threadId, next);
 }
 
 // One scope thread per burst of sends made before any thread is selected.
@@ -2059,9 +1974,7 @@ async function threadForSend() {
 function _markSteered(threadId, turnId, into) {
   const list =
     _threadMessages[threadId] ?? (activeThreadId.value === threadId ? messages.value : []);
-  const answer = list.filter((m) => m.actor === 'agent' && m.turnId === turnId);
-  if (answer.length) _discardLocal(threadId, answer);
-  _persistLocal(
+  _setThreadMessages(
     threadId,
     list
       .filter((m) => !(m.actor === 'agent' && m.turnId === turnId))
@@ -2575,10 +2488,9 @@ export function init() {
     writeHash();
   });
 
-  // Persistence happens at each mutation with its originating thread ID.
-  // Combining selected-thread and message signals here can cross-write history.
-
-  window.addEventListener('storage', _adoptStored);
+  // why: viewers before 2026-11-11 cached every thread's rows here and filled the origin's quota.
+  for (const key of Object.keys(localStorage))
+    if (key.startsWith('foundry:msgs:')) localStorage.removeItem(key);
 
   // Handle back/forward navigation
   // Pages leave the workspace's view state alone; returning to the workspace re-reads it.

@@ -3,7 +3,6 @@ import { mkdtemp } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { StreamBufferRegistry } from '../src/viewer/stream-buffer';
 import {
-  persistBrowserMessages,
   reconcileThreadMessages,
   terminalMessagePatch,
   updateTurnMessage,
@@ -11,7 +10,7 @@ import {
 import { liveThreadStatus, liveWorkLabel, mergeLiveSnapshot } from '../src/viewer/ui/live-state.js';
 import { liveWatchFixture, until } from './helpers/live-watch-fixture';
 
-test('actual cached-watch persistence order retains an empty full response and later native/RPC facts', () => {
+test('the watch merge after a full response retains an empty full response and later native/RPC facts', () => {
   const r = new StreamBufferRegistry(),
     b = r.open('M', 'T', 'P');
   const owner = {
@@ -44,15 +43,11 @@ test('actual cached-watch persistence order retains an empty full response and l
     traceSnapshot: { original: 'TRACE' },
   };
   rows = updateTurnMessage(rows, 'M', terminalMessagePatch(event));
-  let saved = '';
-  rows = persistBrowserMessages(
-    mergeLiveSnapshot(rows, snapshot()),
-    (text: string) => (saved = text),
-  );
+  rows = mergeLiveSnapshot(rows, snapshot());
   expect(rows[0].content).toBe('');
   expect(liveWorkLabel(rows[0])).toBe('Completed · persistence failed');
   expect(liveThreadStatus(rows)).toBe('unconfirmed');
-  expect(JSON.parse(saved)[0].traceSnapshot).toEqual(event.traceSnapshot);
+  expect(rows[0].traceSnapshot).toEqual(event.traceSnapshot);
   b.observe({ ...original, kind: 'result', nativeOutcome: 'completed' });
   rows = mergeLiveSnapshot(rows, snapshot());
   expect(rows[0].live.native).toEqual({ outcome: 'completed', rpc: 'pending' });
