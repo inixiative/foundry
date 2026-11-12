@@ -10313,3 +10313,27 @@ a.thread-ref:hover {
 .update-confirm-list {
   margin: 4px 0 8px 18px;
 }
+
+/* In place of the composer on an observed subagent thread (SubagentRecordNotice). */
+.subagent-record {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 8px 10px 10px;
+  padding: 10px 12px;
+  border: 1px dashed var(--line);
+  border-radius: 10px;
+  font-size: 12.5px;
+  color: var(--text-dim);
+}
+.subagent-record-parent {
+  padding: 3px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: none;
+  color: var(--text);
+  font: 12px var(--font);
+  cursor: pointer;
+  white-space: nowrap;
+}
