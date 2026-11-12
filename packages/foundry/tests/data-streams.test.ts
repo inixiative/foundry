@@ -509,6 +509,35 @@ test('event streams are scoped to a thread, with runtime errors still delivered'
   ).toEqual(['journal']);
 });
 
+test("system activity reaches a thread's events when it is global or its project's, never as an error", async () => {
+  const f = fixture();
+  const activity = (key: string, projectId?: string) => ({
+    key,
+    source: 'test',
+    ...(projectId ? { projectId } : {}),
+    state: 'working' as const,
+    summary: key,
+    detail: key,
+  });
+  f.events.pushActivity(activity('before:P', 'P'));
+  const inProject = connectStreams(f.viewer),
+    elsewhere = connectStreams(f.viewer);
+  await inProject.open('events:in-project');
+  await elsewhere.open('events:main');
+  // Opened mid-warmup: the latest activity is in the snapshot, not among the thread's events.
+  const snap = inProject.data('events:in-project')[0].payload;
+  expect(snap.activities.map((a: any) => a.key)).toEqual(['before:P']);
+  expect(snap.events).toEqual([]);
+  expect(elsewhere.data('events:main')[0].payload.activities).toEqual([]);
+  f.events.pushActivity(activity('host:P', 'P'));
+  f.events.pushActivity(activity('host:Q', 'Q'));
+  f.events.pushActivity(activity('rate-limit'));
+  const keys = (frames: any[]) =>
+    frames.filter((frame) => frame.action === 'append').map((frame) => frame.payload.event.key);
+  expect(keys(inProject.data('events:in-project'))).toEqual(['host:P', 'rate-limit']);
+  expect(keys(elsewhere.data('events:main'))).toEqual(['rate-limit']);
+});
+
 test('the upgrade is authorized like HTTP: loopback, or the tunnel credential, and same origin', async () => {
   const local = fixture();
   const server = Bun.serve({

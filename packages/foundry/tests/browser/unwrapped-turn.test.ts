@@ -120,9 +120,16 @@ test('an unwrapped turn renders without a pre bar, decision badges or unavailabl
     const agent = page.locator('.chat-agent').filter({ hasText: 'UNWRAPPED_ANSWER' }).first();
     await agent.waitFor();
     expect(await agent.locator('.pipeline-pre').count()).toBe(0);
-    expect(await agent.locator('.chat-badge.classify, .chat-badge.route').count()).toBe(0);
-    expect(await agent.locator('.chat-badge.exec').innerText()).toContain('executor');
+    expect(await agent.locator('.chat-badge').count()).toBe(0);
+    // Who answered and how long, never an agent id.
+    expect(await agent.locator('.chat-msg-who').innerText()).toMatch(/^Your agent( · .+)?$/);
     expect(await agent.locator('.chat-layers').count()).toBe(0);
+    // A turn fills the thread column instead of a fixed reading width (Aron, 2026-11-11).
+    const [width, column] = await agent.evaluate((el: HTMLElement) => [
+      el.getBoundingClientRect().width,
+      (el.parentElement as HTMLElement).clientWidth,
+    ]);
+    expect(width).toBeGreaterThan(column * 0.9);
     expect((await agent.innerText()).toLowerCase()).not.toContain('unavailable');
     expect(errors).toEqual([]);
   } finally {

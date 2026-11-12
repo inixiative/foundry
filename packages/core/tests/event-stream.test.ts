@@ -159,4 +159,21 @@ describe('EventStream', () => {
     stream.clear();
     expect(stream.recent().length).toBe(0);
   });
+  test('activity keeps the latest of each key past the history bound', () => {
+    const stream = new EventStream(2);
+    const seen: StreamEvent[] = [];
+    stream.subscribe((event) => seen.push(event));
+    const base = { source: 's', summary: 'x', detail: 'd' };
+    stream.pushActivity({ ...base, key: 'a', state: 'working' });
+    stream.pushActivity({ ...base, key: 'b', state: 'failed' });
+    stream.pushActivity({ ...base, key: 'a', state: 'ready' });
+    for (let i = 0; i < 5; i++) stream.push(makeEvent('dispatch'));
+    expect(seen.filter((e) => e.kind === 'activity').length).toBe(3);
+    expect(stream.activities().map((a) => [a.key, a.state])).toEqual([
+      ['b', 'failed'],
+      ['a', 'ready'],
+    ]);
+    stream.clear();
+    expect(stream.activities()).toEqual([]);
+  });
 });

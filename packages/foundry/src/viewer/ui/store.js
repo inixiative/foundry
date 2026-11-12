@@ -54,6 +54,10 @@ export const threadData = signal(null);
 export const allThreads = signal([]); // all threads (multi-thread support)
 export const activeThreadId = signal(null); // selected thread ID (null = first/default)
 export const liveEvents = signal([]);
+/** What the system is doing around the open thread: the latest activity of each key. */
+export const systemActivity = signal([]);
+/** Every activity event heard, newest first: the strip's expanded log. */
+export const systemActivityLog = signal([]);
 /** The centre's tab: conversation (Thread) | plan | work | graph (Loop). */
 export const CENTER_PANELS = ['conversation', 'plan', 'graph'];
 export const activePanel = signal('conversation');
@@ -293,6 +297,24 @@ export function launchLabels(provider, model) {
     provider: vendorName(provider) ?? entry?.label ?? null,
     model: entry ? (entry.models?.find((m) => m.id === model)?.label ?? model ?? null) : null,
   };
+}
+/**
+ * A model id's display name from the registry ("claude-opus-5-5", or the alias "opus", both read
+ * "Opus 5.5"), across every provider; null until the registry loads or for an id it does not know.
+ */
+export function modelLabel(model, registry = modelRegistry.value) {
+  if (!model) return null;
+  if (!registry) {
+    void modelRegistryOnce().then((loaded) => {
+      if (loaded && !modelRegistry.value) modelRegistry.value = loaded;
+    });
+    return null;
+  }
+  for (const provider of registry.providers ?? []) {
+    const entry = provider.models?.find((m) => m.id === model);
+    if (entry?.label) return entry.label;
+  }
+  return null;
 }
 export const compactPanel = signal('conversation');
 
@@ -717,9 +739,18 @@ function applyEventsFrame(frame) {
       .slice()
       .reverse()
       .map((event) => ({ ...event, _time: eventTime(event) }));
+    const activities = frame.payload.activities ?? [];
+    systemActivity.value = activities;
+    systemActivityLog.value = activities.slice().reverse();
     return;
   }
   const event = frame.payload.event;
+  // System activity shows in the strip above the composer, never as a toast.
+  if (event.kind === 'activity') {
+    systemActivity.value = [...systemActivity.value.filter((a) => a.key !== event.key), event];
+    systemActivityLog.value = [event, ...systemActivityLog.value].slice(0, 100);
+    return;
+  }
   eventCount.value += 1;
   // Surface error events from the backend as toasts
   if (event.kind === 'error')
@@ -804,6 +835,8 @@ function connectStreams() {
       if (eventsStream) socket.close(eventsStream);
       eventsStream = nextEvents;
       liveEvents.value = [];
+      systemActivity.value = [];
+      systemActivityLog.value = [];
       socket.open(nextEvents);
     }
   });

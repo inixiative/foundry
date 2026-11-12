@@ -69,6 +69,7 @@ import {
   loadOlderMessages,
   loadTraceDetail,
   messages,
+  modelLabel,
   openTurnView,
   postAside,
   projects,
@@ -84,6 +85,8 @@ import {
   sendMessage,
   showToast,
   stopTurn,
+  systemActivity,
+  systemActivityLog,
   threadContextTokens,
   threadData,
   threadLaunch,
@@ -92,6 +95,7 @@ import {
   tokenUsage,
   waitingFor,
 } from './store.js';
+import { stripView } from './system-strip.js';
 import {
   harnessName,
   isUnnamed,
@@ -430,19 +434,76 @@ function ContextBar() {
           }
         `} />
       </div>
-      <${ChorusBarLine} threadId=${data.threadId} />
     </div>
   `;
 }
 
-/** The context bar's line for the last turn's degraded chorus (FEAT-008), beside the setup notice. */
-function ChorusBarLine({ threadId }) {
-  const message = lastDegraded(messages.value);
-  if (!message) return null;
-  const { count } = chorusNotice(message.chorus);
-  return html`<div class="context-bar-setup context-bar-setup--degraded" role="status" data-chorus-bar="open">
-    On the last turn, ${count} Warden${count === 1 ? '' : 's'} went unheard.
-    <button class="chorus-bar-retry" onClick=${() => chorusAction(threadId, message.turnId, 'retry')}>Retry</button>
+const STRIP_DOT = { working: 'working', ready: 'done', degraded: 'attention', failed: 'problem' };
+
+/**
+ * What the system is doing around this thread, above the composer (Aron, 2026-11-11): its project's
+ * Wardens starting, a rate limit on the login, the last turn's unheard Wardens. One plain line in the
+ * status colours; the chevron opens the technical log. Nothing shows while all is quiet.
+ */
+function SystemStrip({ threadId }) {
+  const [open, setOpen] = useState(false);
+  const [, tick] = useState(0);
+  const now = Date.now();
+  const view = stripView(systemActivity.value, now);
+  const degraded = lastDegraded(messages.value);
+  const showing = !!view || !!degraded;
+  useEffect(() => {
+    if (!showing) return;
+    const timer = setInterval(() => tick((n) => n + 1), 1000);
+    return () => clearInterval(timer);
+  }, [showing]);
+  if (!showing) return null;
+  const count = degraded ? chorusNotice(degraded.chorus).count : 0;
+  const log = systemActivityLog.value;
+  return html`<div class="system-strip" role="status" data-state=${degraded ? 'degraded' : view.state}>
+    ${
+      degraded
+        ? html`<div class="system-strip-row" data-chorus-bar="open">
+        <span class="system-strip-dot" data-tone="attention"></span>
+        <span class="system-strip-text">On the last turn, ${count} Warden${count === 1 ? '' : 's'} went unheard.</span>
+        <button class="system-strip-action" onClick=${() => chorusAction(threadId, degraded.turnId, 'retry')}>Retry</button>
+      </div>`
+        : null
+    }
+    ${
+      view
+        ? html`<div class="system-strip-row" data-key=${view.head.key}>
+        <span class="system-strip-dot" data-tone=${STRIP_DOT[view.state]}></span>
+        <span class="system-strip-text">${view.head.summary}</span>
+        ${view.elapsed ? html`<span class="system-strip-elapsed">${view.elapsed}</span>` : null}
+        ${view.others.length ? html`<span class="system-strip-more">+${view.others.length} more</span>` : null}
+        ${
+          log.length || view.others.length
+            ? html`<button class="system-strip-toggle" aria-expanded=${open} title=${open ? 'Hide the details' : 'Show the details'} onClick=${() => setOpen(!open)}>${open ? '▾' : '▸'}</button>`
+            : null
+        }
+      </div>`
+        : null
+    }
+    ${
+      open && view
+        ? html`<div class="system-strip-log">
+        ${view.others.map(
+          (a) => html`<div key=${a.key} class="system-strip-row system-strip-other">
+            <span class="system-strip-dot" data-tone=${STRIP_DOT[a.state]}></span>
+            <span class="system-strip-text">${a.summary}</span>
+          </div>`,
+        )}
+        ${log.map(
+          (a, i) => html`<div key=${i} class="system-strip-line">
+            <span class="system-strip-time">${new Date(a.timestamp).toLocaleTimeString()}</span>
+            <span class="system-strip-source">${a.source}</span>
+            <span>${a.detail}</span>
+          </div>`,
+        )}
+      </div>`
+        : null
+    }
   </div>`;
 }
 
@@ -1082,6 +1143,20 @@ function LostTurnCard({ msg }) {
   </section>`;
 }
 
+/**
+ * Who answered, with the model that worked and how long: "Your agent · Opus 5.5 · 22.1s". The model
+ * is what the native session reported (observed, else requested), named from the registry; an id it
+ * does not know shows nothing. A participant's agent will read "<name> · <model>" the same way.
+ */
+export function agentWho(msg, execStage) {
+  const config = msg.meta?.native?.configuration;
+  const model = modelLabel(config?.observedModel) ?? modelLabel(config?.requestedModel);
+  const ms = execStage?.durationMs ?? msg.trace?.totalDurationMs;
+  return ['Your agent', model, ms ? `${(ms / 1000).toFixed(1)}s` : null]
+    .filter(Boolean)
+    .join(' · ');
+}
+
 function AgentMessage({ msg, index, onTraceClick }) {
   const hasTrace = !!msg.traceId;
   const stages = msg.trace?.stages || [];
@@ -1101,7 +1176,7 @@ function AgentMessage({ msg, index, onTraceClick }) {
   return html`
     <div class="chat-msg chat-agent ${msg.error ? 'chat-error' : ''} ${isStreaming ? 'chat-streaming' : ''}" data-turn-id=${msg.turnId ?? ''} data-actor="agent" title=${sentAt(msg)}>
       <div class="chat-msg-n" aria-hidden="true">t${index + 1}</div>
-      <div class="chat-msg-who">Your agent</div>
+      <div class="chat-msg-who">${agentWho(msg, execStage)}</div>
       <${MessageMenu} msg=${msg} index=${index} onFeedback=${give.onFeedback} />
       <!-- Pre-execution bar: classify → route → context loading -->
       <${PipelineBar}
@@ -1114,27 +1189,13 @@ function AgentMessage({ msg, index, onTraceClick }) {
 
       <!-- Classification + route badges (inline) -->
       ${
-        msg.classification || msg.route || execStage || hasTrace
+        msg.classification || hasTrace
           ? html`
         <div class="chat-pipeline">
           ${
             msg.classification
               ? html`
             <span class="chat-badge classify">${msg.classification.category}</span>
-          `
-              : null
-          }
-          ${
-            msg.route
-              ? html`
-            <span class="chat-badge route">${msg.route.destination}</span>
-          `
-              : null
-          }
-          ${
-            execStage
-              ? html`
-            <span class="chat-badge exec">${execStage.agentId || 'executor'}${execStage.durationMs ? ` ${(execStage.durationMs / 1000).toFixed(1)}s` : ''}</span>
           `
               : null
           }
@@ -1665,6 +1726,7 @@ export function Conversation({ onTraceSelect, onLayerClick }) {
       ${shownViews().includes('btw') ? html`<${BtwView} entries=${threadData.value?.conversation?.btw} />` : null}
       ${shownViews().includes('asides') ? html`<${AsidesView} entries=${threadData.value?.conversation?.asides} onPromote=${(aside) => promoteAside(activeThreadId.value, aside.id)} />` : null}
       </div>
+      <${SystemStrip} threadId=${threadId} />
       <${ThreadNowStrip} />
       <${PromptList} threadId=${threadId} />
       <${ChatInput} />
