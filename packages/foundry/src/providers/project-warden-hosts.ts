@@ -285,9 +285,8 @@ export class ProjectWardenHosts {
    * Resolves true once the project's latest host (a start in progress included) serves with every
    * Warden held, false on failure or after `timeoutMs`.
    */
-  async projectReady(projectId: string, timeoutMs: number): Promise<boolean> {
-    const end = Date.now() + timeoutMs;
-    for (;;) {
+  projectReady(projectId: string, timeoutMs: number): Promise<boolean> {
+    return this._until(timeoutMs, () => {
       const entry = this._projects.get(projectId);
       const state = this.projectState(projectId);
       if (
@@ -297,7 +296,29 @@ export class ProjectWardenHosts {
         state.held === state.expected
       )
         return true;
-      if (!state || state.status === 'failed' || Date.now() >= end) return false;
+      if (!state || state.status === 'failed') return false;
+    });
+  }
+
+  /**
+   * Resolves true once a host serves the project (at once while one does), false when none is on its
+   * way (not open, failed, no start or retry pending) or after `timeoutMs`. A replacement starting
+   * beside a serving host is not waited for.
+   */
+  whenServing(projectId: string, timeoutMs: number): Promise<boolean> {
+    return this._until(timeoutMs, () => {
+      const entry = this._projects.get(projectId);
+      if (entry?.live?.host.serving()) return true;
+      if (!entry || this._closed || entry.failed || (!entry.starting && !entry.retry)) return false;
+    });
+  }
+
+  private async _until(timeoutMs: number, settled: () => boolean | undefined): Promise<boolean> {
+    const end = Date.now() + timeoutMs;
+    for (;;) {
+      const value = settled();
+      if (value !== undefined) return value;
+      if (Date.now() >= end) return false;
       await Bun.sleep(100);
     }
   }
@@ -497,12 +518,20 @@ export class ProjectWardenHosts {
   }
 }
 
+/** A project's activity, as `followProjectActivity` follows it. */
+export interface ProjectActivity {
+  /** The project is active: opens its host when none is open; settles once that opening has. */
+  activate(projectId: string): Promise<void>;
+  stop(): void;
+}
+
 /**
  * A project's host opens when the project becomes active and stays while it is.
  * Activity is what the daemon's event stream already says: a turn journalled in the project
- * (`journal`, which carries the project) or a thread of it opened (`thread:added`). The first
+ * (`journal`, which carries the project) or a thread of it attached (`thread:added`), plus what the
+ * caller reports through `activate` (a thread of it opened in the viewer, a turn's advice). The first
  * activity of a project with no open host asks `open` for one (composing its roster); later activity
- * keeps it from going idle (`projectHost.idleMs`). Returns the unsubscribe.
+ * keeps it from going idle (`projectHost.idleMs`).
  */
 export function followProjectActivity(options: {
   hosts: ProjectWardenHosts;
@@ -511,19 +540,27 @@ export function followProjectActivity(options: {
   projectOf: (threadId: string) => string | undefined;
   /** Compose the project's roster and open its host; failures are the caller's to report. */
   open: (projectId: string) => Promise<void>;
-}): () => void {
-  const opening = new Set<string>();
-  const active = (projectId: string | undefined) => {
-    if (!projectId || options.hosts.touchProject(projectId) || opening.has(projectId)) return;
-    opening.add(projectId);
-    void options
+}): ProjectActivity {
+  const opening = new Map<string, Promise<void>>();
+  const activate = (projectId: string): Promise<void> => {
+    if (options.hosts.touchProject(projectId)) return Promise.resolve();
+    const pending = opening.get(projectId);
+    if (pending) return pending;
+    const opened = options
       .open(projectId)
       .catch(() => undefined)
       .finally(() => opening.delete(projectId));
+    opening.set(projectId, opened);
+    return opened;
   };
-  return options.events.subscribe((event) => {
-    if (event.kind === 'journal') active(event.projectId);
-    else if (event.kind === 'session' && event.event.type === 'thread:added')
-      active(options.projectOf(event.event.threadId));
+  const stop = options.events.subscribe((event) => {
+    const projectId =
+      event.kind === 'journal'
+        ? event.projectId
+        : event.kind === 'session' && event.event.type === 'thread:added'
+          ? options.projectOf(event.event.threadId)
+          : undefined;
+    if (projectId) void activate(projectId);
   });
+  return { activate, stop };
 }

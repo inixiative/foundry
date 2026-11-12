@@ -109,6 +109,8 @@ export interface ViewerConfig {
   namingProvider?: LLMProvider;
   /** Each worker's native sessions, for a thread switching worker mid-conversation. */
   workerSessions?: WorkerSessions;
+  /** A project is active: a thread of it was opened here (its Warden host opens before the first turn). */
+  projectActive?: (projectId: string) => void;
   /** Decision provider for the feedback lifecycle (optional; no capture without it). */
   feedbackProvider?: LLMProvider;
   /** Token tracker for analytics (optional but recommended). */
@@ -322,6 +324,7 @@ export function createViewer(config: ViewerConfig) {
     conversation: (threadId) => conversations?.summary(threadId),
     permissionMode: (threadId) => threadLaunch.forLaunch(threadId).permissionMode,
     threadRole: (thread) => threadRoleOf(configStore.config, thread.meta),
+    ...(config.projectActive ? { projectActive: config.projectActive } : {}),
     journal: {
       store: localStore,
       learningState: (threadId) => config.threadFactory?.runtime?.get(threadId)?.learningState,

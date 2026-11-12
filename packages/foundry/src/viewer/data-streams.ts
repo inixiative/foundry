@@ -99,6 +99,8 @@ export function createViewerStreams(deps: {
   permissionMode?: (threadId: string) => string | undefined;
   /** The thread role a thread composes as (its own, else its worker's default). */
   threadRole?: (thread: Thread) => string;
+  /** A thread of this project was opened (`thread:<id>`). */
+  projectActive?: (projectId: string) => void;
 }) {
   const { directory, eventStream, actionQueue, deliverTo } = deps;
   const journal: FlowJournal = deps.journal ?? { store: null };
@@ -144,6 +146,8 @@ export function createViewerStreams(deps: {
     start(stream, append) {
       const threadId = suffix(stream, 'thread:')!;
       threadSinks.set(threadId, append);
+      const projectId = directory.get(threadId)?.meta.projectId;
+      if (projectId) deps.projectActive?.(projectId);
       const unsubscribe = eventStream.subscribe((event) => {
         if (eventThread(event) === threadId && reconcilable(event))
           append({ kind: 'event', event });
