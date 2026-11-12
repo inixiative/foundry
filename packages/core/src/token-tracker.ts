@@ -219,18 +219,19 @@ export interface UsageSummary {
 
 // ---------------------------------------------------------------------------
 // Default cost table. Anthropic: first-party API list prices per 1M tokens, as published at
-// https://platform.claude.com/docs/en/about-claude/pricing (read 2026-11-01; cache writes are the
+// https://platform.claude.com/docs/en/about-claude/pricing (read 2026-11-11; cache writes are the
 // 5-minute rate, 1.25x input). Haiku 5.5 is its rate up to 100K-token prompts.
 // ---------------------------------------------------------------------------
 
 export const DEFAULT_COST_TABLE: CostTable = {
   anthropic: {
+    'claude-fable-5-2': { inputPer1M: 8, outputPer1M: 40, cacheReadPer1M: 0.2 },
     'claude-fable-5-1': { inputPer1M: 10, outputPer1M: 50, cacheReadPer1M: 0.25 },
     'claude-fable-5': { inputPer1M: 10, outputPer1M: 50 },
     'claude-opus-5-5': { inputPer1M: 4, outputPer1M: 20, cacheReadPer1M: 0.2 },
     'claude-opus-5': { inputPer1M: 5, outputPer1M: 25 },
     'claude-opus-4-8': { inputPer1M: 5, outputPer1M: 25 },
-    'claude-sonnet-5-5': { inputPer1M: 2, outputPer1M: 10, cacheReadPer1M: 0.2 },
+    'claude-sonnet-5-5': { inputPer1M: 2, outputPer1M: 10, cacheReadPer1M: 0.1 },
     'claude-sonnet-5': { inputPer1M: 2, outputPer1M: 10 },
     'claude-haiku-5-5': { inputPer1M: 0.1, outputPer1M: 0.5 },
     'claude-haiku-4-5': { inputPer1M: 1, outputPer1M: 5 },

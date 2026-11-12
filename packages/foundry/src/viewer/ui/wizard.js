@@ -32,7 +32,7 @@ const FALLBACK_PROVIDERS = [
     desc: 'CLI subscription: no API key needed, works out of the box',
     envKey: '',
     models: [
-      { id: 'fable', label: 'Fable 5.1', tier: 'powerful' },
+      { id: 'fable', label: 'Fable 5.2', tier: 'powerful' },
       { id: 'opus', label: 'Opus 5.5', tier: 'powerful' },
       { id: 'sonnet', label: 'Sonnet 5.5', tier: 'standard' },
       { id: 'haiku', label: 'Haiku 5.5', tier: 'fast' },
@@ -69,9 +69,9 @@ const FALLBACK_PROVIDERS = [
     desc: 'Direct API, for programmatic access without the Claude Code CLI',
     envKey: 'ANTHROPIC_API_KEY',
     models: [
-      { id: 'claude-fable-5-1', label: 'Claude Fable 5.1', tier: 'powerful' },
-      { id: 'claude-opus-5', label: 'Claude Opus 5', tier: 'powerful' },
-      { id: 'claude-sonnet-5', label: 'Claude Sonnet 5', tier: 'standard' },
+      { id: 'claude-fable-5-2', label: 'Claude Fable 5.2', tier: 'powerful' },
+      { id: 'claude-opus-5-5', label: 'Claude Opus 5.5', tier: 'powerful' },
+      { id: 'claude-sonnet-5-5', label: 'Claude Sonnet 5.5', tier: 'standard' },
       { id: 'claude-haiku-5-5', label: 'Claude Haiku 5.5', tier: 'fast' },
     ],
   },
