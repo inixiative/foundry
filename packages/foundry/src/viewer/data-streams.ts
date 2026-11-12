@@ -6,6 +6,7 @@
 import type {
   ActionPrompt,
   ActionQueue,
+  ActivityEvent,
   EventStream,
   StreamEvent,
   Thread,
@@ -32,8 +33,9 @@ import { FLOW_TURNS, type FlowJournal, flowSnapshot, readLearning, readTurn } fr
  *   threads:<projectId> snapshot { projectId, threads }           append { thread } | { removed: threadId }
  *   threads:all         the same, over every thread across projects (the Active rail, the board)
  *   prompts             snapshot { prompts }                      append { prompt }  (status says pending or settled)
- *   events              snapshot { events }  (runtime-wide)       append { event }
- *   events:<threadId>   snapshot { events }  (owned by thread)    append { event }  (plus threadless errors, for toasts)
+ *   events              snapshot { events, activities }  (runtime-wide)   append { event }
+ *   events:<threadId>   snapshot { events, activities }  (owned by thread)  append { event }  (plus threadless
+ *                       errors, for toasts, and system activity of the thread's project or of every thread)
  *   feedback            snapshot { projectId: null, items }        append { item }  (the lifecycle view; see feedback/service.ts)
  *   feedback:<projectId> snapshot { projectId, items }             append { item }
  *   flow:<threadId>     snapshot { threadId, journal, turns, learning, knowledge, review, learningError, limits }  (bounded; see turn-flow.ts)
@@ -245,16 +247,25 @@ export function createViewerStreams(deps: {
     start(stream, append) {
       const threadId = suffix(stream, 'events:');
       const owned = (event: StreamEvent) => threadId === null || eventThread(event) === threadId;
+      // What the system does around a thread: global activity, or its own project's.
+      const concerns = (event: ActivityEvent) =>
+        threadId === null ||
+        !event.projectId ||
+        event.projectId === directory.get(threadId)?.meta.projectId;
       // Runtime errors name no thread; a thread-scoped viewer still has to hear them.
       const unsubscribe = eventStream.subscribe((event) => {
-        if (owned(event) || event.kind === 'error') append({ event });
+        if (event.kind === 'activity') {
+          if (concerns(event)) append({ event });
+        } else if (owned(event) || event.kind === 'error') append({ event });
       });
       return {
         snapshot: () => ({
           events: eventStream
             .recent({ limit: Number.MAX_SAFE_INTEGER })
-            .filter(owned)
+            .filter((event) => event.kind !== 'activity' && owned(event))
             .slice(-EVENT_HISTORY),
+          // The latest of each, so a viewer opened mid-warmup sees it.
+          activities: eventStream.activities().filter(concerns),
         }),
         stop: unsubscribe,
       };

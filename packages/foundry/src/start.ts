@@ -133,6 +133,12 @@ import {
 } from './viewer/config';
 import { effectiveProject, resolveProjectView } from './viewer/config-resolve';
 import { startViewer } from './viewer/server';
+import {
+  decisionPressureActivity,
+  prefilterActivity,
+  primedEventActivity,
+  projectHostActivity,
+} from './viewer/system-activity';
 
 // ---------------------------------------------------------------------------
 // Load config (auto-bootstrap on first run)
@@ -231,7 +237,9 @@ const decisionEvents: DecisionEvents = {
           ? `Decision admission closed until restart: ${event.reason}`
           : `Decision subscription rate limited; backing off ${Math.round(event.backoffMs / 1000)}s`;
     console.warn(`[subscription-decisions] ${message}`);
-    eventStream.pushError('subscription-decisions', message, 'warn');
+    eventStream.pushActivity(decisionPressureActivity(event));
+    // Closed until restart: the person has to act, so it toasts too.
+    if (event.kind === 'closed') eventStream.pushError('subscription-decisions', message, 'warn');
   },
   onPrimedEvent: (event: Parameters<NonNullable<DecisionEvents['onPrimedEvent']>>[0]) => {
     if (event.type === 'process-started')
@@ -242,7 +250,8 @@ const decisionEvents: DecisionEvents = {
         ? `Decision violated the text-only policy (${event.detail}); process recycled`
         : `Decision process recycled (${event.reason}); roles re-prime on the next decision`;
     console.warn(`[subscription-decisions] ${message}`);
-    eventStream.pushError('subscription-decisions', message, 'warn');
+    const activity = primedEventActivity(event);
+    if (activity) eventStream.pushActivity(activity);
   },
 };
 // The decision host and one host per other model and effort a classify stage names
@@ -260,8 +269,15 @@ const live = subscription
               onProject: (projectId: string, state: ProjectHostState) => {
                 const line = `[project-wardens] ${projectId} ${state.status}: ${state.held}/${state.expected} held${state.setupMs !== undefined ? `, set up in ${state.setupMs} ms` : ''}${state.rssMb !== undefined ? `, ${state.rssMb} MB` : ''}${state.reason ? ` (${state.reason})` : ''}`;
                 console.log(line);
-                // Its calls fall back to primed Wardens meanwhile; say so where decision warnings go.
-                if (state.status === 'failed' || (state.reason && state.status !== 'serving'))
+                // Shown above the composer of the project's threads; failed for good also toasts.
+                eventStream.pushActivity(
+                  projectHostActivity(
+                    projectId,
+                    config.projects?.[projectId]?.label ?? projectId,
+                    state,
+                  ),
+                );
+                if (state.status === 'failed')
                   eventStream.pushError('subscription-decisions', line, 'warn');
               },
             },
@@ -698,19 +714,18 @@ const prefilterServer = prefilterSettings.enabled
 const prefilter = prefilterSettings.enabled
   ? new WardenPrefilter(config.prefilter, {
       onHealth: (health) => {
-        if (health.ok) return console.log('Warden pre-filter: ready');
-        const message = `Warden pre-filter unavailable (${health.reason}); every Warden is asked`;
-        console.warn(`[warden-prefilter] ${message}`);
-        eventStream.pushError('warden-prefilter', message, 'warn');
+        const activity = prefilterActivity(health);
+        if (health.ok) console.log(activity.detail);
+        else console.warn(`[warden-prefilter] ${activity.detail}`);
+        eventStream.pushActivity(activity);
       },
     })
   : undefined;
 if (prefilterServer?.status === 'not-installed') {
   // Every Warden is asked; say so in the log and the viewer without probing the network.
-  const message =
-    'Warden pre-filter model not installed (run `foundry-acp setup`); every Warden is asked';
-  console.warn(`[warden-prefilter] ${message}`);
-  eventStream.pushError('warden-prefilter', message, 'warn');
+  const activity = prefilterActivity('not-installed');
+  console.warn(`[warden-prefilter] ${activity.detail}`);
+  eventStream.pushActivity(activity);
 } else void prefilter?.waitReady(prefilterServer?.status === 'started' ? 120_000 : 0);
 
 // atlasRoot: first atlas-mapped project (has .atlas/ or MAP.md), else the cwd.

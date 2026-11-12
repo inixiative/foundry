@@ -166,7 +166,13 @@ export {
   verifyExpertDelivery,
 } from './delivery-evidence';
 // Observability
-export { EventStream, type SessionEvent, type StreamEvent } from './event-stream';
+export {
+  type ActivityEvent,
+  EventStream,
+  type SessionEvent,
+  type StreamEvent,
+  type SystemActivity,
+} from './event-stream';
 export {
   type ExecuteHandler,
   type ExecuteMeta,
