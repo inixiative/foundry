@@ -51,7 +51,16 @@ test('the rail nests subagents only; a user-started child thread lists flat', as
     });
     sub.meta.spawn = { via: 'native-claude', observed: true };
     sub.meta.depth = 1;
+    sub.meta.status = 'active';
     project.addThread(sub);
+    const finished = new Thread('sub-done', new ContextStack(), {
+      description: 'Read the tax rules',
+      projectId: 'shop',
+      parentThreadId: 'main',
+    });
+    finished.meta.spawn = { via: 'native-claude', observed: true };
+    finished.meta.depth = 1;
+    project.addThread(finished);
     project.addThread(
       new Thread('follow-up', new ContextStack(), {
         description: 'Follow-up: refund rounding',
@@ -101,6 +110,16 @@ test('the rail nests subagents only; a user-started child thread lists flat', as
     const top = await indent('Fix the cart total');
     expect(await indent('Explore the cart module')).toBeGreaterThan(top);
     expect(await indent('Follow-up: refund rounding')).toBe(top);
+
+    // A running subagent shows under its parent; a finished one folds into a thin
+    // "completed runs" toggle, and expanding it lists the run to open.
+    const doneRow = page.locator('.nav-threads .tree-node', { hasText: 'Read the tax rules' });
+    expect(await doneRow.count()).toBe(0);
+    await page
+      .locator('.nav-threads .inactive-fold-header', { hasText: '1 completed run' })
+      .click();
+    await doneRow.first().click();
+    await page.locator('.subagent-record').waitFor();
 
     // An observed subagent takes no turns: its thread shows a record notice, not a composer,
     // and the notice opens the parent thread.
