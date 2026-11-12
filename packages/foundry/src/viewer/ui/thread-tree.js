@@ -56,16 +56,11 @@ import {
 } from './thread-status.js';
 
 // ---------------------------------------------------------------------------
-// Active/inactive classification
+// Completed-runs fold: a thin toggle row over the subagents that are not running
 // ---------------------------------------------------------------------------
 
-function isActiveThread(t) {
-  return !CLOSED_STATUSES.has(t.status);
-}
-
-// ---------------------------------------------------------------------------
-// Inactive fold — "N inactive" / "N uninstantiated"
-// ---------------------------------------------------------------------------
+/** A subagent row stays in view while it runs or waits on the person; the rest fold away. */
+const staysInView = (child) => ['working', 'attention'].includes(categoryOf(nodeState(child)));
 
 function InactiveFold({ count, label, defaultOpen = false, children }) {
   const [open, setOpen] = useState(defaultOpen);
@@ -223,8 +218,9 @@ export function ThreadNode({ thread, depth = 0, selectedId, onSelect, inactive =
   const expanded = open || railExpanded.value.has(thread.id);
   const isSelected = selectedId === thread.id;
   const children = thread.children || [];
-  const activeChildren = children.filter(isActiveThread);
-  const inactiveChildren = children.filter((c) => !isActiveThread(c));
+  const activeChildren = children.filter(staysInView);
+  const inactiveChildren = children.filter((c) => !staysInView(c));
+  const failedRuns = inactiveChildren.filter((c) => nodeState(c) === 'error').length;
   const hasChildren = children.length > 0;
 
   return html`
@@ -295,7 +291,9 @@ export function ThreadNode({ thread, depth = 0, selectedId, onSelect, inactive =
             selectedId=${selectedId} onSelect=${onSelect}
           />`,
         )}
-        <${InactiveFold} count=${inactiveChildren.length} label="inactive">
+        <${InactiveFold} count=${inactiveChildren.length}
+          label=${`completed run${inactiveChildren.length === 1 ? '' : 's'}${failedRuns ? ` · ${failedRuns} failed` : ''}`}
+          defaultOpen=${inactiveChildren.some((c) => c.id === selectedId)}>
           ${inactiveChildren.map(
             (child) =>
               html`<${ThreadNode}
