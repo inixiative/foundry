@@ -152,7 +152,7 @@ export interface ConversationMemberView {
   /** The outbound term a send uses now (falls back to `review`, §4.5). */
   outbound: 'review' | 'auto';
   revision?: number;
-  limits?: { maxRequests: number | null; maxConcurrent: number; expiresAt: string | null };
+  limits?: { maxRequests: number | null; expiresAt: string | null };
   present: boolean;
   lastSeen: string | null;
   holdsConch: boolean;
@@ -2203,7 +2203,6 @@ export class ConversationService implements ConversationWrapper {
         revision: signet.revision,
         limits: {
           maxRequests: signet.maxRequests,
-          maxConcurrent: signet.maxConcurrent,
           expiresAt: signet.expiresAt,
         },
         present: false,

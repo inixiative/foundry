@@ -7,7 +7,6 @@ const request = (over: Partial<HostedSignetRequest>): HostedSignetRequest => ({
   status: 'sent',
   createdAt: '2026-11-01T10:00:00.000Z',
   expiresAt: null,
-  integrationId: '00000000-0000-4000-8000-0000000000aa',
   requester: {
     sourceModel: 'User',
     id: '00000000-0000-4000-8000-0000000000bb',
@@ -18,7 +17,6 @@ const request = (over: Partial<HostedSignetRequest>): HostedSignetRequest => ({
     lifecycle: 'task',
     expiresAt: '2026-11-07T00:00:00.000Z',
     maxRequests: 50,
-    maxConcurrent: 1,
     resources: [
       {
         resourceModel: 'IntegrationResource',

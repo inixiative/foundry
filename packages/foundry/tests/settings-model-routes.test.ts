@@ -170,8 +170,6 @@ test('Kingdom holders are read once, again after the Installation changes, and a
       if (refuse) throw new SignetHttpError(403);
       return {
         signetId: integration.signetId,
-        integrationId: integration.integrationId,
-        provider: null,
         name: 'Studio',
         expiresAt: null,
         lifecycle: 'ongoing',

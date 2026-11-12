@@ -13,7 +13,7 @@ import {
   pairInstallation,
   signetCredentialFile,
 } from '@inixiative/signet';
-import type { RequestedResource } from '@inixiative/signet/contracts';
+import type { RegisteredResource } from '@inixiative/signet/contracts';
 import { z } from 'zod';
 import type { ConfigStore } from '../viewer/config';
 import { privateTunnelToken } from '../viewer/private-token';
@@ -52,7 +52,7 @@ export const kingdomPairInputSchema = z
 /** What a Foundry asks Kingdom for: inference on the owner's models. */
 export const foundryPairingResources = [
   { resourceKind: 'model', operations: { picks: ['inference.create'] } },
-] as const satisfies RequestedResource[];
+] as const satisfies RegisteredResource[];
 
 /** What a person needs to approve the pairing in Kingdom. */
 export type KingdomReview = { url: string; reviewCode: string; review: string; expiresAt: string };
@@ -127,7 +127,6 @@ export async function pairKingdomIntegration(
         resources: [...foundryPairingResources],
         expiresAt: null,
         maxRequests: null,
-        maxConcurrent: 2,
       },
       onReview: (review) => input.onReview({ url, ...review }),
       onError: (error) =>

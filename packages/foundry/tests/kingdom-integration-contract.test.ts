@@ -94,9 +94,7 @@ test('read routes the exact discovered resource Integration and rejects foreign 
     onSignet(action, body, presented) {
       if (action === 'describe')
         return {
-          signetId: presented.signetId,
-          integrationId: foreign ? Bun.randomUUIDv7() : integrationId,
-          provider: 'archive',
+          signetId: foreign ? Bun.randomUUIDv7() : presented.signetId,
           name: 'Controlled',
           expiresAt: null,
           lifecycle: 'task',
@@ -113,6 +111,7 @@ test('read routes the exact discovered resource Integration and rejects foreign 
                   name: 'Controlled',
                   kind: 'document',
                   integrationId: resourceIntegrationId,
+                  provider: 'archive',
                 },
               ],
             },
@@ -174,12 +173,11 @@ test('signet 0.5: a describe resource this package cannot read costs that resour
     name: 'Library',
     kind: 'archiveLibrary',
     integrationId,
+    provider: 'archive',
     ...(lens === undefined ? {} : { lens }),
   });
   const described = parseHeldSignetDescription({
     signetId: Bun.randomUUIDv7(),
-    integrationId,
-    provider: 'archive',
     name: 'Held',
     expiresAt: null,
     lifecycle: 'ongoing',

@@ -164,10 +164,8 @@ test('explicit checks use only the saved origin and enrolled Signet, expose meta
       if (rejected) return new Response('PRIVATE_TOKEN_FAILURE', { status: 401 });
       return {
         signetId: f.source.signetId,
-        integrationId: f.source.integrationId,
         name: 'Team issues',
         expiresAt: new Date(Date.now() + 60000).toISOString(),
-        provider: 'linear',
         lifecycle: 'ongoing',
         taskId: null,
         currentRevision: 1,
@@ -182,6 +180,7 @@ test('explicit checks use only the saved origin and enrolled Signet, expose meta
                 name: 'Issue',
                 kind: 'issue',
                 integrationId: f.source.integrationId,
+                provider: 'linear',
               },
             ],
           },
