@@ -208,7 +208,7 @@ test('Plan shows the about and the checklist, a step opens its turn; Work shows 
     expect(await page.locator('.center-view', { hasText: 'Work' }).count()).toBe(0);
     await page.locator('.rp-tab', { hasText: 'Work' }).click();
     const work = page.locator('.right-panel .work');
-    for (const title of ['File changes', 'Commits', 'Artifacts', 'Signets'])
+    for (const title of ['File changes', 'Commits', 'Pull requests and turns', 'Signets'])
       await work.locator('.rp-section-title', { hasText: title }).waitFor();
     await work.locator('.work-file', { hasText: 'src/checkout/retry.ts' }).waitFor();
     await work.locator('.work-commit', { hasText: 'Cap retries at three' }).waitFor();

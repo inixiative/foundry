@@ -49,7 +49,12 @@ import type { TaskSink } from '../providers/session-backed';
 import { ThreadLaunchSettings } from '../providers/thread-launch';
 import { resolveSecretsSettings, SecretScratch } from '../secrets/scratch';
 import { kingdomPostDelivery } from '../tools/kingdom-post';
-import type { ThreadRecords } from '../tools/thread-record';
+import {
+  ARTIFACT_PHASE,
+  type ArtifactVersionRecord,
+  artifactVersionId,
+  type ThreadRecords,
+} from '../tools/thread-record';
 import { withHandoffBrief } from '../turns/handoff-brief';
 import {
   NATIVE_RECORD_QUIET_MS,
@@ -1139,6 +1144,28 @@ export function createViewer(config: ViewerConfig) {
         threadChanged(thread);
         return result;
       },
+      artifacts: localStore
+        ? {
+            write(thread: Thread, record: ArtifactVersionRecord) {
+              const turnId = turnsReady?.runningTurn(thread.id) ?? null;
+              localStore.appendPhase(thread, {
+                id: artifactVersionId(thread.id, record.id, record.version),
+                phase: ARTIFACT_PHASE,
+                turnId,
+                dispatchId: null,
+                record: record as unknown as Record<string, unknown>,
+              });
+              return { turnId };
+            },
+            latest(threadId: string, artifactId: string) {
+              const rows = localStore.phasesOf(threadId, ARTIFACT_PHASE, {
+                key: 'id',
+                value: artifactId,
+              });
+              return rows.at(-1)?.record as unknown as ArtifactVersionRecord | undefined;
+            },
+          }
+        : undefined,
     } satisfies ThreadRecords,
     startSocket() {
       socket.startStaleSweep();

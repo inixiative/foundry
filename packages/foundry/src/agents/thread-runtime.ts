@@ -608,6 +608,8 @@ export interface PhaseRecordInput {
     | 'restart-hold'
     /** The thread moved to another worker here (`record`: WorkerSwitchRecord, turns/journal-history.ts). */
     | 'worker-switch'
+    /** One version of an artifact the agent made (`set_artifact`, tools/thread-record.ts). */
+    | 'artifact'
     | FeedbackPhase
     | ConversationPhase;
   readonly record: Record<string, unknown>;

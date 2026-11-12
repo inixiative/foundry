@@ -1,0 +1,128 @@
+/* Artifacts (artifacts.js): the tab beside Plan, and the cards under the turn that made each one. */
+.center-frame--artifacts {
+  display: flex;
+  padding: 8px;
+}
+.artifacts {
+  display: flex;
+  gap: 10px;
+  flex: 1;
+  min-height: 0;
+}
+.artifacts-empty {
+  margin: auto;
+  max-width: 44ch;
+}
+.artifact-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 200px;
+  flex: none;
+  overflow-y: auto;
+}
+.artifact-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.artifact-item:hover,
+.artifact-item.is-active {
+  background: var(--surface2);
+}
+.artifact-item-title {
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.artifact-item-meta,
+.artifact-kind {
+  color: var(--text-dim);
+  font-size: 11px;
+}
+.artifact-viewer {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+.artifact-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 2px 4px 8px;
+  border-bottom: 1px solid var(--line);
+}
+.artifact-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  flex: 1;
+  min-width: 0;
+}
+.artifact-version {
+  flex: none;
+}
+.artifact-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 10px 4px;
+}
+.artifact-frame {
+  flex: 1;
+  min-height: 420px;
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+}
+.artifact-cards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+.artifact-card {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  max-width: 100%;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface2);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.artifact-card:hover {
+  border-color: var(--accent);
+}
+.artifact-card-kind,
+.artifact-card-version {
+  color: var(--text-dim);
+  font-size: 11px;
+}
+.artifact-card-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.center-view-count {
+  color: var(--text-dim);
+  font-size: 11px;
+}

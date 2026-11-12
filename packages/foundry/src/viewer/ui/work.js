@@ -166,7 +166,7 @@ export function Work() {
       }
     </${Section}>
 
-    <${Section} title="Artifacts">
+    <${Section} title="Pull requests and turns">
       ${
         prs.length
           ? html`<ul class="rp-list">${prs.map(

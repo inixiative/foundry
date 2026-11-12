@@ -59,6 +59,7 @@ import {
   ThreadLaunchSettings,
 } from '../../providers/thread-launch';
 import type { SecretScratch } from '../../secrets/scratch';
+import { ARTIFACT_PHASE, type ArtifactVersionRecord } from '../../tools/thread-record';
 import { WORKER_SWITCH_PHASE, type WorkerSwitchRecord } from '../../turns/journal-history';
 import type { NativeOutcomeRecovery } from '../../turns/native-outcome-recovery';
 import type { RunningTasks } from '../../turns/running-tasks';
@@ -1091,6 +1092,24 @@ export function registerRuntimeRoutes(
       (projectId ? projectRegistry?.all.get(projectId)?.path : undefined);
     if (!cwd) return c.json({ base: null, commits: [] });
     return c.json(await branchCommits(cwd));
+  });
+
+  // -- An artifact's versions (`set_artifact`): each one's content is a journal row --
+
+  app.get('/api/threads/:id/artifacts/:artifactId', (c) => {
+    const threadId = c.req.param('id');
+    const artifactId = c.req.param('artifactId');
+    const listed = directory.get(threadId)?.meta.artifacts?.find((a) => a.id === artifactId);
+    if (!listed) return c.json({ error: 'artifact not found' }, 404);
+    if (!localStore) return c.json({ error: 'history journal unavailable' }, 503);
+    const versions = localStore
+      .phasesOf(threadId, ARTIFACT_PHASE, { key: 'id', value: artifactId })
+      .map((row) => ({
+        ...(row.record as unknown as ArtifactVersionRecord),
+        at: row.storedAt,
+        turnId: row.turnId,
+      }));
+    return c.json({ id: artifactId, versions });
   });
 
   // -- What a thread touches, in Atlas concepts (and which other threads share them) --

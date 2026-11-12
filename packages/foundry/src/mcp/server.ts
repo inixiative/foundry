@@ -43,6 +43,7 @@ import {
   secretScratchShape,
 } from '../tools/secret-scratch';
 import {
+  artifactSchema,
   loopRoundSchema,
   loopSchema,
   loopStopSchema,
@@ -591,7 +592,7 @@ export function createFoundryMcp(config: FoundryMcpConfig): FoundryMcp {
     );
 
   // -----------------------------------------------------------------------
-  // The thread's own record (tools/thread-record.ts): plan, loop, name and status
+  // The thread's own record (tools/thread-record.ts): plan, loop, name, status and artifacts
   // -----------------------------------------------------------------------
   if (config.tools?.get('thread') instanceof ThreadRecordTool) {
     /** One operation on this thread's record; its answer is the tool's own sentence. */
@@ -612,7 +613,7 @@ export function createFoundryMcp(config: FoundryMcpConfig): FoundryMcp {
     );
     server.tool(
       'get_plan',
-      'Read what Foundry shows for this thread: its name (and whether the person gave it), its status, its plan (and whether Foundry drafted it) and its loop. Use it after a compaction or when resuming, before changing the plan.',
+      'Read what Foundry shows for this thread: its name (and whether the person gave it), its status, its plan (and whether Foundry drafted it), its loop and its artifacts (id, title, kind, newest version). Use it after a compaction or when resuming, before changing the plan.',
       {},
       record('get_plan'),
     );
@@ -651,6 +652,12 @@ export function createFoundryMcp(config: FoundryMcpConfig): FoundryMcp {
       "Say where this thread stands when Foundry can't see it, before you hand back: 'needs-you' (you wait on the person: a question, a decision, a review), 'blocked' (you can't go on: a missing credential, permission or dependency), 'done' (the ask is finished; text says what), or 'clear'. text: one line the person reads on the board. Working, queued, failed, approvals and archived are Foundry's and never set here; the owner's next message clears the status.",
       statusSchema.shape,
       record('set_status'),
+    );
+    server.tool(
+      'set_artifact',
+      "Show the person something you made, beside the thread: a document, a diagram, a page, a block of code. id: a short slug; the same id again saves its next version (earlier versions stay readable). title: what it is. kind: 'markdown', 'mermaid' (a diagram), 'html' (a whole page; its scripts run in a sandboxed frame that cannot fetch, reach Foundry or touch the viewer; scripts, styles and images may load over https) or 'code' (with language). content: the whole artifact each time, never a diff. The person sees it in the Artifacts view and as a card on this turn. Use it for something worth looking at or keeping, not for an answer that fits in the reply.",
+      artifactSchema.shape,
+      record('set_artifact'),
     );
   }
   // -----------------------------------------------------------------------

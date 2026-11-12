@@ -95,6 +95,26 @@ export interface ThreadPlan {
   readonly updatedAt: number;
 }
 
+/** How an artifact renders: Markdown, a Mermaid diagram, an HTML page (scripts run sandboxed) or code. */
+export type ThreadArtifactKind = 'markdown' | 'mermaid' | 'html' | 'code';
+
+/**
+ * One artifact the thread's agent made with `set_artifact`, as the thread lists it: what it is and
+ * its versions. The content of each version is a journal row (`artifact` phase), read on demand.
+ */
+export interface ThreadArtifact {
+  readonly id: string;
+  readonly title: string;
+  readonly kind: ThreadArtifactKind;
+  readonly versions: readonly {
+    readonly version: number;
+    /** The turn that wrote it, when one was running: the conversation shows its card there. */
+    readonly turnId: string | null;
+    readonly at: number;
+  }[];
+  readonly updatedAt: number;
+}
+
 /** One round of a thread's loop: how it went and what it found. */
 export interface ThreadLoopRound {
   readonly round: number;
@@ -241,6 +261,8 @@ export interface ThreadMeta {
   plan?: ThreadPlan;
   /** The process the agent repeats to reach the plan (`set_loop`, the Loop view). */
   loop?: ThreadLoop;
+  /** What the agent made to show the person (`set_artifact`, the Artifacts view), newest last. */
+  artifacts?: ThreadArtifact[];
   /** Where the agent says it stands: waiting on the person or blocked (`set_status`). */
   agentStatus?: ThreadAgentStatus;
   /** The machine (Foundry device identity, `~/.foundry/device.json`) the thread runs on. */

@@ -55,9 +55,16 @@ export const liveEvents = signal([]);
 export const systemActivity = signal([]);
 /** Every activity event heard, newest first: the strip's expanded log. */
 export const systemActivityLog = signal([]);
-/** The centre's tab: conversation (Thread) | plan | work | graph (Loop). */
-export const CENTER_PANELS = ['conversation', 'plan', 'graph'];
+/** The centre's tab: conversation (Thread) | plan | graph (Loop) | artifacts. Keys 1–3 are the first three. */
+export const CENTER_PANELS = ['conversation', 'plan', 'graph', 'artifacts'];
 export const activePanel = signal('conversation');
+/** The artifact the Artifacts tab shows ({ id, version? }; no version: the newest). */
+export const artifactSelection = signal(null);
+/** Open the Artifacts tab on one artifact, at a version or its newest. */
+export function openArtifact(id, version) {
+  artifactSelection.value = { id, ...(version ? { version } : {}) };
+  activePanel.value = 'artifacts';
+}
 export const commandPaletteOpen = signal(false);
 export const helpOpen = signal(false);
 export const toast = signal(null); // { message, type: "ok"|"error"|"warn", persistent?: boolean }
