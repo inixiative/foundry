@@ -142,15 +142,13 @@ test('the headless host pairs, admits a member note the Warden weighs in on, and
 
   const member: HostedSignet = {
     signetId: Bun.randomUUIDv7(),
-    integrationId,
     name: 'JobCo',
     revision: 1,
     lifecycle: 'ongoing',
     expiresAt: null,
     maxRequests: null,
-    maxConcurrent: 1,
     recipient: { recipientModel: 'User', id: Bun.randomUUIDv7(), displayName: 'JobCo' },
-    resources: [threadsGrant({ operations: ['thread.prompt', 'thread.read'] })],
+    resources: [threadsGrant({ operations: ['thread.prompt', 'thread.read'], integrationId })],
     baseLenses: threadsBaseLenses(),
   };
   kingdom.host(member);

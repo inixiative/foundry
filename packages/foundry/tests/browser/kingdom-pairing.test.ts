@@ -22,8 +22,6 @@ const { chromium } = createRequire(import.meta.url)(
 /** Kingdom's extended access/describe: who holds the Signet, by name. */
 const described = (presented: { signetId: string; integrationId: string }) => ({
   signetId: presented.signetId,
-  integrationId: presented.integrationId,
-  provider: null,
   name: 'Browser Foundry',
   expiresAt: null,
   lifecycle: 'ongoing',

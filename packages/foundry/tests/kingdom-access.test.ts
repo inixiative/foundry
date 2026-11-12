@@ -46,11 +46,9 @@ async function fixture() {
       if (oversize) return new Response('x'.repeat(1_048_577));
       if (action === 'describe')
         return {
-          signetId: presented.signetId,
-          integrationId: wrongGrant ? Bun.randomUUIDv7() : integrationId,
+          signetId: wrongGrant ? Bun.randomUUIDv7() : presented.signetId,
           name: 'Team integration',
           expiresAt: new Date(Date.now() + 60000).toISOString(),
-          provider: 'linear',
           lifecycle: 'ongoing',
           taskId: null,
           currentRevision: 1,
@@ -59,12 +57,28 @@ async function fixture() {
             {
               key: 'issues.read',
               name: 'Read issue',
-              resources: [{ id: resourceId, name: 'Fixture issue', kind: 'issue', integrationId }],
+              resources: [
+                {
+                  id: resourceId,
+                  name: 'Fixture issue',
+                  kind: 'issue',
+                  integrationId,
+                  provider: 'linear',
+                },
+              ],
             },
             {
               key: 'issues.write',
               name: 'Write issue',
-              resources: [{ id: resourceId, name: 'Fixture issue', kind: 'issue', integrationId }],
+              resources: [
+                {
+                  id: resourceId,
+                  name: 'Fixture issue',
+                  kind: 'issue',
+                  integrationId,
+                  provider: 'linear',
+                },
+              ],
             },
           ],
         };

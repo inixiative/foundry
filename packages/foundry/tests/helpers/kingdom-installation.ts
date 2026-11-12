@@ -61,11 +61,14 @@ export const threadsGrant = (
     full?: boolean;
     operations?: string[];
     terms?: Partial<ThreadsTerms>;
+    /** The host Foundry's integration the `threads` resource is on. */
+    integrationId?: string;
   } = {},
 ): SignetGrant => ({
   resourceModel: 'IntegrationResource',
   integrationResourceId: Bun.randomUUIDv7(),
   kind: 'threads',
+  integrationId: opts.integrationId ?? Bun.randomUUIDv7(),
   ...(opts.full
     ? { full: true, lens: [] }
     : {
@@ -197,25 +200,40 @@ export function mockKingdom(
   const logins: Record<string, unknown>[] = [];
   let url = '';
 
-  /** Signets issued on the installations' integrations: a conversation's members (signet 0.5). */
+  /** Signets reaching the installations' integrations: a conversation's members (signet 0.5). */
   const hosted = new Map<string, HostedSignet>();
+  /** The integrations a hosted Signet's rows sit on; a Signet has no integration of its own. */
+  const reachedBy = (signet: HostedSignet) =>
+    signet.resources.flatMap((grant) =>
+      grant.resourceModel === 'IntegrationResource' ? [grant.integrationId] : [],
+    );
+  const thumbprintsOf = (signet: HostedSignet) =>
+    reachedBy(signet).flatMap((integrationId) => {
+      const thumbprint = integrations.get(integrationId)?.thumbprint;
+      return thumbprint ? [thumbprint] : [];
+    });
   const snapshotOf = (installation: Installation) => ({
     pending: installation.pending,
     declinedAt: installation.declinedAt,
     inquiries: installation.inquiries,
     hostedSignetRequests: [],
-    hostedSignets: [...hosted.values()].filter(
-      (signet) => integrations.get(signet.integrationId)?.thumbprint === installation.thumbprint,
-    ),
+    hostedSignets: [...hosted.values()].flatMap((signet) => {
+      // Kingdom lists only the rows on the installation's own integrations.
+      const resources = signet.resources.filter(
+        (grant) =>
+          grant.resourceModel === 'IntegrationResource' &&
+          integrations.get(grant.integrationId)?.thumbprint === installation.thumbprint,
+      );
+      return resources.length ? [{ ...signet, resources }] : [];
+    }),
     signets: [...signets.values()]
       .filter(
         (signet) =>
           signet.listed &&
           integrations.get(signet.integrationId)?.thumbprint === installation.thumbprint,
       )
-      .map(({ signetId, integrationId, name, owner }) => ({
+      .map(({ signetId, name, owner }) => ({
         signetId,
-        integrationId,
         name,
         enrollmentId:
           [...enrollments.values()].findLast(
@@ -256,7 +274,6 @@ export function mockKingdom(
       idleExpiresAt: new Date(Date.now() + 86_400_000).toISOString(),
       tokenType: 'DPoP',
       signetId: signet.signetId,
-      integrationId: signet.integrationId,
       owner: signet.owner,
     };
   };
@@ -524,20 +541,19 @@ export function mockKingdom(
       push(installations.get(thumbprint)!);
     },
     /**
-     * Issue (or revise) a Signet on an installation's integration: a member of its conversations, as
+     * Issue (or revise) a Signet reaching an installation's `threads` resource: a member of its conversations, as
      * Kingdom lists it in `hostedSignets`. The snapshot is pushed.
      */
     host(signet: HostedSignet) {
       hosted.set(signet.signetId, signet);
-      const { thumbprint } = integrations.get(signet.integrationId)!;
-      push(installations.get(thumbprint)!);
+      for (const thumbprint of thumbprintsOf(signet)) push(installations.get(thumbprint)!);
     },
     /** Revoke a hosted Signet: the next snapshot no longer lists it. */
     unhost(signetId: string) {
       const signet = hosted.get(signetId);
       if (!signet) return;
       hosted.delete(signetId);
-      push(installations.get(integrations.get(signet.integrationId)!.thumbprint)!);
+      for (const thumbprint of thumbprintsOf(signet)) push(installations.get(thumbprint)!);
     },
     /**
      * Send a conversation frame (`thread.request`, `thread.subscribe`, `thread.unsubscribe`,
@@ -596,7 +612,6 @@ export async function heldSignet(kingdom: MockKingdom, directory: string, owner:
     resources: [],
     expiresAt: null,
     maxRequests: null,
-    maxConcurrent: 2,
   });
   const installation = kingdom.installations.at(-1)!;
   const { signetId, integrationId } = kingdom.approve(owner, { installation });

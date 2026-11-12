@@ -37,7 +37,7 @@ Run `bun run doctor` to check local configuration and file permissions, then res
 When access is configured, the existing Foundry native bridge exposes `foundry_access` to Claude/Codex:
 
 1. `{"action":"integrations"}` lists this task's configured sources without network calls. This is not a claim that their Signets remain valid.
-2. `{"action":"describe","accessId":"SOURCE_UUID"}` fetches currently available read operations and resource UUIDs. A credential belonging to a different Integration or Signet is rejected.
+2. `{"action":"describe","accessId":"SOURCE_UUID"}` fetches currently available read operations and resource UUIDs. A credential belonging to a different Signet is rejected.
 3. `{"action":"read","accessId":"SOURCE_UUID","operation":"issues.read","resourceId":"RESOURCE_UUID","limit":20}` reads one resource. Limits are 1–50, with any tighter provider limit enforced by Kingdom.
 
 Native reads require an active registered admission. Caller project/thread ownership comes from the pinned bridge, never tool arguments. Each invocation uses the existing journal path. If the thread moves projects or its runtime is replaced while a read is pending, the stale bridge refuses result delivery.

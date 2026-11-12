@@ -126,13 +126,11 @@ function fixture(opts: { wardens: boolean; joined?: boolean }) {
   const thread = factory.create('thread_conversation', { cwd: root });
   const member: HostedSignet = {
     signetId: Bun.randomUUIDv7(),
-    integrationId: Bun.randomUUIDv7(),
     name: 'JobCo',
     revision: 1,
     lifecycle: 'ongoing',
     expiresAt: null,
     maxRequests: null,
-    maxConcurrent: 1,
     recipient: { recipientModel: 'User', id: Bun.randomUUIDv7(), displayName: 'JobCo' },
     resources: [threadsGrant({ threadIds: [thread.id], operations: ['thread.prompt'] })],
     baseLenses: threadsBaseLenses(),
