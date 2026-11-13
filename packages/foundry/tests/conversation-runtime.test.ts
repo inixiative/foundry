@@ -484,9 +484,10 @@ test("a project's archived thread is rebuilt in place in its project; the main t
   expect(directory.canReopen('main')).toBe(false);
 });
 
-// Signet 0.12: which threads a grant reaches is its lens. The host evaluates the grantor's lens
-// itself (the same lens Kingdom enforces), so the roster follows the latest snapshot at once.
-test('a grant reaches only the threads its lens names; a narrowing revision drops it at once; a full row reaches every thread', async () => {
+// Signet 0.15: which threads a grant reaches is its lens over the threads operations lens. The host
+// evaluates the grantor's lens itself (the same lens Kingdom enforces), so the roster follows the
+// latest snapshot at once.
+test('a grant reaches only the threads its lens names; a narrowing revision drops it at once; a row with no layers reaches every thread', async () => {
   const f = fixture({ wardens: false, joined: false });
   const elsewhere = { ...f.member, resources: [threadsGrant({ threadIds: ['other-thread'] })] };
   f.snapshot([elsewhere]);
@@ -505,11 +506,23 @@ test('a grant reaches only the threads its lens names; a narrowing revision drop
   // An approver narrows it to another thread: the next snapshot drops it from this one.
   f.snapshot([narrowedTo(f.member, ['other-thread'])]);
   expect(f.service.members(f.thread.id)).toEqual([]);
-  // A full row reaches every thread, whatever its lens.
-  const full = { ...f.member, revision: 3, resources: [threadsGrant({ full: true })] };
-  f.snapshot([full]);
+  // A row with no layers reads every branch: it reaches every thread.
+  const unpinned = {
+    ...f.member,
+    revision: 3,
+    resources: [threadsGrant({ everyThread: true, operations: ['thread.prompt'] })],
+  };
+  f.snapshot([unpinned]);
   expect(f.service.members(f.thread.id)).toHaveLength(1);
+  // A full row is all operations, not all threads: its lens still pins them.
+  const fullPinned = {
+    ...f.member,
+    revision: 4,
+    resources: [threadsGrant({ full: true, threadIds: ['other-thread'] })],
+  };
+  f.snapshot([fullPinned]);
+  expect(f.service.members(f.thread.id)).toEqual([]);
   // A row whose base lens the snapshot doesn't carry reaches nothing (refused, not guessed).
-  f.snapshot([{ ...f.member, revision: 4, baseLenses: {} }]);
+  f.snapshot([{ ...f.member, revision: 5, baseLenses: {} }]);
   expect(f.service.members(f.thread.id)).toEqual([]);
 });
