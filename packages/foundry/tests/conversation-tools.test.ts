@@ -19,6 +19,7 @@ import {
 import {
   heldSignet,
   mockKingdom,
+  reaching,
   threadsBaseLenses,
   threadsGrant,
   userOwner,
@@ -177,7 +178,7 @@ test('kingdom_post holds the post for the owner before anything leaves, then pos
                     {
                       id: Bun.randomUUIDv7(),
                       parents: ['foundry:threads'],
-                      root: { where: { field: 'id', operator: 'in', value: [remoteThread] } },
+                      ...reaching([remoteThread]),
                     },
                   ],
                   terms: { threads: { view: 'own' } },

@@ -1,5 +1,11 @@
 import { join } from 'node:path';
-import { createLens, type Lens, type StoredLens } from '@inixiative/json-rules';
+import {
+  createLens,
+  type FieldMapEntry,
+  type Lens,
+  type ModelNarrowing,
+  type StoredLens,
+} from '@inixiative/json-rules';
 import {
   collectSignet,
   generateSignetKey,
@@ -13,52 +19,105 @@ import {
 import {
   baseLensId,
   type HostedSignet,
+  narrowingAtOperation,
   type RegistrationRequest,
   requestRegistrationSchema,
   type SignetGrant,
   type ThreadsTerms,
+  threadOperationSchema,
   threadsTerms,
 } from '@inixiative/signet/contracts';
 import type { ServerWebSocket } from 'bun';
 
 const threadsBaseId = baseLensId('foundry', 'threads');
 
+const threadsOperationsModel = 'FoundryThreadsOperation';
+
+const relation = (type: string, isList: boolean): FieldMapEntry => ({
+  kind: 'object',
+  type,
+  isList,
+  isRequired: false,
+  relationName: type,
+  fromFields: [],
+  toFields: [],
+});
+
 /**
- * The base lens records Kingdom lists beside a hosted Signet (`baseLenses`): its
- * catalog's base for a Foundry's main threads, by id, keyed by `baseLensId`, `parents: []`.
+ * Kingdom's operations lens for a Foundry's `threads` resource (signet 0.15), as its catalog
+ * generates it: the root is the kind's operations, each dotted segment a relation, each operation
+ * a list of the `Thread` rows it reads.
+ */
+const threadsOperationsLens = (): Lens => {
+  const models: Record<string, { fields: Record<string, FieldMapEntry> }> = {
+    Thread: { fields: { id: { kind: 'scalar', type: 'String', isRequired: true } } },
+  };
+  const modelAt = (path: readonly string[]) => [threadsOperationsModel, ...path].join('_');
+  for (const operation of threadOperationSchema.options) {
+    const segments = operation.split('.');
+    segments.forEach((segment, index) => {
+      const at = modelAt(segments.slice(0, index));
+      models[at] ??= { fields: {} };
+      models[at].fields[segment] =
+        index === segments.length - 1
+          ? relation('Thread', true)
+          : relation(modelAt(segments.slice(0, index + 1)), false);
+    });
+  }
+  return createLens({
+    maps: { operations: { models } },
+    mapName: 'operations',
+    model: threadsOperationsModel,
+  });
+};
+
+/**
+ * The base lens records Kingdom lists beside a hosted Signet (`baseLenses`): the operations lens
+ * for a Foundry's main threads, keyed by `baseLensId`, `parents: []`.
  */
 export const threadsBaseLenses = (): Record<string, StoredLens & Lens> => ({
-  [threadsBaseId]: {
-    ...createLens({
-      maps: {
-        foundry: {
-          models: {
-            Thread: { fields: { id: { kind: 'scalar', type: 'String', isRequired: true } } },
-          },
-        },
-      },
-      mapName: 'foundry',
-      model: 'Thread',
-    }),
-    id: threadsBaseId,
-    parents: [],
+  [threadsBaseId]: { ...threadsOperationsLens(), id: threadsBaseId, parents: [] },
+});
+
+/**
+ * A layer as Kingdom writes one for a pinned grant: every operation's branch kept on, and the
+ * `Thread` rows narrowed to `threadIds` on every branch through `mapDefaults`.
+ */
+export const reaching = (threadIds: string[]) => ({
+  root: threadOperationSchema.options.reduce<ModelNarrowing>(
+    (root, operation) => mergeBranch(root, narrowingAtOperation(operation, {})),
+    {},
+  ),
+  mapDefaults: {
+    operations: {
+      models: { Thread: { where: { field: 'id', operator: 'in', value: threadIds } } },
+    },
   },
 });
 
-const reaching = (threadIds: string[]) => ({
-  root: { where: { field: 'id', operator: 'in', value: threadIds } },
-});
+const mergeBranch = (into: ModelNarrowing, from: ModelNarrowing): ModelNarrowing => {
+  for (const [key, value] of Object.entries(from.relations ?? {})) {
+    into.relations ??= {};
+    into.relations[key] = mergeBranch(
+      (into.relations[key] as ModelNarrowing | undefined) ?? {},
+      value as ModelNarrowing,
+    );
+  }
+  return into;
+};
 
 /**
- * A grant on a Foundry's `threads` resource as Kingdom stores it (signet 0.12): resolved operation
- * leaves (or `full`), the lens layers Kingdom chains under the base (`request`, then an approver's
- * `approval`), each a `where` over the thread's `id`, and the member's terms.
+ * A grant on a Foundry's `threads` resource as Kingdom stores it (signet 0.15): resolved operation
+ * leaves (or `full`), the lens layers Kingdom chains under the operations lens (`request`, then an
+ * approver's `approval`), each pinning the `Thread` rows' `id`, and the member's terms. A grant
+ * with `everyThread`, or `full` with no `threadIds`, stores no layers and reads every branch.
  */
 export const threadsGrant = (
   opts: {
     threadIds?: string[];
     approved?: string[];
     full?: boolean;
+    everyThread?: boolean;
     operations?: string[];
     terms?: Partial<ThreadsTerms>;
     /** The host Foundry's integration the `threads` resource is on. */
@@ -70,17 +129,20 @@ export const threadsGrant = (
   kind: 'threads',
   integrationId: opts.integrationId ?? Bun.randomUUIDv7(),
   ...(opts.full
-    ? { full: true, lens: [] }
+    ? { full: true }
     : {
         full: false,
         operations: opts.operations ?? ['thread.prompt', 'thread.read', 'thread.floor'],
-        lens: [
+      }),
+  lens:
+    opts.everyThread || (opts.full && !opts.threadIds)
+      ? []
+      : [
           { id: 'request', parents: [threadsBaseId], ...reaching(opts.threadIds ?? ['main']) },
           ...(opts.approved
             ? [{ id: 'approval', parents: [threadsBaseId, 'request'], ...reaching(opts.approved) }]
             : []),
         ],
-      }),
   terms: { threads: threadsTerms({ threads: opts.terms }) },
 });
 
