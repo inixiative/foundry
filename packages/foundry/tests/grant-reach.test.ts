@@ -78,6 +78,49 @@ describe('grantReaches reads a thread at its operation’s branch of the operati
     expect(warnings[0]).toContain('no base lens foundry:threads');
   });
 
+  it('a grant reaches only the threads its incoming where admits, before its lens', () => {
+    const { warn, warnings } = quiet();
+    const whereMain = { field: 'threadId', operator: 'in', value: ['main'] };
+    const unpinned = threadsGrant({ everyThread: true });
+    const whereOnly = member([{ ...unpinned, where: whereMain } as SignetGrant]);
+    expect(grantReaches(whereOnly, 'main', undefined, warn)).toBeDefined();
+    expect(grantReaches(whereOnly, 'elsewhere', undefined, warn)).toBeUndefined();
+
+    const pinnedWider = threadsGrant({ threadIds: ['main', 'elsewhere'] });
+    const both = member([{ ...pinnedWider, where: whereMain } as SignetGrant]);
+    expect(grantReaches(both, 'main', undefined, warn)).toBeDefined();
+    expect(grantReaches(both, 'elsewhere', undefined, warn)).toBeUndefined();
+
+    const onOtherField = { field: 'text', operator: 'equals', value: 'hi' };
+    const undecidable = member([{ ...unpinned, where: onOtherField } as SignetGrant]);
+    expect(grantReaches(undecidable, 'main', undefined, warn)).toBeUndefined();
+    const malformed = member([{ ...unpinned, where: { any: 'nope' } } as unknown as SignetGrant]);
+    expect(grantReaches(malformed, 'main', undefined, warn)).toBeUndefined();
+    expect(warnings).toEqual([]);
+  });
+
+  it('a layer not chained under the threads base and every earlier layer reaches nothing', () => {
+    const { warn, warnings } = quiet();
+    const grant = threadsGrant({ threadIds: ['main'] }) as ThreadsGrant;
+    const request = grant.lens?.[0];
+    if (!request) throw new Error('no request layer');
+    const unchained = withLayers([
+      request,
+      { id: 'approval', parents: ['foundry:threads'], ...reaching(['main', 'elsewhere']) },
+    ]);
+    expect(grantReaches(member([unchained]), 'elsewhere', undefined, warn)).toBeUndefined();
+    expect(grantReaches(member([unchained]), 'main', undefined, warn)).toBeUndefined();
+    expect(warnings.at(-1)).toContain('approval is not chained under foundry:threads');
+
+    const otherBase = withLayers([{ ...request, parents: ['other:base'] }]);
+    const bases = {
+      ...threadsBaseLenses(),
+      'other:base': { ...threadsBaseLenses()['foundry:threads'], id: 'other:base' },
+    } as HostedSignet['baseLenses'];
+    expect(grantReaches(member([otherBase], bases), 'main', undefined, warn)).toBeUndefined();
+    expect(warnings.at(-1)).toContain('request is not chained under foundry:threads');
+  });
+
   it('the old shape, a lens rooted at Thread with a where on its root, reaches nothing', () => {
     const { warn } = quiet();
     const oldLayer = {

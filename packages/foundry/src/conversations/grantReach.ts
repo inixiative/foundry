@@ -4,6 +4,8 @@
  * @partOf feature:conversations
  */
 import {
+  type Condition,
+  check,
   composeLens,
   type Lens,
   type LensNarrowing,
@@ -11,6 +13,7 @@ import {
   type StoredLens,
 } from '@inixiative/json-rules';
 import {
+  baseLensId,
   type HostedSignet,
   operationRecord,
   operationRows,
@@ -24,6 +27,9 @@ import {
 } from '@inixiative/signet';
 
 export type ThreadsGrant = Extract<SignetGrant, { resourceModel: 'IntegrationResource' }>;
+
+/** The id of the operations lens every `threads` grant's layers are chained under. */
+const threadsBaseId = baseLensId('foundry', threadsResourceKind);
 
 const warned = new Set<string>();
 
@@ -50,11 +56,17 @@ function composedLens(
   if (!layers.success) return refuse('its lens layers do not parse');
   const last = layers.data.at(-1);
   if (!last) return 'every';
-  const baseId = layers.data[0]!.parents[0]!;
-  const base = signet.baseLenses[baseId];
-  if (!base) return refuse(`the snapshot carries no base lens ${baseId}`);
+  const unchained = layers.data.find((layer, index) => {
+    const chain = [threadsBaseId, ...layers.data.slice(0, index).map((earlier) => earlier.id)];
+    return (
+      layer.parents.length !== chain.length || layer.parents.some((id, at) => id !== chain[at])
+    );
+  });
+  if (unchained) return refuse(`lens layer ${unchained.id} is not chained under ${threadsBaseId}`);
+  const base = signet.baseLenses[threadsBaseId];
+  if (!base) return refuse(`the snapshot carries no base lens ${threadsBaseId}`);
   const records: Record<string, StoredLens> = {
-    [baseId]: { ...base, id: baseId, parents: [] } as StoredLens,
+    [threadsBaseId]: { ...base, id: threadsBaseId, parents: [] } as StoredLens,
   };
   for (const layer of layers.data) records[layer.id] = layer as StoredLens;
   try {
@@ -74,13 +86,24 @@ const reachesAt = (
   return operationRows(projected, operation).length > 0;
 };
 
+/** Whether the grant's incoming `where` admits a call on `threadId`; a where that throws admits none. */
+const whereAdmits = (grant: ThreadsGrant, threadId: string) => {
+  if (grant.where === undefined) return true;
+  try {
+    return check(grant.where as Condition, { threadId }, { absent: 'unknown' }) === true;
+  } catch {
+    return false;
+  }
+};
+
 /**
  * The Signet's `threads` row that reaches `threadId` for one of `operations`, or undefined. It is
- * the grantor's lens evaluated here, the same lens Kingdom enforces at admission: the row must
- * permit the operation, and the thread's row (`threadRow`) must survive the lens at that
- * operation's branch (`operationRecord`). A row with no layers reaches every thread; a row with a
- * missing base or unreadable layers reaches nothing. The grant's incoming `where` is Kingdom's to
- * check: a hosted Signet's rows don't carry it, and the lens pins the same threads.
+ * the grantor's terms evaluated here, as Kingdom enforces them at admission: the row must permit
+ * the operation, its incoming `where` must hold on the call's `threadId` (a field it reads beyond
+ * that is unknown, so it does not hold), and the thread's row (`threadRow`) must survive the lens
+ * at that operation's branch (`operationRecord`). A row with no layers reaches every thread its
+ * `where` admits; a row whose layers are not chained under the threads base and each earlier layer
+ * in order, whose base is missing, or whose layers are unreadable reaches nothing.
  */
 export function grantReaches(
   signet: HostedSignet,
@@ -101,7 +124,7 @@ export function grantReaches(
       ? { full: true as const }
       : { full: false as const, operations: grant.operations ?? [] };
     const permitted = operations.filter((operation) => permitsOperation(scope, operation));
-    if (!permitted.length) continue;
+    if (!permitted.length || !whereAdmits(grant, threadId)) continue;
     const lens = composedLens(signet, grant, warn);
     if (lens === 'every') return grant;
     if (lens && permitted.some((operation) => reachesAt(lens, operation, row))) return grant;
