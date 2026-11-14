@@ -4,28 +4,21 @@
  * @partOf feature:viewer
  */
 /**
- * One "needs you" definition everywhere (design review 11-02): per top-level thread, its subagents'
- * states bubble up, red (can't proceed) over orange (needs you). Shown as an orange count and a red
- * count side by side, never one mixed number: the rail's pane heads, the top bar's Open pill and the
- * Board button all read it.
+ * One "needs you" definition everywhere (design review 11-02): per top-level thread, red (can't
+ * proceed) over orange (needs you) over its own colour. Shown as an orange count and a red count side
+ * by side, never one mixed number: the rail's pane heads, the top bar's Open pill and the Board button
+ * all read it. A top-level thread's colour is its own: a subagent's failures and answers go to the
+ * agent that spawned it, not to you (Aron, 11-14). A subagent that does need you raises its approval
+ * or question on the top-level thread's own id (the tool gate is bound to the session), so that
+ * thread turns orange by itself.
  */
 import { html } from './lib.js';
 import { allThreads } from './store.js';
 import { categoryOf, isClosedThread } from './thread-status.js';
 import { nodeState, threadTree } from './thread-tree.js';
 
-/** A root's colour category, its subagents' bubbling up: red over orange over its own. */
-export function effectiveCategory(node) {
-  const cats = [];
-  const walk = (n) => {
-    cats.push(categoryOf(nodeState(n)));
-    for (const c of n.children) walk(c);
-  };
-  walk(node);
-  if (cats.includes('problem')) return 'problem';
-  if (cats.includes('attention')) return 'attention';
-  return cats[0];
-}
+/** A root's colour category: its own; subagents never add to it. */
+export const effectiveCategory = (node) => categoryOf(nodeState(node));
 
 /** Open top-level threads (subagents fold into their parent). */
 export const openRoots = () => threadTree(allThreads.value.filter((t) => !isClosedThread(t)));

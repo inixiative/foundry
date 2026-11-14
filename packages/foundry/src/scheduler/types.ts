@@ -125,3 +125,19 @@ const UNIT_MS = { m: 60_000, h: 3_600_000, d: 86_400_000 } as const;
 
 export const everyMs = (every: string): number =>
   Number(every.slice(0, -1)) * UNIT_MS[every.at(-1) as keyof typeof UNIT_MS];
+
+export interface ScheduleView {
+  schedule: Schedule;
+  where: ScheduleWhere;
+  /** The next due time it would run at, when it is on (not paused, not a draft, project running). */
+  nextDueAt?: number;
+  lastRun?: ScheduleRun;
+}
+
+/** What an agent's schedule tools need from the scheduler: its schedules, read and written. */
+export interface ScheduleBook {
+  find(id: string): { schedule: Schedule; where: ScheduleWhere } | undefined;
+  list(): ScheduleView[];
+  save(input: Omit<Schedule, 'since'>, where: ScheduleWhere): Promise<ScheduleView>;
+  remove(id: string): Promise<void>;
+}

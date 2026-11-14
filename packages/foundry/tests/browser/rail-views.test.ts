@@ -23,7 +23,8 @@ const { chromium } = createRequire(import.meta.url)(
 );
 
 // The left rail opens on Attention: only the threads that need you (a pending approval), not the one
-// working or the idle one; Open lists them all. ⌥⇧← ⌥⇧→ step Attention · Open · Projects · Scheduled · Status, wrapping,
+// working or the idle one, and not one whose subagents are blocked or asking (a subagent's state goes
+// back to the agent that spawned it; Aron, 11-14); Open lists them all. ⌥⇧← ⌥⇧→ step Attention · Open · Projects · Scheduled · Status, wrapping,
 // from inside the message box, and the hash keeps the view.
 test('the rail opens on Attention, lists only threads that need you, and ⌥⇧← ⌥⇧→ step the five views', async () => {
   const cleanup: ReleaseStep[] = [];
@@ -57,6 +58,21 @@ test('the rail opens on Attention, lists only threads that need you, and ⌥⇧�
           updatedAt: 0,
         };
       project.addThread(thread);
+    }
+    // The changelog thread's subagents: one blocked, one asking. Neither puts it in Attention.
+    for (const [id, state] of [
+      ['shop-3-a', 'blocked'],
+      ['shop-3-b', 'needs-you'],
+    ] as const) {
+      const sub = new Thread(id, new ContextStack(), {
+        description: `Subagent ${state}`,
+        projectId: 'shop',
+        parentThreadId: 'shop-3',
+      });
+      sub.meta.spawn = { via: 'native-claude', observed: true };
+      sub.meta.status = 'idle';
+      sub.meta.agentStatus = { state, text: `Subagent ${state}`, at: 0 };
+      project.addThread(sub);
     }
     const queue = new ActionQueue();
     const configStore = new ConfigStore(dir);

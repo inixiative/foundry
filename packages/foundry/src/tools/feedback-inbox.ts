@@ -49,9 +49,6 @@ export const FEEDBACK_ITEM_DESCRIPTION =
 export const FEEDBACK_STATUS_DESCRIPTION =
   "Archive feedback items that are dealt with or dropped, or reopen archived ones (status 'open'). Do it when the person agrees an item is handled; the change is journalled on each item's thread.";
 
-/** The tool ids `FeedbackInboxTool` answers, in the order the bridge registers them. */
-export const FEEDBACK_TOOL_NAMES = ['feedback_inbox', 'feedback_item', 'feedback_status'] as const;
-
 const line = (view: FeedbackView) =>
   `- ${view.id} [${view.inbox}; ${view.stage}; ${view.attention}] ${view.projectId ?? 'no project'}: ${view.statement.replace(/\s+/g, ' ').slice(0, 300)}`;
 
@@ -66,7 +63,7 @@ export class FeedbackInboxTool implements ApiTool {
   scoped(scope: OwnershipScope): FeedbackInboxTool {
     return new FeedbackInboxTool(this.resolve, scope);
   }
-  /** `url` is one of `FEEDBACK_TOOL_NAMES`; `body` is its arguments. */
+  /** `url` is one of `FEEDBACK_TOOL_NAMES` (`tools/thread-record.ts`); `body` is its arguments. */
   async request<T = unknown>(req: ApiRequest): Promise<ToolResult<ApiResponse<T>>> {
     const started = performance.now();
     try {

@@ -15,7 +15,7 @@ import type { FeedbackItem } from '../feedback/lifecycle';
 import type { FeedbackService } from '../feedback/service';
 import { feedbackView } from '../feedback/view';
 import { SCOPE_ROLES, scopeOfRole, type ThreadScope } from '../prompts/instruction-settings';
-import type { ScheduleView } from '../scheduler/scheduler';
+import type { ScheduleView } from '../scheduler/types';
 import type { StreamFamily } from '../ws/types';
 import { threadToJSON } from './http-helpers';
 import { StreamBufferRegistry, type StreamBufferSnapshot, type TurnAppend } from './stream-buffer';

@@ -7,8 +7,10 @@ import type { FoundryConfig } from '../viewer/config';
 import { dueBetween, nextDueAfter, onceMissed } from './due';
 import {
   type Schedule,
+  type ScheduleBook,
   type ScheduleRun,
   type SchedulerSettings,
+  type ScheduleView,
   type ScheduleWhere,
   whenRefusal,
 } from './types';
@@ -52,14 +54,6 @@ export interface SchedulerDeps {
 }
 
 /** A schedule as the viewer and the agent tools see it. */
-export interface ScheduleView {
-  schedule: Schedule;
-  where: ScheduleWhere;
-  /** The next due time it would run at, when it is on (not paused, not a draft, project running). */
-  nextDueAt?: number;
-  lastRun?: ScheduleRun;
-}
-
 /** A schedule's Where read back from its place in settings. */
 const whereOf = (schedule: Schedule, projectId?: string): ScheduleWhere =>
   projectId
@@ -85,7 +79,7 @@ function slot(config: FoundryConfig, where: ScheduleWhere): SchedulerSettings | 
  * under an hour late, otherwise it is recorded missed. A run whose previous run is still working is
  * recorded skipped (overlap), never queued behind it.
  */
-export class Scheduler {
+export class Scheduler implements ScheduleBook {
   private ticking: Promise<void> | null = null;
 
   constructor(private readonly deps: SchedulerDeps) {}

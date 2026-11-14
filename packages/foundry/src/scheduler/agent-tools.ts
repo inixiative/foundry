@@ -6,8 +6,13 @@
 import type { ThreadMeta } from '@inixiative/foundry-core';
 import { z } from 'zod';
 import { scopeOfRole } from '../prompts/instruction-settings';
-import type { Scheduler, ScheduleView } from './scheduler';
-import { type ScheduleWhere, scheduleSchema, scheduleWhereSchema } from './types';
+import {
+  type ScheduleBook,
+  type ScheduleView,
+  type ScheduleWhere,
+  scheduleSchema,
+  scheduleWhereSchema,
+} from './types';
 
 /** `set_schedule`: a schedule as the agent writes it; Foundry keeps its due times and draft mark. */
 export const setScheduleSchema = scheduleSchema
@@ -18,7 +23,7 @@ export const removeScheduleSchema = z.strictObject({ id: z.string().min(1).max(6
 
 /** What the agent tools reach: the scheduler, and whether the running turn is the owner's own. */
 export interface ScheduleAgentDeps {
-  scheduler: Pick<Scheduler, 'find' | 'list' | 'save' | 'remove'>;
+  scheduler: ScheduleBook;
   /** The owner typed the message that opened the running turn, and it took in no other party's words. */
   ownerInstructed(threadId: string): boolean;
   /** Ask the owner on the proposing thread (Needs-you), so a draft shows in Attention. */
