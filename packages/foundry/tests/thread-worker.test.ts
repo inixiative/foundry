@@ -1071,6 +1071,60 @@ test("a new thread takes its worker's default role, or the one chosen; the role 
   expect(cleared.body.effectiveRole).toBe('coder');
 });
 
+test('Forge Master and Feedback threads live in their own scope: no project, never moved in or out, listed apart', async () => {
+  const { call } = await viewer();
+  // A scope is chosen by where the thread goes, never offered as a role beside coder and assistant.
+  const roles = (await call('GET', '/api/workers')).body.roles as Array<{ id: string }>;
+  expect(roles.map((r) => r.id)).toEqual(['coder', 'assistant']);
+
+  const forge = await call('POST', '/api/threads', { role: 'forge-master' });
+  expect(forge.status).toBe(201);
+  expect((forge.body.meta as ThreadMeta).projectId).toBeUndefined();
+  expect(forge.body.effectiveRole).toBe('forge-master');
+  const feedback = await call('POST', '/api/threads', { role: 'feedback' });
+  const global = await call('POST', '/api/threads', {});
+
+  const inProject = await call('POST', '/api/threads', { projectId: 'claude', role: 'feedback' });
+  expect(inProject.status).toBe(400);
+  expect(inProject.body.error).toContain("Foundry's own scope");
+
+  // A role change never moves a thread into or out of a scope.
+  const into = await call('PATCH', `/api/threads/${global.body.threadId}`, { role: 'feedback' });
+  expect(into.status).toBe(400);
+  expect(into.body.error).toContain('keeps its scope');
+  const out = await call('PATCH', `/api/threads/${forge.body.threadId}`, { role: 'coder' });
+  expect(out.status).toBe(400);
+  // Nor is it given a branch, a worktree, or a parent from elsewhere.
+  expect((await call('POST', '/api/threads', { role: 'forge-master', branch: 'b' })).status).toBe(
+    400,
+  );
+  const adopted = await call('POST', '/api/threads', {
+    role: 'forge-master',
+    parentThreadId: global.body.threadId,
+  });
+  expect(adopted.status).toBe(400);
+  expect(adopted.body.error).toContain('parent must be one too');
+  const worktree = await call('PATCH', `/api/threads/${forge.body.threadId}`, {
+    worktreePath: '/tmp/elsewhere',
+  });
+  expect(worktree.status).toBe(400);
+  expect((await call('PATCH', `/api/threads/${forge.body.threadId}`, { branch: 'b' })).status).toBe(
+    400,
+  );
+
+  const ids = async (query: string) =>
+    ((await call('GET', `/api/threads${query}`)).body.threads as Array<{ threadId: string }>).map(
+      (t) => t.threadId,
+    );
+  // Global leaves the scopes out; each scope lists only its own.
+  const listed = await ids('');
+  expect(listed).toContain(global.body.threadId as string);
+  expect(listed).not.toContain(forge.body.threadId as string);
+  expect(listed).not.toContain(feedback.body.threadId as string);
+  expect(await ids('?scope=forge')).toEqual([forge.body.threadId as string]);
+  expect(await ids('?scope=feedback')).toEqual([feedback.body.threadId as string]);
+});
+
 test('a settings role can default a worker and is offered beside the built-ins', async () => {
   const { call, store } = await viewer();
   await store.update((draft) => {

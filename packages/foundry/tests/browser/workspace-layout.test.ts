@@ -62,6 +62,13 @@ test('the left column is navigation: pinned scopes, a scrolling project list, an
       projectRegistry: projects,
     });
     cleanup.unshift(['store', () => viewer.localStore?.close()]);
+    // A Forge Master thread: listed under its scope, never under Global.
+    viewer.directory.add(
+      new Thread('forge-1', new ContextStack(), {
+        description: 'Tune the chorus',
+        role: 'forge-master',
+      }),
+    );
     const server = Bun.serve({
       hostname: '127.0.0.1',
       port: 0,
@@ -154,19 +161,32 @@ test('the left column is navigation: pinned scopes, a scrolling project list, an
     });
     expect(centered).toBeLessThan(2);
 
-    // Forge Master: its one thread shows in the threads half, and the header names it.
+    // Forge Master is a scope of threads (Aron 11-14): its threads show in the threads half.
     await pinned.filter({ hasText: 'Forge Master' }).click();
-    await page.locator('.forge-master').waitFor();
-    expect(await column.locator('.nav-threads .tree-node').allInnerTexts()).toEqual([
-      'Forge Master',
+    await column.locator('.nav-threads .tree-label', { hasText: 'Tune the chorus' }).waitFor();
+    expect(await column.locator('.nav-threads .tree-label').allInnerTexts()).toEqual([
+      'Tune the chorus',
     ]);
     expect(await pinned.filter({ hasText: 'Forge Master' }).getAttribute('class')).toContain(
       'proj-active',
     );
 
-    // Global lists the unscoped threads.
+    // Feedback shows its inbox in the centre, beside the scope's threads.
+    await pinned.filter({ hasText: 'Feedback' }).click();
+    await page.locator('.feedback-scope .feedback-scope-inbox').waitFor();
+    // The Board is chosen on purpose, so it shows over the Feedback scope, and closes back to it.
+    await page.locator('.board-button').click();
+    await page.locator('.board').waitFor();
+    expect(await page.locator('.feedback-scope').count()).toBe(0);
+    await page.locator('.board-button').click();
+    await page.locator('.feedback-scope .feedback-scope-inbox').waitFor();
+
+    // Global lists the unscoped threads, even when the page first opened in a project.
     await pinned.filter({ hasText: 'Global' }).click();
     await column.locator('.nav-threads .tree-label', { hasText: 'Global work' }).waitFor();
+    expect(await column.locator('.nav-threads .tree-label').allInnerTexts()).not.toContain(
+      'Tune the chorus',
+    );
     expect(await pinned.filter({ hasText: 'Global' }).getAttribute('class')).toContain(
       'proj-active',
     );

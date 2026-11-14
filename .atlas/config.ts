@@ -288,7 +288,7 @@ export default defineConfig({
       partOf: 'primitive:websockets',
     },
     {
-      include: `${FOUNDRY}/viewer/{thread-directory,turn-flow,foundry-self-chat}.ts`,
+      include: `${FOUNDRY}/viewer/{thread-directory,turn-flow}.ts`,
       partOf: 'feature:threads',
     },
     {
@@ -314,7 +314,7 @@ export default defineConfig({
       partOf: 'primitive:websockets',
     },
     {
-      include: `${UI}/{conversation,conversation-state,thread-labels,project-sidebar,self-chat,image-attachments}.js`,
+      include: `${UI}/{conversation,conversation-state,thread-labels,project-sidebar,image-attachments}.js`,
       partOf: 'feature:threads',
     },
     { include: `${UI}/{thread-tree}.js`, partOf: 'feature:threadTree' },

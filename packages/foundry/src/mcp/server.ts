@@ -31,8 +31,18 @@ import { z } from 'zod';
 import { isThreadKnowledgeLayerId, threadKnowledgeLayerId } from '../agents/domain-librarian';
 import type { ThreadRuntimeManager } from '../agents/thread-runtime';
 import { localInventory } from '../devices/local-inventory';
+import { FEEDBACK_ROLE } from '../prompts/instruction-settings';
 import { readOperationSchema } from '../providers/kingdom-access-client';
 import { ConversationTool } from '../tools/conversation';
+import {
+  FEEDBACK_INBOX_DESCRIPTION,
+  FEEDBACK_ITEM_DESCRIPTION,
+  FEEDBACK_STATUS_DESCRIPTION,
+  FeedbackInboxTool,
+  feedbackInboxSchema,
+  feedbackItemSchema,
+  feedbackStatusSchema,
+} from '../tools/feedback-inbox';
 import { KingdomAccessTool } from '../tools/kingdom-access';
 import { KingdomPostTool } from '../tools/kingdom-post';
 import {
@@ -686,6 +696,41 @@ export function createFoundryMcp(config: FoundryMcpConfig): FoundryMcp {
       SECRET_PIPE_DESCRIPTION,
       secretPipeSchema.shape,
       secretCall('secret_pipe'),
+    );
+  }
+  // -----------------------------------------------------------------------
+  // The feedback inbox, on a Feedback thread only (its role is its scope)
+  // -----------------------------------------------------------------------
+  if (
+    config.thread.meta.role === FEEDBACK_ROLE &&
+    config.tools?.get('feedback') instanceof FeedbackInboxTool
+  ) {
+    const inbox = (operation: string) =>
+      guarded<Record<string, unknown>>(operation, async (args) => {
+        const result = await config.tools!.dispatch(
+          'feedback_request',
+          { url: operation, method: 'POST', body: args },
+          { scope: authority.scope() },
+        );
+        return { status: result.ok ? 'ok' : 'error', text: result.summary };
+      });
+    server.tool(
+      'feedback_inbox',
+      FEEDBACK_INBOX_DESCRIPTION,
+      feedbackInboxSchema.shape,
+      inbox('feedback_inbox'),
+    );
+    server.tool(
+      'feedback_item',
+      FEEDBACK_ITEM_DESCRIPTION,
+      feedbackItemSchema.shape,
+      inbox('feedback_item'),
+    );
+    server.tool(
+      'feedback_status',
+      FEEDBACK_STATUS_DESCRIPTION,
+      feedbackStatusSchema.shape,
+      inbox('feedback_status'),
     );
   }
   server.tool(

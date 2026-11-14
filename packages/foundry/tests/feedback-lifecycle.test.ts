@@ -1,9 +1,11 @@
 import { afterEach, expect, test } from 'bun:test';
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { ActionQueue, ContextStack, Thread } from '@inixiative/foundry-core';
+import { ActionQueue, ContextStack, Thread, ToolRegistry } from '@inixiative/foundry-core';
 import type { RouteResult } from '../src/agents/cartographer';
+import { captureThread } from '../src/archives/capture';
 import {
   applyChange,
   feedbackRoots,
@@ -17,10 +19,16 @@ import { type ClassifyCorrection, FeedbackService } from '../src/feedback/servic
 import { lintStatement, parseMatch, ruleMarker } from '../src/feedback/sharpen';
 import { validateFeedbackSettings } from '../src/feedback/types';
 import { assess } from '../src/feedback/view';
+import { createFoundryMcp } from '../src/mcp/server';
 import { LocalSessionStore } from '../src/persistence/local-session-store';
 import { resolveInstructionLadder } from '../src/prompts/instruction-settings';
+import { FeedbackInboxTool } from '../src/tools/feedback-inbox';
 import { type FoundryConfig, starterConfig } from '../src/viewer/config';
 import { writeRegions } from './helpers/regions';
+
+const require = createRequire(import.meta.url);
+const { Client } = require('@modelcontextprotocol/sdk/client/index.js');
+const { InMemoryTransport } = require('@modelcontextprotocol/sdk/inMemory.js');
 
 const cleanup: Array<() => void> = [];
 afterEach(() => {
@@ -70,6 +78,8 @@ function setup(
   const store = new LocalSessionStore(join(tempDir('feedback-store-'), 'sessions.sqlite'));
   cleanup.push(() => store.close());
   const thread = new Thread('t1', new ContextStack(), { projectId: 'P' });
+  // The threads this Foundry runs; a test adds its own (a Feedback thread calling the inbox tools).
+  const live = new Map<string, Thread>([[thread.id, thread]]);
   store.beginTurn(thread, 'turn-0', 'please do the change');
   store.completeTurn(
     thread,
@@ -92,7 +102,7 @@ function setup(
     store,
     config: () => config(project, options.feedback),
     queue,
-    thread: (id) => (id === thread.id ? thread : undefined),
+    thread: (id) => live.get(id),
     cartographer: () => ({
       route: async () =>
         options.route ?? { layers: [], domains: ['convention'], confidence: 0.9, source: 'model' },
@@ -114,7 +124,7 @@ function setup(
     invalidate: (role) => invalidated.push(role),
     roots: () => ({ home, project, org: root }),
   });
-  return { service, store, thread, queue, invalidated, project, home, root, classifyCalls };
+  return { service, store, thread, live, queue, invalidated, project, home, root, classifyCalls };
 }
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 10));
@@ -586,4 +596,106 @@ test('rungs follow the thread: a worktree under the project writes to the projec
   const other = feedbackRoots({ meta: { projectId: 'P', cwd: elsewhere } }, { projects });
   expect(realpathSync(other.project!)).toBe(realpathSync(elsewhere));
   expect(feedbackRoots({ meta: {} }, { projects })).not.toHaveProperty('project');
+});
+
+test("a Feedback thread's inbox tools list, read, archive and reopen items, journalled with the thread as actor", async () => {
+  const { service, store, thread, live } = setup();
+  live.set('fb-1', new Thread('fb-1', new ContextStack(), { role: 'feedback' }));
+  const first = service.record(thread, {
+    text: 'Merge agentic work yourself.',
+    author: { name: 'aron', surface: 'viewer' },
+  });
+  const second = service.record(thread, {
+    text: 'Name things in full.',
+    author: { name: 'aron', surface: 'viewer' },
+  });
+  const tool = new FeedbackInboxTool(() => service).scoped({ threadId: 'fb-1' });
+  const call = async (op: string, body: unknown = {}) => (await tool.post(op, body)).summary;
+
+  const listed = await call('feedback_inbox');
+  expect(listed).toStartWith('2 items:');
+  expect(listed).toContain(first.id);
+  expect(listed).toContain('Name things in full.');
+  expect(await call('feedback_inbox', { limit: 1 })).toContain('(showing the newest 1)');
+  expect(await call('feedback_inbox', { projectId: 'other' })).toBe('No feedback items match.');
+  expect(JSON.parse(await call('feedback_item', { itemId: second.id }))).toMatchObject({
+    id: second.id,
+    statement: 'Name things in full.',
+  });
+
+  expect(await call('feedback_status', { itemIds: [first.id], status: 'archived' })).toBe(
+    'Archived 1 item.',
+  );
+  expect(service.lifecycle.get(first.id)!.inbox).toBe('archived');
+  const status = captureThread(store, Bun.randomUUIDv7(), 't1')
+    .entries.filter((entry) => entry.text?.includes('"feedback-status"'))
+    .map((entry) => JSON.parse(entry.text!))[0];
+  expect(status.record).toEqual({ itemId: first.id, inbox: 'archived', by: 'thread:fb-1' });
+  expect(
+    await call('feedback_status', { itemIds: [first.id, second.id], status: 'archived' }),
+  ).toBe('Archived 1 item; 1 already archived.');
+  expect(await call('feedback_inbox', { status: 'open' })).toBe('No feedback items match.');
+  expect(await call('feedback_status', { itemIds: [first.id], status: 'open' })).toBe(
+    'Reopened 1 item.',
+  );
+
+  // Bad arguments and missing context are refused, not guessed.
+  expect(await call('feedback_status', { itemIds: [], status: 'archived' })).toStartWith(
+    'Not done:',
+  );
+  expect(await call('feedback_item', { itemId: 'nope' })).toBe('feedback item nope not found');
+  const unscoped = await new FeedbackInboxTool(() => service).post('feedback_inbox', {});
+  expect(unscoped).toMatchObject({ ok: false, error: 'This tool runs only inside a thread' });
+  const off = await new FeedbackInboxTool(() => null)
+    .scoped({ threadId: 'x' })
+    .post('feedback_inbox', {});
+  expect(off.ok).toBe(false);
+  // Only a Feedback thread is answered: the tool sits in the shared registry, so an API executor's
+  // tool loop offers it to every thread, and the role is checked here, not only on the bridge.
+  live.set('coder-1', new Thread('coder-1', new ContextStack(), { role: 'coder' }));
+  const coder = await new FeedbackInboxTool(() => service)
+    .scoped({ threadId: 'coder-1' })
+    .post('feedback_status', { itemIds: [first.id], status: 'archived' });
+  expect(coder).toMatchObject({
+    ok: false,
+    error: 'The feedback inbox answers a Feedback thread only',
+  });
+  expect(service.lifecycle.get(first.id)!.inbox).toBe('open');
+});
+
+test('only a Feedback thread is offered the inbox tools on its bridge', async () => {
+  const { service, thread: origin, live } = setup();
+  const item = service.record(origin, {
+    text: 'Merge agentic work yourself.',
+    author: { name: 'aron', surface: 'viewer' },
+  });
+  const tools = new ToolRegistry();
+  tools.register(new FeedbackInboxTool(() => service), 'The feedback inbox');
+  const connect = async (role: string) => {
+    const thread = new Thread(`${role}-thread`, new ContextStack(), { role });
+    live.set(thread.id, thread);
+    const mcp = createFoundryMcp({ thread, tools });
+    const client = new Client({ name: 'feedback-inbox', version: '1' });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await mcp.server.connect(serverTransport);
+    await client.connect(clientTransport);
+    cleanup.push(() => client.close());
+    const names = (await client.listTools()).tools.map((tool: { name: string }) => tool.name);
+    return { client, names };
+  };
+  const coder = await connect('coder');
+  expect(coder.names).not.toContain('feedback_inbox');
+  const forge = await connect('forge-master');
+  expect(forge.names).not.toContain('feedback_inbox');
+  const feedback = await connect('feedback');
+  expect(feedback.names).toEqual(
+    expect.arrayContaining(['feedback_inbox', 'feedback_item', 'feedback_status']),
+  );
+  const result = await feedback.client.callTool({
+    name: 'feedback_status',
+    arguments: { itemIds: [item.id], status: 'archived' },
+  });
+  expect(result.isError).toBeFalsy();
+  expect((result.content as Array<{ text: string }>)[0]!.text).toContain('Archived 1 item.');
+  expect(service.lifecycle.get(item.id)!.inbox).toBe('archived');
 });

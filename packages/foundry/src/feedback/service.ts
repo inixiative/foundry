@@ -19,7 +19,11 @@ import type { Cartographer } from '../agents/cartographer';
 import { REDUCED_PHASE } from '../archives/reduced-middleware';
 import type { AuditLog } from '../audit/audit-log';
 import type { LocalSessionStore } from '../persistence/local-session-store';
-import { MAIN_ROLE, resolveInstructionLadder } from '../prompts/instruction-settings';
+import {
+  FEEDBACK_ROLE,
+  MAIN_ROLE,
+  resolveInstructionLadder,
+} from '../prompts/instruction-settings';
 import { DECISION_PRIORITY } from '../providers/decision-priority';
 import type { FoundryConfig } from '../viewer/config';
 import { effectiveProject, threadRoleOf } from '../viewer/config-resolve';
@@ -281,6 +285,13 @@ export class FeedbackService {
       if (updated) changed.push(updated);
     }
     return changed;
+  }
+
+  /** Whether a thread is a Feedback thread (its effective role), the only one the inbox tools answer. */
+  isFeedbackThread(threadId: string): boolean {
+    const thread =
+      this.deps.thread(threadId) ?? this.deps.store.threads().find((t) => t.id === threadId);
+    return !!thread && threadRoleOf(this.deps.config(), thread.meta) === FEEDBACK_ROLE;
   }
 
   /** The item's origin thread, live or as journalled (an archived thread still takes its rows). */

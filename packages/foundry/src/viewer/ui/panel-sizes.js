@@ -5,7 +5,8 @@
  */
 /**
  * The side panels' sizes, in steps: left hidden · strip · normal · wide; right hidden · icons ·
- * normal · wide (the widest step was dropped, Aron 11-02). One symbol makes a side larger and one smaller, at every step; a control
+ * normal · wide (the widest step was dropped, Aron 11-02). The left list's wide step is wide enough
+ * to show projects and the selected scope's threads side by side (Aron, 11-14). One symbol makes a side larger and one smaller, at every step; a control
  * disappears at its side's limit, and a strip shows only "larger". A hidden side keeps its grid
  * column at 0 width (the other panels never shift), with a slim restore tab mid-height on that edge.
  * `projectSidebarOpen` / `detailDrawerOpen` stay the "at least normal" view of these levels, so the
@@ -17,7 +18,7 @@ import { detailDrawerOpen, leftSize, projectSidebarOpen, rightSize } from './sto
 
 export const LEFT_LEVELS = ['hidden', 'strip', 'normal', 'wide'];
 export const RIGHT_LEVELS = ['hidden', 'icons', 'normal', 'wide'];
-const LEFT_WIDTH = { hidden: 0, strip: 32, normal: 272, wide: 360 };
+const LEFT_WIDTH = { hidden: 0, strip: 32, normal: 272, wide: 520 };
 const RIGHT_WIDTH = { hidden: 0, icons: 44, normal: 440, wide: 560 };
 
 export { leftSize, rightSize };
@@ -81,9 +82,9 @@ export const panelFit = computed(() => {
 });
 
 /** The grid columns for the workspace (the board and Watchtower span the width on their own). */
-export function panelColumns({ forge }) {
+export function panelColumns() {
   const fit = panelFit.value;
-  const right = forge ? 0 : fit.rightOverlay ? RIGHT_WIDTH.icons : fit.right;
+  const right = fit.rightOverlay ? RIGHT_WIDTH.icons : fit.right;
   return `${fit.left}px minmax(0, 1fr) ${right}px`;
 }
 

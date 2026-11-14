@@ -225,18 +225,6 @@ body {
   grid-template-columns: 32px 1fr 32px;
 }
 
-/* Forge Master has no thread detail: that column folds away. */
-.panels--forge.panels--proj-open {
-  grid-template-columns: 260px 1fr 0;
-}
-.panels--forge.panels--proj-closed {
-  grid-template-columns: 32px 1fr 0;
-}
-.panels--forge > .panel-right {
-  visibility: hidden;
-  border: 0;
-}
-
 .panel-projects,
 .panel-center,
 .panel-right {
@@ -378,6 +366,21 @@ body {
   color: inherit;
   font: inherit;
   cursor: pointer;
+}
+/* The wide step: projects and the selected scope's threads side by side, each scrolling on its own. */
+.nav-column--wide {
+  flex-direction: row;
+}
+.nav-column--wide > .nav-projects,
+.nav-column--wide > .nav-projects--collapsed {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.nav-column--wide > .nav-threads {
+  flex: 1.2 1 0;
+  min-width: 0;
+  border-top: 0;
+  border-left: 1px solid var(--line);
 }
 .nav-threads {
   flex: 3 1 0;
@@ -3019,39 +3022,6 @@ body {
   margin-left: auto;
 }
 
-.forge-master {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  flex: 1;
-}
-/* Forge Master beside a settings page: closed until the header opens it (Aron 11-02). */
-@media (min-width: 1001px) {
-  .settings-page.settings-show-chat {
-    grid-template-columns: 220px minmax(0, 1fr) 380px;
-  }
-}
-.settings-chat-close {
-  margin-left: auto;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  background: none;
-  color: var(--text-dim);
-  font: inherit;
-  font-size: 11px;
-  padding: 1px 6px;
-  cursor: pointer;
-}
-.settings-chat-close:hover {
-  color: var(--accent);
-}
-
-.forge-master > .settings-chat {
-  flex: 1;
-  border-left: none;
-  width: auto;
-}
-
 .settings-override-preview {
   font-family: var(--font);
   font-size: 11px;
@@ -3887,6 +3857,36 @@ body {
   min-width: 60px;
 }
 
+/* ---- Feedback scope: the inbox beside the open Feedback thread ---- */
+.feedback-scope {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  height: 100%;
+  min-height: 0;
+}
+.feedback-scope--thread {
+  grid-template-columns: minmax(320px, 1fr) minmax(0, 1.4fr);
+}
+.feedback-scope-inbox,
+.feedback-scope-thread {
+  min-height: 0;
+  min-width: 0;
+  overflow: auto;
+}
+.feedback-scope-thread {
+  border-left: 1px solid var(--line);
+}
+@media (max-width: 1400px) {
+  .feedback-scope--thread {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 2fr) minmax(0, 3fr);
+  }
+  .feedback-scope-thread {
+    border-left: 0;
+    border-top: 1px solid var(--line);
+  }
+}
+
 /* ---- Project sidebar ---- */
 
 .proj-sidebar {
@@ -4643,188 +4643,6 @@ body {
 }
 
 /* =========================================================================
-   Foundry-self chat pane (right side of settings)
-   ========================================================================= */
-
-.settings-chat {
-  display: flex;
-  flex-direction: column;
-  border-left: 1px solid var(--line);
-  background: var(--bg);
-  min-height: 0;
-}
-
-.settings-chat-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 12px;
-  border-bottom: 1px solid var(--line);
-  flex-shrink: 0;
-}
-
-.settings-chat-title {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--accent);
-  flex: 1;
-}
-
-.settings-chat-meta {
-  font-size: 10px;
-  color: var(--text-dimmer);
-}
-
-.settings-chat-focus {
-  font-size: 10px;
-  color: var(--text-dim);
-  padding: 6px 12px;
-  border-bottom: 1px solid var(--line);
-  background: var(--surface2);
-  flex-shrink: 0;
-  font-family: var(--font);
-}
-.settings-chat-focus b {
-  color: var(--accent);
-  font-weight: 500;
-}
-
-.settings-chat-messages {
-  flex: 1;
-  overflow-y: auto;
-  padding: 10px 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  min-height: 0;
-}
-
-.settings-chat-msg {
-  font-size: 12px;
-  line-height: 1.5;
-  padding: 8px 10px;
-  border-radius: 6px;
-  max-width: 100%;
-  word-wrap: break-word;
-  white-space: pre-wrap;
-}
-
-.settings-chat-msg.user {
-  background: var(--accent-dim);
-  color: var(--text);
-  align-self: flex-end;
-  max-width: 90%;
-}
-
-.settings-chat-msg.assistant {
-  background: var(--surface2);
-  color: var(--text);
-  border: 1px solid var(--line);
-}
-
-.settings-chat-msg.system {
-  background: transparent;
-  color: var(--text-dimmer);
-  font-size: 10px;
-  font-style: italic;
-  border: 1px dashed var(--line);
-}
-
-.settings-chat-msg.error {
-  background: var(--err-dim);
-  color: var(--err);
-  border: 1px solid var(--err);
-}
-
-.settings-chat-msg-kind {
-  font-size: 9px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--text-dimmer);
-  margin-bottom: 4px;
-}
-
-.settings-chat-msg-tool {
-  background: var(--bg);
-  border: 1px solid var(--line);
-  border-radius: 4px;
-  padding: 4px 8px;
-  font-family: var(--font);
-  font-size: 10px;
-  color: var(--text-dim);
-  margin-top: 4px;
-}
-
-.settings-chat-form {
-  display: flex;
-  gap: 6px;
-  padding: 10px 12px;
-  border-top: 1px solid var(--line);
-  flex-shrink: 0;
-  background: var(--surface);
-}
-
-.settings-chat-input {
-  flex: 1;
-  font-family: var(--font);
-  font-size: 12px;
-  color: var(--text);
-  background: var(--bg);
-  border: 1px solid var(--line);
-  border-radius: 4px;
-  padding: 6px 8px;
-  resize: none;
-  outline: none;
-  min-height: 32px;
-  max-height: 120px;
-}
-.settings-chat-input:focus {
-  border-color: var(--accent);
-}
-
-.settings-chat-send {
-  font-family: var(--font);
-  font-size: 11px;
-  color: var(--accent);
-  background: rgba(196, 132, 252, 0.1);
-  border: 1px solid rgba(196, 132, 252, 0.3);
-  padding: 0 12px;
-  border-radius: 4px;
-  cursor: pointer;
-  transition: all 0.15s;
-}
-.settings-chat-send:hover:not(:disabled) {
-  background: rgba(196, 132, 252, 0.2);
-}
-.settings-chat-send:disabled {
-  opacity: 0.4;
-  cursor: default;
-}
-
-.settings-chat-actions {
-  display: flex;
-  gap: 4px;
-  padding: 6px 12px;
-  border-bottom: 1px solid var(--line);
-  background: var(--surface2);
-  flex-shrink: 0;
-}
-.settings-chat-action {
-  font-family: var(--font);
-  font-size: 10px;
-  color: var(--text-dim);
-  background: none;
-  border: 1px solid var(--line);
-  padding: 2px 8px;
-  border-radius: 3px;
-  cursor: pointer;
-}
-.settings-chat-action:hover {
-  color: var(--text);
-  border-color: var(--text-dim);
-}
-
-/* =========================================================================
    File picker modal (reused by source uri field)
    ========================================================================= */
 
@@ -5286,27 +5104,11 @@ body {
   .settings-page {
     grid-template-columns: 170px minmax(0, 1fr);
   }
-  .settings-page > .settings-chat {
-    display: none;
-  }
-  .settings-page.settings-show-chat {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .settings-show-chat > .settings-main,
-  .settings-show-chat > .settings-nav {
-    display: none;
-  }
-  .settings-show-chat > .settings-chat {
-    display: flex;
-  }
 }
 @media (max-width: 600px) {
   .settings-page {
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: auto minmax(0, 1fr);
-  }
-  .settings-page.settings-show-chat {
-    grid-template-rows: minmax(0, 1fr);
   }
   .settings-nav {
     padding: 8px;
@@ -7924,9 +7726,6 @@ a.thread-ref:hover {
 .board-card-foot .rp-link {
   margin-left: 0;
   font-size: 11.5px;
-}
-.board-aside {
-  max-width: 320px;
 }
 .conversation-hand {
   color: var(--st-attention);

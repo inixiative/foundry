@@ -418,6 +418,26 @@ test('"+ New thread" picks worker, model and effort before the first message, fr
     await modal.locator('[data-run="start"]:not([disabled])').click();
     await modal.waitFor({ state: 'detached' });
     expect(created[2]).toEqual({ projectId: 'shop', role: 'assistant' });
+    // Where: it opens on the workspace's scope; Forge Master is a scope with its own role, so the
+    // role row goes and the thread has no project.
+    await page.locator('.rail-new-thread').click();
+    expect(await modal.locator('[data-run="where"]').inputValue()).toBe('shop');
+    await modal.locator('[data-run="role"]').selectOption('assistant');
+    await modal.locator('[data-run="where"]').selectOption('@forge');
+    await modal.locator('[data-run="worker"]').waitFor();
+    expect(await modal.locator('[data-run="role"]').count()).toBe(0);
+    await modal.locator('[data-run="start"]:not([disabled])').click();
+    await modal.waitFor({ state: 'detached' });
+    expect(created[3]).toEqual({ role: 'forge-master' });
+    // Starting it moved the workspace into Forge Master, so the next one opens there; Global: no
+    // project, no role.
+    await page.locator('.rail-new-thread').click();
+    await modal.locator('[data-run="worker"]').waitFor();
+    expect(await modal.locator('[data-run="where"]').inputValue()).toBe('@forge');
+    await modal.locator('[data-run="where"]').selectOption('');
+    await modal.locator('[data-run="start"]:not([disabled])').click();
+    await modal.waitFor({ state: 'detached' });
+    expect(created[4]).toEqual({});
     expect(errors).toEqual([]);
   } finally {
     expect(await releaseAll(cleanup)).toEqual([]);

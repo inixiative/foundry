@@ -73,10 +73,27 @@ export const toast = signal(null); // { message, type: "ok"|"error"|"warn", pers
 export const projects = signal([]); // ProjectSummary[]
 export const projectTags = signal([]); // string[]
 export const activeProjectId = signal(null); // selected project ID or null (global: unscoped threads)
-/** The workspace shows Forge Master, the internal thread about this Foundry, instead of a scope's threads. */
+/** The Forge Master scope is selected: its threads, about this Foundry and its settings. */
 export const forgeMasterOpen = signal(false);
-/** The workspace shows the Feedback inbox: every feedback item, across projects. */
+/** The Feedback scope is selected: its threads, with the feedback inbox beside them. */
 export const feedbackInboxOpen = signal(false);
+/**
+ * Foundry's own scopes, each a thread role (Aron, 2026-11-14: "Forge Master and Feedback should just
+ * be threads"): a thread with the role lives in the scope, never in a project; the daemon holds the
+ * same table (`SCOPE_ROLES`).
+ */
+// Keyed `@forge` / `@feedback`, as the daemon's streams are: no project id can hold an `@`, so a
+// project named forge or feedback is never taken for the scope.
+export const SCOPE_ROLES = Object.freeze({ '@forge': 'forge-master', '@feedback': 'feedback' });
+/** The scope a thread role puts a thread in, if any. */
+export const scopeOfRole = (role) =>
+  Object.keys(SCOPE_ROLES).find((scope) => SCOPE_ROLES[scope] === role) ?? null;
+/** Where the workspace is: '@forge', '@feedback', a project id, or null (Global); `selectScope`'s argument. */
+export function currentScope() {
+  if (forgeMasterOpen.value) return '@forge';
+  if (feedbackInboxOpen.value) return '@feedback';
+  return activeProjectId.value ?? null;
+}
 /** Every feedback item (the `feedback` stream), newest first; the inbox, project strips and threads read it. */
 export const feedbackItems = signal([]);
 /** A turn to bring into view once its thread's messages show (a feedback item's provenance link). */
@@ -514,11 +531,12 @@ function holdFeedback() {
 /** Select a pinned scope or a project: Global (`null`), a project id, Forge Master or the Feedback inbox. */
 export function selectScope(scope) {
   batch(() => {
-    forgeMasterOpen.value = scope === 'forge';
-    feedbackInboxOpen.value = scope === 'feedback';
-    if (scope !== 'forge' && scope !== 'feedback') activeProjectId.value = scope;
-    if (scope === 'forge' || scope === 'feedback') compactPanel.value = 'conversation';
-    if (scope === 'forge' || scope === 'feedback') projectHomeOpen.value = false;
+    const pinned = Object.hasOwn(SCOPE_ROLES, scope ?? '');
+    forgeMasterOpen.value = scope === '@forge';
+    feedbackInboxOpen.value = scope === '@feedback';
+    if (!pinned) activeProjectId.value = scope;
+    if (pinned) compactPanel.value = 'conversation';
+    if (pinned) projectHomeOpen.value = false;
   });
 }
 
@@ -707,18 +725,24 @@ function settleInitialScope() {
   if (project) activeProjectId.value = project.id;
 }
 
-/** On the Active rail the scope follows the open thread: its project, or Global. */
+/** On the Active rail the scope follows the open thread: its project, Global, or its Foundry scope. */
 function followActiveProject() {
   if (!railSpansProjects(railView.peek())) return;
   const listed = allThreads.peek().find((t) => t.threadId === activeThreadId.peek());
-  if (listed) activeProjectId.value = listed.meta?.projectId ?? null;
+  if (!listed) return;
+  const scope = scopeOfRole(listed.effectiveRole);
+  batch(() => {
+    forgeMasterOpen.value = scope === '@forge';
+    feedbackInboxOpen.value = scope === '@feedback';
+    if (!scope) activeProjectId.value = listed.meta?.projectId ?? null;
+  });
 }
 
 function adoptThreadList(threads) {
   if (threadsStream === 'threads') {
     globalListed = true;
     settleInitialScope();
-  }
+  } else initialScopeOpen = false; // the first load opened somewhere else: a later Global stays Global
   allThreads.value = threads;
   followActiveProject();
   if (!threads.some((thread) => thread.threadId === activeThreadId.value))
@@ -832,9 +856,13 @@ function connectStreams() {
     const next =
       railSpansProjects(railView.value) || boardOpen.value
         ? 'threads:all'
-        : projectId
-          ? `threads:${projectId}`
-          : 'threads';
+        : forgeMasterOpen.value
+          ? 'threads:@forge'
+          : feedbackInboxOpen.value
+            ? 'threads:@feedback'
+            : projectId
+              ? `threads:${projectId}`
+              : 'threads';
     if (next === threadsStream) return;
     if (threadsStream) socket.close(threadsStream);
     threadsStream = next;
@@ -1596,8 +1624,13 @@ export async function deleteProject(id) {
   }
 }
 
-/** Create a thread in the active scope and select it, so the next send goes to it. */
+/**
+ * Create a thread and select it, so the next send goes to it. `where` is a project id, null
+ * (Global), '@forge' or '@feedback' (the scope's role, no project); it defaults to the active scope,
+ * and a thread made elsewhere brings the workspace to its scope.
+ */
 export async function createThread({
+  where = currentScope(),
   name,
   description,
   tags,
@@ -1609,7 +1642,9 @@ export async function createThread({
   role,
 } = {}) {
   try {
-    const projectId = activeProjectId.value || undefined;
+    const scopeRole = Object.hasOwn(SCOPE_ROLES, where ?? '') ? SCOPE_ROLES[where] : null;
+    const projectId = scopeRole ? undefined : where || undefined;
+    if (scopeRole) role = scopeRole;
     const res = await authFetch('/api/threads', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1633,6 +1668,7 @@ export async function createThread({
         allThreads.value = [...allThreads.value, created];
       // A new thread has no history to load; a first load would race the first send's rows.
       _threadMessages[tid] ??= [];
+      if (where !== currentScope()) selectScope(where);
       selectThread(tid);
       return created;
     }

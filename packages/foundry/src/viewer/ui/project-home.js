@@ -154,7 +154,7 @@ export function ProjectHome() {
       <section class="ph-box">
         <h4>Feedback</h4>
         <div class="ph-line"><b>${openFeedback}</b> open · ${feedback.length} in all</div>
-        <button type="button" class="proj-btn ph-link" onClick=${() => selectScope('feedback')}>Open the feedback →</button>
+        <button type="button" class="proj-btn ph-link" onClick=${() => selectScope('@feedback')}>Open the feedback →</button>
       </section>
       ${
         isGlobal

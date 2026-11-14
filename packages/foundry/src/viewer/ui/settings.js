@@ -7,9 +7,8 @@
  * Settings pages — Foundry-wide at /settings/:section, per project at
  * /projects/:id/settings/:section (ui/route.js).
  *
- * Layout: scope + section nav | editor | Forge Master pane. The page's
- * scope/section/selected item is relayed to Forge Master so it knows what
- * the operator is looking at.
+ * Layout: scope + section nav | editor. "Ask the Forge Master" starts a Forge Master thread
+ * drafted with the page's scope, section and selected item.
  */
 
 import { AboutSection } from './about-settings.js';
@@ -23,7 +22,7 @@ import { FeedbackSettings } from './feedback.js';
 import { FilePicker } from './file-picker.js';
 import { IntegrationSection } from './integration-settings.js';
 import { KingdomSettings } from './kingdom-settings.js';
-import { effect, html, signal, useCallback, useEffect, useState } from './lib.js';
+import { effect, html, signal, useEffect, useState } from './lib.js';
 import { MessageBoxSection } from './message-box.js';
 import { ProfileSection } from './profile-settings.js';
 import { ChorusSwitch, ProjectOverrides, ProjectSources } from './project-setting-rows.js';
@@ -36,10 +35,17 @@ import {
   route,
   settingsPath,
 } from './route.js';
+import { openNewThread } from './run-picker.js';
 import { ActivitySection, AgentsSection, LayersSection } from './runtime-panels.js';
-import { SelfChatPane } from './self-chat.js';
 import { SettingRow } from './setting-row.js';
-import { afterProjectStart, authFetch, modelRegistry, projects, showToast } from './store.js';
+import {
+  afterProjectStart,
+  authFetch,
+  modelRegistry,
+  projects,
+  selectScope,
+  showToast,
+} from './store.js';
 import { Switch } from './switch.js';
 import { ProjectAgent, ProjectWork, ThreadSettings } from './thread-settings.js';
 
@@ -695,9 +701,6 @@ function ProjectSection({ section, projectId, project, onFocusChange }) {
 }
 
 export function SettingsPage() {
-  // Forge Master is closed until asked for (Aron 11-02); the header opens it, ✕ or Esc closes it.
-  const [showChat, setShowChat] = useState(false);
-  const closeChat = useCallback(() => setShowChat(false), []);
   const config = settingsConfig.value;
   const { projectId, section } = route.value;
   const focus = selectedFocus.value;
@@ -732,24 +735,24 @@ export function SettingsPage() {
   const onFocusChange = (next) => {
     selectedFocus.value = next;
   };
-  const chatFocus = {
-    scope: projectId ? 'project' : 'global',
-    projectId: projectId ?? undefined,
-    tab: section,
-    focusKind: focus?.kind ?? null,
-    focusId: focus?.id ?? null,
+  // Asking the Forge Master starts a thread in its scope, the page it was asked from in its draft.
+  const askForgeMaster = () => {
+    const where = `${projectId ? `${project?.label || projectId}'s ` : ''}${label} settings${focus ? ` (${focus.kind} ${focus.id})` : ''}`;
+    navigate('/');
+    selectScope('@forge');
+    openNewThread({ where: '@forge', draft: `About the ${where}: ` });
   };
 
   return html`
-    <main class=${`settings-page ${showChat ? 'settings-show-chat' : ''}`}>
+    <main class="settings-page">
       <${SettingsNav} projectId=${projectId} section=${section} projectList=${projectList} />
       <div class="settings-main">
         <header class="settings-page-header">
           <span class="settings-breadcrumb">${projectId ? project?.label || projectId : 'Foundry'}</span>
           <h1 class="settings-title">${label}</h1>
           ${focus ? html`<span class="settings-title-focus">${focus.kind}:${focus.id}</span>` : null}
-          <button type="button" class="action-btn settings-chat-view" aria-expanded=${showChat}
-            title="Ask the Forge Master about these settings" onClick=${() => setShowChat(!showChat)}>${showChat ? 'Back to settings' : 'Forge Master ▾'}</button>
+          <button type="button" class="action-btn settings-chat-view"
+            title="Start a Forge Master thread about these settings" onClick=${askForgeMaster}>Ask the Forge Master</button>
         </header>
         <div class="settings-body">
           ${searched && anchor === 'missed' ? html`<${SearchedSetting} setting=${searched} />` : null}
@@ -760,7 +763,6 @@ export function SettingsPage() {
           }
         </div>
       </div>
-      ${showChat ? html`<${SelfChatPane} focus=${chatFocus} onClose=${closeChat} />` : null}
     </main>
   `;
 }

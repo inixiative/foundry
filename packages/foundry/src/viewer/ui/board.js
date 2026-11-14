@@ -22,7 +22,6 @@
 import { FilterChips, passesChips } from './filter-chips.js';
 import { html, signal, useEffect, useState } from './lib.js';
 import { DeviceBadge, loadMachineProfile, machineProfile, otherMachine } from './machine-icons.js';
-import { selfChatSending } from './self-chat.js';
 import { settingsConfig } from './settings.js';
 import { STATES, StatusIcon } from './status-icons.js';
 import {
@@ -35,7 +34,7 @@ import {
   projects,
   prompts,
   resolvePrompt,
-  selectScope,
+  scopeOfRole,
   selectThread,
 } from './store.js';
 import { projectKingdom, threadName } from './thread-labels.js';
@@ -57,7 +56,9 @@ const COLUMNS = [
 ];
 const OPEN = (t) => !isClosedThread(t);
 
-/** The board's filter: 'all', 'global', 'forge', 'this', or 'project:<id>'. */
+/** Where a follow-up to this thread goes: its scope, its project, or Global. */
+const whereOf = (thread) => scopeOfRole(thread.effectiveRole) ?? thread.meta?.projectId ?? null;
+
 /** "12 min", "3 h", "2 d": how long since the thread last moved. */
 function age(at) {
   if (!at) return null;
@@ -119,7 +120,11 @@ function Card({ thread, state, subagents = [] }) {
         { label: 'Open', onClick: open },
         {
           label: 'Another thread for this',
-          onClick: () => createThread({ description: `Follow-up to: ${threadName(thread)}` }),
+          onClick: () =>
+            createThread({
+              where: whereOf(thread),
+              description: `Follow-up to: ${threadName(thread)}`,
+            }),
         },
       ]} />
     </div>
@@ -143,22 +148,6 @@ function Card({ thread, state, subagents = [] }) {
         ? html`<div class="board-card-subs">${subagents.length} subagent${subagents.length === 1 ? '' : 's'}${done ? ` · ${done} done` : ''}</div>`
         : null
     }
-  </article>`;
-}
-
-function ForgeMasterCard() {
-  const working = selfChatSending.value;
-  return html`<article class="board-card">
-    <div class="board-card-head">
-      <${StatusIcon} state=${working ? 'working' : 'idle'} />
-      <span class="board-card-kind">${working ? 'Working' : 'Idle'}</span>
-      <span class="board-card-project">this Foundry</span>
-    </div>
-    <button class="board-card-title" onClick=${() => {
-      boardOpen.value = false;
-      selectScope('forge');
-    }}>Forge Master</button>
-    <p class="board-card-ask">The thread about this Foundry and its settings.</p>
   </article>`;
 }
 
@@ -249,7 +238,7 @@ function Details({ placed }) {
     }
     <div class="board-details-actions">
       <button type="button" class="proj-btn proj-btn-ok" onClick=${open}>Open</button>
-      <button type="button" class="proj-btn" onClick=${() => createThread({ description: `Follow-up to: ${threadName(thread)}` })}>Another thread for this</button>
+      <button type="button" class="proj-btn" onClick=${() => createThread({ where: whereOf(thread), description: `Follow-up to: ${threadName(thread)}` })}>Another thread for this</button>
       <button type="button" class="proj-btn" onClick=${() => executeAction('thread:pause', thread.threadId)}>Pause</button>
       <button type="button" class="proj-btn" onClick=${() => executeAction('thread:archive', thread.threadId)}>Archive</button>
     </div>
@@ -258,9 +247,6 @@ function Details({ placed }) {
 
 /** Quiet threads: paused, idle, snoozed (all neutral) or archived. Off the board unless asked for. */
 const QUIET = new Set(['idle', 'archived']);
-
-/** The Project chip's own entry for the Forge Master (it has no threads; it shows its card). */
-const FORGE = '__forge';
 
 export function Board() {
   const chips = boardFilter.value;
@@ -276,7 +262,8 @@ export function Board() {
     'This Foundry';
   // A thread runs on this machine unless its meta.machine names another device.
   const valuesOf = {
-    project: (t) => t.meta?.projectId ?? '',
+    // Forge Master and Feedback threads are their scope's, never a project's or Global's.
+    project: (t) => scopeOfRole(t.effectiveRole) ?? t.meta?.projectId ?? '',
     kingdom: (t) => projectKingdom(t.meta?.projectId),
     device: (t) => otherMachine(t)?.deviceName ?? machine,
   };
@@ -296,7 +283,6 @@ export function Board() {
     return { thread: t, state, cat: categoryOf(state), subagents: children };
   };
   const placed = threads.map(place);
-  const forge = !!chips.project?.has(FORGE);
   const quiet = placed.filter((p) => QUIET.has(p.cat));
   const columns = [
     ...COLUMNS.filter((c) => c.cat !== 'problem' || placed.some((p) => p.cat === 'problem')),
@@ -314,7 +300,8 @@ export function Board() {
       options: [
         ...live.map((p) => option('project', p.id, p.label)),
         option('project', '', 'Global'),
-        { value: FORGE, label: 'Forge Master' },
+        option('project', '@forge', 'Forge Master'),
+        option('project', '@feedback', 'Feedback'),
       ],
     },
     {
@@ -356,25 +343,18 @@ export function Board() {
     <${Details} placed=${placed} />
     <div class="board-columns">
       ${columns.map((col) => {
-        const cards = forge
-          ? []
-          : col.cat === 'quiet'
-            ? quiet
-            : placed.filter((p) => p.cat === col.cat);
-        const forgeHere = forge && col.cat === (selfChatSending.value ? 'working' : null);
+        const cards = col.cat === 'quiet' ? quiet : placed.filter((p) => p.cat === col.cat);
         return html`<section key=${col.cat} class="board-column board-column--${col.cat}">
           <h3 class="board-column-head">
             <span class="board-column-swatch"></span><span class="board-column-title">${col.title}</span>
-            <span class="rail-pane-count">${cards.length + (forgeHere ? 1 : 0)}</span>
+            <span class="rail-pane-count">${cards.length}</span>
           </h3>
           <div class="board-frame">
-            ${forgeHere ? html`<${ForgeMasterCard} />` : null}
             ${cards.map((p) => html`<${Card} key=${p.thread.threadId} thread=${p.thread} state=${p.state} subagents=${p.subagents} />`)}
-            ${!cards.length && !forgeHere ? html`<div class="rail-empty">Nothing here.</div>` : null}
+            ${!cards.length ? html`<div class="rail-empty">Nothing here.</div>` : null}
           </div>
         </section>`;
       })}
     </div>
-    ${forge && !selfChatSending.value ? html`<div class="board-aside"><${ForgeMasterCard} /></div>` : null}
   </div>`;
 }

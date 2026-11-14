@@ -417,6 +417,20 @@ it needs no machinery beyond the ladder:
   the computer-level nodes (`managed`, `global`), so a repository's coding rules
   never reach it. A worker no role names composes as `coder`. Foundry ships no
   role instructions: they are role files the user writes.
+- **Scope roles.** `forge-master` and `feedback` are thread roles that hold a
+  scope (Aron, 2026-11-14: "Forge Master and Feedback should just be threads…
+  with their own sort of system prompts or scopes"). A thread lives in a project,
+  in Global, or in one of these scopes: chosen by the New thread picker's
+  **Where**, never by the role picker. A scope thread has no project, runs in the
+  daemon's directory, reads general files from the computer-level nodes only (as
+  `assistant`), and holds its scope's brief as a standing layer (`scope-brief`,
+  `agents/scope-roles.ts`): the Forge Master's carries this install's
+  configuration and is re-read each turn; the Feedback brief explains the inbox
+  tools (`feedback_inbox`, `feedback_item`, `feedback_status`) that only a
+  Feedback thread's MCP bridge registers. Neither is a worker's default, a
+  project thread cannot take one, and a thread cannot move into or out of a
+  scope by changing its role. The `threads` stream (Global) leaves scope threads
+  out; `threads:@forge` and `threads:@feedback` list them.
 - **Role files.** For thread role X, each rung reads `main`'s role file, then
   X's (core `HierarchyLocation.baseRoles`). So `~/.foundry/roles/main/instructions.md`
   reaches every main thread and `~/.foundry/roles/assistant/instructions.md` only

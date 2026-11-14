@@ -5,14 +5,14 @@
  */
 import { constants } from 'node:fs';
 import { resolve as resolveFilePath } from 'node:path';
-import type { ActionQueue, Harness, TokenTracker, ToolRegistry } from '@inixiative/foundry-core';
+import type { ActionQueue, Harness, TokenTracker } from '@inixiative/foundry-core';
 import type { Context, Hono } from 'hono';
 import { fromSettingsConfig, type ProjectRegistry } from '../../agents/project';
 import { readWardenBrief } from '../../agents/warden-brief';
 import { WARDEN_CHARTER } from '../../classify';
 import { providerAccounts } from '../../providers/provider-accounts';
 import { providerLimits } from '../../providers/provider-limits';
-import { describeReadinessChorus, inspectNativeClis } from '../../readiness';
+import { describeReadinessChorus } from '../../readiness';
 import type { ActionHandler, OperatorAction } from '../actions';
 import type { AIAssist, AssistRequest } from '../ai-assist';
 import type { AnalyticsStore, RollupPeriod } from '../analytics';
@@ -35,7 +35,6 @@ import {
   writeRepositorySettings,
 } from '../config-resolve';
 import { ViewerFileAccess } from '../file-access';
-import { FoundrySelfChatStore, type SelfChatFocus } from '../foundry-self-chat';
 import { validateId } from '../http-helpers';
 import { projectAbout } from '../project-about';
 import { SESSION_COOKIE, sessionValue } from '../request-auth';
@@ -130,10 +129,8 @@ export interface ControlRoutesDeps {
   tunnelHolder: TunnelHolder;
   /** Port the server is listening on (needed to start tunnel). */
   port: number;
-  /** Directory for persistent foundry-self chat log. */
-  selfChatDir?: string;
-  /** Tool registry — when present, self-chat runs with the same tools as the executor. */
-  assistTools?: ToolRegistry;
+  /** Foundry's own directory (`.foundry`): the tunnel keeps its state there. */
+  configDir?: string;
   /** Thread-list streams re-check membership (a removed project's threads become unowned). */
   threadsChanged: () => void;
   /** Whether a paired Kingdom currently authorizes this Foundry (the automatic tunnel waits for it). */
@@ -164,11 +161,7 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps): void 
     actionQueue,
     tunnelHolder,
     port,
-    selfChatDir,
-    assistTools,
   } = deps;
-
-  const selfChat = new FoundrySelfChatStore(`${selfChatDir ?? '.foundry'}/foundry-self-chat.json`);
 
   app.get('/api/definitions', async (c) => {
     await configStore.load();
@@ -858,83 +851,6 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps): void 
     }
   });
 
-  // -- Foundry-self chat (persistent single-thread helper) --
-
-  app.get('/api/self-chat', async (c) => {
-    await selfChat.load();
-    return c.json({ messages: selfChat.messages });
-  });
-
-  app.delete('/api/self-chat', async (c) => {
-    await selfChat.clear();
-    return c.json({ ok: true, messages: [] });
-  });
-
-  app.post('/api/self-chat', async (c) => {
-    if (!aiAssist) {
-      return c.json(
-        { error: 'AI assist not configured. Pass assistProvider to ViewerConfig.' },
-        400,
-      );
-    }
-    const body = await c.req.json<Record<string, unknown>>();
-    const text = typeof body.text === 'string' ? body.text.trim() : '';
-    if (!text) return c.json({ error: 'text required' }, 400);
-
-    const focus: SelfChatFocus = isRecord(body.focus)
-      ? {
-          scope:
-            body.focus.scope === 'project'
-              ? 'project'
-              : body.focus.scope === 'global'
-                ? 'global'
-                : undefined,
-          projectId: typeof body.focus.projectId === 'string' ? body.focus.projectId : undefined,
-          tab: typeof body.focus.tab === 'string' ? body.focus.tab : undefined,
-          focusKind:
-            typeof body.focus.focusKind === 'string'
-              ? (body.focus.focusKind as SelfChatFocus['focusKind'])
-              : null,
-          focusId: typeof body.focus.focusId === 'string' ? body.focus.focusId : null,
-        }
-      : {};
-
-    await configStore.load();
-    await selfChat.load();
-
-    const now = Date.now();
-    await selfChat.append({ role: 'user', content: text, ts: now, focus });
-
-    // Resolve tool cwd: focused project's path if known, else foundry root.
-    const focusedProject = focus.projectId ? configStore.config.projects?.[focus.projectId] : null;
-    const toolCwd = focusedProject?.path ?? process.cwd();
-
-    try {
-      const { reply, tokens } = await aiAssist.chat(
-        configStore.config,
-        selfChat.messages,
-        text,
-        focus,
-        {
-          ...(assistTools ? { tools: assistTools, toolCwd } : {}),
-          // Locating the CLIs again also repairs this process: a CLI installed since startup joins its PATH.
-          nativeClis: (await inspectNativeClis(configStore.config)).nativeClis,
-        },
-      );
-      await selfChat.append({
-        role: 'assistant',
-        content: reply,
-        ts: Date.now(),
-        tokens,
-      });
-      return c.json({ ok: true, messages: selfChat.messages });
-    } catch (err) {
-      const msg = `Chat failed: ${(err as Error).message}`;
-      await selfChat.append({ role: 'system', content: msg, ts: Date.now() });
-      return c.json({ error: msg, messages: selfChat.messages }, 500);
-    }
-  });
-
   app.get('/api/prompts', (c) => {
     if (!actionQueue) return c.json({ prompts: [], count: 0 });
     const threadId = c.req.query('threadId');
@@ -1027,7 +943,7 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps): void 
       const tunnel =
         tunnelHolder.tunnel ??
         new FoundryTunnel({
-          configDir: deps.selfChatDir,
+          configDir: deps.configDir,
           port,
           provider: tunnelCfg.provider ?? 'localtunnel',
           subdomain: tunnelCfg.subdomain,

@@ -22,6 +22,7 @@ import {
   isThreadRole,
   resolveInstructionLadder,
   roleComposition,
+  scopeOfRole,
   threadRoles,
 } from '../src/prompts/instruction-settings';
 import {
@@ -461,7 +462,29 @@ test('instruction settings are validated: tiers, parents, cycles, sources', () =
 });
 
 test('thread roles: coder for Claude Code and Codex, assistant for Muse; settings add roles and move defaults', () => {
-  expect(threadRoles(undefined).map((role) => role.id)).toEqual(['coder', 'assistant']);
+  expect(threadRoles(undefined).map((role) => role.id)).toEqual([
+    'coder',
+    'assistant',
+    'forge-master',
+    'feedback',
+  ]);
+  // The scope roles say where a thread lives; they hold their scope and default no worker.
+  expect(
+    threadRoles(undefined)
+      .filter((role) => role.scope)
+      .map((role) => [role.id, role.scope, role.defaultFor]),
+  ).toEqual([
+    ['forge-master', 'forge', []],
+    ['feedback', 'feedback', []],
+  ]);
+  expect(scopeOfRole('feedback')).toBe('feedback');
+  expect(scopeOfRole('coder')).toBeUndefined();
+  expect(
+    defaultThreadRole(
+      { roles: { feedback: { thread: { label: 'F', defaultFor: ['muse'] } } } },
+      'muse',
+    ),
+  ).toBe('assistant');
   expect(defaultThreadRole(undefined, 'claude-code')).toBe('coder');
   expect(defaultThreadRole(undefined, 'codex')).toBe('coder');
   expect(defaultThreadRole(undefined, 'muse')).toBe('assistant');

@@ -7,6 +7,7 @@ import {
   type LLMProvider,
 } from '@inixiative/foundry-core';
 import { FOUNDRY_TOOLS_NOTE } from '../src/agents/chorus-reception';
+import { FEEDBACK_BRIEF, SCOPE_BRIEF_LAYER } from '../src/agents/scope-roles';
 import {
   buildAgents,
   buildLayers,
@@ -23,7 +24,12 @@ function fresh(): FoundryConfig {
   return config;
 }
 
-function harness(config: FoundryConfig, secretNote?: (messageId: string) => string | undefined) {
+function harness(
+  config: FoundryConfig,
+  secretNote?: (messageId: string) => string | undefined,
+  role?: string,
+  threadWorker?: string,
+) {
   const decisions: string[] = [];
   const central: Array<{ messages: LLMMessage[]; opts?: CompletionOpts }> = [];
   const decision: LLMProvider = {
@@ -47,6 +53,7 @@ function harness(config: FoundryConfig, secretNote?: (messageId: string) => stri
     [decision.id, decision],
     [worker.id, worker],
   ]);
+  if (threadWorker) providers.set(threadWorker, { ...worker, id: threadWorker });
   const manager = new ThreadRuntimeManager({
     config,
     llm: decision,
@@ -62,7 +69,11 @@ function harness(config: FoundryConfig, secretNote?: (messageId: string) => stri
     runtime: manager,
     configuration: { config, layers: { sourceResolver }, agents: deps },
   });
-  const thread = factory.create('lead', { cwd: '/tmp' });
+  const thread = factory.create('lead', {
+    cwd: '/tmp',
+    ...(role ? { role } : {}),
+    ...(threadWorker ? { worker: threadWorker } : {}),
+  });
   const h = new Harness(thread);
   h.setDefaultExecutor('executor');
   return { thread, harness: h, manager, decisions, central };
@@ -104,6 +115,67 @@ test('an unwrapped thread sends the message as typed with only the session brief
     expect(result.result.meta?.phases).toEqual({ guards: [] });
   } finally {
     manager.disposeAll();
+  }
+});
+
+test("a scope's thread holds its brief as a standing layer beside the session briefing, and stays unwrapped", async () => {
+  const {
+    thread,
+    harness: h,
+    manager,
+    decisions,
+    central,
+  } = harness(fresh(), undefined, 'feedback');
+  try {
+    await h.send({ id: 'm1', payload: 'What is in the inbox?' });
+    expect(decisions).toEqual([]);
+    expect(central[0]!.opts?.delivery?.standing.map((part) => part.id)).toEqual([
+      'foundry-tools',
+      SCOPE_BRIEF_LAYER,
+    ]);
+    expect(central[0]!.opts?.delivery?.standing.at(-1)?.text).toContain(FEEDBACK_BRIEF.trim());
+    expect(central[0]!.opts?.delivery?.turn).toBe('');
+    // Held once: the next turn sends nothing new.
+    await h.send({ id: 'm2', payload: 'Archive the first.' });
+    expect(central[1]!.opts?.delivery?.turn).toBe('');
+    expect(thread.stack.layers.map((layer) => layer.id)).toEqual([
+      'foundry-tools',
+      SCOPE_BRIEF_LAYER,
+    ]);
+  } finally {
+    manager.disposeAll();
+  }
+});
+
+test("the Forge Master's brief follows a settings edit on the next turn; a Feedback thread on Muse gets none", async () => {
+  const config = fresh();
+  const { harness: h, manager, central } = harness(config, undefined, 'forge-master');
+  try {
+    await h.send({ id: 'm1', payload: 'What is my default model?' });
+    const first = central[0]!.opts?.delivery?.standing.find(
+      (part) => part.id === SCOPE_BRIEF_LAYER,
+    );
+    expect(first?.text).toContain('Default executor: central/central-model');
+    // Unchanged settings: nothing is sent again.
+    await h.send({ id: 'm2', payload: 'And now?' });
+    expect(central[1]!.opts?.delivery?.turn).toBe('');
+    // An edit reaches the live thread's brief on its next turn.
+    const edited = structuredClone(config);
+    edited.defaults.model = 'edited-model';
+    manager.reconfigure(edited);
+    await h.send({ id: 'm3', payload: 'And after the edit?' });
+    const delivery = central[2]!.opts?.delivery;
+    const sent = [delivery?.turn ?? '', ...(delivery?.standing ?? []).map((part) => part.text)];
+    expect(sent.some((text) => text.includes('Default executor: central/edited-model'))).toBe(true);
+  } finally {
+    manager.disposeAll();
+  }
+  // The Feedback brief names the inbox tools, which a Muse thread cannot hold.
+  const muse = harness(fresh(), undefined, 'feedback', 'muse');
+  try {
+    expect(muse.thread.stack.layers.map((layer) => layer.id)).not.toContain(SCOPE_BRIEF_LAYER);
+  } finally {
+    muse.manager.disposeAll();
   }
 });
 

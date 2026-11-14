@@ -14,6 +14,7 @@ import type {
 import type { FeedbackItem } from '../feedback/lifecycle';
 import type { FeedbackService } from '../feedback/service';
 import { feedbackView } from '../feedback/view';
+import { SCOPE_ROLES, scopeOfRole, type ThreadScope } from '../prompts/instruction-settings';
 import type { StreamFamily } from '../ws/types';
 import { threadToJSON } from './http-helpers';
 import { StreamBufferRegistry, type StreamBufferSnapshot, type TurnAppend } from './stream-buffer';
@@ -167,16 +168,30 @@ export function createViewerStreams(deps: {
   };
 
   const ALL_THREADS = 'threads:all';
+  /** `threads:@forge`, `threads:@feedback`: a Foundry scope's threads (their role is the scope's). */
+  const scopeOfStream = (stream: string): ThreadScope | undefined => {
+    const name = suffix(stream, 'threads:@');
+    return name && Object.hasOwn(SCOPE_ROLES, name) ? (name as ThreadScope) : undefined;
+  };
+  const scopeOfThread = (thread: Thread) => scopeOfRole(deps.threadRole?.(thread));
   const threads: StreamFamily = {
     matches: (stream) => stream === 'threads' || suffix(stream, 'threads:') !== null,
     authorize: (stream) =>
       stream === ALL_THREADS ||
+      scopeOfStream(stream) !== undefined ||
       directory.scope(suffix(stream, 'threads:') ?? undefined) !== undefined,
     start(stream, append) {
       // `threads:all` is every thread across projects (the Active rail and the board).
       const all = stream === ALL_THREADS;
-      const projectId = all ? null : suffix(stream, 'threads:');
-      const scope = () => (all ? directory.all() : (directory.scope(projectId ?? undefined) ?? []));
+      const pinned = scopeOfStream(stream);
+      const projectId = all || pinned ? null : suffix(stream, 'threads:');
+      // Global is the project-less threads outside Foundry's own scopes; a scope is its role's threads.
+      const scope = () =>
+        all
+          ? directory.all()
+          : projectId
+            ? (directory.scope(projectId) ?? [])
+            : (directory.scope() ?? []).filter((thread) => scopeOfThread(thread) === pinned);
       // What subscribers already hold, so a change is sent once and an unchanged thread never.
       const sent = new Map<
         string,

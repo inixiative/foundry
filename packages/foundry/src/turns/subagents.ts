@@ -6,6 +6,7 @@
 import type { EventStream, NativeEvidence, ThreadMeta } from '@inixiative/foundry-core';
 import { sha256Hex } from '@inixiative/foundry-core';
 import type { LocalSessionStore } from '../persistence/local-session-store';
+import { scopeOfRole } from '../prompts/instruction-settings';
 
 /**
  * Native subagents as observed child threads (docs/THREAD-TREE.md spec A): each run the executor's session spawns (a Claude Agent/Task, a Codex sub-agent) becomes a
@@ -204,6 +205,8 @@ export class SubagentRecorder {
         depth: (parent.meta.depth ?? 0) + 1,
         ...(parent.meta.projectId ? { projectId: parent.meta.projectId } : {}),
         ...(parent.meta.worker ? { worker: parent.meta.worker } : {}),
+        // A Forge Master or Feedback thread's subagents stay in its scope, listed under it, not in Global.
+        ...(scopeOfRole(parent.meta.role) ? { role: parent.meta.role } : {}),
         createdAt: now,
         lastActiveAt: now,
       },

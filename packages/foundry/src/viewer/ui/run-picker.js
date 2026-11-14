@@ -15,11 +15,14 @@
 import { html, signal, useEffect, useState } from './lib.js';
 import { Modal } from './modal.js';
 import {
-  activeProjectId,
   activeThreadId,
   authFetch,
+  composerFill,
   createThread,
+  currentScope,
   loadLaunch,
+  projects,
+  SCOPE_ROLES,
   showToast,
   threadLaunch,
 } from './store.js';
@@ -239,25 +242,64 @@ function ThreadRunModal({ launch, onClose }) {
 
 // --- "+ New thread" ----------------------------------------------------------------------------
 
-/** The New thread picker: open (with an optional preset worker) or closed (null). */
+/** The New thread picker: open (with an optional preset worker, role, where or draft) or closed (null). */
 export const newThreadChooser = signal(null);
+
+/** Foundry's own scopes in the Where picker, after Global and before the projects. */
+const SCOPE_CHOICES = [
+  ['@forge', 'Forge Master'],
+  ['@feedback', 'Feedback'],
+];
+const isScope = (where) => where != null && Object.hasOwn(SCOPE_ROLES, where);
+/** A Where choice as a select value: '' is Global, else the scope key or project id (never alike). */
+const whereValue = (where) => where ?? '';
+const whereOf = (value) => value || null;
+
+/** Where a new thread goes: Global, Forge Master, Feedback, or a project (archived ones hidden). */
+function WherePicker({ where, onChange }) {
+  const listed = projects.value.filter((p) => p.status !== 'archived' || p.id === where);
+  return html`<label class="run-picker-row">Where
+    <select class="rp-select" data-run="where" value=${whereValue(where)}
+      onChange=${(e) => onChange(whereOf(e.target.value))}>
+      <option value="">Global</option>
+      ${SCOPE_CHOICES.map(([id, label]) => html`<option key=${id} value=${id}>${label}</option>`)}
+      ${
+        listed.length
+          ? html`<optgroup label="Projects">
+              ${listed.map((p) => html`<option key=${p.id} value=${p.id}>${p.label || p.id}</option>`)}
+            </optgroup>`
+          : null
+      }
+    </select>
+  </label>`;
+}
 export const openNewThread = (preset = {}) => {
   newThreadChooser.value = preset;
 };
 
-/** Start a thread in the active scope on the picked worker, model and effort. */
+/**
+ * Start a thread where it is picked (the active scope by default) on the picked worker, model,
+ * effort and role. A Foundry scope's thread takes the scope's role, so it has no role to pick.
+ */
 export function NewThreadModal() {
   const preset = newThreadChooser.value;
   const [scope, setScope] = useState(null);
   const [value, setValue] = useState(null);
   const [name, setName] = useState('');
-  const projectId = activeProjectId.value || null;
+  const [where, setWhere] = useState(null);
+  // Each open starts where the workspace is, unless the opener named a place.
+  useEffect(() => {
+    if (!preset) return;
+    setName('');
+    setWhere(preset.where !== undefined ? preset.where : currentScope());
+  }, [preset]);
+  const pinned = isScope(where);
+  const projectId = pinned ? null : where;
   useEffect(() => {
     if (!preset) return undefined;
     let live = true;
     setScope(null);
     setValue(null);
-    setName('');
     authFetch(projectId ? `/api/projects/${encodeURIComponent(projectId)}/workers` : '/api/workers')
       .then((res) => (res.ok ? res.json() : Promise.reject(Error(res.statusText))))
       .then((body) => {
@@ -290,13 +332,16 @@ export function NewThreadModal() {
   const start = async () => {
     const worker = scope.workers.find((w) => w.id === value.worker);
     close();
-    await createThread({
+    const created = await createThread({
+      where,
       ...(name.trim() ? { name: name.trim() } : {}),
       ...(worker && !worker.default ? { worker: worker.id } : {}),
       ...(value.model && value.model !== worker?.defaultModel ? { model: value.model } : {}),
       ...(value.effort ? { effort: value.effort } : {}),
-      ...(value.role ? { role: value.role } : {}),
+      ...(value.role && !pinned ? { role: value.role } : {}),
     });
+    // A draft from the opener (a settings page asking the Forge Master) waits in the new thread's box.
+    if (created && preset.draft) composerFill.value = preset.draft;
   };
   return html`<${Modal} title="New thread" onClose=${close} class="run-modal new-thread-modal">
     <div class="run-picker">
@@ -304,12 +349,13 @@ export function NewThreadModal() {
         <input class="rp-select" data-run="name" placeholder="Optional" value=${name}
           onInput=${(e) => setName(e.target.value)} />
       </label>
+      <${WherePicker} where=${where} onChange=${setWhere} />
     </div>
     ${
       scope?.error
         ? html`<p class="run-picker-note">Could not read the workers: ${scope.error}</p>`
         : scope && value
-          ? html`<${RunPicker} value=${value} workers=${scope.workers} roles=${scope.roles} unavailable=${scope.unavailable} onChange=${setValue} />`
+          ? html`<${RunPicker} value=${value} workers=${scope.workers} roles=${pinned ? [] : scope.roles} unavailable=${scope.unavailable} onChange=${setValue} />`
           : html`<p class="run-picker-note run-picker-note--dim">Reading the workers…</p>`
     }
     <div class="rename-actions">
