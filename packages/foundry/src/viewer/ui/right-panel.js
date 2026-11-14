@@ -48,6 +48,7 @@ import {
   watchtowerOpen,
 } from './store.js';
 import { TabIcon } from './tab-icons.js';
+import { AgentsFact } from './thread-agents.js';
 import { harnessName, projectLabel, ReferenceChips, threadPlace } from './thread-labels.js';
 import { TurnView } from './turn-view.js';
 import { Work } from './work.js';
@@ -236,6 +237,7 @@ function ContextTab() {
               </select>
             </dd>
             <dt>Provider</dt><dd title=${harnessName(launch.provider) ? `Runs through ${harnessName(launch.provider)}` : ''}>${vendorName(launch.provider) ?? '—'}</dd>
+            <${AgentsFact} />
           </dl>
           <p class="rp-dim">A change applies on the thread’s next turn.</p>
           <label class="steer-setting" data-setting="steer">When you send during a turn

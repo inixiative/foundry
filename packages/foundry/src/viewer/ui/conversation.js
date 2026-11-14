@@ -43,7 +43,7 @@ import {
 import { MessageMenu } from './message-menu.js';
 import { Modal, RenameModal } from './modal.js';
 import { Plan } from './plan.js';
-import { openThreadRun, roleLabel } from './run-picker.js';
+import { openThreadRun, runParts } from './run-picker.js';
 import { settingsConfig } from './settings.js';
 import { isDangerous, MODES, ModeIcon, STATES, StatusIcon } from './status-icons.js';
 import { QueuedRows, SendHint, turnRunning } from './steering.js';
@@ -62,7 +62,6 @@ import {
   giveFeedback,
   historyPaging,
   kingdomStatus,
-  launchLabels,
   layerColor,
   loadOlderMessages,
   loadTraceDetail,
@@ -94,6 +93,7 @@ import {
   waitingFor,
 } from './store.js';
 import { stripView } from './system-strip.js';
+import { agentCountOf, threadAgents } from './thread-agents.js';
 import {
   harnessName,
   isUnnamed,
@@ -301,20 +301,13 @@ function ContextBar() {
     ? kingdomOwnerOf(settingsConfig.value, kingdomStatus.value, meta.projectId)
     : null;
   const members = view?.members ?? [];
-  const localAgents = members.filter((m) => m.member.kind === 'local');
   const external = members.filter((m) => m.member.kind !== 'local');
   const peopleCount = view ? external.length : (data.conversation?.members ?? 0);
   const signets = external.filter((m) => m.member.kind === 'signet');
   const harness = harnessName(launch?.provider);
-  // Live subagents are sessions too (child threads whose status is active).
-  const subagents = allThreads.value.filter(
-    (t) => t.meta?.parentThreadId === data.threadId && t.meta?.status === 'active',
-  );
-  const agentNames = [
-    `${harness ?? 'Agent'} · your agent`,
-    ...localAgents.map((m) => m.displayName),
-    ...subagents.map((t) => threadName(t)),
-  ];
+  // The thread's agents, counted once for the band and the Context tab (thread-agents.js).
+  const agents = threadAgents(view, data.threadId);
+  const agentCount = agentCountOf(agents);
   const openParticipants = () => {
     rightTab.value = 'participants';
     detailDrawerOpen.value = true;
@@ -325,14 +318,8 @@ function ContextBar() {
   const fill = contextWindow
     ? Math.min(100, (threadContextTokens.value / contextWindow) * 100)
     : null;
-  const named = launchLabels(launch?.provider, launch?.model);
-  // Worker · model · effort (Aron 11-02): the worker goes first when space is tight, never the
-  // model or the effort; an effort the thread didn't choose is the one it runs at by default.
-  const worker = harnessName(launch?.worker ?? launch?.provider) ?? named.provider;
-  const effort = launch?.effort ?? launch?.effortDefault ?? null;
-  // Its thread role (coder, assistant, …) beside how it runs: what its instructions compose as.
-  const role = roleLabel(launch?.options?.roles, launch?.effectiveRole);
-  const runs = [named.model, effort, role].filter(Boolean);
+  const { worker, model, effort, role } = runParts(launch);
+  const runs = [model, effort, role].filter(Boolean);
 
   return html`
     <div class="context-bar thread-band thread-band--pills">
@@ -376,13 +363,14 @@ function ContextBar() {
           </span>
           <${ForkLink} threadId=${data.threadId} forkedFrom=${meta.forkedFrom} />
           <span class="band-pill band-count band-pop" tabindex="0" role="button" onClick=${openParticipants}
-            aria-label=${`${agentNames.length} agent session${agentNames.length === 1 ? '' : 's'} · open Participants`}>
-            <span class="band-glyph" aria-hidden="true">🤖</span>${agentNames.length}
+            aria-label=${`${agentCount} agent${agentCount === 1 ? '' : 's'} · open Participants`}>
+            <span class="band-glyph" aria-hidden="true">🤖</span>${agentCount}
             <span class="band-popover" role="tooltip">
-              <span class="band-pop-head">Agent sessions · ${agentNames.length}</span>
-              <span class="band-pop-row is-primary"><b>${named.model ?? harness ?? 'Your agent'}</b><span>${[named.provider, launch?.effort ? `effort ${launch.effort}` : null].filter(Boolean).join(' · ') || 'your agent'}</span><i>primary</i></span>
-              ${localAgents.map((m) => html`<span key=${m.member.id} class="band-pop-row"><b>${m.displayName}</b><span>local member</span><i></i></span>`)}
-              ${subagents.map((t) => html`<span key=${t.threadId} class="band-pop-row"><b>${threadName(t)}</b><span>${t.meta?.spawn?.agentType ?? 'subagent'}</span><i>subagent</i></span>`)}
+              <span class="band-pop-head">Agents · ${agentCount}</span>
+              <span class="band-pop-row is-primary"><b>${model ?? harness ?? 'Your agent'}</b><span>${[worker, effort ? `effort ${effort}` : null].filter(Boolean).join(' · ') || 'your agent'}</span><i>host</i></span>
+              ${agents.locals.map((m) => html`<span key=${m.member.id} class="band-pop-row"><b>${m.displayName}</b><span>your thread on this machine</span><i>${m.voice ?? 'local'}</i></span>`)}
+              ${agents.remote.map((m) => html`<span key=${m.member.id} class="band-pop-row"><b>${m.displayName}’s agent</b><span>through their Signet</span><i>member</i></span>`)}
+              ${agents.subagents.map((t) => html`<span key=${t.threadId} class="band-pop-row"><b>${threadName(t)}</b><span>${t.meta?.spawn?.agentType ?? 'subagent'}</span><i>subagent</i></span>`)}
             </span>
           </span>
           <span class="band-pill band-count band-pop ${peopleCount ? 'band-chip--shared' : ''}" tabindex="0" role="button" onClick=${openParticipants}

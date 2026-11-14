@@ -29,6 +29,16 @@ export function Modal({ title, onClose, dismissOnBackdrop = true, children, ...p
     document.addEventListener('keydown', onKey, true);
     return () => document.removeEventListener('keydown', onKey, true);
   }, []);
+  // Focus moves into the dialog when it opens (unless a field inside already took it) and back to
+  // whatever held it when it closes, so keyboard users land where they were.
+  const panel = useRef(null);
+  useLayoutEffect(() => {
+    const before = document.activeElement;
+    if (panel.current && !panel.current.contains(document.activeElement)) panel.current.focus();
+    return () => {
+      if (before?.isConnected && typeof before.focus === 'function') before.focus();
+    };
+  }, []);
 
   return html`
     <div
@@ -37,7 +47,7 @@ export function Modal({ title, onClose, dismissOnBackdrop = true, children, ...p
         if (dismissOnBackdrop && event.target === event.currentTarget) onClose();
       }}
     >
-      <div class="modal-panel ${props.class ?? ''}" role="dialog" aria-modal="true" aria-label=${title}>
+      <div ref=${panel} tabindex="-1" class="modal-panel ${props.class ?? ''}" role="dialog" aria-modal="true" aria-label=${title}>
         <div class="modal-header">
           <span class="modal-title">${title}</span>
           <button type="button" class="fullscreen-close" onClick=${onClose} aria-label="Close">×</button>
