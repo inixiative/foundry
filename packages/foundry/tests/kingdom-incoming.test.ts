@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test';
 import type { HostedSignetRequest } from '@inixiative/signet';
+import { joiningDefault, validateFoundryConversationSettings } from '../src/conversations/types';
 import { incomingRequests } from '../src/viewer/routes/kingdom';
 
 const request = (over: Partial<HostedSignetRequest>): HostedSignetRequest => ({
@@ -11,6 +12,7 @@ const request = (over: Partial<HostedSignetRequest>): HostedSignetRequest => ({
     sourceModel: 'User',
     id: '00000000-0000-4000-8000-0000000000bb',
     displayName: 'Sam',
+    audience: 'inOrg',
   },
   terms: {
     name: 'Review the checkout thread',
@@ -60,6 +62,7 @@ test('incomingRequests keeps pending, unexpired requests from every Kingdom, new
           sourceModel: 'Integration',
           id: '00000000-0000-4000-8000-0000000000ee',
           displayName: "Priya's agent",
+          audience: 'outside',
         },
       }),
     ],
@@ -76,7 +79,69 @@ test('incomingRequests keeps pending, unexpired requests from every Kingdom, new
     until: '2026-11-07T00:00:00.000Z',
     full: false,
     operations: ['thread.read', 'thread.prompt'],
-    reviewUrl: 'https://kingdom.example/dashboard?integration=x&signetRequest=y',
+    audience: 'inOrg',
+  });
+  expect(listed[0]?.audience).toBe('outside');
+});
+
+const threadsParam = (reviewUrl: string) => {
+  const url = new URL(reviewUrl);
+  return {
+    rest: [...url.searchParams].filter(([key]) => key !== 'threads'),
+    threads: JSON.parse(url.searchParams.get('threads') ?? 'null'),
+  };
+};
+
+// The review link carries this Foundry's default for the requester's audience, whole: Kingdom's
+// form starts at the narrower of it and what was asked, and a term the default doesn't set is the
+// widest, so the request decides it (Aron 2026-11-14: in-org and outside, something naive).
+test('the review link carries the default for the requester audience', () => {
+  const [outside, inOrg] = incomingRequests(
+    [
+      {
+        url: 'https://kingdom-a.example',
+        signetRequests: [
+          request({}),
+          request({
+            id: '00000000-0000-4000-8000-000000000002',
+            createdAt: '2026-11-01T11:00:00.000Z',
+            requester: { ...request({}).requester, audience: 'outside' },
+          }),
+        ],
+      },
+    ],
+    Date.parse('2026-11-01T12:00:00.000Z'),
+  );
+  expect(threadsParam(inOrg!.reviewUrl)).toEqual({
+    rest: [
+      ['integration', 'x'],
+      ['signetRequest', 'y'],
+    ],
+    threads: {
+      view: 'thread',
+      delivery: 'turn',
+      outbound: 'auto',
+      floor: { mayTake: true },
+      posts: 'instructions',
+      act: 'read',
+      agent: true,
+    },
+  });
+  expect(threadsParam(outside!.reviewUrl).threads).toEqual(joiningDefault(undefined, 'outside'));
+  expect(threadsParam(outside!.reviewUrl).threads).toMatchObject({ posts: 'data', act: 'ask' });
+});
+
+// The person's own settings replace the built-in default term by term, per audience.
+test('the review link follows this Foundry conversations.joining setting', () => {
+  const [listed] = incomingRequests(
+    [{ url: 'https://kingdom-a.example', signetRequests: [request({})] }],
+    Date.parse('2026-11-01T12:00:00.000Z'),
+    { joining: { inOrg: { act: 'full', view: 'own' } } },
+  );
+  expect(threadsParam(listed!.reviewUrl).threads).toMatchObject({
+    view: 'own',
+    posts: 'instructions',
+    act: 'full',
   });
 });
 
@@ -97,4 +162,18 @@ test('incomingRequests says when a request asks for a resource whole', () => {
   expect(
     incomingRequests([{ url: 'https://kingdom-a.example', signetRequests: [whole] }])[0],
   ).toMatchObject({ full: true, operations: [] });
+});
+
+// The top-level `conversations` is this Foundry's joining defaults only; a project's floor settings
+// are refused there by name, pointing at where they go.
+test('this Foundry conversations takes joining only, and names where project keys go', () => {
+  expect(() =>
+    validateFoundryConversationSettings({ joining: { outside: { act: 'read' } } }),
+  ).not.toThrow();
+  expect(() => validateFoundryConversationSettings({ floor: 'conch' })).toThrow(
+    'conversations.floor is a project setting',
+  );
+  expect(() =>
+    validateFoundryConversationSettings({ joining: { outside: { act: 'everything' } } }),
+  ).toThrow();
 });

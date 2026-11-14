@@ -7,9 +7,15 @@ import type { PromptBlock } from '@inixiative/foundry-core';
 import {
   type ConversationMember,
   floorModeSchema,
+  type RequestAudience,
   type ThreadCommission,
   type ThreadsTerms,
+  threadActSchema,
+  threadDeliverySchema,
+  threadOutboundSchema,
+  threadPostsSchema,
   threadTextLimit,
+  threadViewSchema,
 } from '@inixiative/signet';
 import { z } from 'zod';
 
@@ -46,6 +52,79 @@ export const conversationSettingsSchema = z.strictObject({
     .optional(),
 });
 export type ConversationSettingsInput = z.infer<typeof conversationSettingsSchema>;
+
+/** Threads terms a `joining` default may set; a term it leaves out is the request's to decide. */
+const joiningTermsSchema = z.strictObject({
+  view: threadViewSchema.optional(),
+  delivery: threadDeliverySchema.optional(),
+  outbound: threadOutboundSchema.optional(),
+  floor: z.strictObject({ mayTake: z.boolean() }).optional(),
+  posts: threadPostsSchema.optional(),
+  act: threadActSchema.optional(),
+  agent: z.boolean().optional(),
+});
+export type JoiningTerms = z.infer<typeof joiningTermsSchema>;
+
+/**
+ * This Foundry's `conversations` setting (not a project's): what someone joining one of its threads
+ * starts with, per audience (Aron, 2026-11-14: "just in-org and outside-org, but something naive").
+ * Kingdom marks each request's audience; the review opens at the narrower of this and the request.
+ */
+export const foundryConversationSettingsSchema = z.strictObject({
+  joining: z
+    .strictObject({ inOrg: joiningTermsSchema.optional(), outside: joiningTermsSchema.optional() })
+    .optional(),
+});
+export type FoundryConversationSettings = z.infer<typeof foundryConversationSettingsSchema>;
+
+/**
+ * Proposals: someone in your orgs is taken at their word and the agent may read for them; someone
+ * outside is data and every call asks. Each person still dials their own Signet in the review.
+ */
+export const DEFAULT_JOINING: Readonly<Record<RequestAudience, JoiningTerms>> = Object.freeze({
+  inOrg: Object.freeze({ posts: 'instructions', act: 'read' }),
+  outside: Object.freeze({ posts: 'data', act: 'ask' }),
+});
+
+const widest = <T extends string>(values: readonly T[]) => values[values.length - 1] as T;
+
+/**
+ * The default terms for an audience, whole: a term neither the setting nor the built-in default
+ * sets is the widest, so the review's meet leaves it at what was asked.
+ */
+export function joiningDefault(
+  settings: FoundryConversationSettings | undefined,
+  audience: RequestAudience,
+): ThreadsTerms {
+  return {
+    view: widest(threadViewSchema.options),
+    delivery: widest(threadDeliverySchema.options),
+    outbound: widest(threadOutboundSchema.options),
+    floor: { mayTake: true },
+    posts: widest(threadPostsSchema.options),
+    act: widest(threadActSchema.options),
+    agent: true,
+    ...DEFAULT_JOINING[audience],
+    ...settings?.joining?.[audience],
+  };
+}
+
+/** Refuses this Foundry's `conversations` value, naming where a project's own settings go. */
+export function validateFoundryConversationSettings(value: unknown): void {
+  if (value === undefined) return;
+  const parsed = foundryConversationSettingsSchema.safeParse(value);
+  if (parsed.success) return;
+  const projectKey = parsed.error.issues
+    .flatMap((issue) =>
+      issue.code === 'unrecognized_keys' && !issue.path.length ? issue.keys : [],
+    )
+    .at(0);
+  throw Error(
+    projectKey
+      ? `conversations.${projectKey} is a project setting: set it in projects.<id>.conversations or the repository's .foundry/project.json; this Foundry's conversations holds only joining`
+      : `conversations: ${parsed.error.issues.map((issue) => `${['conversations', ...issue.path].join('.')} ${issue.message}`).join('; ')}`,
+  );
+}
 
 /** Refuses a `conversations` value with the field that is wrong. */
 export function validateConversationSettings(where: string, value: unknown): void {

@@ -29,7 +29,9 @@ import { AuditLog, type SourceVersion, settingsRow } from '../audit/audit-log';
 import { type StageConfig, validateStages } from '../classify';
 import {
   type ConversationSettingsInput,
+  type FoundryConversationSettings,
   validateConversationSettings,
+  validateFoundryConversationSettings,
 } from '../conversations/types';
 import { type FeedbackSettings, validateFeedbackSettings } from '../feedback/types';
 import { subscriptionWorker } from '../models/registry';
@@ -157,6 +159,11 @@ const validMachineIcon = (icon: unknown): icon is { glyph: MachineGlyph; color: 
 export interface FoundryConfig {
   /** Opt in to API-key providers (paid tokens). Absent or false: subscription-only, and no API provider is constructed. */
   apiTokens?: boolean;
+  /**
+   * This Foundry's own conversation settings: `joining`, the terms someone joining its threads
+   * starts with, per audience. A project's floor, conch and the rest are `projects.<id>.conversations`.
+   */
+  conversations?: FoundryConversationSettings;
   /** Subscription-mode overrides; every field has a default. See docs/subscription-decisions.md. */
   subscriptionOnly?: SubscriptionSettings;
   /** Structural tool rules: the only tool denials, held in every permission mode (turns/tool-gate.ts). */
@@ -1153,6 +1160,7 @@ export function validateConfig(config: FoundryConfig): void {
       'settings key "providers" is now "vendors": one entry per vendor with subscription and api modes (models/vendors.ts)',
     );
   validateVendorSettings(config.vendors);
+  validateFoundryConversationSettings(config.conversations);
   if (
     config.installationName !== undefined &&
     (typeof config.installationName !== 'string' ||
