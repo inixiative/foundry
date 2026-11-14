@@ -95,3 +95,54 @@ test('the centre keeps 560 px: the rail folds, then the right panel floats', asy
     await releaseAll(cleanup);
   }
 }, 60_000);
+
+// Aron 11-14: under 1100 px the workspace is tabs, and the Threads tab showed an empty page (the
+// tab had no panel since the rail took over the thread list). Every tab shows its panel.
+test('under 1100 px every workspace tab shows its panel', async () => {
+  const cleanup: ReleaseStep[] = [];
+  const dir = mkdtempSync(join(tmpdir(), 'foundry-tabs-'));
+  cleanup.push(['dir', () => rmSync(dir, { recursive: true, force: true })]);
+  try {
+    const viewer = await startViewer({
+      port: 0,
+      configDir: dir,
+      localStore: null,
+      harness: new Harness(new Thread('main', new ContextStack())),
+      eventStream: new EventStream(),
+      interventions: new InterventionLog(),
+      tokenTracker: new TokenTracker(),
+      projectRegistry: new ProjectRegistry(),
+    });
+    cleanup.unshift(['viewer', () => viewer.server.stop(true)]);
+    const origin = `http://127.0.0.1:${viewer.server.port}`;
+    await fetch(`${origin}/api/setup/complete`, { method: 'POST' });
+    const browser = await chromium.launch({ headless: true });
+    cleanup.unshift(['browser', () => browser.close()]);
+    const page = await (
+      await browser.newContext({ viewport: { width: 900, height: 900 } })
+    ).newPage();
+    page.setDefaultTimeout(15_000);
+    const errors: string[] = [];
+    page.on('pageerror', (e: Error) => errors.push(e.message));
+
+    await page.goto(`${origin}/#thread=main`);
+    await page.locator('textarea.chat-input').waitFor();
+    const tabs = page.locator('.panel-navigation [role=tab]');
+    expect(await tabs.allTextContents()).toEqual(['Threads', 'Chat', 'Inspect']);
+    for (const name of ['Threads', 'Chat', 'Inspect']) {
+      await tabs.filter({ hasText: name }).click();
+      const shown = page.locator(
+        `#${await tabs.filter({ hasText: name }).getAttribute('aria-controls')}`,
+      );
+      await shown.waitFor({ state: 'visible' });
+      const box = await shown.boundingBox();
+      expect(box?.width ?? 0).toBeGreaterThan(800);
+    }
+    // The Threads tab is the rail, with its own Attention · Open · Projects toggle.
+    await tabs.filter({ hasText: 'Threads' }).click();
+    await page.locator('.rail-toggle').waitFor({ state: 'visible' });
+    expect(errors).toEqual([]);
+  } finally {
+    await releaseAll(cleanup);
+  }
+}, 60_000);

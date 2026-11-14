@@ -229,9 +229,9 @@ function Header() {
   `;
 }
 
+// The left rail (its own Attention · Open · Projects toggle) is the one Threads tab.
 const panelViews = [
-  ['projects', 'Projects'],
-  ['threads', 'Threads'],
+  ['projects', 'Threads'],
   ['conversation', 'Chat'],
   ['detail', 'Inspect'],
 ];
