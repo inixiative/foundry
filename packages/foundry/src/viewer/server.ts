@@ -1046,13 +1046,19 @@ export function createViewer(config: ViewerConfig) {
   // One gate per thread: an approval at pre-use must answer the native ask for the same call.
   const gates = new Map<string, ThreadToolGate>();
   const watched = new WeakSet<object>();
-  // A disposed thread drops its gate and what hosts chose for it (client MCP env/headers are secrets).
-  const forgetOnDispose = (thread: { id: string; onDispose(fn: () => void): () => void }) => {
+  // A disposed thread drops its gate and what hosts chose for it (client MCP env/headers are secrets);
+  // an archived one also ends its native processes, keeping their bindings so reopening resumes.
+  const forgetOnDispose = (thread: {
+    id: string;
+    meta: { status?: string };
+    onDispose(fn: () => void): () => void;
+  }) => {
     if (watched.has(thread)) return;
     watched.add(thread);
     thread.onDispose(() => {
       gates.delete(thread.id);
       threadLaunch.clear(thread.id);
+      if (thread.meta.status === 'archived') void config.workerSessions?.release(thread.id);
     });
   };
   threadLaunch.onChange((threadId) => {

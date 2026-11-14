@@ -1086,6 +1086,11 @@ const viewer = await startViewer({
       const built = workers.get(worker)?.provider;
       return built instanceof SessionBackedProvider ? built.retireThread(threadId) : undefined;
     },
+    release: async (threadId) => {
+      for (const [worker, { provider: built }] of workers)
+        if (built instanceof SessionBackedProvider && !(await built.releaseThread(threadId)))
+          console.warn(`[Sessions] ${threadId}: a ${worker} session was left running on archive`);
+    },
   },
   feedbackProvider: flowLlm,
   tokenTracker,
