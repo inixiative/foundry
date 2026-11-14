@@ -38,11 +38,12 @@ import {
 } from './route.js';
 import { RunPickers } from './run-picker.js';
 import { SearchPage } from './search.js';
-import { SelfChatPane } from './self-chat.js';
 import { loadSettings, SettingsPage, settingsConfig } from './settings.js';
 import {
   activePanel,
   activeProjectId,
+  activeThreadId,
+  allThreads,
   boardOpen,
   CENTER_PANELS,
   closeTurnView,
@@ -56,7 +57,6 @@ import {
   eventCount,
   executeAction,
   feedbackInboxOpen,
-  forgeMasterOpen,
   helpOpen,
   incoming,
   incomingOpenId,
@@ -73,6 +73,7 @@ import {
   RIGHT_TABS,
   railView,
   resyncStreams,
+  scopeOfRole,
   scopeProjectId,
   selectedEvent,
   selectedSpanId,
@@ -236,11 +237,7 @@ const panelViews = [
 ];
 
 function PanelNavigation() {
-  // Forge Master and the Feedback inbox have no thread list or thread detail.
-  const views =
-    forgeMasterOpen.value || feedbackInboxOpen.value
-      ? panelViews.filter(([id]) => id === 'projects' || id === 'conversation')
-      : panelViews;
+  const views = panelViews;
   const select = (id) => {
     if (id === 'projects') projectSidebarOpen.value = true;
     if (id === 'detail') detailDrawerOpen.value = true;
@@ -348,6 +345,21 @@ function Toast() {
 // App
 // ---------------------------------------------------------------------------
 
+/**
+ * The Feedback scope's centre: the inbox (every project's items) beside the open Feedback thread,
+ * so the person and the agent work the same items side by side; the inbox alone until a Feedback
+ * thread is open.
+ */
+function FeedbackScope({ onSpanSelect, onLayerClick }) {
+  // The rail may list every thread (Attention, Open); only a Feedback thread opens beside the inbox.
+  const open = allThreads.value.find((t) => t.threadId === activeThreadId.value);
+  const hasThread = scopeOfRole(open?.effectiveRole) === '@feedback';
+  return html`<div class=${`feedback-scope${hasThread ? ' feedback-scope--thread' : ''}`}>
+    <div class="feedback-scope-inbox"><${FeedbackInbox} /></div>
+    ${hasThread ? html`<div class="feedback-scope-thread"><${Conversation} onSpanSelect=${onSpanSelect} onLayerClick=${onLayerClick} /></div>` : null}
+  </div>`;
+}
+
 function App() {
   const handleSpanSelect = (span) => {
     selectedEvent.value = null;
@@ -433,11 +445,10 @@ function App() {
 
   const projOpen = projectSidebarOpen.value;
   const detailOpen = detailDrawerOpen.value;
-  const forge = forgeMasterOpen.value;
   const inbox = feedbackInboxOpen.value;
   const page = route.value.page;
 
-  const panelClass = `panels panels--proj-${projOpen ? 'open' : 'closed'} panels--detail-${detailOpen ? 'open' : 'closed'}${forge || inbox ? ' panels--forge' : ''}${boardOpen.value || watchtowerOpen.value ? ' panels--board' : ''}${panelFit.value.leftFolded ? ' panels--left-folded' : ''}${panelFit.value.rightOverlay && !(forge || inbox) ? ' panels--right-overlay' : ''}`;
+  const panelClass = `panels panels--proj-${projOpen ? 'open' : 'closed'} panels--detail-${detailOpen ? 'open' : 'closed'}${boardOpen.value || watchtowerOpen.value ? ' panels--board' : ''}${panelFit.value.leftFolded ? ' panels--left-folded' : ''}${panelFit.value.rightOverlay ? ' panels--right-overlay' : ''}`;
 
   if (page !== 'workspace')
     return html`
@@ -457,7 +468,7 @@ function App() {
       <${PanelNavigation} />
 
       <div class=${panelClass} data-compact-panel=${compactPanel.value}
-        style=${boardOpen.value || watchtowerOpen.value ? '' : `grid-template-columns: ${panelColumns({ forge: forge || inbox })}`}>
+        style=${boardOpen.value || watchtowerOpen.value ? '' : `grid-template-columns: ${panelColumns()}`}>
         <${RestoreTab} side="left" />
         <${RestoreTab} side="right" />
         <!-- Left: navigation — pinned scopes, projects, the selected scope's threads (collapsible) -->
@@ -468,18 +479,16 @@ function App() {
         <!-- Center: Conversation / trace timeline, or the graph panel -->
         <div class="panel-center" id="workspace-conversation" tabIndex="0">
           ${
-            forge
-              ? html`<div class="forge-master"><${SelfChatPane} /></div>`
-              : inbox
-                ? html`<${FeedbackInbox} />`
-                : html`
-            ${
-              incomingOpenId.value && incoming.value.some((r) => r.id === incomingOpenId.value)
-                ? html`<${RequestView} />`
-                : watchtowerOpen.value
-                  ? html`<${Watchtower} />`
-                  : boardOpen.value
-                    ? html`<${Board} />`
+            // A board, the Watchtower or an open request is chosen on purpose, so it shows over the
+            // Feedback scope: on the Attention rail an open Feedback thread puts the workspace there.
+            incomingOpenId.value && incoming.value.some((r) => r.id === incomingOpenId.value)
+              ? html`<${RequestView} />`
+              : watchtowerOpen.value
+                ? html`<${Watchtower} />`
+                : boardOpen.value
+                  ? html`<${Board} />`
+                  : inbox
+                    ? html`<${FeedbackScope} onSpanSelect=${handleSpanSelect} onLayerClick=${inspectLayer} />`
                     : projectHomeOpen.value
                       ? projectPage.value === 'device' && devicePageId.value
                         ? html`<${DevicePage} key=${devicePageId.value} deviceId=${devicePageId.value} />`
@@ -489,8 +498,6 @@ function App() {
                       : activePanel.value === 'feedback'
                         ? html`<${FeedbackInbox} key=${scopeProjectId() ?? 'global'} projectId=${scopeProjectId()} />`
                         : html`<${Conversation} onSpanSelect=${handleSpanSelect} onLayerClick=${inspectLayer} />`
-            }
-          `
           }
         </div>
 

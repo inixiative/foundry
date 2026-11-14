@@ -44,7 +44,7 @@ import { CONVERSATION_FLOOR_LAYER, CONVERSATION_ROSTER_LAYER } from '../conversa
 import type { ConversationPhase, ConversationWrapper } from '../conversations/types';
 import type { FeedbackPhase } from '../feedback/types';
 import { workerHostsFoundryTools } from '../models/registry';
-import { roleComposition } from '../prompts/instruction-settings';
+import { roleComposition, scopeOfRole } from '../prompts/instruction-settings';
 import type { SessionAdapter } from '../providers/session-adapter';
 import {
   type PrefilterOutcome,
@@ -124,6 +124,7 @@ import {
   replaceRoleSources,
   roleSources,
 } from './role-layers';
+import { SCOPE_BRIEF_LAYER, scopeBrief } from './scope-roles';
 import { hasWorkContent } from './thread-namer';
 import type { AdviceTrigger, GuardMode, TriggerPoint } from './warden-triggers';
 import { type ConsumedMatcher, consumedMatcher, workItemOf } from './work-items';
@@ -1032,6 +1033,10 @@ class ThreadRuntimeImpl implements ThreadRuntime {
   private readonly _consumedItems = new Set<string>();
   private readonly _log: (line: string) => void;
   private readonly _warn: (line: string) => void;
+  /** The settings a scope brief reads, kept current by `reconfigure`. */
+  private _scopeConfig: FoundryConfig;
+  /** Settings changed since the scope brief was last read. */
+  private _scopeEdited = false;
 
   constructor(
     thread: Thread,
@@ -1054,6 +1059,7 @@ class ThreadRuntimeImpl implements ThreadRuntime {
     const warn = deps.warn ?? ((line) => console.warn(line));
     this._log = log;
     this._warn = warn;
+    this._scopeConfig = deps.config;
     this._guardMode = deps.config.guard ?? 'per-turn';
     this._handoffDeadlineMs = deps.handoffBriefDeadlineMs ?? HANDOFF_BRIEF_DEADLINE_MS;
     this._consumed = consumedMatcher(
@@ -1318,6 +1324,46 @@ class ThreadRuntimeImpl implements ThreadRuntime {
       stack.addLayer(note);
     }
 
+    // A thread in one of Foundry's own scopes (Forge Master, Feedback: its role) holds that scope's
+    // brief the same way. The forge brief carries the configuration and the native CLIs, so it is
+    // re-read when settings change (`reconfigure`) and sent again only when its text changed. A
+    // rebuilt runtime (a worker switch, a resume) replaces the stack's old brief, never keeps it. The
+    // Feedback brief names the inbox tools, so a worker that cannot hold them never gets it.
+    const scope = scopeOfRole(thread.meta.role);
+    stack.removeLayer(SCOPE_BRIEF_LAYER);
+    let scopeLayer: ContextLayer | undefined;
+    if (scope && (scope === 'forge' || workerHostsFoundryTools(thread.meta.worker))) {
+      // A CLI lookup that fails leaves the CLIs out of the brief, never the turn.
+      const nativeClis = async () =>
+        (await import('../readiness'))
+          .inspectNativeClis(this._scopeConfig)
+          .then((found) => found.nativeClis)
+          .catch(() => undefined);
+      const read = async () =>
+        scopeBrief(scope, this._scopeConfig, scope === 'forge' ? await nativeClis() : undefined);
+      scopeLayer = new ContextLayer({
+        id: SCOPE_BRIEF_LAYER,
+        owner: { threadId: thread.id },
+        sources: [
+          {
+            id: SCOPE_BRIEF_LAYER,
+            load: read,
+            changed: () => {
+              const edited = this._scopeEdited;
+              this._scopeEdited = false;
+              return edited;
+            },
+          },
+        ],
+      });
+      stack.addLayer(scopeLayer);
+    }
+    const refreshScope = async () => {
+      if (!scopeLayer) return;
+      scopeLayer.checkStaleness();
+      if (!scopeLayer.isWarm) await scopeLayer.warm();
+    };
+
     // A conversation thread holds its roster the same way: a standing layer, read through the
     // wrapper (who is in, each member's terms in plain words, the floor). Its source reports a change
     // when the roster moves (a join, a leave, a revision, the conch), so the next turn re-warms it
@@ -1505,6 +1551,7 @@ class ThreadRuntimeImpl implements ThreadRuntime {
       try {
         const started = ctx.messageId ? early.get(ctx.messageId) : undefined;
         if (ctx.messageId) early.delete(ctx.messageId);
+        await refreshScope();
         // Nothing wraps an unwrapped thread (no layers, decision roles or Wardens): the message reaches
         // the session as typed, with no Cartographer call, no plan and no thread-state; it holds only
         // Foundry's standing briefing. Settings that add a layer wrap it from the next turn.
@@ -3855,6 +3902,8 @@ class ThreadRuntimeImpl implements ThreadRuntime {
 
   reconfigure(config: FoundryConfig, domains: ReturnType<typeof resolveThreadDomains>): string[] {
     if (this._disposed) return [];
+    this._scopeConfig = config;
+    this._scopeEdited = true;
     const deferred: string[] = [];
     const next = new Set<string>();
     // Every replacement is built before any is applied: an edit that cannot be built changes nothing.

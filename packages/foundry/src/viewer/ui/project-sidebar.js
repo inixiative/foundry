@@ -6,10 +6,10 @@
 /**
  * Navigation column — the workspace's left column.
  *
- * Top: the pinned scopes, Global (threads no project owns), Forge Master (the internal
- * thread about this Foundry) and Feedback (the inbox of every feedback item). Then the projects, and below them the threads of whichever
- * scope is selected; the two lists scroll independently. Collapsed: a thin strip with
- * project dots.
+ * Top: the pinned scopes, Global (threads no project owns), Forge Master (threads about this
+ * Foundry) and Feedback (threads that work through the feedback inbox, the inbox beside them).
+ * Then the projects, and the threads of whichever scope is selected: below them, or beside them
+ * at the wide step. The two lists scroll independently. Collapsed: a thin strip with project dots.
  */
 
 import { feedbackIn } from './feedback.js';
@@ -22,6 +22,7 @@ import {
   createProject,
   feedbackInboxOpen,
   forgeMasterOpen,
+  leftSize,
   openProjectHome,
   projectSidebarOpen,
   projects,
@@ -313,7 +314,7 @@ export function ProjectSidebar({ folded = false } = {}) {
   const handleSelect = (id) => openProjectHome(id);
 
   return html`
-    <div class="proj-sidebar nav-column">
+    <div class=${`proj-sidebar nav-column${leftSize.value === 'wide' ? ' nav-column--wide' : ''}`}>
       <section class="nav-projects ${listOpen ? '' : 'nav-projects--collapsed'}" aria-label="Projects">
         <div class="proj-sidebar-header">
           <button type="button" class="nav-section-toggle" aria-expanded=${listOpen}
@@ -339,7 +340,7 @@ export function ProjectSidebar({ folded = false } = {}) {
             </div>
             <div
               class="proj-item proj-global ${forge ? 'proj-active' : ''}"
-              onClick=${() => selectScope('forge')}
+              onClick=${() => selectScope('@forge')}
             >
               <span class="proj-runtime-icon">\u2692</span>
               <div class="proj-item-body">
@@ -349,7 +350,7 @@ export function ProjectSidebar({ folded = false } = {}) {
             </div>
             <div
               class="proj-item proj-global nav-feedback ${inbox ? 'proj-active' : ''}"
-              onClick=${() => selectScope('feedback')}
+              onClick=${() => selectScope('@feedback')}
             >
               <span class="proj-runtime-icon">\u25C6</span>
               <div class="proj-item-body">

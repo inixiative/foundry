@@ -308,18 +308,7 @@ export function ThreadNode({ thread, depth = 0, selectedId, onSelect, inactive =
 // ---------------------------------------------------------------------------
 
 // Signals for creation mode (consumed by detail-drawer)
-/** Forge Master is one persistent thread; it shows here when Forge Master is selected. */
-function ForgeMasterThread() {
-  return html`
-    <div class="tree-node selected" title="Forge Master: the persistent thread about this Foundry">
-      <span class="tree-caret-spacer"></span>
-      <span class="tree-status-dot" style="background: var(--st-idle)"></span>
-      <span class="tree-text"><span class="tree-label">Forge Master</span></span>
-    </div>
-  `;
-}
-
-/** In the Feedback inbox the lower list is feedback by project: where it was given, one click away. */
+/** In the Feedback scope, below its threads: feedback by project, where it was given, one click away. */
 function FeedbackByProject() {
   const items = feedbackIn();
   const scopes = new Map();
@@ -359,16 +348,27 @@ function FeedbackByProject() {
   `;
 }
 
+/** The selected scope's threads: a project's, Global's, or a Foundry scope's (Forge Master, Feedback). */
 export function ThreadList() {
-  if (feedbackInboxOpen.value) return html`<${FeedbackByProject} />`;
   const forge = forgeMasterOpen.value;
+  const inbox = feedbackInboxOpen.value;
+  const pinned = forge || inbox;
   const selectedThread = activeThreadId.value;
-  const activeProject = activeProjectId.value;
+  const activeProject = pinned ? null : activeProjectId.value;
   const scopeLabel = forge
     ? 'Forge Master'
-    : activeProject
-      ? projects.value.find((p) => p.id === activeProject)?.label || activeProject
-      : 'Global';
+    : inbox
+      ? 'Feedback'
+      : activeProject
+        ? projects.value.find((p) => p.id === activeProject)?.label || activeProject
+        : 'Global';
+  const empty = forge
+    ? 'No Forge Master threads yet: ask it about this Foundry'
+    : inbox
+      ? 'No Feedback threads yet: work through the inbox with one'
+      : activeProject
+        ? 'No threads in this project'
+        : 'No threads';
 
   const threadNodes = threadTree(allThreads.value);
 
@@ -376,25 +376,24 @@ export function ThreadList() {
     <section class="thread-list" aria-label="Threads">
       <div class="sidebar-header">
         <span class="sidebar-section-title">THREADS</span>
-        <span class="sidebar-scope-chip ${activeProject && !forge ? 'scope-project' : 'scope-global'}" title=${scopeLabel}>${scopeLabel}</span>
+        <span class="sidebar-scope-chip ${activeProject ? 'scope-project' : 'scope-global'}" title=${scopeLabel}>${scopeLabel}</span>
       </div>
 
-      ${forge ? null : html`<button type="button" class="rail-new-thread rail-new-thread--block" onClick=${() => openNewThread()}>+ New thread</button>`}
-      ${!forge && activeProject ? html`<${FeedbackStrip} projectId=${activeProject} />` : null}
+      <button type="button" class="rail-new-thread rail-new-thread--block" onClick=${() => openNewThread()}>+ New thread</button>
+      ${activeProject ? html`<${FeedbackStrip} projectId=${activeProject} />` : null}
 
       <div class="sidebar-threads-list">
         ${
-          forge
-            ? html`<${ForgeMasterThread} />`
-            : threadNodes.length > 0
-              ? threadNodes.map(
-                  (t) => html`
+          threadNodes.length > 0
+            ? threadNodes.map(
+                (t) => html`
             <${ThreadNode} key=${t.id} thread=${t} selectedId=${selectedThread} onSelect=${selectThread} />
           `,
-                )
-              : html`<div class="sidebar-empty">${activeProject ? 'No threads in this project' : 'No threads'}</div>`
+              )
+            : html`<div class="sidebar-empty">${empty}</div>`
         }
       </div>
     </section>
+    ${inbox ? html`<${FeedbackByProject} />` : null}
   `;
 }

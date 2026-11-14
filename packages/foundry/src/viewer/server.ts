@@ -139,8 +139,8 @@ export interface ViewerConfig {
   autoTunnel?: boolean;
   /** Every paired Kingdom integration; defaults to the saved `kingdomIntegrations`. */
   kingdomIntegrations?: KingdomIntegration[];
-  /** Tool registry — shared with executor agents; enables tool-use in self-chat. */
-  assistTools?: ToolRegistry;
+  /** The tool registry the agents share; Kingdom posts are delivered through it. */
+  tools?: ToolRegistry;
   /** Durable local journal; null opts out for an explicitly transient viewer. */
   localStore?: LocalSessionStore | null;
   /** What hosts chose per thread (mode, model, effort, MCP servers); shared with the providers. */
@@ -848,7 +848,7 @@ export function createViewer(config: ViewerConfig) {
       hosted: () => kingdom.hostedSignets(),
       subscriptions: () => kingdom.threadSubscriptions(),
       events: eventStream,
-      deliverPost: kingdomPostDelivery(config.assistTools),
+      deliverPost: kingdomPostDelivery(config.tools),
       changed: (threadId) => streams.threadsChanged(threadId),
       journalChanged: (thread) =>
         eventStream.push({
@@ -898,8 +898,7 @@ export function createViewer(config: ViewerConfig) {
     tunnelHolder,
     port,
     kingdomConnected: () => kingdom.all().some((connection) => connection.connected),
-    selfChatDir: config.configDir ?? '.foundry',
-    assistTools: config.assistTools,
+    configDir: config.configDir ?? '.foundry',
     threadsChanged: () => streams.threadsChanged(),
   });
   if (config.logins)
@@ -1148,6 +1147,8 @@ export function createViewer(config: ViewerConfig) {
     conversations,
     /** The secret scratch pad: `secret_scratch` and `secret_pipe` reach it (FEAT-005). */
     secrets,
+    /** The feedback lifecycle: a Feedback thread's inbox tools reach it. */
+    feedback,
     /** The record tool's reach: a live thread's plan, loop, name and status, persisted and published. */
     records: {
       read(threadId: string): Thread {
@@ -1295,6 +1296,7 @@ export async function startViewer(config: ViewerConfig) {
     conversations: viewer.conversations,
     records: viewer.records,
     secrets: viewer.secrets,
+    feedback: viewer.feedback,
   };
 }
 

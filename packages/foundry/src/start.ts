@@ -4,6 +4,12 @@ import { resolveDecisionModel } from '@inixiative/foundry-core';
 import { stampFoundryRun } from './archives/run-stamp';
 import { AGENT_CLIS, ensureAgentClisOnPath } from './daemon/agent-clis';
 import { publishDaemonRuntime } from './daemon/runtime-hook';
+/**
+ * @atlas
+ * @kind entrypoint
+ * @partOf feature:daemon, feature:flow
+ */
+import type { FeedbackService } from './feedback/service';
 import { subscriptionWorker, WORKER_SESSION_RUNTIMES } from './models/registry';
 import { providerBaseUrl, providerContextBudget, providerEnabled } from './models/vendors';
 import { DECISION_DEADLINE_MS } from './providers/decision-budget';
@@ -42,12 +48,8 @@ import {
   usableLogins,
   workerDefaultModel,
 } from './providers/subscription-policy';
-/**
- * @atlas
- * @kind entrypoint
- * @partOf feature:daemon, feature:flow
- */
 import type { SecretScratch } from './secrets/scratch';
+import { FeedbackInboxTool } from './tools/feedback-inbox';
 import { SECRET_SCRATCH_DESCRIPTION, SecretScratchTool } from './tools/secret-scratch';
 
 /**
@@ -669,6 +671,12 @@ tools.register(new ThreadRecordTool(() => threadRecords), THREAD_RECORD_TOOL_DES
 // The secret scratch pad's tools (FEAT-005), on the viewer's pads once it exists.
 let secretScratch: SecretScratch | null = null;
 tools.register(new SecretScratchTool(() => secretScratch), SECRET_SCRATCH_DESCRIPTION);
+// The feedback inbox's tools, on a Feedback thread only, over the viewer's lifecycle once it exists.
+let feedbackService: FeedbackService | null = null;
+tools.register(
+  new FeedbackInboxTool(() => feedbackService),
+  'The feedback inbox: list, read, archive and reopen items (Feedback threads)',
+);
 
 // Memory as a queryable tool (agents search on demand, not just passive layers)
 const memoryTool = MemoryToolAdapter.fromFileMemory(memory);
@@ -1099,7 +1107,7 @@ const viewer = await startViewer({
   threadFactory: factory,
   configStore,
   actionQueue,
-  assistTools: tools,
+  tools,
   threadLaunch,
   // Every worker's subagents become observed child threads (docs/THREAD-TREE.md spec A).
   subagentSources: sessionProviders,
@@ -1112,6 +1120,7 @@ journalStore = viewer.localStore;
 conversationService = viewer.conversations;
 threadRecords = viewer.records;
 secretScratch = viewer.secrets;
+feedbackService = viewer.feedback;
 
 console.log(`Viewer: http://localhost:${viewer.server.port ?? port}`);
 if (acpLaunch) {

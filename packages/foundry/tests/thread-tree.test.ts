@@ -391,6 +391,30 @@ test('a subagent archived while it runs stays archived when its run ends', () =>
   expect(store.phaseHistory(t.id).map((p) => p.phase)).toEqual(['handoff', 'handoff-return']);
 });
 
+test("a Forge Master or Feedback thread's subagents keep its scope role; a coder's take none", () => {
+  const store = journal();
+  const forge = {
+    id: 'forge',
+    meta: { ...main().meta, projectId: undefined, role: 'forge-master' },
+  };
+  const coder = { id: 'coder', meta: { ...main().meta, role: 'coder' } };
+  for (const t of [forge, coder]) {
+    store.saveThread(t);
+    store.beginTurn(t, `${t.id}-turn`, 'Look');
+    store.startTurn(t, `${t.id}-turn`);
+  }
+  const { r } = recorder(store);
+  for (const t of [forge, coder])
+    r.observe(
+      t.id,
+      life({ phase: 'started', taskId: `${t.id}-task`, toolUseId: `${t.id}-call`, depth: 1 }),
+    );
+  const childOf = (id: string) => store.threads().find((x) => x.meta.parentThreadId === id)!;
+  expect(childOf('forge').meta.role).toBe('forge-master');
+  expect(childOf('forge').meta.projectId).toBeUndefined();
+  expect(childOf('coder').meta.role).toBeUndefined();
+});
+
 test('a Codex sub-agent is its own thread, claimed by its own id; a later child turn opens a new turn', () => {
   const store = journal();
   const t = main();

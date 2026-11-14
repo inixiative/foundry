@@ -120,7 +120,7 @@ test('panel sizes step with [ { ] }; hidden keeps its column at 0 with a restore
     await page.keyboard.press('Alt+Shift+BracketLeft');
     await page.keyboard.press('Alt+Shift+BracketLeft');
     await page.waitForFunction(() =>
-      getComputedStyle(document.querySelector('.panels')!).gridTemplateColumns.startsWith('360px'),
+      getComputedStyle(document.querySelector('.panels')!).gridTemplateColumns.startsWith('520px'),
     );
     expect(await page.getByRole('button', { name: 'Make the left list larger' }).count()).toBe(0);
 

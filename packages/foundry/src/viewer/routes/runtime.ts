@@ -48,7 +48,12 @@ import {
   type ImageAttachmentStore,
 } from '../../persistence/image-attachments';
 import type { LocalSessionStore } from '../../persistence/local-session-store';
-import { defaultThreadRole, isThreadRole, threadRoles } from '../../prompts/instruction-settings';
+import {
+  defaultThreadRole,
+  isThreadRole,
+  scopeOfRole,
+  threadRoles,
+} from '../../prompts/instruction-settings';
 import { workerModelRequirement } from '../../providers/subscription-policy';
 import {
   describeMcpServers,
@@ -833,9 +838,18 @@ export function registerRuntimeRoutes(
     const projectThreads = projectId ? directory.scope(projectId) : undefined;
     if (projectThreads) return c.json({ threads: projectThreads.map(threadJSON), projectId });
 
-    // Global scope = threads not owned by any project (orphan threads only).
-    // Project-scoped threads show under their project view; don't double-count.
-    return c.json({ threads: directory.scope()!.map(threadJSON) });
+    // Global is the threads no project owns outside Foundry's own scopes; `?scope=forge|feedback`
+    // is that scope's threads (their role is the scope's). Project threads show under their project.
+    const scope = c.req.query('scope');
+    const roleScope = (thread: Thread) =>
+      scopeOfRole(threadRoleOf(deps.configStore.config, thread.meta));
+    return c.json({
+      threads: directory
+        .scope()!
+        .filter((thread) => roleScope(thread) === scope)
+        .map(threadJSON),
+      ...(scope ? { scope } : {}),
+    });
   });
 
   app.get('/api/threads/:id', (c) => {
@@ -892,18 +906,24 @@ export function registerRuntimeRoutes(
     ).composition;
 
   /** The thread roles a thread here may run as (Aron, 2026-11-10: coder, assistant, and the user's own). */
+  // Forge Master and Feedback are roles too, but a thread's scope: chosen where the thread goes,
+  // never offered beside coder and assistant.
   const roleChoices = (projectId: string | undefined) =>
-    threadRoles(scopeComposition(projectId)).map(({ id, label }) => ({ id, label }));
+    threadRoles(scopeComposition(projectId))
+      .filter((role) => !role.scope)
+      .map(({ id, label }) => ({ id, label }));
 
   /** Why `role` is not a thread role here, or undefined when it is. */
   const roleRefusal = (projectId: string | undefined, role: unknown) =>
     typeof role !== 'string' || !role
       ? 'role must be a thread role id'
-      : isThreadRole(scopeComposition(projectId), role)
-        ? undefined
-        : `${role} is not a thread role; choose one of ${roleChoices(projectId)
-            .map((r) => r.id)
-            .join(', ')} (or add one under composition.roles with "thread")`;
+      : scopeOfRole(role) && projectId
+        ? `${role} threads live in Foundry's own scope, not in a project`
+        : isThreadRole(scopeComposition(projectId), role)
+          ? undefined
+          : `${role} is not a thread role; choose one of ${roleChoices(projectId)
+              .map((r) => r.id)
+              .join(', ')} (or add one under composition.roles with "thread")`;
 
   /** The subscription workers a thread here cannot start on, each with why (no login, vendor mode off). */
   const unavailableWorkers = (projectId: string | undefined, fallback: string) =>
@@ -1031,7 +1051,12 @@ export function registerRuntimeRoutes(
         efforts: modelEfforts(provider, model) ?? REASONING_EFFORTS,
         workers,
         unavailableWorkers: unavailableWorkers(projectId, fallback),
-        roles: roleChoices(projectId),
+        // A scope's thread keeps its scope: its role is the one choice.
+        roles: scopeOfRole(thread.meta.role)
+          ? threadRoles(scopeComposition(projectId))
+              .filter((role) => role.id === thread.meta.role)
+              .map(({ id, label }) => ({ id, label }))
+          : roleChoices(projectId),
       },
     };
   };
@@ -1298,6 +1323,26 @@ export function registerRuntimeRoutes(
       start.effort = body.effort as EffortLevel;
     }
 
+    // A scope's thread (Forge Master, Feedback) belongs to no project and works in Foundry's own
+    // directory, so nothing that names a project or a directory comes with it.
+    // A child goes where its parent is, so only a thread of the same scope parents one.
+    if (scopeOfRole(body.role as string | undefined)) {
+      if (
+        body.projectId !== undefined ||
+        workingDirectory !== undefined ||
+        body.worktreePath !== undefined ||
+        body.branch !== undefined
+      )
+        return c.json(
+          {
+            error: `${body.role} threads live in Foundry's own scope: no project, cwd, worktree or branch`,
+          },
+          400,
+        );
+      if (parentThreadId && directory.get(parentThreadId)?.meta.role !== body.role)
+        return c.json({ error: `a ${body.role} thread's parent must be one too` }, 400);
+    }
+
     // Resolve ownership before building anything: an unknown project or a
     // live duplicate id must not leave an unreachable thread and runtime.
     const project = projectId ? projectRegistry?.get(projectId) : undefined;
@@ -1389,6 +1434,29 @@ export function registerRuntimeRoutes(
       const refused = roleRefusal(thread.meta.projectId, body.role);
       if (refused) return c.json({ error: refused }, 400);
     }
+    // A thread's scope is where it lives: a role change never moves it into or out of one.
+    if (
+      body.role !== undefined &&
+      body.role !== thread.meta.role &&
+      (scopeOfRole(thread.meta.role) || scopeOfRole(body.role as string | undefined))
+    )
+      return c.json(
+        { error: 'a Forge Master or Feedback thread keeps its scope; start a new thread instead' },
+        400,
+      );
+    // Nor is it given a directory or branch: it works in Foundry's own.
+    if (
+      scopeOfRole(thread.meta.role) &&
+      ((typeof body.worktreePath === 'string' && body.worktreePath) ||
+        (typeof body.branch === 'string' && body.branch))
+    )
+      return c.json(
+        {
+          error:
+            "a Forge Master or Feedback thread works in Foundry's own directory: no worktree or branch",
+        },
+        400,
+      );
 
     // A thread's worker may change at any time it is idle. Before its first turn the thread is just
     // rebuilt on the new worker; after it, the new worker starts a fresh session seeded from the

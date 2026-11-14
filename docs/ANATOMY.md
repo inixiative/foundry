@@ -33,7 +33,7 @@ One sheet naming every part of Foundry, so people and agents use the same words.
  │                                                                             │
  │   decision runtime: decision host ─► primed pool (Haiku, low) ─ scheduler   │
  │   other roles: Cartographer (routing), Librarian (thread state),            │
- │                feedback lifecycle, Forge Master thread                      │
+ │                feedback lifecycle, Forge Master and Feedback scopes         │
  │   journal ─► Archive capture (one session per node, Warden calls reduced)   │
  └───────────────┬─────────────────────────────────────────────────────────────┘
                  │ Installation socket, Signets (enrolled keys)
@@ -169,7 +169,8 @@ One sheet naming every part of Foundry, so people and agents use the same words.
 | classifier / router | Thread agents that classify a message and route it to an executor; keyword fallback on timeout. | agent kinds `classifier`, `router` | off (a fresh install has neither) |
 | feedback lifecycle | `/feedback` records an item on the thread and turn; with detection on, a correction is classified, routed to Warden roles, offered back in a tuning prompt and applied to a role file with provenance. | `pf/feedback/`, `feedback.capture`; [FEEDBACK-LOOP.md](FEEDBACK-LOOP.md) | live (explicit `/feedback`); detection off |
 | tuning prompt | "What happened / what we did / what we intend", shown to the user to sharpen a captured correction (`ask`, `block` or `blockOn`). | | off (with detection) |
-| Forge Master | The persistent thread for talking to this Foundry about itself, beside every settings page. A Forge Master subthread that turns feedback into formal doc changes, and a Forge Master Warden, are designed, not built. | `pf/viewer/ui/self-chat.js`, `/api/self-chat` | live (thread); proposed (formalising) |
+| Forge Master | A thread scope (role `forge-master`): threads for talking to this Foundry about itself, started from the New thread picker or a settings page's "Ask the Forge Master" (which drafts the question). Each holds a standing brief with this install's configuration. A Forge Master Warden is designed, not built. | `pf/agents/scope-roles.ts`, `threads:@forge` | live |
+| Feedback scope | A thread scope (role `feedback`): threads that work through the feedback inbox with the person; the viewer shows the inbox beside the thread, and the thread's MCP bridge carries `feedback_inbox`, `feedback_item`, `feedback_status` (read, archive, reopen; tuning answers stay the person's). | `pf/agents/scope-roles.ts`, `pf/tools/feedback-inbox.ts`, `threads:@feedback` | live |
 | MCP bridge | The `foundry` MCP server a native session can pull from mid-turn (`foundry_query`, `foundry_conventions`, … plus `send_to_member`, `pass_conch`, `kingdom_post` when registered). | `pf/mcp/server.ts` | live |
 
 ## Shared threads
