@@ -156,6 +156,28 @@ export class ViewerThreadDirectory {
     return thread;
   }
 
+  /**
+   * Undo an archive of an observed subagent: it is a record, never dispatched to, so it comes back
+   * open from its meta (`reopen` rebuilds threads Foundry runs, and refuses these).
+   */
+  reopenObserved(id: string): Thread | undefined {
+    const archived = this.get(id);
+    if (
+      !archived?.disposed ||
+      archived.meta.status !== 'archived' ||
+      !archived.meta.spawn?.observed
+    )
+      return undefined;
+    const meta: ThreadMeta = structuredClone(archived.meta);
+    meta.status = 'idle';
+    delete meta.archivedAt;
+    const thread = this.observedThread({ id, meta });
+    const project = meta.projectId ? this.projects?.get(meta.projectId) : undefined;
+    if (project) project.replaceThread(thread);
+    if (!project || this.threads.has(id)) this.threads.set(id, thread);
+    return thread;
+  }
+
   private observedThread(record: { id: string; meta: ThreadMeta }): Thread {
     const stack = this.main.stack.clone({
       threadId: record.id,
@@ -165,6 +187,34 @@ export class ViewerThreadDirectory {
     const thread = new Thread(record.id, stack, record.meta);
     Object.assign(thread.meta, structuredClone(record.meta));
     return thread;
+  }
+
+  /**
+   * Archive every open subagent (`meta.spawn`) whose parent is archived, at any depth: archiving a
+   * thread takes its subagents with it (`thread:archive`), and this settles the ones archived before
+   * that, or left open by a crash. Each takes its archived ancestor's archive time, as the cascade
+   * does, so undoing that archive brings it back. Returns the threads it archived, for the caller to save.
+   */
+  archiveOrphanedSubagents(): Thread[] {
+    const archived: Thread[] = [];
+    /** The archived ancestor (through subagents) of a thread's parent, if any. */
+    const closedAncestor = (id: string | undefined, seen: Set<string>): Thread | undefined => {
+      if (!id || seen.has(id)) return undefined;
+      seen.add(id);
+      const parent = this.get(id);
+      if (!parent) return undefined;
+      if (parent.meta.status === 'archived') return parent;
+      return parent.meta.spawn ? closedAncestor(parent.meta.parentThreadId, seen) : undefined;
+    };
+    for (const thread of this.all()) {
+      if (!thread.meta.spawn || thread.meta.status === 'archived') continue;
+      const ancestor = closedAncestor(thread.meta.parentThreadId, new Set([thread.id]));
+      if (!ancestor) continue;
+      thread.archive();
+      thread.meta.archivedAt = ancestor.meta.archivedAt;
+      archived.push(thread);
+    }
+    return archived;
   }
 
   restore(records: Array<{ id: string; meta: ThreadMeta }>): string[] {

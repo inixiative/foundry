@@ -117,8 +117,22 @@ export const RIGHT_TAB_KEYS = {
 export const leftSize = signal('normal'); // hidden · strip · normal · wide
 export const rightSize = signal('normal'); // hidden · icons · normal · wide
 export const rightTab = signal('context');
-/** The left rail: 'open' (every open thread, Yours over Shared) or 'projects' (the projects, then a scope's threads). */
-export const railView = signal('open');
+/**
+ * The left rail: 'attention' (open threads that need you: orange or red, attention.js), 'open' (every
+ * open thread, Yours over Shared) or 'projects' (the projects, then a scope's threads). Attention and
+ * Open span every project; ⌥⇧← ⌥⇧→ step through them in this order.
+ */
+export const RAIL_VIEWS = ['attention', 'open', 'projects'];
+export const railView = signal('attention');
+/** Attention and Open list threads across every project; Projects lists one scope's. */
+export const railSpansProjects = (view) => view !== 'projects';
+/** Step the rail one view left (-1) or right (1), wrapping. */
+export function stepRailView(d) {
+  const at = RAIL_VIEWS.indexOf(railView.value);
+  railView.value = RAIL_VIEWS[(at + d + RAIL_VIEWS.length) % RAIL_VIEWS.length];
+}
+/** `afterProjectStart` (Settings › Threads), mirrored from the loaded settings: where the rail goes once a thread starts from Projects. */
+export const afterProjectStart = signal('attention');
 /** The attention board fills the centre (key b). */
 export const boardOpen = signal(false);
 /** The actions palette by Send (⌥/, or "/" typed into an empty message box). */
@@ -695,7 +709,7 @@ function settleInitialScope() {
 
 /** On the Active rail the scope follows the open thread: its project, or Global. */
 function followActiveProject() {
-  if (railView.peek() !== 'open') return;
+  if (!railSpansProjects(railView.peek())) return;
   const listed = allThreads.peek().find((t) => t.threadId === activeThreadId.peek());
   if (listed) activeProjectId.value = listed.meta?.projectId ?? null;
 }
@@ -816,7 +830,7 @@ function connectStreams() {
   effect(() => {
     const projectId = activeProjectId.value;
     const next =
-      railView.value === 'open' || boardOpen.value
+      railSpansProjects(railView.value) || boardOpen.value
         ? 'threads:all'
         : projectId
           ? `threads:${projectId}`
@@ -2011,6 +2025,15 @@ export async function sendMessage(text, images = [], { delivery } = {}) {
   // routes back to this thread (not whatever is active when it arrives).
   const tid = await threadForSend();
   if (!tid) return false;
+  // A thread's first message, sent from the Projects rail, starts it: the rail goes back to Attention
+  // unless `afterProjectStart` says stay. The thread stays open in the centre. Started means a turn in
+  // the journal (`lastTurn`, there before its history loads) or a message of yours already shown.
+  if (railView.peek() === 'projects' && afterProjectStart.peek() === 'attention') {
+    const started =
+      allThreads.peek().find((t) => t.id === tid)?.lastTurn ||
+      (_threadMessages[tid] ?? []).some((m) => m.actor === 'user');
+    if (!started) railView.value = 'attention';
+  }
 
   const turnId = `turn_${uuidv7()}`;
   const refs = images.map(({ id, mediaType, bytes }) => ({ id, mediaType, bytes }));
@@ -2346,7 +2369,7 @@ function writeHash() {
   if (!['normal', 'icons'].includes(rightSize.value)) params.set('rsize', rightSize.value);
   if (rightTab.value !== 'context') params.set('rtab', rightTab.value);
   // A project in the hash opens the Projects rail unless the rail is named.
-  if (railView.value !== 'open' || activeProjectId.value) params.set('rail', railView.value);
+  if (railView.value !== 'attention' || activeProjectId.value) params.set('rail', railView.value);
   if (boardOpen.value) params.set('view', 'board');
   else if (watchtowerOpen.value) params.set('view', 'watch');
   if (projectHomeOpen.value && !boardOpen.value) {
@@ -2402,7 +2425,7 @@ function restoreFromHash() {
   projectPage.value = h.home === 'knowledge' ? 'knowledge' : device ? 'device' : 'home';
   devicePageId.value = device || null;
   // A link to a project (and no rail named) opens the Projects rail on it.
-  railView.value = h.rail === 'projects' || (h.rail !== 'open' && h.project) ? 'projects' : 'open';
+  railView.value = RAIL_VIEWS.includes(h.rail) ? h.rail : h.project ? 'projects' : 'attention';
 }
 
 // ---------------------------------------------------------------------------

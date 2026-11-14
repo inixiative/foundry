@@ -90,6 +90,11 @@
     "description": "When you send while a thread's turn runs (CORE-001, Aron 2026-11-01): `true` (default) steers the message into that turn; `false` queues it after. A queued message can always be steered in with \"Steer now\". A project's `steer` (yours, then the repository's) overrides it."
   },
   {
+    "path": "afterProjectStart",
+    "scope": "foundry",
+    "description": "Where the viewer's left rail goes once you start a thread from the Projects rail (Aron, 2026-11-14): `attention` (default) returns to the Attention list, `stay` keeps Projects."
+  },
+  {
     "path": "composition",
     "scope": "foundry",
     "description": "The composition view: one ladder (CLAUDE.md, AGENTS.md, auto memory, role files) composes the instructions and domain knowledge of every role; see docs/usage-and-context.md."

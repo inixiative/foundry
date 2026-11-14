@@ -397,6 +397,7 @@ are ⌥ chords; their plain forms act only where no message box is shown. Hold �
 | `⌥[` `⌥⇧[` · `⌥]` `⌥⇧]` | Left list smaller · larger · right panel smaller · larger |
 | `⌥↑` `⌥↓` | Step through the turn view |
 | `⌥↵` `⌥⌫` · `⌥←` `⌥→` | Approve · reject the waiting card · previous · next card |
+| `⌥⇧←` `⌥⇧→` | Left rail: Attention · Open · Projects |
 | `⌥F` `⌥V` · `⌥⇧F` | Attach · voice · Search everything |
 | `⌥/` `⌥N` · `⌥K` `⌘K` | Actions for this thread · new thread · command palette |
 | `⌥?` | Help |

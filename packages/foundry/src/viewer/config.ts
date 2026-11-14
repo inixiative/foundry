@@ -83,6 +83,9 @@ import { type SecretsSettings, validateSecretsSettings } from '../secrets/scratc
 const GUARD_MODES: readonly GuardMode[] = ['per-turn', 'per-call'];
 export type ThreadOnMerge = 'done' | 'auto-archive';
 const THREAD_ON_MERGE: readonly ThreadOnMerge[] = ['done', 'auto-archive'];
+/** Where the viewer's left rail goes once you start a thread from the Projects rail. */
+export type AfterProjectStart = 'attention' | 'stay';
+const AFTER_PROJECT_START: readonly AfterProjectStart[] = ['attention', 'stay'];
 
 /**
  * Whether a message sent during a running turn steers into it (CORE-001): your project setting, then
@@ -207,6 +210,11 @@ export interface FoundryConfig {
    * "Steer now". A project's `steer` (yours, then the repository's) overrides it.
    */
   steer?: boolean;
+  /**
+   * Where the viewer's left rail goes once you start a thread from the Projects rail (Aron,
+   * 2026-11-14): `attention` (default) returns to the Attention list, `stay` keeps Projects.
+   */
+  afterProjectStart?: AfterProjectStart;
   /**
    * The composition view: one ladder (CLAUDE.md, AGENTS.md, auto memory, role files) composes the
    * instructions and domain knowledge of every role; see docs/usage-and-context.md.
@@ -1256,6 +1264,11 @@ export function validateConfig(config: FoundryConfig): void {
   ] as const)
     if (value !== undefined && typeof value !== 'boolean')
       throw Error(`${where} must be true or false`);
+  if (
+    config.afterProjectStart !== undefined &&
+    !AFTER_PROJECT_START.includes(config.afterProjectStart)
+  )
+    throw Error('afterProjectStart must be one of "attention", "stay"');
   for (const [pid, project] of Object.entries(config.projects ?? {})) {
     validateFeedbackSettings(`projects.${pid}.feedback`, project?.feedback);
     validateSecretsSettings(`projects.${pid}.secrets`, project?.secrets);
@@ -1704,6 +1717,10 @@ export class ConfigStore {
         // Whether a send during a running turn steers into it; null returns to the default (on).
         if (patch.steer === null) delete next.steer;
         else if (patch.steer !== undefined) next.steer = patch.steer as boolean;
+        // Where the rail goes once a thread starts from Projects; null returns to the default (Attention).
+        if (patch.afterProjectStart === null) delete next.afterProjectStart;
+        else if (patch.afterProjectStart !== undefined)
+          next.afterProjectStart = patch.afterProjectStart as AfterProjectStart;
       } else if (section === 'agents') {
         next.agents = { ...next.agents, ...patch } as FoundryConfig['agents'];
       } else if (section === 'layers') {

@@ -66,7 +66,7 @@ test('an incoming request is a hatched row in Shared; it opens a request view wh
         }),
     );
 
-    await page.goto(`${origin}/#thread=main`);
+    await page.goto(`${origin}/#thread=main&rail=open`);
     const row = page.locator('.incoming-row');
     await row.waitFor();
     expect(await row.textContent()).toContain('Dana (Acme)');

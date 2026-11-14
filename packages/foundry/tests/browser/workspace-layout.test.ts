@@ -228,6 +228,11 @@ test('a new thread is selected and takes the first send; one status line while i
     await page.locator('.chat-send-btn').click();
     expect(JSON.parse((await sent).postData()!).threadId).toBe(created);
     await until(() => f.attempts.length === 1, 'turn dispatched');
+    // Started from Projects, the first send takes the rail back to Attention (`afterProjectStart`);
+    // the thread you have open stays listed there while it works.
+    await page.locator('.rail-toggle-btn.is-active', { hasText: 'Attention' }).waitFor();
+    await page.locator('.active-rail .tree-node.selected').waitFor();
+    await page.locator('.rail-toggle-btn', { hasText: 'Projects' }).click();
     expect(await threads.count()).toBe(before + 1);
 
     // One status line for the actual stage; no separate "Processing" bubble.
