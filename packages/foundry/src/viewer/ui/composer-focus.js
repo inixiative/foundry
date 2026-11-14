@@ -14,11 +14,17 @@
  * - A real place to type (Search, a settings field, a rename box, an answer's note, a select) or an
  *   open dialog holds focus while in use; when it closes or blurs, focus returns to the composer.
  * - A text selection is left alone, so reading and copying from the transcript still works.
+ * - A paste anywhere that isn't a text field lands in the message box (Aron 11-14: Wispr Flow
+ *   dictation "frequently doesn't paste"; Wispr pastes with ⌘V into whatever holds focus). So does
+ *   coming back to the window, opening the app, and a select once it is set.
  */
 
 /** A place to type, or a control that takes keys of its own while in use. */
 const PLACE_TO_TYPE =
   'input:not([type=checkbox]):not([type=radio]):not([type=button]):not([type=submit]):not([type=reset]):not([type=range]):not([type=color]):not([type=file]), textarea, select, [contenteditable=""], [contenteditable="true"]';
+
+/** A place to type text into: where a paste belongs. A select takes keys but no paste. */
+const TEXT_FIELD = PLACE_TO_TYPE.replace(', select', '');
 
 const visible = (el) => !!el && el.isConnected && el.getBoundingClientRect().width > 0;
 
@@ -38,6 +44,8 @@ function holding(el) {
   if (!el || el === document.body || el === document.documentElement) return false;
   if (isComposer(el)) return false;
   if (el.closest?.(PLACE_TO_TYPE)) return true;
+  // An artifact's page (a sandboxed frame) holds its own fields.
+  if (el.tagName === 'IFRAME') return true;
   return !!el.closest?.('[role="dialog"], [role="menu"], [aria-modal="true"], .gloss-review');
 }
 
@@ -88,6 +96,56 @@ export function initComposerFocus() {
     },
     true,
   );
+
+  // A paste (⌘V, Wispr Flow's dictation) outside a text field goes to the message box: focus moves
+  // before the paste runs, so the box takes it as typed, images included.
+  window.addEventListener(
+    'keydown',
+    (e) => {
+      if (!(e.metaKey || e.ctrlKey) || e.altKey || e.key.toLowerCase() !== 'v') return;
+      if (e.target.closest?.(TEXT_FIELD) || dialogOpen()) return;
+      composerOnScreen()?.focus({ preventScroll: true });
+    },
+    true,
+  );
+  // A paste that still arrives outside a text field (the Edit menu, a key the page never saw) goes
+  // to the message box: images to its own paste handling, text inserted.
+  document.addEventListener('paste', (e) => {
+    if (e.defaultPrevented || e.target.closest?.(TEXT_FIELD) || dialogOpen()) return;
+    const box = composerOnScreen();
+    const data = e.clipboardData;
+    if (!box || !data) return;
+    const images = [...data.items].some(
+      (item) => item.kind === 'file' && item.type.startsWith('image/'),
+    );
+    const text = data.getData('text/plain');
+    if (!images && !text) return;
+    e.preventDefault();
+    box.focus({ preventScroll: true });
+    if (images) {
+      box.dispatchEvent(
+        new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }),
+      );
+      return;
+    }
+    // insertText fires the box's input event and keeps undo, as a typed paste would.
+    if (document.execCommand('insertText', false, text)) return;
+    box.setRangeText(text, box.selectionStart, box.selectionEnd, 'end');
+    box.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+
+  // Back to the window, or to the tab: focus the message box unless something holds focus.
+  window.addEventListener('focus', soon);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') soon();
+  });
+  // A select keeps focus once set, and would take the next letters typed: let it go, focus comes back.
+  document.addEventListener('change', (e) => {
+    if (!e.target.matches?.('select') || e.target.closest?.('[role="dialog"], [aria-modal="true"]'))
+      return;
+    e.target.blur();
+    soon();
+  });
 
   // Clicking anything but a place to type leaves focus in (or returns it to) the message box.
   document.addEventListener('click', (e) => {

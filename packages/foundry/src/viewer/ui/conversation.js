@@ -15,6 +15,7 @@ import { ActionPalette } from './action-palette.js';
 import { ArtifactCards, Artifacts } from './artifacts.js';
 import { PillGroup } from './band-pills.js';
 import { chorusNotice, lastDegraded } from './chorus-health.js';
+import { returnFocus } from './composer-focus.js';
 import { HeldPromptCard, useConversationView } from './conversation-members.js';
 import { isUnsavedCompletion } from './conversation-state.js';
 import { FeedbackPrompt, GiveFeedback, TurnFeedback } from './feedback.js';
@@ -558,6 +559,8 @@ function ChatInput() {
   const stopDictation = useRef(null);
   const [listening, setListening] = useState(false);
   useEffect(() => () => stopDictation.current?.(), []);
+  // A message box that appears (the app opens, a thread's view comes back) takes focus.
+  useEffect(() => returnFocus(), []);
 
   const patchImage = (key, patch) =>
     setImages((list) => list.map((image) => (image.key === key ? { ...image, ...patch } : image)));
