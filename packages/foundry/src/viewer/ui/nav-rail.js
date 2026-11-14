@@ -4,7 +4,8 @@
  * @partOf feature:viewer
  */
 /**
- * The left rail: Attention | Open | Projects | Status (⌥⇧← ⌥⇧→ step between them).
+ * The left rail, two rows of tabs: Attention | Open | Projects, then Scheduled | Status (⌥⇧← ⌥⇧→
+ * step through all five; Aron, 2026-11-14: "You can have those tabs be two rows").
  *
  * Attention is the open top-level threads that need you, across projects: red (can't proceed) first,
  * then orange (a question, an approval, a reply you haven't read), by `effectiveCategory`, the one
@@ -14,8 +15,10 @@
  * Open is every open thread across projects, in two fixed halves that each scroll on their own:
  * Yours on top, Shared (another party is a member) below. Projects is today's sidebar: the pinned
  * scopes, the project list, and the selected scope's threads. Rows are two lines: the name, then the
- * status icon, the project and any counts. Status is this machine and its resources (machine-status.js),
- * a view of its own so the thread views keep the rail's full height (Aron, 2026-11-14).
+ * status icon, the project and any counts. Scheduled is the work that runs on its own: schedules and
+ * triggers (none yet: the scheduler is a spec awaiting Aron's yes) and every thread running a loop.
+ * Status is this machine and its resources (machine-status.js), a view of its own so the thread
+ * views keep the rail's full height (Aron, 2026-11-14).
  */
 import { Attention, effectiveCategory, openRoots } from './attention.js';
 import { IncomingRows } from './incoming.js';
@@ -29,7 +32,6 @@ import {
   allThreads,
   leftSize,
   projectSidebarOpen,
-  RAIL_VIEWS,
   railView,
   selectThread,
 } from './store.js';
@@ -44,20 +46,29 @@ const RAIL_LABELS = {
   attention: 'Attention',
   open: 'Open',
   projects: 'Projects',
+  scheduled: 'Scheduled',
   status: 'Status',
 };
+/** The tabs in their two rows: where you work, then what runs without you and the machine. */
+const RAIL_ROWS = [
+  ['attention', 'open', 'projects'],
+  ['scheduled', 'status'],
+];
 /** Red before orange in the Attention rail. */
 const URGENCY = { problem: 0, attention: 1 };
 
 function RailToggle() {
   const view = railView.value;
   return html`<div class="rail-toggle" role="tablist" aria-label="Left rail">
-    ${RAIL_VIEWS.map(
-      (id) => html`<button key=${id} role="tab" aria-selected=${view === id}
-        class="rail-toggle-btn ${view === id ? 'is-active' : ''}" title=${`${RAIL_LABELS[id]} (⌥⇧← ⌥⇧→)`}
-        onClick=${() => {
-          railView.value = id;
-        }}>${RAIL_LABELS[id]}</button>`,
+    ${RAIL_ROWS.map(
+      (row, i) =>
+        html`<div key=${i} class="rail-toggle-row">${row.map(
+          (id) => html`<button key=${id} role="tab" aria-selected=${view === id}
+          class="rail-toggle-btn ${view === id ? 'is-active' : ''}" title=${`${RAIL_LABELS[id]} (⌥⇧← ⌥⇧→)`}
+          onClick=${() => {
+            railView.value = id;
+          }}>${RAIL_LABELS[id]}</button>`,
+        )}</div>`,
     )}
   </div>`;
 }
@@ -101,10 +112,28 @@ function AttentionRail() {
   </div>`;
 }
 
+/**
+ * Work that runs without you: schedules and triggers (the scheduler is not built; its spec waits
+ * for Aron's yes), then every open thread running a loop (`meta.loop`, the agent's set_loop).
+ */
+function ScheduledRail() {
+  const selected = activeThreadId.value;
+  const looping = threadTree(
+    allThreads.value.filter((t) => OPEN(t) && t.meta?.loop?.state === 'running'),
+  );
+  return html`<div class="active-rail">
+    <${Pane} title="Schedules & triggers" count=${0} empty="Nothing is scheduled. Scheduled and triggered work will list here, by project and Global." />
+    <${Pane} title="Loops" count=${looping.length} nodes=${looping} empty="No thread is running a loop.">
+      ${looping.map((n) => html`<${ThreadNode} key=${n.id} thread=${n} selectedId=${selected} onSelect=${selectThread} />`)}
+    </${Pane}>
+  </div>`;
+}
+
 const RAILS = {
   attention: AttentionRail,
   open: OpenRail,
   projects: ProjectSidebar,
+  scheduled: ScheduledRail,
   status: MachineStatus,
 };
 

@@ -8,8 +8,8 @@
  *
  * Top: the pinned scopes, Global (threads no project owns), Forge Master (threads about this
  * Foundry) and Feedback (threads that work through the feedback inbox, the inbox beside them).
- * Then the projects, and the threads of whichever scope is selected: below them, or beside them
- * at the wide step. The two lists scroll independently. Collapsed: a thin strip with project dots.
+ * Then the projects, and beside them the threads of whichever scope is selected (the rail
+ * takes the wider share in this view, panel-sizes.js). The two lists scroll independently. Collapsed: a thin strip with project dots.
  */
 
 import { feedbackIn } from './feedback.js';
@@ -22,7 +22,6 @@ import {
   createProject,
   feedbackInboxOpen,
   forgeMasterOpen,
-  leftSize,
   openProjectHome,
   projectSidebarOpen,
   projects,
@@ -314,7 +313,7 @@ export function ProjectSidebar({ folded = false } = {}) {
   const handleSelect = (id) => openProjectHome(id);
 
   return html`
-    <div class=${`proj-sidebar nav-column${leftSize.value === 'wide' ? ' nav-column--wide' : ''}`}>
+    <div class="proj-sidebar nav-column">
       <section class="nav-projects ${listOpen ? '' : 'nav-projects--collapsed'}" aria-label="Projects">
         <div class="proj-sidebar-header">
           <button type="button" class="nav-section-toggle" aria-expanded=${listOpen}

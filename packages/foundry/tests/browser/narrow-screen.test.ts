@@ -68,22 +68,19 @@ test('the centre keeps 560 px: the rail folds, then the right panel floats', asy
       () => (document.querySelector('.panel-center')?.getBoundingClientRect().width ?? 0) >= 559,
     );
     expect(await centre()).toBeGreaterThanOrEqual(559);
-    // Widened, the right panel steps to wide: folding the rail isn't enough, so it floats.
+    // Widened, the right panel steps to wide: a third of the window (its 440 px floor here) still
+    // fits beside the folded rail, so it stays in its column (sides are shares of the window, 11-14).
     await page.locator('body').click({ position: { x: 600, y: 5 } });
     await page.keyboard.press('Alt+Shift+BracketRight');
     await page.waitForFunction(() =>
-      document.querySelector('.panels')?.classList.contains('panels--right-overlay'),
+      getComputedStyle(document.querySelector('.panels')!).gridTemplateColumns.endsWith(' 440px'),
     );
+    expect(await panels.getAttribute('class')).not.toContain('panels--right-overlay');
     // The columns animate: wait for them to settle.
     await page.waitForFunction(
       () => (document.querySelector('.panel-center')?.getBoundingClientRect().width ?? 0) >= 559,
     );
     expect(await centre()).toBeGreaterThanOrEqual(559);
-    const drawer = await page
-      .locator('.panel-right > .right-panel')
-      .evaluate((el: Element) => [getComputedStyle(el).position, el.getBoundingClientRect().width]);
-    expect(drawer[0]).toBe('absolute');
-    expect(drawer[1]).toBeGreaterThan(400);
     // A wide window restores both.
     await page.setViewportSize({ width: 1700, height: 900 });
     await page.waitForFunction(() => {

@@ -105,12 +105,18 @@ test('the left column is navigation: pinned scopes, a scrolling project list, an
         '.proj-list .nav-pinned',
         '.proj-list .proj-list-divider',
         '.proj-list > .proj-item:not(.proj-global)',
-        '.nav-threads',
       ].map((sel) => document.querySelector(sel)!.getBoundingClientRect().top),
     );
     expect(order).toEqual([...order].sort((a, b) => a - b));
+    // The threads sit beside the projects, not below them (Aron, 11-14).
+    const beside = await page.evaluate(() => {
+      const projects = document.querySelector('.nav-projects')!.getBoundingClientRect();
+      const threads = document.querySelector('.nav-threads')!.getBoundingClientRect();
+      return { sameTop: threads.top === projects.top, right: threads.left >= projects.right - 1 };
+    });
+    expect(beside).toEqual({ sameTop: true, right: true });
 
-    // The project list scrolls on its own; the threads half stays in view below it.
+    // The project list scrolls on its own; the threads half stays in view beside it.
     const scroll = await page.evaluate(() => {
       const list = document.querySelector('.proj-list')!;
       const threadsHalf = document.querySelector('.nav-threads')!.getBoundingClientRect();
@@ -120,10 +126,10 @@ test('the left column is navigation: pinned scopes, a scrolling project list, an
       };
     });
     expect(scroll).toEqual({ scrolls: true, threadsVisible: true });
-    // Threads get ~60% of the space below the pinned group, projects ~40%.
+    // Threads get ~60% of the column's width, projects ~40%.
     const split = await page.evaluate(() => {
-      const height = (sel: string) => document.querySelector(sel)!.getBoundingClientRect().height;
-      return height('.nav-threads') / (height('.nav-threads') + height('.nav-projects'));
+      const width = (sel: string) => document.querySelector(sel)!.getBoundingClientRect().width;
+      return width('.nav-threads') / (width('.nav-threads') + width('.nav-projects'));
     });
     expect(split).toBeGreaterThan(0.55);
     expect(split).toBeLessThan(0.65);

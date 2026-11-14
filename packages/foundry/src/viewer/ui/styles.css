@@ -367,17 +367,18 @@ body {
   font: inherit;
   cursor: pointer;
 }
-/* The wide step: projects and the selected scope's threads side by side, each scrolling on its own. */
-.nav-column--wide {
+/* Projects and the selected scope's threads side by side, each scrolling on its own (Aron, 11-14:
+   stacked "is kind of rough"). The projects list is the narrower column. */
+.nav-column.proj-sidebar {
   flex-direction: row;
 }
-.nav-column--wide > .nav-projects,
-.nav-column--wide > .nav-projects--collapsed {
+.nav-column > .nav-projects,
+.nav-column > .nav-projects--collapsed {
   flex: 1 1 0;
   min-width: 0;
 }
-.nav-column--wide > .nav-threads {
-  flex: 1.2 1 0;
+.nav-column > .nav-threads {
+  flex: 1.5 1 0;
   min-width: 0;
   border-top: 0;
   border-left: 1px solid var(--line);
@@ -7286,7 +7287,7 @@ a.thread-ref:hover {
   margin-top: 8px;
 }
 
-/* ---- Left rail: Attention | Open | Projects | Status ---- */
+/* ---- Left rail: Attention | Open | Projects, then Scheduled | Status ---- */
 .nav-rail {
   display: flex;
   flex-direction: column;
@@ -7301,6 +7302,7 @@ a.thread-ref:hover {
 }
 .rail-toggle {
   display: flex;
+  flex-direction: column;
   gap: 2px;
   padding: 2px;
   background: var(--surface);
@@ -7308,7 +7310,11 @@ a.thread-ref:hover {
   border-radius: 9px;
   flex-shrink: 0;
 }
-/* Four tabs share the rail's width by their labels, so "Attention" never overruns its slot. */
+/* Each row's tabs share the rail's width by their labels, so "Attention" never overruns its slot. */
+.rail-toggle-row {
+  display: flex;
+  gap: 2px;
+}
 .rail-toggle-btn {
   flex: 1 1 auto;
   min-width: 0;

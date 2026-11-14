@@ -66,6 +66,17 @@ test('a toast sits at the top of the centre, never over the message box, header 
       await page.setViewportSize({ width, height: 900 });
       await page.goto(`${origin}/#thread=main&detail=1`);
       await page.locator('.panel-center textarea.chat-input').waitFor();
+      // The columns animate: measure once the centre has stopped changing width.
+      await page.waitForFunction(
+        () => {
+          const w = document.querySelector('.panel-center')!.getBoundingClientRect().width;
+          const last = (window as unknown as { __w?: number }).__w;
+          (window as unknown as { __w?: number }).__w = w;
+          return last === w;
+        },
+        undefined,
+        { polling: 200 },
+      );
       // An error stays until dismissed: the one from Aron's screenshot.
       await toast('[harness] Execution failed: the session ended', 'error');
       const shown = page.locator('.toast.error');

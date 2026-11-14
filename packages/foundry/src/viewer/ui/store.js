@@ -139,7 +139,7 @@ export const rightTab = signal('context');
  * open thread, Yours over Shared) or 'projects' (the projects, then a scope's threads). Attention and
  * Open span every project; ⌥⇧← ⌥⇧→ step through them in this order.
  */
-export const RAIL_VIEWS = ['attention', 'open', 'projects', 'status'];
+export const RAIL_VIEWS = ['attention', 'open', 'projects', 'scheduled', 'status'];
 export const railView = signal('attention');
 /** Attention and Open list threads across every project; Projects lists one scope's. */
 export const railSpansProjects = (view) => view !== 'projects';
