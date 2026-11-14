@@ -5,6 +5,11 @@
     "description": "Opt in to API-key providers (paid tokens). Absent or false: subscription-only, and no API provider is constructed."
   },
   {
+    "path": "conversations",
+    "scope": "foundry",
+    "description": "This Foundry's own conversation settings: `joining`, the terms someone joining its threads starts with, per audience. A project's floor, conch and the rest are `projects.<id>.conversations`."
+  },
+  {
     "path": "subscriptionOnly",
     "scope": "foundry",
     "description": "Subscription-mode overrides; every field has a default. See docs/subscription-decisions.md."

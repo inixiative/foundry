@@ -6,6 +6,7 @@
 import type { HostedSignetRequest } from '@inixiative/signet';
 import type { Hono } from 'hono';
 import { z } from 'zod';
+import { type FoundryConversationSettings, joiningDefault } from '../../conversations/types';
 import { defaultKingdomUrl, installationNameOf } from '../../providers/kingdom-cli';
 import type { KingdomHolders } from '../../providers/kingdom-holder';
 import {
@@ -29,10 +30,28 @@ const picked = (request: HostedSignetRequest) =>
     resource.resourceModel === 'IntegrationResource' ? [resource.operations] : [],
   );
 
+/**
+ * Kingdom's review link, carrying this Foundry's default for the requester's audience as `threads`:
+ * the review opens at the narrower of it and the request (signet `meetThreadsTerms`). It only
+ * narrows where the form starts; Kingdom still refuses an approval wider than the request.
+ */
+export const reviewUrlWithDefault = (
+  request: Pick<HostedSignetRequest, 'reviewUrl' | 'requester'>,
+  conversations: FoundryConversationSettings | undefined,
+) => {
+  const url = new URL(request.reviewUrl);
+  url.searchParams.set(
+    'threads',
+    JSON.stringify(joiningDefault(conversations, request.requester.audience)),
+  );
+  return url.toString();
+};
+
 /** Pending, unexpired Signet requests across every paired Kingdom, newest first. */
 export function incomingRequests(
   connections: readonly Pick<KingdomInstallationConnection, 'url' | 'signetRequests'>[],
   now = Date.now(),
+  conversations?: FoundryConversationSettings,
 ) {
   return connections
     .flatMap((connection) =>
@@ -44,6 +63,7 @@ export function incomingRequests(
           kingdomUrl: connection.url,
           requester: request.requester.displayName,
           requesterModel: request.requester.sourceModel,
+          audience: request.requester.audience,
           createdAt: request.createdAt,
           expiresAt: request.expiresAt,
           name: request.terms.name,
@@ -55,7 +75,7 @@ export function incomingRequests(
           operations: [
             ...new Set(picked(request).flatMap((pick) => ('picks' in pick ? pick.picks : []))),
           ],
-          reviewUrl: request.reviewUrl,
+          reviewUrl: reviewUrlWithDefault(request, conversations),
         })),
     )
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
@@ -145,8 +165,10 @@ export function registerKingdomRoutes(
   app.get('/api/kingdom/status', async (c) => c.json(await status()));
   // Incoming: parties asking to join this Foundry's threads. Nothing runs until the owner accepts in
   // Kingdom (the request's reviewUrl); Foundry only shows them, read from the Installation snapshot.
-  app.get('/api/kingdom/incoming', (c) =>
-    c.json({ requests: incomingRequests(connections.all()) }),
+  app.get('/api/kingdom/incoming', async (c) =>
+    c.json({
+      requests: incomingRequests(connections.all(), Date.now(), (await store.load()).conversations),
+    }),
   );
   app.post('/api/kingdom/pair', async (c) => {
     if (pairing) return c.json({ error: 'Already pairing; cancel pending pairing first.' }, 409);

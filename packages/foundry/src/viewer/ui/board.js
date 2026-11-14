@@ -162,7 +162,7 @@ export function IncomingCard({ request }) {
       <span class="incoming-card-kind">Request</span>
       <span class="incoming-card-when">${when(request.createdAt)}</span>
     </div>
-    <p class="incoming-card-who"><strong>${request.requester}</strong> asks to join your threads</p>
+    <p class="incoming-card-who"><strong>${request.requester}</strong> asks to join your threads${request.audience === 'outside' ? ' · from outside your orgs' : request.audience === 'inOrg' ? ' · in your orgs' : ''}</p>
     <p class="incoming-card-what">${request.name}${request.full || request.operations.length ? ` · ${[...(request.full ? ['everything'] : []), ...request.operations].join(', ')}` : ''}</p>
     <p class="incoming-card-terms">${request.lifecycle} · ${allowance} · ${until}</p>
     <p class="incoming-card-note">Nothing runs until you accept it in Kingdom.</p>

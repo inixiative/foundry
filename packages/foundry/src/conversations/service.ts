@@ -57,10 +57,12 @@ import {
   type Invitation,
   type LocalMemberRecord,
   MAX_HELD_TEXT,
+  type MemberActTerms,
   type MemberPostRecord,
   memberKey,
   OWNER_MEMBER,
   type SharedEntryRecord,
+  type TurnActor,
   type Voice,
 } from './types';
 import { capView, sameMember, sharedEntryText, threadEntryOf, visibleTo } from './view';
@@ -112,6 +114,11 @@ export interface ConversationServiceDeps {
       ) => { threadId: string; name: string })
     | null;
   log?: (message: string) => void;
+  /**
+   * Whether the thread's worker answers each tool call before it runs (Claude), so a member's `act`
+   * can hold (§4.12). Codex and Muse can't, so they take no post from a member below `full`.
+   */
+  gatesEachCall?: (thread: Thread) => boolean;
 }
 
 /** A refusal decided inside the admission transaction; a throw rolls the transaction back. */
@@ -158,6 +165,8 @@ export interface ConversationMemberView {
   holdsConch: boolean;
   /** A local member's voice (§4.11 point 1); a Signet member's is a term of its grant (not yet). */
   voice?: Voice;
+  /** An outside member's `posts`, `act` and `agent` now (§4.12), narrowest while stale or unlisted. */
+  act?: MemberActTerms;
 }
 
 /**
@@ -272,6 +281,18 @@ export class ConversationService implements ConversationWrapper {
   ): ThreadOutcome<'thread.prompt'> {
     const me = post.member;
     const key = memberKey(me);
+    // A member whose word may not have the agent act freely needs a gate before every tool call
+    // (§4.12); a worker without one never hears them, rather than failing at launch.
+    if (
+      me.kind === 'signet' &&
+      !this.isOwnerSignet(me.id) &&
+      this.memberActTerms(me.id, thread.id).act !== 'full' &&
+      this.deps.gatesEachCall?.(thread) === false
+    )
+      return threadRefused(
+        'failed',
+        `This thread runs on ${thread.meta.worker ?? 'a worker'}, which cannot ask before each tool call, so it takes posts only from members who may have its agent act freely.`,
+      );
     let outcome:
       | { kind: 'refused'; refusal: ThreadRefusal; message?: string }
       | { kind: 'duplicate'; seq: number }
@@ -334,6 +355,11 @@ export class ConversationService implements ConversationWrapper {
           // People talking while the agents listen spend no agent turns; an agent's post always does.
           ...(hostListening && me.kind === 'signet' ? { silent: true } : {}),
           ...(floor.commission === 'notify' ? { notify: true } : {}),
+          ...(me.kind === 'signet' &&
+          !this.isOwnerSignet(me.id) &&
+          this.memberActTerms(me.id, thread.id).posts === 'instructions'
+            ? { posts: 'instructions' as const }
+            : {}),
           ...(post.executionId ? { executionId: post.executionId } : {}),
           ...(post.acceptedRevision !== undefined
             ? { acceptedRevision: post.acceptedRevision }
@@ -362,6 +388,7 @@ export class ConversationService implements ConversationWrapper {
               member: me,
               displayName: post.displayName,
               postId: post.postId,
+              ...(row.posts ? { posts: row.posts } : {}),
               ...(post.executionId ? { executionId: post.executionId } : {}),
             },
           });
@@ -976,6 +1003,7 @@ export class ConversationService implements ConversationWrapper {
           ? { terms: { view: member.terms.view, delivery: member.terms.delivery } }
           : {}),
         outbound: member.outbound,
+        ...(member.act ? { act: member.act } : {}),
         ...(member.voice ? { local: { voice: member.voice } } : {}),
       })),
       this.memberships(threadId),
@@ -1092,7 +1120,7 @@ export class ConversationService implements ConversationWrapper {
         id: `member-post:${post.memberKey}:${post.postId}`,
         source: `conversation:${post.memberKey}`,
         placement: 'after-message' as const,
-        text: memberPostReception(post.displayName, post.text),
+        text: memberPostReception(post.displayName, post.text, post.posts),
       })),
       ...heard.map((entry) => ({
         role: 'content' as const,
@@ -1115,7 +1143,10 @@ export class ConversationService implements ConversationWrapper {
       .map((row) => row.record as unknown as MemberPostRecord)
       .find((candidate) => candidate.memberKey === memberKey(member));
     return post
-      ? { displayName: post.displayName, text: memberPostReception(post.displayName, post.text) }
+      ? {
+          displayName: post.displayName,
+          text: memberPostReception(post.displayName, post.text, post.posts),
+        }
       : undefined;
   }
 
@@ -1671,6 +1702,13 @@ export class ConversationService implements ConversationWrapper {
             kind: entry.kind,
             addressed,
             text: entry.text,
+            ...((entry.kind === 'agent' || entry.kind === 'send') &&
+            (row.source === 'message' ? row.message.turnId : row.turnId)
+              ? {
+                  hostTurnId:
+                    row.source === 'message' ? row.message.turnId : (row.turnId ?? undefined),
+                }
+              : {}),
           });
         }
       // The cursor moves past every row read, readable or not, so a long unreadable run never
@@ -1794,6 +1832,99 @@ export class ConversationService implements ConversationWrapper {
       .phasesOf(threadId, 'shared-entry-delivered')
       .some((row) => row.turnId === turnId);
     return !foreign && !mirrored;
+  }
+
+  /**
+   * The other parties whose words a turn took in (§4.12), with their terms now: the member whose post
+   * opened it and every member whose note was delivered to it. The owner's own remote client is him.
+   * His local members are his agents, but what they relay may carry other parties' words: the host
+   * agent's words a local member heard bring the actors of the host turn that said them; naively, a
+   * local member's post or a member's mirrored post brings every outside member of the conversations
+   * it could have come from.
+   */
+  turnActors(threadId: string, turnId: string, seen = new Set<string>()): TurnActor[] {
+    seen.add(`${threadId}:${turnId}`);
+    const store = this.deps.store;
+    const keys = new Set(
+      store
+        .phasesOf(threadId, 'member-post-delivered')
+        .filter((row) => row.turnId === turnId)
+        .map((row) => String(row.record.memberKey)),
+    );
+    const opener = store
+      .phasesOf(threadId, 'member-post')
+      .map((row) => row.record as unknown as MemberPostRecord)
+      .find((post) => post.turnId === turnId);
+    if (opener) keys.add(opener.memberKey);
+    const actors = new Map<string, TurnActor>();
+    const add = (hostThreadId: string, signetId: string) => {
+      if (actors.has(signetId) || this.isOwnerSignet(signetId)) return;
+      actors.set(signetId, this.actorOn(hostThreadId, signetId));
+    };
+    const relayedFrom = new Set<string>();
+    for (const key of keys) {
+      if (key.startsWith('signet:')) add(threadId, key.slice('signet:'.length));
+      else if (key.startsWith('local:')) {
+        relayedFrom.add(threadId);
+        for (const host of this.hostsOf(key.slice('local:'.length))) relayedFrom.add(host);
+      }
+    }
+    const heard = store
+      .phasesOf(threadId, 'shared-entry-delivered')
+      .filter((row) => row.turnId === turnId)
+      .map((row) => row.record as { hostThreadId: string; hostSeq: number });
+    if (heard.length) {
+      const entries = store
+        .phasesOf(threadId, 'shared-entry')
+        .map((row) => row.record as unknown as SharedEntryRecord);
+      for (const { hostThreadId, hostSeq } of heard) {
+        const entry = entries.find(
+          (candidate) => candidate.hostThreadId === hostThreadId && candidate.hostSeq === hostSeq,
+        );
+        if (entry?.kind === 'owner') continue;
+        if (entry?.hostTurnId) {
+          if (seen.has(`${hostThreadId}:${entry.hostTurnId}`)) continue;
+          for (const actor of this.turnActors(hostThreadId, entry.hostTurnId, seen))
+            if (!actors.has(actor.member.id)) actors.set(actor.member.id, actor);
+        } else relayedFrom.add(hostThreadId);
+      }
+    }
+    for (const host of relayedFrom)
+      for (const signet of this.deps.hosted())
+        if (this.termsOn(signet, host) !== undefined) add(host, signet.signetId);
+    return [...actors.values()];
+  }
+
+  /** One outside member of a conversation as an actor: their name there, and their terms now. */
+  private actorOn(threadId: string, signetId: string): TurnActor {
+    const key = memberKey({ kind: 'signet', id: signetId });
+    const post = this.deps.store
+      .phasesOf(threadId, 'member-post')
+      .map((row) => row.record as unknown as MemberPostRecord)
+      .findLast((candidate) => candidate.memberKey === key);
+    return {
+      member: { kind: 'signet', id: signetId },
+      displayName: post?.displayName ?? 'a member',
+      terms: this.memberActTerms(signetId, threadId),
+    };
+  }
+
+  /**
+   * A member's `posts` and `act` terms now (§4.12), read like `outbound` (§4.5): from the latest
+   * snapshot, or the narrowest (`data`, `ask`) when the member is missing there or the snapshot is
+   * older than a frame it sent.
+   */
+  memberActTerms(signetId: string, threadId: string): MemberActTerms {
+    const signet = this.deps.hosted().find((candidate) => candidate.signetId === signetId);
+    const terms =
+      signet && signet.revision >= this.acceptedRevision(signetId, threadId)
+        ? this.termsOn(signet, threadId)
+        : undefined;
+    return {
+      posts: terms?.posts ?? 'data',
+      act: terms?.act ?? 'ask',
+      agent: terms?.agent ?? false,
+    };
   }
 
   /** Ask the owner to confirm a control his agent was asked for outside his own instruction. */
@@ -2229,7 +2360,11 @@ export class ConversationService implements ConversationWrapper {
       });
     }
     for (const [key, view] of views) {
-      if (view.member.kind === 'signet') view.outbound = this.outbound(view.member.id, threadId);
+      if (view.member.kind === 'signet') {
+        view.outbound = this.outbound(view.member.id, threadId);
+        if (!this.isOwnerSignet(view.member.id))
+          view.act = this.memberActTerms(view.member.id, threadId);
+      }
       if (view.member.kind === 'local') view.present = !!this.deps.store.openTurn(view.member.id);
       if (view.member.kind !== 'local') view.present = present.has(key);
       const last = Math.max(
