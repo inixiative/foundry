@@ -20,6 +20,7 @@ import {
   composerFill,
   createThread,
   currentScope,
+  launchLabels,
   loadLaunch,
   projects,
   SCOPE_ROLES,
@@ -35,6 +36,28 @@ export const workerName = (worker) =>
 /** A thread role's label from the scope's choices. */
 export const roleLabel = (roles, id) =>
   id ? (roles?.find((r) => r.id === id)?.label ?? id) : null;
+
+/**
+ * What a thread runs on, from its launch view: worker · model · effort · role (Aron 11-02: the
+ * worker goes first when space is tight). An effort the thread didn't choose is its default; only
+ * names the registry knows show, never a raw id. Read by the header band and the agents modal.
+ */
+export function runParts(launch) {
+  const named = launchLabels(launch?.provider, launch?.model);
+  return {
+    worker: workerName(launch?.worker ?? launch?.provider) ?? named.provider,
+    model: named.model,
+    effort: launch?.effort ?? launch?.effortDefault ?? null,
+    role: roleLabel(launch?.options?.roles, launch?.effectiveRole),
+  };
+}
+
+/** "Claude Code · Opus 5.5 · high · Coder", or null when nothing about the run is known yet. */
+export function runLabel(launch) {
+  if (!launch) return null;
+  const { worker, model, effort, role } = runParts(launch);
+  return [worker, model, effort, role].filter(Boolean).join(' · ') || null;
+}
 
 /** The model entry of a worker choice. */
 const modelOf = (worker, modelId) => worker?.models?.find((m) => m.id === modelId) ?? null;
@@ -170,8 +193,18 @@ export const openThreadRun = () => {
   threadRunOpen.value = true;
 };
 
-function ThreadRunModal({ launch, onClose }) {
-  const threadId = activeThreadId.value;
+/**
+ * The picker for one thread's run: the open thread's (the header's pill) or an agent of it (the
+ * agents modal, which names the agent in `title` and leaves out `onNewThread`).
+ */
+export function ThreadRunModal({
+  threadId,
+  launch,
+  title = 'Runs on',
+  onClose,
+  onSaved,
+  onNewThread,
+}) {
   const workers = launch.options?.workers ?? [];
   // What the picker shows is what Apply sends: a model its worker doesn't list reads as the default.
   const current = workers.find((w) => w.id === launch.worker);
@@ -198,6 +231,7 @@ function ThreadRunModal({ launch, onClose }) {
     try {
       await applyRun(threadId, launch, value);
       await loadLaunch(threadId);
+      await onSaved?.();
       showToast(
         switching
           ? launch.started
@@ -211,19 +245,17 @@ function ThreadRunModal({ launch, onClose }) {
       showToast(`Could not change it: ${error.message}`, 'error');
       // A worker switch may have landed before the model or effort was refused: show what is true now.
       await loadLaunch(threadId);
+      await onSaved?.();
       onClose();
     } finally {
       setBusy(false);
     }
   };
-  return html`<${Modal} title="Runs on" onClose=${onClose} class="run-modal">
+  return html`<${Modal} title=${title} onClose=${onClose} class="run-modal">
     <${RunPicker} value=${value} workers=${workers} roles=${launch.options?.roles ?? []}
       unavailable=${launch.options?.unavailableWorkers ?? []}
       lock=${launch.workerLock} musePersonal=${musePersonal} onChange=${setValue}
-      onNewThread=${() => {
-        onClose();
-        openNewThread();
-      }} />
+      onNewThread=${onNewThread} />
     <p class="run-picker-note run-picker-note--dim" data-note="carry-over">
       ${
         !switching
@@ -373,7 +405,15 @@ export function RunPickers() {
     threadRunOpen.value = false;
   };
   return html`
-    ${threadRunOpen.value && launch ? html`<${ThreadRunModal} key=${launch.threadId} launch=${launch} onClose=${close} />` : null}
+    ${
+      threadRunOpen.value && launch
+        ? html`<${ThreadRunModal} key=${launch.threadId} threadId=${activeThreadId.value} launch=${launch} onClose=${close}
+      onNewThread=${() => {
+        close();
+        openNewThread();
+      }} />`
+        : null
+    }
     <${NewThreadModal} />
   `;
 }

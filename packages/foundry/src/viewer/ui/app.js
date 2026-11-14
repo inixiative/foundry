@@ -84,6 +84,7 @@ import {
   turnViewTarget,
   watchtowerOpen,
 } from './store.js';
+import { ThreadAgentsModals } from './thread-agents.js';
 import { UpdateNotice } from './update-notice.js';
 import { Watchtower } from './watchtower.js';
 import { checkSetupNeeded, Wizard, wizardOpen } from './wizard.js';
@@ -514,6 +515,7 @@ function App() {
       <${Toast} />
       <${GlossReview} />
       <${RunPickers} />
+      <${ThreadAgentsModals} />
     </div>
   `;
 }

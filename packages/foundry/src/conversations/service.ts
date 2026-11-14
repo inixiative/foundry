@@ -1277,22 +1277,38 @@ export class ConversationService implements ConversationWrapper {
         held: number;
         members: number;
         localMembers: number;
+        speakingLocals: number;
+        memberAgents: number;
         asides: ReturnType<ConversationService['asides']>;
         asidesSinceYourPost: number;
       }
     | undefined {
     const record = this.deps.store.conversation<ConversationRecord>(threadId);
     if (!record) return undefined;
+    const thread = this.deps.thread(threadId);
+    const settings = thread ? this.settings(thread, record) : null;
+    const signets = this.members(threadId).filter(
+      (member) => member.member.kind === 'signet' && !this.isOwnerSignet(member.member.id),
+    );
     return {
       unread: this.pendingNotes(threadId).length,
       paused: this.paused(threadId, record),
       held: this.heldPending(threadId).length,
       // Parties off this machine other than the owner: what makes a thread shared (D5).
-      members: this.members(threadId).filter(
-        (member) => member.member.kind === 'signet' && !this.isOwnerSignet(member.member.id),
-      ).length,
+      members: signets.length,
       // The owner's own agents in the thread (Codex, a second Claude): members, never "shared".
       localMembers: (record.locals ?? []).length,
+      // Which of them speak, and members whose terms bring their own agent: the viewer's agent count.
+      speakingLocals: settings
+        ? (record.locals ?? []).filter(
+            (local) =>
+              this.voice(record, settings, memberKey({ kind: 'local', id: local.threadId })) ===
+              'speaking',
+          ).length
+        : 0,
+      memberAgents: signets.filter(
+        (member) => this.memberActTerms(member.member.id, threadId).agent,
+      ).length,
       // The viewer's aside view and its "N asides since your last post" line (M6).
       asides: this.asides(threadId),
       asidesSinceYourPost: this.asidesSinceOwnerPost(threadId),

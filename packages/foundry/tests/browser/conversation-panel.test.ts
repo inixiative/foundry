@@ -81,6 +81,10 @@ test('an unread member post marks the thread; the panel shows the member and its
     const panel = page.locator('.conversation-panel');
     await panel.waitFor();
     expect(await panel.locator('.conversation-member-name').innerText()).toBe('JobCo');
+    // No snapshot lists the member's Signet yet, so its terms read as the narrowest (§4.12).
+    expect(await panel.locator('[data-term="posts"]').innerText()).toBe('posts as data');
+    expect(await panel.locator('[data-term="act"]').innerText()).toBe('agent asks before acting');
+    expect(await panel.locator('[data-term="agent"]').count()).toBe(0);
     expect(
       await panel.locator('.conversation-post.is-unread .conversation-post-text').innerText(),
     ).toBe('The role you wanted opened.');
@@ -104,6 +108,108 @@ test('an unread member post marks the thread; the panel shows the member and its
     await browser.close();
     server.stop(true);
     conversations.dispose();
+    viewer.localStore?.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+}, 60_000);
+
+// The agents in a thread (CONVERSATIONS.md §4.12): one by default, the host's; another open thread
+// of the same scope joins from "+ Add agent" as a local member, and leaves from the same modal.
+test("Runs on counts the thread's agents; + Add agent joins another thread and Remove lets it go", async () => {
+  const dir = await mkdtemp(resolve('.foundry/qa/thread-agents-'));
+  const main = new Thread('main', new ContextStack());
+  main.register(new Executor({ id: 'worker', stack: main.stack, handler: async () => 'answered' }));
+  const harness = new Harness(main);
+  harness.setDefaultExecutor('worker');
+  const configStore = new ConfigStore(dir);
+  const config = starterConfig('controlled', 'controlled');
+  config.setupComplete = true;
+  await configStore.save(config);
+  const viewer = createViewer({
+    configStore,
+    harness,
+    eventStream: new EventStream(),
+    interventions: new InterventionLog(),
+    configDir: dir,
+    actionQueue: new ActionQueue(),
+  });
+  const created = await viewer.app.request('/api/threads', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ id: 'codex', description: 'Second opinion' }),
+  });
+  expect(created.status).toBe(201);
+  const server = Bun.serve({
+    hostname: '127.0.0.1',
+    port: 0,
+    fetch: viewer.fetch,
+    websocket: viewer.websocket,
+  });
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await (
+      await browser.newContext({ viewport: { width: 1440, height: 960 } })
+    ).newPage();
+    page.setDefaultTimeout(15_000);
+    const errors: string[] = [];
+    page.on('pageerror', (e: Error) => errors.push(e.message));
+    await page.goto(`http://127.0.0.1:${server.port}/#thread=main`);
+    await page.locator('.rp-tab', { hasText: 'Context' }).click();
+    const count = page.locator('[data-agents="count"]');
+    await count.waitFor();
+    expect(await count.innerText()).toBe('1 agent');
+
+    await page.locator('[data-agents="add"]').click();
+    const modal = page.locator('.thread-agents-modal');
+    await modal.waitFor();
+    expect(await modal.locator('[data-agent]').count()).toBe(1);
+    await modal.locator('select').selectOption('codex');
+    await modal.locator('[data-agents="join"]').click();
+    await modal.locator('[data-agent="local"]').waitFor();
+    expect(viewer.conversations!.view('main').members.map((m) => m.member)).toEqual([
+      { kind: 'local', id: 'codex' },
+    ]);
+    // The thread already in is no longer offered.
+    expect(await modal.locator('option[value="codex"]').count()).toBe(0);
+    await until(async () => (await count.innerText()) === '2 agents', 'the count follows');
+    // Each local agent says what it runs on, and Change opens the same picker as Runs on, named for it.
+    const local = modal.locator('[data-agent="local"][data-member="codex"]');
+    await until(async () => {
+      const run = await local.locator('[data-run="local"]').innerText();
+      return run !== 'reading…' && run !== '—' && run.trim() !== '';
+    }, 'the local agent shows its run');
+    const launchOf = async (id: string) =>
+      (await (await viewer.app.request(`/api/threads/${id}/launch`)).json()) as {
+        role: string | null;
+        effectiveRole: string | null;
+      };
+    const mainBefore = await launchOf('main');
+    await local.getByRole('button', { name: 'Change Second opinion' }).click();
+    const picker = page.locator('.run-modal:not(.thread-agents-modal)');
+    await picker.locator('[data-run="apply"]').waitFor();
+    expect(await picker.locator('.modal-title').innerText()).toBe('Second opinion runs on');
+    // Apply changes this agent's run, not the host's.
+    await picker.locator('[data-run="role"]').selectOption('assistant');
+    await picker.locator('[data-run="apply"]').click();
+    await picker.waitFor({ state: 'detached' });
+    await until(async () => (await launchOf('codex')).role === 'assistant', 'the agent changed');
+    expect(await launchOf('main')).toMatchObject({
+      role: mainBefore.role,
+      effectiveRole: mainBefore.effectiveRole,
+    });
+    await until(
+      async () => (await local.locator('[data-run="local"]').innerText()).includes('ssistant'),
+      'its row shows the new run',
+    );
+
+    await local.getByRole('button', { name: 'Remove Second opinion' }).click();
+    await local.waitFor({ state: 'detached' });
+    await until(async () => (await count.innerText()) === '1 agent', 'back to one');
+    expect(errors).toEqual([]);
+  } finally {
+    await browser.close();
+    server.stop(true);
+    viewer.conversations?.dispose();
     viewer.localStore?.close();
     await rm(dir, { recursive: true, force: true });
   }

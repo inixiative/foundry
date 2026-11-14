@@ -18,16 +18,24 @@ import { settingsConfig } from './settings.js';
 import { activeThreadId, prompts, resolvePrompt, showToast, threadData } from './store.js';
 import { layeredActions, sourceOf } from './thread-settings.js';
 
+/** What the host's agent may do on a turn that took a member's words in (threads term `act`, §4.12). */
+const ACT_LABELS = {
+  ask: 'agent asks before acting',
+  read: 'agent may read freely',
+  full: 'agent acts freely',
+};
+
 const FLOORS = [
   ['talk', 'Talk'],
   ['speak-when-spoken-to', 'Speak when spoken to'],
   ['conch', 'Conch'],
 ];
 
-async function post(path, body) {
+/** A conversation request; a refusal is a toast. True when it went through. */
+export async function post(path, body, method = 'POST') {
   try {
     const res = await fetch(path, {
-      method: 'POST',
+      method,
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body ?? {}),
     });
@@ -107,6 +115,13 @@ function MemberRow({ member, threadId, conch }) {
           <span class="context-bar-chip" title="How its posts arrive">${terms.delivery === 'turn' ? 'posts wake the agent' : 'posts as notes'}</span>`
         : null
     }
+    ${
+      member.act
+        ? html`<span class="context-bar-chip" data-term="posts" title="How the agent takes its posts">${member.act.posts === 'instructions' ? 'posts as instructions' : 'posts as data'}</span>
+          <span class="context-bar-chip" data-term="act" title="What the agent may do for it">${ACT_LABELS[member.act.act] ?? member.act.act}</span>
+          ${member.act.agent ? html`<span class="context-bar-chip" data-term="agent" title="It may bring its own agent">brings an agent</span>` : null}`
+        : null
+    }
     <span class="context-bar-chip ${member.outbound === 'review' ? '' : 'context-bar-chip--dim'}"
       title="Sends to this member">${member.outbound === 'review' ? 'sends reviewed' : 'sends leave at once'}</span>
     ${member.holdsConch ? html`<span class="context-bar-chip" title="Holds the conch">conch</span>` : null}
@@ -133,7 +148,7 @@ function MemberRow({ member, threadId, conch }) {
 }
 
 /** Open Kingdom's grant form for this thread (§5.5), read on demand. */
-async function invite(threadId) {
+export async function invite(threadId) {
   try {
     const res = await fetch(`/api/threads/${encodeURIComponent(threadId)}/conversation`);
     const url = res.ok ? (await res.json()).invites?.find((candidate) => candidate.url)?.url : null;
@@ -145,37 +160,47 @@ async function invite(threadId) {
   }
 }
 
-/**
- * The participants panel, shown on a thread that has a conversation (its line in the sessions list
- * carries `conversation`), or folded to its invite link on any other thread.
- */
+/** In-flight reads, so the band, the panel and the agents modal share one GET per change. */
+const reading = new Map();
+function readView(threadId, lineKey) {
+  const key = `${threadId}\n${lineKey}`;
+  let read = reading.get(key);
+  if (!read) {
+    read = fetch(`/api/threads/${encodeURIComponent(threadId)}/conversation`)
+      .then((res) => (res.ok ? res.json() : null))
+      .catch(() => null)
+      .finally(() => reading.delete(key));
+    reading.set(key, read);
+  }
+  return read;
+}
+
 /**
  * The thread's conversation view (members, floor, posts), read only for a thread whose line in the
- * sessions list carries `conversation`, and re-read whenever that line changes.
+ * sessions list carries `conversation`, and re-read whenever that line changes. The last view stays
+ * until the new one arrives, so counts don't flicker on every post.
  */
 export function useConversationView(threadId, line) {
-  const [view, setView] = useState(null);
+  const [read, setRead] = useState(null);
   const lineKey = JSON.stringify(line);
   // biome-ignore lint/correctness/useExhaustiveDependencies: re-read when the thread's line changes.
   useEffect(() => {
-    setView(null);
     if (!threadId || !line) return;
     let live = true;
-    fetch(`/api/threads/${encodeURIComponent(threadId)}/conversation`)
-      .then((res) => (res.ok ? res.json() : null))
-      .then((body) => {
-        if (live) setView(body);
-      })
-      .catch(() => {
-        if (live) setView(null);
-      });
+    readView(threadId, lineKey).then((view) => {
+      if (live) setRead({ threadId, view });
+    });
     return () => {
       live = false;
     };
   }, [threadId, lineKey]);
-  return [view];
+  return [line && read?.threadId === threadId ? read.view : null];
 }
 
+/**
+ * The participants panel, shown on a thread that has a conversation (its line in the sessions list
+ * carries `conversation`), or folded to its invite link on any other thread.
+ */
 export function ParticipantsPanel() {
   const threadId = activeThreadId.value;
   const line = threadData.value?.conversation ?? null;

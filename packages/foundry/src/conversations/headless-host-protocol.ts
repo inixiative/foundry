@@ -90,6 +90,8 @@ export const headlessThreadStateSchema = z.strictObject({
       held: z.number(),
       members: z.number(),
       localMembers: z.number(),
+      speakingLocals: z.number(),
+      memberAgents: z.number(),
       asides: z.array(
         z.strictObject({
           id: z.string(),
