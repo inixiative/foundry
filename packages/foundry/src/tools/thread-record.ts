@@ -17,7 +17,6 @@ import type {
 } from '@inixiative/foundry-core';
 import { threadTitle } from '@inixiative/foundry-core';
 import { z } from 'zod';
-import { FEEDBACK_TOOL_NAMES } from './feedback-inbox';
 
 /**
  * The thread's own record, written by its agent through Foundry's MCP tools: the plan (`set_plan`,
@@ -437,6 +436,9 @@ const OPERATIONS: Record<
 };
 
 export const THREAD_RECORD_OPERATIONS = Object.keys(OPERATIONS);
+
+/** The tool ids `FeedbackInboxTool` answers, in the order the bridge registers them. */
+export const FEEDBACK_TOOL_NAMES = ['feedback_inbox', 'feedback_item', 'feedback_status'] as const;
 
 /**
  * Foundry's own tools that only write the thread's own record (plan, loop, name, status) or read
