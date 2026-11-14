@@ -103,7 +103,9 @@ export function signatureOf(status: number, body: unknown): Signature {
     for (const frame of body.frames) {
       if (frame.stream === 'stderr') {
         // A probe's kept answer (codex login status) is protocol; other stderr is CLI logging.
-        if ((frame as { kept?: true }).kept) kindSet('stderr:kept').add(`text:${frame.data}`);
+        // A process id in a kept line (muse's "signal SIGTERM from pid 51443") differs every run.
+        if ((frame as { kept?: true }).kept)
+          kindSet('stderr:kept').add(`text:${frame.data.replace(/\bpid \d+/g, 'pid N')}`);
         else kindSet('stderr').add('text');
         continue;
       }
