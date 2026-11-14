@@ -21,7 +21,7 @@ When a message brings new work to a thread with no plan, Foundry adds a line to 
 
 | Section | One line each | Example |
 |---|---|---|
-| `outcomes` | what the person gets, with `status`: `todo`, `doing`, `done`, `you` (waits on the person) | "Board shows each thread's machine" · doing |
+| `outcomes` | what the person gets, with `status`: `todo`, `doing`, `done`, `you` (waits on the person; shown in Plan only: to ask, `set_status` `needs-you`) | "Board shows each thread's machine" · doing |
 | `pains` | what hurts today | "Plan reads 'not recorded yet'" |
 | `strategy` | how the work goes, in order | "Stamp the device on thread meta" |
 | `reasons` | why this way, not another | "The device id already exists in device.json" |

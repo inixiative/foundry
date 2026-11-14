@@ -8,9 +8,12 @@
  * step through all five; Aron, 2026-11-14: "You can have those tabs be two rows").
  *
  * Attention is the open top-level threads that need you, across projects: red (can't proceed) first,
- * then orange (a question, an approval, a reply you haven't read), by `effectiveCategory`, the one
- * "needs you" definition. A thread that is working, queued or idle drops out and comes back when it
- * hands back; the thread you have open stays listed until you move on.
+ * then orange (a decision for you: a question, an approval, a request; or an answer you haven't
+ * read), by `effectiveCategory`, the one "needs you" definition. A thread only waiting (a plan
+ * outcome left on you, a draft, a pause) is in Open, not here (Aron, 2026-11-14: "Attention means I
+ * have to look at it, and it needs a decision from me, or it has an answer for me"). A thread that is
+ * working, queued or idle drops out and comes back when it hands back; the thread you have open stays
+ * listed until you move on.
  *
  * Open is every open thread across projects, in two fixed halves that each scroll on their own:
  * Yours on top, Shared (another party is a member) below. Projects is today's sidebar: the pinned

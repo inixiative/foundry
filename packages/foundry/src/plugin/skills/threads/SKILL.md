@@ -13,12 +13,12 @@ Foundry already shows what it can see: working, queued, a failed turn, an approv
 
 | You are handing back because | Call |
 |---|---|
-| You wait on the person: a question, a decision, a review | `set_status` `{status: "needs-you", text: "Which table should sessions write to?"}` (orange) |
+| The person must decide something before you can go on: a question, a choice, an approval | `set_status` `{status: "needs-you", text: "Which table should sessions write to?"}` (orange) |
 | You can't go on: a missing credential, permission or dependency | `{status: "blocked", text: "No GitHub token for inixiative/kingdom"}` (red) |
 | The ask is finished | `{status: "done", text: "Login endpoint merged"}` (blue), or mark the plan's last outcome `done` |
 | A status you set no longer holds | `{status: "clear"}` |
 
-`text` is one line the person reads on the board. The person's next message clears the status. A turn that just ends with no status reads as done, so say `needs-you` whenever your answer ends in a question.
+`text` is one line the person reads on the board. The person's next message clears the status. A turn that just ends with no status reads as done, so say `needs-you` whenever your answer ends in a question. Only waiting (on CI, a merge, a review the person will get to) is not `needs-you`: hand back with no status, and the thread stays in Open, not Attention.
 
 ## Name (`rename_thread`)
 
@@ -30,7 +30,7 @@ Foundry names a new thread from the person's first message. Rename it when the o
 |---|---|
 | Next step of the same outcome | Continue here; update the plan (`set_plan`) |
 | The person says "take this and do it in its own thread" | `fork_thread` with `name` and `task` |
-| A separate outcome turned up while working | Note it as an outcome with status `you` and ask; don't fork on your own |
+| A separate outcome turned up while working | Note it as an outcome with status `you` and ask (`set_status` `needs-you`); don't fork on your own |
 | Unsure whether someone else is on it | `foundry_threads` first |
 
 ## `fork_thread`

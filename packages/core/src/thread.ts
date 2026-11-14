@@ -68,7 +68,7 @@ export interface ThreadPlanItem {
 
 /**
  * The thread's plan, written by its agent through Foundry's `set_plan` tool. Outcomes are what the
- * person gets (`you`: waits on the person); pains what hurts today; strategy how the work goes;
+ * person gets (`you`: waits on the person, shown in Plan, never Attention); pains what hurts today; strategy how the work goes;
  * reasons why this way. Each technical row names, per concern (auth, permissions, db access,
  * requests, locks, jobs, events, errors…), the existing system it uses and where, or why none fits.
  */
