@@ -23,9 +23,9 @@ const { chromium } = createRequire(import.meta.url)(
 );
 
 // The left rail opens on Attention: only the threads that need you (a pending approval), not the one
-// working or the idle one; Open lists them all. ⌥⇧← ⌥⇧→ step Attention · Open · Projects, wrapping,
+// working or the idle one; Open lists them all. ⌥⇧← ⌥⇧→ step Attention · Open · Projects · Status, wrapping,
 // from inside the message box, and the hash keeps the view.
-test('the rail opens on Attention, lists only threads that need you, and ⌥⇧← ⌥⇧→ step the three views', async () => {
+test('the rail opens on Attention, lists only threads that need you, and ⌥⇧← ⌥⇧→ step the four views', async () => {
   const cleanup: ReleaseStep[] = [];
   const dir = mkdtempSync(join(tmpdir(), 'foundry-rail-views-'));
   cleanup.push(['dir', () => rmSync(dir, { recursive: true, force: true })]);
@@ -105,8 +105,17 @@ test('the rail opens on Attention, lists only threads that need you, and ⌥⇧�
     await page.waitForFunction(() => location.hash.includes('rail=open'));
     await page.keyboard.press('Alt+Shift+ArrowRight');
     await active.filter({ hasText: 'Projects' }).waitFor();
+    // Status is this machine's resources, a view of its own: no thread rows, nothing else under it.
+    await page.keyboard.press('Alt+Shift+ArrowRight');
+    await active.filter({ hasText: 'Status' }).waitFor();
+    await page.locator('.nav-rail .machine-status').waitFor();
+    expect(await page.locator('.nav-rail .tree-node').count()).toBe(0);
+    await page.waitForFunction(() => location.hash.includes('rail=status'));
     await page.keyboard.press('Alt+Shift+ArrowRight');
     await active.filter({ hasText: 'Attention' }).waitFor();
+    expect(await page.locator('.machine-status').count()).toBe(0);
+    await page.keyboard.press('Alt+Shift+ArrowLeft');
+    await active.filter({ hasText: 'Status' }).waitFor();
     await page.keyboard.press('Alt+Shift+ArrowLeft');
     await active.filter({ hasText: 'Projects' }).waitFor();
     expect(

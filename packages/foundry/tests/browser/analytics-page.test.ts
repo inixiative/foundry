@@ -16,7 +16,7 @@ import { startViewer } from '../../src/viewer/server';
 import { type ReleaseStep, releaseAll } from '../helpers/release-all';
 
 // Analytics as designed in concept-v4 (design review 11-02): the capacity band first, per
-// subscription login (5-hour and 7-day windows, the footer's record), tokens over a chosen range,
+// subscription login (5-hour and 7-day windows, the Status view's record), tokens over a chosen range,
 // and "Coming soon" where Foundry records nothing yet.
 const { chromium } = createRequire(import.meta.url)(
   process.env.FOUNDRY_QA_PLAYWRIGHT ?? 'playwright',

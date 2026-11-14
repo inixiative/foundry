@@ -7286,7 +7286,7 @@ a.thread-ref:hover {
   margin-top: 8px;
 }
 
-/* ---- Left rail: Active | Projects ---- */
+/* ---- Left rail: Attention | Open | Projects | Status ---- */
 .nav-rail {
   display: flex;
   flex-direction: column;
@@ -7308,14 +7308,17 @@ a.thread-ref:hover {
   border-radius: 9px;
   flex-shrink: 0;
 }
+/* Four tabs share the rail's width by their labels, so "Attention" never overruns its slot. */
 .rail-toggle-btn {
-  flex: 1;
+  flex: 1 1 auto;
+  min-width: 0;
   background: none;
   border: none;
   color: var(--text-dim);
   font: inherit;
-  font-size: 12.5px;
-  padding: 4px 0;
+  font-size: 12px;
+  padding: 4px 4px;
+  white-space: nowrap;
   border-radius: 7px;
   cursor: pointer;
 }
@@ -8314,30 +8317,31 @@ a.thread-ref:hover {
   cursor: pointer;
 }
 
-/* The rail's footer: this machine and its resources. */
+/* The rail's Status view: this machine and its resources. */
 .nav-rail {
   display: flex;
   flex-direction: column;
   min-height: 0;
 }
-.nav-footer {
-  flex-shrink: 0;
+.machine-status {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 4px;
   padding: 8px 10px;
-  border-top: 1px solid var(--line);
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--text-dim);
 }
-.nav-footer-line {
+.machine-status-line {
   display: flex;
   align-items: center;
   gap: 8px;
   min-width: 0;
   white-space: nowrap;
 }
-.nav-footer-device {
+.machine-status-device {
   flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
@@ -8345,33 +8349,33 @@ a.thread-ref:hover {
   font-weight: 600;
   color: var(--text);
 }
-.nav-footer-link {
+.machine-status-link {
   color: var(--text-dim);
   text-decoration: none;
   display: inline-flex;
   align-items: center;
   gap: 4px;
 }
-.nav-footer-link:hover {
+.machine-status-link:hover {
   color: var(--accent);
 }
-.nav-footer-dim {
+.machine-status-dim {
   color: var(--text-dim);
 }
-.nav-footer-dot {
+.machine-status-dot {
   width: 6px;
   height: 6px;
   border-radius: 50%;
   flex-shrink: 0;
   background: var(--text-dimmer);
 }
-.nav-footer-dot.is-ok {
+.machine-status-dot.is-ok {
   background: var(--ok);
 }
-.nav-footer-dot.is-warn {
+.machine-status-dot.is-warn {
   background: var(--warn);
 }
-.nav-footer-row {
+.machine-status-row {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -8384,7 +8388,7 @@ a.thread-ref:hover {
   cursor: pointer;
   text-align: left;
 }
-.nav-footer-name {
+.machine-status-name {
   flex: 1 1 auto;
   font-weight: 500;
   min-width: 0;
@@ -8392,18 +8396,18 @@ a.thread-ref:hover {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.nav-footer-count,
-.nav-footer-caret {
+.machine-status-count,
+.machine-status-caret {
   color: var(--text-dim);
 }
-.nav-footer-subs {
+.machine-status-subs {
   list-style: none;
   margin: 2px 0 4px 12px;
   padding: 0;
   display: grid;
   gap: 2px;
 }
-.nav-footer-subs li {
+.machine-status-subs li {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -8412,7 +8416,7 @@ a.thread-ref:hover {
   white-space: nowrap;
 }
 
-.nav-footer-edit {
+.machine-status-edit {
   border: 0;
   background: transparent;
   color: var(--text-dim);
@@ -8421,10 +8425,10 @@ a.thread-ref:hover {
   cursor: pointer;
   padding: 0 2px;
 }
-.nav-footer-edit:hover {
+.machine-status-edit:hover {
   color: var(--text);
 }
-.nav-footer-name-input {
+.machine-status-name-input {
   flex: 1 1 auto;
   min-width: 0;
   font: inherit;
@@ -8540,22 +8544,22 @@ a.thread-ref:hover {
   box-shadow: none;
 }
 
-/* Footer: Edit shows on hover; Kingdoms and Archives as two equal pills. */
-.nav-footer-machine .nav-footer-edit {
+/* Status: Edit shows on hover; Kingdoms and Archives as two equal pills. */
+.machine-status-machine .machine-status-edit {
   opacity: 0;
 }
-.nav-footer-machine:hover .nav-footer-edit,
-.nav-footer-edit:focus-visible {
+.machine-status-machine:hover .machine-status-edit,
+.machine-status-edit:focus-visible {
   opacity: 1;
 }
-.nav-footer-name-edit {
+.machine-status-name-edit {
   display: flex;
   align-items: center;
   gap: 4px;
   flex: 1 1 auto;
   min-width: 0;
 }
-.nav-footer-icon-btn {
+.machine-status-icon-btn {
   border: 1px solid var(--border);
   background: transparent;
   color: var(--text);
@@ -8565,12 +8569,12 @@ a.thread-ref:hover {
   font: inherit;
   font-size: 11px;
 }
-.nav-footer-pills {
+.machine-status-pills {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 6px;
 }
-.nav-footer-pill {
+.machine-status-pill {
   text-align: center;
   padding: 1px 8px;
   border: 1px solid var(--line2);
@@ -8581,11 +8585,11 @@ a.thread-ref:hover {
   text-decoration: none;
   white-space: nowrap;
 }
-.nav-footer-pill:hover {
+.machine-status-pill:hover {
   border-color: hsl(var(--app-primary) / 0.6);
   color: var(--text);
 }
-.nav-footer-sub-name {
+.machine-status-sub-name {
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -8746,21 +8750,21 @@ a.thread-ref:hover {
   margin: 12px 16px 0;
 }
 
-/* Footer subscriptions: a label, then one row per provider that opens to its subscriptions */
-.nav-footer-label {
+/* Status subscriptions: a label, then one row per provider that opens to its subscriptions */
+.machine-status-label {
   font: 600 10.5px var(--font-mono);
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--text-dim);
   margin: 6px 0 2px;
 }
-.nav-footer-provider .nav-footer-row {
+.machine-status-provider .machine-status-row {
   display: flex;
   align-items: center;
   gap: 6px;
   width: 100%;
 }
-.nav-footer-provider .nav-footer-count {
+.machine-status-provider .machine-status-count {
   margin-left: auto;
   font-size: 11.5px;
   color: var(--text-dim);
@@ -9345,7 +9349,7 @@ a.thread-ref:hover {
 .vendor-list > .settings-card.vendor-row:last-child {
   border-bottom: 0;
 }
-.nav-footer-pill b {
+.machine-status-pill b {
   color: var(--text);
   font-weight: 600;
 }
@@ -9432,7 +9436,7 @@ a.thread-ref:hover {
    summary and underlined icon tabs (the selected one names itself); the content in one bordered
    frame of boxes; Running at the foot. ---- */
 .right-panel {
-  /* The foot keeps the rail's 10 px, so Running lines up with the left footer. */
+  /* The foot keeps the rail's 10 px bottom padding. */
   padding: 0 0 10px;
   gap: 0;
 }
@@ -9529,7 +9533,7 @@ a.thread-ref:hover {
   background: var(--st-attention);
   color: var(--bg);
 }
-.nav-footer-pill b {
+.machine-status-pill b {
   color: var(--text);
   font-weight: 600;
 }

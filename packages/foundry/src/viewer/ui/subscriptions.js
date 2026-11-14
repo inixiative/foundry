@@ -6,7 +6,7 @@
 /**
  * This machine's subscription logins and their balancing (Aron, 2026-11-02: "Maybe under
  * subscriptions we should have a balancing toggle, maybe like a scale… where it's balancing and/or
- * where it stopped"). One record, `/api/providers/pools`, read by the rail footer, Settings ›
+ * where it stopped"). One record, `/api/providers/pools`, read by the rail's Status view, Settings ›
  * Providers and Analytics: per runtime, whether it balances across how many logins or why it
  * stopped, and each login's status, meters and turns in the last five hours. The scale toggles the
  * load balancer: balanced ↔ pinned to one login.
@@ -156,8 +156,8 @@ const windowLabel = (w) =>
 export function LoginMeters({ limits }) {
   const windows = limits?.windows ?? [];
   if (!windows.length)
-    return html`<span class="nav-footer-limits rp-dim" title="This login hasn't reported its usage windows yet">no reading yet</span>`;
-  return html`<span class=${`nav-footer-limits${limits.blocked ? ' is-blocked' : ''}`}>${windows.map(
+    return html`<span class="machine-status-limits rp-dim" title="This login hasn't reported its usage windows yet">no reading yet</span>`;
+  return html`<span class=${`machine-status-limits${limits.blocked ? ' is-blocked' : ''}`}>${windows.map(
     (
       w,
     ) => html`<span key=${w.id} class="meterlbl" title=${`${windowLabel(w)} window used${w.resetsAt ? ` · resets ${new Date(w.resetsAt).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })}` : ''}`}>
@@ -201,7 +201,7 @@ export function LoginRow({ login }) {
   const reset = resetsIn(login.limits);
   return html`<li class="pool-login" data-status=${login.status}>
     <div class="pool-login-head" title=${[STATUS_LABEL[login.status], login.issue].filter(Boolean).join(' · ')}>
-      <span class=${`nav-footer-dot ${STATUS_TONE[login.status]}`}></span>
+      <span class=${`machine-status-dot ${STATUS_TONE[login.status]}`}></span>
       <span class="pool-login-name">${login.name}${login.preferred ? html` <span class="pool-pref" title="The preferred login">★</span>` : null}</span>
       <span class="pool-login-runs" title=${`${runsText(login.runs)} this 5-hour window`}>${runsText(login.runs)}</span>
     </div>
@@ -227,20 +227,20 @@ export function KingdomPools({ kingdom }) {
 export const KINGDOM_TICKET =
   'https://github.com/inixiative/kingdom/blob/main/tickets/FEAT-024-effort-budgets.md';
 
-/** The footer's Subscriptions block for this machine's logins: per runtime, the scale and each login. */
-export function FooterPools() {
+/** The Status view's Subscriptions block for this machine's logins: per runtime, the scale and each login. */
+export function StatusPools() {
   const data = useLoginPools();
   const [open, setOpen] = useState({});
   if (!data) return null;
   return html`${data.pools.map((pool) => {
     const isOpen = !!open[pool.runtime];
-    return html`<div key=${pool.runtime} class="nav-footer-provider pool">
+    return html`<div key=${pool.runtime} class="machine-status-provider pool">
       <div class="pool-head">
-        <button type="button" class="nav-footer-row" aria-expanded=${isOpen}
+        <button type="button" class="machine-status-row" aria-expanded=${isOpen}
           onClick=${() => setOpen({ ...open, [pool.runtime]: !isOpen })}>
-          <span class="nav-footer-caret">${isOpen ? '▾' : '▸'}</span>
-          <span class="nav-footer-name">${RUNTIME_LABEL[pool.runtime]}</span>
-          <span class="nav-footer-count">${pool.logins.filter((l) => l.status === 'ready').length}/${pool.logins.length} ready</span>
+          <span class="machine-status-caret">${isOpen ? '▾' : '▸'}</span>
+          <span class="machine-status-name">${RUNTIME_LABEL[pool.runtime]}</span>
+          <span class="machine-status-count">${pool.logins.filter((l) => l.status === 'ready').length}/${pool.logins.length} ready</span>
         </button>
         <${ScaleButton} pool=${pool} />
       </div>
@@ -349,7 +349,7 @@ function LoginTableRow({ login }) {
     }
   };
   if (login.status === 'signing-in')
-    return html`<tr data-status="signing-in"><td>${login.name}</td><td><span class="nav-footer-dot is-busy"></span> Signing in</td><td colspan="3"></td></tr>`;
+    return html`<tr data-status="signing-in"><td>${login.name}</td><td><span class="machine-status-dot is-busy"></span> Signing in</td><td colspan="3"></td></tr>`;
   const reset = resetsIn(login.limits);
   const editor = edit
     ? html`<input class="settings-input small" value=${edit.value} maxlength="40" autofocus
@@ -373,7 +373,7 @@ function LoginTableRow({ login }) {
           : html`<${LoginFacts} login=${login} />${reset ? ` · ${reset}` : ''}`
       }</div>
     </td>
-    <td title=${login.issue ?? ''}><span class=${`nav-footer-dot ${STATUS_TONE[login.status]}`}></span> ${STATUS_LABEL[login.status]}</td>
+    <td title=${login.issue ?? ''}><span class=${`machine-status-dot ${STATUS_TONE[login.status]}`}></span> ${STATUS_LABEL[login.status]}</td>
     <td><${LoginMeters} limits=${login.limits} /></td>
     <td>${runsText(login.runs)} this window</td>
     <td class="pool-actions">

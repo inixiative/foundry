@@ -4,7 +4,7 @@
  * @partOf feature:viewer
  */
 /**
- * The left rail: Attention | Open | Projects (⌥⇧← ⌥⇧→ step between them).
+ * The left rail: Attention | Open | Projects | Status (⌥⇧← ⌥⇧→ step between them).
  *
  * Attention is the open top-level threads that need you, across projects: red (can't proceed) first,
  * then orange (a question, an approval, a reply you haven't read), by `effectiveCategory`, the one
@@ -14,12 +14,13 @@
  * Open is every open thread across projects, in two fixed halves that each scroll on their own:
  * Yours on top, Shared (another party is a member) below. Projects is today's sidebar: the pinned
  * scopes, the project list, and the selected scope's threads. Rows are two lines: the name, then the
- * status icon, the project and any counts.
+ * status icon, the project and any counts. Status is this machine and its resources (machine-status.js),
+ * a view of its own so the thread views keep the rail's full height (Aron, 2026-11-14).
  */
 import { Attention, effectiveCategory, openRoots } from './attention.js';
 import { IncomingRows } from './incoming.js';
 import { html } from './lib.js';
-import { NavFooter } from './nav-footer.js';
+import { MachineStatus } from './machine-status.js';
 import { panelFit, SizeControls } from './panel-sizes.js';
 import { ProjectSidebar } from './project-sidebar.js';
 import { openNewThread } from './run-picker.js';
@@ -39,7 +40,12 @@ const OPEN = (t) => !isClosedThread(t);
 /** Shared: another party (a Signet member) is in the thread. */
 const isShared = (node) => (node.conversation?.members ?? 0) > 0;
 
-const RAIL_LABELS = { attention: 'Attention', open: 'Open', projects: 'Projects' };
+const RAIL_LABELS = {
+  attention: 'Attention',
+  open: 'Open',
+  projects: 'Projects',
+  status: 'Status',
+};
 /** Red before orange in the Attention rail. */
 const URGENCY = { problem: 0, attention: 1 };
 
@@ -95,7 +101,12 @@ function AttentionRail() {
   </div>`;
 }
 
-const RAILS = { attention: AttentionRail, open: OpenRail, projects: ProjectSidebar };
+const RAILS = {
+  attention: AttentionRail,
+  open: OpenRail,
+  projects: ProjectSidebar,
+  status: MachineStatus,
+};
 
 export function NavRail() {
   if (leftSize.value === 'hidden') return html`<div class="panel-hidden" aria-hidden="true"></div>`;
@@ -105,6 +116,5 @@ export function NavRail() {
   return html`<div class="nav-rail">
     <div class="rail-head-row"><${RailToggle} /><${SizeControls} side="left" /></div>
     ${html`<${RAILS[railView.value] ?? AttentionRail} />`}
-    <${NavFooter} />
   </div>`;
 }

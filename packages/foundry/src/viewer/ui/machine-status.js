@@ -4,7 +4,8 @@
  * @partOf feature:viewer
  */
 /**
- * The rail's footer: this machine and its resources (Aron, 2026-11-01). The machine's name (this
+ * The rail's Status view: this machine and its resources (Aron, 2026-11-01; a rail view of its own
+ * since 2026-11-14, so Attention, Open and Projects keep the rail's full height for threads). The machine's name (this
  * Foundry's name, editable in place; the name opens this machine's page) and its tunnel; Kingdoms
  * and Archives as two equal pills, each linking to its settings; your other machines, each with its
  * open threads and no meters (subscriptions are per login and shared across machines, Aron
@@ -29,7 +30,7 @@ import {
   showToast,
   vendorName,
 } from './store.js';
-import { FooterPools, useLoginPools } from './subscriptions.js';
+import { StatusPools, useLoginPools } from './subscriptions.js';
 import { harnessName } from './thread-labels.js';
 
 const getJson = (url) =>
@@ -40,7 +41,7 @@ const getJson = (url) =>
 /** A subscription is a login (a native harness sign-in, a profile, or a Kingdom pool), not an API key. */
 const SUBSCRIPTION_SOURCES = new Set(['login', 'profile', 'kingdom', 'gateway']);
 
-/** Read once when the footer mounts; the footer is glanceable, not live. */
+/** Read when the Status view opens; it is glanceable, not live. */
 function useMachine() {
   const [machine, setMachine] = useState({});
   const rename = (profile) => setMachine((m) => ({ ...m, profile }));
@@ -105,12 +106,12 @@ const resets = (w) =>
 function LimitMeters({ limit }) {
   if (!limit) return null;
   if (limit.state === 'kingdom')
-    return html`<span class="nav-footer-limits rp-dim" title="This subscription is a Kingdom pool; Kingdom reports its limits">pool limits in Kingdom</span>`;
+    return html`<span class="machine-status-limits rp-dim" title="This subscription is a Kingdom pool; Kingdom reports its limits">pool limits in Kingdom</span>`;
   const windows = limit.snapshot?.windows ?? [];
   if (limit.state !== 'probed' || !windows.length)
-    return html`<span class="nav-footer-limits rp-dim" title="The CLI didn't report its usage windows">limits unavailable</span>`;
+    return html`<span class="machine-status-limits rp-dim" title="The CLI didn't report its usage windows">limits unavailable</span>`;
   const plan = limit.snapshot.plan ? `${limit.snapshot.plan} plan · ` : '';
-  return html`<span class="nav-footer-limits${limit.snapshot.blocked ? ' is-blocked' : ''}">${windows.map(
+  return html`<span class="machine-status-limits${limit.snapshot.blocked ? ' is-blocked' : ''}">${windows.map(
     (
       w,
     ) => html`<span key=${w.id} class="meterlbl" title=${`${plan}${windowLabel(w)} window used${resets(w)}`}>
@@ -119,7 +120,7 @@ function LimitMeters({ limit }) {
   )}</span>`;
 }
 
-/** Accounts whose subscription is one of this machine's pooled logins (shown by `FooterPools`). */
+/** Accounts whose subscription is one of this machine's pooled logins (shown by `StatusPools`). */
 const POOLED = new Set(['claude-code', 'codex']);
 
 function Subscriptions({ accounts, registry }) {
@@ -137,29 +138,29 @@ function Subscriptions({ accounts, registry }) {
   );
   const groups = capacityByProvider(subscriptions, (provider) => vendorName(provider, registry));
   if (!groups.length && !pools?.pools?.length && !pools?.kingdom?.length) return null;
-  return html`<div class="nav-footer-subscriptions">
-    <div class="nav-footer-label">Subscriptions</div>
-    <${FooterPools} />
+  return html`<div class="machine-status-subscriptions">
+    <div class="machine-status-label">Subscriptions</div>
+    <${StatusPools} />
     ${groups.map((g) => {
       const isOpen = !!open[g.provider];
       const total = g.accounts.length;
-      return html`<div key=${g.provider} class="nav-footer-provider">
-        <button type="button" class="nav-footer-row" aria-expanded=${isOpen}
+      return html`<div key=${g.provider} class="machine-status-provider">
+        <button type="button" class="machine-status-row" aria-expanded=${isOpen}
           onClick=${() => setOpen({ ...open, [g.provider]: !isOpen })}
           title=${`${g.provider}: ${g.ready} of ${total} subscription${total === 1 ? '' : 's'} ready`}>
-          <span class="nav-footer-caret">${isOpen ? '▾' : '▸'}</span>
-          <span class="nav-footer-name">${g.provider}</span>
-          <span class="nav-footer-dot ${g.ready === total ? 'is-ok' : 'is-warn'}"></span>
-          <span class="nav-footer-count">${g.ready}/${total} ready</span>
+          <span class="machine-status-caret">${isOpen ? '▾' : '▸'}</span>
+          <span class="machine-status-name">${g.provider}</span>
+          <span class="machine-status-dot ${g.ready === total ? 'is-ok' : 'is-warn'}"></span>
+          <span class="machine-status-count">${g.ready}/${total} ready</span>
         </button>
         ${g.accounts.map((a, i) => html`<${LimitMeters} key=${`${g.provider}:limits:${i}`} limit=${limitOf(a.provider)} />`)}
         ${
           isOpen
-            ? html`<ul class="nav-footer-subs">${g.accounts.map(
+            ? html`<ul class="machine-status-subs">${g.accounts.map(
                 (a, i) => html`<li key=${`${g.provider}:${i}`}
                   title=${[a.issue, harnessName(a.provider) ? `through ${harnessName(a.provider)}` : null].filter(Boolean).join(' · ')}>
-                  <span class="nav-footer-dot ${a.ready ? 'is-ok' : 'is-warn'}"></span>
-                  <span class="nav-footer-sub-name">${a.detail}</span>
+                  <span class="machine-status-dot ${a.ready ? 'is-ok' : 'is-warn'}"></span>
+                  <span class="machine-status-sub-name">${a.detail}</span>
                 </li>`,
               )}</ul>`
             : null
@@ -202,30 +203,30 @@ function MachineName({ profile, onSaved }) {
             return save(next);
           }}><${MachineIconPicker} /><//>`
       : null;
-  return html`<${DeviceIcon} icon=${machineIcon()} size=${16} title="This machine's icon" /><button type="button" class="nav-footer-device" title="Open this machine's page" onClick=${() => openDevicePage('here')}>${name}</button>
-    <button type="button" class="nav-footer-edit" title="Rename this machine" onClick=${() => setDraft(name)}>Edit</button>${modal}`;
+  return html`<${DeviceIcon} icon=${machineIcon()} size=${16} title="This machine's icon" /><button type="button" class="machine-status-device" title="Open this machine's page" onClick=${() => openDevicePage('here')}>${name}</button>
+    <button type="button" class="machine-status-edit" title="Rename this machine" onClick=${() => setDraft(name)}>Edit</button>${modal}`;
 }
 
 /** Your other machines: each opens its page; listed with its open threads, never metered. */
 function OtherMachines() {
   const machines = otherMachines();
-  return html`<div class="nav-footer-others">
-    <div class="nav-footer-label">Your other devices</div>
+  return html`<div class="machine-status-others">
+    <div class="machine-status-label">Your other devices</div>
     ${machines.map(
       (
         m,
-      ) => html`<button key=${m.id} type="button" class="nav-footer-row nav-footer-other" onClick=${() => openDevicePage(m.id)}
+      ) => html`<button key=${m.id} type="button" class="machine-status-row machine-status-other" onClick=${() => openDevicePage(m.id)}
         title=${`Open ${m.name}'s page. It uses the same subscriptions as this machine.`}>
-        <span class="nav-footer-name">${m.name}</span>
-        <span class=${`nav-footer-dot ${m.online ? 'is-ok' : ''}`} title=${m.online == null ? "Whether it's online: coming soon" : m.online ? 'Online' : 'Offline'}></span>
-        <span class="nav-footer-count">${openThreadsLabel(m.open)}</span>
+        <span class="machine-status-name">${m.name}</span>
+        <span class=${`machine-status-dot ${m.online ? 'is-ok' : ''}`} title=${m.online == null ? "Whether it's online: coming soon" : m.online ? 'Online' : 'Offline'}></span>
+        <span class="machine-status-count">${openThreadsLabel(m.open)}</span>
       </button>`,
     )}
     <${ComingSoon} inline=${true} what=${machines.length ? 'Whether each is online' : 'Your other machines'} ticket="VIEWER-007" />
   </div>`;
 }
 
-export function NavFooter() {
+export function MachineStatus() {
   const { profile, tunnel, archive, destinations, accounts, registry, rename } = useMachine();
   const kingdoms = kingdomStatus.value?.integrations?.length ?? 0;
   const archives = (archive?.reachable ? 1 : 0) + (destinations?.libraries?.length ?? 0);
@@ -233,24 +234,26 @@ export function NavFooter() {
     e.preventDefault();
     navigate(settingsPath(null, section));
   };
-  return html`<footer class="nav-footer">
-    <div class="nav-footer-line nav-footer-machine">
+  return html`<section class="machine-status" aria-label="Status">
+    <div class="machine-status-label">This machine</div>
+    <div class="machine-status-line machine-status-machine">
       <${MachineName} profile=${profile} onSaved=${rename} />
       ${
         tunnel
-          ? html`<a class="nav-footer-link" href=${settingsPath(null, 'devices')} onClick=${go('devices')}
+          ? html`<a class="machine-status-link" href=${settingsPath(null, 'devices')} onClick=${go('devices')}
               title=${tunnel.active ? `Tunnel on: ${tunnel.url ?? ''}` : `Tunnel off (${tunnel.mode})`}>
-              <span class="nav-footer-dot ${tunnel.active ? 'is-ok' : 'is-off'}"></span>tunnel ${tunnel.active ? 'on' : 'off'}
+              <span class="machine-status-dot ${tunnel.active ? 'is-ok' : 'is-off'}"></span>tunnel ${tunnel.active ? 'on' : 'off'}
             </a>`
           : null
       }
     </div>
-    <div class="nav-footer-pills">
-      <a class="nav-footer-pill" href=${settingsPath(null, 'kingdom')} onClick=${go('kingdom')}>Kingdoms <b>${kingdoms}</b></a>
-      <a class="nav-footer-pill" href=${settingsPath(null, 'archive')} onClick=${go('archive')}
+    <div class="machine-status-label">Connections</div>
+    <div class="machine-status-pills">
+      <a class="machine-status-pill" href=${settingsPath(null, 'kingdom')} onClick=${go('kingdom')}>Kingdoms <b>${kingdoms}</b></a>
+      <a class="machine-status-pill" href=${settingsPath(null, 'archive')} onClick=${go('archive')}
         title=${archive?.reachable ? 'Local Archive running' : 'Local Archive not running'}>Archives <b>${archives}</b></a>
     </div>
     <${OtherMachines} />
     <${Subscriptions} accounts=${accounts} registry=${registry} />
-  </footer>`;
+  </section>`;
 }

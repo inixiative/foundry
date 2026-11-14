@@ -166,12 +166,13 @@ test('threads on another machine are badged and filterable; a recorded plan fill
       .locator('.actor', { hasText: 'You · this machine' })
       .waitFor();
 
-    // Footer: your other machine with its open threads (no meter); its page lists its threads and
+    // Status: your other machine with its open threads (no meter); its page lists its threads and
     // opens the Watchtower filtered to it, with a removable chip.
     await page.locator('.watchtower-button').click();
     await tower.waitFor({ state: 'detached' });
-    const other = page.locator('.nav-footer-other', { hasText: 'studio Mac' });
-    await other.locator('.nav-footer-count', { hasText: '1 open thread' }).waitFor();
+    await page.locator('.rail-toggle-btn', { hasText: 'Status' }).click();
+    const other = page.locator('.machine-status-other', { hasText: 'studio Mac' });
+    await other.locator('.machine-status-count', { hasText: '1 open thread' }).waitFor();
     expect(await other.locator('.bar2').count()).toBe(0);
     await other.click();
     const devicePage = page.locator('.device-page');
@@ -201,7 +202,7 @@ test('threads on another machine are badged and filterable; a recorded plan fill
     // This machine's page: its own threads and checkouts, read from this Foundry.
     await page.locator('.watchtower-button').click();
     await tower.waitFor({ state: 'detached' });
-    await page.locator('button.nav-footer-device').click();
+    await page.locator('button.machine-status-device').click();
     await devicePage.locator('h2', { hasText: 'MacBook Pro' }).waitFor();
     await devicePage.locator('.ph-row', { hasText: 'Cap checkout retries' }).waitFor();
     await devicePage.locator('.dp-checkout', { hasText: 'acme-shop' }).waitFor();

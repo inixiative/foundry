@@ -14,7 +14,7 @@
  * prompt cache) lives in that login's home. It moves only when its login is exhausted, expired or
  * removed, or when balancing is off and pinned to another login; the move starts a fresh native
  * session seeded from the thread's journal, as a Kingdom pool's does. Every turn records the login
- * that served it (`LoginRunLog`), which the footer, Settings › Providers and Analytics read.
+ * that served it (`LoginRunLog`), which the rail's Status view, Settings › Providers and Analytics read.
  */
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -48,7 +48,7 @@ export interface LoginRun {
 }
 export type LoginChoice = 'kept' | 'balanced' | 'preferred' | 'pinned' | 'moved' | 'only';
 
-/** Five hours: the window the footer counts runs in, the subscriptions' shortest. */
+/** Five hours: the window the Status view counts runs in, the subscriptions' shortest. */
 export const RUN_WINDOW_MS = 5 * 3_600_000;
 const KEEP_RUNS = 2_000;
 
@@ -143,7 +143,7 @@ export class LoginRunLog {
   }
 }
 
-/** A login's state, as the footer and Settings show it. */
+/** A login's state, as the Status view and Settings show it. */
 export type LoginStatus = 'ready' | 'signing-in' | 'expired' | 'exhausted';
 
 export interface PoolLoginState {
@@ -295,7 +295,7 @@ export class LoginPoolAuthentication implements NativeAuthenticationProvider {
     const pool = new SubscriptionPool({
       instances,
       ...(this.options.now ? { now: this.options.now } : {}),
-      // Each login is read in its own home with its own token (the footer's reading, cached).
+      // Each login is read in its own home with its own token (the Status view's reading, cached).
       probe: async (instance) => {
         const login = byId.get(instance.id);
         return login ? (this.options.probe ?? loginLimits)(login) : undefined;
@@ -530,7 +530,7 @@ export class LoginPoolAuthentication implements NativeAuthenticationProvider {
       }),
     );
   }
-  /** The pool as the footer and Settings show it, for the Foundry-wide settings or a project's. */
+  /** The pool as the Status view and Settings show it, for the Foundry-wide settings or a project's. */
   state(settings: LoginPoolSettings & { from: PoolState['from'] }): PoolState {
     const logins = this.logins();
     const routing = settings.routing ?? 'quartile-balanced';

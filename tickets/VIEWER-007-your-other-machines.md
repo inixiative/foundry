@@ -14,7 +14,7 @@ The rail footer lists **your other devices** under this machine, each with its s
 
 ## Why (Aron, 2026-11-02)
 
-Quota belongs to a subscription login and is shared across devices, so it is never shown per machine. The footer reads: this Mac, then Kingdoms and Archives, then "Your other devices" (listed with status and open-thread count), then Subscriptions. Intended features stay visible as placeholders.
+Quota belongs to a subscription login and is shared across devices, so it is never shown per machine. The rail's Status view reads: this Mac, then Kingdoms and Archives, then "Your other devices" (listed with status and open-thread count), then Subscriptions. Intended features stay visible as placeholders.
 
 ## The Kingdom contract (Kingdom #206, `docs/DEVICE-INVENTORY.md`; builds after Kingdom #202)
 
@@ -31,7 +31,7 @@ Your other devices reach Foundry through **the Signets Foundry holds from Kingdo
 ## Foundry side (built)
 
 - `ui/device-page.js` (`DevicePage`, `otherMachines`, `threadsOnMachine`); `openDevicePage`, `openMachineBoard`, `openMachineWatchtower`, `watchtowerFilter` in `ui/store.js`.
-- The footer's "Your other devices" (`ui/nav-footer.js`).
+- The Status view's "Your other devices" (`ui/machine-status.js`).
 - Removable filter chips (`ui/filter-chips.js`).
 
 To do once Kingdom ships it: switch `otherMachines()` (`ui/device-page.js`), the one function every surface reads, to the describe and execute calls above, through the existing Kingdom client and merged with the machines known from threads. That fills `online` (from `status`), `open` (from `openThreads`) and `tunnel` (`openUrl` as its link), and the "Coming soon" notes give way on their own. Drop the Checkouts box for other machines: Kingdom has none.

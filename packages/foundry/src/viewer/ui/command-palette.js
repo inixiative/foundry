@@ -201,7 +201,7 @@ const KEY_GROUPS = [
       ['⌥] · ⌥⇧]', 'Right panel smaller · larger'],
       ['⌥↑ · ⌥↓', 'Step through the turn view'],
       ['⌥← · ⌥→', 'Previous · next card in the waiting stack'],
-      ['⌥⇧← · ⌥⇧→', 'Left rail: Attention · Open · Projects'],
+      ['⌥⇧← · ⌥⇧→', 'Left rail: Attention · Open · Projects · Status'],
     ],
   ],
   [
