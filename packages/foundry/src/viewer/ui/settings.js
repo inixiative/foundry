@@ -23,7 +23,7 @@ import { FeedbackSettings } from './feedback.js';
 import { FilePicker } from './file-picker.js';
 import { IntegrationSection } from './integration-settings.js';
 import { KingdomSettings } from './kingdom-settings.js';
-import { html, signal, useCallback, useEffect, useState } from './lib.js';
+import { effect, html, signal, useCallback, useEffect, useState } from './lib.js';
 import { MessageBoxSection } from './message-box.js';
 import { ProfileSection } from './profile-settings.js';
 import { ChorusSwitch, ProjectOverrides, ProjectSources } from './project-setting-rows.js';
@@ -39,11 +39,14 @@ import {
 import { ActivitySection, AgentsSection, LayersSection } from './runtime-panels.js';
 import { SelfChatPane } from './self-chat.js';
 import { SettingRow } from './setting-row.js';
-import { authFetch, modelRegistry, projects, showToast } from './store.js';
+import { afterProjectStart, authFetch, modelRegistry, projects, showToast } from './store.js';
 import { Switch } from './switch.js';
 import { ProjectAgent, ProjectWork, ThreadSettings } from './thread-settings.js';
 
 export const settingsConfig = signal(null);
+effect(() => {
+  afterProjectStart.value = settingsConfig.value?.afterProjectStart ?? 'attention';
+});
 /** A setting Search jumped to ({ path, description, value, source, section, projectId }): its section shows it highlighted. */
 export const settingsHighlight = signal(null);
 

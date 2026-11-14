@@ -59,7 +59,7 @@ test('archiving a thread from its menu shows a toast with Undo that outlasts an 
     const errors: string[] = [];
     page.on('pageerror', (e: Error) => errors.push(e.message));
 
-    await page.goto(`${origin}/#thread=main`);
+    await page.goto(`${origin}/#thread=main&rail=open`);
     const row = page.locator('.tree-row', { hasText: 'Tidy the docs' }).first();
     await row.waitFor();
     // Snooze: the row turns to the neutral snoozed state, and the menu offers to wake it.

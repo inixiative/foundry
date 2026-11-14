@@ -363,6 +363,7 @@ export function createViewer(config: ViewerConfig) {
       );
     for (const warning of directory.restore(localStore.threads()))
       console.warn(`[Recovery] ${warning}`);
+    for (const subagent of directory.archiveOrphanedSubagents()) localStore.saveThread(subagent);
     // Settle what the native records already show; records still being written (a native process
     // the restart orphaned) are read again once they go quiet, and again before any next turn.
     const settleLost = () => {
@@ -658,7 +659,17 @@ export function createViewer(config: ViewerConfig) {
     eventStream,
     interventions,
     resolveThread: (id) => directory.get(id),
-    reopenThread: (id) => turns.reopen(id),
+    reopenThread: (id) => {
+      if (turns.reopen(id)) return true;
+      // An observed subagent (archived with its parent) is a record: it reopens from its meta.
+      const subagent = directory.reopenObserved(id);
+      if (!subagent) return false;
+      localStore?.saveThread(subagent);
+      streams.threadsChanged(id);
+      return true;
+    },
+    // Only a subagent (`meta.spawn`) goes with its parent; a thread started from another stays top-level.
+    childrenOf: (id) => directory.all().filter((t) => t.meta.spawn && t.meta.parentThreadId === id),
     onThreadChange: (thread) => {
       localStore?.saveThread(thread);
       streams.threadsChanged(thread.id);

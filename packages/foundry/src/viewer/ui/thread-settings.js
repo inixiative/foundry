@@ -180,6 +180,21 @@ const STEER = {
   help: (v) => STEER_CHOICES.find(([c]) => c === v)?.[2] ?? '',
 };
 
+const AFTER_START_CHOICES = [
+  [
+    'attention',
+    'Back to Attention',
+    'The rail returns to Attention once the thread starts; it comes back there when it needs you.',
+  ],
+  ['stay', 'Stay on Projects', 'The rail stays on the project you started it from.'],
+];
+const AFTER_START = {
+  label: 'After you start a thread from Projects',
+  choices: AFTER_START_CHOICES,
+  fallback: 'attention',
+  help: (v) => AFTER_START_CHOICES.find(([c]) => c === v)?.[2] ?? '',
+};
+
 export function MergeRow({ config, projectId, onSaved }) {
   return projectId
     ? html`<${ProjectChoiceRow} projectId=${projectId} path="threadOnMerge" ...${MERGE} onSaved=${onSaved} />`
@@ -197,6 +212,7 @@ export function ThreadSettings({ config, onSaved }) {
   return html`<section class="settings-card setting-rows">
     <${MergeRow} config=${config} onSaved=${onSaved} />
     <${SteerRow} config=${config} onSaved=${onSaved} />
+    <${FoundryChoiceRow} config=${config} settingKey="afterProjectStart" ...${AFTER_START} onSaved=${onSaved} />
   </section>`;
 }
 

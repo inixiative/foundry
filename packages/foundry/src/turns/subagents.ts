@@ -267,8 +267,21 @@ export class SubagentRecorder {
     this.deps.store.startObservedTurn(run.child, run.turnId, task);
   }
 
+  /**
+   * Archived under the run (with its parent, or on its own): the recorder's copy takes the archive, so
+   * saving the run's end never reopens it. True when it is archived.
+   */
+  private keepArchived(run: Run): boolean {
+    const live = this.deps.thread(run.child.id)?.meta;
+    if (live?.status !== 'archived') return false;
+    run.child.meta.status = 'archived';
+    run.child.meta.archivedAt = live.archivedAt;
+    return true;
+  }
+
   private closeTurn(run: Run, status: string | undefined): void {
     if (!run.turnId) return;
+    this.keepArchived(run);
     const failed = status === 'failed' || status === 'killed' || status === 'interrupted';
     this.deps.store.endObservedTurn(
       run.child,
@@ -299,7 +312,7 @@ export class SubagentRecorder {
     if (summary && !run.lastText) run.lastText = summary;
     const text = run.lastText ?? '';
     this.closeTurn(run, status);
-    run.child.meta.status = 'idle';
+    if (!this.keepArchived(run)) run.child.meta.status = 'idle';
     run.child.meta.lastActiveAt = Date.now();
     this.deps.store.saveThread(run.child);
     this.deps.store.appendPhase(run.parent, {
