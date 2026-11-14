@@ -8,6 +8,7 @@ import {
   type ConversationMember,
   floorModeSchema,
   type ThreadCommission,
+  type ThreadsTerms,
   threadTextLimit,
 } from '@inixiative/signet';
 import { z } from 'zod';
@@ -190,6 +191,8 @@ export interface SharedEntryRecord {
   /** A send addressed to this member: something it was asked. */
   addressed: boolean;
   text: string;
+  /** The host's words (`agent`, `send`): the host turn that said them, whose actors they carry (§4.12). */
+  hostTurnId?: string;
 }
 
 /**
@@ -234,6 +237,16 @@ export const emptyConversation = (): ConversationRecord => ({
 });
 
 /** A member's post as the journal holds it (phase `member-post`). */
+/** A Signet member's terms on what its words are and what the agent may do on them (§4.12). */
+export type MemberActTerms = Pick<ThreadsTerms, 'posts' | 'act' | 'agent'>;
+
+/** Another party whose words a turn took in, and what they may have the agent do (§4.12). */
+export interface TurnActor {
+  member: ConversationMember;
+  displayName: string;
+  terms: MemberActTerms;
+}
+
 export interface MemberPostRecord {
   postId: string;
   /** Who posted: a Signet member (through Kingdom) or a local one (another thread on this machine). */
@@ -254,6 +267,8 @@ export interface MemberPostRecord {
   turnId?: string;
   /** A report against a `notify` commission: the owner reads it, the other members never do. */
   notify?: boolean;
+  /** Admitted as instructions within the member's `act` (§4.12); absent, the post is data. */
+  posts?: 'instructions';
 }
 
 /**

@@ -27,6 +27,7 @@ import { registerArchiveRoutes } from '../archives/routes';
 import { ThreadContextTracker } from '../archives/thread-context';
 import { CompositionAuditor } from '../audit/compositions';
 import { ConversationService } from '../conversations/service';
+import { memberKey } from '../conversations/types';
 import { blockedOnPerson, RestartRoll } from '../daemon/restart-roll';
 import { readLocalDevice } from '../devices/local-inventory';
 import { feedbackRoots } from '../feedback/apply';
@@ -66,6 +67,7 @@ import { NativeTurnRecorder } from '../turns/native-turns';
 import { RunningTasks } from '../turns/running-tasks';
 import { SubagentRecorder } from '../turns/subagents';
 import {
+  actRules,
   createToolGate,
   enforces,
   rulesFor,
@@ -850,6 +852,8 @@ export function createViewer(config: ViewerConfig) {
         }),
       fork: () => fork,
       log: (message) => console.warn(message),
+      gatesEachCall: (thread) =>
+        !config.threadFactory?.runtime?.sessionAdapter(thread.meta.worker)?.structuralRulesAtLaunch,
     });
     // Owner-only like the conversation controls: secrets are used only in a turn the owner's own message opened.
     const service = conversations;
@@ -1073,6 +1077,24 @@ export function createViewer(config: ViewerConfig) {
       queue: config.actionQueue ?? null,
       turnId: () => turns.runningTurn(threadId),
       privacy: () => secrets.privacy(thread.meta.projectId),
+      // Each other party the turn took in brings its own rules (CONVERSATIONS §4.12).
+      actors: (turnId) =>
+        turnId && conversations
+          ? conversations.turnActors(threadId, turnId).flatMap(({ member, displayName, terms }) => {
+              const rules = actRules(terms.act);
+              const root = thread.meta.cwd;
+              return rules
+                ? [
+                    {
+                      label: displayName,
+                      key: memberKey(member),
+                      rules,
+                      ...(root ? { readRoot: root } : {}),
+                    },
+                  ]
+                : [];
+            })
+          : [],
       journal: (id, phase, turnId, record) => {
         try {
           localStore?.appendPhase(thread, { id, phase, turnId, dispatchId: null, record });
@@ -1100,6 +1122,7 @@ export function createViewer(config: ViewerConfig) {
         warn: (line) => console.warn(`[Gate] ${threadId}: ${line}`),
       },
     );
+    // A member's `act` is no launch rule: a worker that can't ask per call never takes their posts.
     const bound: ThreadToolGate = { gate: briefed, hasRules: () => enforces(rules()) };
     gates.set(threadId, bound);
     forgetOnDispose(thread);

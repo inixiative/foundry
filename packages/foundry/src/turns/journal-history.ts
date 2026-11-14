@@ -257,7 +257,7 @@ function render(entry: JournalEntry, currentTurnId: string | undefined): string 
     case 'post': {
       const post = (entry as { record: Record<string, unknown> })
         .record as unknown as MemberPostRecord;
-      return `## Member post\n${memberPostReception(post.displayName, post.text)}`;
+      return `## Member post\n${memberPostReception(post.displayName, post.text, post.posts)}`;
     }
     case 'send': {
       const record = (entry as { record: Record<string, unknown> }).record as unknown as

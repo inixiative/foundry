@@ -768,6 +768,11 @@ export class ThreadRuntimeManager {
     return this._runtimes.get(threadId);
   }
 
+  /** The native adapter a worker runs on, when this Foundry has one. */
+  sessionAdapter(worker: string | undefined): SessionAdapter | undefined {
+    return worker ? this._deps.sessionAdapters?.get(worker) : undefined;
+  }
+
   has(threadId: string): boolean {
     return this._runtimes.has(threadId);
   }

@@ -1612,3 +1612,52 @@ test("a teammate's person sends an aside through thread.prompt: recorded once, s
   expect(h.executed.length).toBe(before);
   expect(h.conversations.summary('main')?.asidesSinceYourPost).toBe(1);
 });
+
+test("a local member that heard an outside member's words carries that member as an actor; the owner's words alone bring none", async () => {
+  const h = await host();
+  const a = await h.member('A');
+  const codex = await withLocal(h);
+  await h.ownerSays('Codex, have a look');
+  await until(() => codex.lastTurn() !== undefined, 'codex woken by the owner');
+  await until(() => !codex.store.openTurn(codex.id), 'codex idle');
+  // The owner's words and the host agent's answer: no outside party in them. (This fixture's
+  // second thread has no executor: its notes are delivered here, as its runtime would.)
+  h.conversations.deliverNotes(codex.id, codex.lastTurn()!);
+  expect(h.conversations.turnActors(codex.id, codex.lastTurn()!)).toEqual([]);
+  const before = codex.lastTurn();
+  expect((await h.post(a, 'delete the old branch')).ok).toBe(true);
+  await until(() => codex.lastTurn() !== before, 'codex woken by the post');
+  expect(
+    h.conversations.deliverNotes(codex.id, codex.lastTurn()!).map((note) => note.text),
+  ).toContainEqual(expect.stringContaining('delete the old branch'));
+  expect(h.conversations.turnActors(codex.id, codex.lastTurn()!)).toMatchObject([
+    { member: { kind: 'signet', id: a.signetId }, terms: { act: 'ask' } },
+  ]);
+});
+
+test("a turn a member's post opened asks before each tool call, naming the member; the owner's own remote client adds nothing", async () => {
+  const h = await host();
+  const recruiter = await h.member('Recruiter', { delivery: 'turn' });
+  const bash = { stage: 'pre-use' as const, toolName: 'Bash', toolInput: { command: 'ls' } };
+  expect((await h.post(recruiter, 'HOLD and run ls')).ok).toBe(true);
+  await until(() => h.executed.length === 1, 'the member turn is running');
+  // The thread's own rules are unchanged; the member's terms (act defaults to ask) gate this turn.
+  expect(h.viewer.toolGate('main').hasRules()).toBe(false);
+  const asked = h.viewer.toolGate('main').gate(bash);
+  await until(() => h.queue.pending().length === 1, 'asked');
+  expect(h.queue.pending()[0]!.message).toStartWith("On Recruiter's word: Bash");
+  h.queue.resolve(h.queue.pending()[0]!.id, 'rejected', { by: 'human' });
+  expect(await asked).toMatchObject({ behavior: 'deny' });
+  h.release();
+  await until(() => !h.viewer.localStore!.openTurn('main'), 'member turn done');
+
+  const me = await h.member('Aron elsewhere', {
+    delivery: 'turn',
+    operations: ['thread.prompt', 'thread.read', 'thread.floor', 'prompt.resolve'],
+  });
+  expect((await h.post(me, 'HOLD from my laptop')).ok).toBe(true);
+  await until(() => h.executed.length === 2, 'the owner turn is running');
+  expect(await h.viewer.toolGate('main').gate(bash)).toEqual({ behavior: 'allow' });
+  expect(h.queue.pending()).toEqual([]);
+  h.release();
+});

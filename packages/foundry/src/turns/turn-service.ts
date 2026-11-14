@@ -110,6 +110,8 @@ export interface TurnOrigin {
   postId: string;
   /** The Kingdom `AccessExecution` the post arrived under (a Signet member's post). */
   executionId?: string;
+  /** The post was admitted as instructions within the member's `act` (§4.12). */
+  posts?: 'instructions';
   /**
    * Not a post: Foundry woke a local member because its shared thread (`member.id`) has something
    * for it. The message is Foundry's own line; the entries ride the turn as notes.
@@ -522,7 +524,7 @@ export class TurnService {
     // both read it so); the owner's message as typed.
     const harnessPayload =
       origin && !origin.wake && !origin.fork
-        ? memberPostReception(origin.displayName, payload)
+        ? memberPostReception(origin.displayName, payload, origin.posts)
         : payload;
     try {
       if (!resumed) localStore?.beginTurn(harness.thread, turnId, payload, userMeta);

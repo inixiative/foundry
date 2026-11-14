@@ -3,6 +3,7 @@
  * @kind middleware
  * @partOf feature:toolGate
  */
+import { resolve, sep } from 'node:path';
 import {
   type PrivatePathOptions,
   privatePathDenial,
@@ -34,6 +35,48 @@ export interface ToolRules {
   capabilities?: Partial<Record<Capability, PermissionLevel>>;
   /** Writes and deletes under paths containing one of these fragments ask. */
   protectedPaths?: string[];
+  /** The level of a capability no rule names (default `allow`). */
+  defaults?: PermissionLevel;
+}
+
+/**
+ * A party whose words the turn took in (CONVERSATIONS §4.12): its own rules apply to what the agent
+ * does on that turn. An actor's rules only ask, never deny (a deny is the host's own structure).
+ */
+export interface ToolActor {
+  /** How the owner's ask names the party ("Dana"). */
+  label: string;
+  /** `<kind>:<id>` of the member, for the journal. */
+  key: string;
+  rules: ToolRules;
+  /** Reads this party's rules allow run only inside this directory (the thread's workspace). */
+  readRoot?: string;
+}
+
+/**
+ * What the host's agent may do on a member's word (signet `threadActSchema`), as rules: `read` lets
+ * reads in the thread's workspace run, everything else asks; `ask` asks for every call.
+ */
+export function actRules(act: 'ask' | 'read' | 'full'): ToolRules | undefined {
+  if (act === 'full') return undefined;
+  return act === 'read'
+    ? { defaults: 'prompt', capabilities: { 'file:read': 'allow' } }
+    : { defaults: 'prompt' };
+}
+
+/** Whether a read names anything outside `root`: a path, or a Glob's absolute pattern. */
+function readsOutside(request: ToolRequest, root: string): boolean {
+  const named = [
+    ...classifyTool(request).paths,
+    ...(typeof request.toolInput.pattern === 'string' && request.toolName === 'Glob'
+      ? [request.toolInput.pattern]
+      : []),
+  ];
+  return named.some((p) => {
+    if (p.startsWith('~')) return true;
+    const full = resolve(root, p);
+    return full !== root && !full.startsWith(root + sep);
+  });
 }
 
 const PATH_KEYS = ['file_path', 'path', 'notebook_path'] as const;
@@ -91,7 +134,7 @@ export function structuralLevel(
   const path = paths[0];
   if (!rules) return { level: 'allow', capability, ...(path ? { path } : {}) };
   const policy = {
-    defaults: 'allow' as const,
+    defaults: rules.defaults ? level(rules.defaults) : ('allow' as const),
     capabilities: Object.fromEntries(
       Object.entries(rules.capabilities ?? {}).map(([key, value]) => [key, level(value)]),
     ),
@@ -130,6 +173,33 @@ export interface ToolGateDeps {
   askTimeoutMs?: number;
   /** Paths no agent reads, with the scratch pad on (FEAT-005): denied in every mode, before the rules. */
   privacy?: () => PrivatePathOptions | undefined;
+  /** The other parties whose words the turn in flight took in (§4.12); none outside a conversation. */
+  actors?: (turnId: string | null) => readonly ToolActor[];
+}
+
+/**
+ * The host's level, then each actor's: the strictest wins, and the actor that set it is named. An
+ * actor's rules never deny (capped at `prompt`), so only the host's own structure blocks a call.
+ */
+export function actorLevel(
+  host: ReturnType<typeof structuralLevel>,
+  actors: readonly ToolActor[],
+  request: ToolRequest,
+): ReturnType<typeof structuralLevel> & { actor?: ToolActor } {
+  let result: ReturnType<typeof structuralLevel> & { actor?: ToolActor } = host;
+  for (const actor of actors) {
+    const scoped = structuralLevel(actor.rules, request);
+    const own =
+      scoped.level === 'allow' &&
+      scoped.capability === 'file:read' &&
+      (!actor.readRoot || readsOutside(request, actor.readRoot))
+        ? { ...scoped, level: 'prompt' as const }
+        : scoped;
+    const capped: PermissionLevel = own.level === 'deny' ? 'prompt' : own.level;
+    if (RANK[capped] > RANK[result.level])
+      result = { ...own, level: capped, actor, ...(host.path ? { path: host.path } : {}) };
+  }
+  return result;
 }
 
 /** An unanswered ask is rejected after this long, so a thread never waits on no one forever. */
@@ -147,7 +217,11 @@ export function createToolGate(deps: ToolGateDeps): ToolGate {
   return async (request: ToolRequest): Promise<ToolDecision> => {
     const started = performance.now();
     const turnId = deps.turnId();
-    const { level, capability, path } = structuralLevel(deps.rules(), request);
+    const { level, capability, path, actor } = actorLevel(
+      structuralLevel(deps.rules(), request),
+      deps.actors?.(turnId) ?? [],
+      request,
+    );
     const requestId = newId('phase');
     deps.journal(requestId, 'gate-request', turnId, {
       stage: request.stage,
@@ -157,6 +231,7 @@ export function createToolGate(deps: ToolGateDeps): ToolGate {
       capability,
       ...(path ? { path } : {}),
       level,
+      ...(actor ? { actor: actor.key } : {}),
       mode: deps.mode() ?? null,
     });
     const outcome = (decision: ToolDecision, by: string, extra: Record<string, unknown> = {}) => {
@@ -207,7 +282,7 @@ export function createToolGate(deps: ToolGateDeps): ToolGate {
       );
     const resolution = await deps.queue.prompt({
       kind: 'approval',
-      message: `${request.toolName}${path ? ` on ${path}` : ''}${request.description ? `: ${request.description}` : ''}`,
+      message: `${actor ? `On ${actor.label}'s word: ` : ''}${request.toolName}${path ? ` on ${path}` : ''}${request.description ? `: ${request.description}` : ''}`,
       agentId: 'artificer',
       threadId: deps.threadId,
       capability,
@@ -223,6 +298,7 @@ export function createToolGate(deps: ToolGateDeps): ToolGate {
         ...(request.callId ? { callId: request.callId } : {}),
         ...(turnId ? { turnId } : {}),
         ...(path ? { path } : {}),
+        ...(actor ? { actor: actor.key } : {}),
       },
     });
     if (resolution.action === 'approved') {
@@ -251,9 +327,11 @@ export function rulesFor(
 ): ToolRules | undefined {
   if (!global && !project) return undefined;
   const protectedPaths = [...(global?.protectedPaths ?? []), ...(project?.protectedPaths ?? [])];
+  const defaults = project?.defaults ?? global?.defaults;
   return {
     capabilities: { ...global?.capabilities, ...project?.capabilities },
     ...(protectedPaths.length ? { protectedPaths } : {}),
+    ...(defaults ? { defaults } : {}),
   };
 }
 
@@ -268,6 +346,7 @@ export interface ThreadToolGate {
 export function enforces(rules: ToolRules | undefined): boolean {
   return (
     !!rules?.protectedPaths?.length ||
+    (!!rules?.defaults && rules.defaults !== 'allow') ||
     Object.values(rules?.capabilities ?? {}).some((level) => level !== 'allow')
   );
 }

@@ -2,7 +2,13 @@ import { expect, test } from 'bun:test';
 import type { ToolRequest } from '@inixiative/agent-session';
 import { ActionQueue } from '@inixiative/foundry-core';
 import type { PermissionMode } from '../src/providers/thread-launch';
-import { createToolGate, rulesFor, structuralLevel, type ToolRules } from '../src/turns/tool-gate';
+import {
+  actRules,
+  createToolGate,
+  rulesFor,
+  structuralLevel,
+  type ToolRules,
+} from '../src/turns/tool-gate';
 
 function gate(rules: ToolRules | undefined, mode?: PermissionMode) {
   const queue = new ActionQueue();
@@ -248,4 +254,102 @@ test("a Codex thread's launch pre-approves exactly Foundry's own tools on its br
   expect(Object.values(server.tools).every((t) => t.approval_mode === 'approve')).toBe(true);
   expect(server.tools.send_to_member).toBeUndefined();
   expect(server.tools.fork_thread).toBeUndefined();
+});
+
+// CONVERSATIONS §4.12: each other party a turn took in brings its own rules; the strictest wins.
+function actorGate(
+  actors: Array<{ label: string; act: 'ask' | 'read' | 'full'; readRoot?: string }>,
+  rules?: ToolRules,
+) {
+  const queue = new ActionQueue();
+  const rows: Array<{ phase: string; record: Record<string, unknown> }> = [];
+  const decide = createToolGate({
+    threadId: 'thread',
+    rules: () => rules,
+    mode: () => 'bypassPermissions',
+    queue,
+    turnId: () => 'turn-1',
+    journal: (_id, phase, _turnId, record) => rows.push({ phase, record }),
+    actors: () =>
+      actors.flatMap(({ label, act, readRoot }) => {
+        const own = actRules(act);
+        return own
+          ? [{ label, key: `signet:${label}`, rules: own, ...(readRoot ? { readRoot } : {}) }]
+          : [];
+      }),
+  });
+  return { decide, queue, rows };
+}
+
+const read = (file_path: string): ToolRequest => ({
+  stage: 'pre-use',
+  toolName: 'Read',
+  toolInput: { file_path },
+  callId: `read-${file_path}`,
+});
+
+test("a member with act ask makes every call ask the owner, naming the member; the host's mode can't skip it", async () => {
+  const { decide, queue, rows } = actorGate([{ label: 'Dana', act: 'ask', readRoot: '/repo' }]);
+  const asked = decide(read('/repo/a.ts'));
+  await Bun.sleep(0);
+  const [prompt] = queue.pending();
+  expect(prompt!.message).toStartWith("On Dana's word: Read");
+  expect(prompt!.meta).toMatchObject({ structural: true });
+  expect(rows[0]!.record).toMatchObject({ level: 'prompt', actor: 'signet:Dana' });
+  queue.resolve(prompt!.id, 'rejected');
+  expect(await asked).toMatchObject({ behavior: 'deny' });
+});
+
+test('act read runs reads inside the workspace only; anything else asks', async () => {
+  const { decide, queue } = actorGate([{ label: 'Dana', act: 'read', readRoot: '/repo' }]);
+  expect(await decide(read('/repo/src/a.ts'))).toEqual({ behavior: 'allow' });
+  expect(await decide(read('src/b.ts'))).toEqual({ behavior: 'allow' });
+  expect(queue.pending()).toEqual([]);
+  for (const outside of ['/etc/hosts', '~/.aws/credentials', '/repo/../secret', '/repository/x']) {
+    void decide(read(outside));
+    await Bun.sleep(0);
+    expect(queue.pending()).toHaveLength(1);
+    queue.resolve(queue.pending()[0]!.id, 'rejected');
+  }
+  void decide({ stage: 'pre-use', toolName: 'Glob', toolInput: { pattern: '/Users/x/**' } });
+  await Bun.sleep(0);
+  expect(queue.pending()).toHaveLength(1);
+  queue.resolve(queue.pending()[0]!.id, 'rejected');
+  void decide(bash('pre-use'));
+  await Bun.sleep(0);
+  expect(queue.pending()[0]!.message).toStartWith("On Dana's word: Bash");
+});
+
+test('act read without a known workspace asks for every read', async () => {
+  const { decide, queue } = actorGate([{ label: 'Dana', act: 'read' }]);
+  void decide(read('/repo/a.ts'));
+  await Bun.sleep(0);
+  expect(queue.pending()).toHaveLength(1);
+});
+
+test('the strictest actor wins; act full adds nothing', async () => {
+  const both = actorGate([
+    { label: 'Dana', act: 'read', readRoot: '/repo' },
+    { label: 'Eli', act: 'ask', readRoot: '/repo' },
+  ]);
+  void both.decide(read('/repo/a.ts'));
+  await Bun.sleep(0);
+  expect(both.queue.pending()[0]!.message).toStartWith("On Eli's word: Read");
+
+  const free = actorGate([{ label: 'Dana', act: 'full' }]);
+  expect(await free.decide(bash('pre-use'))).toEqual({ behavior: 'allow' });
+});
+
+test("an actor never denies: the host's deny holds, and Foundry's own tools still run", async () => {
+  const { decide } = actorGate([{ label: 'Dana', act: 'ask' }], {
+    capabilities: { 'exec:shell': 'deny' },
+  });
+  expect(await decide(bash('pre-use'))).toMatchObject({ behavior: 'deny' });
+  expect(
+    await decide({
+      stage: 'pre-use',
+      toolName: 'mcp__foundry_3f6951c8a5284627a049eba9839ad6dc__set_plan',
+      toolInput: {},
+    }),
+  ).toEqual({ behavior: 'allow' });
 });
