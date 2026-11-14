@@ -12,6 +12,7 @@ import type {
   InterventionLog,
   StreamEvent,
   ThreadConfig,
+  ThreadScheduled,
   TokenTracker,
 } from '@inixiative/foundry-core';
 import {
@@ -138,6 +139,29 @@ const RESTARTING =
  * undefined for a worker with no native sessions; `retire` is false when the session could not be
  * ended.
  */
+export type NewThreadResult =
+  | { ok: true; thread: Thread }
+  | { ok: false; status: 400 | 404 | 409; error: string };
+
+/** A new thread as `createThread` takes it: the New thread picker's fields, or a schedule run's. */
+export interface NewThreadInput {
+  id?: string;
+  name?: string;
+  description?: string;
+  tags?: string[];
+  cwd?: string;
+  projectId?: string;
+  worktreePath?: string;
+  branch?: string;
+  parentThreadId?: string;
+  worker?: string;
+  role?: string;
+  /** Its model and effort, held where a later change goes. */
+  start: ThreadLaunchPatch;
+  /** The schedule run it is for. */
+  scheduledBy?: ThreadScheduled;
+}
+
 export interface WorkerSessions {
   binding(worker: string, threadId: string): Promise<string | null | undefined>;
   retire(worker: string, threadId: string): Promise<boolean | undefined>;
@@ -178,6 +202,7 @@ export function registerRuntimeRoutes(
     sourceThreadId: string,
     options: { atSeq: number; name?: string; task?: string; confirmed?: boolean },
   ) => { threadId: string; name: string };
+  createThread: (input: NewThreadInput) => Promise<NewThreadResult>;
 } {
   const { harness, eventStream, interventions, assistProviderId, threadFactory, projectRegistry } =
     deps;
@@ -1281,35 +1306,137 @@ export function registerRuntimeRoutes(
     return { threadId: id, name };
   };
 
-  app.post('/api/threads', async (c) => {
-    const body = await c.req.json<Record<string, unknown>>();
-    const id = typeof body.id === 'string' ? body.id : newId('thread');
+  /**
+   * Make a new thread: the New thread picker's path and a schedule run's. Its project is resolved
+   * from its working directory when not named; its worker, model, effort and role are checked the
+   * same way for both; a scope's thread has no project or directory.
+   */
+  const createThread = async (input: NewThreadInput): Promise<NewThreadResult> => {
+    const refuse = (status: 400 | 404 | 409, error: string) => ({
+      ok: false as const,
+      status,
+      error,
+    });
+    const id = input.id ?? newId('thread');
     const idErr = validateId(id, 'thread id');
-    if (idErr) return c.json({ error: idErr }, 400);
-
-    const description = typeof body.description === 'string' ? body.description.slice(0, 500) : '';
-    const tags = Array.isArray(body.tags)
-      ? body.tags.filter((tag): tag is string => typeof tag === 'string').slice(0, 20)
-      : [];
+    if (idErr) return refuse(400, idErr);
     // A working directory names where the work is; its project (if any) is resolved from it. A
     // directory outside every registered project is a global-scope thread working there.
-    const workingDirectory = typeof body.cwd === 'string' ? body.cwd : undefined;
+    const workingDirectory = input.cwd;
     if (workingDirectory !== undefined && !isAbsolute(workingDirectory))
-      return c.json({ error: 'cwd must be an absolute path' }, 400);
+      return refuse(400, 'cwd must be an absolute path');
     const projectId =
-      typeof body.projectId === 'string'
-        ? body.projectId
-        : workingDirectory
-          ? (await projectRegistry?.forDirectory(workingDirectory))?.id
-          : undefined;
-    const worktreePath =
-      typeof body.worktreePath === 'string' ? body.worktreePath : workingDirectory;
-    const branch = typeof body.branch === 'string' ? body.branch : undefined;
-    const parentThreadId =
-      typeof body.parentThreadId === 'string' ? body.parentThreadId : undefined;
-    if (body.worker !== undefined && typeof body.worker !== 'string')
-      return c.json({ error: 'worker must be a string' }, 400);
-    const worker = body.worker as string | undefined;
+      input.projectId ??
+      (workingDirectory ? (await projectRegistry?.forDirectory(workingDirectory))?.id : undefined);
+    const worktreePath = input.worktreePath ?? workingDirectory;
+    const { branch, parentThreadId, worker, start } = input;
+
+    // A scope's thread (Forge Master, Feedback) belongs to no project and works in Foundry's own
+    // directory, so nothing that names a project or a directory comes with it.
+    // A child goes where its parent is, so only a thread of the same scope parents one.
+    if (scopeOfRole(input.role)) {
+      if (
+        input.projectId !== undefined ||
+        workingDirectory !== undefined ||
+        input.worktreePath !== undefined ||
+        branch !== undefined
+      )
+        return refuse(
+          400,
+          `${input.role} threads live in Foundry's own scope: no project, cwd, worktree or branch`,
+        );
+      if (parentThreadId && directory.get(parentThreadId)?.meta.role !== input.role)
+        return refuse(400, `a ${input.role} thread's parent must be one too`);
+    }
+
+    // Resolve ownership before building anything: an unknown project or a
+    // live duplicate id must not leave an unreachable thread and runtime.
+    const project = projectId ? projectRegistry?.get(projectId) : undefined;
+    if (projectId && !project) return refuse(404, `project not found: ${projectId}`);
+    if (directory.get(id) || threadFactory?.runtime?.has(id))
+      return refuse(409, `thread already exists: ${id}`);
+
+    // A project thread works in its project's directory unless a worktree is given.
+    const cwd = worktreePath ?? project?.path;
+
+    if (start.model !== undefined || start.effort !== undefined) {
+      const runsOn =
+        worker ??
+        threadFactory?.defaultWorker(project?.id) ??
+        deps.configStore.config.defaults.provider;
+      // A worker it can't run on is refused with its reason before its view is resolved.
+      const refused = worker ? threadFactory?.workerRefusal(project?.id, worker) : undefined;
+      if (refused) return refuse(400, refused);
+      if (worker && !subscriptionWorker(worker))
+        return refuse(400, `${worker} is not a subscription worker`);
+      if (start.model && subscriptionWorker(runsOn)) {
+        const refusal = workerModelRequirement(runsOn, start.model);
+        if (refusal) return refuse(400, refusal);
+      }
+      const model =
+        start.model ??
+        resolveThreadView(deps.configStore.config, { projectId: project?.id, worker: runsOn })
+          .config.defaults.model;
+      const takes = modelEfforts(runsOn, model);
+      if (start.effort && takes && !takes.includes(start.effort))
+        return refuse(
+          400,
+          `${model} takes effort ${takes.join(', ') || 'none'}, not ${start.effort}`,
+        );
+    }
+
+    if (worker && !threadFactory) return refuse(400, 'choosing a worker needs the thread factory');
+    // Its thread role: the one chosen, else its worker's default, stored so it never shifts silently.
+    if (input.role !== undefined) {
+      const refused = roleRefusal(project?.id, input.role);
+      if (refused) return refuse(400, refused);
+    }
+    const role =
+      input.role ??
+      defaultThreadRole(
+        scopeComposition(project?.id),
+        worker ??
+          threadFactory?.defaultWorker(project?.id) ??
+          deps.configStore.config.defaults.provider,
+      );
+    let thread: Thread;
+    try {
+      thread = constructThread(id, {
+        description: input.description ?? '',
+        tags: input.tags ?? [],
+        cwd,
+        branch,
+        parentThreadId,
+        projectId: project?.id,
+        ...(worker ? { worker } : {}),
+        role,
+        ...(input.scheduledBy ? { scheduledBy: input.scheduledBy } : {}),
+      });
+    } catch (error) {
+      if (error instanceof WorkerRefusedError) return refuse(400, error.message);
+      throw error;
+    }
+
+    if (input.name !== undefined) thread.rename(input.name.slice(0, 200));
+    if (start.model !== undefined || start.effort !== undefined) threadLaunch.update(id, start);
+    registerThread(thread, project);
+    return { ok: true, thread };
+  };
+
+  app.post('/api/threads', async (c) => {
+    const body = await c.req.json<Record<string, unknown>>();
+    for (const key of [
+      'id',
+      'cwd',
+      'projectId',
+      'worktreePath',
+      'branch',
+      'parentThreadId',
+      'worker',
+      'role',
+    ] as const)
+      if (body[key] !== undefined && typeof body[key] !== 'string')
+        return c.json({ error: `${key} must be a string` }, 400);
     // The new thread's model and effort (the New thread picker), held where a later change goes.
     const start: ThreadLaunchPatch = {};
     if (body.model !== undefined) {
@@ -1322,102 +1449,24 @@ export function registerRuntimeRoutes(
         return c.json({ error: `effort must be one of ${REASONING_EFFORTS.join(', ')}` }, 400);
       start.effort = body.effort as EffortLevel;
     }
-
-    // A scope's thread (Forge Master, Feedback) belongs to no project and works in Foundry's own
-    // directory, so nothing that names a project or a directory comes with it.
-    // A child goes where its parent is, so only a thread of the same scope parents one.
-    if (scopeOfRole(body.role as string | undefined)) {
-      if (
-        body.projectId !== undefined ||
-        workingDirectory !== undefined ||
-        body.worktreePath !== undefined ||
-        body.branch !== undefined
-      )
-        return c.json(
-          {
-            error: `${body.role} threads live in Foundry's own scope: no project, cwd, worktree or branch`,
-          },
-          400,
-        );
-      if (parentThreadId && directory.get(parentThreadId)?.meta.role !== body.role)
-        return c.json({ error: `a ${body.role} thread's parent must be one too` }, 400);
-    }
-
-    // Resolve ownership before building anything: an unknown project or a
-    // live duplicate id must not leave an unreachable thread and runtime.
-    const project = projectId ? projectRegistry?.get(projectId) : undefined;
-    if (projectId && !project) {
-      return c.json({ error: `project not found: ${projectId}` }, 404);
-    }
-    if (directory.get(id) || threadFactory?.runtime?.has(id)) {
-      return c.json({ error: `thread already exists: ${id}` }, 409);
-    }
-
-    // A project thread works in its project's directory unless a worktree is given.
-    const cwd = worktreePath ?? project?.path;
-
-    if (start.model !== undefined || start.effort !== undefined) {
-      const runsOn =
-        worker ??
-        threadFactory?.defaultWorker(project?.id) ??
-        deps.configStore.config.defaults.provider;
-      // A worker it can't run on is refused with its reason before its view is resolved.
-      const refused = worker ? threadFactory?.workerRefusal(project?.id, worker) : undefined;
-      if (refused) return c.json({ error: refused }, 400);
-      if (worker && !subscriptionWorker(worker))
-        return c.json({ error: `${worker} is not a subscription worker` }, 400);
-      if (start.model && subscriptionWorker(runsOn)) {
-        const refusal = workerModelRequirement(runsOn, start.model);
-        if (refusal) return c.json({ error: refusal }, 400);
-      }
-      const model =
-        start.model ??
-        resolveThreadView(deps.configStore.config, { projectId: project?.id, worker: runsOn })
-          .config.defaults.model;
-      const takes = modelEfforts(runsOn, model);
-      if (start.effort && takes && !takes.includes(start.effort))
-        return c.json(
-          { error: `${model} takes effort ${takes.join(', ') || 'none'}, not ${start.effort}` },
-          400,
-        );
-    }
-
-    if (worker && !threadFactory)
-      return c.json({ error: 'choosing a worker needs the thread factory' }, 400);
-    // Its thread role: the one chosen, else its worker's default, stored so it never shifts silently.
-    if (body.role !== undefined) {
-      const refused = roleRefusal(project?.id, body.role);
-      if (refused) return c.json({ error: refused }, 400);
-    }
-    const role =
-      (body.role as string | undefined) ??
-      defaultThreadRole(
-        scopeComposition(project?.id),
-        worker ??
-          threadFactory?.defaultWorker(project?.id) ??
-          deps.configStore.config.defaults.provider,
-      );
-    let thread: Thread;
-    try {
-      thread = constructThread(id, {
-        description,
-        tags,
-        cwd,
-        branch,
-        parentThreadId,
-        projectId: project?.id,
-        ...(worker ? { worker } : {}),
-        role,
-      });
-    } catch (error) {
-      if (error instanceof WorkerRefusedError) return c.json({ error: error.message }, 400);
-      throw error;
-    }
-
-    if (typeof body.name === 'string') thread.rename(body.name.slice(0, 200));
-    if (start.model !== undefined || start.effort !== undefined) threadLaunch.update(id, start);
-    registerThread(thread, project);
-    return c.json(threadJSON(thread), 201);
+    const made = await createThread({
+      id: body.id as string | undefined,
+      description: typeof body.description === 'string' ? body.description.slice(0, 500) : '',
+      tags: Array.isArray(body.tags)
+        ? body.tags.filter((tag): tag is string => typeof tag === 'string').slice(0, 20)
+        : [],
+      cwd: body.cwd as string | undefined,
+      projectId: body.projectId as string | undefined,
+      worktreePath: body.worktreePath as string | undefined,
+      branch: body.branch as string | undefined,
+      parentThreadId: body.parentThreadId as string | undefined,
+      worker: body.worker as string | undefined,
+      role: body.role as string | undefined,
+      ...(typeof body.name === 'string' ? { name: body.name } : {}),
+      start,
+    });
+    if (!made.ok) return c.json({ error: made.error }, made.status);
+    return c.json(threadJSON(made.thread), 201);
   });
 
   // -- Thread update (worktree reassignment) --
@@ -1774,7 +1823,7 @@ export function registerRuntimeRoutes(
     const limit = Number(c.req.query('limit') ?? 100);
     return c.json(eventStream.recent({ kind, limit }));
   });
-  return { turns, fork: forkThread };
+  return { turns, fork: forkThread, createThread };
 }
 
 /** A send's `delivery` (CORE-001): `steer`, `queue`, absent (the `steer` setting decides), or null when malformed. */

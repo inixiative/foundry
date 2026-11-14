@@ -33,6 +33,7 @@ import type { ThreadRuntimeManager } from '../agents/thread-runtime';
 import { localInventory } from '../devices/local-inventory';
 import { FEEDBACK_ROLE } from '../prompts/instruction-settings';
 import { readOperationSchema } from '../providers/kingdom-access-client';
+import { removeScheduleSchema, setScheduleSchema } from '../scheduler/agent-tools';
 import { ConversationTool } from '../tools/conversation';
 import {
   FEEDBACK_INBOX_DESCRIPTION,
@@ -668,6 +669,24 @@ export function createFoundryMcp(config: FoundryMcpConfig): FoundryMcp {
       "Show the person something you made, beside the thread: a document, a diagram, a page, a block of code. id: a short slug; the same id again saves its next version (earlier versions stay readable). title: what it is. kind: 'markdown', 'mermaid' (a diagram), 'html' (a whole page; its scripts run in a sandboxed frame that cannot fetch, reach Foundry or touch the viewer; scripts, styles and images may load over https) or 'code' (with language). content: the whole artifact each time, never a diff. The person sees it in the Artifacts view and as a card on this turn. Use it for something worth looking at or keeping, not for an answer that fits in the reply.",
       artifactSchema.shape,
       record('set_artifact'),
+    );
+    server.tool(
+      'set_schedule',
+      "Run something on a schedule: each run is a new thread at the schedule's Where whose first message is prompt, and it runs to completion on its own; its runs are listed in the Scheduled view. Make one only when the person asked for it. In a turn their own message opened, it is scheduled at once; otherwise (you decided to, or a scheduled run, a member's post or a forked task asked) it is saved as a draft that never runs until they accept it, and this thread asks them. id: a short slug, unique across this Foundry; the same id again replaces that schedule (a live one only on the person's instruction). name: what it does. prompt: the whole task, written for an agent that starts with no memory of this thread. when: {every: '15m' | '2h' | '1d'} (at least 5m), {cron: 'm h dom mon dow', tz?: 'America/New_York'}, or {at: an ISO time with offset} once. where: {kind: 'project', projectId}, {kind: 'global'} or {kind: 'scope', scope: 'forge' | 'feedback'}; absent, this thread's own. worker, role, model, effort: what runs start on; absent, the Where's defaults. paused: saved but not running. Call list_schedules first to avoid a duplicate.",
+      setScheduleSchema.shape,
+      record('set_schedule'),
+    );
+    server.tool(
+      'remove_schedule',
+      "Remove a schedule by id, when the person asks; its past runs stay in the history. You may also remove a draft this thread proposed. A live schedule is only removed on the person's own instruction.",
+      removeScheduleSchema.shape,
+      record('remove_schedule'),
+    );
+    server.tool(
+      'list_schedules',
+      "List this Foundry's schedules: each one's id, name, Where, time, whether it is a draft or paused, its next run and its last result. Read it before set_schedule or remove_schedule.",
+      {},
+      record('list_schedules'),
     );
   }
   // -----------------------------------------------------------------------

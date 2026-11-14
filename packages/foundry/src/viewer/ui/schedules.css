@@ -1,0 +1,149 @@
+/* The Scheduled rail's schedules (schedules.js). */
+.schedules-pane .rail-frame {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+}
+.schedule-group-head {
+  font: 600 10.5px var(--ui);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  padding: 6px 6px 2px;
+}
+.schedule.is-open > .tree-node {
+  background: var(--accent-dim);
+}
+.schedule-state[data-state="draft"] {
+  color: var(--st-attention);
+  font-weight: 600;
+}
+.schedule-state[data-state="paused"] {
+  color: var(--text-dim);
+}
+.schedule-last[data-outcome="failed"],
+.schedule-runs li[data-outcome="failed"] .schedule-run-outcome {
+  color: var(--err);
+}
+.schedule-last[data-outcome="skipped"],
+.schedule-runs li[data-outcome="skipped"] .schedule-run-outcome {
+  color: var(--text-dim);
+}
+.schedule-detail {
+  display: grid;
+  gap: 6px;
+  padding: 4px 8px 10px;
+  font-size: 12.5px;
+}
+.schedule-prompt {
+  margin: 0;
+  white-space: pre-wrap;
+  max-height: 8em;
+  overflow-y: auto;
+  color: var(--text-dim);
+}
+.schedule-draft-note {
+  margin: 0;
+}
+.schedule-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.schedule-actions button,
+.schedule-editor button {
+  font: 500 12px var(--ui);
+  padding: 3px 9px;
+  border-radius: 6px;
+  border: 1px solid var(--line2);
+  background: hsl(var(--card));
+  color: inherit;
+  cursor: pointer;
+}
+.schedule-actions button:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+.schedule-actions .schedule-primary {
+  background: var(--accent);
+  color: var(--accent-ink);
+  border-color: transparent;
+}
+.schedule-actions .schedule-danger {
+  color: var(--err);
+}
+.schedule-link {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--accent);
+  text-decoration: underline;
+  cursor: pointer;
+  font: inherit;
+}
+.schedule-error {
+  margin: 0;
+  color: var(--err);
+}
+.schedule-runs-head {
+  font: 600 10.5px var(--ui);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  margin-top: 4px;
+}
+.schedule-runs {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+.schedule-runs li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 8px;
+  align-items: baseline;
+}
+.schedule-run-reason {
+  flex-basis: 100%;
+  color: var(--text-dim);
+  font-size: 11.5px;
+}
+.schedule-editor {
+  display: grid;
+  gap: 8px;
+  padding: 8px;
+  border-bottom: 1px solid var(--line2);
+  font-size: 12.5px;
+}
+.schedule-editor label {
+  display: grid;
+  gap: 3px;
+  color: var(--text-dim);
+}
+.schedule-editor .schedule-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.schedule-editor input:not([type="checkbox"]),
+.schedule-editor select,
+.schedule-editor textarea {
+  font: 13px var(--ui);
+  color: var(--text);
+  background: hsl(var(--background));
+  border: 1px solid var(--line2);
+  border-radius: 6px;
+  padding: 4px 6px;
+}
+.rail-toggle-badge {
+  margin-left: 5px;
+  min-width: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  font-size: 10px;
+  font-weight: 700;
+  background: var(--st-attention);
+  color: var(--accent-ink);
+}

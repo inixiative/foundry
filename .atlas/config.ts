@@ -134,6 +134,14 @@ export default defineConfig({
 
     // foundry: the turn path
     { include: `${FOUNDRY}/conversations/**`, partOf: 'feature:conversations' },
+    {
+      include: [
+        `${FOUNDRY}/scheduler/**`,
+        `${FOUNDRY}/viewer/routes/schedules.ts`,
+        `${UI}/schedules.js`,
+      ],
+      partOf: 'feature:scheduler',
+    },
     { include: `${FOUNDRY}/turns/{turn-service,host-instructions}.ts`, partOf: 'feature:threads' },
     { include: `${FOUNDRY}/turns/tool-gate.ts`, partOf: 'feature:toolGate' },
     { include: `${FOUNDRY}/turns/subagents.ts`, partOf: 'feature:threadTree' },

@@ -123,6 +123,12 @@ export interface TurnOrigin {
    * so its first turn must not count as his instruction (`lastOwnerSeq`), and nothing is split off it.
    */
   fork?: true;
+  /**
+   * Not a post: a schedule's run (`member.id` is `schedule:<id>`), its prompt as the owner set it.
+   * Foundry's line, never counted as his message (`lastOwnerSeq`), so a run that asks to schedule
+   * more work drafts it for him instead of making it.
+   */
+  schedule?: true;
 }
 
 /** A settled turn's result as the routes and the requesting client receive it. */
@@ -517,13 +523,21 @@ export class TurnService {
             ...(images.length
               ? { images: images.map(({ id, mediaType, bytes }) => ({ id, mediaType, bytes })) }
               : {}),
-            ...(origin ? { origin: { ...origin }, postedBy: origin.displayName } : {}),
+            ...(origin
+              ? {
+                  origin: { ...origin },
+                  // A scheduled run's prompt is the owner's, set ahead: never a member's post.
+                  ...(origin.schedule
+                    ? { scheduledRun: origin.displayName }
+                    : { postedBy: origin.displayName }),
+                }
+              : {}),
           }
         : undefined;
     // What the harness runs on: the member's post labelled as data (the Wardens and the executor
     // both read it so); the owner's message as typed.
     const harnessPayload =
-      origin && !origin.wake && !origin.fork
+      origin && !origin.wake && !origin.fork && !origin.schedule
         ? memberPostReception(origin.displayName, payload, origin.posts)
         : payload;
     try {

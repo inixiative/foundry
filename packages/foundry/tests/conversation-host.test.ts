@@ -21,6 +21,7 @@ import {
   FileExternalSessionStore,
 } from '../src/providers/session-adapter';
 import { SessionBackedProvider as NativeProvider } from '../src/providers/session-backed';
+import { draftAsk, setScheduleAsAgent } from '../src/scheduler/agent-tools';
 import { journalHistory } from '../src/turns/journal-history';
 import { ConfigStore } from '../src/viewer/config';
 import { createViewer } from '../src/viewer/server';
@@ -1660,4 +1661,62 @@ test("a turn a member's post opened asks before each tool call, naming the membe
   expect(await h.viewer.toolGate('main').gate(bash)).toEqual({ behavior: 'allow' });
   expect(h.queue.pending()).toEqual([]);
   h.release();
+});
+
+test("schedules: the agent's own idea is a draft the owner is asked about; told by him, it schedules; a run's prompt is never his message", async () => {
+  const h = await host();
+  const store = h.viewer.localStore!;
+  const tools = h.viewer.records.schedules!;
+  const main = () => store.threads().find((thread) => thread.id === 'main')!;
+  const nightly = {
+    id: 'nightly',
+    name: 'Nightly',
+    prompt: 'Summarize the day.',
+    when: { every: '1h' } as const,
+  };
+
+  // Outside the owner's own turn: a draft, and the proposing thread asks him (Attention).
+  expect(await setScheduleAsAgent(tools, 'main', {}, nightly)).toMatch(/^Drafted "Nightly"/);
+  expect(main().meta.agentStatus).toMatchObject({ state: 'needs-you', text: draftAsk('Nightly') });
+  expect((await h.route('/api/schedules/nightly/run')).status).toBe(400);
+
+  // He accepts it in the Scheduled view: it is live and the ask clears.
+  expect((await h.route('/api/schedules/nightly/accept')).status).toBe(200);
+  expect(main().meta.agentStatus).toBeUndefined();
+
+  // A run is a new thread whose first message is the schedule's prompt, labelled as the run, never
+  // as his message or a member's post.
+  const response = await h.route('/api/schedules/nightly/run');
+  expect(response.status).toBe(200);
+  const { run } = (await response.json()) as { run: { outcome: string; threadId: string } };
+  expect(run.outcome).toBe('started');
+  await until(
+    () => store.messages(run.threadId, 10).some((m) => m.actor === 'user'),
+    'run prompt recorded',
+  );
+  const prompt = store.messages(run.threadId, 10).find((m) => m.actor === 'user')!;
+  expect(String(prompt.content)).toStartWith('Scheduled run of "Nightly", as the owner set it:');
+  expect(prompt.meta).toMatchObject({ scheduledRun: 'Nightly', origin: { schedule: true } });
+  expect(prompt.meta?.postedBy).toBeUndefined();
+  expect(store.lastOwnerSeq(run.threadId)).toBe(0);
+  expect(store.threads().find((t) => t.id === run.threadId)?.meta.scheduledBy).toMatchObject({
+    scheduleId: 'nightly',
+  });
+  const runs = await h.viewer.app.request('/api/schedules/nightly/runs');
+  expect(((await runs.json()) as { runs: unknown[] }).runs).toMatchObject([
+    { outcome: 'started', threadId: run.threadId, reason: 'run by hand' },
+  ]);
+
+  // In the owner's own turn, the agent schedules at once.
+  await h.ownerSends('HOLD schedule a weekly review');
+  await until(() => h.executed.some((p) => p.includes('weekly review')), 'owner turn running');
+  expect(
+    await setScheduleAsAgent(tools, 'main', {}, { ...nightly, id: 'weekly', name: 'Weekly' }),
+  ).toMatch(/^Scheduled "Weekly"/);
+  h.release();
+  const listed = await h.viewer.app.request('/api/schedules');
+  const { schedules } = (await listed.json()) as {
+    schedules: Array<{ schedule: { id: string; draft?: unknown } }>;
+  };
+  expect(schedules.find((view) => view.schedule.id === 'weekly')?.schedule.draft).toBeUndefined();
 });
