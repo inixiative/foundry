@@ -48,7 +48,7 @@ test('first visit opens on Open with the right panel folded; the workspace is re
 
     await page.goto(origin);
     await page.locator('.header').waitFor();
-    // First visit: the right panel starts folded and the rail is on Open.
+    // First visit: the right panel starts folded and the rail is on Attention.
     expect(new URL(page.url()).hash).toContain('detail=0');
     expect(new URL(page.url()).hash).not.toContain('rail=projects');
 

@@ -797,6 +797,10 @@ function switchingWorkers(dir: string, journal: () => LocalSessionStore) {
       (worker === 'codex' ? codex : claude).bindingOf(threadId),
     retire: (worker: string, threadId: string) =>
       (worker === 'codex' ? codex : claude).retireThread(threadId),
+    release: async (threadId: string) => {
+      await claude.releaseThread(threadId);
+      await codex.releaseThread(threadId);
+    },
   };
   return { cli, server, claude, codex, claudeAdapter, codexAdapter, workerSessions };
 }
@@ -951,6 +955,85 @@ test('a worker switch waits while a turn runs: the route says so, and the old se
   await until(() => server.turns.length > 0, 'the long job is running');
   expect(await provider.retireThread('busy')).toBe(false);
   expect(server.launches[0]!.exited).toBe(false);
+});
+
+test('archiving a thread ends its native process and keeps the binding: reopening resumes the same conversation', async () => {
+  const dir = temporary('archive-release-');
+  const server = appServerTransport({ threadId: 'codex-kept', response: 'answered' });
+  const adapter = new CodexSessionAdapter({
+    store: new FileExternalSessionStore(join(dir, 'sessions.json')),
+    defaults: { spawn: server.spawn },
+  });
+  cleanup.push(() => adapter.releaseAll());
+  const provider = new SessionBackedProvider({
+    id: 'codex',
+    adapter,
+    defaultModel: 'controlled-model',
+    defaultCwd: dir,
+  });
+  await provider.complete([{ role: 'user', content: 'first' }], { threadId: 'kept' });
+  expect(server.launches[0]!.exited).toBe(false);
+
+  expect(await provider.releaseThread('kept')).toBe(true);
+  await until(() => server.launches[0]!.exited, "the archived thread's process exits");
+  expect(await provider.bindingOf('kept')).toBe('codex-kept');
+
+  await provider.complete([{ role: 'user', content: 'back again' }], { threadId: 'kept' });
+  expect(server.launches).toHaveLength(2);
+  const resumed = server.requests.filter((r) => r.method === 'thread/resume');
+  expect(resumed.map((r) => r.params.threadId)).toEqual(['codex-kept']);
+});
+
+test('archiving a thread mid-turn leaves the turn alone and ends its process once the turn settles', async () => {
+  const dir = temporary('archive-release-busy-');
+  const server = appServerTransport({ threadId: 'codex-busy', response: 'done', delayMs: 150 });
+  const adapter = new CodexSessionAdapter({
+    store: new FileExternalSessionStore(join(dir, 'sessions.json')),
+    defaults: { spawn: server.spawn },
+  });
+  cleanup.push(() => adapter.releaseAll());
+  const provider = new SessionBackedProvider({
+    id: 'codex',
+    adapter,
+    defaultModel: 'controlled-model',
+    defaultCwd: dir,
+  });
+  const running = provider.complete([{ role: 'user', content: 'long job' }], { threadId: 'busy' });
+  await until(() => server.turns.length > 0, 'the long job is running');
+  expect(await provider.releaseThread('busy')).toBe(true);
+  expect(server.launches[0]!.exited).toBe(false);
+  await running;
+  await until(() => server.launches[0]!.exited, 'the process exits once the turn settles');
+  expect(await provider.bindingOf('busy')).toBe('codex-busy');
+});
+
+test('the viewer asks every worker to release an archived thread, and never a thread that is only closing', async () => {
+  const released: string[] = [];
+  const { served, main } = await viewer({
+    workerSessions: {
+      binding: async () => null,
+      retire: async () => true,
+      release: async (threadId) => {
+        released.push(threadId);
+      },
+    },
+  });
+  served.toolGate(main.id);
+  main.archive();
+  expect(released).toEqual([main.id]);
+
+  const { served: other, main: closing } = await viewer({
+    workerSessions: {
+      binding: async () => null,
+      retire: async () => true,
+      release: async (threadId) => {
+        released.push(threadId);
+      },
+    },
+  });
+  other.toolGate(closing.id);
+  closing.dispose();
+  expect(released).toEqual([main.id]);
 });
 
 test("a new thread takes its worker's default role, or the one chosen; the role changes any time, and an unknown one is refused", async () => {

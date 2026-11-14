@@ -179,6 +179,8 @@ export class SessionBackedProvider implements LLMProvider {
   private _profiles = new Map<string, NativeSessionProfile>();
   /** Current logical-pool admission/release guard, never an old admission's RPC evidence. */
   private _activeCalls = new Map<string, number>();
+  /** Sessions of archived threads still running a turn: released once their last call ends. */
+  private _releaseWhenSettled = new Set<string>();
   private _sessionCalls = new WeakMap<HarnessSession, Set<ProviderInvocation>>();
   private _idle = new Set<string>();
   private _uncertain = new Set<string>();
@@ -486,6 +488,8 @@ export class SessionBackedProvider implements LLMProvider {
       throw error;
     }
     this._idle.delete(key);
+    // A reopened thread uses its session again: an archive's pending release no longer applies.
+    this._releaseWhenSettled.delete(key);
     this._activeCalls.set(key, (this._activeCalls.get(key) ?? 0) + 1);
     const call: ProviderInvocation = { active: true };
     try {
@@ -503,7 +507,16 @@ export class SessionBackedProvider implements LLMProvider {
       if (call.session) this._sessionCalls.get(call.session)?.delete(call);
       const remaining = (this._activeCalls.get(key) ?? 1) - 1;
       if (remaining) this._activeCalls.set(key, remaining);
-      else this._activeCalls.delete(key);
+      else {
+        this._activeCalls.delete(key);
+        if (this._releaseWhenSettled.delete(key)) {
+          const [cwd, threadId] = JSON.parse(key) as [string, string];
+          void this._retireElsewhere(threadId, cwd).then((status) => {
+            if (status !== 'released')
+              console.warn(`[Sessions] ${threadId}: archived thread's session not released`);
+          });
+        }
+      }
     }
   }
 
@@ -985,6 +998,25 @@ export class SessionBackedProvider implements LLMProvider {
       console.warn(`[Sessions] ${threadId}: binding not cleared: ${(error as Error).message}`);
       ended = false;
     });
+    return ended;
+  }
+
+  /**
+   * The thread was archived: end every executor process it holds here and keep its native binding,
+   * so reopening it resumes the same conversation. A session still running a turn is released when
+   * that turn settles (unless the thread is used again first). False when one is left running.
+   */
+  async releaseThread(threadId: string): Promise<boolean> {
+    let ended = true;
+    for (const key of [...this._sessions.keys()]) {
+      const [cwd, owner] = JSON.parse(key) as [string, string];
+      if (owner !== threadId) continue;
+      if (this._activeCalls.get(key)) {
+        this._releaseWhenSettled.add(key);
+        continue;
+      }
+      if ((await this._retireElsewhere(threadId, cwd)) !== 'released') ended = false;
+    }
     return ended;
   }
 

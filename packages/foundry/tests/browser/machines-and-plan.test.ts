@@ -107,7 +107,7 @@ test('threads on another machine are badged and filterable; a recorded plan fill
     const errors: string[] = [];
     page.on('pageerror', (e: Error) => errors.push(e.message));
 
-    await page.goto(`http://127.0.0.1:${server.port}/#thread=shop-1`);
+    await page.goto(`http://127.0.0.1:${server.port}/#thread=shop-1&rail=open`);
     await page.locator('.context-bar-title', { hasText: 'Cap checkout retries' }).waitFor();
     // The list: only the thread on the other machine carries a badge.
     await page

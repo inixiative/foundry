@@ -200,7 +200,7 @@ One sheet naming every part of Foundry, so people and agents use the same words.
 |---|---|---|---|
 | viewer | The local control surface at http://localhost:4500, styled with Kingdom's tokens so the two apps read as one. It does not grow runner features (worktrees, diffs, checkpoints). | `pf/viewer/`, `ui/tokens.css` | live |
 | data streams | `/ws` streams a panel opens (`thread:<id>`, `threads`, `prompts`, `events`, `flow:<id>`, `feedback`): snapshot, then appends with a `seq` for gap detection; no replay. | `pf/viewer/data-streams.ts`; [SYSTEM.md](SYSTEM.md) | live |
-| left rail | Active (Yours / Shared, fixed halves) and Projects (project list and the selected scope's threads). | `ui/nav-rail.js`, `ui/project-sidebar.js` | live |
+| left rail | Attention (open threads that need you, red then orange; the default), Open (Yours / Shared, fixed halves) and Projects (project list and the selected scope's threads); `⌥⇧←` `⌥⇧→` step between them. Starting a thread from Projects returns to Attention (`afterProjectStart`). | `ui/nav-rail.js`, `ui/project-sidebar.js` | live |
 | centre tabs | Thread · Brief (what the thread is about and where it stands) · Work (task lists, records) · Loop (plan → build → review → land, then each turn's flow graph). | `ui/conversation.js`, `brief.js`, `work.js`, `loop-view.js` | live |
 | right panel | Context · Participants · Permissions · Heralds · Pointers (Warden pointers that reached the thread) · Feedback. Inspecting anything opens the inspector over it. | `ui/right-panel.js`, `detail-drawer.js` | live (Heralds tab: placeholder) |
 | board | The attention board (`b`): threads in columns by status colour. | `ui/board.js` | live |

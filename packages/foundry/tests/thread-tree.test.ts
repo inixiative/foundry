@@ -366,6 +366,31 @@ test('subagents to any depth become child threads tied to their real parent, sti
   ).toBeDefined();
 });
 
+test('a subagent archived while it runs stays archived when its run ends', () => {
+  const store = journal();
+  const t = main();
+  store.saveThread(t);
+  store.beginTurn(t, 'turn-1', 'Explore');
+  store.startTurn(t, 'turn-1');
+  const { r } = recorder(store);
+  r.observe(
+    t.id,
+    life({ phase: 'started', taskId: 'task-a', toolUseId: 'call-a', prompt: 'Look', depth: 1 }),
+  );
+  r.observe(t.id, childEvent('call-a', { kind: 'text', text: 'working' }));
+  // Archiving the parent archives the subagent (ActionHandler's cascade) while it still runs.
+  const child = store.threads().find((x) => x.meta.spawn?.nativeTaskId === 'task-a')!;
+  store.saveThread({ ...child, meta: { ...child.meta, status: 'archived', archivedAt: 42 } });
+  r.observe(
+    t.id,
+    life({ phase: 'ended', taskId: 'task-a', toolUseId: 'call-a', status: 'completed' }),
+  );
+  const after = store.threads().find((x) => x.id === child.id)!;
+  expect(after.meta).toMatchObject({ status: 'archived', archivedAt: 42 });
+  // The parent still journals the return.
+  expect(store.phaseHistory(t.id).map((p) => p.phase)).toEqual(['handoff', 'handoff-return']);
+});
+
 test('a Codex sub-agent is its own thread, claimed by its own id; a later child turn opens a new turn', () => {
   const store = journal();
   const t = main();

@@ -49,6 +49,7 @@ export class ActionHandler {
   private _resolveThread: (id: string) => Thread | undefined;
   private _onThreadChange?: (thread: Thread) => void;
   private _reopenThread?: (id: string) => boolean;
+  private _childrenOf: (id: string) => Thread[];
 
   constructor(opts: {
     harness: Harness;
@@ -58,6 +59,8 @@ export class ActionHandler {
     onThreadChange?: (thread: Thread) => void;
     /** Bring an archived thread back (the turn service's reopen: rebuilt with its journal and binding). */
     reopenThread?: (id: string) => boolean;
+    /** A thread's subagent threads (`meta.spawn` under `meta.parentThreadId`): archiving a thread archives them too. */
+    childrenOf?: (id: string) => Thread[];
   }) {
     this._harness = opts.harness;
     this._events = opts.eventStream;
@@ -67,6 +70,7 @@ export class ActionHandler {
       ((id) => (id === opts.harness.thread.id ? opts.harness.thread : undefined));
     this._onThreadChange = opts.onThreadChange;
     this._reopenThread = opts.reopenThread;
+    this._childrenOf = opts.childrenOf ?? (() => []);
   }
 
   /** Execute an operator action. */
@@ -88,10 +92,20 @@ export class ActionHandler {
     if (action.kind === 'thread:unarchive') {
       if (!thread.disposed)
         return { ok: true, action: action.kind, message: `Thread ${threadId} is open` };
+      // The subagents archived with it (they carry its archive time) come back with it.
+      const archivedAt = thread.meta.archivedAt;
+      const subagents = this._subagentsOf(thread.id).filter(
+        (s) => s.disposed && archivedAt !== undefined && s.meta.archivedAt === archivedAt,
+      );
       const reopened = this._reopenThread?.(threadId) ?? false;
-      return reopened
-        ? { ok: true, action: action.kind, message: `Thread ${threadId} reopened` }
-        : { ok: false, action: action.kind, message: `Thread ${threadId} can't be reopened` };
+      if (!reopened)
+        return { ok: false, action: action.kind, message: `Thread ${threadId} can't be reopened` };
+      const back = subagents.filter((s) => this._reopenThread?.(s.id)).length;
+      return {
+        ok: true,
+        action: action.kind,
+        message: `Thread ${threadId} reopened${back ? ` with ${back} subagent${back === 1 ? '' : 's'}` : ''}`,
+      };
     }
     if (thread.disposed && action.kind !== 'thread:inspect' && action.kind !== 'system:snapshot') {
       return {
@@ -151,9 +165,42 @@ export class ActionHandler {
     return { ok: true, action: action.kind, message: `Thread ${thread.id} resumed` };
   }
 
+  /**
+   * Archive the thread and every open subagent under it, children before their parent. Each subagent
+   * takes the parent's archive time, so undoing the archive knows which ones went with it.
+   */
   private _archiveThread(action: OperatorAction, thread: Thread): ActionResult {
+    const subagents = this._subagentsOf(thread.id)
+      .filter((s) => !s.disposed)
+      .reverse();
+    for (const subagent of subagents) subagent.archive();
     thread.archive();
-    return { ok: true, action: action.kind, message: `Thread ${thread.id} archived` };
+    for (const subagent of subagents) {
+      subagent.meta.archivedAt = thread.meta.archivedAt;
+      this._onThreadChange?.(subagent);
+    }
+    const n = subagents.length;
+    return {
+      ok: true,
+      action: action.kind,
+      message: `Thread ${thread.id} archived${n ? ` with ${n} subagent${n === 1 ? '' : 's'}` : ''}`,
+    };
+  }
+
+  /** Every subagent under a thread, at any depth, each parent before its children. */
+  private _subagentsOf(rootId: string): Thread[] {
+    const found: Thread[] = [];
+    const seen = new Set<string>([rootId]);
+    const walk = (id: string) => {
+      for (const child of this._childrenOf(id)) {
+        if (seen.has(child.id)) continue;
+        seen.add(child.id);
+        found.push(child);
+        walk(child.id);
+      }
+    };
+    walk(rootId);
+    return found;
   }
 
   private _inspectThread(action: OperatorAction, thread: Thread): ActionResult {

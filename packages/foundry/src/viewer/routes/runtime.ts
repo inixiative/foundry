@@ -136,6 +136,8 @@ const RESTARTING =
 export interface WorkerSessions {
   binding(worker: string, threadId: string): Promise<string | null | undefined>;
   retire(worker: string, threadId: string): Promise<boolean | undefined>;
+  /** An archived thread: end its processes on every worker, keeping bindings so reopening resumes. */
+  release(threadId: string): Promise<void>;
 }
 
 /** Opaque history cursor: base64url of {t: threadId, s: oldest seq of the issued page}. */

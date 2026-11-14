@@ -16,6 +16,7 @@ import {
   commandPaletteOpen,
   createThread,
   helpOpen,
+  stepRailView,
   watchtowerOpen,
 } from './store.js';
 
@@ -193,6 +194,7 @@ function showHoldKeys(on) {
     ['⌥↑ ⌥↓', 'Step through the turn view'],
     ['⌥↵ ⌥⌫', 'Approve · reject the waiting card'],
     ['⌥← ⌥→', 'Previous · next waiting card'],
+    ['⌥⇧← ⌥⇧→', 'Left rail: Attention · Open · Projects'],
     ['⌥F ⌥V', 'Attach a file · start voice'],
     ['⌥⇧F', 'Search everything'],
     ['⌥K ⌘K', 'Command palette'],
@@ -259,6 +261,11 @@ export function initHotkeys() {
     if (e.altKey && !e.metaKey && !e.ctrlKey) {
       clearTimeout(holdTimer);
       showHoldKeys(false);
+      // ⌥⇧← ⌥⇧→ step the left rail: Attention · Open · Projects. Before the waiting stack's ⌥← ⌥→.
+      if (e.shiftKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+        e.preventDefault();
+        return stepRailView(e.key === 'ArrowLeft' ? -1 : 1);
+      }
       const stack = document.querySelector('.prompt-stack');
       if (e.key === 'Enter' && stack) {
         e.preventDefault();

@@ -157,3 +157,76 @@ test('production action route preserves thread scope for layer commands', async 
     expect(selected.disposed).toBe(false);
   }
 });
+
+function tree() {
+  const main = new Thread('main', new ContextStack());
+  const parent = new Thread('parent', new ContextStack());
+  const sub = (id: string, parentThreadId: string) => {
+    const thread = new Thread(id, new ContextStack());
+    Object.assign(thread.meta, { parentThreadId, spawn: { via: 'native-claude', observed: true } });
+    return thread;
+  };
+  const child = sub('child', 'parent');
+  const grandchild = sub('grandchild', 'child');
+  // Started from the parent by a person: top-level, keeps its own life.
+  const followUp = new Thread('follow-up', new ContextStack());
+  followUp.meta.parentThreadId = 'parent';
+  const all = [main, parent, child, grandchild, followUp];
+  const changed: string[] = [];
+  const reopened: string[] = [];
+  const actions = new ActionHandler({
+    harness: new Harness(main),
+    eventStream: new EventStream(),
+    interventions: new InterventionLog(),
+    resolveThread: (id) => all.find((t) => t.id === id),
+    childrenOf: (id) => all.filter((t) => t.meta.spawn && t.meta.parentThreadId === id),
+    onThreadChange: (t) => changed.push(t.id),
+    reopenThread: (id) => {
+      if (!all.find((t) => t.id === id)?.disposed) return false;
+      reopened.push(id);
+      return true;
+    },
+  });
+  return { parent, child, grandchild, followUp, actions, changed, reopened };
+}
+
+test('archiving a thread archives its subagents at every depth, not threads started from it', async () => {
+  const { parent, child, grandchild, followUp, actions, changed } = tree();
+  const result = await actions.execute({
+    kind: 'thread:archive',
+    target: parent.id,
+    timestamp: Date.now(),
+  });
+  expect(result).toMatchObject({ ok: true, message: 'Thread parent archived with 2 subagents' });
+  for (const t of [parent, child, grandchild]) expect(t.meta.status).toBe('archived');
+  expect(followUp.disposed).toBe(false);
+  // Each is saved and streamed, children before their parent.
+  expect(changed).toEqual(['grandchild', 'child', 'parent']);
+  // They carry the parent's archive time: that is how Undo knows they went with it.
+  expect(child.meta.archivedAt).toBe(parent.meta.archivedAt);
+  expect(grandchild.meta.archivedAt).toBe(parent.meta.archivedAt);
+});
+
+test('undoing an archive reopens the subagents archived with it, not one archived before', async () => {
+  const { parent, grandchild, actions, reopened } = tree();
+  grandchild.archive();
+  grandchild.meta.archivedAt = 1;
+  await actions.execute({ kind: 'thread:archive', target: parent.id, timestamp: Date.now() });
+  const result = await actions.execute({
+    kind: 'thread:unarchive',
+    target: parent.id,
+    timestamp: Date.now(),
+  });
+  expect(result).toMatchObject({ ok: true, message: 'Thread parent reopened with 1 subagent' });
+  expect(reopened).toEqual(['parent', 'child']);
+});
+
+test('an already archived subagent is not archived again', async () => {
+  const { parent, child, grandchild, actions, changed } = tree();
+  grandchild.archive();
+  const at = grandchild.meta.archivedAt;
+  await actions.execute({ kind: 'thread:archive', target: parent.id, timestamp: Date.now() + 5 });
+  expect(grandchild.meta.archivedAt).toBe(at);
+  expect(child.meta.status).toBe('archived');
+  expect(changed).toEqual(['child', 'parent']);
+});
