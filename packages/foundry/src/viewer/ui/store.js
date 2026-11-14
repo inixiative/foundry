@@ -135,11 +135,16 @@ export const leftSize = signal('normal'); // hidden · strip · normal · wide
 export const rightSize = signal('normal'); // hidden · icons · normal · wide
 export const rightTab = signal('context');
 /**
- * The left rail: 'attention' (open threads that need you: orange or red, attention.js), 'open' (every
- * open thread, Yours over Shared) or 'projects' (the projects, then a scope's threads). Attention and
- * Open span every project; ⌥⇧← ⌥⇧→ step through them in this order.
+ * The left rail's views, as its toggle shows them in two rows: 'attention' (open threads that need
+ * you: orange or red, attention.js), 'open' (every open thread, Yours over Shared), 'projects' (the
+ * projects beside a scope's threads); then 'scheduled' (schedules, triggers and running loops) and
+ * 'status' (this machine and its connections). ⌥⇧← ⌥⇧→ step through them in this order.
  */
-export const RAIL_VIEWS = ['attention', 'open', 'projects', 'scheduled', 'status'];
+export const RAIL_ROWS = [
+  ['attention', 'open', 'projects'],
+  ['scheduled', 'status'],
+];
+export const RAIL_VIEWS = RAIL_ROWS.flat();
 export const railView = signal('attention');
 /** Attention and Open list threads across every project; Projects lists one scope's. */
 export const railSpansProjects = (view) => view !== 'projects';

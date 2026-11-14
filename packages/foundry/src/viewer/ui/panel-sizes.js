@@ -90,29 +90,30 @@ window.addEventListener('resize', () => {
 const CENTRE_MIN = 560;
 
 /**
- * How the sides fit beside a centre of at least 560 px, without changing the sizes you chose: the
- * left list folds to its strip first; if that isn't enough, the right panel (the turn view with it)
- * floats over the centre as a drawer, keeping only its icon column. Below 1100 px the workspace is
- * tabs instead (styles.css), so this applies from there up. Closing or widening the window restores
- * the layout you had.
+ * How the sides fit beside a centre of at least 560 px, without changing the sizes you chose. The
+ * Projects view's wider list only takes what the centre can spare, so picking Projects never folds
+ * the rail; when an open rail and right panel still leave the centre too narrow, the rail folds to
+ * its strip. The right panel never needs to float: its shares (at most a third of the window) always
+ * fit beside the strip from 1100 px, and below that the workspace is tabs instead (styles.css).
+ * Widening the window restores the layout you had.
  */
 export const panelFit = computed(() => {
   // At 1700 px and up the app is zoomed 1.1 (styles.css), so it lays out in fewer pixels.
   const width = viewportWidth.value >= 1700 ? viewportWidth.value / 1.1 : viewportWidth.value;
-  let left = leftWidth(leftSize.value, width, railView.value);
   const right = rightWidth(rightSize.value, width);
-  if (width < 1100) return { leftFolded: false, rightOverlay: false, left, right };
+  const base = leftWidth(leftSize.value, width, 'attention');
+  let left = leftWidth(leftSize.value, width, railView.value);
+  if (left > base) left = Math.max(base, Math.min(left, width - right - CENTRE_MIN));
+  if (width < 1100) return { leftFolded: false, left, right };
   const leftFolded = left > STRIP && width - left - right < CENTRE_MIN;
   if (leftFolded) left = STRIP;
-  const rightOverlay = right > ICONS && width - left - right < CENTRE_MIN;
-  return { leftFolded, rightOverlay, left, right };
+  return { leftFolded, left, right };
 });
 
 /** The grid columns for the workspace (the board and Watchtower span the width on their own). */
 export function panelColumns() {
   const fit = panelFit.value;
-  const right = fit.rightOverlay ? ICONS : fit.right;
-  return `${fit.left}px minmax(0, 1fr) ${right}px`;
+  return `${fit.left}px minmax(0, 1fr) ${fit.right}px`;
 }
 
 /**

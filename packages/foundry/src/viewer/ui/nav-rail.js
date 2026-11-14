@@ -32,6 +32,7 @@ import {
   allThreads,
   leftSize,
   projectSidebarOpen,
+  RAIL_ROWS,
   railView,
   selectThread,
 } from './store.js';
@@ -50,10 +51,6 @@ const RAIL_LABELS = {
   status: 'Status',
 };
 /** The tabs in their two rows: where you work, then what runs without you and the machine. */
-const RAIL_ROWS = [
-  ['attention', 'open', 'projects'],
-  ['scheduled', 'status'],
-];
 /** Red before orange in the Attention rail. */
 const URGENCY = { problem: 0, attention: 1 };
 

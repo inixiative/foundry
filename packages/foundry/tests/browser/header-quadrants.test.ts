@@ -99,10 +99,10 @@ test('the thread header shows its name and grouped pills', async () => {
     // Row 2: status, your agents, other parties; then provider · model · effort, named from the registry.
     const bottom = band.locator('.band-who');
     expect(await bottom.locator('.band-status').count()).toBe(1);
-    // Agents: a list of sessions, the primary first; people: you first.
+    // Agents: the thread's agents, the host first; people: you first.
     await bottom.locator('.band-count').first().hover();
     const agentsPop = bottom.locator('.band-count').first().locator('.band-popover');
-    expect(await agentsPop.innerText()).toMatch(/AGENT SESSIONS · 1[\s\S]*Opus 5\.5[\s\S]*primary/);
+    expect(await agentsPop.innerText()).toMatch(/AGENTS · 1[\s\S]*Opus 5\.5[\s\S]*host/);
     await bottom.locator('.band-count').nth(1).hover();
     expect(await bottom.locator('.band-count').nth(1).locator('.band-popover').innerText()).toMatch(
       /PEOPLE · 1[\s\S]*You[\s\S]*acting as[\s\S]*trusted[\s\S]*Untrusted: everyone else/,
