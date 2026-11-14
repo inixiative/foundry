@@ -1,5 +1,5 @@
-/* Subscription usage windows in the footer: "5h ▬ 7%" per window, as the mockup's meter labels. */
-.nav-footer-limits {
+/* Subscription usage windows in the Status view: "5h ▬ 7%" per window, as the mockup's meter labels. */
+.machine-status-limits {
   display: flex;
   flex-wrap: wrap;
   gap: 2px 10px;
@@ -7,13 +7,13 @@
   font-size: 11px;
   color: var(--text-dim);
 }
-.nav-footer-limits .meterlbl {
+.machine-status-limits .meterlbl {
   display: inline-flex;
   align-items: center;
   gap: 5px;
   white-space: nowrap;
 }
-.nav-footer-limits .bar2 {
+.machine-status-limits .bar2 {
   display: inline-block;
   width: 40px;
   height: 5px;
@@ -21,12 +21,12 @@
   background: var(--line);
   overflow: hidden;
 }
-.nav-footer-limits .bar2 i {
+.machine-status-limits .bar2 i {
   display: block;
   height: 100%;
   background: var(--text-dim);
 }
-.nav-footer-limits.is-blocked .bar2 i {
+.machine-status-limits.is-blocked .bar2 i {
   background: var(--st-problem);
 }
 
@@ -36,7 +36,7 @@
   align-items: center;
   gap: 4px;
 }
-.pool-head .nav-footer-row {
+.pool-head .machine-status-row {
   flex: 1 1 auto;
   min-width: 0;
 }
@@ -105,13 +105,13 @@
   color: var(--text-dim);
   font-size: 11px;
 }
-.pool-login .nav-footer-limits {
+.pool-login .machine-status-limits {
   margin-left: 12px;
 }
-.nav-footer-dot.is-bad {
+.machine-status-dot.is-bad {
   background: var(--st-problem);
 }
-.nav-footer-dot.is-busy {
+.machine-status-dot.is-busy {
   background: var(--warn);
   animation: pool-pulse 1.4s ease-in-out infinite;
 }
@@ -121,7 +121,7 @@
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .nav-footer-dot.is-busy {
+  .machine-status-dot.is-busy {
     animation: none;
   }
 }
@@ -173,7 +173,7 @@
 .pool-table td {
   vertical-align: middle;
 }
-.pool-table .nav-footer-limits {
+.pool-table .machine-status-limits {
   margin: 0;
 }
 .pool-actions {
@@ -209,7 +209,7 @@
   white-space: pre-wrap;
   word-break: break-all;
 }
-.pool-table .nav-footer-dot {
+.pool-table .machine-status-dot {
   display: inline-block;
   margin-right: 4px;
   vertical-align: middle;

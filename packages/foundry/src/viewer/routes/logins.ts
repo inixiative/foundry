@@ -7,7 +7,7 @@
  * This machine's subscription logins and how they are balanced (Aron, 2026-11-02): add a login (its
  * sign-in runs here, finished in the browser), name or remove one, set a runtime's balancing, and
  * read each runtime's pool: whether it is balancing across how many logins or why it stopped, each
- * login's status, meters and turns in the last five hours, and the last turns' logins. The footer,
+ * login's status, meters and turns in the last five hours, and the last turns' logins. The rail's Status view,
  * Settings › Providers and Analytics read the same record. Tokens never appear in any response.
  */
 import { rmSync } from 'node:fs';
@@ -64,7 +64,7 @@ export function registerLoginRoutes(app: Hono, deps: LoginRoutesDeps): void {
             runs: 0,
             preferred: false,
           });
-      // Projects that balance this runtime their own way: the footer's scale doesn't move them.
+      // Projects that balance this runtime their own way: the Status view's scale doesn't move them.
       const overrides = Object.entries(configStore.config.projects ?? {})
         .filter(([id, p]) => id !== project && p.subscriptionPools?.[runtime])
         .map(([id, p]) => ({ projectId: id, name: p.label ?? id }));

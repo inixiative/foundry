@@ -5,7 +5,7 @@
  */
 /**
  * Analytics, as designed in concept-v4 (design review 11-02): the headline tiles, the capacity band
- * first (each subscription login's 5-hour and 7-day windows, the same record the footer reads, never
+ * first (each subscription login's 5-hour and 7-day windows, the same record the Status view reads, never
  * per machine), and tokens over a chosen range. They read what Foundry already records:
  * `/api/providers/limits` (with `/api/providers/accounts` for each login's name) and
  * `/api/analytics/timeseries`. What Foundry doesn't record yet (run-out, tokens by spender, the
@@ -58,7 +58,7 @@ const POOLED_PROVIDER = { claude: 'claude-code', codex: 'codex' };
 
 /**
  * Each subscription login with its usage windows: { name, provider, limit, runs? }. This machine's
- * Claude and Codex logins come from their pools (`/api/providers/pools`, the record the footer's
+ * Claude and Codex logins come from their pools (`/api/providers/pools`, the record the Status view's
  * scale reads, with each login's turns in the last five hours); any other subscription from its account.
  */
 export function useLogins() {
@@ -132,7 +132,7 @@ function Meter({ label, window }) {
 /** The capacity band: one row per subscription login, its 5-hour and 7-day windows and when they reset. */
 export function CapacityBand({ logins }) {
   return html`<section class="an-box an-capacity" aria-label="Capacity">
-    <h3>Capacity <span>per login · the same record the footer reads</span></h3>
+    <h3>Capacity <span>per login · the same record the Status view reads</span></h3>
     ${
       logins === undefined
         ? html`<div class="an-dim">Reading your logins…</div>`

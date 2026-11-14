@@ -270,8 +270,8 @@
   background: var(--ok);
 }
 
-/* The footer's machine name opens its page; other machines are rows with their open threads. */
-button.nav-footer-device {
+/* The Status view's machine name opens its page; other machines are rows with their open threads. */
+button.machine-status-device {
   border: 0;
   background: none;
   color: inherit;
@@ -280,15 +280,15 @@ button.nav-footer-device {
   text-align: left;
   cursor: pointer;
 }
-button.nav-footer-device:hover,
-.nav-footer-other:hover .nav-footer-name {
+button.machine-status-device:hover,
+.machine-status-other:hover .machine-status-name {
   color: var(--accent);
 }
-.nav-footer-others {
+.machine-status-others {
   display: grid;
   gap: 2px;
 }
-.nav-footer-others .coming-soon-note {
+.machine-status-others .coming-soon-note {
   font-size: 11px;
 }
 

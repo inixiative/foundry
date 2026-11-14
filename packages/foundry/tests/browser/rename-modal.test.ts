@@ -45,21 +45,21 @@ test('renaming the machine opens a small window and saves through it', async () 
     const errors: string[] = [];
     page.on('pageerror', (e: Error) => errors.push(e.message));
 
-    await page.goto(origin);
+    await page.goto(`${origin}/#rail=status`);
     await page.locator('.header').waitFor();
-    await page.locator('.nav-footer-edit').click();
+    await page.locator('.machine-status-edit').click();
     const modal = page.getByRole('dialog', { name: 'Rename this machine' });
     await modal.waitFor();
     // Cancel leaves the name alone.
     await modal.getByRole('button', { name: /Cancel/ }).click();
     expect(await page.getByRole('dialog', { name: 'Rename this machine' }).count()).toBe(0);
-    await page.locator('.nav-footer-edit').click();
+    await page.locator('.machine-status-edit').click();
     await page.getByLabel('Machine name').fill('2025 MacBook Pro');
     await page
       .getByRole('dialog', { name: 'Rename this machine' })
       .getByRole('button', { name: '✓ Save' })
       .click();
-    await page.locator('.nav-footer-device', { hasText: '2025 MacBook Pro' }).waitFor();
+    await page.locator('.machine-status-device', { hasText: '2025 MacBook Pro' }).waitFor();
     expect((await (await fetch(`${origin}/api/settings`)).json()).installationName).toBe(
       '2025 MacBook Pro',
     );

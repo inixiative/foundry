@@ -5,7 +5,7 @@
  */
 /**
  * Each subscription login's usage windows (5 hour, 7 day…, percent used and when they reset), for
- * the footer. Read with agent-session's limit probes in the login's own home (`CLAUDE_CONFIG_DIR`,
+ * the rail's Status view. Read with agent-session's limit probes in the login's own home (`CLAUDE_CONFIG_DIR`,
  * `CODEX_HOME`): the CLI answers over its control channel, no model call. Muse Code's are its
  * `muse usage --json` (no model turn), on the user's own login (the only Muse login Foundry runs). Cached a few minutes per
  * login, one probe in flight at a time. A Kingdom-pool login's limits are Kingdom's to report.

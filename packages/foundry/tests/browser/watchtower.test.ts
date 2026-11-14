@@ -79,11 +79,12 @@ test('h opens the Watchtower: every stage is a column, a thread is a card, a car
       await watching.getByRole('region', { name }).waitFor();
     await watching.locator('.wdev', { hasText: machine }).waitFor();
 
-    // The machine's icon is picked in its rename window (the footer, off the Watchtower).
+    // The machine's icon is picked in its rename window (the Status view, off the Watchtower).
     await page.keyboard.press('Escape');
     await page.waitForFunction(() => !location.hash.includes('view=watch'));
-    await page.locator('.nav-footer-machine').hover();
-    await page.locator('.nav-footer-edit').click();
+    await page.locator('.rail-toggle-btn', { hasText: 'Status' }).click();
+    await page.locator('.machine-status-machine').hover();
+    await page.locator('.machine-status-edit').click();
     await page.locator('.rename-modal').getByRole('radio', { name: 'peak' }).click();
     await page.waitForFunction(
       async (url: string) => (await (await fetch(url)).json()).installationIcon?.glyph === 'peak',

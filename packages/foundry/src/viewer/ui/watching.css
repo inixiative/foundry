@@ -214,7 +214,7 @@
   height: 22px;
   background: var(--dc);
 }
-.nav-footer .dva {
+.machine-status .dva {
   margin-right: 4px;
   vertical-align: middle;
 }

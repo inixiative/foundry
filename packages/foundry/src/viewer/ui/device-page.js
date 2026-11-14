@@ -43,7 +43,7 @@ const getJson = (url) =>
     .then((res) => (res.ok ? res.json() : null))
     .catch(() => null);
 
-/** This machine's name: its Foundry's name, as the footer and the Board show it. */
+/** This machine's name: its Foundry's name, as the Status view and the Board show it. */
 export const thisMachineName = () =>
   machineProfile.value?.installationName ??
   settingsConfig.value?.installationName ??
@@ -204,7 +204,7 @@ export function DevicePage({ deviceId }) {
       <section class="ph-box">
         <h4>Subscriptions</h4>
         <div class="ph-line">Shared with ${here ? 'your other machines' : 'this machine'}</div>
-        <div class="ph-meta">The same logins everywhere; usage counts once. See the footer or Analytics.</div>
+        <div class="ph-meta">The same logins everywhere; usage counts once. See Status or Analytics.</div>
       </section>
     </div>
   </section>`;

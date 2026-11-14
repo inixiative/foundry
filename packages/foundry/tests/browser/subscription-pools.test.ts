@@ -16,7 +16,7 @@ import { startViewer } from '../../src/viewer/server';
 import { type ReleaseStep, releaseAll } from '../helpers/release-all';
 
 // Aron, 2026-11-02: "how do we see if balancing is happening? … a balancing toggle, maybe like a
-// scale". The footer shows each runtime's pool with its scale; clicking it toggles the balancer.
+// scale". The Status view shows each runtime's pool with its scale; clicking it toggles the balancer.
 const { chromium } = createRequire(import.meta.url)(
   process.env.FOUNDRY_QA_PLAYWRIGHT ?? 'playwright',
 );
@@ -63,7 +63,7 @@ const pool = (pinned: boolean) => ({
   ],
 });
 
-test('the footer scale shows balancing and toggles the load balancer; Settings lists the logins', async () => {
+test('the Status scale shows balancing and toggles the load balancer; Settings lists the logins', async () => {
   const cleanup: ReleaseStep[] = [];
   const dir = mkdtempSync(join(tmpdir(), 'foundry-pools-'));
   cleanup.push(['dir', () => rmSync(dir, { recursive: true, force: true })]);
@@ -112,34 +112,34 @@ test('the footer scale shows balancing and toggles the load balancer; Settings l
       return route.fulfill({ contentType: 'application/json', body: '{"ok":true}' });
     });
 
-    await page.goto(origin);
-    const footer = page.locator('.nav-footer');
-    await footer.locator('.pool-balancing', { hasText: 'Balancing across 3 logins' }).waitFor();
+    await page.goto(`${origin}/#rail=status`);
+    const status = page.locator('.machine-status');
+    await status.locator('.pool-balancing', { hasText: 'Balancing across 3 logins' }).waitFor();
     // The Kingdom pool's balancing isn't shown yet: its badge is the link to the plan.
-    await footer.locator('.pool-kingdom a.coming-soon', { hasText: 'Coming soon' }).waitFor();
-    await footer.locator('.pool .nav-footer-row').click();
-    const rows = footer.locator('.pool-login');
+    await status.locator('.pool-kingdom a.coming-soon', { hasText: 'Coming soon' }).waitFor();
+    await status.locator('.pool .machine-status-row').click();
+    const rows = status.locator('.pool-login');
     expect(await rows.count()).toBe(3);
-    await footer.locator('.pool-login[data-status="exhausted"]', { hasText: 'work' }).waitFor();
-    await footer.locator('.pool-login', { hasText: '5 runs' }).waitFor();
+    await status.locator('.pool-login[data-status="exhausted"]', { hasText: 'work' }).waitFor();
+    await status.locator('.pool-login', { hasText: '5 runs' }).waitFor();
     // Expanded, each login says its plan, whose it is and who it is signed in as.
-    await footer
+    await status
       .locator('.pool-login', {
         hasText: 'Claude Ultra (Max 20x) · inixiative · inixiative@example.com',
       })
       .waitFor();
-    await footer.locator('.pool-login[data-status="exhausted"] .pool-plan.is-unknown').waitFor();
-    await footer.locator('.pool-last', { hasText: 'Last runs: personal, inixiative' }).waitFor();
+    await status.locator('.pool-login[data-status="exhausted"] .pool-plan.is-unknown').waitFor();
+    await status.locator('.pool-last', { hasText: 'Last runs: personal, inixiative' }).waitFor();
 
     // The scale turns balancing off (pinned to the preferred login), then back on.
-    const scale = footer.locator('.scale-btn');
+    const scale = status.locator('.scale-btn');
     expect(await scale.getAttribute('aria-pressed')).toBe('true');
     await scale.click();
-    await footer.locator('.pool-balancing', { hasText: 'Stopped: pinned to inixiative' }).waitFor();
+    await status.locator('.pool-balancing', { hasText: 'Stopped: pinned to inixiative' }).waitFor();
     expect(patches[0]).toEqual({ pinned: true, preferredLoginId: 'a' });
     expect(await scale.getAttribute('aria-pressed')).toBe('false');
     await scale.click();
-    await footer.locator('.pool-balancing', { hasText: 'Balancing across 3 logins' }).waitFor();
+    await status.locator('.pool-balancing', { hasText: 'Balancing across 3 logins' }).waitFor();
     expect(patches[1]).toEqual({ pinned: false });
 
     // Settings › Providers: the same pool, each login with its meters, turns and actions.
