@@ -5,8 +5,8 @@
  */
 /**
  * The side panels' sizes, in steps: left hidden · strip · normal · wide; right hidden · icons ·
- * normal · wide (the widest step was dropped, Aron 11-02). The left list's wide step is wide enough
- * to show projects and the selected scope's threads side by side (Aron, 11-14). One symbol makes a side larger and one smaller, at every step; a control
+ * normal · wide (the widest step was dropped, Aron 11-02). In the Projects view the left list is
+ * one share wider, since it shows projects and the selected scope's threads side by side (Aron, 11-14). One symbol makes a side larger and one smaller, at every step; a control
  * disappears at its side's limit, and a strip shows only "larger". A hidden side keeps its grid
  * column at 0 width (the other panels never shift), with a slim restore tab mid-height on that edge.
  * `projectSidebarOpen` / `detailDrawerOpen` stay the "at least normal" view of these levels, so the
@@ -14,12 +14,39 @@
  */
 
 import { computed, effect, html, signal } from './lib.js';
-import { detailDrawerOpen, leftSize, projectSidebarOpen, rightSize } from './store.js';
+import { detailDrawerOpen, leftSize, projectSidebarOpen, railView, rightSize } from './store.js';
 
 export const LEFT_LEVELS = ['hidden', 'strip', 'normal', 'wide'];
 export const RIGHT_LEVELS = ['hidden', 'icons', 'normal', 'wide'];
-const LEFT_WIDTH = { hidden: 0, strip: 32, normal: 272, wide: 520 };
-const RIGHT_WIDTH = { hidden: 0, icons: 44, normal: 440, wide: 560 };
+/**
+ * Each open step is a share of the window, kept between a floor and a ceiling (Aron, 11-14: the
+ * sides were "a little bit too big", fixed pixels that grew to over a third of a laptop screen).
+ * The usual shares for side panels: a navigation list a fifth, a detail panel a quarter, nothing
+ * past a third. Collapsed steps stay fixed.
+ */
+const LEFT_SHARE = { normal: [0.18, 240, 300], wide: [0.28, 400, 540] };
+/**
+ * The Projects view lays projects and threads side by side, so each of its steps is one wider; its
+ * normal floor stays at 320 so a 1280 px laptop keeps the list open beside the centre and right panel.
+ */
+const PROJECTS_SHARE = { normal: [0.28, 320, 540], wide: [0.33, 480, 640] };
+const RIGHT_SHARE = { normal: [0.25, 360, 480], wide: [0.33, 440, 640] };
+const STRIP = 32;
+const ICONS = 44;
+
+const share = ([part, min, max], width) => Math.round(Math.min(max, Math.max(min, width * part)));
+const leftWidth = (size, width, view) => {
+  if (size === 'hidden') return 0;
+  if (size === 'strip') return STRIP;
+  const shares = view === 'projects' ? PROJECTS_SHARE : LEFT_SHARE;
+  return share(shares[size] ?? shares.normal, width);
+};
+const rightWidth = (size, width) =>
+  size === 'hidden'
+    ? 0
+    : size === 'icons'
+      ? ICONS
+      : share(RIGHT_SHARE[size] ?? RIGHT_SHARE.normal, width);
 
 export { leftSize, rightSize };
 
@@ -63,29 +90,30 @@ window.addEventListener('resize', () => {
 const CENTRE_MIN = 560;
 
 /**
- * How the sides fit beside a centre of at least 560 px, without changing the sizes you chose: the
- * left list folds to its strip first; if that isn't enough, the right panel (the turn view with it)
- * floats over the centre as a drawer, keeping only its icon column. Below 1100 px the workspace is
- * tabs instead (styles.css), so this applies from there up. Closing or widening the window restores
- * the layout you had.
+ * How the sides fit beside a centre of at least 560 px, without changing the sizes you chose. The
+ * Projects view's wider list only takes what the centre can spare, so picking Projects never folds
+ * the rail; when an open rail and right panel still leave the centre too narrow, the rail folds to
+ * its strip. The right panel never needs to float: its shares (at most a third of the window) always
+ * fit beside the strip from 1100 px, and below that the workspace is tabs instead (styles.css).
+ * Widening the window restores the layout you had.
  */
 export const panelFit = computed(() => {
   // At 1700 px and up the app is zoomed 1.1 (styles.css), so it lays out in fewer pixels.
   const width = viewportWidth.value >= 1700 ? viewportWidth.value / 1.1 : viewportWidth.value;
-  let left = LEFT_WIDTH[leftSize.value] ?? 272;
-  const right = RIGHT_WIDTH[rightSize.value] ?? 440;
-  if (width < 1100) return { leftFolded: false, rightOverlay: false, left, right };
-  const leftFolded = left > LEFT_WIDTH.strip && width - left - right < CENTRE_MIN;
-  if (leftFolded) left = LEFT_WIDTH.strip;
-  const rightOverlay = right > RIGHT_WIDTH.icons && width - left - right < CENTRE_MIN;
-  return { leftFolded, rightOverlay, left, right };
+  const right = rightWidth(rightSize.value, width);
+  const base = leftWidth(leftSize.value, width, 'attention');
+  let left = leftWidth(leftSize.value, width, railView.value);
+  if (left > base) left = Math.max(base, Math.min(left, width - right - CENTRE_MIN));
+  if (width < 1100) return { leftFolded: false, left, right };
+  const leftFolded = left > STRIP && width - left - right < CENTRE_MIN;
+  if (leftFolded) left = STRIP;
+  return { leftFolded, left, right };
 });
 
 /** The grid columns for the workspace (the board and Watchtower span the width on their own). */
 export function panelColumns() {
   const fit = panelFit.value;
-  const right = fit.rightOverlay ? RIGHT_WIDTH.icons : fit.right;
-  return `${fit.left}px minmax(0, 1fr) ${right}px`;
+  return `${fit.left}px minmax(0, 1fr) ${fit.right}px`;
 }
 
 /**

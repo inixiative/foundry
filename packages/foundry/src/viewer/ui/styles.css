@@ -367,17 +367,21 @@ body {
   font: inherit;
   cursor: pointer;
 }
-/* The wide step: projects and the selected scope's threads side by side, each scrolling on its own. */
-.nav-column--wide {
+/* Projects and the selected scope's threads side by side, each scrolling on its own (Aron, 11-14:
+   stacked "is kind of rough"). The projects list is the narrower column. */
+.nav-column.proj-sidebar {
   flex-direction: row;
 }
-.nav-column--wide > .nav-projects,
-.nav-column--wide > .nav-projects--collapsed {
+.nav-column > .nav-projects {
   flex: 1 1 0;
   min-width: 0;
 }
-.nav-column--wide > .nav-threads {
-  flex: 1.2 1 0;
+/* Collapsed, the projects list keeps only its header's width and the threads take the rest. */
+.nav-column > .nav-projects--collapsed {
+  flex: 0 0 auto;
+}
+.nav-column > .nav-threads {
+  flex: 1.5 1 0;
   min-width: 0;
   border-top: 0;
   border-left: 1px solid var(--line);
@@ -7286,7 +7290,7 @@ a.thread-ref:hover {
   margin-top: 8px;
 }
 
-/* ---- Left rail: Attention | Open | Projects | Status ---- */
+/* ---- Left rail: Attention | Open | Projects, then Scheduled | Status ---- */
 .nav-rail {
   display: flex;
   flex-direction: column;
@@ -7301,6 +7305,7 @@ a.thread-ref:hover {
 }
 .rail-toggle {
   display: flex;
+  flex-direction: column;
   gap: 2px;
   padding: 2px;
   background: var(--surface);
@@ -7308,7 +7313,11 @@ a.thread-ref:hover {
   border-radius: 9px;
   flex-shrink: 0;
 }
-/* Four tabs share the rail's width by their labels, so "Attention" never overruns its slot. */
+/* Each row's tabs share the rail's width by their labels, so "Attention" never overruns its slot. */
+.rail-toggle-row {
+  display: flex;
+  gap: 2px;
+}
 .rail-toggle-btn {
   flex: 1 1 auto;
   min-width: 0;
@@ -9538,27 +9547,6 @@ a.thread-ref:hover {
   font-weight: 600;
 }
 
-/* The narrow-screen rule (panel-sizes.js panelFit): the right panel floats over the centre as a
-   drawer, its width kept, while its grid column keeps only the icon strip's width. */
-.panel-right {
-  /* The drawer's width, set from the panel's chosen size (app.js). */
-  --right-overlay-width: 360px;
-}
-.panels--right-overlay > .panel-right {
-  position: relative;
-  overflow: visible;
-}
-.panels--right-overlay > .panel-right > .right-panel:not(.right-panel--collapsed) {
-  position: absolute;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 25;
-  width: var(--right-overlay-width);
-  background: var(--bg);
-  border-left: 1px solid var(--line-strong);
-  box-shadow: -18px 0 36px hsl(0 0% 0% / 0.45);
-}
 /* One settings row (setting-row.js): label and help left; control, source chip and ⋯ right. */
 .setting-rows {
   padding: 4px 14px;

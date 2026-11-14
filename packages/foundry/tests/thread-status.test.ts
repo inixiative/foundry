@@ -54,6 +54,15 @@ describe('threadState', () => {
         }),
       ),
     ).toBe('done');
+    // A subagent hands back to its parent agent, not to you: finished, it is done, never orange.
+    expect(
+      threadState(
+        t({
+          meta: { status: 'idle', spawn: { via: 'native-claude' } },
+          lastTurn: { status: 'completed', completedAt: 100 },
+        }),
+      ),
+    ).toBe('done');
   });
   test('a turn completed after the owner last looked is a new arrival (orange) until he looks', () => {
     // A reply he hasn't read, or a turn the agent started on its own (a Muse cron).

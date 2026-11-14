@@ -23,9 +23,10 @@ const { chromium } = createRequire(import.meta.url)(
 );
 
 // The narrow-screen rule (design review 11-02): the centre never drops below 560 px. The left list
-// folds to its strip first; then the right panel floats over the centre as a drawer. Widening the
-// window restores the layout you chose.
-test('the centre keeps 560 px: the rail folds, then the right panel floats', async () => {
+// folds to its strip; the right panel's shares always fit beside it from 1100 px, so it keeps its
+// column. Picking Projects never folds the rail: its wider list takes only what the centre spares.
+// Widening the window restores the layout you chose.
+test('the centre keeps 560 px: the rail folds and the right panel keeps its column', async () => {
   const cleanup: ReleaseStep[] = [];
   const dir = mkdtempSync(join(tmpdir(), 'foundry-narrow-'));
   cleanup.push(['dir', () => rmSync(dir, { recursive: true, force: true })]);
@@ -68,27 +69,40 @@ test('the centre keeps 560 px: the rail folds, then the right panel floats', asy
       () => (document.querySelector('.panel-center')?.getBoundingClientRect().width ?? 0) >= 559,
     );
     expect(await centre()).toBeGreaterThanOrEqual(559);
-    // Widened, the right panel steps to wide: folding the rail isn't enough, so it floats.
+    // Widened, the right panel steps to wide: a third of the window (its 440 px floor here) still
+    // fits beside the folded rail, so it stays in its column (sides are shares of the window, 11-14).
     await page.locator('body').click({ position: { x: 600, y: 5 } });
     await page.keyboard.press('Alt+Shift+BracketRight');
     await page.waitForFunction(() =>
-      document.querySelector('.panels')?.classList.contains('panels--right-overlay'),
+      getComputedStyle(document.querySelector('.panels')!).gridTemplateColumns.endsWith(' 440px'),
     );
     // The columns animate: wait for them to settle.
     await page.waitForFunction(
       () => (document.querySelector('.panel-center')?.getBoundingClientRect().width ?? 0) >= 559,
     );
     expect(await centre()).toBeGreaterThanOrEqual(559);
-    const drawer = await page
-      .locator('.panel-right > .right-panel')
-      .evaluate((el: Element) => [getComputedStyle(el).position, el.getBoundingClientRect().width]);
-    expect(drawer[0]).toBe('absolute');
-    expect(drawer[1]).toBeGreaterThan(400);
+    // Back to a normal right panel at 1200: the rail opens again, and picking Projects (whose list is
+    // wider) does not fold it; the list takes only what the centre can spare.
+    await page.keyboard.press('Alt+BracketRight');
+    await page.setViewportSize({ width: 1200, height: 900 });
+    await page.waitForFunction(
+      () => !document.querySelector('.panels')?.classList.contains('panels--left-folded'),
+    );
+    await page.goto(`${origin}/#thread=main&detail=1&rail=projects`);
+    await page.locator('textarea.chat-input').waitFor();
+    await page.waitForFunction(
+      () => (document.querySelector('.panel-center')?.getBoundingClientRect().width ?? 0) >= 559,
+    );
+    expect(await panels.getAttribute('class')).not.toContain('panels--left-folded');
+    await page.locator('.rail-toggle').waitFor({ state: 'visible' });
+    expect(await page.locator('.rail-toggle [aria-selected="true"]').innerText()).toContain(
+      'Projects',
+    );
     // A wide window restores both.
     await page.setViewportSize({ width: 1700, height: 900 });
     await page.waitForFunction(() => {
       const c = document.querySelector('.panels')?.classList;
-      return c && !c.contains('panels--left-folded') && !c.contains('panels--right-overlay');
+      return c && !c.contains('panels--left-folded');
     });
     expect(errors).toEqual([]);
   } finally {
@@ -138,7 +152,7 @@ test('under 1100 px every workspace tab shows its panel', async () => {
       const box = await shown.boundingBox();
       expect(box?.width ?? 0).toBeGreaterThan(800);
     }
-    // The Threads tab is the rail, with its own Attention · Open · Projects toggle.
+    // The Threads tab is the rail, with its own two-row view toggle.
     await tabs.filter({ hasText: 'Threads' }).click();
     await page.locator('.rail-toggle').waitFor({ state: 'visible' });
     expect(errors).toEqual([]);

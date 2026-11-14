@@ -449,7 +449,7 @@ function App() {
   const inbox = feedbackInboxOpen.value;
   const page = route.value.page;
 
-  const panelClass = `panels panels--proj-${projOpen ? 'open' : 'closed'} panels--detail-${detailOpen ? 'open' : 'closed'}${boardOpen.value || watchtowerOpen.value ? ' panels--board' : ''}${panelFit.value.leftFolded ? ' panels--left-folded' : ''}${panelFit.value.rightOverlay ? ' panels--right-overlay' : ''}`;
+  const panelClass = `panels panels--proj-${projOpen ? 'open' : 'closed'} panels--detail-${detailOpen ? 'open' : 'closed'}${boardOpen.value || watchtowerOpen.value ? ' panels--board' : ''}${panelFit.value.leftFolded ? ' panels--left-folded' : ''}`;
 
   if (page !== 'workspace')
     return html`
@@ -503,7 +503,7 @@ function App() {
         </div>
 
         <!-- Right: reference about the thread, or the inspector -->
-        <div class="panel-right" id="workspace-detail" tabIndex="0" style=${`--right-overlay-width:${panelFit.value.right}px`}>
+        <div class="panel-right" id="workspace-detail" tabIndex="0">
           <${RightPanel} onSpanSelect=${handleSpanSelect} />
         </div>
       </div>

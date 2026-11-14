@@ -116,11 +116,12 @@ test('panel sizes step with [ { ] }; hidden keeps its column at 0 with a restore
       getComputedStyle(document.querySelector('.panels')!).gridTemplateColumns.startsWith('32px'),
     );
 
-    // Up to wide: no "larger" left at the limit.
+    // Up to wide: no "larger" left at the limit. Each open step is a share of the window: at 1600
+    // the wide left list is 28% (448 px).
     await page.keyboard.press('Alt+Shift+BracketLeft');
     await page.keyboard.press('Alt+Shift+BracketLeft');
     await page.waitForFunction(() =>
-      getComputedStyle(document.querySelector('.panels')!).gridTemplateColumns.startsWith('520px'),
+      getComputedStyle(document.querySelector('.panels')!).gridTemplateColumns.startsWith('448px'),
     );
     expect(await page.getByRole('button', { name: 'Make the left list larger' }).count()).toBe(0);
 

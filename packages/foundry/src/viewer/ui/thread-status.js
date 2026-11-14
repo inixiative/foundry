@@ -75,8 +75,14 @@ export function threadState(thread, context = {}) {
   if (turn === 'queued') return 'queued';
   if (meta.status === 'waiting' || conversation.paused) return 'paused';
   // A hand-back: a turn completed after the owner last looked (a reply he hasn't read, or a turn the
-  // agent started on its own, a Muse cron or goal). Opening the thread clears it.
-  if (turn === 'completed' && (thread.lastTurn?.completedAt ?? 0) > (meta.seenAt ?? 0))
+  // agent started on its own, a Muse cron or goal). Opening the thread clears it. A subagent never
+  // arrives: its result goes back to the agent that spawned it, so finished it reads done (Aron,
+  // 11-14: finished subagents kept a done parent in Attention, counted as "active").
+  if (
+    turn === 'completed' &&
+    !meta.spawn &&
+    (thread.lastTurn?.completedAt ?? 0) > (meta.seenAt ?? 0)
+  )
     return 'newarrival';
   // Done: its branch merged, or the agent marked a plan milestone; the owner's next message clears it.
   if (meta.done) return 'done';
