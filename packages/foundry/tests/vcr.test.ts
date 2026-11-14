@@ -292,6 +292,13 @@ describe('drift classification', () => {
       'stderr:kept added text:Logged in using an API key',
       'stderr:kept removed text:Logged in using ChatGPT',
     ]);
+    // A process id in a kept line changes every run; it is not drift.
+    expect(
+      compareSignatures(
+        login('muse serve: exit reason recorded: signal SIGTERM from pid 26935'),
+        login('muse serve: exit reason recorded: signal SIGTERM from pid 51443'),
+      ),
+    ).toEqual([]);
     // Prompt-cache diagnostics follow cache state: a miss carries a reason, a hit is null.
     const reply = (diagnostics: unknown) =>
       transcript(init, {

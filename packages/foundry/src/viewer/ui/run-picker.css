@@ -63,3 +63,40 @@ button.band-run:focus-visible {
   flex: 1;
   border-top: 1px dashed hsl(var(--border, var(--muted)));
 }
+
+/* The agents in a thread (thread-agents.js): beside Runs on, a count and "+ Add agent". */
+.thread-agents-fact {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.thread-agents-list {
+  display: grid;
+  gap: 6px;
+  margin: 4px 16px 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12.5px;
+}
+.thread-agents-list li {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.thread-agents-list li button {
+  margin-left: auto;
+}
+.thread-agents-label {
+  margin: 14px 16px 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-dim);
+}
+.thread-agents-add {
+  display: flex;
+  gap: 8px;
+  margin: 0 16px;
+}
+.thread-agents-modal > .action-btn {
+  margin: 6px 16px 0;
+}

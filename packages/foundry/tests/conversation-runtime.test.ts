@@ -567,6 +567,16 @@ test('the roster says what each member may have the agent do', async () => {
   expect(roster).toMatch(/on a turn that took in its words: .*read/);
 });
 
+// The sessions list's line carries the agent counts, so a change to a member's `agent` term re-reads
+// the views that show the thread's agents (the band and the Agents fact).
+test("the summary counts members' own agents, and follows their terms", () => {
+  const f = fixture({ wardens: false });
+  expect(f.note('hello').ok).toBe(true);
+  expect(f.service.summary(f.thread.id)).toMatchObject({ members: 1, memberAgents: 0 });
+  f.snapshot([withTerms(f.member, { agent: true })]);
+  expect(f.service.summary(f.thread.id)).toMatchObject({ members: 1, memberAgents: 1 });
+});
+
 test('a worker that cannot ask before each tool call takes posts only from members who may have it act freely', () => {
   const f = fixture({ wardens: false, gatesEachCall: false });
   expect(f.note('hello')).toMatchObject({ ok: false });
