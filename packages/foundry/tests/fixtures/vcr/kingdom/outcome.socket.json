@@ -1,5 +1,5 @@
 {
-  "version": "6132d20c2857",
+  "version": "2cee47cd9fe6",
   "status": 200,
   "body": [
     {
@@ -16,8 +16,8 @@
   ],
   "recorded": {
     "service": "kingdom",
-    "recordedAt": "2026-10-30T02:05:17.765Z",
-    "agentSession": "0.6.8",
+    "recordedAt": "2026-11-14T15:10:10.415Z",
+    "agentSession": "0.12.0",
     "environment": "terminal"
   }
 }
