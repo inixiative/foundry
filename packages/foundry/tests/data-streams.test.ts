@@ -373,6 +373,35 @@ test('re-opening after a reconnect yields a fresh snapshot of the turn so far, t
   expect(getConnectionStats(f.viewer.socket.registry)).toEqual({ connections: 2, streams: 1 });
 });
 
+test("a Foundry scope's stream lists its role's threads, and Global leaves them out", async () => {
+  const f = fixture();
+  const global = connectStreams(f.viewer),
+    forge = connectStreams(f.viewer),
+    feedback = connectStreams(f.viewer);
+  await global.open('threads');
+  await forge.open('threads:@forge');
+  await feedback.open('threads:@feedback');
+  expect(forge.data('threads:@forge')[0].payload.threads).toEqual([]);
+
+  expect((await f.post('/api/threads', { id: 'forge-1', role: 'forge-master' })).status).toBe(201);
+  expect(forge.data('threads:@forge').at(-1).payload).toMatchObject({
+    thread: { threadId: 'forge-1', effectiveRole: 'forge-master' },
+  });
+  // Neither Global nor the other scope hears of it.
+  const ids = (frames: Array<{ payload: any }>) =>
+    frames.flatMap((frame) =>
+      frame.payload.thread
+        ? [frame.payload.thread.threadId]
+        : frame.payload.threads.map((t: any) => t.threadId),
+    );
+  expect(ids(global.data('threads'))).not.toContain('forge-1');
+  expect(ids(feedback.data('threads:@feedback'))).toEqual([]);
+
+  const reopened = connectStreams(f.viewer);
+  await reopened.open('threads:@forge');
+  expect(ids(reopened.data('threads:@forge'))).toEqual(['forge-1']);
+});
+
 test('thread list streams are scoped and send only real changes', async () => {
   const f = fixture();
   const global = connectStreams(f.viewer),

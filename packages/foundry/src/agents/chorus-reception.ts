@@ -5,6 +5,7 @@
  */
 import { computeHash } from '@inixiative/foundry-core';
 import { ALL_OF_CAVEAT, CHOOSE_ONE_CAVEAT } from '../classify/pointer';
+import { SCOPE_BRIEF_LAYER } from './scope-roles';
 
 /**
  * The reception charter: how the main thread reads a chime. The counterpart of the Warden charter,
@@ -84,4 +85,5 @@ export const FOUNDRY_TOOLS_LAYER = 'foundry-tools';
 export const STANDING_LAYERS: ReadonlySet<string> = new Set([
   FOUNDRY_TOOLS_LAYER,
   CHORUS_RECEPTION_LAYER,
+  SCOPE_BRIEF_LAYER,
 ]);

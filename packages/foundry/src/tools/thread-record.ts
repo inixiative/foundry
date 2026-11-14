@@ -17,6 +17,7 @@ import type {
 } from '@inixiative/foundry-core';
 import { threadTitle } from '@inixiative/foundry-core';
 import { z } from 'zod';
+import { FEEDBACK_TOOL_NAMES } from './feedback-inbox';
 
 /**
  * The thread's own record, written by its agent through Foundry's MCP tools: the plan (`set_plan`,
@@ -452,6 +453,8 @@ export const FOUNDRY_OWN_TOOLS: ReadonlySet<string> = new Set([
   'foundry_conventions',
   'foundry_memory',
   'foundry_device',
+  // A Feedback thread's inbox: reads, and archive or reopen (journalled, reversible).
+  ...FEEDBACK_TOOL_NAMES,
   // The scratch pad's own tool only writes the person's secret where the agent says; secret_pipe runs a command, so it keeps the host's mode.
   'secret_scratch',
 ]);

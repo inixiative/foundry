@@ -273,6 +273,24 @@ export const DEFAULT_INSTRUCTION_LADDER: readonly InstructionNodeSettings[] = Ob
 export const CODER_ROLE = 'coder';
 /** The built-in thread role for Muse: a day-to-day assistant, not a coder in the repository. */
 export const ASSISTANT_ROLE = 'assistant';
+/** The built-in thread role of the Forge Master scope: threads about this Foundry itself. */
+export const FORGE_MASTER_ROLE = 'forge-master';
+/** The built-in thread role of the Feedback scope: threads that work through the feedback inbox. */
+export const FEEDBACK_ROLE = 'feedback';
+
+/**
+ * The scopes a thread can live in beside a project or Global, each held by its own built-in role
+ * (Aron, 2026-11-14: "Forge Master and Feedback should just be threads… with their own sort of
+ * system prompts or scopes"). A scope's threads always take its role and have no project, and a role
+ * that holds a scope is never another thread's role: the scope says where a thread lives, the role
+ * how it works.
+ */
+export const SCOPE_ROLES = Object.freeze({ forge: FORGE_MASTER_ROLE, feedback: FEEDBACK_ROLE });
+export type ThreadScope = keyof typeof SCOPE_ROLES;
+
+/** The scope `role` holds (`forge`, `feedback`), or undefined for every other role. */
+export const scopeOfRole = (role: string | undefined): ThreadScope | undefined =>
+  (Object.entries(SCOPE_ROLES) as [ThreadScope, string][]).find(([, id]) => id === role)?.[0];
 
 /**
  * The thread roles Foundry ships (Aron, 2026-11-10: "Muse should be an assistant, and Claude Codex
@@ -288,6 +306,16 @@ export const BUILT_IN_THREAD_ROLES: Readonly<
     thread: { label: 'Assistant', defaultFor: ['muse'] },
     instructions: { general: ['managed', 'global'] },
   },
+  // The scope roles carry Foundry's own brief as a standing layer (`agents/scope-roles.ts`), and
+  // read general files only from the computer-level nodes, like the assistant.
+  [FORGE_MASTER_ROLE]: {
+    thread: { label: 'Forge Master', defaultFor: [] },
+    instructions: { general: ['managed', 'global'] },
+  },
+  [FEEDBACK_ROLE]: {
+    thread: { label: 'Feedback', defaultFor: [] },
+    instructions: { general: ['managed', 'global'] },
+  },
 });
 
 /** A thread role as it resolves: built-ins, then settings roles with `thread`. */
@@ -297,6 +325,8 @@ export interface ThreadRole {
   /** Workers whose new threads take it unless another is chosen. */
   readonly defaultFor: readonly string[];
   readonly builtIn: boolean;
+  /** The scope this role holds (Forge Master, Feedback); chosen by where a thread lives, not picked. */
+  readonly scope?: ThreadScope;
 }
 
 /**
@@ -308,10 +338,12 @@ export function threadRoles(settings: CompositionSettings | undefined): ThreadRo
     (entry): entry is [string, RoleComposition & { thread: ThreadRoleSettings }] =>
       !!entry[1]?.thread,
   );
-  const claimed = new Set(written.flatMap(([, picks]) => picks.thread.defaultFor ?? []));
+  // A scope role's written `defaultFor` claims no worker (it is never a default).
+  const claiming = written.filter(([id]) => !scopeOfRole(id));
+  const claimed = new Set(claiming.flatMap(([, picks]) => picks.thread.defaultFor ?? []));
   const claimedByOthers = (id: string) =>
     new Set(
-      written.flatMap(([other, picks]) => (other === id ? [] : (picks.thread.defaultFor ?? []))),
+      claiming.flatMap(([other, picks]) => (other === id ? [] : (picks.thread.defaultFor ?? []))),
     );
   const roles = new Map<string, ThreadRole>();
   for (const [id, { thread }] of Object.entries(BUILT_IN_THREAD_ROLES))
@@ -320,17 +352,22 @@ export function threadRoles(settings: CompositionSettings | undefined): ThreadRo
       label: thread.label,
       defaultFor: thread.defaultFor.filter((worker) => !claimed.has(worker)),
       builtIn: true,
+      ...(scopeOfRole(id) ? { scope: scopeOfRole(id) } : {}),
     });
   for (const [id, { thread }] of written) {
     const builtIn = BUILT_IN_THREAD_ROLES[id]?.thread;
+    const scope = scopeOfRole(id);
     roles.set(id, {
       id,
       label: thread.label ?? builtIn?.label ?? id,
-      defaultFor:
-        thread.defaultFor ??
-        builtIn?.defaultFor.filter((worker) => !claimedByOthers(id).has(worker)) ??
-        [],
+      // A scope role is never a worker's default: it is taken by living in its scope.
+      defaultFor: scope
+        ? []
+        : (thread.defaultFor ??
+          builtIn?.defaultFor.filter((worker) => !claimedByOthers(id).has(worker)) ??
+          []),
       builtIn: !!builtIn,
+      ...(scope ? { scope } : {}),
     });
   }
   return [...roles.values()];
