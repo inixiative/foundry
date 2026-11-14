@@ -94,7 +94,7 @@ const MARK = { done: '✓', doing: '◐', you: '!' };
 
 function PlanItem({ item, status }) {
   return html`<li class="plan-item">
-    ${status ? html`<span class="plan-box s-${status}" title=${status === 'you' ? 'needs you' : status}>${MARK[status] ?? ''}</span>` : html`<span class="plan-dot"></span>`}
+    ${status ? html`<span class="plan-box s-${status}" title=${status === 'you' ? 'waits on you' : status}>${MARK[status] ?? ''}</span>` : html`<span class="plan-dot"></span>`}
     <div><b><${InlineMarkdown} text=${item.text} /></b>${item.detail ? html`<small><${InlineMarkdown} text=${item.detail} /></small>` : null}</div>
   </li>`;
 }

@@ -1,6 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 import { STATES, statusSvg } from '../src/viewer/ui/status-icons.js';
-import { categoryOf, promptState, threadState } from '../src/viewer/ui/thread-status.js';
+import {
+  categoryOf,
+  promptState,
+  statusText,
+  threadState,
+} from '../src/viewer/ui/thread-status.js';
 
 // A thread's status icon comes from the fields the viewer already holds. The most urgent colour wins:
 // red › orange › green › light yellow › light blue › neutral › charcoal.
@@ -38,6 +43,26 @@ describe('threadState', () => {
   test('an unread member post is a request; a held send is held', () => {
     expect(threadState(t({ conversation: { unread: 2 } }))).toBe('request');
     expect(threadState(t({ conversation: { held: 1, unread: 2 } }))).toBe('held');
+  });
+  test('the agent asking at hand-back is orange, blocked red; a plan outcome left on you is not', () => {
+    const done = { status: 'completed', completedAt: 100 };
+    const seen = { status: 'idle', seenAt: 200 };
+    const asking = t({
+      meta: { ...seen, agentStatus: { state: 'needs-you', text: 'Which table?' } },
+      lastTurn: done,
+    });
+    expect(threadState(asking)).toBe('question');
+    expect(statusText(asking, 'question')).toBe('Which table?');
+    expect(
+      threadState(t({ meta: { ...seen, agentStatus: { state: 'blocked' } }, lastTurn: done })),
+    ).toBe('blocked');
+    // Only waiting, nothing to decide: Open, not Attention (Aron, 2026-11-14).
+    const waiting = t({
+      meta: { ...seen, plan: { outcomes: [{ text: 'Review the PR', status: 'you' }] } },
+      lastTurn: done,
+    });
+    expect(threadState(waiting)).toBe('done');
+    expect(categoryOf(threadState(waiting))).not.toBe('attention');
   });
   test('running and active are green', () => {
     expect(threadState(t({ lastTurn: { status: 'running' } }))).toBe('working');
