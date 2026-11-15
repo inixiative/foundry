@@ -62,6 +62,10 @@
 .rail-head-row .rail-toggle {
   flex: 1;
 }
+/* Beside the rail's tabs, narrow sits above widen so the pair takes one button's width. */
+.rail-head-row .size-controls {
+  flex-direction: column;
+}
 .proj-collapsed-controls {
   display: flex;
   justify-content: center;
