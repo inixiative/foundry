@@ -192,7 +192,7 @@ test('Not now: the waiting turn starts here and nothing restarts', async () => {
   expect(d.restarts).toEqual([]);
 });
 
-test('the viewer serves the update state; a turn waiting on a person does not hold the restart up', async () => {
+test('the viewer serves the update state and its boot id; with nothing running it restarts at once', async () => {
   const { createViewer } = await import('../src/viewer/server');
   const { ActionQueue } = await import('@inixiative/foundry-core');
   const dir = mkdtempSync(join(tmpdir(), 'spin-down-viewer-'));

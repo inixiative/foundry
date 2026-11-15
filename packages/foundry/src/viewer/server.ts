@@ -786,7 +786,7 @@ export function createViewer(config: ViewerConfig) {
     running: () => turnsReady?.runningTurns() ?? [],
     // A turn blocked on its person (its agent's approval or question) is paused without the grace.
     waitingOnPerson: (turn) => blockedOnPerson(config.actionQueue, turn),
-    pause: async (turn) => turnsReady?.pauseForRestart(turn.threadId, turn.turnId) ?? false,
+    pause: async (turn) => turnsReady?.pauseForRestart(turn.threadId, turn.turnId) ?? 'not-yet',
     waiting: () => turnsReady?.queuedCount() ?? 0,
     finishing: () => planDrafter?.drafting() ?? 0,
     background: () => runningTasks.active(),

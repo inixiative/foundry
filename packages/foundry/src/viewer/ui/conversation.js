@@ -528,8 +528,27 @@ function ComposerImage({ image, onRemove }) {
   `;
 }
 
-/** Each thread's unsent draft, kept while another view (Search, the board) replaces the conversation. */
-const drafts = new Map();
+/**
+ * Each thread's unsent draft, kept while another view (Search, the board) replaces the conversation,
+ * and in this tab's session storage so a reload (the page reloads itself after a restart) keeps it.
+ */
+const DRAFTS_KEY = 'foundry:drafts';
+const drafts = (() => {
+  try {
+    return new Map(JSON.parse(sessionStorage.getItem(DRAFTS_KEY) ?? '[]'));
+  } catch {
+    return new Map();
+  }
+})();
+const keepDraft = (threadId, value) => {
+  if (value) drafts.set(threadId, value);
+  else drafts.delete(threadId);
+  try {
+    sessionStorage.setItem(DRAFTS_KEY, JSON.stringify([...drafts]));
+  } catch {
+    /* storage full or blocked: the draft is still kept in memory */
+  }
+};
 
 function ChatInput() {
   const [text, setTextState] = useState(() => drafts.get(activeThreadId.peek()) ?? '');
@@ -538,7 +557,7 @@ function ChatInput() {
   const setText = (next) =>
     setTextState((current) => {
       const value = typeof next === 'function' ? next(current) : next;
-      drafts.set(activeThreadId.peek(), value);
+      keepDraft(activeThreadId.peek(), value);
       return value;
     });
   const [asideError, setAsideError] = useState(null);

@@ -26,8 +26,8 @@ export function updateLine(state) {
     const pausing = state.pausing?.length ?? 0;
     if (pausing && pausing === running)
       return `Update ready: pausing ${turns(running)}; ${running === 1 ? 'it resumes' : 'they resume'} after the restart`;
-    if (running && state.pauseAt) {
-      const left = Math.max(0, Math.ceil((state.pauseAt - Date.now()) / 1000));
+    const left = state.pauseAt ? Math.ceil((state.pauseAt - Date.now()) / 1000) : 0;
+    if (running && left > 0) {
       return `Update ready: pausing ${turns(running)} in ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')} unless ${running === 1 ? 'it finishes' : 'they finish'}`;
     }
     if (running)
@@ -84,7 +84,8 @@ export function UpdateNotice() {
     ${
       state.phase === 'spinning-down'
         ? html`${
-            state.pauseAt && (state.pausing?.length ?? 0) < (state.running?.length ?? 0)
+            state.pauseAt > Date.now() &&
+            (state.pausing?.length ?? 0) < (state.running?.length ?? 0)
               ? html`<button type="button" class="update-notice-btn" title="Pause running turns now; each resumes after the restart" onClick=${() => updateAction('pause-now')}>Pause now</button>`
               : html`<button type="button" class="update-notice-btn" onClick=${() => setConfirming(true)}>Restart now</button>`
           }

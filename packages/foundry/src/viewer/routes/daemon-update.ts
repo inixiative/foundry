@@ -19,19 +19,20 @@ export function registerDaemonUpdateRoutes(
   roll: RestartRoll,
   threadName: (threadId: string) => string | undefined,
 ): void {
-  app.get('/api/daemon/update', (c) => {
+  const view = () => {
     const status = roll.status();
     const named = (turn: { threadId: string; turnId: string }) => ({
       ...turn,
       ...(threadName(turn.threadId) ? { name: threadName(turn.threadId) } : {}),
     });
-    return c.json({
+    return {
       ...status,
       bootId: BOOT_ID,
       running: status.running.map(named),
       pausing: status.pausing.map(named),
-    });
-  });
+    };
+  };
+  app.get('/api/daemon/update', (c) => c.json(view()));
 
   app.post('/api/daemon/update', async (c) => {
     const body = await c.req.json<{ action?: unknown }>().catch(() => ({}) as { action?: unknown });
@@ -52,6 +53,6 @@ export function registerDaemonUpdateRoutes(
         400,
       );
     if (!done) return c.json({ error: `nothing to ${action} (${roll.status().phase})` }, 409);
-    return c.json(roll.status());
+    return c.json(view());
   });
 }

@@ -3,6 +3,7 @@ import { ActionQueue } from '@inixiative/foundry-core';
 import {
   blockedOnPerson,
   PAUSE_SETTLE_MS,
+  type PauseAnswer,
   RestartRoll,
   type RunningTurnRef,
 } from '../src/daemon/restart-roll';
@@ -153,7 +154,7 @@ function pausingRoll(running: RunningTurnRef[], opts: { waitingOnPerson?: string
   const now = { t: 0 };
   const restarts: string[] = [];
   const asked: string[] = [];
-  const answers: boolean[] = [];
+  const answers: PauseAnswer[] = [];
   const settle: Array<() => void> = [];
   const r = new RestartRoll({
     running: () => running,
@@ -162,11 +163,11 @@ function pausingRoll(running: RunningTurnRef[], opts: { waitingOnPerson?: string
     waitingOnPerson: (turn) => opts.waitingOnPerson?.includes(turn.turnId) ?? false,
     pause: (turn) => {
       asked.push(turn.turnId);
-      const answer = answers.shift() ?? true;
+      const answer = answers.shift() ?? 'paused';
       return new Promise((resolve) => settle.push(() => resolve(answer)));
     },
     now: () => now.t,
-    pollMs: 60_000,
+    pollMs: 1_000,
   });
   const offer = (pauseAfterMs = 1_000) =>
     r.offerUpdate({
@@ -219,16 +220,47 @@ test('a turn waiting on its person is paused at once; the others keep their grac
   expect(asked).toEqual(['t2']);
 });
 
-test("a turn that hadn't reached its runtime is asked again on the next check", async () => {
+test("a turn that hasn't reached its runtime is asked again a poll later, never in the same tick", async () => {
   const running: RunningTurnRef[] = [{ threadId: 'a', turnId: 't1' }];
-  const { r, offer, asked, answers, answer } = pausingRoll(running);
-  answers.push(false);
+  const { r, offer, now, asked, answers, answer } = pausingRoll(running);
+  answers.push('not-yet');
   offer(0);
   expect(asked).toEqual(['t1']);
-  // The answer re-checks: asked again at once.
   await answer();
+  // The answer re-checks, but it is not asked again until the poll interval has passed.
+  r.check();
+  expect(asked).toEqual(['t1']);
+  expect(r.status().pausing).toEqual([]);
+  now.t = 1_000;
+  r.check();
   expect(asked).toEqual(['t1', 't1']);
   expect(r.status().pausing).toHaveLength(1);
+});
+
+test("a turn whose runtime can't stop it runs on; the restart waits for it, not the settle cap", async () => {
+  const running: RunningTurnRef[] = [{ threadId: 'a', turnId: 't1' }];
+  const { r, offer, now, restarts, asked, answers, answer } = pausingRoll(running);
+  answers.push('cannot');
+  offer(0);
+  await answer();
+  expect(r.status().pausing).toEqual([]);
+  now.t = PAUSE_SETTLE_MS * 2;
+  r.check();
+  expect(asked).toEqual(['t1']);
+  expect(restarts).toEqual([]);
+  running.pop();
+  r.check();
+  expect(restarts).toEqual(['c1']);
+});
+
+test('Restart now while a pause is between its stop and its continuation waits for it', async () => {
+  const running: RunningTurnRef[] = [{ threadId: 'a', turnId: 't1' }];
+  const { r, offer, restarts, answer } = pausingRoll(running);
+  offer(0);
+  expect(r.restartNow()).toBe(true);
+  expect(restarts).toEqual([]);
+  await answer();
+  expect(restarts).toEqual(['c1']);
 });
 
 test('a paused turn that never stops holds the restart only so long', async () => {

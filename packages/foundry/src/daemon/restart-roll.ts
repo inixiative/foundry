@@ -63,6 +63,8 @@ export interface RollStatus {
   waiting: number;
 }
 
+export type PauseAnswer = 'paused' | 'not-yet' | 'cannot';
+
 export interface RestartRollDeps {
   /** Turns running now. */
   running(): RunningTurnRef[];
@@ -70,11 +72,11 @@ export interface RestartRollDeps {
   waitingOnPerson?(turn: RunningTurnRef): boolean;
   /**
    * Pause a running turn: stop it, its native session kept, and queue its continuation for after
-   * the restart. Resolves false when it can't be paused yet (it hasn't reached its runtime), so it
-   * is asked again; true once it was asked, whatever its runtime answered. Without it, the
-   * spin-down only waits.
+   * the restart. `paused`: asked to stop, its continuation queued (or it was already ending).
+   * `not-yet`: it hasn't reached its runtime; asked again on a later poll. `cannot`: its runtime
+   * can't stop a turn; the restart waits for it to finish. Without it, the spin-down only waits.
    */
-  pause?(turn: RunningTurnRef): Promise<boolean>;
+  pause?(turn: RunningTurnRef): Promise<PauseAnswer>;
   /** Accepted turns not yet running. */
   waiting(): number;
   /** Work a turn left behind that the restart also waits for (a plan draft being written). */
@@ -118,6 +120,12 @@ export class RestartRoll {
   /** Turns asked to pause (by turn id); `inFlight` of them are still between stop and continuation. */
   private paused = new Map<string, RunningTurnRef>();
   private inFlight = 0;
+  /** Turns whose runtime can't stop them: the restart waits for them to finish. */
+  private runsOn = new Set<string>();
+  /** Turns not yet at their runtime, and when they may be asked again. */
+  private notYet = new Map<string, number>();
+  /** The owner restarted now while a pause was between its stop and its continuation. */
+  private restartWanted = false;
   /** When the last running turn was asked to pause. */
   private allPausedAt?: number;
   private timer?: ReturnType<typeof setInterval>;
@@ -183,10 +191,14 @@ export class RestartRoll {
     return true;
   }
 
-  /** Owner: restart now. Running turns are cut and settled from their native records on boot. */
+  /**
+   * Owner: restart now. Running turns are cut and settled from their native records on boot; a
+   * pause between its stop and its continuation finishes first (bounded by the runtime's stop).
+   */
   restartNow(): boolean {
     if (!this.offer || this.phase === 'restarting') return false;
-    this.restart('the owner restarted now');
+    if (this.inFlight > 0) this.restartWanted = true;
+    else this.restart('the owner restarted now');
     return true;
   }
 
@@ -212,9 +224,15 @@ export class RestartRoll {
     if (this.phase !== 'spinning-down') return;
     const running = this.deps.running();
     if (this.deps.pause) {
-      const due = this.pauseAt !== undefined && this.now() >= this.pauseAt;
+      const now = this.now();
+      const due = this.pauseAt !== undefined && now >= this.pauseAt;
       for (const turn of running)
-        if (!this.paused.has(turn.turnId) && (due || this.deps.waitingOnPerson?.(turn)))
+        if (
+          !this.paused.has(turn.turnId) &&
+          !this.runsOn.has(turn.turnId) &&
+          now >= (this.notYet.get(turn.turnId) ?? 0) &&
+          (due || this.deps.waitingOnPerson?.(turn))
+        )
           this.pauseTurn(turn);
       if (running.length && running.every((turn) => this.paused.has(turn.turnId)))
         this.allPausedAt ??= this.now();
@@ -235,17 +253,26 @@ export class RestartRoll {
     this.inFlight++;
     this.deps.log?.(`pausing ${turn.turnId} on ${turn.threadId} for the restart`);
     void this.deps.pause!(turn)
-      .catch((error) => {
+      .catch((error): PauseAnswer => {
         this.deps.log?.(`pausing ${turn.turnId} failed: ${String(error)}`);
-        return true;
+        return 'cannot';
       })
-      .then((asked) => {
-        // Not paused yet (it hadn't reached its runtime): asked again on the next check.
-        if (!asked) this.paused.delete(turn.turnId);
+      .then((answer) => {
+        if (answer === 'paused') return;
+        this.paused.delete(turn.turnId);
+        // Not at its runtime yet: asked again a poll later, never in the same tick.
+        if (answer === 'not-yet')
+          this.notYet.set(turn.turnId, this.now() + (this.deps.pollMs ?? 5_000));
+        else {
+          this.runsOn.add(turn.turnId);
+          this.deps.log?.(`${turn.turnId} can't be paused; the restart waits for it to finish`);
+        }
       })
       .finally(() => {
         this.inFlight--;
-        this.check();
+        if (this.restartWanted && this.inFlight === 0 && this.phase !== 'restarting')
+          this.restart('the owner restarted now');
+        else this.check();
       });
   }
 
@@ -259,6 +286,9 @@ export class RestartRoll {
       this.since +
       (this.offer?.pauseAfterMs ?? this.deps.defaultPauseAfterMs ?? DEFAULT_PAUSE_AFTER_MS);
     this.paused.clear();
+    this.runsOn.clear();
+    this.notYet.clear();
+    this.restartWanted = false;
     this.allPausedAt = undefined;
     this.deps.log?.(
       `spinning down for update ${this.offer?.candidate.slice(0, 8)}: ${this.deps.running().length} running turn(s)${this.deps.pause ? ` pause in ${Math.round((this.pauseAt - this.since) / 1000)}s unless they finish` : ''}`,

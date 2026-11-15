@@ -29,6 +29,7 @@ import { memberPostReception } from '../agents/chorus-reception';
 import type { PlanDrafter } from '../agents/plan-drafter';
 import type { ThreadFactory } from '../agents/thread-factory';
 import type { ThreadNamer } from '../agents/thread-namer';
+import type { PauseAnswer } from '../daemon/restart-roll';
 import type { FeedbackService } from '../feedback/service';
 import {
   isOpenTurn,
@@ -138,7 +139,7 @@ export interface TurnOrigin {
 
 /** What a paused thread's agent reads after the restart (`pauseForRestart`). */
 export const RESTART_RESUME_NOTE =
-  'Foundry paused your previous turn to restart onto an update, and has restarted. Pick up where you left off: your work so far is in this session. Background commands and subagents stopped with the restart; check any you were waiting on and start them again if they are still needed.';
+  'Foundry paused your previous turn for a restart onto an update. Pick up where you left off: your work so far is in this session. Background commands and subagents may have stopped; check any you were waiting on and start them again if they are still needed.';
 
 /** A settled turn's result as the routes and the requesting client receive it. */
 export type CompletedTurn = ReturnType<TurnService['completeResult']>;
@@ -198,6 +199,8 @@ interface LiveTurn {
   readonly threadId: string;
   phase: 'queued' | 'running' | 'settled';
   cancelRequested: boolean;
+  /** The owner (or a client) asked to stop it: a restart's pause never resumes it. */
+  stopAsked?: boolean;
   /** The executor's native admission is registered: native work is being sent. */
   admitted: boolean;
   /** The executor's native turn reached its terminal. */
@@ -697,6 +700,7 @@ export class TurnService {
     if (state.steering)
       return { ok: false, status: 409, error: 'turn is being steered into the running turn' };
     state.cancelRequested = true;
+    state.stopAsked = true;
     if (state.phase === 'queued') {
       state.phase = 'settled';
       this.live.delete(turnId);
@@ -710,18 +714,21 @@ export class TurnService {
 
   /**
    * Pause a running turn for a planned restart (`daemon/restart-roll.ts`, Aron 2026-11-14): stop it
-   * through its runtime, its native session kept, and once the stop is acknowledged queue Foundry's
-   * continuation on its thread, which the restart holds and the next boot runs first. False while
-   * the turn hasn't reached its runtime (ask again); true once asked. A runtime that can't stop, or
-   * a stop never acknowledged, leaves the turn running and queues nothing.
+   * through its runtime, its native session kept, and queue Foundry's continuation on its thread,
+   * which the restart holds and the next boot runs first. `not-yet` while it hasn't reached its
+   * runtime; `cannot` on a runtime that can't stop a turn (it runs on). A stop never acknowledged
+   * still queues the continuation: the restart cuts that turn, and the continuation picks it up.
+   * A turn its owner stopped is never resumed.
    */
-  async pauseForRestart(threadId: string, turnId: string): Promise<boolean> {
+  async pauseForRestart(threadId: string, turnId: string): Promise<PauseAnswer> {
     const state = this.live.get(turnId);
-    if (!state || state.threadId !== threadId || state.phase !== 'running') return true;
-    if (!state.admitted) return false;
-    if (!state.interrupt) return true;
-    const stopped = await this.interrupt(threadId, turnId);
-    if (!stopped.ok || stopped.outcome !== 'acknowledged') return true;
+    if (!state || state.threadId !== threadId || state.phase !== 'running') return 'paused';
+    if (state.stopAsked) return 'paused';
+    if (!state.admitted) return 'not-yet';
+    if (!state.interrupt) return 'cannot';
+    state.cancelRequested = true;
+    const outcome = await this.stop(state);
+    if (outcome === 'no-turn' || state.stopAsked) return 'paused';
     const resumed = this.accept({
       threadId,
       payload: RESTART_RESUME_NOTE,
@@ -736,7 +743,7 @@ export class TurnService {
       console.warn(
         `[Turns] paused ${turnId} for the restart; its continuation was refused: ${String(resumed.body.error)}`,
       );
-    return true;
+    return 'paused';
   }
 
   /**

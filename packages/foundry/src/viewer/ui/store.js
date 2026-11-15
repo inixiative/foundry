@@ -1558,8 +1558,10 @@ export async function updateAction(action) {
       action === 'postpone'
         ? 'Update postponed: waiting turns start now'
         : action === 'update-now'
-          ? 'Restarting when running turns finish'
-          : 'Restarting now',
+          ? 'Restarting once running turns finish or pause'
+          : action === 'pause-now'
+            ? 'Pausing running turns: they resume after the restart'
+            : 'Restarting now',
       'ok',
     );
     void loadUpdateState();

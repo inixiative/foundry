@@ -304,8 +304,9 @@ test('a runtime that cannot stop a turn is not paused: nothing is queued, it run
       pauseAfterMs: 0,
       restart: () => restarts.push('cand'),
     });
-    await until(() => f.viewer.restartRoll.status().pausing.length === 1, 'asked to pause');
-    await Bun.sleep(20);
+    // Asked once, answered that it can't: never shown as pausing, and nothing restarts.
+    await Bun.sleep(50);
+    expect(f.viewer.restartRoll.status().pausing).toEqual([]);
     expect(restarts).toEqual([]);
     expect(f.viewer.localStore!.heldForRestart()).toEqual([]);
     f.attempts[0].finish();
