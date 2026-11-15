@@ -33,7 +33,7 @@
     },
     "packages/core": {
       "name": "@inixiative/foundry-core",
-      "version": "0.5.13",
+      "version": "0.5.14",
       "dependencies": {
         "uuidv7": "^1.0.2",
       },
