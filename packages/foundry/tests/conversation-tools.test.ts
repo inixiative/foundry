@@ -64,7 +64,6 @@ function hostedMember(threadId: string): HostedSignet {
       audience: 'outside',
     },
     resources: [conversationGrant({ threadId, operations: ['thread.prompt', 'thread.read'] })],
-    baseLenses: {},
   };
 }
 

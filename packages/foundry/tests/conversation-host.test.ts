@@ -171,7 +171,6 @@ async function host(
           integrationId,
         }),
       ),
-      baseLenses: {},
     };
     kingdom.host(signet);
     await until(
