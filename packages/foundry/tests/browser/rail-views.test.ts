@@ -158,7 +158,7 @@ test('the rail opens on Attention, lists only threads that need you, and ⌥⇧�
     // Scheduled: schedules and triggers (none yet), then threads running a loop.
     await page.keyboard.press('Alt+Shift+ArrowRight');
     await active.filter({ hasText: 'Scheduled' }).waitFor();
-    await page.locator('.rail-pane[aria-label="Schedules & triggers"] .rail-empty').waitFor();
+    await page.locator('.rail-pane[aria-label="Schedules"] .rail-empty').waitFor();
     const loops = page.locator('.rail-pane[aria-label="Loops"] .tree-node');
     await loops.filter({ hasText: 'Rewrite the setup guide' }).waitFor();
     expect(await loops.count()).toBe(1);

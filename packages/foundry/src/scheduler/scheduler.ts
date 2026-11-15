@@ -283,8 +283,8 @@ export class Scheduler implements ScheduleBook {
   async setPaused(id: string, paused: boolean): Promise<ScheduleView> {
     const found = this.find(id);
     if (!found) throw Error(`no schedule ${id}`);
-    const { since: _since, ...rest } = found.schedule;
-    return this.save({ ...rest, paused }, found.where);
+    const { since: _since, paused: _paused, ...rest } = found.schedule;
+    return this.save(paused ? { ...rest, paused } : rest, found.where);
   }
 
   /** Remove a schedule; its past runs stay in the history. */

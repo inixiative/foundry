@@ -281,6 +281,7 @@ describe('Scheduler saves', () => {
     await h.scheduler.setPaused('digest', true);
     h.setNow(T0 + 5 * HOUR);
     await h.scheduler.setPaused('digest', false);
+    expect(h.scheduler.find('digest')?.schedule).not.toHaveProperty('paused');
     expect(h.scheduler.find('digest')?.schedule.since).toBe(T0 + 5 * HOUR);
     await h.scheduler.tick();
     expect(h.started).toHaveLength(0);
