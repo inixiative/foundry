@@ -190,6 +190,7 @@ export function mockKingdom(
   const frames: Record<string, unknown>[] = [];
   const credentials: { integrationId: string; token: string }[] = [];
   const logins: Record<string, unknown>[] = [];
+  const entitlementAsks: { inquiryId: string; body: Record<string, unknown> }[] = [];
   let url = '';
 
   /** Signets reaching the installations' integrations: a conversation's members (signet 0.5). */
@@ -398,6 +399,23 @@ export function mockKingdom(
             owner: paired.owner,
           });
         }
+        case 'requestSignetEntitlement': {
+          const signet = signets.get(body.signetId);
+          if (!signet?.listed || integrations.get(signet.integrationId)?.thumbprint !== thumbprint)
+            return refuse(404);
+          // One open ask per Signet: the same ask again returns it.
+          const open =
+            entitlementAsks.find(
+              (ask) => ask.body.signetId === body.signetId && Bun.deepEquals(ask.body, body),
+            ) ??
+            entitlementAsks[entitlementAsks.push({ inquiryId: Bun.randomUUIDv7(), body }) - 1]!;
+          return data({
+            inquiryId: open.inquiryId,
+            status: 'sent',
+            expiresAt: new Date(Date.now() + 7 * 86_400_000).toISOString(),
+            reviewUrl: `${kingdomWebUrl}/dashboard?signetEntitlement=${open.inquiryId}`,
+          });
+        }
         case 'setInstallationCredential': {
           if (integrations.get(body.integrationId)?.thumbprint !== thumbprint) return refuse(403);
           credentials.push({ integrationId: body.integrationId, token: body.token });
@@ -582,6 +600,8 @@ export function mockKingdom(
       for (const ws of sockets.keys()) ws.send(JSON.stringify({ type: 'installationRevoked' }));
     },
     logins,
+    /** Asks for more on a held Signet (`requestSignetEntitlement`), one per distinct ask. */
+    entitlementAsks,
     get installations() {
       return [...installations.values()];
     },

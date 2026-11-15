@@ -3,8 +3,17 @@ import { existsSync } from 'node:fs';
 import { mkdtemp, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { installationDirectory } from '@inixiative/signet';
 import {
+  installationDirectory,
+  readPrivateJson,
+  signetCredentialFile,
+  signetCredentialSchema,
+  writePrivateJson,
+} from '@inixiative/signet';
+import { KingdomClient } from '../src/providers/kingdom-client';
+import {
+  askForMoreOnSignet,
+  heldSignetFile,
   KingdomInstallationConnections,
   type KingdomIntegration,
   kingdomInstallationPaths,
@@ -219,6 +228,70 @@ test('Kingdom polled while its socket is refused still authorizes until the snap
     } finally {
       connections.stop();
     }
+  } finally {
+    kingdom.stop();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('a Signet file an older signet client wrote is named, not a ZodError, and is enrolled again', async () => {
+  const kingdom = mockKingdom(),
+    dir = await mkdtemp(join(tmpdir(), 'kingdom-legacy-'));
+  try {
+    const { settings } = await pairKingdomIntegration(new ConfigStore(dir), dir, {
+      url: kingdom.url,
+      name: 'Legacy',
+      viewerToken: 't'.repeat(48),
+      onReview: () => kingdom.approve(userOwner()),
+    });
+    const file = signetCredentialFile(
+      kingdomInstallationPaths(dir, kingdom.url).directory,
+      settings.signetId,
+    );
+    // signet before 0.13 wrote the integration the Signet was issued under.
+    await writePrivateJson(file, {
+      ...((await readPrivateJson(file)) as object),
+      integrationId: settings.integrationId,
+    });
+    await expect(KingdomClient.fromFile(file)).rejects.toThrow(
+      'an older signet client wrote it; enroll the Signet again',
+    );
+    expect(await heldSignetFile(dir, kingdom.url, settings.signetId)).toBe(file);
+    expect(signetCredentialSchema.safeParse(await readPrivateJson(file)).success).toBe(true);
+    await expect(heldSignetFile(dir, kingdom.url, Bun.randomUUIDv7())).rejects.toThrow(
+      'no longer lists Signet',
+    );
+  } finally {
+    kingdom.stop();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('asking for more on a held Signet opens one ask, broad, with its review link', async () => {
+  const kingdom = mockKingdom(),
+    dir = await mkdtemp(join(tmpdir(), 'kingdom-ask-'));
+  try {
+    const { settings } = await pairKingdomIntegration(new ConfigStore(dir), dir, {
+      url: kingdom.url,
+      name: 'Asker',
+      viewerToken: 't'.repeat(48),
+      onReview: () => kingdom.approve(userOwner()),
+    });
+    const kingdomProjectId = Bun.randomUUIDv7();
+    const ask = { signetId: settings.signetId, kingdomProjectId, reason: 'No capacity' };
+    const asked = await askForMoreOnSignet(dir, kingdom.url, ask);
+    expect(new URL(asked.reviewUrl).searchParams.get('signetEntitlement')).toBe(asked.inquiryId);
+    expect(kingdom.entitlementAsks.map((item) => item.body)).toEqual([
+      {
+        signetId: settings.signetId,
+        resources: [
+          { resourceKind: 'subscription', operations: { picks: ['subscription.use'] } },
+          { resourceModel: 'Project', projectId: kingdomProjectId },
+        ],
+        reason: 'No capacity',
+      },
+    ]);
+    expect((await askForMoreOnSignet(dir, kingdom.url, ask)).inquiryId).toBe(asked.inquiryId);
   } finally {
     kingdom.stop();
     await rm(dir, { recursive: true, force: true });

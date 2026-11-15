@@ -111,7 +111,14 @@ export class KingdomClient {
   ) {}
   /** A client for the Signet a credential file holds. */
   static async fromFile(credentialFile: string) {
-    const { enrollmentId } = signetCredentialSchema.parse(await readPrivateJson(credentialFile));
+    const parsed = signetCredentialSchema.safeParse(
+      await readPrivateJson(credentialFile).catch(() => null),
+    );
+    if (!parsed.success)
+      throw Error(
+        `The Signet file ${credentialFile} is missing, or an older signet client wrote it; enroll the Signet again`,
+      );
+    const { enrollmentId } = parsed.data;
     return new KingdomClient(await SignetClient.fromFile(credentialFile), enrollmentId);
   }
   get origin() {

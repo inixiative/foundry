@@ -110,12 +110,17 @@ async function kingdomWithLogin(
     },
   });
   cleanups.push(async () => kingdom.stop());
-  const { credentialFile, keyFile, integrationId } = await heldSignet(kingdom, directory, owner);
+  const { credentialFile, keyFile, integrationId, signetId } = await heldSignet(
+    kingdom,
+    directory,
+    owner,
+  );
   const projectId = Bun.randomUUIDv7();
   const auth = new KingdomSubscriptionAuthentication({
     directory: join(directory, 'subscriptions'),
     capacity: async () => ({
       url: kingdom.url,
+      signetId,
       credentialFile,
       projectId,
       model: 'claude-opus-5-5',
@@ -308,16 +313,20 @@ test('threads of a kingdom project route to Kingdom; every other thread keeps th
   expect((await routed.prepare('kingdom-thread', 'claude')).mode).toBe('kingdom-subscription');
 });
 
-test("a Kingdom project's Codex thread whose pool has no Codex login is refused with Kingdom's reason, never run locally", async () => {
+test("a Kingdom project's Codex thread with no Codex login its Signet may use asks the Signet's issuer for more, never runs locally", async () => {
   const directory = await temporary();
   const owner = `OrganizationUser:${Bun.randomUUIDv7()}:${Bun.randomUUIDv7()}:`;
   const asked: Array<{ runtime: string; model: string }> = [];
+  const askedForMore: Array<{ signetId: string; runtime: string }> = [];
   // The pool holds only a Claude login: Kingdom refuses a Codex run.
   const kingdom = mockKingdom({
     onSignet: (action, body) => {
       if (action === 'resolveRun')
         asked.push({ runtime: body.selection.runtime, model: body.selection.model });
-      return Response.json({ error: 'No authorized capacity matches' }, { status: 409 });
+      return Response.json(
+        { error: { message: 'No authorized capacity matches this resource spread' } },
+        { status: 403 },
+      );
     },
   });
   cleanups.push(async () => kingdom.stop());
@@ -343,6 +352,10 @@ test("a Kingdom project's Codex thread whose pool has no Codex login is refused 
     meta: (threadId) =>
       threadId === 'codex-thread' ? { projectId: 'pooled', worker: 'codex' } : undefined,
     credentialFile: async () => credentialFile,
+    askForMore: async (capacity, runtime) => {
+      askedForMore.push({ signetId: capacity.signetId, runtime });
+      return { reviewUrl: 'https://kingdom-web.test/dashboard?signetEntitlement=ask-1' };
+    },
   });
   const routed = route({
     bindingId: (threadId) => threadId,
@@ -352,9 +365,10 @@ test("a Kingdom project's Codex thread whose pool has no Codex login is refused 
     },
   });
   await expect(routed.prepare('codex-thread', 'codex')).rejects.toThrow(
-    'No authorized capacity matches',
+    "Kingdom has no codex subscription this Foundry's Signet may use here. Asked its issuer to grant more; review it at https://kingdom-web.test/dashboard?signetEntitlement=ask-1",
   );
   expect(asked).toEqual([{ runtime: 'codex', model: 'gpt-6-astra' }]);
+  expect(askedForMore).toEqual([{ signetId, runtime: 'codex' }]);
   expect(local).toBe(0);
 });
 
@@ -701,11 +715,12 @@ test('a Muse pool with no login left says which login Meta rejected', async () =
     },
   });
   cleanups.push(async () => kingdom.stop());
-  const { credentialFile } = await heldSignet(kingdom, directory, owner);
+  const { credentialFile, signetId } = await heldSignet(kingdom, directory, owner);
   const auth = new KingdomSubscriptionAuthentication({
     directory: join(directory, 'subscriptions'),
     capacity: async () => ({
       url: kingdom.url,
+      signetId,
       credentialFile,
       model: 'muse-wonder-1.0',
       effort: 'default',

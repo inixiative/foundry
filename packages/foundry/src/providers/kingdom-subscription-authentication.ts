@@ -6,7 +6,7 @@
 import { createHash } from 'node:crypto';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, unlinkSync } from 'node:fs';
 import { dirname, isAbsolute, join } from 'node:path';
-import { kingdomUrl } from '@inixiative/signet';
+import { kingdomUrl, SignetHttpError } from '@inixiative/signet';
 import { writePrivateFile } from '../client/private-file';
 import { capacityKingdomProject, type FoundryConfig } from '../viewer/config';
 import { resolveThreadView } from '../viewer/config-resolve';
@@ -26,7 +26,11 @@ import {
   type KingdomRunEnvelope,
   type KingdomSubscriptionRelease,
 } from './kingdom-client';
-import { heldSignetFile, selectKingdomIntegration } from './kingdom-installation-connection';
+import {
+  askForMoreOnSignet,
+  heldSignetFile,
+  selectKingdomIntegration,
+} from './kingdom-installation-connection';
 import {
   assertCodexLaunchArguments,
   type NativeAuthenticationLaunch,
@@ -42,6 +46,8 @@ import { assertPrivateDirectory, assertPrivateProfile } from './private-profile'
 /** Where one thread's subscription comes from: a Signet this Foundry holds, and the Kingdom project it bills. */
 export interface KingdomCapacity {
   url: string;
+  /** The Signet this capacity draws on: the one asked to grant more when Kingdom finds no capacity on it. */
+  signetId: string;
   credentialFile: string;
   /** Kingdom UsageProject; its pool chooses the login. Absent: the Signet's own project. */
   projectId?: string;
@@ -104,6 +110,11 @@ export class KingdomSubscriptionAuthentication implements NativeAuthenticationPr
       userConfigDirectory?: string;
       /** Test seam: runs `muse usage --json` in this environment. */
       museStatus?: (environment: Record<string, string | undefined>) => StatusProcess;
+      /**
+       * Kingdom found no capacity this Signet may use: ask its issuer for more, answering the review
+       * link the refusal names. Absent: the refusal stands as Kingdom said it.
+       */
+      askForMore?: (capacity: KingdomCapacity, runtime: Runtime) => Promise<{ reviewUrl: string }>;
     },
   ) {
     if (!isAbsolute(options.directory)) throw Error('Kingdom profile directory must be absolute');
@@ -133,7 +144,15 @@ export class KingdomSubscriptionAuthentication implements NativeAuthenticationPr
             runtime,
             ...(capacity.projectId ? { projectId: capacity.projectId } : {}),
           })
-          .catch((error: unknown) => {
+          .catch(async (error: unknown) => {
+            // why: Kingdom names no code; this is `resolveRunBinding`'s noCapacity refusal
+            if (
+              error instanceof SignetHttpError &&
+              error.status === 403 &&
+              error.detail?.startsWith('No authorized capacity') &&
+              this.options.askForMore
+            )
+              throw await this.noCapacity(capacity, runtime, error);
             if (runtime !== 'muse' || !this.rejectedMuse.size) throw error;
             throw Error(
               `${(error as Error).message}. Meta rejected this pool's Muse Code login (${[...this.rejectedMuse].join(', ')}); ${SIGN_IN_AGAIN}`,
@@ -150,6 +169,21 @@ export class KingdomSubscriptionAuthentication implements NativeAuthenticationPr
       this.pending.set(key, pending);
     }
     return await pending;
+  }
+  /** The refusal, with the review link of the ask for more it opened (or why it could not ask). */
+  private async noCapacity(capacity: KingdomCapacity, runtime: Runtime, refusal: SignetHttpError) {
+    try {
+      const { reviewUrl } = await this.options.askForMore!(capacity, runtime);
+      return Error(
+        `Kingdom has no ${runtime} subscription this Foundry's Signet may use here. Asked its issuer to grant more; review it at ${reviewUrl}`,
+        { cause: refusal },
+      );
+    } catch (error) {
+      return Error(
+        `${refusal.message}. Asking the Signet's issuer for more failed: ${(error as Error).message}`,
+        { cause: refusal },
+      );
+    }
   }
   private bindingFor(threadId: string, run: Run) {
     return `${threadId}:kingdom:${run.envelope.integrationId}`;
@@ -463,6 +497,11 @@ export function projectCapacity(options: {
   meta: (threadId: string) => { projectId?: string; worker?: string } | undefined;
   /** Test seam: the Signet credential file this Foundry holds for a Kingdom. */
   credentialFile?: (url: string, signetId: string) => Promise<string>;
+  /** Test seam: asks a Signet's issuer for more (default: Kingdom `requestSignetEntitlement`). */
+  askForMore?: (
+    capacity: KingdomCapacity,
+    runtime: NativeRuntime,
+  ) => Promise<{ reviewUrl: string }>;
 }): (local: NativeAuthenticationProvider | undefined) => NativeAuthenticationProvider {
   const metaOf = (threadId: string) => options.meta(threadId.split(':aux:')[0]!);
   const projectOf = (threadId: string) => {
@@ -481,6 +520,7 @@ export function projectCapacity(options: {
       const view = resolveThreadView(config, metaOf(threadId) ?? {}).config;
       return {
         url,
+        signetId: capacity.signetId,
         credentialFile: await (
           options.credentialFile ??
           ((at, signetId) => heldSignetFile(options.foundryDir, at, signetId))
@@ -490,6 +530,14 @@ export function projectCapacity(options: {
         effort: view.defaults.codexEffort ?? 'default',
       };
     },
+    askForMore:
+      options.askForMore ??
+      ((capacity, runtime) =>
+        askForMoreOnSignet(options.foundryDir, capacity.url, {
+          signetId: capacity.signetId,
+          ...(capacity.projectId ? { kingdomProjectId: capacity.projectId } : {}),
+          reason: `No ${runtime} subscription capacity on this Signet${capacity.projectId ? ` for Kingdom project ${capacity.projectId}` : ''}`,
+        })),
   });
   return (local) =>
     new ProjectCapacityAuthentication({

@@ -22,6 +22,7 @@ import {
   kingdomInstallationPaths,
   kingdomIntegrationId,
   listedSignets,
+  selectKingdomIntegration,
 } from './providers/kingdom-installation-connection';
 import { withoutCompetingCredentials } from './providers/native-authentication';
 import { nativeTextEnvironment } from './providers/native-text-environment';
@@ -650,6 +651,7 @@ export async function inspectReadiness(
   kingdoms = await Promise.all(
     integrations.map((integration) => inspectKingdom(integration, configDir, issue, listed)),
   );
+  inspectKingdomCapacity(saved, issue, listed);
   if (options.archive) archive = await inspectArchive(options.archive(), issue, options.transport);
   prefilter = await inspectPrefilter(config, issue, options.transport, options.modelsDir);
   const native = await inspectNativeClis(saved, {
@@ -827,9 +829,15 @@ async function inspectKingdom(
   const pairAgain = `Pair again with bun run kingdom pair --replace --kingdom ${identity.id}.`;
   try {
     const { directory } = kingdomInstallationPaths(configDir, integration.url);
-    signetCredentialSchema.parse(
-      await readPrivateJson(signetCredentialFile(directory, integration.signetId)),
-    );
+    const held = await readPrivateJson(signetCredentialFile(directory, integration.signetId));
+    // An older signet client's file: enrolled again on its next use while Kingdom still lists it.
+    if (!signetCredentialSchema.safeParse(held).success)
+      issue(
+        'warning',
+        `kingdom:${identity.id}`,
+        'kingdom-credential-outdated',
+        `An older signet client wrote the Signet file for ${integration.url}; Foundry enrolls it again on its next use while that Kingdom lists it.`,
+      );
   } catch {
     issue(
       'error',
@@ -849,6 +857,41 @@ async function inspectKingdom(
     `${integration.url} refused, could not be reached, or no longer lists this Foundry's Signet. Check the Foundry integration in that Kingdom, or ${pairAgain.charAt(0).toLowerCase()}${pairAgain.slice(1)}`,
   );
   return { ...identity, status: 'unavailable' };
+}
+
+/**
+ * A Kingdom-capacity project draws on `kingdomCapacity.signetId`: a Signet Kingdom must list for this
+ * Foundry. One it no longer lists cannot be enrolled or asked for more on.
+ */
+function inspectKingdomCapacity(
+  config: FoundryConfig,
+  issue: Issue,
+  listed?: Map<string, Set<string> | null>,
+) {
+  for (const project of Object.values(config.projects)) {
+    const capacity = project.capacity === 'kingdom' ? project.kingdomCapacity : undefined;
+    if (!capacity) continue;
+    let url: string;
+    try {
+      ({ url } = selectKingdomIntegration(config.kingdomIntegrations, capacity.kingdom));
+    } catch (error) {
+      issue(
+        'error',
+        `project:${project.id}`,
+        'kingdom-capacity-unpaired',
+        (error as Error).message,
+      );
+      continue;
+    }
+    const signets = listed?.get(url);
+    if (!signets || signets.has(capacity.signetId)) continue;
+    issue(
+      'error',
+      `project:${project.id}`,
+      'kingdom-capacity-signet-unlisted',
+      `${url} does not list Signet ${capacity.signetId} for this Foundry, so project ${project.id} has no capacity. Point kingdomCapacity.signetId at a Signet it lists (${[...signets].join(', ') || 'none'}).`,
+    );
+  }
 }
 
 async function inspectArchive(

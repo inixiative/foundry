@@ -4,6 +4,7 @@ import { existsSync } from 'node:fs';
 import { lstat, mkdtemp, readdir, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { readPrivateJson, writePrivateJson } from '@inixiative/signet';
 import { localArchiveUrl } from '../src/archives/local';
 import { runArchiveSetup } from '../src/archives/setup';
 import { kingdomStatus, pairKingdom } from '../src/providers/kingdom-cli';
@@ -362,6 +363,55 @@ test('archive setup and kingdom CLIs run non-interactively; other archive comman
     });
   } finally {
     archive.stop();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('doctor names a Kingdom-capacity project whose Signet Kingdom no longer lists, and an older Signet file', async () => {
+  const kingdom = mockKingdom({ autoApprove: userOwner() });
+  const dir = await configDirectory([P1]);
+  try {
+    const paired = await pairKingdom({ configDir: dir, url: kingdom.url, ...quiet });
+    const config = await new ConfigStore(dir).load();
+    const project = Object.values(config.projects)[0]!;
+    const gone = crypto.randomUUID();
+    project.capacity = 'kingdom';
+    project.kingdomCapacity = { kingdom: kingdom.url, signetId: gone };
+    const inspect = (transport?: typeof fetch) =>
+      inspectReadiness(config, {
+        environment: {},
+        which: () => '/controlled/cli',
+        configDir: dir,
+        ...(transport ? { transport } : {}),
+      });
+    const capacityIssues = (report: Awaited<ReturnType<typeof inspect>>) =>
+      report.issues.filter((item) => item.code.startsWith('kingdom-capacity'));
+    expect(capacityIssues(await inspect())).toEqual([]);
+    expect(capacityIssues(await inspect(fetch))).toEqual([
+      expect.objectContaining({
+        severity: 'error',
+        scope: `project:${project.id}`,
+        code: 'kingdom-capacity-signet-unlisted',
+        message: expect.stringContaining(paired.signetId),
+      }),
+    ]);
+    project.kingdomCapacity.signetId = paired.signetId;
+    expect(capacityIssues(await inspect(fetch))).toEqual([]);
+
+    const file = join(
+      kingdomInstallationPaths(dir, kingdom.url).directory,
+      `signet-${paired.signetId}.json`,
+    );
+    await writePrivateJson(file, {
+      ...((await readPrivateJson(file)) as object),
+      integrationId: paired.id,
+    });
+    const outdated = (await inspect(fetch)).issues.find(
+      (item) => item.scope === `kingdom:${paired.id}`,
+    );
+    expect(outdated).toMatchObject({ severity: 'warning', code: 'kingdom-credential-outdated' });
+  } finally {
+    kingdom.stop();
     await rm(dir, { recursive: true, force: true });
   }
 });

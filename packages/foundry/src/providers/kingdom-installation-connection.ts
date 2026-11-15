@@ -18,8 +18,12 @@ import {
   installationPaths,
   installationSignets,
   kingdomUrl,
+  readPrivateJson,
+  requestSignetEntitlement,
+  type SignetEntitlementResponse,
   setInstallationCredential,
   signetCredentialFile,
+  signetCredentialSchema,
   type ThreadEntry,
   type ThreadHost,
   type ThreadSubscription,
@@ -132,18 +136,53 @@ export async function listedSignets(configDir: string, urls: readonly string[]) 
   return listed;
 }
 
-/** The local file of a Signet this Foundry holds from one Kingdom, enrolling it now if Kingdom lists it but no file exists yet. */
+/** Whether a Signet credential file holds a credential this signet client reads (an older client's file does not). */
+const readableSignetFile = async (file: string) =>
+  existsSync(file) &&
+  signetCredentialSchema.safeParse(await readPrivateJson(file).catch(() => null)).success;
+
+/**
+ * The local file of a Signet this Foundry holds from one Kingdom. A missing file, or one an older
+ * signet client wrote that this one cannot read, is enrolled again now if Kingdom still lists the Signet.
+ */
 export async function heldSignetFile(configDir: string, url: string, signetId: string) {
   const { keyFile, directory } = await kingdomInstallation(configDir, url);
   const file = signetCredentialFile(directory, signetId);
-  if (existsSync(file)) return file;
+  if (await readableSignetFile(file)) return file;
   const listed = (await installationSignets(url, keyFile)).signets.filter(
     (signet) => signet.signetId === signetId,
   );
-  if (!listed.length) throw Error(`Kingdom does not list Signet ${signetId} for this Foundry`);
+  if (!listed.length)
+    throw Error(
+      `${url} no longer lists Signet ${signetId} for this Foundry: pair again, or point this project's capacity at a Signet it holds`,
+    );
   await holdInstallationSignets(url, keyFile, directory, listed);
-  if (!existsSync(file)) throw Error(`Signet ${signetId} could not be enrolled on this Foundry`);
+  if (!(await readableSignetFile(file)))
+    throw Error(`Signet ${signetId} could not be enrolled on this Foundry`);
   return file;
+}
+
+/**
+ * Asks the person who issued a Signet this Foundry holds to grant it more (Kingdom `signetEntitlement`).
+ * Kingdom keeps one open ask per Signet: the same ask again returns it, with its review link.
+ */
+export async function askForMoreOnSignet(
+  configDir: string,
+  url: string,
+  ask: { signetId: string; kingdomProjectId?: string; reason: string },
+): Promise<SignetEntitlementResponse> {
+  const { keyFile } = await kingdomInstallation(configDir, url);
+  return requestSignetEntitlement(url, keyFile, {
+    signetId: ask.signetId,
+    // Broad for now: any subscription login the owner can grant, and the Kingdom project it bills.
+    resources: [
+      { resourceKind: 'subscription', operations: { picks: ['subscription.use'] } },
+      ...(ask.kingdomProjectId
+        ? [{ resourceModel: 'Project' as const, projectId: ask.kingdomProjectId }]
+        : []),
+    ],
+    reason: ask.reason,
+  });
 }
 
 /**
