@@ -5,9 +5,11 @@
  */
 /**
  * The spin-down, as the owner sees it (packages/foundry/src/daemon/restart-roll.ts): a quiet
- * top-bar notice while an update waits for running turns ("Update ready: restarting when 2 turns
- * finish"), with Restart now (confirmed: it names the turns that would be cut and says each is
- * recovered) and Not now (postpone this update). Settings › About shows the same state.
+ * top-bar notice while an update waits for running turns ("Update ready: pausing 2 turns in 0:45"),
+ * with Pause now (pause them without the grace; each resumes after the restart), Restart now once
+ * they are pausing (confirmed: it names the turns that would be cut) and Not now (postpone this
+ * update). Settings › About shows the same state. The page reloads onto the new build by itself
+ * (`loadUpdateState`).
  */
 import { html, useState } from './lib.js';
 import { Modal } from './modal.js';
@@ -19,12 +21,21 @@ const turns = (n) => `${n} turn${n === 1 ? '' : 's'}`;
 /** One line for the update state, or null when there is nothing to say. */
 export function updateLine(state) {
   if (!state) return null;
-  if (state.phase === 'spinning-down')
-    return state.running.length
-      ? `Update ready: restarting when ${turns(state.running.length)} finish${state.running.length === 1 ? 'es' : ''}`
-      : state.finishing
-        ? 'Update ready: restarting when the last plan draft is written'
-        : 'Update ready: restarting now';
+  if (state.phase === 'spinning-down') {
+    const running = state.running?.length ?? 0;
+    const pausing = state.pausing?.length ?? 0;
+    if (pausing && pausing === running)
+      return `Update ready: pausing ${turns(running)}; ${running === 1 ? 'it resumes' : 'they resume'} after the restart`;
+    if (running && state.pauseAt) {
+      const left = Math.max(0, Math.ceil((state.pauseAt - Date.now()) / 1000));
+      return `Update ready: pausing ${turns(running)} in ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')} unless ${running === 1 ? 'it finishes' : 'they finish'}`;
+    }
+    if (running)
+      return `Update ready: restarting when ${turns(running)} finish${running === 1 ? 'es' : ''}`;
+    return state.finishing
+      ? 'Update ready: restarting when the last plan draft is written'
+      : 'Update ready: restarting now';
+  }
   if (state.phase === 'restarting') return 'Restarting onto the update…';
   if (state.phase === 'postponed') return `Update ${short(state.candidate)} postponed`;
   return null;
@@ -72,7 +83,11 @@ export function UpdateNotice() {
     <span class="update-notice-text" role="status">${line}</span>
     ${
       state.phase === 'spinning-down'
-        ? html`<button type="button" class="update-notice-btn" onClick=${() => setConfirming(true)}>Restart now</button>
+        ? html`${
+            state.pauseAt && (state.pausing?.length ?? 0) < (state.running?.length ?? 0)
+              ? html`<button type="button" class="update-notice-btn" title="Pause running turns now; each resumes after the restart" onClick=${() => updateAction('pause-now')}>Pause now</button>`
+              : html`<button type="button" class="update-notice-btn" onClick=${() => setConfirming(true)}>Restart now</button>`
+          }
           <button type="button" class="update-notice-btn" onClick=${() => updateAction('postpone')}>Not now</button>`
         : null
     }

@@ -12,7 +12,11 @@ import {
   InterventionLog,
   Thread,
 } from '@inixiative/foundry-core';
-import { CANCELLED_BEFORE_DISPATCH, CANCELLED_BEFORE_START } from '../src/turns/turn-service';
+import {
+  CANCELLED_BEFORE_DISPATCH,
+  CANCELLED_BEFORE_START,
+  RESTART_RESUME_NOTE,
+} from '../src/turns/turn-service';
 import { createViewer } from '../src/viewer/server';
 import { connectStreams } from './helpers/data-stream';
 import { liveWatchFixture, until } from './helpers/live-watch-fixture';
@@ -246,6 +250,68 @@ test('a dispatched native turn is stopped by its runtime; the thread then takes 
     await until(() => f.attempts.length === 2, 'next turn admitted');
     f.attempts[1].finish();
     expect(await next.done).toMatchObject({ type: 'done', content: 'FINAL_ONLY' });
+  } finally {
+    await f.close();
+  }
+});
+
+test('a restart pauses a dispatched native turn: stopped, its continuation held for the next boot', async () => {
+  const dir = await mkdtemp(resolve('.foundry/qa/turn-pause-'));
+  const f = await liveWatchFixture(dir);
+  try {
+    const first = f.send('native-paused');
+    expect((await first.response).status).toBe(202);
+    await until(
+      () => f.attempts.length === 1 && f.attempts[0].native.dispatch === 'attempted',
+      'dispatched',
+    );
+    const restarts: string[] = [];
+    f.viewer.restartRoll.offerUpdate({
+      candidate: 'cand',
+      pauseAfterMs: 0,
+      restart: () => restarts.push('cand'),
+    });
+    await until(() => restarts.length === 1, 'restarted after the pause');
+    expect(f.interrupts).toEqual([f.attempts[0].native.admissionId]);
+    expect(await first.done).toMatchObject({ type: 'error', cancelled: true });
+    // Its continuation waits in the journal: Foundry's line, never the owner's message.
+    const held = f.viewer.localStore!.heldForRestart();
+    expect(held).toHaveLength(1);
+    expect(held[0].threadId).toBe(f.thread.id);
+    const resume = f.viewer
+      .localStore!.messages(f.thread.id)
+      .find((m) => m.turnId === held[0].turnId && m.actor === 'user');
+    expect(resume?.content).toBe(RESTART_RESUME_NOTE);
+    expect(resume?.meta).toMatchObject({ restartResume: true });
+  } finally {
+    await f.close();
+  }
+});
+
+test('a runtime that cannot stop a turn is not paused: nothing is queued, it runs on', async () => {
+  const dir = await mkdtemp(resolve('.foundry/qa/turn-pause-'));
+  const f = await liveWatchFixture(dir, { interruptible: false });
+  try {
+    const first = f.send('native-runs-on');
+    expect((await first.response).status).toBe(202);
+    await until(
+      () => f.attempts.length === 1 && f.attempts[0].native.dispatch === 'attempted',
+      'dispatched',
+    );
+    const restarts: string[] = [];
+    f.viewer.restartRoll.offerUpdate({
+      candidate: 'cand',
+      pauseAfterMs: 0,
+      restart: () => restarts.push('cand'),
+    });
+    await until(() => f.viewer.restartRoll.status().pausing.length === 1, 'asked to pause');
+    await Bun.sleep(20);
+    expect(restarts).toEqual([]);
+    expect(f.viewer.localStore!.heldForRestart()).toEqual([]);
+    f.attempts[0].finish();
+    expect(await first.done).toMatchObject({ type: 'done' });
+    await until(() => restarts.length === 1, 'restarted once it finished');
+    expect(f.viewer.localStore!.heldForRestart()).toEqual([]);
   } finally {
     await f.close();
   }

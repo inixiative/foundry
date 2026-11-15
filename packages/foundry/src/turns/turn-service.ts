@@ -129,7 +129,16 @@ export interface TurnOrigin {
    * more work drafts it for him instead of making it.
    */
   schedule?: true;
+  /**
+   * Not a post: Foundry's continuation of a turn it paused for a restart (`member.id` is
+   * `restart:<turn id>`). Foundry's line, never the owner's message; the next boot runs it first.
+   */
+  restart?: true;
 }
+
+/** What a paused thread's agent reads after the restart (`pauseForRestart`). */
+export const RESTART_RESUME_NOTE =
+  'Foundry paused your previous turn to restart onto an update, and has restarted. Pick up where you left off: your work so far is in this session. Background commands and subagents stopped with the restart; check any you were waiting on and start them again if they are still needed.';
 
 /** A settled turn's result as the routes and the requesting client receive it. */
 export type CompletedTurn = ReturnType<TurnService['completeResult']>;
@@ -372,7 +381,14 @@ export class TurnService {
     const { localStore } = this.deps;
     const result = { resumed: 0, failed: [] as Array<{ turnId: string; error: string }> };
     if (!localStore) return result;
-    for (const held of localStore.heldForRestart()) {
+    // A paused turn's continuation runs first on its thread: what the owner queued behind that
+    // turn was waiting for it to finish.
+    const heldTurns = localStore.heldForRestart();
+    const ordered = [
+      ...heldTurns.filter((turn) => turn.request.origin?.restart === true),
+      ...heldTurns.filter((turn) => turn.request.origin?.restart !== true),
+    ];
+    for (const held of ordered) {
       let images: TurnRequest['images'];
       try {
         images = held.request.imageIds?.length
@@ -529,7 +545,9 @@ export class TurnService {
                   // A scheduled run's prompt is the owner's, set ahead: never a member's post.
                   ...(origin.schedule
                     ? { scheduledRun: origin.displayName }
-                    : { postedBy: origin.displayName }),
+                    : origin.restart
+                      ? { restartResume: true }
+                      : { postedBy: origin.displayName }),
                 }
               : {}),
           }
@@ -537,7 +555,7 @@ export class TurnService {
     // What the harness runs on: the member's post labelled as data (the Wardens and the executor
     // both read it so); the owner's message as typed.
     const harnessPayload =
-      origin && !origin.wake && !origin.fork && !origin.schedule
+      origin && !origin.wake && !origin.fork && !origin.schedule && !origin.restart
         ? memberPostReception(origin.displayName, payload, origin.posts)
         : payload;
     try {
@@ -688,6 +706,37 @@ export class TurnService {
     }
     if (state.interrupt) return { ok: true, outcome: await this.stop(state) };
     return { ok: true, outcome: state.admitted ? 'unsupported' : 'requested' };
+  }
+
+  /**
+   * Pause a running turn for a planned restart (`daemon/restart-roll.ts`, Aron 2026-11-14): stop it
+   * through its runtime, its native session kept, and once the stop is acknowledged queue Foundry's
+   * continuation on its thread, which the restart holds and the next boot runs first. False while
+   * the turn hasn't reached its runtime (ask again); true once asked. A runtime that can't stop, or
+   * a stop never acknowledged, leaves the turn running and queues nothing.
+   */
+  async pauseForRestart(threadId: string, turnId: string): Promise<boolean> {
+    const state = this.live.get(turnId);
+    if (!state || state.threadId !== threadId || state.phase !== 'running') return true;
+    if (!state.admitted) return false;
+    if (!state.interrupt) return true;
+    const stopped = await this.interrupt(threadId, turnId);
+    if (!stopped.ok || stopped.outcome !== 'acknowledged') return true;
+    const resumed = this.accept({
+      threadId,
+      payload: RESTART_RESUME_NOTE,
+      origin: {
+        member: { kind: 'local', id: `restart:${turnId}` },
+        displayName: 'Foundry',
+        postId: `restart:${turnId}`,
+        restart: true,
+      },
+    });
+    if (!resumed.ok)
+      console.warn(
+        `[Turns] paused ${turnId} for the restart; its continuation was refused: ${String(resumed.body.error)}`,
+      );
+    return true;
   }
 
   /**

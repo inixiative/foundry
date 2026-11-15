@@ -8,10 +8,10 @@
  *
  * The supervisor only stages updates at startup, so a daemon left running for
  * days never sees main move. This stages the candidate while running and offers
- * it to the daemon, which spins down (Aron, 2026-11-02: "finish all open
- * threads… once the last one finishes, restart, then reopen"): running turns
- * finish, new ones wait, and it calls back to restart when the last running turn
- * finishes or the backstop timeout passes (packages/foundry/src/daemon/restart-roll.ts).
+ * it to the daemon, which spins down (Aron, 2026-11-14: "pause + resume"): new
+ * turns wait, running turns get a minute to finish and are then paused (stopped,
+ * resumed after the restart), and it calls back to restart once they have stopped
+ * or the backstop timeout passes (packages/foundry/src/daemon/restart-roll.ts).
  * Restarting is exiting 75 so launchd relaunches onto the candidate. A daemon
  * that can't spin down (an older release) is drained on its live turns instead.
  *
@@ -112,7 +112,7 @@ export const startUpdateWatcher = (options: WatchOptions): (() => void) => {
         // Offered once per candidate: the daemon spins down, or keeps it postponed ("Not now").
         if (offered === candidate) return;
         log(
-          `offering ${candidate.slice(0, 8)} to the daemon: it restarts once running turns finish`,
+          `offering ${candidate.slice(0, 8)} to the daemon: it pauses running turns and restarts`,
         );
         hook.offerUpdate({ candidate, timeoutMs, restart: () => void restart(candidate) });
         offered = candidate;

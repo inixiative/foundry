@@ -167,6 +167,8 @@ export const SUMMARY_META_KEYS = [
   'postedBy',
   /** A schedule's run: the schedule's name (its prompt is the owner's, set ahead). */
   'scheduledRun',
+  /** Foundry's continuation of a turn it paused for a restart (`TurnService.pauseForRestart`). */
+  'restartResume',
 ] as const;
 const SUMMARY_SCALAR_MAX = 512;
 const SUMMARY_LAYERS_MAX = 8192;

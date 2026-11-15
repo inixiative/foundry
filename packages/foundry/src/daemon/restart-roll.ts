@@ -4,18 +4,22 @@
  * @partOf feature:daemon
  */
 /**
- * The spin-down: how the daemon restarts onto an update without cutting work (Aron, 2026-11-02:
- * "Pause: finish all open threads. Don't stop them. Everything else waits. Once the last one
- * finishes, restart, then reopen").
+ * The spin-down: how the daemon restarts onto an update without cutting work, and without one long
+ * turn holding every thread for an hour (Aron, 2026-11-14: "more aggressively seek to pause running
+ * agents for a restart of foundry to not do long blocking. pause + resume").
  *
- * When the supervisor offers a staged update, the daemon spins down: turns already running finish
- * normally; new messages are still accepted but wait in the queue ("waiting for Foundry to
- * restart"); nothing new starts. A turn waiting on a person (an approval) doesn't count as running.
- * When the last running turn finishes, every waiting turn is held in the journal
- * (`restart-hold`) and the daemon restarts; the next boot runs them in the order they arrived, and
- * threads resume their native sessions through their bindings. A timeout (default 60 minutes) is
- * only a backstop: past it the daemon restarts anyway and each cut turn is settled from its native
- * record (`turns/native-outcome-recovery.ts`). The owner can restart now or postpone the update.
+ * When the supervisor offers a staged update, the daemon spins down: new messages are still
+ * accepted but wait in the queue ("waiting for Foundry to restart"); nothing new starts. Turns
+ * already running get a short grace (`pauseAfterMs`, default a minute) to finish on their own; a
+ * turn waiting on its person (its agent's approval or question) is paused at once. Past the grace,
+ * each turn still running is paused: stopped through its runtime with its native session kept, and
+ * Foundry queues a continuation on its thread (`TurnService.pauseForRestart`). When the last turn
+ * has stopped, every waiting turn is held in the journal (`restart-hold`) and the daemon restarts;
+ * the next boot runs the continuations first, then the rest in the order they arrived, each thread
+ * resuming its native session through its binding. A turn whose stop isn't acknowledged gets
+ * `PAUSE_SETTLE_MS` before the restart goes ahead; the timeout (default 60 minutes) stays the last
+ * backstop, and a cut turn is settled from its native record (`turns/native-outcome-recovery.ts`).
+ * The owner can pause now, restart now (cutting what runs) or postpone the update.
  */
 
 import type { ActionQueue } from '@inixiative/foundry-core';
@@ -32,6 +36,8 @@ export interface UpdateOffer {
   restart: () => void;
   /** Backstop: restart anyway after this long. */
   timeoutMs?: number;
+  /** How long running turns may finish on their own before they are paused. */
+  pauseAfterMs?: number;
 }
 
 export type RollPhase = 'idle' | 'spinning-down' | 'postponed' | 'restarting';
@@ -43,8 +49,12 @@ export interface RollStatus {
   since?: number;
   /** When the backstop restarts it anyway. */
   deadline?: number;
+  /** When turns still running are paused (past it, they are being paused). */
+  pauseAt?: number;
   /** Turns the restart waits for. */
   running: RunningTurnRef[];
+  /** Of those, the ones asked to pause: they stop, and resume after the restart. */
+  pausing: RunningTurnRef[];
   /** Other work the restart waits for (plan drafts being written after a turn). */
   finishing: number;
   /** Background processes agents started; a restart stops them. */
@@ -54,8 +64,17 @@ export interface RollStatus {
 }
 
 export interface RestartRollDeps {
-  /** Turns running now, not counting those waiting on a person. */
+  /** Turns running now. */
   running(): RunningTurnRef[];
+  /** A running turn blocked on its person (an approval or question): paused without the grace. */
+  waitingOnPerson?(turn: RunningTurnRef): boolean;
+  /**
+   * Pause a running turn: stop it, its native session kept, and queue its continuation for after
+   * the restart. Resolves false when it can't be paused yet (it hasn't reached its runtime), so it
+   * is asked again; true once it was asked, whatever its runtime answered. Without it, the
+   * spin-down only waits.
+   */
+  pause?(turn: RunningTurnRef): Promise<boolean>;
   /** Accepted turns not yet running. */
   waiting(): number;
   /** Work a turn left behind that the restart also waits for (a plan draft being written). */
@@ -67,10 +86,14 @@ export interface RestartRollDeps {
   log?: (message: string) => void;
   now?: () => number;
   defaultTimeoutMs?: number;
+  defaultPauseAfterMs?: number;
   pollMs?: number;
 }
 
 export const DEFAULT_SPIN_DOWN_TIMEOUT_MS = 60 * 60_000;
+export const DEFAULT_PAUSE_AFTER_MS = 60_000;
+/** Once every running turn was asked to pause, how long one that hasn't stopped may hold the restart. */
+export const PAUSE_SETTLE_MS = 2 * 60_000;
 
 /**
  * Whether a running turn is blocked on a person: its own agent asked an approval or a question
@@ -91,6 +114,12 @@ export class RestartRoll {
   private offer?: UpdateOffer;
   private since?: number;
   private deadline?: number;
+  private pauseAt?: number;
+  /** Turns asked to pause (by turn id); `inFlight` of them are still between stop and continuation. */
+  private paused = new Map<string, RunningTurnRef>();
+  private inFlight = 0;
+  /** When the last running turn was asked to pause. */
+  private allPausedAt?: number;
   private timer?: ReturnType<typeof setInterval>;
   private opened: Array<() => void> = [];
 
@@ -101,11 +130,20 @@ export class RestartRoll {
   }
 
   status(): RollStatus {
+    const spinning = this.phase === 'spinning-down';
+    const running = spinning ? this.deps.running() : [];
     return {
       phase: this.phase,
       ...(this.offer ? { candidate: this.offer.candidate } : {}),
-      ...(this.phase === 'spinning-down' ? { since: this.since, deadline: this.deadline } : {}),
-      running: this.phase === 'spinning-down' ? this.deps.running() : [],
+      ...(spinning
+        ? {
+            since: this.since,
+            deadline: this.deadline,
+            ...(this.deps.pause ? { pauseAt: this.pauseAt } : {}),
+          }
+        : {}),
+      running,
+      pausing: running.filter((turn) => this.paused.has(turn.turnId)),
       finishing: this.phase === 'spinning-down' ? (this.deps.finishing?.() ?? 0) : 0,
       background: this.phase === 'idle' ? [] : (this.deps.background?.() ?? []),
       waiting: this.phase === 'idle' ? 0 : this.deps.waiting(),
@@ -137,6 +175,14 @@ export class RestartRoll {
     this.spinDown();
   }
 
+  /** Owner: pause now. Running turns are paused without waiting out the grace; the restart follows. */
+  pauseNow(): boolean {
+    if (this.phase !== 'spinning-down' || !this.deps.pause) return false;
+    this.pauseAt = this.now();
+    this.check();
+    return true;
+  }
+
   /** Owner: restart now. Running turns are cut and settled from their native records on boot. */
   restartNow(): boolean {
     if (!this.offer || this.phase === 'restarting') return false;
@@ -161,13 +207,46 @@ export class RestartRoll {
     return true;
   }
 
-  /** A turn settled: the last one to finish triggers the restart. */
+  /** A turn settled, a pause finished, or the poll ticked: pause what is due, restart once none runs. */
   check(): void {
     if (this.phase !== 'spinning-down') return;
-    const running = this.deps.running().length + (this.deps.finishing?.() ?? 0);
-    if (running === 0) this.restart('every running turn finished');
+    const running = this.deps.running();
+    if (this.deps.pause) {
+      const due = this.pauseAt !== undefined && this.now() >= this.pauseAt;
+      for (const turn of running)
+        if (!this.paused.has(turn.turnId) && (due || this.deps.waitingOnPerson?.(turn)))
+          this.pauseTurn(turn);
+      if (running.length && running.every((turn) => this.paused.has(turn.turnId)))
+        this.allPausedAt ??= this.now();
+      else this.allPausedAt = undefined;
+    }
+    const busy = running.length + (this.deps.finishing?.() ?? 0) + this.inFlight;
+    if (busy === 0) this.restart('every running turn finished or paused');
+    else if (this.allPausedAt !== undefined && this.now() >= this.allPausedAt + PAUSE_SETTLE_MS)
+      this.restart(
+        `${running.length} paused turn(s) had not stopped ${PAUSE_SETTLE_MS / 1000}s on`,
+      );
     else if (this.deadline !== undefined && this.now() >= this.deadline)
-      this.restart(`${running} turn(s) still running at the spin-down timeout`);
+      this.restart(`${running.length} turn(s) still running at the spin-down timeout`);
+  }
+
+  private pauseTurn(turn: RunningTurnRef) {
+    this.paused.set(turn.turnId, turn);
+    this.inFlight++;
+    this.deps.log?.(`pausing ${turn.turnId} on ${turn.threadId} for the restart`);
+    void this.deps.pause!(turn)
+      .catch((error) => {
+        this.deps.log?.(`pausing ${turn.turnId} failed: ${String(error)}`);
+        return true;
+      })
+      .then((asked) => {
+        // Not paused yet (it hadn't reached its runtime): asked again on the next check.
+        if (!asked) this.paused.delete(turn.turnId);
+      })
+      .finally(() => {
+        this.inFlight--;
+        this.check();
+      });
   }
 
   private spinDown() {
@@ -176,8 +255,13 @@ export class RestartRoll {
     this.deadline =
       this.since +
       (this.offer?.timeoutMs ?? this.deps.defaultTimeoutMs ?? DEFAULT_SPIN_DOWN_TIMEOUT_MS);
+    this.pauseAt =
+      this.since +
+      (this.offer?.pauseAfterMs ?? this.deps.defaultPauseAfterMs ?? DEFAULT_PAUSE_AFTER_MS);
+    this.paused.clear();
+    this.allPausedAt = undefined;
     this.deps.log?.(
-      `spinning down for update ${this.offer?.candidate.slice(0, 8)}: waiting for ${this.deps.running().length} running turn(s)`,
+      `spinning down for update ${this.offer?.candidate.slice(0, 8)}: ${this.deps.running().length} running turn(s)${this.deps.pause ? ` pause in ${Math.round((this.pauseAt - this.since) / 1000)}s unless they finish` : ''}`,
     );
     this.stopTimer();
     this.timer = setInterval(() => this.check(), this.deps.pollMs ?? 5_000);

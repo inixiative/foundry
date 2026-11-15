@@ -844,7 +844,11 @@ function connectStreams() {
           );
       }
     },
-    onReconnect: () => requestReconcile(activeThreadId.value, 0),
+    onReconnect: () => {
+      requestReconcile(activeThreadId.value, 0);
+      // The socket came back: if the daemon restarted, the update poll reloads the page.
+      void loadUpdateState();
+    },
     // A rejection means the stream's subject is gone (losing authorization closes the socket instead).
     onRejected: (stream) => {
       // A project that no longer exists scopes nothing; fall back to the unscoped list.
@@ -1514,10 +1518,20 @@ export const restartHolding = computed(
 );
 
 let updatePoll = null;
+/** The daemon process this page loaded against: a new one (a restart) reloads the page onto its build. */
+let seenBootId = null;
 export async function loadUpdateState() {
   try {
     const res = await authFetch('/api/daemon/update');
-    if (res.ok) updateState.value = await res.json();
+    if (res.ok) {
+      const state = await res.json();
+      if (seenBootId && state.bootId && state.bootId !== seenBootId) {
+        window.location.reload();
+        return;
+      }
+      seenBootId ??= state.bootId ?? null;
+      updateState.value = state;
+    }
   } catch {
     /* restarting: the next poll after reconnect reads the new daemon */
   }

@@ -3,8 +3,12 @@
  * @kind route
  * @partOf feature:daemon, feature:viewer
  */
+import { randomUUID } from 'node:crypto';
 import type { Hono } from 'hono';
 import type { RestartRoll } from '../../daemon/restart-roll';
+
+/** This daemon process: a viewer that sees it change reloads onto the new build. */
+const BOOT_ID = randomUUID();
 
 /**
  * The spin-down as the viewer sees it (`daemon/restart-roll.ts`): the update state with the turns a
@@ -17,12 +21,15 @@ export function registerDaemonUpdateRoutes(
 ): void {
   app.get('/api/daemon/update', (c) => {
     const status = roll.status();
+    const named = (turn: { threadId: string; turnId: string }) => ({
+      ...turn,
+      ...(threadName(turn.threadId) ? { name: threadName(turn.threadId) } : {}),
+    });
     return c.json({
       ...status,
-      running: status.running.map((turn) => ({
-        ...turn,
-        ...(threadName(turn.threadId) ? { name: threadName(turn.threadId) } : {}),
-      })),
+      bootId: BOOT_ID,
+      running: status.running.map(named),
+      pausing: status.pausing.map(named),
     });
   });
 
@@ -32,13 +39,18 @@ export function registerDaemonUpdateRoutes(
     const done =
       action === 'restart-now'
         ? roll.restartNow()
-        : action === 'postpone'
-          ? roll.postpone()
-          : action === 'update-now'
-            ? roll.updateNow()
-            : null;
+        : action === 'pause-now'
+          ? roll.pauseNow()
+          : action === 'postpone'
+            ? roll.postpone()
+            : action === 'update-now'
+              ? roll.updateNow()
+              : null;
     if (done === null)
-      return c.json({ error: 'action must be restart-now, postpone or update-now' }, 400);
+      return c.json(
+        { error: 'action must be pause-now, restart-now, postpone or update-now' },
+        400,
+      );
     if (!done) return c.json({ error: `nothing to ${action} (${roll.status().phase})` }, 409);
     return c.json(roll.status());
   });

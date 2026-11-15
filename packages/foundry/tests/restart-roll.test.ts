@@ -1,9 +1,16 @@
 import { expect, test } from 'bun:test';
 import { ActionQueue } from '@inixiative/foundry-core';
-import { blockedOnPerson, RestartRoll, type RunningTurnRef } from '../src/daemon/restart-roll';
+import {
+  blockedOnPerson,
+  PAUSE_SETTLE_MS,
+  RestartRoll,
+  type RunningTurnRef,
+} from '../src/daemon/restart-roll';
 
 // Aron, 2026-11-02: "Pause: finish all open threads. Don't stop them. Everything else waits. Once
-// the last one finishes, restart, then reopen."
+// the last one finishes, restart, then reopen." Superseded 2026-11-14: "more aggressively seek to
+// pause running agents for a restart of foundry to not do long blocking. pause + resume". Turns get
+// a short grace, then are paused (stopped, a continuation queued) and resume after the restart.
 
 function roll(running: RunningTurnRef[], now = { t: 0 }) {
   const restarts: string[] = [];
@@ -139,4 +146,117 @@ test("only the turn's own approval or question makes it not running; a held send
   expect(blockedOnPerson(queue, turn)).toBe(true);
   expect(blockedOnPerson(queue, { threadId: 'b', turnId: 't2' })).toBe(false);
   expect(blockedOnPerson(undefined, turn)).toBe(false);
+});
+
+/** A roll that can pause: `pause` records each ask and resolves with the next queued answer. */
+function pausingRoll(running: RunningTurnRef[], opts: { waitingOnPerson?: string[] } = {}) {
+  const now = { t: 0 };
+  const restarts: string[] = [];
+  const asked: string[] = [];
+  const answers: boolean[] = [];
+  const settle: Array<() => void> = [];
+  const r = new RestartRoll({
+    running: () => running,
+    waiting: () => 0,
+    prepare: () => {},
+    waitingOnPerson: (turn) => opts.waitingOnPerson?.includes(turn.turnId) ?? false,
+    pause: (turn) => {
+      asked.push(turn.turnId);
+      const answer = answers.shift() ?? true;
+      return new Promise((resolve) => settle.push(() => resolve(answer)));
+    },
+    now: () => now.t,
+    pollMs: 60_000,
+  });
+  const offer = (pauseAfterMs = 1_000) =>
+    r.offerUpdate({
+      candidate: 'c1',
+      timeoutMs: 60 * 60_000,
+      pauseAfterMs,
+      restart: () => restarts.push('c1'),
+    });
+  /** Every pending pause call answers. */
+  const answer = async () => {
+    for (const fn of settle.splice(0)) fn();
+    await Bun.sleep(0);
+  };
+  return { r, offer, now, restarts, asked, answers, answer };
+}
+
+test('past the grace each running turn is paused; the restart follows once they stop', async () => {
+  const running: RunningTurnRef[] = [
+    { threadId: 'a', turnId: 't1' },
+    { threadId: 'b', turnId: 't2' },
+  ];
+  const { r, offer, now, restarts, asked, answer } = pausingRoll(running);
+  offer(1_000);
+  expect(r.status()).toMatchObject({ phase: 'spinning-down', pauseAt: 1_000, pausing: [] });
+  now.t = 999;
+  r.check();
+  expect(asked).toEqual([]);
+  now.t = 1_000;
+  r.check();
+  expect(asked).toEqual(['t1', 't2']);
+  expect(r.status().pausing).toHaveLength(2);
+  // Asked again on a later check: each is paused once.
+  r.check();
+  expect(asked).toEqual(['t1', 't2']);
+  // The turns stopped, but a continuation is still being queued: no restart yet.
+  running.splice(0);
+  r.check();
+  expect(restarts).toEqual([]);
+  await answer();
+  expect(restarts).toEqual(['c1']);
+});
+
+test('a turn waiting on its person is paused at once; the others keep their grace', () => {
+  const running: RunningTurnRef[] = [
+    { threadId: 'a', turnId: 't1' },
+    { threadId: 'b', turnId: 't2' },
+  ];
+  const { offer, asked } = pausingRoll(running, { waitingOnPerson: ['t2'] });
+  offer(60_000);
+  expect(asked).toEqual(['t2']);
+});
+
+test("a turn that hadn't reached its runtime is asked again on the next check", async () => {
+  const running: RunningTurnRef[] = [{ threadId: 'a', turnId: 't1' }];
+  const { r, offer, asked, answers, answer } = pausingRoll(running);
+  answers.push(false);
+  offer(0);
+  expect(asked).toEqual(['t1']);
+  // The answer re-checks: asked again at once.
+  await answer();
+  expect(asked).toEqual(['t1', 't1']);
+  expect(r.status().pausing).toHaveLength(1);
+});
+
+test('a paused turn that never stops holds the restart only so long', async () => {
+  const running: RunningTurnRef[] = [{ threadId: 'a', turnId: 't1' }];
+  const { r, offer, now, restarts, answer } = pausingRoll(running);
+  offer(0);
+  await answer();
+  expect(restarts).toEqual([]);
+  now.t = PAUSE_SETTLE_MS - 1;
+  r.check();
+  expect(restarts).toEqual([]);
+  now.t = PAUSE_SETTLE_MS;
+  r.check();
+  expect(restarts).toEqual(['c1']);
+});
+
+test('Pause now skips the grace; without a way to pause there is nothing to do', async () => {
+  const running: RunningTurnRef[] = [{ threadId: 'a', turnId: 't1' }];
+  const { r, offer, now, asked } = pausingRoll(running);
+  expect(r.pauseNow()).toBe(false);
+  offer(60_000);
+  now.t = 5;
+  expect(r.pauseNow()).toBe(true);
+  expect(asked).toEqual(['t1']);
+  expect(r.status().pauseAt).toBe(5);
+
+  const plain = roll([{ threadId: 'a', turnId: 't1' }]);
+  plain.offer();
+  expect(plain.r.pauseNow()).toBe(false);
+  expect(plain.r.status().pauseAt).toBeUndefined();
 });
