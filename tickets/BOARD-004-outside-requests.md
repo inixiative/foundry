@@ -24,7 +24,7 @@ Aron, 2026-10-31 (Q1): "Everyone who's not on your computer needs a signet." Tea
    - **The member reads nothing while it waits.** `visibleTo` narrows that member to `own` until Aron decides. The draft reply is a `send_to_member` under `review` (`service.ts:1185`). On proceed, the view widens and the opening findings become readable; the agent is told so in its opening prompt.
    - **Read-only.** `ToolRules` gains `defaults`. The waiting overlay is `defaults: 'deny'` plus an allow set (`file:read`, named read tools, read-only MCP globs). Today the gate defaults to `allow`, and `net:api` covers every MCP call (`pf/turns/tool-gate.ts:80-81`, `native-tools.ts:42-43`).
    - **Codex is out in v1.** Codex refuses structural rules (`session-adapter.ts:286-289`), so a Codex-executor project refuses `thread.open`, with the reason.
-   - **Aron decides:** proceed (lift the pause; Signet terms and normal tool levels), take over, or decline (the teammate is told).
+   - **Aron decides:** proceed (lift the pause; the member's Signet permissions and normal tool levels), take over, or decline (the teammate is told).
 
 ## Open questions
 

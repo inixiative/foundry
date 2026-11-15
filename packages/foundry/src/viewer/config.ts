@@ -164,8 +164,10 @@ export interface FoundryConfig {
   /** Opt in to API-key providers (paid tokens). Absent or false: subscription-only, and no API provider is constructed. */
   apiTokens?: boolean;
   /**
-   * This Foundry's own conversation settings: `joining`, the terms someone joining its threads
-   * starts with, per audience. A project's floor, conch and the rest are `projects.<id>.conversations`.
+   * This Foundry's own conversation settings: `joining`, the conversation permissions and outbound
+   * setting someone joining its threads starts with, per audience (built in: in your orgs every
+   * permission but `agent.act`; outside `member.log`, `member.wake`, `member.take` and
+   * `member.agent`; outbound `review` for both). A project's floor, conch and the rest are `projects.<id>.conversations`.
    */
   conversations?: FoundryConversationSettings;
   /**
@@ -1971,9 +1973,21 @@ export function capacityKingdomProject(
   project: Pick<ProjectSettingsConfig, 'kingdomCapacity' | 'kingdomProject'>,
 ): string | undefined {
   const capacity = project.kingdomCapacity;
+  return capacity ? kingdomProjectOn(config, project, capacity.kingdom) : undefined;
+}
+
+/**
+ * The Kingdom project this Foundry project links to (`kingdomProject`), when that link is on the
+ * paired Kingdom `kingdom` names (its id or API origin); undefined otherwise.
+ */
+export function kingdomProjectOn(
+  config: Pick<FoundryConfig, 'kingdomIntegrations'>,
+  project: Pick<ProjectSettingsConfig, 'kingdomProject'>,
+  kingdom: string,
+): string | undefined {
   const link = project.kingdomProject;
-  if (!capacity || !link) return undefined;
-  const url = (kingdom: string) =>
-    selectKingdomIntegration(config.kingdomIntegrations, kingdom).url;
-  return url(link.kingdom) === url(capacity.kingdom) ? link.projectId : undefined;
+  if (!link) return undefined;
+  const url = (selector: string) =>
+    selectKingdomIntegration(config.kingdomIntegrations, selector).url;
+  return url(link.kingdom) === url(kingdom) ? link.projectId : undefined;
 }

@@ -1,6 +1,9 @@
 import { expect, test } from 'bun:test';
 import type { HostedSignetRequest } from '@inixiative/signet';
 import { joiningDefault, validateFoundryConversationSettings } from '../src/conversations/types';
+import { kingdomIntegrationId } from '../src/providers/kingdom-installation-connection';
+import { kingdomProjectOn } from '../src/viewer/config';
+import { inviteUrl } from '../src/viewer/routes/conversations';
 import { incomingRequests } from '../src/viewer/routes/kingdom';
 
 const request = (over: Partial<HostedSignetRequest>): HostedSignetRequest => ({
@@ -33,6 +36,7 @@ const request = (over: Partial<HostedSignetRequest>): HostedSignetRequest => ({
       { resourceModel: 'Project', projectId: '00000000-0000-4000-8000-0000000000ff' },
     ],
   },
+  resourceHandles: {},
   reviewUrl: 'https://kingdom.example/dashboard?integration=x&signetRequest=y',
   ...over,
 });
@@ -84,18 +88,18 @@ test('incomingRequests keeps pending, unexpired requests from every Kingdom, new
   expect(listed[0]?.audience).toBe('outside');
 });
 
-const threadsParam = (reviewUrl: string) => {
+const permissionsParam = (reviewUrl: string) => {
   const url = new URL(reviewUrl);
   return {
-    rest: [...url.searchParams].filter(([key]) => key !== 'threads'),
-    threads: JSON.parse(url.searchParams.get('threads') ?? 'null'),
+    rest: [...url.searchParams].filter(([key]) => key !== 'permissions'),
+    permissions: url.searchParams.get('permissions'),
   };
 };
 
-// The review link carries this Foundry's default for the requester's audience, whole: Kingdom's
-// form starts at the narrower of it and what was asked, and a term the default doesn't set is the
-// widest, so the request decides it (Aron 2026-11-14: in-org and outside, something naive).
-test('the review link carries the default for the requester audience', () => {
+// The review link carries this Foundry's default conversation permissions for the requester's
+// audience, comma-separated under `permissions`: the review opens at what was asked with only the
+// agent's latitude capped, as the old terms did (Aron 2026-11-14: in-org and outside, something naive).
+test('the review link carries the default permissions for the requester audience', () => {
   const [outside, inOrg] = incomingRequests(
     [
       {
@@ -112,36 +116,35 @@ test('the review link carries the default for the requester audience', () => {
     ],
     Date.parse('2026-11-01T12:00:00.000Z'),
   );
-  expect(threadsParam(inOrg!.reviewUrl)).toEqual({
+  expect(permissionsParam(inOrg!.reviewUrl)).toEqual({
     rest: [
       ['integration', 'x'],
       ['signetRequest', 'y'],
     ],
-    threads: {
-      view: 'thread',
-      delivery: 'turn',
-      outbound: 'auto',
-      floor: { mayTake: true },
-      posts: 'instructions',
-      act: 'read',
-      agent: true,
-    },
+    permissions: 'member.log,member.wake,member.take,member.agent,agent.instruct,agent.read',
   });
-  expect(threadsParam(outside!.reviewUrl).threads).toEqual(joiningDefault(undefined, 'outside'));
-  expect(threadsParam(outside!.reviewUrl).threads).toMatchObject({ posts: 'data', act: 'ask' });
+  // Outside: everything about taking part, nothing that has the agent take its word.
+  expect(permissionsParam(outside!.reviewUrl).permissions).toBe(
+    'member.log,member.wake,member.take,member.agent',
+  );
+  expect(joiningDefault(undefined, 'outside')).toEqual({
+    permissions: ['member.log', 'member.wake', 'member.take', 'member.agent'],
+    outbound: 'review',
+  });
+  expect(joiningDefault(undefined, 'inOrg').permissions).not.toContain('agent.act');
 });
 
-// The person's own settings replace the built-in default term by term, per audience.
+// The person's own settings replace the built-in default field by field, per audience.
 test('the review link follows this Foundry conversations.joining setting', () => {
   const [listed] = incomingRequests(
     [{ url: 'https://kingdom-a.example', signetRequests: [request({})] }],
     Date.parse('2026-11-01T12:00:00.000Z'),
-    { joining: { inOrg: { act: 'full', view: 'own' } } },
+    { joining: { inOrg: { permissions: ['member.log', 'agent.act'], outbound: 'auto' } } },
   );
-  expect(threadsParam(listed!.reviewUrl).threads).toMatchObject({
-    view: 'own',
-    posts: 'instructions',
-    act: 'full',
+  expect(permissionsParam(listed!.reviewUrl).permissions).toBe('member.log,agent.act');
+  expect(joiningDefault({ joining: { inOrg: { outbound: 'auto' } } }, 'inOrg')).toEqual({
+    permissions: joiningDefault(undefined, 'inOrg').permissions,
+    outbound: 'auto',
   });
 });
 
@@ -168,12 +171,71 @@ test('incomingRequests says when a request asks for a resource whole', () => {
 // are refused there by name, pointing at where they go.
 test('this Foundry conversations takes joining only, and names where project keys go', () => {
   expect(() =>
-    validateFoundryConversationSettings({ joining: { outside: { act: 'read' } } }),
+    validateFoundryConversationSettings({ joining: { outside: { permissions: ['agent.read'] } } }),
   ).not.toThrow();
   expect(() => validateFoundryConversationSettings({ floor: 'conch' })).toThrow(
     'conversations.floor is a project setting',
   );
   expect(() =>
-    validateFoundryConversationSettings({ joining: { outside: { act: 'everything' } } }),
+    validateFoundryConversationSettings({
+      joining: { outside: { permissions: ['agent.everything'] } },
+    }),
   ).toThrow();
+});
+
+// The invite link (CONVERSATIONS.md, F1 as built) names the Kingdom Project a thread's project links
+// to on that Kingdom, so Kingdom creates the conversation resource in it; a global thread, or a
+// project linked elsewhere or not at all, carries none.
+test('the invite link carries the linked Kingdom Project on that Kingdom, and only then', () => {
+  const owner = 'User:00000000-0000-4000-8000-0000000000aa::';
+  const here = {
+    url: 'https://kingdom-a.example',
+    integrationId: '00000000-0000-4000-8000-0000000000a1',
+    owner,
+    signetId: '00000000-0000-4000-8000-0000000000a2',
+  };
+  const there = { ...here, url: 'https://kingdom-b.example' };
+  const config = { kingdomIntegrations: [here, there] };
+  const projectId = '00000000-0000-4000-8000-0000000000f1';
+  const linked = { kingdomProject: { kingdom: kingdomIntegrationId(here), projectId } };
+  expect(kingdomProjectOn(config, linked, kingdomIntegrationId(here))).toBe(projectId);
+  expect(kingdomProjectOn(config, linked, kingdomIntegrationId(there))).toBeUndefined();
+  expect(kingdomProjectOn(config, {}, kingdomIntegrationId(here))).toBeUndefined();
+  const thread = { threadId: 'thread_1', threadName: 'Hiring' };
+  const withProject = new URL(
+    inviteUrl('https://kingdom-web.example', here.integrationId, { ...thread, projectId }),
+  );
+  expect(Object.fromEntries(withProject.searchParams)).toEqual({
+    grantThreads: here.integrationId,
+    threadId: 'thread_1',
+    threadName: 'Hiring',
+    projectId,
+  });
+  const global = new URL(inviteUrl('https://kingdom-web.example', here.integrationId, thread));
+  expect(global.searchParams.has('projectId')).toBe(false);
+});
+
+// A join request names its thread (`resourceHandles`): the card and Kingdom's review say which one;
+// a thread this Foundry doesn't have is shown by its id, marked unknown, never dropped.
+test('incoming requests name the thread they ask for, and keep one this Foundry does not have', () => {
+  const names = (threadId: string) =>
+    threadId === 'thread_known' ? 'Checkout redesign' : undefined;
+  const known = request({
+    resourceHandles: { '00000000-0000-4000-8000-0000000000cc': 'thread_known' },
+  });
+  const stranger = request({
+    id: '00000000-0000-4000-8000-000000000003',
+    createdAt: '2026-11-01T09:00:00.000Z',
+    resourceHandles: { '00000000-0000-4000-8000-0000000000dd': 'thread_gone' },
+  });
+  const [first, second] = incomingRequests(
+    [{ url: 'https://kingdom-a.example', signetRequests: [known, stranger] }],
+    Date.parse('2026-11-01T12:00:00.000Z'),
+    undefined,
+    names,
+  );
+  expect(first!.threads).toEqual([{ threadId: 'thread_known', name: 'Checkout redesign' }]);
+  expect(new URL(first!.reviewUrl).searchParams.get('threadName')).toBe('Checkout redesign');
+  expect(second!.threads).toEqual([{ threadId: 'thread_gone', unknown: true }]);
+  expect(new URL(second!.reviewUrl).searchParams.has('threadName')).toBe(false);
 });

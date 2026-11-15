@@ -52,10 +52,11 @@ test('asides: post from /aside, unread count, promote once and say why the secon
     signetId,
     acceptedRevision: 1,
     member: { signetId, displayName: 'JobCo' },
-    terms: { view: 'own', delivery: 'note', outbound: 'review', floor: { mayTake: false } },
+    threadId: 'main',
+    permissions: [],
     operation: 'thread.prompt',
-    input: { threadId: 'main', postId: Bun.randomUUIDv7(), text: 'The role you wanted opened.' },
-  } as ThreadRequestOf<'thread.prompt'>);
+    input: { postId: Bun.randomUUIDv7(), text: 'The role you wanted opened.' },
+  } satisfies ThreadRequestOf<'thread.prompt'>);
   expect(admitted.ok).toBe(true);
   const server = Bun.serve({
     hostname: '127.0.0.1',

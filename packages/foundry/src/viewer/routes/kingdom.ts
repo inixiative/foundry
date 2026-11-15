@@ -30,20 +30,43 @@ const picked = (request: HostedSignetRequest) =>
     resource.resourceModel === 'IntegrationResource' ? [resource.operations] : [],
   );
 
+/** A thread's name on this Foundry; undefined when it has no such thread. */
+export type ThreadNames = (threadId: string) => string | undefined;
+
 /**
- * Kingdom's review link, carrying this Foundry's default for the requester's audience as `threads`:
- * the review opens at the narrower of it and the request (signet `meetThreadsTerms`). It only
- * narrows where the form starts; Kingdom still refuses an approval wider than the request.
+ * The threads a request asks to join (`resourceHandles`: a conversation's thread id by resource
+ * id), each with its name here; one this Foundry doesn't have is kept, marked unknown, never dropped.
+ */
+export const requestedThreads = (
+  request: Pick<HostedSignetRequest, 'resourceHandles'>,
+  names: ThreadNames,
+) =>
+  [...new Set(Object.values(request.resourceHandles))].map((threadId) => {
+    const name = names(threadId);
+    return name === undefined ? { threadId, unknown: true as const } : { threadId, name };
+  });
+
+/**
+ * Kingdom's review link, carrying this Foundry's default conversation permissions for the
+ * requester's audience as `permissions`, comma-separated (empty: none), and the name of the thread
+ * asked for as `threadName` when this Foundry has it: the review opens with those permissions the
+ * request asked for, showing which thread. It only sets where the form starts; Kingdom still refuses
+ * an approval wider than the request.
  */
 export const reviewUrlWithDefault = (
-  request: Pick<HostedSignetRequest, 'reviewUrl' | 'requester'>,
+  request: Pick<HostedSignetRequest, 'reviewUrl' | 'requester' | 'resourceHandles'>,
   conversations: FoundryConversationSettings | undefined,
+  names: ThreadNames = () => undefined,
 ) => {
   const url = new URL(request.reviewUrl);
   url.searchParams.set(
-    'threads',
-    JSON.stringify(joiningDefault(conversations, request.requester.audience)),
+    'permissions',
+    joiningDefault(conversations, request.requester.audience).permissions.join(','),
   );
+  const name = requestedThreads(request, names).flatMap((thread) =>
+    'name' in thread ? [thread.name] : [],
+  )[0];
+  if (name !== undefined) url.searchParams.set('threadName', name);
   return url.toString();
 };
 
@@ -52,6 +75,7 @@ export function incomingRequests(
   connections: readonly Pick<KingdomInstallationConnection, 'url' | 'signetRequests'>[],
   now = Date.now(),
   conversations?: FoundryConversationSettings,
+  names: ThreadNames = () => undefined,
 ) {
   return connections
     .flatMap((connection) =>
@@ -75,7 +99,8 @@ export function incomingRequests(
           operations: [
             ...new Set(picked(request).flatMap((pick) => ('picks' in pick ? pick.picks : []))),
           ],
-          reviewUrl: reviewUrlWithDefault(request, conversations),
+          threads: requestedThreads(request, names),
+          reviewUrl: reviewUrlWithDefault(request, conversations, names),
         })),
     )
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
@@ -107,6 +132,7 @@ export function registerKingdomRoutes(
   connections: KingdomInstallationConnections,
   viewerToken: () => string | undefined,
   holders: KingdomHolders,
+  threadNames: ThreadNames = () => undefined,
 ) {
   let pairing: Pairing | undefined;
   let failure: string | undefined;
@@ -167,7 +193,12 @@ export function registerKingdomRoutes(
   // Kingdom (the request's reviewUrl); Foundry only shows them, read from the Installation snapshot.
   app.get('/api/kingdom/incoming', async (c) =>
     c.json({
-      requests: incomingRequests(connections.all(), Date.now(), (await store.load()).conversations),
+      requests: incomingRequests(
+        connections.all(),
+        Date.now(),
+        (await store.load()).conversations,
+        threadNames,
+      ),
     }),
   );
   app.post('/api/kingdom/pair', async (c) => {

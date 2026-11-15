@@ -5,13 +5,14 @@
  */
 import {
   type ConversationMember,
+  type ConversationPermission,
   type ThreadEntry,
-  type ThreadsTerms,
   type ThreadViewResult,
   threadTextLimit,
 } from '@inixiative/signet';
 import { memberPostReception } from '../agents/chorus-reception';
 import type { JournalEntry } from '../persistence/local-session-store';
+import { memberReads } from './membership';
 import { quotedName } from './roster';
 import type {
   AsideRecord,
@@ -23,7 +24,7 @@ import type {
 
 /**
  * The read-off point (docs/reference/CONVERSATIONS.md §4.7): a member reads a view of the main
- * thread's journal, set by its terms, and nothing else. These functions are that view. Only five things can ever be an
+ * thread's journal, set by its permissions, and nothing else. These functions are that view. Only five things can ever be an
  * entry: what the owner typed, the main agent's answers, members' posts, released sends and asides
  * (people only: every agent path skips them). Tool
  * calls, Warden rows, composed context and held sends are not entries, so no view can show them.
@@ -103,15 +104,15 @@ export function threadEntryOf(entry: JournalEntry): ThreadEntry | null {
 }
 
 /**
- * Whether a member with these terms sees an entry. `own`: its posts and the sends addressed to it.
- * `thread`: every entry; the wrapper narrows it further per reader (the host agent's own messages
+ * Whether a member with these permissions sees an entry. Without `member.log`: its posts and the
+ * sends addressed to it. With it: every entry; the wrapper narrows it further per reader (the host agent's own messages
  * only for the owner, a `notify` report only for its author and the owner).
  */
 export function visibleTo(
   entry: ThreadEntry,
-  view: { member: ConversationMember; terms: Pick<ThreadsTerms, 'view'> },
+  view: { member: ConversationMember; permissions: readonly ConversationPermission[] },
 ): boolean {
-  if (view.terms.view === 'thread') return true;
+  if (memberReads(view.permissions) === 'thread') return true;
   // An aside goes to every person in the thread, whatever they sit in on (no DMs, Aron 11-01).
   if (entry.kind === 'aside') return true;
   return (entry.kind === 'post' || entry.kind === 'send') && sameMember(entry.member, view.member);

@@ -6,16 +6,14 @@
 import type { PromptBlock } from '@inixiative/foundry-core';
 import {
   type ConversationMember,
+  type ConversationOutbound,
+  type ConversationPermission,
+  conversationOutboundSchema,
+  conversationPermissionSchema,
   floorModeSchema,
   type RequestAudience,
   type ThreadCommission,
-  type ThreadsTerms,
-  threadActSchema,
-  threadDeliverySchema,
-  threadOutboundSchema,
-  threadPostsSchema,
   threadTextLimit,
-  threadViewSchema,
 } from '@inixiative/signet';
 import { z } from 'zod';
 
@@ -53,60 +51,59 @@ export const conversationSettingsSchema = z.strictObject({
 });
 export type ConversationSettingsInput = z.infer<typeof conversationSettingsSchema>;
 
-/** Threads terms a `joining` default may set; a term it leaves out is the request's to decide. */
-const joiningTermsSchema = z.strictObject({
-  view: threadViewSchema.optional(),
-  delivery: threadDeliverySchema.optional(),
-  outbound: threadOutboundSchema.optional(),
-  floor: z.strictObject({ mayTake: z.boolean() }).optional(),
-  posts: threadPostsSchema.optional(),
-  act: threadActSchema.optional(),
-  agent: z.boolean().optional(),
+/**
+ * What someone joining one of this Foundry's conversations starts with, per audience: the
+ * conversation permissions Kingdom's review opens at, and this host's own `outbound` setting for
+ * them. A field it leaves out is the built-in default's.
+ */
+const joiningSchema = z.strictObject({
+  permissions: z.array(conversationPermissionSchema).optional(),
+  outbound: conversationOutboundSchema.optional(),
 });
-export type JoiningTerms = z.infer<typeof joiningTermsSchema>;
+export type Joining = z.infer<typeof joiningSchema>;
 
 /**
  * This Foundry's `conversations` setting (not a project's): what someone joining one of its threads
  * starts with, per audience (Aron, 2026-11-14: "just in-org and outside-org, but something naive").
- * Kingdom marks each request's audience; the review opens at the narrower of this and the request.
+ * Kingdom marks each request's audience, and each hosted Signet's.
  */
 export const foundryConversationSettingsSchema = z.strictObject({
   joining: z
-    .strictObject({ inOrg: joiningTermsSchema.optional(), outside: joiningTermsSchema.optional() })
+    .strictObject({ inOrg: joiningSchema.optional(), outside: joiningSchema.optional() })
     .optional(),
 });
 export type FoundryConversationSettings = z.infer<typeof foundryConversationSettingsSchema>;
 
 /**
- * Proposals: someone in your orgs is taken at their word and the agent may read for them; someone
- * outside is data and every call asks. Each person still dials their own Signet in the review.
+ * Where a review opens: at what was asked, with only the agent's latitude capped, as the old terms
+ * did (an unset term was at its widest). Someone in your orgs may direct the agent and have it read,
+ * not act; someone outside is data and every call asks. Sends to either wait for the owner's review.
+ * Each person still dials their own Signet in the review.
  */
-export const DEFAULT_JOINING: Readonly<Record<RequestAudience, JoiningTerms>> = Object.freeze({
-  inOrg: Object.freeze({ posts: 'instructions', act: 'read' }),
-  outside: Object.freeze({ posts: 'data', act: 'ask' }),
+export const DEFAULT_JOINING: Readonly<Record<RequestAudience, Required<Joining>>> = Object.freeze({
+  inOrg: Object.freeze({
+    permissions: conversationPermissionSchema.options.filter(
+      (permission) => permission !== 'agent.act',
+    ),
+    outbound: 'review' as const,
+  }),
+  outside: Object.freeze({
+    permissions: [
+      'member.log',
+      'member.wake',
+      'member.take',
+      'member.agent',
+    ] as ConversationPermission[],
+    outbound: 'review' as const,
+  }),
 });
 
-const widest = <T extends string>(values: readonly T[]) => values[values.length - 1] as T;
-
-/**
- * The default terms for an audience, whole: a term neither the setting nor the built-in default
- * sets is the widest, so the review's meet leaves it at what was asked.
- */
+/** What someone of this audience joining starts with: the setting's fields over the built-in default. */
 export function joiningDefault(
   settings: FoundryConversationSettings | undefined,
   audience: RequestAudience,
-): ThreadsTerms {
-  return {
-    view: widest(threadViewSchema.options),
-    delivery: widest(threadDeliverySchema.options),
-    outbound: widest(threadOutboundSchema.options),
-    floor: { mayTake: true },
-    posts: widest(threadPostsSchema.options),
-    act: widest(threadActSchema.options),
-    agent: true,
-    ...DEFAULT_JOINING[audience],
-    ...settings?.joining?.[audience],
-  };
+): Required<Joining> {
+  return { ...DEFAULT_JOINING[audience], ...settings?.joining?.[audience] };
 }
 
 /** Refuses this Foundry's `conversations` value, naming where a project's own settings go. */
@@ -205,7 +202,7 @@ export interface ConversationRecord {
   sharedFromSeq?: number;
   /**
    * Members on this machine (§4.11 point 2): another Foundry thread of the owner's, his Codex or a
-   * second Claude, joined in-process with no Signet. Each one's invite record carries its terms.
+   * second Claude, joined in-process with no Signet. Each one's record carries its permissions.
    */
   locals?: LocalMemberRecord[];
   /**
@@ -213,6 +210,12 @@ export interface ConversationRecord {
    * agent, a local member is keyed `local:<threadId>`. Unset: the `agents` default.
    */
   voices?: Record<string, Voice>;
+  /**
+   * Whether the host's sends to a Signet member wait for the owner (§4.5), keyed `signet:<id>`,
+   * where the owner set it. Unset: the joining default for the member's audience. The host's own
+   * setting, never the grant's (signet 0.18).
+   */
+  outbound?: Record<string, ConversationOutbound>;
   /** Members asking for the conch, newest last, until it moves. */
   requests: Array<{ member: ConversationMember; displayName: string; at: string }>;
   /** Per-thread overrides, the last step of the cascade. */
@@ -223,28 +226,21 @@ export interface ConversationRecord {
 export type Voice = 'speaking' | 'listening';
 
 /**
- * A local member's terms, the same ones a Signet's `threads` terms name (M4): what it hears of the
- * log, whether its posts wake the host's agent, and whether it may take the conch. The log it hears
- * is what was posted: the host agent's own answers stay the host's side (§4.9 point 2, M8).
+ * The owner's own agents talk to the host's agent by default (§4.11 point 2): they read the log
+ * (`member.log`) and their posts wake it (`member.wake`); they don't take the conch. The log they
+ * hear is what was posted: the host agent's own answers stay the host's side (§4.9 point 2, M8).
  */
-export interface LocalMemberTerms {
-  view: 'thread' | 'own';
-  delivery: 'note' | 'turn';
-  floor: { mayTake: boolean };
-}
-
-/** The owner's own agents talk to the host's agent by default: their posts wake it (§4.11 point 2). */
-export const DEFAULT_LOCAL_TERMS: LocalMemberTerms = Object.freeze({
-  view: 'thread',
-  delivery: 'turn',
-  floor: Object.freeze({ mayTake: false }),
-});
+export const DEFAULT_LOCAL_PERMISSIONS: readonly ConversationPermission[] = Object.freeze([
+  'member.log',
+  'member.wake',
+]);
 
 export interface LocalMemberRecord {
   /** The member's own Foundry thread on this machine. */
   threadId: string;
   displayName: string;
-  terms: LocalMemberTerms;
+  /** The same conversation permissions a Signet member holds (signet `conversationPermissionSchema`). */
+  permissions: ConversationPermission[];
   joinedAt: string;
   /** It hears the log from here on (the host journal seq when it joined). */
   fromSeq: number;
@@ -253,6 +249,17 @@ export interface LocalMemberRecord {
   /** The newest mirrored host seq a wake covered: it is woken again only for something newer. */
   wokenSeq?: number;
 }
+
+/** A stored local member, read when its conversation record is: one in another shape is dropped. */
+export const localMemberRecordSchema = z.object({
+  threadId: z.string().min(1),
+  displayName: z.string(),
+  permissions: z.array(conversationPermissionSchema),
+  joinedAt: z.string(),
+  fromSeq: z.number().int(),
+  mirroredSeq: z.number().int().optional(),
+  wokenSeq: z.number().int().optional(),
+}) satisfies z.ZodType<LocalMemberRecord>;
 
 /**
  * The host's log mirrored into a local member's own thread (phase `shared-entry`, CONVERSATIONS.md
@@ -300,7 +307,7 @@ export interface AsidePromotedRecord {
 
 /** A plain-text control the host's agent carried out for the owner (§4.11 point 4), shown and reversible. */
 export interface ConversationControlRecord {
-  action: 'voice' | 'floor' | 'conch' | 'join' | 'leave';
+  action: 'voice' | 'floor' | 'conch' | 'join' | 'leave' | 'outbound';
   /** The agent or member it changed (`host`, or a member's display name). */
   target?: string;
   before: string | null;
@@ -315,17 +322,14 @@ export const emptyConversation = (): ConversationRecord => ({
   settings: {},
 });
 
-/** A member's post as the journal holds it (phase `member-post`). */
-/** A Signet member's terms on what its words are and what the agent may do on them (§4.12). */
-export type MemberActTerms = Pick<ThreadsTerms, 'posts' | 'act' | 'agent'>;
-
-/** Another party whose words a turn took in, and what they may have the agent do (§4.12). */
+/** Another party whose words a turn took in, and what they hold on the conversation now (§4.12). */
 export interface TurnActor {
   member: ConversationMember;
   displayName: string;
-  terms: MemberActTerms;
+  permissions: ConversationPermission[];
 }
 
+/** A member's post as the journal holds it (phase `member-post`). */
 export interface MemberPostRecord {
   postId: string;
   /** Who posted: a Signet member (through Kingdom) or a local one (another thread on this machine). */
@@ -341,12 +345,14 @@ export interface MemberPostRecord {
   executionId?: string;
   /** The grant revision the post's frame carried (a Signet member's post). */
   acceptedRevision?: number;
+  /** The conversation permissions that frame carried: what a member there by a scope row holds. */
+  permissions?: ConversationPermission[];
   inReplyTo?: string;
   /** The turn the post opened (`delivery: 'turn'`). */
   turnId?: string;
   /** A report against a `notify` commission: the owner reads it, the other members never do. */
   notify?: boolean;
-  /** Admitted as instructions within the member's `act` (§4.12); absent, the post is data. */
+  /** Admitted as instructions (`agent.instruct`, §4.12); absent, the post is data. */
   posts?: 'instructions';
 }
 
@@ -412,7 +418,7 @@ export interface ConversationWrapper {
    */
   deliverNotes(threadId: string, turnId: string | undefined): PromptBlock[];
   /**
-   * Who is in and each member's terms, in plain words (§4.5); undefined: not a conversation.
+   * Who is in and what each member may do, in plain words (§4.5); undefined: not a conversation.
    * `held`: the thread's context already carries a roster, so one is due even when no member is left.
    */
   roster(threadId: string, held?: boolean): string | undefined;

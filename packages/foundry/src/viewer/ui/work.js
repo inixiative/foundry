@@ -11,14 +11,16 @@
  * artifacts are its pull requests and each turn's journalled records; Signets are its members'
  * grants, read-only, managed in Kingdom. Diffs open in GitHub: the diff viewer is VIEWER-003.
  */
+
+import { holds } from './conversation-members.js';
 import { useFlowStream } from './graph-view.js';
 import { html, useEffect, useState } from './lib.js';
 import { activeThreadId, detailDrawerOpen, openTurnDetail, rightTab, threadData } from './store.js';
 
 const githubRef = (ref) => /^#?\d+$/.test(ref) || /^[\w.-]+\/[\w.-]+#\d+$/.test(ref);
 
-/** Kingdom's own wording for a member's terms (Kingdom `ThreadsLensEditor.tsx`). */
-const TERMS_WORDS = {
+/** Plain words for what a member holds and how sends to it leave. */
+const MEMBER_WORDS = {
   view: {
     own: 'Its own posts and what is sent to it',
     thread: 'The whole thread: messages and answers, never tool calls',
@@ -74,7 +76,9 @@ function kingdomManageUrl(view) {
 }
 
 function SignetCard({ member, manageUrl }) {
-  const terms = member.terms;
+  const listed = member.listed;
+  const reads = holds(member, 'member.log') ? 'thread' : 'own';
+  const delivery = holds(member, 'member.wake') ? 'turn' : 'note';
   const limits = member.limits ?? {};
   return html`<li class="signet-card" data-member=${member.member.id}>
     <div class="signet-card-head">
@@ -83,9 +87,9 @@ function SignetCard({ member, manageUrl }) {
       ${member.listed ? null : html`<span class="rp-dim">no longer listed by Kingdom</span>`}
     </div>
     <dl class="rp-facts">
-      ${terms ? html`<dt>It reads</dt><dd>${TERMS_WORDS.view[terms.view] ?? terms.view}</dd>` : null}
-      ${terms ? html`<dt>Its posts arrive as</dt><dd>${TERMS_WORDS.delivery[terms.delivery] ?? terms.delivery}</dd>` : null}
-      ${terms ? html`<dt>Replies to it</dt><dd>${TERMS_WORDS.outbound[terms.outbound] ?? terms.outbound}</dd>` : null}
+      ${listed ? html`<dt>It reads</dt><dd>${MEMBER_WORDS.view[reads]}</dd>` : null}
+      ${listed ? html`<dt>Its posts arrive as</dt><dd>${MEMBER_WORDS.delivery[delivery]}</dd>` : null}
+      ${listed ? html`<dt>Replies to it</dt><dd>${MEMBER_WORDS.outbound[member.outbound] ?? member.outbound}</dd>` : null}
       <dt>Requests</dt><dd>${limits.maxRequests ?? 'unlimited'}</dd>
       <dt>Expires</dt><dd>${limits.expiresAt ? new Date(limits.expiresAt).toLocaleString() : 'no grant deadline'}</dd>
     </dl>

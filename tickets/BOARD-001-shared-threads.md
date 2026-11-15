@@ -33,7 +33,7 @@ There is no new link record, private mark or held-answer state.
 | Piece | Extends (path) |
 |---|---|
 | `ConversationMember.kind` gains `local`, and `local-herald` folds into it | `@inixiative/signet` `src/threads.ts:115` |
-| Every `signetId`-keyed site takes a member key: `admit` (frame fields), `pump` (`subscriptions()`), `visibleTo`, `members()` (so local members show before their first post), `outbound()`, `seen`/`accepted`, note ids, the dedupe key. Local terms come from settings (CONVERSATIONS §4.1) or the conversation record | `pf/conversations/service.ts:184-235,358-379,718-745,998-1050`; `view.ts:46,69-79` |
+| Every `signetId`-keyed site takes a member key: `admit` (frame fields), `pump` (`subscriptions()`), `visibleTo`, `members()` (so local members show before their first post), `outbound()`, `seen`/`accepted`, note ids, the dedupe key. A local member's permissions come from its invite record on the conversation record (CONVERSATIONS §4.11) | `pf/conversations/service.ts:184-235,358-379,718-745,998-1050`; `view.ts:46,69-79` |
 | Members of a shared thread read the whole thread. Tool I/O, subagent runs and Warden rows are already never entries | `threadEntryOf` / `visibleTo` (`view.ts:23-79`); Kingdom AUTH-014 |
 | **Audience at the clamp.** The per-thread audience feeds `roleComposition`, so the Wardens narrow with main. The narrowest member wins. Outsiders at `org` (Q-A) | `pf/prompts/instruction-settings.ts:441-452`; `composeRoleView` (`instruction-stack.ts:365-400`); `VISIBLE_TO` (`corpus-compiler.ts:90-95`) |
 | **A private home for a shared thread's sessions**, the host and every local member, so the harness loads no user CLAUDE.md, AGENTS.md, hooks, skills or MCP connectors. With no private home, the invite is refused | `NativeAuthentication` per-thread source and `privateHome` (`pf/providers/native-authentication.ts:258-282`). `harnessLoading` can't do it, because it is process-wide (`instruction-stack.ts:678-684`) |
@@ -53,7 +53,7 @@ There is no new link record, private mark or held-answer state.
 | A shared thread holds every draft for `review`, except a report against an open commission whose caller chose `post` | `send()` / `hold()` |
 | Commission sends: `commission: {report: 'post'\|'notify', expiresAt}` (default 24 h, `conversations.commissionHours`). Only they invite outside `speak-when-spoken-to`. They survive `setFloor`, the switch to conch and restarts. The entry is marked (signet release) | `invite()`, `setFloor` (`:583-585`), `takeFloor`, `raisePending`-style startup |
 | `agents: 'silent' \| 'drafting'`: under silent, posts are admitted as `note`, and `send()` is refused (commissions excepted) | `conversations` settings; `admit`, `send` |
-| `floor.mayTake` lens term (signet release); a local member's term on its invite record | `threadsLensSchema`, `floor()` |
+| `member.take` permission on the conversation (signet 0.18); a local member holds it on its invite record | `conversationPermissionSchema`, `floor()` |
 | `aside` entry kind: sender and addressee people only; skipped by notes, mirror, `journalHistory` and the agent's context | `view.ts`, viewer |
 | §4.4's private-home, fresh-session and audience pieces are **not built in v1** | — |
 
