@@ -274,7 +274,11 @@ export function ThreadRunModal({
 
 // --- "+ New thread" ----------------------------------------------------------------------------
 
-/** The New thread picker: open (with an optional preset worker, role, where or draft) or closed (null). */
+/**
+ * The New thread picker: open (with an optional preset worker, role, where or draft) or closed (null).
+ * `joinThread` opens it as "New agent in this thread": the thread it starts stays unselected and
+ * `onCreated(created, displayName)` joins it to that thread.
+ */
 export const newThreadChooser = signal(null);
 
 /** Foundry's own scopes in the Where picker, after Global and before the projects. */
@@ -311,27 +315,8 @@ export const openNewThread = (preset = {}) => {
 
 /** A new agent's name in the thread it joins, when the person gives none: its worker and model. */
 const agentName = (worker, model) =>
-  [worker?.label ?? worker?.id, modelOf(worker, model)?.label ?? model]
-    .filter(Boolean)
-    .join(' · ') || 'New agent';
-
-/** The new thread joins the host thread's conversation as a local member (CONVERSATIONS.md §4.11). */
-async function joinAsAgent(hostThreadId, threadId, displayName) {
-  const res = await authFetch(
-    `/api/threads/${encodeURIComponent(hostThreadId)}/conversation/locals`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ threadId, displayName }),
-    },
-  );
-  if (res.ok) return showToast(`${displayName} joined this thread`, 'ok');
-  const body = await res.json().catch(() => ({}));
-  showToast(
-    `Started ${displayName}, but it could not join: ${body.error ?? res.statusText}`,
-    'error',
-  );
-}
+  [workerName(worker), modelOf(worker, model)?.label ?? model].filter(Boolean).join(' · ') ||
+  'New agent';
 
 /**
  * Start a thread where it is picked (the active scope by default) on the picked worker, model,
@@ -400,13 +385,13 @@ export function NewThreadModal() {
     });
     // A draft from the opener (a settings page asking the Forge Master) waits in the new thread's box.
     if (created && preset.draft) composerFill.value = preset.draft;
-    if (created && joining)
-      await joinAsAgent(joining, created.threadId, name.trim() || agentName(worker, value.model));
+    if (created && preset.onCreated)
+      await preset.onCreated(created, name.trim() || agentName(worker, value.model));
   };
   return html`<${Modal} title=${joining ? 'New agent in this thread' : 'New thread'} onClose=${close} class="run-modal new-thread-modal">
     <div class="run-picker">
       <label class="run-picker-row">Name
-        <input class="rp-select" data-run="name" placeholder="Optional" value=${name}
+        <input class="rp-select" data-run="name" placeholder="Optional" maxlength="200" value=${name}
           onInput=${(e) => setName(e.target.value)} />
       </label>
       ${joining ? null : html`<${WherePicker} where=${where} onChange=${setWhere} />`}

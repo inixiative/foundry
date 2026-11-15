@@ -105,6 +105,11 @@ button.band-add-agent {
   gap: 8px;
   margin: 0 16px;
 }
-.thread-agents-modal > .action-btn {
+.conversation-invites {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.thread-agents-modal > .conversation-invites {
   margin: 6px 16px 0;
 }

@@ -399,11 +399,11 @@ function ContextBar() {
               ? html`<button type="button" class="band-pill band-run" data-run="pill" onClick=${openThreadRun}
                   title=${`${[worker, ...runs].filter(Boolean).join(' · ')}${launch?.effort ? '' : ' (default effort)'} · change for this thread`}>${
                     worker ? html`<span class="band-drop">${worker}\u00a0·\u00a0</span>` : null
-                  }${runs.join(' · ')}</button>
-                <button type="button" class="band-pill band-add-agent" data-agents="add-band" aria-haspopup="dialog"
-                  aria-label="Add an agent" title="Add an agent to this thread" onClick=${openThreadAgents}>+</button>`
+                  }${runs.join(' · ')}</button>`
               : null
           }
+          <button type="button" class="band-pill band-add-agent" data-agents="add-band" aria-haspopup="dialog"
+            aria-label="Add an agent" title="Add an agent to this thread" onClick=${openThreadAgents}>+</button>
           ${
             fill !== null
               ? html`<span class="band-pill band-meter" title=${`Estimated context fill: ${fmtNum(threadContextTokens.value)} of ${fmtNum(contextWindow)} tokens`}>

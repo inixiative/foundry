@@ -11,7 +11,7 @@
  * the sessions list changes (the existing `threads` stream).
  */
 
-import { ownerName } from './kingdom-holder.js';
+import { kingdomIntegrationOf, ownerName } from './kingdom-holder.js';
 import { html, useEffect, useState } from './lib.js';
 // settings.js imports this module's settings card; the signal is read at render, so the cycle is safe.
 import { SettingRow } from './setting-row.js';
@@ -25,7 +25,7 @@ import {
   threadData,
 } from './store.js';
 // thread-agents.js imports this module too; AgentsLine is read at render, so the cycle is safe.
-import { AgentsLine } from './thread-agents.js';
+import { AgentsLine, projectOf } from './thread-agents.js';
 import { layeredActions, sourceOf } from './thread-settings.js';
 
 /** What the host's agent may do on a turn that took a member's words in (threads term `act`, §4.12). */
@@ -157,38 +157,29 @@ function MemberRow({ member, threadId, conch }) {
   </li>`;
 }
 
-const isOwn = (candidate, key) =>
-  !!key && (candidate.kingdomId === key || candidate.kingdomUrl === key.replace(/\/+$/, ''));
-
 /**
  * Where to invite someone into this thread (§5.5): one link to Kingdom's grant form per paired
  * owner, the project's own owner first. Plain links, so the browser opens them on the click itself
- * (a window opened after a read is a popup the browser blocks).
+ * (a window opened after a read is a popup the browser blocks). With no conversation yet it reads
+ * the view itself, again whenever a pairing changes.
  */
-export function InviteLinks({ threadId, view = null }) {
-  const [read, setRead] = useState(null);
-  useEffect(() => {
-    if (view || !threadId) return undefined;
-    let live = true;
-    readView(threadId, 'invites').then((body) => live && setRead({ threadId, body }));
-    return () => {
-      live = false;
-    };
-  }, [threadId, view]);
-  const source = view ?? (read?.threadId === threadId ? read.body : null);
+export function InviteLinks({ threadId, projectId = null, view = null }) {
   const integrations = kingdomStatus.value?.integrations ?? [];
-  const projectId = threadData.value?.meta?.projectId ?? null;
-  const own = projectId
-    ? settingsConfig.value?.projects?.[projectId]?.kingdomCapacity?.kingdom
-    : null;
+  const pairings = integrations.map((i) => `${i.id}:${i.status}`).join(',');
+  const [read, loaded] = useConversationView(threadId, view ? null : `invites:${pairings}`);
+  const source = view ?? read;
+  const own = kingdomIntegrationOf(settingsConfig.value, kingdomStatus.value, projectId)?.id;
   const invites = (source?.invites ?? [])
     .filter((candidate) => candidate.url)
     .map((candidate) => {
       const holder = integrations.find((i) => i.id === candidate.kingdomId)?.holder;
       return { ...candidate, label: ownerName(holder) ?? `Kingdom ${candidate.kingdomId}` };
     })
-    .sort((a, b) => isOwn(b, own) - isOwn(a, own));
-  if (!source) return html`<span class="conversation-dim">Reading where to invite from…</span>`;
+    .sort((a, b) => (b.kingdomId === own) - (a.kingdomId === own));
+  if (!source)
+    return loaded
+      ? html`<span class="conversation-dim">Could not read where to invite from.</span>`
+      : html`<span class="conversation-dim">Reading where to invite from…</span>`;
   if (!invites.length)
     return html`<span class="conversation-dim">Kingdom did not describe where to invite from; check Settings → Kingdom.</span>`;
   return html`<span class="conversation-invites">${invites.map(
@@ -216,7 +207,8 @@ function readView(threadId, lineKey) {
 /**
  * The thread's conversation view (members, floor, posts), read only for a thread whose line in the
  * sessions list carries `conversation`, and re-read whenever that line changes. The last view stays
- * until the new one arrives, so counts don't flicker on every post.
+ * until the new one arrives, so counts don't flicker on every post. The second value is true once a
+ * read has settled, so a null view after it is a failed read, not one still loading.
  */
 export function useConversationView(threadId, line) {
   const [read, setRead] = useState(null);
@@ -232,12 +224,13 @@ export function useConversationView(threadId, line) {
       live = false;
     };
   }, [threadId, lineKey]);
-  return [line && read?.threadId === threadId ? read.view : null];
+  const settled = !!line && read?.threadId === threadId;
+  return [settled ? read.view : null, settled];
 }
 
 /**
  * The participants panel, shown on a thread that has a conversation (its line in the sessions list
- * carries `conversation`), or folded to its invite link on any other thread.
+ * carries `conversation`), or folded to its agents and invite links on any other thread.
  */
 export function ParticipantsPanel() {
   const threadId = activeThreadId.value;
@@ -249,7 +242,7 @@ export function ParticipantsPanel() {
   if (!line)
     return html`<div class="conversation-panel conversation-panel--empty">
       <${AgentsLine} threadId=${threadId} view=${null} />
-      ${paired ? html`<div class="conversation-floor"><${InviteLinks} threadId=${threadId} /></div>` : null}
+      ${paired ? html`<div class="conversation-floor"><${InviteLinks} threadId=${threadId} projectId=${projectOf(threadId)} /></div>` : null}
     </div>`;
   if (!view) return null;
   const unread = view.posts.filter((p) => p.unread).length;
@@ -309,7 +302,7 @@ export function ParticipantsPanel() {
               ? html`<button class="proj-btn proj-btn-ok" onClick=${() => post(`${base}/resume`)}>Resume</button>`
               : html`<button class="proj-btn" onClick=${() => post(`${base}/pause`)}>Pause members</button>`
           }
-          ${paired ? html`<${InviteLinks} threadId=${threadId} view=${view} />` : null}
+          ${paired ? html`<${InviteLinks} threadId=${threadId} projectId=${projectOf(threadId)} view=${view} />` : null}
         </div>
         ${
           view.requests?.length
