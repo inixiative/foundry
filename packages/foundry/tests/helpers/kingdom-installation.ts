@@ -2,6 +2,7 @@ import { join } from 'node:path';
 import {
   type ConversationPermission,
   collectSignet,
+  conversationPermissionSchema,
   generateSignetKey,
   type OwnerRef,
   registerInstallation,
@@ -17,7 +18,7 @@ import {
   type SignetGrant,
 } from '@inixiative/signet/contracts';
 import type { ServerWebSocket } from 'bun';
-import { conversationRows, rowPermissions } from '../../src/conversations/membership';
+import { conversationRows, rowsPermit } from '../../src/conversations/membership';
 
 /** The calls a member makes by default: post, read and the floor. */
 const memberCalls = ['thread.prompt', 'thread.read', 'thread.floor'];
@@ -86,7 +87,9 @@ export const permissionsOf = (
   threadId = 'main',
 ): ConversationPermission[] => {
   const { face, scoped } = conversationRows(signet, threadId);
-  return rowPermissions([...face, ...scoped]);
+  return conversationPermissionSchema.options.filter((permission) =>
+    rowsPermit([...face, ...scoped], [permission]),
+  );
 };
 
 /** The same Signet revised to hold `permissions` beside its calls on each conversation row. */

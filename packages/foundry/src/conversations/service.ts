@@ -17,6 +17,7 @@ import {
   type ConversationOutbound,
   type ConversationPermission,
   conversationActLevel,
+  conversationPermissionSchema,
   type HostedSignet,
   type ThreadEntry,
   type ThreadHost,
@@ -38,13 +39,7 @@ import {
 } from '../providers/kingdom-installation-connection';
 import type { TurnAcceptance, TurnRequest } from '../turns/turn-service';
 import type { ProjectSettingsConfig } from '../viewer/config';
-import {
-  conversationHoldings,
-  conversationRows,
-  memberDelivery,
-  rowPermissions,
-  rowsPermit,
-} from './membership';
+import { conversationHoldings, conversationRows, memberDelivery, rowsPermit } from './membership';
 import { conversationFloor, conversationRoster, quotedName } from './roster';
 import { resolveConversationSettings } from './settings';
 import {
@@ -1936,25 +1931,36 @@ export class ConversationService implements ConversationWrapper {
   turnActors(threadId: string, turnId: string, seen = new Set<string>()): TurnActor[] {
     seen.add(`${threadId}:${turnId}`);
     const store = this.deps.store;
+    const delivered = store
+      .phasesOf(threadId, 'member-post-delivered')
+      .filter((row) => row.turnId === turnId)
+      .map((row) => postKey(row.record as { memberKey?: unknown; postId?: unknown }));
     const keys = new Set(
       store
         .phasesOf(threadId, 'member-post-delivered')
         .filter((row) => row.turnId === turnId)
         .map((row) => String(row.record.memberKey)),
     );
-    const opener = store
+    const posts = store
       .phasesOf(threadId, 'member-post')
-      .map((row) => row.record as unknown as MemberPostRecord)
-      .find((post) => post.turnId === turnId);
+      .map((row) => row.record as unknown as MemberPostRecord);
+    const opener = posts.find((post) => post.turnId === turnId);
     if (opener) keys.add(opener.memberKey);
+    // The posts this turn took in, each with what Kingdom admitted it under.
+    const taken = posts.filter((post) => post === opener || delivered.includes(postKey(post)));
     const actors = new Map<string, TurnActor>();
-    const add = (hostThreadId: string, signetId: string) => {
+    const add = (hostThreadId: string, signetId: string, own?: readonly MemberPostRecord[]) => {
       if (actors.has(signetId) || this.isOwnerSignet(signetId, hostThreadId)) return;
-      actors.set(signetId, this.actorOn(hostThreadId, signetId));
+      actors.set(signetId, this.actorOn(hostThreadId, signetId, own));
     };
     const relayedFrom = new Set<string>();
     for (const key of keys) {
-      if (key.startsWith('signet:')) add(threadId, key.slice('signet:'.length));
+      if (key.startsWith('signet:'))
+        add(
+          threadId,
+          key.slice('signet:'.length),
+          taken.filter((post) => post.memberKey === key),
+        );
       else if (key.startsWith('local:')) {
         relayedFrom.add(threadId);
         for (const host of this.hostsOf(key.slice('local:'.length))) relayedFrom.add(host);
@@ -1986,25 +1992,39 @@ export class ConversationService implements ConversationWrapper {
     return [...actors.values()];
   }
 
-  /** One outside member of a conversation as an actor: their name there, and their permissions now. */
-  private actorOn(threadId: string, signetId: string): TurnActor {
+  /**
+   * One outside member of a conversation as an actor: their name there, and what Kingdom said they
+   * hold. With `own`, the posts of theirs the turn took in: only what every one of those posts was
+   * admitted under (the narrowest). Without (their words came relayed), their latest frame.
+   */
+  private actorOn(
+    threadId: string,
+    signetId: string,
+    own?: readonly MemberPostRecord[],
+  ): TurnActor {
     const key = memberKey({ kind: 'signet', id: signetId });
     const post = this.deps.store
       .phasesOf(threadId, 'member-post')
       .map((row) => row.record as unknown as MemberPostRecord)
       .findLast((candidate) => candidate.memberKey === key);
+    const permissions = own?.length
+      ? conversationPermissionSchema.options.filter((permission) =>
+          own.every((taken) => taken.permissions?.includes(permission)),
+        )
+      : this.memberPermissions(signetId, threadId);
     return {
       member: { kind: 'signet', id: signetId },
       displayName: post?.displayName ?? 'a member',
-      permissions: this.memberPermissions(signetId, threadId),
+      permissions,
     };
   }
 
   /**
-   * What a Signet member holds on this conversation now, where no frame carries it (the roster,
-   * sends, a turn's actors, the participants view): its row in the latest snapshot, `full` being
-   * every permission. None when the member is missing there or the snapshot is older than a frame it
-   * sent (§4.5): a stale read can only make the host more careful.
+   * What a Signet member holds on this conversation now, where no frame is in hand (the roster,
+   * sends, the participants view, relayed actors): what Kingdom sent on its latest frame for the
+   * thread. A stored grant row is what was granted, not what is held (a Signet issued from another
+   * keeps its row when its parent loses a permission), so it never gates. None before a frame, when
+   * the member is missing from the snapshot, or once the snapshot is newer than that frame (§4.5).
    */
   memberPermissions(signetId: string, threadId: string): ConversationPermission[] {
     const signet = this.deps.hosted().find((candidate) => candidate.signetId === signetId);
@@ -2014,11 +2034,11 @@ export class ConversationService implements ConversationWrapper {
 
   /**
    * The one membership read (§4.1). A `conversation` resource row for this thread makes a listed
-   * Signet a member, holding that row's permissions (with `operations`, only when a row permits one
-   * of them). A scope row reaches what Kingdom says it reaches, never what the host guesses: a
-   * Signet holding one is a member through Kingdom's latest frame for this thread, holding the
-   * permissions that frame carried, until the snapshot shows a newer revision than the frame's; its
-   * rows' operations only say which calls it may make (`prompt.resolve` for the owner's client).
+   * Signet a member (with `operations`, only when a row permits one of them). A scope row reaches
+   * what Kingdom says it reaches, never what the host guesses: a Signet holding one is a member
+   * through Kingdom's latest frame for this thread, until the snapshot shows a newer revision than
+   * the frame's. Rows only say who is a member and which calls it may make (`prompt.resolve` for the
+   * owner's client); what it holds is its latest frame's, under the same revision rule.
    */
   private reach(
     signet: HostedSignet,
@@ -2026,15 +2046,15 @@ export class ConversationService implements ConversationWrapper {
     operations?: readonly ThreadOperation[],
   ): { permissions: ConversationPermission[]; standing?: true } | undefined {
     const { face, scoped } = conversationRows(signet, threadId);
+    const frame = this.latestFrame(signet.signetId, threadId);
+    const held = frame && signet.revision <= frame.revision ? frame : undefined;
     if (face.length)
       return !operations || rowsPermit(face, operations)
-        ? { permissions: rowPermissions(face) }
+        ? { permissions: held?.permissions ?? [] }
         : undefined;
-    if (!scoped.length) return undefined;
-    const frame = this.latestFrame(signet.signetId, threadId);
-    if (!frame || signet.revision > frame.revision) return undefined;
+    if (!scoped.length || !held) return undefined;
     if (operations && !rowsPermit(scoped, operations)) return undefined;
-    return { permissions: frame.permissions, standing: true };
+    return { permissions: held.permissions, standing: true };
   }
 
   /** Kingdom's latest frame from this Signet for this thread: this run's, or its last post's. */

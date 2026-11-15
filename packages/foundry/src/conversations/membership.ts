@@ -5,7 +5,6 @@
  */
 import {
   type ConversationPermission,
-  conversationPermissionSchema,
   conversationResourceKind,
   type HostedSignet,
   type OperationScope,
@@ -58,10 +57,6 @@ export const rowScope = (row: ConversationRow): OperationScope =>
 /** Whether any of the rows permits one of the operations (`full`, or a picked leaf). */
 export const rowsPermit = (rows: readonly ConversationRow[], operations: readonly string[]) =>
   rows.some((row) => operations.some((operation) => permitsOperation(rowScope(row), operation)));
-
-/** The conversation permissions the rows hold together: every one on a `full` row, else the picked leaves. */
-export const rowPermissions = (rows: readonly ConversationRow[]): ConversationPermission[] =>
-  conversationPermissionSchema.options.filter((permission) => rowsPermit(rows, [permission]));
 
 /** `thread`: it reads the whole conversation (`member.log`); `own`: its posts and the sends to it. */
 export const memberReads = (permissions: readonly ConversationPermission[]) =>
