@@ -5,7 +5,7 @@
  */
 import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { resolve } from 'node:path';
 import {
   type HeldSignet,
   type HostedSignet,
@@ -15,6 +15,7 @@ import {
   InstallationSocket,
   type InstallationSocketOptions,
   installationDirectory,
+  installationPaths,
   installationSignets,
   kingdomUrl,
   setInstallationCredential,
@@ -101,11 +102,9 @@ export const kingdomInstallationRoot = (configDir: string) => resolve(configDir,
 export const kingdomInstallation = (configDir: string, url: string) =>
   installationDirectory(kingdomInstallationRoot(configDir), url);
 
-/** Where the Installation for one Kingdom lives, without creating anything. Mirrors `installationDirectory`. */
-export function kingdomInstallationPaths(configDir: string, url: string) {
-  const directory = join(kingdomInstallationRoot(configDir), new URL(kingdomUrl(url)).host);
-  return { directory, keyFile: join(directory, 'installation-key.json') };
-}
+/** Where the Installation for one Kingdom lives, without creating anything. */
+export const kingdomInstallationPaths = (configDir: string, url: string) =>
+  installationPaths(kingdomInstallationRoot(configDir), url);
 
 /** `connected` when every paired Kingdom is, `unavailable` when any is not, `disconnected` when none is paired. */
 export const overallStatus = (integrations: readonly { status: string }[]) =>
