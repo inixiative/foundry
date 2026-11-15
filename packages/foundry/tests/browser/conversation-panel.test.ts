@@ -104,15 +104,9 @@ test('an unread member post marks the thread; the panel shows the member and its
       action: 'released',
       text: 'Aron is interested; send details.',
     });
-    // The owner lets sends to JobCo leave at once from its row (a host setting, §4.5).
-    const outbound = panel.locator('[data-term="outbound"]');
-    expect(await outbound.inputValue()).toBe('review');
-    await outbound.selectOption('auto');
-    await until(
-      () => conversations.members('main')[0]?.outbound === 'auto',
-      'outbound set by the owner',
-    );
-    expect(conversations.send('main', 'JobCo', 'Straight through.')).toBe('Sent to JobCo.');
+    // JobCo is not listed by any snapshot, so its sends are always reviewed: no control, a chip.
+    expect(await panel.locator('[data-term="outbound"]').count()).toBe(0);
+    expect(await panel.getByTitle('Sends to this member').innerText()).toBe('sends reviewed');
     expect(errors).toEqual([]);
   } finally {
     await browser.close();

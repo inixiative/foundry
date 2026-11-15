@@ -148,7 +148,8 @@ function MemberRow({ member, threadId, conch }) {
         : null
     }
     ${
-      outside
+      // A member no longer listed is always reviewed (§4.5): only a listed one has the control.
+      outside && member.listed
         ? html`<select class="context-bar-chip conversation-outbound" data-term="outbound"
             title="Sends to this member" aria-label=${`Sends to ${member.displayName}`}
             value=${outbound} onChange=${(e) => setOutbound(e.target.value)}>
