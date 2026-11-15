@@ -1,5 +1,5 @@
 {
-  "version": "1.4.14",
+  "version": "1.4.20",
   "status": 200,
   "body": {
     "turns": [
@@ -20,8 +20,8 @@
   "recorded": {
     "service": "muse",
     "cli": "muse",
-    "recordedAt": "2026-11-14T20:23:51.347Z",
-    "agentSession": "0.12.0",
+    "recordedAt": "2026-11-15T16:35:36.059Z",
+    "agentSession": "0.12.3",
     "environment": "terminal"
   }
 }

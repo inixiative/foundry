@@ -44,10 +44,10 @@ import {
   type MuseUserInputHandler,
   musePermissions,
   type SessionEvent,
+  spawnMuseHost,
   type ToolGate,
 } from '@inixiative/agent-session';
 import { type NativeBridgeLease, newId, type SignalBus } from '@inixiative/foundry-core';
-import { spawnMspConnection } from '@muse-code/sdk';
 import { readFileSync } from 'fs';
 import { mkdir, readFile, rename, writeFile } from 'fs/promises';
 import { dirname, join } from 'path';
@@ -1497,46 +1497,6 @@ export class MuseSessionAdapter implements SessionAdapter {
     session.kill();
     await ended;
     return 'released';
-  }
-}
-
-/**
- * `muse serve` through the SDK's owned-process handshake: agent-session's own default host, kept here
- * only because MuseSession does not expose when its host has exited, and the adapter must not release
- * the login (or report a session released) before it has. Remove when agent-session exposes the exit.
- */
-const MUSE_STARTUP_TIMEOUT_MS = 30_000;
-async function spawnMuseHost(launch: Parameters<MuseConnect>[0]) {
-  const handshake = spawnMspConnection({
-    command: launch.museBin,
-    args: launch.args,
-    cwd: launch.cwd,
-    env: launch.env,
-    shutdownTimeoutMs: 10_000,
-  });
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  try {
-    const spawned = await Promise.race([
-      handshake.initialize(launch.initialize),
-      new Promise<never>((_, reject) => {
-        timer = setTimeout(
-          () => reject(Error(`muse serve did not initialize within ${MUSE_STARTUP_TIMEOUT_MS}ms`)),
-          MUSE_STARTUP_TIMEOUT_MS,
-        );
-      }),
-    ]);
-    return {
-      connection: spawned.connection,
-      initializeResult: spawned.initializeResult,
-      exited: spawned.exited,
-      stderrTail: () => handshake.child.stderrTail,
-      close: () => spawned.close(),
-    };
-  } catch (error) {
-    await handshake.close().catch(() => undefined);
-    throw error;
-  } finally {
-    clearTimeout(timer);
   }
 }
 

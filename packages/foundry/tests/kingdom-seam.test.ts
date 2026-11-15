@@ -17,6 +17,12 @@ const resolveLocal = (from: string, specifier: string): string | null => {
   return null;
 };
 
+/** A harness subpath that imports nothing (agent-session's `muse-env`) brings no session runtime with it. */
+const importFree = (specifier: string, from: string): boolean =>
+  specifier !== HARNESS_PACKAGE &&
+  ts.preProcessFile(readFileSync(Bun.resolveSync(specifier, dirname(from)), 'utf8'), true, true)
+    .importedFiles.length === 0;
+
 /** Every path from `entry` to a harness file or package, as `a → b → …` lines. */
 const harnessPaths = (entry: string): string[] => {
   const parent = new Map<string, string>();
@@ -38,7 +44,7 @@ const harnessPaths = (entry: string): string[] => {
     for (const { fileName } of ts.preProcessFile(readFileSync(file, 'utf8'), true, true)
       .importedFiles) {
       if (fileName === HARNESS_PACKAGE || fileName.startsWith(`${HARNESS_PACKAGE}/`)) {
-        hits.push(`${chain(file)} → ${fileName}`);
+        if (!importFree(fileName, file)) hits.push(`${chain(file)} → ${fileName}`);
         continue;
       }
       if (!fileName.startsWith('.')) continue;

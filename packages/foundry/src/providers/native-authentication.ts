@@ -15,6 +15,7 @@ import {
 } from 'node:fs';
 import { realpath } from 'node:fs/promises';
 import { dirname, isAbsolute, join } from 'node:path';
+import { MUSE_COMPETING_ENV } from '@inixiative/agent-session/muse-env';
 import { sha256Hex } from '@inixiative/foundry-core';
 import { z } from 'zod';
 import { readPrivateJson } from '../client/private-file';
@@ -169,20 +170,11 @@ export interface NativeAuthenticationProvider {
   prepare(threadId: string, runtime: NativeRuntime): Promise<NativeAuthenticationLaunch>;
 }
 
-/**
- * What would bill, route or loosen Muse Code away from its saved subscription login and the gates, by
- * the names the 1.4.14 binary reads: Meta's metered keys and endpoints (META_, LLM_, MODEL_, LLAMA_,
- * OPENROUTER_), its auth and key-mint endpoints, and the MUSE_ switches for the model, experiments,
- * contributor mode, the approval judge and a fail-open permission profile. agent-session's
- * MuseSession strips the same set; Foundry strips it first so no launch path depends on that.
- */
-const MUSE_COMPETING =
-  /^(META_|LLM_|MODEL_|LLAMA_|OPENROUTER_|TBH_(AUTH|MINT)_BASE_URL$|MUSE_EXPERIMENTAL_|MUSE_(MODEL|CONTRIBUTOR_MODE|DISABLE_APPROVAL_JUDGE|PERMISSION_PROFILE_FAIL_OPEN)$)/;
-
 /** The child's environment without inherited credentials, endpoints or profile overrides: only the
  * binding's own source may set them, after this. Foundry's instruction-file switch is policy, not a credential.
- * A Muse launch also loses Meta's metered keys and Muse's billing and approval switches, and never self-updates
- * (the CLI must stay on the version agent-session's SDK is pinned to). */
+ * A Muse launch also loses agent-session's Muse strip list (`MUSE_COMPETING_ENV`, from its import-free `muse-env`
+ * subpath, so Kingdom never compiles the transports), and never self-updates (the CLI must stay on the version
+ * agent-session's SDK is pinned to). */
 export function withoutCompetingCredentials(
   inherited: Record<string, string | undefined>,
   runtime?: NativeRuntime,
@@ -193,7 +185,7 @@ export function withoutCompetingCredentials(
       /^(ANTHROPIC_|OPENAI_|CODEX_|CLAUDE_CODE_|CLAUDE_CONFIG_DIR$|FOUNDRY_GATEWAY_TOKEN$)/.test(
         key,
       ) ||
-      (runtime === 'muse' && MUSE_COMPETING.test(key))
+      (runtime === 'muse' && MUSE_COMPETING_ENV.test(key))
     )
       delete env[key];
   if (inherited.CLAUDE_CODE_DISABLE_CLAUDE_MDS === '1') env.CLAUDE_CODE_DISABLE_CLAUDE_MDS = '1';
