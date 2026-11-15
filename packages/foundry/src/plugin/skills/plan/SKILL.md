@@ -21,7 +21,7 @@ When a message brings new work to a thread with no plan, Foundry adds a line to 
 
 | Section | One line each | Example |
 |---|---|---|
-| `outcomes` | what the person gets, with `status`: `todo`, `doing`, `done`, `you` (waits on the person; shown in Plan only: to ask, `set_status` `needs-you`) | "Board shows each thread's machine" · doing |
+| `outcomes` | what the person gets, with `status`: `todo`, `doing`, `done`, `you` (waits on the person; shown in Plan only: to ask, `set_status` `needs-you`); an optional `group` names the group Plan heads it under | "Board shows each thread's machine" · doing · group "Board" |
 | `pains` | what hurts today | "Plan reads 'not recorded yet'" |
 | `strategy` | how the work goes, in order | "Stamp the device on thread meta" |
 | `reasons` | why this way, not another | "The device id already exists in device.json" |
@@ -39,7 +39,7 @@ For each concern (auth, permissions, db access, requests, locks, jobs, events, e
 
 ## Sections replace, others stay
 
-Each section you give replaces that section; sections you leave out keep their last value. To move outcomes without resending the list, use `mark`: `{"mark": [{"outcome": "Board shows each thread's machine", "status": "done"}]}` (the outcome's exact text, or its number from 1). An outcome newly `done` shows the thread as done with that text, until the person's next message.
+Each section you give replaces that section; sections you leave out keep their last value. To move outcomes without resending the list, use `mark`: `{"mark": [{"outcome": "Board shows each thread's machine", "status": "done"}]}` (the outcome's exact text, or its number from 1). An outcome newly `done` shows the thread as done with that text, until the person's next message. The person can also tick an outcome in the Plan tab (done ↔ todo); their tick never shows the thread as done, so read `get_plan` back before marking — their ticks may have moved things since you last recorded.
 
 ## Read, clear
 

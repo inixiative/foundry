@@ -15,7 +15,9 @@ import { createFoundryMcp } from '../src/mcp/server';
 import {
   type ArtifactVersionRecord,
   applyPlanPatch,
+  markPlanOutcomeByPerson,
   needsPlan,
+  planPatchSchema,
   recordArtifact,
   recordPlan,
   THREAD_RECORD_TOOL_DESCRIPTION,
@@ -171,6 +173,63 @@ test("the agent's first set_plan replaces a Foundry draft whole, and a draft nev
   expect(applyPlanPatch(thread.meta.plan, { pains: [{ text: 'No login' }] }).outcomes).toHaveLength(
     1,
   );
+});
+
+test('grouped outcomes keep their group through mark; a person ticking creates no milestone', () => {
+  expect(
+    planPatchSchema.safeParse({
+      outcomes: [{ text: 'Alpha outcome', status: 'todo', group: 'First group' }],
+    }).success,
+  ).toBe(true);
+  expect(
+    planPatchSchema.safeParse({
+      outcomes: [{ text: 'Alpha outcome', status: 'todo', group: 'g'.repeat(81) }],
+    }).success,
+  ).toBe(false);
+  const thread = new Thread('g', new ContextStack(), { description: '' });
+  recordPlan(thread, {
+    outcomes: [
+      { text: 'Alpha outcome', status: 'todo', group: 'First group' },
+      { text: 'Beta outcome', status: 'todo', group: 'First group' },
+      { text: 'Gamma outcome', status: 'todo' },
+    ],
+  });
+  expect(thread.meta.done).toBeUndefined();
+  const marked = applyPlanPatch(thread.meta.plan, {
+    mark: [{ outcome: 'Alpha outcome', status: 'doing' }],
+  });
+  expect(marked.outcomes[0]).toMatchObject({ status: 'doing', group: 'First group' });
+  markPlanOutcomeByPerson(thread, 'Alpha outcome', 'done');
+  markPlanOutcomeByPerson(thread, 'Beta outcome', 'done');
+  expect(thread.meta.plan?.outcomes.slice(0, 2)).toMatchObject([
+    { status: 'done', group: 'First group' },
+    { status: 'done', group: 'First group' },
+  ]);
+  // A person's tick is not the agent reaching an outcome: no milestone, thread not shown done.
+  expect(thread.meta.done).toBeUndefined();
+  // All outcomes done still means done (Aron's call): the next work is due a new plan.
+  markPlanOutcomeByPerson(thread, 'Gamma outcome', 'done');
+  expect(needsPlan(thread.meta)).toBe(true);
+  expect(wantsDraft(thread.meta)).toBe(true);
+});
+
+test('a person reopening an outcome the agent finished clears its milestone; a tick keeps a draft a draft', () => {
+  const thread = new Thread('r', new ContextStack(), { description: '' });
+  recordPlan(thread, { outcomes: [{ text: 'Alpha outcome', status: 'todo' }] });
+  recordPlan(thread, { mark: [{ outcome: 'Alpha outcome', status: 'done' }] });
+  expect(thread.meta.done).toMatchObject({ kind: 'milestone', text: 'Alpha outcome' });
+  markPlanOutcomeByPerson(thread, 'Alpha outcome', 'todo');
+  expect(thread.meta.plan?.outcomes[0]?.status).toBe('todo');
+  expect(thread.meta.done).toBeUndefined();
+
+  const drafted = new Thread('dr', new ContextStack(), { description: '' });
+  recordPlan(drafted, { outcomes: [{ text: 'Beta outcome', status: 'todo' }] }, 'foundry');
+  markPlanOutcomeByPerson(drafted, 'Beta outcome', 'done');
+  expect(drafted.meta.plan).toMatchObject({
+    draftedBy: 'foundry',
+    outcomes: [{ text: 'Beta outcome', status: 'done' }],
+  });
+  expect(drafted.meta.done).toBeUndefined();
 });
 
 test('the loop: set_loop starts it, loop_round records rounds, the limit says stop, stop_loop ends it', async () => {

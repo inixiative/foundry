@@ -44,10 +44,20 @@ const item = z.strictObject({
   detail: z.string().trim().min(1).max(4_000).optional(),
 });
 const outcomeStatus = z.enum(['todo', 'doing', 'done', 'you']);
+/** One mark: an outcome named by its text or 1-based number, moved to a status. */
+const planMarkItemSchema = z.strictObject({
+  outcome: z.string().trim().min(1).max(300),
+  status: outcomeStatus,
+});
 export const planPatchSchema = z
   .strictObject({
     outcomes: z
-      .array(item.extend({ status: outcomeStatus }))
+      .array(
+        item.extend({
+          status: outcomeStatus,
+          group: z.string().trim().min(1).max(80).optional(),
+        }),
+      )
       .max(40)
       .optional(),
     pains: z.array(item).max(20).optional(),
@@ -66,13 +76,14 @@ export const planPatchSchema = z
       .max(40)
       .optional(),
     /** Move outcomes to a status without resending the list: each names an outcome by its text or its 1-based number. */
-    mark: z
-      .array(z.strictObject({ outcome: z.string().trim().min(1).max(300), status: outcomeStatus }))
-      .max(40)
-      .optional(),
+    mark: z.array(planMarkItemSchema).max(40).optional(),
   })
   .refine((patch) => Object.keys(patch).length > 0, 'Give at least one section');
 export type PlanPatch = z.infer<typeof planPatchSchema>;
+
+/** One outcome's move, as the person makes it by ticking in the Plan tab: the mark, with its actor. */
+export const planMarkSchema = planMarkItemSchema;
+export type PlanMark = z.infer<typeof planMarkSchema>;
 
 export const loopSchema = z.strictObject({
   goal: z.string().trim().min(1).max(300),
@@ -243,6 +254,34 @@ export function recordPlan(
       ? plan.outcomes.filter((o) => o.status === 'done' && !before.has(o.text)).at(-1)
       : undefined;
   if (reached) thread.meta.done = { kind: 'milestone', text: reached.text, at: Date.now() };
+  return plan;
+}
+
+/**
+ * A person ticking an outcome in the Plan tab: the same `mark` through `applyPlanPatch`, but the
+ * person is the actor, so it never creates the milestone an agent's newly-done outcome does in
+ * `recordPlan`, and it keeps the plan's own `draftedBy` (ticking a Foundry draft keeps it a draft).
+ */
+export function markPlanOutcomeByPerson(
+  thread: Thread,
+  outcome: string,
+  status: PlanMark['status'],
+): ThreadPlan {
+  const current = thread.meta.plan?.outcomes ?? [];
+  const index = /^\d+$/.test(outcome)
+    ? Number(outcome) - 1
+    : current.findIndex((o) => o.text === outcome);
+  const text = index >= 0 ? current[index]?.text : outcome;
+  const plan = applyPlanPatch(
+    thread.meta.plan,
+    { mark: [{ outcome, status }] },
+    Date.now(),
+    thread.meta.plan?.draftedBy ?? 'agent',
+  );
+  thread.meta.plan = plan;
+  // Reopening the outcome a milestone stands for clears it: the thread is not done with it any more.
+  if (status !== 'done' && thread.meta.done?.kind === 'milestone' && thread.meta.done.text === text)
+    delete thread.meta.done;
   return plan;
 }
 

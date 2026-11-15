@@ -25,12 +25,14 @@ import {
   activePanel,
   activeThreadId,
   allThreads,
+  authFetch,
   commentOn,
   createThread,
   executeAction,
   focusTurnId,
   messages,
   selectThread,
+  showToast,
   threadData,
   threadStatusOf,
   waitingFor,
@@ -92,11 +94,50 @@ const DECISIONS = {
 };
 const MARK = { done: '✓', doing: '◐', you: '!' };
 
-function PlanItem({ item, status }) {
+/** The person ticking an outcome: done ↔ todo through the plan route, which marks without a milestone. */
+async function patchOutcome(threadId, outcome, status) {
+  try {
+    const res = await authFetch(`/api/threads/${encodeURIComponent(threadId)}/plan`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ outcome, status }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw Error(data.error ?? res.statusText);
+    if (data.meta) threadData.value = { ...threadData.value, meta: data.meta };
+  } catch (error) {
+    showToast(`Could not update the outcome: ${error.message}`, 'error');
+  }
+}
+
+function PlanItem({ item, status, threadId }) {
+  const box = status
+    ? threadId
+      ? html`<button type="button" class="plan-box s-${status}"
+          title=${status === 'done' ? 'Reopen this outcome' : 'Tick this outcome off'}
+          aria-label=${status === 'done' ? `Reopen "${item.text}"` : `Tick off "${item.text}"`}
+          onClick=${() => patchOutcome(threadId, item.text, status === 'done' ? 'todo' : 'done')}>${MARK[status] ?? ''}</button>`
+      : html`<span class="plan-box s-${status}" title=${status === 'you' ? 'waits on you' : status}>${MARK[status] ?? ''}</span>`
+    : html`<span class="plan-dot"></span>`;
   return html`<li class="plan-item">
-    ${status ? html`<span class="plan-box s-${status}" title=${status === 'you' ? 'waits on you' : status}>${MARK[status] ?? ''}</span>` : html`<span class="plan-dot"></span>`}
+    ${box}
     <div><b><${InlineMarkdown} text=${item.text} /></b>${item.detail ? html`<small><${InlineMarkdown} text=${item.detail} /></small>` : null}</div>
   </li>`;
+}
+
+/** Outcomes under their group heads, in the order groups first appear; ungrouped outcomes keep no head. */
+function groupedOutcomes(outcomes) {
+  const groups = [];
+  for (const outcome of outcomes) {
+    const name = outcome.group ?? null;
+    let entry = groups.find((g) => g.name === name);
+    if (!entry) {
+      entry = { name, items: [] };
+      groups.push(entry);
+    }
+    entry.items.push(outcome);
+  }
+  return groups;
 }
 
 /** One section of the what and why; "not recorded yet" until the agent records it. */
@@ -193,7 +234,12 @@ export function Plan() {
       </header>
       ${
         recorded.outcomes?.length
-          ? html`<ul class="plan-items">${recorded.outcomes.map((o, i) => html`<${PlanItem} key=${i} item=${o} status=${o.status} />`)}</ul>`
+          ? groupedOutcomes(recorded.outcomes).map(
+              (g) => html`<div key=${g.name ?? ''} class="plan-group">
+                ${g.name ? html`<div class="plan-group-head">${g.name}</div>` : null}
+                <ul class="plan-items">${g.items.map((o) => html`<${PlanItem} key=${o.text} item=${o} status=${o.status} threadId=${threadId} />`)}</ul>
+              </div>`,
+            )
           : checklist.goals.length
             ? checklist.goals.map(
                 (g) => html`<div key=${g.source} class="plan-goal">

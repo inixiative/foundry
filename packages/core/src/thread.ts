@@ -75,6 +75,8 @@ export interface ThreadPlanItem {
 export interface ThreadPlan {
   readonly outcomes: readonly (ThreadPlanItem & {
     readonly status: 'todo' | 'doing' | 'done' | 'you';
+    /** The named group this outcome belongs to, when the plan groups its outcomes; Plan heads each group. */
+    readonly group?: string;
   })[];
   readonly pains: readonly ThreadPlanItem[];
   readonly strategy: readonly ThreadPlanItem[];
