@@ -2454,12 +2454,13 @@ export class ConversationService implements ConversationWrapper {
    */
   private outbound(signetId: string, threadId: string): ConversationOutbound {
     const signet = this.deps.hosted().find((candidate) => candidate.signetId === signetId);
-    if (signet?.recipient.audience === 'owner') return 'auto';
     // A member no longer listed on this thread is reviewed, whatever the owner set for it.
     if (!signet || !this.reach(signet, threadId)) return 'review';
+    const audience = signet.recipient.audience;
+    if (audience === 'owner') return 'auto';
     return (
       this.record(threadId).outbound?.[memberKey(signetMember(signetId))] ??
-      joiningDefault(this.deps.joining?.(), signet.recipient.audience).outbound
+      joiningDefault(this.deps.joining?.(), audience).outbound
     );
   }
 
