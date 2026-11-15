@@ -167,6 +167,8 @@ export const SUMMARY_META_KEYS = [
   'postedBy',
   /** A schedule's run: the schedule's name (its prompt is the owner's, set ahead). */
   'scheduledRun',
+  /** Foundry's continuation of a turn it paused for a restart (`TurnService.pauseForRestart`). */
+  'restartResume',
 ] as const;
 const SUMMARY_SCALAR_MAX = 512;
 const SUMMARY_LAYERS_MAX = 8192;
@@ -1399,6 +1401,15 @@ export class LocalSessionStore {
         WHERE j.source='message' AND m.turn_id=? AND m.actor='user'`,
     ).get(turnId) as { seq: number } | null;
     return row?.seq;
+  }
+
+  /** The turn a restart paused, when this turn is Foundry's continuation of it (`restart:<turn id>`). */
+  restartContinuationOf(turnId: string): string | undefined {
+    const row = this.query(
+      `SELECT json_extract(record, '$.meta.origin.member.id') AS id FROM session_messages
+        WHERE turn_id=? AND actor='user' AND json_extract(record, '$.meta.origin.restart') = 1`,
+    ).get(turnId) as { id: string | null } | null;
+    return row?.id?.startsWith('restart:') ? row.id.slice('restart:'.length) : undefined;
   }
 
   /** The journal seq of one ordered phase row. */

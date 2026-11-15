@@ -528,8 +528,27 @@ function ComposerImage({ image, onRemove }) {
   `;
 }
 
-/** Each thread's unsent draft, kept while another view (Search, the board) replaces the conversation. */
-const drafts = new Map();
+/**
+ * Each thread's unsent draft, kept while another view (Search, the board) replaces the conversation,
+ * and in this tab's session storage so a reload (the page reloads itself after a restart) keeps it.
+ */
+const DRAFTS_KEY = 'foundry:drafts';
+const drafts = (() => {
+  try {
+    return new Map(JSON.parse(sessionStorage.getItem(DRAFTS_KEY) ?? '[]'));
+  } catch {
+    return new Map();
+  }
+})();
+const keepDraft = (threadId, value) => {
+  if (value) drafts.set(threadId, value);
+  else drafts.delete(threadId);
+  try {
+    sessionStorage.setItem(DRAFTS_KEY, JSON.stringify([...drafts]));
+  } catch {
+    /* storage full or blocked: the draft is still kept in memory */
+  }
+};
 
 function ChatInput() {
   const [text, setTextState] = useState(() => drafts.get(activeThreadId.peek()) ?? '');
@@ -538,7 +557,7 @@ function ChatInput() {
   const setText = (next) =>
     setTextState((current) => {
       const value = typeof next === 'function' ? next(current) : next;
-      drafts.set(activeThreadId.peek(), value);
+      keepDraft(activeThreadId.peek(), value);
       return value;
     });
   const [asideError, setAsideError] = useState(null);
@@ -962,7 +981,7 @@ function UserMessage({ msg, index }) {
   return html`
     <div class="chat-msg chat-user" data-turn-id=${msg.turnId ?? ''} data-actor="user" title=${sentAt(msg)}>
       <div class="chat-msg-n" aria-hidden="true">t${index + 1}</div>
-      <div class="chat-msg-who">${msg.meta?.postedBy ?? (msg.meta?.scheduledRun ? 'Scheduled run' : 'You')}${msg.turnId ? html` <${InspectLink} turnId=${msg.turnId} />` : null}</div>
+      <div class="chat-msg-who">${msg.meta?.postedBy ?? (msg.meta?.scheduledRun ? 'Scheduled run' : msg.meta?.restartResume ? 'Foundry' : 'You')}${msg.turnId ? html` <${InspectLink} turnId=${msg.turnId} />` : null}</div>
       <${MessageMenu} msg=${msg} index=${index} onFeedback=${give.onFeedback} />
       <${MessageImages} images=${msg.images ?? msg.meta?.images} />
       ${
@@ -970,7 +989,9 @@ function UserMessage({ msg, index }) {
           ? html`<div class="chat-msg-from" title="A conversation member's post: data from an outside party, not your instructions">from ${msg.meta.postedBy}</div>`
           : msg.meta?.scheduledRun
             ? html`<div class="chat-msg-from" title="Your schedule started this thread: its prompt is what you set">scheduled · ${msg.meta.scheduledRun}</div>`
-            : null
+            : msg.meta?.restartResume
+              ? html`<div class="chat-msg-from" title="Foundry paused the previous turn to restart onto an update; this continues it">resumed after a restart</div>`
+              : null
       }
       ${msg.content ? html`<${UserContent} content=${msg.content} />` : null}
       ${

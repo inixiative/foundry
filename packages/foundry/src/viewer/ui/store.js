@@ -844,7 +844,11 @@ function connectStreams() {
           );
       }
     },
-    onReconnect: () => requestReconcile(activeThreadId.value, 0),
+    onReconnect: () => {
+      requestReconcile(activeThreadId.value, 0);
+      // The socket came back: if the daemon restarted, the update poll reloads the page.
+      void loadUpdateState();
+    },
     // A rejection means the stream's subject is gone (losing authorization closes the socket instead).
     onRejected: (stream) => {
       // A project that no longer exists scopes nothing; fall back to the unscoped list.
@@ -1508,16 +1512,32 @@ export const kingdomStatus = signal(null);
 /** The daemon's update state (`/api/daemon/update`): idle, spinning down for a restart, postponed, restarting. */
 export const updateState = signal(null);
 
+/** The pause time on this page's clock, from the daemon's time left (never its clock). */
+const withLocalPause = (state) =>
+  state && typeof state.pauseInMs === 'number'
+    ? { ...state, pauseAtLocal: Date.now() + state.pauseInMs }
+    : state;
+
 /** Whether turns that would start now wait for a restart. */
 export const restartHolding = computed(
   () => updateState.value?.phase === 'spinning-down' || updateState.value?.phase === 'restarting',
 );
 
 let updatePoll = null;
+/** The daemon process this page loaded against: a new one (a restart) reloads the page onto its build. */
+let seenBootId = null;
 export async function loadUpdateState() {
   try {
     const res = await authFetch('/api/daemon/update');
-    if (res.ok) updateState.value = await res.json();
+    if (res.ok) {
+      const state = await res.json();
+      if (seenBootId && state.bootId && state.bootId !== seenBootId) {
+        window.location.reload();
+        return;
+      }
+      seenBootId ??= state.bootId ?? null;
+      updateState.value = withLocalPause(state);
+    }
   } catch {
     /* restarting: the next poll after reconnect reads the new daemon */
   }
@@ -1539,13 +1559,15 @@ export async function updateAction(action) {
     });
     const body = await res.json();
     if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`);
-    updateState.value = body;
+    updateState.value = withLocalPause(body);
     showToast(
       action === 'postpone'
         ? 'Update postponed: waiting turns start now'
         : action === 'update-now'
-          ? 'Restarting when running turns finish'
-          : 'Restarting now',
+          ? 'Restarting once running turns finish or pause'
+          : action === 'pause-now'
+            ? 'Pausing running turns: they resume after the restart'
+            : 'Restarting now',
       'ok',
     );
     void loadUpdateState();
