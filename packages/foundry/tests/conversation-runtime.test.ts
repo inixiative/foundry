@@ -30,6 +30,7 @@ import {
 import { KnowledgePersistence } from '../src/persistence/knowledge-persistence';
 import { LocalSessionStore } from '../src/persistence/local-session-store';
 import { serializeTrace } from '../src/persistence/trace-record';
+import { actRules } from '../src/turns/tool-gate';
 import { starterConfig } from '../src/viewer/config';
 import { ViewerThreadDirectory } from '../src/viewer/thread-directory';
 import {
@@ -835,11 +836,27 @@ test('a member whose row grants every permission holds nothing before a frame; e
   await f.turn('turn_2', 'go on');
   const second = f.service.turnActors(f.thread.id, 'turn_2');
   expect(conversationActLevel(second[0]!.permissions)).toBe('read');
-  // A turn keeps what its posts were admitted under; the snapshot never widens or narrows it.
-  f.snapshot([]);
+  // A snapshot change that does not revoke leaves the turn as its posts were admitted.
+  f.snapshot([{ ...full, revision: 2 }]);
   expect(conversationActLevel(f.service.turnActors(f.thread.id, 'turn_2')[0]!.permissions)).toBe(
     'read',
   );
+});
+
+test('a revoked member holds nothing: its words still make the turn ask', async () => {
+  const f = fixture({ wardens: false });
+  f.service.setFloor(f.thread.id, 'talk');
+  expect(f.admitNote('read the logs', f.member, ['agent.read']).ok).toBe(true);
+  await f.turn('turn_1', 'ok');
+  const before = f.service.turnActors(f.thread.id, 'turn_1');
+  expect(actRules(conversationActLevel(before[0]!.permissions))).toMatchObject({
+    capabilities: { 'file:read': 'allow' },
+  });
+  // Kingdom drops the Signet mid-turn: the gate's next call reads the actor again, and asks.
+  f.snapshot([]);
+  const after = f.service.turnActors(f.thread.id, 'turn_1');
+  expect(after).toMatchObject([{ permissions: [] }]);
+  expect(actRules(conversationActLevel(after[0]!.permissions))).toEqual({ defaults: 'prompt' });
 });
 
 test('the roster says what each member may have the agent do', async () => {

@@ -1995,7 +1995,9 @@ export class ConversationService implements ConversationWrapper {
   /**
    * One outside member of a conversation as an actor: their name there, and what Kingdom said they
    * hold. With `own`, the posts of theirs the turn took in: only what every one of those posts was
-   * admitted under (the narrowest). Without (their words came relayed), their latest frame.
+   * admitted under (the narrowest). Without (their words came relayed), their latest frame. Either
+   * way, only while they are still a member of the thread: read on every gate call, so a revocation
+   * mid-turn makes the next call ask.
    */
   private actorOn(
     threadId: string,
@@ -2007,11 +2009,16 @@ export class ConversationService implements ConversationWrapper {
       .phasesOf(threadId, 'member-post')
       .map((row) => row.record as unknown as MemberPostRecord)
       .findLast((candidate) => candidate.memberKey === key);
-    const permissions = own?.length
-      ? conversationPermissionSchema.options.filter((permission) =>
-          own.every((taken) => taken.permissions?.includes(permission)),
-        )
-      : this.memberPermissions(signetId, threadId);
+    const signet = this.deps.hosted().find((candidate) => candidate.signetId === signetId);
+    // Revocation only ever makes it stricter: a member gone from the thread holds nothing now.
+    const member = !!signet && this.reach(signet, threadId) !== undefined;
+    const permissions = !member
+      ? []
+      : own?.length
+        ? conversationPermissionSchema.options.filter((permission) =>
+            own.every((taken) => taken.permissions?.includes(permission)),
+          )
+        : this.memberPermissions(signetId, threadId);
     return {
       member: { kind: 'signet', id: signetId },
       displayName: post?.displayName ?? 'a member',
