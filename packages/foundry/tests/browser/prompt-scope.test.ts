@@ -161,7 +161,8 @@ test('the composer shows only the open thread’s prompts; approving resolves th
     const declined = await other;
     expect(declined.action).toBe('reject');
     expect(declined.note).toBe('Not until CI is green');
-    await until(async () => (await box.inputValue()) === '', 'the box is cleared');
+    // That answered the last thread in Attention, so the centre moves to its project's page.
+    await page.locator('.project-home[aria-label="acme-shop home"]').waitFor();
     expect(errors).toEqual([]);
   } finally {
     const failures = await releaseAll(cleanup);

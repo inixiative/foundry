@@ -22,7 +22,7 @@ import { createDataStreamSocket } from './data-stream-socket.js';
 import { batch, computed, effect, signal } from './lib.js';
 import { applyTurnFrame, mergeLiveSnapshot } from './live-state.js';
 import { route } from './route.js';
-import { threadState } from './thread-status.js';
+import { categoryOf, threadState } from './thread-status.js';
 import { uuidv7 } from './uuidv7.js';
 
 // ---------------------------------------------------------------------------
@@ -2117,6 +2117,8 @@ export async function sendMessage(text, images = [], { delivery } = {}) {
   // routes back to this thread (not whatever is active when it arrives).
   const tid = await threadForSend();
   if (!tid) return false;
+  // A send deals with a thread only when it was asking you (orange or red); a plain follow-up never moves you.
+  if (['attention', 'problem'].includes(categoryOf(threadStatusOf(tid)))) answeringSends.add(tid);
   // A thread's first message, sent from the Projects rail, starts it: the rail goes back to Attention
   // unless `afterProjectStart` says stay. The thread stays open in the centre. Started means a turn in
   // the journal (`lastTurn`, there before its history loads) or a message of yours already shown.
@@ -2158,6 +2160,7 @@ export async function sendMessage(text, images = [], { delivery } = {}) {
 }
 
 const SEND_OPEN_WAIT_MS = 5000;
+const answeringSends = new Set();
 
 /**
  * Your reply or answer dealt with the last thread in Attention: it leaves, and the centre shows its
@@ -2180,6 +2183,7 @@ async function leaveFinishedAttention(threadId, resolvedPromptId = null) {
 }
 
 async function _sendInBackground(text, tid, turnId, images = [], delivery = undefined) {
+  const answering = answeringSends.delete(tid);
   // Hold the thread stream on the server before the turn can finish, so its full result reaches this tab.
   await socket.opened(`thread:${tid}`, SEND_OPEN_WAIT_MS);
   let res;
@@ -2219,7 +2223,7 @@ async function _sendInBackground(text, tid, turnId, images = [], delivery = unde
     return;
   }
   const accepted = await res.json().catch(() => ({}));
-  void leaveFinishedAttention(tid);
+  if (answering) void leaveFinishedAttention(tid);
   // Steered into the running turn: nothing of its own will run (its terminal may have come first).
   if (accepted.steer?.steered) {
     _markSteered(tid, turnId, accepted.steer.into);
