@@ -22,7 +22,7 @@ import { createDataStreamSocket } from './data-stream-socket.js';
 import { batch, computed, effect, signal } from './lib.js';
 import { applyTurnFrame, mergeLiveSnapshot } from './live-state.js';
 import { route } from './route.js';
-import { categoryOf, isClosedThread, subagentParentOf, threadState } from './thread-status.js';
+import { threadState } from './thread-status.js';
 import { uuidv7 } from './uuidv7.js';
 
 // ---------------------------------------------------------------------------
@@ -1381,7 +1381,7 @@ export async function resolvePrompt(promptId, action, input, { always, note: giv
       }),
     });
     if (res.ok) {
-      if (prompt?.threadId) leaveFinishedAttention(prompt.threadId, promptId);
+      if (prompt?.threadId) void leaveFinishedAttention(prompt.threadId, promptId);
       if (note) {
         // The note went with the answer: empty the box (its mirror empties composerNote).
         if (!given) composerFill.value = '';
@@ -2124,7 +2124,10 @@ export async function sendMessage(text, images = [], { delivery } = {}) {
     const started =
       allThreads.peek().find((t) => t.id === tid)?.lastTurn ||
       (_threadMessages[tid] ?? []).some((m) => m.actor === 'user');
-    if (!started) railView.value = 'attention';
+    if (!started) {
+      railView.value = 'attention';
+      attentionHold.value = tid;
+    }
   }
 
   const turnId = `turn_${uuidv7()}`;
@@ -2156,31 +2159,24 @@ export async function sendMessage(text, images = [], { delivery } = {}) {
 
 const SEND_OPEN_WAIT_MS = 5000;
 
-/** A top-level open thread that is orange or red: a root's colour is its own (attention.js). */
-const needsYou = (thread) =>
-  !isClosedThread(thread) &&
-  !subagentParentOf(thread.meta) &&
-  ['attention', 'problem'].includes(
-    categoryOf(
-      threadState(thread, { prompts: prompts.peek().filter((p) => p.threadId === thread.threadId) }),
-    ),
-  );
-
 /**
  * Your reply or answer dealt with the last thread in Attention: it leaves, and the centre shows its
  * project's page (Aron, 2026-11-15: "switch middle section to project view"). A Forge Master or
- * Feedback thread has no project page; it only leaves.
+ * Feedback thread has no project page; it only leaves. It stays while it still holds something your
+ * action did not answer: another prompt, or a held reply waiting for your release.
  */
-function leaveFinishedAttention(threadId, resolvedPromptId = null) {
+async function leaveFinishedAttention(threadId, resolvedPromptId = null) {
   if (railView.peek() !== 'attention' || attentionHold.peek() !== threadId) return;
-  if (activeThreadId.peek() !== threadId || projectHomeOpen.peek()) return;
+  if (activeThreadId.peek() !== threadId) return;
   if (prompts.peek().some((p) => p.threadId === threadId && p.id !== resolvedPromptId)) return;
-  const threads = allThreads.peek();
-  if (threads.some((t) => t.threadId !== threadId && needsYou(t))) return;
+  const listed = allThreads.peek().find((t) => t.threadId === threadId);
+  if ((listed?.conversation?.held ?? 0) > 0) return;
+  // why: attention.js imports the store and the UI tree; loaded at call time, not at module load.
+  const { attentionOf, openRoots } = await import('./attention.js');
+  const { needs, red } = attentionOf(openRoots().filter((node) => node.id !== threadId));
+  if (needs || red || attentionHold.peek() !== threadId) return;
   attentionHold.value = null;
-  const listed = threads.find((t) => t.threadId === threadId);
-  if (listed && !scopeOfRole(listed.effectiveRole))
-    openProjectHome(listed.meta?.projectId ?? null);
+  if (listed && !scopeOfRole(listed.effectiveRole)) openProjectHome(listed.meta?.projectId ?? null);
 }
 
 async function _sendInBackground(text, tid, turnId, images = [], delivery = undefined) {
@@ -2223,7 +2219,7 @@ async function _sendInBackground(text, tid, turnId, images = [], delivery = unde
     return;
   }
   const accepted = await res.json().catch(() => ({}));
-  leaveFinishedAttention(tid);
+  void leaveFinishedAttention(tid);
   // Steered into the running turn: nothing of its own will run (its terminal may have come first).
   if (accepted.steer?.steered) {
     _markSteered(tid, turnId, accepted.steer.into);
