@@ -12,6 +12,7 @@
  */
 import { html, useEffect, useState } from './lib.js';
 import { Pane } from './rail-pane.js';
+import { WherePicker } from './run-picker.js';
 import { authFetch, openScheduleId, projects, railView, schedules, selectThread } from './store.js';
 import { projectLabel } from './thread-labels.js';
 
@@ -30,6 +31,16 @@ const whereKey = (where) =>
     : where.kind === 'scope'
       ? `scope:${where.scope}`
       : 'global';
+
+/** A schedule's Where as the New thread picker's value: null Global, '@<scope>', or a project id. */
+const pickerWhere = (where) =>
+  where.kind === 'project' ? where.projectId : where.kind === 'scope' ? `@${where.scope}` : null;
+const scheduleWhere = (value) =>
+  value == null
+    ? { kind: 'global' }
+    : value.startsWith('@')
+      ? { kind: 'scope', scope: value.slice(1) }
+      : { kind: 'project', projectId: value };
 
 const when = (ms) =>
   new Date(ms).toLocaleString(undefined, {
@@ -200,7 +211,7 @@ const slug = (name) =>
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
-    .slice(0, 63) || 'schedule';
+    .slice(0, 64) || 'schedule';
 
 /** A datetime-local value for an ISO time, in this browser's zone. */
 const localInput = (iso) => {
@@ -222,7 +233,7 @@ function ScheduleEditor({ view, onDone }) {
     cron: prior?.when.cron ?? '0 9 * * 1-5',
     tz: prior?.when.tz ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
     at: prior?.when.at ? localInput(prior.when.at) : '',
-    where: view ? whereKey(view.where) : 'global',
+    where: view ? pickerWhere(view.where) : null,
     paused: !!prior?.paused,
   });
   const [error, setError] = useState(null);
@@ -241,13 +252,7 @@ function ScheduleEditor({ view, onDone }) {
         : form.kind === 'cron'
           ? { cron: form.cron.trim(), ...(form.tz.trim() ? { tz: form.tz.trim() } : {}) }
           : { at: form.at ? new Date(form.at).toISOString() : '' };
-    const [whereKind, whereId] = form.where.split(':');
-    const where =
-      whereKind === 'project'
-        ? { kind: 'project', projectId: form.where.slice('project:'.length) }
-        : whereKind === 'scope'
-          ? { kind: 'scope', scope: whereId }
-          : { kind: 'global' };
+    const where = scheduleWhere(form.where);
     const { since: _since, draft: _draft, scope: _scope, paused: _paused, ...kept } = prior ?? {};
     const schedule = {
       ...kept,
@@ -273,16 +278,11 @@ function ScheduleEditor({ view, onDone }) {
       prior
         ? null
         : html`<label>Id<input value=${form.id} onInput=${set('id')} placeholder=${slug(form.name || 'schedule')}
-            pattern="[a-z0-9][a-z0-9-]{0,62}" title="lowercase letters, digits and dashes" /></label>`
+            pattern="[a-z0-9][a-z0-9-]{0,63}" title="lowercase letters, digits and dashes" /></label>`
     }
     <label>Prompt<textarea required rows="4" value=${form.prompt} onInput=${set('prompt')}
       placeholder="What each run is asked. It starts a new thread with no memory of this one."></textarea></label>
-    <label>Where<select value=${form.where} onChange=${set('where')}>
-      <option value="global">Global</option>
-      <option value="scope:forge">Forge Master</option>
-      <option value="scope:feedback">Feedback</option>
-      ${projects.value.map((p) => html`<option key=${p.id} value=${`project:${p.id}`}>${p.label || p.id}</option>`)}
-    </select></label>
+    <${WherePicker} where=${form.where} onChange=${(where) => setForm({ ...form, where })} />
     <label>When<select value=${form.kind} onChange=${set('kind')}>
       <option value="every">Every</option>
       <option value="cron">Cron</option>
@@ -299,7 +299,7 @@ function ScheduleEditor({ view, onDone }) {
     <label class="schedule-check"><input type="checkbox" checked=${form.paused} onChange=${set('paused')} /> Paused</label>
     ${error ? html`<p class="schedule-error" role="alert">${error}</p>` : null}
     <div class="schedule-actions">
-      <button type="submit" class="schedule-primary" disabled=${saving}>${prior ? 'Save' : 'Schedule it'}</button>
+      <button type="submit" class="schedule-primary" disabled=${saving}>${prior?.draft ? 'Save and accept' : prior ? 'Save' : 'Schedule it'}</button>
       <button type="button" onClick=${() => onDone(null)}>Cancel</button>
     </div>
   </form>`;

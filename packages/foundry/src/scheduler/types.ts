@@ -25,7 +25,7 @@ export const MIN_EVERY_MS = 5 * 60_000;
 
 export const scheduleSchema = z.strictObject({
   /** Unique across this Foundry's schedules: the run ids and the history key on it. */
-  id: z.string().regex(/^[a-z0-9][a-z0-9-]{0,62}$/, 'is lowercase letters, digits and dashes'),
+  id: z.string().regex(/^[a-z0-9][a-z0-9-]{0,63}$/, 'is lowercase letters, digits and dashes'),
   name: z.string().trim().min(1).max(200),
   /** What each run is asked: the first message of its thread. */
   prompt: z.string().trim().min(1).max(20_000),

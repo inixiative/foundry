@@ -60,7 +60,6 @@ export interface SchedulerDeps {
   now?: () => number;
 }
 
-/** A schedule as the viewer and the agent tools see it. */
 /** A schedule's Where read back from its place in settings. */
 const whereOf = (schedule: Schedule, projectId?: string): ScheduleWhere =>
   projectId

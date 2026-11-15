@@ -288,7 +288,7 @@ const whereValue = (where) => where ?? '';
 const whereOf = (value) => value || null;
 
 /** Where a new thread goes: Global, Forge Master, Feedback, or a project (archived ones hidden). */
-function WherePicker({ where, onChange }) {
+export function WherePicker({ where, onChange }) {
   const listed = projects.value.filter((p) => p.status !== 'archived' || p.id === where);
   return html`<label class="run-picker-row">Where
     <select class="rp-select" data-run="where" value=${whereValue(where)}

@@ -56,7 +56,6 @@ import {
   ARTIFACT_PHASE,
   type ArtifactVersionRecord,
   artifactVersionId,
-  setAgentStatus,
   type ThreadRecords,
 } from '../tools/thread-record';
 import { withHandoffBrief } from '../turns/handoff-brief';
