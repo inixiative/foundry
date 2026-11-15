@@ -22,7 +22,7 @@ import { createDataStreamSocket } from './data-stream-socket.js';
 import { batch, computed, effect, signal } from './lib.js';
 import { applyTurnFrame, mergeLiveSnapshot } from './live-state.js';
 import { route } from './route.js';
-import { threadState } from './thread-status.js';
+import { categoryOf, threadState } from './thread-status.js';
 import { uuidv7 } from './uuidv7.js';
 
 // ---------------------------------------------------------------------------
@@ -162,6 +162,12 @@ export function stepRailView(d) {
   const at = RAIL_VIEWS.indexOf(railView.value);
   railView.value = RAIL_VIEWS[(at + d + RAIL_VIEWS.length) % RAIL_VIEWS.length];
 }
+/**
+ * The thread Attention keeps listed after it stops needing you: the one you opened, until you
+ * navigate (another thread, a project page, the board, the Watchtower, Settings, another rail tab).
+ * Why: keyed on the open thread, the last one in Attention never left (Aron, 2026-11-15).
+ */
+export const attentionHold = signal(null);
 /** `afterProjectStart` (Settings › Threads), mirrored from the loaded settings: where the rail goes once a thread starts from Projects. */
 export const afterProjectStart = signal('attention');
 /** The attention board fills the centre (key b). */
@@ -1375,6 +1381,7 @@ export async function resolvePrompt(promptId, action, input, { always, note: giv
       }),
     });
     if (res.ok) {
+      if (prompt?.threadId) void leaveFinishedAttention(prompt.threadId, promptId);
       if (note) {
         // The note went with the answer: empty the box (its mirror empties composerNote).
         if (!given) composerFill.value = '';
@@ -1957,6 +1964,7 @@ export function selectThread(threadId) {
   aboutTarget.value = null;
   incomingOpenId.value = null;
   projectHomeOpen.value = false;
+  attentionHold.value = threadId;
   const prev = activeThreadId.value;
   if (prev === threadId) return;
 
@@ -2109,6 +2117,8 @@ export async function sendMessage(text, images = [], { delivery } = {}) {
   // routes back to this thread (not whatever is active when it arrives).
   const tid = await threadForSend();
   if (!tid) return false;
+  // A send deals with a thread only when it was asking you (orange or red); a plain follow-up never moves you.
+  if (['attention', 'problem'].includes(categoryOf(threadStatusOf(tid)))) answeringSends.add(tid);
   // A thread's first message, sent from the Projects rail, starts it: the rail goes back to Attention
   // unless `afterProjectStart` says stay. The thread stays open in the centre. Started means a turn in
   // the journal (`lastTurn`, there before its history loads) or a message of yours already shown.
@@ -2116,7 +2126,10 @@ export async function sendMessage(text, images = [], { delivery } = {}) {
     const started =
       allThreads.peek().find((t) => t.id === tid)?.lastTurn ||
       (_threadMessages[tid] ?? []).some((m) => m.actor === 'user');
-    if (!started) railView.value = 'attention';
+    if (!started) {
+      railView.value = 'attention';
+      attentionHold.value = tid;
+    }
   }
 
   const turnId = `turn_${uuidv7()}`;
@@ -2147,8 +2160,30 @@ export async function sendMessage(text, images = [], { delivery } = {}) {
 }
 
 const SEND_OPEN_WAIT_MS = 5000;
+const answeringSends = new Set();
+
+/**
+ * Your reply or answer dealt with the last thread in Attention: it leaves, and the centre shows its
+ * project's page (Aron, 2026-11-15: "switch middle section to project view"). A Forge Master or
+ * Feedback thread has no project page; it only leaves. It stays while it still holds something your
+ * action did not answer: another prompt, or a held reply waiting for your release.
+ */
+async function leaveFinishedAttention(threadId, resolvedPromptId = null) {
+  if (railView.peek() !== 'attention' || attentionHold.peek() !== threadId) return;
+  if (activeThreadId.peek() !== threadId) return;
+  if (prompts.peek().some((p) => p.threadId === threadId && p.id !== resolvedPromptId)) return;
+  const listed = allThreads.peek().find((t) => t.threadId === threadId);
+  if ((listed?.conversation?.held ?? 0) > 0) return;
+  // why: attention.js imports the store and the UI tree; loaded at call time, not at module load.
+  const { attentionOf, openRoots } = await import('./attention.js');
+  const { needs, red } = attentionOf(openRoots().filter((node) => node.id !== threadId));
+  if (needs || red || attentionHold.peek() !== threadId) return;
+  attentionHold.value = null;
+  if (listed && !scopeOfRole(listed.effectiveRole)) openProjectHome(listed.meta?.projectId ?? null);
+}
 
 async function _sendInBackground(text, tid, turnId, images = [], delivery = undefined) {
+  const answering = answeringSends.delete(tid);
   // Hold the thread stream on the server before the turn can finish, so its full result reaches this tab.
   await socket.opened(`thread:${tid}`, SEND_OPEN_WAIT_MS);
   let res;
@@ -2188,6 +2223,7 @@ async function _sendInBackground(text, tid, turnId, images = [], delivery = unde
     return;
   }
   const accepted = await res.json().catch(() => ({}));
+  if (answering) void leaveFinishedAttention(tid);
   // Steered into the running turn: nothing of its own will run (its terminal may have come first).
   if (accepted.steer?.steered) {
     _markSteered(tid, turnId, accepted.steer.into);
@@ -2596,6 +2632,21 @@ export function init() {
   document.addEventListener('visibilitychange', () =>
     markSeen(activeThreadId.peek(), allThreads.peek()),
   );
+
+  // Navigating releases Attention's hold on the thread you had open: a page, the board, the
+  // Watchtower, Settings or another rail tab (opening a thread holds that one instead).
+  let railSeen = railView.peek();
+  effect(() => {
+    const rail = railView.value;
+    const away =
+      projectHomeOpen.value ||
+      boardOpen.value ||
+      watchtowerOpen.value ||
+      route.value.page !== 'workspace';
+    const switched = rail !== railSeen;
+    railSeen = rail;
+    if (away || switched) attentionHold.value = null;
+  });
 
   // Leaving the workspace leaves the board; Settings and Analytics have none.
   effect(() => {
