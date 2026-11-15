@@ -80,6 +80,7 @@ import {
   validateLoginPools,
 } from '../providers/subscription-policy';
 import { type PrefilterSettings, validatePrefilterSettings } from '../providers/warden-prefilter';
+import { type SchedulerSettings, validateSchedulerSettings } from '../scheduler/types';
 import { type SecretsSettings, validateSecretsSettings } from '../secrets/scratch';
 
 const GUARD_MODES: readonly GuardMode[] = ['per-turn', 'per-call'];
@@ -167,6 +168,11 @@ export interface FoundryConfig {
    * starts with, per audience. A project's floor, conch and the rest are `projects.<id>.conversations`.
    */
   conversations?: FoundryConversationSettings;
+  /**
+   * Global and scope schedules (Forge Master, Feedback): work this Foundry starts on its own, each run
+   * a thread. A project's are `projects.<id>.scheduler`. Local only: never in a repository.
+   */
+  scheduler?: SchedulerSettings;
   /** Subscription-mode overrides; every field has a default. See docs/subscription-decisions.md. */
   subscriptionOnly?: SubscriptionSettings;
   /** Structural tool rules: the only tool denials, held in every permission mode (turns/tool-gate.ts). */
@@ -373,6 +379,8 @@ export interface ProjectSettingsConfig {
    * bound and conch, over the repository's `conversations`, each thread's own overrides last.
    */
   conversations?: ConversationSettingsInput;
+  /** This project's schedules: each run a thread in the project. This machine's only, never committed. */
+  scheduler?: SchedulerSettings;
   /** Where main threads get their subscription: this machine's login (`local`, the default) or a Kingdom pool. */
   capacity?: 'local' | 'kingdom';
   /** How this project's threads balance this machine's logins, per runtime; over the Foundry-wide `subscriptionPools`. */
@@ -1169,6 +1177,7 @@ export function validateConfig(config: FoundryConfig): void {
     );
   validateVendorSettings(config.vendors);
   validateFoundryConversationSettings(config.conversations);
+  validateSchedulerSettings('scheduler', config.scheduler, true);
   if (
     config.installationName !== undefined &&
     (typeof config.installationName !== 'string' ||
@@ -1287,7 +1296,21 @@ export function validateConfig(config: FoundryConfig): void {
         );
     validateChorusSettings(`projects.${pid}.chorus`, project?.chorus);
     validateConversationSettings(`projects.${pid}.conversations`, project?.conversations);
+    validateSchedulerSettings(`projects.${pid}.scheduler`, project?.scheduler, false);
   }
+  // A run's id names its schedule's id, so ids are unique across this Foundry, not per Where.
+  const scheduleIds = new Map<string, string>();
+  for (const [where, settings] of [
+    ['scheduler', config.scheduler],
+    ...Object.entries(config.projects ?? {}).map(
+      ([pid, project]) => [`projects.${pid}.scheduler`, project?.scheduler] as const,
+    ),
+  ] as const)
+    for (const schedule of settings?.schedules ?? []) {
+      const other = scheduleIds.get(schedule.id);
+      if (other) throw Error(`${where}: schedule id ${schedule.id} is already used in ${other}`);
+      scheduleIds.set(schedule.id, where);
+    }
   if ('instructions' in config)
     throw Error(
       'settings key "instructions" is now "composition" (docs/usage-and-context.md, "Composition view")',
@@ -1384,6 +1407,8 @@ const PERSONAL_PROJECT_SETTINGS: Readonly<Record<string, string>> = {
   kingdomProject: 'Your link to a Kingdom project',
   subscriptionPools:
     'How your own logins on this machine are balanced (their ids are this machine’s)',
+  scheduler:
+    'Schedules start work on this machine on their own; they are yours, never a repository’s',
   toolRules:
     'Tool rules gate what agents may run on this machine; a cloned repository can’t loosen them',
   sources:
@@ -1678,13 +1703,14 @@ export class ConfigStore {
 
   /**
    * Apply `fn` to a deep copy of the latest committed config. Mutations run one at a time;
-   * the result becomes live only after it validates and is persisted.
+   * the result becomes live only after it validates and is persisted. `author` is the audit actor:
+   * absent, the owner; otherwise an agent's id (`thread:<id>`).
    */
-  update(fn: ConfigDraft, expectedRevision?: number): Promise<FoundryConfig> {
+  update(fn: ConfigDraft, expectedRevision?: number, author = 'user'): Promise<FoundryConfig> {
     return this._serialize(async () => {
       this._expect(expectedRevision);
       const draft = structuredClone(this._config);
-      return this._commit(fn(draft) ?? draft);
+      return this._commit(fn(draft) ?? draft, author);
     });
   }
 
@@ -1841,7 +1867,7 @@ export class ConfigStore {
     if (revision !== undefined && revision !== this._revision) throw new ConfigRevisionError();
   }
 
-  private async _commit(candidate: FoundryConfig): Promise<FoundryConfig> {
+  private async _commit(candidate: FoundryConfig, author = 'user'): Promise<FoundryConfig> {
     validateConfig(candidate);
     const path = join(this._dir, 'settings.json');
     writeFileAtomic(path, JSON.stringify(candidate, null, 2), 0o600);
@@ -1849,7 +1875,7 @@ export class ConfigStore {
     this._config = candidate;
     this._revision++;
     this._loaded = true;
-    await this._record(previous, candidate, 'user');
+    await this._record(previous, candidate, author);
     return candidate;
   }
 

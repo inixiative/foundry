@@ -15,6 +15,7 @@ import type { FeedbackItem } from '../feedback/lifecycle';
 import type { FeedbackService } from '../feedback/service';
 import { feedbackView } from '../feedback/view';
 import { SCOPE_ROLES, scopeOfRole, type ThreadScope } from '../prompts/instruction-settings';
+import type { ScheduleView } from '../scheduler/types';
 import type { StreamFamily } from '../ws/types';
 import { threadToJSON } from './http-helpers';
 import { StreamBufferRegistry, type StreamBufferSnapshot, type TurnAppend } from './stream-buffer';
@@ -39,6 +40,7 @@ import { FLOW_TURNS, type FlowJournal, flowSnapshot, readLearning, readTurn } fr
  *                       errors, for toasts, and system activity of the thread's project or of every thread)
  *   feedback            snapshot { projectId: null, items }        append { item }  (the lifecycle view; see feedback/service.ts)
  *   feedback:<projectId> snapshot { projectId, items }             append { item }
+ *   schedules           snapshot { schedules }                     append { schedules }  (the whole list again on any change; scheduler/scheduler.ts)
  *   flow:<threadId>     snapshot { threadId, journal, turns, learning, knowledge, review, learningError, limits }  (bounded; see turn-flow.ts)
  *                       append   { kind: 'turn', turn } | { kind: 'learning', entries } | { kind: 'knowledge', knowledge, review, learningError }
  */
@@ -102,6 +104,8 @@ export function createViewerStreams(deps: {
   threadRole?: (thread: Thread) => string;
   /** A thread of this project was opened (`thread:<id>`). */
   projectActive?: (projectId: string) => void;
+  /** This Foundry's schedules as the viewer shows them; created after the streams. */
+  schedules?: () => ScheduleView[];
 }) {
   const { directory, eventStream, actionQueue, deliverTo } = deps;
   const journal: FlowJournal = deps.journal ?? { store: null };
@@ -449,9 +453,30 @@ export function createViewerStreams(deps: {
     },
   };
 
+  // Every schedule, its next due time and last run; a change re-sends the list (at most 200 rows).
+  const scheduleSinks = new Set<() => void>();
+  const schedules: StreamFamily = {
+    matches: (stream) => stream === 'schedules',
+    authorize: () => !!deps.schedules,
+    start(_stream, append) {
+      const send = () => append({ schedules: deps.schedules?.() ?? [] });
+      scheduleSinks.add(send);
+      return {
+        snapshot: () => ({ schedules: deps.schedules?.() ?? [] }),
+        stop() {
+          scheduleSinks.delete(send);
+        },
+      };
+    },
+  };
+
   return {
     turns,
-    families: [thread, threads, prompts, events, flow, feedback],
+    families: [thread, threads, prompts, events, flow, feedback, schedules],
+    /** A schedule was made, changed or removed, or one of its runs was recorded. */
+    schedulesChanged: () => {
+      for (const send of scheduleSinks) send();
+    },
     /** A feedback item changed (captured, routed, tuned, applied, reverted). */
     feedbackChanged: (item: FeedbackItem) => {
       for (const send of feedbackSinks) send(item);

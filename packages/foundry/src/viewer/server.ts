@@ -37,7 +37,7 @@ import { releaseWorktree } from '../git';
 import { ImageAttachmentStore } from '../persistence/image-attachments';
 import { KnowledgePersistence } from '../persistence/knowledge-persistence';
 import { LocalSessionStore } from '../persistence/local-session-store';
-import { isThreadRole, MAIN_ROLE } from '../prompts/instruction-settings';
+import { isThreadRole, MAIN_ROLE, SCOPE_ROLES } from '../prompts/instruction-settings';
 import { installationNameOf } from '../providers/kingdom-cli';
 import { KingdomHolders } from '../providers/kingdom-holder';
 import {
@@ -48,6 +48,8 @@ import {
 import { FileExternalSessionStore } from '../providers/session-adapter';
 import type { TaskSink } from '../providers/session-backed';
 import { ThreadLaunchSettings } from '../providers/thread-launch';
+import { DraftAsks } from '../scheduler/draft-asks';
+import { Scheduler } from '../scheduler/scheduler';
 import { resolveSecretsSettings, SecretScratch } from '../secrets/scratch';
 import { kingdomPostDelivery } from '../tools/kingdom-post';
 import {
@@ -95,6 +97,7 @@ import { registerLoginRoutes } from './routes/logins';
 import { registerModelRoutes } from './routes/models';
 import { registerProfileRoutes } from './routes/profile';
 import { registerRuntimeRoutes, type WorkerSessions } from './routes/runtime';
+import { registerScheduleRoutes } from './routes/schedules';
 import { ViewerThreadDirectory } from './thread-directory';
 import { expireSnoozes } from './thread-snooze';
 import { FoundryTunnel, type TunnelConfig, type TunnelHolder, tunnelAuth } from './tunnel';
@@ -322,6 +325,9 @@ export function createViewer(config: ViewerConfig) {
     closeAllConnections(socket.registry, 1008, 'Kingdom authorization unavailable');
   // The conversation wrapper of main threads (docs/reference/CONVERSATIONS.md); built once turns exist.
   let conversations: ConversationService | null = null;
+  // Schedules start runs as threads (scheduler/scheduler.ts); built once turns exist, with a journal.
+  let scheduler: Scheduler | null = null;
+  let draftAsks: DraftAsks | undefined;
   // `socket` is created below, once its stream families exist; delivery only happens after both do.
   const streams = createViewerStreams({
     directory,
@@ -332,6 +338,7 @@ export function createViewer(config: ViewerConfig) {
     permissionMode: (threadId) => threadLaunch.forLaunch(threadId).permissionMode,
     threadRole: (thread) => threadRoleOf(configStore.config, thread.meta),
     ...(config.projectActive ? { projectActive: config.projectActive } : {}),
+    schedules: () => scheduler?.list() ?? [],
     journal: {
       store: localStore,
       learningState: (threadId) => config.threadFactory?.runtime?.get(threadId)?.learningState,
@@ -791,7 +798,7 @@ export function createViewer(config: ViewerConfig) {
     log: (message) => console.log(`[Restart] ${message}`),
   });
   const imageStore = new ImageAttachmentStore(join(configDir, 'attachments', 'images'));
-  const { turns, fork } = registerRuntimeRoutes(app, {
+  const { turns, fork, createThread } = registerRuntimeRoutes(app, {
     nativeRecovery,
     ...(config.workerSessions ? { workerSessions: config.workerSessions } : {}),
     restartGate: restartRoll,
@@ -819,6 +826,77 @@ export function createViewer(config: ViewerConfig) {
   });
   turnsReady = turns;
   turns.onSettled(() => restartRoll.check());
+  // A schedule's run is a new thread at its Where whose first turn is the prompt, as the owner set
+  // it but never counted as his message (TurnOrigin.schedule). Runs are kept in the journal store.
+  if (localStore) {
+    const schedules = new Scheduler({
+      config: () => configStore.config,
+      update: (edit, author) => configStore.update(edit, undefined, author),
+      store: localStore,
+      busy: (threadId) => turns.hasTurns(threadId),
+      changed: () => streams.schedulesChanged(),
+      startRun: async ({ schedule, where, runId, dueAt, made }) => {
+        const created = await createThread({
+          name: `${schedule.name} · ${new Date(dueAt).toLocaleString()}`,
+          description: `Scheduled run of ${schedule.name}`,
+          ...(where.kind === 'project' ? { projectId: where.projectId } : {}),
+          ...(where.kind === 'scope'
+            ? { role: SCOPE_ROLES[where.scope] }
+            : schedule.role
+              ? { role: schedule.role }
+              : {}),
+          ...(schedule.worker ? { worker: schedule.worker } : {}),
+          start: {
+            ...(schedule.model ? { model: schedule.model } : {}),
+            ...(schedule.effort ? { effort: schedule.effort } : {}),
+          },
+          scheduledBy: { scheduleId: schedule.id, runId, dueAt },
+        });
+        if (!created.ok) throw Error(created.error);
+        const threadId = created.thread.id;
+        made(threadId);
+        const accepted = turns.accept({
+          threadId,
+          payload: `Scheduled run of ${JSON.stringify(schedule.name)}, as the owner set it:\n\n${schedule.prompt}`,
+          origin: {
+            member: { kind: 'local', id: `schedule:${schedule.id}` },
+            displayName: schedule.name,
+            postId: runId,
+            schedule: true,
+          },
+        });
+        if (!accepted.ok)
+          throw Object.assign(Error(`its first turn was refused: ${String(accepted.body.error)}`), {
+            threadId,
+          });
+        return threadId;
+      },
+    });
+    scheduler = schedules;
+    registerScheduleRoutes(app, schedules);
+    // An agent's draft asks the owner on the thread that proposed it (Accept or Reject).
+    const asks = config.actionQueue
+      ? new DraftAsks({
+          scheduler: schedules,
+          queue: config.actionQueue,
+          live: (threadId) => {
+            const thread = directory.get(threadId);
+            return !!thread && !thread.disposed && thread.meta.status !== 'archived';
+          },
+          log: (line) => console.warn(line),
+        })
+      : undefined;
+    draftAsks = asks;
+    // Any settings edit (the owner's, an agent's, a file reload) may change a schedule.
+    const unsubscribe = configStore.onChange(() => {
+      streams.schedulesChanged();
+      asks?.reconcile();
+    });
+    localStore.onClose(() => {
+      unsubscribe();
+      asks?.close();
+    });
+  }
   registerDaemonUpdateRoutes(app, restartRoll, (threadId) => {
     const thread = directory.get(threadId);
     return thread ? threadTitle(thread.meta)?.text : undefined;
@@ -1014,6 +1092,11 @@ export function createViewer(config: ViewerConfig) {
     intervalMs: 15_000,
     tick: () => void expireSnoozes(directory.all(), threadChanged),
   });
+  // Due schedules start their runs; a tick that overruns the next is not doubled (Scheduler.tick).
+  const schedulerWatch = makeUnrefInterval({
+    intervalMs: 15_000,
+    tick: () => void scheduler?.tick().catch((error) => console.warn(`[Scheduler] ${error}`)),
+  });
   const kingdomWatch = makeUnrefInterval({
     intervalMs: 15_000,
     tick: () => {
@@ -1185,6 +1268,14 @@ export function createViewer(config: ViewerConfig) {
         threadChanged(thread);
         return result;
       },
+      schedules:
+        scheduler && conversations
+          ? {
+              scheduler,
+              ownerInstructed: (threadId: string) =>
+                conversations?.ownerInstructed(threadId) ?? false,
+            }
+          : undefined,
       artifacts: localStore
         ? {
             write(thread: Thread, record: ArtifactVersionRecord) {
@@ -1212,10 +1303,15 @@ export function createViewer(config: ViewerConfig) {
       socket.startStaleSweep();
       kingdomWatch.start();
       snoozeWatch.start();
+      schedulerWatch.start();
+      // Once at start too: a run missed while Foundry was off starts now, not a tick later.
+      void scheduler?.tick().catch((error) => console.warn(`[Scheduler] ${error}`));
+      draftAsks?.reconcile();
     },
     stopSocket() {
       kingdomWatch.stop();
       snoozeWatch.stop();
+      schedulerWatch.stop();
       socket.shutdown();
     },
     kingdom,

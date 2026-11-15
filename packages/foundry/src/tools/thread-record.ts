@@ -17,6 +17,15 @@ import type {
 } from '@inixiative/foundry-core';
 import { threadTitle } from '@inixiative/foundry-core';
 import { z } from 'zod';
+import {
+  listSchedulesForAgent,
+  removeScheduleAsAgent,
+  removeScheduleSchema,
+  type ScheduleAgentDeps,
+  type SetScheduleInput,
+  setScheduleAsAgent,
+  setScheduleSchema,
+} from '../scheduler/agent-tools';
 
 /**
  * The thread's own record, written by its agent through Foundry's MCP tools: the plan (`set_plan`,
@@ -347,19 +356,28 @@ export interface ThreadRecords {
     /** The newest version of one artifact, when it has one. */
     latest(threadId: string, artifactId: string): ArtifactVersionRecord | undefined;
   };
+  /** This Foundry's schedules (scheduler/agent-tools.ts); absent where nothing is journalled. */
+  schedules?: ScheduleAgentDeps;
 }
 
 export const THREAD_RECORD_TOOL_DESCRIPTION =
-  "The thread's own record: plan, loop, name, status and artifacts. url = the operation (set_plan, get_plan, clear_plan, set_loop, loop_round, stop_loop, rename_thread, set_status, set_artifact), body = its arguments.";
+  "The thread's own record: plan, loop, name, status and artifacts. url = the operation (set_plan, get_plan, clear_plan, set_loop, loop_round, stop_loop, rename_thread, set_status, set_artifact, set_schedule, remove_schedule, list_schedules), body = its arguments.";
 
-/** Each operation: its argument schema and what it does to the thread, as the sentence the agent reads back. */
+const scheduler = (records: ThreadRecords): ScheduleAgentDeps => {
+  if (!records.schedules) throw Error('This Foundry keeps no journal, so it cannot hold schedules');
+  return records.schedules;
+};
+
+/**
+ * Each operation: its argument schema and what it does, as the sentence the agent reads back. `run`
+ * reads or (with `write`) changes the thread's record; `act` reaches past it (its schedules).
+ */
 const OPERATIONS: Record<
   string,
-  {
-    schema: z.ZodType;
-    write: boolean;
-    run: (thread: Thread, body: never, records: ThreadRecords) => string;
-  }
+  { schema: z.ZodType } & (
+    | { write: boolean; run: (thread: Thread, body: never, records: ThreadRecords) => string }
+    | { act: (thread: Thread, body: never, records: ThreadRecords) => Promise<string> }
+  )
 > = {
   set_plan: {
     schema: planPatchSchema,
@@ -433,6 +451,21 @@ const OPERATIONS: Record<
         : `Artifact "${artifact.title}" is unchanged at version ${version}.`;
     },
   },
+  set_schedule: {
+    schema: setScheduleSchema,
+    act: (thread, input: SetScheduleInput, records) =>
+      setScheduleAsAgent(scheduler(records), thread.id, thread.meta, input),
+  },
+  remove_schedule: {
+    schema: removeScheduleSchema,
+    act: (thread, { id }: { id: string }, records) =>
+      removeScheduleAsAgent(scheduler(records), thread.id, id),
+  },
+  list_schedules: {
+    schema: z.strictObject({}),
+    write: false,
+    run: (_thread, _body, records) => listSchedulesForAgent(scheduler(records)),
+  },
 };
 
 export const THREAD_RECORD_OPERATIONS = Object.keys(OPERATIONS);
@@ -486,8 +519,13 @@ export class ThreadRecordTool implements ApiTool {
         throw Error(
           `Not recorded: ${parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`,
         );
-      const run = (thread: Thread) => operation.run(thread, parsed.data as never, records);
-      const summary = operation.write ? records.update(threadId, run) : run(records.read(threadId));
+      const body = parsed.data as never;
+      const summary =
+        'act' in operation
+          ? await operation.act(records.read(threadId), body, records)
+          : operation.write
+            ? records.update(threadId, (thread) => operation.run(thread, body, records))
+            : operation.run(records.read(threadId), body, records);
       return {
         ok: true,
         summary,

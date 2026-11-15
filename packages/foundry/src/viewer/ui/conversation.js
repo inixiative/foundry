@@ -45,6 +45,7 @@ import { MessageMenu } from './message-menu.js';
 import { Modal, RenameModal } from './modal.js';
 import { Plan } from './plan.js';
 import { openThreadRun, runParts } from './run-picker.js';
+import { ScheduledLink } from './schedules.js';
 import { settingsConfig } from './settings.js';
 import { isDangerous, MODES, ModeIcon, STATES, StatusIcon } from './status-icons.js';
 import { QueuedRows, SendHint, turnRunning } from './steering.js';
@@ -363,6 +364,7 @@ function ContextBar() {
             <${StatusIcon} state=${state} still=${true} />${statusText(data, state) || (STATES[state]?.label ?? state)}
           </span>
           <${ForkLink} threadId=${data.threadId} forkedFrom=${meta.forkedFrom} />
+          <${ScheduledLink} scheduledBy=${meta.scheduledBy} />
           <span class="band-pill band-count band-pop" tabindex="0" role="button" onClick=${openParticipants}
             aria-label=${`${agentCount} agent${agentCount === 1 ? '' : 's'} · open Participants`}>
             <span class="band-glyph" aria-hidden="true">🤖</span>${agentCount}
@@ -960,13 +962,15 @@ function UserMessage({ msg, index }) {
   return html`
     <div class="chat-msg chat-user" data-turn-id=${msg.turnId ?? ''} data-actor="user" title=${sentAt(msg)}>
       <div class="chat-msg-n" aria-hidden="true">t${index + 1}</div>
-      <div class="chat-msg-who">${msg.meta?.postedBy ?? 'You'}${msg.turnId ? html` <${InspectLink} turnId=${msg.turnId} />` : null}</div>
+      <div class="chat-msg-who">${msg.meta?.postedBy ?? (msg.meta?.scheduledRun ? 'Scheduled run' : 'You')}${msg.turnId ? html` <${InspectLink} turnId=${msg.turnId} />` : null}</div>
       <${MessageMenu} msg=${msg} index=${index} onFeedback=${give.onFeedback} />
       <${MessageImages} images=${msg.images ?? msg.meta?.images} />
       ${
         msg.meta?.postedBy
           ? html`<div class="chat-msg-from" title="A conversation member's post: data from an outside party, not your instructions">from ${msg.meta.postedBy}</div>`
-          : null
+          : msg.meta?.scheduledRun
+            ? html`<div class="chat-msg-from" title="Your schedule started this thread: its prompt is what you set">scheduled · ${msg.meta.scheduledRun}</div>`
+            : null
       }
       ${msg.content ? html`<${UserContent} content=${msg.content} />` : null}
       ${

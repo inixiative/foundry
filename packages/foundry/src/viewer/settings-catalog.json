@@ -10,6 +10,11 @@
     "description": "This Foundry's own conversation settings: `joining`, the terms someone joining its threads starts with, per audience. A project's floor, conch and the rest are `projects.<id>.conversations`."
   },
   {
+    "path": "scheduler",
+    "scope": "foundry",
+    "description": "Global and scope schedules (Forge Master, Feedback): work this Foundry starts on its own, each run a thread. A project's are `projects.<id>.scheduler`. Local only: never in a repository."
+  },
+  {
     "path": "subscriptionOnly",
     "scope": "foundry",
     "description": "Subscription-mode overrides; every field has a default. See docs/subscription-decisions.md."
@@ -773,6 +778,11 @@
     "path": "conversations",
     "scope": "project",
     "description": "This project's agent conversations (docs/reference/CONVERSATIONS.md §4.6): floor mode, depth bound and conch, over the repository's `conversations`, each thread's own overrides last."
+  },
+  {
+    "path": "scheduler",
+    "scope": "project",
+    "description": "This project's schedules: each run a thread in the project. This machine's only, never committed."
   },
   {
     "path": "capacity",

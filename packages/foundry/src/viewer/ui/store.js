@@ -96,6 +96,10 @@ export function currentScope() {
 }
 /** Every feedback item (the `feedback` stream), newest first; the inbox, project strips and threads read it. */
 export const feedbackItems = signal([]);
+/** Every schedule (the `schedules` stream): its Where, next run and last result. The Scheduled rail reads it. */
+export const schedules = signal([]);
+/** The schedule open in the Scheduled rail (its runs and actions), or null. */
+export const openScheduleId = signal(null);
 /** A turn to bring into view once its thread's messages show (a feedback item's provenance link). */
 export const focusTurnId = signal(null);
 
@@ -515,6 +519,14 @@ export function holdStream(stream, onFrame) {
     if (!current.size) heldStreams.delete(stream);
     socket.close(stream);
   };
+}
+
+/** Hold the `schedules` stream for the whole workspace: the Scheduled rail and its draft count read it. */
+function holdSchedules() {
+  holdStream('schedules', (frame) => {
+    if (frame.action === 'rejected') return;
+    schedules.value = frame.payload?.schedules ?? [];
+  });
 }
 
 const newestFeedbackFirst = (a, b) => b.origin.at - a.origin.at || (a.id < b.id ? 1 : -1);
@@ -2480,6 +2492,7 @@ export function init() {
 
   connectStreams();
   holdFeedback();
+  holdSchedules();
   loadTraces();
   loadDefinitions();
   loadProjects();

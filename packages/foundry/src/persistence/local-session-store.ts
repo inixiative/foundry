@@ -32,6 +32,7 @@ import {
   reduceMiddleware,
 } from '../archives/reduced-middleware';
 import type { CompositionBody } from '../audit/compositions';
+import type { ScheduleRun } from '../scheduler/types';
 import { type CheckpointImport, checkpointSpans } from './checkpoint-import';
 import {
   type ContentStore,
@@ -164,6 +165,8 @@ export const SUMMARY_META_KEYS = [
   'neverSent',
   /** A conversation member's post delivered as a turn: who posted it (CONVERSATIONS.md §4.7). */
   'postedBy',
+  /** A schedule's run: the schedule's name (its prompt is the owner's, set ahead). */
+  'scheduledRun',
 ] as const;
 const SUMMARY_SCALAR_MAX = 512;
 const SUMMARY_LAYERS_MAX = 8192;
@@ -481,6 +484,12 @@ export class LocalSessionStore {
         thread_id TEXT PRIMARY KEY REFERENCES session_threads(id), record TEXT NOT NULL,
         updated_at INTEGER NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS scheduler_runs (
+        id TEXT PRIMARY KEY, schedule_id TEXT NOT NULL, due_at INTEGER NOT NULL,
+        manual INTEGER NOT NULL, outcome TEXT NOT NULL, reason TEXT, thread_id TEXT,
+        recorded_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS scheduler_runs_schedule ON scheduler_runs(schedule_id, due_at);
     `);
       // v6: one order over a main thread's messages and conversation entries (the journal seq a
       // member reads by). Existing messages are ordered as they were written.
@@ -1305,6 +1314,82 @@ export class LocalSessionStore {
           AND json_extract(m.record, '$.meta.observed') IS NULL${before === undefined ? '' : ' AND j.seq <= ?'}`,
     ).get(...(before === undefined ? [threadId] : [threadId, before])) as { seq: number | null };
     return row.seq ?? 0;
+  }
+
+  /**
+   * Claim one due time of a schedule: true once, false for every later claim of the same run id, so
+   * a due time runs at most once across ticks and restarts. Claimed as interrupted until
+   * `settleScheduleRun` says what happened, so a crash in between reads true.
+   */
+  claimScheduleRun(run: {
+    id: string;
+    scheduleId: string;
+    dueAt: number;
+    manual: boolean;
+  }): boolean {
+    const result = this.query(
+      `INSERT OR IGNORE INTO scheduler_runs(id, schedule_id, due_at, manual, outcome, reason, recorded_at)
+        VALUES (?, ?, ?, ?, 'failed', 'interrupted before it started', ?)`,
+    ).run(run.id, run.scheduleId, run.dueAt, run.manual ? 1 : 0, Date.now());
+    return result.changes === 1;
+  }
+
+  /** What a claimed run came to: started on a thread, skipped, or failed, with why. */
+  settleScheduleRun(
+    id: string,
+    outcome: ScheduleRun['outcome'],
+    detail: { reason?: string; threadId?: string } = {},
+  ): void {
+    this.query(
+      'UPDATE scheduler_runs SET outcome=?, reason=?, thread_id=COALESCE(?, thread_id), recorded_at=? WHERE id=?',
+    ).run(outcome, detail.reason ?? null, detail.threadId ?? null, Date.now(), id);
+  }
+
+  /** The thread a claimed run made, noted as soon as it exists, so a crash before it settles still names it. */
+  noteScheduleRunThread(id: string, threadId: string): void {
+    this.query('UPDATE scheduler_runs SET thread_id=? WHERE id=?').run(threadId, id);
+  }
+
+  /** The newest thread another run of the schedule recorded, whatever its outcome. */
+  latestScheduleRunThread(scheduleId: string, exceptRunId: string): string | undefined {
+    const row = this.query(
+      `SELECT thread_id FROM scheduler_runs WHERE schedule_id=? AND id<>? AND thread_id IS NOT NULL
+        ORDER BY due_at DESC, recorded_at DESC LIMIT 1`,
+    ).get(scheduleId, exceptRunId) as { thread_id: string } | null;
+    return row?.thread_id;
+  }
+
+  /** A schedule's runs, newest first. */
+  scheduleRuns(scheduleId: string, limit = 50): ScheduleRun[] {
+    const rows = this.query(
+      `SELECT id, schedule_id, due_at, outcome, reason, thread_id, recorded_at FROM scheduler_runs
+        WHERE schedule_id=? ORDER BY due_at DESC, recorded_at DESC LIMIT ?`,
+    ).all(scheduleId, limit) as Array<{
+      id: string;
+      schedule_id: string;
+      due_at: number;
+      outcome: ScheduleRun['outcome'];
+      reason: string | null;
+      thread_id: string | null;
+      recorded_at: number;
+    }>;
+    return rows.map((row) => ({
+      id: row.id,
+      scheduleId: row.schedule_id,
+      dueAt: row.due_at,
+      outcome: row.outcome,
+      ...(row.reason === null ? {} : { reason: row.reason }),
+      ...(row.thread_id === null ? {} : { threadId: row.thread_id }),
+      recordedAt: row.recorded_at,
+    }));
+  }
+
+  /** The latest due time the scheduler handled for a schedule (runs by hand don't count). */
+  lastScheduledDue(scheduleId: string): number | undefined {
+    const row = this.query(
+      'SELECT MAX(due_at) AS due FROM scheduler_runs WHERE schedule_id=? AND manual=0',
+    ).get(scheduleId) as { due: number | null };
+    return row.due ?? undefined;
   }
 
   /** The journal seq of one turn's user message (undefined when the turn has none). */

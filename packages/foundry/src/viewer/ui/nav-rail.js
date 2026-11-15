@@ -18,18 +18,20 @@
  * Open is every open thread across projects, in two fixed halves that each scroll on their own:
  * Yours on top, Shared (another party is a member) below. Projects is today's sidebar: the pinned
  * scopes, the project list, and the selected scope's threads. Rows are two lines: the name, then the
- * status icon, the project and any counts. Scheduled is the work that runs on its own: schedules and
- * triggers (none yet: the scheduler is a spec awaiting Aron's yes) and every thread running a loop.
+ * status icon, the project and any counts. Scheduled is the work that runs on its own: schedules (each
+ * with its past runs; an agent's draft counts on the tab) and every thread running a loop.
  * Status is this machine and its resources (machine-status.js), a view of its own so the thread
  * views keep the rail's full height (Aron, 2026-11-14).
  */
-import { Attention, effectiveCategory, openRoots } from './attention.js';
+import { effectiveCategory, openRoots } from './attention.js';
 import { IncomingRows } from './incoming.js';
 import { html } from './lib.js';
 import { MachineStatus } from './machine-status.js';
 import { panelFit, SizeControls } from './panel-sizes.js';
 import { ProjectSidebar } from './project-sidebar.js';
+import { Pane } from './rail-pane.js';
 import { openNewThread } from './run-picker.js';
+import { draftCount, ScheduleList } from './schedules.js';
 import {
   activeThreadId,
   allThreads,
@@ -67,17 +69,14 @@ function RailToggle() {
           class="rail-toggle-btn ${view === id ? 'is-active' : ''}" title=${`${RAIL_LABELS[id]} (⌥⇧← ⌥⇧→)`}
           onClick=${() => {
             railView.value = id;
-          }}>${RAIL_LABELS[id]}</button>`,
+          }}>${RAIL_LABELS[id]}${
+            id === 'scheduled' && draftCount()
+              ? html`<span class="rail-toggle-badge" title="Schedules an agent proposed, waiting for you">${draftCount()}</span>`
+              : null
+          }</button>`,
         )}</div>`,
     )}
   </div>`;
-}
-
-function Pane({ title, count, children, empty, lead, nodes = [], action = null }) {
-  return html`<section class="rail-pane" aria-label=${title}>
-    <h3 class="rail-pane-head"><span>${title}</span><span class="rail-pane-count">${count}</span><${Attention} nodes=${nodes} />${action}</h3>
-    <div class="rail-frame">${lead ?? null}${count ? children : html`<div class="rail-empty">${empty}</div>`}</div>
-  </section>`;
 }
 
 function OpenRail() {
@@ -113,8 +112,8 @@ function AttentionRail() {
 }
 
 /**
- * Work that runs without you: schedules and triggers (the scheduler is not built; its spec waits
- * for Aron's yes), then every open thread running a loop (`meta.loop`, the agent's set_loop).
+ * Work that runs without you: schedules (schedules.js; triggers are not built yet), then every open
+ * thread running a loop (`meta.loop`, the agent's set_loop).
  */
 function ScheduledRail() {
   const selected = activeThreadId.value;
@@ -122,7 +121,7 @@ function ScheduledRail() {
     allThreads.value.filter((t) => OPEN(t) && t.meta?.loop?.state === 'running'),
   );
   return html`<div class="active-rail">
-    <${Pane} title="Schedules & triggers" count=${0} empty="Nothing is scheduled. Scheduled and triggered work will list here, by project and Global." />
+    <${ScheduleList} />
     <${Pane} title="Loops" count=${looping.length} nodes=${looping} empty="No thread is running a loop.">
       ${looping.map((n) => html`<${ThreadNode} key=${n.id} thread=${n} selectedId=${selected} onSelect=${selectThread} />`)}
     </${Pane}>

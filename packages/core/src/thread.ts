@@ -214,6 +214,15 @@ export interface ThreadFork {
   readonly journalSeq: number;
 }
 
+/** The schedule run a thread was started for (provenance; a run is top-level). */
+export interface ThreadScheduled {
+  readonly scheduleId: string;
+  /** The run's id, `schedule:<scheduleId>:<dueAt>`: one run per due time. */
+  readonly runId: string;
+  /** When the run was due (epoch ms). */
+  readonly dueAt: number;
+}
+
 /** How a subagent thread came to be: who spawned it, through what, and its native identity. */
 export interface ThreadSpawn {
   readonly via: 'foundry' | 'native-claude' | 'native-codex' | 'host-paseo' | 'host-t3';
@@ -291,6 +300,9 @@ export interface ThreadMeta {
 
   /** The thread and point this one was forked from (provenance; a fork is top-level). */
   forkedFrom?: ThreadFork;
+
+  /** The schedule run this thread was started for. */
+  scheduledBy?: ThreadScheduled;
 
   /** How this subagent thread was spawned. */
   spawn?: ThreadSpawn;
@@ -409,6 +421,8 @@ export interface ThreadConfig {
   parentThreadId?: string;
   /** The thread and point this one was forked from. */
   forkedFrom?: ThreadFork;
+  /** The schedule run this thread was started for. */
+  scheduledBy?: ThreadScheduled;
   /** Project that owns this thread. Scopes memory sources and tool calls. */
   projectId?: string;
   /** The harness running this thread's main session. */
@@ -466,6 +480,7 @@ export class Thread {
       branch: opts?.branch,
       parentThreadId: opts?.parentThreadId,
       ...(opts?.forkedFrom ? { forkedFrom: opts.forkedFrom } : {}),
+      ...(opts?.scheduledBy ? { scheduledBy: opts.scheduledBy } : {}),
       projectId: opts?.projectId,
       ...(opts?.worker ? { worker: opts.worker } : {}),
       ...(opts?.role ? { role: opts.role } : {}),
