@@ -67,7 +67,12 @@ export function openArtifact(id, version) {
 }
 export const commandPaletteOpen = signal(false);
 export const helpOpen = signal(false);
-export const toast = signal(null); // { message, type: "ok"|"error"|"warn", persistent?: boolean }
+// Two places (Aron 11-15): a system toast sits at the bottom left; a thread's toast sits at the top of
+// that thread, full width, pushing its messages down. Each is { message, type, persistent, undo? }.
+export const toast = signal(null);
+export const threadToast = signal(null); // also { threadId }
+/** The thread whose conversation is on screen (ThreadToast sets it); a thread's toast shows only there. */
+export const threadToastHost = signal(null);
 
 // Projects
 export const projects = signal([]); // ProjectSummary[]
@@ -560,7 +565,7 @@ export function selectScope(scope) {
 /** `/feedback <text>`: record feedback on a thread (its last turn unless one is named). Never a turn. */
 export async function giveFeedback(threadId, text, { turnId, messageId, about, tags } = {}) {
   if (!threadId) {
-    showToast('Open a thread to give feedback on it', 'warn');
+    showToast('Open a thread to give feedback on it', 'warn', { thread: threadId });
     return false;
   }
   try {
@@ -578,13 +583,13 @@ export async function giveFeedback(threadId, text, { turnId, messageId, about, t
     });
     const body = await res.json().catch(() => ({}));
     if (!res.ok) {
-      showToast(body.error || 'Feedback not recorded', 'error');
+      showToast(body.error || 'Feedback not recorded', 'error', { thread: threadId });
       return false;
     }
-    showToast('Feedback recorded', 'ok');
+    showToast('Feedback recorded', 'ok', { thread: threadId });
     return true;
   } catch (err) {
-    showToast(`Feedback not recorded: ${err.message}`, 'error');
+    showToast(`Feedback not recorded: ${err.message}`, 'error', { thread: threadId });
     return false;
   }
 }
@@ -813,7 +818,9 @@ function applyEventsFrame(frame) {
   eventCount.value += 1;
   // Surface error events from the backend as toasts
   if (event.kind === 'error')
-    showToast(`[${event.source}] ${event.message}`, event.severity === 'warn' ? 'warn' : 'error');
+    showToast(`[${event.source}] ${event.message}`, event.severity === 'warn' ? 'warn' : 'error', {
+      thread: event.threadId,
+    });
   const next = [{ ...event, _time: new Date().toLocaleTimeString() }, ...liveEvents.value];
   liveEvents.value = next.length > 200 ? next.slice(0, 200) : next;
 }
@@ -844,7 +851,11 @@ function connectStreams() {
           );
       }
     },
-    onReconnect: () => requestReconcile(activeThreadId.value, 0),
+    onReconnect: () => {
+      requestReconcile(activeThreadId.value, 0);
+      // The socket came back: if the daemon restarted, the update poll reloads the page.
+      void loadUpdateState();
+    },
     // A rejection means the stream's subject is gone (losing authorization closes the socket instead).
     onRejected: (stream) => {
       // A project that no longer exists scopes nothing; fall back to the unscoped list.
@@ -1268,7 +1279,7 @@ export async function openTurnDetail(threadId, turnId) {
     // Superseded by a thread switch, a newer selection or a dismissal: publish nothing, re-open nothing, toast nothing.
     if (!ownsTraceRequest(requestId, threadId)) return;
     if (res.status === 404) {
-      showToast(`Turn ${turnId} is not in this thread's journal`, 'warn');
+      showToast(`Turn ${turnId} is not in this thread's journal`, 'warn', { thread: threadId });
       return;
     }
     if (!res.ok) {
@@ -1369,15 +1380,15 @@ export async function resolvePrompt(promptId, action, input, { always, note: giv
         if (!given) composerFill.value = '';
         const carried = REJECTING.has(action) && prompt?.kind === 'approval';
         if (!carried) await sendMessage(note);
-        showToast(`${action} · your note went with it`, 'ok');
-      } else showToast(`Prompt resolved: ${action}`, 'ok');
+        showToast(`${action} · your note went with it`, 'ok', { thread: prompt?.threadId });
+      } else showToast(`Prompt resolved: ${action}`, 'ok', { thread: prompt?.threadId });
       return true;
     }
     const err = await res.json();
-    showToast(err.error || 'Failed to resolve prompt', 'error');
+    showToast(err.error || 'Failed to resolve prompt', 'error', { thread: prompt?.threadId });
     return false;
   } catch (err) {
-    showToast(`Prompt resolution failed: ${err.message}`, 'error');
+    showToast(`Prompt resolution failed: ${err.message}`, 'error', { thread: prompt?.threadId });
     return false;
   }
 }
@@ -1508,16 +1519,32 @@ export const kingdomStatus = signal(null);
 /** The daemon's update state (`/api/daemon/update`): idle, spinning down for a restart, postponed, restarting. */
 export const updateState = signal(null);
 
+/** The pause time on this page's clock, from the daemon's time left (never its clock). */
+const withLocalPause = (state) =>
+  state && typeof state.pauseInMs === 'number'
+    ? { ...state, pauseAtLocal: Date.now() + state.pauseInMs }
+    : state;
+
 /** Whether turns that would start now wait for a restart. */
 export const restartHolding = computed(
   () => updateState.value?.phase === 'spinning-down' || updateState.value?.phase === 'restarting',
 );
 
 let updatePoll = null;
+/** The daemon process this page loaded against: a new one (a restart) reloads the page onto its build. */
+let seenBootId = null;
 export async function loadUpdateState() {
   try {
     const res = await authFetch('/api/daemon/update');
-    if (res.ok) updateState.value = await res.json();
+    if (res.ok) {
+      const state = await res.json();
+      if (seenBootId && state.bootId && state.bootId !== seenBootId) {
+        window.location.reload();
+        return;
+      }
+      seenBootId ??= state.bootId ?? null;
+      updateState.value = withLocalPause(state);
+    }
   } catch {
     /* restarting: the next poll after reconnect reads the new daemon */
   }
@@ -1539,13 +1566,15 @@ export async function updateAction(action) {
     });
     const body = await res.json();
     if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`);
-    updateState.value = body;
+    updateState.value = withLocalPause(body);
     showToast(
       action === 'postpone'
         ? 'Update postponed: waiting turns start now'
         : action === 'update-now'
-          ? 'Restarting when running turns finish'
-          : 'Restarting now',
+          ? 'Restarting once running turns finish or pause'
+          : action === 'pause-now'
+            ? 'Pausing running turns: they resume after the restart'
+            : 'Restarting now',
       'ok',
     );
     void loadUpdateState();
@@ -1644,7 +1673,8 @@ export async function deleteProject(id) {
 /**
  * Create a thread and select it, so the next send goes to it. `where` is a project id, null
  * (Global), '@forge' or '@feedback' (the scope's role, no project); it defaults to the active scope,
- * and a thread made elsewhere brings the workspace to its scope.
+ * and a thread made elsewhere brings the workspace to its scope. `select: false` leaves the person
+ * where they are (a new agent joining the thread they're in).
  */
 export async function createThread({
   where = currentScope(),
@@ -1657,6 +1687,7 @@ export async function createThread({
   model,
   effort,
   role,
+  select = true,
 } = {}) {
   try {
     const scopeRole = Object.hasOwn(SCOPE_ROLES, where ?? '') ? SCOPE_ROLES[where] : null;
@@ -1685,6 +1716,7 @@ export async function createThread({
         allThreads.value = [...allThreads.value, created];
       // A new thread has no history to load; a first load would race the first send's rows.
       _threadMessages[tid] ??= [];
+      if (!select) return created;
       if (where !== currentScope()) selectScope(where);
       selectThread(tid);
       return created;
@@ -1717,12 +1749,12 @@ export async function revertThread(messageIndex) {
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      showToast(err.error || 'Revert failed', 'error');
+      showToast(err.error || 'Revert failed', 'error', { thread: tid });
       return;
     }
-    showToast('Reverted', 'ok');
+    showToast('Reverted', 'ok', { thread: tid });
   } catch (err) {
-    showToast(`Revert failed: ${err.message}`, 'error');
+    showToast(`Revert failed: ${err.message}`, 'error', { thread: tid });
   }
 }
 
@@ -1744,7 +1776,7 @@ export async function forkThread(messageIndex) {
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      showToast(err.error || 'Fork failed', 'error');
+      showToast(err.error || 'Fork failed', 'error', { thread: tid });
       return;
     }
     const newThread = await res.json();
@@ -1755,7 +1787,7 @@ export async function forkThread(messageIndex) {
     // The thread list stream already carries the fork.
     selectThread(newThread.threadId);
   } catch (err) {
-    showToast(`Fork failed: ${err.message}`, 'error');
+    showToast(`Fork failed: ${err.message}`, 'error', { thread: tid });
   }
 }
 
@@ -1805,12 +1837,11 @@ export async function recreateWorktree(threadId) {
     });
     if (res.ok) return true;
     const { error } = await res.json().catch(() => ({}));
-    toast.value = {
-      message: `Couldn’t recreate the worktree: ${error ?? res.status}`,
-      type: 'error',
-    };
+    showToast(`Couldn’t recreate the worktree: ${error ?? res.status}`, 'error', {
+      thread: threadId,
+    });
   } catch (err) {
-    toast.value = { message: `Couldn’t recreate the worktree: ${err.message}`, type: 'error' };
+    showToast(`Couldn’t recreate the worktree: ${err.message}`, 'error', { thread: threadId });
   }
   return false;
 }
@@ -1824,10 +1855,10 @@ export async function renameThread(threadId, name) {
     });
     if (res.ok) return true;
     const err = await res.json().catch(() => ({}));
-    showToast(err.error || 'Failed to rename thread', 'error');
+    showToast(err.error || 'Failed to rename thread', 'error', { thread: threadId });
     return false;
   } catch (err) {
-    showToast(`Failed: ${err.message}`, 'error');
+    showToast(`Failed: ${err.message}`, 'error', { thread: threadId });
     return false;
   }
 }
@@ -1840,14 +1871,14 @@ export async function updateThreadWorktree(threadId, worktreePath, branch) {
       body: JSON.stringify({ worktreePath, branch }),
     });
     if (res.ok) {
-      showToast('Worktree updated', 'ok');
+      showToast('Worktree updated', 'ok', { thread: threadId });
       return true;
     }
     const err = await res.json().catch(() => ({}));
-    showToast(err.error || 'Failed to update worktree', 'error');
+    showToast(err.error || 'Failed to update worktree', 'error', { thread: threadId });
     return false;
   } catch (err) {
-    showToast(`Failed: ${err.message}`, 'error');
+    showToast(`Failed: ${err.message}`, 'error', { thread: threadId });
     return false;
   }
 }
@@ -2165,7 +2196,7 @@ async function _sendInBackground(text, tid, turnId, images = [], delivery = unde
   }
   // Sent to steer, but the running turn can't take it: it waits, and says why.
   if (accepted.steer && !accepted.steer.steered)
-    showToast(`Queued after the running turn: ${accepted.steer.reason}`, 'warn');
+    showToast(`Queued after the running turn: ${accepted.steer.reason}`, 'warn', { thread: tid });
   // Accepted; output arrives on the thread stream. Seed the turn so a later
   // snapshot that no longer has it reads as unconfirmed rather than running.
   const turns = liveTurns.get(tid) ?? new Map();
@@ -2237,14 +2268,14 @@ export async function steerTurn(threadId, turnId) {
     const body = await res.json();
     if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`);
     if (!body.steered) {
-      showToast(`Still queued: ${body.reason}`, 'warn');
+      showToast(`Still queued: ${body.reason}`, 'warn', { thread: threadId });
       return false;
     }
     _markSteered(threadId, turnId, body.into);
     settleSend(turnId);
     return true;
   } catch (err) {
-    showToast(`Steer failed: ${err.message}`, 'error');
+    showToast(`Steer failed: ${err.message}`, 'error', { thread: threadId });
     return false;
   }
 }
@@ -2263,10 +2294,11 @@ export async function stopTurn(threadId, turnId) {
         ? 'This runtime cannot stop a turn; it runs to its end'
         : 'Stop requested',
       body.outcome === 'unsupported' ? 'error' : 'ok',
+      { thread: threadId },
     );
     return body.outcome;
   } catch (err) {
-    showToast(`Stop failed: ${err.message}`, 'error');
+    showToast(`Stop failed: ${err.message}`, 'error', { thread: threadId });
   }
 }
 
@@ -2285,11 +2317,13 @@ export async function resolveLostTurn(threadId, action) {
     const body = await res.json();
     if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`);
     if (body.retryError) throw new Error(`settled, but the retry was not sent: ${body.retryError}`);
-    showToast(action === 'retry' ? 'Sent the turn again' : 'Continuing from here', 'ok');
+    showToast(action === 'retry' ? 'Sent the turn again' : 'Continuing from here', 'ok', {
+      thread: threadId,
+    });
     requestReconcile(threadId, 0);
     return true;
   } catch (err) {
-    showToast(`Could not resolve the lost turn: ${err.message}`, 'error');
+    showToast(`Could not resolve the lost turn: ${err.message}`, 'error', { thread: threadId });
     return false;
   }
 }
@@ -2316,11 +2350,14 @@ export async function chorusAction(threadId, turnId, action) {
             ? 'Already asking again'
             : `Cannot ask again: ${missing.map((u) => u.reason).join('; ')}`,
         body.started?.length || body.busy?.length ? 'ok' : 'error',
+        { thread: threadId },
       );
     }
     return body;
   } catch (err) {
-    showToast(`${action === 'retry' ? 'Retry' : 'Dismiss'} failed: ${err.message}`, 'error');
+    showToast(`${action === 'retry' ? 'Retry' : 'Dismiss'} failed: ${err.message}`, 'error', {
+      thread: threadId,
+    });
   }
 }
 
@@ -2339,10 +2376,10 @@ export async function submitIntervention(threadId, traceId, spanId, correction, 
       }),
     });
     const result = await res.json();
-    showToast('Correction submitted', 'ok');
+    showToast('Correction submitted', 'ok', { thread: threadId });
     return result;
   } catch (err) {
-    showToast(`Override failed: ${err.message}`, 'error');
+    showToast(`Override failed: ${err.message}`, 'error', { thread: threadId });
   }
 }
 
@@ -2350,9 +2387,10 @@ export async function submitIntervention(threadId, traceId, spanId, correction, 
 // Toast
 // ---------------------------------------------------------------------------
 
-let toastTimer = null;
+const toastTimers = new Map();
 /**
- * Show a toast notification.
+ * Show a toast. With `thread` (a thread id) it is that thread's and shows at the top of it while it
+ * is the open thread; anything else, or a thread that isn't open, is a system toast (bottom left).
  *
  * - "ok" toasts auto-dismiss after 3s
  * - "warn" toasts auto-dismiss after 6s
@@ -2360,25 +2398,43 @@ let toastTimer = null;
  *
  * @param {string} message
  * @param {"ok"|"error"|"warn"} type
- * @param {{ undo?: () => void, ms?: number }} [opts] an Undo button and how long the toast stays
+ * @param {{ undo?: () => void, ms?: number, thread?: string | null }} [opts] an Undo button, how long the toast stays, the thread it is about
  */
-export function showToast(message, type = 'ok', { undo, ms } = {}) {
-  if (toastTimer) clearTimeout(toastTimer);
-  toastTimer = null;
-  const persistent = type === 'error';
-  toast.value = { message, type, persistent, ...(undo ? { undo } : {}) };
-  if (!persistent) {
-    const delay = ms ?? (type === 'warn' ? 6000 : 3000);
-    toastTimer = setTimeout(() => {
-      toast.value = null;
-    }, delay);
+export function showToast(message, type = 'ok', { undo, ms, thread } = {}) {
+  const slot = thread && thread === threadToastHost.peek() ? threadToast : toast;
+  // A thread's toast while its conversation is not on screen goes to the corner, saying which thread.
+  if (thread && slot === toast) {
+    const t = allThreads.peek().find((x) => x.threadId === thread);
+    message = `${t?.title?.text || t?.meta?.description || thread}: ${message}`;
   }
+  clearTimeout(toastTimers.get(slot));
+  toastTimers.delete(slot);
+  const persistent = type === 'error';
+  slot.value = {
+    message,
+    type,
+    persistent,
+    ...(slot === threadToast ? { threadId: thread } : {}),
+    ...(undo ? { undo } : {}),
+  };
+  if (!persistent)
+    toastTimers.set(
+      slot,
+      setTimeout(
+        () => {
+          slot.value = null;
+        },
+        ms ?? (type === 'warn' ? 6000 : 3000),
+      ),
+    );
 }
 
-export function dismissToast() {
-  if (toastTimer) clearTimeout(toastTimer);
-  toastTimer = null;
-  toast.value = null;
+/** Dismiss the system toast, or with `thread: true` the thread's. */
+export function dismissToast({ thread = false } = {}) {
+  const slot = thread ? threadToast : toast;
+  clearTimeout(toastTimers.get(slot));
+  toastTimers.delete(slot);
+  slot.value = null;
 }
 
 // ---------------------------------------------------------------------------

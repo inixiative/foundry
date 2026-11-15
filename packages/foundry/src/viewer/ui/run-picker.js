@@ -239,10 +239,11 @@ export function ThreadRunModal({
             : `This thread now runs on ${workerName(value.worker)}`
           : 'Applies from the next turn',
         'ok',
+        { thread: threadId },
       );
       onClose();
     } catch (error) {
-      showToast(`Could not change it: ${error.message}`, 'error');
+      showToast(`Could not change it: ${error.message}`, 'error', { thread: threadId });
       // A worker switch may have landed before the model or effort was refused: show what is true now.
       await loadLaunch(threadId);
       await onSaved?.();
@@ -274,7 +275,11 @@ export function ThreadRunModal({
 
 // --- "+ New thread" ----------------------------------------------------------------------------
 
-/** The New thread picker: open (with an optional preset worker, role, where or draft) or closed (null). */
+/**
+ * The New thread picker: open (with an optional preset worker, role, where or draft) or closed (null).
+ * `joinThread` opens it as "New agent in this thread": the thread it starts stays unselected and
+ * `onCreated(created, displayName)` joins it to that thread.
+ */
 export const newThreadChooser = signal(null);
 
 /** Foundry's own scopes in the Where picker, after Global and before the projects. */
@@ -309,6 +314,11 @@ export const openNewThread = (preset = {}) => {
   newThreadChooser.value = preset;
 };
 
+/** A new agent's name in the thread it joins, when the person gives none: its worker and model. */
+const agentName = (worker, model) =>
+  [workerName(worker), modelOf(worker, model)?.label ?? model].filter(Boolean).join(' · ') ||
+  'New agent';
+
 /**
  * Start a thread where it is picked (the active scope by default) on the picked worker, model,
  * effort and role. A Foundry scope's thread takes the scope's role, so it has no role to pick.
@@ -319,10 +329,10 @@ export function NewThreadModal() {
   const [value, setValue] = useState(null);
   const [name, setName] = useState('');
   const [where, setWhere] = useState(null);
-  // Each open starts where the workspace is, unless the opener named a place.
+  // Each open starts where the workspace is, unless the opener named a place. The name is cleared on
+  // close, not here: an effect runs after the first paint and would wipe what was typed in it.
   useEffect(() => {
     if (!preset) return;
-    setName('');
     setWhere(preset.where !== undefined ? preset.where : currentScope());
   }, [preset]);
   const pinned = isScope(where);
@@ -360,12 +370,15 @@ export function NewThreadModal() {
     // The next open reads its scope afresh, never picking from this one's choices.
     setScope(null);
     setValue(null);
+    setName('');
   };
+  const joining = preset.joinThread ?? null;
   const start = async () => {
     const worker = scope.workers.find((w) => w.id === value.worker);
     close();
     const created = await createThread({
       where,
+      ...(joining ? { select: false } : {}),
       ...(name.trim() ? { name: name.trim() } : {}),
       ...(worker && !worker.default ? { worker: worker.id } : {}),
       ...(value.model && value.model !== worker?.defaultModel ? { model: value.model } : {}),
@@ -374,15 +387,22 @@ export function NewThreadModal() {
     });
     // A draft from the opener (a settings page asking the Forge Master) waits in the new thread's box.
     if (created && preset.draft) composerFill.value = preset.draft;
+    if (created && preset.onCreated)
+      await preset.onCreated(created, name.trim() || agentName(worker, value.model));
   };
-  return html`<${Modal} title="New thread" onClose=${close} class="run-modal new-thread-modal">
+  return html`<${Modal} title=${joining ? 'New agent in this thread' : 'New thread'} onClose=${close} class="run-modal new-thread-modal">
     <div class="run-picker">
       <label class="run-picker-row">Name
-        <input class="rp-select" data-run="name" placeholder="Optional" value=${name}
+        <input class="rp-select" data-run="name" placeholder="Optional" maxlength="200" value=${name}
           onInput=${(e) => setName(e.target.value)} />
       </label>
-      <${WherePicker} where=${where} onChange=${setWhere} />
+      ${joining ? null : html`<${WherePicker} where=${where} onChange=${setWhere} />`}
     </div>
+    ${
+      joining
+        ? html`<p class="run-picker-note run-picker-note--dim" data-note="joins">Starts as its own thread in this project and joins this one as a local member: it hears the conversation and speaks when the floor lets it.</p>`
+        : null
+    }
     ${
       scope?.error
         ? html`<p class="run-picker-note">Could not read the workers: ${scope.error}</p>`
@@ -393,7 +413,7 @@ export function NewThreadModal() {
     <div class="rename-actions">
       <button type="button" class="action-btn" onClick=${close}>✕ Cancel</button>
       <button type="button" class="action-btn primary" data-run="start" disabled=${!value}
-        onClick=${start}>✓ Start thread</button>
+        onClick=${start}>${joining ? '✓ Add agent' : '✓ Start thread'}</button>
     </div>
   <//>`;
 }

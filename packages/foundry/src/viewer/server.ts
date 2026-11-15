@@ -788,11 +788,10 @@ export function createViewer(config: ViewerConfig) {
   // path so a turn reaching the front of its queue can wait for it.
   let turnsReady: ReturnType<typeof registerRuntimeRoutes>['turns'] | undefined;
   const restartRoll = new RestartRoll({
-    // A turn blocked on a person (its agent's approval or question) isn't running: the restart doesn't wait for it.
-    running: () =>
-      (turnsReady?.runningTurns() ?? []).filter(
-        (turn) => !blockedOnPerson(config.actionQueue, turn),
-      ),
+    running: () => turnsReady?.runningTurns() ?? [],
+    // A turn blocked on its person (its agent's approval or question) is paused without the grace.
+    waitingOnPerson: (turn) => blockedOnPerson(config.actionQueue, turn),
+    pause: async (turn) => turnsReady?.pauseForRestart(turn.threadId, turn.turnId) ?? 'not-yet',
     waiting: () => turnsReady?.queuedCount() ?? 0,
     finishing: () => planDrafter?.drafting() ?? 0,
     background: () => runningTasks.active(),

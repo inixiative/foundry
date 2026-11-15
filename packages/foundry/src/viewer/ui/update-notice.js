@@ -5,9 +5,11 @@
  */
 /**
  * The spin-down, as the owner sees it (packages/foundry/src/daemon/restart-roll.ts): a quiet
- * top-bar notice while an update waits for running turns ("Update ready: restarting when 2 turns
- * finish"), with Restart now (confirmed: it names the turns that would be cut and says each is
- * recovered) and Not now (postpone this update). Settings › About shows the same state.
+ * top-bar notice while an update waits for running turns ("Update ready: pausing 2 turns in 0:45"),
+ * with Pause now (pause them without the grace; each resumes after the restart), Restart now once
+ * they are pausing (confirmed: it names the turns that would be cut) and Not now (postpone this
+ * update). Settings › About shows the same state. The page reloads onto the new build by itself
+ * (`loadUpdateState`).
  */
 import { html, useState } from './lib.js';
 import { Modal } from './modal.js';
@@ -19,29 +21,57 @@ const turns = (n) => `${n} turn${n === 1 ? '' : 's'}`;
 /** One line for the update state, or null when there is nothing to say. */
 export function updateLine(state) {
   if (!state) return null;
-  if (state.phase === 'spinning-down')
-    return state.running.length
-      ? `Update ready: restarting when ${turns(state.running.length)} finish${state.running.length === 1 ? 'es' : ''}`
-      : state.finishing
-        ? 'Update ready: restarting when the last plan draft is written'
-        : 'Update ready: restarting now';
+  if (state.phase === 'spinning-down') {
+    const running = state.running?.length ?? 0;
+    const pausing = state.pausing?.length ?? 0;
+    if (pausing && pausing === running)
+      return `Update ready: pausing ${turns(running)}; ${running === 1 ? 'it resumes' : 'they resume'} after the restart`;
+    // Only the turns not yet pausing wait out the grace.
+    const unpaused = running - pausing;
+    const left = state.pauseAtLocal ? Math.ceil((state.pauseAtLocal - Date.now()) / 1000) : 0;
+    if (unpaused && left > 0) {
+      return `Update ready: pausing ${turns(unpaused)} in ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')} unless ${unpaused === 1 ? 'it finishes' : 'they finish'}`;
+    }
+    // The grace is over: the daemon pauses them on its next look, within a few seconds.
+    if (unpaused && state.pauseAtLocal) return `Update ready: pausing ${turns(unpaused)} now`;
+    if (running)
+      return `Update ready: restarting when ${turns(running)} finish${running === 1 ? 'es' : ''}`;
+    return state.finishing
+      ? 'Update ready: restarting when the last plan draft is written'
+      : 'Update ready: restarting now';
+  }
   if (state.phase === 'restarting') return 'Restarting onto the update…';
   if (state.phase === 'postponed') return `Update ${short(state.candidate)} postponed`;
   return null;
 }
 
 function RestartConfirm({ state, onClose }) {
-  const running = state.running ?? [];
+  const pausingIds = new Set((state.pausing ?? []).map((t) => t.turnId));
+  const pausing = (state.running ?? []).filter((t) => pausingIds.has(t.turnId));
+  const cut = (state.running ?? []).filter((t) => !pausingIds.has(t.turnId));
+  const list = (items) =>
+    html`<ul class="update-confirm-list">
+      ${items.map((t) => html`<li key=${t.turnId}>${t.name ?? t.threadId}</li>`)}
+    </ul>`;
   return html`<${Modal} title="Restart now?" onClose=${onClose} class="update-confirm">
     <div class="update-confirm-body">
       ${
-        running.length
-          ? html`<p>These ${turns(running.length)} would be cut:</p>
-            <ul class="update-confirm-list">
-              ${running.map((t) => html`<li key=${t.turnId}>${t.name ?? t.threadId}</li>`)}
-            </ul>
+        pausing.length
+          ? html`<p>${pausing.length === 1 ? 'This turn is' : `These ${turns(pausing.length)} are`} pausing and ${pausing.length === 1 ? 'resumes' : 'resume'} after the restart:</p>
+            ${list(pausing)}`
+          : null
+      }
+      ${
+        cut.length
+          ? html`<p>${cut.length === 1 ? 'This turn' : `These ${turns(cut.length)}`} would be cut:</p>
+            ${list(cut)}
             <p>After the restart Foundry reads each one's native session record to see how far it got; one it can't tell shows Continue and Retry on its thread. Turns waiting to start run after the restart; one queued behind a cut turn may need sending again.</p>`
-          : html`<p>Nothing is running. Turns waiting to start run after the restart.</p>`
+          : null
+      }
+      ${
+        !pausing.length && !cut.length
+          ? html`<p>Nothing is running. Turns waiting to start run after the restart.</p>`
+          : null
       }
       ${
         state.background?.length
@@ -72,7 +102,12 @@ export function UpdateNotice() {
     <span class="update-notice-text" role="status">${line}</span>
     ${
       state.phase === 'spinning-down'
-        ? html`<button type="button" class="update-notice-btn" onClick=${() => setConfirming(true)}>Restart now</button>
+        ? html`${
+            state.pauseAtLocal > Date.now() &&
+            (state.pausing?.length ?? 0) < (state.running?.length ?? 0)
+              ? html`<button type="button" class="update-notice-btn" title="Pause running turns now; each resumes after the restart" onClick=${() => updateAction('pause-now')}>Pause now</button>`
+              : html`<button type="button" class="update-notice-btn" onClick=${() => setConfirming(true)}>Restart now</button>`
+          }
           <button type="button" class="update-notice-btn" onClick=${() => updateAction('postpone')}>Not now</button>`
         : null
     }

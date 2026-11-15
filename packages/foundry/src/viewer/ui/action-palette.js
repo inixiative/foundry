@@ -266,7 +266,7 @@ export function ActionPalette({ onSend }) {
       openLoop: () => {
         const last = [...messages.peek()].reverse().find((m) => m.actor === 'agent' && m.turnId);
         if (last) setLoopFor(last);
-        else showToast('No finished turn to make a loop from yet', 'warn');
+        else showToast('No finished turn to make a loop from yet', 'warn', { thread: threadId });
       },
     });
   };

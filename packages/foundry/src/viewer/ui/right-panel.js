@@ -128,9 +128,10 @@ async function setSteer(threadId, projectId, steer) {
     showToast(
       steer ? 'Sends during a turn now steer into it' : 'Sends during a turn now queue',
       'ok',
+      { thread: threadId },
     );
   } catch (error) {
-    showToast(`Could not change it: ${error.message}`, 'error');
+    showToast(`Could not change it: ${error.message}`, 'error', { thread: threadId });
   }
 }
 
@@ -146,7 +147,7 @@ async function setLaunch(threadId, patch) {
     if (!res.ok) throw Error(body.error ?? res.statusText);
     threadLaunch.value = body;
   } catch (error) {
-    showToast(`Could not change it: ${error.message}`, 'error');
+    showToast(`Could not change it: ${error.message}`, 'error', { thread: threadId });
   }
 }
 

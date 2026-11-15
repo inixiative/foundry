@@ -218,3 +218,85 @@ test("Runs on counts the thread's agents; + Add agent joins another thread and R
     await rm(dir, { recursive: true, force: true });
   }
 }, 60_000);
+
+// A new agent from the band (Aron, 2026-11-14: "next to primary model should be some sort of add or
+// + button which opens a modal"): "+" beside the run pill opens the agents modal, "New agent…" opens
+// the New thread picker in join mode, and the thread it starts joins this one as a local member
+// while this thread stays selected. Participants carries the same count and "+ Add agent".
+test('the band\'s "+" starts a new agent that joins this thread; Participants shows the agents', async () => {
+  const dir = await mkdtemp(resolve('.foundry/qa/thread-agents-new-'));
+  const main = new Thread('main', new ContextStack());
+  main.register(new Executor({ id: 'worker', stack: main.stack, handler: async () => 'answered' }));
+  const harness = new Harness(main);
+  harness.setDefaultExecutor('worker');
+  const configStore = new ConfigStore(dir);
+  const config = starterConfig('controlled', 'controlled');
+  config.setupComplete = true;
+  await configStore.save(config);
+  const viewer = createViewer({
+    configStore,
+    harness,
+    eventStream: new EventStream(),
+    interventions: new InterventionLog(),
+    configDir: dir,
+    actionQueue: new ActionQueue(),
+  });
+  const server = Bun.serve({
+    hostname: '127.0.0.1',
+    port: 0,
+    fetch: viewer.fetch,
+    websocket: viewer.websocket,
+  });
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await (
+      await browser.newContext({ viewport: { width: 1440, height: 960 } })
+    ).newPage();
+    page.setDefaultTimeout(15_000);
+    const errors: string[] = [];
+    page.on('pageerror', (e: Error) => errors.push(e.message));
+    await page.goto(`http://127.0.0.1:${server.port}/#thread=main`);
+
+    await page.locator('.rp-tab', { hasText: 'Participants' }).click();
+    const line = page.locator('[data-agents="line"]');
+    await line.waitFor();
+    expect(await line.locator('[data-agents="count"]').innerText()).toBe('1 agent');
+
+    await page.locator('[data-agents="add-band"]').click();
+    const modal = page.locator('.thread-agents-modal');
+    await modal.waitFor();
+    await modal.locator('[data-agents="new"]').click();
+    await modal.waitFor({ state: 'detached' });
+    const picker = page.locator('.new-thread-modal');
+    await picker.waitFor();
+    expect(await picker.locator('.modal-title').innerText()).toBe('New agent in this thread');
+    expect(await picker.locator('[data-note="joins"]').count()).toBe(1);
+    await picker.locator('[data-run="name"]').fill('Reviewer');
+    const start = picker.locator('[data-run="start"]');
+    await until(async () => !(await start.isDisabled()), 'the workers are read');
+    expect(await start.innerText()).toContain('Add agent');
+    await start.click();
+    await picker.waitFor({ state: 'detached' });
+
+    await until(
+      () => viewer.conversations!.view('main').members.some((m) => m.member.kind === 'local'),
+      'the new thread joined',
+    );
+    const [member] = viewer.conversations!.view('main').members;
+    expect(member).toMatchObject({ displayName: 'Reviewer', member: { kind: 'local' } });
+    expect(member!.member.id).not.toBe('main');
+    // This thread stays selected: the new agent is a member, not where the person goes.
+    expect(new URL(page.url()).hash).toContain('thread=main');
+    await until(
+      async () => (await line.locator('[data-agents="count"]').innerText()) === '2 agents',
+      'Participants counts it',
+    );
+    expect(errors).toEqual([]);
+  } finally {
+    await browser.close();
+    server.stop(true);
+    viewer.conversations?.dispose();
+    viewer.localStore?.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+}, 60_000);

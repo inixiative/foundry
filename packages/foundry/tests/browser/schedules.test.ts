@@ -201,8 +201,13 @@ test('the Scheduled rail lists schedules, their past runs, drafts to accept, and
       configStore.config.scheduler?.schedules?.find((s) => s.id === 'inbox-sweep')?.draft,
     ).toBeUndefined();
 
-    // + New schedule: a once-only Global schedule, then remove it.
-    await pane.locator('.rail-new-thread', { hasText: '+ New schedule' }).click();
+    // + New schedule: the list's full-width first row; a once-only Global schedule, then remove it.
+    const newSchedule = pane.locator('.rail-frame > .rail-new-thread--block', {
+      hasText: '+ New schedule',
+    });
+    expect(await newSchedule.count()).toBe(1);
+    await newSchedule.click();
+    expect(await newSchedule.count()).toBe(0);
     const form = pane.locator('form[aria-label="New schedule"]');
     await form.locator('label', { hasText: 'Name' }).locator('input').fill('Release notes');
     await form

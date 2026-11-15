@@ -1905,9 +1905,21 @@ export class ConversationService implements ConversationWrapper {
    */
   ownerInstructed(threadId: string): boolean {
     const turnId = this.deps.turns()?.runningTurn?.(threadId);
-    if (!turnId) return false;
-    const seq = this.deps.store.turnMessageSeq(turnId);
-    if (seq === undefined || this.deps.store.lastOwnerSeq(threadId, seq) !== seq) return false;
+    return turnId ? this.instructedByOwner(threadId, turnId) : false;
+  }
+
+  /**
+   * One turn's owner authority. Foundry's continuation of a turn a restart paused carries the paused
+   * turn's: it resumes his instruction, so it is his only if that turn was (Aron, 2026-11-14).
+   */
+  private instructedByOwner(threadId: string, turnId: string, depth = 0): boolean {
+    const paused = this.deps.store.restartContinuationOf(turnId);
+    if (paused !== undefined) {
+      if (depth >= 8 || !this.instructedByOwner(threadId, paused, depth + 1)) return false;
+    } else {
+      const seq = this.deps.store.turnMessageSeq(turnId);
+      if (seq === undefined || this.deps.store.lastOwnerSeq(threadId, seq) !== seq) return false;
+    }
     const foreign = this.deps.store
       .phasesOf(threadId, 'member-post-delivered')
       .filter((row) => row.turnId === turnId)

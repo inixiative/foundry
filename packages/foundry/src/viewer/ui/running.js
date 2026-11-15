@@ -11,7 +11,7 @@
  */
 
 import { html, useEffect, useState } from './lib.js';
-import { allThreads, authFetch, railExpanded, railView, selectThread, toast } from './store.js';
+import { allThreads, authFetch, railExpanded, railView, selectThread, showToast } from './store.js';
 import { threadName } from './thread-labels.js';
 
 const since = (at) => {
@@ -56,10 +56,10 @@ async function stop(threadId, taskId, reread) {
     );
     if (!res.ok) {
       const { error } = await res.json().catch(() => ({}));
-      toast.value = { message: `Couldn’t stop it: ${error ?? res.status}`, type: 'error' };
+      showToast(`Couldn’t stop it: ${error ?? res.status}`, 'error');
     }
   } catch (err) {
-    toast.value = { message: `Couldn’t stop it: ${err.message}`, type: 'error' };
+    showToast(`Couldn’t stop it: ${err.message}`, 'error');
   }
   reread();
 }

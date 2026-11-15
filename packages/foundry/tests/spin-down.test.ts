@@ -128,6 +128,41 @@ test('running turns finish, new ones wait, the restart holds them, and the next 
   second.store.close();
 });
 
+test("after the restart a paused turn's continuation runs first, ahead of messages that waited", async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'spin-down-'));
+  cleanup.push(() => rmSync(dir, { recursive: true, force: true }));
+  const path = join(dir, 'sessions.sqlite');
+  let finishA!: () => void;
+  const gates = new Map([['A', new Promise<void>((resolve) => (finishA = resolve))]]);
+  const first = daemon(path, dir, gates);
+  first.turns.accept({ threadId: 'main', payload: 'A' });
+  await until(() => first.ran.includes('A'));
+  first.offer();
+  const b = first.turns.accept({ threadId: 'main', payload: 'B' });
+  const resume = first.turns.accept({
+    threadId: 'main',
+    payload: 'resume',
+    origin: {
+      member: { kind: 'local', id: 'restart:A' },
+      displayName: 'Foundry',
+      postId: 'restart:A',
+      restart: true,
+    },
+  });
+  expect(b.ok && resume.ok).toBe(true);
+  finishA();
+  await until(() => first.restarts.length === 1);
+  first.store.close();
+
+  const second = daemon(path, dir, new Map());
+  second.store.recoverInterrupted();
+  expect(await second.turns.resumeHeld()).toEqual({ resumed: 2, failed: [] });
+  if (!b.ok) throw Error('unreachable');
+  await until(() => second.store.turn(b.turnId)?.status === 'completed');
+  expect(second.ran).toEqual(['resume', 'B']);
+  second.store.close();
+});
+
 test('Not now: the waiting turn starts here and nothing restarts', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'spin-down-'));
   cleanup.push(() => rmSync(dir, { recursive: true, force: true }));
@@ -147,6 +182,8 @@ test('Not now: the waiting turn starts here and nothing restarts', async () => {
     });
   expect((await post('nope')).status).toBe(400);
   expect((await post('update-now')).status).toBe(409);
+  // This daemon has no way to pause a turn: Pause now has nothing to do.
+  expect((await post('pause-now')).status).toBe(409);
   expect(((await (await post('postpone')).json()) as { phase: string }).phase).toBe('postponed');
   finishA();
   await until(() => d.ran.includes('B'));
@@ -155,7 +192,7 @@ test('Not now: the waiting turn starts here and nothing restarts', async () => {
   expect(d.restarts).toEqual([]);
 });
 
-test('the viewer serves the update state; a turn waiting on a person does not hold the restart up', async () => {
+test('the viewer serves the update state and its boot id; with nothing running it restarts at once', async () => {
   const { createViewer } = await import('../src/viewer/server');
   const { ActionQueue } = await import('@inixiative/foundry-core');
   const dir = mkdtempSync(join(tmpdir(), 'spin-down-viewer-'));
@@ -172,7 +209,13 @@ test('the viewer serves the update state; a turn waiting on a person does not ho
   expect(await (await viewer.app.request('/api/daemon/update')).json()).toMatchObject({
     phase: 'idle',
     running: [],
+    pausing: [],
   });
+  // The boot's id: a viewer that sees it change reloads onto the new daemon.
+  const { bootId } = (await (await viewer.app.request('/api/daemon/update')).json()) as {
+    bootId: string;
+  };
+  expect(bootId).toMatch(/^[0-9a-f-]{36}$/);
   const restarts: string[] = [];
   viewer.restartRoll.offerUpdate({ candidate: 'cand', restart: () => restarts.push('cand') });
   // Nothing running: it restarts at once.
