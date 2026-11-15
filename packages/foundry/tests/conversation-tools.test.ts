@@ -17,10 +17,9 @@ import {
   registerKingdomPost,
 } from '../src/tools/kingdom-post';
 import {
+  conversationGrant,
   heldSignet,
   mockKingdom,
-  threadsBaseLenses,
-  threadsGrant,
   userOwner,
 } from './helpers/kingdom-installation';
 
@@ -49,7 +48,7 @@ async function until(predicate: () => boolean, label: string, ms = 3000) {
 
 const projectId = 'project-conversations';
 
-function hostedMember(threadId: string, outbound: 'review' | 'auto'): HostedSignet {
+function hostedMember(threadId: string): HostedSignet {
   return {
     signetId: Bun.randomUUIDv7(),
     name: 'JobCo',
@@ -57,15 +56,14 @@ function hostedMember(threadId: string, outbound: 'review' | 'auto'): HostedSign
     lifecycle: 'ongoing',
     expiresAt: null,
     maxRequests: null,
-    recipient: { recipientModel: 'User', id: Bun.randomUUIDv7(), displayName: 'JobCo' },
-    resources: [
-      threadsGrant({
-        threadIds: [threadId],
-        operations: ['thread.prompt', 'thread.read'],
-        terms: { outbound },
-      }),
-    ],
-    baseLenses: threadsBaseLenses(),
+    recipient: {
+      recipientModel: 'User',
+      id: Bun.randomUUIDv7(),
+      displayName: 'JobCo',
+      audience: 'outside',
+    },
+    resources: [conversationGrant({ threadId, operations: ['thread.prompt', 'thread.read'] })],
+    baseLenses: {},
   };
 }
 
@@ -77,7 +75,7 @@ async function bridge(opts: {
   const dir = mkdtempSync(join(tmpdir(), 'conversation-tools-'));
   const store = new LocalSessionStore(join(dir, 'sessions.sqlite'));
   const thread = new Thread('thread_tools', new ContextStack(), { projectId });
-  const member = hostedMember(thread.id, opts.outbound ?? 'auto');
+  const member = hostedMember(thread.id);
   const queue = new ActionQueue();
   const tools = new ToolRegistry();
   const service = new ConversationService({
@@ -95,6 +93,8 @@ async function bridge(opts: {
     subscriptions: () => [],
     deliverPost: kingdomPostDelivery(tools),
   });
+  // Outbound is the host's own setting per member (§4.5).
+  if ((opts.outbound ?? 'auto') === 'auto') service.setOutbound(thread.id, member.signetId, 'auto');
   tools.register(new ConversationTool(() => service), CONVERSATION_TOOL_DESCRIPTION);
   await opts.register?.(tools, service);
   const mcp = createFoundryMcp({ thread, tools });
@@ -146,9 +146,11 @@ test('send_to_member is the only text that leaves: auto releases at once, review
   );
 });
 
-test('kingdom_post holds the post for the owner before anything leaves, then posts it once through the held Signet', async () => {
+test('kingdom_post holds the post for the owner before anything leaves, then posts it once through the held Signet, to the conversation of its thread', async () => {
   const executions: any[] = [];
   const remoteThread = 'thread_remote';
+  // The Signet holds two conversations of one host: the post goes to its thread's resource.
+  const siblingId = Bun.randomUUIDv7();
   let resourceId = '';
   let integrationId = '';
   const kingdom = mockKingdom({
@@ -168,19 +170,20 @@ test('kingdom_post holds the post for the owner before anything leaves, then pos
               name: 'Post',
               resources: [
                 {
-                  id: resourceId,
-                  name: 'threads',
-                  kind: 'threads',
+                  id: siblingId,
+                  name: 'Another thread',
+                  kind: 'conversation',
+                  externalId: 'thread_sibling',
                   integrationId,
                   provider: 'foundry',
-                  lens: [
-                    {
-                      id: Bun.randomUUIDv7(),
-                      parents: ['foundry:threads'],
-                      root: { where: { field: 'id', operator: 'in', value: [remoteThread] } },
-                    },
-                  ],
-                  terms: { threads: { view: 'own' } },
+                },
+                {
+                  id: resourceId,
+                  name: 'Remote thread',
+                  kind: 'conversation',
+                  externalId: remoteThread,
+                  integrationId,
+                  provider: 'foundry',
                 },
               ],
             },
@@ -257,11 +260,11 @@ test('kingdom_post holds the post for the owner before anything leaves, then pos
     integrationId,
     input: {
       resourceId,
-      threadId: remoteThread,
       text: 'Our client wants the role; details follow.',
       postId: expect.any(String),
     },
   });
+  expect(executions[0].input).not.toHaveProperty('threadId');
   await until(
     () => f.store.phasesOf(f.thread.id, 'outbound-delivered').length === 1,
     'delivery journalled',

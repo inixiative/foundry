@@ -53,10 +53,11 @@ test('an unread member post marks the thread; the panel shows the member and its
     signetId,
     acceptedRevision: 1,
     member: { signetId, displayName: 'JobCo' },
-    terms: { view: 'own', delivery: 'note', outbound: 'review', floor: { mayTake: false } },
+    threadId: 'main',
+    permissions: [],
     operation: 'thread.prompt',
-    input: { threadId: 'main', postId: Bun.randomUUIDv7(), text: 'The role you wanted opened.' },
-  } as ThreadRequestOf<'thread.prompt'>);
+    input: { postId: Bun.randomUUIDv7(), text: 'The role you wanted opened.' },
+  } satisfies ThreadRequestOf<'thread.prompt'>);
   expect(admitted.ok).toBe(true);
   const server = Bun.serve({
     hostname: '127.0.0.1',
@@ -81,7 +82,7 @@ test('an unread member post marks the thread; the panel shows the member and its
     const panel = page.locator('.conversation-panel');
     await panel.waitFor();
     expect(await panel.locator('.conversation-member-name').innerText()).toBe('JobCo');
-    // No snapshot lists the member's Signet yet, so its terms read as the narrowest (§4.12).
+    // No snapshot lists the member's Signet yet, so it reads as holding no permission (§4.12).
     expect(await panel.locator('[data-term="posts"]').innerText()).toBe('posts as data');
     expect(await panel.locator('[data-term="act"]').innerText()).toBe('agent asks before acting');
     expect(await panel.locator('[data-term="agent"]').count()).toBe(0);
@@ -103,6 +104,15 @@ test('an unread member post marks the thread; the panel shows the member and its
       action: 'released',
       text: 'Aron is interested; send details.',
     });
+    // The owner lets sends to JobCo leave at once from its row (a host setting, §4.5).
+    const outbound = panel.locator('[data-term="outbound"]');
+    expect(await outbound.inputValue()).toBe('review');
+    await outbound.selectOption('auto');
+    await until(
+      () => conversations.members('main')[0]?.outbound === 'auto',
+      'outbound set by the owner',
+    );
+    expect(conversations.send('main', 'JobCo', 'Straight through.')).toBe('Sent to JobCo.');
     expect(errors).toEqual([]);
   } finally {
     await browser.close();

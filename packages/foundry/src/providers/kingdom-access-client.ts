@@ -5,11 +5,11 @@
  */
 import { isAbsolute } from 'node:path';
 import {
+  conversationResourceKind,
   kingdomUrl,
   readPrivateJson,
   SignetClient,
   signetCredentialSchema,
-  threadsResourceKind,
 } from '@inixiative/signet';
 import { z } from 'zod';
 
@@ -32,7 +32,7 @@ export const kingdomAccessSourceSchema = z
     credentialFile: z.string().refine(isAbsolute),
     /**
      * The integration this source works on. A Signet has no integration of its own (its resources
-     * may sit on several); a joined conversation posts to the `threads` resource on this one.
+     * may sit on several); a joined conversation posts to its `conversation` resource on this one.
      */
     integrationId: z.string().uuid(),
     signetId: z.string().uuid(),
@@ -162,29 +162,25 @@ export class KingdomAccessClient {
 
   /**
    * Post into a conversation this Foundry joined (the joining side, `kingdom_post`): the held
-   * Signet's `thread.prompt` on the `threads` resource of the host Foundry this source names
-   * (`integrationId`). Which threads the grant
-   * reaches is its lens, which only Kingdom applies (signet 0.12), so Kingdom answers whether this
-   * thread is one of them, refusing the call if not. `postId` is the post's own id, kept across a
-   * retry; each call is a new request id.
+   * Signet's `thread.prompt` on the host Foundry's `conversation` resource for that thread, the one
+   * whose `externalId` is the thread's id, on the integration this source names (`integrationId`).
+   * The call names the resource, never the thread; Kingdom admits it against the Signet's grant.
+   * `postId` is the post's own id, kept across a retry; each call is a new request id.
    */
   async threadPrompt(
     input: { threadId: string; postId: string; text: string; inReplyTo?: string },
     onDispatch?: () => void,
   ) {
     const description = await this.granted();
-    const resources =
-      description.operations
-        .find((operation) => operation.key === 'thread.prompt')
-        ?.resources.filter(
-          (candidate) =>
-            candidate.kind === threadsResourceKind &&
-            candidate.integrationId === this.source.integrationId,
-        ) ?? [];
-    if (!resources.length) throw Error('This Signet does not reach that conversation thread');
-    // One `threads` resource per host Foundry.
-    if (resources.length > 1) throw Error('This Signet names more than one conversation resource');
-    const resource = resources[0]!;
+    const resource = description.operations
+      .find((operation) => operation.key === 'thread.prompt')
+      ?.resources.find(
+        (candidate) =>
+          candidate.kind === conversationResourceKind &&
+          candidate.integrationId === this.source.integrationId &&
+          candidate.externalId === input.threadId,
+      );
+    if (!resource) throw Error('This Signet does not reach that conversation thread');
     return this.execute(
       {
         requestId: Bun.randomUUIDv7(),
@@ -192,7 +188,6 @@ export class KingdomAccessClient {
         operation: 'thread.prompt',
         input: {
           resourceId: resource.id,
-          threadId: input.threadId,
           postId: input.postId,
           text: input.text,
           ...(input.inReplyTo ? { inReplyTo: input.inReplyTo } : {}),

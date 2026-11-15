@@ -7,13 +7,13 @@
  * The agents in a thread, beside "Runs on": a count and "+ Add agent". A thread has one agent by
  * default, the host's; more are opt-in (Aron, 2026-11-14): another of your threads on this machine
  * joins as a local member (`/conversation/locals`, CONVERSATIONS.md §4.11), and someone else's agent
- * comes in through a Signet whose threads terms let it bring one (`agent`, §4.12). Running
+ * comes in through a Signet that holds `member.agent` on the conversation (§4.12). Running
  * subagents count too, read-only. The count opens the agents modal, mounted at the app's root
  * beside the run picker. The band's popover and this fact share `threadAgents` / `agentCountOf`, so
  * the two counts cannot disagree.
  */
 
-import { invite, post, useConversationView } from './conversation-members.js';
+import { holds, invite, post, useConversationView } from './conversation-members.js';
 import { html, signal, useEffect, useRef, useState } from './lib.js';
 import { Modal } from './modal.js';
 import { runLabel, ThreadRunModal } from './run-picker.js';
@@ -30,14 +30,16 @@ import { threadName } from './thread-labels.js';
 import { isClosedThread } from './thread-status.js';
 
 /**
- * The agents of a thread besides the host's: local members, members' own agents (a Signet whose
- * terms carry `agent`) and the executor's running subagents.
+ * The agents of a thread besides the host's: local members, members' own agents (a Signet holding
+ * `member.agent`) and the executor's running subagents.
  */
 export function threadAgents(view, threadId) {
   const members = view?.members ?? [];
   return {
     locals: members.filter((m) => m.member.kind === 'local'),
-    remote: members.filter((m) => m.member.kind === 'signet' && m.act?.agent),
+    remote: members.filter(
+      (m) => m.member.kind === 'signet' && !m.ownerClient && holds(m, 'member.agent'),
+    ),
     subagents: allThreads.value.filter(
       (t) => t.meta?.parentThreadId === threadId && t.meta?.status === 'active',
     ),

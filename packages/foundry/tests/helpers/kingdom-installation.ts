@@ -1,6 +1,6 @@
 import { join } from 'node:path';
-import { createLens, type Lens, type StoredLens } from '@inixiative/json-rules';
 import {
+  type ConversationPermission,
   collectSignet,
   generateSignetKey,
   type OwnerRef,
@@ -11,110 +11,99 @@ import {
   writePrivateJson,
 } from '@inixiative/signet';
 import {
-  baseLensId,
   type HostedSignet,
   type RegistrationRequest,
   requestRegistrationSchema,
   type SignetGrant,
-  type ThreadsTerms,
-  threadsTerms,
 } from '@inixiative/signet/contracts';
 import type { ServerWebSocket } from 'bun';
+import { conversationRows, rowPermissions } from '../../src/conversations/membership';
 
-const threadsBaseId = baseLensId('foundry', 'threads');
-
-/**
- * The base lens records Kingdom lists beside a hosted Signet (`baseLenses`): its
- * catalog's base for a Foundry's main threads, by id, keyed by `baseLensId`, `parents: []`.
- */
-export const threadsBaseLenses = (): Record<string, StoredLens & Lens> => ({
-  [threadsBaseId]: {
-    ...createLens({
-      maps: {
-        foundry: {
-          models: {
-            Thread: { fields: { id: { kind: 'scalar', type: 'String', isRequired: true } } },
-          },
-        },
-      },
-      mapName: 'foundry',
-      model: 'Thread',
-    }),
-    id: threadsBaseId,
-    parents: [],
-  },
-});
-
-const reaching = (threadIds: string[]) => ({
-  root: { where: { field: 'id', operator: 'in', value: threadIds } },
-});
+/** The calls a member makes by default: post, read and the floor. */
+const memberCalls = ['thread.prompt', 'thread.read', 'thread.floor'];
 
 /**
- * A grant on a Foundry's `threads` resource as Kingdom stores it (signet 0.12): resolved operation
- * leaves (or `full`), the lens layers Kingdom chains under the base (`request`, then an approver's
- * `approval`), each a `where` over the thread's `id`, and the member's terms.
+ * A grant on one of a Foundry's conversations as Kingdom lists it to the host (signet 0.18): the
+ * thread's `conversation` resource (`externalId` = the thread id), its resolved operation leaves
+ * (the calls, then the held permissions) or `full`.
  */
-export const threadsGrant = (
+export const conversationGrant = (
   opts: {
-    threadIds?: string[];
-    approved?: string[];
+    threadId?: string;
     full?: boolean;
     operations?: string[];
-    terms?: Partial<ThreadsTerms>;
-    /** The host Foundry's integration the `threads` resource is on. */
+    permissions?: ConversationPermission[];
+    /** The host Foundry's integration the resource is on. */
     integrationId?: string;
   } = {},
 ): SignetGrant => ({
   resourceModel: 'IntegrationResource',
   integrationResourceId: Bun.randomUUIDv7(),
-  kind: 'threads',
+  kind: 'conversation',
+  externalId: opts.threadId ?? 'main',
   integrationId: opts.integrationId ?? Bun.randomUUIDv7(),
   ...(opts.full
-    ? { full: true, lens: [] }
+    ? { full: true }
     : {
         full: false,
-        operations: opts.operations ?? ['thread.prompt', 'thread.read', 'thread.floor'],
-        lens: [
-          { id: 'request', parents: [threadsBaseId], ...reaching(opts.threadIds ?? ['main']) },
-          ...(opts.approved
-            ? [{ id: 'approval', parents: [threadsBaseId, 'request'], ...reaching(opts.approved) }]
-            : []),
-        ],
+        operations: [...(opts.operations ?? memberCalls), ...(opts.permissions ?? [])],
       }),
-  terms: { threads: threadsTerms({ threads: opts.terms }) },
 });
 
-/** A revision whose approver narrowed the threads the grant reaches to `threadIds`. */
-export const narrowedTo = <S extends HostedSignet>(signet: S, threadIds: string[]): S => ({
-  ...signet,
-  revision: signet.revision + 1,
-  resources: signet.resources.map((resource) =>
-    resource.resourceModel === 'IntegrationResource'
-      ? {
-          ...resource,
-          lens: [
-            ...(resource.lens ?? []).filter((layer) => layer.id === 'request'),
-            { id: 'approval', parents: [threadsBaseId, 'request'], ...reaching(threadIds) },
-          ],
-        }
-      : resource,
-  ),
+/**
+ * A row over a scope (signet `resourceModel: 'Integration'`): every `conversation` of the host
+ * Foundry's integration, or, with `projectId` or `where`, those Kingdom's condition admits.
+ */
+export const conversationScope = (
+  opts: {
+    full?: boolean;
+    operations?: string[];
+    permissions?: ConversationPermission[];
+    integrationId?: string;
+    projectId?: string;
+    where?: Record<string, unknown>;
+  } = {},
+): SignetGrant => ({
+  resourceModel: 'Integration',
+  integrationId: opts.integrationId ?? Bun.randomUUIDv7(),
+  kind: 'conversation',
+  ...(opts.projectId ? { projectId: opts.projectId } : {}),
+  ...(opts.where ? { where: opts.where } : {}),
+  ...(opts.full
+    ? { full: true }
+    : {
+        full: false,
+        operations: [...(opts.operations ?? memberCalls), ...(opts.permissions ?? [])],
+      }),
 });
 
-/** A hosted Signet's terms on its `threads` grant, as Kingdom relays them on every frame. */
-export const termsOf = (signet: HostedSignet): ThreadsTerms => {
-  const grant = signet.resources.find(
-    (resource) => resource.resourceModel === 'IntegrationResource',
-  );
-  return threadsTerms(grant?.resourceModel === 'IntegrationResource' ? grant.terms : undefined);
+/**
+ * What a hosted Signet holds on a thread's conversation, as Kingdom relays it on every frame: every
+ * row that reaches the thread, a conditional scope row included (Kingdom admitted the frame).
+ */
+export const permissionsOf = (
+  signet: HostedSignet,
+  threadId = 'main',
+): ConversationPermission[] => {
+  const { rows, conditional } = conversationRows(signet, threadId);
+  return rowPermissions([...rows, ...conditional]);
 };
 
-/** The same Signet with its `threads` terms changed, as a revision lists it. */
-export const withTerms = <S extends HostedSignet>(signet: S, terms: Partial<ThreadsTerms>): S => ({
+/** The same Signet revised to hold `permissions` beside its calls on each conversation row. */
+export const withPermissions = <S extends HostedSignet>(
+  signet: S,
+  permissions: ConversationPermission[],
+): S => ({
   ...signet,
   resources: signet.resources.map((resource) =>
-    resource.resourceModel === 'IntegrationResource'
-      ? { ...resource, terms: { threads: { ...termsOf(signet), ...terms } } }
+    resource.resourceModel !== 'Project' && !resource.full
+      ? {
+          ...resource,
+          operations: [
+            ...(resource.operations ?? []).filter((operation) => operation.startsWith('thread.')),
+            ...permissions,
+          ],
+        }
       : resource,
   ),
 });
@@ -205,7 +194,7 @@ export function mockKingdom(
   /** The integrations a hosted Signet's rows sit on; a Signet has no integration of its own. */
   const reachedBy = (signet: HostedSignet) =>
     signet.resources.flatMap((grant) =>
-      grant.resourceModel === 'IntegrationResource' ? [grant.integrationId] : [],
+      grant.resourceModel === 'Project' ? [] : [grant.integrationId],
     );
   const thumbprintsOf = (signet: HostedSignet) =>
     reachedBy(signet).flatMap((integrationId) => {
@@ -221,7 +210,7 @@ export function mockKingdom(
       // Kingdom lists only the rows on the installation's own integrations.
       const resources = signet.resources.filter(
         (grant) =>
-          grant.resourceModel === 'IntegrationResource' &&
+          grant.resourceModel !== 'Project' &&
           integrations.get(grant.integrationId)?.thumbprint === installation.thumbprint,
       );
       return resources.length ? [{ ...signet, resources }] : [];
@@ -541,7 +530,7 @@ export function mockKingdom(
       push(installations.get(thumbprint)!);
     },
     /**
-     * Issue (or revise) a Signet reaching an installation's `threads` resource: a member of its conversations, as
+     * Issue (or revise) a Signet reaching an installation's conversations: a member of them, as
      * Kingdom lists it in `hostedSignets`. The snapshot is pushed.
      */
     host(signet: HostedSignet) {

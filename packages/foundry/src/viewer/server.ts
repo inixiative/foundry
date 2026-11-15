@@ -17,6 +17,7 @@ import type {
   ToolRegistry,
 } from '@inixiative/foundry-core';
 import { newId, threadTitle } from '@inixiative/foundry-core';
+import { conversationActLevel } from '@inixiative/signet';
 import type { Server } from 'bun';
 import { Hono } from 'hono';
 import { serveStatic } from 'hono/bun';
@@ -925,6 +926,7 @@ export function createViewer(config: ViewerConfig) {
       turns: () => turns,
       queue: config.actionQueue ?? null,
       project: (id) => configStore.config.projects[id],
+      joining: () => configStore.config.conversations,
       hosted: () => kingdom.hostedSignets(),
       subscriptions: () => kingdom.threadSubscriptions(),
       events: eventStream,
@@ -1179,20 +1181,22 @@ export function createViewer(config: ViewerConfig) {
       // Each other party the turn took in brings its own rules (CONVERSATIONS §4.12).
       actors: (turnId) =>
         turnId && conversations
-          ? conversations.turnActors(threadId, turnId).flatMap(({ member, displayName, terms }) => {
-              const rules = actRules(terms.act);
-              const root = thread.meta.cwd;
-              return rules
-                ? [
-                    {
-                      label: displayName,
-                      key: memberKey(member),
-                      rules,
-                      ...(root ? { readRoot: root } : {}),
-                    },
-                  ]
-                : [];
-            })
+          ? conversations
+              .turnActors(threadId, turnId)
+              .flatMap(({ member, displayName, permissions }) => {
+                const rules = actRules(conversationActLevel(permissions));
+                const root = thread.meta.cwd;
+                return rules
+                  ? [
+                      {
+                        label: displayName,
+                        key: memberKey(member),
+                        rules,
+                        ...(root ? { readRoot: root } : {}),
+                      },
+                    ]
+                  : [];
+              })
           : [],
       journal: (id, phase, turnId, record) => {
         try {

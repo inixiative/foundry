@@ -54,7 +54,7 @@ export interface ToolActor {
 }
 
 /**
- * What the host's agent may do on a member's word (signet `threadActSchema`), as rules: `read` lets
+ * What the host's agent may do on a member's word (signet `conversationActLevel`), as rules: `read` lets
  * reads in the thread's workspace run, everything else asks; `ask` asks for every call.
  */
 export function actRules(act: 'ask' | 'read' | 'full'): ToolRules | undefined {

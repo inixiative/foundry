@@ -11,10 +11,9 @@ import {
   headlessThreadStateSchema,
 } from '../src/conversations/headless-host-protocol';
 import {
+  conversationGrant,
   mockKingdom,
-  termsOf,
-  threadsBaseLenses,
-  threadsGrant,
+  permissionsOf,
   userOwner,
 } from './helpers/kingdom-installation';
 import { until } from './helpers/live-watch-fixture';
@@ -147,9 +146,14 @@ test('the headless host pairs, admits a member note the Warden weighs in on, and
     lifecycle: 'ongoing',
     expiresAt: null,
     maxRequests: null,
-    recipient: { recipientModel: 'User', id: Bun.randomUUIDv7(), displayName: 'JobCo' },
-    resources: [threadsGrant({ operations: ['thread.prompt', 'thread.read'], integrationId })],
-    baseLenses: threadsBaseLenses(),
+    recipient: {
+      recipientModel: 'User',
+      id: Bun.randomUUIDv7(),
+      displayName: 'JobCo',
+      audience: 'outside',
+    },
+    resources: [conversationGrant({ operations: ['thread.prompt', 'thread.read'], integrationId })],
+    baseLenses: {},
   };
   kingdom.host(member);
   const requestId = Bun.randomUUIDv7();
@@ -168,9 +172,10 @@ test('the headless host pairs, admits a member note the Warden weighs in on, and
     signetId: member.signetId,
     acceptedRevision: 1,
     member: { signetId: member.signetId, displayName: 'JobCo' },
-    terms: termsOf(member),
+    threadId: 'main',
+    permissions: permissionsOf(member),
     operation: 'thread.prompt',
-    input: { threadId: 'main', postId: Bun.randomUUIDv7(), text: 'A role opened.' },
+    input: { postId: Bun.randomUUIDv7(), text: 'A role opened.' },
   });
   expect((await kingdom.threadResponse(requestId)).outcome).toMatchObject({
     ok: true,

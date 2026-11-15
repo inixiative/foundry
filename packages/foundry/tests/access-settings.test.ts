@@ -179,6 +179,7 @@ test('explicit checks use only the saved origin and enrolled Signet, expose meta
                 id: Bun.randomUUIDv7(),
                 name: 'Issue',
                 kind: 'issue',
+                externalId: 'issue-1',
                 integrationId: f.source.integrationId,
                 provider: 'linear',
               },

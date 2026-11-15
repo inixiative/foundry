@@ -164,8 +164,8 @@ export interface FoundryConfig {
   /** Opt in to API-key providers (paid tokens). Absent or false: subscription-only, and no API provider is constructed. */
   apiTokens?: boolean;
   /**
-   * This Foundry's own conversation settings: `joining`, the terms someone joining its threads
-   * starts with, per audience. A project's floor, conch and the rest are `projects.<id>.conversations`.
+   * This Foundry's own conversation settings: `joining`, the conversation permissions and outbound
+   * setting someone joining its threads starts with, per audience. A project's floor, conch and the rest are `projects.<id>.conversations`.
    */
   conversations?: FoundryConversationSettings;
   /**

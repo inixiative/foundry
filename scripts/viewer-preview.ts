@@ -176,9 +176,10 @@ export async function createViewerPreview(port = 0) {
     signetId,
     acceptedRevision: 1,
     member: { signetId, displayName: "Sam's agent" },
-    terms: { view: 'thread', delivery: 'note', outbound: 'review', floor: { mayTake: false } },
+    threadId: 'main',
+    permissions: ['member.log'],
     operation: 'thread.prompt',
-    input: { threadId: 'main', postId: Bun.randomUUIDv7(), text: 'Can you keep our test name?' },
+    input: { postId: Bun.randomUUIDv7(), text: 'Can you keep our test name?' },
   } as Parameters<ConversationService['admit']>[0]);
   const server = Bun.serve({
     hostname: '127.0.0.1',

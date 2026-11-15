@@ -31,9 +31,10 @@ const picked = (request: HostedSignetRequest) =>
   );
 
 /**
- * Kingdom's review link, carrying this Foundry's default for the requester's audience as `threads`:
- * the review opens at the narrower of it and the request (signet `meetThreadsTerms`). It only
- * narrows where the form starts; Kingdom still refuses an approval wider than the request.
+ * Kingdom's review link, carrying this Foundry's default conversation permissions for the
+ * requester's audience as `permissions`, comma-separated (empty: none): the review opens with those
+ * of them the request asked for. It only sets where the form starts; Kingdom still refuses an
+ * approval wider than the request.
  */
 export const reviewUrlWithDefault = (
   request: Pick<HostedSignetRequest, 'reviewUrl' | 'requester'>,
@@ -41,8 +42,8 @@ export const reviewUrlWithDefault = (
 ) => {
   const url = new URL(request.reviewUrl);
   url.searchParams.set(
-    'threads',
-    JSON.stringify(joiningDefault(conversations, request.requester.audience)),
+    'permissions',
+    joiningDefault(conversations, request.requester.audience).permissions.join(','),
   );
   return url.toString();
 };

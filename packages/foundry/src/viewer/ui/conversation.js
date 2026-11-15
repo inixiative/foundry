@@ -16,7 +16,7 @@ import { ArtifactCards, Artifacts } from './artifacts.js';
 import { PillGroup } from './band-pills.js';
 import { chorusNotice, lastDegraded } from './chorus-health.js';
 import { returnFocus } from './composer-focus.js';
-import { HeldPromptCard, useConversationView } from './conversation-members.js';
+import { HeldPromptCard, holds, useConversationView } from './conversation-members.js';
 import { isUnsavedCompletion } from './conversation-state.js';
 import { FeedbackPrompt, GiveFeedback, TurnFeedback } from './feedback.js';
 import { ForkLink } from './fork-link.js';
@@ -263,7 +263,7 @@ export function ContextStats() {
   </section>`;
 }
 
-/** Kingdom's own words for what a member reads (its `threads` terms). */
+/** Plain words for what a member reads (`member.log`, or only its own). */
 const VIEW_READS = {
   own: 'Its own posts and what is sent to it',
   thread: 'The whole thread: messages and answers, never tool calls',
@@ -272,7 +272,7 @@ const VIEW_READS = {
 const signetLine = (m) =>
   [
     m.displayName,
-    m.terms ? VIEW_READS[m.terms.view] : null,
+    m.listed ? VIEW_READS[holds(m, 'member.log') ? 'thread' : 'own'] : null,
     m.limits?.maxRequests ? `up to ${m.limits.maxRequests} requests` : null,
     m.limits?.expiresAt ? `until ${new Date(m.limits.expiresAt).toLocaleDateString()}` : null,
     m.listed ? null : 'no longer listed by Kingdom',

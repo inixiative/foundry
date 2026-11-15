@@ -84,18 +84,18 @@ test('incomingRequests keeps pending, unexpired requests from every Kingdom, new
   expect(listed[0]?.audience).toBe('outside');
 });
 
-const threadsParam = (reviewUrl: string) => {
+const permissionsParam = (reviewUrl: string) => {
   const url = new URL(reviewUrl);
   return {
-    rest: [...url.searchParams].filter(([key]) => key !== 'threads'),
-    threads: JSON.parse(url.searchParams.get('threads') ?? 'null'),
+    rest: [...url.searchParams].filter(([key]) => key !== 'permissions'),
+    permissions: url.searchParams.get('permissions'),
   };
 };
 
-// The review link carries this Foundry's default for the requester's audience, whole: Kingdom's
-// form starts at the narrower of it and what was asked, and a term the default doesn't set is the
-// widest, so the request decides it (Aron 2026-11-14: in-org and outside, something naive).
-test('the review link carries the default for the requester audience', () => {
+// The review link carries this Foundry's default conversation permissions for the requester's
+// audience, comma-separated under `permissions`: Kingdom's form starts there (Aron 2026-11-14: in-org
+// and outside, something naive).
+test('the review link carries the default permissions for the requester audience', () => {
   const [outside, inOrg] = incomingRequests(
     [
       {
@@ -112,36 +112,33 @@ test('the review link carries the default for the requester audience', () => {
     ],
     Date.parse('2026-11-01T12:00:00.000Z'),
   );
-  expect(threadsParam(inOrg!.reviewUrl)).toEqual({
+  expect(permissionsParam(inOrg!.reviewUrl)).toEqual({
     rest: [
       ['integration', 'x'],
       ['signetRequest', 'y'],
     ],
-    threads: {
-      view: 'thread',
-      delivery: 'turn',
-      outbound: 'auto',
-      floor: { mayTake: true },
-      posts: 'instructions',
-      act: 'read',
-      agent: true,
-    },
+    permissions: 'agent.instruct,agent.read',
   });
-  expect(threadsParam(outside!.reviewUrl).threads).toEqual(joiningDefault(undefined, 'outside'));
-  expect(threadsParam(outside!.reviewUrl).threads).toMatchObject({ posts: 'data', act: 'ask' });
+  // Outside: none, an empty value.
+  expect(permissionsParam(outside!.reviewUrl).permissions).toBe('');
+  expect(joiningDefault(undefined, 'outside')).toEqual({ permissions: [], outbound: 'review' });
+  expect(joiningDefault(undefined, 'inOrg')).toEqual({
+    permissions: ['agent.instruct', 'agent.read'],
+    outbound: 'review',
+  });
 });
 
-// The person's own settings replace the built-in default term by term, per audience.
+// The person's own settings replace the built-in default field by field, per audience.
 test('the review link follows this Foundry conversations.joining setting', () => {
   const [listed] = incomingRequests(
     [{ url: 'https://kingdom-a.example', signetRequests: [request({})] }],
     Date.parse('2026-11-01T12:00:00.000Z'),
-    { joining: { inOrg: { act: 'full', view: 'own' } } },
+    { joining: { inOrg: { permissions: ['member.log', 'agent.act'], outbound: 'auto' } } },
   );
-  expect(threadsParam(listed!.reviewUrl).threads).toMatchObject({
-    view: 'own',
-    posts: 'instructions',
-    act: 'full',
+  expect(permissionsParam(listed!.reviewUrl).permissions).toBe('member.log,agent.act');
+  expect(joiningDefault({ joining: { inOrg: { outbound: 'auto' } } }, 'inOrg')).toEqual({
+    permissions: ['agent.instruct', 'agent.read'],
+    outbound: 'auto',
   });
 });
 
@@ -168,12 +165,14 @@ test('incomingRequests says when a request asks for a resource whole', () => {
 // are refused there by name, pointing at where they go.
 test('this Foundry conversations takes joining only, and names where project keys go', () => {
   expect(() =>
-    validateFoundryConversationSettings({ joining: { outside: { act: 'read' } } }),
+    validateFoundryConversationSettings({ joining: { outside: { permissions: ['agent.read'] } } }),
   ).not.toThrow();
   expect(() => validateFoundryConversationSettings({ floor: 'conch' })).toThrow(
     'conversations.floor is a project setting',
   );
   expect(() =>
-    validateFoundryConversationSettings({ joining: { outside: { act: 'everything' } } }),
+    validateFoundryConversationSettings({
+      joining: { outside: { permissions: ['agent.everything'] } },
+    }),
   ).toThrow();
 });

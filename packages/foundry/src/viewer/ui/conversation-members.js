@@ -5,7 +5,8 @@
  */
 /**
  * A conversation thread's participants panel (docs/reference/CONVERSATIONS.md §4.7): who the
- * members are and their terms (view, delivery, outbound), who is here now, the floor, posts as they
+ * members are and what they hold (signet's conversation permissions) and how sends to them leave,
+ * who is here now, the floor, posts as they
  * arrived (unread ones marked), held sends to release, and where to invite someone in Kingdom.
  * Everything is read from `GET /api/threads/:id/conversation`, re-read whenever the thread's line in
  * the sessions list changes (the existing `threads` stream).
@@ -18,11 +19,27 @@ import { settingsConfig } from './settings.js';
 import { activeThreadId, prompts, resolvePrompt, showToast, threadData } from './store.js';
 import { layeredActions, sourceOf } from './thread-settings.js';
 
-/** What the host's agent may do on a turn that took a member's words in (threads term `act`, §4.12). */
+/** What the host's agent may do on a turn that took a member's words in (signet `conversationActLevel`, §4.12). */
 const ACT_LABELS = {
   ask: 'agent asks before acting',
   read: 'agent may read freely',
   full: 'agent acts freely',
+};
+
+/** Whether a member holds a conversation permission (signet `conversationPermissionSchema`). */
+export const holds = (member, permission) => !!member.permissions?.includes(permission);
+
+/** The act level its permissions give (signet `conversationActLevel`). */
+export const actLevel = (member) =>
+  holds(member, 'agent.act') ? 'full' : holds(member, 'agent.read') ? 'read' : 'ask';
+
+/** How a member reaches the thread when no grant names this conversation. */
+const SCOPE_LABELS = {
+  foundry: ['standing grant', 'It holds a standing grant over every conversation of this Foundry'],
+  conditional: [
+    'conditional grant',
+    "It holds a standing grant over this Foundry's conversations narrowed by a condition only Kingdom checks",
+  ],
 };
 
 const FLOORS = [
@@ -103,27 +120,50 @@ export function HeldPromptCard({ prompt }) {
 }
 
 function MemberRow({ member, threadId, conch }) {
-  const terms = member.terms;
+  // The owner's choice shows at once; the next view read carries it too.
+  const [chosen, setChosen] = useState(null);
+  const outbound = chosen ?? member.outbound;
+  const outside = member.member.kind === 'signet' && !member.ownerClient;
+  const scope = member.scope ? SCOPE_LABELS[member.scope] : null;
+  const setOutbound = async (value) => {
+    if (
+      await post(`/api/threads/${encodeURIComponent(threadId)}/conversation/outbound`, {
+        member: member.member.id,
+        outbound: value,
+      })
+    )
+      setChosen(value);
+  };
   return html`<li class="conversation-member ${member.present ? 'is-present' : ''}"
       data-member=${member.member.id}>
     <span class="conversation-presence" title=${member.present ? 'Here now' : `Last seen ${ago(member.lastSeen)}`}></span>
     <span class="conversation-member-name">${member.displayName}</span>
     ${member.listed ? null : html`<span class="context-bar-chip context-bar-chip--dim" title="Kingdom no longer lists this Signet on the thread (revoked, narrowed, or not yet in a snapshot)">unlisted</span>`}
+    ${scope ? html`<span class="context-bar-chip" data-term="scope" title=${scope[1]}>${scope[0]}</span>` : null}
     ${
-      terms
-        ? html`<span class="context-bar-chip" title="What it reads">${terms.view === 'thread' ? 'reads the thread' : 'reads its own'}</span>
-          <span class="context-bar-chip" title="How its posts arrive">${terms.delivery === 'turn' ? 'posts wake the agent' : 'posts as notes'}</span>`
+      member.listed
+        ? html`<span class="context-bar-chip" title="What it reads">${holds(member, 'member.log') ? 'reads the thread' : 'reads its own'}</span>
+          <span class="context-bar-chip" title="How its posts arrive">${holds(member, 'member.wake') ? 'posts wake the agent' : 'posts as notes'}</span>`
         : null
     }
     ${
-      member.act
-        ? html`<span class="context-bar-chip" data-term="posts" title="How the agent takes its posts">${member.act.posts === 'instructions' ? 'posts as instructions' : 'posts as data'}</span>
-          <span class="context-bar-chip" data-term="act" title="What the agent may do for it">${ACT_LABELS[member.act.act] ?? member.act.act}</span>
-          ${member.act.agent ? html`<span class="context-bar-chip" data-term="agent" title="It may bring its own agent">brings an agent</span>` : null}`
+      outside
+        ? html`<span class="context-bar-chip" data-term="posts" title="How the agent takes its posts">${holds(member, 'agent.instruct') ? 'posts as instructions' : 'posts as data'}</span>
+          <span class="context-bar-chip" data-term="act" title="What the agent may do for it">${ACT_LABELS[actLevel(member)]}</span>
+          ${holds(member, 'member.agent') ? html`<span class="context-bar-chip" data-term="agent" title="It may bring its own agent">brings an agent</span>` : null}`
         : null
     }
-    <span class="context-bar-chip ${member.outbound === 'review' ? '' : 'context-bar-chip--dim'}"
-      title="Sends to this member">${member.outbound === 'review' ? 'sends reviewed' : 'sends leave at once'}</span>
+    ${
+      outside
+        ? html`<select class="context-bar-chip conversation-outbound" data-term="outbound"
+            title="Sends to this member" aria-label=${`Sends to ${member.displayName}`}
+            value=${outbound} onChange=${(e) => setOutbound(e.target.value)}>
+            <option value="review">sends reviewed</option>
+            <option value="auto">sends leave at once</option>
+          </select>`
+        : html`<span class="context-bar-chip ${outbound === 'review' ? '' : 'context-bar-chip--dim'}"
+          title="Sends to this member">${outbound === 'review' ? 'sends reviewed' : 'sends leave at once'}</span>`
+    }
     ${member.holdsConch ? html`<span class="context-bar-chip" title="Holds the conch">conch</span>` : null}
     ${(() => {
       // A raised hand is a Needs-you prompt; answer it here or on the board.
