@@ -10,7 +10,7 @@
  * Watchtower) agrees.
  */
 
-import { allThreads, authFetch, toast } from './store.js';
+import { allThreads, authFetch, showToast } from './store.js';
 import { snoozeRunning } from './thread-status.js';
 
 const snoozeOf = (threadId) =>
@@ -38,9 +38,9 @@ async function send(threadId, method, body) {
     });
     if (res.ok) return true;
     const { error } = await res.json().catch(() => ({}));
-    toast.value = { message: `Couldn’t snooze: ${error ?? res.status}`, type: 'error' };
+    showToast(`Couldn’t snooze: ${error ?? res.status}`, 'error');
   } catch (err) {
-    toast.value = { message: `Couldn’t snooze: ${err.message}`, type: 'error' };
+    showToast(`Couldn’t snooze: ${err.message}`, 'error');
   }
   return false;
 }

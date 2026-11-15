@@ -117,6 +117,7 @@ import {
   shownViews,
   ThreadViewSegments,
 } from './thread-views.js';
+import { ThreadToast } from './toast.js';
 import { uuidv7 } from './uuidv7.js';
 import {
   dictationSupported,
@@ -600,7 +601,9 @@ function ChatInput() {
     if (!accepted.length) return;
     const room = IMAGES_PER_MESSAGE - images.length;
     if (accepted.length > room)
-      showToast(`A message carries at most ${IMAGES_PER_MESSAGE} images`, 'warn');
+      showToast(`A message carries at most ${IMAGES_PER_MESSAGE} images`, 'warn', {
+        thread: activeThreadId.peek(),
+      });
     for (const file of accepted.slice(0, Math.max(0, room))) {
       const key = ++attachmentKey;
       setImages((list) => [
@@ -612,7 +615,9 @@ function ChatInput() {
         .then((stored) => patchImage(key, { status: 'ready', ...stored }))
         .catch((error) => {
           patchImage(key, { status: 'error', error: error.message });
-          showToast(`Image not attached: ${error.message}`, 'error');
+          showToast(`Image not attached: ${error.message}`, 'error', {
+            thread: activeThreadId.peek(),
+          });
         });
     }
   };
@@ -644,7 +649,8 @@ function ChatInput() {
       onEnd: (error) => {
         stopDictation.current = null;
         setListening(false);
-        if (error) showToast(`Dictation stopped: ${error}`, 'warn');
+        if (error)
+          showToast(`Dictation stopped: ${error}`, 'warn', { thread: activeThreadId.peek() });
       },
     });
     setListening(true);
@@ -678,7 +684,9 @@ function ChatInput() {
     if (feedback) {
       const body = feedback[1]?.trim() ?? '';
       if (!body)
-        return showToast('Usage: /feedback <what you want to say about this thread>', 'warn');
+        return showToast('Usage: /feedback <what you want to say about this thread>', 'warn', {
+          thread: activeThreadId.peek(),
+        });
       stopDictation.current?.();
       inputHistory.push(sent);
       historyIdx = -1;
@@ -1701,6 +1709,7 @@ export function Conversation({ onTraceSelect, onLayerClick }) {
         <${ContextBar} />
         <${CenterTabs} />
       </header>
+      <${ThreadToast} threadId=${threadId} />
       ${
         view === 'plan'
           ? html`<div class="center-frame"><${Plan} /></div>`

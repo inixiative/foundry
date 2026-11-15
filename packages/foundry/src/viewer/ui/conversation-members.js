@@ -43,6 +43,8 @@ const FLOORS = [
 
 /** A conversation request; a refusal is a toast. True when it went through. */
 export async function post(path, body, method = 'POST') {
+  const thread = /^\/api\/threads\/([^/]+)\//.exec(path)?.[1];
+  const about = thread ? { thread: decodeURIComponent(thread) } : {};
   try {
     const res = await fetch(path, {
       method,
@@ -50,9 +52,9 @@ export async function post(path, body, method = 'POST') {
       body: JSON.stringify(body ?? {}),
     });
     if (res.ok) return true;
-    showToast((await res.json()).error || 'Conversation request failed', 'error');
+    showToast((await res.json()).error || 'Conversation request failed', 'error', about);
   } catch (error) {
-    showToast(`Conversation request failed: ${error.message}`, 'error');
+    showToast(`Conversation request failed: ${error.message}`, 'error', about);
   }
   return false;
 }

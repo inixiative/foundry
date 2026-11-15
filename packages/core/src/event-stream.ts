@@ -42,6 +42,8 @@ export type StreamEvent =
       message: string;
       severity: 'error' | 'warn';
       timestamp: number;
+      /** The thread the error is about, when it is one thread's (the viewer shows it on that thread). */
+      threadId?: string;
     }
   | ({ kind: 'activity'; timestamp: number } & SystemActivity);
 
@@ -142,9 +144,21 @@ export class EventStream {
     return events.slice(-limit);
   }
 
-  /** Push an error event — surfaced as a toast in the viewer UI. */
-  pushError(source: string, message: string, severity: 'error' | 'warn' = 'error'): void {
-    this.push({ kind: 'error', source, message, severity, timestamp: Date.now() });
+  /** Push an error event — surfaced as a toast in the viewer UI, on its thread when it names one. */
+  pushError(
+    source: string,
+    message: string,
+    severity: 'error' | 'warn' = 'error',
+    threadId?: string,
+  ): void {
+    this.push({
+      kind: 'error',
+      source,
+      message,
+      severity,
+      timestamp: Date.now(),
+      ...(threadId ? { threadId } : {}),
+    });
   }
 
   /** Push what the system is doing (shown above the composer, never as a toast). */

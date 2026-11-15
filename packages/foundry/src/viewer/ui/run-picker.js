@@ -239,10 +239,11 @@ export function ThreadRunModal({
             : `This thread now runs on ${workerName(value.worker)}`
           : 'Applies from the next turn',
         'ok',
+        { thread: threadId },
       );
       onClose();
     } catch (error) {
-      showToast(`Could not change it: ${error.message}`, 'error');
+      showToast(`Could not change it: ${error.message}`, 'error', { thread: threadId });
       // A worker switch may have landed before the model or effort was refused: show what is true now.
       await loadLaunch(threadId);
       await onSaved?.();
@@ -328,10 +329,10 @@ export function NewThreadModal() {
   const [value, setValue] = useState(null);
   const [name, setName] = useState('');
   const [where, setWhere] = useState(null);
-  // Each open starts where the workspace is, unless the opener named a place.
+  // Each open starts where the workspace is, unless the opener named a place. The name is cleared on
+  // close, not here: an effect runs after the first paint and would wipe what was typed in it.
   useEffect(() => {
     if (!preset) return;
-    setName('');
     setWhere(preset.where !== undefined ? preset.where : currentScope());
   }, [preset]);
   const pinned = isScope(where);
@@ -369,6 +370,7 @@ export function NewThreadModal() {
     // The next open reads its scope afresh, never picking from this one's choices.
     setScope(null);
     setValue(null);
+    setName('');
   };
   const joining = preset.joinThread ?? null;
   const start = async () => {

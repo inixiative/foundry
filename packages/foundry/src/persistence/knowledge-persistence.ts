@@ -265,7 +265,7 @@ export class KnowledgePersistence {
     if (this.errors.has(thread.id)) return;
     const message = `Knowledge durability failure for ${thread.id}: ${error instanceof Error ? error.message : String(error)}`;
     this.errors.set(thread.id, message);
-    this.events.pushError(`knowledge:${thread.id}`, message);
+    this.events.pushError(`knowledge:${thread.id}`, message, 'error', thread.id);
     console.error(`[Recovery] ${message}; learning withheld, the thread continues`);
   }
 
