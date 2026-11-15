@@ -65,7 +65,12 @@ import {
   ThreadLaunchSettings,
 } from '../../providers/thread-launch';
 import type { SecretScratch } from '../../secrets/scratch';
-import { ARTIFACT_PHASE, type ArtifactVersionRecord } from '../../tools/thread-record';
+import {
+  ARTIFACT_PHASE,
+  type ArtifactVersionRecord,
+  markPlanOutcomeByPerson,
+  planMarkSchema,
+} from '../../tools/thread-record';
 import { WORKER_SWITCH_PHASE, type WorkerSwitchRecord } from '../../turns/journal-history';
 import type { NativeOutcomeRecovery } from '../../turns/native-outcome-recovery';
 import type { RunningTasks } from '../../turns/running-tasks';
@@ -1617,6 +1622,29 @@ export function registerRuntimeRoutes(
     streams.threadsChanged(thread.id);
     if ('worktreePath' in body || 'branch' in body) void threadContext?.refresh(thread.id);
 
+    return c.json(threadJSON(thread));
+  });
+
+  // -- The plan's outcomes, ticked by the person: the mark through applyPlanPatch, no milestone --
+
+  app.patch('/api/threads/:id/plan', async (c) => {
+    const thread = directory.get(c.req.param('id'));
+    if (!thread) return c.json({ error: 'thread not found' }, 404);
+    if (thread.disposed) return c.json({ error: 'thread is archived or disposed' }, 409);
+    const body = await c.req.json().catch(() => null);
+    const parsed = planMarkSchema.safeParse(body);
+    if (!parsed.success)
+      return c.json(
+        { error: parsed.error.issues[0]?.message ?? 'outcome and status are required' },
+        400,
+      );
+    try {
+      markPlanOutcomeByPerson(thread, parsed.data.outcome, parsed.data.status);
+    } catch (error) {
+      return c.json({ error: (error as Error).message }, 400);
+    }
+    localStore?.saveThread(thread);
+    streams.threadsChanged(thread.id);
     return c.json(threadJSON(thread));
   });
 
