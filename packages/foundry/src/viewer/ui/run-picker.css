@@ -1,14 +1,22 @@
 /* What a thread runs on: the header's run pill opens the picker; "+ New thread" opens it too. */
-button.band-run {
+button.band-run,
+button.band-add-agent {
   border: none;
   font: inherit;
   font-size: 12px;
   cursor: pointer;
 }
 button.band-run:hover,
-button.band-run:focus-visible {
+button.band-run:focus-visible,
+button.band-add-agent:hover,
+button.band-add-agent:focus-visible {
   background: hsl(var(--accent, var(--muted)));
   outline: 1px solid hsl(var(--app-primary) / 0.6);
+}
+/* "+" beside the run pill opens the agents modal (thread-agents.js). */
+button.band-add-agent {
+  padding-inline: 7px;
+  font-weight: 600;
 }
 .run-modal {
   width: 400px;

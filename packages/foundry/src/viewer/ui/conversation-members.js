@@ -11,11 +11,21 @@
  * the sessions list changes (the existing `threads` stream).
  */
 
+import { ownerName } from './kingdom-holder.js';
 import { html, useEffect, useState } from './lib.js';
 // settings.js imports this module's settings card; the signal is read at render, so the cycle is safe.
 import { SettingRow } from './setting-row.js';
 import { settingsConfig } from './settings.js';
-import { activeThreadId, prompts, resolvePrompt, showToast, threadData } from './store.js';
+import {
+  activeThreadId,
+  kingdomStatus,
+  prompts,
+  resolvePrompt,
+  showToast,
+  threadData,
+} from './store.js';
+// thread-agents.js imports this module too; AgentsLine is read at render, so the cycle is safe.
+import { AgentsLine } from './thread-agents.js';
 import { layeredActions, sourceOf } from './thread-settings.js';
 
 /** What the host's agent may do on a turn that took a member's words in (threads term `act`, §4.12). */
@@ -147,17 +157,45 @@ function MemberRow({ member, threadId, conch }) {
   </li>`;
 }
 
-/** Open Kingdom's grant form for this thread (§5.5), read on demand. */
-export async function invite(threadId) {
-  try {
-    const res = await fetch(`/api/threads/${encodeURIComponent(threadId)}/conversation`);
-    const url = res.ok ? (await res.json()).invites?.find((candidate) => candidate.url)?.url : null;
-    if (url) window.open(url, '_blank', 'noopener');
-    else
-      showToast('Kingdom did not describe where to invite from; check Settings → Kingdom', 'warn');
-  } catch (error) {
-    showToast(`Invite unavailable: ${error.message}`, 'error');
-  }
+const isOwn = (candidate, key) =>
+  !!key && (candidate.kingdomId === key || candidate.kingdomUrl === key.replace(/\/+$/, ''));
+
+/**
+ * Where to invite someone into this thread (§5.5): one link to Kingdom's grant form per paired
+ * owner, the project's own owner first. Plain links, so the browser opens them on the click itself
+ * (a window opened after a read is a popup the browser blocks).
+ */
+export function InviteLinks({ threadId, view = null }) {
+  const [read, setRead] = useState(null);
+  useEffect(() => {
+    if (view || !threadId) return undefined;
+    let live = true;
+    readView(threadId, 'invites').then((body) => live && setRead({ threadId, body }));
+    return () => {
+      live = false;
+    };
+  }, [threadId, view]);
+  const source = view ?? (read?.threadId === threadId ? read.body : null);
+  const integrations = kingdomStatus.value?.integrations ?? [];
+  const projectId = threadData.value?.meta?.projectId ?? null;
+  const own = projectId
+    ? settingsConfig.value?.projects?.[projectId]?.kingdomCapacity?.kingdom
+    : null;
+  const invites = (source?.invites ?? [])
+    .filter((candidate) => candidate.url)
+    .map((candidate) => {
+      const holder = integrations.find((i) => i.id === candidate.kingdomId)?.holder;
+      return { ...candidate, label: ownerName(holder) ?? `Kingdom ${candidate.kingdomId}` };
+    })
+    .sort((a, b) => isOwn(b, own) - isOwn(a, own));
+  if (!source) return html`<span class="conversation-dim">Reading where to invite from…</span>`;
+  if (!invites.length)
+    return html`<span class="conversation-dim">Kingdom did not describe where to invite from; check Settings → Kingdom.</span>`;
+  return html`<span class="conversation-invites">${invites.map(
+    (candidate) =>
+      html`<a key=${candidate.kingdomId} class="proj-btn" data-invite=${candidate.kingdomId} href=${candidate.url}
+        target="_blank" rel="noopener" title=${`Invite as ${candidate.label}, in Kingdom`}>Invite as ${candidate.label}</a>`,
+  )}</span>`;
 }
 
 /** In-flight reads, so the band, the panel and the agents modal share one GET per change. */
@@ -207,14 +245,13 @@ export function ParticipantsPanel() {
   const [view] = useConversationView(threadId, line);
   const [open, setOpen] = useState(true);
   if (!threadId) return null;
+  const paired = !!settingsConfig.value?.kingdomIntegrations?.length;
   if (!line)
-    return settingsConfig.value?.kingdomIntegrations?.length
-      ? html`<div class="conversation-panel conversation-panel--empty">
-        <button class="proj-btn" onClick=${() => invite(threadId)}>Invite to this conversation</button>
-      </div>`
-      : null;
+    return html`<div class="conversation-panel conversation-panel--empty">
+      <${AgentsLine} threadId=${threadId} view=${null} />
+      ${paired ? html`<div class="conversation-floor"><${InviteLinks} threadId=${threadId} /></div>` : null}
+    </div>`;
   if (!view) return null;
-  const invite = view.invites?.find((candidate) => candidate.url);
   const unread = view.posts.filter((p) => p.unread).length;
   const conch = view.floor.mode === 'conch';
   const base = `/api/threads/${encodeURIComponent(threadId)}/conversation`;
@@ -230,6 +267,7 @@ export function ParticipantsPanel() {
     ${
       open
         ? html`<div class="conversation-panel-body">
+        <${AgentsLine} threadId=${threadId} view=${view} />
         <div class="conversation-floor">
           <label>Floor
             <select value=${view.floorFrom === 'thread' ? view.floor.mode : ''}
@@ -271,7 +309,7 @@ export function ParticipantsPanel() {
               ? html`<button class="proj-btn proj-btn-ok" onClick=${() => post(`${base}/resume`)}>Resume</button>`
               : html`<button class="proj-btn" onClick=${() => post(`${base}/pause`)}>Pause members</button>`
           }
-          ${invite ? html`<a class="proj-btn" href=${invite.url} target="_blank" rel="noopener">Invite</a>` : null}
+          ${paired ? html`<${InviteLinks} threadId=${threadId} view=${view} />` : null}
         </div>
         ${
           view.requests?.length

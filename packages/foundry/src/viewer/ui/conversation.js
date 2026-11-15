@@ -95,7 +95,7 @@ import {
   waitingFor,
 } from './store.js';
 import { stripView } from './system-strip.js';
-import { agentCountOf, threadAgents } from './thread-agents.js';
+import { agentCountOf, openThreadAgents, threadAgents } from './thread-agents.js';
 import {
   harnessName,
   isUnnamed,
@@ -399,7 +399,9 @@ function ContextBar() {
               ? html`<button type="button" class="band-pill band-run" data-run="pill" onClick=${openThreadRun}
                   title=${`${[worker, ...runs].filter(Boolean).join(' · ')}${launch?.effort ? '' : ' (default effort)'} · change for this thread`}>${
                     worker ? html`<span class="band-drop">${worker}\u00a0·\u00a0</span>` : null
-                  }${runs.join(' · ')}</button>`
+                  }${runs.join(' · ')}</button>
+                <button type="button" class="band-pill band-add-agent" data-agents="add-band" aria-haspopup="dialog"
+                  aria-label="Add an agent" title="Add an agent to this thread" onClick=${openThreadAgents}>+</button>`
               : null
           }
           ${

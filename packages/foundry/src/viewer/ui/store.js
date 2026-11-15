@@ -1666,7 +1666,8 @@ export async function deleteProject(id) {
 /**
  * Create a thread and select it, so the next send goes to it. `where` is a project id, null
  * (Global), '@forge' or '@feedback' (the scope's role, no project); it defaults to the active scope,
- * and a thread made elsewhere brings the workspace to its scope.
+ * and a thread made elsewhere brings the workspace to its scope. `select: false` leaves the person
+ * where they are (a new agent joining the thread they're in).
  */
 export async function createThread({
   where = currentScope(),
@@ -1679,6 +1680,7 @@ export async function createThread({
   model,
   effort,
   role,
+  select = true,
 } = {}) {
   try {
     const scopeRole = Object.hasOwn(SCOPE_ROLES, where ?? '') ? SCOPE_ROLES[where] : null;
@@ -1707,6 +1709,7 @@ export async function createThread({
         allThreads.value = [...allThreads.value, created];
       // A new thread has no history to load; a first load would race the first send's rows.
       _threadMessages[tid] ??= [];
+      if (!select) return created;
       if (where !== currentScope()) selectScope(where);
       selectThread(tid);
       return created;

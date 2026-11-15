@@ -309,6 +309,30 @@ export const openNewThread = (preset = {}) => {
   newThreadChooser.value = preset;
 };
 
+/** A new agent's name in the thread it joins, when the person gives none: its worker and model. */
+const agentName = (worker, model) =>
+  [worker?.label ?? worker?.id, modelOf(worker, model)?.label ?? model]
+    .filter(Boolean)
+    .join(' · ') || 'New agent';
+
+/** The new thread joins the host thread's conversation as a local member (CONVERSATIONS.md §4.11). */
+async function joinAsAgent(hostThreadId, threadId, displayName) {
+  const res = await authFetch(
+    `/api/threads/${encodeURIComponent(hostThreadId)}/conversation/locals`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ threadId, displayName }),
+    },
+  );
+  if (res.ok) return showToast(`${displayName} joined this thread`, 'ok');
+  const body = await res.json().catch(() => ({}));
+  showToast(
+    `Started ${displayName}, but it could not join: ${body.error ?? res.statusText}`,
+    'error',
+  );
+}
+
 /**
  * Start a thread where it is picked (the active scope by default) on the picked worker, model,
  * effort and role. A Foundry scope's thread takes the scope's role, so it has no role to pick.
@@ -361,11 +385,13 @@ export function NewThreadModal() {
     setScope(null);
     setValue(null);
   };
+  const joining = preset.joinThread ?? null;
   const start = async () => {
     const worker = scope.workers.find((w) => w.id === value.worker);
     close();
     const created = await createThread({
       where,
+      ...(joining ? { select: false } : {}),
       ...(name.trim() ? { name: name.trim() } : {}),
       ...(worker && !worker.default ? { worker: worker.id } : {}),
       ...(value.model && value.model !== worker?.defaultModel ? { model: value.model } : {}),
@@ -374,15 +400,22 @@ export function NewThreadModal() {
     });
     // A draft from the opener (a settings page asking the Forge Master) waits in the new thread's box.
     if (created && preset.draft) composerFill.value = preset.draft;
+    if (created && joining)
+      await joinAsAgent(joining, created.threadId, name.trim() || agentName(worker, value.model));
   };
-  return html`<${Modal} title="New thread" onClose=${close} class="run-modal new-thread-modal">
+  return html`<${Modal} title=${joining ? 'New agent in this thread' : 'New thread'} onClose=${close} class="run-modal new-thread-modal">
     <div class="run-picker">
       <label class="run-picker-row">Name
         <input class="rp-select" data-run="name" placeholder="Optional" value=${name}
           onInput=${(e) => setName(e.target.value)} />
       </label>
-      <${WherePicker} where=${where} onChange=${setWhere} />
+      ${joining ? null : html`<${WherePicker} where=${where} onChange=${setWhere} />`}
     </div>
+    ${
+      joining
+        ? html`<p class="run-picker-note run-picker-note--dim" data-note="joins">Starts as its own thread in this project and joins this one as a local member: it hears the conversation and speaks when the floor lets it.</p>`
+        : null
+    }
     ${
       scope?.error
         ? html`<p class="run-picker-note">Could not read the workers: ${scope.error}</p>`
@@ -393,7 +426,7 @@ export function NewThreadModal() {
     <div class="rename-actions">
       <button type="button" class="action-btn" onClick=${close}>✕ Cancel</button>
       <button type="button" class="action-btn primary" data-run="start" disabled=${!value}
-        onClick=${start}>✓ Start thread</button>
+        onClick=${start}>${joining ? '✓ Add agent' : '✓ Start thread'}</button>
     </div>
   <//>`;
 }
