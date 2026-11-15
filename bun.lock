@@ -155,7 +155,7 @@
 
     "@inixiative/json-rules": ["@inixiative/json-rules@3.22.0", "", { "dependencies": { "dayjs": "^1.11.13", "fastest-levenshtein": "^1.0.16", "re2js": "^2.8.6" }, "peerDependencies": { "@prisma/client": ">=6.0.0", "typescript": ">=6.0.0" }, "optionalPeers": ["@prisma/client", "typescript"] }, "sha512-hNHMXXp1yE4F/n5hDpBwIJzss7tY85OxGG9jiK+DymfpEHFIcq6y/scdXmWSrIsE6lQgppVkV/2fJKlkZabaUQ=="],
 
-    "@inixiative/signet": ["@inixiative/signet@github:inixiative/signet#46f6dd8", { "dependencies": { "jose": "^6.2.3" }, "peerDependencies": { "@inixiative/json-rules": "^3.21.0", "zod": "^4.3.6" }, "hasInstallScript": true }, "inixiative-signet-46f6dd8", "sha512-1UTYzPlZ7MJ3R76RDZIw43n62eI4uMfbFatO1KOY41s8GjjWGmvCaJm0aCXiCUdHOc9NE/4zFDUxeNIPxcyC9A=="],
+    "@inixiative/signet": ["@inixiative/signet@github:inixiative/signet#30b4a83", { "dependencies": { "jose": "^6.2.3" }, "peerDependencies": { "@inixiative/json-rules": "^3.21.0", "zod": "^4.3.6" }, "hasInstallScript": true }, "inixiative-signet-30b4a83", "sha512-QJ0TbHlXjb49Q1GJmlAGHBBjD3hKUVUNKwGMtO7vkO4r6bfNl2IlfunY5h9Hjg7tRndfKQAL1VuYsN8k6OpCzg=="],
 
     "@mermaid-js/parser": ["@mermaid-js/parser@2.0.1", "", { "dependencies": { "@chevrotain/types": "~13.2.0" } }, "sha512-j37dj/h6p6pots1L7pLPPNuABEEu9WP4OYg9pW1g+nYG331j0+3canE9OagtYdytYvdSAMG+2fKU5cxep6LgjA=="],
 

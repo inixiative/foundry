@@ -627,31 +627,38 @@ test('a scope-only Signet is no member before a frame, is one after with the fra
   expect(f.service.members(f.thread.id)).toMatchObject([{ listed: false, permissions: [] }]);
 });
 
-test("the owner's scope row with prompt.resolve makes it his client on a thread once it frames in; it never shares the thread", () => {
+// The owner's own client is the recipient Kingdom marks `owner`, never what a row permits: recipients
+// are never restricted, so `full` permits `prompt.resolve` to anyone.
+test("the owner's own client is the recipient Kingdom marks owner: an owner with only thread.read is his client; an outside member with a full row is a member like any other", async () => {
   const f = fixture({ wardens: false, joined: false });
   const owner = {
     ...f.member,
-    resources: [
-      conversationScope({ operations: ['thread.read', 'thread.prompt', 'prompt.resolve'] }),
-    ],
+    recipient: { ...f.member.recipient, audience: 'owner' as const },
+    resources: [conversationGrant({ threadId: f.thread.id, operations: ['thread.read'] })],
   };
   f.snapshot([owner]);
-  expect(f.service.members(f.thread.id)).toEqual([]);
-  const read = f.service.read({
-    type: 'thread.request',
-    requestId: Bun.randomUUIDv7(),
-    signetId: owner.signetId,
-    acceptedRevision: 1,
-    member: { signetId: owner.signetId, displayName: 'JobCo' },
-    threadId: f.thread.id,
-    permissions: ['member.log'],
-    operation: 'thread.read',
-    input: {},
-  });
-  expect(read.ok).toBe(true);
   expect(f.service.members(f.thread.id)).toMatchObject([{ ownerClient: true, outbound: 'auto' }]);
-  f.snapshot([owner]);
+  expect(f.service.summary(f.thread.id)?.members ?? 0).toBe(0);
   expect(f.service.view(f.thread.id).floorFrom).not.toBe('shared');
+  // An outside member granted `full`: not the owner. It shares the thread, its sends follow the
+  // outbound setting, and its words gate at what its frames carried.
+  const outsider = {
+    ...f.member,
+    signetId: Bun.randomUUIDv7(),
+    recipient: { ...f.member.recipient, displayName: 'Outsider' },
+    resources: [conversationGrant({ threadId: f.thread.id, full: true })],
+  };
+  f.snapshot([owner, outsider]);
+  expect(f.service.view(f.thread.id).floorFrom).toBe('shared');
+  const row = f.service.members(f.thread.id).find((m) => m.member.id === outsider.signetId)!;
+  expect(row.ownerClient).toBeUndefined();
+  expect(row.outbound).toBe('review');
+  f.service.setFloor(f.thread.id, 'talk');
+  expect(f.admitNote('run it', outsider, ['member.log']).ok).toBe(true);
+  await f.turn('turn_1', 'ok');
+  const actors = f.service.turnActors(f.thread.id, 'turn_1');
+  expect(actors.map((actor) => actor.member.id)).toEqual([outsider.signetId]);
+  expect(conversationActLevel(actors[0]!.permissions)).toBe('ask');
 });
 
 test('outbound for a member no longer listed is review, whatever the owner set', () => {
@@ -836,8 +843,30 @@ test('a member whose row grants every permission holds nothing before a frame; e
   await f.turn('turn_2', 'go on');
   const second = f.service.turnActors(f.thread.id, 'turn_2');
   expect(conversationActLevel(second[0]!.permissions)).toBe('read');
-  // A snapshot change that does not revoke leaves the turn as its posts were admitted.
-  f.snapshot([{ ...full, revision: 2 }]);
+  // A snapshot change that does not revoke or revise leaves the turn as its posts were admitted.
+  f.snapshot([{ ...full, recipient: { ...full.recipient, displayName: 'JobCo Ltd' } }]);
+  expect(conversationActLevel(f.service.turnActors(f.thread.id, 'turn_2')[0]!.permissions)).toBe(
+    'read',
+  );
+  // Revised mid-turn, still a member: the snapshot passes its last frame, so the next call asks.
+  const revised = { ...full, revision: 2 };
+  f.snapshot([revised]);
+  expect(conversationActLevel(f.service.turnActors(f.thread.id, 'turn_2')[0]!.permissions)).toBe(
+    'ask',
+  );
+  expect(f.service.members(f.thread.id)[0]?.listed).toBe(true);
+  // A new frame under the new revision carrying agent.read restores it.
+  f.service.read({
+    type: 'thread.request',
+    requestId: Bun.randomUUIDv7(),
+    signetId: revised.signetId,
+    acceptedRevision: 2,
+    member: { signetId: revised.signetId, displayName: 'JobCo' },
+    threadId: f.thread.id,
+    permissions: ['agent.read'],
+    operation: 'thread.read',
+    input: {},
+  });
   expect(conversationActLevel(f.service.turnActors(f.thread.id, 'turn_2')[0]!.permissions)).toBe(
     'read',
   );

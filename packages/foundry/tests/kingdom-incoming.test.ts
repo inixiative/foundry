@@ -36,6 +36,7 @@ const request = (over: Partial<HostedSignetRequest>): HostedSignetRequest => ({
       { resourceModel: 'Project', projectId: '00000000-0000-4000-8000-0000000000ff' },
     ],
   },
+  resourceHandles: {},
   reviewUrl: 'https://kingdom.example/dashboard?integration=x&signetRequest=y',
   ...over,
 });
@@ -212,4 +213,29 @@ test('the invite link carries the linked Kingdom Project on that Kingdom, and on
   });
   const global = new URL(inviteUrl('https://kingdom-web.example', here.integrationId, thread));
   expect(global.searchParams.has('projectId')).toBe(false);
+});
+
+// A join request names its thread (`resourceHandles`): the card and Kingdom's review say which one;
+// a thread this Foundry doesn't have is shown by its id, marked unknown, never dropped.
+test('incoming requests name the thread they ask for, and keep one this Foundry does not have', () => {
+  const names = (threadId: string) =>
+    threadId === 'thread_known' ? 'Checkout redesign' : undefined;
+  const known = request({
+    resourceHandles: { '00000000-0000-4000-8000-0000000000cc': 'thread_known' },
+  });
+  const stranger = request({
+    id: '00000000-0000-4000-8000-000000000003',
+    createdAt: '2026-11-01T09:00:00.000Z',
+    resourceHandles: { '00000000-0000-4000-8000-0000000000dd': 'thread_gone' },
+  });
+  const [first, second] = incomingRequests(
+    [{ url: 'https://kingdom-a.example', signetRequests: [known, stranger] }],
+    Date.parse('2026-11-01T12:00:00.000Z'),
+    undefined,
+    names,
+  );
+  expect(first!.threads).toEqual([{ threadId: 'thread_known', name: 'Checkout redesign' }]);
+  expect(new URL(first!.reviewUrl).searchParams.get('threadName')).toBe('Checkout redesign');
+  expect(second!.threads).toEqual([{ threadId: 'thread_gone', unknown: true }]);
+  expect(new URL(second!.reviewUrl).searchParams.has('threadName')).toBe(false);
 });

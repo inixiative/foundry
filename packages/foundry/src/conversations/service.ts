@@ -17,7 +17,6 @@ import {
   type ConversationOutbound,
   type ConversationPermission,
   conversationActLevel,
-  conversationPermissionSchema,
   type HostedSignet,
   type ThreadEntry,
   type ThreadHost,
@@ -306,7 +305,7 @@ export class ConversationService implements ConversationWrapper {
   ): ThreadOutcome<'thread.prompt'> {
     const me = post.member;
     const key = memberKey(me);
-    const outside = me.kind === 'signet' && !this.isOwnerSignet(me.id, thread.id);
+    const outside = me.kind === 'signet' && !this.isOwnerSignet(me.id);
     // A member whose word may not have the agent act freely needs a gate before every tool call
     // (§4.12); a worker without one never hears them, rather than failing at launch.
     if (
@@ -464,7 +463,7 @@ export class ConversationService implements ConversationWrapper {
     if (!thread) return threadRefused('unknown_thread');
     this.noteRevision(frame.signetId, frame.acceptedRevision, thread.id, frame.permissions);
     this.seen.set(seenKey(signetMember(frame.signetId), thread.id), Date.now());
-    const owner = this.isOwnerSignet(frame.signetId, thread.id);
+    const owner = this.isOwnerSignet(frame.signetId);
     const after = Math.max(frame.input.afterSeq ?? 0, owner ? 0 : this.sharedFrom(thread));
     const raw = this.deps.store.journalEntries(thread.id, { after, limit: RAW_READ });
     const reader = { member: signetMember(frame.signetId), permissions: frame.permissions };
@@ -489,7 +488,7 @@ export class ConversationService implements ConversationWrapper {
     if (!thread) return threadRefused('unknown_thread');
     this.noteRevision(frame.signetId, frame.acceptedRevision, thread.id, frame.permissions);
     const journalSeq = this.deps.store.journalSeq(thread.id);
-    const owner = this.isOwnerSignet(frame.signetId, thread.id);
+    const owner = this.isOwnerSignet(frame.signetId);
     const from = owner ? 0 : this.sharedFrom(thread);
     const raw = this.deps.store.journalEntries(thread.id, { newest: true, limit: RAW_READ });
     const reader = { member: signetMember(frame.signetId), permissions: frame.permissions };
@@ -552,7 +551,7 @@ export class ConversationService implements ConversationWrapper {
     const raw = this.deps.store.journalEntries(threadId, { after: from, limit: 10_000 });
     if (!raw.length) return;
     const owners = new Map(
-      views.map((view) => [view.subscriptionId, this.isOwnerSignet(view.signetId, threadId)]),
+      views.map((view) => [view.subscriptionId, this.isOwnerSignet(view.signetId)]),
     );
     for (const row of raw)
       for (const view of views)
@@ -1913,7 +1912,7 @@ export class ConversationService implements ConversationWrapper {
       .phasesOf(threadId, 'member-post-delivered')
       .filter((row) => row.turnId === turnId)
       .map((row) => String(row.record.memberKey))
-      .some((key) => !(key.startsWith('signet:') && this.isOwnerSignet(key.slice(7), threadId)));
+      .some((key) => !(key.startsWith('signet:') && this.isOwnerSignet(key.slice(7))));
     const mirrored = this.deps.store
       .phasesOf(threadId, 'shared-entry-delivered')
       .some((row) => row.turnId === turnId);
@@ -1950,7 +1949,7 @@ export class ConversationService implements ConversationWrapper {
     const taken = posts.filter((post) => post === opener || delivered.includes(postKey(post)));
     const actors = new Map<string, TurnActor>();
     const add = (hostThreadId: string, signetId: string, own?: readonly MemberPostRecord[]) => {
-      if (actors.has(signetId) || this.isOwnerSignet(signetId, hostThreadId)) return;
+      if (actors.has(signetId) || this.isOwnerSignet(signetId)) return;
       actors.set(signetId, this.actorOn(hostThreadId, signetId, own));
     };
     const relayedFrom = new Set<string>();
@@ -1995,8 +1994,8 @@ export class ConversationService implements ConversationWrapper {
   /**
    * One outside member of a conversation as an actor: their name there, and what Kingdom said they
    * hold. With `own`, the posts of theirs the turn took in: only what every one of those posts was
-   * admitted under (the narrowest). Without (their words came relayed), their latest frame. Either
-   * way, only while they are still a member of the thread: read on every gate call, so a revocation
+   * admitted under (the narrowest), and only what the member holds now on top. Without (their words
+   * came relayed), what it holds now. Read on every gate call, so a revocation or a narrower revision
    * mid-turn makes the next call ask.
    */
   private actorOn(
@@ -2012,13 +2011,12 @@ export class ConversationService implements ConversationWrapper {
     const signet = this.deps.hosted().find((candidate) => candidate.signetId === signetId);
     // Revocation only ever makes it stricter: a member gone from the thread holds nothing now.
     const member = !!signet && this.reach(signet, threadId) !== undefined;
-    const permissions = !member
-      ? []
-      : own?.length
-        ? conversationPermissionSchema.options.filter((permission) =>
-            own.every((taken) => taken.permissions?.includes(permission)),
-          )
-        : this.memberPermissions(signetId, threadId);
+    // What it holds now can only narrow what its posts were admitted under: a permission dropped
+    // mid-turn, or a snapshot newer than its last frame, takes effect at the next gate call.
+    const now = member ? this.memberPermissions(signetId, threadId) : [];
+    const permissions = own?.length
+      ? now.filter((permission) => own.every((taken) => taken.permissions?.includes(permission)))
+      : now;
     return {
       member: { kind: 'signet', id: signetId },
       displayName: post?.displayName ?? 'a member',
@@ -2082,15 +2080,6 @@ export class ConversationService implements ConversationWrapper {
     return post
       ? { revision: post.acceptedRevision!, permissions: [...post.permissions!] }
       : undefined;
-  }
-
-  /**
-   * A conversation row that answers the host's prompts: Kingdom allows `prompt.resolve` only to the
-   * thread's owner. A resource row with it makes its holder the owner's client on that thread; a
-   * scope row with it, on every thread Kingdom has let it into.
-   */
-  private ownsConversation(signet: HostedSignet, threadId: string): boolean {
-    return this.reach(signet, threadId, ['prompt.resolve']) !== undefined;
   }
 
   /** Ask the owner to confirm a control his agent was asked for outside his own instruction. */
@@ -2228,13 +2217,15 @@ export class ConversationService implements ConversationWrapper {
   }
 
   /**
-   * The host's own owner reaching his thread from another machine (a conversation row for it that
-   * reaches `prompt.resolve`, which Kingdom allows only to the owner) is not another party: it
-   * doesn't share the thread, and his remote view isn't cut at the share.
+   * The host's own owner reaching his threads from another machine is not another party: it doesn't
+   * share a thread, and his remote view isn't cut at the share. Kingdom says who he is (the
+   * recipient's `audience` is `owner`); what a row permits never does, since recipients are never
+   * restricted (`full` permits `prompt.resolve` to anyone). A Signet the snapshot doesn't list is
+   * never the owner.
    */
-  private isOwnerSignet(signetId: string, threadId: string): boolean {
+  private isOwnerSignet(signetId: string): boolean {
     const signet = this.deps.hosted().find((candidate) => candidate.signetId === signetId);
-    return !!signet && this.ownsConversation(signet, threadId);
+    return !!signet && ownersClient(signet);
   }
 
   /** Whether any listed Signet holds this thread's conversation. */
@@ -2246,10 +2237,7 @@ export class ConversationService implements ConversationWrapper {
   private isShared(threadId: string): boolean {
     return this.deps
       .hosted()
-      .some(
-        (signet) =>
-          !this.ownsConversation(signet, threadId) && this.reach(signet, threadId) !== undefined,
-      );
+      .some((signet) => !ownersClient(signet) && this.reach(signet, threadId) !== undefined);
   }
 
   /**
@@ -2288,9 +2276,7 @@ export class ConversationService implements ConversationWrapper {
       if (
         this.record(thread.id).sharedFromSeq === undefined &&
         hosted.some(
-          (signet) =>
-            !this.ownsConversation(signet, thread.id) &&
-            this.reach(signet, thread.id) !== undefined,
+          (signet) => !ownersClient(signet) && this.reach(signet, thread.id) !== undefined,
         )
       )
         this.sharedFrom(thread);
@@ -2467,8 +2453,8 @@ export class ConversationService implements ConversationWrapper {
    * snapshot doesn't list.
    */
   private outbound(signetId: string, threadId: string): ConversationOutbound {
-    if (this.isOwnerSignet(signetId, threadId)) return 'auto';
     const signet = this.deps.hosted().find((candidate) => candidate.signetId === signetId);
+    if (signet?.recipient.audience === 'owner') return 'auto';
     // A member no longer listed on this thread is reviewed, whatever the owner set for it.
     if (!signet || !this.reach(signet, threadId)) return 'review';
     return (
@@ -2533,7 +2519,7 @@ export class ConversationService implements ConversationWrapper {
         recipientModel: signet.recipient.recipientModel,
         permissions: [],
         outbound: 'review',
-        ...(this.ownsConversation(signet, threadId) ? { ownerClient: true as const } : {}),
+        ...(ownersClient(signet) ? { ownerClient: true as const } : {}),
         ...(reach.standing ? { standing: true as const } : {}),
         revision: signet.revision,
         limits: {
@@ -2874,6 +2860,9 @@ export class ConversationService implements ConversationWrapper {
     }
   }
 }
+
+/** The owner's own client: the recipient Kingdom marks as the integration's owner. */
+const ownersClient = (signet: HostedSignet) => signet.recipient.audience === 'owner';
 
 /** How many journal rows one read or snapshot looks at before it says there is more. */
 const RAW_READ = 5_000;

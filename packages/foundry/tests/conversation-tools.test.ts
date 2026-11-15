@@ -10,6 +10,7 @@ import { ConversationService } from '../src/conversations/service';
 import type { HeldRecord } from '../src/conversations/types';
 import { createFoundryMcp } from '../src/mcp/server';
 import { LocalSessionStore } from '../src/persistence/local-session-store';
+import { KingdomAccessClient } from '../src/providers/kingdom-access-client';
 import { CONVERSATION_TOOL_DESCRIPTION, ConversationTool } from '../src/tools/conversation';
 import {
   KingdomPostTool,
@@ -151,6 +152,8 @@ test('kingdom_post holds the post for the owner before anything leaves, then pos
   const remoteThread = 'thread_remote';
   // The Signet holds two conversations of one host: the post goes to its thread's resource.
   const siblingId = Bun.randomUUIDv7();
+  // Another kind's resource comes without an externalId (Kingdom sends it only for conversations).
+  const issueId = Bun.randomUUIDv7();
   let resourceId = '';
   let integrationId = '';
   const kingdom = mockKingdom({
@@ -165,6 +168,19 @@ test('kingdom_post holds the post for the owner before anything leaves, then pos
           currentRevision: 1,
           remainingRequests: null,
           operations: [
+            {
+              key: 'issues.read',
+              name: 'Read issues',
+              resources: [
+                {
+                  id: issueId,
+                  name: 'Issues',
+                  kind: 'issue',
+                  integrationId,
+                  provider: 'linear',
+                },
+              ],
+            },
             {
               key: 'thread.prompt',
               name: 'Post',
@@ -233,6 +249,13 @@ test('kingdom_post holds the post for the owner before anything leaves, then pos
   });
   // Nothing left: the post waits in the journal and the owner's prompt.
   expect(executions).toHaveLength(0);
+  // Parsing keeps the resource without an externalId beside the conversations.
+  expect(
+    (await new KingdomAccessClient(source).describe()).operations.map((operation) => ({
+      key: operation.key,
+      resources: operation.resources.map((resource) => resource.id),
+    })),
+  ).toEqual([{ key: 'issues.read', resources: [issueId] }]);
   const prompt = f.queue.pending()[0]!;
   expect(prompt.meta?.conversationHeld).toMatchObject({
     kind: 'post',

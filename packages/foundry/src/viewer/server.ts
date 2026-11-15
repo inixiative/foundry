@@ -741,6 +741,10 @@ export function createViewer(config: ViewerConfig) {
     kingdom,
     () => tunnelHolder.tunnel?.token,
     holders,
+    (threadId) => {
+      const thread = directory.get(threadId);
+      return thread ? (threadTitle(thread.meta)?.text ?? thread.id) : undefined;
+    },
   );
   registerDeviceRoutes(app, configStore, config.deviceIdentityPath);
   registerModelRoutes(app, configStore);

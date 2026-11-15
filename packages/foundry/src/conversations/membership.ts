@@ -46,7 +46,7 @@ export function conversationHoldings(signet: HostedSignet): { face: Set<string>;
   for (const grant of signet.resources)
     if (grant.resourceModel !== 'Project' && grant.kind === conversationResourceKind) {
       if (grant.resourceModel === 'Integration') scoped = true;
-      else face.add(grant.externalId);
+      else if (grant.externalId !== undefined) face.add(grant.externalId);
     }
   return { face, scoped };
 }

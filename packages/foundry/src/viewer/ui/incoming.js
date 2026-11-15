@@ -101,6 +101,14 @@ export function RequestView() {
     <div class="request-box">
       <h4>What they want</h4>
       <p>${request.name}</p>
+      ${(request.threads ?? []).map(
+        (t) =>
+          html`<p key=${t.threadId} class="request-thread" data-thread=${t.threadId}>${
+            t.unknown
+              ? html`<i>In</i> thread ${t.threadId} <span class="rp-dim">(not on this Foundry)</span>`
+              : html`<i>In</i> ${t.name}`
+          }</p>`,
+      )}
       <div class="request-terms">
         ${request.full ? html`<span><i>Can</i> do everything it offers</span>` : null}
         ${request.operations.map((op) => html`<span key=${op}><i>Can</i> ${op}</span>`)}

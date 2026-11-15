@@ -12,7 +12,7 @@ import {
   InterventionLog,
   Thread,
 } from '@inixiative/foundry-core';
-import type { ConversationPermission, HostedSignet, RequestAudience } from '@inixiative/signet';
+import type { ConversationPermission, HostedSignet, RecipientAudience } from '@inixiative/signet';
 import type { LocalSessionStore } from '../src/persistence/local-session-store';
 import { pairKingdomIntegration } from '../src/providers/kingdom-pairing';
 import {
@@ -52,7 +52,7 @@ type Grant = {
   ids?: string[];
   operations?: string[];
   permissions?: ConversationPermission[];
-  audience?: RequestAudience;
+  audience?: RecipientAudience;
   /** The owner's outbound setting for the member, set once it is listed (a host setting, §4.5). */
   outbound?: 'review' | 'auto';
 };
@@ -543,6 +543,7 @@ test('a live view: one subscribe answers the snapshot and its journalSeq; append
   const remote = await h.member('Owner remote', {
     permissions: ['member.log'],
     operations: ['thread.prompt', 'thread.read', 'thread.floor', 'prompt.resolve'],
+    audience: 'owner',
   });
   expect((await h.post(own, 'before the stream')).ok).toBe(true);
   const ownView = await h.subscribe(own);
@@ -1022,6 +1023,7 @@ test('the owner reaching his own thread remotely neither shares it nor loses its
   const me = await h.member('Aron elsewhere', {
     permissions: ['member.log'],
     operations: ['thread.prompt', 'thread.read', 'thread.floor', 'prompt.resolve'],
+    audience: 'owner',
   });
   expect(h.conversations.view('main').floorFrom).toBe('default');
   const texts = (await h.read(me)).result.entries.map((entry: { text: string }) => entry.text);
@@ -1152,6 +1154,7 @@ test('a notify report reaches only its author and the owner; the host agent’s 
   const me = await h.member('Aron elsewhere', {
     permissions: ['member.log'],
     operations: ['thread.prompt', 'thread.read', 'thread.floor', 'prompt.resolve'],
+    audience: 'owner',
   });
   await h.ownerSays('kick off');
   h.conversations.send('main', 'Worker', 'Check the logs and tell me only', 'notify');
@@ -1694,6 +1697,7 @@ test("a turn a member's post opened asks before each tool call, naming the membe
   const me = await h.member('Aron elsewhere', {
     permissions: ['member.wake'],
     operations: ['thread.prompt', 'thread.read', 'thread.floor', 'prompt.resolve'],
+    audience: 'owner',
   });
   expect((await h.post(me, 'HOLD from my laptop')).ok).toBe(true);
   await until(() => h.executed.length === 2, 'the owner turn is running');
