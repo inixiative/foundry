@@ -93,8 +93,8 @@ const permissionsParam = (reviewUrl: string) => {
 };
 
 // The review link carries this Foundry's default conversation permissions for the requester's
-// audience, comma-separated under `permissions`: Kingdom's form starts there (Aron 2026-11-14: in-org
-// and outside, something naive).
+// audience, comma-separated under `permissions`: the review opens at what was asked with only the
+// agent's latitude capped, as the old terms did (Aron 2026-11-14: in-org and outside, something naive).
 test('the review link carries the default permissions for the requester audience', () => {
   const [outside, inOrg] = incomingRequests(
     [
@@ -117,15 +117,17 @@ test('the review link carries the default permissions for the requester audience
       ['integration', 'x'],
       ['signetRequest', 'y'],
     ],
-    permissions: 'agent.instruct,agent.read',
+    permissions: 'member.log,member.wake,member.take,member.agent,agent.instruct,agent.read',
   });
-  // Outside: none, an empty value.
-  expect(permissionsParam(outside!.reviewUrl).permissions).toBe('');
-  expect(joiningDefault(undefined, 'outside')).toEqual({ permissions: [], outbound: 'review' });
-  expect(joiningDefault(undefined, 'inOrg')).toEqual({
-    permissions: ['agent.instruct', 'agent.read'],
+  // Outside: everything about taking part, nothing that has the agent take its word.
+  expect(permissionsParam(outside!.reviewUrl).permissions).toBe(
+    'member.log,member.wake,member.take,member.agent',
+  );
+  expect(joiningDefault(undefined, 'outside')).toEqual({
+    permissions: ['member.log', 'member.wake', 'member.take', 'member.agent'],
     outbound: 'review',
   });
+  expect(joiningDefault(undefined, 'inOrg').permissions).not.toContain('agent.act');
 });
 
 // The person's own settings replace the built-in default field by field, per audience.
@@ -137,7 +139,7 @@ test('the review link follows this Foundry conversations.joining setting', () =>
   );
   expect(permissionsParam(listed!.reviewUrl).permissions).toBe('member.log,agent.act');
   expect(joiningDefault({ joining: { inOrg: { outbound: 'auto' } } }, 'inOrg')).toEqual({
-    permissions: ['agent.instruct', 'agent.read'],
+    permissions: joiningDefault(undefined, 'inOrg').permissions,
     outbound: 'auto',
   });
 });

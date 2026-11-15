@@ -165,7 +165,9 @@ export interface FoundryConfig {
   apiTokens?: boolean;
   /**
    * This Foundry's own conversation settings: `joining`, the conversation permissions and outbound
-   * setting someone joining its threads starts with, per audience. A project's floor, conch and the rest are `projects.<id>.conversations`.
+   * setting someone joining its threads starts with, per audience (built in: in your orgs every
+   * permission but `agent.act`; outside `member.log`, `member.wake`, `member.take` and
+   * `member.agent`; outbound `review` for both). A project's floor, conch and the rest are `projects.<id>.conversations`.
    */
   conversations?: FoundryConversationSettings;
   /**

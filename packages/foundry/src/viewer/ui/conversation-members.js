@@ -33,14 +33,9 @@ export const holds = (member, permission) => !!member.permissions?.includes(perm
 export const actLevel = (member) =>
   holds(member, 'agent.act') ? 'full' : holds(member, 'agent.read') ? 'read' : 'ask';
 
-/** How a member reaches the thread when no grant names this conversation. */
-const SCOPE_LABELS = {
-  foundry: ['standing grant', 'It holds a standing grant over every conversation of this Foundry'],
-  conditional: [
-    'conditional grant',
-    "It holds a standing grant over this Foundry's conversations narrowed by a condition only Kingdom checks",
-  ],
-};
+/** A member there through a standing grant over this Foundry's conversations, not one naming this thread. */
+const STANDING_TITLE =
+  "It holds a standing grant over this Foundry's conversations; Kingdom decides which threads it reaches and let it into this one";
 
 const FLOORS = [
   ['talk', 'Talk'],
@@ -124,7 +119,6 @@ function MemberRow({ member, threadId, conch }) {
   const [chosen, setChosen] = useState(null);
   const outbound = chosen ?? member.outbound;
   const outside = member.member.kind === 'signet' && !member.ownerClient;
-  const scope = member.scope ? SCOPE_LABELS[member.scope] : null;
   const setOutbound = async (value) => {
     if (
       await post(`/api/threads/${encodeURIComponent(threadId)}/conversation/outbound`, {
@@ -139,7 +133,7 @@ function MemberRow({ member, threadId, conch }) {
     <span class="conversation-presence" title=${member.present ? 'Here now' : `Last seen ${ago(member.lastSeen)}`}></span>
     <span class="conversation-member-name">${member.displayName}</span>
     ${member.listed ? null : html`<span class="context-bar-chip context-bar-chip--dim" title="Kingdom no longer lists this Signet on the thread (revoked, narrowed, or not yet in a snapshot)">unlisted</span>`}
-    ${scope ? html`<span class="context-bar-chip" data-term="scope" title=${scope[1]}>${scope[0]}</span>` : null}
+    ${member.standing ? html`<span class="context-bar-chip" data-term="standing" title=${STANDING_TITLE}>standing grant</span>` : null}
     ${
       member.listed
         ? html`<span class="context-bar-chip" title="What it reads">${holds(member, 'member.log') ? 'reads the thread' : 'reads its own'}</span>

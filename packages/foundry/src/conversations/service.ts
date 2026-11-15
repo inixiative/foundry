@@ -39,7 +39,7 @@ import {
 import type { TurnAcceptance, TurnRequest } from '../turns/turn-service';
 import type { ProjectSettingsConfig } from '../viewer/config';
 import {
-  type ConversationRow,
+  conversationHoldings,
   conversationRows,
   memberDelivery,
   rowPermissions,
@@ -63,6 +63,7 @@ import {
   type Invitation,
   joiningDefault,
   type LocalMemberRecord,
+  localMemberRecordSchema,
   MAX_HELD_TEXT,
   type MemberPostRecord,
   memberKey,
@@ -174,10 +175,10 @@ export interface ConversationMemberView {
   /** The owner's own remote client (a row that reaches `prompt.resolve`): him, not another party. */
   ownerClient?: true;
   /**
-   * How it reaches this thread when no resource row names the conversation: a standing grant over
-   * every conversation of this Foundry, or one narrowed by a condition only Kingdom evaluates.
+   * It reaches this thread through a standing grant over this Foundry's conversations, not a row
+   * naming this one: Kingdom let it in, and what it holds is what Kingdom sent on its latest frame.
    */
-  scope?: 'foundry' | 'conditional';
+  standing?: true;
   revision?: number;
   limits?: { maxRequests: number | null; expiresAt: string | null };
   present: boolean;
@@ -201,8 +202,16 @@ export class ConversationService implements ConversationWrapper {
   private readonly seen = new Map<string, number>();
   /** The newest revision a frame from each member carried (frames are newer than snapshots, §4.5). */
   private readonly accepted = new Map<string, number>();
-  /** Which members Kingdom relayed a frame from, per thread (`<member key>@<threadId>`). */
-  private readonly framedOn = new Set<string>();
+  /**
+   * The latest frame Kingdom relayed from each member, per thread (`<member key>@<threadId>`): its
+   * revision and the permissions it carried. A member there through a scope row holds these.
+   */
+  private readonly frames = new Map<
+    string,
+    { revision: number; permissions: ConversationPermission[] }
+  >();
+  /** What each listed Signet held on this Foundry's conversations at the previous snapshot. */
+  private held: Map<string, { face: Set<string>; scoped: boolean }> | null = null;
   private readonly open = new Map<string, OpenHeld>();
   /** A raised hand's open prompt, by `<threadId>:<member kind>:<member id>` (§4.8). */
   private readonly hands = new Map<string, OpenHeld>();
@@ -259,7 +268,7 @@ export class ConversationService implements ConversationWrapper {
     const thread = this.deps.thread(frame.threadId);
     const closed = this.closedReason(thread);
     if (closed || !thread) return threadRefused(closed ?? 'unknown_thread');
-    this.noteRevision(signetId, frame.acceptedRevision, thread.id);
+    this.noteRevision(signetId, frame.acceptedRevision, thread.id, permissions);
     // A person's aside (M6): out of the log, to every person and no agent; not admitted as a post.
     if (input.aside) {
       const recorded = this.aside(
@@ -377,7 +386,7 @@ export class ConversationService implements ConversationWrapper {
             : {}),
           ...(post.executionId ? { executionId: post.executionId } : {}),
           ...(post.acceptedRevision !== undefined
-            ? { acceptedRevision: post.acceptedRevision }
+            ? { acceptedRevision: post.acceptedRevision, permissions: [...post.permissions] }
             : {}),
           ...(post.inReplyTo ? { inReplyTo: post.inReplyTo } : {}),
           ...(turnId ? { turnId } : {}),
@@ -458,7 +467,7 @@ export class ConversationService implements ConversationWrapper {
   read(frame: ThreadRequestOf<'thread.read'>): ThreadOutcome<'thread.read'> {
     const thread = this.deps.thread(frame.threadId);
     if (!thread) return threadRefused('unknown_thread');
-    this.noteRevision(frame.signetId, frame.acceptedRevision, thread.id);
+    this.noteRevision(frame.signetId, frame.acceptedRevision, thread.id, frame.permissions);
     this.seen.set(seenKey(signetMember(frame.signetId), thread.id), Date.now());
     const owner = this.isOwnerSignet(frame.signetId, thread.id);
     const after = Math.max(frame.input.afterSeq ?? 0, owner ? 0 : this.sharedFrom(thread));
@@ -483,7 +492,7 @@ export class ConversationService implements ConversationWrapper {
   subscribe(frame: ThreadSubscribeFrame): ThreadOutcome<'thread.subscribe'> {
     const thread = this.deps.thread(frame.threadId);
     if (!thread) return threadRefused('unknown_thread');
-    this.noteRevision(frame.signetId, frame.acceptedRevision, thread.id);
+    this.noteRevision(frame.signetId, frame.acceptedRevision, thread.id, frame.permissions);
     const journalSeq = this.deps.store.journalSeq(thread.id);
     const owner = this.isOwnerSignet(frame.signetId, thread.id);
     const from = owner ? 0 : this.sharedFrom(thread);
@@ -568,7 +577,7 @@ export class ConversationService implements ConversationWrapper {
     const thread = this.deps.thread(frame.threadId);
     const closed = this.closedReason(thread);
     if (closed || !thread) return threadRefused(closed ?? 'unknown_thread');
-    this.noteRevision(frame.signetId, frame.acceptedRevision, thread.id);
+    this.noteRevision(frame.signetId, frame.acceptedRevision, thread.id, frame.permissions);
     const me: ConversationMember = { kind: 'signet', id: frame.signetId };
     const action = frame.input.floor;
     let outcome: ThreadRefusal | null;
@@ -641,7 +650,7 @@ export class ConversationService implements ConversationWrapper {
     const { threadId } = frame;
     const { promptId, answer } = frame.input;
     if (!this.deps.thread(threadId)) return threadRefused('unknown_thread');
-    this.noteRevision(frame.signetId, frame.acceptedRevision, threadId);
+    this.noteRevision(frame.signetId, frame.acceptedRevision, threadId, frame.permissions);
     const queue = this.deps.queue;
     const prompt = queue?.get(promptId);
     if (!queue || !prompt || prompt.status !== 'pending' || prompt.threadId !== threadId)
@@ -1014,7 +1023,7 @@ export class ConversationService implements ConversationWrapper {
           : {}),
         permissions: member.permissions,
         outbound: member.outbound,
-        ...(member.scope ? { scope: member.scope } : {}),
+        ...(member.standing ? { standing: true } : {}),
         ...(member.member.kind === 'signet' && !member.ownerClient ? { outside: true } : {}),
         ...(member.voice ? { local: { voice: member.voice } } : {}),
       })),
@@ -1294,7 +1303,7 @@ export class ConversationService implements ConversationWrapper {
         asidesSinceYourPost: number;
       }
     | undefined {
-    const record = this.deps.store.conversation<ConversationRecord>(threadId);
+    const record = this.stored(threadId);
     if (!record) return undefined;
     const thread = this.deps.thread(threadId);
     const settings = thread ? this.settings(thread, record) : null;
@@ -1392,6 +1401,22 @@ export class ConversationService implements ConversationWrapper {
     if (before)
       for (const signetId of before)
         if (!now.has(signetId) && !dropped.has(signetId)) void this.cancelMember(signetId);
+    // A Signet still listed that stopped being a member of a thread (its row for it gone, and no
+    // scope row left over this Foundry's conversations) is cancelled there; a row replaced by a
+    // scope row keeps its work.
+    const held = new Map(hosted.map((signet) => [signet.signetId, conversationHoldings(signet)]));
+    for (const [signetId, was] of this.held ?? []) {
+      const is = held.get(signetId);
+      if (!is || is.scoped) continue;
+      const lost = new Set(
+        was.scoped
+          ? this.deps.store.conversationThreads().filter((threadId) => !is.face.has(threadId))
+          : [...was.face].filter((threadId) => !is.face.has(threadId)),
+      );
+      if (lost.size) void this.cancelMember(signetId, lost);
+    }
+    for (const id of dropped) if (this.held?.has(id)) held.set(id, this.held.get(id)!);
+    this.held = held;
     this.reconcileShares();
     for (const threadId of this.deps.store.conversationThreads()) this.deps.changed?.(threadId);
   }
@@ -1706,7 +1731,7 @@ export class ConversationService implements ConversationWrapper {
     if (from === to) return true;
     if (seen.has(from)) return false;
     seen.add(from);
-    return (this.deps.store.conversation<ConversationRecord>(from)?.locals ?? []).some((local) =>
+    return (this.stored(from)?.locals ?? []).some((local) =>
       this.reaches(local.threadId, to, seen),
     );
   }
@@ -1725,7 +1750,7 @@ export class ConversationService implements ConversationWrapper {
    * may read through its permissions, keyed by host seq, never its own posts. Then wake who should speak.
    */
   private mirror(hostThreadId: string): void {
-    const record = this.deps.store.conversation<ConversationRecord>(hostThreadId);
+    const record = this.stored(hostThreadId);
     if (!record?.locals?.length) return;
     const host = this.deps.thread(hostThreadId);
     if (!host) return;
@@ -1983,49 +2008,58 @@ export class ConversationService implements ConversationWrapper {
   memberPermissions(signetId: string, threadId: string): ConversationPermission[] {
     const signet = this.deps.hosted().find((candidate) => candidate.signetId === signetId);
     if (!signet || signet.revision < this.acceptedRevision(signetId, threadId)) return [];
-    return rowPermissions(this.reach(signet, threadId)?.rows ?? []);
+    return this.reach(signet, threadId)?.permissions ?? [];
   }
 
   /**
-   * The one membership read (§4.1): the rows of a listed Signet that reach this thread
-   * (`conversationRows`), a conditional scope row counted once Kingdom has relayed a frame from the
-   * Signet for the thread (admission trusts the frame). With `operations`, only when a row permits
-   * one of them. `scope` says how it reaches the thread when no resource row names it: every
-   * conversation of this Foundry (`foundry`), or a standing grant narrowed by a condition only Kingdom
-   * evaluates (`conditional`).
+   * The one membership read (§4.1). A `conversation` resource row for this thread makes a listed
+   * Signet a member, holding that row's permissions (with `operations`, only when a row permits one
+   * of them). A scope row reaches what Kingdom says it reaches, never what the host guesses: a
+   * Signet holding one is a member through Kingdom's latest frame for this thread, holding the
+   * permissions that frame carried, until the snapshot shows a newer revision than the frame's; its
+   * rows' operations only say which calls it may make (`prompt.resolve` for the owner's client).
    */
   private reach(
     signet: HostedSignet,
     threadId: string,
     operations?: readonly ThreadOperation[],
-  ): { rows: ConversationRow[]; scope?: 'foundry' | 'conditional' } | undefined {
-    const { rows, conditional } = conversationRows(signet, threadId);
-    const reaching =
-      conditional.length && this.framed(signet.signetId, threadId)
-        ? [...rows, ...conditional]
-        : rows;
-    if (!reaching.length || (operations && !rowsPermit(reaching, operations))) return undefined;
-    if (reaching.some((row) => row.resourceModel === 'IntegrationResource'))
-      return { rows: reaching };
-    return { rows: reaching, scope: rows.length ? 'foundry' : 'conditional' };
+  ): { permissions: ConversationPermission[]; standing?: true } | undefined {
+    const { face, scoped } = conversationRows(signet, threadId);
+    if (face.length)
+      return !operations || rowsPermit(face, operations)
+        ? { permissions: rowPermissions(face) }
+        : undefined;
+    if (!scoped.length) return undefined;
+    const frame = this.latestFrame(signet.signetId, threadId);
+    if (!frame || signet.revision > frame.revision) return undefined;
+    if (operations && !rowsPermit(scoped, operations)) return undefined;
+    return { permissions: frame.permissions, standing: true };
   }
 
-  /** Whether Kingdom has relayed a frame from this Signet for this thread (now, or a post before a restart). */
-  private framed(signetId: string, threadId: string): boolean {
-    const key = seenKey(signetMember(signetId), threadId);
-    return (
-      this.framedOn.has(key) ||
-      this.deps.store.phasesOf(threadId, 'member-post', {
+  /** Kingdom's latest frame from this Signet for this thread: this run's, or its last post's. */
+  private latestFrame(
+    signetId: string,
+    threadId: string,
+  ): { revision: number; permissions: ConversationPermission[] } | undefined {
+    const live = this.frames.get(seenKey(signetMember(signetId), threadId));
+    if (live) return live;
+    const post = this.deps.store
+      .phasesOf(threadId, 'member-post', {
         key: 'memberKey',
         value: memberKey(signetMember(signetId)),
-      }).length > 0
-    );
+      })
+      .map((row) => row.record as unknown as MemberPostRecord)
+      .filter((record) => record.acceptedRevision !== undefined && record.permissions)
+      .at(-1);
+    return post
+      ? { revision: post.acceptedRevision!, permissions: [...post.permissions!] }
+      : undefined;
   }
 
   /**
-   * A conversation row that answers the host's prompts: Kingdom allows it only to the thread's
-   * owner. A scope row with `prompt.resolve` makes its holder the owner's client on every thread
-   * it reaches.
+   * A conversation row that answers the host's prompts: Kingdom allows `prompt.resolve` only to the
+   * thread's owner. A resource row with it makes its holder the owner's client on that thread; a
+   * scope row with it, on every thread Kingdom has let it into.
    */
   private ownsConversation(signet: HostedSignet, threadId: string): boolean {
     return this.reach(signet, threadId, ['prompt.resolve']) !== undefined;
@@ -2100,8 +2134,33 @@ export class ConversationService implements ConversationWrapper {
   }
 
   private record(threadId: string): ConversationRecord {
-    return this.deps.store.conversation<ConversationRecord>(threadId) ?? emptyConversation();
+    return this.stored(threadId) ?? emptyConversation();
   }
+
+  /**
+   * A thread's stored conversation record, its local members read on the way: one stored in another
+   * shape (before signet 0.18 they carried `terms`) is dropped, logged once, and must be joined again.
+   */
+  private stored(threadId: string): ConversationRecord | undefined {
+    const record = this.deps.store.conversation<ConversationRecord>(threadId);
+    if (!record?.locals?.length) return record;
+    const locals = record.locals.filter((local) => {
+      if (localMemberRecordSchema.safeParse(local).success) return true;
+      const name = String((local as { displayName?: unknown }).displayName ?? local.threadId);
+      const key = `${threadId}:${String(local.threadId)}`;
+      if (!this.droppedLocals.has(key)) {
+        this.droppedLocals.add(key);
+        this.warn(
+          `[conversations] thread ${threadId}: local member ${name} is stored in an older shape and was dropped; join it again`,
+        );
+      }
+      return false;
+    });
+    return locals.length === record.locals.length ? record : { ...record, locals };
+  }
+
+  private readonly droppedLocals = new Set<string>();
+  private readonly warn = (message: string) => (this.deps.log ?? console.warn)(message);
 
   private save(thread: Thread, record: ConversationRecord): void {
     this.deps.store.saveConversation(thread, record);
@@ -2347,9 +2406,16 @@ export class ConversationService implements ConversationWrapper {
   }
 
   /** A newer revision than the snapshot has: the member reads as holding nothing until it catches up. */
-  private noteRevision(signetId: string, revision: number, threadId: string): void {
+  private noteRevision(
+    signetId: string,
+    revision: number,
+    threadId: string,
+    permissions: readonly ConversationPermission[],
+  ): void {
     if ((this.accepted.get(signetId) ?? 0) < revision) this.accepted.set(signetId, revision);
-    this.framedOn.add(seenKey(signetMember(signetId), threadId));
+    const key = seenKey(signetMember(signetId), threadId);
+    if ((this.frames.get(key)?.revision ?? 0) <= revision)
+      this.frames.set(key, { revision, permissions: [...permissions] });
   }
 
   /** The newest revision any frame from this member carried, kept in the journal across restarts. */
@@ -2374,12 +2440,13 @@ export class ConversationService implements ConversationWrapper {
    */
   private outbound(signetId: string, threadId: string): ConversationOutbound {
     if (this.isOwnerSignet(signetId, threadId)) return 'auto';
-    const set = this.record(threadId).outbound?.[memberKey(signetMember(signetId))];
-    if (set) return set;
     const signet = this.deps.hosted().find((candidate) => candidate.signetId === signetId);
-    return signet
-      ? joiningDefault(this.deps.joining?.(), signet.recipient.audience).outbound
-      : 'review';
+    // A member no longer listed on this thread is reviewed, whatever the owner set for it.
+    if (!signet || !this.reach(signet, threadId)) return 'review';
+    return (
+      this.record(threadId).outbound?.[memberKey(signetMember(signetId))] ??
+      joiningDefault(this.deps.joining?.(), signet.recipient.audience).outbound
+    );
   }
 
   /**
@@ -2405,7 +2472,7 @@ export class ConversationService implements ConversationWrapper {
         .filter((view) => view.threadId === threadId && this.cursors.has(view.subscriptionId))
         .map((view) => memberKey(signetMember(view.signetId))),
     );
-    const record = this.deps.store.conversation<ConversationRecord>(threadId);
+    const record = this.stored(threadId);
     const now = Date.now();
     const holder = record?.invitations.find(
       (invitation) =>
@@ -2439,7 +2506,7 @@ export class ConversationService implements ConversationWrapper {
         permissions: [],
         outbound: 'review',
         ...(this.ownsConversation(signet, threadId) ? { ownerClient: true as const } : {}),
-        ...(reach.scope ? { scope: reach.scope } : {}),
+        ...(reach.standing ? { standing: true as const } : {}),
         revision: signet.revision,
         limits: {
           maxRequests: signet.maxRequests,
@@ -2738,9 +2805,10 @@ export class ConversationService implements ConversationWrapper {
   }
 
   /** A member revoked mid-conversation: its queued turns and unread notes are cancelled (§5.7). */
-  private async cancelMember(signetId: string): Promise<void> {
+  private async cancelMember(signetId: string, only?: ReadonlySet<string>): Promise<void> {
     const turns = this.deps.turns();
     for (const threadId of this.deps.store.conversationThreads()) {
+      if (only && !only.has(threadId)) continue;
       const thread = this.deps.thread(threadId);
       if (!thread) continue;
       const settled = new Set([

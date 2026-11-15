@@ -17,30 +17,39 @@ import {
 export type ConversationRow = Exclude<SignetGrant, { resourceModel: 'Project' }>;
 
 /**
- * Which of a Signet's rows reach thread T (Aron, 2026-11-14: a conversation is an integration
- * resource, one per shared thread, its `externalId` the thread's id; per-conversation is the usual
- * grant, "but if you want to, you can do project-scoped, the whole Foundry, or the whole integration
- * level"). The snapshot lists only rows on this Foundry's own integrations (signet
- * `hostedSignetSchema`). `rows` reach T on their face: a `conversation` resource row for T, or a
- * `conversation` scope row over the integration. `conditional` are scope rows over this Foundry's
- * conversations the host cannot evaluate, narrowed to a Kingdom project or by a `where`:
- * Kingdom decides them at admission and a holder never gates on them, so they reach T only once
- * Kingdom has relayed a frame from the Signet for T.
+ * A Signet's rows on this Foundry's conversations, for thread T (Aron, 2026-11-14: a conversation is
+ * an integration resource, one per shared thread, its `externalId` the thread's id; per-conversation
+ * is the usual grant, "but if you want to, you can do project-scoped, the whole Foundry, or the
+ * whole integration level"). The snapshot lists only rows on this Foundry's own integrations (signet
+ * `hostedSignetSchema`). `face` reach T on their face: `conversation` resource rows for T. `scoped`
+ * are `conversation` scope rows: what a scope row reaches is Kingdom's to answer (its project, its
+ * `where`, its lens), never the host's, so a scope row reaches T only through a frame Kingdom
+ * relayed for T, and the host never reads permissions off it.
  */
 export function conversationRows(
   signet: HostedSignet,
   threadId: string,
-): { rows: ConversationRow[]; conditional: ConversationRow[] } {
-  const rows: ConversationRow[] = [];
-  const conditional: ConversationRow[] = [];
+): { face: ConversationRow[]; scoped: ConversationRow[] } {
+  const face: ConversationRow[] = [];
+  const scoped: ConversationRow[] = [];
   for (const grant of signet.resources) {
     if (grant.resourceModel === 'Project' || grant.kind !== conversationResourceKind) continue;
-    if (grant.resourceModel === 'IntegrationResource') {
-      if (grant.externalId === threadId) rows.push(grant);
-    } else if (grant.projectId === undefined && grant.where === undefined) rows.push(grant);
-    else conditional.push(grant);
+    if (grant.resourceModel === 'Integration') scoped.push(grant);
+    else if (grant.externalId === threadId) face.push(grant);
   }
-  return { rows, conditional };
+  return { face, scoped };
+}
+
+/** The threads a Signet's `conversation` resource rows name, and whether it holds a scope row. */
+export function conversationHoldings(signet: HostedSignet): { face: Set<string>; scoped: boolean } {
+  const face = new Set<string>();
+  let scoped = false;
+  for (const grant of signet.resources)
+    if (grant.resourceModel !== 'Project' && grant.kind === conversationResourceKind) {
+      if (grant.resourceModel === 'Integration') scoped = true;
+      else face.add(grant.externalId);
+    }
+  return { face, scoped };
 }
 
 export const rowScope = (row: ConversationRow): OperationScope =>

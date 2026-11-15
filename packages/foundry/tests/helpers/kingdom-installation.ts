@@ -78,15 +78,15 @@ export const conversationScope = (
 });
 
 /**
- * What a hosted Signet holds on a thread's conversation, as Kingdom relays it on every frame: every
- * row that reaches the thread, a conditional scope row included (Kingdom admitted the frame).
+ * What a hosted Signet holds on a thread's conversation, as this mock Kingdom relays it on every
+ * frame: every row that reaches the thread, a scope row included (Kingdom decides what it reaches).
  */
 export const permissionsOf = (
   signet: HostedSignet,
   threadId = 'main',
 ): ConversationPermission[] => {
-  const { rows, conditional } = conversationRows(signet, threadId);
-  return rowPermissions([...rows, ...conditional]);
+  const { face, scoped } = conversationRows(signet, threadId);
+  return rowPermissions([...face, ...scoped]);
 };
 
 /** The same Signet revised to hold `permissions` beside its calls on each conversation row. */

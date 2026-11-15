@@ -38,8 +38,8 @@ export interface RosterMember {
   outbound: 'review' | 'auto';
   /** An outside party: what its words are and what you may do on them are listed (§4.12). */
   outside?: boolean;
-  /** It reaches this thread through a standing grant, not one naming this conversation. */
-  scope?: 'foundry' | 'conditional';
+  /** It reaches this thread through a standing grant over this Foundry's conversations. */
+  standing?: boolean;
   /** One of the owner's own agents on this machine (a local member), with its voice. */
   local?: { voice: 'speaking' | 'listening' };
 }
@@ -96,12 +96,8 @@ const ACT: Record<ConversationActLevel, string> = {
 export const quotedName = (name: string) =>
   JSON.stringify(name.replace(/\s+/g, ' ').trim().slice(0, 200) || 'a member');
 
-const SCOPE: Record<NonNullable<RosterMember['scope']>, string> = {
-  foundry:
-    '  - it holds a standing grant over every conversation of this Foundry, not one naming this thread',
-  conditional:
-    "  - it holds a standing grant over this Foundry's conversations narrowed by a condition only Kingdom checks; it is listed here because Kingdom let it into this one",
-};
+const STANDING =
+  "  - it holds a standing grant over this Foundry's conversations, not one naming this thread; Kingdom decides which threads it reaches and let it into this one";
 
 function memberLines(member: RosterMember): string[] {
   const permissions = member.permissions;
@@ -120,7 +116,7 @@ function memberLines(member: RosterMember): string[] {
     ];
   return [
     `- ${name}`,
-    ...(member.scope ? [SCOPE[member.scope]] : []),
+    ...(member.standing ? [STANDING] : []),
     `  - sees: ${VIEW[memberReads(permissions)]}`,
     `  - its posts arrive: ${DELIVERY[memberDelivery(permissions)]}`,
     `  - what you send it (send_to_member): ${member.outbound === 'auto' ? 'leaves at once' : "held for the owner's review before it leaves"}`,

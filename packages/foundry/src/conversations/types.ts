@@ -75,17 +75,25 @@ export const foundryConversationSettingsSchema = z.strictObject({
 export type FoundryConversationSettings = z.infer<typeof foundryConversationSettingsSchema>;
 
 /**
- * Proposals: someone in your orgs directs the agent and it may read for them; someone outside is
- * data and every call asks. Sends to either wait for the owner's review. Each person still dials
- * their own Signet in the review.
+ * Where a review opens: at what was asked, with only the agent's latitude capped, as the old terms
+ * did (an unset term was at its widest). Someone in your orgs may direct the agent and have it read,
+ * not act; someone outside is data and every call asks. Sends to either wait for the owner's review.
+ * Each person still dials their own Signet in the review.
  */
 export const DEFAULT_JOINING: Readonly<Record<RequestAudience, Required<Joining>>> = Object.freeze({
   inOrg: Object.freeze({
-    permissions: ['agent.instruct', 'agent.read'] as ConversationPermission[],
+    permissions: conversationPermissionSchema.options.filter(
+      (permission) => permission !== 'agent.act',
+    ),
     outbound: 'review' as const,
   }),
   outside: Object.freeze({
-    permissions: [] as ConversationPermission[],
+    permissions: [
+      'member.log',
+      'member.wake',
+      'member.take',
+      'member.agent',
+    ] as ConversationPermission[],
     outbound: 'review' as const,
   }),
 });
@@ -242,6 +250,17 @@ export interface LocalMemberRecord {
   wokenSeq?: number;
 }
 
+/** A stored local member, read when its conversation record is: one in another shape is dropped. */
+export const localMemberRecordSchema = z.object({
+  threadId: z.string().min(1),
+  displayName: z.string(),
+  permissions: z.array(conversationPermissionSchema),
+  joinedAt: z.string(),
+  fromSeq: z.number().int(),
+  mirroredSeq: z.number().int().optional(),
+  wokenSeq: z.number().int().optional(),
+}) satisfies z.ZodType<LocalMemberRecord>;
+
 /**
  * The host's log mirrored into a local member's own thread (phase `shared-entry`, CONVERSATIONS.md
  * §4.10): one row per host entry it may read, keyed by the host's journal seq, never admitted, exempt
@@ -326,6 +345,8 @@ export interface MemberPostRecord {
   executionId?: string;
   /** The grant revision the post's frame carried (a Signet member's post). */
   acceptedRevision?: number;
+  /** The conversation permissions that frame carried: what a member there by a scope row holds. */
+  permissions?: ConversationPermission[];
   inReplyTo?: string;
   /** The turn the post opened (`delivery: 'turn'`). */
   turnId?: string;

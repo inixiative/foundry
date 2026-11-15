@@ -1,4 +1,4 @@
-import { afterEach, expect, test } from 'bun:test';
+import { afterEach, expect, spyOn, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -11,7 +11,12 @@ import {
   type LLMProvider,
   Thread,
 } from '@inixiative/foundry-core';
-import type { ConversationPermission, HostedSignet, ThreadRequestOf } from '@inixiative/signet';
+import {
+  type ConversationPermission,
+  conversationActLevel,
+  type HostedSignet,
+  type ThreadRequestOf,
+} from '@inixiative/signet';
 import { ProjectRegistry } from '../src/agents/project';
 import { buildAgents, ThreadFactory } from '../src/agents/thread-factory';
 import { ThreadRuntimeManager } from '../src/agents/thread-runtime';
@@ -546,68 +551,58 @@ test('membership is a conversation row whose externalId is the thread; a revisio
   ]);
 });
 
-test('a scope row over the integration reaches every conversation; a scope row with a where or a project waits for a frame; resource and scope rows hold the union', async () => {
+// Signet README: "What a row reaches is Kingdom's to answer". The host never evaluates a scope row:
+// a Signet holding one is a member of a thread only through Kingdom's latest frame for it.
+test('a resource row and a full scope row: host paths read the resource row only, never the scope row; the turn asks', async () => {
   const f = fixture({ wardens: false, joined: false });
-  const scoped = {
-    ...f.member,
-    resources: [conversationScope({ permissions: ['member.log'] })],
-  };
-  f.snapshot([scoped]);
-  expect(f.service.wraps(f.thread.id)).toBe(true);
-  expect(f.service.members(f.thread.id)).toMatchObject([
-    { listed: true, scope: 'foundry', permissions: ['member.log'] },
-  ]);
-  await f.turn('turn_1', 'who is here?');
-  expect(f.lastSystem()).toContain(
-    '  - it holds a standing grant over every conversation of this Foundry, not one naming this thread',
-  );
-  // Union: a resource row for the thread and the scope row together.
   const both = {
-    ...scoped,
-    revision: 2,
+    ...f.member,
     resources: [
-      ...scoped.resources,
-      conversationGrant({ threadId: f.thread.id, permissions: ['agent.instruct'] }),
+      conversationGrant({ threadId: f.thread.id, operations: ['thread.prompt'] }),
+      conversationScope({ full: true }),
     ],
   };
   f.snapshot([both]);
-  const [member] = f.service.members(f.thread.id);
-  expect(member?.permissions).toEqual(['member.log', 'agent.instruct']);
-  expect(member?.scope).toBeUndefined();
-  // A scope row narrowed by a condition only Kingdom evaluates: not a member on its face.
-  const conditional = {
-    ...f.member,
-    revision: 3,
-    resources: [
-      conversationScope({
-        permissions: ['member.take'],
-        where: { field: 'text', operator: 'contains', value: 'ok' },
-      }),
-    ],
-  };
-  f.snapshot([conditional]);
-  expect(f.service.members(f.thread.id)).toEqual([]);
-  // Kingdom admits a frame from it for this thread: from then on it is a member, shown as standing.
   f.service.setFloor(f.thread.id, 'talk');
-  expect(f.admitNote('ok, I am in', conditional).ok).toBe(true);
-  expect(f.service.members(f.thread.id)).toMatchObject([
-    { listed: true, scope: 'conditional', permissions: ['member.take'] },
-  ]);
-  await f.turn('turn_2', 'and now?');
-  expect(f.lastSystem()).toContain(
-    "  - it holds a standing grant over this Foundry's conversations narrowed by a condition only Kingdom checks",
-  );
-  // A project-scoped row is conditional too.
-  const project = {
-    ...f.member,
-    signetId: Bun.randomUUIDv7(),
-    resources: [conversationScope({ projectId: Bun.randomUUIDv7() })],
-  };
-  f.snapshot([conditional, project]);
-  expect(f.service.members(f.thread.id).map((m) => m.member.id)).toEqual([f.member.signetId]);
+  // Kingdom relays what it admitted: here, nothing beyond the call.
+  const frame = { ...both, resources: [conversationGrant({ threadId: f.thread.id })] };
+  expect(f.admitNote('please delete the branch', frame).ok).toBe(true);
+  expect(f.service.members(f.thread.id)[0]?.permissions).toEqual([]);
+  await f.turn('turn_1', 'what came in?');
+  const actors = f.service.turnActors(f.thread.id, 'turn_1');
+  expect(actors).toMatchObject([{ permissions: [] }]);
+  expect(conversationActLevel(actors[0]!.permissions)).toBe('ask');
 });
 
-test("a scope row with prompt.resolve is the owner's own client on every thread; a resource row with it only on its own", () => {
+test('a scope-only Signet is no member before a frame, is one after with the frame permissions, and lapses when the snapshot revision passes the frame', () => {
+  const f = fixture({ wardens: false, joined: false });
+  const scoped = {
+    ...f.member,
+    resources: [conversationScope({ permissions: ['member.log', 'agent.act'] })],
+  };
+  f.snapshot([scoped]);
+  expect(f.service.members(f.thread.id)).toEqual([]);
+  expect(f.service.wraps(f.thread.id)).toBe(false);
+  // A whole-Foundry scope row from someone else marks nothing shared.
+  expect(f.service.view(f.thread.id).floorFrom).not.toBe('shared');
+  f.service.setFloor(f.thread.id, 'talk');
+  const frame = {
+    ...scoped,
+    resources: [conversationGrant({ threadId: f.thread.id, permissions: ['member.log'] })],
+  };
+  expect(f.admitNote('in through the standing grant', frame).ok).toBe(true);
+  expect(f.service.members(f.thread.id)).toMatchObject([
+    { listed: true, standing: true, permissions: ['member.log'] },
+  ]);
+  expect(f.service.roster(f.thread.id)).toContain(
+    "  - it holds a standing grant over this Foundry's conversations, not one naming this thread",
+  );
+  // Kingdom revises the Signet: until a new frame, the old frame no longer speaks for it.
+  f.snapshot([{ ...scoped, revision: 2 }]);
+  expect(f.service.members(f.thread.id)).toMatchObject([{ listed: false, permissions: [] }]);
+});
+
+test("the owner's scope row with prompt.resolve makes it his client on a thread once it frames in; it never shares the thread", () => {
   const f = fixture({ wardens: false, joined: false });
   const owner = {
     ...f.member,
@@ -616,23 +611,82 @@ test("a scope row with prompt.resolve is the owner's own client on every thread;
     ],
   };
   f.snapshot([owner]);
+  expect(f.service.members(f.thread.id)).toEqual([]);
+  const read = f.service.read({
+    type: 'thread.request',
+    requestId: Bun.randomUUIDv7(),
+    signetId: owner.signetId,
+    acceptedRevision: 1,
+    member: { signetId: owner.signetId, displayName: 'JobCo' },
+    threadId: f.thread.id,
+    permissions: ['member.log'],
+    operation: 'thread.read',
+    input: {},
+  });
+  expect(read.ok).toBe(true);
   expect(f.service.members(f.thread.id)).toMatchObject([{ ownerClient: true, outbound: 'auto' }]);
-  // The owner's own client does not share the thread.
+  f.snapshot([owner]);
   expect(f.service.view(f.thread.id).floorFrom).not.toBe('shared');
-  const other = {
-    ...f.member,
-    revision: 2,
-    resources: [
-      conversationGrant({
-        threadId: 'other-thread',
-        operations: ['thread.read', 'prompt.resolve'],
-      }),
-      conversationGrant({ threadId: f.thread.id }),
-    ],
-  };
-  f.snapshot([other]);
-  expect(f.service.members(f.thread.id)[0]?.ownerClient).toBeUndefined();
-  expect(f.service.view(f.thread.id).floorFrom).toBe('shared');
+});
+
+test('outbound for a member no longer listed is review, whatever the owner set', () => {
+  const f = fixture({ wardens: false });
+  f.service.setFloor(f.thread.id, 'talk');
+  expect(f.note('hello').ok).toBe(true);
+  f.service.setOutbound(f.thread.id, f.member.signetId, 'auto');
+  expect(f.service.members(f.thread.id)[0]?.outbound).toBe('auto');
+  f.snapshot([]);
+  expect(f.service.members(f.thread.id)[0]).toMatchObject({ listed: false, outbound: 'review' });
+  expect(f.service.send(f.thread.id, f.member.signetId, 'still there?')).toContain('Held');
+});
+
+test('a Signet that stops being a member of a thread has its undelivered notes cancelled there; one moved to a scope row keeps them', () => {
+  const f = fixture({ wardens: false });
+  f.snapshot([f.member]);
+  f.service.setFloor(f.thread.id, 'talk');
+  expect(f.note('kept for later').ok).toBe(true);
+  expect(f.service.summary(f.thread.id)?.unread).toBe(1);
+  // The row for this thread becomes a scope row: still a possible member, the note stays.
+  f.snapshot([{ ...f.member, revision: 2, resources: [conversationScope()] }]);
+  expect(f.service.summary(f.thread.id)?.unread).toBe(1);
+  // Now its only row names another thread: it is gone from this one, and the note is withdrawn.
+  f.snapshot([
+    { ...f.member, revision: 3, resources: [conversationGrant({ threadId: 'other-thread' })] },
+  ]);
+  expect(f.service.summary(f.thread.id)?.unread).toBe(0);
+  expect(f.store.phasesOf(f.thread.id, 'member-post-withdrawn')).toHaveLength(1);
+});
+
+test('a local member stored in the old shape is dropped with one logged line; members, the roster, the mirror and a wake still run', async () => {
+  const f = fixture({ wardens: false });
+  const warn = spyOn(console, 'warn').mockImplementation(() => {});
+  try {
+    f.store.saveConversation(f.thread, {
+      invitations: [],
+      requests: [],
+      settings: {},
+      locals: [
+        {
+          threadId: 'thread_old',
+          displayName: 'Old Codex',
+          terms: { view: 'thread', delivery: 'turn', floor: { mayTake: false } },
+          joinedAt: new Date().toISOString(),
+          fromSeq: 0,
+        },
+      ],
+    });
+    expect(f.service.members(f.thread.id).some((m) => m.member.kind === 'local')).toBe(false);
+    expect(f.service.roster(f.thread.id)).not.toContain('Old Codex');
+    f.service.pump(f.thread.id);
+    f.service.turnSettled('thread_old');
+    await f.turn('turn_1', 'still fine');
+    const lines = warn.mock.calls.map((call) => String(call[0]));
+    expect(lines.filter((line) => line.includes('Old Codex'))).toEqual([
+      `[conversations] thread ${f.thread.id}: local member Old Codex is stored in an older shape and was dropped; join it again`,
+    ]);
+  } finally {
+    warn.mockRestore();
+  }
 });
 
 test('each permission maps to the fact it replaced: log the whole view, wake a turn, agent an agent, instruct and the act level', async () => {
