@@ -371,12 +371,14 @@ export function RightPanel({ onSpanSelect }) {
   const facts = tabFacts(tab, threadId);
   return html`<div class="right-panel detail-drawer">
     <header class="rp-band">
-      <div class="rp-band-row">
-        <span class="rp-eyebrow" title="This thread's reference">${threadData.value.meta?.projectId ? `Project: ${projectLabel(threadData.value.meta.projectId)}` : 'Global'}</span>
+      <div class="rp-band-row rp-head-row">
+        <div class="rp-head-text">
+          <span class="rp-eyebrow" title="This thread's reference">${threadData.value.meta?.projectId ? `Project: ${projectLabel(threadData.value.meta.projectId)}` : 'Global'}</span>
+          <h2 class="rp-title">${TAB_LABELS[tab]}</h2>
+          ${facts.info ? html`<div class="rp-info">${facts.info}</div>` : null}
+        </div>
         <${SizeControls} side="right" />
       </div>
-      <h2 class="rp-title">${TAB_LABELS[tab]}</h2>
-      ${facts.info ? html`<div class="rp-info">${facts.info}</div>` : null}
       <nav class="rp-tabs" role="tablist" aria-label="Thread reference">
         ${RIGHT_TABS.map((t) => {
           return html`<button key=${t} role="tab" aria-selected=${t === tab}

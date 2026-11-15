@@ -72,14 +72,20 @@ test('panel sizes step with [ { ] }; hidden keeps its column at 0 with a restore
           els.map((el) => (el.classList.contains('size-btn--larger') ? 'larger' : 'smaller')),
         );
     expect(await order('left')).toEqual(['smaller', 'larger']);
-    expect((await order('right')).slice(0, 2)).toEqual(['larger', 'smaller']);
-    // Beside the rail's tabs the left pair stacks, narrow above widen, to take one button's width.
-    const leftBoxes = await page
-      .locator('.rail-head-row .size-btn')
-      .evaluateAll((els: Element[]) => els.map((el) => el.getBoundingClientRect().toJSON()));
-    expect(leftBoxes).toHaveLength(2);
-    expect(leftBoxes[1].top).toBeGreaterThanOrEqual(leftBoxes[0].bottom);
-    expect(leftBoxes[1].left).toBe(leftBoxes[0].left);
+    expect(await order('right')).toEqual(['smaller', 'larger']);
+    // Both panels stack the pair the same way, narrow above widen, in one button's width, from the
+    // same height.
+    const tops: number[] = [];
+    for (const head of ['.rail-head-row', '.rp-head-row']) {
+      const boxes = await page
+        .locator(`${head} .size-btn`)
+        .evaluateAll((els: Element[]) => els.map((el) => el.getBoundingClientRect().toJSON()));
+      expect(boxes).toHaveLength(2);
+      expect(boxes[1].top).toBeGreaterThanOrEqual(boxes[0].bottom);
+      expect(boxes[1].left).toBe(boxes[0].left);
+      tops.push(boxes[0].top);
+    }
+    expect(tops[0]).toBe(tops[1]);
     // And resizes that way.
     const right = async () => Number.parseFloat((await columns()).split(' ').at(-1)!);
     const before = await right();
