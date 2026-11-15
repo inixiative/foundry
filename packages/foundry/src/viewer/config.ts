@@ -1973,9 +1973,21 @@ export function capacityKingdomProject(
   project: Pick<ProjectSettingsConfig, 'kingdomCapacity' | 'kingdomProject'>,
 ): string | undefined {
   const capacity = project.kingdomCapacity;
+  return capacity ? kingdomProjectOn(config, project, capacity.kingdom) : undefined;
+}
+
+/**
+ * The Kingdom project this Foundry project links to (`kingdomProject`), when that link is on the
+ * paired Kingdom `kingdom` names (its id or API origin); undefined otherwise.
+ */
+export function kingdomProjectOn(
+  config: Pick<FoundryConfig, 'kingdomIntegrations'>,
+  project: Pick<ProjectSettingsConfig, 'kingdomProject'>,
+  kingdom: string,
+): string | undefined {
   const link = project.kingdomProject;
-  if (!capacity || !link) return undefined;
-  const url = (kingdom: string) =>
-    selectKingdomIntegration(config.kingdomIntegrations, kingdom).url;
-  return url(link.kingdom) === url(capacity.kingdom) ? link.projectId : undefined;
+  if (!link) return undefined;
+  const url = (selector: string) =>
+    selectKingdomIntegration(config.kingdomIntegrations, selector).url;
+  return url(link.kingdom) === url(kingdom) ? link.projectId : undefined;
 }

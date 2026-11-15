@@ -1,6 +1,9 @@
 import { expect, test } from 'bun:test';
 import type { HostedSignetRequest } from '@inixiative/signet';
 import { joiningDefault, validateFoundryConversationSettings } from '../src/conversations/types';
+import { kingdomIntegrationId } from '../src/providers/kingdom-installation-connection';
+import { kingdomProjectOn } from '../src/viewer/config';
+import { inviteUrl } from '../src/viewer/routes/conversations';
 import { incomingRequests } from '../src/viewer/routes/kingdom';
 
 const request = (over: Partial<HostedSignetRequest>): HostedSignetRequest => ({
@@ -177,4 +180,36 @@ test('this Foundry conversations takes joining only, and names where project key
       joining: { outside: { permissions: ['agent.everything'] } },
     }),
   ).toThrow();
+});
+
+// The invite link (CONVERSATIONS.md, F1 as built) names the Kingdom Project a thread's project links
+// to on that Kingdom, so Kingdom creates the conversation resource in it; a global thread, or a
+// project linked elsewhere or not at all, carries none.
+test('the invite link carries the linked Kingdom Project on that Kingdom, and only then', () => {
+  const owner = 'User:00000000-0000-4000-8000-0000000000aa::';
+  const here = {
+    url: 'https://kingdom-a.example',
+    integrationId: '00000000-0000-4000-8000-0000000000a1',
+    owner,
+    signetId: '00000000-0000-4000-8000-0000000000a2',
+  };
+  const there = { ...here, url: 'https://kingdom-b.example' };
+  const config = { kingdomIntegrations: [here, there] };
+  const projectId = '00000000-0000-4000-8000-0000000000f1';
+  const linked = { kingdomProject: { kingdom: kingdomIntegrationId(here), projectId } };
+  expect(kingdomProjectOn(config, linked, kingdomIntegrationId(here))).toBe(projectId);
+  expect(kingdomProjectOn(config, linked, kingdomIntegrationId(there))).toBeUndefined();
+  expect(kingdomProjectOn(config, {}, kingdomIntegrationId(here))).toBeUndefined();
+  const thread = { threadId: 'thread_1', threadName: 'Hiring' };
+  const withProject = new URL(
+    inviteUrl('https://kingdom-web.example', here.integrationId, { ...thread, projectId }),
+  );
+  expect(Object.fromEntries(withProject.searchParams)).toEqual({
+    grantThreads: here.integrationId,
+    threadId: 'thread_1',
+    threadName: 'Hiring',
+    projectId,
+  });
+  const global = new URL(inviteUrl('https://kingdom-web.example', here.integrationId, thread));
+  expect(global.searchParams.has('projectId')).toBe(false);
 });

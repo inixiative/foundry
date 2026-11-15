@@ -1356,6 +1356,7 @@ export class ConversationService implements ConversationWrapper {
     return {
       threadId,
       name: hostName(thread),
+      projectId: thread.meta.projectId ?? null,
       conversation: this.wraps(threadId),
       settings,
       floorFrom,

@@ -19,7 +19,7 @@ import {
   type KingdomIntegration,
   kingdomIntegrationId,
 } from '../../providers/kingdom-installation-connection';
-import type { ConfigStore } from '../config';
+import { type ConfigStore, kingdomProjectOn } from '../config';
 import { readRepositorySettings } from '../config-resolve';
 
 const floorBody = z.strictObject({ mode: floorModeSchema.nullable() });
@@ -52,19 +52,21 @@ const answerBody = z.strictObject({
 
 /**
  * Where the owner invites a party into a thread (§5.5 path 1): Kingdom's grant form, pre-filled with
- * the Foundry integration, the thread and its name. Kingdom creates the thread's `conversation`
- * resource from them when the owner grants; Foundry registers no resource itself.
+ * the Foundry integration, the thread, its name and, when the thread's project links to a Kingdom
+ * Project on this Kingdom, that project. Kingdom creates the thread's `conversation` resource from
+ * them when the owner grants, in that project (a project-scoped grant is made at the row that puts
+ * a resource in a project, Aron 2026-11-14); Foundry registers no resource itself.
  */
 export function inviteUrl(
   webUrl: string,
   integrationId: string,
-  threadId: string,
-  threadName: string,
+  thread: { threadId: string; threadName: string; projectId?: string },
 ): string {
   const url = new URL('/dashboard', webUrl);
   url.searchParams.set('grantThreads', integrationId);
-  url.searchParams.set('threadId', threadId);
-  url.searchParams.set('threadName', threadName);
+  url.searchParams.set('threadId', thread.threadId);
+  url.searchParams.set('threadName', thread.threadName);
+  if (thread.projectId) url.searchParams.set('projectId', thread.projectId);
   return url.toString();
 }
 
@@ -90,15 +92,24 @@ export function registerConversationRoutes(
     const threadId = c.req.param('threadId');
     const result = await guard(async () => {
       const view = conversations.view(threadId);
+      const config = await configStore.load();
+      const project = view.projectId ? config.projects[view.projectId] : undefined;
       const invites = await Promise.all(
         (await kingdom.integrations()).map(async (integration) => {
           const described = await kingdom.holders.get(integration, 1_500);
+          const projectId = project
+            ? kingdomProjectOn(config, project, kingdomIntegrationId(integration))
+            : undefined;
           return {
             kingdomId: kingdomIntegrationId(integration),
             kingdomUrl: integration.url,
             integrationId: integration.integrationId,
             url: described.holder
-              ? inviteUrl(described.holder.webUrl, integration.integrationId, threadId, view.name)
+              ? inviteUrl(described.holder.webUrl, integration.integrationId, {
+                  threadId,
+                  threadName: view.name,
+                  ...(projectId ? { projectId } : {}),
+                })
               : null,
           };
         }),
