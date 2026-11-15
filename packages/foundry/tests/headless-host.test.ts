@@ -153,7 +153,6 @@ test('the headless host pairs, admits a member note the Warden weighs in on, and
       audience: 'outside',
     },
     resources: [conversationGrant({ operations: ['thread.prompt', 'thread.read'], integrationId })],
-    baseLenses: {},
   };
   kingdom.host(member);
   const requestId = Bun.randomUUIDv7();

@@ -152,7 +152,6 @@ function fixture(opts: {
       audience: 'outside',
     },
     resources: [conversationGrant({ threadId: thread.id, operations: ['thread.prompt'] })],
-    baseLenses: {},
   };
   let hosted: HostedSignet[] = opts.joined === false ? [] : [member];
   service = new ConversationService({

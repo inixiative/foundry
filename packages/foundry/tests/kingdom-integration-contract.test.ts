@@ -184,17 +184,22 @@ test('signet 0.5: a describe resource this package cannot read costs that resour
     taskId: null,
     currentRevision: 1,
     remainingRequests: null,
-    // No lens is the base lens; a lens that isn't json-rules layers (a pre-0.12 lens object) is dropped.
+    // No lens is the base lens and a body is one narrowing; a pre-0.12 lens object and 0.18's list of layers are dropped.
     operations: [
       {
         key: 'documents.read',
         name: 'Read',
-        resources: [resource({}), resource(), resource({ threads: { form: 'ids', ids: ['t'] } })],
+        resources: [
+          resource({}),
+          resource(),
+          resource({ threads: { form: 'ids', ids: ['t'] } }),
+          resource([{ id: 'grant', parents: ['base'] }]),
+        ],
       },
     ],
     holder: null,
   });
-  expect(described.operations[0]!.resources).toHaveLength(1);
+  expect(described.operations[0]!.resources).toHaveLength(2);
   expect(described.dropped).toHaveLength(2);
   expect(described.holder).toBeNull();
 });
