@@ -1,8 +1,10 @@
-/* Panel sizes in steps (panel-sizes.js). */
+/* Panel sizes in steps (panel-sizes.js). Every pair stacks, narrow above widen, in one button's width. */
 .size-controls {
   display: inline-flex;
+  flex-direction: column;
   gap: 2px;
   margin-left: auto;
+  align-self: flex-start;
 }
 .size-btn {
   display: inline-flex;
@@ -56,15 +58,22 @@
 }
 .rail-head-row {
   display: flex;
-  align-items: center;
   gap: 6px;
 }
 .rail-head-row .rail-toggle {
   flex: 1;
 }
-/* Beside the rail's tabs, narrow sits above widen so the pair takes one button's width. */
-.rail-head-row .size-controls {
+/* Both panels' heads start at their top edge, so the pairs sit at the same height. */
+.rail-head-row,
+.rp-head-row {
+  align-items: flex-start;
+}
+.rp-head-text {
+  display: flex;
   flex-direction: column;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
 }
 .proj-collapsed-controls {
   display: flex;
