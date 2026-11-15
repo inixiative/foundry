@@ -4,7 +4,6 @@
  * @partOf integration:kingdom
  */
 import { createHash } from 'node:crypto';
-import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import {
   type HeldSignet,
@@ -16,14 +15,12 @@ import {
   type InstallationSocketOptions,
   installationDirectory,
   installationPaths,
-  installationSignets,
   kingdomUrl,
-  readPrivateJson,
   requestSignetEntitlement,
   type SignetEntitlementResponse,
   setInstallationCredential,
-  signetCredentialFile,
-  signetCredentialSchema,
+  heldSignetFile as signetHeldSignetFile,
+  listedSignets as signetListedSignets,
   type ThreadEntry,
   type ThreadHost,
   type ThreadSubscription,
@@ -119,48 +116,15 @@ export const overallStatus = (integrations: readonly { status: string }[]) =>
       : ('unavailable' as const);
 
 /** Which Signets each Kingdom lists for this Installation: one read per Kingdom; null when it refused or is unreachable. */
-export async function listedSignets(configDir: string, urls: readonly string[]) {
-  const listed = new Map<string, Set<string> | null>();
-  await Promise.all(
-    [...new Set(urls)].map(async (url) => {
-      const { keyFile } = kingdomInstallationPaths(configDir, url);
-      try {
-        if (!existsSync(keyFile)) throw Error('No Installation key');
-        const { signets } = await installationSignets(url, keyFile, { timeoutMs: 5000 });
-        listed.set(url, new Set(signets.map((signet) => signet.signetId)));
-      } catch {
-        listed.set(url, null);
-      }
-    }),
-  );
-  return listed;
-}
-
-/** Whether a Signet credential file holds a credential this signet client reads (an older client's file does not). */
-const readableSignetFile = async (file: string) =>
-  existsSync(file) &&
-  signetCredentialSchema.safeParse(await readPrivateJson(file).catch(() => null)).success;
+export const listedSignets = (configDir: string, urls: readonly string[]) =>
+  signetListedSignets(kingdomInstallationRoot(configDir), urls);
 
 /**
  * The local file of a Signet this Foundry holds from one Kingdom. A missing file, or one an older
  * signet client wrote that this one cannot read, is enrolled again now if Kingdom still lists the Signet.
  */
-export async function heldSignetFile(configDir: string, url: string, signetId: string) {
-  const { keyFile, directory } = await kingdomInstallation(configDir, url);
-  const file = signetCredentialFile(directory, signetId);
-  if (await readableSignetFile(file)) return file;
-  const listed = (await installationSignets(url, keyFile)).signets.filter(
-    (signet) => signet.signetId === signetId,
-  );
-  if (!listed.length)
-    throw Error(
-      `${url} no longer lists Signet ${signetId} for this Foundry: pair again, or point this project's capacity at a Signet it holds`,
-    );
-  await holdInstallationSignets(url, keyFile, directory, listed);
-  if (!(await readableSignetFile(file)))
-    throw Error(`Signet ${signetId} could not be enrolled on this Foundry`);
-  return file;
-}
+export const heldSignetFile = (configDir: string, url: string, signetId: string) =>
+  signetHeldSignetFile(kingdomInstallationRoot(configDir), url, signetId);
 
 /**
  * Asks the person who issued a Signet this Foundry holds to grant it more (Kingdom `signetEntitlement`).

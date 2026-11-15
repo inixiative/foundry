@@ -3,12 +3,7 @@
  * @kind client
  * @partOf integration:kingdom
  */
-import {
-  kingdomUrl,
-  readPrivateJson,
-  SignetClient,
-  signetCredentialSchema,
-} from '@inixiative/signet';
+import { heldSignetCredential, kingdomUrl, SignetClient } from '@inixiative/signet';
 import { z } from 'zod';
 import { refreshSecretPattern, runSecretPattern } from './kingdom-secrets';
 
@@ -111,14 +106,12 @@ export class KingdomClient {
   ) {}
   /** A client for the Signet a credential file holds. */
   static async fromFile(credentialFile: string) {
-    const parsed = signetCredentialSchema.safeParse(
-      await readPrivateJson(credentialFile).catch(() => null),
-    );
-    if (!parsed.success)
+    const held = await heldSignetCredential(credentialFile);
+    if (!held)
       throw Error(
         `The Signet file ${credentialFile} is missing, or an older signet client wrote it; enroll the Signet again`,
       );
-    const { enrollmentId } = parsed.data;
+    const { enrollmentId } = held;
     return new KingdomClient(await SignetClient.fromFile(credentialFile), enrollmentId);
   }
   get origin() {

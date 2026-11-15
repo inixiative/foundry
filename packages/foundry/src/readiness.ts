@@ -871,18 +871,8 @@ function inspectKingdomCapacity(
   for (const project of Object.values(config.projects)) {
     const capacity = project.capacity === 'kingdom' ? project.kingdomCapacity : undefined;
     if (!capacity) continue;
-    let url: string;
-    try {
-      ({ url } = selectKingdomIntegration(config.kingdomIntegrations, capacity.kingdom));
-    } catch (error) {
-      issue(
-        'error',
-        `project:${project.id}`,
-        'kingdom-capacity-unpaired',
-        (error as Error).message,
-      );
-      continue;
-    }
+    // why: config validation already refuses a capacity whose Kingdom is not paired
+    const { url } = selectKingdomIntegration(config.kingdomIntegrations, capacity.kingdom);
     const signets = listed?.get(url);
     if (!signets || signets.has(capacity.signetId)) continue;
     issue(
