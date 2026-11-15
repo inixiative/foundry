@@ -135,8 +135,8 @@ const shrinksToward = (side) => side;
 
 /**
  * A side's size controls, rendered once inside the panel (never patched in afterwards). Smaller
- * points toward the panel's own edge, larger away from it; each hides at its limit, and a strip
- * (or icons) shows only larger.
+ * points toward the panel's own edge, larger away from it, stacked narrow above widen on both
+ * sides; each hides at its limit, and a strip (or icons) shows only larger.
  */
 export function SizeControls({ side }) {
   const levels = side === 'left' ? LEFT_LEVELS : RIGHT_LEVELS;
@@ -158,11 +158,8 @@ export function SizeControls({ side }) {
     ? html`<button type="button" class="size-btn size-btn--larger" aria-label=${`Make the ${name} larger`} title=${`Widen · ${keyLarge}`} onClick=${() => stepSize(side, 1)}>
       <${EdgeIcon} side=${side} toward=${growsToward(side)} /></button>`
     : null;
-  // Each control sits on the side it points to: the left list narrows left of widening, the right
-  // panel widens left of narrowing.
-  return html`<span class="size-controls size-controls--${side}">
-    ${side === 'left' ? smallerBtn : largerBtn}${side === 'left' ? largerBtn : smallerBtn}
-  </span>`;
+  // Both sides stack the pair the same way, narrow above widen.
+  return html`<span class="size-controls size-controls--${side}">${smallerBtn}${largerBtn}</span>`;
 }
 
 /** A hidden side's restore tab: slim, mid-height on that screen edge. */
