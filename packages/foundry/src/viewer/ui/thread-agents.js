@@ -103,7 +103,7 @@ function candidates(threadId, projectId, locals) {
 /** A thread just started from "New agent…" joins the host as a local member (§4.11). */
 async function joinAsAgent(hostThreadId, threadId, displayName) {
   if (await post(base(hostThreadId), { threadId, displayName }))
-    showToast(`${displayName} joined the conversation`, 'ok');
+    showToast(`${displayName} joined the conversation`, 'ok', { thread: hostThreadId });
 }
 
 async function readLaunch(threadId) {
@@ -159,7 +159,7 @@ function ThreadAgentsModal({ onClose }) {
     if (!pick) return;
     setBusy('add');
     if (await post(base(threadId), { threadId: pick })) {
-      showToast('It joins with the conversation’s default voice', 'ok');
+      showToast('It joins with the conversation’s default voice', 'ok', { thread: threadId });
       setPick('');
     }
     setBusy(null);
@@ -167,7 +167,7 @@ function ThreadAgentsModal({ onClose }) {
   const remove = async (m) => {
     setBusy(m.member.id);
     if (await post(`${base(threadId)}/${encodeURIComponent(m.member.id)}`, undefined, 'DELETE')) {
-      showToast(`${m.displayName} left`, 'ok');
+      showToast(`${m.displayName} left`, 'ok', { thread: threadId });
     }
     setBusy(null);
   };

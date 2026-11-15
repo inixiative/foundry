@@ -1139,9 +1139,9 @@ export class TurnService {
     );
   }
 
-  private observeFailure(message: string) {
+  private observeFailure(threadId: string, message: string) {
     try {
-      this.deps.eventStream.pushError('harness', `Execution failed: ${message}`);
+      this.deps.eventStream.pushError('harness', `Execution failed: ${message}`, 'error', threadId);
     } catch (error) {
       console.warn('[Turns] error observer failed:', error);
     }
@@ -1259,7 +1259,7 @@ export class TurnService {
       });
       buffer.fail(msg, { id: turnId, error: msg, ...evidence });
       // A stop someone asked for is not a harness failure.
-      if (!cancelled) this.observeFailure(msg);
+      if (!cancelled) this.observeFailure(threadId, msg);
       return { kind: 'failed', error: msg, evidence, cancelled };
     } finally {
       this.deps.streams.turns.drop(turnId);

@@ -239,10 +239,11 @@ export function ThreadRunModal({
             : `This thread now runs on ${workerName(value.worker)}`
           : 'Applies from the next turn',
         'ok',
+        { thread: threadId },
       );
       onClose();
     } catch (error) {
-      showToast(`Could not change it: ${error.message}`, 'error');
+      showToast(`Could not change it: ${error.message}`, 'error', { thread: threadId });
       // A worker switch may have landed before the model or effort was refused: show what is true now.
       await loadLaunch(threadId);
       await onSaved?.();

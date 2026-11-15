@@ -1,4 +1,4 @@
-/* Approval cards: the risk line, the scope picker and "make a rule" (conversation.js), and the Undo toast. */
+/* Approval cards: the risk line, the scope picker and "make a rule" (conversation.js). */
 .prompt-risk {
   font-size: 12px;
   color: hsl(38 87% 69%);
@@ -28,15 +28,4 @@
 }
 .prompt-make-rule:hover {
   color: hsl(var(--app-primary));
-}
-.toast-undo {
-  margin-left: 10px;
-  border: 1px solid currentColor;
-  background: none;
-  color: inherit;
-  font: inherit;
-  font-size: 12px;
-  padding: 1px 8px;
-  border-radius: 6px;
-  cursor: pointer;
 }

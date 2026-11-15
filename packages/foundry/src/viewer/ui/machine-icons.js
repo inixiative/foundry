@@ -10,7 +10,7 @@
  */
 
 import { html, signal } from './lib.js';
-import { authFetch, toast } from './store.js';
+import { authFetch, showToast } from './store.js';
 
 const GLYPHS = {
   anvil: html`<path d="M2 5h8l2-2v4H9v2l2 2H3l2-2V7H2z" />`,
@@ -109,7 +109,7 @@ export function MachineIconPicker() {
         throw Error((await res.json().catch(() => ({}))).error || 'Could not save the icon');
       machineProfile.value = { ...machineProfile.value, installationIcon: next };
     } catch (error) {
-      toast.value = { message: error.message, type: 'error' };
+      showToast(error.message, 'error');
     }
   };
   return html`<div class="machine-icon-picker" role="group" aria-label="Machine icon">
