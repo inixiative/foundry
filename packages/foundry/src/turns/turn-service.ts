@@ -205,6 +205,10 @@ interface LiveTurn {
   admitted: boolean;
   /** The executor's native turn reached its terminal. */
   nativeSettled: boolean;
+  /** How it ended natively: `completed` when it finished on its own. */
+  nativeOutcome?: 'completed' | 'failed';
+  /** A restart paused it: the continuation queued behind it, cancelled if it finishes on its own. */
+  continuation?: string;
   interrupt?: NativeInterrupt;
   stopping?: Promise<NativeInterruptOutcome>;
   /** How the running turn takes more input, or why it can't (from its runtime, at admission). */
@@ -654,6 +658,9 @@ export class TurnService {
               !origin,
             ),
           );
+          // Paused for a restart but it finished on its own first: nothing is left to resume.
+          if (state.continuation && state.nativeOutcome === 'completed' && !state.stopAsked)
+            void this.interrupt(threadId, state.continuation);
         }
       })
       .finally(() => {
@@ -701,6 +708,8 @@ export class TurnService {
       return { ok: false, status: 409, error: 'turn is being steered into the running turn' };
     state.cancelRequested = true;
     state.stopAsked = true;
+    // Stopped by its owner: a restart's continuation of it never runs.
+    if (state.continuation) void this.interrupt(threadId, state.continuation);
     if (state.phase === 'queued') {
       state.phase = 'settled';
       this.live.delete(turnId);
@@ -713,22 +722,21 @@ export class TurnService {
   }
 
   /**
-   * Pause a running turn for a planned restart (`daemon/restart-roll.ts`, Aron 2026-11-14): stop it
-   * through its runtime, its native session kept, and queue Foundry's continuation on its thread,
-   * which the restart holds and the next boot runs first. `not-yet` while it hasn't reached its
-   * runtime; `cannot` on a runtime that can't stop a turn (it runs on). A stop never acknowledged
-   * still queues the continuation: the restart cuts that turn, and the continuation picks it up.
-   * A turn its owner stopped is never resumed.
+   * Pause a running turn for a planned restart (`daemon/restart-roll.ts`, Aron 2026-11-14): queue
+   * Foundry's continuation behind it, then stop it through its runtime, its native session kept; the
+   * restart holds the continuation and the next boot runs it first. `not-yet` while it hasn't reached
+   * a runtime that can stop it (the roll gives up on one that never does); `cannot` when its
+   * continuation can't be queued, so it runs on rather than be cut. A stop never acknowledged keeps
+   * the continuation (the restart cuts that turn), unless the turn then finishes on its own. A turn
+   * its owner stopped is never resumed.
    */
   async pauseForRestart(threadId: string, turnId: string): Promise<PauseAnswer> {
     const state = this.live.get(turnId);
     if (!state || state.threadId !== threadId || state.phase !== 'running') return 'paused';
-    if (state.stopAsked) return 'paused';
-    if (!state.admitted) return 'not-yet';
-    if (!state.interrupt) return 'cannot';
-    state.cancelRequested = true;
-    const outcome = await this.stop(state);
-    if (outcome === 'no-turn' || state.stopAsked) return 'paused';
+    if (state.stopAsked || state.continuation) return 'paused';
+    // The runtime reports both handles together once the session is up: steer without interrupt is
+    // a runtime that can't stop a turn; neither yet is one still starting.
+    if (!state.interrupt) return state.admitted && state.steer ? 'cannot' : 'not-yet';
     const resumed = this.accept({
       threadId,
       payload: RESTART_RESUME_NOTE,
@@ -739,10 +747,16 @@ export class TurnService {
         restart: true,
       },
     });
-    if (!resumed.ok)
+    if (!resumed.ok) {
       console.warn(
-        `[Turns] paused ${turnId} for the restart; its continuation was refused: ${String(resumed.body.error)}`,
+        `[Turns] could not queue ${turnId}'s continuation, so it runs on: ${String(resumed.body.error)}`,
       );
+      return 'cannot';
+    }
+    state.continuation = resumed.turnId;
+    state.cancelRequested = true;
+    const outcome = await this.stop(state);
+    if (outcome === 'no-turn' && !state.stopAsked) void this.interrupt(threadId, resumed.turnId);
     return 'paused';
   }
 
@@ -794,6 +808,7 @@ export class TurnService {
     if (!steer) return queued('the running turn hasn’t reached its runtime yet');
     if (!steer.push) return queued(steer.reason);
     if (running.nativeSettled) return queued('the running turn is finishing');
+    if (running.cancelRequested) return queued('the running turn is stopping');
     const sending = steer
       .push(text)
       .catch((error) => ({ outcome: 'ignored' as const, reason: (error as Error).message }));
@@ -963,8 +978,10 @@ export class TurnService {
         if (
           evidence.owner?.providerSessionKey === thread.id &&
           evidence.nativeOutcome !== 'unknown'
-        )
+        ) {
           state.nativeSettled = true;
+          state.nativeOutcome = evidence.nativeOutcome;
+        }
         if (evidence.owner?.messageId)
           streams.turns.get(evidence.owner.messageId)?.observe(evidence);
         localStore?.appendNative(thread, evidence);

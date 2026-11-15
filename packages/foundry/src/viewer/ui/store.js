@@ -1512,6 +1512,12 @@ export const kingdomStatus = signal(null);
 /** The daemon's update state (`/api/daemon/update`): idle, spinning down for a restart, postponed, restarting. */
 export const updateState = signal(null);
 
+/** The pause time on this page's clock, from the daemon's time left (never its clock). */
+const withLocalPause = (state) =>
+  state && typeof state.pauseInMs === 'number'
+    ? { ...state, pauseAtLocal: Date.now() + state.pauseInMs }
+    : state;
+
 /** Whether turns that would start now wait for a restart. */
 export const restartHolding = computed(
   () => updateState.value?.phase === 'spinning-down' || updateState.value?.phase === 'restarting',
@@ -1530,7 +1536,7 @@ export async function loadUpdateState() {
         return;
       }
       seenBootId ??= state.bootId ?? null;
-      updateState.value = state;
+      updateState.value = withLocalPause(state);
     }
   } catch {
     /* restarting: the next poll after reconnect reads the new daemon */
@@ -1553,7 +1559,7 @@ export async function updateAction(action) {
     });
     const body = await res.json();
     if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`);
-    updateState.value = body;
+    updateState.value = withLocalPause(body);
     showToast(
       action === 'postpone'
         ? 'Update postponed: waiting turns start now'

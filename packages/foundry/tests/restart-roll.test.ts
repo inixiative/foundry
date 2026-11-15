@@ -246,11 +246,44 @@ test("a turn whose runtime can't stop it runs on; the restart waits for it, not 
   expect(r.status().pausing).toEqual([]);
   now.t = PAUSE_SETTLE_MS * 2;
   r.check();
+  r.check();
+  // Never asked again.
   expect(asked).toEqual(['t1']);
   expect(restarts).toEqual([]);
   running.pop();
   r.check();
   expect(restarts).toEqual(['c1']);
+});
+
+test('a turn that never reaches its runtime runs on after a minute of asking', async () => {
+  const running: RunningTurnRef[] = [{ threadId: 'a', turnId: 't1' }];
+  const { r, offer, now, asked, answers, answer } = pausingRoll(running);
+  answers.push(...Array<PauseAnswer>(200).fill('not-yet'));
+  offer(0);
+  for (let t = 1_000; t <= 70_000; t += 1_000) {
+    await answer();
+    now.t = t;
+    r.check();
+  }
+  await answer();
+  const times = asked.length;
+  expect(times).toBeGreaterThan(50);
+  expect(times).toBeLessThan(70);
+  now.t = 200_000;
+  r.check();
+  expect(asked).toHaveLength(times);
+  expect(r.status().pausing).toEqual([]);
+});
+
+test('Restart now, then Not now while the pause is still in flight: nothing restarts', async () => {
+  const running: RunningTurnRef[] = [{ threadId: 'a', turnId: 't1' }];
+  const { r, offer, restarts, answer } = pausingRoll(running);
+  offer(0);
+  expect(r.restartNow()).toBe(true);
+  expect(r.postpone()).toBe(true);
+  await answer();
+  expect(restarts).toEqual([]);
+  expect(r.status().phase).toBe('postponed');
 });
 
 test('Restart now while a pause is between its stop and its continuation waits for it', async () => {
@@ -286,6 +319,8 @@ test('Pause now skips the grace; without a way to pause there is nothing to do',
   expect(r.pauseNow()).toBe(true);
   expect(asked).toEqual(['t1']);
   expect(r.status().pauseAt).toBe(5);
+  // Time left on the daemon's clock, so a viewer's skewed clock never moves the countdown.
+  expect(r.status().pauseInMs).toBe(0);
 
   const plain = roll([{ threadId: 'a', turnId: 't1' }]);
   plain.offer();

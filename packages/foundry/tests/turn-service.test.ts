@@ -283,6 +283,11 @@ test('a restart pauses a dispatched native turn: stopped, its continuation held 
       .find((m) => m.turnId === held[0].turnId && m.actor === 'user');
     expect(resume?.content).toBe(RESTART_RESUME_NOTE);
     expect(resume?.meta).toMatchObject({ restartResume: true });
+    // It resumes the paused turn, so it carries that turn's owner authority.
+    expect(f.viewer.localStore!.restartContinuationOf(held[0].turnId)).toBe('native-paused');
+    // Asked again (a later check), the paused turn gets no second continuation.
+    f.viewer.restartRoll.check();
+    expect(f.viewer.localStore!.heldForRestart()).toHaveLength(1);
   } finally {
     await f.close();
   }
