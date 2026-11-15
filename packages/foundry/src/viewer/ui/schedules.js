@@ -82,7 +82,7 @@ async function call(url, method, body) {
 
 const path = (id, rest = '') => `/api/schedules/${encodeURIComponent(id)}${rest}`;
 
-/** The schedules, grouped by Where in the order settings hold them, with a + New. */
+/** The schedules, grouped by Where in the order settings hold them, under a + New schedule row. */
 export function ScheduleList() {
   const [editing, setEditing] = useState(null); // null | 'new' | a schedule id
   const views = schedules.value;
@@ -96,14 +96,13 @@ export function ScheduleList() {
     editing && editing !== 'new' ? views.find((v) => v.schedule.id === editing) : null;
   return html`<${Pane} title="Schedules" className="schedules-pane" count=${views.length}
     empty=${editing ? null : 'Nothing is scheduled. Add one here, or ask an agent to schedule something: each run is a new thread, listed under its schedule.'}
-    action=${html`<button type="button" class="rail-new-thread" onClick=${() => setEditing('new')}>+ New schedule</button>`}
     lead=${
       editing
         ? html`<${ScheduleEditor} key=${editing} view=${editView} onDone=${(id) => {
             setEditing(null);
             if (id) openScheduleId.value = id;
           }} />`
-        : null
+        : html`<button type="button" class="rail-new-thread rail-new-thread--block" onClick=${() => setEditing('new')}>+ New schedule</button>`
     }>${[...groups.values()].map(
       (group) => html`<div key=${whereKey(group.where)} class="schedule-group">
         <div class="schedule-group-head">${whereLabel(group.where)}</div>
