@@ -28,14 +28,21 @@ export interface ScheduleRunStore {
     outcome: ScheduleRun['outcome'],
     detail?: { reason?: string; threadId?: string },
   ): void;
+  /** The thread a claimed run started, recorded as soon as it exists (before its first turn is accepted). */
+  noteScheduleRunThread(id: string, threadId: string): void;
   scheduleRuns(scheduleId: string, limit?: number): ScheduleRun[];
   lastScheduledDue(scheduleId: string): number | undefined;
+  /** The newest thread any other run of the schedule recorded, whatever its outcome. */
+  latestScheduleRunThread(scheduleId: string, exceptRunId: string): string | undefined;
 }
 
 export interface SchedulerDeps {
   config(): FoundryConfig;
-  /** Commit a settings edit (`ConfigStore.update`: validated, persisted, audited). */
-  update(edit: (draft: FoundryConfig) => void): Promise<unknown>;
+  /**
+   * Commit a settings edit (`ConfigStore.update`: validated, persisted, audited). `author` is the
+   * audit actor: absent, the owner; `thread:<id>` for an agent's edit.
+   */
+  update(edit: (draft: FoundryConfig) => void, author?: string): Promise<unknown>;
   store: ScheduleRunStore;
   /** Start one run: a new thread at the schedule's Where, its first turn the prompt. Its thread id; throws with why when it can't. */
   startRun(run: {
@@ -43,13 +50,13 @@ export interface SchedulerDeps {
     where: ScheduleWhere;
     runId: string;
     dueAt: number;
+    /** Call once the run's thread exists, so a crash before its first turn still names it. */
+    made(threadId: string): void;
   }): Promise<string>;
   /** Whether a thread has a turn queued or running. */
   busy(threadId: string): boolean;
-  /** Schedules or their runs changed: the viewer refreshes. */
+  /** Runs changed: the viewer refreshes (settings edits reach it through `ConfigStore.onChange`). */
   changed(): void;
-  /** An agent's draft became a live schedule (accepted, or saved by the owner): the schedule as it was, draft mark included. */
-  accepted?(schedule: Schedule): void;
   now?: () => number;
 }
 
@@ -81,6 +88,13 @@ function slot(config: FoundryConfig, where: ScheduleWhere): SchedulerSettings | 
  */
 export class Scheduler implements ScheduleBook {
   private ticking: Promise<void> | null = null;
+  /**
+   * Schedules seen off because their project was (disabled or archived), and when each came back
+   * on: due times count from then, so nothing missed while the project was off runs. In memory: a
+   * project turned back on while Foundry was off reads as Foundry having been off.
+   */
+  private readonly projectOff = new Set<string>();
+  private readonly projectBackOn = new Map<string, number>();
 
   constructor(private readonly deps: SchedulerDeps) {}
 
@@ -114,11 +128,18 @@ export class Scheduler implements ScheduleBook {
     if (schedule.paused || schedule.draft) return false;
     if (where.kind !== 'project') return true;
     const project = this.deps.config().projects?.[where.projectId];
-    return !!project && project.enabled !== false && project.status !== 'archived';
+    const on = !!project && project.enabled !== false && project.status !== 'archived';
+    if (!on) this.projectOff.add(schedule.id);
+    else if (this.projectOff.delete(schedule.id)) this.projectBackOn.set(schedule.id, this.now());
+    return on;
   }
 
   private cursor(schedule: Schedule): number {
-    return Math.max(schedule.since, this.deps.store.lastScheduledDue(schedule.id) ?? 0);
+    return Math.max(
+      schedule.since,
+      this.deps.store.lastScheduledDue(schedule.id) ?? 0,
+      this.projectBackOn.get(schedule.id) ?? 0,
+    );
   }
 
   view(schedule: Schedule, where: ScheduleWhere): ScheduleView {
@@ -205,18 +226,22 @@ export class Scheduler implements ScheduleBook {
     dueAt: number,
     note: string | undefined,
   ): Promise<void> {
-    const previous = this.deps.store
-      .scheduleRuns(schedule.id, 20)
-      .find((run) => run.id !== runId && run.outcome === 'started' && run.threadId);
-    if (previous?.threadId && this.deps.busy(previous.threadId)) {
+    const previous = this.deps.store.latestScheduleRunThread(schedule.id, runId);
+    if (previous && this.deps.busy(previous)) {
       this.deps.store.settleScheduleRun(runId, 'skipped', {
         reason: 'overlap: its previous run is still working',
-        threadId: previous.threadId,
+        threadId: previous,
       });
       return;
     }
     try {
-      const threadId = await this.deps.startRun({ schedule, where, runId, dueAt });
+      const threadId = await this.deps.startRun({
+        schedule,
+        where,
+        runId,
+        dueAt,
+        made: (made) => this.deps.store.noteScheduleRunThread(runId, made),
+      });
       this.deps.store.settleScheduleRun(runId, 'started', {
         threadId,
         ...(note ? { reason: note } : {}),
@@ -236,7 +261,11 @@ export class Scheduler implements ScheduleBook {
    * time changes, or when it comes off pause or out of draft, so nothing it missed while off runs.
    * A schedule moved to another Where leaves the old one.
    */
-  async save(input: Omit<Schedule, 'since'>, where: ScheduleWhere): Promise<ScheduleView> {
+  async save(
+    input: Omit<Schedule, 'since'>,
+    where: ScheduleWhere,
+    author?: string,
+  ): Promise<ScheduleView> {
     const refused = whenRefusal(input.when);
     if (refused) throw Error(`when ${refused}`);
     if ('at' in input.when && Date.parse(input.when.at) <= this.now() && !this.find(input.id))
@@ -244,10 +273,8 @@ export class Scheduler implements ScheduleBook {
     if (where.kind === 'project' && input.scope)
       throw Error("a project's schedule runs in the project; scopes are top-level");
     const now = this.now();
-    let undrafted: Schedule | undefined;
     await this.deps.update((draft) => {
       const prior = this.locate(draft, input.id);
-      undrafted = prior?.schedule.draft && !input.draft ? { ...prior.schedule } : undefined;
       const restart =
         !prior ||
         JSON.stringify(prior.schedule.when) !== JSON.stringify(input.when) ||
@@ -264,9 +291,7 @@ export class Scheduler implements ScheduleBook {
       const at =
         prior && prior.list === settings.schedules ? prior.index : settings.schedules!.length;
       settings.schedules!.splice(at, 0, next);
-    });
-    this.deps.changed();
-    if (undrafted) this.deps.accepted?.(undrafted);
+    }, author);
     const saved = this.find(input.id)!;
     return this.view(saved.schedule, saved.where);
   }
@@ -288,13 +313,12 @@ export class Scheduler implements ScheduleBook {
   }
 
   /** Remove a schedule; its past runs stay in the history. */
-  async remove(id: string): Promise<void> {
+  async remove(id: string, author?: string): Promise<void> {
     if (!this.find(id)) throw Error(`no schedule ${id}`);
     await this.deps.update((draft) => {
       const prior = this.locate(draft, id);
       if (prior) prior.list.splice(prior.index, 1);
-    });
-    this.deps.changed();
+    }, author);
   }
 
   private locate(

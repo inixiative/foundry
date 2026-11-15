@@ -21,9 +21,9 @@ const failure = (error: unknown) => ({ error: (error as Error).message ?? String
 export function registerScheduleRoutes(app: Hono, scheduler: Scheduler): void {
   app.get('/api/schedules', (c) => c.json({ schedules: scheduler.list() }));
 
+  // A removed schedule's runs stay readable: the history outlives it.
   app.get('/api/schedules/:id/runs', (c) => {
     const id = c.req.param('id');
-    if (!scheduler.find(id)) return c.json({ error: `no schedule ${id}` }, 404);
     const limit = Number(c.req.query('limit') ?? 50);
     return c.json({
       runs: scheduler.runs(id, Number.isInteger(limit) && limit > 0 ? Math.min(limit, 500) : 50),

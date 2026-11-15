@@ -1341,8 +1341,22 @@ export class LocalSessionStore {
     detail: { reason?: string; threadId?: string } = {},
   ): void {
     this.query(
-      'UPDATE scheduler_runs SET outcome=?, reason=?, thread_id=?, recorded_at=? WHERE id=?',
+      'UPDATE scheduler_runs SET outcome=?, reason=?, thread_id=COALESCE(?, thread_id), recorded_at=? WHERE id=?',
     ).run(outcome, detail.reason ?? null, detail.threadId ?? null, Date.now(), id);
+  }
+
+  /** The thread a claimed run made, noted as soon as it exists, so a crash before it settles still names it. */
+  noteScheduleRunThread(id: string, threadId: string): void {
+    this.query('UPDATE scheduler_runs SET thread_id=? WHERE id=?').run(threadId, id);
+  }
+
+  /** The newest thread another run of the schedule recorded, whatever its outcome. */
+  latestScheduleRunThread(scheduleId: string, exceptRunId: string): string | undefined {
+    const row = this.query(
+      `SELECT thread_id FROM scheduler_runs WHERE schedule_id=? AND id<>? AND thread_id IS NOT NULL
+        ORDER BY due_at DESC, recorded_at DESC LIMIT 1`,
+    ).get(scheduleId, exceptRunId) as { thread_id: string } | null;
+    return row?.thread_id;
   }
 
   /** A schedule's runs, newest first. */

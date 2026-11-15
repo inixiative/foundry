@@ -10,7 +10,7 @@ A schedule starts a new thread on a timer, with its prompt as that thread's firs
 ## Told, or your own idea
 
 - **The person asked for it** in the message that opened this turn: `set_schedule` makes it at once.
-- **Your own idea**, or the ask came from somewhere else (a member's post, a ticket, a scheduled run): `set_schedule` still works, but saves a **draft**. A draft never runs; this thread is set to Needs-you and the person accepts or rejects it in the Scheduled view. Say in your reply what you proposed and why.
+- **Your own idea**, or the ask came from somewhere else (a member's post, a ticket, a scheduled run): `set_schedule` still works, but saves a **draft**. A draft never runs; Foundry asks the person Accept or Reject on this thread, and they can answer there or in the Scheduled view. Don't set Needs-you for it yourself. Say in your reply what you proposed and why.
 - A live schedule is changed or removed only when the person asks. You may change or remove your own draft.
 
 ## How
@@ -19,8 +19,8 @@ A schedule starts a new thread on a timer, with its prompt as that thread's firs
 |---|---|
 | `id` | a short lowercase slug (`nightly-deps`); the same id again replaces it |
 | `name` | what it does, in a few plain words |
-| `prompt` | the first message of every run. Write it for an agent with no memory of this thread, and say it is a scheduled run: what to do, where, what done looks like, when to ask |
-| `when` | `{"every": "30m" \| "2h" \| "1d"}` (at least 5m), `{"cron": "0 9 * * 1-5", "tz": "Europe/London"}`, or `{"at": "<ISO time>"}` once |
+| `prompt` | the first message of every run. Write it for an agent with no memory of this thread: what to do, where, what done looks like, when to ask. Foundry marks it as a scheduled run itself |
+| `when` | runs at least 5m apart: `{"every": "30m" \| "2h" \| "1d"}`, `{"cron": "0 9 * * 1-5", "tz": "Europe/London"}`, or `{"at": "<ISO time>"}` once |
 | `where` | optional: `{"kind":"project","projectId":…}`, `{"kind":"global"}`, or `{"kind":"scope","scope":"forge"\|"feedback"}`; absent, this thread's own Where |
 | `worker`, `role`, `model`, `effort` | optional; absent, the Where's defaults |
 

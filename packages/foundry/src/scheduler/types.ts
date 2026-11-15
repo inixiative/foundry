@@ -105,14 +105,25 @@ export function validateSchedulerSettings(where: string, value: unknown, topLeve
   }
 }
 
+const CRON_SAMPLE = 64;
+
 /** Why a `when` can't be scheduled, or undefined. */
 export function whenRefusal(when: ScheduleWhen): string | undefined {
   if ('every' in when) {
     return everyMs(when.every) < MIN_EVERY_MS ? 'every is at least 5m' : undefined;
   }
   if ('cron' in when) {
+    // The 5m floor holds for a cron too: its next fire times, sampled, never come closer.
+    const options = when.tz ? { tz: when.tz } : undefined;
     try {
-      Bun.cron.parse(when.cron, new Date(), when.tz ? { tz: when.tz } : undefined);
+      let at = Bun.cron.parse(when.cron, new Date(), options);
+      if (!at) return 'cron never fires';
+      for (let i = 0; i < CRON_SAMPLE; i++) {
+        const next = Bun.cron.parse(when.cron, at, options);
+        if (!next) return undefined;
+        if (next.getTime() - at.getTime() < MIN_EVERY_MS) return 'cron runs at least 5m apart';
+        at = next;
+      }
       return undefined;
     } catch (error) {
       return `cron ${(error as Error).message}`;
@@ -138,6 +149,11 @@ export interface ScheduleView {
 export interface ScheduleBook {
   find(id: string): { schedule: Schedule; where: ScheduleWhere } | undefined;
   list(): ScheduleView[];
-  save(input: Omit<Schedule, 'since'>, where: ScheduleWhere): Promise<ScheduleView>;
-  remove(id: string): Promise<void>;
+  /** `author`: the audit actor; absent, the owner. */
+  save(
+    input: Omit<Schedule, 'since'>,
+    where: ScheduleWhere,
+    author?: string,
+  ): Promise<ScheduleView>;
+  remove(id: string, author?: string): Promise<void>;
 }

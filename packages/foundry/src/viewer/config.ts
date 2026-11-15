@@ -1703,13 +1703,14 @@ export class ConfigStore {
 
   /**
    * Apply `fn` to a deep copy of the latest committed config. Mutations run one at a time;
-   * the result becomes live only after it validates and is persisted.
+   * the result becomes live only after it validates and is persisted. `author` is the audit actor:
+   * absent, the owner; otherwise an agent's id (`thread:<id>`).
    */
-  update(fn: ConfigDraft, expectedRevision?: number): Promise<FoundryConfig> {
+  update(fn: ConfigDraft, expectedRevision?: number, author = 'user'): Promise<FoundryConfig> {
     return this._serialize(async () => {
       this._expect(expectedRevision);
       const draft = structuredClone(this._config);
-      return this._commit(fn(draft) ?? draft);
+      return this._commit(fn(draft) ?? draft, author);
     });
   }
 
@@ -1866,7 +1867,7 @@ export class ConfigStore {
     if (revision !== undefined && revision !== this._revision) throw new ConfigRevisionError();
   }
 
-  private async _commit(candidate: FoundryConfig): Promise<FoundryConfig> {
+  private async _commit(candidate: FoundryConfig, author = 'user'): Promise<FoundryConfig> {
     validateConfig(candidate);
     const path = join(this._dir, 'settings.json');
     writeFileAtomic(path, JSON.stringify(candidate, null, 2), 0o600);
@@ -1874,7 +1875,7 @@ export class ConfigStore {
     this._config = candidate;
     this._revision++;
     this._loaded = true;
-    await this._record(previous, candidate, 'user');
+    await this._record(previous, candidate, author);
     return candidate;
   }
 

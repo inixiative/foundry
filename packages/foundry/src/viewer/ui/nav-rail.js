@@ -23,12 +23,13 @@
  * Status is this machine and its resources (machine-status.js), a view of its own so the thread
  * views keep the rail's full height (Aron, 2026-11-14).
  */
-import { Attention, effectiveCategory, openRoots } from './attention.js';
+import { effectiveCategory, openRoots } from './attention.js';
 import { IncomingRows } from './incoming.js';
 import { html } from './lib.js';
 import { MachineStatus } from './machine-status.js';
 import { panelFit, SizeControls } from './panel-sizes.js';
 import { ProjectSidebar } from './project-sidebar.js';
+import { Pane } from './rail-pane.js';
 import { openNewThread } from './run-picker.js';
 import { draftCount, ScheduleList } from './schedules.js';
 import {
@@ -76,13 +77,6 @@ function RailToggle() {
         )}</div>`,
     )}
   </div>`;
-}
-
-function Pane({ title, count, children, empty, lead, nodes = [], action = null }) {
-  return html`<section class="rail-pane" aria-label=${title}>
-    <h3 class="rail-pane-head"><span>${title}</span><span class="rail-pane-count">${count}</span><${Attention} nodes=${nodes} />${action}</h3>
-    <div class="rail-frame">${lead ?? null}${count ? children : html`<div class="rail-empty">${empty}</div>`}</div>
-  </section>`;
 }
 
 function OpenRail() {

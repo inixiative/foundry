@@ -14,7 +14,7 @@ import {
   TokenTracker,
 } from '@inixiative/foundry-core';
 import { ProjectRegistry } from '../../src/agents/project';
-import { draftAsk } from '../../src/scheduler/agent-tools';
+import { draftAsk } from '../../src/scheduler/draft-asks';
 import { ConfigStore, defaultAgents, starterConfig } from '../../src/viewer/config';
 import { createViewer } from '../../src/viewer/server';
 import { type ReleaseStep, releaseAll } from '../helpers/release-all';
@@ -58,11 +58,6 @@ test('the Scheduled rail lists schedules, their past runs, drafts to accept, and
       projectId: 'shop',
     });
     proposer.meta.status = 'idle';
-    proposer.meta.agentStatus = {
-      state: 'needs-you',
-      text: draftAsk('Weekly inbox sweep'),
-      at: 0,
-    };
     project.addThread(proposer);
 
     const queue = new ActionQueue();
@@ -102,6 +97,9 @@ test('the Scheduled rail lists schedules, their past runs, drafts to accept, and
       actionQueue: queue,
     });
     cleanup.unshift(['store', () => viewer.localStore?.close()]);
+    // Starting the socket asks the proposer about its draft, as the daemon does at start.
+    viewer.startSocket();
+    cleanup.unshift(['socket', () => viewer.stopSocket()]);
     const store = viewer.localStore;
     if (!store) throw Error('the viewer has no journal store');
     const runId = `schedule:morning-triage:${dueAt}`;
@@ -133,6 +131,13 @@ test('the Scheduled rail lists schedules, their past runs, drafts to accept, and
     page.on('pageerror', (e: Error) => errors.push(e.message));
     page.on('dialog', (d: { accept(): Promise<void> }) => d.accept());
 
+    // The proposing thread asks Accept or Reject, as a structural prompt on its own conversation.
+    await page.goto(`http://127.0.0.1:${server.port}/#thread=proposer`);
+    await page
+      .locator('.prompt-card-message', { hasText: draftAsk('Weekly inbox sweep') })
+      .waitFor();
+    const draftPrompts = () => queue.pending().filter((p) => p.meta?.scheduleDraft);
+    expect(draftPrompts().map((p) => p.threadId)).toEqual(['proposer']);
     await page.goto(`http://127.0.0.1:${server.port}/#thread=main`);
     // The draft is counted on the Scheduled tab.
     const tab = page.locator('.rail-toggle-btn', { hasText: 'Scheduled' });
@@ -178,7 +183,7 @@ test('the Scheduled rail lists schedules, their past runs, drafts to accept, and
     expect(configStore.config.scheduler?.schedules?.[0]?.paused).toBeUndefined();
 
     // The draft: no Run now or Pause, only Accept, Edit, Reject. Accepting clears the tab's count
-    // and the proposing thread's ask.
+    // and withdraws the proposing thread's prompt.
     await sweep.locator('.tree-node').click();
     await sweep.locator('.schedule-draft-note').waitFor();
     expect(
@@ -189,6 +194,8 @@ test('the Scheduled rail lists schedules, their past runs, drafts to accept, and
     await sweep.locator('.schedule-actions button', { hasText: 'Accept' }).click();
     await sweep.locator('.schedule-state[data-state="on"]').waitFor();
     expect(await tab.locator('.rail-toggle-badge').count()).toBe(0);
+    for (let i = 0; i < 50 && draftPrompts().length > 0; i++) await Bun.sleep(20);
+    expect(draftPrompts()).toEqual([]);
     expect(proposer.meta.agentStatus).toBeUndefined();
     expect(
       configStore.config.scheduler?.schedules?.find((s) => s.id === 'inbox-sweep')?.draft,

@@ -21,7 +21,8 @@ import {
   FileExternalSessionStore,
 } from '../src/providers/session-adapter';
 import { SessionBackedProvider as NativeProvider } from '../src/providers/session-backed';
-import { draftAsk, setScheduleAsAgent } from '../src/scheduler/agent-tools';
+import { setScheduleAsAgent } from '../src/scheduler/agent-tools';
+import { draftAsk } from '../src/scheduler/draft-asks';
 import { journalHistory } from '../src/turns/journal-history';
 import { ConfigStore } from '../src/viewer/config';
 import { createViewer } from '../src/viewer/server';
@@ -1675,14 +1676,32 @@ test("schedules: the agent's own idea is a draft the owner is asked about; told 
     when: { every: '1h' } as const,
   };
 
-  // Outside the owner's own turn: a draft, and the proposing thread asks him (Attention).
+  const draftPrompt = (id: string) =>
+    h.queue
+      .pending()
+      .find((prompt) => (prompt.meta?.scheduleDraft as { id?: string } | undefined)?.id === id);
+  // Outside the owner's own turn: a draft, and the proposing thread asks him (Attention): one
+  // structural Accept or Reject prompt on the action queue.
   expect(await setScheduleAsAgent(tools, 'main', {}, nightly)).toMatch(/^Drafted "Nightly"/);
-  expect(main().meta.agentStatus).toMatchObject({ state: 'needs-you', text: draftAsk('Nightly') });
+  await until(() => !!draftPrompt('nightly'), 'the draft asks the owner');
+  expect(draftPrompt('nightly')).toMatchObject({
+    threadId: 'main',
+    kind: 'choice',
+    message: draftAsk('Nightly'),
+    meta: { structural: true },
+  });
+  expect(main().meta.agentStatus).toBeUndefined();
   expect((await h.route('/api/schedules/nightly/run')).status).toBe(400);
 
-  // He accepts it in the Scheduled view: it is live and the ask clears.
+  // He accepts it in the Scheduled view: it is live and the ask is withdrawn.
   expect((await h.route('/api/schedules/nightly/accept')).status).toBe(200);
-  expect(main().meta.agentStatus).toBeUndefined();
+  await until(() => !draftPrompt('nightly'), 'the ask withdrawn');
+
+  // Another draft, rejected on the thread's prompt: removed.
+  await setScheduleAsAgent(tools, 'main', {}, { ...nightly, id: 'sweep', name: 'Sweep' });
+  await until(() => !!draftPrompt('sweep'), 'the second draft asks');
+  h.queue.resolve(draftPrompt('sweep')!.id, 'reject', { by: 'human' });
+  await until(() => !tools.scheduler.find('sweep'), 'rejected draft removed');
 
   // A run is a new thread whose first message is the schedule's prompt, labelled as the run, never
   // as his message or a member's post.

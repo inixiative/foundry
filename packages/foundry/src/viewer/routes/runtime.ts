@@ -1424,7 +1424,10 @@ export function registerRuntimeRoutes(
   };
 
   app.post('/api/threads', async (c) => {
-    const body = await c.req.json<Record<string, unknown>>();
+    // A null field is an absent one, as the picker sends it.
+    const body = Object.fromEntries(
+      Object.entries(await c.req.json<Record<string, unknown>>()).filter(([, v]) => v !== null),
+    );
     for (const key of [
       'id',
       'cwd',

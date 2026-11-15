@@ -11,6 +11,7 @@
  * settings, never committed (`scheduler/`, `/api/schedules`).
  */
 import { html, useEffect, useState } from './lib.js';
+import { Pane } from './rail-pane.js';
 import { authFetch, openScheduleId, projects, railView, schedules, selectThread } from './store.js';
 import { projectLabel } from './thread-labels.js';
 
@@ -82,35 +83,25 @@ export function ScheduleList() {
   }
   const editView =
     editing && editing !== 'new' ? views.find((v) => v.schedule.id === editing) : null;
-  return html`<section class="rail-pane schedules-pane" aria-label="Schedules">
-    <h3 class="rail-pane-head"><span>Schedules</span><span class="rail-pane-count">${views.length}</span>
-      <button type="button" class="rail-new-thread" onClick=${() => setEditing('new')}>+ New schedule</button></h3>
-    <div class="rail-frame">
-      ${
-        editing
-          ? html`<${ScheduleEditor} key=${editing} view=${editView} onDone=${(id) => {
-              setEditing(null);
-              if (id) openScheduleId.value = id;
-            }} />`
-          : null
-      }
-      ${
-        views.length
-          ? [...groups.values()].map(
-              (group) => html`<div key=${whereKey(group.where)} class="schedule-group">
-                <div class="schedule-group-head">${whereLabel(group.where)}</div>
-                ${group.views.map(
-                  (view) =>
-                    html`<${ScheduleRow} key=${view.schedule.id} view=${view} onEdit=${() => setEditing(view.schedule.id)} />`,
-                )}
-              </div>`,
-            )
-          : editing
-            ? null
-            : html`<div class="rail-empty">Nothing is scheduled. Add one here, or ask an agent to schedule something: each run is a new thread, listed under its schedule.</div>`
-      }
-    </div>
-  </section>`;
+  return html`<${Pane} title="Schedules" className="schedules-pane" count=${views.length}
+    empty=${editing ? null : 'Nothing is scheduled. Add one here, or ask an agent to schedule something: each run is a new thread, listed under its schedule.'}
+    action=${html`<button type="button" class="rail-new-thread" onClick=${() => setEditing('new')}>+ New schedule</button>`}
+    lead=${
+      editing
+        ? html`<${ScheduleEditor} key=${editing} view=${editView} onDone=${(id) => {
+            setEditing(null);
+            if (id) openScheduleId.value = id;
+          }} />`
+        : null
+    }>${[...groups.values()].map(
+      (group) => html`<div key=${whereKey(group.where)} class="schedule-group">
+        <div class="schedule-group-head">${whereLabel(group.where)}</div>
+        ${group.views.map(
+          (view) =>
+            html`<${ScheduleRow} key=${view.schedule.id} view=${view} onEdit=${() => setEditing(view.schedule.id)} />`,
+        )}
+      </div>`,
+    )}</${Pane}>`;
 }
 
 function ScheduleRow({ view, onEdit }) {
@@ -139,7 +130,7 @@ function ScheduleDetail({ view, onEdit }) {
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
   const lastId = view.lastRun?.id ?? '';
-  // biome-ignore lint/correctness/useExhaustiveDependencies: re-read when a new run lands.
+  // Re-read when a new run lands (lastId).
   useEffect(() => {
     let live = true;
     call(path(schedule.id, '/runs?limit=30'), 'GET')

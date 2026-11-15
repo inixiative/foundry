@@ -48,7 +48,7 @@ import {
 import { FileExternalSessionStore } from '../providers/session-adapter';
 import type { TaskSink } from '../providers/session-backed';
 import { ThreadLaunchSettings } from '../providers/thread-launch';
-import { draftAsk } from '../scheduler/agent-tools';
+import { DraftAsks } from '../scheduler/draft-asks';
 import { Scheduler } from '../scheduler/scheduler';
 import { resolveSecretsSettings, SecretScratch } from '../secrets/scratch';
 import { kingdomPostDelivery } from '../tools/kingdom-post';
@@ -328,6 +328,7 @@ export function createViewer(config: ViewerConfig) {
   let conversations: ConversationService | null = null;
   // Schedules start runs as threads (scheduler/scheduler.ts); built once turns exist, with a journal.
   let scheduler: Scheduler | null = null;
+  let draftAsks: DraftAsks | undefined;
   // `socket` is created below, once its stream families exist; delivery only happens after both do.
   const streams = createViewerStreams({
     directory,
@@ -831,19 +832,11 @@ export function createViewer(config: ViewerConfig) {
   if (localStore) {
     const schedules = new Scheduler({
       config: () => configStore.config,
-      update: (edit) => configStore.update(edit),
+      update: (edit, author) => configStore.update(edit, undefined, author),
       store: localStore,
       busy: (threadId) => turns.hasTurns(threadId),
       changed: () => streams.schedulesChanged(),
-      // The thread that proposed an accepted draft no longer waits on the owner for it.
-      accepted: ({ draft, name }) => {
-        const thread = draft ? directory.get(draft.threadId) : undefined;
-        if (!thread || thread.disposed) return;
-        if (thread.meta.agentStatus?.text !== draftAsk(name)) return;
-        delete thread.meta.agentStatus;
-        threadChanged(thread);
-      },
-      startRun: async ({ schedule, where, runId, dueAt }) => {
+      startRun: async ({ schedule, where, runId, dueAt, made }) => {
         const created = await createThread({
           name: `${schedule.name} · ${new Date(dueAt).toLocaleString()}`,
           description: `Scheduled run of ${schedule.name}`,
@@ -862,6 +855,7 @@ export function createViewer(config: ViewerConfig) {
         });
         if (!created.ok) throw Error(created.error);
         const threadId = created.thread.id;
+        made(threadId);
         const accepted = turns.accept({
           threadId,
           payload: `Scheduled run of ${JSON.stringify(schedule.name)}, as the owner set it:\n\n${schedule.prompt}`,
@@ -881,6 +875,28 @@ export function createViewer(config: ViewerConfig) {
     });
     scheduler = schedules;
     registerScheduleRoutes(app, schedules);
+    // An agent's draft asks the owner on the thread that proposed it (Accept or Reject).
+    const asks = config.actionQueue
+      ? new DraftAsks({
+          scheduler: schedules,
+          queue: config.actionQueue,
+          live: (threadId) => {
+            const thread = directory.get(threadId);
+            return !!thread && !thread.disposed && thread.meta.status !== 'archived';
+          },
+          log: (line) => console.warn(line),
+        })
+      : undefined;
+    draftAsks = asks;
+    // Any settings edit (the owner's, an agent's, a file reload) may change a schedule.
+    const unsubscribe = configStore.onChange(() => {
+      streams.schedulesChanged();
+      asks?.reconcile();
+    });
+    localStore.onClose(() => {
+      unsubscribe();
+      asks?.close();
+    });
   }
   registerDaemonUpdateRoutes(app, restartRoll, (threadId) => {
     const thread = directory.get(threadId);
@@ -1259,12 +1275,6 @@ export function createViewer(config: ViewerConfig) {
               scheduler,
               ownerInstructed: (threadId: string) =>
                 conversations?.ownerInstructed(threadId) ?? false,
-              askOwner: (threadId: string, text: string) => {
-                const thread = directory.get(threadId);
-                if (!thread || thread.disposed) return;
-                setAgentStatus(thread, { status: 'needs-you', text });
-                threadChanged(thread);
-              },
             }
           : undefined,
       artifacts: localStore
@@ -1295,6 +1305,9 @@ export function createViewer(config: ViewerConfig) {
       kingdomWatch.start();
       snoozeWatch.start();
       schedulerWatch.start();
+      // Once at start too: a run missed while Foundry was off starts now, not a tick later.
+      void scheduler?.tick().catch((error) => console.warn(`[Scheduler] ${error}`));
+      draftAsks?.reconcile();
     },
     stopSocket() {
       kingdomWatch.stop();

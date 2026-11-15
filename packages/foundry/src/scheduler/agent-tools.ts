@@ -26,9 +26,10 @@ export interface ScheduleAgentDeps {
   scheduler: ScheduleBook;
   /** The owner typed the message that opened the running turn, and it took in no other party's words. */
   ownerInstructed(threadId: string): boolean;
-  /** Ask the owner on the proposing thread (Needs-you), so a draft shows in Attention. */
-  askOwner(threadId: string, text: string): void;
 }
+
+/** The audit actor of an agent's schedule edit: the thread it was made from. */
+const agentAuthor = (threadId: string) => `thread:${threadId}`;
 
 /** A thread's own Where: its project, else its scope, else Global. */
 export const threadWhere = (meta: Pick<ThreadMeta, 'projectId' | 'role'>): ScheduleWhere => {
@@ -36,9 +37,6 @@ export const threadWhere = (meta: Pick<ThreadMeta, 'projectId' | 'role'>): Sched
   const scope = scopeOfRole(meta.role);
   return scope ? { kind: 'scope', scope } : { kind: 'global' };
 };
-
-/** The Needs-you line on a thread whose schedule waits for the owner. */
-export const draftAsk = (name: string) => `Accept the schedule "${name}"? (Scheduled view)`;
 
 const describeWhere = (where: ScheduleWhere) =>
   where.kind === 'project'
@@ -81,10 +79,10 @@ export async function setScheduleAsAgent(
   const saved = await deps.scheduler.save(
     { ...schedule, ...(owner ? {} : { draft: { threadId } }) },
     where,
+    agentAuthor(threadId),
   );
   if (owner) return `Scheduled ${describeView(saved)}. Its runs show in the Scheduled view.`;
-  deps.askOwner(threadId, draftAsk(schedule.name));
-  return `Drafted ${describeView(saved)}. It runs only once the owner accepts it in the Scheduled view; this thread now asks him. This turn was not his own instruction, so nothing was scheduled.`;
+  return `Drafted ${describeView(saved)}. It runs only once the owner accepts it; this thread now asks him (Accept or Reject), and the Scheduled view shows it. This turn was not his own instruction, so nothing was scheduled.`;
 }
 
 /** Remove a schedule for the agent: the owner's instruction, or its own draft. */
@@ -97,7 +95,7 @@ export async function removeScheduleAsAgent(
   if (!existing) throw Error(`No schedule ${id}`);
   if (!deps.ownerInstructed(threadId) && existing.schedule.draft?.threadId !== threadId)
     throw Error(`Only the owner removes ${id}: ask him, or he removes it in the Scheduled view.`);
-  await deps.scheduler.remove(id);
+  await deps.scheduler.remove(id, agentAuthor(threadId));
   return `Removed ${existing.schedule.name} (${id}); its past runs stay in the history.`;
 }
 
