@@ -13,10 +13,10 @@
  * the two counts cannot disagree.
  */
 
-import { invite, post, useConversationView } from './conversation-members.js';
+import { InviteLinks, post, useConversationView } from './conversation-members.js';
 import { html, signal, useEffect, useRef, useState } from './lib.js';
 import { Modal } from './modal.js';
-import { runLabel, ThreadRunModal } from './run-picker.js';
+import { openNewThread, runLabel, ThreadRunModal } from './run-picker.js';
 import { settingsConfig } from './settings.js';
 import {
   activeThreadId,
@@ -49,22 +49,38 @@ export const agentCountOf = ({ locals, remote, subagents }) =>
   1 + locals.length + remote.length + subagents.length;
 
 export const threadAgentsOpen = signal(false);
-const openThreadAgents = () => {
+export const openThreadAgents = () => {
   threadAgentsOpen.value = true;
 };
 
-/** The "Agents" fact under Runs on: the count (opens the modal) and "+ Add agent". */
+/** The count (opens the modal) and "+ Add agent", wherever the thread's agents are listed. */
+function AgentsButtons({ count }) {
+  return html`<button type="button" class="run-picker-link" data-agents="count" aria-haspopup="dialog"
+      onClick=${openThreadAgents} title="The agents in this thread">${count} agent${count === 1 ? '' : 's'}</button>
+    <button type="button" class="proj-btn" data-agents="add" aria-haspopup="dialog"
+      onClick=${openThreadAgents}>+ Add agent</button>`;
+}
+
+/** The "Agents" fact under Runs on. */
 export function AgentsFact() {
   const threadId = activeThreadId.value;
   const [view] = useConversationView(threadId, threadData.value?.conversation ?? null);
-  const count = agentCountOf(threadAgents(view, threadId));
   return html`<dt>Agents</dt><dd class="thread-agents-fact">
-    <button type="button" class="run-picker-link" data-agents="count" aria-haspopup="dialog"
-      onClick=${openThreadAgents} title="The agents in this thread">${count} agent${count === 1 ? '' : 's'}</button>
-    <button type="button" class="proj-btn" data-agents="add" aria-haspopup="dialog"
-      onClick=${openThreadAgents}>+ Add agent</button>
+    <${AgentsButtons} count=${agentCountOf(threadAgents(view, threadId))} />
   </dd>`;
 }
+
+/** The same, as a row of the Participants panel (with or without members). */
+export function AgentsLine({ threadId, view }) {
+  return html`<div class="conversation-floor thread-agents-fact" data-agents="line">
+    <span class="conversation-dim">Agents</span>
+    <${AgentsButtons} count=${agentCountOf(threadAgents(view, threadId))} />
+  </div>`;
+}
+
+/** A thread's project, read from the thread's own line (never from whichever thread is loaded). */
+export const projectOf = (threadId) =>
+  allThreads.value.find((t) => t.threadId === threadId)?.meta?.projectId ?? null;
 
 const base = (threadId) => `/api/threads/${encodeURIComponent(threadId)}/conversation/locals`;
 
@@ -82,6 +98,12 @@ function candidates(threadId, projectId, locals) {
       !t.meta?.spawn?.observed &&
       !isClosedThread(t),
   );
+}
+
+/** A thread just started from "New agent…" joins the host as a local member (§4.11). */
+async function joinAsAgent(hostThreadId, threadId, displayName) {
+  if (await post(base(hostThreadId), { threadId, displayName }))
+    showToast(`${displayName} joined the conversation`, 'ok');
 }
 
 async function readLaunch(threadId) {
@@ -131,7 +153,7 @@ function ThreadAgentsModal({ onClose }) {
     return html`<${ThreadRunModal} key=${changing} threadId=${changing} launch=${changingLaunch}
       title=${`${name} runs on`} onSaved=${() => refresh(changing)} onClose=${() => setChanging(null)} />`;
   }
-  const options = candidates(threadId, threadData.value?.meta?.projectId, locals);
+  const options = candidates(threadId, projectOf(threadId), locals);
   const paired = !!settingsConfig.value?.kingdomIntegrations?.length;
   const add = async () => {
     if (!pick) return;
@@ -178,6 +200,20 @@ function ThreadAgentsModal({ onClose }) {
         </li>`,
       )}
     </ul>
+    <h4 class="thread-agents-label">Start a new agent</h4>
+    <div class="thread-agents-add">
+      <span class="run-picker-note run-picker-note--dim">A new thread on the worker and model you choose, joined to this one.</span>
+      <button type="button" class="action-btn primary" data-agents="new" aria-haspopup="dialog"
+        onClick=${() => {
+          onClose();
+          openNewThread({
+            where: projectOf(threadId),
+            joinThread: threadId,
+            onCreated: (created, displayName) =>
+              joinAsAgent(threadId, created.threadId, displayName),
+          });
+        }}>New agent…</button>
+    </div>
     <h4 class="thread-agents-label">Add one of your threads</h4>
     ${
       options.length
@@ -195,7 +231,7 @@ function ThreadAgentsModal({ onClose }) {
     ${
       paired
         ? html`<p class="run-picker-note run-picker-note--dim">Invite them in Kingdom and let their grant bring an agent. Each side’s Signet sets its own rules.</p>
-          <button type="button" class="action-btn" data-agents="invite" onClick=${() => invite(threadId)}>Invite in Kingdom</button>`
+          <${InviteLinks} threadId=${threadId} projectId=${projectOf(threadId)} view=${view} />`
         : html`<p class="run-picker-note run-picker-note--dim">Pair this Foundry with Kingdom (Settings → Kingdom) to invite someone else’s agent.</p>`
     }
   <//>`;

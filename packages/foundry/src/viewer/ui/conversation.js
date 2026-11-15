@@ -95,7 +95,7 @@ import {
   waitingFor,
 } from './store.js';
 import { stripView } from './system-strip.js';
-import { agentCountOf, threadAgents } from './thread-agents.js';
+import { agentCountOf, openThreadAgents, threadAgents } from './thread-agents.js';
 import {
   harnessName,
   isUnnamed,
@@ -402,6 +402,8 @@ function ContextBar() {
                   }${runs.join(' · ')}</button>`
               : null
           }
+          <button type="button" class="band-pill band-add-agent" data-agents="add-band" aria-haspopup="dialog"
+            aria-label="Add an agent" title="Add an agent to this thread" onClick=${openThreadAgents}>+</button>
           ${
             fill !== null
               ? html`<span class="band-pill band-meter" title=${`Estimated context fill: ${fmtNum(threadContextTokens.value)} of ${fmtNum(contextWindow)} tokens`}>
