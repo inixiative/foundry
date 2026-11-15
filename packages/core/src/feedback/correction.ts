@@ -340,7 +340,7 @@ export const CORRECTION_CLASSIFY_PROMPT = `You classify messages a person typed 
 
 A CORRECTION is feedback about how the agent works: the person redirects, fixes or rejects what the agent did, or states a rule or preference the agent should keep following beyond this task. These are NOT corrections: a new task or question, an answer to the agent's question, approving or reviewing one specific item, design discussion, status chatter.
 
-For a correction, write each rule it carries as a statement: one imperative sentence of at most 160 characters that says when it applies ("When X, do Y." or "Never X."), general enough to hold next time, in plain words without quoting the message. At most three statements per message. Use names (products, tools, terms) only when the rule is about them.
+For a correction, write each rule it carries as a statement: one imperative sentence of at most 160 characters that says when it applies ("When X, do Y." or "Never X."), general enough to hold next time, in plain words without quoting the message. A statement is exactly one sentence: put what to do instead in the same sentence ("…; never Y" or "…instead of Y"), never in a second sentence, and write a separate rule as a separate statement. At most three statements per message. Use names (products, tools, terms) only when the rule is about them.
 
 Respond with JSON only, one result per message id:
 { "results": { "<id>": { "isCorrection": boolean, "category": "approach" | "scope" | "convention" | "fact" | "other", "statements": string[], "sharp": boolean } } }
