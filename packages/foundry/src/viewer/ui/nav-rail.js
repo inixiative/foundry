@@ -12,8 +12,8 @@
  * read), by `effectiveCategory`, the one "needs you" definition. A thread only waiting (a plan
  * outcome left on you, a draft, a pause) is in Open, not here (Aron, 2026-11-14: "Attention means I
  * have to look at it, and it needs a decision from me, or it has an answer for me"). A thread that is
- * working, queued or idle drops out and comes back when it hands back; the thread you have open stays
- * listed until you move on.
+ * working, queued or idle drops out and comes back when it hands back. The thread you opened stays
+ * listed until you navigate (`attentionHold`); replying to the last one opens its project's page.
  *
  * Open is every open thread across projects, in two fixed halves that each scroll on their own:
  * Yours on top, Shared (another party is a member) below. Projects is today's sidebar: the pinned
@@ -35,6 +35,7 @@ import { draftCount, ScheduleList } from './schedules.js';
 import {
   activeThreadId,
   allThreads,
+  attentionHold,
   leftSize,
   projectSidebarOpen,
   RAIL_ROWS,
@@ -100,7 +101,7 @@ function AttentionRail() {
   const selected = activeThreadId.value;
   const needs = openRoots()
     .map((node) => ({ node, cat: effectiveCategory(node) }))
-    .filter(({ node, cat }) => cat in URGENCY || node.id === selected)
+    .filter(({ node, cat }) => cat in URGENCY || node.id === attentionHold.value)
     .sort((a, b) => (URGENCY[a.cat] ?? 2) - (URGENCY[b.cat] ?? 2))
     .map(({ node }) => node);
   return html`<div class="active-rail">
