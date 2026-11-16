@@ -1735,7 +1735,11 @@ test("schedules: the agent's own idea is a draft the owner is asked about; told 
   expect((await h.route('/api/schedules/nightly/run')).status).toBe(400);
 
   // He accepts it in the Scheduled view: it is live and the ask is withdrawn.
-  expect((await h.route('/api/schedules/nightly/accept')).status).toBe(200);
+  const seen = (await (await h.viewer.app.request('/api/schedules')).json()) as {
+    schedules: Array<{ schedule: { id: string }; version: string }>;
+  };
+  const version = seen.schedules.find((view) => view.schedule.id === 'nightly')?.version;
+  expect((await h.route('/api/schedules/nightly/accept', { version })).status).toBe(200);
   await until(() => !draftPrompt('nightly'), 'the ask withdrawn');
 
   // Another draft, rejected on the thread's prompt: removed.
