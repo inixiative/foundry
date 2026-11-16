@@ -30,10 +30,10 @@
       "--no-chrome",
       "--no-session-persistence",
       "--resume",
-      "5d9297d3-a6c8-417d-8d15-ce132f57867e",
+      "ab6750d3-6b84-47e4-8645-02f2100e302a",
       "--fork-session",
       "--append-system-prompt-file",
-      "{{tmp}}/agent-session-base-87268-ejlr1e/append-system-prompt.md",
+      "{{tmp}}/agent-session-base-68900-WePotV/append-system-prompt.md",
       "--setting-sources",
       ""
     ],
@@ -50,9 +50,9 @@
   "recorded": {
     "service": "claude",
     "cli": "claude",
-    "recordedAt": "2026-11-16T01:43:32.581Z",
-    "agentSession": "0.12.4",
+    "recordedAt": "2026-11-16T14:50:28.874Z",
+    "agentSession": "0.13.0",
     "environment": "terminal",
-    "durationMs": 39
+    "durationMs": 52
   }
 }
