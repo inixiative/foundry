@@ -10117,6 +10117,14 @@ a.thread-ref:hover {
 .update-confirm-list {
   margin: 4px 0 8px 18px;
 }
+.update-notice-problem {
+  color: var(--warn);
+}
+/* The last daemon start's agent-CLI results (AgentCliFacts in Settings › About). */
+.agent-cli-list {
+  margin: 2px 0 0;
+  padding-left: 16px;
+}
 
 /* In place of the composer on an observed subagent thread (SubagentRecordNotice). */
 .subagent-record {

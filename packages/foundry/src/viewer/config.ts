@@ -33,6 +33,7 @@ import {
   validateConversationSettings,
   validateFoundryConversationSettings,
 } from '../conversations/types';
+import { type DaemonSettings, validateDaemonSettings } from '../daemon/settings';
 import { type FeedbackSettings, validateFeedbackSettings } from '../feedback/types';
 import { subscriptionWorker } from '../models/registry';
 import {
@@ -201,6 +202,8 @@ export interface FoundryConfig {
   feedback?: FeedbackSettings;
   /** `$$word` secrets lifted into the thread's scratch pad, and paths no agent reads (FEAT-005). On by default. */
   secrets?: SecretsSettings;
+  /** The LaunchAgent daemon: release auto-update and agent-CLI upgrades at start (README, "Daemon"). */
+  daemon?: DaemonSettings;
   /** The local journal (docs/THREAD-TREE.md spec A). */
   journal?: JournalSettings;
   /**
@@ -1259,6 +1262,7 @@ export function validateConfig(config: FoundryConfig): void {
   validateJournalSettings(config.journal);
   validateFeedbackSettings('feedback', config.feedback);
   validateSecretsSettings('secrets', config.secrets);
+  validateDaemonSettings('daemon', config.daemon);
   validatePrefilterSettings('prefilter', config.prefilter);
   validateLoginPoolReferences(config);
   if ('wardens' in config)

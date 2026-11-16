@@ -29,6 +29,7 @@ import { ThreadContextTracker } from '../archives/thread-context';
 import { CompositionAuditor } from '../audit/compositions';
 import { ConversationService } from '../conversations/service';
 import { memberKey } from '../conversations/types';
+import { readAgentCliReport } from '../daemon/agent-cli-update';
 import { blockedOnPerson, RestartRoll } from '../daemon/restart-roll';
 import { readLocalDevice } from '../devices/local-inventory';
 import { feedbackRoots } from '../feedback/apply';
@@ -932,10 +933,15 @@ export function createViewer(config: ViewerConfig) {
       asks?.close();
     });
   }
-  registerDaemonUpdateRoutes(app, restartRoll, (threadId) => {
-    const thread = directory.get(threadId);
-    return thread ? threadTitle(thread.meta)?.text : undefined;
-  });
+  registerDaemonUpdateRoutes(
+    app,
+    restartRoll,
+    (threadId) => {
+      const thread = directory.get(threadId);
+      return thread ? threadTitle(thread.meta)?.text : undefined;
+    },
+    () => readAgentCliReport(configDir),
+  );
   // Turns a planned restart held run again, in the order they arrived, once the daemon has booted
   // (start.ts calls it); their threads resume their native sessions through their bindings.
   const resumeHeldTurns = () =>

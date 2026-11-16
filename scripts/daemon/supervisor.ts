@@ -11,11 +11,14 @@
  * change to how updates restart ships with the release instead of waiting for this
  * checkout to move: a staged update spins the daemon down (running turns finish,
  * new ones wait) and it restarts when the last one finishes (watch.ts,
- * packages/foundry/src/daemon/restart-roll.ts). Local services come up first. A candidate
+ * packages/foundry/src/daemon/restart-roll.ts). Local services come up first. With
+ * daemon.updateAgentClis on, the agent CLIs are upgraded before the release boots, while no session
+ * runs (packages/foundry/src/daemon/agent-cli-update.ts). A candidate
  * that fails to boot (it throws, or is still booting at the boot deadline) falls back to
  * stable; a stable boot still booting at the deadline relaunches; a stable boot that fails on
  * changed settings restores the last settings that booted.
  */
+import type { updateAgentClis } from '../../packages/foundry/src/daemon/agent-cli-update';
 import { recordBooted, restoreAfterFailedBoot } from './last-good';
 import { ensureServices } from './services';
 import {
@@ -58,23 +61,47 @@ if (release.interruptedBoots)
     `candidate ${short(release.sha)}'s last boot was cut off before it finished; trying again (${release.interruptedBoots + 1} of ${MAX_INTERRUPTED_BOOTS})`,
   );
 
-// The release's own watcher when it has one (it speaks to the daemon it ships with); this checkout's otherwise.
-const releaseWatcher = `${release.dir}/scripts/daemon/watch.ts`;
-const loadReleaseWatcher = async (): Promise<typeof checkoutWatcher> => {
-  if (!(await Bun.file(releaseWatcher).exists())) return checkoutWatcher;
-  try {
-    const loaded = (await import(releaseWatcher)) as {
-      startUpdateWatcher?: typeof checkoutWatcher;
-    };
-    return loaded.startUpdateWatcher ?? checkoutWatcher;
-  } catch (error) {
-    // A release whose watcher won't load still boots, watched by this checkout's.
-    log(`release watcher did not load, using the checkout's — ${String(error)}`);
-    return checkoutWatcher;
-  }
+// A daemon module from the booted release when it has one (it speaks to the daemon it ships with);
+// this checkout's otherwise, so a release that lacks it or whose copy won't load still boots.
+const fromRelease = async <T>(
+  path: string,
+  name: string,
+  checkout: () => Promise<T>,
+): Promise<T> => {
+  const file = `${release.dir}/${path}`;
+  if (await Bun.file(file).exists())
+    try {
+      const loaded = ((await import(file)) as Record<string, T | undefined>)[name];
+      if (loaded) return loaded;
+    } catch (error) {
+      log(`release ${path} did not load, using the checkout's — ${String(error)}`);
+    }
+  return checkout();
 };
-const startUpdateWatcher = await loadReleaseWatcher();
+const startUpdateWatcher = await fromRelease(
+  'scripts/daemon/watch.ts',
+  'startUpdateWatcher',
+  async () => checkoutWatcher,
+);
 const settings = await readSettings();
+// Before the release boots, so no session runs on a CLI this moves (daemon.updateAgentClis). A
+// module that won't load, or a check that throws, is logged and the release boots anyway.
+const agentCliUpdate = 'packages/foundry/src/daemon/agent-cli-update.ts';
+try {
+  const update = await fromRelease<typeof updateAgentClis>(
+    agentCliUpdate,
+    'updateAgentClis',
+    async () => (await import(`${repoRoot}/${agentCliUpdate}`)).updateAgentClis,
+  );
+  await update({
+    updates: settings?.daemon?.updateAgentClis === true,
+    configDir,
+    fixturesDir: `${release.dir}/packages/foundry/tests/fixtures/vcr`,
+    log: (message: string) => log(`agent CLIs: ${message}`),
+  });
+} catch (error) {
+  log(`agent CLI check failed — ${String(error)}`);
+}
 const checkSeconds = Number(settings?.daemon?.updateCheckSeconds ?? 300);
 const spinDownSeconds = Number(settings?.daemon?.drainTimeoutSeconds);
 // Generous: a boot took 19 minutes at load 90–200 (2026-11-04).

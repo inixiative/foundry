@@ -3,6 +3,7 @@
  * @kind helper
  * @partOf feature:daemon
  */
+import { MUSE_SDK_VERSION } from '@inixiative/agent-session';
 import { $ } from 'bun';
 
 export const SYSTEM_PATH = [
@@ -20,6 +21,15 @@ export const AGENT_CLIS = ['claude', 'codex', 'muse'] as const;
  * daemon; where it is installed, the daemon's PATH reaches it.
  */
 export const REQUIRED_AGENT_CLIS: readonly string[] = ['claude', 'codex'];
+
+/**
+ * CLIs whose protocol is pinned to one release: agent-session's MuseSession speaks the @muse-code/sdk
+ * of exactly this version and refuses a host serving another.
+ */
+export const PINNED_CLI_VERSIONS: Readonly<Record<string, string>> = { muse: MUSE_SDK_VERSION };
+
+/** A binary inside an app bundle shares its directory with the app's other tools; the app updates it. */
+export const inAppBundle = (binary: string) => binary.includes('.app/Contents/');
 
 export type Install = { binary: string; version: number[] };
 
@@ -56,9 +66,6 @@ const appBundled = (command: string, home: string): Array<{ root: string; patter
     ];
   return [];
 };
-
-/** A binary inside an app bundle shares its directory with the app's other tools. */
-const inAppBundle = (binary: string) => binary.includes('.app/Contents/');
 
 export const installLocations = async (
   command: string,

@@ -9,7 +9,9 @@
  * with Pause now (pause them without the grace; each resumes after the restart), Restart now once
  * they are pausing (confirmed: it names the turns that would be cut) and Not now (postpone this
  * update). Settings › About shows the same state. The page reloads onto the new build by itself
- * (`loadUpdateState`).
+ * (`loadUpdateState`). What the last daemon start did to the agent CLIs (`agentClis`,
+ * packages/foundry/src/daemon/agent-cli-update.ts) is listed in About; a failed upgrade, a CLI not
+ * signed in after one, and cassettes that need re-recording also show in the header.
  */
 import { html, useState } from './lib.js';
 import { Modal } from './modal.js';
@@ -17,6 +19,47 @@ import { updateAction, updateState } from './store.js';
 
 const short = (sha) => (sha ? sha.slice(0, 8) : '');
 const turns = (n) => `${n} turn${n === 1 ? '' : 's'}`;
+
+const CLI_LABELS = { claude: 'Claude Code', codex: 'Codex', muse: 'Muse Code' };
+const cliLabel = (cli) => CLI_LABELS[cli] ?? cli;
+const cassettes = (n) => `${n} cassette${n === 1 ? '' : 's'}`;
+
+/** What needs the owner from the last agent-CLI check: failed upgrades, lost logins, stale cassettes. */
+export function agentCliProblems(report) {
+  if (!report) return [];
+  return [
+    ...(report.clis ?? []).flatMap((entry) => [
+      ...(entry.outcome === 'failed'
+        ? [`${cliLabel(entry.cli)} update failed${entry.detail ? `: ${entry.detail}` : ''}`]
+        : []),
+      ...(entry.signedIn === false
+        ? [`${cliLabel(entry.cli)} is not signed in after its update`]
+        : []),
+    ]),
+    ...(report.reRecord ?? []).map(
+      (stale) =>
+        `Re-record needed: ${cassettes(stale.cassettes)} recorded on an older ${cliLabel(stale.cli)} than ${stale.installed} (bun run test:live)`,
+    ),
+  ];
+}
+
+/** One CLI's result, in plain words. */
+function agentCliLine(entry) {
+  const versions =
+    entry.before && entry.after && entry.before !== entry.after
+      ? `${entry.before} → ${entry.after}`
+      : (entry.after ?? entry.before ?? '');
+  const outcome = {
+    updated: 'updated',
+    current: 'up to date',
+    'not-updated': 'not updated',
+    failed: 'update failed',
+    missing: 'not installed',
+  }[entry.outcome];
+  const login =
+    entry.signedIn === false ? ' · not signed in' : entry.signedIn ? ' · signed in' : '';
+  return `${cliLabel(entry.cli)}${versions ? ` ${versions}` : ''}: ${outcome ?? entry.outcome}${entry.detail ? ` (${entry.detail})` : ''}${login}`;
+}
 
 /** One line for the update state, or null when there is nothing to say. */
 export function updateLine(state) {
@@ -94,7 +137,13 @@ export function UpdateNotice() {
   const state = updateState.value;
   const [confirming, setConfirming] = useState(false);
   const line = updateLine(state);
-  if (!line || state.phase === 'postponed') return null;
+  if (!line || state.phase === 'postponed') {
+    const problems = agentCliProblems(state?.agentClis);
+    if (!problems.length) return null;
+    return html`<span class="update-notice update-notice-problem" title=${problems.join('\n')}>
+      <span class="update-notice-text" role="status">${problems.length === 1 ? problems[0] : `Agent CLIs: ${problems.length} things need you (Settings › About)`}</span>
+    </span>`;
+  }
   const waiting = state.waiting
     ? ` · ${turns(state.waiting)} waiting to start after the restart`
     : '';
@@ -112,6 +161,24 @@ export function UpdateNotice() {
         : null
     }
     ${confirming ? html`<${RestartConfirm} state=${state} onClose=${() => setConfirming(false)} />` : null}
+  </span>`;
+}
+
+/** Settings › About: what the last daemon start did to the agent CLIs, and cassettes to re-record. */
+export function AgentCliFacts() {
+  const report = updateState.value?.agentClis;
+  if (!report)
+    return html`<span class="agent-cli-facts">Not checked yet: the daemon checks at start</span>`;
+  const stale = (report.reRecord ?? []).map(
+    (entry) =>
+      `Re-record needed: ${cassettes(entry.cassettes)} recorded on an older ${cliLabel(entry.cli)} than ${entry.installed} (bun run test:live)`,
+  );
+  return html`<span class="agent-cli-facts">
+    ${report.updates ? null : html`<span>Upgrades at start are off (<code>daemon.updateAgentClis</code>)</span>`}
+    <ul class="agent-cli-list">
+      ${(report.clis ?? []).map((entry) => html`<li key=${entry.cli} data-cli=${entry.cli} data-outcome=${entry.outcome}>${agentCliLine(entry)}</li>`)}
+      ${stale.map((line) => html`<li key=${line} data-re-record>${line}</li>`)}
+    </ul>
   </span>`;
 }
 

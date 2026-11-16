@@ -11,6 +11,7 @@ import {
   type NativeAuthenticationSource,
   type NativeRuntime,
   readSetupToken,
+  withoutCompetingCredentials,
 } from './native-authentication';
 import { nativeTextEnvironment } from './native-text-environment';
 import {
@@ -45,6 +46,33 @@ const STATUS: Record<
 // `claude auth status` reaches the network; under launchd it takes several seconds.
 const STATUS_DEADLINE_MS = 20_000;
 const STATUS_TTL_MS = 5 * 60_000;
+
+/**
+ * Whether a CLI binary's own login is signed in, by its runtime's read-only check (no model turn,
+ * nothing about the account read out), on the user's home with competing credentials removed.
+ * False on a refusal, a failed check or one past the deadline.
+ */
+export async function nativeLoginSignedIn(
+  runtime: NativeRuntime,
+  binary: string,
+  env: Record<string, string | undefined> = process.env,
+): Promise<boolean> {
+  const status = STATUS[runtime];
+  const child = Bun.spawn([binary, ...status.argv.slice(1)], {
+    env: withoutCompetingCredentials(nativeTextEnvironment(env), runtime),
+    stdin: 'ignore',
+    stdout: 'pipe',
+    stderr: 'pipe',
+  });
+  const timer = setTimeout(() => child.kill(), STATUS_DEADLINE_MS);
+  try {
+    return await status.read(child);
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 /** The main-thread worker on its subscription login, a shared holder alongside decisions on the same login.
  * Codex runs on a Foundry-private CODEX_HOME, so the user's Codex config never applies. Muse Code runs on

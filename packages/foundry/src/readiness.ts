@@ -6,7 +6,6 @@
 import { constants } from 'node:fs';
 import { access, stat } from 'node:fs/promises';
 import { join } from 'node:path';
-import { MUSE_SDK_VERSION } from '@inixiative/agent-session';
 import type { ArchiveClient } from '@inixiative/archive/remote';
 import { computeHash, MODEL_REGISTRY, resolveDecisionModel } from '@inixiative/foundry-core';
 import { readPrivateJson, signetCredentialFile, signetCredentialSchema } from '@inixiative/signet';
@@ -14,7 +13,7 @@ import { configuredExperts } from './agents/configured-experts';
 import { REPOSITORY_SETTINGS_FILE, regionKey } from './agents/region-roster';
 import { archiveStatus, localArchiveUrl } from './archives/local';
 import { charterFor, deadlineShares, responseProtocol, type StageConfig } from './classify';
-import { ensureAgentClisOnPath, type Install } from './daemon/agent-clis';
+import { ensureAgentClisOnPath, type Install, PINNED_CLI_VERSIONS } from './daemon/agent-clis';
 import { SUBSCRIPTION_WORKERS, subscriptionWorker } from './models/registry';
 import { providerEnabled } from './models/vendors';
 import {
@@ -23,12 +22,10 @@ import {
   kingdomIntegrationId,
   listedSignets,
 } from './providers/kingdom-installation-connection';
-import { withoutCompetingCredentials } from './providers/native-authentication';
-import { nativeTextEnvironment } from './providers/native-text-environment';
-import { museSubscriptionStatus } from './providers/native-text-provider';
 import { providerApiKey } from './providers/openai-compatible';
 import { prefilterInstalled } from './providers/prefilter-model';
 import { assertProfile } from './providers/private-profile';
+import { nativeLoginSignedIn } from './providers/subscription-authentication';
 import {
   defaultWorkers,
   resolveSubscriptionPolicy,
@@ -170,11 +167,6 @@ const NATIVE_LABELS: Record<string, string> = {
   codex: 'Codex',
   muse: 'Muse Code',
 };
-/**
- * CLIs whose protocol is pinned to one release: agent-session's MuseSession speaks the @muse-code/sdk
- * of exactly this version and refuses a host serving another, so a mismatch is found here first.
- */
-const PINNED_CLI_VERSIONS: Record<string, string> = { muse: MUSE_SDK_VERSION };
 
 /**
  * Each native runtime CLI the configuration launches (every enabled native provider's, and the
@@ -282,19 +274,7 @@ export async function inspectNativeClis(
  * (Claude's and Codex's are checked at launch by their worker's authentication); undefined: not asked.
  */
 export async function nativeLoginStatus(cli: string, binary: string): Promise<boolean | undefined> {
-  if (cli !== 'muse') return undefined;
-  const child = Bun.spawn([binary, 'usage', '--json'], {
-    env: { ...withoutCompetingCredentials(nativeTextEnvironment(process.env), 'muse') },
-    stdin: 'ignore',
-    stdout: 'pipe',
-    stderr: 'pipe',
-  });
-  const timer = setTimeout(() => child.kill(), 20_000);
-  try {
-    return await museSubscriptionStatus(child);
-  } finally {
-    clearTimeout(timer);
-  }
+  return cli === 'muse' ? nativeLoginSignedIn('muse', binary) : undefined;
 }
 
 /** Local configuration inspection only. No provider construction, auth renewal, reservation or task dispatch. */

@@ -221,3 +221,39 @@ test('the viewer serves the update state and its boot id; with nothing running i
   // Nothing running: it restarts at once.
   expect(restarts).toEqual(['cand']);
 });
+
+test('the update status carries what the last daemon start did to the agent CLIs', async () => {
+  const roll = new RestartRoll({
+    running: () => [],
+    waiting: () => 0,
+    prepare: () => {},
+    pollMs: 60_000,
+  });
+  const report = {
+    checkedAt: '2026-11-15T00:00:00.000Z',
+    updates: true,
+    clis: [
+      {
+        cli: 'claude',
+        before: '2.1.325',
+        after: '2.1.330',
+        outcome: 'updated' as const,
+        signedIn: true,
+      },
+    ],
+    reRecord: [{ cli: 'claude', installed: '2.1.330', cassettes: 4 }],
+  };
+  const withReport = new Hono();
+  registerDaemonUpdateRoutes(
+    withReport,
+    roll,
+    () => undefined,
+    async () => report,
+  );
+  expect(await (await withReport.request('/api/daemon/update')).json()).toMatchObject({
+    agentClis: report,
+  });
+  const before = new Hono();
+  registerDaemonUpdateRoutes(before, roll, () => undefined);
+  expect(await (await before.request('/api/daemon/update')).json()).not.toHaveProperty('agentClis');
+});
