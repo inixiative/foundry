@@ -46,7 +46,7 @@ const WORKERS = [
         defaultEffort: 'high',
       },
       {
-        id: 'haiku',
+        id: 'claude-haiku-5-5',
         label: 'Haiku 5.5',
         efforts: ['low', 'medium', 'high'],
         defaultEffort: 'high',
@@ -87,7 +87,7 @@ const launchOf = (threadId: string, extra: Record<string, unknown> = {}) => ({
   provider: 'claude-code',
   worker: 'claude-code',
   model: 'claude-opus-5-5',
-  modelOverride: null,
+  modelAlias: null,
   effort: null,
   effortDefault: 'high',
   workerLock: null,
@@ -157,7 +157,7 @@ test('the header names worker · model · effort; its picker switches this threa
       if (route.request().method() === 'PATCH') {
         const body = route.request().postDataJSON();
         sent.push({ path: 'launch', body });
-        launch = { ...launch, ...body, modelOverride: body.model as null };
+        launch = { ...launch, ...body };
       }
       return route.fulfill({ contentType: 'application/json', body: JSON.stringify(launch) });
     });

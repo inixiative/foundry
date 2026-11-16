@@ -154,8 +154,8 @@ export function RunPicker({
 /**
  * Apply a picked run to a thread. A worker or role change goes first: the thread is rebuilt on the
  * new worker, whose native session starts fresh (after the first turn, seeded with the conversation and
- * marked "continued on" in the transcript); then the model and effort, which its idle session picks
- * up on the next turn.
+ * marked "continued on" in the transcript); then the model (marked "switched to" after the first turn) and effort, which its idle
+ * session picks up on the next turn.
  */
 async function applyRun(threadId, launch, next) {
   const json = { 'Content-Type': 'application/json' };
@@ -173,13 +173,12 @@ async function applyRun(threadId, launch, next) {
     const body = await res.json().catch(() => ({}));
     if (!res.ok) throw Error(body.error ?? res.statusText);
   }
-  const worker = launch.options?.workers?.find((w) => w.id === next.worker);
   const res = await authFetch(`/api/threads/${encodeURIComponent(threadId)}/launch`, {
     method: 'PATCH',
     headers: json,
     body: JSON.stringify({
-      // The worker's default model is no choice: the thread follows the project's default.
-      model: next.model && next.model !== worker?.defaultModel ? next.model : null,
+      // The thread holds its own model: only a different pick is sent (a worker switch already set one).
+      ...(next.model && next.model !== launch.model ? { model: next.model } : {}),
       effort: next.effort || null,
     }),
   });

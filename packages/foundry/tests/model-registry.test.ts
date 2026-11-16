@@ -83,15 +83,15 @@ describe('model registry', () => {
 
     expect(claudeCode?.models.find((model) => model.id === 'fable')).toMatchObject({
       runtimeKind: 'native-harness',
-      nativeAlias: true,
+      aliasOf: 'claude-fable-5-2',
     });
     expect(openai?.models.find((model) => model.id === 'gpt-6-astra')).toMatchObject({
       runtimeKind: 'api',
-      nativeAlias: false,
+      aliasOf: null,
     });
     expect(codex?.models.find((model) => model.id === 'gpt-6-astra')).toMatchObject({
       runtimeKind: 'native-harness',
-      nativeAlias: false,
+      aliasOf: null,
     });
   });
 });

@@ -18,9 +18,13 @@ import type { JournalEntry, LocalSessionStore } from '../persistence/local-sessi
 /** How much of the conversation a fresh native session is given when its worker's window is unknown (newest kept). */
 export const JOURNAL_HISTORY_CHARS = 40_000;
 
-/** The journal row a mid-thread worker switch writes, in the thread's order (CORE-004's marker). */
+/** The journal row a mid-thread worker or model switch writes, in the thread's order (CORE-004's marker). */
 export const WORKER_SWITCH_PHASE = 'worker-switch';
-/** A thread moving to another worker (Aron, 2026-11-02): its marker, as the journal keeps it. */
+/**
+ * A thread moving to another worker (Aron, 2026-11-02) or another model (2026-11-15): its marker, as
+ * the journal keeps it. `from === to` is a model switch on the same worker: the same native session
+ * resumes on the new model, so it is no seed boundary.
+ */
 export interface WorkerSwitchRecord {
   readonly from: string;
   readonly to: string;
@@ -28,6 +32,16 @@ export interface WorkerSwitchRecord {
   readonly toLabel: string;
   /** The native session the thread held on the old worker; kept on record, never resumed. */
   readonly fromSession: string | null;
+  /** The model the thread ran before and after (`ThreadMeta.model.id`), when either is known. */
+  readonly fromModel?: string;
+  readonly toModel?: string;
+  /** Who moved it: the person's choice, or Foundry because the old model was retired. */
+  readonly cause?: 'person' | 'retired';
+}
+
+/** A marker that changed only the model: the thread stayed on its worker and its native session. */
+export function isModelOnlySwitch(record: WorkerSwitchRecord): boolean {
+  return record.from === record.to;
 }
 
 type HistoryStore = Pick<LocalSessionStore, 'journalEntries'> &
@@ -138,7 +152,12 @@ function seedParts(
         !delivered.has(`${String(entry.record.hostThreadId)}:${String(entry.record.hostSeq)}`)
       )
         continue;
-      if (hops === 0 && entry.source === 'phase' && entry.phase === WORKER_SWITCH_PHASE) {
+      if (
+        hops === 0 &&
+        entry.source === 'phase' &&
+        entry.phase === WORKER_SWITCH_PHASE &&
+        !isModelOnlySwitch(entry.record as unknown as WorkerSwitchRecord)
+      ) {
         if (!moved && !turnAfter) moved = entry.record as unknown as WorkerSwitchRecord;
         turnAfter = true;
       }
@@ -181,7 +200,7 @@ function intro(forkedFrom: ThreadFork | undefined, moved: WorkerSwitchRecord | u
   if (moved)
     return `This thread moved from ${moved.fromLabel} to ${moved.toLabel} mid-conversation, so this session started fresh on ${moved.toLabel}${
       forkedFrom ? ` (the thread is also a fork of thread ${forkedFrom.threadId})` : ''
-    }. Here is the conversation so far from Foundry's journal, oldest first; "Continued on" marks where the worker changed. The earlier session's own state (files it read, tool results) did not carry over: read again what you need. ${record}`;
+    }. Here is the conversation so far from Foundry's journal, oldest first; "Continued on" marks where the worker changed and "Switched to" where the model did. The earlier session's own state (files it read, tool results) did not carry over: read again what you need. ${record}`;
   if (forkedFrom)
     return `This thread was forked from thread ${forkedFrom.threadId} at its entry ${forkedFrom.journalSeq}, so this session started fresh. Here is the conversation it carries from Foundry's journal, oldest first: the source's conversation up to the fork, then this thread's own. ${record}`;
   return `This thread's earlier native session could not be resumed, so this session started fresh. Here is the thread's conversation so far from Foundry's journal, oldest first. ${record}`;
@@ -228,6 +247,15 @@ function planText(plan: ThreadPlan | undefined): string | undefined {
   return text.length > PLAN_CHARS ? `${text.slice(0, PLAN_CHARS - 1)}…` : text;
 }
 
+/** The marker in words, as the seed and a reader see it. */
+export function switchLine(record: WorkerSwitchRecord): string {
+  const why = record.cause === 'retired' ? `, because ${record.fromModel} was retired` : '';
+  if (isModelOnlySwitch(record))
+    return `Switched to ${record.toModel} from here (it ran on ${record.fromModel ?? 'its earlier model'} before${why})`;
+  const model = record.toModel ? ` with ${record.toModel}` : '';
+  return `Continued on ${record.toLabel}${model} from here (it ran on ${record.fromLabel} before${why})`;
+}
+
 const FORKED_HERE = '## Forked here';
 
 /** How far up a chain of forks the history reaches (each hop is a source thread). */
@@ -244,8 +272,7 @@ function render(entry: JournalEntry, currentTurnId: string | undefined): string 
   if (entry.source === 'phase' && entry.phase === 'shared-entry')
     return `## Heard\n${sharedEntryText(entry.record as unknown as SharedEntryRecord)}`;
   if (entry.source === 'phase' && entry.phase === WORKER_SWITCH_PHASE) {
-    const record = entry.record as unknown as WorkerSwitchRecord;
-    return `## Continued on ${record.toLabel} from here (it ran on ${record.fromLabel} before)`;
+    return `## ${switchLine(entry.record as unknown as WorkerSwitchRecord)}`;
   }
   const view = threadEntryOf(entry);
   if (!view) return undefined;

@@ -74,7 +74,7 @@ interface Session {
   outbox: Promise<void>;
   /** This session's thread and flow streams on a socket: shared by every request that needs them. */
   holding: { streams: DataStreamClient; ready: Promise<void> } | null;
-  /** What this host chose (mode, model, effort, MCP servers), re-applied to a restarted daemon. */
+  /** What this host chose (mode, effort, MCP servers), re-applied to a restarted daemon; the model is the thread's own. */
   launch: ThreadLaunchPatch;
   /** The daemon socket the launch was last applied through; null once that daemon may have lost it. */
   launchedOn: DataStreamClient | null;
@@ -878,16 +878,23 @@ export function createFoundryAgent(options: FoundryAgentOptions = {}) {
         const view = await foundry.http.launch(session.threadId).catch(httpError);
         return { configOptions: configOptions(view, session.steer) };
       }
+      // The model is the thread's record's, not a launch setting: a change is marked in the thread,
+      // and a restarted daemon still has it, so it is never replayed.
+      if (configId === 'model') {
+        const foundry = await ensureDaemon().catch(httpError);
+        const view = await foundry.http
+          .updateLaunch(session.threadId, { model: value })
+          .catch(httpError);
+        return { configOptions: configOptions(view, session.steer) };
+      }
       const patch: ThreadLaunchPatch =
         configId === 'mode'
           ? { permissionMode: value as ModeId }
-          : configId === 'model'
-            ? { model: value }
-            : configId === 'effort'
-              ? { effort: value === 'default' ? null : (value as ThreadLaunchPatch['effort']) }
-              : (() => {
-                  throw RequestError.invalidParams({ configId }, 'Unknown config option');
-                })();
+          : configId === 'effort'
+            ? { effort: value === 'default' ? null : (value as ThreadLaunchPatch['effort']) }
+            : (() => {
+                throw RequestError.invalidParams({ configId }, 'Unknown config option');
+              })();
       const foundry = await ensureDaemon().catch(httpError);
       const view = await applyLaunch(session, foundry, patch).catch(httpError);
       if (configId === 'mode')
@@ -907,7 +914,7 @@ export function createFoundryAgent(options: FoundryAgentOptions = {}) {
         foundry = await ensureDaemon().catch(httpError);
         if (pending.cancelled) return { stopReason: 'cancelled' };
         await hold(session, foundry).catch(httpError);
-        // A restarted daemon lost this host's mode, model, effort and MCP servers: apply them first,
+        // A restarted daemon lost this host's mode, effort and MCP servers: apply them first,
         // or refuse the turn rather than run it under settings the host did not choose.
         await relaunch(session, foundry).catch(httpError);
       } finally {

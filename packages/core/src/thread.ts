@@ -240,6 +240,15 @@ export interface ThreadSpawn {
   readonly observed?: boolean;
 }
 
+/**
+ * A thread's model: the id it runs, and the CLI alias it was chosen as, if any
+ * (`{ id: 'claude-opus-5-5', alias: 'opus' }`). The alias is a record of the choice; the id runs.
+ */
+export interface ThreadModel {
+  id: string;
+  alias?: string;
+}
+
 export interface ThreadMeta {
   /** Living description — what this thread is doing right now. */
   description: string;
@@ -317,6 +326,20 @@ export interface ThreadMeta {
 
   /** The harness running this thread's main session (`claude-code`, `codex`). Set at creation; never changed silently. */
   worker?: string;
+
+  /**
+   * The model its main session runs, as the id a CLI alias points to (`claude-opus-5-5`, never
+   * `opus`), with the alias it was chosen as. The one source for the thread's model: a changed
+   * default applies to new threads only, and after its first turn it changes only by a person's
+   * choice or by succession when the model is retired, each marked in the thread.
+   */
+  model?: ThreadModel;
+
+  /**
+   * Set when the thread came back from archive on a retired model: its person chooses the model it
+   * continues on before any turn runs. Cleared when its model changes.
+   */
+  retiredModelChoice?: { model: string; retiredAt: string };
 
   /** The thread role its instructions compose as (`coder`, `assistant`, …). Absent: its worker's default role. */
   role?: string;
@@ -429,6 +452,8 @@ export interface ThreadConfig {
   projectId?: string;
   /** The harness running this thread's main session. */
   worker?: string;
+  /** The model its main session runs (see `ThreadMeta.model`). */
+  model?: ThreadModel;
   /** The thread role its instructions compose as. */
   role?: string;
   /** Optional token tracker — auto-records costs for every dispatch. */
@@ -485,6 +510,7 @@ export class Thread {
       ...(opts?.scheduledBy ? { scheduledBy: opts.scheduledBy } : {}),
       projectId: opts?.projectId,
       ...(opts?.worker ? { worker: opts.worker } : {}),
+      ...(opts?.model ? { model: { ...opts.model } } : {}),
       ...(opts?.role ? { role: opts.role } : {}),
       createdAt: now,
       lastActiveAt: now,
@@ -631,6 +657,9 @@ export class Thread {
     const meta = {
       cwd: this.meta.cwd,
       threadId: this.id,
+      ...(this.meta.model && this.meta.worker
+        ? { model: { id: this.meta.model.id, worker: this.meta.worker } }
+        : {}),
       projectId: this.meta.projectId,
       messageId: ctx.messageId,
       dispatchId,

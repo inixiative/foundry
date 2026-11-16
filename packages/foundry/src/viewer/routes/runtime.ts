@@ -12,6 +12,7 @@ import type {
   InterventionLog,
   StreamEvent,
   ThreadConfig,
+  ThreadModel,
   ThreadScheduled,
   TokenTracker,
 } from '@inixiative/foundry-core';
@@ -20,7 +21,9 @@ import {
   modelEfforts,
   newId,
   REASONING_EFFORTS,
+  readModelRetirement,
   registryModel,
+  resolveModelAliasToModelId,
   Thread,
   threadTitle,
   timeFromId,
@@ -29,7 +32,11 @@ import type { Hono } from 'hono';
 import { chorusRetries, chorusRows, turnChorus } from '../../agents/chorus-degraded';
 import type { PlanDrafter } from '../../agents/plan-drafter';
 import type { ProjectRegistry } from '../../agents/project';
-import { type ThreadFactory, WorkerRefusedError } from '../../agents/thread-factory';
+import {
+  defaultThreadModel,
+  type ThreadFactory,
+  WorkerRefusedError,
+} from '../../agents/thread-factory';
 import type { ThreadNamer } from '../../agents/thread-namer';
 import type { ArchiveCapture } from '../../archives/capture';
 import type { ThreadContextTracker } from '../../archives/thread-context';
@@ -37,7 +44,9 @@ import { type FeedbackService, localOperator } from '../../feedback/service';
 import type { FeedbackAbout } from '../../feedback/types';
 import { byAttention, feedbackView, newestFirst } from '../../feedback/view';
 import { branchCommits, listWorktrees } from '../../git';
+import { retiredModelRefusal } from '../../models/model-succession';
 import {
+  choosableThreadModels,
   registryForViewer,
   SUBSCRIPTION_WORKERS,
   subscriptionWorker,
@@ -74,6 +83,7 @@ import {
 import { WORKER_SWITCH_PHASE, type WorkerSwitchRecord } from '../../turns/journal-history';
 import type { NativeOutcomeRecovery } from '../../turns/native-outcome-recovery';
 import type { RunningTasks } from '../../turns/running-tasks';
+import { changeThreadModel } from '../../turns/thread-model';
 import { TurnService, type TurnServiceDeps } from '../../turns/turn-service';
 import { type ConfigStore, steerOnSend } from '../config';
 import { resolveProjectView, resolveThreadView, threadRoleOf } from '../config-resolve';
@@ -127,11 +137,11 @@ export interface RuntimeRoutesDeps {
   feedback?: FeedbackService | null;
   /** The secret scratch pad (FEAT-005): owners' messages are lifted on accept. */
   secrets?: SecretScratch | null;
+  /** Moving threads off retired models at turn start (`models/model-succession.ts`). */
+  modelSuccession?: TurnServiceDeps['modelSuccession'];
   /** Images sent with messages (`POST /api/attachments/images`, then `images: [id]` on a send). */
   images?: ImageAttachmentStore;
 }
-
-type SubscriptionWorkerId = keyof typeof SUBSCRIPTION_WORKERS;
 
 /** Nothing new starts while the daemon spins down for an update (`daemon/restart-roll.ts`). */
 const RESTARTING =
@@ -161,8 +171,8 @@ export interface NewThreadInput {
   parentThreadId?: string;
   worker?: string;
   role?: string;
-  /** Its model and effort, held where a later change goes. */
-  start: ThreadLaunchPatch;
+  /** Its model (pinned on its record) and effort (held in its launch settings). */
+  start: { model?: string; effort?: EffortLevel };
   /** The schedule run it is for. */
   scheduledBy?: ThreadScheduled;
 }
@@ -234,6 +244,7 @@ export function registerRuntimeRoutes(
     streams,
     feedback: deps.feedback ?? null,
     secrets: deps.secrets ?? null,
+    modelSuccession: deps.modelSuccession ?? null,
   });
 
   /** The installed @inixiative/foundry version (the About page shows it). */
@@ -905,10 +916,11 @@ export function registerRuntimeRoutes(
         id: worker,
         label: MODEL_REGISTRY[worker]?.label ?? worker,
         default: worker === fallback,
-        defaultModel: scopeModel(projectId, worker),
+        defaultModel:
+          resolveModelAliasToModelId(worker, scopeModel(projectId, worker) ?? '') || undefined,
         defaultRole: defaultThreadRole(scopeComposition(projectId), worker),
         // Each model with the efforts it takes and the one it runs at when none is chosen (N-series vocabulary).
-        models: (MODEL_REGISTRY[worker]?.models ?? []).map((model) => ({
+        models: choosableThreadModels(worker).map((model) => ({
           id: model.id,
           label: model.label,
           efforts: modelEfforts(worker, model.id) ?? [],
@@ -1018,6 +1030,24 @@ export function registerRuntimeRoutes(
     return null;
   };
 
+  /** Why the thread's model can't change right now: a turn on it is running or queued. */
+  const modelLock = (thread: Thread): string | null =>
+    thread.meta.status === 'active' || turns.hasTurns(thread.id)
+      ? 'a turn is running or queued; change the model once it ends'
+      : null;
+
+  /** A model a thread may be set to: one its subscription worker runs, and not retired. */
+  const threadModelRefusal = (worker: string, modelId: string): string | undefined => {
+    if (subscriptionWorker(worker)) {
+      const refusal = workerModelRequirement(worker, modelId);
+      if (refusal) return refusal;
+    }
+    const retirement = readModelRetirement(worker, modelId);
+    return retirement.retired ? retiredModelRefusal(modelId, retirement) : undefined;
+  };
+
+  const modelDeps = { store: localStore ?? undefined, launch: threadLaunch };
+
   /** Whether the thread has run a turn: a worker switch then carries its conversation over. */
   const started = (thread: Thread) => (localStore?.recentTurnIds(thread.id, 1).length ?? 0) > 0;
 
@@ -1031,6 +1061,9 @@ export function registerRuntimeRoutes(
         to: record.to,
         fromLabel: record.fromLabel,
         toLabel: record.toLabel,
+        fromModel: record.fromModel ?? null,
+        toModel: record.toModel ?? null,
+        cause: record.cause ?? 'person',
       };
     });
 
@@ -1042,7 +1075,7 @@ export function registerRuntimeRoutes(
     const projectId = thread.meta.projectId;
     const fallback = threadFactory?.defaultWorker(projectId) ?? provider;
     const workers = workerChoices(projectId, fallback);
-    const model = launch.model ?? configuredModel;
+    const model = thread.meta.model?.id ?? configuredModel;
     return {
       threadId: thread.id,
       provider,
@@ -1052,8 +1085,9 @@ export function registerRuntimeRoutes(
       /** The thread role its instructions compose as now. */
       effectiveRole: threadRoleOf(deps.configStore.config, thread.meta),
       permissionMode: launch.permissionMode ?? null,
+      /** The model the thread runs (`meta.model`, pinned at creation), and the alias it was chosen by. */
       model,
-      modelOverride: launch.model ?? null,
+      modelAlias: thread.meta.model?.alias ?? null,
       effort: launch.effort ?? null,
       /** The effort it runs at while it chose none, so the header always names one. */
       effortDefault: defaultEffort(provider, model),
@@ -1074,7 +1108,7 @@ export function registerRuntimeRoutes(
       setAside,
       options: {
         permissionModes: PERMISSION_MODES,
-        models: (MODEL_REGISTRY[provider]?.models ?? []).map((model) => ({
+        models: choosableThreadModels(provider).map((model) => ({
           id: model.id,
           label: model.label,
         })),
@@ -1104,23 +1138,35 @@ export function registerRuntimeRoutes(
     const patch: ThreadLaunchPatch = {};
     if ('permissionMode' in body)
       patch.permissionMode = body.permissionMode as PermissionMode | null;
-    if ('model' in body) patch.model = body.model as string | null;
     if ('effort' in body) patch.effort = body.effort as EffortLevel | null;
     if ('mcpServers' in body) patch.mcpServers = body.mcpServers as ThreadLaunchPatch['mcpServers'];
-    // A thread's model is the same choice as an executor's: any model its subscription worker runs.
+    // A thread's model is the same choice as an executor's: any current model its worker runs,
+    // stored on its record (the one source), an alias pinned to the id it names. Null re-pins the
+    // configured default as it is now.
     const { provider, model: current, effort } = launchView(thread);
-    if (typeof patch.model === 'string' && subscriptionWorker(provider)) {
-      const refusal = workerModelRequirement(provider, patch.model);
-      if (refusal) return c.json({ error: refusal }, 400);
+    let nextModel: ThreadModel | undefined;
+    if ('model' in body) {
+      if (body.model === null) {
+        nextModel = defaultThreadModel(
+          resolveThreadView(deps.configStore.config, thread.meta).config,
+        );
+      } else if (typeof body.model !== 'string' || !body.model.trim()) {
+        return c.json({ error: 'model must be a non-empty string or null' }, 400);
+      } else {
+        const id = resolveModelAliasToModelId(provider, body.model);
+        nextModel = id === body.model ? { id } : { id, alias: body.model };
+      }
+      if (nextModel) {
+        const refusal = threadModelRefusal(provider, nextModel.id);
+        if (refusal) return c.json({ error: refusal }, 400);
+      }
+      if (nextModel?.id !== current) {
+        const locked = modelLock(thread);
+        if (locked) return c.json({ error: locked }, 409);
+      }
     }
     // An effort is one the model takes; a model change drops a chosen effort the new model doesn't.
-    const model =
-      typeof patch.model === 'string'
-        ? patch.model
-        : patch.model === null
-          ? (resolveThreadView(deps.configStore.config, thread.meta).config.defaults.model ??
-            current)
-          : current;
+    const model = nextModel?.id ?? current;
     const accepted = modelEfforts(provider, model);
     if (typeof patch.effort === 'string' && accepted && !accepted.includes(patch.effort))
       return c.json(
@@ -1134,6 +1180,7 @@ export function registerRuntimeRoutes(
     } catch (error) {
       return c.json({ error: (error as Error).message }, 400);
     }
+    if (nextModel) changeThreadModel(modelDeps, thread, nextModel, 'person');
     return c.json(launchView(thread));
   });
 
@@ -1364,6 +1411,8 @@ export function registerRuntimeRoutes(
     // A project thread works in its project's directory unless a worktree is given.
     const cwd = worktreePath ?? project?.path;
 
+    // A chosen model is pinned on the record at construction; without one the factory pins the default.
+    let chosenModel: ThreadModel | undefined;
     if (start.model !== undefined || start.effort !== undefined) {
       const runsOn =
         worker ??
@@ -1374,12 +1423,14 @@ export function registerRuntimeRoutes(
       if (refused) return refuse(400, refused);
       if (worker && !subscriptionWorker(worker))
         return refuse(400, `${worker} is not a subscription worker`);
-      if (start.model && subscriptionWorker(runsOn)) {
-        const refusal = workerModelRequirement(runsOn, start.model);
+      if (start.model) {
+        const id = resolveModelAliasToModelId(runsOn, start.model);
+        const refusal = threadModelRefusal(runsOn, id);
         if (refusal) return refuse(400, refusal);
+        chosenModel = id === start.model ? { id } : { id, alias: start.model };
       }
       const model =
-        start.model ??
+        chosenModel?.id ??
         resolveThreadView(deps.configStore.config, { projectId: project?.id, worker: runsOn })
           .config.defaults.model;
       const takes = modelEfforts(runsOn, model);
@@ -1415,6 +1466,7 @@ export function registerRuntimeRoutes(
         projectId: project?.id,
         ...(worker ? { worker } : {}),
         role,
+        ...(chosenModel ? { model: chosenModel } : {}),
         ...(input.scheduledBy ? { scheduledBy: input.scheduledBy } : {}),
       });
     } catch (error) {
@@ -1423,7 +1475,7 @@ export function registerRuntimeRoutes(
     }
 
     if (input.name !== undefined) thread.rename(input.name.slice(0, 200));
-    if (start.model !== undefined || start.effort !== undefined) threadLaunch.update(id, start);
+    if (start.effort !== undefined) threadLaunch.update(id, { effort: start.effort });
     registerThread(thread, project);
     return { ok: true, thread };
   };
@@ -1446,7 +1498,7 @@ export function registerRuntimeRoutes(
       if (body[key] !== undefined && typeof body[key] !== 'string')
         return c.json({ error: `${key} must be a string` }, 400);
     // The new thread's model and effort (the New thread picker), held where a later change goes.
-    const start: ThreadLaunchPatch = {};
+    const start: NewThreadInput['start'] = {};
     if (body.model !== undefined) {
       if (typeof body.model !== 'string' || !body.model.trim())
         return c.json({ error: 'model must be a non-empty string' }, 400);
@@ -1529,6 +1581,14 @@ export function registerRuntimeRoutes(
       const refusal = threadFactory.workerRefusal(thread.meta.projectId, to);
       if (refusal) return c.json({ error: refusal }, 400);
       const carries = started(thread);
+      // Its model goes with it when the new worker runs it, else it takes the new worker's default.
+      const fromModel = thread.meta.model;
+      const toModel =
+        fromModel && !threadModelRefusal(to, fromModel.id)
+          ? fromModel
+          : defaultThreadModel(
+              resolveThreadView(deps.configStore.config, { ...thread.meta, worker: to }).config,
+            );
       let switched: WorkerSwitchRecord | undefined;
       if (carries) {
         // A turn lost to a restart is settled from the old worker's record, or decided, first.
@@ -1550,6 +1610,9 @@ export function registerRuntimeRoutes(
           fromLabel: workerName(from),
           toLabel: workerName(to),
           fromSession,
+          ...(fromModel ? { fromModel: fromModel.id } : {}),
+          ...(toModel ? { toModel: toModel.id } : {}),
+          cause: 'person',
         };
       }
       // The record as it stood: the marker is written against it, then the new worker is saved.
@@ -1561,7 +1624,11 @@ export function registerRuntimeRoutes(
       if (body.role === undefined && meta.role === defaultThreadRole(composition, from))
         meta.role = defaultThreadRole(composition, to);
       try {
-        thread = directory.rebuild(id, { ...meta, worker: to });
+        thread = directory.rebuild(id, {
+          ...meta,
+          worker: to,
+          ...(toModel ? { model: { ...toModel } } : {}),
+        });
       } catch (error) {
         return c.json({ error: (error as Error).message }, 409);
       }
@@ -1583,11 +1650,7 @@ export function registerRuntimeRoutes(
         console.warn(
           `[Threads] ${id}: its ${from} session could not be ended after the switch; it is not resumed`,
         );
-      // A model chosen for the old worker is not carried to the new one.
-      const chosen = threadLaunch.get(id).model;
-      if (chosen && workerModelRequirement(body.worker as SubscriptionWorkerId, chosen))
-        threadLaunch.update(id, { model: null });
-      // Nor an effort the new worker's model doesn't take.
+      // An effort the new worker's model doesn't take is not carried over.
       const { model: next, effort } = launchView(thread);
       const takes = modelEfforts(body.worker, next);
       if (effort && takes && !takes.includes(effort)) threadLaunch.update(id, { effort: null });

@@ -30,8 +30,10 @@ import {
   type OwnershipScope,
   type Route,
   Router,
+  resolveModelAliasToModelId,
   Thread,
   type ThreadConfig,
+  type ThreadModel,
   type TokenTracker,
   type ToolRegistry,
 } from '@inixiative/foundry-core';
@@ -262,6 +264,22 @@ export function configureHarness(harness: Harness, config: FoundryConfig): void 
       DEFAULT_EXECUTOR_ID,
   );
   harness.loadModes(config.agents, config.layers);
+}
+
+/**
+ * The model a new thread is pinned to (`ThreadMeta.model`, its one source from then on): its default
+ * executor's (the first enabled one, as `configureHarness` picks), else the view's default model, an
+ * alias stored as the exact id it names with the alias beside it, so a later alias move or default
+ * change never moves a running thread. `config` is the thread's view (`resolveThreadView`).
+ */
+export function defaultThreadModel(config: FoundryConfig): ThreadModel | undefined {
+  const executor = Object.values(config.agents).find(
+    (agent) => agent.kind === 'executor' && agent.enabled,
+  );
+  const named = (executor && resolveAgentOpts(executor, config).model) || config.defaults.model;
+  if (!named) return undefined;
+  const id = resolveModelAliasToModelId(executor?.provider || config.defaults.provider, named);
+  return id === named ? { id } : { id, alias: named };
 }
 
 /**
@@ -539,7 +557,13 @@ export class ThreadFactory {
       config && base ? new ContextStack(buildLayers(config, base.layers)) : this._stack;
     const agents = config && base ? buildAgents(config, template, base.agents) : this._agents;
     const stack = template.clone(scope);
-    thread = new Thread(id, stack, { ...opts, ...(worker ? { worker } : {}) });
+    // Its model is pinned once, from its worker's view, unless its record already names one.
+    const model = opts?.model ?? (config ? defaultThreadModel(config) : undefined);
+    thread = new Thread(id, stack, {
+      ...opts,
+      ...(worker ? { worker } : {}),
+      ...(model ? { model } : {}),
+    });
 
     for (const agent of agents.values()) {
       thread.register(agent.withStack(stack));
@@ -732,6 +756,9 @@ function buildAgent(
           ];
           meta?.recordProviderInput?.(messages);
           const delivery = meta?.delivery;
+          // The thread's own model (`ThreadMeta.model`, its one source) on its own worker's provider.
+          const run =
+            meta?.model?.worker === deps.provider.id ? { ...opts, model: meta.model.id } : opts;
           // Owned public native tool events feed the dispatch's ordinary tool observation channel
           // (the same one the local tool loop uses), so post-review input sees what the native
           // engine ran. The raw journal write comes first and is independent of this projection.
@@ -769,7 +796,7 @@ function buildAgent(
           try {
             if (useToolLoop) {
               const result = await toolUseLoop(deps.provider, messages, tools, {
-                ...opts,
+                ...run,
                 nativeObservation,
                 threadId: meta?.threadId,
                 // The native session runs where the thread works, never in the daemon's directory.
@@ -810,7 +837,7 @@ function buildAgent(
               let full = '';
               let tokens: TokenCounts | undefined;
               for await (const ev of deps.provider.stream(messages, {
-                ...opts,
+                ...run,
                 nativeObservation,
                 cwd: meta?.cwd,
                 threadId: meta?.threadId,
@@ -827,7 +854,7 @@ function buildAgent(
               if (deps.tokenTracker && tokens) {
                 deps.tokenTracker.record({
                   provider: deps.provider.id,
-                  model: opts.model ?? 'unknown',
+                  model: run.model ?? 'unknown',
                   agentId: id,
                   tokens,
                 });
@@ -835,7 +862,7 @@ function buildAgent(
               return full;
             } else {
               const result = await complete(messages, {
-                ...opts,
+                ...run,
                 nativeObservation,
                 cwd: meta?.cwd,
                 threadId: meta?.threadId,

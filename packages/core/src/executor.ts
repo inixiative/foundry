@@ -25,6 +25,11 @@ export interface ExecuteMeta {
   cwd?: string;
   /** Thread ID that dispatched this execution. */
   threadId?: string;
+  /**
+   * The dispatching thread's model (`ThreadMeta.model.id`) and the worker it belongs to: an executor
+   * whose provider is that worker runs on it; one on another provider keeps its own model.
+   */
+  model?: { id: string; worker: string };
   /** Project that owns the dispatching thread. Scopes memory tool reads. */
   projectId?: string;
   /** Logical message identity, not a native session or dispatch ID. */

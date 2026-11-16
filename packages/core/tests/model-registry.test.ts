@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import {
   DECISION_MODEL,
   DECISION_PROVIDER,
+  type FoundryProviderInfo,
   MODEL_CAPABILITIES,
   MODEL_REGISTRY,
   type ModelCapability,
@@ -9,8 +10,11 @@ import {
   modelHasCapability,
   modelOptionsByCapability,
   providersWithCapability,
+  readModelRetirement,
   registryModel,
   resolveDecisionModel,
+  resolveModelAliasToModelId,
+  SUBSCRIPTION_WORKER_MODELS,
 } from '../src/index';
 
 describe('the registry is reachable from core alone', () => {
@@ -141,5 +145,93 @@ describe('the contributor tier is visible at the point of choice', () => {
     expect(contributor.tier).toBe(standard.tier);
     expect(contributor.costTier).toBe('low');
     expect(standard.costTier).toBe('high');
+  });
+});
+
+describe('aliases and retirement', () => {
+  const WORKERS = Object.keys(SUBSCRIPTION_WORKER_MODELS);
+
+  test('every model a subscription worker serves names its family', () => {
+    for (const worker of WORKERS)
+      for (const model of MODEL_REGISTRY[worker]!.models)
+        expect({ worker, model: model.id, family: model.family }).toEqual({
+          worker,
+          model: model.id,
+          family: expect.any(String),
+        });
+  });
+
+  test('an alias points to a listed, unaliased model of its own family', () => {
+    for (const provider of Object.values(MODEL_REGISTRY))
+      for (const model of provider.models.filter((entry) => entry.aliasOf)) {
+        const target = registryModel(provider.id, model.aliasOf!);
+        expect(target?.aliasOf).toBeUndefined();
+        expect(target?.family).toBe(model.family!);
+      }
+    expect(resolveModelAliasToModelId('claude-code', 'opus')).toBe('claude-opus-5-5');
+    expect(resolveModelAliasToModelId('claude-code', 'sonnet')).toBe('claude-sonnet-5-5');
+    expect(resolveModelAliasToModelId('claude-code', 'claude-fable-5-1')).toBe('claude-fable-5-1');
+    expect(resolveModelAliasToModelId('codex', 'not-listed')).toBe('not-listed');
+  });
+
+  test("every retired model's successor chain ends on a served model of its family", () => {
+    for (const provider of Object.values(MODEL_REGISTRY))
+      for (const model of provider.models.filter((entry) => entry.retired)) {
+        const retirement = readModelRetirement(provider.id, model.id);
+        expect(retirement).toMatchObject({ retired: true });
+        // A succession stays in its family, so a model can only retire once it names one.
+        expect({ model: model.id, family: model.family }).toEqual({
+          model: model.id,
+          family: expect.any(String),
+        });
+        if (retirement.retired && model.retired!.successor)
+          expect(retirement.reason).toBeUndefined();
+      }
+  });
+
+  const fixture: Record<string, FoundryProviderInfo> = {
+    worker: {
+      id: 'worker',
+      type: 'claude-code',
+      label: 'Worker',
+      description: '',
+      credential: 'subscription',
+      enabledByDefault: true,
+      models: [
+        ['opus-1', 'opus', { at: '2026-01-01', successor: 'opus-2' }],
+        ['opus-2', 'opus', { at: '2026-06-01', successor: 'opus-3' }],
+        ['opus-3', 'opus', undefined],
+        ['sonnet-1', 'sonnet', { at: '2026-01-01' }],
+        ['sonnet-2', 'sonnet', { at: '2026-01-01', successor: 'opus-3' }],
+        ['loop-a', 'loop', { at: '2026-01-01', successor: 'loop-b' }],
+        ['loop-b', 'loop', { at: '2026-01-01', successor: 'loop-a' }],
+      ].map(([id, family, retired]) => ({
+        id: id as string,
+        label: id as string,
+        family: family as string,
+        tier: 'powerful' as const,
+        runtimeKind: 'native-harness' as const,
+        capabilities: ['judgment'] as ModelCapability[],
+        ...(retired ? { retired: retired as { at: string; successor?: string } } : {}),
+      })),
+    },
+  };
+
+  test('a retired model moves along its chain to the newest served model', () => {
+    expect(readModelRetirement('worker', 'opus-1', fixture)).toEqual({
+      retired: true,
+      at: '2026-01-01',
+      successor: 'opus-3',
+    });
+    expect(readModelRetirement('worker', 'opus-3', fixture)).toEqual({ retired: false });
+    expect(readModelRetirement('worker', 'unknown', fixture)).toEqual({ retired: false });
+  });
+
+  test('no successor, another family or a loop is retired with a reason and no successor', () => {
+    for (const id of ['sonnet-1', 'sonnet-2', 'loop-a']) {
+      const retirement = readModelRetirement('worker', id, fixture);
+      expect(retirement).toMatchObject({ retired: true, reason: expect.any(String) });
+      expect(retirement).not.toHaveProperty('successor');
+    }
   });
 });

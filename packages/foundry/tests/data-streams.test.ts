@@ -726,7 +726,11 @@ test('a thread may choose any model its subscription worker runs, and nothing el
   );
   const chosen = await launch('fable');
   expect(chosen.status).toBe(200);
-  expect(await chosen.json()).toMatchObject({ provider: 'claude-code', modelOverride: 'fable' });
+  expect(await chosen.json()).toMatchObject({
+    provider: 'claude-code',
+    model: 'claude-fable-5-2',
+    modelAlias: 'fable',
+  });
 });
 
 test('a turn the journal recorded as ended reaches the list after the live buffer dropped it, observed turns included', async () => {
