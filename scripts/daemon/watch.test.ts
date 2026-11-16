@@ -73,6 +73,32 @@ test('a daemon that can spin down is offered the update once; it calls back to r
   expect(exits).toEqual([75]);
 });
 
+// Aron, 2026-11-16: the owner restarts from the viewer, so the daemon gets the supervisor's restart
+// as soon as it is up, not on the next update check.
+test('the booted daemon is handed the restart at once; calling it exits for launchd', async () => {
+  const { startUpdateWatcher } = await import('./watch');
+  let hook: DaemonRuntimeHook | undefined;
+  let handed: (() => void) | undefined;
+  const exits: number[] = [];
+  const stop = startUpdateWatcher({
+    repoRoot: '/nonexistent',
+    configDir: '/nonexistent',
+    intervalMs: 60_000,
+    attachPollMs: 5,
+    runtime: () => hook,
+    exit: (code) => exits.push(code),
+  });
+  await Bun.sleep(30);
+  expect(handed).toBeUndefined();
+  hook = { liveTurns: () => 0, acceptSupervisorRestart: (restart) => (handed = restart) };
+  for (let i = 0; i < 50 && !handed; i++) await Bun.sleep(5);
+  stop();
+  expect(handed).toBeDefined();
+  handed!();
+  for (let i = 0; i < 50 && exits.length === 0; i++) await Bun.sleep(5);
+  expect(exits).toEqual([75]);
+});
+
 // 2026-11-04: a candidate took 19 minutes to boot at load 90–200; the watcher restarted mid-boot
 // (no runtime hook yet read as "nothing to drain"), the relaunch read the cut-off boot as a failed
 // one, and the candidate was marked failed for good.

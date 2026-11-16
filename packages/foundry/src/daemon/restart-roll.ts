@@ -20,6 +20,11 @@
  * `PAUSE_SETTLE_MS` before the restart goes ahead; the timeout (default 60 minutes) stays the last
  * backstop, and a cut turn is settled from its native record (`turns/native-outcome-recovery.ts`).
  * The owner can pause now, restart now (cutting what runs) or postpone the update.
+ *
+ * The same spin-down serves a plain restart the owner asks for (Aron, 2026-11-16: "As soon as all
+ * the blockers are done, it can just restart"), for example when the Wardens stopped answering
+ * until Foundry restarts. It needs the supervisor's restart (`acceptSupervisorRestart`, handed over
+ * by the update watcher), so an unsupervised daemon can't offer it; "Not now" cancels it.
  */
 
 import type { ActionQueue } from '@inixiative/foundry-core';
@@ -45,6 +50,10 @@ export type RollPhase = 'idle' | 'spinning-down' | 'postponed' | 'restarting';
 export interface RollStatus {
   phase: RollPhase;
   candidate?: string;
+  /** Why a plain restart (no update) is spinning down; absent for an update. */
+  reason?: string;
+  /** Whether the owner can ask for a plain restart: the supervisor handed over its restart. */
+  canRestart: boolean;
   /** When the spin-down began. */
   since?: number;
   /** When the backstop restarts it anyway. */
@@ -136,6 +145,10 @@ export class RestartRoll {
   private allPausedAt?: number;
   private timer?: ReturnType<typeof setInterval>;
   private opened: Array<() => void> = [];
+  /** The supervisor's restart (exit so launchd relaunches), for a restart with no update. */
+  private supervisorRestart?: () => void;
+  /** Set while a plain restart the owner asked for spins down. */
+  private plainReason?: string;
 
   constructor(private readonly deps: RestartRollDeps) {}
 
@@ -149,6 +162,8 @@ export class RestartRoll {
     return {
       phase: this.phase,
       ...(this.offer ? { candidate: this.offer.candidate } : {}),
+      ...(this.plainReason ? { reason: this.plainReason } : {}),
+      canRestart: !!this.supervisorRestart,
       ...(spinning
         ? {
             since: this.since,
@@ -191,6 +206,24 @@ export class RestartRoll {
     this.spinDown();
   }
 
+  /** The supervisor's restart, so the owner can restart without an update. */
+  acceptSupervisorRestart(restart: () => void): void {
+    this.supervisorRestart = restart;
+  }
+
+  /**
+   * Owner: restart. Spins down like an update (running turns get the grace, then pause and resume
+   * after the restart) and restarts once nothing blocks it. A staged update, postponed or not, is
+   * applied by the relaunch.
+   */
+  requestRestart(reason: string): boolean {
+    if (!this.supervisorRestart && !this.offer) return false;
+    if (this.phase === 'spinning-down' || this.phase === 'restarting') return false;
+    this.plainReason = reason;
+    this.spinDown();
+    return true;
+  }
+
   /** Owner: pause now. Running turns are paused without waiting out the grace; the restart follows. */
   pauseNow(): boolean {
     if (this.phase !== 'spinning-down' || !this.deps.pause) return false;
@@ -204,20 +237,29 @@ export class RestartRoll {
    * pause between its stop and its continuation finishes first (bounded by the runtime's stop).
    */
   restartNow(): boolean {
-    if (!this.offer || this.phase === 'restarting') return false;
+    if (!this.restartTarget() || this.phase === 'restarting') return false;
     if (this.inFlight > 0) this.restartWanted = true;
     else this.restart('the owner restarted now');
     return true;
   }
 
-  /** Owner: not now. Waiting turns start; the update stays staged until a newer one or "Update now". */
+  /**
+   * Owner: not now. Waiting turns start; the update stays staged until a newer one or "Update now".
+   * A plain restart is cancelled (back to a postponed update, if one was staged).
+   */
   postpone(): boolean {
     if (this.phase !== 'spinning-down') return false;
-    this.phase = 'postponed';
+    const plain = this.plainReason;
+    this.plainReason = undefined;
+    this.phase = this.offer ? 'postponed' : 'idle';
     this.restartWanted = false;
     this.stopTimer();
     this.open();
-    this.deps.log?.(`update ${this.offer?.candidate.slice(0, 8)} postponed`);
+    this.deps.log?.(
+      plain
+        ? `restart cancelled (${plain})`
+        : `update ${this.offer?.candidate.slice(0, 8)} postponed`,
+    );
     return true;
   }
 
@@ -307,7 +349,7 @@ export class RestartRoll {
     this.restartWanted = false;
     this.allPausedAt = undefined;
     this.deps.log?.(
-      `spinning down for update ${this.offer?.candidate.slice(0, 8)}: ${this.deps.running().length} running turn(s)${this.deps.pause ? ` pause in ${Math.round((this.pauseAt - this.since) / 1000)}s unless they finish` : ''}`,
+      `spinning down for ${this.plainReason ? `a restart (${this.plainReason})` : `update ${this.offer?.candidate.slice(0, 8)}`}: ${this.deps.running().length} running turn(s)${this.deps.pause ? ` pause in ${Math.round((this.pauseAt - this.since) / 1000)}s unless they finish` : ''}`,
     );
     this.stopTimer();
     this.timer = setInterval(() => this.check(), this.deps.pollMs ?? 5_000);
@@ -315,8 +357,14 @@ export class RestartRoll {
     this.check();
   }
 
+  /** What restarts the daemon: the update's restart, else the supervisor's. */
+  private restartTarget(): (() => void) | undefined {
+    return this.offer?.restart ?? this.supervisorRestart;
+  }
+
   private restart(reason: string) {
-    if (!this.offer) return;
+    const go = this.restartTarget();
+    if (!go) return;
     this.phase = 'restarting';
     this.stopTimer();
     try {
@@ -324,8 +372,10 @@ export class RestartRoll {
     } catch (error) {
       this.deps.log?.(`holding waiting turns failed: ${String(error)}`);
     }
-    this.deps.log?.(`restarting onto ${this.offer.candidate.slice(0, 8)}: ${reason}`);
-    this.offer.restart();
+    this.deps.log?.(
+      `${this.offer ? `restarting onto ${this.offer.candidate.slice(0, 8)}` : 'restarting'}: ${reason}`,
+    );
+    go();
   }
 
   private open() {

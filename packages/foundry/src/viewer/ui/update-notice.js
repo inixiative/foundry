@@ -14,36 +14,10 @@
 import { html, useState } from './lib.js';
 import { Modal } from './modal.js';
 import { updateAction, updateState } from './store.js';
+import { updateLine } from './update-line.js';
 
 const short = (sha) => (sha ? sha.slice(0, 8) : '');
 const turns = (n) => `${n} turn${n === 1 ? '' : 's'}`;
-
-/** One line for the update state, or null when there is nothing to say. */
-export function updateLine(state) {
-  if (!state) return null;
-  if (state.phase === 'spinning-down') {
-    const running = state.running?.length ?? 0;
-    const pausing = state.pausing?.length ?? 0;
-    if (pausing && pausing === running)
-      return `Update ready: pausing ${turns(running)}; ${running === 1 ? 'it resumes' : 'they resume'} after the restart`;
-    // Only the turns not yet pausing wait out the grace.
-    const unpaused = running - pausing;
-    const left = state.pauseAtLocal ? Math.ceil((state.pauseAtLocal - Date.now()) / 1000) : 0;
-    if (unpaused && left > 0) {
-      return `Update ready: pausing ${turns(unpaused)} in ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')} unless ${unpaused === 1 ? 'it finishes' : 'they finish'}`;
-    }
-    // The grace is over: the daemon pauses them on its next look, within a few seconds.
-    if (unpaused && state.pauseAtLocal) return `Update ready: pausing ${turns(unpaused)} now`;
-    if (running)
-      return `Update ready: restarting when ${turns(running)} finish${running === 1 ? 'es' : ''}`;
-    return state.finishing
-      ? 'Update ready: restarting when the last plan draft is written'
-      : 'Update ready: restarting now';
-  }
-  if (state.phase === 'restarting') return 'Restarting onto the update…';
-  if (state.phase === 'postponed') return `Update ${short(state.candidate)} postponed`;
-  return null;
-}
 
 function RestartConfirm({ state, onClose }) {
   const pausingIds = new Set((state.pausing ?? []).map((t) => t.turnId));
@@ -98,7 +72,8 @@ export function UpdateNotice() {
   const waiting = state.waiting
     ? ` · ${turns(state.waiting)} waiting to start after the restart`
     : '';
-  return html`<span class="update-notice" title=${`Update ${short(state.candidate)}${waiting}`}>
+  const title = state.reason ? `Restart${waiting}` : `Update ${short(state.candidate)}${waiting}`;
+  return html`<span class="update-notice" title=${title}>
     <span class="update-notice-text" role="status">${line}</span>
     ${
       state.phase === 'spinning-down'
@@ -108,7 +83,7 @@ export function UpdateNotice() {
               ? html`<button type="button" class="update-notice-btn" title="Pause running turns now; each resumes after the restart" onClick=${() => updateAction('pause-now')}>Pause now</button>`
               : html`<button type="button" class="update-notice-btn" onClick=${() => setConfirming(true)}>Restart now</button>`
           }
-          <button type="button" class="update-notice-btn" onClick=${() => updateAction('postpone')}>Not now</button>`
+          <button type="button" class="update-notice-btn" title=${state.reason ? 'Cancel the restart' : 'Postpone this update'} onClick=${() => updateAction('postpone')}>Not now</button>`
         : null
     }
     ${confirming ? html`<${RestartConfirm} state=${state} onClose=${() => setConfirming(false)} />` : null}

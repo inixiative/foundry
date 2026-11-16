@@ -12,7 +12,7 @@ const BOOT_ID = randomUUID();
 
 /**
  * The spin-down as the viewer sees it (`daemon/restart-roll.ts`): the update state with the turns a
- * restart waits for, and the owner's choices. Mounted behind the viewer's operator authentication.
+ * restart waits for, and the owner's choices (`restart` asks for one with no update). Mounted behind the viewer's operator authentication.
  */
 export function registerDaemonUpdateRoutes(
   app: Hono,
@@ -38,18 +38,20 @@ export function registerDaemonUpdateRoutes(
     const body = await c.req.json<{ action?: unknown }>().catch(() => ({}) as { action?: unknown });
     const action = body.action;
     const done =
-      action === 'restart-now'
-        ? roll.restartNow()
-        : action === 'pause-now'
-          ? roll.pauseNow()
-          : action === 'postpone'
-            ? roll.postpone()
-            : action === 'update-now'
-              ? roll.updateNow()
-              : null;
+      action === 'restart'
+        ? roll.requestRestart('the owner asked')
+        : action === 'restart-now'
+          ? roll.restartNow()
+          : action === 'pause-now'
+            ? roll.pauseNow()
+            : action === 'postpone'
+              ? roll.postpone()
+              : action === 'update-now'
+                ? roll.updateNow()
+                : null;
     if (done === null)
       return c.json(
-        { error: 'action must be pause-now, restart-now, postpone or update-now' },
+        { error: 'action must be restart, pause-now, restart-now, postpone or update-now' },
         400,
       );
     if (!done) return c.json({ error: `nothing to ${action} (${roll.status().phase})` }, 409);

@@ -221,3 +221,35 @@ test('the viewer serves the update state and its boot id; with nothing running i
   // Nothing running: it restarts at once.
   expect(restarts).toEqual(['cand']);
 });
+
+test('the viewer asks for a plain restart once the supervisor handed over its restart', async () => {
+  const { createViewer } = await import('../src/viewer/server');
+  const dir = mkdtempSync(join(tmpdir(), 'spin-down-restart-'));
+  cleanup.push(() => rmSync(dir, { recursive: true, force: true }));
+  const viewer = createViewer({
+    harness: new Harness(new Thread('main', new ContextStack(), {})),
+    eventStream: new EventStream(),
+    interventions: new InterventionLog(),
+    configDir: dir,
+  });
+  cleanup.push(() => viewer.localStore?.close());
+  const post = () =>
+    viewer.app.request('/api/daemon/update', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ action: 'restart' }),
+    });
+  // Unsupervised: nothing to restart with.
+  expect((await post()).status).toBe(409);
+  const restarts: number[] = [];
+  viewer.restartRoll.acceptSupervisorRestart(() => restarts.push(1));
+  expect(await (await viewer.app.request('/api/daemon/update')).json()).toMatchObject({
+    canRestart: true,
+  });
+  // Nothing running: it restarts at once.
+  expect(await (await post()).json()).toMatchObject({
+    phase: 'restarting',
+    reason: 'the owner asked',
+  });
+  expect(restarts).toEqual([1]);
+});

@@ -1599,8 +1599,12 @@ export async function loadUpdateState() {
   }
 }
 
-/** The owner's choice on a staged update: `restart-now`, `postpone` or `update-now`. */
+/**
+ * The owner's choice on the restart: `restart` (one with no update), `pause-now`, `restart-now`,
+ * `postpone` (cancels a plain restart) or `update-now`.
+ */
 export async function updateAction(action) {
+  const plain = !!updateState.value?.reason;
   try {
     const res = await authFetch('/api/daemon/update', {
       method: 'POST',
@@ -1611,13 +1615,17 @@ export async function updateAction(action) {
     if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`);
     updateState.value = withLocalPause(body);
     showToast(
-      action === 'postpone'
-        ? 'Update postponed: waiting turns start now'
-        : action === 'update-now'
-          ? 'Restarting once running turns finish or pause'
-          : action === 'pause-now'
-            ? 'Pausing running turns: they resume after the restart'
-            : 'Restarting now',
+      action === 'restart'
+        ? 'Restarting once nothing blocks it: running turns finish or pause'
+        : action === 'postpone'
+          ? plain
+            ? 'Restart cancelled: waiting turns start now'
+            : 'Update postponed: waiting turns start now'
+          : action === 'update-now'
+            ? 'Restarting once running turns finish or pause'
+            : action === 'pause-now'
+              ? 'Pausing running turns: they resume after the restart'
+              : 'Restarting now',
       'ok',
     );
     void loadUpdateState();

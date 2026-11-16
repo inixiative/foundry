@@ -1172,6 +1172,7 @@ await runStartupSelfTest({
 publishDaemonRuntime({
   liveTurns: viewer.liveTurns,
   offerUpdate: (offer) => viewer.restartRoll.offerUpdate(offer),
+  acceptSupervisorRestart: (restart) => viewer.restartRoll.acceptSupervisorRestart(restart),
 });
 // Turns a planned restart held (the spin-down) run now, in the order they arrived.
 void viewer.resumeHeldTurns();
