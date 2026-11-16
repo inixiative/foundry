@@ -23,7 +23,7 @@ How it works, end to end:
 
 ## The setting
 
-`secrets.scratchPad: true | false`, default `false`, plus `secrets.privatePaths` (extra globs no agent reads; project globs add to global ones). Like every Foundry setting it can be set for me (personal) or for everyone (the repo's `.foundry/`). On, Foundry:
+`secrets.scratchPad: true | false`, default `true` (Aron 11-15: "on by default for all Foundry"), plus `secrets.privatePaths` (extra globs no agent reads; project globs add to global ones). Like every Foundry setting it can be set for me (personal) or for everyone (the repo's `.foundry/`). On, Foundry:
 
 - launches every thread's session with the scratch pad option, its directory under the thread's Foundry state (`.private/scratch/`), so a restart keeps it;
 - lifts `$$` words in `TurnService.accept`;
@@ -92,7 +92,7 @@ Aron, 2026-11-02: "One dagger per message, with a number for each sub-dagger… 
 - **Lifting** happens first in `TurnService.accept`; a lift that fails refuses the turn (503), so a secret never goes through raw. A member's post is never lifted.
 - **The block** runs in the tool gate before the structural rules, in every mode, but does not count as a structural rule, so Codex and Muse threads still start; they get the block on the calls they ask about. Codex under full access asks nothing.
 - **Cleanup**: the pad goes when its thread is archived; at start, pads of threads archived meanwhile are swept. A dispose without archiving (a restart) keeps it.
-- **Settings**: off unless `secrets.scratchPad` is true (global, or per project). `.private` blocking comes with the setting.
+- **Settings**: on unless `secrets.scratchPad` is false (global, or per project; on by default since 11-15). `.private` blocking comes with the setting.
 - **After review** (adversarial, before merge):
   - **Lift timing.** The lift runs after the turn's own checks (duplicate id, capacity, unknown or archived thread), and a turn that then fails to be recorded takes its secrets out of the pad again. A retried id is refused before anything is lifted.
   - **Where `secret_scratch` writes.** It writes only inside the thread's working directory (real paths, so a symlink out is refused) and never into `.git`, `.claude`, `.codex`, `.foundry`, `.ssh`, `.gnupg`, `.aws`, `.mcp.json` or a `settings*.json`. Anything else goes through `secret_pipe`, which keeps the host's mode. Why: the tool never asks, and "access follows the host".
