@@ -409,6 +409,10 @@ test('the decision host launches the project host on the decision login: its own
     DISABLE_TELEMETRY: '1',
     DISABLE_AUTOUPDATER: '1',
   });
+  // The host's own subagent cap survives the credential strip: one Warden, one dispatcher → 8 over the default.
+  expect(launch.env.CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS).toBe(
+    String((Number(process.env.CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS) || 20) + 8),
+  );
   expect(
     Object.entries(launch.env).flatMap(([key, value]) =>
       value && /API_KEY|AUTH_TOKEN|BASE_URL/.test(key) ? [key] : [],

@@ -728,6 +728,8 @@ export function createPrimedDecisionHost(config: PrimedDecisionHostConfig) {
           child = claudeSpawn([...argv, ...PROJECT_HOST_ARGS], options, {
             ...withoutCompetingCredentials(options.env),
             ...claude.env(),
+            // why: the strip drops every CLAUDE_CODE_* key, the host's raised subagent cap included.
+            ...extension.env,
             ...PROJECT_HOST_ENV,
           });
           return child;
