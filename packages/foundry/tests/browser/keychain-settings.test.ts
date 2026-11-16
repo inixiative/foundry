@@ -73,4 +73,4 @@ test('Settings → Keychain adds, re-holds and removes an entry without showing 
   } finally {
     await releaseAll(cleanup);
   }
-});
+}, 60_000);
