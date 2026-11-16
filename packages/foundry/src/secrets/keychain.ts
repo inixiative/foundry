@@ -3,12 +3,9 @@
  * @kind service
  * @partOf feature:secrets
  */
+import { realpathSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import {
-  type CredentialReference,
-  type CredentialResolver,
-  MODEL_REGISTRY,
-} from '@inixiative/foundry-core';
+import { MODEL_REGISTRY } from '@inixiative/foundry-core';
 import { type AuditActor, AuditLog } from '../audit/audit-log';
 import { readPrivateJson, writePrivateJson } from '../client/private-file';
 import { contentHash } from '../persistence/journal-content';
@@ -21,6 +18,11 @@ import { contentHash } from '../persistence/journal-content';
  * reaches these by name), or one connector (`provider:anthropic`, `mcp:linear`), readable by that
  * connector alone. Storing an entry, or changing who holds it, is the person's one grant, and every
  * change is a row in Foundry's audit log, the entry's metadata and never its value.
+ *
+ * The holder rule binds Foundry's own paths (the scratch-pad tools, the providers). It is not a
+ * boundary against a process running as this user: an agent's shell can ask the native store for
+ * an item it can name, as it can read any file this user can. Keeping a secret from the agent's
+ * shell needs the item held by another binary, which this does not do.
  */
 
 export const KEYCHAIN_SERVICE = 'inixiative.foundry';
@@ -28,6 +30,8 @@ export const FOUNDRY_HOLDER = 'foundry';
 
 const NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/;
 const CONNECTOR = /^(provider|memory|mcp|integration):[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/;
+/** The index is one private file, read at most 64 KiB; this keeps it well under that. */
+export const KEYCHAIN_MAX_ENTRIES = 200;
 
 /** `foundry`, or one connector: `provider:<id>`, `memory:<id>`, `mcp:<id>`, `integration:<id>`. */
 export type KeychainHolder = string;
@@ -69,13 +73,22 @@ export const holderMayRead = (
  * config directory so two Foundries on one machine never share an entry.
  */
 export function nativeKeychainBackend(configDir: string): KeychainBackend {
-  const scope = contentHash(resolve(configDir)).slice(0, 12);
+  const scope = contentHash(realPath(configDir)).slice(0, 12);
   const key = (name: string) => ({ service: KEYCHAIN_SERVICE, name: `${scope}/${name}` });
   return {
     get: (name) => Bun.secrets.get(key(name)),
     set: (name, value) => Bun.secrets.set({ ...key(name), value }),
     delete: (name) => Bun.secrets.delete(key(name)),
   };
+}
+
+// why: `/tmp` and `/private/tmp`, or a symlinked home, are one directory and must be one scope.
+function realPath(dir: string): string {
+  try {
+    return realpathSync(dir);
+  } catch {
+    return resolve(dir);
+  }
 }
 
 /** A backend in memory, for tests and machines with no native store. */
@@ -100,10 +113,18 @@ export async function providerKeyEnvironment(
   environment: Record<string, string | undefined> = process.env,
 ): Promise<Record<string, string | undefined>> {
   const merged = { ...environment };
+  let entries: Map<string, KeychainEntry>;
+  try {
+    entries = new Map(keychain.list().map((entry) => [entry.name, entry]));
+  } catch (error) {
+    // A bad index costs the keychain's keys, never Foundry's start.
+    console.warn(`[Keychain] ${(error as Error).message}`);
+    return merged;
+  }
   for (const [id, provider] of Object.entries(MODEL_REGISTRY)) {
     const key = provider.envKey;
     const reader = `provider:${id}`;
-    const entry = key ? keychain.entry(key) : undefined;
+    const entry = key ? entries.get(key) : undefined;
     if (!key || merged[key]?.trim() || !entry || !holderMayRead(entry, reader)) continue;
     try {
       merged[key] = await keychain.read(key, reader);
@@ -135,6 +156,8 @@ export class Keychain {
   private readonly backend: KeychainBackend;
   private readonly audit: AuditLog;
   private readonly now: () => number;
+  /** Changes run one at a time, so two at once never lose an entry from the index. */
+  private changes: Promise<unknown> = Promise.resolve();
 
   constructor(options: KeychainOptions) {
     this.indexPath = join(options.configDir, '.private', 'keychain.json');
@@ -157,7 +180,15 @@ export class Keychain {
     return this.list().filter((entry) => holderMayRead(entry, reader));
   }
 
-  async store(name: string, value: string, options: StoreOptions): Promise<KeychainEntry> {
+  store(name: string, value: string, options: StoreOptions): Promise<KeychainEntry> {
+    return this.change(() => this.storeNow(name, value, options));
+  }
+
+  private async storeNow(
+    name: string,
+    value: string,
+    options: StoreOptions,
+  ): Promise<KeychainEntry> {
     if (!isKeychainName(name))
       throw new KeychainError(
         'a keychain name is letters, digits, dot, dash or underscore, at most 100',
@@ -172,6 +203,8 @@ export class Keychain {
     const before = index.get(name);
     if (before && !options.replace)
       throw new KeychainError(`${name} is already in the keychain; pass replace to overwrite it`);
+    if (!before && index.size >= KEYCHAIN_MAX_ENTRIES)
+      throw new KeychainError(`the keychain holds at most ${KEYCHAIN_MAX_ENTRIES} entries`);
     await this.backend.set(name, value);
     const at = this.now();
     const after: KeychainEntry = {
@@ -182,7 +215,13 @@ export class Keychain {
       updatedAt: at,
     };
     index.set(name, after);
-    this.save(index);
+    try {
+      this.save(index);
+    } catch (error) {
+      // A new value the index can't name would be orphaned: take it back out.
+      if (!before) await this.backend.delete(name).catch(() => false);
+      throw error;
+    }
     this.record(name, before, after, options.actor);
     return after;
   }
@@ -200,7 +239,11 @@ export class Keychain {
   }
 
   /** Hand an entry to another holder: the person's grant. */
-  grant(name: string, holder: KeychainHolder, actor: AuditActor): KeychainEntry {
+  grant(name: string, holder: KeychainHolder, actor: AuditActor): Promise<KeychainEntry> {
+    return this.change(async () => this.grantNow(name, holder, actor));
+  }
+
+  private grantNow(name: string, holder: KeychainHolder, actor: AuditActor): KeychainEntry {
     if (!isKeychainHolder(holder))
       throw new KeychainError(
         'a holder is foundry, or provider:<id>, memory:<id>, mcp:<id> or integration:<id>',
@@ -216,7 +259,11 @@ export class Keychain {
     return after;
   }
 
-  async remove(name: string, actor: AuditActor): Promise<boolean> {
+  remove(name: string, actor: AuditActor): Promise<boolean> {
+    return this.change(() => this.removeNow(name, actor));
+  }
+
+  private async removeNow(name: string, actor: AuditActor): Promise<boolean> {
     const index = this.index();
     const before = index.get(name);
     if (!before) return false;
@@ -227,17 +274,10 @@ export class Keychain {
     return true;
   }
 
-  /** Core's credential resolver for `managed` references: the id is an entry's name, read as `reader`. */
-  resolver(reader: KeychainHolder): CredentialResolver {
-    return {
-      resolve: async (reference: CredentialReference) => {
-        if (reference.type !== 'managed')
-          throw new KeychainError(
-            `the keychain resolves managed credentials, not ${reference.type}`,
-          );
-        return this.read(reference.id, reader);
-      },
-    };
+  private change<T>(run: () => Promise<T>): Promise<T> {
+    const next = this.changes.then(run, run);
+    this.changes = next.catch(() => undefined);
+    return next;
   }
 
   private index(): Map<string, KeychainEntry> {

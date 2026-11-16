@@ -45,7 +45,9 @@ export function registerKeychainRoutes(app: Hono, keychain: Keychain): void {
     const parsed = holderBody.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) return c.json({ error: 'holder is a string' }, 400);
     try {
-      return c.json({ entry: keychain.grant(c.req.param('name'), parsed.data.holder, owner) });
+      return c.json({
+        entry: await keychain.grant(c.req.param('name'), parsed.data.holder, owner),
+      });
     } catch (error) {
       return c.json(failure(error), 400);
     }

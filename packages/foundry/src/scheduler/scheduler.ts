@@ -3,6 +3,7 @@
  * @kind service
  * @partOf feature:scheduler
  */
+import { contentHash } from '../persistence/journal-content';
 import type { FoundryConfig } from '../viewer/config';
 import { dueBetween, nextDueAfter, onceMissed } from './due';
 import {
@@ -149,6 +150,7 @@ export class Scheduler implements ScheduleBook {
     return {
       schedule,
       where,
+      version: scheduleVersion(schedule, where),
       ...(nextDueAt === undefined ? {} : { nextDueAt }),
       ...(lastRun ? { lastRun } : {}),
     };
@@ -295,11 +297,16 @@ export class Scheduler implements ScheduleBook {
     return this.view(saved.schedule, saved.where);
   }
 
-  /** Accept an agent's draft: it runs from now on. */
-  async accept(id: string): Promise<ScheduleView> {
+  /**
+   * Accept an agent's draft: it runs from now on. `version` is the one the owner saw, so a draft the
+   * agent rewrote after he read it is never what he accepts.
+   */
+  async accept(id: string, version: string): Promise<ScheduleView> {
     const found = this.find(id);
     if (!found) throw Error(`no schedule ${id}`);
     if (!found.schedule.draft) throw Error(`${id} is not a draft`);
+    if (scheduleVersion(found.schedule, found.where) !== version)
+      throw Error(`${id} changed since you saw it; look at it again before accepting`);
     const { draft: _draft, since: _since, ...rest } = found.schedule;
     return this.save(rest, found.where);
   }
@@ -350,4 +357,10 @@ export class Scheduler implements ScheduleBook {
 
   /** The schedules slot a Where reads (for tests and the view). */
   static slot = slot;
+}
+
+/** A schedule's version: what it does and where, never when it was last enabled. */
+export function scheduleVersion(schedule: Schedule, where: ScheduleWhere): string {
+  const { since: _since, ...rest } = schedule;
+  return contentHash(JSON.stringify({ schedule: rest, where }));
 }

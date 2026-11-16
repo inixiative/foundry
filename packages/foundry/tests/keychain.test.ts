@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from 'bun:test';
-import { mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { chmodSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { AuditLog } from '../src/audit/audit-log';
@@ -81,21 +81,14 @@ test('a connector entry is read by that connector alone; a foundry entry by ever
   );
   expect(await keychain.read('shared', 'provider:openai')).toBe(VALUE);
   expect(keychain.readable(FOUNDRY_HOLDER).map((e) => e.name)).toEqual(['shared']);
-  keychain.grant('ANTHROPIC_API_KEY', FOUNDRY_HOLDER, user);
+  await keychain.grant('ANTHROPIC_API_KEY', FOUNDRY_HOLDER, user);
   expect(await keychain.read('ANTHROPIC_API_KEY', FOUNDRY_HOLDER)).toBe(VALUE);
-  const resolver = keychain.resolver('provider:anthropic');
-  expect(
-    await resolver.resolve(
-      { type: 'managed', id: 'shared' },
-      { service: 's', url: 'u', projectId: 'p' },
-    ),
-  ).toBe(VALUE);
 });
 
 test('every change is an audit row of the entry, its metadata and never its value', async () => {
   const { configDir, keychain } = fixture();
   await keychain.store('k', VALUE, { from: 'pad', actor: { kind: 'agent', id: 'thread-1' } });
-  keychain.grant('k', 'mcp:linear', user);
+  await keychain.grant('k', 'mcp:linear', user);
   await keychain.remove('k', user);
   const rows = AuditLog.for(configDir).rows('keychain:k');
   expect(rows.map((row) => row.action)).toEqual(['create', 'update', 'delete']);
@@ -133,4 +126,32 @@ test("a provider's key comes from the environment first, else its own keychain e
   expect(base).toEqual({ PATH: '/bin' });
   const set = await providerKeyEnvironment(keychain, { ANTHROPIC_API_KEY: 'from-env' });
   expect(set.ANTHROPIC_API_KEY).toBe('from-env');
+});
+
+test('changes at once never lose an entry, and a name is stored once', async () => {
+  const { keychain } = fixture();
+  await Promise.all([
+    keychain.store('a', VALUE, { from: 'api', actor: user }),
+    keychain.store('b', VALUE, { from: 'api', actor: user }),
+    keychain.store('c', VALUE, { from: 'api', actor: user }),
+  ]);
+  expect(keychain.list().map((e) => e.name)).toEqual(['a', 'b', 'c']);
+  const twice = await Promise.allSettled([
+    keychain.store('d', 'first', { from: 'api', actor: user }),
+    keychain.store('d', 'second', { from: 'api', actor: user }),
+  ]);
+  expect(twice.map((r) => r.status)).toEqual(['fulfilled', 'rejected']);
+  expect(await keychain.read('d', FOUNDRY_HOLDER)).toBe('first');
+});
+
+test('a bad index costs the keychain keys, never the start', async () => {
+  const { configDir, keychain } = fixture();
+  await keychain.store('ANTHROPIC_API_KEY', VALUE, {
+    from: 'api',
+    actor: user,
+    holder: 'provider:anthropic',
+  });
+  chmodSync(join(configDir, '.private', 'keychain.json'), 0o644);
+  const merged = await providerKeyEnvironment(keychain, { PATH: '/bin' });
+  expect(merged).toEqual({ PATH: '/bin' });
 });

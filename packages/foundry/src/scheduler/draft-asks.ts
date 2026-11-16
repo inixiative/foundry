@@ -18,7 +18,7 @@ export const draftAsk = (name: string) =>
 
 export interface DraftAskDeps {
   scheduler: ScheduleBook & {
-    accept(id: string): Promise<unknown>;
+    accept(id: string, version: string): Promise<unknown>;
   };
   queue: ActionQueue;
   /** Whether the proposing thread can still be asked (live, not archived). */
@@ -38,11 +38,15 @@ export class DraftAsks {
   constructor(private readonly deps: DraftAskDeps) {}
 
   reconcile(): void {
-    const wanted = new Map<string, { threadId: string; name: string }>();
+    const wanted = new Map<string, Want>();
     for (const view of this.deps.scheduler.list()) {
       const draft = view.schedule.draft;
       if (draft && this.deps.live(draft.threadId))
-        wanted.set(view.schedule.id, { threadId: draft.threadId, name: view.schedule.name });
+        wanted.set(view.schedule.id, {
+          threadId: draft.threadId,
+          name: view.schedule.name,
+          version: view.version,
+        });
     }
     for (const [id, asked] of this.open) {
       const want = wanted.get(id);
@@ -63,7 +67,7 @@ export class DraftAsks {
     asked.abort.abort();
   }
 
-  private ask(id: string, want: { threadId: string; name: string }): void {
+  private ask(id: string, want: Want): void {
     const abort = new AbortController();
     const key = askKey(want);
     this.open.set(id, { key, abort });
@@ -81,9 +85,7 @@ export class DraftAsks {
       .then(async (resolution) => {
         if (resolution.by !== 'human') return;
         // The answer applies only to the draft it was asked about.
-        const now = this.deps.scheduler.find(id)?.schedule;
-        if (!now?.draft || askKey({ threadId: now.draft.threadId, name: now.name }) !== key) return;
-        if (resolution.action === 'accept') await this.deps.scheduler.accept(id);
+        if (resolution.action === 'accept') await this.deps.scheduler.accept(id, want.version);
         else if (resolution.action === 'reject') await this.deps.scheduler.remove(id);
       })
       .catch((error: unknown) =>
@@ -98,4 +100,11 @@ export class DraftAsks {
   }
 }
 
-const askKey = (want: { threadId: string; name: string }) => `${want.threadId}\u0000${want.name}`;
+interface Want {
+  threadId: string;
+  name: string;
+  version: string;
+}
+
+/** A rewritten draft is a new question: the old prompt is withdrawn and the new one asked. */
+const askKey = (want: Want) => `${want.threadId}\u0000${want.name}\u0000${want.version}`;

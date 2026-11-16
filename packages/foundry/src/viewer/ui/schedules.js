@@ -179,7 +179,7 @@ function ScheduleDetail({ view, onEdit }) {
     <div class="schedule-actions">
       ${
         schedule.draft
-          ? html`<button type="button" class="schedule-primary" disabled=${busy} onClick=${act(() => call(path(schedule.id, '/accept'), 'POST'))}>Accept</button>`
+          ? html`<button type="button" class="schedule-primary" disabled=${busy} onClick=${act(() => call(path(schedule.id, '/accept'), 'POST', { version: view.version }))}>Accept</button>`
           : html`<button type="button" disabled=${busy} onClick=${act(() => call(path(schedule.id, '/run'), 'POST'))}>Run now</button>
             <button type="button" disabled=${busy} onClick=${act(() => call(path(schedule.id, '/pause'), 'POST', { paused: !schedule.paused }))}>${schedule.paused ? 'Resume' : 'Pause'}</button>`
       }

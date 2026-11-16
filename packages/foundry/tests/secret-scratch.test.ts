@@ -487,3 +487,53 @@ test("an entry held by a connector is not the agent's to use", async () => {
   expect(used.text).toContain('held by provider:anthropic');
   expect(await keychain.read('ANTHROPIC_API_KEY', 'provider:anthropic')).toBe(SECRET);
 });
+
+test("a schedule's run uses a kept entry by name but never keeps one; an agent never re-holds one", async () => {
+  const state = tempDir();
+  const backend = memoryKeychainBackend();
+  const keychain = new Keychain({ configDir: state, backend });
+  await keychain.store('ANTHROPIC_API_KEY', 'provider-key', {
+    from: 'api',
+    actor: { kind: 'user' },
+    holder: 'provider:anthropic',
+  });
+  await keychain.store('site-password', SECRET, { from: 'api', actor: { kind: 'user' } });
+  // A scheduled run: the owner's standing word (ownerSet), not his new instruction.
+  let instructed = false;
+  const b = await bridge(
+    true,
+    {},
+    { keychain, ownerSet: () => true, ownerInstructed: () => instructed },
+  );
+  b.secrets.lift(b.thread, 'turn_a', `the key is $$${SECRET}`);
+  const env = await b.call('secret_scratch', {
+    action: 'env',
+    name: 'site-password',
+    path: '.env.local',
+    key: 'SITE_PASSWORD',
+  });
+  expect(env.isError).toBe(false);
+  const kept = await b.call('secret_scratch', { action: 'keep', ref: '†turn_a.1', name: 'other' });
+  expect(kept.isError).toBe(true);
+  expect(keychain.entry('other')).toBeUndefined();
+  // consume never applies to a kept entry.
+  const consumed = await b.call('secret_scratch', {
+    action: 'write',
+    name: 'site-password',
+    path: 'p.txt',
+    consume: true,
+  });
+  expect(consumed.text).toContain('consume is for a scratch-pad reference');
+  // Even on the owner's own word, keep never takes over an entry a connector holds.
+  instructed = true;
+  const takeover = await b.call('secret_scratch', {
+    action: 'keep',
+    ref: '†turn_a.1',
+    name: 'ANTHROPIC_API_KEY',
+    replace: true,
+  });
+  expect(takeover.isError).toBe(true);
+  expect(takeover.text).toContain('only the person changes that');
+  expect(await backend.get('ANTHROPIC_API_KEY')).toBe('provider-key');
+  expect(b.secrets.pad.list(b.thread.id)).not.toEqual([]);
+});

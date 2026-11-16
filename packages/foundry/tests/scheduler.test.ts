@@ -383,6 +383,15 @@ describe('Scheduler saves', () => {
     ).rejects.toThrow('scopes are top-level');
   });
 
+  test('a draft rewritten after the owner saw it is not what he accepts', async () => {
+    const h = harness();
+    const draft = { id: 'a', ...base, when: { every: '1h' }, draft: { threadId: 't1' } };
+    const seen = (await h.scheduler.save(draft, GLOBAL)).version;
+    await h.scheduler.save({ ...draft, prompt: 'something else' }, GLOBAL);
+    await expect(h.scheduler.accept('a', seen)).rejects.toThrow('changed since you saw it');
+    expect(h.scheduler.find('a')?.schedule.draft).toEqual({ threadId: 't1' });
+  });
+
   test('accepting a draft, or the owner saving it, makes it live from then', async () => {
     const h = harness();
     await h.scheduler.save(
@@ -394,12 +403,15 @@ describe('Scheduler saves', () => {
       GLOBAL,
     );
     h.setNow(T0 + 3 * HOUR);
-    await h.scheduler.accept('a');
+    await h.scheduler.accept(
+      'a',
+      h.scheduler.list().find((view) => view.schedule.id === 'a')!.version,
+    );
     await h.scheduler.save({ id: 'b', ...base, when: { every: '1h' } }, GLOBAL);
     expect(h.scheduler.find('b')?.schedule.draft).toBeUndefined();
     expect(h.scheduler.find('a')?.schedule).toMatchObject({ since: T0 + 3 * HOUR });
     expect(h.scheduler.find('a')?.schedule.draft).toBeUndefined();
-    await expect(h.scheduler.accept('a')).rejects.toThrow('is not a draft');
+    await expect(h.scheduler.accept('a', 'any')).rejects.toThrow('is not a draft');
     await h.scheduler.tick();
     expect(h.started).toHaveLength(0);
   });
@@ -608,7 +620,10 @@ describe('draft asks', () => {
   test('accepted elsewhere withdraws the prompt; a dead thread is never asked', async () => {
     const { h, draftAsks, open } = asks();
     draftAsks.reconcile();
-    await h.scheduler.accept('sweep');
+    await h.scheduler.accept(
+      'sweep',
+      h.scheduler.list().find((view) => view.schedule.id === 'sweep')!.version,
+    );
     draftAsks.reconcile();
     await settle(() => open().length === 0);
     const dead = asks(() => false);

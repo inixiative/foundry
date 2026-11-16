@@ -236,12 +236,16 @@ export class SecretScratchTool implements ApiTool {
   private async source(
     secrets: SecretScratch,
     threadId: string,
-    given: { ref?: string; name?: string; envFile?: string; key?: string },
+    given: { ref?: string; name?: string; envFile?: string; key?: string; consume?: boolean },
   ): Promise<ScratchSource> {
     const chosen = [given.ref, given.name, given.envFile].filter((v) => v !== undefined);
     if (chosen.length !== 1 || (given.envFile !== undefined) !== (given.key !== undefined))
       throw new SecretScratchError('Give one of ref, name, or envFile and key.');
     if (given.name !== undefined) {
+      if (given.consume)
+        throw new SecretScratchError(
+          'consume is for a scratch-pad reference; a keychain entry stays until the person removes it.',
+        );
       const refused = secrets.keychainRefusal(threadId);
       if (refused) throw new SecretScratchError(refused);
       return { value: await secrets.keychain!.read(given.name, FOUNDRY_HOLDER) };
@@ -310,14 +314,22 @@ export class SecretScratchTool implements ApiTool {
         ].join('\n');
       }
       case 'env': {
-        const source = await this.source(secrets, threadId, { ref: args.ref, name: args.name });
+        const source = await this.source(secrets, threadId, {
+          ref: args.ref,
+          name: args.name,
+          consume: args.consume,
+        });
         pad.env(source, threadId, scratchTarget(cwd, args.path), args.key, {
           consume: args.consume,
         });
         return `${args.key} is set in ${args.path}${args.consume && args.ref ? '; the secret is consumed' : ''}.`;
       }
       case 'write': {
-        const source = await this.source(secrets, threadId, { ref: args.ref, name: args.name });
+        const source = await this.source(secrets, threadId, {
+          ref: args.ref,
+          name: args.name,
+          consume: args.consume,
+        });
         pad.write(source, threadId, scratchTarget(cwd, args.path), {
           consume: args.consume,
           ...(args.mode ? { mode: args.mode } : {}),
@@ -335,12 +347,19 @@ export class SecretScratchTool implements ApiTool {
         if (refused) throw new SecretScratchError(refused);
         const keychain = secrets.keychain;
         if (!keychain) throw new SecretScratchError('This Foundry has no keychain.');
+        const holder = args.holder ?? FOUNDRY_HOLDER;
+        const held = keychain.entry(args.name);
+        // Who holds an entry is the person's to change, in Settings; an agent never takes one over.
+        if (held && held.holder !== holder)
+          throw new SecretScratchError(
+            `${args.name} is held by ${held.holder}; only the person changes that, in Settings → Keychain.`,
+          );
         const entry = await pad.use(
           args.ref,
           threadId,
           (value) =>
             keychain.store(args.name, value, {
-              holder: args.holder ?? FOUNDRY_HOLDER,
+              holder,
               from: 'pad',
               actor: { kind: 'agent', id: threadId },
               replace: args.replace,
