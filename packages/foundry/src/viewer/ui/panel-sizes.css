@@ -68,10 +68,7 @@
 .rp-head-row {
   align-items: flex-start;
 }
-.rp-head-text {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+.rp-head-row .rp-tabs {
   flex: 1;
   min-width: 0;
 }

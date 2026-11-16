@@ -6,8 +6,10 @@
 /**
  * The right panel: reference about the open thread, readable beside the conversation.
  *
- * A header band (the tab's title and one line of facts), a tab strip, and a framed content area.
- * Tabs: Context · Participants · Permissions · Heralds · Pointers · Feedback. When something is
+ * A band holding the tab strip and the size controls, then a framed content area that opens with the
+ * tab's title and one line of facts (a title above the tabs read as a stray message, Aron 11-16).
+ * Tabs: Plan · Loop · Artifacts · Work · Context · Participants · Permissions · Heralds · Reminders ·
+ * Feedback. When something is
  * inspected (an activity event, a span, a turn trace, a layer) the inspector takes the panel over,
  * with a way back to the tabs. Collapsed, it is a strip of the tabs with their counts.
  */
@@ -63,7 +65,7 @@ const tabTitle = (tab) =>
 const openFeedback = (threadId) =>
   feedbackIn({ threadId }).filter((item) => item.inbox === 'open').length;
 
-/** Each tab's one line of facts for the header band, and its count for the collapsed strip. */
+/** Each tab's one line of facts under its title, and its count for the collapsed strip. */
 function tabFacts(tab, threadId) {
   const launch = threadLaunch.value;
   const members = threadData.value?.conversation?.members ?? 0;
@@ -384,14 +386,7 @@ export function RightPanel({ onSpanSelect }) {
   return html`<div class="right-panel detail-drawer">
     <header class="rp-band">
       <div class="rp-band-row rp-head-row">
-        <div class="rp-head-text">
-          <span class="rp-eyebrow" title="This thread's reference">${threadData.value.meta?.projectId ? `Project: ${projectLabel(threadData.value.meta.projectId)}` : 'Global'}</span>
-          <h2 class="rp-title">${RIGHT_TAB_LABELS[tab]}</h2>
-          ${facts.info ? html`<div class="rp-info">${facts.info}</div>` : null}
-        </div>
-        <${SizeControls} side="right" />
-      </div>
-      <nav class="rp-tabs" role="tablist" aria-label="Thread reference">
+        <nav class="rp-tabs" role="tablist" aria-label="Thread reference">
         ${RIGHT_TABS.map((t) => {
           return html`<button key=${t} role="tab" aria-selected=${t === tab}
             aria-label=${RIGHT_TAB_LABELS[t]} class="rp-tab ${t === tab ? 'is-active' : ''}" title=${tabTitle(t)}
@@ -405,8 +400,14 @@ export function RightPanel({ onSpanSelect }) {
             })()}</button>`;
         })}
       </nav>
+      <${SizeControls} side="right" />
+      </div>
     </header>
-    <div class="rp-frame" role="tabpanel">
+    <div class="rp-frame" role="tabpanel" aria-label=${RIGHT_TAB_LABELS[tab]}>
+      <header class="rp-tab-head">
+        <h2 class="rp-title">${RIGHT_TAB_LABELS[tab]}</h2>
+        ${facts.info ? html`<div class="rp-info">${facts.info}</div>` : null}
+      </header>
       <${TabBody} tab=${tab} threadId=${threadId} />
     </div>
     <${Running} threadId=${threadId} />
