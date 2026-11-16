@@ -117,6 +117,7 @@ function seedTurn(
   const meta: Record<string, unknown> = {
     injection,
     injectedLayers: [{ id: 'conventions', hash: 'h', tokens: 5000 }],
+    chorusChimes: ['permissions', 'data-model'],
     executionOutcome: 'completed',
     persistence: 'committed',
     turnStatus: 'completed',
@@ -240,8 +241,10 @@ test('index summaries keep identity, semantic status and detail availability', (
   expect(native.traceId).toBe('trace-t-main-010');
   expect(native.trace).toMatchObject({ totalDurationMs: 10 });
   // Layer provenance records are small and drive the per-message chips; they survive the index. Large objects do not.
+  // The chiming regions survive too: the † badge counts the chorus apart from standing context.
   expect(native.meta).toMatchObject({
     injectedLayers: [{ id: 'conventions', hash: 'h', tokens: 5000 }],
+    chorusChimes: ['permissions', 'data-model'],
     turnStatus: 'completed',
   });
   expect(native.meta && 'injection' in native.meta).toBe(false);

@@ -150,6 +150,41 @@ test('a busy thread queues: the second turn is accepted at once and runs after t
   expect(v.viewer.localStore!.turn('second')?.status).toBe('completed');
 });
 
+test('a turn the chorus chimed into records the chiming regions apart from its standing layers', async () => {
+  const v = heldViewer();
+  // Stands in for the pre-message flow: two Warden chimes and a routing block, as composeDecoration builds them.
+  v.main.middleware.use('chorus', async (ctx, next) => {
+    ctx.annotations.decoration = {
+      input: { hash: 'h', capturedAt: 1 },
+      blocks: [
+        { role: 'content', id: 'decoration:routing', text: 'Routed.' },
+        ...['permissions', 'data-model', 'permissions'].map((region, i) => ({
+          role: 'content' as const,
+          id: `decoration:${region}:${i}`,
+          source: region,
+          segment: 'domain-knowledge',
+          placement: 'after-message' as const,
+          text: `The ${region} Warden chimed in:\n- see its doc`,
+        })),
+      ],
+      participants: [],
+      omissions: [],
+      conflicts: [],
+    };
+    return next();
+  });
+  await v.client.open('thread:main');
+  expect((await v.send('chimed')).status).toBe(202);
+  await until(() => v.started.length === 1, 'chimed started');
+  v.release(v.started[0]!);
+  expect((await v.terminal('chimed')).type).toBe('done');
+  const reply = v.viewer
+    .localStore!.messageIndex('main')
+    .messages.find((m) => m.turnId === 'chimed' && m.actor !== 'user');
+  // Each region once, in the order it chimed; routing is not a chime.
+  expect(reply?.meta?.chorusChimes).toEqual(['permissions', 'data-model']);
+});
+
 test('the synchronous route runs through the same queue', async () => {
   const v = heldViewer();
   await v.client.open('thread:main');

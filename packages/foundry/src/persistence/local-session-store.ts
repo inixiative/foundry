@@ -152,7 +152,8 @@ export interface MessageSummary {
 }
 
 /** Explicit summary contract: only these metadata keys are carried by the index, each a scalar of
- * bounded length, plus `injectedLayers` as a bounded list of flat provenance records. */
+ * bounded length, plus `injectedLayers` as a bounded list of flat provenance records and
+ * `chorusChimes` as a bounded list of region names. */
 export const SUMMARY_META_KEYS = [
   'turnStatus',
   'persistence',
@@ -2216,6 +2217,7 @@ export class LocalSessionStore {
       inlineNativeOutcome: string | null;
       recordNativeOutcome: string | null;
       injectedLayers: string | null;
+      chorusChimes: string | null;
       images: string | null;
       metaKeys: string | null;
     } & Record<`meta_${(typeof SUMMARY_META_KEYS)[number]}`, unknown>;
@@ -2227,6 +2229,7 @@ export class LocalSessionStore {
         json_extract(record, '$.meta.nativeHistory[#-1].nativeOutcome') AS inlineNativeOutcome,
         json_extract(record, '$.meta.native.nativeOutcome') AS recordNativeOutcome,
         json_extract(record, '$.meta.injectedLayers') AS injectedLayers,
+        json_extract(record, '$.meta.chorusChimes') AS chorusChimes,
         json_extract(record, '$.meta.images') AS images,
         (SELECT group_concat(key, char(31)) FROM json_each(session_messages.record, '$.meta')) AS metaKeys,
         ${metaColumns}
@@ -2335,6 +2338,15 @@ export class LocalSessionStore {
           if (Array.isArray(layers) && isSummaryValue(layers)) meta.injectedLayers = layers;
         } catch {
           /* malformed provenance stays in detail */
+        }
+      }
+      // The regions whose Warden chimed into the turn: the viewer's † badge counts the chorus, not standing context.
+      if (typeof row.chorusChimes === 'string' && row.chorusChimes.length <= SUMMARY_LAYERS_MAX) {
+        try {
+          const regions = JSON.parse(row.chorusChimes);
+          if (Array.isArray(regions) && isSummaryValue(regions)) meta.chorusChimes = regions;
+        } catch {
+          /* malformed chime regions stay in detail */
         }
       }
       // A message's images by identity (id, type, size): the viewer shows them from the attachment route.
