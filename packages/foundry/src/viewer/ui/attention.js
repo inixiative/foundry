@@ -14,14 +14,20 @@
  */
 import { html } from './lib.js';
 import { allThreads } from './store.js';
-import { categoryOf, isClosedThread } from './thread-status.js';
+import { categoryOf, isClosedThread, isScheduledRun } from './thread-status.js';
 import { nodeState, threadTree } from './thread-tree.js';
 
 /** A root's colour category: its own; subagents never add to it. */
 export const effectiveCategory = (node) => categoryOf(nodeState(node));
 
-/** Open top-level threads (subagents fold into their parent). */
+/** Open top-level threads (subagents fold into their parent), scheduled runs included. */
 export const openRoots = () => threadTree(allThreads.value.filter((t) => !isClosedThread(t)));
+
+/** Open's threads: open top-level threads that are not a schedule's run (those live under Scheduled). */
+export const openListRoots = () => openRoots().filter((node) => !isScheduledRun(node));
+
+/** Does this node need the owner (red or orange)? */
+export const needsOwner = (node) => ['problem', 'attention'].includes(effectiveCategory(node));
 
 /** { needs, red } over top-level nodes. */
 export function attentionOf(nodes) {

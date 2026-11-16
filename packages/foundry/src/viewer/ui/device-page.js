@@ -36,7 +36,7 @@ import {
   threadStatusOf,
 } from './store.js';
 import { threadName } from './thread-labels.js';
-import { isClosedThread, subagentParentOf } from './thread-status.js';
+import { isClosedThread, isScheduledRun, subagentParentOf } from './thread-status.js';
 
 const getJson = (url) =>
   authFetch(url)
@@ -49,10 +49,10 @@ export const thisMachineName = () =>
   settingsConfig.value?.installationName ??
   'This machine';
 
-/** Open top-level threads on a machine ('here' = this one). */
+/** Open top-level threads on a machine ('here' = this one), a schedule's runs aside. */
 export function threadsOnMachine(deviceId) {
   return allThreads.value.filter((t) => {
-    if (subagentParentOf(t.meta) || isClosedThread(t)) return false;
+    if (subagentParentOf(t.meta) || isClosedThread(t) || isScheduledRun(t)) return false;
     const other = otherMachine(t);
     return deviceId === 'here' ? !other : other?.deviceId === deviceId;
   });

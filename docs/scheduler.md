@@ -45,7 +45,11 @@ The run's first turn carries a schedule origin (`TurnOrigin.schedule`). Because 
 - Foundry prefixes the message with "Scheduled run of <name>", so the schedule's prompt need not say it, and it shows as "Scheduled run" in the conversation (`meta.scheduledRun`);
 - the thread header carries a "scheduled · <name>" pill (`meta.scheduledBy`) that opens the schedule.
 
-From there it is a thread like any other. It works to completion, asks with `set_status needs-you` when it needs a decision (so it shows in Attention, like any thread), and can be opened, steered or archived.
+From there it works like any thread: it works to completion, asks with `set_status needs-you` when it needs a decision, and can be opened, steered or archived. It is listed differently (Aron, 2026-11-16: "those threads need to not really show up in my open threads… That should be in Scheduled. They're cluttering things"):
+
+- **Never in Open.** Open, its count, the board, a scope's page and a machine's thread counts leave runs out (`isScheduledRun`, `meta.scheduledBy`).
+- **Under Scheduled.** The Scheduled tab's Runs pane lists the runs still going or needing you; every run, finished ones included, is under its schedule's past runs.
+- **In Attention only when it needs you.** Red (failed, blocked) or orange (a question, an approval, `needs-you`). A finished run's answer is not an unread hand-back, so it reads done and stays out.
 
 A run's turn is not the owner's own instruction (`ConversationService.ownerInstructed` is false), so anything a run asks for that needs the owner's word, a new schedule included, waits for him.
 

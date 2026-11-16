@@ -10,7 +10,7 @@
  */
 
 import { AnalyticsPage } from './analytics.js';
-import { Attention, openRoots } from './attention.js';
+import { Attention, openListRoots, openRoots } from './attention.js';
 import { Board, IncomingCard } from './board.js';
 import { CommandPalette, HelpOverlay } from './command-palette.js';
 import { initComposerFocus } from './composer-focus.js';
@@ -133,15 +133,18 @@ function WorkspaceSwitch() {
   </span>`;
 }
 
-/** Open N: every open top-level thread, with the orange and red counts; it shows the Open list. */
+/**
+ * Open N: the Open list's threads (scheduled runs live under Scheduled), with the orange and red
+ * counts over every open thread, runs included; it shows the Open list.
+ */
 function OpenPill() {
-  const roots = openRoots();
+  const roots = openListRoots();
   return html`<button type="button" class="top-pill open-pill" title="Your open threads"
     onClick=${() => {
       railView.value = 'open';
       boardOpen.value = false;
       watchtowerOpen.value = false;
-    }}><span class="top-pill-dot"></span>Open<span class="top-pill-count">${roots.length}</span><${Attention} nodes=${roots} /></button>`;
+    }}><span class="top-pill-dot"></span>Open<span class="top-pill-count">${roots.length}</span><${Attention} nodes=${openRoots()} /></button>`;
 }
 
 /**

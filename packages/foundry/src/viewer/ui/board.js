@@ -41,6 +41,7 @@ import { projectKingdom, threadName } from './thread-labels.js';
 import {
   categoryOf,
   isClosedThread,
+  isScheduledRun,
   statusText,
   subagentParentOf,
   threadState,
@@ -267,8 +268,20 @@ export function Board() {
     kingdom: (t) => projectKingdom(t.meta?.projectId),
     device: (t) => otherMachine(t)?.deviceName ?? machine,
   };
-  // Subagents fold into their parent's card; the counts are top-level threads only.
-  const open = allThreads.value.filter((t) => (showQuiet || OPEN(t)) && !subagentParentOf(t.meta));
+  // Subagents fold into their parent's card; the counts are top-level threads only. A scheduled run
+  // is on the board only while it needs you (its other runs are under Scheduled).
+  const runNeedsOwner = (t) =>
+    ['problem', 'attention'].includes(
+      categoryOf(
+        threadState(t, { prompts: prompts.value.filter((p) => p.threadId === t.threadId) }),
+      ),
+    );
+  const open = allThreads.value.filter(
+    (t) =>
+      (showQuiet || OPEN(t)) &&
+      !subagentParentOf(t.meta) &&
+      (!isScheduledRun(t) || runNeedsOwner(t)),
+  );
   const isShared = (t) => (t.conversation?.members ?? 0) > 0;
   const inZone = (t) => zone === 'all' || (zone === 'shared') === isShared(t);
   const threads = open.filter((t) => inZone(t) && passesChips(chips, valuesOf, t));

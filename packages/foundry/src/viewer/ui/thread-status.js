@@ -28,6 +28,13 @@ export const CLOSED_STATUSES = new Set(['archived', 'completed', 'done']);
 export const isClosedThread = (thread) =>
   CLOSED_STATUSES.has(thread?.meta?.status ?? thread?.status ?? '');
 
+/**
+ * Is the thread a schedule's run (`meta.scheduledBy`)? Runs live under Scheduled, never in Open, and
+ * reach Attention only when one needs a decision or can't proceed (Aron, 11-16: "those threads need
+ * to not really show up in my open threads… That should be in Scheduled").
+ */
+export const isScheduledRun = (thread) => Boolean(thread?.meta?.scheduledBy);
+
 /** The orange state a pending prompt stands for. */
 export function promptState(prompt) {
   const meta = prompt?.meta ?? {};
@@ -74,10 +81,12 @@ export function threadState(thread, context = {}) {
   // A hand-back: a turn completed after the owner last looked (a reply he hasn't read, or a turn the
   // agent started on its own, a Muse cron or goal). Opening the thread clears it. A subagent never
   // arrives: its result goes back to the agent that spawned it, so finished it reads done (Aron,
-  // 11-14: finished subagents kept a done parent in Attention, counted as "active").
+  // 11-14: finished subagents kept a done parent in Attention, counted as "active"). A scheduled run
+  // never arrives either: its result is listed under its schedule.
   if (
     turn === 'completed' &&
     !meta.spawn &&
+    !meta.scheduledBy &&
     (thread.lastTurn?.completedAt ?? 0) > (meta.seenAt ?? 0)
   )
     return 'newarrival';

@@ -24,7 +24,7 @@ import {
   threadStatusOf,
 } from './store.js';
 import { kingdomOwnerName, threadName } from './thread-labels.js';
-import { isClosedThread } from './thread-status.js';
+import { isClosedThread, isScheduledRun } from './thread-status.js';
 
 const INACTIVE = new Set(['paused', 'idle']);
 
@@ -110,7 +110,8 @@ export function ProjectHome() {
   );
   // Closed is the stored status; open vs inactive is the live one (a waiting request is open).
   const closed = threads.filter(isClosedThread);
-  const live = threads.filter((t) => !isClosedThread(t));
+  // A schedule's runs are listed under Scheduled, not with the scope's open threads.
+  const live = threads.filter((t) => !isClosedThread(t) && !isScheduledRun(t));
   const inactive = live.filter((t) => INACTIVE.has(threadStatusOf(t.threadId)));
   const open = live.filter((t) => !INACTIVE.has(threadStatusOf(t.threadId)));
   const feedback = feedbackIn(isGlobal ? {} : { projectId });
