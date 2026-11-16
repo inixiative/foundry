@@ -9455,9 +9455,9 @@ a.thread-ref:hover {
   }
 }
 
-/* ---- Right panel (concept-v4 .insp): a band on the card colour with the eyebrow, the tab's one-line
-   summary and underlined icon tabs (the selected one names itself); the content in one bordered
-   frame of boxes; Running at the foot. ---- */
+/* ---- Right panel (concept-v4 .insp): a band on the card colour with underlined icon tabs (the
+   selected one names itself); the content in one bordered frame that opens with the tab's title and
+   its one-line summary, then its boxes; Running at the foot. ---- */
 .right-panel {
   /* The foot keeps the rail's 10 px bottom padding. */
   padding: 0 0 10px;
@@ -9484,6 +9484,15 @@ a.thread-ref:hover {
 .rp-info {
   font-size: 12px;
   line-height: 18px;
+}
+.rp-tab-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0 0 12px;
+}
+.rp-tab-head .rp-title {
+  font-size: 15px;
 }
 .rp-tabs {
   margin-top: 2px;
