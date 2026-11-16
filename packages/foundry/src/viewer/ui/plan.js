@@ -22,7 +22,6 @@ import { InlineMarkdown } from './markdown.js';
 import { buildChecklist, progress } from './plan-checklist.js';
 import { STATES, StatusIcon } from './status-icons.js';
 import {
-  activePanel,
   activeThreadId,
   allThreads,
   authFetch,
@@ -31,7 +30,9 @@ import {
   executeAction,
   focusTurnId,
   messages,
+  rightTab,
   selectThread,
+  showThreadView,
   showToast,
   threadData,
   threadStatusOf,
@@ -45,7 +46,7 @@ function Line({ label, children }) {
 }
 
 const openTurn = (turnId) => {
-  activePanel.value = 'conversation';
+  showThreadView();
   focusTurnId.value = turnId;
 };
 
@@ -202,9 +203,7 @@ export function Plan() {
               (p) => html`<li key=${p.id}>
                 <${StatusIcon} state=${promptState(p)} still=${true} />
                 <span>${p.message}</span>
-                <button class="rp-link" onClick=${() => {
-                  activePanel.value = 'conversation';
-                }}>Answer in Thread</button>
+                <button class="rp-link" onClick=${showThreadView}>Answer in Thread</button>
               </li>`,
             )}</ul>
           </${Line}>`
@@ -218,12 +217,12 @@ export function Plan() {
 
     <p class="plan-intro">The plan is what you want and why${meta.plan?.updatedAt ? html`<span class="rp-dim"> · ${meta.plan.draftedBy === 'foundry' ? 'drafted by Foundry (the agent recorded none; its next plan replaces this)' : 'recorded by the agent'} ${new Date(meta.plan.updatedAt).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })}</span>` : null}.
       <button type="button" class="rp-link" onClick=${() => {
-        activePanel.value = 'graph';
+        rightTab.value = 'loop';
       }}>The Loop is how it’s being done →</button></p>
 
     <section class="plan-lifecycle" aria-label="Where the work stands">
       <${LifecycleStrip} turns=${turns} meta=${meta} showNow=${true} onOpen=${() => {
-        activePanel.value = 'graph';
+        rightTab.value = 'loop';
       }} />
     </section>
 

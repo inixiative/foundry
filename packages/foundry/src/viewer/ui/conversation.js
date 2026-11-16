@@ -12,7 +12,7 @@
  */
 
 import { ActionPalette } from './action-palette.js';
-import { ArtifactCards, Artifacts } from './artifacts.js';
+import { ArtifactCards } from './artifacts.js';
 import { PillGroup } from './band-pills.js';
 import { chorusNotice, lastDegraded } from './chorus-health.js';
 import { returnFocus } from './composer-focus.js';
@@ -20,6 +20,7 @@ import { HeldPromptCard, holds, useConversationView } from './conversation-membe
 import { isUnsavedCompletion } from './conversation-state.js';
 import { FeedbackPrompt, GiveFeedback, TurnFeedback } from './feedback.js';
 import { ForkLink } from './fork-link.js';
+import { GraphPanel } from './graph-view.js';
 import {
   IMAGE_TYPES,
   IMAGES_PER_MESSAGE,
@@ -32,7 +33,6 @@ import { failurePresentation } from './inspector-data.js';
 import { kingdomOwnerOf } from './kingdom-holder.js';
 import { html, useEffect, useRef, useState } from './lib.js';
 import { liveExecutionStatus, liveThreadStatus, liveWorkLabel, workLog } from './live-state.js';
-import { LoopView } from './loop-view.js';
 import { Markdown } from './markdown.js';
 import {
   composerDestination,
@@ -43,7 +43,6 @@ import {
 } from './message-box.js';
 import { MessageMenu } from './message-menu.js';
 import { Modal, RenameModal } from './modal.js';
-import { Plan } from './plan.js';
 import { openThreadRun, runParts } from './run-picker.js';
 import { ScheduledLink } from './schedules.js';
 import { settingsConfig } from './settings.js';
@@ -69,6 +68,7 @@ import {
   loadTraceDetail,
   messages,
   modelLabel,
+  openRightTab,
   openTurnView,
   postAside,
   projects,
@@ -915,7 +915,7 @@ function UserContent({ content }) {
     re
       ? html`<button type="button" class="re-link" title="Open it"
       onClick=${() => {
-        activePanel.value = re[2] === 'Plan' ? 'plan' : 'graph';
+        openRightTab(re[2] === 'Plan' ? 'plan' : 'loop');
       }}>Re: ${re[1]}</button>`
       : null
   }<${Markdown} text=${body} breaks=${true} /></div>`;
@@ -1632,10 +1632,8 @@ function HistoryPager({ threadId, count, onLoadOlder }) {
 
 /** The centre's tabs, on the band's lower edge. Ids are the store's `activePanel` values. */
 const CENTER_TABS = [
-  ['conversation', 'Thread', 1],
-  ['plan', 'Plan', 2],
-  ['artifacts', 'Artifacts', null],
-  ['graph', 'Loop', 3],
+  ['conversation', 'Thread', '1'],
+  ['graph', 'Graph', 'g'],
 ];
 
 function CenterTabs() {
@@ -1647,7 +1645,7 @@ function CenterTabs() {
         title=${key ? `${label} (${key})` : label}
         onClick=${() => {
           activePanel.value = id;
-        }}>${label}${id === 'artifacts' && threadData.value?.meta?.artifacts?.length ? html` <span class="center-view-count">${threadData.value.meta.artifacts.length}</span>` : null}</button>`,
+        }}>${label}</button>`,
     )}
   </nav>
   ${current === 'conversation' ? html`<${ThreadViewSegments} conversation=${threadData.value?.conversation} />` : null}
@@ -1711,13 +1709,9 @@ export function Conversation({ onTraceSelect, onLayerClick }) {
       </header>
       <${ThreadToast} threadId=${threadId} />
       ${
-        view === 'plan'
-          ? html`<div class="center-frame"><${Plan} /></div>`
-          : view === 'graph'
-            ? html`<div class="center-frame center-frame--loop"><${LoopView} onLayerClick=${onLayerClick} /></div>`
-            : view === 'artifacts'
-              ? html`<div class="center-frame center-frame--artifacts"><${Artifacts} /></div>`
-              : null
+        view === 'graph'
+          ? html`<div class="center-frame center-frame--graph"><${GraphPanel} onLayerClick=${onLayerClick} /></div>`
+          : null
       }
       ${
         view === 'conversation'

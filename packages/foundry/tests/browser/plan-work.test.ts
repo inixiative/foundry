@@ -159,9 +159,9 @@ test('Plan shows the about and the checklist, a step opens its turn; Work shows 
     await page.goto(`http://127.0.0.1:${server.port}/#thread=shop-1`);
     await page.locator('.context-bar-title', { hasText: 'Checkout errors since 2:02' }).waitFor();
 
-    // Plan (key 2): About, then the checklist.
+    // Plan (key 2), in the right panel beside the thread: About, then the checklist.
     await page.keyboard.press('Alt+Digit2');
-    const plan = page.locator('.plan');
+    const plan = page.locator('.right-panel .plan');
     await plan.locator('.plan-about').waitFor();
     await plan.locator('.plan-section-head', { hasText: '1 of 2 done' }).waitFor();
     // Plan is the what and why: five sections, and a link to the Loop for the how.
@@ -204,7 +204,7 @@ test('Plan shows the about and the checklist, a step opens its turn; Work shows 
       'turn 2 focused',
     );
 
-    // Work lives in the right panel (its first tab): four sections; the file the turn wrote and the commit.
+    // Work lives in the right panel too: four sections; the file the turn wrote and the commit.
     expect(await page.locator('.center-view', { hasText: 'Work' }).count()).toBe(0);
     await page.locator('.rp-tab', { hasText: 'Work' }).click();
     const work = page.locator('.right-panel .work');

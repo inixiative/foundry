@@ -11,7 +11,6 @@
  * closed = landed). Then the agent's recorded loop (its goal, steps, stop check and rounds). Below
  * it, today's graph panel: the thread tree, each turn's flow and the learning loop.
  */
-import { GraphPanel } from './graph-view.js';
 import { html } from './lib.js';
 import { lifecycle } from './lifecycle.js';
 import { InlineMarkdown } from './markdown.js';
@@ -82,6 +81,12 @@ export function PointerLedger({ rows }) {
 const ROUND_MARK = { pass: '✓', fail: '✗', partial: '◐' };
 const LOOP_STATE = { running: 'Running', done: 'Done', stopped: 'Stopped' };
 
+/** A recorded loop in one line: its state and rounds ("Running · 2 of 5 rounds"). */
+export function loopSummary(loop) {
+  const rounds = loop.rounds?.length ?? 0;
+  return `${LOOP_STATE[loop.state] ?? loop.state} · ${rounds}${loop.maxRounds ? ` of ${loop.maxRounds}` : ''} round${rounds === 1 ? '' : 's'}`;
+}
+
 /** The agent's loop (set_loop / loop_round / stop_loop): its goal, one round's steps, the stop check, each round. */
 export function RecordedLoop({ loop }) {
   if (!loop)
@@ -94,7 +99,7 @@ export function RecordedLoop({ loop }) {
   return html`<section class="loop-record" aria-label="The loop" data-state=${loop.state}>
     <header class="plan-section-head">
       <h3><${InlineMarkdown} text=${loop.goal} /></h3>
-      <small>${LOOP_STATE[loop.state] ?? loop.state} · ${rounds.length}${loop.maxRounds ? ` of ${loop.maxRounds}` : ''} round${rounds.length === 1 ? '' : 's'}</small>
+      <small>${loopSummary(loop)}</small>
     </header>
     <ol class="loop-steps">${(loop.steps ?? []).map(
       (step, i) =>
@@ -116,8 +121,8 @@ export function RecordedLoop({ loop }) {
   </section>`;
 }
 
-export function LoopView({ onLayerClick }) {
-  // From the thread's own fields: the flow stream is held only while a turn graph is shown.
+/** The right panel's Loop tab: where the work stands, then the agent's recorded loop. The turn graph is the centre's. */
+export function LoopView() {
   const data = threadData.value;
   const last =
     data?.lastTurn ?? allThreads.value.find((t) => t.threadId === activeThreadId.value)?.lastTurn;
@@ -126,6 +131,5 @@ export function LoopView({ onLayerClick }) {
       turns=${last ? [{ status: last.status === 'running' ? 'active' : last.status }] : []}
       meta=${data?.meta} />
     <${RecordedLoop} loop=${data?.meta?.loop} />
-    <div class="loop-graph"><${GraphPanel} onLayerClick=${onLayerClick} /></div>
   </div>`;
 }

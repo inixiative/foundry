@@ -15,9 +15,6 @@ import { ProjectRegistry } from '../../src/agents/project';
 import { startViewer } from '../../src/viewer/server';
 import { type ReleaseStep, releaseAll } from '../helpers/release-all';
 
-// Aron 11-02: a collapsed right panel's tab icon opens the panel on that tab, the tab already
-// selected included; number keys work plain, with ⌘ (even while typing) or
-// with ⌥: 1–3 the centre's tabs, 4–0 the right panel's, and a key for the tab showing folds it.
 const { chromium } = createRequire(import.meta.url)(
   process.env.FOUNDRY_QA_PLAYWRIGHT ?? 'playwright',
 );
@@ -155,6 +152,15 @@ test('under 1100 px every workspace tab shows its panel', async () => {
     // The Threads tab is the rail, with its own two-row view toggle.
     await tabs.filter({ hasText: 'Threads' }).click();
     await page.locator('.rail-toggle').waitFor({ state: 'visible' });
+    // Plan lives in the right panel (Aron 11-15): its key shows the panel's pane, 1 brings the thread back.
+    await tabs.filter({ hasText: 'Chat' }).click();
+    await page.locator('body').click({ position: { x: 450, y: 5 } });
+    await page.keyboard.press('Alt+Digit2');
+    await page.locator('.right-panel .plan').waitFor({ state: 'visible' });
+    expect(await page.locator('.panels').getAttribute('data-compact-panel')).toBe('detail');
+    await page.keyboard.press('Alt+Digit1');
+    await page.locator('.panel-center textarea.chat-input').waitFor({ state: 'visible' });
+    expect(await page.locator('.panels').getAttribute('data-compact-panel')).toBe('conversation');
     expect(errors).toEqual([]);
   } finally {
     await releaseAll(cleanup);

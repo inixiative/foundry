@@ -55,15 +55,18 @@ export const liveEvents = signal([]);
 export const systemActivity = signal([]);
 /** Every activity event heard, newest first: the strip's expanded log. */
 export const systemActivityLog = signal([]);
-/** The centre's tab: conversation (Thread) | plan | graph (Loop) | artifacts. Keys 1–3 are the first three. */
-export const CENTER_PANELS = ['conversation', 'plan', 'graph', 'artifacts'];
+/**
+ * The centre's tab: conversation (Thread, key 1) | graph (the turn graph, key g). Plan, Loop and
+ * Artifacts are right-panel tabs (Aron 11-15), so the thread stays open beside them.
+ */
+export const CENTER_PANELS = ['conversation', 'graph'];
 export const activePanel = signal('conversation');
 /** The artifact the Artifacts tab shows ({ id, version? }; no version: the newest). */
 export const artifactSelection = signal(null);
-/** Open the Artifacts tab on one artifact, at a version or its newest. */
+/** Open the right panel's Artifacts tab on one artifact, at a version or its newest. */
 export function openArtifact(id, version) {
   artifactSelection.value = { id, ...(version ? { version } : {}) };
-  activePanel.value = 'artifacts';
+  openRightTab('artifacts');
 }
 export const commandPaletteOpen = signal(false);
 export const helpOpen = signal(false);
@@ -118,8 +121,14 @@ export const projectSidebarOpen = signal(true); // collapsed state
 export const detailDrawerOpen = signal(true); // right panel collapsed state
 /** What the detail drawer inspects besides a trace: `{ kind: 'layer', id }` or null. */
 export const inspectTarget = signal(null);
-/** The right panel's tab: context | participants | permissions | heralds | feedback. (Pointers live in Loop.) */
+/**
+ * The right panel's tabs: what the thread is doing (Plan, Loop, Artifacts, Work) and what it runs
+ * with (Context, Participants, Permissions, Heralds, Reminders, Feedback), beside the thread.
+ */
 export const RIGHT_TABS = [
+  'plan',
+  'loop',
+  'artifacts',
   'work',
   'context',
   'participants',
@@ -128,8 +137,26 @@ export const RIGHT_TABS = [
   'pointers',
   'feedback',
 ];
-/** Each right tab's number key (Aron 11-02): 1–3 are the centre's Thread, Plan and Loop; plain, ⌘ or ⌥. */
+/**
+ * Each right tab's number key (Aron 11-02), plain, ⌘ or ⌥: 1 is the centre's Thread; Plan and Loop
+ * keep 2 and 3 from when they were centre tabs. Artifacts has none (it had none in the centre).
+ */
+/** Each right tab's label, the one table the panel, its strip and the key help read. */
+export const RIGHT_TAB_LABELS = {
+  plan: 'Plan',
+  loop: 'Loop',
+  artifacts: 'Artifacts',
+  work: 'Work',
+  context: 'Context',
+  participants: 'Participants',
+  permissions: 'Permissions',
+  heralds: 'Heralds',
+  pointers: 'Reminders',
+  feedback: 'Feedback',
+};
 export const RIGHT_TAB_KEYS = {
+  plan: '2',
+  loop: '3',
   work: '4',
   context: '5',
   participants: '6',
@@ -306,6 +333,15 @@ export function openRightTab(tab, { toggle = false } = {}) {
     watchtowerOpen.value = false;
     rightTab.value = tab;
     detailDrawerOpen.value = true;
+    compactPanel.value = 'detail';
+  });
+}
+
+/** Show the thread in the centre, and on a narrow screen switch to it from the right panel. */
+export function showThreadView() {
+  batch(() => {
+    activePanel.value = 'conversation';
+    compactPanel.value = 'conversation';
   });
 }
 
@@ -638,7 +674,7 @@ export function inspectLayer(layerId) {
   compactPanel.value = 'detail';
 }
 
-/** Center panel: chat or the graph panel. */
+/** The centre: the thread or the turn graph. */
 export function toggleGraphPanel() {
   activePanel.value = activePanel.value === 'graph' ? 'conversation' : 'graph';
 }

@@ -38,7 +38,7 @@ fetch('/api/threads').then(() => out.push('fetch open'), () => out.push('fetch b
   .finally(() => { document.getElementById('out').textContent = out.join(' · '); });
 </script>`;
 
-// Artifacts: the agent's set_artifact versions, listed beside Plan and carded on the turn that wrote
+// Artifacts: the agent's set_artifact versions, a right-panel tab beside Plan, and carded on the turn that wrote
 // them. Markdown renders; an HTML page runs its scripts in a sandboxed frame that reaches nothing.
 test('Artifacts lists versions, cards open them from their turn, and an HTML page runs sandboxed', async () => {
   const cleanup: ReleaseStep[] = [];
@@ -164,9 +164,11 @@ test('Artifacts lists versions, cards open them from their turn, and an HTML pag
     expect(await cards.count()).toBe(2);
     expect(await page.locator('.artifact-card', { hasText: 'Checkout notes' }).count()).toBe(0);
 
-    // A card opens Artifacts on its version; the page's script runs but reaches nothing.
+    // A card opens the right panel's Artifacts on its version, beside the thread that stays open;
+    // the page's script runs but reaches nothing.
     await cards.filter({ hasText: 'v1' }).click();
-    await page.locator('.center-view--active', { hasText: 'Artifacts' }).waitFor();
+    await page.locator('.right-panel .rp-tab.is-active', { hasText: 'Artifacts' }).waitFor();
+    expect(await cards.first().isVisible()).toBe(true);
     const viewerPane = page.locator('.artifact-viewer[data-artifact="page"]');
     expect(await viewerPane.locator('.artifact-version').inputValue()).toBe('1');
     expect(await viewerPane.locator('iframe.artifact-frame').getAttribute('sandbox')).toBe(

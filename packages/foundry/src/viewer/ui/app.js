@@ -45,7 +45,6 @@ import {
   activeThreadId,
   allThreads,
   boardOpen,
-  CENTER_PANELS,
   closeTurnView,
   compactPanel,
   connected,
@@ -69,6 +68,7 @@ import {
   projectSidebarOpen,
   projects,
   RIGHT_TAB_KEYS,
+  RIGHT_TAB_LABELS,
   RIGHT_TABS,
   railView,
   resyncStreams,
@@ -76,6 +76,7 @@ import {
   scopeProjectId,
   selectedEvent,
   selectedSpanId,
+  showThreadView,
   toggleBoard,
   toggleGraphPanel,
   toggleWatchtower,
@@ -295,10 +296,7 @@ function App() {
 
   useEffect(() => {
     registerDefaults({
-      centerTabs: ['Thread', 'Plan', 'Loop'],
-      showCenterTab: (i) => {
-        activePanel.value = CENTER_PANELS[i];
-      },
+      showThread: showThreadView,
       nextItem: () => {
         /* TODO: span navigation */
       },
@@ -346,10 +344,10 @@ function App() {
       toggleRightPanel: () => {
         detailDrawerOpen.value = !detailDrawerOpen.value;
       },
-      rightTabKeys: Object.fromEntries(RIGHT_TABS.map((t) => [t, RIGHT_TAB_KEYS[t]])),
-      rightTabLabels: Object.fromEntries(
-        RIGHT_TABS.map((t) => [t, t[0].toUpperCase() + t.slice(1)]),
+      rightTabKeys: Object.fromEntries(
+        RIGHT_TABS.filter((t) => RIGHT_TAB_KEYS[t]).map((t) => [t, RIGHT_TAB_KEYS[t]]),
       ),
+      rightTabLabels: RIGHT_TAB_LABELS,
       showRightTab: (tab) => openRightTab(tab, { toggle: true }),
     });
     initHotkeys();

@@ -392,8 +392,8 @@ are ⌥ chords; their plain forms act only where no message box is shown. Hold �
 | Key | Action |
 |-----|--------|
 | `⌥T` `⌥B` `⌥H` | Threads · Board · Watchtower |
-| `⌥1` `⌥2` `⌥3` (or `⌘`) | Thread · Plan · Loop |
-| `⌥4`–`⌥0` (or `⌘`) | Right panel tabs (the open tab's key folds it) |
+| `⌥1` (or `⌘`) · `⌥G` | Thread · the turn graph, in the centre |
+| `⌥2`–`⌥0` (or `⌘`) | Right panel: Plan · Loop · Work · Context · Participants · Permissions · Heralds · Pointers · Feedback (the open tab's key folds it; Artifacts has no key) |
 | `⌥[` `⌥⇧[` · `⌥]` `⌥⇧]` | Left list smaller · larger · right panel smaller · larger |
 | `⌥↑` `⌥↓` | Step through the turn view |
 | `⌥↵` `⌥⌫` · `⌥←` `⌥→` | Approve · reject the waiting card · previous · next card |

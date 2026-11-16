@@ -1,12 +1,9 @@
-/* Artifacts (artifacts.js): the tab beside Plan, and the cards under the turn that made each one. */
-.center-frame--artifacts {
-  display: flex;
-  padding: 8px;
-}
+/* Artifacts (artifacts.js): the right panel's tab beside Plan and Loop, and the cards under the
+   turn that made each one. In the panel the list sits above the open artifact. */
 .artifacts {
   display: flex;
+  flex-direction: column;
   gap: 10px;
-  flex: 1;
   min-height: 0;
 }
 .artifacts-empty {
@@ -17,8 +14,8 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
-  width: 200px;
   flex: none;
+  max-height: 30vh;
   overflow-y: auto;
 }
 .artifact-item {
@@ -121,8 +118,4 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.center-view-count {
-  color: var(--text-dim);
-  font-size: 11px;
 }
