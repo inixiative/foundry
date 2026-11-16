@@ -130,7 +130,23 @@ export interface FoundryModelInfo {
   contextWindow?: number;
   maxOutputTokens?: number;
   runtimeKind: RuntimeKind;
-  nativeAlias?: boolean;
+  /**
+   * This id is the CLI's moving alias for another model in the same provider (Claude Code's `opus`
+   * is `claude-opus-5-5` today). A thread stores the id the alias points to, never the alias, so a
+   * new release behind the alias never moves a working thread: only retirement does (Aron, 2026-11-15).
+   */
+  aliasOf?: string;
+  /**
+   * The model line this id belongs to on its provider (`opus`, `sol`, `spark`). Succession stays in
+   * the family: a retired model's `successor` names a model of the same family on the same provider.
+   */
+  family?: string;
+  /**
+   * The provider no longer serves this model. The entry stays so threads and settings that name it
+   * can be moved: to `successor` (the newest model of the same family on the same provider, itself
+   * possibly retired later, so callers follow the chain), or, with none, refused with a clear message.
+   */
+  retired?: { at: string; successor?: string };
   /** Always includes "judgment". Includes "reasoning" exactly when `reasoning` is set. */
   capabilities: ModelCapability[];
   /** Request shape for reasoning. Absent = plain chat completions with max_tokens. */
@@ -298,10 +314,10 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
         contextWindow: 1_000_000,
         maxOutputTokens: 128_000,
         runtimeKind: 'native-harness',
-        nativeAlias: true,
+        aliasOf: 'claude-fable-5-2',
+        family: 'fable',
         capabilities: POWERFUL_REASONING,
         reasoning: CLAUDE_REASONING,
-        notes: 'Claude Code alias for claude-fable-5-2.',
       },
       {
         id: 'opus',
@@ -310,10 +326,10 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
         costTier: 'high',
         contextWindow: 1_000_000,
         runtimeKind: 'native-harness',
-        nativeAlias: true,
+        aliasOf: 'claude-opus-5-5',
+        family: 'opus',
         capabilities: POWERFUL_REASONING,
         reasoning: CLAUDE_REASONING,
-        notes: 'Claude Code alias for claude-opus-5-5.',
       },
       {
         id: 'sonnet',
@@ -322,13 +338,14 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
         costTier: 'medium',
         contextWindow: 1_000_000,
         runtimeKind: 'native-harness',
-        nativeAlias: true,
+        aliasOf: 'claude-sonnet-5-5',
+        family: 'sonnet',
         capabilities: STANDARD_REASONING,
         reasoning: CLAUDE_REASONING,
-        notes: 'Claude Code alias for claude-sonnet-5-5.',
       },
       {
         id: 'claude-haiku-5-5',
+        family: 'haiku',
         label: 'Haiku 5.5',
         tier: 'fast',
         costTier: 'low',
@@ -340,6 +357,7 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
       },
       {
         id: 'claude-opus-5-5',
+        family: 'opus',
         label: 'Opus 5.5',
         tier: 'powerful',
         costTier: 'high',
@@ -349,7 +367,19 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
         reasoning: CLAUDE_REASONING,
       },
       {
+        id: 'claude-sonnet-5-5',
+        family: 'sonnet',
+        label: 'Sonnet 5.5',
+        tier: 'standard',
+        costTier: 'medium',
+        contextWindow: 1_000_000,
+        runtimeKind: 'native-harness',
+        capabilities: STANDARD_REASONING,
+        reasoning: CLAUDE_REASONING,
+      },
+      {
         id: 'claude-fable-5-2',
+        family: 'fable',
         label: 'Fable 5.2',
         tier: 'powerful',
         costTier: 'high',
@@ -361,6 +391,7 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
       },
       {
         id: 'claude-fable-5-1',
+        family: 'fable',
         label: 'Fable 5.1',
         tier: 'powerful',
         costTier: 'high',
@@ -377,7 +408,8 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
         costTier: 'low',
         contextWindow: 1_000_000,
         runtimeKind: 'native-harness',
-        nativeAlias: true,
+        aliasOf: 'claude-haiku-5-5',
+        family: 'haiku',
         capabilities: FAST_REASONING,
         reasoning: { ...CLAUDE_REASONING, efforts: ['low', 'medium', 'high'] },
       },
@@ -559,6 +591,7 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
       // them (2026-10-16); the GPT-5.6 models run on both.
       {
         id: 'gpt-6-astra',
+        family: 'astra',
         label: 'GPT-6 Astra',
         tier: 'powerful',
         costTier: 'high',
@@ -570,6 +603,7 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
       },
       {
         id: 'gpt-6-sol',
+        family: 'sol',
         label: 'GPT-6 Sol',
         tier: 'powerful',
         costTier: 'high',
@@ -581,6 +615,7 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
       },
       {
         id: 'gpt-6-luna',
+        family: 'luna',
         label: 'GPT-6 Luna',
         tier: 'fast',
         costTier: 'low',
@@ -592,6 +627,7 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
       },
       {
         id: 'gpt-5.6-sol',
+        family: 'sol',
         label: 'GPT-5.6 Sol',
         tier: 'powerful',
         costTier: 'high',
@@ -602,6 +638,7 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
       },
       {
         id: 'gpt-5.6-terra',
+        family: 'terra',
         label: 'GPT-5.6 Terra',
         tier: 'standard',
         costTier: 'medium',
@@ -612,6 +649,7 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
       },
       {
         id: 'gpt-5.6-luna',
+        family: 'luna',
         label: 'GPT-5.6 Luna',
         tier: 'fast',
         costTier: 'low',
@@ -802,6 +840,7 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
       // (`<muse data>/model-catalog`, 2026-11-01). The -contributor ids are hidden there and not listed.
       {
         id: 'muse-wonder-1.0',
+        family: 'wonder',
         label: 'Muse Wonder 1.0',
         tier: 'powerful',
         costTier: 'high',
@@ -814,6 +853,7 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
       },
       {
         id: 'muse-spark-1.3',
+        family: 'spark',
         label: 'Muse Spark 1.3',
         tier: 'powerful',
         costTier: 'high',
@@ -825,6 +865,7 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
       },
       {
         id: 'muse-spark-1.2',
+        family: 'spark',
         label: 'Muse Spark 1.2',
         tier: 'powerful',
         costTier: 'high',
@@ -1849,6 +1890,57 @@ export function modelEfforts(
 
 export function registryModel(providerId: string, modelId: string): FoundryModelInfo | undefined {
   return MODEL_REGISTRY[providerId]?.models.find((model) => model.id === modelId);
+}
+
+/**
+ * The model id a thread stores for `modelId`: the id a CLI alias points to (`opus` →
+ * `claude-opus-5-5`), or the id itself. An unknown id is returned as given.
+ */
+export function resolveModelAliasToModelId(
+  providerId: string,
+  modelId: string,
+  registry: Record<string, FoundryProviderInfo> = MODEL_REGISTRY,
+): string {
+  return registry[providerId]?.models.find((model) => model.id === modelId)?.aliasOf ?? modelId;
+}
+
+/** Whether a provider still serves a model, and where a retired one's threads move. */
+export type ModelRetirement =
+  | { retired: false }
+  | { retired: true; at: string; successor?: string; reason?: string };
+
+/**
+ * Whether `modelId` is retired on `providerId`, and the model its threads and settings move to:
+ * its `successor`, followed while that is retired too, so the answer is always a served model of
+ * the same family. No successor, a successor outside the provider or family, or a loop leaves
+ * `successor` unset with the `reason`, and the caller refuses the thread with it. An unknown id is
+ * not retired: the registry only retires what it lists.
+ */
+export function readModelRetirement(
+  providerId: string,
+  modelId: string,
+  registry: Record<string, FoundryProviderInfo> = MODEL_REGISTRY,
+): ModelRetirement {
+  const models = registry[providerId]?.models ?? [];
+  const find = (id: string) => models.find((model) => model.id === id);
+  const first = find(modelId);
+  if (!first?.retired) return { retired: false };
+  const at = first.retired.at;
+  const seen = new Set([first.id]);
+  let current = first;
+  while (current.retired) {
+    const next = current.retired.successor;
+    if (!next) return { retired: true, at, reason: `${current.label} has no successor` };
+    const model = find(next);
+    if (!model) return { retired: true, at, reason: `${next} is not a ${providerId} model` };
+    if (model.family !== first.family)
+      return { retired: true, at, reason: `${next} is not in the ${first.family} family` };
+    if (seen.has(model.id))
+      return { retired: true, at, reason: `the successors of ${first.id} loop` };
+    seen.add(model.id);
+    current = model;
+  }
+  return { retired: true, at, successor: current.id };
 }
 
 /** Unknown provider/model pairs report no capabilities rather than throwing. */

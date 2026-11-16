@@ -277,9 +277,10 @@ test("a host's launch change relaunches the idle executor session on the next tu
   expect(adapter.created[0]).toMatchObject({ model: 'fable', toolGate: gate });
   expect(adapter.created[0].permissionMode).toBeUndefined();
 
+  // The model is the thread's record's (`modelOf`); the host's choices are the rest.
+  launch.modelOf = (threadId) => (threadId === 'thread' ? 'claude-opus-5-5' : undefined);
   launch.update('thread', {
     permissionMode: 'default',
-    model: 'claude-opus-5-5',
     effort: 'high',
     mcpServers: [{ name: 'paseo', command: 'paseo', args: ['mcp'], env: [] }],
   });

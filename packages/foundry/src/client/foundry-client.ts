@@ -20,8 +20,10 @@ export interface ThreadLaunchView {
   /** The thread role its instructions compose as. */
   effectiveRole: string;
   permissionMode: string | null;
+  /** The model the thread runs: its record's (`ThreadMeta.model`), pinned at creation. */
   model: string;
-  modelOverride: string | null;
+  /** The alias it was chosen by (`opus`), when it was. */
+  modelAlias: string | null;
   effort: string | null;
   mcpServers: Array<{ name: string; type: 'stdio' | 'http' }>;
   revision: number;
@@ -218,7 +220,14 @@ export class FoundryClient {
     return this.request('GET', `/api/threads/${encodeURIComponent(threadId)}/launch`);
   }
 
-  updateLaunch(threadId: string, patch: ThreadLaunchPatch): Promise<ThreadLaunchView> {
+  /**
+   * Change the thread's launch settings; `model` changes its record's model (a person's choice,
+   * marked in the thread), null re-pinning the configured default.
+   */
+  updateLaunch(
+    threadId: string,
+    patch: ThreadLaunchPatch & { model?: string | null },
+  ): Promise<ThreadLaunchView> {
     return this.request('PATCH', `/api/threads/${encodeURIComponent(threadId)}/launch`, patch);
   }
 

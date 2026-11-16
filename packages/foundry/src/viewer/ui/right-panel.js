@@ -233,9 +233,9 @@ function ContextTab() {
         launch
           ? html`<dl class="rp-facts">
             <dt>Model</dt><dd>
-              <select class="rp-select" value=${launch.modelOverride ?? ''}
-                onChange=${(e) => setLaunch(threadId, { model: e.target.value || null })}>
-                <option value="">${launchLabels(launch.provider, launch.model).model ? `Project default (${launchLabels(launch.provider, launch.model).model})` : 'Project default'}</option>
+              <select class="rp-select" value=${launch.model ?? ''}
+                onChange=${(e) => e.target.value && setLaunch(threadId, { model: e.target.value })}>
+                ${(launch.options?.models ?? []).some((m) => m.id === launch.model) ? null : html`<option value=${launch.model ?? ''}>${launchLabels(launch.provider, launch.model).model ?? launch.model ?? '—'}</option>`}
                 ${(launch.options?.models ?? []).map((m) => html`<option key=${m.id} value=${m.id}>${m.label ?? m.id}</option>`)}
               </select>
             </dd>

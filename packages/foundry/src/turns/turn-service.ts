@@ -31,6 +31,7 @@ import type { ThreadFactory } from '../agents/thread-factory';
 import type { ThreadNamer } from '../agents/thread-namer';
 import type { PauseAnswer } from '../daemon/restart-roll';
 import type { FeedbackService } from '../feedback/service';
+import type { ModelSuccession } from '../models/model-succession';
 import {
   isOpenTurn,
   type LocalSessionStore,
@@ -79,6 +80,11 @@ export interface TurnServiceDeps {
   streams: ViewerStreams;
   /** `$$word` secrets are lifted into the thread's scratch pad before anything reads the message (FEAT-005). */
   secrets?: SecretScratch | null;
+  /** Moves a thread off a retired model before its turn starts, or asks on a revived one. */
+  modelSuccession?: Pick<
+    ModelSuccession,
+    'revived' | 'beforeTurn' | 'release' | 'modelMissing'
+  > | null;
 }
 
 export interface TurnRequest {
@@ -221,6 +227,8 @@ interface LiveTurn {
   steering?: Promise<unknown>;
   /** What a planned restart keeps of the turn while it is queued, so the next boot runs it. */
   readonly resume: RestartHeldRequest;
+  /** Why it must not run after all (its thread's model is retired with nothing to move to). */
+  refusal?: string;
   /** Settle a queued turn now, without running it. */
   cancelQueued(): void;
   /** Settle a queued turn as steered into the running turn `into`. */
@@ -327,13 +335,16 @@ export class TurnService {
 
   /**
    * Reopen an archived thread (the directory rebuilds it; see `ViewerThreadDirectory.reopen`) and
-   * record it open. A thread that isn't archived is left as it is.
+   * record it open, every reopen path (a message, a member's post, Unarchive) through here, so one on
+   * a retired model asks its person for one (`ModelSuccession.revived`). A thread that isn't
+   * archived is left as it is.
    */
   reopen(threadId: string): boolean {
     const current = this.deps.directory.get(threadId);
     if (!current || !this.deps.directory.canReopen(threadId)) return false;
     const thread = this.deps.directory.reopen(threadId);
     if (!thread || thread === current) return false;
+    this.deps.modelSuccession?.revived(thread);
     this.deps.localStore?.saveThread(thread);
     this.deps.streams.threadsChanged(threadId);
     return true;
@@ -641,6 +652,11 @@ export class TurnService {
         await this.deps.feedback?.held(turnId);
         // A steer of it being sent decides first: if the running turn took it, it is settled.
         if (state.steering) await state.steering.catch(() => {});
+        // Nothing else of the thread runs now: a retired model moves (or a revived thread asks for
+        // one, still queued, so a stop cancels it) before the turn starts on it.
+        if (state.phase !== 'settled')
+          state.refusal =
+            (await this.deps.modelSuccession?.beforeTurn(harness.thread, turnId)) ?? undefined;
         // A queued turn cancelled (or steered) while it waited has already settled.
         if (state.phase !== 'settled') {
           // Out of the queue: the live turn reads running from here, not once the runtime first answers.
@@ -714,6 +730,7 @@ export class TurnService {
       state.phase = 'settled';
       this.live.delete(turnId);
       this.deps.feedback?.release(turnId);
+      this.deps.modelSuccession?.release(turnId);
       state.cancelQueued();
       return { ok: true, outcome: 'cancelled' };
     }
@@ -1118,6 +1135,16 @@ export class TurnService {
     return { traceId: trace?.id, trace: trace?.summary(), meta };
   }
 
+  /** `ModelSuccession.modelMissing`, never letting a failed move hide the turn's own failure. */
+  private movedForMissingModel(thread: Thread, err: unknown): string | undefined {
+    try {
+      return this.deps.modelSuccession?.modelMissing(thread, err);
+    } catch (moveError) {
+      console.warn(`[turns] moving ${thread.id} off a missing model failed:`, moveError);
+      return undefined;
+    }
+  }
+
   private completedAfterFailure(thread: Thread, turnId: string, error: string, trace?: Trace) {
     const span = trace && [...trace.spans].reverse().find((span) => span.kind === 'execute');
     const completed = span?.annotations.executorCompletion as { output: unknown } | undefined;
@@ -1185,6 +1212,7 @@ export class TurnService {
     let attemptTrace: Trace | undefined;
     try {
       if (state.cancelRequested) throw Error(CANCELLED_BEFORE_START);
+      if (state.refusal) throw Error(state.refusal);
       state.phase = 'running';
       // The plan as this turn starts: the drafter drafts only if the agent records none during it.
       const planAtStart = thread.meta.plan;
@@ -1234,7 +1262,9 @@ export class TurnService {
       }
       return { kind: 'completed', completed, result };
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const raw = err instanceof Error ? err.message : String(err);
+      // The CLI says the thread's model does not exist: the thread moves now, and the error says so.
+      const msg = state.cancelRequested ? raw : (this.movedForMissingModel(thread, err) ?? raw);
       const completed = this.completedAfterFailure(thread, turnId, msg, attemptTrace);
       if (completed) {
         this.publishTerminal(threadId, clientId, turnId, 'done', { threadId, ...completed });

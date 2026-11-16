@@ -35,6 +35,7 @@ import { feedbackRoots } from '../feedback/apply';
 import { FeedbackService } from '../feedback/service';
 import { classifyCorrection, matchExisting } from '../feedback/sharpen';
 import { releaseWorktree } from '../git';
+import { ModelSuccession } from '../models/model-succession';
 import { ImageAttachmentStore } from '../persistence/image-attachments';
 import { KnowledgePersistence } from '../persistence/knowledge-persistence';
 import { LocalSessionStore } from '../persistence/local-session-store';
@@ -778,6 +779,8 @@ export function createViewer(config: ViewerConfig) {
   // asks, never runs at the runtime's full-access default. Viewer threads keep their full access.
   threadLaunch.fallbackMode = (threadId) =>
     directory.get(threadId)?.meta.tags?.includes('acp') ? 'default' : undefined;
+  // The model a thread launches on is its record's (`turns/thread-model.ts` changes it).
+  threadLaunch.modelOf = (threadId) => directory.get(threadId)?.meta.model?.id;
   // Settled prompts (each with its bounded tool input) leave the queue after an hour.
   if (config.actionQueue) {
     const queue = config.actionQueue;
@@ -802,7 +805,28 @@ export function createViewer(config: ViewerConfig) {
     log: (message) => console.log(`[Restart] ${message}`),
   });
   const imageStore = new ImageAttachmentStore(join(configDir, 'attachments', 'images'));
+  // Retired models (`models/model-succession.ts`): at boot, settings naming one move to its
+  // successor in one audited update and idle open threads move behind a marker; a busy thread
+  // moves at its next turn's start, and one revived from archive asks its person.
+  const modelSuccession = new ModelSuccession({
+    store: localStore ?? undefined,
+    launch: threadLaunch,
+    queue: config.actionQueue ?? null,
+    log: (line) => console.log(line),
+  });
+  void modelSuccession
+    .succeedSettings(configStore)
+    .catch((error) =>
+      console.warn(`[Models] settings not moved off retired models: ${String(error)}`),
+    );
+  for (const thread of directory.all())
+    try {
+      if (modelSuccession.moveIdle(thread)) streams.threadsChanged(thread.id);
+    } catch (error) {
+      console.warn(`[Models] ${thread.id} not moved off its retired model: ${String(error)}`);
+    }
   const { turns, fork, createThread } = registerRuntimeRoutes(app, {
+    modelSuccession,
     nativeRecovery,
     ...(config.workerSessions ? { workerSessions: config.workerSessions } : {}),
     restartGate: restartRoll,

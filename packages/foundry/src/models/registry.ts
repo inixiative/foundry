@@ -23,6 +23,14 @@ import {
   vendorModeProvider,
 } from '@inixiative/foundry-core';
 
+/**
+ * The models a thread on `providerId` may be put on: the provider's own ids, never a CLI alias
+ * (a thread stores the id an alias points to, so the alias and its target would be one choice
+ * twice) and never a retired model (a thread on one moves to its successor).
+ */
+export const choosableThreadModels = (providerId: string, registry = MODEL_REGISTRY) =>
+  (registry[providerId]?.models ?? []).filter((model) => !model.aliasOf && !model.retired);
+
 /** Native harnesses that run a main thread on the user's own subscription login, and the profile each uses. */
 export const SUBSCRIPTION_WORKERS = {
   'claude-code': 'claude',
@@ -125,7 +133,9 @@ export function registryForViewer() {
         contextWindow: model.contextWindow ?? null,
         maxOutputTokens: model.maxOutputTokens ?? null,
         runtimeKind: model.runtimeKind,
-        nativeAlias: model.nativeAlias ?? false,
+        aliasOf: model.aliasOf ?? null,
+        family: model.family ?? null,
+        retired: model.retired ?? null,
         trainsOnInput: model.trainsOnInput ?? false,
         capabilities: [...model.capabilities],
         notes: model.notes ?? null,

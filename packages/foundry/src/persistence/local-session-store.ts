@@ -1553,6 +1553,22 @@ export class LocalSessionStore {
           );
       }
     }
+    // Nor its model (`meta.model`, the one source of it): set once when missing, then changed after
+    // its first turn only with a journalled switch whose newest row names exactly this change.
+    const priorModel = prior?.model?.id;
+    const nextModel = thread.meta.model?.id;
+    if (priorModel !== undefined && priorModel !== nextModel) {
+      if (nextModel === undefined) throw new Error(`Thread model cannot be removed: ${thread.id}`);
+      if (this.query('SELECT 1 FROM session_turns WHERE thread_id=? LIMIT 1').get(thread.id)) {
+        const marker = this.query(
+          "SELECT json_extract(record, '$.fromModel') AS from_model, json_extract(record, '$.toModel') AS to_model FROM session_phase WHERE thread_id=? AND phase='worker-switch' ORDER BY seq DESC LIMIT 1",
+        ).get(thread.id) as { from_model: string | null; to_model: string | null } | null;
+        if (marker?.from_model !== priorModel || marker?.to_model !== nextModel)
+          throw new Error(
+            `Thread model cannot change after its first turn without a recorded switch: ${thread.id} runs ${priorModel}`,
+          );
+      }
+    }
     this.query(
       'INSERT INTO session_threads(id, meta) VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET meta=excluded.meta',
     ).run(thread.id, JSON.stringify(thread.meta));

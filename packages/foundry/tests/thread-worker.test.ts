@@ -137,13 +137,13 @@ test("a codex thread in a Claude project runs on the Codex worker's provider and
   expect(member.meta.worker).toBe('codex');
   await answer(host);
   await answer(member);
-  expect(f.claude.models).toEqual(['fable']);
+  expect(f.claude.models).toEqual(['claude-fable-5-2']);
   expect(f.codex.models).toEqual(['gpt-6-astra']);
   // A Codex-default project's threads run on Codex unless one chooses Claude.
   expect(factory.create('c', { projectId: 'codex' }).meta.worker).toBe('codex');
   const chosen = factory.create('d', { projectId: 'codex', worker: 'claude-code' });
   await answer(chosen);
-  expect(f.claude.models.at(-1)).toBe('fable');
+  expect(f.claude.models.at(-1)).toBe('claude-fable-5-2');
 });
 
 test("a thread keeps its worker across restart, reopen and an edit of its project's default", async () => {
@@ -189,7 +189,7 @@ test("a thread keeps its worker across restart, reopen and an edit of its projec
   await factory.reconfigure(resolveSubscriptionPolicy(edited)!.config);
   expect(claudeThread.meta.worker).toBe('claude-code');
   await answer(claudeThread);
-  expect(f.claude.models.at(-1)).toBe('fable');
+  expect(f.claude.models.at(-1)).toBe('claude-fable-5-2');
   // A new thread there takes the new default.
   expect(factory.create('later', { projectId: 'claude' }).meta.worker).toBe('codex');
 });
@@ -660,7 +660,7 @@ test('a new thread starts on a chosen model and effort; each must be one its wor
   expect(launch.body).toMatchObject({
     worker: 'codex',
     model: 'gpt-6-sol',
-    modelOverride: 'gpt-6-sol',
+    modelAlias: null,
     effort: 'ultra',
     workerLock: null,
   });
@@ -711,7 +711,9 @@ test('the launch view always names an effort, says when the worker is fixed, and
   writeFileSync(join(claudeHome, 'settings.json'), JSON.stringify({ effortLevel: 'medium' }));
   expect((await call('GET', `/api/threads/${id}/launch`)).body.effortDefault).toBe('medium');
   expect(view.workerLock).toBeNull();
-  const haiku = view.options.workers[0]!.models.find((m) => m.id === 'haiku')!;
+  const haiku = view.options.workers[0]!.models.find((m) => m.id === 'claude-haiku-5-5')!;
+  // An alias is never offered: a thread holds the id it points to.
+  expect(view.options.workers[0]!.models.map((m) => m.id)).not.toContain('haiku');
   expect(haiku).toMatchObject({ efforts: ['low', 'medium', 'high'], defaultEffort: 'high' });
   // Muse has no login in this fixture: it is not offered, and the view says why.
   expect(view.options.workers.map((w) => w.id)).not.toContain('muse');
@@ -721,7 +723,13 @@ test('the launch view always names an effort, says when the worker is fixed, and
   // An effort the model doesn't take is refused; a model change drops a chosen effort it doesn't take.
   expect((await call('PATCH', `/api/threads/${id}/launch`, { effort: 'max' })).status).toBe(200);
   const narrowed = await call('PATCH', `/api/threads/${id}/launch`, { model: 'haiku' });
-  expect(narrowed.body).toMatchObject({ model: 'haiku', effort: null, effortDefault: 'medium' });
+  // An alias is pinned: the thread stores the id it points to now, with the alias beside it.
+  expect(narrowed.body).toMatchObject({
+    model: 'claude-haiku-5-5',
+    modelAlias: 'haiku',
+    effort: null,
+    effortDefault: 'medium',
+  });
   const refused = await call('PATCH', `/api/threads/${id}/launch`, { effort: 'max' });
   expect(refused.status).toBe(400);
   expect(refused.body.error).toContain('takes effort low, medium, high');
@@ -749,7 +757,7 @@ test("the picker's default model is the project's own, and a refused worker with
     defaultModel: string;
   }>;
   // The project's default worker starts on the project's model; another worker on its own default.
-  expect(workers.find((w) => w.id === 'claude-code')?.defaultModel).toBe('sonnet');
+  expect(workers.find((w) => w.id === 'claude-code')?.defaultModel).toBe('claude-sonnet-5-5');
   expect(workers.find((w) => w.id === 'codex')?.defaultModel).toBe('gpt-6-astra');
   const refused = await call('POST', '/api/threads', {
     projectId: 'claude',
@@ -859,8 +867,13 @@ test('a thread switches Claude Code → Codex mid-conversation: a fresh Codex se
     fromLabel: 'Claude Code',
     toLabel: 'Codex',
     fromSession: 'claude-session-1',
+    // Codex doesn't run Fable: the thread moves to Codex's default model, named on the marker.
+    fromModel: 'claude-fable-5-2',
+    toModel: 'gpt-6-astra',
+    cause: 'person',
   });
   expect(store.threadMeta(id)?.worker).toBe('codex');
+  expect(store.threadMeta(id)?.model).toEqual({ id: 'gpt-6-astra' });
   // The transcript's marker.
   const launch = (await call('GET', `/api/threads/${id}/launch`)).body;
   expect(launch.switches).toEqual([
@@ -882,7 +895,9 @@ test('a thread switches Claude Code → Codex mid-conversation: a fresh Codex se
     seed.indexOf('Only remote-friendly ones.'),
   );
   expect(seed).toContain('## User\nOnly remote-friendly ones.');
-  expect(seed).toContain('## Continued on Codex from here (it ran on Claude Code before)');
+  expect(seed).toContain(
+    '## Continued on Codex with gpt-6-astra from here (it ran on Claude Code before)',
+  );
   expect(seed.indexOf('Noted: remote-friendly only.')).toBeLessThan(
     seed.indexOf('## Continued on Codex'),
   );
@@ -893,7 +908,7 @@ test('a thread switches Claude Code → Codex mid-conversation: a fresh Codex se
   expect(await w.codexAdapter.getExternalSessionId(id)).toBe('codex-thread-1');
   // A later fresh seed on Codex (its rollout gone) keeps the marker but doesn't say it just moved.
   const later = journalHistory(store, id, undefined, workerHistoryBudget('codex'))!;
-  expect(later).toContain('## Continued on Codex from here');
+  expect(later).toContain('## Continued on Codex with gpt-6-astra from here');
   expect(later).toContain('could not be resumed');
   expect(later).not.toContain('mid-conversation');
 
@@ -909,8 +924,8 @@ test('a thread switches Claude Code → Codex mid-conversation: a fresh Codex se
   expect(w.cli.launches).toHaveLength(2);
   expect(back.argv).not.toContain('--resume');
   expect(back.turns[0]).toContain('This thread moved from Codex to Claude Code mid-conversation');
-  expect(back.turns[0]).toContain('## Continued on Codex from here');
-  expect(back.turns[0]).toContain('## Continued on Claude Code from here');
+  expect(back.turns[0]).toContain('## Continued on Codex with gpt-6-astra from here');
+  expect(back.turns[0]).toContain('## Continued on Claude Code with ');
 });
 
 test("a seed's budget is a tenth of the worker's smallest context window", () => {

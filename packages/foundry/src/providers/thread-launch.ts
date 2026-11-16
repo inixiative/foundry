@@ -6,7 +6,9 @@
 import { REASONING_EFFORTS, type ReasoningEffort } from '@inixiative/foundry-core';
 /**
  * What a host (an ACP client, or the viewer) chose for one thread's executor session: the
- * permission mode, model and effort it runs with and the MCP servers it carries. Access follows
+ * permission mode and effort it runs with and the MCP servers it carries. The model is not a host
+ * choice held here: it is the thread's own record (`ThreadMeta.model`, read through `modelOf`),
+ * changed only by `turns/thread-model.ts`, which bumps the revision here so the session relaunches. Access follows
  * the host: a mode is the native runtime's own permission mode, full access included, and Foundry
  * adds none of its own. Held in daemon memory only, never under `.foundry`, because client MCP
  * server `env` and `headers` can hold secrets; a host re-supplies them on `session/load`.
@@ -40,6 +42,7 @@ export type ClientMcpServer =
 
 export interface ThreadLaunch {
   readonly permissionMode?: PermissionMode;
+  /** The thread's model (`ThreadMeta.model.id`), filled by `forLaunch`; never set by a patch. */
   readonly model?: string;
   readonly effort?: EffortLevel;
   readonly mcpServers?: readonly ClientMcpServer[];
@@ -49,7 +52,6 @@ export interface ThreadLaunch {
 
 export type ThreadLaunchPatch = {
   permissionMode?: PermissionMode | null;
-  model?: string | null;
   effort?: EffortLevel | null;
   mcpServers?: readonly ClientMcpServer[] | null;
 };
@@ -118,6 +120,9 @@ export class ThreadLaunchSettings {
   /** The mode a thread with none launches in; undefined leaves the runtime's own default. */
   fallbackMode: (threadId: string) => PermissionMode | undefined = () => undefined;
 
+  /** The thread's model, from its record (`ThreadMeta.model.id`); undefined leaves the configured default. */
+  modelOf: (threadId: string) => string | undefined = () => undefined;
+
   get(threadId: string): ThreadLaunch {
     return this.threads.get(threadId) ?? { revision: 0 };
   }
@@ -128,10 +133,23 @@ export class ThreadLaunchSettings {
    * its host re-applies the real mode on its next prompt.
    */
   forLaunch(threadId: string): ThreadLaunch {
-    const launch = this.get(threadId);
+    const model = this.modelOf(threadId);
+    const launch = model ? { ...this.get(threadId), model } : this.get(threadId);
     if (launch.permissionMode) return launch;
     const permissionMode = this.fallbackMode(threadId);
     return permissionMode ? { ...launch, permissionMode } : launch;
+  }
+
+  /**
+   * The thread's model changed on its record: bump the revision so its warm session relaunches
+   * (resuming its native binding) on the new model at its next turn.
+   */
+  modelChanged(threadId: string): ThreadLaunch {
+    const current = this.get(threadId);
+    const launch = { ...current, revision: current.revision + 1 };
+    this.threads.set(threadId, launch);
+    for (const listener of this.listeners) listener(threadId, launch);
+    return launch;
   }
 
   /** Apply a host's choice; `null` clears a field back to the thread's configured default. */
@@ -141,10 +159,10 @@ export class ThreadLaunchSettings {
       throw Error(`Unknown permission mode: ${patch.permissionMode}`);
     if (patch.effort != null && !REASONING_EFFORTS.includes(patch.effort))
       throw Error(`Unknown effort: ${patch.effort}`);
-    if (patch.model != null && (typeof patch.model !== 'string' || !patch.model.trim()))
-      throw Error('model must be a non-empty string');
+    if ('model' in patch)
+      throw Error("A thread's model is its record's, changed through its model route");
     const next: Record<string, unknown> = { ...current };
-    for (const key of ['permissionMode', 'model', 'effort'] as const)
+    for (const key of ['permissionMode', 'effort'] as const)
       if (key in patch) {
         if (patch[key] === null) delete next[key];
         else next[key] = patch[key];
@@ -153,7 +171,7 @@ export class ThreadLaunchSettings {
       if (patch.mcpServers === null || patch.mcpServers?.length === 0) delete next.mcpServers;
       else next.mcpServers = clientMcpServers(patch.mcpServers);
     }
-    const changed = (['permissionMode', 'model', 'effort', 'mcpServers'] as const).some(
+    const changed = (['permissionMode', 'effort', 'mcpServers'] as const).some(
       (key) => JSON.stringify(next[key] ?? null) !== JSON.stringify(current[key] ?? null),
     );
     if (!changed) return current;

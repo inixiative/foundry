@@ -4,9 +4,10 @@
  * @partOf feature:viewer
  */
 /**
- * Where a thread moved to another worker mid-conversation: a "Continued on Codex from here" line in
- * the transcript, at the point it switched (the launch view's `switches`, from the journal's
- * `worker-switch` rows). The new worker's session started fresh, seeded with the conversation.
+ * Where a thread moved to another worker or model mid-conversation: a "Continued on Codex from here"
+ * or "Switched to claude-opus-5-6 from here" line in the transcript, at the point it switched (the
+ * launch view's `switches`, from the journal's `worker-switch` rows). On a new worker the session
+ * started fresh, seeded with the conversation; a model switch on the same worker kept its session.
  */
 
 import { html } from './lib.js';
@@ -36,8 +37,15 @@ export function withSwitchMarkers(messages, switches, hasOlder) {
 export function WorkerSwitchMarker({ marker }) {
   const to = workerName(marker.to) ?? marker.toLabel;
   const from = workerName(marker.from) ?? marker.fromLabel;
+  const when = new Date(marker.at).toLocaleString();
+  const why = marker.cause === 'retired' ? ` because ${marker.fromModel} was retired` : '';
+  if (marker.from === marker.to)
+    return html`<div class="worker-switch-marker" role="note" data-switch-model=${marker.toModel}
+      title=${`Switched from ${marker.fromModel ?? 'its earlier model'} on ${when}${why}. The same session continues.`}>
+      <span>Switched to ${marker.toModel} from here${why}</span>
+    </div>`;
   return html`<div class="worker-switch-marker" role="note" data-switch-to=${marker.to}
-    title=${`Moved from ${from} on ${new Date(marker.at).toLocaleString()}. The new session carries the conversation and plan, not the old session's files read or tool state.`}>
-    <span>Continued on ${to} from here</span>
+    title=${`Moved from ${from} on ${when}${why}. The new session carries the conversation and plan, not the old session's files read or tool state.`}>
+    <span>Continued on ${to}${marker.toModel ? ` with ${marker.toModel}` : ''} from here</span>
   </div>`;
 }
