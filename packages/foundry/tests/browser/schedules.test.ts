@@ -53,6 +53,19 @@ test('the Scheduled rail lists schedules, their past runs, drafts to accept, and
       dueAt,
     };
     project.addThread(run);
+    // A run that asks for a decision: it needs the owner, so it is in Attention and Scheduled's Runs.
+    const asking = new Thread('asking-run', new ContextStack(), {
+      description: 'Morning triage · Nov 12',
+      projectId: 'shop',
+    });
+    asking.meta.status = 'idle';
+    asking.meta.agentStatus = { state: 'needs-you', text: 'Which error first?', at: Date.now() };
+    asking.meta.scheduledBy = {
+      scheduleId: 'morning-triage',
+      runId: `schedule:morning-triage:${dueAt - 86_400_000}`,
+      dueAt: dueAt - 86_400_000,
+    };
+    project.addThread(asking);
     const proposer = new Thread('proposer', new ContextStack(), {
       description: 'Feedback sweep',
       projectId: 'shop',
@@ -139,10 +152,29 @@ test('the Scheduled rail lists schedules, their past runs, drafts to accept, and
     const draftPrompts = () => queue.pending().filter((p) => p.meta?.scheduleDraft);
     expect(draftPrompts().map((p) => p.threadId)).toEqual(['proposer']);
     await page.goto(`http://127.0.0.1:${server.port}/#thread=main`);
+    // A schedule's runs stay out of Open; the one that needs a decision is in Attention.
+    const railNames = async (): Promise<string[]> =>
+      page
+        .locator('.active-rail .tree-node')
+        .evaluateAll((els: Element[]) => els.map((e) => (e as HTMLElement).innerText));
+    await page.locator('.rail-toggle-btn', { hasText: 'Open' }).click();
+    await page.locator('.active-rail .tree-node', { hasText: 'Feedback sweep' }).waitFor();
+    expect((await railNames()).filter((name) => name.includes('Morning triage'))).toEqual([]);
+    // The Open pill counts what the Open list shows.
+    expect(await page.locator('.open-pill .top-pill-count').innerText()).toBe(
+      String((await railNames()).length),
+    );
+    await page.locator('.rail-toggle-btn', { hasText: 'Attention' }).click();
+    await page.locator('.active-rail .tree-node', { hasText: 'Morning triage · Nov 12' }).waitFor();
+    expect((await railNames()).some((name) => name.includes('Nov 13'))).toBe(false);
     // The draft is counted on the Scheduled tab.
     const tab = page.locator('.rail-toggle-btn', { hasText: 'Scheduled' });
     await tab.locator('.rail-toggle-badge', { hasText: '1' }).waitFor();
     await tab.click();
+    // Runs: only the run that needs you; the finished one is under its schedule's past runs.
+    const runsPane = page.locator('.rail-pane[aria-label="Runs"]');
+    await runsPane.locator('.tree-node', { hasText: 'Nov 12' }).waitFor();
+    expect(await runsPane.locator('.tree-node', { hasText: 'Nov 13' }).count()).toBe(0);
     const pane = page.locator('.rail-pane[aria-label="Schedules"]');
     expect(
       await pane

@@ -15,15 +15,18 @@
  * working, queued or idle drops out and comes back when it hands back. The thread you opened stays
  * listed until you navigate (`attentionHold`); replying to the last one opens its project's page.
  *
- * Open is every open thread across projects, in two fixed halves that each scroll on their own:
+ * Open is every open thread across projects except a schedule's runs, in two fixed halves that each scroll on their own:
  * Yours on top, Shared (another party is a member) below. Projects is today's sidebar: the pinned
  * scopes, the project list, and the selected scope's threads. Rows are two lines: the name, then the
- * status icon, the project and any counts. Scheduled is the work that runs on its own: schedules (each
- * with its past runs; an agent's draft counts on the tab) and every thread running a loop.
+ * status icon, the project and any counts. Scheduled is the work that runs on its own: the runs still
+ * going or needing you, schedules (each with its past runs; an agent's draft counts on the tab) and
+ * every thread running a loop. A run is in Attention only while it needs you: its finished answer is
+ * no unread hand-back (Aron, 2026-11-16: "those threads need to not really show up in my open
+ * threads… That should be in Scheduled").
  * Status is this machine and its resources (machine-status.js), a view of its own so the thread
  * views keep the rail's full height (Aron, 2026-11-14).
  */
-import { effectiveCategory, openRoots } from './attention.js';
+import { effectiveCategory, needsOwner, openListRoots, openRoots } from './attention.js';
 import { IncomingRows } from './incoming.js';
 import { html } from './lib.js';
 import { MachineStatus } from './machine-status.js';
@@ -42,7 +45,7 @@ import {
   railView,
   selectThread,
 } from './store.js';
-import { isClosedThread } from './thread-status.js';
+import { isClosedThread, isScheduledRun } from './thread-status.js';
 import { ThreadNode, threadTree } from './thread-tree.js';
 
 const OPEN = (t) => !isClosedThread(t);
@@ -81,7 +84,7 @@ function RailToggle() {
 }
 
 function OpenRail() {
-  const roots = threadTree(allThreads.value.filter(OPEN));
+  const roots = openListRoots();
   const yours = roots.filter((n) => !isShared(n));
   const shared = roots.filter(isShared);
   const selected = activeThreadId.value;
@@ -113,15 +116,22 @@ function AttentionRail() {
 }
 
 /**
- * Work that runs without you: schedules (schedules.js; triggers are not built yet), then every open
- * thread running a loop (`meta.loop`, the agent's set_loop).
+ * Work that runs without you: the schedules' runs that are still going or need you (a finished run is
+ * listed under its schedule), the schedules (schedules.js; triggers are not built yet), then every
+ * open thread running a loop (`meta.loop`, the agent's set_loop).
  */
 function ScheduledRail() {
   const selected = activeThreadId.value;
+  const runs = openRoots().filter(
+    (node) => isScheduledRun(node) && (needsOwner(node) || effectiveCategory(node) === 'working'),
+  );
   const looping = threadTree(
     allThreads.value.filter((t) => OPEN(t) && t.meta?.loop?.state === 'running'),
   );
   return html`<div class="active-rail">
+    <${Pane} title="Runs" count=${runs.length} nodes=${runs} empty="No run is going or needs you. Open a schedule for its past runs.">
+      ${runs.map((n) => html`<${ThreadNode} key=${n.id} thread=${n} selectedId=${selected} onSelect=${selectThread} />`)}
+    </${Pane}>
     <${ScheduleList} />
     <${Pane} title="Loops" count=${looping.length} nodes=${looping} empty="No thread is running a loop.">
       ${looping.map((n) => html`<${ThreadNode} key=${n.id} thread=${n} selectedId=${selected} onSelect=${selectThread} />`)}

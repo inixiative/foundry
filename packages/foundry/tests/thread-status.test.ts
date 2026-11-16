@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { STATES, statusSvg } from '../src/viewer/ui/status-icons.js';
 import {
   categoryOf,
+  isScheduledRun,
   promptState,
   statusText,
   threadState,
@@ -89,6 +90,31 @@ describe('threadState', () => {
       ),
     ).toBe('done');
   });
+  test('a scheduled run never arrives: finished it reads done; asking it still needs you', () => {
+    const scheduledBy = { scheduleId: 'nightly', runId: 'schedule:nightly:1', dueAt: 1 };
+    const finished = t({
+      meta: { status: 'idle', scheduledBy },
+      lastTurn: { status: 'completed', completedAt: 100 },
+    });
+    expect(isScheduledRun(finished)).toBe(true);
+    expect(threadState(finished)).toBe('done');
+    expect(
+      threadState(
+        t({
+          meta: {
+            status: 'idle',
+            scheduledBy,
+            agentStatus: { state: 'needs-you', text: 'Which?' },
+          },
+          lastTurn: { status: 'completed', completedAt: 100 },
+        }),
+      ),
+    ).toBe('question');
+    expect(
+      threadState(t({ meta: { status: 'idle', scheduledBy }, lastTurn: { status: 'failed' } })),
+    ).toBe('error');
+  });
+
   test('a turn completed after the owner last looked is a new arrival (orange) until he looks', () => {
     // A reply he hasn't read, or a turn the agent started on its own (a Muse cron).
     expect(threadState(t({ lastTurn: { status: 'completed', completedAt: 100 } }))).toBe(
