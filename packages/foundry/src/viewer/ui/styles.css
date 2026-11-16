@@ -10009,6 +10009,14 @@ a.thread-ref:hover {
   font: 500 11.5px var(--font);
   cursor: pointer;
 }
+/* Without chimes the badge is only standing context: muted, no dagger. */
+.chat-foundry-added:not(.has-chimes) {
+  border-color: var(--text-dimmer);
+  color: var(--text-dim);
+}
+.chat-foundry-added .chat-foundry-standing {
+  color: var(--text-dim);
+}
 /* Context layers and the work log under an agent turn, as the mockup's pointer chips and log line. */
 .chat-agent .chat-layers {
   display: flex;

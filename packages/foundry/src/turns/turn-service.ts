@@ -283,6 +283,17 @@ function buildInjectionProvenance(
   return records.length > 0 ? records : undefined;
 }
 
+/**
+ * The regions whose Warden chimed into this turn: the decoration's domain-knowledge blocks, by source.
+ * Kept apart from `injectedLayers` (standing context) so the viewer can tell the chorus from the base.
+ */
+function listChorusChimeRegions(artifact: InjectionArtifact | undefined): string[] | undefined {
+  const regions = (artifact?.decoration?.blocks ?? [])
+    .filter((block) => block.segment === 'domain-knowledge' && typeof block.source === 'string')
+    .map((block) => block.source as string);
+  return regions.length > 0 ? [...new Set(regions)] : undefined;
+}
+
 export class TurnService {
   private readonly generation = newId('native-runtime');
   private readonly harnesses: Map<string, Harness>;
@@ -1031,9 +1042,11 @@ export class TurnService {
     const content = typeof output === 'string' ? output : JSON.stringify(output ?? null);
     const injection = result.result.meta?.injection as InjectionArtifact | undefined;
     const injectedLayers = buildInjectionProvenance(injection);
+    const chorusChimes = listChorusChimeRegions(injection);
     const meta: Record<string, unknown> = {
       ...(result.result.meta ?? {}),
       ...(injectedLayers ? { injectedLayers } : {}),
+      ...(chorusChimes ? { chorusChimes } : {}),
       attemptOutcome: 'completed',
       executionOutcome: 'completed',
       ...(postExecutionError ? { attemptOutcome: 'failed', postExecutionError } : {}),
@@ -1092,6 +1105,7 @@ export class TurnService {
     const injection = executeSpan?.annotations.injection as InjectionArtifact | undefined;
     const native = executeSpan?.annotations.native as NativeEvidence | undefined;
     const injectedLayers = buildInjectionProvenance(injection);
+    const chorusChimes = listChorusChimeRegions(injection);
     const meta: Record<string, unknown> = {
       error,
       turnStatus: 'failed',
@@ -1108,6 +1122,7 @@ export class TurnService {
       ...(native ? { native, ...(native.content ? { partialOutput: native.content } : {}) } : {}),
       ...(injection ? { injection } : {}),
       ...(injectedLayers ? { injectedLayers } : {}),
+      ...(chorusChimes ? { chorusChimes } : {}),
       ...(partialOutput ? { partialOutput } : {}),
       ...(cancelled ? { cancelled: true } : {}),
     };

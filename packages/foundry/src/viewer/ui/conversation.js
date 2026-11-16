@@ -977,13 +977,24 @@ const sentAt = (msg) =>
   });
 
 /** What Foundry added to this turn (the context layers its reply records), on your message. */
+/** What Foundry added to the turn under the user's message: † marks the chorus (regions whose Warden
+ * chimed in); standing context (instructions, conventions, thread state) is counted apart, muted. */
 function FoundryAdded({ turnId }) {
   if (!turnId) return null;
   const reply = messages.value.find((m) => m.turnId === turnId && m.actor !== 'user');
+  const chimes = reply?.meta?.chorusChimes ?? [];
   const layers = reply?.meta?.injectedLayers ?? [];
-  if (!layers.length) return null;
-  return html`<button type="button" class="chat-foundry-added" title=${layers.map((l) => l.id).join('\n')}
-    onClick=${() => openTurnView(activeThreadId.peek(), turnId)}>† ${layers.length} added by Foundry · Inspect →</button>`;
+  if (!chimes.length && !layers.length) return null;
+  const title = [
+    ...(chimes.length ? ['Chorus:', ...chimes.map((region) => `  ${region}`)] : []),
+    ...(layers.length ? ['Standing context:', ...layers.map((l) => `  ${l.id}`)] : []),
+  ].join('\n');
+  return html`<button type="button" class=${`chat-foundry-added${chimes.length ? ' has-chimes' : ''}`} title=${title}
+    onClick=${() => openTurnView(activeThreadId.peek(), turnId)}>
+    ${chimes.length ? html`<span class="chat-foundry-chorus">† ${chimes.length} from the chorus</span>` : null}
+    ${chimes.length && layers.length ? ' · ' : null}
+    ${layers.length ? html`<span class="chat-foundry-standing">${layers.length} standing</span>` : null}
+    ${' · Inspect →'}</button>`;
 }
 
 function UserMessage({ msg, index }) {
