@@ -333,6 +333,15 @@ export function openRightTab(tab, { toggle = false } = {}) {
     watchtowerOpen.value = false;
     rightTab.value = tab;
     detailDrawerOpen.value = true;
+    compactPanel.value = 'detail';
+  });
+}
+
+/** Show the thread in the centre, and on a narrow screen switch to it from the right panel. */
+export function showThreadView() {
+  batch(() => {
+    activePanel.value = 'conversation';
+    compactPanel.value = 'conversation';
   });
 }
 

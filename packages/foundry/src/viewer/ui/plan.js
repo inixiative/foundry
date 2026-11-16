@@ -22,7 +22,6 @@ import { InlineMarkdown } from './markdown.js';
 import { buildChecklist, progress } from './plan-checklist.js';
 import { STATES, StatusIcon } from './status-icons.js';
 import {
-  activePanel,
   activeThreadId,
   allThreads,
   authFetch,
@@ -33,6 +32,7 @@ import {
   messages,
   rightTab,
   selectThread,
+  showThreadView,
   showToast,
   threadData,
   threadStatusOf,
@@ -46,7 +46,7 @@ function Line({ label, children }) {
 }
 
 const openTurn = (turnId) => {
-  activePanel.value = 'conversation';
+  showThreadView();
   focusTurnId.value = turnId;
 };
 
@@ -203,9 +203,7 @@ export function Plan() {
               (p) => html`<li key=${p.id}>
                 <${StatusIcon} state=${promptState(p)} still=${true} />
                 <span>${p.message}</span>
-                <button class="rp-link" onClick=${() => {
-                  activePanel.value = 'conversation';
-                }}>Answer in Thread</button>
+                <button class="rp-link" onClick=${showThreadView}>Answer in Thread</button>
               </li>`,
             )}</ul>
           </${Line}>`

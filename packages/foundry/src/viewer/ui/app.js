@@ -76,6 +76,7 @@ import {
   scopeProjectId,
   selectedEvent,
   selectedSpanId,
+  showThreadView,
   toggleBoard,
   toggleGraphPanel,
   toggleWatchtower,
@@ -295,9 +296,7 @@ function App() {
 
   useEffect(() => {
     registerDefaults({
-      showThread: () => {
-        activePanel.value = 'conversation';
-      },
+      showThread: showThreadView,
       nextItem: () => {
         /* TODO: span navigation */
       },
