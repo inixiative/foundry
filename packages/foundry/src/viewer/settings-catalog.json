@@ -67,7 +67,7 @@
   {
     "path": "secrets",
     "scope": "foundry",
-    "description": "`$$word` secrets lifted into the thread's scratch pad, and paths no agent reads (FEAT-005). Off by default."
+    "description": "`$$word` secrets lifted into the thread's scratch pad, and paths no agent reads (FEAT-005). On by default."
   },
   {
     "path": "journal",

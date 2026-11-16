@@ -199,7 +199,7 @@ export interface FoundryConfig {
   learning?: LearningSettings;
   /** The feedback lifecycle: capture, tuning prompts and the role-file changes they apply (docs/FEEDBACK-LOOP.md). */
   feedback?: FeedbackSettings;
-  /** `$$word` secrets lifted into the thread's scratch pad, and paths no agent reads (FEAT-005). Off by default. */
+  /** `$$word` secrets lifted into the thread's scratch pad, and paths no agent reads (FEAT-005). On by default. */
   secrets?: SecretsSettings;
   /** The local journal (docs/THREAD-TREE.md spec A). */
   journal?: JournalSettings;

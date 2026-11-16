@@ -14,21 +14,21 @@ import { foundryOperation } from '../turns/tool-gate';
 
 /**
  * Secrets handed to an agent as `$$word` (FEAT-005), on agent-session's scratch pad (AS-009). With
- * the setting on, Foundry lifts them out of the owner's message before anything records it, offers
+ * the setting on (the default), Foundry lifts them out of the owner's message before anything records it, offers
  * the scratch pad's tools, keeps the agent from reading private paths and the files the pad wrote,
  * and deletes a thread's pad when the thread is archived.
  */
 
 /** Global and per project (`projects[id].secrets` overrides field by field). */
 export interface SecretsSettings {
-  /** Lift `$$word` secrets into the thread's scratch pad. Default false. */
+  /** Lift `$$word` secrets into the thread's scratch pad. Default true. */
   scratchPad?: boolean;
   /** Extra globs no agent reads (`*.pem`), beside `.private` names. Project globs add to global ones. */
   privatePaths?: string[];
 }
 
 export const DEFAULT_SECRETS_SETTINGS: Required<SecretsSettings> = Object.freeze({
-  scratchPad: false,
+  scratchPad: true,
   privatePaths: [],
 }) as Required<SecretsSettings>;
 
@@ -37,7 +37,7 @@ export function resolveSecretsSettings(
   project: SecretsSettings | undefined,
 ): Required<SecretsSettings> {
   return {
-    scratchPad: project?.scratchPad ?? global?.scratchPad ?? false,
+    scratchPad: project?.scratchPad ?? global?.scratchPad ?? DEFAULT_SECRETS_SETTINGS.scratchPad,
     privatePaths: [...(global?.privatePaths ?? []), ...(project?.privatePaths ?? [])],
   };
 }

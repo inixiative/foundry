@@ -53,9 +53,9 @@ const tempDir = () => {
   return dir;
 };
 
-test('settings: off by default, the project overrides the switch, globs add up, fields are checked', () => {
+test('settings: on by default, the project overrides the switch, globs add up, fields are checked', () => {
   expect(resolveSecretsSettings(undefined, undefined)).toEqual({
-    scratchPad: false,
+    scratchPad: true,
     privatePaths: [],
   });
   expect(
