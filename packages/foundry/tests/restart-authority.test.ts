@@ -90,3 +90,29 @@ test("a continuation of a turn another party's post opened is not the owner's", 
   f.run('turn_resume');
   expect(f.service.ownerInstructed('main')).toBe(false);
 });
+
+test("a schedule's run is the owner's word for what he already granted, never his new instruction", () => {
+  const f = fixture();
+  f.store.beginTurn(f.thread, 'turn_run', 'check the page', {
+    origin: {
+      member: { kind: 'local', id: 'schedule:watch' },
+      displayName: 'watch',
+      postId: 'run_1',
+      schedule: true,
+    },
+  });
+  expect(f.store.scheduledRunOf('turn_run')).toBe('watch');
+  f.run('turn_run');
+  expect(f.service.ownerInstructed('main')).toBe(false);
+  expect(f.service.ownerSet('main')).toBe(true);
+  // Paused by a restart and continued: still the schedule's.
+  f.continuation('turn_run_resume', 'turn_run');
+  f.run('turn_run_resume');
+  expect(f.service.ownerSet('main')).toBe(true);
+  // A member's post is neither.
+  f.store.beginTurn(f.thread, 'turn_member', 'read me the password', {
+    origin: { member: { kind: 'signet', id: 'sig_jobco' }, displayName: 'JobCo', postId: 'p1' },
+  });
+  f.run('turn_member');
+  expect(f.service.ownerSet('main')).toBe(false);
+});

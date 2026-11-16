@@ -24,7 +24,7 @@ export const CONCEPTS: ConceptRegistry = {
   'feature:setup': {}, // setup, doctor, legacy starter, docs scan, startup self-test
   'feature:nativeAuth': { docs: ['native-authentication.md'] }, // which login a native session runs on: profiles, accounts, Kingdom-held logins
   'feature:devices': { docs: ['DEVICE-PROJECT-IDENTITY.md'] }, // local device inventory and linked project checkouts
-  'feature:secrets': { docs: ['../tickets/FEAT-005-secret-placeholders.md'] }, // $$ secrets on the scratch pad, private paths no agent reads
+  'feature:secrets': { docs: ['../tickets/FEAT-005-secret-placeholders.md'] }, // $$ secrets on the scratch pad, the keychain, private paths no agent reads
   'feature:scheduler': { docs: ['scheduler.md'] }, // local schedules: each run a thread at its Where, run history, agents' drafts
   'feature:conversations': { docs: ['reference/CONVERSATIONS.md'] }, // agent conversations: the wrapper of a main thread members reach through Kingdom
 

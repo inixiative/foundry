@@ -52,6 +52,7 @@ import type { TaskSink } from '../providers/session-backed';
 import { ThreadLaunchSettings } from '../providers/thread-launch';
 import { DraftAsks } from '../scheduler/draft-asks';
 import { Scheduler } from '../scheduler/scheduler';
+import { Keychain } from '../secrets/keychain';
 import { resolveSecretsSettings, SecretScratch } from '../secrets/scratch';
 import { kingdomPostDelivery } from '../tools/kingdom-post';
 import {
@@ -94,6 +95,7 @@ import { registerConversationRoutes } from './routes/conversations';
 import { registerDaemonUpdateRoutes } from './routes/daemon-update';
 import { registerDeviceRoutes } from './routes/devices';
 import { registerGlossRoutes } from './routes/gloss';
+import { registerKeychainRoutes } from './routes/keychain';
 import { registerKingdomRoutes } from './routes/kingdom';
 import { registerLoginRoutes } from './routes/logins';
 import { registerModelRoutes } from './routes/models';
@@ -111,6 +113,8 @@ export interface ViewerConfig {
   port?: number;
   /** Directory for persisting settings. Defaults to .foundry/ */
   configDir?: string;
+  /** Foundry's keychain; default, one on the machine's native store indexed under `configDir`. */
+  keychain?: Keychain;
   /** Optional identity file for an isolated local profile. */
   deviceIdentityPath?: string;
   /** LLM provider for AI assist (optional). */
@@ -718,7 +722,9 @@ export function createViewer(config: ViewerConfig) {
     : null;
   // The secret scratch pad (FEAT-005): one private directory of pads, one per thread, under this
   // Foundry's own directory. The setting is read live, global then project.
+  const keychain = config.keychain ?? new Keychain({ configDir });
   const secrets = new SecretScratch(join(configDir, '.private', 'scratch'), {
+    keychain,
     settings: (projectId) =>
       resolveSecretsSettings(
         configStore.config.secrets,
@@ -748,6 +754,7 @@ export function createViewer(config: ViewerConfig) {
     },
   );
   registerDeviceRoutes(app, configStore, config.deviceIdentityPath);
+  registerKeychainRoutes(app, keychain);
   registerModelRoutes(app, configStore);
   registerProfileRoutes(app, configStore);
   registerGlossRoutes(app, configStore);
@@ -976,6 +983,7 @@ export function createViewer(config: ViewerConfig) {
     // Owner-only like the conversation controls: secrets are used only in a turn the owner's own message opened.
     const service = conversations;
     secrets.ownerInstructed = (threadId) => service.ownerInstructed(threadId);
+    secrets.ownerSet = (threadId) => service.ownerSet(threadId);
     kingdom.serveThreads(service.host(), (hosted, dropped) =>
       service.hostedChanged(hosted, dropped),
     );

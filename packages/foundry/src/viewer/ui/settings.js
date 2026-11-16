@@ -21,6 +21,7 @@ import { DevicesSection } from './devices.js';
 import { FeedbackSettings } from './feedback.js';
 import { FilePicker } from './file-picker.js';
 import { IntegrationSection } from './integration-settings.js';
+import { KeychainSection } from './keychain-settings.js';
 import { KingdomSettings } from './kingdom-settings.js';
 import { effect, html, signal, useEffect, useState } from './lib.js';
 import { MessageBoxSection } from './message-box.js';
@@ -639,6 +640,7 @@ function FoundrySection({ section, config }) {
   if (section === 'devices')
     return html`<${DevicesSection} projectIds=${JSON.stringify(projects.value.map((p) => p.id))}
       kingdomPaired=${!!config.kingdomIntegrations?.length} />`;
+  if (section === 'keychain') return html`<${KeychainSection} />`;
   if (section === 'threads')
     return html`<${ThreadSettings} config=${config} onSaved=${loadSettings} />`;
   if (section === 'layers') return html`<${LayersSection} />`;

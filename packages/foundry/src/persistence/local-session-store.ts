@@ -1412,6 +1412,15 @@ export class LocalSessionStore {
     return row?.id?.startsWith('restart:') ? row.id.slice('restart:'.length) : undefined;
   }
 
+  /** The schedule whose run this turn is, when its message is a scheduled run's prompt. */
+  scheduledRunOf(turnId: string): string | undefined {
+    const row = this.query(
+      `SELECT json_extract(record, '$.meta.origin.member.id') AS id FROM session_messages
+        WHERE turn_id=? AND actor='user' AND json_extract(record, '$.meta.origin.schedule') = 1`,
+    ).get(turnId) as { id: string | null } | null;
+    return row?.id?.startsWith('schedule:') ? row.id.slice('schedule:'.length) : undefined;
+  }
+
   /** The journal seq of one ordered phase row. */
   phaseSeq(phaseId: string): number | undefined {
     const row = this.query("SELECT seq FROM session_journal WHERE source='phase' AND ref=?").get(

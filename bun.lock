@@ -55,7 +55,7 @@
       },
       "dependencies": {
         "@anthropic-ai/claude-code": "^2.1.92",
-        "@inixiative/agent-session": "^0.12.4",
+        "@inixiative/agent-session": "^0.13.0",
         "@inixiative/archive": "^0.34.0",
         "@inixiative/config": "^0.5.218",
         "@inixiative/foundry-core": "workspace:*",
@@ -137,7 +137,7 @@
 
     "@iconify/utils": ["@iconify/utils@3.1.7", "", { "dependencies": { "@antfu/install-pkg": "^2.0.1", "@iconify/types": "^2.0.0", "import-meta-resolve": "^4.2.0" } }, "sha512-JZHlwdID+dy+lTgbYC8NEC4zeugqeYsc6jewvzb4c58kHauJn+X7rNwQjxz5p2qSjqaEeQoLkCIQ9v/H4PK0/w=="],
 
-    "@inixiative/agent-session": ["@inixiative/agent-session@0.12.4", "", { "dependencies": { "@inixiative/json-rules": "^3.23.0", "@muse-code/sdk": "1.4.20" } }, "sha512-XGWAADkgyPnaCPglISCrA5i0WpaJdEuLmCKqdDC9ISpFNBTgS+fflrjd0fd17Bub5lX/XEBrGcL778dJMhWDHA=="],
+    "@inixiative/agent-session": ["@inixiative/agent-session@0.13.0", "", { "dependencies": { "@inixiative/json-rules": "^3.23.0", "@muse-code/sdk": "1.4.20" } }, "sha512-WGl/pIy2Kd9V2pi10mdx1fC3bLU4k/5eyrfbUtbI3D9K5ayeNnAwDtMszTAlaj4ouYokZPzxsKjIruLxKimtAQ=="],
 
     "@inixiative/archive": ["@inixiative/archive@0.34.0", "", { "dependencies": { "@inixiative/agent-session": "^0.12.0", "@inixiative/signet": "^0.14.0", "@prisma/client": "^6.6.0", "js-tiktoken": "1.0.21", "prisma": "^6.6.0", "zod": "^4.3.6" }, "bin": { "archive": "src/cli.ts" } }, "sha512-6jNG0JDBiXSQGCmwFMMYeumKGpSHVQyQnqTI5ySNAVYvgt6di2u9Z/dy1a4Kqd8MKQ469WxeRdTvob8vWB3qmw=="],
 
@@ -646,6 +646,8 @@
     "zod": ["zod@4.6.7", "", {}, "sha512-g8W2D2kU6a8untc053fX1uVBKzM7yqAxW/3zwk83+6RyF2+SKOuV+c0wBDhUwzV1PaGapmZH+rmcUzPf+3CGwg=="],
 
     "zod-to-json-schema": ["zod-to-json-schema@3.25.2", "", { "peerDependencies": { "zod": "^3.25.28 || ^4" } }, "sha512-O/PgfnpT1xKSDeQYSCfRI5Gy3hPf91mKVDuYLUHZJMiDFptvP41MSnWofm8dnCm0256ZNfZIM7DSzuSMAFnjHA=="],
+
+    "@inixiative/archive/@inixiative/agent-session": ["@inixiative/agent-session@0.12.5", "", { "dependencies": { "@inixiative/json-rules": "^3.23.0", "@muse-code/sdk": "1.4.20" } }, "sha512-kYoeFVJntPKCF1pI3z+YxYKMgu29WBZs9FdcKR59gYl4Mx18Q+qDrkI9iwN84STgdN1FLwONDyKFy967D+cnrQ=="],
 
     "@inixiative/archive/@inixiative/signet": ["@inixiative/signet@0.14.0", "", { "dependencies": { "jose": "^6.2.3" }, "peerDependencies": { "@inixiative/json-rules": "^3.16.0", "zod": "^4.3.6" } }, "sha512-gsjpiFguRpWk1WRBWnwOzV+IGQEme2Nv+NCWqSxGMx/17oJvPtOAIN3DSDTdLq8ZpNvXp+stdMxrIG29QrxRbA=="],
 

@@ -12,6 +12,7 @@
  */
 import { join } from 'node:path';
 import { inspectReadiness } from '../readiness';
+import { Keychain, providerKeyEnvironment } from '../secrets/keychain';
 import { ConfigStore } from '../viewer/config';
 
 export interface ReadinessGate {
@@ -37,7 +38,10 @@ export const checkReadiness = async (configDirectory: string): Promise<Readiness
     return { ready: false, errors: ['Foundry configuration could not be read.'], warnings: [] };
   }
 
-  const report = await inspectReadiness(config, { configDir: configDirectory });
+  const report = await inspectReadiness(config, {
+    configDir: configDirectory,
+    environment: await providerKeyEnvironment(new Keychain({ configDir: configDirectory })),
+  });
   const describe = (issue: { scope: string; message: string }) =>
     issue.scope === 'global' ? issue.message : `${issue.scope}: ${issue.message}`;
 
