@@ -29,13 +29,14 @@ async function call(method, path, body) {
 const when = (at) => new Date(at).toLocaleString();
 
 function EntryRow({ entry, onChanged }) {
-  const [holder, setHolder] = useState(entry.holder);
-  useEffect(() => setHolder(entry.holder), [entry.holder]);
+  const [draft, setDraft] = useState(null);
+  const holder = draft ?? entry.holder;
   const regrant = async () => {
     try {
       await call('POST', `/api/keychain/${encodeURIComponent(entry.name)}/holder`, { holder });
       showToast(`${entry.name} is held by ${holder}`, 'ok');
-      onChanged();
+      await onChanged();
+      setDraft(null);
     } catch (error) {
       showToast(error.message, 'error');
     }
@@ -54,7 +55,7 @@ function EntryRow({ entry, onChanged }) {
     <td class="mono">${entry.name}</td>
     <td>
       <input class="settings-input small mono" aria-label=${`Holder of ${entry.name}`} value=${holder}
-        onInput=${(e) => setHolder(e.target.value.trim())} />
+        onInput=${(e) => setDraft(e.target.value.trim())} />
       ${holder !== entry.holder ? html`<button class="action-btn small" onClick=${regrant}>Save</button>` : null}
     </td>
     <td>${entry.from === 'pad' ? 'scratch pad' : entry.from === 'api' ? 'settings' : entry.from}</td>
