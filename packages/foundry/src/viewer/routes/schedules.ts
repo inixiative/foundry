@@ -14,6 +14,7 @@ const saveBody = z.strictObject({
   where: scheduleWhereSchema,
 });
 const pauseBody = z.strictObject({ paused: z.boolean() });
+const acceptBody = z.strictObject({ version: z.string().min(1) });
 
 const failure = (error: unknown) => ({ error: (error as Error).message ?? String(error) });
 
@@ -70,8 +71,10 @@ export function registerScheduleRoutes(app: Hono, scheduler: Scheduler): void {
   });
 
   app.post('/api/schedules/:id/accept', async (c) => {
+    const parsed = acceptBody.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) return c.json({ error: 'version is the draft you saw' }, 400);
     try {
-      return c.json({ schedule: await scheduler.accept(c.req.param('id')) });
+      return c.json({ schedule: await scheduler.accept(c.req.param('id'), parsed.data.version) });
     } catch (error) {
       return c.json(failure(error), 400);
     }

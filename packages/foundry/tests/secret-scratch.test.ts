@@ -26,9 +26,11 @@ import {
   ToolRegistry,
 } from '@inixiative/foundry-core';
 import { createFoundryMcp } from '../src/mcp/server';
+import { Keychain, memoryKeychainBackend } from '../src/secrets/keychain';
 import {
   resolveSecretsSettings,
   SecretScratch,
+  type SecretScratchDeps,
   secretNote,
   validateSecretsSettings,
 } from '../src/secrets/scratch';
@@ -69,9 +71,14 @@ test('settings: on by default, the project overrides the switch, globs add up, f
 });
 
 /** A thread on Foundry's MCP bridge with the scratch tools, its working directory a temp dir. */
-async function bridge(on = true, projects: Record<string, string | undefined> = {}) {
+async function bridge(
+  on = true,
+  projects: Record<string, string | undefined> = {},
+  extra: Partial<SecretScratchDeps> = {},
+) {
   const root = tempDir();
   const secrets = new SecretScratch(join(root, 'state', '.private', 'scratch'), {
+    ...extra,
     settings: () => ({ scratchPad: on, privatePaths: [] }),
     projectOf: (threadId) => (threadId in projects ? projects[threadId] : null),
   });
@@ -218,7 +225,7 @@ test('with the setting off the tools are not offered and nothing is lifted', asy
 test('the gate denies reading private paths and files the pad wrote, in every mode, and lets the scratch tool through', async () => {
   const b = await bridge();
   b.secrets.lift(b.thread, 'turn_a', `$$${SECRET}`);
-  b.secrets.pad.env('turn_a.1', b.thread.id, '.env.local', 'K', { cwd: b.root });
+  b.secrets.pad.env({ ref: 'turn_a.1' }, b.thread.id, '.env.local', 'K', { cwd: b.root });
   const rows: Array<Record<string, unknown>> = [];
   const decide = createToolGate({
     threadId: b.thread.id,
@@ -405,4 +412,128 @@ test('the composer never imports a .private path', () => {
   expect(secretInstructionPath('/repo/.private/notes.md')).toBe(true);
   expect(secretInstructionPath('/repo/docs/keys.private.md')).toBe(true);
   expect(secretInstructionPath('/repo/docs/private-routes.md')).toBe(false);
+});
+
+test('keep moves a pad secret into the keychain; a foundry entry is used by name, never shown', async () => {
+  const state = tempDir();
+  const backend = memoryKeychainBackend();
+  const keychain = new Keychain({ configDir: state, backend });
+  let owner = true;
+  const b = await bridge(
+    true,
+    {},
+    { keychain, ownerSet: () => owner, ownerInstructed: () => owner },
+  );
+  b.secrets.lift(b.thread, 'turn_a', `the key is $$${SECRET}`);
+  const kept = await b.call('secret_scratch', {
+    action: 'keep',
+    ref: '†turn_a.1',
+    name: 'gh-token',
+  });
+  expect(kept.isError).toBe(false);
+  expect(kept.text).not.toContain(SECRET);
+  expect(b.secrets.pad.list(b.thread.id)).toEqual([]);
+  expect(await backend.get('gh-token')).toBe(SECRET);
+  expect((await b.call('secret_scratch', { action: 'list' })).text).toContain('Keychain: gh-token');
+  const env = await b.call('secret_scratch', {
+    action: 'env',
+    name: 'gh-token',
+    path: '.env.local',
+    key: 'GH_TOKEN',
+  });
+  expect(env.isError).toBe(false);
+  expect(readFileSync(join(b.root, '.env.local'), 'utf8')).toContain(`GH_TOKEN=${SECRET}`);
+  // A turn that carried another party's words never reaches the keychain.
+  owner = false;
+  const refused = await b.call('secret_scratch', {
+    action: 'write',
+    name: 'gh-token',
+    path: 'token.txt',
+  });
+  expect(refused.isError).toBe(true);
+  expect(existsSync(join(b.root, 'token.txt'))).toBe(false);
+  owner = true;
+  const both = await b.call('secret_scratch', {
+    action: 'write',
+    name: 'gh-token',
+    ref: '†turn_a.1',
+    path: 'token.txt',
+  });
+  expect(both.text).toContain('Give one of');
+  // The audit log holds the entry's metadata, never its value.
+  expect(readFileSync(join(state, 'audit.jsonl'), 'utf8')).not.toContain(SECRET);
+});
+
+test("an entry held by a connector is not the agent's to use", async () => {
+  const state = tempDir();
+  const keychain = new Keychain({ configDir: state, backend: memoryKeychainBackend() });
+  const b = await bridge(true, {}, { keychain });
+  b.secrets.lift(b.thread, 'turn_a', `the key is $$${SECRET}`);
+  const kept = await b.call('secret_scratch', {
+    action: 'keep',
+    ref: '†turn_a.1',
+    name: 'ANTHROPIC_API_KEY',
+    holder: 'provider:anthropic',
+  });
+  expect(kept.text).toContain('held by provider:anthropic');
+  expect((await b.call('secret_scratch', { action: 'list' })).text).toContain(
+    'ANTHROPIC_API_KEY (held by provider:anthropic, not yours to use)',
+  );
+  const used = await b.call('secret_pipe', {
+    name: 'ANTHROPIC_API_KEY',
+    command: 'cat >/dev/null',
+  });
+  expect(used.isError).toBe(true);
+  expect(used.text).toContain('held by provider:anthropic');
+  expect(await keychain.read('ANTHROPIC_API_KEY', 'provider:anthropic')).toBe(SECRET);
+});
+
+test("a schedule's run uses a kept entry by name but never keeps one; an agent never re-holds one", async () => {
+  const state = tempDir();
+  const backend = memoryKeychainBackend();
+  const keychain = new Keychain({ configDir: state, backend });
+  await keychain.store('ANTHROPIC_API_KEY', 'provider-key', {
+    from: 'api',
+    actor: { kind: 'user' },
+    holder: 'provider:anthropic',
+  });
+  await keychain.store('site-password', SECRET, { from: 'api', actor: { kind: 'user' } });
+  // A scheduled run: the owner's standing word (ownerSet), not his new instruction.
+  let instructed = false;
+  const b = await bridge(
+    true,
+    {},
+    { keychain, ownerSet: () => true, ownerInstructed: () => instructed },
+  );
+  b.secrets.lift(b.thread, 'turn_a', `the key is $$${SECRET}`);
+  const env = await b.call('secret_scratch', {
+    action: 'env',
+    name: 'site-password',
+    path: '.env.local',
+    key: 'SITE_PASSWORD',
+  });
+  expect(env.isError).toBe(false);
+  const kept = await b.call('secret_scratch', { action: 'keep', ref: '†turn_a.1', name: 'other' });
+  expect(kept.isError).toBe(true);
+  expect(keychain.entry('other')).toBeUndefined();
+  // consume never applies to a kept entry.
+  const consumed = await b.call('secret_scratch', {
+    action: 'write',
+    name: 'site-password',
+    path: 'p.txt',
+    consume: true,
+  });
+  expect(consumed.text).toContain('consume is for a scratch-pad reference');
+  // Even on the owner's own word, keep never takes over an entry a connector holds.
+  instructed = true;
+  const takeover = await b.call('secret_scratch', {
+    action: 'keep',
+    ref: '†turn_a.1',
+    name: 'ANTHROPIC_API_KEY',
+    replace: true,
+  });
+  expect(takeover.isError).toBe(true);
+  expect(takeover.text).toContain('only the person changes that');
+  expect(await backend.get('ANTHROPIC_API_KEY')).toBe('provider-key');
+  expect(b.secrets.pad.list(b.thread.id)).not.toEqual([]);
 });

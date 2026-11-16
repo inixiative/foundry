@@ -114,6 +114,7 @@ import {
 import { startPrefilterServer } from './providers/prefilter-model';
 import { ThreadLaunchSettings } from './providers/thread-launch';
 import { resolvePrefilterSettings, WardenPrefilter } from './providers/warden-prefilter';
+import { Keychain, providerKeyEnvironment } from './secrets/keychain';
 import { runStartupSelfTest, startupSelfTestEnabled } from './startup-self-test';
 import { BashShell } from './tools/bash-shell';
 import { BunScript } from './tools/bun-script';
@@ -155,6 +156,9 @@ const FOUNDRY_DIR = foundryConfigDir();
 const selfTestRequested = startupSelfTestEnabled(process.env.FOUNDRY_STARTUP_SELF_TEST);
 
 const configStore = new ConfigStore(FOUNDRY_DIR);
+const keychain = new Keychain({ configDir: FOUNDRY_DIR });
+// API keys: the environment's, then each provider's own keychain entry; never put on process.env.
+const providerKeys = await providerKeyEnvironment(keychain);
 let config: FoundryConfig;
 
 function hasEntries(record: Record<string, unknown> | undefined): boolean {
@@ -299,7 +303,7 @@ if (live?.projectHosts)
     "Wardens: each project's held warm in one Foundry-owned process; guards, reviews and later stages stay primed",
   );
 const decisions = live?.decisions;
-const flowLlm = decisions?.provider ?? createDecisionProvider(config);
+const flowLlm = decisions?.provider ?? createDecisionProvider(config, providerKeys);
 /** Wired only with subscription decisions: without it, a chorus that writes no stages runs one. */
 const stageHost = live?.stageHost;
 const decisionModel = subscription?.policy.model ?? resolveDecisionModel(config).model;
@@ -445,7 +449,7 @@ function createProvider(
     selectedAuth?.mode === 'native-profile' &&
     !(
       providerEnabled(config, resolveDecisionModel(config).provider) &&
-      providerApiKey(resolveDecisionModel(config).provider)
+      providerApiKey(resolveDecisionModel(config).provider, providerKeys)
     )
   ) {
     throw Error(
@@ -549,9 +553,11 @@ function createProvider(
       };
     }
     case 'anthropic': {
-      const key = process.env.ANTHROPIC_API_KEY;
+      const key = providerKeys.ANTHROPIC_API_KEY;
       if (!key) {
-        console.error('ANTHROPIC_API_KEY not set. Add it to .env.local or environment.');
+        console.error(
+          'ANTHROPIC_API_KEY not set. Add it to .env.local, the environment or the keychain.',
+        );
         process.exit(1);
       }
       return {
@@ -562,9 +568,11 @@ function createProvider(
       };
     }
     case 'openai': {
-      const key = process.env.OPENAI_API_KEY;
+      const key = providerKeys.OPENAI_API_KEY;
       if (!key) {
-        console.error('OPENAI_API_KEY not set. Add it to .env.local or environment.');
+        console.error(
+          'OPENAI_API_KEY not set. Add it to .env.local, the environment or the keychain.',
+        );
         process.exit(1);
       }
       return {
@@ -575,9 +583,11 @@ function createProvider(
       };
     }
     case 'gemini': {
-      const key = process.env.GEMINI_API_KEY;
+      const key = providerKeys.GEMINI_API_KEY;
       if (!key) {
-        console.error('GEMINI_API_KEY not set. Add it to .env.local or environment.');
+        console.error(
+          'GEMINI_API_KEY not set. Add it to .env.local, the environment or the keychain.',
+        );
         process.exit(1);
       }
       return {
@@ -589,7 +599,7 @@ function createProvider(
     }
     default: {
       // Meta, xAI and the other OpenAI-compatible hosts share one adapter, keyed by the registry.
-      const key = providerApiKey(providerId);
+      const key = providerApiKey(providerId, providerKeys);
       try {
         return {
           provider: createRegisteredProvider(providerId, {
@@ -599,7 +609,9 @@ function createProvider(
           }),
         };
       } catch (error) {
-        console.error(`${(error as Error).message}. Add it to .env.local or environment.`);
+        console.error(
+          `${(error as Error).message}. Add it to .env.local, the environment or the keychain.`,
+        );
         process.exit(1);
       }
     }
@@ -1069,6 +1081,7 @@ const acpLaunch =
 
 const viewer = await startViewer({
   autoTunnel: true,
+  keychain,
   logins: {
     pools: loginPools,
     runs: loginRuns,

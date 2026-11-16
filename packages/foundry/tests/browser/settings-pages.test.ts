@@ -81,6 +81,7 @@ test('settings and analytics are addressable pages scoped to Foundry or a projec
       'Linear',
       'Threads',
       'Devices',
+      'Keychain',
       'Loops',
       'Skills',
       'ADVANCED',

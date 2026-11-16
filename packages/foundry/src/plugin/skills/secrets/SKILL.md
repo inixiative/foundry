@@ -14,12 +14,15 @@ If the person pastes a secret without `$$`, Foundry lifts what it recognises by 
 1. **Put it in an env file** (the normal path): `secret_scratch` with `action: "env"`, the `ref`, the file (`.env.local`) and the `key`. Pass `consume: true` when that is its last use.
 2. **Hand it to a command**: `secret_pipe` with `envFile` and `key` (or a `ref`) and a `command` that reads stdin: `gh secret set API_TOKEN`, `railway variables set API_TOKEN --stdin`, `vercel env add API_TOKEN production`. The output is thrown away; only the exit code comes back. A failed command keeps the secret.
 3. **Put it in a file** (a key file): `secret_scratch` with `action: "write"` and the `path`.
-4. **See what is pending**: `secret_scratch` with `action: "list"` (this thread), `thread` (another), or `all: true`. You get references and the message each came from, never values. A leftover from an old thread can be used with its full reference.
+4. **Keep it past this thread**: `secret_scratch` with `action: "keep"`, the `ref` and a `name` (letters, digits, `.`, `-`, `_`). It moves from the pad into Foundry's keychain, the machine's own keychain, and leaves the pad. Do this when the person says to keep it, or the secret is for a schedule (a run is a new thread with an empty pad). `holder` defaults to `foundry`: any Foundry thread may use it by name. Give a connector's id instead (`provider:anthropic`, `mcp:linear`) when only that connector should read it; a provider reads the entry named after its key (`ANTHROPIC_API_KEY`). An existing name needs `replace: true`.
+5. **Use a kept one**: the same `env`, `write` and `secret_pipe` calls with `name` instead of `ref`. Using it never removes it; the person removes entries in Settings → Keychain.
+6. **See what is pending**: `secret_scratch` with `action: "list"` (this thread), `thread` (another), or `all: true`. You get references and the message each came from, never values. A leftover from an old thread can be used with its full reference.
 
 ## Limits
 
 - `secret_scratch` writes only inside the thread's working directory, never into `.git`, `.claude`, `.ssh` or agent settings. For anywhere else, use `secret_pipe` with a command, which asks the person when the host would.
 - Secrets are used only in a turn the person's own message opened. A turn that carries someone else's words (a member's post in a shared thread) can't use them.
+- A keychain entry is used in a turn the person's own message or one of their schedules opened, again never with someone else's words in it. An entry held by a connector is that connector's alone; you can't use it.
 - Another thread's pad is reachable only from a thread of the same project. A pad is deleted when its thread is archived.
 
 ## Don't

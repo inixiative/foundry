@@ -140,6 +140,8 @@ export const everyMs = (every: string): number =>
 export interface ScheduleView {
   schedule: Schedule;
   where: ScheduleWhere;
+  /** What it does and where, hashed: accepting a draft names the version the owner saw. */
+  version: string;
   /** The next due time it would run at, when it is on (not paused, not a draft, project running). */
   nextDueAt?: number;
   lastRun?: ScheduleRun;

@@ -11,6 +11,7 @@ import {
 } from '@inixiative/agent-session';
 import { contextSecretHits, SHAPED_SECRET_PATTERNS, type Thread } from '@inixiative/foundry-core';
 import { foundryOperation } from '../turns/tool-gate';
+import type { Keychain } from './keychain';
 
 /**
  * Secrets handed to an agent as `$$word` (FEAT-005), on agent-session's scratch pad (AS-009). With
@@ -79,6 +80,13 @@ export interface SecretScratchDeps {
    * it): the conversation rule for owner-only tools (CONVERSATIONS.md §4.11). Absent: every turn is.
    */
   ownerInstructed?: (threadId: string) => boolean;
+  /**
+   * Whether the running turn is the owner's word, his message or a schedule he set, with no other
+   * party's words in it: the rule for keychain entries he already granted to all of Foundry. Absent: every turn is.
+   */
+  ownerSet?: (threadId: string) => boolean;
+  /** Foundry's keychain: a pad secret kept past its thread, and the `foundry` entries agents use by name. */
+  keychain?: Keychain;
 }
 
 /**
@@ -109,6 +117,7 @@ const MAX_NOTES = 200;
 
 export class SecretScratch {
   readonly pad: SecretScratchPad;
+  readonly keychain: Keychain | undefined;
   private readonly _watched = new WeakSet<Thread>();
   private readonly _notes = new Map<string, string>();
   private readonly settings: SecretScratchDeps['settings'];
@@ -118,12 +127,29 @@ export class SecretScratch {
     private readonly deps: SecretScratchDeps,
   ) {
     this.pad = new SecretScratchPad(dir);
+    this.keychain = deps.keychain;
     this.settings = deps.settings;
   }
 
   /** Set once the conversation service exists (it is built after the pads). */
   set ownerInstructed(check: (threadId: string) => boolean) {
     this.deps.ownerInstructed = check;
+  }
+
+  set ownerSet(check: (threadId: string) => boolean) {
+    this.deps.ownerSet = check;
+  }
+
+  /**
+   * Why this thread may not use a `foundry` keychain entry now, or undefined when it may: entries are
+   * the owner's standing grant to all of Foundry, so a schedule he set uses them too; a turn that
+   * carried another party's words never does.
+   */
+  keychainRefusal(threadId: string): string | undefined {
+    if (!this.keychain) return 'This Foundry has no keychain.';
+    if (this.deps.ownerSet && !this.deps.ownerSet(threadId))
+      return "Keychain entries are used only in a turn the owner's own message or schedule opened, with no other party's words in it.";
+    return undefined;
   }
 
   /**

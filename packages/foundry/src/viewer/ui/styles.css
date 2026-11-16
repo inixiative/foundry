@@ -10132,3 +10132,13 @@ a.thread-ref:hover {
   cursor: pointer;
   white-space: nowrap;
 }
+
+.keychain-add {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.keychain-table td input {
+  max-width: 220px;
+}

@@ -39,6 +39,7 @@ export const FOUNDRY_SETTINGS = [
   ['linear', 'Linear', 'Integrations'],
   ['threads', 'Threads', null, false, ['threadOnMerge', 'steer', 'afterProjectStart']],
   ['devices', 'Devices', null, false, ['tunnel']],
+  ['keychain', 'Keychain'],
   ['loops', 'Loops'],
   ['skills', 'Skills'],
   ['layers', 'Layers', 'Advanced', false, ['layers']],

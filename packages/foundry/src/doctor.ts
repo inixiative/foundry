@@ -8,6 +8,7 @@ import { stat } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { localArchive } from '@inixiative/archive/remote';
 import { inspectReadiness } from './readiness';
+import { Keychain, providerKeyEnvironment } from './secrets/keychain';
 import { ConfigStore, foundryConfigDir } from './viewer/config';
 
 /** Inspect existing settings without starting servers, agents or authentication flows. */
@@ -28,6 +29,7 @@ async function main() {
   const config = await store.load();
   const report = await inspectReadiness(config, {
     configDir: directory,
+    environment: await providerKeyEnvironment(new Keychain({ configDir: directory })),
     archive: () => localArchive(),
     ...(offline ? {} : { transport: fetch }),
   });

@@ -1909,14 +1909,30 @@ export class ConversationService implements ConversationWrapper {
   }
 
   /**
+   * Whether the running turn is the owner's word, his own message or a schedule he set (its prompt
+   * is his, set ahead), with no other party's words in it. Wider than `ownerInstructed`: for what he
+   * has already granted to all of Foundry (keychain entries), never for a new decision.
+   */
+  ownerSet(threadId: string): boolean {
+    const turnId = this.deps.turns()?.runningTurn?.(threadId);
+    return turnId ? this.instructedByOwner(threadId, turnId, 0, true) : false;
+  }
+
+  /**
    * One turn's owner authority. Foundry's continuation of a turn a restart paused carries the paused
    * turn's: it resumes his instruction, so it is his only if that turn was (Aron, 2026-11-14).
    */
-  private instructedByOwner(threadId: string, turnId: string, depth = 0): boolean {
+  private instructedByOwner(
+    threadId: string,
+    turnId: string,
+    depth = 0,
+    scheduled = false,
+  ): boolean {
     const paused = this.deps.store.restartContinuationOf(turnId);
     if (paused !== undefined) {
-      if (depth >= 8 || !this.instructedByOwner(threadId, paused, depth + 1)) return false;
-    } else {
+      if (depth >= 8 || !this.instructedByOwner(threadId, paused, depth + 1, scheduled))
+        return false;
+    } else if (!(scheduled && this.deps.store.scheduledRunOf(turnId) !== undefined)) {
       const seq = this.deps.store.turnMessageSeq(turnId);
       if (seq === undefined || this.deps.store.lastOwnerSeq(threadId, seq) !== seq) return false;
     }
