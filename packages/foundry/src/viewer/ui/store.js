@@ -141,6 +141,19 @@ export const RIGHT_TABS = [
  * Each right tab's number key (Aron 11-02), plain, ⌘ or ⌥: 1 is the centre's Thread; Plan and Loop
  * keep 2 and 3 from when they were centre tabs. Artifacts has none (it had none in the centre).
  */
+/** Each right tab's label, the one table the panel, its strip and the key help read. */
+export const RIGHT_TAB_LABELS = {
+  plan: 'Plan',
+  loop: 'Loop',
+  artifacts: 'Artifacts',
+  work: 'Work',
+  context: 'Context',
+  participants: 'Participants',
+  permissions: 'Permissions',
+  heralds: 'Heralds',
+  pointers: 'Reminders',
+  feedback: 'Feedback',
+};
 export const RIGHT_TAB_KEYS = {
   plan: '2',
   loop: '3',

@@ -68,6 +68,7 @@ import {
   projectSidebarOpen,
   projects,
   RIGHT_TAB_KEYS,
+  RIGHT_TAB_LABELS,
   RIGHT_TABS,
   railView,
   resyncStreams,
@@ -347,9 +348,7 @@ function App() {
       rightTabKeys: Object.fromEntries(
         RIGHT_TABS.filter((t) => RIGHT_TAB_KEYS[t]).map((t) => [t, RIGHT_TAB_KEYS[t]]),
       ),
-      rightTabLabels: Object.fromEntries(
-        RIGHT_TABS.map((t) => [t, t[0].toUpperCase() + t.slice(1)]),
-      ),
+      rightTabLabels: RIGHT_TAB_LABELS,
       showRightTab: (tab) => openRightTab(tab, { toggle: true }),
     });
     initHotkeys();

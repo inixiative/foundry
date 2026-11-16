@@ -21,7 +21,7 @@ import { Inspector, inspection, ThreadDetail } from './detail-drawer.js';
 import { feedbackIn, ThreadFeedback } from './feedback.js';
 import { useFlowStream } from './graph-view.js';
 import { html, useEffect, useState } from './lib.js';
-import { LoopView, PointerLedger, pointerRows } from './loop-view.js';
+import { LoopView, loopSummary, PointerLedger, pointerRows } from './loop-view.js';
 import { SizeControls } from './panel-sizes.js';
 import { Plan } from './plan.js';
 import { Running } from './running.js';
@@ -37,6 +37,7 @@ import {
   openRightTab,
   projects,
   RIGHT_TAB_KEYS,
+  RIGHT_TAB_LABELS,
   RIGHT_TABS,
   rightSize,
   rightTab,
@@ -55,24 +56,9 @@ import { harnessName, projectLabel, ReferenceChips, threadPlace } from './thread
 import { TurnView } from './turn-view.js';
 import { Work } from './work.js';
 
-const TAB_LABELS = {
-  plan: 'Plan',
-  loop: 'Loop',
-  artifacts: 'Artifacts',
-  work: 'Work',
-  context: 'Context',
-  participants: 'Participants',
-  permissions: 'Permissions',
-  heralds: 'Heralds',
-  pointers: 'Reminders',
-  feedback: 'Feedback',
-};
-
 /** A tab's tooltip: its label, and its number key when it has one. */
 const tabTitle = (tab) =>
-  RIGHT_TAB_KEYS[tab] ? `${TAB_LABELS[tab]} (${RIGHT_TAB_KEYS[tab]})` : TAB_LABELS[tab];
-
-const LOOP_STATES = { running: 'Running', done: 'Done', stopped: 'Stopped' };
+  RIGHT_TAB_KEYS[tab] ? `${RIGHT_TAB_LABELS[tab]} (${RIGHT_TAB_KEYS[tab]})` : RIGHT_TAB_LABELS[tab];
 
 const openFeedback = (threadId) =>
   feedbackIn({ threadId }).filter((item) => item.inbox === 'open').length;
@@ -83,24 +69,10 @@ function tabFacts(tab, threadId) {
   const members = threadData.value?.conversation?.members ?? 0;
   const meta = threadData.value?.meta ?? {};
   switch (tab) {
-    case 'plan': {
-      const outcomes = meta.plan?.outcomes ?? [];
-      const done = outcomes.filter((o) => o.status === 'done').length;
-      return {
-        info: outcomes.length
-          ? `${done} of ${outcomes.length} done`
-          : 'What the thread is for and why',
-      };
-    }
-    case 'loop': {
-      const loop = meta.loop;
-      const rounds = loop?.rounds?.length ?? 0;
-      return {
-        info: loop
-          ? `${LOOP_STATES[loop.state] ?? loop.state} · ${rounds} round${rounds === 1 ? '' : 's'}`
-          : 'How the work is being done',
-      };
-    }
+    case 'plan':
+      return { info: 'What the thread is for and why' };
+    case 'loop':
+      return { info: meta.loop ? loopSummary(meta.loop) : 'How the work is being done' };
     case 'artifacts': {
       const count = meta.artifacts?.length ?? 0;
       return {
@@ -381,9 +353,9 @@ export function RightPanel({ onSpanSelect }) {
       : html`<div class="right-panel detail-drawer detail-drawer--collapsed right-panel--collapsed">
       <div class="rp-strip-controls"><${SizeControls} side="right" /></div>
       ${RIGHT_TABS.map((t) => {
-        return html`<button key=${t} class="rp-strip-tab" title=${tabTitle(t)} aria-label=${`Open ${TAB_LABELS[t]}`}
+        return html`<button key=${t} class="rp-strip-tab" title=${tabTitle(t)} aria-label=${`Open ${RIGHT_TAB_LABELS[t]}`}
           aria-current=${t === tab ? 'true' : undefined} onClick=${() => openRightTab(t)}>
-          <${TabIcon} tab=${t} /><span class="rp-strip-label">${TAB_LABELS[t]}</span>
+          <${TabIcon} tab=${t} /><span class="rp-strip-label">${RIGHT_TAB_LABELS[t]}</span>
         </button>`;
       })}
     </div>`;
@@ -392,7 +364,7 @@ export function RightPanel({ onSpanSelect }) {
     return html`<div class="right-panel detail-drawer">
       <header class="rp-band">
         <div class="rp-band-row">
-          <button class="rp-back" onClick=${closeInspector}>← ${TAB_LABELS[tab]}</button>
+          <button class="rp-back" onClick=${closeInspector}>← ${RIGHT_TAB_LABELS[tab]}</button>
           <span class="rp-eyebrow">Inspector</span>
           ${target.kind === 'trace' || target.kind === 'span' ? html`<button class="rp-back back-btn" onClick=${() => dismissTraceSelection()}>Clear</button>` : null}
           <${SizeControls} side="right" />
@@ -414,7 +386,7 @@ export function RightPanel({ onSpanSelect }) {
       <div class="rp-band-row rp-head-row">
         <div class="rp-head-text">
           <span class="rp-eyebrow" title="This thread's reference">${threadData.value.meta?.projectId ? `Project: ${projectLabel(threadData.value.meta.projectId)}` : 'Global'}</span>
-          <h2 class="rp-title">${TAB_LABELS[tab]}</h2>
+          <h2 class="rp-title">${RIGHT_TAB_LABELS[tab]}</h2>
           ${facts.info ? html`<div class="rp-info">${facts.info}</div>` : null}
         </div>
         <${SizeControls} side="right" />
@@ -422,10 +394,10 @@ export function RightPanel({ onSpanSelect }) {
       <nav class="rp-tabs" role="tablist" aria-label="Thread reference">
         ${RIGHT_TABS.map((t) => {
           return html`<button key=${t} role="tab" aria-selected=${t === tab}
-            aria-label=${TAB_LABELS[t]} class="rp-tab ${t === tab ? 'is-active' : ''}" title=${tabTitle(t)}
+            aria-label=${RIGHT_TAB_LABELS[t]} class="rp-tab ${t === tab ? 'is-active' : ''}" title=${tabTitle(t)}
             onClick=${() => {
               rightTab.value = t;
-            }}><${TabIcon} tab=${t} /><span class="rp-tab-label">${TAB_LABELS[t]}</span>${(() => {
+            }}><${TabIcon} tab=${t} /><span class="rp-tab-label">${RIGHT_TAB_LABELS[t]}</span>${(() => {
               const n = tabFacts(t, threadId).count;
               return n
                 ? html`<span class="rp-tab-count ${t === 'feedback' ? 'is-attention' : ''}">${n}</span>`

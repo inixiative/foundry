@@ -81,6 +81,12 @@ export function PointerLedger({ rows }) {
 const ROUND_MARK = { pass: '✓', fail: '✗', partial: '◐' };
 const LOOP_STATE = { running: 'Running', done: 'Done', stopped: 'Stopped' };
 
+/** A recorded loop in one line: its state and rounds ("Running · 2 of 5 rounds"). */
+export function loopSummary(loop) {
+  const rounds = loop.rounds?.length ?? 0;
+  return `${LOOP_STATE[loop.state] ?? loop.state} · ${rounds}${loop.maxRounds ? ` of ${loop.maxRounds}` : ''} round${rounds === 1 ? '' : 's'}`;
+}
+
 /** The agent's loop (set_loop / loop_round / stop_loop): its goal, one round's steps, the stop check, each round. */
 export function RecordedLoop({ loop }) {
   if (!loop)
@@ -93,7 +99,7 @@ export function RecordedLoop({ loop }) {
   return html`<section class="loop-record" aria-label="The loop" data-state=${loop.state}>
     <header class="plan-section-head">
       <h3><${InlineMarkdown} text=${loop.goal} /></h3>
-      <small>${LOOP_STATE[loop.state] ?? loop.state} · ${rounds.length}${loop.maxRounds ? ` of ${loop.maxRounds}` : ''} round${rounds.length === 1 ? '' : 's'}</small>
+      <small>${loopSummary(loop)}</small>
     </header>
     <ol class="loop-steps">${(loop.steps ?? []).map(
       (step, i) =>
