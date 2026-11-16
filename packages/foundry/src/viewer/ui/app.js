@@ -45,7 +45,6 @@ import {
   activeThreadId,
   allThreads,
   boardOpen,
-  CENTER_PANELS,
   closeTurnView,
   compactPanel,
   connected,
@@ -295,9 +294,8 @@ function App() {
 
   useEffect(() => {
     registerDefaults({
-      centerTabs: ['Thread', 'Plan', 'Loop'],
-      showCenterTab: (i) => {
-        activePanel.value = CENTER_PANELS[i];
+      showThread: () => {
+        activePanel.value = 'conversation';
       },
       nextItem: () => {
         /* TODO: span navigation */
@@ -346,7 +344,9 @@ function App() {
       toggleRightPanel: () => {
         detailDrawerOpen.value = !detailDrawerOpen.value;
       },
-      rightTabKeys: Object.fromEntries(RIGHT_TABS.map((t) => [t, RIGHT_TAB_KEYS[t]])),
+      rightTabKeys: Object.fromEntries(
+        RIGHT_TABS.filter((t) => RIGHT_TAB_KEYS[t]).map((t) => [t, RIGHT_TAB_KEYS[t]]),
+      ),
       rightTabLabels: Object.fromEntries(
         RIGHT_TABS.map((t) => [t, t[0].toUpperCase() + t.slice(1)]),
       ),

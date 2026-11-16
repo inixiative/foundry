@@ -83,7 +83,9 @@ test('typing always lands in the message box after clicking around', async () =>
     // A thread row in the left list.
     await typeAfter('row ', () => page.locator('.tree-node').first().click());
     // A right-panel tab, and the panel's body.
-    await typeAfter('tab ', () => page.locator('.rp-strip-tab, .rp-tab').first().click());
+    await typeAfter('tab ', () =>
+      page.locator('.rp-strip-tab, .rp-tab', { hasText: 'Context' }).first().click(),
+    );
     await typeAfter('panel ', () => page.locator('.right-panel .rp-section-title').first().click());
     // Plain letters are typed, never commands: b would open the Board.
     await typeAfter('b ', async () => {});

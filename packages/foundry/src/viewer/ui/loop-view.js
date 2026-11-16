@@ -11,7 +11,6 @@
  * closed = landed). Then the agent's recorded loop (its goal, steps, stop check and rounds). Below
  * it, today's graph panel: the thread tree, each turn's flow and the learning loop.
  */
-import { GraphPanel } from './graph-view.js';
 import { html } from './lib.js';
 import { lifecycle } from './lifecycle.js';
 import { InlineMarkdown } from './markdown.js';
@@ -116,8 +115,8 @@ export function RecordedLoop({ loop }) {
   </section>`;
 }
 
-export function LoopView({ onLayerClick }) {
-  // From the thread's own fields: the flow stream is held only while a turn graph is shown.
+/** The right panel's Loop tab: where the work stands, then the agent's recorded loop. The turn graph is the centre's. */
+export function LoopView() {
   const data = threadData.value;
   const last =
     data?.lastTurn ?? allThreads.value.find((t) => t.threadId === activeThreadId.value)?.lastTurn;
@@ -126,6 +125,5 @@ export function LoopView({ onLayerClick }) {
       turns=${last ? [{ status: last.status === 'running' ? 'active' : last.status }] : []}
       meta=${data?.meta} />
     <${RecordedLoop} loop=${data?.meta?.loop} />
-    <div class="loop-graph"><${GraphPanel} onLayerClick=${onLayerClick} /></div>
   </div>`;
 }

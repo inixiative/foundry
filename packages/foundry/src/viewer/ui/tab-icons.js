@@ -11,6 +11,12 @@
 import { html } from './lib.js';
 
 const PATHS = {
+  // lucide list-checks: the plan's outcomes
+  plan: html`<path d="m3 17 2 2 4-4" /><path d="m3 7 2 2 4-4" /><path d="M13 6h8M13 12h8M13 18h8" />`,
+  // lucide repeat: rounds of build, check and fix
+  loop: html`<path d="m17 2 4 4-4 4" /><path d="M3 11v-1a4 4 0 0 1 4-4h14" /><path d="m7 22-4-4 4-4" /><path d="M21 13v1a4 4 0 0 1-4 4H3" />`,
+  // lucide shapes: what the agent made to show you
+  artifacts: html`<path d="M8.3 10a.7.7 0 0 1-.626-1.079L11.4 3a.7.7 0 0 1 1.198-.043L16.3 8.9a.7.7 0 0 1-.572 1.1Z" /><rect x="3" y="14" width="7" height="7" rx="1" /><circle cx="17.5" cy="17.5" r="3.5" />`,
   // lucide briefcase
   work: html`<path d="M16 20V4a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" /><rect x="2" y="6" width="20" height="14" rx="2" />`,
   // a page: what the thread runs on and links to

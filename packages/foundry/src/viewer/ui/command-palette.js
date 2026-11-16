@@ -63,7 +63,7 @@ const COMMANDS = [
     icon: '$',
     action: () => navigate(analyticsPath(scopeProjectId())),
   },
-  { id: 'graph', label: 'Loop (the graph)', icon: '◇', action: toggleGraphPanel },
+  { id: 'graph', label: 'The turn graph', icon: '◇', action: toggleGraphPanel },
   {
     id: 'board',
     label: 'Open the attention board',
@@ -196,7 +196,8 @@ const KEY_GROUPS = [
     'Moving around',
     [
       ['⌥T · ⌥B · ⌥H', 'Threads · Board · Watchtower'],
-      ['⌥1 · ⌥2 · ⌥3', 'Thread · Plan · Loop (⌘ works too)'],
+      ['⌥1 · ⌥G', 'Thread · the turn graph (⌘1 works too)'],
+      ['⌥2 · ⌥3 · ⌥4–⌥0', 'Right panel: Plan · Loop · Work and the rest'],
       ['⌥[ · ⌥⇧[', 'Left list smaller · larger'],
       ['⌥] · ⌥⇧]', 'Right panel smaller · larger'],
       ['⌥↑ · ⌥↓', 'Step through the turn view'],

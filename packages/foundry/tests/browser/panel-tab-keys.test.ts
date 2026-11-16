@@ -17,7 +17,8 @@ import { type ReleaseStep, releaseAll } from '../helpers/release-all';
 
 // Aron 11-02: a collapsed right panel's tab icon opens the panel on that tab, the tab already
 // selected included; number keys work plain, with ⌘ (even while typing) or
-// with ⌥: 1–3 the centre's tabs, 4–0 the right panel's, and a key for the tab showing folds it.
+// with ⌥: 1 the centre's Thread, 2–0 the right panel's (Plan, Loop, Work, …; Aron 11-15), and a key
+// for the tab showing folds it.
 const { chromium } = createRequire(import.meta.url)(
   process.env.FOUNDRY_QA_PLAYWRIGHT ?? 'playwright',
 );
@@ -101,10 +102,15 @@ test('tab icons and number keys open the right panel on their tab', async () => 
     await title.filter({ hasText: 'Work' }).waitFor();
     expect(await page.locator('.watchtower').count()).toBe(0);
 
-    // 2 is the centre's Plan.
+    // 2 is the right panel's Plan, 3 its Loop; the thread stays in the centre.
     await page.locator('body').click({ position: { x: 800, y: 300 } });
     await page.keyboard.press('Alt+Digit2');
-    await page.locator('.plan').waitFor();
+    await page.locator('.right-panel .plan').waitFor();
+    await page.keyboard.press('Alt+Digit3');
+    await page.locator('.right-panel .loop-view').waitFor();
+    expect(await page.locator('.center-views .center-view--active').innerText()).toContain(
+      'Thread',
+    );
     expect(errors).toEqual([]);
   } finally {
     await releaseAll(cleanup);

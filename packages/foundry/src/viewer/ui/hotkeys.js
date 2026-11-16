@@ -189,7 +189,8 @@ function showHoldKeys(on) {
   if (!on) return;
   const rows = [
     ['⌥T ⌥B ⌥H', 'Threads · Board · Watchtower'],
-    ['⌥1 ⌥2 ⌥3', 'Thread · Plan · Loop'],
+    ['⌥1 ⌥G', 'Thread · the turn graph'],
+    ['⌥2 ⌥3 ⌥4–⌥0', 'Right panel: Plan · Loop · Work …'],
     ['⌥[ ⌥]', 'Left list · right panel'],
     ['⌥↑ ⌥↓', 'Step through the turn view'],
     ['⌥↵ ⌥⌫', 'Approve · reject the waiting card'],
@@ -344,13 +345,12 @@ export function initHotkeys() {
 
 export function registerDefaults(actions) {
   // Navigation
-  // Number keys, plain, ⌘ or ⌥ (Aron 11-02): 1–3 the centre's tabs, 4–0 the right panel's.
-  for (const [i, key] of ['1', '2', '3'].entries())
-    bind(key, {
-      description: `Centre: ${actions.centerTabs[i]}`,
-      category: 'navigation',
-      action: () => actions.showCenterTab(i),
-    });
+  // Number keys, plain, ⌘ or ⌥ (Aron 11-02): 1 the centre's Thread, 2–0 the right panel's tabs.
+  bind('1', {
+    description: 'Centre: Thread',
+    category: 'navigation',
+    action: actions.showThread,
+  });
 
   // Movement
   bind('j', { description: 'Next trace / span', category: 'navigation', action: actions.nextItem });
@@ -411,7 +411,7 @@ export function registerDefaults(actions) {
     category: 'panels',
     action: actions.toggleEvents,
   });
-  bind('g', { description: 'Loop (the graph)', category: 'panels', action: actions.toggleGraph });
+  bind('g', { description: 'The turn graph', category: 'panels', action: actions.toggleGraph });
   bind('b', {
     description: 'The attention board',
     category: 'panels',

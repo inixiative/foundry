@@ -12,6 +12,7 @@
  * with a way back to the tabs. Collapsed, it is a strip of the tabs with their counts.
  */
 import { AccessSettings } from './access-settings.js';
+import { Artifacts } from './artifacts.js';
 import { AtlasTouches, SharedConcepts } from './atlas-panels.js';
 import { ComingSoon } from './coming-soon.js';
 import { ContextStats, TokenBar } from './conversation.js';
@@ -20,8 +21,9 @@ import { Inspector, inspection, ThreadDetail } from './detail-drawer.js';
 import { feedbackIn, ThreadFeedback } from './feedback.js';
 import { useFlowStream } from './graph-view.js';
 import { html, useEffect, useState } from './lib.js';
-import { PointerLedger, pointerRows } from './loop-view.js';
+import { LoopView, PointerLedger, pointerRows } from './loop-view.js';
 import { SizeControls } from './panel-sizes.js';
+import { Plan } from './plan.js';
 import { Running } from './running.js';
 import {
   activeThreadId,
@@ -54,6 +56,9 @@ import { TurnView } from './turn-view.js';
 import { Work } from './work.js';
 
 const TAB_LABELS = {
+  plan: 'Plan',
+  loop: 'Loop',
+  artifacts: 'Artifacts',
   work: 'Work',
   context: 'Context',
   participants: 'Participants',
@@ -63,6 +68,12 @@ const TAB_LABELS = {
   feedback: 'Feedback',
 };
 
+/** A tab's tooltip: its label, and its number key when it has one. */
+const tabTitle = (tab) =>
+  RIGHT_TAB_KEYS[tab] ? `${TAB_LABELS[tab]} (${RIGHT_TAB_KEYS[tab]})` : TAB_LABELS[tab];
+
+const LOOP_STATES = { running: 'Running', done: 'Done', stopped: 'Stopped' };
+
 const openFeedback = (threadId) =>
   feedbackIn({ threadId }).filter((item) => item.inbox === 'open').length;
 
@@ -70,7 +81,33 @@ const openFeedback = (threadId) =>
 function tabFacts(tab, threadId) {
   const launch = threadLaunch.value;
   const members = threadData.value?.conversation?.members ?? 0;
+  const meta = threadData.value?.meta ?? {};
   switch (tab) {
+    case 'plan': {
+      const outcomes = meta.plan?.outcomes ?? [];
+      const done = outcomes.filter((o) => o.status === 'done').length;
+      return {
+        info: outcomes.length
+          ? `${done} of ${outcomes.length} done`
+          : 'What the thread is for and why',
+      };
+    }
+    case 'loop': {
+      const loop = meta.loop;
+      const rounds = loop?.rounds?.length ?? 0;
+      return {
+        info: loop
+          ? `${LOOP_STATES[loop.state] ?? loop.state} · ${rounds} round${rounds === 1 ? '' : 's'}`
+          : 'How the work is being done',
+      };
+    }
+    case 'artifacts': {
+      const count = meta.artifacts?.length ?? 0;
+      return {
+        info: count ? `${count} made on this thread` : 'What the agent made to show you',
+        count,
+      };
+    }
     case 'context':
       return {
         info: [
@@ -307,6 +344,9 @@ function PointersTab({ threadId }) {
 }
 
 function TabBody({ tab, threadId }) {
+  if (tab === 'plan') return html`<${Plan} />`;
+  if (tab === 'loop') return html`<${LoopView} />`;
+  if (tab === 'artifacts') return html`<${Artifacts} />`;
   if (tab === 'work') return html`<${Work} />`;
   if (tab === 'context') return html`<${ContextTab} />`;
   if (tab === 'participants') return html`<${ParticipantsPanel} />`;
@@ -341,7 +381,7 @@ export function RightPanel({ onSpanSelect }) {
       : html`<div class="right-panel detail-drawer detail-drawer--collapsed right-panel--collapsed">
       <div class="rp-strip-controls"><${SizeControls} side="right" /></div>
       ${RIGHT_TABS.map((t) => {
-        return html`<button key=${t} class="rp-strip-tab" title=${`${TAB_LABELS[t]} (${RIGHT_TAB_KEYS[t]})`} aria-label=${`Open ${TAB_LABELS[t]}`}
+        return html`<button key=${t} class="rp-strip-tab" title=${tabTitle(t)} aria-label=${`Open ${TAB_LABELS[t]}`}
           aria-current=${t === tab ? 'true' : undefined} onClick=${() => openRightTab(t)}>
           <${TabIcon} tab=${t} /><span class="rp-strip-label">${TAB_LABELS[t]}</span>
         </button>`;
@@ -365,7 +405,7 @@ export function RightPanel({ onSpanSelect }) {
   if (!threadId || !threadData.value)
     return html`<div class="right-panel detail-drawer">
       <header class="rp-band"><h2 class="rp-title">No thread open</h2></header>
-      <div class="rp-frame"><div class="rp-empty">Open a thread to see its context, participants, permissions and feedback.</div></div>
+      <div class="rp-frame"><div class="rp-empty">Open a thread to see its plan, loop, artifacts, work and context.</div></div>
     </div>`;
 
   const facts = tabFacts(tab, threadId);
@@ -382,7 +422,7 @@ export function RightPanel({ onSpanSelect }) {
       <nav class="rp-tabs" role="tablist" aria-label="Thread reference">
         ${RIGHT_TABS.map((t) => {
           return html`<button key=${t} role="tab" aria-selected=${t === tab}
-            aria-label=${TAB_LABELS[t]} class="rp-tab ${t === tab ? 'is-active' : ''}" title=${`${TAB_LABELS[t]} (${RIGHT_TAB_KEYS[t]})`}
+            aria-label=${TAB_LABELS[t]} class="rp-tab ${t === tab ? 'is-active' : ''}" title=${tabTitle(t)}
             onClick=${() => {
               rightTab.value = t;
             }}><${TabIcon} tab=${t} /><span class="rp-tab-label">${TAB_LABELS[t]}</span>${(() => {

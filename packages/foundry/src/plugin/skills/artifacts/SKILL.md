@@ -5,7 +5,7 @@ description: Use in a Foundry thread when you make something the person should l
 
 # Artifacts (`set_artifact`)
 
-An artifact is something you made to show the person: it sits in the thread's Artifacts tab, beside Plan, and as a card on the turn that saved it. Each save of the same `id` is a new version; earlier versions stay readable from a picker.
+An artifact is something you made to show the person: it sits in the Artifacts tab of the thread's right panel, beside Plan and Loop, so the person reads it with the conversation still open, and as a card on the turn that saved it. Each save of the same `id` is a new version; earlier versions stay readable from a picker.
 
 ## When
 
