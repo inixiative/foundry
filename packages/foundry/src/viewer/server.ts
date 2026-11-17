@@ -29,6 +29,7 @@ import { ThreadContextTracker } from '../archives/thread-context';
 import { CompositionAuditor } from '../audit/compositions';
 import { ConversationService } from '../conversations/service';
 import { memberKey } from '../conversations/types';
+import { releaseHeldPort } from '../daemon/port-handoff';
 import { blockedOnPerson, RestartRoll } from '../daemon/restart-roll';
 import { readLocalDevice } from '../devices/local-inventory';
 import { feedbackRoots } from '../feedback/apply';
@@ -89,7 +90,7 @@ import { AnalyticsStore } from './analytics';
 import { ConfigStore, DEFAULT_RAW_MIDDLEWARE_DAYS, threadOnMerge } from './config';
 import { threadRoleOf } from './config-resolve';
 import { createViewerStreams } from './data-streams';
-import { authenticatedRequest, sameOrigin } from './request-auth';
+import { authenticatedRequest, directLoopback, LOOPBACK_HOSTS, sameOrigin } from './request-auth';
 import { registerControlRoutes } from './routes/control';
 import { registerConversationRoutes } from './routes/conversations';
 import { registerDaemonUpdateRoutes } from './routes/daemon-update';
@@ -102,6 +103,7 @@ import { registerModelRoutes } from './routes/models';
 import { registerProfileRoutes } from './routes/profile';
 import { registerRuntimeRoutes, type WorkerSessions } from './routes/runtime';
 import { registerScheduleRoutes } from './routes/schedules';
+import { THEME_PATH_PREFIX, themeDirectory, themeFile } from './theme-files';
 import { ViewerThreadDirectory } from './thread-directory';
 import { expireSnoozes } from './thread-snooze';
 import { FoundryTunnel, type TunnelConfig, type TunnelHolder, tunnelAuth } from './tunnel';
@@ -284,6 +286,8 @@ export function createViewer(config: ViewerConfig) {
     if (
       kingdom.size &&
       c.req.path !== '/api/health' &&
+      c.req.path !== '/status' &&
+      c.req.path !== '/api/daemon/status' &&
       c.req.path !== '/kingdom' &&
       !c.req.path.startsWith('/api/kingdom/') &&
       !c.req.path.startsWith('/ui/')
@@ -934,10 +938,15 @@ export function createViewer(config: ViewerConfig) {
       asks?.close();
     });
   }
-  registerDaemonUpdateRoutes(app, restartRoll, (threadId) => {
-    const thread = directory.get(threadId);
-    return thread ? threadTitle(thread.meta)?.text : undefined;
-  });
+  registerDaemonUpdateRoutes(
+    app,
+    restartRoll,
+    (threadId) => {
+      const thread = directory.get(threadId);
+      return thread ? threadTitle(thread.meta)?.text : undefined;
+    },
+    configDir,
+  );
   // Turns a planned restart held run again, in the order they arrived, once the daemon has booted
   // (start.ts calls it); their threads resume their native sessions through their bindings.
   const resumeHeldTurns = () =>
@@ -1066,22 +1075,21 @@ export function createViewer(config: ViewerConfig) {
     if (!(await body.exists())) return c.notFound();
     return new Response(body, { headers: { 'Content-Type': 'application/javascript' } });
   });
-  // The look is @inixiative/config's shared theme (public.css, status.css and the fonts they load),
-  // read from the package at runtime so Foundry and Kingdom never drift apart.
-  const themeDir = dirname(
-    fileURLToPath(import.meta.resolve('@inixiative/config/theme/public.css')),
+  // The look is @inixiative/config's shared theme (`theme-files.ts`).
+  const themeDir = themeDirectory();
+  app.get(
+    `${THEME_PATH_PREFIX}*`,
+    async (c) => (themeDir ? await themeFile(themeDir, c.req.path) : undefined) ?? c.notFound(),
   );
-  app.get('/ui/theme/*', async (c) => {
-    const file = resolve(themeDir, c.req.path.slice('/ui/theme/'.length));
-    if (!file.startsWith(`${themeDir}${sep}`)) return c.notFound();
-    const body = Bun.file(file);
-    if (!(await body.exists())) return c.notFound();
-    return new Response(body, { headers: { 'Content-Type': body.type } });
-  });
   app.get('/ui/*', serveStatic({ root: fileURLToPath(new URL('./', import.meta.url)) }));
   app.get(
     '/kingdom',
     serveStatic({ root: fileURLToPath(new URL('./', import.meta.url)), path: 'ui/kingdom.html' }),
+  );
+  // The daemon's status page: the same file the supervisor serves while no release is booted.
+  app.get(
+    '/status',
+    serveStatic({ root: fileURLToPath(new URL('./', import.meta.url)), path: 'ui/status.html' }),
   );
   // The workspace and its settings, analytics and search pages are one client-routed app (ui/route.js).
   const appPage = serveStatic({
@@ -1394,6 +1402,8 @@ export async function startViewer(config: ViewerConfig) {
   try {
     for (const id of await viewer.kingdom.start())
       console.warn(`[Kingdom] Paired Kingdom ${id} unavailable; reconnect at /kingdom`);
+    // The supervisor holds the port with its status page until this moment (`daemon/port-handoff.ts`).
+    await releaseHeldPort();
     server = Bun.serve<WSData>({
       port,
       hostname: '127.0.0.1',
@@ -1458,27 +1468,6 @@ export async function startViewer(config: ViewerConfig) {
     secrets: viewer.secrets,
     feedback: viewer.feedback,
   };
-}
-
-const LOOPBACK_HOSTS = ['localhost', '127.0.0.1', '[::1]'];
-const PROXY_HEADERS = [
-  'forwarded',
-  'x-forwarded-for',
-  'x-forwarded-host',
-  'x-forwarded-proto',
-  'x-real-ip',
-  'cf-connecting-ip',
-  'cf-ray',
-  'true-client-ip',
-  'via',
-];
-
-/** Addressed to a loopback host and carrying no reverse-proxy headers. */
-function directLoopback(request: Request): boolean {
-  return (
-    LOOPBACK_HOSTS.includes(new URL(request.url).hostname) &&
-    !PROXY_HEADERS.some((header) => request.headers.has(header))
-  );
 }
 
 /** Paths served by the client-routed app; ui/route.js parses the same shapes. */

@@ -26,11 +26,12 @@
  * viewer with no update (the daemon spins down first; `RestartRoll.requestRestart`).
  */
 
+import { readState } from '../../packages/foundry/src/daemon/release-state';
 import {
   type DaemonRuntimeHook,
   daemonRuntime,
 } from '../../packages/foundry/src/daemon/runtime-hook';
-import { RESTART_EXIT_CODE, readState, stageUpdate } from './update';
+import { RESTART_EXIT_CODE, stageUpdate } from './update';
 
 export interface WatchOptions {
   repoRoot: string;

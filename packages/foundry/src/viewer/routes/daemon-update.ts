@@ -6,6 +6,7 @@
 import { randomUUID } from 'node:crypto';
 import type { Hono } from 'hono';
 import type { RestartRoll } from '../../daemon/restart-roll';
+import { readDaemonStatus } from '../../daemon/status';
 
 /** This daemon process: a viewer that sees it change reloads onto the new build. */
 const BOOT_ID = randomUUID();
@@ -18,7 +19,31 @@ export function registerDaemonUpdateRoutes(
   app: Hono,
   roll: RestartRoll,
   threadName: (threadId: string) => string | undefined,
+  configDir: string,
 ): void {
+  const bootedAt = Date.now();
+  // The status page's data while Foundry runs; the supervisor answers the same address while it does not.
+  app.get('/api/daemon/status', async (c) =>
+    c.json(
+      await readDaemonStatus(configDir, {
+        servedBy: 'daemon',
+        bootId: BOOT_ID,
+        phase: 'running',
+        phaseSince: bootedAt,
+        // The supervisor names the release it booted; a daemon started from a checkout has none.
+        ...(process.env.FOUNDRY_RELEASE
+          ? {
+              release: {
+                sha: process.env.FOUNDRY_RELEASE,
+                trial: process.env.FOUNDRY_RELEASE_TRIAL === '1',
+              },
+            }
+          : {}),
+        ...(process.env.FOUNDRY_LOG_DIR ? { logDir: process.env.FOUNDRY_LOG_DIR } : {}),
+      }),
+    ),
+  );
+
   const view = () => {
     const status = roll.status();
     const named = (turn: { threadId: string; turnId: string }) => ({

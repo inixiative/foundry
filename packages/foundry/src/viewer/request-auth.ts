@@ -20,6 +20,30 @@ export function sameSecret(actual: string, expected: string): boolean {
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
+/** The host names this machine answers to itself on. */
+export const LOOPBACK_HOSTS = ['localhost', '127.0.0.1', '[::1]'];
+
+/** Headers a proxy adds: a request carrying one came through a tunnel, not from this machine. */
+const PROXY_HEADERS = [
+  'forwarded',
+  'x-forwarded-for',
+  'x-forwarded-host',
+  'x-forwarded-proto',
+  'x-real-ip',
+  'cf-connecting-ip',
+  'cf-ray',
+  'true-client-ip',
+  'via',
+];
+
+/** A request made on this machine itself: a loopback host, through no proxy. */
+export function directLoopback(request: Request): boolean {
+  return (
+    LOOPBACK_HOSTS.includes(new URL(request.url).hostname) &&
+    !PROXY_HEADERS.some((header) => request.headers.has(header))
+  );
+}
+
 export function sameOrigin(request: Request, publicOrigin?: string): boolean {
   const origin = request.headers.get('origin');
   if (!origin) return true;

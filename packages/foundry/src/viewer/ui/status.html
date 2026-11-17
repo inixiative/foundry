@@ -1,0 +1,355 @@
+<!doctype html>
+<html lang="en" class="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Foundry status</title>
+<link rel="icon" type="image/svg+xml" href="/ui/favicon.svg">
+<link rel="stylesheet" href="/ui/theme/public.css"><link rel="stylesheet" href="/ui/theme/status.css">
+<style>
+  /* One file on purpose: the supervisor serves it while no release is booted, so it cannot depend on
+     the viewer's bundle. The fallbacks are the theme's dark values, for when the theme is not found. */
+  :root {
+    --bg: hsl(var(--background, 206 29% 6%));
+    --surface: hsl(var(--card, 202 26% 8%));
+    --line: hsl(var(--border, 202 22% 15%));
+    --text: hsl(var(--foreground, 96 17% 94%));
+    --text-dim: hsl(var(--muted-foreground, 199 9% 63%));
+    --text-dimmer: hsl(var(--subtle-foreground, 199 8% 54%));
+    --accent: hsl(var(--app-primary, 83 88% 73%));
+    --accent-ink: hsl(var(--app-primary-foreground, 206 29% 6%));
+    --ok: hsl(var(--status-working, 142 64% 58%));
+    --err: hsl(var(--status-problem, 0 84% 64%));
+    --att: hsl(var(--status-attention, 24 96% 61%));
+    --queued: hsl(var(--status-queued, 54 92% 74%));
+    --idle: hsl(var(--status-idle, 199 9% 63%));
+    --sans: var(--font-sans, "Instrument Sans", system-ui, sans-serif);
+    --mono: var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
+    --display: var(--font-display, "Bricolage Grotesque", system-ui, sans-serif);
+    --r: var(--radius, 0.75rem);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; min-height: 100%; }
+  body {
+    background:
+      radial-gradient(60rem 30rem at 50% -10rem, color-mix(in srgb, var(--tone) 9%, transparent), transparent 70%),
+      var(--bg);
+    color: var(--text);
+    font: 15px/1.5 var(--sans);
+    --tone: var(--idle);
+    transition: --tone 0.4s;
+  }
+  body[data-tone="ok"] { --tone: var(--ok); }
+  body[data-tone="working"] { --tone: var(--accent); }
+  body[data-tone="problem"] { --tone: var(--err); }
+  body[data-tone="stopped"] { --tone: var(--idle); }
+  body[data-tone="away"] { --tone: var(--queued); }
+  a { color: inherit; }
+  .bar {
+    display: flex; align-items: center; gap: 1.25rem; flex-wrap: wrap;
+    padding: 1rem 1.5rem; border-bottom: 1px solid var(--line);
+  }
+  .mark { font: 700 0.95rem var(--mono); letter-spacing: -0.02em; text-decoration: none; }
+  .mark i { font-style: normal; color: var(--text-dimmer); font-weight: 400; }
+  .mark b { color: var(--accent); }
+  .mark span { font: 600 1rem var(--display); margin-left: 0.5rem; letter-spacing: 0; }
+  nav { display: flex; gap: 0.25rem; margin-left: auto; flex-wrap: wrap; }
+  nav a {
+    padding: 0.35rem 0.7rem; border-radius: 0.5rem; text-decoration: none;
+    color: var(--text-dim); font-size: 0.875rem;
+  }
+  nav a:hover { color: var(--text); background: color-mix(in srgb, var(--text) 6%, transparent); }
+  nav a[aria-current="page"] { color: var(--text); background: color-mix(in srgb, var(--text) 8%, transparent); }
+  nav a[aria-disabled="true"] { color: var(--text-dimmer); opacity: 0.55; pointer-events: none; }
+  main { max-width: 46rem; margin: 0 auto; padding: 3.5rem 1.5rem 4rem; }
+  .hero { display: flex; gap: 1.25rem; align-items: flex-start; }
+  .glyph {
+    flex: none; width: 3.25rem; height: 3.25rem; border-radius: 1rem; display: grid; place-items: center;
+    color: var(--tone); background: color-mix(in srgb, var(--tone) 13%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tone) 35%, transparent);
+  }
+  .glyph svg { width: 1.6rem; height: 1.6rem; }
+  body[data-tone="working"] .glyph svg, body[data-tone="away"] .glyph svg { animation: spin 1.6s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  h1 { font: 650 2rem/1.15 var(--display); margin: 0; letter-spacing: -0.02em; text-wrap: balance; }
+  .sub { color: var(--text-dim); margin: 0.4rem 0 0; }
+  .steps { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.5rem; margin: 2.25rem 0 0; padding: 0; list-style: none; }
+  .steps li { padding-top: 0.6rem; border-top: 3px solid var(--line); color: var(--text-dimmer); font-size: 0.8125rem; }
+  .steps li[data-step="done"] { border-color: color-mix(in srgb, var(--ok) 55%, transparent); color: var(--text-dim); }
+  .steps li[data-step="now"] { border-color: var(--tone); color: var(--text); font-weight: 600; }
+  .steps li[data-step="failed"] { border-color: var(--err); color: var(--text); font-weight: 600; }
+  .panel { margin-top: 2rem; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 1.25rem; }
+  .panel h2 { font: 600 0.75rem var(--sans); letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-dimmer); margin: 0 0 0.75rem; }
+  .problem { border-color: color-mix(in srgb, var(--tone) 45%, var(--line)); }
+  pre {
+    margin: 0; padding: 0.85rem 1rem; border-radius: 0.5rem; background: var(--bg);
+    font: 0.8125rem/1.55 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text);
+    max-height: 16rem; overflow: auto;
+  }
+  .actions { display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap; margin-top: 1rem; }
+  button {
+    font: 600 0.9375rem var(--sans); padding: 0.6rem 1.1rem; border-radius: 0.6rem; border: 0; cursor: pointer;
+    background: var(--accent); color: var(--accent-ink);
+  }
+  button:hover { filter: brightness(1.08); }
+  button:disabled { opacity: 0.55; cursor: default; }
+  .hint { color: var(--text-dim); font-size: 0.875rem; margin: 0; flex: 1 1 16rem; }
+  dl { display: grid; grid-template-columns: max-content 1fr; gap: 0.45rem 1.5rem; margin: 0; }
+  dt { color: var(--text-dim); }
+  dd { margin: 0; overflow-wrap: anywhere; }
+  .mono { font-family: var(--mono); font-size: 0.8125rem; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
+  th { text-align: left; font-weight: 500; color: var(--text-dimmer); padding: 0 0.75rem 0.4rem 0; }
+  td { padding: 0.4rem 0.75rem 0.4rem 0; border-top: 1px solid var(--line); vertical-align: top; }
+  td:last-child, th:last-child { padding-right: 0; }
+  td:first-child { white-space: nowrap; }
+  .outcome { display: inline-flex; align-items: center; gap: 0.45rem; white-space: nowrap; }
+  .outcome svg { width: 0.7rem; height: 0.7rem; flex: none; }
+  .outcome[data-outcome="booted"] { color: var(--ok); }
+  .outcome[data-outcome="failed"], .outcome[data-outcome="timed-out"] { color: var(--err); }
+  .why { color: var(--text-dim); font-size: 0.8125rem; }
+  .empty { color: var(--text-dimmer); margin: 0; }
+  [hidden] { display: none !important; }
+  @media (max-width: 34rem) {
+    main { padding-top: 2rem; }
+    h1 { font-size: 1.6rem; }
+    .steps { grid-template-columns: repeat(2, 1fr); }
+    .boots-error { display: none; }
+  }
+  @media (prefers-reduced-motion: reduce) { .glyph svg { animation: none !important; } }
+</style>
+</head>
+<body data-tone="away">
+<header class="bar">
+  <a class="mark" href="/"><i>&lt;</i><b>iXi</b><i>&gt;</i><span>Foundry</span></a>
+  <nav aria-label="Foundry">
+    <a data-nav href="/">Workspace</a>
+    <a data-nav href="/settings">Settings</a>
+    <a data-nav href="/analytics">Analytics</a>
+    <a href="/status" aria-current="page">Status</a>
+  </nav>
+</header>
+<main>
+  <section class="hero" aria-live="polite">
+    <div class="glyph" id="glyph"></div>
+    <div>
+      <h1 id="headline">Looking for Foundry…</h1>
+      <p class="sub" id="sub">Asking this machine what Foundry is doing.</p>
+    </div>
+  </section>
+
+  <ol class="steps" id="steps">
+    <li data-key="checking-for-update">Check for an update</li>
+    <li data-key="starting-services">Start services</li>
+    <li data-key="booting">Boot the release</li>
+    <li data-key="running">Ready</li>
+  </ol>
+
+  <section class="panel problem" id="hold" hidden>
+    <h2 id="hold-title">Why it stopped</h2>
+    <pre id="hold-error" hidden></pre>
+    <div class="actions">
+      <button type="button" id="start">Start Foundry</button>
+      <p class="hint" id="hold-hint"></p>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>This Foundry</h2>
+    <dl>
+      <dt>Release</dt><dd class="mono" id="release">—</dd>
+      <dt>Last good release</dt><dd class="mono" id="stable">—</dd>
+      <dt>Update waiting</dt><dd class="mono" id="candidate">—</dd>
+      <dt>Updates</dt><dd id="auto-update">—</dd>
+      <dt>Releases skipped</dt><dd id="failed">—</dd>
+      <dt>Logs</dt><dd class="mono" id="logs">—</dd>
+    </dl>
+  </section>
+
+  <section class="panel">
+    <h2>Recent starts</h2>
+    <p class="empty" id="boots-empty">No starts recorded yet.</p>
+    <table id="boots" hidden>
+      <thead><tr><th>When</th><th>Release</th><th>Result</th><th>Took</th><th class="boots-error">Why</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </section>
+</main>
+<script type="module">
+  const GLYPHS = {
+    // Status is colour, then shape: each state has its own outline.
+    ok: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
+    working: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 3a9 9 0 1 0 9 9"/></svg>',
+    away: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 3a9 9 0 1 0 9 9"/></svg>',
+    problem: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4l9 16H3z"/><path d="M12 10v4.5M12 17.6v.1"/></svg>',
+    stopped: '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2.5"/></svg>',
+  };
+  const DOT = {
+    booted: '<svg viewBox="0 0 10 10"><circle cx="5" cy="5" r="4.5" fill="currentColor"/></svg>',
+    failed: '<svg viewBox="0 0 10 10"><path d="M5 .5l4.5 9h-9z" fill="currentColor"/></svg>',
+    'timed-out': '<svg viewBox="0 0 10 10"><path d="M5 .5l4.5 9h-9z" fill="currentColor"/></svg>',
+  };
+  const OUTCOME = { booted: 'Started', failed: 'Failed', 'timed-out': 'Ran out of time' };
+  const ORDER = ['checking-for-update', 'starting-services', 'booting', 'running'];
+  const $ = (id) => document.getElementById(id);
+  const short = (sha) => (typeof sha === 'string' ? sha.slice(0, 8) : '—');
+  const span = (ms) => {
+    const s = Math.max(0, Math.round(ms / 1000));
+    if (s < 90) return `${s}s`;
+    const m = Math.round(s / 60);
+    if (m < 90) return `${m} min`;
+    const h = Math.floor(m / 60);
+    return `${h}h ${m % 60}m`;
+  };
+  const when = (at) =>
+    new Date(at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+
+  let lostAt = null;
+  let starting = false;
+  let last = null;
+
+  function show(tone, headline, sub) {
+    document.body.dataset.tone = tone;
+    $('glyph').innerHTML = GLYPHS[tone];
+    $('headline').textContent = headline;
+    $('sub').textContent = sub;
+  }
+
+  function steps(phase, failed) {
+    const at = ORDER.indexOf(phase);
+    for (const li of $('steps').children) {
+      const i = ORDER.indexOf(li.dataset.key);
+      li.dataset.step =
+        at < 0 ? '' : i < at ? 'done' : i > at ? '' : failed ? 'failed' : phase === 'running' ? 'done' : 'now';
+    }
+  }
+
+  function render(status) {
+    const { phase, hold, release } = status;
+    const forSoFar = span(status.now - status.phaseSince);
+    $('hold').hidden = phase !== 'held';
+    if (phase === 'running') {
+      show('ok', 'Foundry is running', `Up for ${forSoFar}${release ? `, on release ${short(release.sha)}` : ', from a checkout'}.`);
+      steps('running', false);
+    } else if (phase === 'held' && hold?.reason === 'stopped') {
+      show('stopped', 'Foundry is stopped', `Stopped ${span(status.now - hold.since)} ago. Nothing runs until you start it.`);
+      steps('', false);
+      $('hold-title').textContent = 'Stopped by you';
+      $('hold-error').hidden = true;
+      $('start').textContent = 'Start Foundry';
+      $('hold-hint').textContent = 'Threads, schedules and Wardens are off while Foundry is stopped.';
+    } else if (phase === 'held') {
+      show('problem', "Foundry can't start", `Release ${short(hold?.sha)} failed to start ${hold?.failures ?? 2} times in a row with the same error, so it stopped trying.`);
+      steps('booting', true);
+      $('hold-title').textContent = 'What the start failed on';
+      $('hold-error').hidden = false;
+      $('hold-error').textContent = hold?.error ?? 'No error was recorded; see the logs.';
+      $('start').textContent = 'Try again';
+      $('hold-hint').textContent =
+        status.autoUpdate === 'apply'
+          ? 'It tries again by itself when settings.json changes or a new release lands.'
+          : 'It tries again by itself when settings.json changes.';
+    } else {
+      const doing =
+        phase === 'checking-for-update'
+          ? 'Checking for an update'
+          : phase === 'starting-services'
+            ? 'Starting its services'
+            : release?.trial
+              ? `Starting the update ${short(release.sha)}`
+              : `Starting release ${short(release?.sha)}`;
+      show('working', 'Foundry is starting', `${doing}, ${forSoFar} so far. This page opens Foundry when it is ready.`);
+      steps(phase, false);
+    }
+    $('start').disabled = starting;
+
+    for (const link of document.querySelectorAll('[data-nav]'))
+      link.setAttribute('aria-disabled', String(status.servedBy !== 'daemon'));
+    $('release').textContent = release
+      ? `${short(release.sha)}${release.trial ? ' (update on trial)' : ''}`
+      : status.servedBy === 'daemon'
+        ? 'a checkout, not a release'
+        : 'none started yet';
+    $('stable').textContent = short(status.stable);
+    $('candidate').textContent = status.candidate ? short(status.candidate) : 'none';
+    $('auto-update').textContent =
+      status.autoUpdate === 'apply'
+        ? 'Installed automatically from main'
+        : status.autoUpdate === 'check'
+          ? 'Reported, not installed'
+          : 'Off';
+    $('failed').textContent = status.failed.length
+      ? `${status.failed.length} that failed to start (latest ${short(status.failed.at(-1))})`
+      : 'none';
+    $('logs').textContent = status.logDir ?? '—';
+
+    const rows = $('boots').tBodies[0];
+    rows.replaceChildren(
+      ...status.boots.map((boot) => {
+        const tr = document.createElement('tr');
+        const cell = (text, cls) => {
+          const td = document.createElement('td');
+          if (cls) td.className = cls;
+          td.textContent = text;
+          tr.append(td);
+          return td;
+        };
+        cell(when(boot.startedAt));
+        cell(`${short(boot.sha)}${boot.trial ? ' (update)' : ''}`, 'mono');
+        const result = cell('');
+        const badge = document.createElement('span');
+        badge.className = 'outcome';
+        badge.dataset.outcome = boot.outcome;
+        badge.innerHTML = DOT[boot.outcome] ?? '';
+        badge.append(OUTCOME[boot.outcome] ?? boot.outcome);
+        result.append(badge);
+        cell(span(boot.endedAt - boot.startedAt));
+        cell(boot.error ?? '', 'why boots-error');
+        return tr;
+      }),
+    );
+    $('boots').hidden = status.boots.length === 0;
+    $('boots-empty').hidden = status.boots.length > 0;
+  }
+
+  async function poll() {
+    try {
+      const res = await fetch('/api/daemon/status', { cache: 'no-store' });
+      if (!res.ok) throw new Error(String(res.status));
+      const status = await res.json();
+      // Opened at a workspace address while Foundry was down: the same address now opens Foundry.
+      if (status.servedBy === 'daemon' && location.pathname !== '/status') return location.reload();
+      if (last && last.bootId !== status.bootId) starting = false;
+      lostAt = null;
+      last = status;
+      render(status);
+    } catch {
+      lostAt ??= Date.now();
+      $('hold').hidden = true;
+      show(
+        'away',
+        last ? 'Foundry is restarting' : 'Looking for Foundry…',
+        Date.now() - lostAt > 30_000
+          ? `Nothing has answered for ${span(Date.now() - lostAt)}. If Foundry was uninstalled, start it from a terminal with "bun run daemon:install".`
+          : 'Waiting for it to come back. This usually takes a few seconds.',
+      );
+    }
+  }
+
+  $('start').addEventListener('click', async () => {
+    starting = true;
+    $('start').disabled = true;
+    try {
+      await fetch('/api/daemon/start', { method: 'POST' });
+    } catch {
+      starting = false;
+    }
+    poll();
+  });
+
+  $('glyph').innerHTML = GLYPHS.away;
+  poll();
+  setInterval(poll, 2000);
+</script>
+</body>
+</html>

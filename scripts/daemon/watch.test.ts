@@ -107,7 +107,7 @@ test('a restart never interrupts a boot in progress, and the candidate being boo
   const { join } = await import('node:path');
   const { tmpdir } = await import('node:os');
   const { startUpdateWatcher } = await import('./watch');
-  const { readState } = await import('./update');
+  const { readState } = await import('../../packages/foundry/src/daemon/release-state');
   const configDir = mkdtempSync(join(tmpdir(), 'watch-booting-'));
   mkdirSync(join(configDir, 'releases'), { recursive: true });
   const booting = 'b'.repeat(40);

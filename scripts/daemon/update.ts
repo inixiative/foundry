@@ -20,22 +20,16 @@
 import { mkdir, readdir, rename, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { $ } from 'bun';
-
-export type AutoUpdate = 'off' | 'check' | 'apply';
+import {
+  type ReleaseState,
+  readAutoUpdate,
+  readState,
+  releasesRoot,
+  statePath,
+} from '../../packages/foundry/src/daemon/release-state';
 
 /** Distinct from a crash so the logs can tell the two apart. */
 export const RESTART_EXIT_CODE = 75;
-
-export interface ReleaseState {
-  stable?: string;
-  previous?: string;
-  candidate?: string;
-  /** Set while a candidate boots; still set on the next launch means that boot was cut off. */
-  booting?: string;
-  /** Boots of `booting` cut off before a verdict, so far. */
-  interruptedBoots?: number;
-  failed: string[];
-}
 
 export interface Release {
   sha: string;
@@ -59,26 +53,7 @@ const KEEP_FAILED = 20;
 /** A third boot in a row that dies without a verdict marks the candidate failed. */
 export const MAX_INTERRUPTED_BOOTS = 3;
 
-const releasesRoot = (configDir: string) => join(configDir, 'releases');
-const statePath = (configDir: string) => join(releasesRoot(configDir), 'state.json');
 export const releaseDir = (configDir: string, sha: string) => join(releasesRoot(configDir), sha);
-
-export const readAutoUpdate = async (configDir: string): Promise<AutoUpdate> => {
-  try {
-    const value = (await Bun.file(join(configDir, 'settings.json')).json())?.daemon?.autoUpdate;
-    return value === 'check' || value === 'apply' ? value : 'off';
-  } catch {
-    return 'off';
-  }
-};
-
-export const readState = async (configDir: string): Promise<ReleaseState> => {
-  try {
-    return { failed: [], ...(await Bun.file(statePath(configDir)).json()) };
-  } catch {
-    return { failed: [] };
-  }
-};
 
 const writeState = async (configDir: string, state: ReleaseState) => {
   await mkdir(releasesRoot(configDir), { recursive: true });

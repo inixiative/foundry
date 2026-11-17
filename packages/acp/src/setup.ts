@@ -22,9 +22,11 @@ import {
   enabledPrefilter,
   ensureStarterSettings,
   installDaemon,
+  installedConfigDirectory,
   installedDaemon,
   installPrefilterModel,
   prefilterInstalled,
+  readHold,
   WardenPrefilter,
 } from '@inixiative/foundry/daemon';
 import { runRepeats } from '@inixiative/foundry/repeats';
@@ -210,7 +212,8 @@ export async function runSetup(args: string[]): Promise<number> {
         : workingDirectory;
     const prefilter = await enabledPrefilter(settingsHome);
     let modelAdded = false,
-      daemonInstalled = false;
+      daemonInstalled = false,
+      held: ReturnType<typeof readHold>;
     if (prefilter) {
       if (prefilterInstalled()) ok('the Warden pre-filter model is installed');
       else {
@@ -232,7 +235,17 @@ export async function runSetup(args: string[]): Promise<number> {
       if (!(await daemonLoaded())) await startDaemon();
     } else if (current && !values.reinstall) {
       // Reinstalling restarts the daemon and ends its live sessions: only on request.
-      ok('the Foundry daemon is installed and running; pass --reinstall to restart it');
+      const configDirectory = installedConfigDirectory();
+      held = configDirectory ? readHold(configDirectory) : undefined;
+      if (held?.reason === 'stopped')
+        warn(
+          `the Foundry daemon is installed but stopped; start it at http://localhost:${PORT} or pass --reinstall`,
+        );
+      else if (held)
+        warn(
+          `the Foundry daemon is installed but can't start (${held.error}); see http://localhost:${PORT}, or pass --reinstall`,
+        );
+      else ok('the Foundry daemon is installed and running; pass --reinstall to restart it');
     } else {
       if (!checkout && (await ensureStarterSettings(workingDirectory)))
         ok(`wrote starter settings in ${join(workingDirectory, '.foundry')}`);
@@ -250,7 +263,10 @@ export async function runSetup(args: string[]): Promise<number> {
       daemonInstalled = true;
       ok(`daemon installed (logs: ${DAEMON_LOG_DIR}/foundry.out.log)`);
     }
-    if (await daemonAnswers(60_000)) ok(`daemon answering — viewer at http://localhost:${PORT}`);
+    // A held daemon serves only its status page: nothing to wait for.
+    if (held) info(`status page: http://localhost:${PORT}`);
+    else if (await daemonAnswers(60_000))
+      ok(`daemon answering — viewer at http://localhost:${PORT}`);
     else warn(`the daemon did not answer within a minute; see ${DAEMON_LOG_DIR}/foundry.err.log`);
     if (prefilter && prefilterInstalled()) {
       const health = await new WardenPrefilter(prefilter).waitReady(

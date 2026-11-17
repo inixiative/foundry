@@ -18,11 +18,21 @@ import {
   daemonDomain,
   daemonPlistPath,
   daemonTarget,
+  installedDaemon,
+  supervised,
 } from '../../packages/foundry/src/client/daemon';
+import { clearHold, readHold, writeHold } from '../../packages/foundry/src/daemon/boot-record';
 import { installDaemon } from '../../packages/foundry/src/daemon/install';
 
 const repoRoot = new URL('../..', import.meta.url).pathname.replace(/\/$/, '');
 const home = homedir();
+// The installed daemon's own checkout, not this one: run from a worktree, a hold written here would
+// never reach the supervisor launchd runs.
+const installed = () => installedDaemon(home);
+const installedConfigDir = () => {
+  const daemon = installed();
+  return `${daemon?.readable ? daemon.workingDirectory : repoRoot}/.foundry`;
+};
 const plistPath = daemonPlistPath(home);
 const target = daemonTarget();
 const domain = daemonDomain();
@@ -58,12 +68,15 @@ const install = async () => {
 };
 
 const uninstall = async () => {
+  const configDir = installedConfigDir();
   if (await isLoaded()) await $`launchctl bootout ${target}`.nothrow();
   await rm(plistPath, { force: true });
+  clearHold(configDir);
   ok('daemon stopped and LaunchAgent removed');
 };
 
 const start = async () => {
+  clearHold(installedConfigDir());
   if (!(await isLoaded())) {
     await $`launchctl bootstrap ${domain} ${plistPath}`;
     ok('daemon started');
@@ -73,9 +86,31 @@ const start = async () => {
   ok('daemon restarted');
 };
 
+// Stopped is a hold, not an unload: the supervisor stays up serving the status page, whose Start
+// brings Foundry back (`daemon:uninstall` removes the LaunchAgent and frees the port). A daemon not
+// run by the supervisor (one `foundry-acp setup` installed) has no page, so it is unloaded as before.
 const stop = async () => {
-  await $`launchctl bootout ${target}`.nothrow();
-  ok('daemon stopped');
+  if (!(await isLoaded())) {
+    console.log('daemon: not loaded');
+    return;
+  }
+  if (!supervised(installed())) {
+    await $`launchctl bootout ${target}`.nothrow();
+    ok('daemon stopped');
+    return;
+  }
+  const configDir = installedConfigDir();
+  writeHold(configDir, { reason: 'stopped', since: Date.now() });
+  const kick = await $`launchctl kickstart -k ${target}`.nothrow().quiet();
+  if (kick.exitCode !== 0) {
+    // Nothing restarted onto the hold: leave none behind for the next natural restart to find.
+    clearHold(configDir);
+    console.error(`could not restart the daemon to stop it: ${kick.stderr.toString().trim()}`);
+    process.exit(1);
+  }
+  ok(
+    `daemon stopped — start it from http://localhost:${process.env.VIEWER_PORT ?? '4500'} or \`bun run daemon:start\``,
+  );
 };
 
 const status = async () => {
@@ -86,7 +121,16 @@ const status = async () => {
   const out = await $`launchctl print ${target}`.quiet().text();
   const pid = out.match(/pid = (\d+)/)?.[1];
   const lastExit = out.match(/last exit code = (\d+)/)?.[1];
-  console.log(`daemon: loaded${pid ? `, running (pid ${pid})` : ', not running'}`);
+  const hold = readHold(installedConfigDir());
+  console.log(
+    `daemon: loaded${pid ? `, running (pid ${pid})` : ', not running'}${
+      hold?.reason === 'stopped'
+        ? ', stopped (bun run daemon:start)'
+        : hold
+          ? `, held after ${hold.failures} failed boots: ${hold.error}`
+          : ''
+    }`,
+  );
   if (lastExit)
     info(`last exit code: ${lastExit}${lastExit === '75' ? ' (restarted for update)' : ''}`);
   info(`viewer: http://localhost:${process.env.VIEWER_PORT ?? '4500'}`);

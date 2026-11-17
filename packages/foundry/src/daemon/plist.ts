@@ -7,7 +7,12 @@
  * LaunchAgent plist generation — pure, so it can be tested without touching disk.
  */
 
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 import { DAEMON_LABEL } from '../client/daemon';
+
+/** Where the LaunchAgent writes the daemon's output. */
+export const DAEMON_LOG_DIR = join(homedir(), 'Library', 'Logs', 'foundry');
 
 export { DAEMON_LABEL };
 

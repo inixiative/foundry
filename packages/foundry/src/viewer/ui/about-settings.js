@@ -40,6 +40,8 @@ export function AboutSection() {
           <dd class="mono">${version ?? '—'}</dd>
           <dt>Updates</dt>
           <dd data-about="update"><${UpdateFact} /></dd>
+          <dt>Status</dt>
+          <dd data-about="status"><a href="/status">What this Foundry is running, and its recent starts</a></dd>
           <dt>Source</dt>
           <dd><a href=${REPO_URL} target="_blank" rel="noreferrer">github.com/inixiative/foundry ↗</a></dd>
           <dt>Licence</dt>

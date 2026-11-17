@@ -3,17 +3,15 @@
  * @kind service
  * @partOf feature:daemon
  */
-import { existsSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { $ } from 'bun';
 import { daemonDomain, daemonPlistPath, daemonTarget } from '../client/daemon';
 import { installLocations, resolveDaemonPath } from './agent-clis';
-import { buildPlist } from './plist';
+import { clearHold } from './boot-record';
+import { buildPlist, DAEMON_LOG_DIR } from './plist';
 import { checkReadiness } from './ready';
-
-export const DAEMON_LOG_DIR = join(homedir(), 'Library', 'Logs', 'foundry');
 
 export interface DaemonInstallOptions {
   /** A Foundry checkout, or an installed Foundry's home; its `.foundry/` holds the settings. */
@@ -22,35 +20,6 @@ export interface DaemonInstallOptions {
   program?: string[];
   port: number;
   log?: (message: string) => void;
-}
-
-/**
- * The installed LaunchAgent's working directory and program (read with `plutil`), or `readable: false`
- * when one exists that can't be read: callers treat it as someone else's daemon.
- */
-export function installedDaemon(home = homedir()) {
-  const plistPath = daemonPlistPath(home);
-  if (!existsSync(plistPath)) return undefined;
-  const read = Bun.spawnSync(['plutil', '-convert', 'json', '-o', '-', plistPath], {
-    stderr: 'ignore',
-  });
-  try {
-    const plist = JSON.parse(read.stdout.toString()) as {
-      WorkingDirectory?: unknown;
-      ProgramArguments?: unknown;
-    };
-    if (read.exitCode !== 0 || typeof plist.WorkingDirectory !== 'string') throw Error();
-    return {
-      plistPath,
-      readable: true as const,
-      workingDirectory: plist.WorkingDirectory,
-      program: Array.isArray(plist.ProgramArguments)
-        ? plist.ProgramArguments.filter((item): item is string => typeof item === 'string')
-        : [],
-    };
-  } catch {
-    return { plistPath, readable: false as const };
-  }
 }
 
 export const daemonLoaded = async () =>
@@ -104,6 +73,8 @@ export async function installDaemon(options: DaemonInstallOptions) {
     }),
   );
   log(`wrote ${plistPath}`);
+  // An install starts Foundry: no stop or failing-boot hold from before carries over.
+  clearHold(join(options.workingDirectory, '.foundry'));
   await replaceService(plistPath);
   return { plistPath, logDir: DAEMON_LOG_DIR };
 }
