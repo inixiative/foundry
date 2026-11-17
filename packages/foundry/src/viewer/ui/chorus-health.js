@@ -6,7 +6,8 @@
 /**
  * A degraded chorus in words (FEAT-008). Pure: reads the `chorus` the message index puts on an agent
  * row (`TurnChorus`: every degraded row of the turn, and which are still open) and says which Wardens
- * went unheard, at which layer, and why. The turn went on without them; Retry asks them again.
+ * went unheard, at which layer, and why. The turn went on without them; Retry asks them again, from
+ * the one prompt in the strip above the composer.
  */
 
 const KIND = { timeout: 'timed out', error: 'failed', 'not-started': 'not started' };
@@ -26,8 +27,8 @@ const MOMENT = {
 };
 
 /**
- * The notice for one turn: `open` (still degraded: Retry and Dismiss), `retried` (asked again), or
- * null when nothing is shown (never degraded, or dismissed).
+ * The notice for one turn while it is still degraded (`open`: the strip above the composer offers Retry
+ * and Dismiss), or null when nothing is shown (never degraded, asked again, or dismissed).
  */
 export function chorusNotice(chorus) {
   const notices = Array.isArray(chorus?.notices) ? chorus.notices : [];
@@ -45,12 +46,6 @@ export function chorusNotice(chorus) {
       text: `Some Wardens went unheard on this turn: ${parts.join('; ')}. The turn went on without ${silent ? 'them' : 'their confirmation'}.`,
     };
   }
-  if (notices.some((n) => n.retriedBy))
-    return {
-      state: 'retried',
-      count: 0,
-      text: 'The unheard Wardens were asked again; any reminder they gave rides with your next message.',
-    };
   return null;
 }
 

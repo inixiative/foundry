@@ -477,15 +477,18 @@ function SystemStrip({ threadId }) {
     return () => clearInterval(timer);
   }, [showing]);
   if (!showing) return null;
-  const count = degraded ? chorusNotice(degraded.chorus).count : 0;
+  const notice = degraded ? chorusNotice(degraded.chorus) : null;
   const log = systemActivityLog.value;
   return html`<div class="system-strip" role="status" data-state=${degraded ? 'degraded' : view.state}>
     ${
       degraded
         ? html`<div class="system-strip-row" data-chorus-bar="open">
         <span class="system-strip-dot" data-tone="attention"></span>
-        <span class="system-strip-text">On the last turn, ${count} Warden${count === 1 ? '' : 's'} went unheard.</span>
-        <button class="system-strip-action" onClick=${() => chorusAction(threadId, degraded.turnId, 'retry')}>Retry</button>
+        <span class="system-strip-text" title=${notice.text}>On the last turn, ${notice.count} Warden${notice.count === 1 ? '' : 's'} went unheard.</span>
+        <button class="system-strip-action" title="Ask these Wardens again on the same moment; what they say rides with your next message"
+          onClick=${() => chorusAction(threadId, degraded.turnId, 'retry')}>Retry</button>
+        <button class="system-strip-action" title="Close this notice; the turn keeps its record"
+          onClick=${() => chorusAction(threadId, degraded.turnId, 'dismiss')}>Dismiss</button>
       </div>`
         : null
     }
@@ -1163,34 +1166,6 @@ function LiveWork({ msg }) {
   </section>`;
 }
 
-/** The turn's degraded chorus (FEAT-008): which Wardens went unheard, with Retry and Dismiss. */
-function ChorusNotice({ msg }) {
-  const [busy, setBusy] = useState(false);
-  const notice = chorusNotice(msg.chorus);
-  const threadId = activeThreadId.value;
-  if (!notice || !msg.turnId || !threadId) return null;
-  const act = async (action) => {
-    setBusy(true);
-    try {
-      await chorusAction(threadId, msg.turnId, action);
-    } finally {
-      setBusy(false);
-    }
-  };
-  return html`<div class="chorus-notice chorus-notice--${notice.state}" role="status" data-chorus=${notice.state}>
-    <span>${notice.text}</span>
-    ${
-      notice.state === 'open'
-        ? html`<span class="chorus-notice-actions">
-            <button class="prompt-btn" disabled=${busy} onClick=${() => act('retry')}
-              title="Ask these Wardens again on the same moment; what they say rides with your next message">Retry</button>
-            <button class="prompt-btn" disabled=${busy} onClick=${() => act('dismiss')}>Dismiss</button>
-          </span>`
-        : null
-    }
-  </div>`;
-}
-
 /** A turn lost to a restart that the native record couldn't settle: the owner decides, never a silent refusal. */
 function LostTurnCard({ msg }) {
   const [busy, setBusy] = useState(false);
@@ -1319,7 +1294,6 @@ function AgentMessage({ msg, index, onTraceClick }) {
           : null
       }
 
-      <${ChorusNotice} msg=${msg} />
 
       <!-- Post-execution bar: guards, writeback -->
       <${PipelineBar}
