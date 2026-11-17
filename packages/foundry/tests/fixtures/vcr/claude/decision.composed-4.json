@@ -1,5 +1,5 @@
 {
-  "version": "2.1.325",
+  "version": "2.1.326",
   "status": 0,
   "body": {
     "kind": "process",
@@ -30,10 +30,10 @@
       "--no-chrome",
       "--no-session-persistence",
       "--resume",
-      "ab6750d3-6b84-47e4-8645-02f2100e302a",
+      "b769502f-d78f-4894-91f4-f169cbec4890",
       "--fork-session",
       "--append-system-prompt-file",
-      "{{tmp}}/agent-session-base-68900-WePotV/append-system-prompt.md",
+      "{{tmp}}/agent-session-base-50901-rnZb6U/append-system-prompt.md",
       "--setting-sources",
       ""
     ],
@@ -50,9 +50,9 @@
   "recorded": {
     "service": "claude",
     "cli": "claude",
-    "recordedAt": "2026-11-16T14:50:28.874Z",
-    "agentSession": "0.13.0",
+    "recordedAt": "2026-11-17T03:24:25.115Z",
+    "agentSession": "0.15.0",
     "environment": "terminal",
-    "durationMs": 52
+    "durationMs": 37
   }
 }
