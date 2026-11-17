@@ -69,6 +69,7 @@ export {
   type ClassifyRunOptions,
   carriedSection,
   classifiedSummary,
+  runRepairs,
   runStages,
   type StageCall,
   type StageDebug,

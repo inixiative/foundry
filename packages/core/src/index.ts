@@ -266,6 +266,7 @@ export {
   scorePrefilter,
 } from './feedback/warden-prefilter';
 export {
+  type AnswerRepair,
   type Authorship,
   type CharterScore,
   type ClassifyOutcome,

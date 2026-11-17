@@ -39,6 +39,7 @@
 // ---------------------------------------------------------------------------
 
 import {
+  type AnswerRepair,
   type ContextStack,
   computeHash,
   copyMessageIdentity,
@@ -144,7 +145,7 @@ export interface DomainContribution {
   /** The charter's pointer read off the snippets (`Look over here: …`). */
   readonly pointer?: WardenPointer;
   /** The sloppy shapes the answer was let in from (protocol `AnswerRepair`); absent when it was exact. */
-  readonly repairs?: readonly string[];
+  readonly repairs?: readonly AnswerRepair[];
   readonly segments: ContributionSegments;
   readonly provenance: ContributionProvenance;
   /**
@@ -322,7 +323,7 @@ export interface GuardOutcome {
   /** The check completed with NO_COMMENT: nothing to add. */
   readonly noComment?: true;
   /** The sloppy shapes the answer was let in from (protocol `AnswerRepair`); absent when it was exact. */
-  readonly repairs?: readonly string[];
+  readonly repairs?: readonly AnswerRepair[];
   readonly error?: string;
   /** Provider lifecycle classification of a failed call, "unknown", or "not-admitted" when the call was refused before the provider. */
   readonly admission?: GuardCallEvidence | 'unknown' | 'not-admitted';

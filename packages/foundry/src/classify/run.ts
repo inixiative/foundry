@@ -9,6 +9,7 @@
 // outlives its share of the deadline leaves the run with the previous stage's outcome, journalled.
 
 import type {
+  AnswerRepair,
   ClassifyOutcome,
   ClassifyStageTrace,
   ServedModel,
@@ -208,6 +209,11 @@ export interface ClassifiedSummary {
   readonly finalStage?: number;
   readonly fallback?: ClassifyResult['fallback'];
   readonly stages: readonly ClassifyStageTrace[];
+}
+
+/** Every repair any stage of the run was let in with, each once; empty when every answer was exact. */
+export function runRepairs(result: ClassifyResult): AnswerRepair[] {
+  return [...new Set(result.stages.flatMap((stage) => stage.repairs ?? []))];
 }
 
 export function classifiedSummary(result: ClassifyResult): ClassifiedSummary {

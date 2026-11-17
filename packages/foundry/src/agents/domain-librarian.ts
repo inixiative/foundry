@@ -50,6 +50,7 @@ import {
   NO_COMMENT,
   NO_COMMENT_RULE,
   protocolAnswer,
+  runRepairs,
   runStages,
   STRICT_RULE,
   type StageCall,
@@ -1726,7 +1727,8 @@ export class DomainLibrarian {
         ...classified,
       };
     const { repairs: _answerRepairs, ...advice } = run.final.advice!;
-    const repaired = run.final.repairs?.length ? { repairs: run.final.repairs } : {};
+    const repairs = runRepairs(run);
+    const repaired = repairs.length ? { repairs } : {};
     // Only a pointing stage's yes reaches the thread; anything else is journalled as nothing to add.
     if (!run.delivered)
       return {
@@ -1901,7 +1903,7 @@ export class DomainLibrarian {
     return {
       findings,
       ...(!findings.length ? { noComment: true as const } : {}),
-      ...(run.final.repairs?.length ? { repairs: run.final.repairs } : {}),
+      ...(runRepairs(run).length ? { repairs: runRepairs(run) } : {}),
       ran: true,
       status: 'completed',
       request: supplied,

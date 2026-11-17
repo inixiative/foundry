@@ -157,6 +157,18 @@ test('NO_COMMENT parses strictly and carries nothing; anything else outside the 
     noComment: true,
     repairs: ['empty-as-no-comment'],
   });
+  // A why with text in the wrong field is something said, so an otherwise empty answer stays an error.
+  expect(
+    validateAdviceResponse('{"why":"lock ordering","layers":[],"snippets":[],"confidence":0.9}'),
+  ).toEqual({ error: 'advice response has a "why" but no snippet or layer' });
+  expect(validateGuardResponse('{"why":"it drops a column","findings":[]}')).toEqual({
+    error: 'guard response has a "why" but no findings',
+  });
+  expect(validateGuardResponse('{"why":"  ","findings":[]}')).toEqual({
+    findings: [],
+    noComment: true,
+    repairs: ['stray-why-dropped', 'empty-as-no-comment'],
+  });
   for (const answer of [
     `${NO_COMMENT} — all clear`,
     '{"findings":[],"verdict":"clear"}',

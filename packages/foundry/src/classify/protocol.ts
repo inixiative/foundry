@@ -8,7 +8,7 @@
 // snippets, or guard findings). A sloppy answer with one meaning is let in and named (`AnswerRepair`);
 // any other answer in neither shape is an error, never a guess.
 
-import type { ClassifyOutcome } from '@inixiative/foundry-core';
+import type { AnswerRepair, ClassifyOutcome } from '@inixiative/foundry-core';
 import type { AdviceTrigger, TriggerPoint } from '../agents/warden-triggers';
 import { parseWardenPointer, type WardenPointer } from './pointer';
 import { parseRecognition, type Recognition } from './recognition';
@@ -24,16 +24,7 @@ export interface AdviceAnswer {
   repairs?: AnswerRepair[];
 }
 
-/**
- * A sloppy answer whose meaning is unambiguous is let in and named, so the prompt can be tuned
- * against the count: an empty contribution read as NO_COMMENT, empty snippets dropped, a why the
- * stage did not ask for dropped, a why it asked for missing. Anything else stays an error.
- */
-export type AnswerRepair =
-  | 'empty-as-no-comment'
-  | 'empty-snippets-dropped'
-  | 'stray-why-dropped'
-  | 'missing-why';
+export type { AnswerRepair };
 
 /** A guard finding as the protocol allows it: advisory, its description one remark of the pointer. */
 export interface GuardAnswerFinding {
@@ -52,14 +43,19 @@ export const NO_COMMENT = 'NO_COMMENT';
 export const NO_COMMENT_RULE = `Nothing to add is the expected answer, and the most common one. Then respond with exactly ${NO_COMMENT} and nothing else: no JSON, no explanation, no punctuation. It adds nothing to the thread.`;
 export const STRICT_RULE = `Any other answer, including JSON with empty lists or extra fields, is an error, not a comment.`;
 
-/** A stray `why` the envelope does not admit: dropped and named, never an error. */
-function dropStrayWhy(
-  value: Record<string, unknown>,
-  extra: readonly string[],
-): { value: Record<string, unknown>; repairs: AnswerRepair[] } {
-  if (extra.includes('why') || !('why' in value)) return { value, repairs: [] };
-  const { why: _why, ...rest } = value;
-  return { value: rest, repairs: ['stray-why-dropped'] };
+/**
+ * A stray `why` the envelope does not admit: dropped and named. `spoke` says it held text, so an
+ * otherwise empty answer is not read as nothing to add: the Warden said something, in the wrong field.
+ */
+function dropStrayWhy(value: Record<string, unknown>): {
+  value: Record<string, unknown>;
+  repairs: AnswerRepair[];
+  spoke: boolean;
+} {
+  if (!('why' in value)) return { value, repairs: [], spoke: false };
+  const { why, ...rest } = value;
+  const spoke = typeof why === 'string' ? why.trim().length > 0 : why != null;
+  return { value: rest, repairs: ['stray-why-dropped'], spoke };
 }
 
 /**
@@ -131,8 +127,8 @@ const outside = (value: Record<string, unknown>, allowed: readonly string[]) =>
 
 /**
  * Validate a guard-phase response against the protocol. Errors are bounded and never carry
- * the response text. NO_COMMENT is a completed check with nothing to add; otherwise only an object
- * with a non-empty `findings` array of well-formed findings is a result.
+ * the response text. NO_COMMENT is a completed check with nothing to add, and so is `findings: []`
+ * (repaired as `empty-as-no-comment`); otherwise an object with well-formed findings is a result.
  */
 export function validateGuardResponse(
   content: unknown,
@@ -148,23 +144,24 @@ export function validateGuardResponse(
   return guardValue(answer.value);
 }
 
-/** A guard answer's object, read as the guard envelope (the fields `extra` admits are the caller's). */
+/** A guard answer's object, read as the guard envelope. */
 function guardValue(
   answer: Record<string, unknown>,
-  extra: readonly string[] = [],
 ):
   | { findings: GuardAnswerFinding[]; noComment?: true; repairs?: AnswerRepair[] }
   | { error: string } {
-  const { value, repairs } = dropStrayWhy(answer, extra);
-  const beyond = outside(value, ['findings', ...extra]);
+  const { value, repairs, spoke } = dropStrayWhy(answer);
+  const beyond = outside(value, ['findings']);
   if (beyond.length)
     return {
       error: `guard response has ${beyond.length} field(s) outside the protocol`,
     };
   const raw = value.findings;
   if (!Array.isArray(raw)) return { error: 'guard response requires "findings": array' };
-  if (!raw.length)
+  if (!raw.length) {
+    if (spoke) return { error: 'guard response has a "why" but no findings' };
     return { findings: [], noComment: true, repairs: [...repairs, 'empty-as-no-comment'] };
+  }
   const findings: GuardAnswerFinding[] = [];
   for (let i = 0; i < raw.length; i++) {
     const f = raw[i] as {
@@ -213,13 +210,10 @@ export function validateAdviceResponse(content: unknown): AdviceAnswer | { error
   return adviceValue(answer.value);
 }
 
-/** An advice answer's object, read as the advice envelope (the fields `extra` admits are the caller's). */
-function adviceValue(
-  answer: Record<string, unknown>,
-  extra: readonly string[] = [],
-): AdviceAnswer | { error: string } {
-  const { value, repairs } = dropStrayWhy(answer, extra);
-  const beyond = outside(value, ['layers', 'snippets', 'confidence', ...extra]);
+/** An advice answer's object, read as the advice envelope. */
+function adviceValue(answer: Record<string, unknown>): AdviceAnswer | { error: string } {
+  const { value, repairs, spoke } = dropStrayWhy(answer);
+  const beyond = outside(value, ['layers', 'snippets', 'confidence']);
   if (beyond.length)
     return {
       error: `advice response has ${beyond.length} field(s) outside the protocol`,
@@ -236,7 +230,8 @@ function adviceValue(
     return { error: 'advice response requires "confidence": finite number from 0 to 1' };
   const snippets = value.snippets.filter((snippet) => snippet.trim());
   if (snippets.length !== value.snippets.length) repairs.push('empty-snippets-dropped');
-  if (!snippets.length && !value.layers.length)
+  if (!snippets.length && !value.layers.length) {
+    if (spoke) return { error: 'advice response has a "why" but no snippet or layer' };
     return {
       layers: [],
       snippets: [],
@@ -244,6 +239,7 @@ function adviceValue(
       noComment: true,
       repairs: [...repairs, 'empty-as-no-comment'],
     };
+  }
   return {
     layers: value.layers,
     snippets,
@@ -414,7 +410,9 @@ export function readStageAnswer(
         return {
           error: `${kind} answer requires "outcome": ${allowed.map((o) => `"${o}"`).join(' | ')}`,
         };
-      const given = typeof why === 'string' && why.trim() ? why.trim() : undefined;
+      if (why !== undefined && typeof why !== 'string')
+        return { error: `${kind} answer "why" must be a string` };
+      const given = why?.trim() || undefined;
       if (!plain && !given) repairs.push('missing-why');
       if (plain && why !== undefined) repairs.push('stray-why-dropped');
       const o = outcome as ClassifyOutcome;

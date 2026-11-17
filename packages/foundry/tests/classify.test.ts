@@ -20,6 +20,7 @@ import {
   RECOGNISE_CHARTER,
   readStageAnswer,
   responseProtocol,
+  runRepairs,
   runStages,
   type StageConfig,
   validateStages,
@@ -190,6 +191,16 @@ describe('protocols', () => {
     expect(
       readStageAnswer(JSON.stringify({ outcome: 'yes', why: 'x', findings: [] }), spec),
     ).toEqual({ error: 'guard answer "outcome": "yes" carries no remark or layer' });
+    expect(
+      readStageAnswer(
+        JSON.stringify({
+          outcome: 'yes',
+          why: 42,
+          findings: [{ severity: 'advisory', description: 'x' }],
+        }),
+        spec,
+      ),
+    ).toEqual({ error: 'guard answer "why" must be a string' });
     expect(
       readStageAnswer(
         JSON.stringify({
@@ -535,4 +546,17 @@ describe('the stage loop', () => {
     expect(asked).toEqual([0, 1]);
     expect(fanned).toMatchObject({ outcome: 'yes', finalStage: 1, delivered: true });
   });
+});
+
+test("a run carries every stage's repairs, each once", () => {
+  expect(
+    runRepairs({
+      delivered: true,
+      stages: [
+        { stage: 0, outcome: 'yes', repairs: ['missing-why'] },
+        { stage: 1, outcome: 'yes', repairs: ['missing-why', 'empty-snippets-dropped'] },
+        { stage: 2, outcome: 'yes' },
+      ],
+    } as unknown as Parameters<typeof runRepairs>[0]),
+  ).toEqual(['missing-why', 'empty-snippets-dropped']);
 });
