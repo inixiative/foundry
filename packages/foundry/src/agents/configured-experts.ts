@@ -8,7 +8,7 @@ import { vendorOfProvider } from '@inixiative/foundry-core';
 import { DEFAULT_STAGES, type StageConfig } from '../classify';
 import { providerEnabled } from '../models/vendors';
 import { roleComposition } from '../prompts/instruction-settings';
-import { isIdName, isRoleId } from '../prompts/role-namespace';
+import { isIdName, isRoleId, roleIdOfAgent } from '../prompts/role-namespace';
 import type { AgentSettingsConfig, FoundryConfig } from '../viewer/config';
 import { resolveProjectView } from '../viewer/config-resolve';
 import { threadKnowledgeLayerId } from './domain-librarian';
@@ -155,11 +155,11 @@ export function largestStageCount(
   return largest;
 }
 
-/** The Cartographer's role in the composition view: the enabled cartographer agent's id, else "cartographer". */
+/** The Cartographer's role in the composition view: the enabled cartographer agent's, else `agent:cartographer`. */
 export function cartographerRoleId(config: FoundryConfig): string {
-  return (
+  return roleIdOfAgent(
     Object.values(config.agents).find((a) => a.enabled && a.kind === 'cartographer')?.id ??
-    'cartographer'
+      'cartographer',
   );
 }
 

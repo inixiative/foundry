@@ -61,7 +61,9 @@ import type { LocalSessionStore } from '../../persistence/local-session-store';
 import {
   defaultThreadRole,
   isThreadRole,
+  SCOPE_ROLES,
   scopeOfRole,
+  type ThreadScope,
   threadRoles,
 } from '../../prompts/instruction-settings';
 import { workerModelRequirement } from '../../providers/subscription-policy';
@@ -1494,9 +1496,22 @@ export function registerRuntimeRoutes(
       'parentThreadId',
       'worker',
       'role',
+      'scope',
     ] as const)
       if (body[key] !== undefined && typeof body[key] !== 'string')
         return c.json({ error: `${key} must be a string` }, 400);
+    // A thread started in a Foundry scope (`forge`, `feedback`) takes the scope's role: the client
+    // names the scope, never its role id.
+    if (body.scope !== undefined) {
+      if (!Object.hasOwn(SCOPE_ROLES, body.scope as string))
+        return c.json(
+          { error: `scope must be one of ${Object.keys(SCOPE_ROLES).join(', ')}` },
+          400,
+        );
+      if (body.projectId !== undefined || body.role !== undefined)
+        return c.json({ error: "a scope thread takes its scope's role and no project" }, 400);
+      body.role = SCOPE_ROLES[body.scope as ThreadScope];
+    }
     // The new thread's model and effort (the New thread picker), held where a later change goes.
     const start: NewThreadInput['start'] = {};
     if (body.model !== undefined) {

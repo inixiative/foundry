@@ -13,13 +13,19 @@ import { dirname, join } from 'node:path';
 import type { ClaudeCodeSessionConfig } from '@inixiative/agent-session';
 import { ContextStack, FileMemory } from '@inixiative/foundry-core';
 import type { CorpusTier } from '../src/agents/corpus-compiler';
+import { regionRoleId } from '../src/agents/region-roster';
 import { buildLayers, createSourceResolver } from '../src/agents/thread-factory';
 import {
+  ASSISTANT_ROLE,
+  CODER_ROLE,
   type CompositionSettings,
   DEFAULT_INSTRUCTION_LADDER,
   defaultThreadRole,
   effectiveThreadRole,
+  FEEDBACK_ROLE,
+  FORGE_MASTER_ROLE,
   isThreadRole,
+  MAIN_ROLE,
   resolveInstructionLadder,
   roleComposition,
   scopeOfRole,
@@ -36,6 +42,7 @@ import {
   instructionStackSource,
   roleViewChanged,
 } from '../src/prompts/instruction-stack';
+import { roleIdIn, roleIdOfAgent, roleNamespace } from '../src/prompts/role-namespace';
 import { nativeTextEnvironment } from '../src/providers/native-text-environment';
 import {
   ClaudeCodeSessionAdapter,
@@ -82,7 +89,7 @@ const compose = async (
   (
     await composeRoleView({
       ...opts,
-      role: 'main',
+      role: MAIN_ROLE,
       picks: audience ? { audience } : {},
       ...(dedupe ? { dedupe } : {}),
     })
@@ -436,20 +443,26 @@ test('instruction settings are validated: tiers, parents, cycles, sources', () =
     [{ preset: 'cursor' }, 'composition.preset'],
     [{ dedupe: { lines: true } }, 'composition.dedupe'],
     [{ nodes: { a: { ...node, when: { slots: ['thread'] } } } }, 'when.slots names thread'],
-    [{ roles: { coder: { instructions: { exclude: ['nope'] } } } }, 'unknown nodes: nope'],
-    [{ roles: { coder: { budget: 0 } } }, 'budget must be a positive'],
-    [{ roles: { main: { audience: 'public' } } }, 'audience must be one of'],
-    [{ roles: { main: { slots: {} } } }, 'unknown field slots'],
+    [{ roles: { [CODER_ROLE]: { instructions: { exclude: ['nope'] } } } }, 'unknown nodes: nope'],
+    [{ roles: { [CODER_ROLE]: { budget: 0 } } }, 'budget must be a positive'],
+    [{ roles: { [MAIN_ROLE]: { audience: 'public' } } }, 'audience must be one of'],
+    [{ roles: { [MAIN_ROLE]: { slots: {} } } }, 'unknown field slots'],
     // main is the shared base under every thread role: it picks nothing, so a pick is refused by name.
-    [{ roles: { main: { instructions: { exclude: ['org'] } } } }, 'main is the shared base'],
-    [{ roles: { mine: { thread: { defaultFor: 'muse' } } } }, 'defaultFor must be a list'],
-    [{ roles: { mine: { thread: { label: '' } } } }, 'thread.label must be'],
-    [{ roles: { mine: { thread: { icon: 'x' } } } }, 'thread: unknown field icon'],
+    [{ roles: { [MAIN_ROLE]: { instructions: { exclude: ['org'] } } } }, 'main is the shared base'],
+    // A role key carries its namespace; a bare one is refused with the fix, in roles and in when.roles.
+    [{ roles: { coder: { budget: 9 } } }, 'composition.roles.coder: "coder" is a bare name'],
+    [
+      { nodes: { a: { ...node, when: { roles: ['coder'] } } } },
+      'when.roles: "coder" is a bare name',
+    ],
+    [{ roles: { 'thread:mine': { thread: { defaultFor: 'muse' } } } }, 'defaultFor must be a list'],
+    [{ roles: { 'thread:mine': { thread: { label: '' } } } }, 'thread.label must be'],
+    [{ roles: { 'thread:mine': { thread: { icon: 'x' } } } }, 'thread: unknown field icon'],
     [
       {
         roles: {
-          a: { thread: { defaultFor: ['muse'] } },
-          b: { thread: { defaultFor: ['muse'] } },
+          'thread:a': { thread: { defaultFor: ['muse'] } },
+          'thread:b': { thread: { defaultFor: ['muse'] } },
         },
       },
       'a worker has one default role',
@@ -463,10 +476,10 @@ test('instruction settings are validated: tiers, parents, cycles, sources', () =
 
 test('thread roles: coder for Claude Code and Codex, assistant for Muse; settings add roles and move defaults', () => {
   expect(threadRoles(undefined).map((role) => role.id)).toEqual([
-    'coder',
-    'assistant',
-    'forge-master',
-    'feedback',
+    'thread:coder',
+    'thread:assistant',
+    'scope:forge',
+    'scope:feedback',
   ]);
   // The scope roles say where a thread lives; they hold their scope and default no worker.
   expect(
@@ -474,59 +487,73 @@ test('thread roles: coder for Claude Code and Codex, assistant for Muse; setting
       .filter((role) => role.scope)
       .map((role) => [role.id, role.scope, role.defaultFor]),
   ).toEqual([
-    ['forge-master', 'forge', []],
-    ['feedback', 'feedback', []],
+    [FORGE_MASTER_ROLE, 'forge', []],
+    [FEEDBACK_ROLE, 'feedback', []],
   ]);
-  expect(scopeOfRole('feedback')).toBe('feedback');
-  expect(scopeOfRole('coder')).toBeUndefined();
+  expect(scopeOfRole(FEEDBACK_ROLE)).toBe('feedback');
+  expect(scopeOfRole(CODER_ROLE)).toBeUndefined();
   expect(
     defaultThreadRole(
-      { roles: { feedback: { thread: { label: 'F', defaultFor: ['muse'] } } } },
+      { roles: { [FEEDBACK_ROLE]: { thread: { label: 'F', defaultFor: ['muse'] } } } },
       'muse',
     ),
-  ).toBe('assistant');
-  expect(defaultThreadRole(undefined, 'claude-code')).toBe('coder');
-  expect(defaultThreadRole(undefined, 'codex')).toBe('coder');
-  expect(defaultThreadRole(undefined, 'muse')).toBe('assistant');
+  ).toBe(ASSISTANT_ROLE);
+  expect(defaultThreadRole(undefined, 'claude-code')).toBe(CODER_ROLE);
+  expect(defaultThreadRole(undefined, 'codex')).toBe(CODER_ROLE);
+  expect(defaultThreadRole(undefined, 'muse')).toBe(ASSISTANT_ROLE);
   // A worker no role names (an API provider) composes as coder.
-  expect(defaultThreadRole(undefined, 'anthropic')).toBe('coder');
+  expect(defaultThreadRole(undefined, 'anthropic')).toBe(CODER_ROLE);
+  const writer = roleIdIn(roleNamespace.thread, 'writer');
   const settings = {
-    roles: { writer: { thread: { label: 'Writer', defaultFor: ['muse'] } }, coder: { budget: 9 } },
+    roles: {
+      [writer]: { thread: { label: 'Writer', defaultFor: ['muse'] } },
+      [CODER_ROLE]: { budget: 9 },
+    },
   };
   // A settings role naming a worker takes it from the built-in; the built-in stays choosable.
-  expect(defaultThreadRole(settings, 'muse')).toBe('writer');
-  expect(threadRoles(settings).find((role) => role.id === 'assistant')!.defaultFor).toEqual([]);
-  expect(isThreadRole(settings, 'writer')).toBe(true);
+  expect(defaultThreadRole(settings, 'muse')).toBe(writer);
+  expect(threadRoles(settings).find((role) => role.id === ASSISTANT_ROLE)!.defaultFor).toEqual([]);
+  expect(isThreadRole(settings, writer)).toBe(true);
   // A role a thread stored that is no longer a thread role resolves to its worker's default.
-  expect(effectiveThreadRole(undefined, { role: 'writer', worker: 'muse' })).toBe('assistant');
-  expect(effectiveThreadRole(settings, { role: 'coder', worker: 'muse' })).toBe('coder');
+  expect(effectiveThreadRole(undefined, { role: writer, worker: 'muse' })).toBe(ASSISTANT_ROLE);
+  expect(effectiveThreadRole(settings, { role: CODER_ROLE, worker: 'muse' })).toBe(CODER_ROLE);
   // Built-in picks sit under settings, slot by slot; thread roles have no budget by default.
-  expect(roleComposition(undefined, 'assistant')).toMatchObject({
+  expect(roleComposition(undefined, ASSISTANT_ROLE)).toMatchObject({
     instructions: { general: ['managed', 'global'] },
     budget: Number.POSITIVE_INFINITY,
   });
-  expect(roleComposition(settings, 'coder').budget).toBe(9);
+  expect(roleComposition(settings, CODER_ROLE).budget).toBe(9);
   // On a built-in, a written thread field replaces only that field: a new label keeps Muse's default.
-  const relabelled = { roles: { assistant: { thread: { label: 'Helper' } } } };
-  expect(defaultThreadRole(relabelled, 'muse')).toBe('assistant');
-  expect(threadRoles(relabelled).find((role) => role.id === 'assistant')!.label).toBe('Helper');
+  const relabelled = { roles: { [ASSISTANT_ROLE]: { thread: { label: 'Helper' } } } };
+  expect(defaultThreadRole(relabelled, 'muse')).toBe(ASSISTANT_ROLE);
+  expect(threadRoles(relabelled).find((role) => role.id === ASSISTANT_ROLE)!.label).toBe('Helper');
   // A Warden serves every main thread of its project: its audience cap is the widest thread role's.
-  expect(roleComposition({ roles: { coder: { audience: 'team' } } }, 'naming').audience).toBe(
+  const naming = regionRoleId('naming');
+  expect(roleComposition({ roles: { [CODER_ROLE]: { audience: 'team' } } }, naming).audience).toBe(
     'team',
   );
-  expect(roleComposition(undefined, 'naming').audience).toBe('personal_private');
+  expect(roleComposition(undefined, naming).audience).toBe('personal_private');
 });
 
-test('an agent may not take a thread role id or main: it would share that composition role', () => {
+test("an agent may carry a thread role's name: its role is agent:<id>; a namespaced agent id is refused", () => {
   for (const id of ['coder', 'assistant', 'main']) {
     const config = starterConfig();
     config.agents[id] = { ...config.agents.executor!, id };
-    expect(() => validateConfig(config)).toThrow(`agents.${id}: "${id}" is a thread role`);
+    expect(() => validateConfig(config)).not.toThrow();
+    expect(roleIdOfAgent(id)).toBe(`agent:${id}`);
+    expect(roleIdOfAgent(id)).not.toBe(roleIdIn(roleNamespace.thread, id));
   }
+  // A settings thread role and an agent of the same name are two roles.
   const own = starterConfig();
-  own.composition = { roles: { writer: { thread: {} } } };
+  own.composition = { roles: { [roleIdIn(roleNamespace.thread, 'writer')]: { thread: {} } } };
   own.agents.writer = { ...own.agents.executor!, id: 'writer' };
-  expect(() => validateConfig(own)).toThrow('agents.writer');
+  expect(() => validateConfig(own)).not.toThrow();
+  // A written agent's id is a bare key: a namespace in it is refused.
+  for (const id of [CODER_ROLE, regionRoleId('x')]) {
+    const config = starterConfig();
+    config.agents[id] = { ...config.agents.executor!, id };
+    expect(() => validateConfig(config)).toThrow(`agents.${id}: an agent's id is a bare name`);
+  }
 });
 
 test("a registered ladder composes every applicable level, in order, for the thread's location", async () => {
@@ -857,7 +884,7 @@ test('a committed CLAUDE.md symlinked to a credential file or out of the reposit
     expect(text).not.toContain('OUTSIDE_NOTES');
   }
   // The refusal is reported in the Selection panel, never silently dropped.
-  const view = await composeRoleView({ ...options(repo), role: 'main' });
+  const view = await composeRoleView({ ...options(repo), role: MAIN_ROLE });
   const report = instructionStackReport(view, 'instructions', 'personal_private');
   expect(report.omitted.map((omitted) => omitted.reason)).toEqual(
     expect.arrayContaining([
@@ -900,7 +927,7 @@ test('legitimate symlinks still load: ~/.claude into ~/.config, CLAUDE.local.md 
   write(join(repo, '.claude', 'rules', 'sub', 'README.txt'), 'not a rule');
   // A file written as composition starts leaves the view unfingerprinted (re-read once); not here.
   await Bun.sleep(5);
-  const view = await composeRoleView({ ...options(repo), role: 'main' });
+  const view = await composeRoleView({ ...options(repo), role: MAIN_ROLE });
   expect(roleViewChanged(view)).toBe(false);
   write(join(repo, '.claude', 'rules', 'sub', 'new.md'), 'NEW_RULE');
   expect(roleViewChanged(view)).toBe(true);

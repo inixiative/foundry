@@ -13,6 +13,7 @@ import {
   type MemorySelectionPolicy,
   newId,
   REASONING_EFFORTS,
+  ROLE_NAMESPACE_SEPARATOR,
   registryModel,
   SUBSCRIPTION_WORKER_MODELS,
   type VersionEntry,
@@ -52,7 +53,7 @@ import {
   resolveInstructionLadder,
   validateCompositionSettings,
 } from '../prompts/instruction-settings';
-import { roleNameIn, roleNamespace } from '../prompts/role-namespace';
+import { roleIdIn, roleNameIn, roleNamespace } from '../prompts/role-namespace';
 import {
   type KingdomAccessSource,
   validateKingdomAccess,
@@ -774,7 +775,7 @@ export interface DataSourceConfig {
   /**
    * Instruction sources only (`uri` is unused): which slot of the thread's role composition the
    * source returns. Default "instructions". Who it is for is the thread role's audience, else
-   * `composition.roles.main.audience`.
+   * `composition.roles["thread:main"].audience`.
    */
   slot?: CompositionSlot;
   /** Searches the local Archive for this project; `uri` is unused. */
@@ -1326,7 +1327,7 @@ export function validateConfig(config: FoundryConfig): void {
         `composition.nodes.${id} is the project Warden brief's own node; settings may not define it`,
       );
   validateCompositionSettings(config.composition, resolveInstructionLadder(config.composition));
-  // An agent's id is its composition role: a thread role's (or main's) would be shared with it.
+  // A written agent's role is `agent:<id>` (`roleIdOfAgent`), so it can't share a thread role's.
   for (const [owner, agents] of [
     ['agents', config.agents],
     ...Object.entries(config.projects ?? {}).map(
@@ -1334,11 +1335,7 @@ export function validateConfig(config: FoundryConfig): void {
     ),
   ] as const)
     for (const id of Object.keys(agents ?? {})) {
-      if (id === MAIN_ROLE || isThreadRole(config.composition, id))
-        throw Error(
-          `${owner}.${id}: "${id}" is a thread role's composition role id (or main's); rename the agent`,
-        );
-      refuseRegionWardenId(owner, id);
+      refuseNamespacedAgentId(owner, id);
     }
   for (const [id, layer] of Object.entries(config.layers ?? {}))
     validateLayerDefinition('global layers', id, layer);
@@ -1468,11 +1465,14 @@ export function personalOnlySetting(path: string): string | undefined {
  * The repository's settings, checked by the same rules as this machine's project settings: one
  * error naming the first bad key. Machine and person settings are refused with why.
  */
-/** A written agent may not take a region Warden's id: those are generated from a project's regions. */
-function refuseRegionWardenId(owner: string, id: string): void {
-  if (roleNameIn(roleNamespace.region, id) !== undefined)
+/**
+ * A written agent's id is a bare name: its role is `agent:<id>`, and a namespaced id is a generated
+ * agent's (a region Warden's `region:<id>`), so a written one may never take it.
+ */
+function refuseNamespacedAgentId(owner: string, id: string): void {
+  if (id.includes(ROLE_NAMESPACE_SEPARATOR))
     throw Error(
-      `${owner}.${id}: the ${roleNamespace.region}: prefix names a region Warden, which a project's regions generate; rename the agent`,
+      `${owner}.${id}: an agent's id is a bare name (its role is ${roleIdIn(roleNamespace.agent, '<id>')}); a namespaced id such as ${roleNamespace.region}:… is a generated agent's; rename the agent`,
     );
 }
 
@@ -1539,7 +1539,7 @@ export function validateRepositoryProject(settings: Record<string, unknown>): vo
     if (found.length) throwHandNamed(found);
     validateAgentKinds('repository', agents);
     for (const [id, agent] of Object.entries(agents)) {
-      refuseRegionWardenId('agents', id);
+      refuseNamespacedAgentId('agents', id);
       const set = MACHINE_AGENT_FIELDS.find((field) => field in agent);
       if (set)
         throw Error(

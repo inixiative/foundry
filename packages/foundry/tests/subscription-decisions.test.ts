@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import type { NativeEvidence, NativeOwner } from '@inixiative/foundry-core';
 import { ContextStack, EventStream, type LLMProvider } from '@inixiative/foundry-core';
 import { oneCall } from '../src/agents/domain-librarian';
+import { regionRoleId } from '../src/agents/region-roster';
 import {
   buildAgents,
   buildLayers,
@@ -41,6 +42,8 @@ afterEach(async () => {
 });
 afterAll(settleRecordings);
 const LIVE_TIMEOUT = 90_000;
+/** The hand-injected domain-advising expert's id: a namespaced role id, as a region Warden's is. */
+const EXPERT = regionRoleId('expert');
 type Transport = Parameters<typeof buildNativeTextProvider>[1] & {
   launches: { argv: string[]; cwd: string; exited: boolean }[];
   writes: number;
@@ -297,8 +300,8 @@ test('actual factory classification, routing, advice, guard and learning use the
       maxDepth: 1,
       enabled: true,
     },
-    expert: {
-      id: 'expert',
+    [EXPERT]: {
+      id: EXPERT,
       kind: 'domain-librarian',
       flowRole: 'domain-advising',
       domain: 'docs',
@@ -323,7 +326,7 @@ test('actual factory classification, routing, advice, guard and learning use the
       domain: 'docs',
       prompt: 'Domain rules',
       segment: 'domain-knowledge',
-      writers: ['expert'],
+      writers: [EXPERT],
       sourceIds: ['docs-source'],
       enabled: true,
       staleness: 0,

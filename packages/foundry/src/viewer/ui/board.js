@@ -34,7 +34,7 @@ import {
   projects,
   prompts,
   resolvePrompt,
-  scopeOfRole,
+  scopeOfThread,
   selectThread,
 } from './store.js';
 import { projectKingdom, threadName } from './thread-labels.js';
@@ -59,7 +59,7 @@ const COLUMNS = [
 const OPEN = (t) => !isClosedThread(t);
 
 /** Where a follow-up to this thread goes: its scope, its project, or Global. */
-const whereOf = (thread) => scopeOfRole(thread.effectiveRole) ?? thread.meta?.projectId ?? null;
+const whereOf = (thread) => scopeOfThread(thread) ?? thread.meta?.projectId ?? null;
 
 /** "12 min", "3 h", "2 d": how long since the thread last moved. */
 function age(at) {
@@ -273,7 +273,7 @@ export function Board() {
   // A thread runs on this machine unless its meta.machine names another device.
   const valuesOf = {
     // Forge Master and Feedback threads are their scope's, never a project's or Global's.
-    project: (t) => scopeOfRole(t.effectiveRole) ?? t.meta?.projectId ?? '',
+    project: (t) => scopeOfThread(t) ?? t.meta?.projectId ?? '',
     kingdom: (t) => projectKingdom(t.meta?.projectId),
     device: (t) => otherMachine(t)?.deviceName ?? machine,
   };

@@ -86,16 +86,18 @@ export const forgeMasterOpen = signal(false);
 /** The Feedback scope is selected: its threads, with the feedback inbox beside them. */
 export const feedbackInboxOpen = signal(false);
 /**
- * Foundry's own scopes, each a thread role (Aron, 2026-11-14: "Forge Master and Feedback should just
- * be threads"): a thread with the role lives in the scope, never in a project; the daemon holds the
- * same table (`SCOPE_ROLES`).
+ * Foundry's own scopes (Aron, 2026-11-14: "Forge Master and Feedback should just be threads"): a
+ * thread whose role holds one lives in it, never in a project. The daemon owns which role holds
+ * which scope; a thread arrives with its `scope` (`forge`, `feedback`) and a new one is started with
+ * one, so the viewer never names a role id.
  */
 // Keyed `@forge` / `@feedback`, as the daemon's streams are: no project id can hold an `@`, so a
 // project named forge or feedback is never taken for the scope.
-export const SCOPE_ROLES = Object.freeze({ '@forge': 'forge-master', '@feedback': 'feedback' });
-/** The scope a thread role puts a thread in, if any. */
-export const scopeOfRole = (role) =>
-  Object.keys(SCOPE_ROLES).find((scope) => SCOPE_ROLES[scope] === role) ?? null;
+export const SCOPES = Object.freeze(['@forge', '@feedback']);
+/** Whether `where` is one of Foundry's scopes. */
+export const isScope = (where) => where != null && SCOPES.includes(where);
+/** The scope a thread lives in (`@forge`, `@feedback`), if any, from the daemon's `scope`. */
+export const scopeOfThread = (thread) => (thread?.scope ? `@${thread.scope}` : null);
 /** Where the workspace is: '@forge', '@feedback', a project id, or null (Global); `selectScope`'s argument. */
 export function currentScope() {
   if (forgeMasterOpen.value) return '@forge';
@@ -595,7 +597,7 @@ function holdFeedback() {
 /** Select a pinned scope or a project: Global (`null`), a project id, Forge Master or the Feedback inbox. */
 export function selectScope(scope) {
   batch(() => {
-    const pinned = Object.hasOwn(SCOPE_ROLES, scope ?? '');
+    const pinned = isScope(scope);
     forgeMasterOpen.value = scope === '@forge';
     feedbackInboxOpen.value = scope === '@feedback';
     if (!pinned) activeProjectId.value = scope;
@@ -794,7 +796,7 @@ function followActiveProject() {
   if (!railSpansProjects(railView.peek())) return;
   const listed = allThreads.peek().find((t) => t.threadId === activeThreadId.peek());
   if (!listed) return;
-  const scope = scopeOfRole(listed.effectiveRole);
+  const scope = scopeOfThread(listed);
   batch(() => {
     forgeMasterOpen.value = scope === '@forge';
     feedbackInboxOpen.value = scope === '@feedback';
@@ -1744,9 +1746,9 @@ export async function createThread({
   select = true,
 } = {}) {
   try {
-    const scopeRole = Object.hasOwn(SCOPE_ROLES, where ?? '') ? SCOPE_ROLES[where] : null;
-    const projectId = scopeRole ? undefined : where || undefined;
-    if (scopeRole) role = scopeRole;
+    const scope = isScope(where) ? where.slice(1) : undefined;
+    const projectId = scope ? undefined : where || undefined;
+    if (scope) role = undefined;
     const res = await authFetch('/api/threads', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1761,6 +1763,7 @@ export async function createThread({
         model,
         effort,
         role,
+        scope,
       }),
     });
     if (res.ok) {
@@ -2226,7 +2229,7 @@ async function leaveFinishedAttention(threadId, resolvedPromptId = null) {
   const { needs, red } = attentionOf(openRoots().filter((node) => node.id !== threadId));
   if (needs || red || attentionHold.peek() !== threadId) return;
   attentionHold.value = null;
-  if (listed && !scopeOfRole(listed.effectiveRole)) openProjectHome(listed.meta?.projectId ?? null);
+  if (listed && !scopeOfThread(listed)) openProjectHome(listed.meta?.projectId ?? null);
 }
 
 async function _sendInBackground(text, tid, turnId, images = [], delivery = undefined) {

@@ -1055,66 +1055,77 @@ test("a new thread takes its worker's default role, or the one chosen; the role 
   const { call } = await viewer();
   const scope = await call('GET', '/api/projects/claude/workers');
   expect(scope.body.roles).toEqual([
-    { id: 'coder', label: 'Coder' },
-    { id: 'assistant', label: 'Assistant' },
+    { id: 'thread:coder', label: 'Coder' },
+    { id: 'thread:assistant', label: 'Assistant' },
   ]);
   const workers = scope.body.workers as Array<{ id: string; defaultRole: string }>;
-  expect(workers.find((w) => w.id === 'claude-code')?.defaultRole).toBe('coder');
-  expect(workers.find((w) => w.id === 'codex')?.defaultRole).toBe('coder');
+  expect(workers.find((w) => w.id === 'claude-code')?.defaultRole).toBe('thread:coder');
+  expect(workers.find((w) => w.id === 'codex')?.defaultRole).toBe('thread:coder');
 
   const coder = await call('POST', '/api/threads', { projectId: 'claude', worker: 'codex' });
-  expect((coder.body.meta as ThreadMeta).role).toBe('coder');
-  expect(coder.body.effectiveRole).toBe('coder');
-  const chosen = await call('POST', '/api/threads', { projectId: 'claude', role: 'assistant' });
-  expect((chosen.body.meta as ThreadMeta).role).toBe('assistant');
+  expect((coder.body.meta as ThreadMeta).role).toBe('thread:coder');
+  expect(coder.body.effectiveRole).toBe('thread:coder');
+  const chosen = await call('POST', '/api/threads', {
+    projectId: 'claude',
+    role: 'thread:assistant',
+  });
+  expect((chosen.body.meta as ThreadMeta).role).toBe('thread:assistant');
   const id = chosen.body.threadId as string;
   const launch = await call('GET', `/api/threads/${id}/launch`);
-  expect(launch.body).toMatchObject({ role: 'assistant', effectiveRole: 'assistant' });
+  expect(launch.body).toMatchObject({
+    role: 'thread:assistant',
+    effectiveRole: 'thread:assistant',
+  });
   expect((launch.body.options as { roles: unknown[] }).roles).toHaveLength(2);
 
   const refused = await call('POST', '/api/threads', { projectId: 'claude', role: 'pilot' });
   expect(refused.status).toBe(400);
   expect(refused.body.error).toContain('pilot is not a thread role');
 
-  const changed = await call('PATCH', `/api/threads/${id}`, { role: 'coder' });
+  const changed = await call('PATCH', `/api/threads/${id}`, { role: 'thread:coder' });
   expect(changed.status).toBe(200);
-  expect((changed.body.meta as ThreadMeta).role).toBe('coder');
+  expect((changed.body.meta as ThreadMeta).role).toBe('thread:coder');
   expect((await call('PATCH', `/api/threads/${id}`, { role: 'pilot' })).status).toBe(400);
   // Null follows the worker's default again (a record with no role resolves at read time).
   const cleared = await call('PATCH', `/api/threads/${id}`, { role: null });
   expect((cleared.body.meta as ThreadMeta).role).toBeUndefined();
-  expect(cleared.body.effectiveRole).toBe('coder');
+  expect(cleared.body.effectiveRole).toBe('thread:coder');
 });
 
 test('Forge Master and Feedback threads live in their own scope: no project, never moved in or out, listed apart', async () => {
   const { call } = await viewer();
   // A scope is chosen by where the thread goes, never offered as a role beside coder and assistant.
   const roles = (await call('GET', '/api/workers')).body.roles as Array<{ id: string }>;
-  expect(roles.map((r) => r.id)).toEqual(['coder', 'assistant']);
+  expect(roles.map((r) => r.id)).toEqual(['thread:coder', 'thread:assistant']);
 
-  const forge = await call('POST', '/api/threads', { role: 'forge-master' });
+  const forge = await call('POST', '/api/threads', { role: 'scope:forge' });
   expect(forge.status).toBe(201);
   expect((forge.body.meta as ThreadMeta).projectId).toBeUndefined();
-  expect(forge.body.effectiveRole).toBe('forge-master');
-  const feedback = await call('POST', '/api/threads', { role: 'feedback' });
+  expect(forge.body.effectiveRole).toBe('scope:forge');
+  const feedback = await call('POST', '/api/threads', { role: 'scope:feedback' });
   const global = await call('POST', '/api/threads', {});
 
-  const inProject = await call('POST', '/api/threads', { projectId: 'claude', role: 'feedback' });
+  const inProject = await call('POST', '/api/threads', {
+    projectId: 'claude',
+    role: 'scope:feedback',
+  });
   expect(inProject.status).toBe(400);
   expect(inProject.body.error).toContain("Foundry's own scope");
 
   // A role change never moves a thread into or out of a scope.
-  const into = await call('PATCH', `/api/threads/${global.body.threadId}`, { role: 'feedback' });
+  const into = await call('PATCH', `/api/threads/${global.body.threadId}`, {
+    role: 'scope:feedback',
+  });
   expect(into.status).toBe(400);
   expect(into.body.error).toContain('keeps its scope');
-  const out = await call('PATCH', `/api/threads/${forge.body.threadId}`, { role: 'coder' });
+  const out = await call('PATCH', `/api/threads/${forge.body.threadId}`, { role: 'thread:coder' });
   expect(out.status).toBe(400);
   // Nor is it given a branch, a worktree, or a parent from elsewhere.
-  expect((await call('POST', '/api/threads', { role: 'forge-master', branch: 'b' })).status).toBe(
+  expect((await call('POST', '/api/threads', { role: 'scope:forge', branch: 'b' })).status).toBe(
     400,
   );
   const adopted = await call('POST', '/api/threads', {
-    role: 'forge-master',
+    role: 'scope:forge',
     parentThreadId: global.body.threadId,
   });
   expect(adopted.status).toBe(400);
@@ -1144,36 +1155,39 @@ test('a settings role can default a worker and is offered beside the built-ins',
   const { call, store } = await viewer();
   await store.update((draft) => {
     draft.composition = {
-      roles: { reviewer: { thread: { label: 'Reviewer', defaultFor: ['codex'] } } },
+      roles: { 'thread:reviewer': { thread: { label: 'Reviewer', defaultFor: ['codex'] } } },
     };
   });
   const scope = await call('GET', '/api/projects/claude/workers');
   expect((scope.body.roles as Array<{ id: string }>).map((r) => r.id)).toEqual([
-    'coder',
-    'assistant',
-    'reviewer',
+    'thread:coder',
+    'thread:assistant',
+    'thread:reviewer',
   ]);
   const created = await call('POST', '/api/threads', { projectId: 'claude', worker: 'codex' });
-  expect((created.body.meta as ThreadMeta).role).toBe('reviewer');
+  expect((created.body.meta as ThreadMeta).role).toBe('thread:reviewer');
 });
 
 test("a worker switch moves a thread on its old worker's default role to the new worker's; a chosen role stays", async () => {
   const { call, store } = await viewer();
   // Muse needs a login here; a settings role defaulting codex stands in for the assistant.
   await store.update((draft) => {
-    draft.composition = { roles: { reviewer: { thread: { defaultFor: ['codex'] } } } };
+    draft.composition = { roles: { 'thread:reviewer': { thread: { defaultFor: ['codex'] } } } };
   });
   const defaulted = await call('POST', '/api/threads', { projectId: 'claude' });
   const id = defaulted.body.threadId as string;
-  expect((defaulted.body.meta as ThreadMeta).role).toBe('coder');
+  expect((defaulted.body.meta as ThreadMeta).role).toBe('thread:coder');
   const switched = await call('PATCH', `/api/threads/${id}`, { worker: 'codex' });
   expect(switched.status).toBe(200);
-  expect((switched.body.meta as ThreadMeta).role).toBe('reviewer');
+  expect((switched.body.meta as ThreadMeta).role).toBe('thread:reviewer');
 
-  const chosen = await call('POST', '/api/threads', { projectId: 'claude', role: 'assistant' });
+  const chosen = await call('POST', '/api/threads', {
+    projectId: 'claude',
+    role: 'thread:assistant',
+  });
   const other = chosen.body.threadId as string;
   const kept = await call('PATCH', `/api/threads/${other}`, { worker: 'codex' });
-  expect((kept.body.meta as ThreadMeta).role).toBe('assistant');
+  expect((kept.body.meta as ThreadMeta).role).toBe('thread:assistant');
   // A refused role leaves the worker as it was.
   const refused = await call('PATCH', `/api/threads/${other}`, {
     worker: 'claude-code',
