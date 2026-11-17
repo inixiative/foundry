@@ -14,6 +14,7 @@ import {
   Thread,
 } from '@inixiative/foundry-core';
 import { ProjectRegistry } from '../src/agents/project';
+import { LocalSessionStore } from '../src/persistence/local-session-store';
 import { pairKingdomIntegration } from '../src/providers/kingdom-pairing';
 import { ConfigStore } from '../src/viewer/config';
 import { createViewer, startViewer } from '../src/viewer/server';
@@ -30,7 +31,13 @@ afterEach(async () => {
 });
 
 /** A viewer whose `main` executor streams "first " then waits for `release()` before "second". */
-function fixture(options: { actionQueue?: ActionQueue; tunnelToken?: string } = {}) {
+function fixture(
+  options: {
+    actionQueue?: ActionQueue;
+    tunnelToken?: string;
+    taskSources?: Parameters<typeof createViewer>[0]['taskSources'];
+  } = {},
+) {
   const dir = mkdtempSync(join(tmpdir(), 'foundry-data-streams-'));
   let release!: () => void;
   let hold = new Promise<void>((resolve) => {
@@ -62,9 +69,11 @@ function fixture(options: { actionQueue?: ActionQueue; tunnelToken?: string } = 
     eventStream: events,
     interventions: new InterventionLog(),
     configDir: dir,
-    localStore: null,
+    // why: task sources are observed only beside a journal.
+    localStore: options.taskSources ? new LocalSessionStore(':memory:') : null,
     projectRegistry: projects,
     actionQueue: options.actionQueue,
+    ...(options.taskSources ? { taskSources: options.taskSources } : {}),
     ...(options.tunnelToken
       ? { tunnel: { port: 4500, token: options.tunnelToken, configDir: dir } }
       : {}),
@@ -467,6 +476,43 @@ test('the thread list carries each thread’s newest turn status, with nobody wa
     lastTurn: { status: 'completed' },
   });
   expect(f.viewer.socket.streams.isOpen('thread:main')).toBe(false);
+});
+
+test('the thread list carries how many background jobs a thread still has running', async () => {
+  let sink!: Parameters<
+    NonNullable<Parameters<typeof createViewer>[0]['taskSources']>[number]['observeTasks']
+  >[0];
+  const f = fixture({
+    taskSources: [
+      {
+        observeTasks: (taskSink) => {
+          sink = taskSink;
+          return () => {};
+        },
+      },
+    ],
+  });
+  const list = connectStreams(f.viewer);
+  await list.open('threads');
+  sink('main', { phase: 'started', taskId: 'shell-1', taskType: 'local_bash' }, 1);
+  await list.next(
+    (frame) =>
+      frame.payload?.thread?.threadId === 'main' &&
+      frame.payload.thread.backgroundJobsRunning === 1,
+    'the list sees the job running',
+  );
+  sink(
+    'main',
+    { phase: 'ended', taskId: 'shell-1', taskType: 'local_bash', status: 'completed' },
+    2,
+  );
+  const ended = await list.next(
+    (frame) =>
+      frame.payload?.thread?.threadId === 'main' &&
+      frame.payload.thread.backgroundJobsRunning === undefined,
+    'the list sees the job end',
+  );
+  expect(ended.payload.thread.backgroundJobsRunning).toBeUndefined();
 });
 
 test('prompts stream carries pending prompts and their settlement', async () => {

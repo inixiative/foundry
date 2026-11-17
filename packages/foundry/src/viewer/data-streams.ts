@@ -100,6 +100,8 @@ export function createViewerStreams(deps: {
   conversation?: (threadId: string) => Record<string, unknown> | undefined;
   /** The mode a thread's executor launches in (its list row marks Dangerous ones). */
   permissionMode?: (threadId: string) => string | undefined;
+  /** How many background jobs the thread's agent left running (its row reads them while no turn runs). */
+  backgroundJobsRunning?: (threadId: string) => number;
   /** The thread role a thread composes as (its own, else its worker's default). */
   threadRole?: (thread: Thread) => string;
   /** A thread of this project was opened (`thread:<id>`). */
@@ -205,6 +207,7 @@ export function createViewerStreams(deps: {
             conversation?: unknown;
             lastTurn?: unknown;
             permissionMode?: string;
+            backgroundJobsRunning?: number;
           };
         }
       >();
@@ -219,11 +222,13 @@ export function createViewerStreams(deps: {
           const conversation = deps.conversation?.(id);
           const turn = lastTurn(id);
           const permissionMode = deps.permissionMode?.(id);
+          const backgroundJobsRunning = deps.backgroundJobsRunning?.(id) ?? 0;
           const json = {
               ...threadToJSON(found, deps.threadRole?.(found)),
               ...(conversation ? { conversation } : {}),
               ...(turn ? { lastTurn: turn } : {}),
               ...(permissionMode ? { permissionMode } : {}),
+              ...(backgroundJobsRunning ? { backgroundJobsRunning } : {}),
             },
             text = JSON.stringify(json);
           if (sent.get(id)?.text === text) continue;

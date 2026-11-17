@@ -35,6 +35,8 @@ const CUTS = {
   lock:
     cut('M5.3 6.4V5.3a1.7 1.7 0 0 1 3.4 0v1.1', 1.4) +
     `<rect x="4.2" y="6.2" width="5.6" height="4.2" rx=".9" fill="${KNOCK}"/>`,
+  // A shell prompt: a background job the agent left running.
+  prompt: cut('M4 4.8 6.2 7 4 9.2', 1.6) + cut('M7.4 9.6h2.8', 1.6),
   lines: cut('M4.2 4.9h5.6M4.2 7.1h5.6M4.2 9.3h3.4', 1.4),
   check: cut('M4.2 7.2 6.1 9.1 9.9 5', 1.8),
   dash: cut('M4.3 7h5.4', 1.9),
@@ -62,7 +64,12 @@ export const CATEGORIES = [
     means: 'Needs your attention. Not an error.',
   },
   { id: 'working', token: '--st-working', name: 'Green', means: 'Working.' },
-  { id: 'queued', token: '--st-queued', name: 'Light yellow', means: 'Queued: it will run.' },
+  {
+    id: 'queued',
+    token: '--st-queued',
+    name: 'Light yellow',
+    means: 'Waiting on something running: a queued turn or a background job.',
+  },
   { id: 'done', token: '--st-done', name: 'Light blue', means: 'Done.' },
   {
     id: 'idle',
@@ -104,6 +111,7 @@ export const STATES = {
   },
   working: { cat: 'working', cut: 'bars', label: 'Working' },
   subagents: { cat: 'working', cut: 'branch', label: 'Subagents working' },
+  background: { cat: 'queued', cut: 'prompt', label: 'Background job running' },
   waitother: { cat: 'working', cut: 'notch', label: 'In motion, not by you' },
   queued: { cat: 'queued', cut: 'lines', label: 'Queued' },
   done: { cat: 'done', cut: 'check', label: 'Done' },

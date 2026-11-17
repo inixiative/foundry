@@ -83,6 +83,14 @@ export class RunningTasks {
     ].map((e) => this.view(threadId, e));
   }
 
+  /** How many of the thread's background processes are still running (its status reads them). */
+  runningCount(threadId: string): number {
+    let count = 0;
+    for (const entry of this.threads.get(threadId)?.values() ?? [])
+      if (entry.endedAt === undefined) count += 1;
+    return count;
+  }
+
   /** Background processes still running, across threads: a restart stops them. */
   active(): Array<{ threadId: string; label: string }> {
     const found: Array<{ threadId: string; label: string }> = [];
