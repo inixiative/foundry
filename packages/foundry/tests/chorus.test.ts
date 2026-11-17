@@ -1,3 +1,4 @@
+import './helpers/isolate-archive';
 // A project's chorus (`projects[id].chorus`): its Wardens generated from layers of concept regions, each
 // Warden's knowledge the region's knowledge.md in full, under the classifier charter, with a warm-cache key.
 
@@ -66,7 +67,7 @@ import { contentHash } from '../src/persistence/journal-content';
 import { LocalSessionStore } from '../src/persistence/local-session-store';
 import { DEFAULT_ROLE_BUDGET, roleComposition } from '../src/prompts/instruction-settings';
 import { DECISION_INPUT_CAP } from '../src/providers/decision-budget';
-import { describeReadinessChorus } from '../src/readiness';
+import { describeReadinessChorus, inspectReadiness } from '../src/readiness';
 import { type FoundryConfig, starterConfig, validateConfig } from '../src/viewer/config';
 import { resolveProjectView } from '../src/viewer/config-resolve';
 
@@ -343,7 +344,8 @@ test("a project's chorus is one generated Warden per region of .foundry/regions,
     ...c.composition!.nodes,
     [WARDEN_BRIEF_NODE]: { scope: 'project', personal: false, sources: [] },
   };
-  expect(() => resolveProjectView(c, 'P')).toThrow('the project Warden brief');
+  // Refused when settings are written: the brief's nodes are Foundry's.
+  expect(() => validateConfig(c)).toThrow("is the project Warden brief's own node");
 });
 
 test("a region Warden composes the charter's instructions, the project's Warden brief and its region, never CLAUDE.md", async () => {
@@ -871,9 +873,19 @@ test('settings declare no Wardens: a hand-named one is refused by name with the 
     join(regions, 'orphan', 'region.json'),
     JSON.stringify({ id: 'other', title: 'O', routing: 'r' }),
   );
-  expect(() => resolveProjectView(c, 'P')).toThrow('differs from its directory');
+  // A malformed region names itself, and never stops the daemon: the project has no Wardens, and says why.
+  const notBuilt = () => {
+    const chorus = resolveProjectView(c, 'P')!.chorus;
+    expect(chorus.on).toBe(false);
+    expect(configuredExperts(resolveProjectView(c, 'P')!.config).experts).toEqual([]);
+    return chorus.reason;
+  };
+  expect(notBuilt()).toContain('the Wardens are not built: ');
+  expect(notBuilt()).toContain('differs from its directory');
   write(join(regions, 'orphan', 'region.json'), JSON.stringify({ id: 'orphan', title: 'O' }));
-  expect(() => resolveProjectView(c, 'P')).toThrow('needs a "routing" line');
+  expect(notBuilt()).toContain('needs a "routing" line');
+  // Every other project still resolves, and validating the whole settings does not throw.
+  expect(() => validateConfig(c)).not.toThrow();
   rmSync(join(regions, 'orphan'), { recursive: true });
   // A region named like a global agent is its own Warden (`region:worker`), and no written agent
   // may take a Warden's id.
@@ -1246,4 +1258,71 @@ test('a settings file holding a whole roster names every hand-named Warden in on
   expect(() => validateConfig(c)).toThrow(
     'agents.librarian-a is a hand-named Warden (domain-librarian); agents.librarian-b is a hand-named Warden (domain-librarian); projects.P.agents.librarian-c is a hand-named Warden (domain-librarian): the hand-named Warden roster is retired',
   );
+});
+
+test("settings may not take a region's source id, and the brief's nodes are refused with the chorus off too", () => {
+  const { project } = projectWithRegions();
+  const c = config(project);
+  c.sources = {
+    [regionSourceId('lens-model')]: {
+      id: regionSourceId('lens-model'),
+      label: 'a hand-written source',
+      type: 'markdown',
+      uri: join(project, 'notes.md'),
+      enabled: true,
+    },
+  };
+  expect(() => validateConfig(c)).toThrow("the region: prefix names a region's own docs");
+  c.sources = {};
+  c.composition!.nodes = {
+    ...c.composition!.nodes,
+    [WARDEN_BRIEF_NODE]: { scope: 'project', personal: false, sources: [] },
+  };
+  // A repository turning its chorus on later must not be what fails a boot.
+  write(join(project, '.foundry', 'project.json'), JSON.stringify({ chorus: { enabled: false } }));
+  expect(() => validateConfig(c)).toThrow("is the project Warden brief's own node");
+});
+
+test("one project's unreadable regions leave only it without Wardens: the others run, and the doctor says so", async () => {
+  const { project } = projectWithRegions();
+  const healthy = projectWithRegions().project;
+  const c = config(project);
+  c.projects.Q = { id: 'Q', path: healthy };
+  write(
+    join(project, '.foundry', 'regions', 'orphan', 'region.json'),
+    JSON.stringify({ id: 'other', title: 'O', routing: 'r' }),
+  );
+  write(join(project, '.foundry', 'regions', 'orphan', 'knowledge.md'), 'x');
+  expect(() => validateConfig(c)).not.toThrow();
+  expect(resolveProjectView(c, 'P')!.chorus).toMatchObject({
+    on: false,
+    unreadable: expect.stringContaining('differs from its directory'),
+  });
+  expect(resolveProjectView(c, 'Q')!.chorus.on).toBe(true);
+  const report = await inspectReadiness(c, { environment: {}, which: () => null });
+  expect(report.issues).toContainEqual(
+    expect.objectContaining({ severity: 'error', scope: 'P', code: 'regions-unreadable' }),
+  );
+  expect(report.issues.some((i) => i.scope === 'Q' && i.code === 'regions-unreadable')).toBe(false);
+});
+
+test('a regions directory that cannot be read is no failed boot, with the chorus on or off', () => {
+  const { project, regions } = projectWithRegions();
+  const c = config(project);
+  chmodSync(regions, 0o000);
+  try {
+    expect(() => validateConfig(c)).not.toThrow();
+    expect(resolveProjectView(c, 'P')!.chorus).toMatchObject({
+      on: false,
+      unreadable: expect.stringContaining('could not be read'),
+    });
+    write(
+      join(project, '.foundry', 'project.json'),
+      JSON.stringify({ chorus: { enabled: false } }),
+    );
+    expect(() => validateConfig(c)).not.toThrow();
+    expect(resolveProjectView(c, 'P')!.chorus.unreadable).toContain('could not be read');
+  } finally {
+    chmodSync(regions, 0o755);
+  }
 });

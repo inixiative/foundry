@@ -140,7 +140,32 @@ export function chorusLayers(
  * id. A missing directory is no regions. A region whose files are malformed is an error, named: the
  * chorus is never silently short.
  */
+/**
+ * A project's regions could not be read: a region's files are malformed, or the directory is not
+ * readable. Config resolution turns it into a project without Wardens, the message as the reason
+ * (a repository's files never stop the daemon); every other error is a bug and still throws.
+ */
+export class RegionsUnreadable extends Error {
+  override readonly name = 'RegionsUnreadable';
+}
+
+/** Runs `read` over `dir`, any failure of it a `RegionsUnreadable` that names the directory. */
+const readingRegions = <T>(dir: string, read: () => T): T => {
+  try {
+    return read();
+  } catch (error) {
+    if (error instanceof RegionsUnreadable) throw error;
+    throw new RegionsUnreadable(
+      `regions at ${dir} could not be read (${(error as Error).message})`,
+    );
+  }
+};
+
 export function readRegions(dir: string): RegionSummary[] {
+  return readingRegions(dir, () => readRegionFiles(dir));
+}
+
+function readRegionFiles(dir: string): RegionSummary[] {
   if (!existsSync(dir) || !statSync(dir).isDirectory()) return [];
   const regions: RegionSummary[] = [];
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -149,20 +174,24 @@ export function readRegions(dir: string): RegionSummary[] {
     const knowledgePath = join(dir, entry.name, 'knowledge.md');
     if (!existsSync(path)) continue;
     if (!existsSync(knowledgePath))
-      throw Error(`region ${entry.name} at ${dir} has a region.json but no knowledge.md`);
+      throw new RegionsUnreadable(
+        `region ${entry.name} at ${dir} has a region.json but no knowledge.md`,
+      );
     const knowledge = statSync(knowledgePath);
     if (!knowledge.isFile())
-      throw Error(`region ${entry.name} at ${dir}: knowledge.md is not a regular file`);
+      throw new RegionsUnreadable(
+        `region ${entry.name} at ${dir}: knowledge.md is not a regular file`,
+      );
     // Its source would load an oversized file as nothing: a Warden with no knowledge, never silently.
     if (knowledge.size > INSTRUCTION_FILE_LIMIT)
-      throw Error(
+      throw new RegionsUnreadable(
         `region ${entry.name} at ${dir}: knowledge.md is ${knowledge.size} bytes, over the ${INSTRUCTION_FILE_LIMIT}-byte limit an instruction file loads`,
       );
     let raw: unknown;
     try {
       raw = JSON.parse(readFileSync(path, 'utf8'));
     } catch (error) {
-      throw Error(
+      throw new RegionsUnreadable(
         `region ${entry.name} at ${dir}: region.json is not JSON (${(error as Error).message})`,
       );
     }
@@ -175,30 +204,30 @@ export function readRegions(dir: string): RegionSummary[] {
       tokens?: unknown;
     } | null;
     if (!r || typeof r !== 'object')
-      throw Error(`region ${entry.name} at ${dir}: region.json is not an object`);
+      throw new RegionsUnreadable(`region ${entry.name} at ${dir}: region.json is not an object`);
     // How a region is classified is the chorus's setting, per role (Aron, 2026-10-18: "let's try and
     // start without that"): refused by name, so a region never silently classifies differently.
     for (const key of ['stages', 'charter'])
       if (key in r)
-        throw Error(
+        throw new RegionsUnreadable(
           `region ${entry.name} at ${dir}: region.json "${key}" is not a region setting; a chorus sets its stages per role (chorus.wardens.stages), and charters are Foundry's`,
         );
     if (r.role !== undefined && r.role !== 'warden' && r.role !== 'herald')
-      throw Error(
+      throw new RegionsUnreadable(
         `region ${entry.name} at ${dir}: region.json "role" must be "warden" or "herald"`,
       );
     if (!isIdName(r.id))
-      throw Error(
+      throw new RegionsUnreadable(
         `region ${entry.name} at ${dir}: region.json needs an "id" (letters, digits, _ . -)`,
       );
     if (r.id !== entry.name)
-      throw Error(
+      throw new RegionsUnreadable(
         `region ${entry.name} at ${dir}: region.json id ${JSON.stringify(r.id)} differs from its directory`,
       );
     if (typeof r.title !== 'string' || !r.title.trim())
-      throw Error(`region ${r.id} at ${dir}: region.json needs a "title"`);
+      throw new RegionsUnreadable(`region ${r.id} at ${dir}: region.json needs a "title"`);
     if (typeof r.routing !== 'string' || !r.routing.trim())
-      throw Error(`region ${r.id} at ${dir}: region.json needs a "routing" line`);
+      throw new RegionsUnreadable(`region ${r.id} at ${dir}: region.json needs a "routing" line`);
     const concepts = Array.isArray(r.concepts)
       ? r.concepts.filter((c): c is string => typeof c === 'string')
       : [];
@@ -226,10 +255,12 @@ export function readRegions(dir: string): RegionSummary[] {
 
 /** How many regions `dir` holds (subdirectories with a `region.json`), without reading them. */
 export function countRegions(dir: string): number {
-  if (!existsSync(dir) || !statSync(dir).isDirectory()) return 0;
-  return readdirSync(dir, { withFileTypes: true }).filter(
-    (entry) => entry.isDirectory() && existsSync(join(dir, entry.name, 'region.json')),
-  ).length;
+  return readingRegions(dir, () => {
+    if (!existsSync(dir) || !statSync(dir).isDirectory()) return 0;
+    return readdirSync(dir, { withFileTypes: true }).filter(
+      (entry) => entry.isDirectory() && existsSync(join(dir, entry.name, 'region.json')),
+    ).length;
+  });
 }
 
 /**
