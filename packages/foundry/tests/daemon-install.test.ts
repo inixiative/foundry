@@ -2,8 +2,8 @@ import { expect, test } from 'bun:test';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { daemonPlistPath } from '../src/client/daemon';
-import { installedDaemon, type Launchctl, replaceService } from '../src/daemon/install';
+import { daemonPlistPath, installedDaemon } from '../src/client/daemon';
+import { type Launchctl, replaceService } from '../src/daemon/install';
 import { buildPlist } from '../src/daemon/plist';
 
 test.skipIf(process.platform !== 'darwin')(

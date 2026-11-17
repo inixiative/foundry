@@ -67,7 +67,7 @@ function daemon(path: string, dir: string, gates: Map<string, Promise<void>>) {
   );
   turnsRef = turns;
   turns.onSettled(() => roll.check());
-  registerDaemonUpdateRoutes(app, roll, () => 'Main thread');
+  registerDaemonUpdateRoutes(app, roll, () => 'Main thread', dir);
   const offer = () => roll.offerUpdate({ candidate: 'cand', restart: () => restarts.push('cand') });
   return { app, store, turns, roll, ran, restarts, offer };
 }

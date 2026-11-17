@@ -3,12 +3,15 @@ import { join } from 'node:path';
 import { type PrefilterSettings, resolvePrefilterSettings } from '../providers/warden-prefilter';
 import { ConfigStore, starterConfig } from '../viewer/config';
 
+export { installedConfigDirectory, installedDaemon } from '../client/daemon';
 export {
   installPrefilterModel,
   prefilterInstalled,
 } from '../providers/prefilter-model';
 export { WardenPrefilter } from '../providers/warden-prefilter';
-export { DAEMON_LOG_DIR, daemonLoaded, installDaemon, installedDaemon } from './install';
+export { readHold } from './boot-record';
+export { daemonLoaded, installDaemon } from './install';
+export { DAEMON_LOG_DIR } from './plist';
 
 /** An installed Foundry's home gets the starter settings a first start would write. */
 export async function ensureStarterSettings(home: string): Promise<boolean> {

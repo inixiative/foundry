@@ -4,14 +4,8 @@ import { mkdtemp, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { $ } from 'bun';
-import {
-  readState,
-  recordBoot,
-  rejectCandidate,
-  releaseDir,
-  selectRelease,
-  stageUpdate,
-} from './update';
+import { readState } from '../../packages/foundry/src/daemon/release-state';
+import { recordBoot, rejectCandidate, releaseDir, selectRelease, stageUpdate } from './update';
 
 const prepare = async () => {};
 const identity = {

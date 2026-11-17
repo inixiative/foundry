@@ -881,6 +881,8 @@ function connectStreams() {
     onStatus: (status) => {
       connected.value = status === 'open';
       if (status === 'open') return;
+      // While the daemon is gone its port serves the status page, whose boot id reloads this page there.
+      void loadUpdateState();
       // Live work on a dropped connection is unconfirmed until a fresh snapshot says otherwise.
       for (const threadId of liveTurns.keys()) {
         const rows = _threadMessages[threadId];
@@ -1591,8 +1593,9 @@ export async function loadUpdateState() {
   } catch {
     /* restarting: the next poll after reconnect reads the new daemon */
   }
-  // Every few seconds while a restart is coming, so the count and the reconnect follow it.
-  const fast = restartHolding.value;
+  // Every few seconds while a restart is coming or the connection is down, so the count and the
+  // reconnect follow it, and a daemon that went away hands this tab to its status page.
+  const fast = restartHolding.value || !connected.value;
   if (!updatePoll || fast !== updatePoll.fast) {
     if (updatePoll) clearInterval(updatePoll.timer);
     updatePoll = { fast, timer: setInterval(loadUpdateState, fast ? 3000 : 30000) };
