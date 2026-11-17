@@ -62,6 +62,7 @@ import {
   TokenTracker,
 } from '../../packages/core/src';
 import { FileMemory } from '../../packages/core/src/adapters/file-memory';
+import { degradedAnswer } from '../../packages/foundry/src/agents/chorus-degraded';
 import { CHORUS_RECEPTION_VERSION } from '../../packages/foundry/src/agents/chorus-reception';
 import { composeProjectRoster } from '../../packages/foundry/src/agents/chorus-thread';
 import { createSourceResolver } from '../../packages/foundry/src/agents/thread-factory';
@@ -87,6 +88,7 @@ import { processTreeRssMb } from '../../packages/foundry/src/providers/process-t
 import { resolveSubscriptionPolicy } from '../../packages/foundry/src/providers/subscription-policy';
 import { ConfigStore } from '../../packages/foundry/src/viewer/config';
 import { resolveProjectView } from '../../packages/foundry/src/viewer/config-resolve';
+import { heldSpares, hostSizing, watchHost } from './host-probe';
 
 const { values } = parseArgs({
   options: {
@@ -124,8 +126,8 @@ const messages = values['message-file'].map((file) => readFileSync(file, 'utf8')
 const gapMs = values['gap-ms'] === undefined ? 0 : Number(values['gap-ms']);
 if (!Number.isSafeInteger(gapMs) || gapMs < 0) throw Error('--gap-ms must be a whole number of ms');
 const concurrent = values.concurrent === true;
-if (concurrent && (messages.length < 2 || values.prime || values['gap-ms']))
-  throw Error('--concurrent needs two or more messages, no --prime, no --gap-ms');
+if (concurrent && (values.prime || values['gap-ms']))
+  throw Error('--concurrent needs no --prime, no --gap-ms');
 // A few messages are never a wide run; a named design is checked and recorded.
 const experiment = requireExperiment(values.experiment, messages.length > 3);
 
@@ -609,6 +611,23 @@ try {
   }, 2_000);
   if (concurrent) {
     const UNHEARD = new Set<string>(['timeout', 'error', 'excluded']);
+    const host = projectHosts?.serving(`${values.session ?? 'chorus-advise'}:1`);
+    if (!host || host === 'starting') throw Error('--concurrent: the project host is not serving');
+    const size = Number((hostReport.setup as { roster: number }).roster);
+    const sizing = hostSizing(host);
+    // Every role's spares held before the batch, or a settle cap recorded instead (design B3).
+    const wantHeld = size * Number(sizing.sparesPerRole);
+    const settleFrom = Date.now();
+    while (heldSpares(host).total < wantHeld && Date.now() - settleFrom < 120_000)
+      await Bun.sleep(250);
+    hostReport.sizing = sizing;
+    hostReport.atSend = {
+      wantHeld,
+      settleMs: Date.now() - settleFrom,
+      ...heldSpares(host),
+    };
+    console.error(`[project-wardens] at send ${JSON.stringify(hostReport.atSend)}`);
+    const watch = watchHost(host);
     // Every message at once, each its own thread, into the one host: the batch shares the tracker
     // and the host's call outcomes, so those are the batch's in every message's record.
     hostCalls.push([]);
@@ -640,6 +659,11 @@ try {
       }),
     );
     const batchEnd = Date.now();
+    const { perCall, samples, ...watched } = watch.stop();
+    hostReport.watched = watched;
+    writeFileSync(join(out, 'host-calls.json'), JSON.stringify({ perCall, samples }, null, 2), {
+      mode: 0o600,
+    });
     const after = await recordWindows('after');
     const calls = hostCalls.at(-1) ?? [];
     const batch = {
@@ -660,12 +684,35 @@ try {
         wardens: advice.decisions.length,
         // A Warden with no answer by the deadline, an error, or left out: what a degraded notice counts.
         unheard: advice.decisions.filter((d) => UNHEARD.has(d.decision)).length,
+        // Each degraded Warden by kind and layer (`timeout:L1`, `error:L2`, `not-started:L?`), and
+        // how many of the errors are the subscription provider's own failure.
+        unheardBy: advice.decisions.reduce<Record<string, number>>((by, d) => {
+          const g = degradedAnswer(d);
+          if (!g) return by;
+          const key = `${g.kind}:L${g.layer ?? '?'}${g.silent ? '' : ':spoke'}`;
+          return { ...by, [key]: (by[key] ?? 0) + 1 };
+        }, {}),
+        subscriptionFailed: advice.decisions.filter((d) =>
+          /Subscription decision (failed|rate limited)/.test(
+            `${d.reason ?? ''} ${JSON.stringify(d.classified?.stages ?? [])}`,
+          ),
+        ).length,
         layer1Ms: pcts(layer1),
         windows: { before: before ?? null, after: after ?? null },
       });
       writeChorus(dir, n, advice, startedAt, before, after);
     }
-    hostReport.batch = { ...batch, elapsedMs: batchEnd - sendAt };
+    hostReport.batch = {
+      ...batch,
+      elapsedMs: batchEnd - sendAt,
+      // Layer 1 calls the project host never took went to primed sessions (fail-open), as serial counts it.
+      failOpen: Math.max(
+        0,
+        sent.reduce((sum, { advice }) => sum + advice.decisions.length, 0) - watched.calls,
+      ),
+      // In concurrent mode the token tracker is shared: per-message tokens are batch totals.
+      tokensAreBatchTotals: true,
+    };
     refills.push(timeRefill(hostReport.batch as Record<string, unknown>, sendAt, messages.length));
   }
   for (let n = 0; !concurrent && n < messages.length; n++) {
