@@ -55,7 +55,7 @@ import {
   type SignalBus,
 } from '@inixiative/foundry-core';
 import { type ClassifiedSummary, classifiedSummary, type WardenPointer } from '../classify';
-import { DECISION_DEADLINE_MS } from '../providers/decision-budget';
+import { DECISION_DEADLINE_MS, NOT_HELD_REFUSAL } from '../providers/decision-budget';
 import {
   type PrefilterOutcome,
   type PrefilterSkip,
@@ -68,6 +68,7 @@ import {
   activityTools,
   type CacheComposition,
   type DomainLibrarian,
+  type EarlierMessages,
   type GuardCallEvidence,
   type GuardFinding,
   type GuardResult,
@@ -77,6 +78,7 @@ import {
   type TurnActivity,
 } from './domain-librarian';
 import type { Librarian } from './librarian';
+import { WardenCatchUp } from './warden-catch-up';
 import type { AdviceTrigger, TriggerPoint } from './warden-triggers';
 import { clipMomentText } from './work-items';
 
@@ -158,6 +160,10 @@ export interface DomainContribution {
   readonly classified?: ClassifiedSummary;
   /** The exact input of every stage past the first (the first is `request`), each with its own composition. */
   readonly stageRequests?: readonly ParticipantRequest[];
+  /** Skipped unsent on a user message (`not-held`): asked on it with the next one, so not degraded. */
+  readonly catchesUp?: true;
+  /** The missed user messages it was asked on with this one (`user-message` only). */
+  readonly earlier?: { readonly count: number; readonly dropped: number };
 }
 
 /** The immutable input every participant assessed. */
@@ -544,6 +550,8 @@ export class FlowOrchestrator {
    * running turn (CLAUDE.md, Communication Channels).
    */
   private _pendingNotes: PromptBlock[] = [];
+  /** Each Warden's cursor over the thread's user messages: what it missed, it is asked on next. */
+  readonly catchUp = new WardenCatchUp();
 
   constructor(config: FlowOrchestratorConfig) {
     this._cartographer = config.cartographer;
@@ -690,6 +698,12 @@ export class FlowOrchestrator {
     const participants = this._participants();
     const clock = this._clock(start);
     const outstanding: OutstandingCall[] = [];
+    // A re-fire asks on the same message again; a fresh message is the next one in the thread, and a
+    // second prepare of the same logical message keeps its number.
+    const seq =
+      fresh || !this.catchUp.current
+        ? this.catchUp.message(message, currentMessage?.messageId)
+        : this.catchUp.current;
 
     // 2. Assess: the user-message trigger point asks every Warden the pre-filter does not rule out;
     //    each decides under the charter (bounded pool). Routing starts alongside the pre-filter.
@@ -701,9 +715,19 @@ export class FlowOrchestrator {
       participants.filter((p) => p.cache).map((p) => p.lib),
     );
     const assessments = runBounded(participants, this._maxAdviseParallel, (p) =>
-      this._assess(p, input, clock, outstanding, prefilterSkip(prefiltered, p.lib.domain)),
+      this._assess(
+        p,
+        input,
+        clock,
+        outstanding,
+        prefilterSkip(prefiltered, p.lib.domain),
+        'user-message',
+        this.catchUp.missedBy(p.lib.domain, seq),
+        true,
+      ),
     );
     const [route, contributions] = await Promise.all([routing, assessments]);
+    this.catchUp.answered(seq, contributions);
 
     // 3. Compose in configured order and seal.
     const plan = this._compose(input, route, contributions, outstanding, start, fresh);
@@ -796,7 +820,10 @@ export class FlowOrchestrator {
     message: string,
     domains: readonly string[],
   ): Promise<BriefReport> {
-    return this._between(trigger, message, new Set(domains));
+    const report = await this._between(trigger, message, new Set(domains));
+    // A Retry on a user message that answers moves the Warden's cursor, so it is not asked again on it.
+    if (trigger === 'user-message') this.catchUp.answeredMoment(message, report.contributions);
+    return report;
   }
 
   /** One fan-out to the chorus at a moment between turns, through the advice protocol. */
@@ -954,6 +981,9 @@ export class FlowOrchestrator {
     outstanding: OutstandingCall[],
     skip?: PrefilterSkip,
     trigger: AdviceTrigger = 'user-message',
+    earlier?: EarlierMessages,
+    /** A user message's own advice: served warm or skipped, and what it skips it catches up on. */
+    catchingUp = false,
   ): Promise<DomainContribution> {
     const startedAt = Date.now();
     // Three separately owned segments: configured instructions, configured
@@ -1008,6 +1038,7 @@ export class FlowOrchestrator {
           | 'repairs'
           | 'classified'
           | 'stageRequests'
+          | 'catchesUp'
         >
       > = {},
     ): DomainContribution => ({
@@ -1018,6 +1049,9 @@ export class FlowOrchestrator {
       snippets: [],
       confidence: 0,
       ...extra,
+      ...(earlier && decision !== 'skipped'
+        ? { earlier: { count: earlier.messages.length, dropped: earlier.dropped } }
+        : {}),
       // A skipped domain was given nothing: no call, so no inputs to record.
       segments:
         decision === 'skipped'
@@ -1045,6 +1079,8 @@ export class FlowOrchestrator {
         },
         timeoutMs: Math.min(this._adviseTimeoutMs, clock.remaining() ?? Number.POSITIVE_INFINITY),
         trigger,
+        ...(earlier ? { earlier } : {}),
+        ...(catchingUp ? { heldOnly: true } : {}),
       })
       .then(
         (result) => ({ kind: 'result' as const, result }),
@@ -1074,7 +1110,15 @@ export class FlowOrchestrator {
     };
     if (result.error) return decided('error', { reason: result.error, ...staged });
     if (result.skipped) return decided('skipped', { reason: result.skipped, ...staged });
-    if (result.notStarted) return decided('excluded', { reason: result.notStarted, ...staged });
+    if (result.notStarted)
+      return decided('excluded', {
+        reason: result.notStarted,
+        // Skipped unsent on a user message: it catches up on the next one, so it is not degraded.
+        ...(catchingUp && result.notStarted === NOT_HELD_REFUSAL
+          ? { catchesUp: true as const }
+          : {}),
+        ...staged,
+      });
     const repaired = result.repairs?.length ? { repairs: result.repairs } : {};
     if (result.noComment) return decided('no-comment', { ...repaired, ...staged });
     return decided('contribute', {

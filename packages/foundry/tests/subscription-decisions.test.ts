@@ -15,6 +15,7 @@ import {
 import { scopedProvider, ThreadRuntimeManager } from '../src/agents/thread-runtime';
 import { KnowledgePersistence } from '../src/persistence/knowledge-persistence';
 import { LocalSessionStore } from '../src/persistence/local-session-store';
+import { NOT_HELD_REFUSAL } from '../src/providers/decision-budget';
 import {
   buildNativeTextProvider,
   type NativeTextConfig,
@@ -619,5 +620,51 @@ test('decisions served in a project host take no shared decision slot', async ()
   await until(() => runs.length === 4);
   for (const release of gates.splice(0)) release();
   await router2;
+  decisions.close();
+});
+
+test('a Warden its project host holds no warm spare for is a capacity refusal: skipped, admission stays open', async () => {
+  const createRun = (_config: NativeTextConfig) => {
+    const calls: Array<Record<string, unknown>> = [];
+    return {
+      provider: {
+        id: 'fake',
+        async complete() {
+          calls.push({ transport: 'primed', settled: true, failure: 'not-held', valid: false });
+          throw Error('Project Warden host starting');
+        },
+      },
+      snapshot: () => ({ closed: false, calls: calls as never }),
+      close: () => {},
+    };
+  };
+  const decisions = buildSubscriptionDecisions(
+    {
+      source: {
+        id: 's',
+        runtime: 'claude',
+        mode: 'native-profile',
+        profileDirectory: '/x',
+      } as never,
+      directory: '/tmp',
+      model: 'm',
+      maxCalls: 100,
+      maxQueued: 100,
+      callTimeoutMs: 20_000,
+      maxConcurrent: 1,
+      unbounded: (key) => key.includes(':aux:domain:'),
+    },
+    createRun as never,
+  );
+  const ask = () =>
+    decisions.provider.complete([{ role: 'user', content: 'x' }], { threadId: 't1:aux:domain:a' });
+  const error = await ask().catch((e: unknown) => e);
+  expect(error).toBeInstanceOf(Error);
+  expect((error as { decisionCapacity?: boolean }).decisionCapacity).toBe(true);
+  expect((error as Error).message).toBe(NOT_HELD_REFUSAL);
+  // The refusal left nothing owned: admission stays open, so the next call is admitted (and refused
+  // for capacity again), not shut out as closed.
+  const again = await ask().catch((e: unknown) => e);
+  expect((again as { decisionCapacity?: boolean }).decisionCapacity).toBe(true);
   decisions.close();
 });

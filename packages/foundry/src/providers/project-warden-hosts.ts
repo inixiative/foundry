@@ -164,17 +164,34 @@ const rosterKey = (roster: Roster) =>
  */
 export class ProjectWardenHosts {
   private readonly _projects = new Map<string, ProjectEntry>();
+  private readonly _opening = new Set<string>();
   private _launcher?: ProjectHostLauncher;
   private _health?: ReturnType<typeof setInterval>;
   private _closed = false;
 
   constructor(readonly config: ProjectWardenHostsConfig) {}
 
-  /** The host serving this thread's Warden calls now, if any: its project's, while it serves. */
-  serving(threadId: string): ClaudeInSessionDecisions | undefined {
+  /**
+   * The host serving this thread's Warden calls now: its project's, while it serves; `starting`
+   * while the project's host is on its way (opening, starting or retrying), so its Wardens are
+   * skipped and catch up later rather than starting cold; undefined otherwise (no host for the
+   * project, or it failed: primed serves).
+   */
+  serving(threadId: string): ClaudeInSessionDecisions | 'starting' | undefined {
     const projectId = this.config.projectOf(threadId);
-    const host = projectId ? this._projects.get(projectId)?.live?.host : undefined;
-    return host?.serving() ? host : undefined;
+    if (!projectId || this._closed) return undefined;
+    const entry = this._projects.get(projectId);
+    const host = entry?.live?.host;
+    if (host?.serving()) return host;
+    if (entry ? !entry.failed && (entry.starting || entry.retry) : this._opening.has(projectId))
+      return 'starting';
+    return undefined;
+  }
+
+  /** The project's roster is being composed to open its host (`followProjectActivity`). */
+  markOpening(projectId: string, opening: boolean): void {
+    if (opening) this._opening.add(projectId);
+    else this._opening.delete(projectId);
   }
 
   snapshot() {
@@ -297,19 +314,6 @@ export class ProjectWardenHosts {
       )
         return true;
       if (!state || state.status === 'failed') return false;
-    });
-  }
-
-  /**
-   * Resolves true once a host serves the project (at once while one does), false when none is on its
-   * way (not open, failed, no start or retry pending) or after `timeoutMs`. A replacement starting
-   * beside a serving host is not waited for.
-   */
-  whenServing(projectId: string, timeoutMs: number): Promise<boolean> {
-    return this._until(timeoutMs, () => {
-      const entry = this._projects.get(projectId);
-      if (entry?.live?.host.serving()) return true;
-      if (!entry || this._closed || entry.failed || (!entry.starting && !entry.retry)) return false;
     });
   }
 
@@ -546,10 +550,14 @@ export function followProjectActivity(options: {
     if (options.hosts.touchProject(projectId)) return Promise.resolve();
     const pending = opening.get(projectId);
     if (pending) return pending;
+    options.hosts.markOpening(projectId, true);
     const opened = options
       .open(projectId)
       .catch(() => undefined)
-      .finally(() => opening.delete(projectId));
+      .finally(() => {
+        opening.delete(projectId);
+        options.hosts.markOpening(projectId, false);
+      });
     opening.set(projectId, opened);
     return opened;
   };

@@ -30,6 +30,8 @@ export interface ChorusAnswer {
   readonly decision: string;
   readonly reason?: string;
   readonly classified?: Pick<ClassifiedSummary, 'fallback' | 'stages'>;
+  /** Skipped unsent on a user message: it catches up on the next one (warden-catch-up). */
+  readonly catchesUp?: boolean;
 }
 
 const clip = (text: string | undefined) => (text ? text.slice(0, 300) : null);
@@ -64,7 +66,10 @@ export function degradedAnswer(
   const layer = failed ? failed.stage + 1 : single ? 1 : null;
   const reason = clip(failed?.error ?? answer.reason);
   if (decision === 'timeout') return { domain, kind: 'timeout', layer, silent: true, reason };
-  if (decision === 'excluded') return { domain, kind: 'not-started', layer, silent: true, reason };
+  if (decision === 'excluded')
+    return answer.catchesUp
+      ? undefined
+      : { domain, kind: 'not-started', layer, silent: true, reason };
   if (decision === 'skipped' && answer.reason === 'cold-cache' && context.notWarm?.has(domain))
     return { domain, kind: 'not-started', layer, silent: true, reason: 'not warm in time' };
   if (decision === 'error')

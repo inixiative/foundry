@@ -18,6 +18,7 @@ import { createSourceResolver } from '../src/agents/thread-factory';
 import { DECISION_PRIORITY } from '../src/providers/decision-priority';
 import { defaultProfileSource } from '../src/providers/default-profiles';
 import {
+  type AdmittedDecisionOpts,
   createPrimedDecisionHost,
   isStageSession,
   isWardenSession,
@@ -69,6 +70,12 @@ const spec = (role: string): PrimeSpec => ({
   hash: `h-${role}`,
 });
 const roster = (...roles: string[]): Roster => roles.map((r) => ({ spec: spec(r), standby: '' }));
+/** The host serving a thread's Wardens, when one serves (never `starting`). */
+const servingHost = (wardens: ProjectWardenHosts, threadId: string) => {
+  const host = wardens.serving(threadId);
+  if (host === 'starting') throw new Error(`${threadId}: host still starting`);
+  return host;
+};
 
 /** A project-mode registry whose hosts run on the fake CLI: per-pid memory readings set by the test. */
 function projectHosts(
@@ -132,7 +139,7 @@ test('a project host holds the roster before any thread; every thread of the pro
     failures: 0,
   });
   // Two threads of P share the host; a thread of another project has none.
-  const host = wardens.serving('A1');
+  const host = servingHost(wardens, 'A1');
   expect(host).toBeDefined();
   expect(wardens.serving('A2')).toBe(host);
   expect(wardens.serving('B1')).toBeUndefined();
@@ -224,7 +231,7 @@ test('only while someone works in the project: activity opens its host, idleness
   expect(await until(() => wardens.openProjects().length === 0, 2_000)).toBe(true);
   await Promise.all([activity.activate('P'), activity.activate('P')]);
   expect(opened).toEqual(['P', 'P', 'P']);
-  expect(await wardens.whenServing('P', 5_000)).toBe(true);
+  expect(await wardens.projectReady('P', 5_000)).toBe(true);
   // Activity on an open host only keeps it open.
   await activity.activate('P');
   expect(opened).toEqual(['P', 'P', 'P']);
@@ -234,11 +241,14 @@ test('a host process that dies: routing falls back at once, and a new host is st
   const { tree, wardens } = projectHosts();
   wardens.openProject('P', roster('locks'));
   expect(await wardens.projectReady('P', 5_000)).toBe(true);
-  const dead = wardens.serving('A1');
+  const dead = servingHost(wardens, 'A1');
   tree.processes[0]!.crash();
   // Routing leaves the dead host at once (the replacement may already serve: the double is fast).
   expect(await until(() => wardens.serving('A1') !== dead)).toBe(true);
   expect(dead!.serving()).toBe(false);
+  // What routes now is nothing, a host still starting (held-only calls refuse), or a live host.
+  const after = wardens.serving('A1');
+  expect(after === undefined || after === 'starting' || after.serving()).toBe(true);
   expect(await until(() => wardens.projectState('P')?.generation === 2)).toBe(true);
   expect(await wardens.projectReady('P', 5_000)).toBe(true);
   expect(Object.keys(wardens.projectState('P')!.resets)[0]).toMatch(/^process ended/);
@@ -281,30 +291,30 @@ test('a host that never sets up is retried with backoff, then the project stays 
   expect(tree.processes.every((p) => p.exited)).toBe(true);
   expect(wardens.serving('A1')).toBeUndefined();
   expect(states.at(-1)!.reason).toMatch(/2 starts failed in a row/);
-  // A failed project has no host on its way: nothing waits for one.
-  const at = Date.now();
-  expect(await wardens.whenServing('P', 5_000)).toBe(false);
-  expect(Date.now() - at).toBeLessThan(1_000);
 }, 20_000);
 
-test('whenServing: a turn waits for a starting host, not for a closed one, an empty roster or a replacement', async () => {
+test('serving: a starting host skips its Wardens (they catch up later); a failed, closed or replaced one does not', async () => {
   const { tree, rss, wardens } = projectHosts();
-  // No host open: nothing on its way.
-  expect(await wardens.whenServing('P', 5_000)).toBe(false);
-  // Starting: resolves once it serves.
+  // No host open, nothing opening: primed serves.
+  expect(wardens.serving('A1')).toBeUndefined();
+  // The roster is being composed to open the host: starting.
+  wardens.markOpening('P', true);
+  expect(wardens.serving('A1')).toBe('starting');
+  wardens.markOpening('P', false);
+  expect(wardens.serving('A1')).toBeUndefined();
+  // Starting: still starting until it serves, then the host.
   wardens.openProject('P', roster('locks', 'lens'));
   expect(wardens.projectState('P')!.status).toBe('starting');
-  expect(await wardens.whenServing('P', 5_000)).toBe(true);
-  expect(wardens.serving('A1')).toBeDefined();
-  // A replacement starting beside the serving host is not waited for.
+  expect(wardens.serving('A1')).toBe('starting');
+  expect(wardens.serving('B1')).toBeUndefined();
+  expect(await wardens.projectReady('P', 5_000)).toBe(true);
+  const host = servingHost(wardens, 'A1');
+  expect(host).toBeDefined();
+  // A replacement starting beside the serving host does not take its Wardens off.
   rss.set(tree.processes[0]!.pid, 2_000);
   expect(await until(() => wardens.projectState('P')?.generation === 2)).toBe(true);
-  const at = Date.now();
-  expect(await wardens.whenServing('P', 5_000)).toBe(true);
-  expect(Date.now() - at).toBeLessThan(100);
-  // A project with no Wardens holds nothing to wait for.
-  wardens.openProject('Q', []);
-  expect(await wardens.whenServing('Q', 5_000)).toBe(false);
+  expect(wardens.serving('A1')).not.toBe('starting');
+  expect(wardens.serving('A1')).toBeDefined();
 });
 
 test('routing: a project host takes advice only; guards, reviews and later stages stay primed', () => {
@@ -320,6 +330,10 @@ test('routing: a project host takes advice only; guards, reviews and later stage
   expect(projectHostTarget(project, 'A1:aux:review:g1:domain:locks')).toBeUndefined();
   expect(projectHostTarget(project, 'A1:aux:domain:locks:stage:1')).toBeUndefined();
   expect(projectHostTarget(project, 'A1:aux:cartographer')).toBeUndefined();
+  // A host still starting holds only held-only advice (refused unsent); any other call goes primed.
+  const starting = { serving: () => 'starting' } as unknown as ProjectWardenHosts;
+  expect(projectHostTarget(starting, 'A1:aux:domain:locks')).toBeUndefined();
+  expect(projectHostTarget(starting, 'A1:aux:domain:locks', { heldOnly: true })).toBe('starting');
 });
 
 test('settings: Claude decisions resolve to project Wardens with the host defaults, by default or named; projectHost is refused on primed Wardens', () => {
@@ -394,6 +408,41 @@ test('the decision host launches the project host on the decision login: its own
     { stablePrefix: cache },
     'T0:aux:domain:locks',
   );
+  const newRun = (maxCalls: number) =>
+    primed.createRun({
+      source: defaultProfileSource('claude'),
+      directory,
+      runId: crypto.randomUUID(),
+      model: 'claude-haiku-5-5',
+      maxCalls,
+    });
+  // The host is on its way: a held-only Warden (a user message's advice) is refused unsent
+  // (`not-held`), never started cold, and the turn does not wait for the host.
+  wardens.markOpening('P', true);
+  const early = newRun(1);
+  const at = Date.now();
+  await expect(
+    early.provider.complete(messages('T7'), {
+      threadId: 'T7:aux:domain:locks',
+      stablePrefix: cache,
+      heldOnly: true,
+    }),
+  ).rejects.toThrow();
+  expect(Date.now() - at).toBeLessThan(1_000);
+  expect(early.snapshot().calls[0]).toMatchObject({ failure: 'not-held', valid: false });
+  expect(tree.processes.length).toBe(0);
+  wardens.markOpening('P', false);
+  // Admitted to the host by the queue, but the host is gone by the time it runs: refused unsent too,
+  // never run cold on primed outside the queue's slots.
+  const orphan = newRun(1);
+  const admitted: AdmittedDecisionOpts = {
+    threadId: 'T7:aux:domain:locks',
+    stablePrefix: cache,
+    admittedToProjectHost: true,
+  };
+  await expect(orphan.provider.complete(messages('T7'), admitted)).rejects.toThrow();
+  expect(orphan.snapshot().calls[0]).toMatchObject({ failure: 'not-held', valid: false });
+  expect(tree.processes.length).toBe(0);
   wardens.openProject('P', [{ spec: held, standby: '' }]);
   expect(await wardens.projectReady('P', 5_000)).toBe(true);
   const launch = tree.processes[0]!;
@@ -418,13 +467,7 @@ test('the decision host launches the project host on the decision login: its own
       value && /API_KEY|AUTH_TOKEN|BASE_URL/.test(key) ? [key] : [],
     ),
   ).toEqual([]);
-  const run = primed.createRun({
-    source: defaultProfileSource('claude'),
-    directory,
-    runId: crypto.randomUUID(),
-    model: 'claude-haiku-5-5',
-    maxCalls: 2,
-  });
+  const run = newRun(2);
   const answer = await run.provider.complete(messages('T7'), {
     threadId: 'T7:aux:domain:locks',
     stablePrefix: cache,
@@ -438,6 +481,20 @@ test('the decision host launches the project host on the decision login: its own
   expect(holding).toContain('LOCKS WARDEN');
   expect(holding).toContain('use createLock');
   expect(holding).not.toContain('knows');
+  // A held-only Warden the serving host holds no spare for is refused unsent too: no cold start on the host.
+  const other = '## Domain cache (naming)\nname it fully\n';
+  const unheld = newRun(1);
+  await expect(
+    unheld.provider.complete(
+      [
+        { role: 'system', content: 'NAMING WARDEN' },
+        { role: 'user', content: `${other}\n## Message\nadd a lock` },
+      ],
+      { threadId: 'T7:aux:domain:naming', stablePrefix: other, heldOnly: true },
+    ),
+  ).rejects.toThrow();
+  expect(unheld.snapshot().calls[0]).toMatchObject({ failure: 'not-held', valid: false });
+  expect(tree.memberPrompts.some((p) => p.includes('NAMING WARDEN'))).toBe(false);
 });
 
 // -- Composition: what a thread of the project sends is what the project host holds -------------

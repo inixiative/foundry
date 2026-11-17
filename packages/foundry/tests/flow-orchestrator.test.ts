@@ -643,3 +643,91 @@ describe('compaction before any plan', () => {
     expect(reads).toBe(2);
   });
 });
+
+describe('catch-up: a Warden that missed messages is asked on them with the next one', () => {
+  function catchUp() {
+    const { cartographer, librarian, stack, signals } = setup();
+    const asked: string[] = [];
+    const state = { fail: false };
+    const layer = new ContextLayer({ id: 'arch-cache' });
+    layer.set('Snapshots are column-only.');
+    const arch = new DomainLibrarian({
+      domain: 'arch',
+      cache: layer,
+      signals,
+      llm: {
+        id: 'arch',
+        async complete(messages): Promise<CompletionResult> {
+          asked.push(messages.map((m) => m.content).join('\n'));
+          if (state.fail) throw Error('host starting');
+          return { content: 'NO_COMMENT', model: 'mock' };
+        },
+      },
+    });
+    const orchestrator = new FlowOrchestrator({
+      cartographer,
+      domainLibrarians: new Map([['arch', arch]]),
+      librarian,
+      stack,
+      signals,
+    });
+    const decision = (plan: { contributions: readonly { domain: string; decision: string }[] }) =>
+      plan.contributions.find((c) => c.domain === 'arch')!.decision;
+    return { orchestrator, asked, state, decision };
+  }
+  const missedSection = (text: string) =>
+    text.includes('## Messages since you last answered')
+      ? text.slice(
+          text.indexOf('## Messages since you last answered'),
+          text.indexOf('## Message\n'),
+        )
+      : '';
+
+  it('answered, then missed two (no answer moves nothing), then catches up on both; NO_COMMENT moves the cursor', async () => {
+    const { orchestrator, asked, state, decision } = catchUp();
+    expect(decision(await orchestrator.preMessage('first message'))).toBe('no-comment');
+    expect(missedSection(asked.at(-1)!)).toBe('');
+    state.fail = true;
+    expect(decision(await orchestrator.preMessage('second message'))).not.toBe('no-comment');
+    expect(decision(await orchestrator.preMessage('third message'))).not.toBe('no-comment');
+    // The failed call on the third carried the second: a failure does not move the cursor.
+    expect(missedSection(asked.at(-1)!)).toContain('second message');
+    state.fail = false;
+    await orchestrator.preMessage('fourth message');
+    const caught = missedSection(asked.at(-1)!);
+    expect(caught).toContain('### Earlier message 1\nsecond message');
+    expect(caught).toContain('### Earlier message 2\nthird message');
+    expect(caught).not.toContain('first message');
+    expect(caught).not.toContain('not shown');
+    expect(asked.at(-1)!).toContain('## Message\nfourth message');
+    // Caught up: the next message carries nothing earlier.
+    await orchestrator.preMessage('fifth message');
+    expect(missedSection(asked.at(-1)!)).toBe('');
+  });
+
+  it('caps at five messages (the current one included) and says how many older ones it left out', async () => {
+    const { orchestrator, asked, state } = catchUp();
+    state.fail = true;
+    for (let i = 1; i <= 7; i++) await orchestrator.preMessage(`message ${i}`);
+    state.fail = false;
+    await orchestrator.preMessage('message 8');
+    const caught = missedSection(asked.at(-1)!);
+    // Missed 1..7; the four newest are shown, the three older counted.
+    expect(caught).toContain('(3 earlier messages you missed are not shown.)');
+    for (const i of [4, 5, 6, 7]) expect(caught).toContain(`\nmessage ${i}\n`);
+    for (const i of [1, 2, 3]) expect(caught).not.toContain(`\nmessage ${i}\n`);
+  });
+
+  it('caps at about 4k tokens: a long missed message is counted, not sent', async () => {
+    const { orchestrator, asked, state } = catchUp();
+    state.fail = true;
+    await orchestrator.preMessage(`long ${'x'.repeat(20_000)}`);
+    await orchestrator.preMessage('short missed');
+    state.fail = false;
+    await orchestrator.preMessage('now');
+    const caught = missedSection(asked.at(-1)!);
+    expect(caught).toContain('short missed');
+    expect(caught).not.toContain('xxxx');
+    expect(caught).toContain('(1 earlier message you missed is not shown.)');
+  });
+});

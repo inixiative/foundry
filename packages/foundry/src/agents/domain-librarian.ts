@@ -121,6 +121,16 @@ export interface AdviseOpts {
   trigger?: AdviceTrigger;
   /** Start at a later stage, carrying what an earlier one said (a group recogniser's fan-out). */
   from?: { readonly index: number; readonly carried: Carried };
+  /** The user messages this Warden missed since it last answered (skipped, timed out or failed), asked on with the current one. `user-message` only. */
+  earlier?: EarlierMessages;
+  /** Serve only from a warm call the provider holds; never start one cold (`CompletionOpts.heldOnly`). User-message advice only. */
+  heldOnly?: boolean;
+}
+
+/** User messages a Warden missed, oldest first, and how many older ones the cap left out. */
+export interface EarlierMessages {
+  readonly messages: readonly string[];
+  readonly dropped: number;
 }
 
 /** The exact input one phase call supplied to its provider, frozen at the call boundary. Text only. */
@@ -136,6 +146,15 @@ export interface PhaseRequestEvidence {
 }
 /** Advice-phase request evidence: the advice observer's payload. */
 export type AdviceRequestEvidence = PhaseRequestEvidence & { readonly phase: 'advice' };
+
+function catchUpText(earlier: EarlierMessages | undefined): string {
+  if (!earlier || (!earlier.messages.length && !earlier.dropped)) return '';
+  const older = earlier.dropped
+    ? `\n(${earlier.dropped} earlier message${earlier.dropped === 1 ? '' : 's'} you missed ${earlier.dropped === 1 ? 'is' : 'are'} not shown.)`
+    : '';
+  const shown = earlier.messages.map((m, i) => `\n### Earlier message ${i + 1}\n${m}`).join('\n');
+  return `\n## Messages since you last answered (oldest first)${older}\n${shown}\n`;
+}
 
 function frozenRequest(
   phase: PhaseRequestEvidence['phase'],
@@ -1704,8 +1723,8 @@ export class DomainLibrarian {
                   ? `\n## Milestone the agent is about to reach\n${message}`
                   : trigger === 'hand-back'
                     ? `\n## Message the agent handed back\n${message}`
-                    : `\n## Message\n${message}`,
-          opts: {},
+                    : `${catchUpText(opts?.earlier)}\n## Message\n${message}`,
+          opts: opts?.heldOnly ? { heldOnly: true } : {},
           observe: (e: PhaseRequestEvidence) =>
             stage.index === 0 ? opts?.observeRequest?.(e as AdviceRequestEvidence) : later.push(e),
         });
