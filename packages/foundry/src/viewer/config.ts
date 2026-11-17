@@ -24,6 +24,7 @@ import { isThreadKnowledgeLayerId } from '../agents/domain-librarian';
 import { type LearningSettings, validateLearningSettings } from '../agents/learning-config';
 import { THREAD_STATE_LAYER_ID } from '../agents/librarian';
 import { isRoleLayerId } from '../agents/role-layers';
+import { WARDEN_BRIEF_NODES } from '../agents/warden-brief';
 import type { GuardMode } from '../agents/warden-triggers';
 import { AuditLog, type SourceVersion, settingsRow } from '../audit/audit-log';
 import { type StageConfig, validateStages } from '../classify';
@@ -1318,6 +1319,12 @@ export function validateConfig(config: FoundryConfig): void {
     throw Error(
       'settings key "instructions" is now "composition" (docs/usage-and-context.md, "Composition view")',
     );
+  // The project Warden brief's nodes are Foundry's, made per project when its chorus runs.
+  for (const id of WARDEN_BRIEF_NODES)
+    if (config.composition?.nodes?.[id])
+      throw Error(
+        `composition.nodes.${id} is the project Warden brief's own node; settings may not define it`,
+      );
   validateCompositionSettings(config.composition, resolveInstructionLadder(config.composition));
   // An agent's id is its composition role: a thread role's (or main's) would be shared with it.
   for (const [owner, agents] of [
@@ -1361,6 +1368,10 @@ function validateSourceDefinitions(
   sources: Record<string, DataSourceConfig> | undefined,
 ): void {
   for (const [id, src] of Object.entries(sources ?? {})) {
+    if (roleNameIn(roleNamespace.region, id) !== undefined)
+      throw new Error(
+        `invalid source ${JSON.stringify(id)} in ${owner}: the ${roleNamespace.region}: prefix names a region's own docs, which its regions generate; rename the source`,
+      );
     if ('audience' in (src ?? {}))
       throw new Error(
         `invalid source ${JSON.stringify(id)} in ${owner}: audience moved to composition.roles.<role>.audience`,

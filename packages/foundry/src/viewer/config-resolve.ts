@@ -17,9 +17,10 @@ import {
   REPOSITORY_SETTINGS_FILE,
   type RegionRole,
   type RegionSummary,
+  RegionsUnreadable,
   regionWardens,
 } from '../agents/region-roster';
-import { WARDEN_BRIEF_NODES, wardenBriefNodes, wardenComposition } from '../agents/warden-brief';
+import { wardenBriefNodes, wardenComposition } from '../agents/warden-brief';
 import { defaultStages, type StageConfig, validateStages } from '../classify';
 import { writeFileAtomic } from '../client/private-file';
 import { effectiveThreadRole } from '../prompts/instruction-settings';
@@ -119,6 +120,8 @@ export interface ResolvedChorus {
   };
   /** Docs a region lacks for its role's stages: while any is missing the chorus is not built. */
   missingDocs?: MissingRegionDoc[];
+  /** Why the project's regions could not be read (`RegionsUnreadable`): its Wardens are not built. */
+  unreadable?: string;
   /** The repository's `.foundry/project.json`, when it exists: what it said, or why it was not read. */
   repository?: { file: string; chorus?: ChorusSettings; error?: string };
   /** Regions present in the configured layers but not run, because the chorus is not enabled. */
@@ -1196,68 +1199,89 @@ function buildProjectView(
   let chorus: ResolvedChorus = { on: false, ...asked, layers: [], regions: [] };
   let generated: ReturnType<typeof regionWardens> = [];
   if (enabled) {
-    const composed = composeChorus(configuredLayers);
-    const wardenRegions = composed.regions.filter((r) => r.role === 'warden');
-    const heraldRegions = composed.regions.filter((r) => r.role === 'herald');
-    const roles = {
-      warden: { ...asked.roles.warden, regions: wardenRegions.length },
-      herald: { ...asked.roles.herald, regions: heraldRegions.length },
-    };
-    // Checked on the composed chorus: a later layer's region replaces an earlier one whole, docs included.
-    const missingDocs = missingRegionDocs(wardenRegions, () => roles.warden.stages);
-    const heralds = heraldRegions.length
-      ? `; ${heraldRegions.length} Herald topic${heraldRegions.length === 1 ? '' : 's'} (${heraldRegions.map((r) => r.id).join(', ')}) not run: Heralds are not built`
-      : '';
-    // A stage on its own model or effort needs its own decision host, which only subscription
-    // decisions start: with API-token decisions it is named here, not found when a thread starts.
-    const unserved =
-      config.apiTokens === true
-        ? roles.warden.stages.flatMap((stage, i) =>
-            stage.model !== undefined || stage.effort !== undefined ? [i] : [],
-          )
-        : [];
-    chorus = unserved.length
-      ? {
-          on: false,
-          ...asked,
-          roles,
-          ...composed,
-          reason: `the Wardens are not built: chorus.wardens.stages ${unserved.map((i) => `[${i}]`).join(', ')} name their own model or effort, which only subscription decisions serve (apiTokens is on)${unread}`,
-        }
-      : missingDocs.length
+    // A repository's regions never stop the daemon (Aron, 2026-11-16): one that can't be read or
+    // built leaves this project without Wardens, the reason shown, as a missing stage doc does.
+    try {
+      const composed = composeChorus(configuredLayers);
+      const wardenRegions = composed.regions.filter((r) => r.role === 'warden');
+      const heraldRegions = composed.regions.filter((r) => r.role === 'herald');
+      const roles = {
+        warden: { ...asked.roles.warden, regions: wardenRegions.length },
+        herald: { ...asked.roles.herald, regions: heraldRegions.length },
+      };
+      // Checked on the composed chorus: a later layer's region replaces an earlier one whole, docs included.
+      const missingDocs = missingRegionDocs(wardenRegions, () => roles.warden.stages);
+      const heralds = heraldRegions.length
+        ? `; ${heraldRegions.length} Herald topic${heraldRegions.length === 1 ? '' : 's'} (${heraldRegions.map((r) => r.id).join(', ')}) not run: Heralds are not built`
+        : '';
+      // A stage on its own model or effort needs its own decision host, which only subscription
+      // decisions start: with API-token decisions it is named here, not found when a thread starts.
+      const unserved =
+        config.apiTokens === true
+          ? roles.warden.stages.flatMap((stage, i) =>
+              stage.model !== undefined || stage.effort !== undefined ? [i] : [],
+            )
+          : [];
+      chorus = unserved.length
         ? {
             on: false,
             ...asked,
             roles,
             ...composed,
-            missingDocs,
-            reason: `the Wardens are not built: ${missingDocs.map((m) => `topic ${m.region} has no ${m.doc} (stage ${m.stages.map((i) => i + 1).join(', ')} of chorus.wardens.stages)`).join('; ')}${heralds}${unread}`,
+            reason: `the Wardens are not built: chorus.wardens.stages ${unserved.map((i) => `[${i}]`).join(', ')} name their own model or effort, which only subscription decisions serve (apiTokens is on)${unread}`,
           }
-        : wardenRegions.length
+        : missingDocs.length
           ? {
-              on: true,
-              ...asked,
-              roles,
-              ...composed,
-              ...(heralds ? { reason: heralds.slice(2) } : {}),
-            }
-          : {
               on: false,
               ...asked,
               roles,
               ...composed,
-              reason: `${heraldRegions.length ? `no Warden topics at ${dirs}${heralds}` : `no topics at ${dirs} (no <id>/region.json)`}; this project has no Wardens${unread}`,
-            };
-    generated = chorus.on ? regionWardens(wardenRegions, roles.warden.stages) : [];
+              missingDocs,
+              reason: `the Wardens are not built: ${missingDocs.map((m) => `topic ${m.region} has no ${m.doc} (stage ${m.stages.map((i) => i + 1).join(', ')} of chorus.wardens.stages)`).join('; ')}${heralds}${unread}`,
+            }
+          : wardenRegions.length
+            ? {
+                on: true,
+                ...asked,
+                roles,
+                ...composed,
+                ...(heralds ? { reason: heralds.slice(2) } : {}),
+              }
+            : {
+                on: false,
+                ...asked,
+                roles,
+                ...composed,
+                reason: `${heraldRegions.length ? `no Warden topics at ${dirs}${heralds}` : `no topics at ${dirs} (no <id>/region.json)`}; this project has no Wardens${unread}`,
+              };
+      generated = chorus.on ? regionWardens(wardenRegions, roles.warden.stages) : [];
+    } catch (error) {
+      if (!(error instanceof RegionsUnreadable)) throw error;
+      generated = [];
+      chorus = {
+        on: false,
+        ...asked,
+        layers: [],
+        regions: [],
+        unreadable: error.message,
+        reason: `the Wardens are not built: ${error.message}${unread}`,
+      };
+    }
   } else {
-    const available = configuredLayers.reduce((n, l) => n + countRegions(l.regionsDir), 0);
-    if (available || unread)
+    let available = 0;
+    try {
+      available = configuredLayers.reduce((n, l) => n + countRegions(l.regionsDir), 0);
+    } catch (error) {
+      if (!(error instanceof RegionsUnreadable)) throw error;
+      chorus = { ...chorus, unreadable: error.message };
+    }
+    if (available || unread || chorus.unreadable)
       chorus = {
         ...chorus,
         ...(available ? { available } : {}),
         reason: available
           ? `Wardens are off: ${available} topics at ${dirs} are not turned on (set "chorus": { "enabled": true } in ${join(project.path, REPOSITORY_SETTINGS_FILE)} or in this project's settings)${unread}`
-          : `this project has no Wardens${unread}`,
+          : `this project has no Wardens${chorus.unreadable ? `; ${chorus.unreadable}` : ''}${unread}`,
       };
   }
   // The view's project entry carries the effective chorus, normalized. The setting is valid and, on a
@@ -1286,13 +1310,6 @@ function buildProjectView(
   const entries = Object.entries(project.agents ?? {});
   if (chorus.on) {
     for (const { agent, sources, region } of generated) {
-      // A Warden's id is in the region namespace, which no written agent may use (`validateConfig`),
-      // so only its sources can meet a written one.
-      const taken = sources.find((source) => resolved.sources[source.id]);
-      if (taken)
-        throw new Error(
-          `[config] region ${region.id} (${region.path}) collides with source ${JSON.stringify(taken.id)}`,
-        );
       // A Warden is a decision role: it runs on the project's decision provider and model, never on the
       // main-thread default (an agent with no model resolves to defaults.model, the executor's).
       const decision = {
@@ -1317,11 +1334,6 @@ function buildProjectView(
     }
     if (ignored.length) chorus = { ...chorus, ignoredComposition: ignored };
     const nodes = { ...resolved.composition?.nodes };
-    for (const id of WARDEN_BRIEF_NODES)
-      if (nodes[id])
-        throw new Error(
-          `[config] composition.nodes.${id} is the project Warden brief's own node; settings may not define it`,
-        );
     resolved.composition = {
       ...resolved.composition,
       roles,

@@ -141,7 +141,9 @@ export function KnowledgePage() {
                 (l) =>
                   html`<tr key=${l.label}><td>${l.label}</td><td class="mono">${l.regionsDir}</td><td class="kok">${l.regions} topic${l.regions === 1 ? '' : 's'}</td></tr>`,
               )}</table>`
-            : html`<span class="kwarn">No Warden levels set up${chorus?.reason ? `: ${chorus.reason}` : ''}.</span>`
+            : chorus?.unreadable
+              ? html`<span class="kwarn">The topics could not be read: ${chorus.unreadable}.</span>`
+              : html`<span class="kwarn">No Warden levels set up${chorus?.reason ? `: ${chorus.reason}` : ''}.</span>`
         }
         <div>${builtNote}</div>
       <//>

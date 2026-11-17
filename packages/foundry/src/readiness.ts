@@ -673,6 +673,13 @@ export async function inspectReadiness(
           : `${join(project.path, REPOSITORY_SETTINGS_FILE)} can't be built on this machine (${problem.message}); its threadOnMerge, gloss, defaults, feedback, agents and layers don't apply here (its chorus, conversations and steer still do).`,
       );
   }
+  // A project whose Wardens are asked for but can't be built is an error: its threads run without them.
+  for (const [scope, c] of choruses) {
+    if (c.unreadable)
+      issue('error', scope, 'regions-unreadable', `Its Wardens are not built: ${c.unreadable}.`);
+    if (c.enabled && c.missingDocs?.length)
+      issue('error', scope, 'region-docs-missing', `Its Wardens are not built: ${c.reason}.`);
+  }
   chorus = await Promise.all(
     choruses.map(([scope, c]) =>
       describeReadinessChorus(scope, c, (region, message) =>
