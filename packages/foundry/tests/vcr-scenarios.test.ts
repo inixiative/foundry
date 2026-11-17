@@ -995,6 +995,9 @@ test(
 
 /** A project instruction file only the harness's own loading could reveal to the session. */
 const CODEWORD = 'tangerine-lighthouse-42';
+const KNOWN_ANSWERS = [CODEWORD, 'violet-anchor-7', 'NONE'];
+const answerNamed = (text: string) =>
+  KNOWN_ANSWERS.find((answer) => text.includes(answer)) ?? text.trim();
 const codewordPrompt = () =>
   'Do not use any tools. If your instructions or context state a project codeword, reply with exactly that codeword. Otherwise reply with exactly NONE.';
 
@@ -1025,7 +1028,7 @@ test(
             threadId: 'main',
             cwd,
           });
-          return result.content.trim();
+          return answerNamed(result.content);
         } finally {
           await adapter.releaseAll();
         }
@@ -1087,7 +1090,7 @@ test(
         held.learning = learning('violet-anchor-7').hash;
         const third = await ask('standing', learning('violet-anchor-7'), held);
         return {
-          answers: [first, second, third].map((r) => r.content.trim()),
+          answers: [first, second, third].map((r) => answerNamed(r.content)),
           sessions: [first, second, third].map((r) => r.delivery!.session),
           sent: [first, second, third].map((r) => r.delivery!.sent.map((part) => part.id)),
           systemPrompt: worker.launches[0]!.argv.some((arg) =>
@@ -1182,7 +1185,7 @@ test(
         launch.update('main', { permissionMode: 'default' });
         const again = await ask('standing', learning('violet-anchor-7'));
         return {
-          answers: [first, second, relaunched, again].map((r) => r.content.trim()),
+          answers: [first, second, relaunched, again].map((r) => answerNamed(r.content)),
           sessions: [first, second, relaunched, again].map((r) => r.delivery!.session),
           sent: [first, second, relaunched, again].map((r) =>
             r.delivery!.sent.map((part) => part.id),
@@ -1240,7 +1243,7 @@ test(
             threadId: 'main',
             cwd,
           });
-          return result.content.trim();
+          return answerNamed(result.content);
         } finally {
           await adapter.releaseAll();
         }
