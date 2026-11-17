@@ -73,8 +73,6 @@ describe('advice phase protocol independent of domain instructions', () => {
     ['negative confidence', { layers: [], snippets: [], confidence: -1 }],
     ['confidence above one', { layers: [], snippets: [], confidence: 2 }],
     ['retired abstention field', { layers: [], snippets: [], confidence: 0, abstain: true }],
-    ['empty contribution', { layers: [], snippets: [], confidence: 0 }],
-    ['empty snippet', { layers: [], snippets: [''], confidence: 0.5 }],
   ];
   for (const [name, value] of invalid) {
     it(`records an explicit failure for ${name}, not successful empty advice`, async () => {
@@ -87,6 +85,20 @@ describe('advice phase protocol independent of domain instructions', () => {
       expect(result.snippets).toEqual([]);
       expect(result.confidence).toBe(0);
       expect(result.noComment).not.toBe(true);
+    });
+  }
+
+  // A contribution with nothing in it means nothing to add: let in as NO_COMMENT, its repair named.
+  for (const [name, value] of [
+    ['empty contribution', { layers: [], snippets: [], confidence: 0 }],
+    ['empty snippet', { layers: [], snippets: [''], confidence: 0.5 }],
+  ] as const) {
+    it(`reads an ${name} as nothing to add, its repair named`, async () => {
+      const { lib } = fixture(JSON.stringify(value));
+      const result = await lib.advise('inspect this migration');
+      expect(result.error).toBeUndefined();
+      expect(result).toMatchObject({ layers: [], snippets: [], confidence: 0, noComment: true });
+      expect(result.repairs).toContain('empty-as-no-comment');
     });
   }
 

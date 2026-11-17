@@ -77,10 +77,9 @@ test('protocol errors are explicit, bounded and never echo response content; pro
     `not json at all ${secret}`,
     `{"layers":["${secret}"],"snippets":[],"confidence":1.5}`,
     'x'.repeat(20_001),
-    // Unknown fields, the retired abstain field, empty contributions and NO_COMMENT mixed with text are errors.
+    // Unknown fields, the retired abstain field and NO_COMMENT mixed with text are errors.
     `{"layers":["architecture"],"snippets":[],"confidence":0.7,"domain":"${secret}"}`,
     `{"layers":[],"snippets":[],"confidence":0,"abstain":true,"reason":"${secret}"}`,
-    '{"layers":[],"snippets":[],"confidence":0}',
     `NO_COMMENT because ${secret}`,
     `Sure: {"layers":[],"snippets":["${secret}"],"confidence":1}`,
   ]) {

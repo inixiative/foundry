@@ -39,6 +39,7 @@ import {
   type TokenCounts,
 } from '@inixiative/foundry-core';
 import {
+  type AnswerRepair,
   type Carried,
   type ClassifyResult,
   carriedSection,
@@ -49,6 +50,7 @@ import {
   NO_COMMENT,
   NO_COMMENT_RULE,
   protocolAnswer,
+  runRepairs,
   runStages,
   STRICT_RULE,
   type StageCall,
@@ -79,6 +81,8 @@ export interface AdviseResult {
   pointer?: WardenPointer;
   /** The Warden answered NO_COMMENT: it has nothing to add, and nothing reaches the thread. */
   noComment?: true;
+  /** The sloppy shapes the answer was let in from (protocol `AnswerRepair`); absent when it was exact. */
+  repairs?: readonly AnswerRepair[];
   /** Why no call was made, when none was (e.g. a cold cache). */
   skipped?: string;
   /** The provider never admitted the call (queue expiry, shed, admission closed): it did not run. */
@@ -725,6 +729,8 @@ export interface GuardResult {
   findings: GuardFinding[];
   /** A completed check whose answer was NO_COMMENT: nothing to add. */
   noComment?: true;
+  /** The sloppy shapes the answer was let in from (protocol `AnswerRepair`); absent when it was exact. */
+  repairs?: readonly AnswerRepair[];
   /** Whether the guard was triggered for this activity (false only when trigger-gated out). */
   ran: boolean;
   /** Distinguishes a completed check from a skipped, cold, failed or malformed one. */
@@ -1724,13 +1730,22 @@ export class DomainLibrarian {
         error: run.error ?? 'no answer',
         ...classified,
       };
-    const advice = run.final.advice!;
+    const { repairs: _answerRepairs, ...advice } = run.final.advice!;
+    const repairs = runRepairs(run);
+    const repaired = repairs.length ? { repairs } : {};
     // Only a pointing stage's yes reaches the thread; anything else is journalled as nothing to add.
     if (!run.delivered)
-      return { layers: [], snippets: [], confidence: 0, noComment: true, ...classified };
-    if (!advice.snippets.length) return { ...advice, ...classified };
+      return {
+        layers: [],
+        snippets: [],
+        confidence: 0,
+        noComment: true,
+        ...repaired,
+        ...classified,
+      };
+    if (!advice.snippets.length) return { ...advice, ...repaired, ...classified };
     // The charter's contract: the first snippet is the pointer, read into its parts.
-    return { ...advice, pointer: run.final.pointer!, ...classified };
+    return { ...advice, pointer: run.final.pointer!, ...repaired, ...classified };
   }
 
   // -----------------------------------------------------------------------
@@ -1892,6 +1907,7 @@ export class DomainLibrarian {
     return {
       findings,
       ...(!findings.length ? { noComment: true as const } : {}),
+      ...(runRepairs(run).length ? { repairs: runRepairs(run) } : {}),
       ran: true,
       status: 'completed',
       request: supplied,

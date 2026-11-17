@@ -39,6 +39,7 @@ import {
   isSingleDefaultStage,
   KNOWLEDGE_DOC,
   type Recognition,
+  runRepairs,
   SINGLE_STAGE,
   type StageConfig,
   type StageDebug,
@@ -269,9 +270,16 @@ type Row = Omit<WardenProbeAnswer, 'probeId' | 'domain' | 'trigger' | 'elapsedMs
 
 /** A Warden's answer as a row: a yes speaks its final remarks; a no, or a final unsure, is silence. */
 function rowOf(result: AdviseResult | GuardResult, classified?: ClassifyResult): Row {
-  const staged = classified
-    ? { ...(classified.outcome ? { outcome: classified.outcome } : {}), stages: classified.stages }
-    : {};
+  const repairs = classified ? runRepairs(classified) : (result.repairs ?? []);
+  const staged = {
+    ...(classified
+      ? {
+          ...(classified.outcome ? { outcome: classified.outcome } : {}),
+          stages: classified.stages,
+        }
+      : {}),
+    ...(repairs.length ? { repairs } : {}),
+  };
   if ('status' in result) {
     if (result.status !== 'completed')
       return {
@@ -298,17 +306,18 @@ function rowOf(result: AdviseResult | GuardResult, classified?: ClassifyResult):
       : { noComment: true, ...staged };
   if ('status' in result)
     return result.noComment
-      ? { noComment: true }
+      ? { noComment: true, ...staged }
       : {
           noComment: false,
+          ...staged,
           text: result.findings
             .map((f) => [f.description, f.suggestion].filter(Boolean).join(' '))
             .join('\n'),
         };
   // Advice without a snippet adds nothing a Warden would say to the thread.
   return result.noComment || !result.snippets.length
-    ? { noComment: true }
-    : { noComment: false, text: result.snippets.join('\n') };
+    ? { noComment: true, ...staged }
+    : { noComment: false, text: result.snippets.join('\n'), ...staged };
 }
 
 /** A trace's tokens split evenly over a group's members, so per-region cost sums to the group's. */

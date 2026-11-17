@@ -17,6 +17,7 @@ import { Librarian } from '../src/agents/librarian';
 import { buildAgents, ThreadFactory } from '../src/agents/thread-factory';
 import { ThreadRuntimeManager } from '../src/agents/thread-runtime';
 import {
+  type AdviceAnswer,
   NO_COMMENT,
   validateAdviceResponse,
   validateGuardResponse,
@@ -103,9 +104,7 @@ test('NO_COMMENT parses strictly and carries nothing; anything else outside the 
     `${NO_COMMENT}: nothing in my domain`,
     `I have nothing to add. ${NO_COMMENT}`,
     'no comment',
-    '{"layers":[],"snippets":[],"confidence":0}',
     '{"layers":[],"snippets":[],"confidence":0,"abstain":true,"reason":"nothing"}',
-    '{"layers":[],"snippets":[""],"confidence":0.5}',
     'Here is my advice: {"layers":[],"snippets":["x"],"confidence":0.5}',
     '{"layers":[],"snippets":["x"],"confidence":0.5,"note":"extra"}',
   ];
@@ -134,9 +133,44 @@ test('NO_COMMENT parses strictly and carries nothing; anything else outside the 
     expect('error' in result).toBe(true);
     expect(JSON.stringify(result)).not.toContain('nothing in my domain');
   }
+  // A sloppy answer with one meaning is let in and named, so the prompt can be tuned against the count.
+  const nothing: AdviceAnswer = { layers: [], snippets: [], confidence: 0, noComment: true };
+  expect(validateAdviceResponse('{"layers":[],"snippets":[],"confidence":0}')).toEqual({
+    ...nothing,
+    repairs: ['empty-as-no-comment'],
+  });
+  expect(validateAdviceResponse('{"layers":[],"snippets":[""],"confidence":0.5}')).toEqual({
+    ...nothing,
+    repairs: ['empty-snippets-dropped', 'empty-as-no-comment'],
+  });
+  expect(validateAdviceResponse('{"layers":[],"snippets":["x",""],"confidence":0.5}')).toEqual({
+    layers: [],
+    snippets: ['x'],
+    confidence: 0.5,
+    repairs: ['empty-snippets-dropped'],
+  });
+  expect(
+    validateAdviceResponse('{"layers":[],"snippets":["x"],"confidence":0.5,"why":"a lock"}'),
+  ).toEqual({ layers: [], snippets: ['x'], confidence: 0.5, repairs: ['stray-why-dropped'] });
+  expect(validateGuardResponse('{"findings":[]}')).toEqual({
+    findings: [],
+    noComment: true,
+    repairs: ['empty-as-no-comment'],
+  });
+  // A why with text in the wrong field is something said, so an otherwise empty answer stays an error.
+  expect(
+    validateAdviceResponse('{"why":"lock ordering","layers":[],"snippets":[],"confidence":0.9}'),
+  ).toEqual({ error: 'advice response has a "why" but no snippet or layer' });
+  expect(validateGuardResponse('{"why":"it drops a column","findings":[]}')).toEqual({
+    error: 'guard response has a "why" but no findings',
+  });
+  expect(validateGuardResponse('{"why":"  ","findings":[]}')).toEqual({
+    findings: [],
+    noComment: true,
+    repairs: ['stray-why-dropped', 'empty-as-no-comment'],
+  });
   for (const answer of [
     `${NO_COMMENT} — all clear`,
-    '{"findings":[]}',
     '{"findings":[],"verdict":"clear"}',
     'All clear.',
   ])

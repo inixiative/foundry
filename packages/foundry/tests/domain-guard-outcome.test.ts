@@ -115,8 +115,7 @@ test('invalid schema is an explicit invalid-response with a bounded error that n
   const completed = await fixture(() => 'NO_COMMENT').lib.guard(oneCall(observation));
   for (const bad of [
     `not json ${secret}`,
-    // Silence is NO_COMMENT alone: an empty findings list, NO_COMMENT with text, or prose-wrapped JSON is malformed.
-    '{"findings":[]}',
+    // NO_COMMENT with text, or prose-wrapped JSON, is malformed (an empty findings list is a repair).
     `NO_COMMENT ${secret}`,
     `NO_COMMENT.`,
     `Here you go: {"findings":[{"severity":"critical","description":"${secret}"}]}`,

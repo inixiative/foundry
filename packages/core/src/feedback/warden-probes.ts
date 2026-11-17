@@ -75,6 +75,17 @@ export function probeTriggers(probe: WardenProbe): WardenProbeTrigger[] {
 export type ClassifyOutcome = 'yes' | 'unsure' | 'no';
 
 /**
+ * A sloppy answer whose meaning is unambiguous is let in and named, so the prompt can be tuned
+ * against the count: an empty contribution read as NO_COMMENT, empty snippets dropped, a why the
+ * stage did not ask for dropped, a why it asked for missing. Anything else stays an error.
+ */
+export type AnswerRepair =
+  | 'empty-as-no-comment'
+  | 'empty-snippets-dropped'
+  | 'stray-why-dropped'
+  | 'missing-why';
+
+/**
  * One stage of a classification run (Foundry's `classify`), as answered: what it read, what it said
  * and what it cost. A stage that failed or answered out of shape carries `error` and no outcome:
  * counted, never guessed.
@@ -118,6 +129,8 @@ export interface ClassifyStageTrace {
   readonly timedOut?: true;
   /** Region ids a recogniser named that it does not hold: counted, never followed. */
   readonly unknownRegions?: readonly string[];
+  /** The sloppy shapes the answer was let in from; absent when exact. */
+  readonly repairs?: readonly AnswerRepair[];
 }
 
 /** One Warden's answer on one probe, and the judge's verdict when it spoke. */
@@ -142,6 +155,8 @@ export interface WardenProbeAnswer {
   readonly outcome?: ClassifyOutcome;
   /** Every stage the run asked, in order. */
   readonly stages?: readonly ClassifyStageTrace[];
+  /** The sloppy shapes the answer was let in from, over every stage; absent when exact. */
+  readonly repairs?: readonly AnswerRepair[];
 }
 
 /** One probe run as a turn: every Warden asked at once, as the live chorus is. */
@@ -206,6 +221,8 @@ export interface CharterScore {
   readonly silences: number;
   /** Silences whose final outcome was `unsure` (a ternary last stage): delivered as nothing, counted apart. */
   readonly unsure: number;
+  /** Answers let in with a repair (before #398 most were errors): the count the answer prompt is tuned against. */
+  readonly repaired: number;
   /** Remarks the judge could not grade: counted as unmatched, reported apart. */
   readonly unjudged: number;
   /** Per-turn load at roster scale: calls and wall clock, when the run recorded turns. */
@@ -255,6 +272,7 @@ export function scoreCharterRun(
     scope = 0,
     silences = 0,
     unsure = 0,
+    repaired = 0,
     unjudged = 0;
   const recalled = new Set<string>();
   const anticipated = new Set<string>();
@@ -264,6 +282,7 @@ export function scoreCharterRun(
   >();
   for (const a of answers) {
     calls++;
+    if (a.repairs?.length) repaired++;
     const probe = byId.get(a.probeId);
     if (!probe) continue;
     const owned = probe.kind === 'positive' && (probe.gold?.domains ?? []).includes(a.domain);
@@ -350,6 +369,7 @@ export function scoreCharterRun(
     remarks,
     silences,
     unsure,
+    repaired,
     unjudged,
     ...(turns.length
       ? {

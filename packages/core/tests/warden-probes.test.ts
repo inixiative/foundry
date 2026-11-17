@@ -59,7 +59,7 @@ test('silence, speech, scope and recall are scored against who owns the correcti
       said('p2', 'schema', true), // a non-owner matching does not count as recall, and is not a broken silence
       quiet('p2', 'ship'), // the owner stayed quiet: missed
       said('n1', 'schema', false, false), // noise, out of scope
-      quiet('n1', 'ship'),
+      { ...quiet('n1', 'ship'), repairs: ['empty-as-no-comment'] }, // a repaired silence is a silence, counted apart
       {
         probeId: 'n1',
         domain: 'types',
@@ -77,6 +77,7 @@ test('silence, speech, scope and recall are scored against who owns the correcti
     errors: 1,
     remarks: 3,
     silences: 3,
+    repaired: 1,
     unjudged: 0,
     scopeViolations: 1,
     speakPrecision: 0.667,
