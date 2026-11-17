@@ -363,7 +363,7 @@ every role.
 - **Roles.** A main thread composes as its **thread role** (below): `coder`,
   `assistant`, or one of the user's own. `main` is the shared base under every
   thread role: its role files compose for every main thread, and it picks
-  nothing itself. Every model-backed middleware role is its agent id: each Warden (a region Warden's id is its region id) and the
+  nothing itself. Every model-backed middleware role is its agent id: each Warden (a region Warden's id is `region:<region id>`, built by `regionRoleId` from the one namespace registry, `prompts/role-namespace.ts`, so a region named like another role never takes its id; its role files nest by namespace, `.foundry/roles/region/<region id>/`) and the
   Cartographer (its agent id, or `cartographer`). The Librarian makes no model
   call and has nothing to compose. Classifier and router agents still use their
   settings prompt and visible layers.
@@ -717,7 +717,7 @@ regions never run (Heralds are not built) and the view says so.
   thread context of the call. Never the CLAUDE.md / AGENTS.md ladder: that is
   written for the agent doing the work. `resolveProjectView` gives every region
   role `general: []` in both slots (`agents/warden-brief.ts`,
-  `wardenComposition`); a `composition.roles.<region id>` entry keeps its other
+  `wardenComposition`); a `composition.roles.region:<region id>` entry keeps its other
   picks (`exclude`, `budget`, `audience`); one naming nodes in `general` is not
   applied and is reported (`view.chorus.ignoredComposition`, the Knowledge
   page), never thrown, so a teammate's committed region never stops settings
@@ -761,7 +761,7 @@ regions never run (Heralds are not built) and the view says so.
   included) composes it the same way, overlays included (`buildStageKnowledge`,
   layer `role:<id>:domainKnowledge:<doc>`), and a later stage journals its own
   versions with its request (`stageRequests`). The ladder then applies as for any role:
-  `.foundry/roles/<region id>/{instructions,domainKnowledge}.md` at the org,
+  `.foundry/roles/region/<region id>/{instructions,domainKnowledge}.md` at the org,
   project and personal rungs overlay the region, with their own `file:` versions.
 - **Warm-cache key.** Each region has a key, the content hash of its composed
   knowledge (`regionKey`: `knowledge.md` as its source loads it, comments

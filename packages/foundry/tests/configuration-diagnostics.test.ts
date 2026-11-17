@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ContextLayer, ContextStack, type LLMProvider, Thread } from '@inixiative/foundry-core';
 import { resolveThreadDomains } from '../src/agents/configured-experts';
+import { regionRoleId } from '../src/agents/region-roster';
 import { buildAgents, buildLayers, ThreadFactory } from '../src/agents/thread-factory';
 import { DEFAULT_THREAD_DOMAINS, ThreadRuntimeManager } from '../src/agents/thread-runtime';
 import { type FoundryConfig, starterConfig } from '../src/viewer/config';
@@ -150,7 +151,7 @@ test('explicit review override is reported while requested phase settings and pr
     expect(resolved.adviseOpts!.thinking).toBeUndefined();
     expect(f.warnings).toHaveLength(1);
     expect(f.warnings[0]).toContain('expert-review-profile-override');
-    expect(f.warnings[0]).toContain('domain="docs" agent="docs"');
+    expect(f.warnings[0]).toContain(`domain="docs" agent="${regionRoleId('docs')}"`);
     expect(f.warnings[0]).toContain('learning.review');
     expect(f.warnings[0]).toContain('changed=provider,model,thinking,maxTokens');
     expect(f.warnings[0]).toContain('requested');

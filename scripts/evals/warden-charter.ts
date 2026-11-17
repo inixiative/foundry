@@ -321,7 +321,7 @@ const viewOf = (projectId: string | undefined): FoundryConfig =>
   (projectId ? resolveProjectView(config, projectId)?.config : undefined) ?? config;
 const rosterOf = (projectId: string | undefined) => {
   const roster = configuredExperts(viewOf(projectId)).experts.filter(
-    (r) => !onlyRoles || onlyRoles.includes(r.agentId),
+    (r) => !onlyRoles || onlyRoles.includes(r.domain),
   );
   if (onlyRoles && roster.length !== onlyRoles.length)
     throw Error(`--roles names Wardens not in the roster: ${onlyRoles.join(', ')}`);
@@ -383,24 +383,24 @@ for (const probe of probes) {
     const slots = buildRoleLayers(view, agentId, { resolveSource, scope: place });
     await Promise.all([slots.instructions.warm(), slots.domainKnowledge.warm()]);
     const knowledge =
-      alternate('domainKnowledge.md', agentId, probe.project) ?? slots.domainKnowledge.content;
+      alternate('domainKnowledge.md', domain, probe.project) ?? slots.domainKnowledge.content;
     if (!knowledge.trim()) {
       cold.set(key, [...(cold.get(key) ?? []), domain]);
       continue;
     }
     const instructions =
-      alternate('instructions.md', agentId, probe.project) ?? slots.instructions.content;
+      alternate('instructions.md', domain, probe.project) ?? slots.instructions.content;
     const budget = budgetOverride ?? roleComposition(view.composition, agentId).budget;
     const docs: Record<string, string> = {};
     for (const doc of ownDocs) {
-      const layer = buildStageKnowledge(view, agentId, doc, regionDocSourceId(agentId, doc), {
+      const layer = buildStageKnowledge(view, agentId, doc, regionDocSourceId(domain, doc), {
         resolveSource,
         scope: place,
       });
       await layer.warm();
       docs[doc] = layer.content;
     }
-    const members = membersDir ? membersOf(agentId) : undefined;
+    const members = membersDir ? membersOf(domain) : undefined;
     wardens.push({
       domain,
       instructions,

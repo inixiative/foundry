@@ -340,7 +340,7 @@ export function chunkSource(
  * project holds the same text as the project host (oracle docs/foundry/PROJECT-WARDEN-HOST.md,
  * Lifecycle 4): the project's root for every thread, worktree threads included. Wardens never get
  * CLAUDE.md; what would otherwise follow the cwd is the walk for role files
- * (`.foundry/roles/<region>/`) and the paths their text names.
+ * (`.foundry/roles/region/<region>/`) and the paths their text names.
  * Undefined with primed Wardens (`decisionRuntime: claude` or `codex`, or API tokens): a Warden
  * composes at its thread's cwd.
  */

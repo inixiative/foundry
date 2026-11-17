@@ -10,10 +10,11 @@ import {
   Harness,
   type LLMMessage,
   type LLMProvider,
+  roleDirectory,
 } from '@inixiative/foundry-core';
 import { PLAN_ASK_NOTE } from '../src/agents/chorus-reception';
 import { oneCall } from '../src/agents/domain-librarian';
-import { regionInstructions } from '../src/agents/region-roster';
+import { regionInstructions, regionRoleId } from '../src/agents/region-roster';
 import { invalidateComposition } from '../src/agents/role-layers';
 import {
   buildAgents,
@@ -66,10 +67,13 @@ const write = (path: string, text: string) => {
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, text);
 };
+/** A namespaced role's files nest by namespace: `region:conventions` is `roles/region/conventions/`. */
 const roleFile = (dir: string, role: string, slot: string, local = false) =>
-  join(dir, '.foundry', 'roles', role, `${slot}${local ? '.local' : ''}.md`);
-/** The project's one region, and so its one Warden (role and domain are the region id). */
+  join(dir, '.foundry', 'roles', roleDirectory(role), `${slot}${local ? '.local' : ''}.md`);
+/** The project's one region, and so its one Warden (its domain is the region id). */
 const WARDEN = 'conventions';
+/** The generated Warden's role id. */
+const WARDEN_ROLE = regionRoleId(WARDEN);
 const REGION = { id: WARDEN, title: 'Conventions', routing: 'Is this about how this repo works?' };
 const REGION_RULES = regionInstructions(REGION);
 
@@ -246,7 +250,7 @@ function config(picks: RoleComposition = {}): FoundryConfig {
     instructions: { id: 'instructions', type: 'instructions', label: 'I', uri: '', enabled: true },
   };
   c.projects.P = { id: 'P', path: repo };
-  c.composition = { roles: { [WARDEN]: picks } };
+  c.composition = { roles: { [WARDEN_ROLE]: picks } };
   return c;
 }
 
@@ -323,7 +327,7 @@ function setup(
 
 test('a Warden and the main thread take their slots from the view; the Warden slots stay private', async () => {
   ladderFiles();
-  write(roleFile(repo, WARDEN, 'domainKnowledge'), 'PROJECT_WARDEN_KNOWLEDGE');
+  write(roleFile(repo, WARDEN_ROLE, 'domainKnowledge'), 'PROJECT_WARDEN_KNOWLEDGE');
   write(BRIEF(repo), '# Repo\n\nWARDEN_BRIEF');
   const f = setup(config());
   try {
@@ -350,15 +354,17 @@ test('a Warden and the main thread take their slots from the view; the Warden sl
 
 test('a composition over the role budget is a clear reported error in every phase; nothing is sent', async () => {
   ladderFiles();
-  write(roleFile(org, WARDEN, 'domainKnowledge'), `# Org\n\n${'ORG_POLICY '.repeat(400)}`);
+  write(roleFile(org, WARDEN_ROLE, 'domainKnowledge'), `# Org\n\n${'ORG_POLICY '.repeat(400)}`);
   const f = setup(config({ budget: 3_000 }));
   try {
     await f.thread.dispatch('worker', 'Add a script', undefined, { messageId: 'm1' });
     expect(f.calls.filter((call) => call.phase === 'advise')).toHaveLength(0);
     const advice = await f.lib.advise('Add a script');
     expect(advice.error).toContain('exceed its budget of 3000');
-    expect(advice.error).toContain(`composition.roles.${WARDEN}.budget`);
-    expect(advice.error).toContain(`${roleFile(org, WARDEN, 'domainKnowledge')} (domainKnowledge`);
+    expect(advice.error).toContain(`composition.roles.${WARDEN_ROLE}.budget`);
+    expect(advice.error).toContain(
+      `${roleFile(org, WARDEN_ROLE, 'domainKnowledge')} (domainKnowledge`,
+    );
     const guard = await f.lib.guard(oneCall({ tool: 'Write', input: { file_path: 'a.ts' } }));
     expect(guard.status).toBe('not-admitted');
     expect(guard.error).toContain('exceed its budget');
@@ -421,7 +427,7 @@ test('the Cartographer composes too, and over its budget routing reports an erro
 
 test('a Warden primes its composed prefix and re-primes only when the composition changes', async () => {
   ladderFiles();
-  write(roleFile(repo, WARDEN, 'domainKnowledge'), 'KNOWLEDGE_V1');
+  write(roleFile(repo, WARDEN_ROLE, 'domainKnowledge'), 'KNOWLEDGE_V1');
   write(BRIEF(repo), 'WARDEN_BRIEF');
   const f = setup(config());
   const primed = () => {
@@ -438,7 +444,7 @@ test('a Warden primes its composed prefix and re-primes only when the compositio
     expect(first.input).not.toContain('KNOWLEDGE_V1');
     await f.thread.dispatch('worker', 'Second', undefined, { messageId: 'm2' });
     expect(primed().spec.hash).toBe(first.spec.hash);
-    write(roleFile(repo, WARDEN, 'domainKnowledge'), 'KNOWLEDGE_V2');
+    write(roleFile(repo, WARDEN_ROLE, 'domainKnowledge'), 'KNOWLEDGE_V2');
     expect(invalidateComposition()).toBeGreaterThan(0);
     await f.thread.dispatch('worker', 'Third', undefined, { messageId: 'm3' });
     const third = primed();
@@ -451,7 +457,7 @@ test('a Warden primes its composed prefix and re-primes only when the compositio
 
 test("a Warden that chimes in is appended to the end of the user's message, not the context", async () => {
   const f = setup(config(), { snippets: ['Use the existing script runner.'] });
-  write(roleFile(repo, WARDEN, 'domainKnowledge'), 'KNOWLEDGE');
+  write(roleFile(repo, WARDEN_ROLE, 'domainKnowledge'), 'KNOWLEDGE');
   try {
     await f.thread.dispatch('worker', 'Add a script', undefined, { messageId: 'm1' });
     const messages = f.last('central').messages;
@@ -493,10 +499,13 @@ test('the Warden brief composes like any ladder file: its imports load, the pers
 
 test("a role never reads more personal files than the main thread's audience allows", async () => {
   ladderFiles();
-  write(roleFile(repo, WARDEN, 'domainKnowledge'), 'KNOWLEDGE');
+  write(roleFile(repo, WARDEN_ROLE, 'domainKnowledge'), 'KNOWLEDGE');
   write(BRIEF(repo), 'SHARED_BRIEF');
   write(BRIEF(repo, true), 'PERSONAL_BRIEF');
-  write(join(home, '.foundry', 'roles', WARDEN, 'instructions.md'), 'PERSONAL_WARDEN_NOTES');
+  write(
+    join(home, '.foundry', 'roles', 'region', WARDEN, 'instructions.md'),
+    'PERSONAL_WARDEN_NOTES',
+  );
   // The Warden's notes reach main's message, so a team main thread makes the Warden team too.
   const c = config();
   c.composition = { roles: { ...c.composition!.roles, main: { audience: 'team' } } };
@@ -682,7 +691,7 @@ test('a composition edit reaches the main thread on its next turn', async () => 
 
 test('an edited CLAUDE.md, a new MEMORY.md, an edited Warden brief and role file reach a running thread and its Warden on the next turn', async () => {
   ladderFiles();
-  write(roleFile(repo, WARDEN, 'domainKnowledge'), 'KNOWLEDGE_V1');
+  write(roleFile(repo, WARDEN_ROLE, 'domainKnowledge'), 'KNOWLEDGE_V1');
   write(BRIEF(repo), 'BRIEF_V1');
   const f = setup(config());
   const primed = () => {
@@ -699,7 +708,7 @@ test('an edited CLAUDE.md, a new MEMORY.md, an edited Warden brief and role file
       join(claudeDir, 'projects', claudeProjectDirName(repo), 'memory', 'MEMORY.md'),
       'REMEMBERED_FACT',
     );
-    write(roleFile(repo, WARDEN, 'domainKnowledge'), 'KNOWLEDGE_V2');
+    write(roleFile(repo, WARDEN_ROLE, 'domainKnowledge'), 'KNOWLEDGE_V2');
     write(BRIEF(repo), 'BRIEF_V2');
     await f.thread.dispatch('worker', 'Second', undefined, { messageId: 'm2' });
     const central = JSON.stringify(f.last('central').messages);

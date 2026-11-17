@@ -12,6 +12,7 @@ import {
   regionDocOfSubject,
   regionDocSourceId,
   regionKey,
+  regionRoleId,
   regionSourceId,
 } from '../src/agents/region-roster';
 import { buildRoleLayers, buildStageKnowledge } from '../src/agents/role-layers';
@@ -46,6 +47,8 @@ const TWO_STAGES: StageSettings[] = [
   { task: 'recognise', doc: 'recognise.md', outcomes: 'ternary', escalate: ['yes', 'unsure'] },
   { model: 'claude-sonnet-5-5', effort: 'low' },
 ];
+/** The `locks` region's Warden: its role and agent id (its domain is `locks`). */
+const LOCKS = regionRoleId('locks');
 
 function project(chorus: Record<string, unknown> = { enabled: true }) {
   const path = temp('classify-project');
@@ -115,7 +118,7 @@ test('a stage whose doc a region lacks fails the chorus build, naming the region
   expect(on.chorus.roles.warden.stages).toEqual(validateStages('s', TWO_STAGES));
   // Each doc a stage reads is its own project source; the first stage's is the Warden's knowledge.
   // The knowledge slot is knowledge.md; the first stage's own doc is composed beside it.
-  expect(on.config.agents.locks!.domainKnowledge).toEqual(['region:locks']);
+  expect(on.config.agents[LOCKS]!.domainKnowledge).toEqual(['region:locks']);
   expect(Object.keys(on.config.sources).sort()).toEqual([
     'region:locks',
     'region:locks:recognise.md',
@@ -148,7 +151,7 @@ test('settings resolve per role: the machine’s stages replace the repository�
   expect(heralds.chorus.on).toBe(true);
   expect(heralds.chorus.roles.herald).toMatchObject({ regions: 1, built: false });
   expect(heralds.chorus.reason).toBe('1 Herald topic (queues) not run: Heralds are not built');
-  expect(Object.keys(heralds.config.agents)).toEqual(['locks']);
+  expect(Object.keys(heralds.config.agents)).toEqual([LOCKS]);
 });
 
 test('project-level charter settings are refused by name; stage settings are checked where written', () => {
@@ -176,11 +179,11 @@ test('each stage composes its own doc, journals its own versions, and recomposes
   mkdirSync(memory, { recursive: true });
   const resolveSource = createSourceResolver({ memory: new FileMemory(memory) });
   const scope = { projectId: 'P', cwd: config.projects.P!.path };
-  const slots = buildRoleLayers(view, 'locks', { resolveSource, scope });
+  const slots = buildRoleLayers(view, LOCKS, { resolveSource, scope });
   // The knowledge slot stays knowledge.md (the review reads it); stage 1's doc composes on its own.
   const first = buildStageKnowledge(
     view,
-    'locks',
+    LOCKS,
     'recognise.md',
     regionDocSourceId('locks', 'recognise.md'),
     { resolveSource, scope },
@@ -189,7 +192,7 @@ test('each stage composes its own doc, journals its own versions, and recomposes
   await Promise.all([slots.instructions.warm(), second.warm(), first.warm()]);
   expect(first.content).toContain('Mutual exclusion across instances.');
   expect(second.content).toContain('- createLock (CONCURRENCY.md)');
-  expect(first.id).toBe('role:locks:domainKnowledge:recognise.md');
+  expect(first.id).toBe(`role:${LOCKS}:domainKnowledge:recognise.md`);
 
   const answers = [
     '{"snippets":["locks: YES — a lock"],"layers":[],"confidence":0.8}',
@@ -204,7 +207,7 @@ test('each stage composes its own doc, journals its own versions, and recomposes
   const stages = validateStages('s', TWO_STAGES);
   const lib = new DomainLibrarian({
     domain: 'locks',
-    role: 'locks',
+    role: LOCKS,
     cache: slots.domainKnowledge,
     instructions: slots.instructions,
     signals: new SignalBus(0),
@@ -236,7 +239,7 @@ test('each stage composes its own doc, journals its own versions, and recomposes
   const audit = AuditLog.for(temp('classify-audit'));
   const auditor = new CompositionAuditor(audit, store);
   const versions = requests.map((r) =>
-    auditor.versions('locks', r.composition as Parameters<CompositionAuditor['versions']>[1]),
+    auditor.versions(LOCKS, r.composition as Parameters<CompositionAuditor['versions']>[1]),
   );
   // One composition per doc, each recomposing to exactly the text that stage read.
   expect(versions[0]!.domainKnowledge).not.toBe(versions[1]!.domainKnowledge);

@@ -11,6 +11,7 @@ import {
   type LLMMessage,
   type LLMProvider,
 } from '@inixiative/foundry-core';
+import { regionRoleId } from '../src/agents/region-roster';
 import { invalidateComposition } from '../src/agents/role-layers';
 import {
   buildAgents,
@@ -162,7 +163,10 @@ test('an applied rule is in the routed Warden’s composed instructions on the n
 
   await thread.dispatch('worker', 'First turn');
   const [item] = await service.intervention(thread, 'Merge it yourself once green.');
-  expect(item?.route).toMatchObject({ roles: ['conventions'], level: 'project-personal' });
+  expect(item?.route).toMatchObject({
+    roles: [regionRoleId('conventions')],
+    level: 'project-personal',
+  });
   const prompt = queue.pending()[0]!;
   service.submit(item!.id, 'apply');
   await new Promise((resolve) => setTimeout(resolve, 10));
@@ -172,5 +176,7 @@ test('an applied rule is in the routed Warden’s composed instructions on the n
   await thread.dispatch('worker', 'Second turn');
   const advice = calls.filter((call) => call.phase === 'pre').at(-1)!;
   expect(advice.messages[0]!.content).toContain(`${RULE} (${item!.id})`);
-  expect(service.uses(item!.id)).toMatchObject([{ phase: 'advice', roles: ['conventions'] }]);
+  expect(service.uses(item!.id)).toMatchObject([
+    { phase: 'advice', roles: [regionRoleId('conventions')] },
+  ]);
 });

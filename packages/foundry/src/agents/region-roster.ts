@@ -14,6 +14,7 @@ import {
   stageDocs,
 } from '../classify';
 import { contentHash } from '../persistence/journal-content';
+import { isIdName, roleIdIn, roleNamespace } from '../prompts/role-namespace';
 import type {
   AgentSettingsConfig,
   ChorusSettings,
@@ -46,8 +47,12 @@ export const REGION_GUARD_TRIGGERS: readonly string[] = [
   'bash',
 ];
 
+/** The role id of a region's Warden, also its agent id: never a bare name, so it cannot take another role's. */
+export const regionRoleId = (regionId: string): string => roleIdIn(roleNamespace.region, regionId);
+
 /** Source id of a region's knowledge in the project view; the audit log versions it as `source-content:<id>@project:<pid>`. */
-export const regionSourceId = (regionId: string): string => `region:${regionId}`;
+export const regionSourceId = (regionId: string): string =>
+  roleIdIn(roleNamespace.region, regionId);
 
 /**
  * Source id of one doc of a region: its knowledge.md is `region:<id>`, any other doc a stage reads
@@ -56,7 +61,9 @@ export const regionSourceId = (regionId: string): string => `region:${regionId}`
 export const regionDocSourceId = (regionId: string, doc: string): string =>
   doc === KNOWLEDGE_DOC ? regionSourceId(regionId) : `${regionSourceId(regionId)}:${doc}`;
 
-const REGION_SUBJECT = /^source-content:region:([^@:]+)(?::([^@]+))?(?:@project:.*)?$/;
+const REGION_SUBJECT = new RegExp(
+  `^source-content:${roleNamespace.region}:([^@:]+)(?::([^@]+))?(?:@project:.*)?$`,
+);
 
 /** The region id a composition part's subject names, when it is a region's doc. */
 export function regionOfSubject(subject: string): string | undefined {
@@ -109,8 +116,6 @@ export interface ChorusRegion extends RegionSummary {
   readonly layer: string;
   readonly replaces: readonly string[];
 }
-
-const REGION_ID = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,199}$/;
 
 /**
  * The layers a project's chorus is built from, in order: `chorus.layers` as written, else the one
@@ -182,7 +187,7 @@ export function readRegions(dir: string): RegionSummary[] {
       throw Error(
         `region ${entry.name} at ${dir}: region.json "role" must be "warden" or "herald"`,
       );
-    if (typeof r.id !== 'string' || !REGION_ID.test(r.id))
+    if (!isIdName(r.id))
       throw Error(
         `region ${entry.name} at ${dir}: region.json needs an "id" (letters, digits, _ . -)`,
       );
@@ -359,7 +364,7 @@ export interface RegionWarden {
  * id, asked on every user message (`invocation: always`) and on every write or exec tool call, its
  * knowledge the region's knowledge.md through a `markdown` source (audited as `source-content`, so
  * composition versions name the exact text). Org and personal overlays reach it through the ladder's
- * role files for role `<region id>` as for any Warden.
+ * role files for role `region:<region id>` (`.foundry/roles/region/<region id>/`) as for any Warden.
  */
 export function regionWardens(
   regions: readonly RegionSummary[],
@@ -380,7 +385,7 @@ function regionWarden(region: RegionSummary, stages: readonly StageConfig[]): Re
   return {
     region,
     agent: {
-      id: region.id,
+      id: regionRoleId(region.id),
       kind: 'domain-librarian',
       flowRole: 'domain-advising',
       domain: region.id,

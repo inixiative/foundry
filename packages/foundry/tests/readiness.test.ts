@@ -4,6 +4,7 @@ import { mkdtempSync } from 'node:fs';
 import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { regionRoleId } from '../src/agents/region-roster';
 import { inspectReadiness } from '../src/readiness';
 import { ConfigStore, defaultConfig } from '../src/viewer/config';
 import { writeRegions } from './helpers/regions';
@@ -50,7 +51,7 @@ test('readiness resolves effective experts without dispatch, loading corpus or e
     expect(report.profiles).toContainEqual(
       expect.objectContaining({
         scope: 'P',
-        agentId: 'docs',
+        agentId: regionRoleId('docs'),
         role: 'domain-advising',
         domain: 'docs',
       }),

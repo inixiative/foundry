@@ -10,6 +10,7 @@ import type {
   HierarchySpan,
 } from '@inixiative/foundry-core';
 import { CORPUS_TIERS, type CorpusTier } from '../agents/corpus-compiler';
+import { roleNameIn, roleNamespace } from './role-namespace';
 
 /** The two composed slots every role has. Thread knowledge is computed per call, not composed. */
 export const COMPOSITION_SLOTS = ['instructions', 'domainKnowledge'] as const;
@@ -584,6 +585,10 @@ export function validateCompositionSettings(
         );
     }
     if (picks.thread !== undefined) {
+      if (roleNameIn(roleNamespace.region, role) !== undefined)
+        throw Error(
+          `${where}.thread: ${role} is a region Warden's role, never a thread role; name the thread role without the ${roleNamespace.region}: prefix`,
+        );
       const thread = picks.thread as unknown;
       if (!thread || typeof thread !== 'object' || Array.isArray(thread))
         throw Error(`${where}.thread must be an object: { label?, defaultFor? }`);

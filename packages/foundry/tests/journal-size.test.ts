@@ -14,6 +14,7 @@ import {
   type LLMProvider,
 } from '@inixiative/foundry-core';
 import { ProjectRegistry } from '../src/agents/project';
+import { regionRoleId } from '../src/agents/region-roster';
 import {
   buildAgents,
   buildLayers,
@@ -96,14 +97,16 @@ async function wardenConfig(wardens: number): Promise<FoundryConfig> {
     ids.map((id) => ({ id, knowledge: KNOWLEDGE })),
   );
   for (const [i, id] of ids.entries()) {
-    await mkdir(join(project, '.foundry', 'roles', id), { recursive: true });
+    await mkdir(join(project, '.foundry', 'roles', 'region', id), { recursive: true });
     await writeFile(
-      join(project, '.foundry', 'roles', id, 'instructions.md'),
+      join(project, '.foundry', 'roles', 'region', id, 'instructions.md'),
       `${SHARED}\nWARDEN_${i}`,
     );
   }
   const c = baseConfig();
-  c.composition!.roles = Object.fromEntries(ids.map((id) => [id, { budget: 200_000 }]));
+  c.composition!.roles = Object.fromEntries(
+    ids.map((id) => [regionRoleId(id), { budget: 200_000 }]),
+  );
   c.projects.P = { id: 'P', path: project };
   return c;
 }

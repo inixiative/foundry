@@ -9,6 +9,7 @@
 // never guessed, and a line in no shape is an error.
 
 import type { ClassifyOutcome } from '@inixiative/foundry-core';
+import { isIdName } from '../prompts/role-namespace';
 import type { StageOutcomes } from './stages';
 
 /** One region a recogniser named for a moment, with its line why and its outcome. */
@@ -18,7 +19,6 @@ export interface Recognition {
   readonly outcome: Exclude<ClassifyOutcome, 'no'>;
 }
 
-const ID = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,199}$/;
 const LINE =
   /^\s*(?:in my domain:\s*)?(?:regions?\s+)?`?([A-Za-z0-9][A-Za-z0-9_.,\s`/-]*?)`?\s*:\s*(.+?)\s*$/i;
 const TAG = /^\**(YES|UNSURE)\**\s*(?:[—–:-]+\s*|$)/i;
@@ -42,7 +42,7 @@ export function parseRecognition(
       ? m[1]!
           .split(/\s*,\s*|\s+(?:and|\/)\s+/i)
           .map((s) => s.trim().replace(/^`|`$/g, ''))
-          .filter((s) => ID.test(s))
+          .filter(isIdName)
       : [];
     if (!m || !ids.length) {
       errors.push(line.trim());

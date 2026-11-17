@@ -8,6 +8,7 @@ import { vendorOfProvider } from '@inixiative/foundry-core';
 import { DEFAULT_STAGES, type StageConfig } from '../classify';
 import { providerEnabled } from '../models/vendors';
 import { roleComposition } from '../prompts/instruction-settings';
+import { isIdName, isRoleId } from '../prompts/role-namespace';
 import type { AgentSettingsConfig, FoundryConfig } from '../viewer/config';
 import { resolveProjectView } from '../viewer/config-resolve';
 import { threadKnowledgeLayerId } from './domain-librarian';
@@ -20,8 +21,6 @@ export interface ConfiguredExpert {
   readonly agent: AgentSettingsConfig;
 }
 
-const identity = (value: unknown): value is string =>
-  typeof value === 'string' && /^[A-Za-z0-9][A-Za-z0-9_.-]{0,199}$/.test(value);
 // Diagnostics contain escaped, bounded identities and field names only, never
 // layer contents, instructions, writer lists or provider configuration payloads.
 const diagnosticLabel = (value: string): string => {
@@ -45,7 +44,7 @@ export function configuredExperts(config: FoundryConfig): {
   const domains = new Map<string, string>();
   for (const [id, agent] of Object.entries(config.agents)) {
     if (agent.flowRole !== 'domain-advising') continue;
-    if (!identity(id) || agent.id !== id || !identity(agent.domain))
+    if (!isRoleId(id) || agent.id !== id || !isIdName(agent.domain))
       throw Error(`Invalid configured expert identity: ${id}`);
     if (typeof agent.enabled !== 'boolean') throw Error(`Invalid expert enablement: ${id}`);
     claimedDomains.add(agent.domain);
@@ -290,7 +289,7 @@ export function resolveThreadDomains(
     seenLayers = new Set<string>();
   for (const dc of result) {
     if (
-      !identity(dc.domain) ||
+      !isIdName(dc.domain) ||
       seenDomains.has(dc.domain) ||
       (dc.layerId !== undefined && seenLayers.has(dc.layerId))
     )

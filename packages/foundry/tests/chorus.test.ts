@@ -40,6 +40,7 @@ import {
   readRegions,
   regionKey,
   regionOfSubject,
+  regionRoleId,
   regionSourceId,
 } from '../src/agents/region-roster';
 import { buildRoleLayers } from '../src/agents/role-layers';
@@ -88,6 +89,10 @@ const write = (path: string, text: string) => {
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, text);
 };
+
+/** The generated Wardens' role and agent ids (their domains are the bare region ids). */
+const LOCKS = regionRoleId('concurrency-locks');
+const LENS = regionRoleId('lens-model');
 
 const LOCKS_ROUTING =
   'Is this about two things running at once and who goes first: a race between processes (createLock, withOwnerLock, db.findForUpdate), or newest-wins jobs (claimLane / watchLane)?';
@@ -263,9 +268,9 @@ test("a project's chorus is one generated Warden per region of .foundry/regions,
   ]);
   expect(view.config.agents.worker).toEqual(c.agents.worker!);
 
-  const locks = view.config.agents['concurrency-locks']!;
+  const locks = view.config.agents[LOCKS]!;
   expect(locks).toMatchObject({
-    id: 'concurrency-locks',
+    id: LOCKS,
     kind: 'domain-librarian',
     flowRole: 'domain-advising',
     domain: 'concurrency-locks',
@@ -290,7 +295,7 @@ test("a project's chorus is one generated Warden per region of .foundry/regions,
     enabled: true,
   });
   // Provenance: every field derived from the region, and the view's project carries the agent.
-  const resolved = view.agents.find((a) => a.id === 'concurrency-locks')!;
+  const resolved = view.agents.find((a) => a.id === LOCKS)!;
   expect(resolved).toMatchObject({
     scope: 'project-generated',
     generatedFrom: join(regions, 'concurrency-locks', 'region.json'),
@@ -299,23 +304,23 @@ test("a project's chorus is one generated Warden per region of .foundry/regions,
   expect(resolved.fields.prompt!.chunks![0]!.from).toBe(
     join(regions, 'concurrency-locks', 'region.json'),
   );
-  expect(view.config.projects.P!.agents!['concurrency-locks']).toEqual(locks);
+  expect(view.config.projects.P!.agents![LOCKS]).toEqual(locks);
   // Neither slot reads general files (CLAUDE.md and the like); the region is its knowledge.
-  expect(view.config.composition!.roles!['concurrency-locks']).toEqual({
+  expect(view.config.composition!.roles![LOCKS]).toEqual({
     instructions: { general: [] },
     domainKnowledge: { general: [] },
   });
   // The Warden brief is a ladder node of its own, for exactly the project's Wardens.
   expect(view.config.composition!.nodes![WARDEN_BRIEF_NODE]!.when).toEqual({
-    roles: ['concurrency-locks', 'lens-model'],
+    roles: [LOCKS, LENS],
     slots: ['instructions'],
   });
   // A role entry in settings keeps its other picks; the ladder never comes back.
   c.composition!.roles = {
-    'lens-model': { budget: 50_000, instructions: { exclude: ['project'] } },
+    [LENS]: { budget: 50_000, instructions: { exclude: ['project'] } },
   };
   const tuned = resolveProjectView(c, 'P')!.config.composition!.roles!;
-  expect(tuned['lens-model']).toEqual({
+  expect(tuned[LENS]).toEqual({
     budget: 50_000,
     instructions: { exclude: ['project'], general: [] },
     domainKnowledge: { general: [] },
@@ -323,15 +328,15 @@ test("a project's chorus is one generated Warden per region of .foundry/regions,
   // A `general` naming nodes is never applied to a Warden (Aron, 2026-11-02: no opt-out) and is
   // reported, not thrown: a teammate's new region never stops this machine's settings loading.
   for (const slot of ['instructions', 'domainKnowledge'] as const) {
-    c.composition!.roles = { 'lens-model': { [slot]: { general: ['project'] } } };
+    c.composition!.roles = { [LENS]: { [slot]: { general: ['project'] } } };
     const ignoredView = resolveProjectView(c, 'P')!;
-    expect(ignoredView.config.composition!.roles!['lens-model']![slot]).toEqual({ general: [] });
+    expect(ignoredView.config.composition!.roles![LENS]![slot]).toEqual({ general: [] });
     expect(ignoredView.chorus.ignoredComposition).toEqual([
-      expect.stringContaining(`composition.roles.lens-model.${slot}.general is not applied`),
+      expect.stringContaining(`composition.roles.${LENS}.${slot}.general is not applied`),
     ]);
   }
   // `general: []`, what a Warden composes anyway, is no problem.
-  c.composition!.roles = { 'lens-model': { instructions: { general: [] } } };
+  c.composition!.roles = { [LENS]: { instructions: { general: [] } } };
   expect(resolveProjectView(c, 'P')!.chorus.ignoredComposition).toBeUndefined();
   c.composition!.roles = {};
   c.composition!.nodes = {
@@ -339,20 +344,6 @@ test("a project's chorus is one generated Warden per region of .foundry/regions,
     [WARDEN_BRIEF_NODE]: { scope: 'project', personal: false, sources: [] },
   };
   expect(() => resolveProjectView(c, 'P')).toThrow('the project Warden brief');
-});
-
-test("a region may not take the main thread's or the Cartographer's composition role", () => {
-  for (const id of ['main', 'cartographer']) {
-    const { project, regions } = projectWithRegions();
-    write(
-      join(regions, id, 'region.json'),
-      JSON.stringify({ id, title: id, routing: 'r', concepts: [id] }),
-    );
-    write(join(regions, id, 'knowledge.md'), knowledge(id, 'r', 'K'));
-    expect(() => resolveProjectView(config(project), 'P')).toThrow(
-      `has the reserved role id "${id}"`,
-    );
-  }
 });
 
 test("a region Warden composes the charter's instructions, the project's Warden brief and its region, never CLAUDE.md", async () => {
@@ -366,7 +357,10 @@ test("a region Warden composes the charter's instructions, the project's Warden 
   );
   write(join(project, 'docs', 'shape.md'), 'SHAPE_DOC');
   write(join(project, '.foundry', 'warden-brief.local.md'), 'BRIEF_PERSONAL');
-  write(join(project, '.foundry', 'roles', 'lens-model', 'instructions.md'), 'ROLE_FILE_LENS');
+  write(
+    join(project, '.foundry', 'roles', 'region', 'lens-model', 'instructions.md'),
+    'ROLE_FILE_LENS',
+  );
   const c = config(project);
   // The project node also reads the directory's general files, as Claude Code's own ladder does.
   c.composition!.nodes!.project!.sources = [
@@ -388,7 +382,7 @@ test("a region Warden composes the charter's instructions, the project's Warden 
     memory: new FileMemory(join(tempDir('memory'), 'm')),
   });
   const scope = { threadId: 't', projectId: 'P', cwd: project };
-  const lens = buildRoleLayers(view.config, 'lens-model', { resolveSource, scope });
+  const lens = buildRoleLayers(view.config, LENS, { resolveSource, scope });
   await Promise.all([lens.instructions.warm(), lens.domainKnowledge.warm()]);
   const instructions = lens.instructions.content;
   expect(instructions).toContain('BRIEF_PROJECT');
@@ -419,7 +413,7 @@ test("a region Warden composes the charter's instructions, the project's Warden 
       ),
   ).toBe(true);
   // A Warden without a role file still gets the brief.
-  const locks = buildRoleLayers(view.config, 'concurrency-locks', { resolveSource, scope });
+  const locks = buildRoleLayers(view.config, LOCKS, { resolveSource, scope });
   await locks.instructions.warm();
   expect(locks.instructions.content).toContain('BRIEF_PROJECT');
   expect(locks.instructions.content).not.toContain('ROLE_FILE_LENS');
@@ -699,9 +693,9 @@ test('a chorus composes from layers in order: a later region replaces an earlier
   // The replaced region is the later layer's, whole: its files, its prompt, its knowledge.
   const lens = view.chorus.regions.find((r) => r.id === 'lens-model')!;
   expect(lens.knowledgePath).toBe(join(delta, 'lens-model', 'knowledge.md'));
-  expect(view.config.agents['lens-model']!.prompt).toContain('Your region: The lens model (here)');
+  expect(view.config.agents[LENS]!.prompt).toContain('Your region: The lens model (here)');
   expect(view.config.sources['region:lens-model']!.uri).toBe(lens.knowledgePath);
-  expect(view.agents.find((a) => a.id === 'lens-model')!.generatedFrom).toBe(lens.path);
+  expect(view.agents.find((a) => a.id === LENS)!.generatedFrom).toBe(lens.path);
   expect(configuredExperts(view.config).experts.map((e) => e.domain)).toEqual([
     'concurrency-locks',
     'kingdom-signets',
@@ -721,7 +715,7 @@ test('a chorus composes from layers in order: a later region replaces an earlier
   const resolveSource = createSourceResolver({
     memory: new FileMemory(join(tempDir('memory'), 'm')),
   });
-  const slots = buildRoleLayers(view.config, 'lens-model', {
+  const slots = buildRoleLayers(view.config, LENS, {
     resolveSource,
     scope: { threadId: 't', projectId: 'P', cwd: project },
   });
@@ -792,7 +786,7 @@ test("a region's warm-cache key is the content hash of its composed knowledge: e
   const resolveSource = createSourceResolver({
     memory: new FileMemory(join(tempDir('memory'), 'm')),
   });
-  const slots = buildRoleLayers(view.config, 'concurrency-locks', {
+  const slots = buildRoleLayers(view.config, LOCKS, {
     resolveSource,
     scope: { threadId: 't', projectId: 'P', cwd: project },
   });
@@ -800,8 +794,8 @@ test("a region's warm-cache key is the content hash of its composed knowledge: e
   const store = new LocalSessionStore(':memory:');
   try {
     const auditor = new CompositionAuditor(AuditLog.for(tempDir('chorus-audit')), store);
-    const versions = auditor.versions('concurrency-locks', {
-      role: 'concurrency-locks',
+    const versions = auditor.versions(LOCKS, {
+      role: LOCKS,
       instructions: slots.instructions.segments(),
       domainKnowledge: slots.domainKnowledge.segments(),
     });
@@ -881,25 +875,30 @@ test('settings declare no Wardens: a hand-named one is refused by name with the 
   write(join(regions, 'orphan', 'region.json'), JSON.stringify({ id: 'orphan', title: 'O' }));
   expect(() => resolveProjectView(c, 'P')).toThrow('needs a "routing" line');
   rmSync(join(regions, 'orphan'), { recursive: true });
-  // A region named like a global agent cannot take its place.
+  // A region named like a global agent is its own Warden (`region:worker`), and no written agent
+  // may take a Warden's id.
   write(
     join(regions, 'worker', 'region.json'),
     JSON.stringify({ id: 'worker', title: 'W', routing: 'r' }),
   );
   write(join(regions, 'worker', 'knowledge.md'), 'x');
-  expect(() => resolveProjectView(c, 'P')).toThrow('has the id of global agent "worker"');
+  const beside = resolveProjectView(c, 'P')!.config.agents;
+  expect(beside.worker).toMatchObject({ id: 'worker', kind: 'executor' });
+  expect(beside[regionRoleId('worker')]).toMatchObject({ domain: 'worker' });
+  c.agents[regionRoleId('worker')] = { ...c.agents.worker!, id: regionRoleId('worker') };
+  expect(() => validateConfig(c)).toThrow('the region: prefix names a region Warden');
 });
 
 test("a region Warden's domain knowledge is the whole knowledge.md, with the ladder's overlays and source provenance", async () => {
   const { project, regions } = projectWithRegions();
   const c = config(project);
-  // Org/personal overlays reach a region Warden as role files for role `<region id>`.
+  // Org/personal overlays reach a region Warden as role files for role `region:<region id>` (`.foundry/roles/region/<region id>/`).
   write(
-    join(project, '.foundry', 'roles', 'concurrency-locks', 'domainKnowledge.md'),
+    join(project, '.foundry', 'roles', 'region', 'concurrency-locks', 'domainKnowledge.md'),
     'OVERLAY_KNOWLEDGE: prefer withOwnerLock for owner-scoped writes.',
   );
   write(
-    join(project, '.foundry', 'roles', 'concurrency-locks', 'instructions.md'),
+    join(project, '.foundry', 'roles', 'region', 'concurrency-locks', 'instructions.md'),
     'OVERLAY_INSTRUCTIONS: name the sibling you did not choose.',
   );
   validateConfig(c);
@@ -907,7 +906,7 @@ test("a region Warden's domain knowledge is the whole knowledge.md, with the lad
   const resolveSource = createSourceResolver({
     memory: new FileMemory(join(tempDir('memory'), 'm')),
   });
-  const slots = buildRoleLayers(view.config, 'concurrency-locks', {
+  const slots = buildRoleLayers(view.config, LOCKS, {
     resolveSource,
     scope: { threadId: 't', projectId: 'P', cwd: project },
   });
@@ -934,7 +933,8 @@ test("a region Warden's domain knowledge is the whole knowledge.md, with the lad
   expect(subjects).toContain(`source-content:${regionSourceId('concurrency-locks')}@project:P`);
   expect(
     subjects.some(
-      (s) => s.startsWith('file:') && s.includes('roles/concurrency-locks/domainKnowledge.md'),
+      (s) =>
+        s.startsWith('file:') && s.includes('roles/region/concurrency-locks/domainKnowledge.md'),
     ),
   ).toBe(true);
   expect(segmentsText(slots.domainKnowledge.segments())).toBe(text);
@@ -945,12 +945,10 @@ test("a region Warden's domain knowledge is the whole knowledge.md, with the lad
   expect(instructions).toContain('OVERLAY_INSTRUCTIONS');
   expect(
     slots.instructions.segments().flatMap((s) => (typeof s === 'string' ? [] : [s.subject])),
-  ).toContain('prompt:agent:concurrency-locks@project:P');
+  ).toContain(`prompt:agent:${LOCKS}@project:P`);
 
   // Within the default budget with room to spare; the region is far under H.
-  expect(roleComposition(view.config.composition, 'concurrency-locks').budget).toBe(
-    DEFAULT_ROLE_BUDGET,
-  );
+  expect(roleComposition(view.config.composition, LOCKS).budget).toBe(DEFAULT_ROLE_BUDGET);
   expect(instructions.length + text.length).toBeLessThan(DEFAULT_ROLE_BUDGET);
   expect(view.chorus.layers[0]!.regionsDir).toBe(regions);
 });
@@ -1192,27 +1190,24 @@ test('budgets admit a region at the 40k-token hard cap and refuse above it, with
   expect(DECISION_INPUT_CAP).toBeGreaterThanOrEqual(
     DEFAULT_ROLE_BUDGET + WARDEN_CHARTER.length + 4_000 + 20_000,
   );
-  expect(roleComposition(undefined, 'concurrency-locks').budget).toBe(DEFAULT_ROLE_BUDGET);
+  expect(roleComposition(undefined, LOCKS).budget).toBe(DEFAULT_ROLE_BUDGET);
   expect(roleComposition(undefined, 'main').budget).toBe(Number.POSITIVE_INFINITY);
-  expect(
-    roleComposition({ roles: { 'concurrency-locks': { budget: 50_000 } } }, 'concurrency-locks')
-      .budget,
-  ).toBe(50_000);
+  expect(roleComposition({ roles: { [LOCKS]: { budget: 50_000 } } }, LOCKS).budget).toBe(50_000);
 
   const cache = new ContextLayer({ id: 'k' });
   cache.set(hardCapKnowledge);
   const lib = new DomainLibrarian({
     domain: 'concurrency-locks',
-    role: 'concurrency-locks',
+    role: LOCKS,
     cache,
-    budget: roleComposition(undefined, 'concurrency-locks').budget,
+    budget: roleComposition(undefined, LOCKS).budget,
     signals: new SignalBus(0),
     llm: { id: 'w', complete: async () => ({ model: 'x', content: 'NO_COMMENT' }) },
   });
   expect(lib.budgetError(instructions, hardCapKnowledge)).toBeUndefined();
   const over = lib.budgetError(instructions, 'k'.repeat(DEFAULT_ROLE_BUDGET));
   expect(over).toContain(
-    `exceed its budget of ${DEFAULT_ROLE_BUDGET} (composition.roles.concurrency-locks.budget)`,
+    `exceed its budget of ${DEFAULT_ROLE_BUDGET} (composition.roles.${LOCKS}.budget)`,
   );
   expect(over).toContain('Nothing was sent or truncated');
 });
