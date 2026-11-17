@@ -335,6 +335,9 @@ export function createViewer(config: ViewerConfig) {
   let scheduler: Scheduler | null = null;
   let draftAsks: DraftAsks | undefined;
   // `socket` is created below, once its stream families exist; delivery only happens after both do.
+  const runningTasks = new RunningTasks((threadId, callId) =>
+    localStore?.nativeToolUse(threadId, callId),
+  );
   const streams = createViewerStreams({
     directory,
     eventStream,
@@ -343,6 +346,7 @@ export function createViewer(config: ViewerConfig) {
     conversation: (threadId) => conversations?.summary(threadId),
     permissionMode: (threadId) => threadLaunch.forLaunch(threadId).permissionMode,
     threadRole: (thread) => threadRoleOf(configStore.config, thread.meta),
+    backgroundJobsRunning: (threadId) => runningTasks.runningCount(threadId),
     ...(config.projectActive ? { projectActive: config.projectActive } : {}),
     schedules: () => scheduler?.list() ?? [],
     journal: {
@@ -505,9 +509,10 @@ export function createViewer(config: ViewerConfig) {
       },
     });
     for (const source of config.taskSources ?? [])
-      source.observeTasks((threadId, task, at, stop) =>
-        runningTasks.observe(threadId, task, at, stop),
-      );
+      source.observeTasks((threadId, task, at, stop) => {
+        runningTasks.observe(threadId, task, at, stop);
+        streams.threadsChanged(threadId);
+      });
     for (const source of config.subagentSources ?? [])
       source.observeSubagents((threadId, evidence) => {
         try {
@@ -556,9 +561,6 @@ export function createViewer(config: ViewerConfig) {
         settled: () => restartRoll.check(),
       })
     : undefined;
-  const runningTasks = new RunningTasks((threadId, callId) =>
-    localStore?.nativeToolUse(threadId, callId),
-  );
   const threadContext = new ThreadContextTracker({
     thread: (id) => directory.get(id),
     changed: threadChanged,

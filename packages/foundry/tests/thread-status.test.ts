@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { STATES, statusSvg } from '../src/viewer/ui/status-icons.js';
 import {
+  backgroundJobsLine,
   categoryOf,
   isScheduledRun,
   promptState,
@@ -62,7 +63,7 @@ describe('threadState', () => {
       meta: { ...seen, plan: { outcomes: [{ text: 'Review the PR', status: 'you' }] } },
       lastTurn: done,
     });
-    expect(threadState(waiting)).toBe('done');
+    expect(threadState(waiting)).toBe('idle');
     expect(categoryOf(threadState(waiting))).not.toBe('attention');
   });
   test('running and active are green', () => {
@@ -70,7 +71,7 @@ describe('threadState', () => {
     expect(threadState(t({ meta: { status: 'active' } }))).toBe('working');
     expect(threadState(t(), { childrenWorking: true })).toBe('subagents');
   });
-  test('queued is light yellow; a completed last turn on an idle thread is done', () => {
+  test('queued is light yellow; a completed, seen last turn is idle, not done', () => {
     expect(threadState(t({ lastTurn: { status: 'queued' } }))).toBe('queued');
     expect(
       threadState(
@@ -79,8 +80,8 @@ describe('threadState', () => {
           lastTurn: { status: 'completed', completedAt: 100 },
         }),
       ),
-    ).toBe('done');
-    // A subagent hands back to its parent agent, not to you: finished, it is done, never orange.
+    ).toBe('idle');
+    // A subagent hands back to its parent agent, not to you: finished, it is idle, never orange.
     expect(
       threadState(
         t({
@@ -88,16 +89,16 @@ describe('threadState', () => {
           lastTurn: { status: 'completed', completedAt: 100 },
         }),
       ),
-    ).toBe('done');
+    ).toBe('idle');
   });
-  test('a scheduled run never arrives: finished it reads done; asking it still needs you', () => {
+  test('a scheduled run never arrives: finished it reads idle; asking it still needs you', () => {
     const scheduledBy = { scheduleId: 'nightly', runId: 'schedule:nightly:1', dueAt: 1 };
     const finished = t({
       meta: { status: 'idle', scheduledBy },
       lastTurn: { status: 'completed', completedAt: 100 },
     });
     expect(isScheduledRun(finished)).toBe(true);
-    expect(threadState(finished)).toBe('done');
+    expect(threadState(finished)).toBe('idle');
     expect(
       threadState(
         t({
@@ -146,6 +147,28 @@ describe('threadState', () => {
         }),
       ),
     ).toBe('done');
+  });
+  test('a background job still running reads light yellow, below working and attention, above queued', () => {
+    const jobs = { backgroundJobsRunning: 2 };
+    expect(
+      threadState(
+        t({
+          ...jobs,
+          lastTurn: { status: 'completed', completedAt: 100 },
+          meta: { status: 'idle', seenAt: 200 },
+        }),
+      ),
+    ).toBe('background');
+    expect(categoryOf('background')).toBe('queued');
+    expect(threadState(t({ ...jobs, lastTurn: { status: 'queued' } }))).toBe('background');
+    expect(threadState(t({ ...jobs, lastTurn: { status: 'running' } }))).toBe('working');
+    expect(
+      threadState(t({ ...jobs, meta: { agentStatus: { state: 'needs-you', text: 'Which?' } } })),
+    ).toBe('question');
+    expect(backgroundJobsLine(t(jobs))).toBe('2 background jobs running');
+    expect(backgroundJobsLine(t({ backgroundJobsRunning: 1 }))).toBe('1 background job running');
+    expect(backgroundJobsLine(t())).toBeNull();
+    expect(statusText(t(jobs), 'background')).toBe('2 background jobs running');
   });
   test('waiting (paused by the owner) and a paused conversation are paused', () => {
     expect(threadState(t({ meta: { status: 'waiting' } }))).toBe('paused');

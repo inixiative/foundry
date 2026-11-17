@@ -48,6 +48,7 @@ import {
   threadPlace,
 } from './thread-labels.js';
 import {
+  backgroundJobsOf,
   CLOSED_STATUSES,
   categoryOf,
   statusText,
@@ -224,7 +225,9 @@ export function ThreadNode({ thread, depth = 0, selectedId, onSelect, inactive =
   const next = nextSubagentStep(step, activeChildren.length, finishedChildren.length);
   const shown =
     step === ALL ? [...activeChildren, ...finishedChildren] : step === ACTIVE ? activeChildren : [];
+  const jobs = backgroundJobsOf(thread);
   const counter = [
+    jobs ? `${jobs} job${jobs === 1 ? '' : 's'} running` : null,
     activeChildren.length ? `${activeChildren.length} active` : null,
     finishedChildren.length ? `${finishedChildren.length} finished` : null,
     failedRuns ? `${failedRuns} failed` : null,
@@ -290,7 +293,9 @@ export function ThreadNode({ thread, depth = 0, selectedId, onSelect, inactive =
               <span class="subagent-toggle-caret">${step === CLOSED ? '▸' : step === ACTIVE ? '▾' : '▴'}</span>
               <span class="subagent-toggle-count">${counter}</span>
             </button>`
-          : null
+          : jobs
+            ? html`<div class="subagent-toggle" data-step="jobs"><span class="subagent-toggle-count">${counter}</span></div>`
+            : null
       }
       ${shown.map(
         (child) =>

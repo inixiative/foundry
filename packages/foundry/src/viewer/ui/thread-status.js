@@ -17,6 +17,7 @@
  *   thread.lastTurn          { status, startedAt, completedAt? } (newest live turn)
  *   thread.conversation      { unread, paused, held, members }
  *   prompts                  pending ActionQueue prompts for this thread
+ *   thread.backgroundJobsRunning  background jobs the agent left running (shells, monitors)
  *   childrenWorking          true when a child thread (subagent) is working
  */
 import { STATES } from './status-icons.js';
@@ -76,11 +77,12 @@ export function threadState(thread, context = {}) {
   if (snoozeRunning(thread?.meta?.snooze)) return 'snoozed';
   if (turn === 'running' || meta.status === 'active') return 'working';
   if (context.childrenWorking) return 'subagents';
+  if (backgroundJobsOf(thread) > 0) return 'background';
   if (turn === 'queued') return 'queued';
   if (meta.status === 'waiting' || conversation.paused) return 'paused';
   // A hand-back: a turn completed after the owner last looked (a reply he hasn't read, or a turn the
   // agent started on its own, a Muse cron or goal). Opening the thread clears it. A subagent never
-  // arrives: its result goes back to the agent that spawned it, so finished it reads done (Aron,
+  // arrives: its result goes back to the agent that spawned it, so finished it reads idle (Aron,
   // 11-14: finished subagents kept a done parent in Attention, counted as "active"). A scheduled run
   // never arrives either: its result is listed under its schedule.
   if (
@@ -91,8 +93,8 @@ export function threadState(thread, context = {}) {
   )
     return 'newarrival';
   // Done: its branch merged, or the agent marked a plan milestone; the owner's next message clears it.
+  // A turn that ended and was seen is idle, not done (Aron, 11-16: "Done means something else").
   if (meta.done) return 'done';
-  if (turn === 'completed') return 'done';
   return 'idle';
 }
 
@@ -103,9 +105,20 @@ export function threadState(thread, context = {}) {
 export function statusText(thread, state) {
   const meta = thread?.meta ?? {};
   if (state === 'done') return meta.done?.text ?? null;
+  if (state === 'background') return backgroundJobsLine(thread);
   if (state === 'blocked' && meta.agentStatus?.state === 'blocked') return meta.agentStatus.text;
   if (state === 'question' && meta.agentStatus?.state === 'needs-you') return meta.agentStatus.text;
   return null;
+}
+
+/** How many background jobs the thread's agent left running (shells, monitors), from its list row. */
+export const backgroundJobsOf = (thread) => thread?.backgroundJobsRunning ?? 0;
+
+/** "2 background jobs running", or null when none run. */
+export function backgroundJobsLine(thread) {
+  const count = backgroundJobsOf(thread);
+  if (!count) return null;
+  return `${count} background job${count === 1 ? '' : 's'} running`;
 }
 
 /** The colour category of a state: red, orange, green, yellow, blue, neutral, charcoal. */

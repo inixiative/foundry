@@ -101,3 +101,19 @@ test('a task whose runtime cannot stop it says so', async () => {
   });
   expect(await tasks.stop('main', 'm-1')).toBe('unsupported');
 });
+
+test('runningCount counts only the tasks of a thread that have not ended', () => {
+  const tasks = new RunningTasks();
+  expect(tasks.runningCount('main')).toBe(0);
+  tasks.observe('main', { phase: 'started', taskId: 'a', taskType: 'local_bash' }, 1);
+  tasks.observe('main', { phase: 'started', taskId: 'b', taskType: 'monitor' }, 2);
+  tasks.observe('other', { phase: 'started', taskId: 'c', taskType: 'local_bash' }, 3);
+  expect(tasks.runningCount('main')).toBe(2);
+  tasks.observe(
+    'main',
+    { phase: 'ended', taskId: 'a', taskType: 'local_bash', status: 'completed' },
+    4,
+  );
+  expect(tasks.runningCount('main')).toBe(1);
+  expect(tasks.runningCount('other')).toBe(1);
+});

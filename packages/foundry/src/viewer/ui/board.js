@@ -39,6 +39,7 @@ import {
 } from './store.js';
 import { projectKingdom, threadName } from './thread-labels.js';
 import {
+  backgroundJobsLine,
   categoryOf,
   isClosedThread,
   isScheduledRun,
@@ -52,7 +53,7 @@ const COLUMNS = [
   { cat: 'problem', title: 'Problems' },
   { cat: 'attention', title: 'Needs you' },
   { cat: 'working', title: 'Working' },
-  { cat: 'queued', title: 'Queued' },
+  { cat: 'queued', title: 'Queued & background' },
   { cat: 'done', title: 'Done' },
 ];
 const OPEN = (t) => !isClosedThread(t);
@@ -105,9 +106,10 @@ function Card({ thread, state, subagents = [] }) {
       : [];
   const node = threadTree([thread])[0];
   const since = age(thread.meta?.lastActiveAt);
-  const done = subagents.filter(
-    (c) => categoryOf(threadState(c, { prompts: [] })) === 'done',
+  const working = subagents.filter(
+    (c) => categoryOf(threadState(c, { prompts: [] })) === 'working',
   ).length;
+  const jobs = backgroundJobsLine(thread);
   return html`<article class="board-card" data-thread=${thread.threadId}>
     <div class="board-card-head">
       <span class="board-card-project">${project}</span>
@@ -145,8 +147,15 @@ function Card({ thread, state, subagents = [] }) {
         : null
     }
     ${
-      subagents.length
-        ? html`<div class="board-card-subs">${subagents.length} subagent${subagents.length === 1 ? '' : 's'}${done ? ` · ${done} done` : ''}</div>`
+      subagents.length || jobs
+        ? html`<div class="board-card-subs">${[
+            jobs,
+            subagents.length
+              ? `${subagents.length} subagent${subagents.length === 1 ? '' : 's'}${working ? ` · ${working} working` : ''}`
+              : null,
+          ]
+            .filter(Boolean)
+            .join(' · ')}</div>`
         : null
     }
   </article>`;
