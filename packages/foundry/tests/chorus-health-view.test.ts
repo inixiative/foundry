@@ -28,12 +28,12 @@ test('an open notice names each Warden, its layer and the moment; the turn went 
   });
 });
 
-test('asked again reads as retried; dismissed or never degraded shows nothing', () => {
+test('asked again, dismissed or never degraded shows nothing', () => {
   const retried = {
     notices: [{ rowId: 'a', trigger: 'user-message', degraded: [timeout], retriedBy: 'b' }],
     open: [],
   };
-  expect(chorusNotice(retried)?.state).toBe('retried');
+  expect(chorusNotice(retried)).toBeNull();
   expect(
     chorusNotice({
       notices: [{ rowId: 'a', trigger: 'user-message', degraded: [timeout], retriedBy: null }],
@@ -43,7 +43,7 @@ test('asked again reads as retried; dismissed or never degraded shows nothing', 
   expect(chorusNotice(undefined)).toBeNull();
 });
 
-test("the context bar follows the newest turn's chorus only", () => {
+test('the strip shows the newest degraded turn while it is open; clean turns carry no chorus', () => {
   const open = {
     notices: [{ rowId: 'a', trigger: 'user-message', degraded: [timeout] }],
     open: ['a'],
@@ -57,7 +57,14 @@ test("the context bar follows the newest turn's chorus only", () => {
   expect(
     lastDegraded([
       ...messages,
-      { actor: 'agent', turnId: 't3', chorus: { notices: [], open: [] } },
+      {
+        actor: 'agent',
+        turnId: 't3',
+        chorus: {
+          notices: [{ rowId: 'c', trigger: 'user-message', degraded: [timeout] }],
+          open: [],
+        },
+      },
     ]),
   ).toBeNull();
 });
