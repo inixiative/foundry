@@ -41,7 +41,10 @@
  * set of hosts in order, --gap-ms apart (0: back to back), each into `<out>/<n>/`; host.json then
  * records per message how many Warden calls a held spare served (`warm`) or started their own member
  * (`cold`), their latencies, how long after the message every Warden was held again (`refillMs`,
- * null when the next message came first), and the host's memory over the run.
+ * null when the next message came first), and the host's memory over the run. --concurrent sends
+ * the messages at once instead, each as its own thread (`<session>:<n>`), as several threads of one
+ * project advise together: the host's warm and cold counts, the usage and the window readings are
+ * then the batch's, written to every message's record.
  */
 import { createHash } from 'node:crypto';
 import { appendFileSync, existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -98,6 +101,7 @@ const { values } = parseArgs({
     'pause-at': { type: 'string' },
     experiment: { type: 'string' },
     prime: { type: 'boolean' },
+    concurrent: { type: 'boolean' },
   },
   strict: true,
 });
@@ -119,6 +123,9 @@ privateDirectory(out);
 const messages = values['message-file'].map((file) => readFileSync(file, 'utf8'));
 const gapMs = values['gap-ms'] === undefined ? 0 : Number(values['gap-ms']);
 if (!Number.isSafeInteger(gapMs) || gapMs < 0) throw Error('--gap-ms must be a whole number of ms');
+const concurrent = values.concurrent === true;
+if (concurrent && (messages.length < 2 || values.prime || values['gap-ms']))
+  throw Error('--concurrent needs two or more messages, no --prime, no --gap-ms');
 // A few messages are never a wide run; a named design is checked and recorded.
 const experiment = requireExperiment(values.experiment, messages.length > 3);
 
@@ -295,6 +302,7 @@ const projectHosts = live.projectHosts;
 const hostReport: Record<string, unknown> = {
   bounds: subscription.policy.projectHost,
   gapMs,
+  concurrent,
 };
 /** The host process tree's and this process's resident memory, every 2 s while messages run. */
 const memorySamples: Array<{ at: number; hostMb?: number; evalMb: number; held?: number }> = [];
@@ -476,7 +484,9 @@ const writeChorus = (
     project: { id: projectId, label: project.label ?? null, path: project.path },
     cwd,
     session: values.session ?? null,
-    ...(messages.length > 1 ? { message: { index: n, of: messages.length, gapMs } } : {}),
+    ...(messages.length > 1
+      ? { message: { index: n, of: messages.length, gapMs, concurrent } }
+      : {}),
     startedAt,
     endedAt: new Date().toISOString(),
     elapsedMs: advice.elapsedMs,
@@ -597,7 +607,68 @@ try {
       ...(state ? { held: state.held } : {}),
     });
   }, 2_000);
-  for (let n = 0; n < messages.length; n++) {
+  if (concurrent) {
+    const UNHEARD = new Set<string>(['timeout', 'error', 'excluded']);
+    // Every message at once, each its own thread, into the one host: the batch shares the tracker
+    // and the host's call outcomes, so those are the batch's in every message's record.
+    hostCalls.push([]);
+    await quota();
+    const before = await recordWindows('before');
+    const startedAt = new Date().toISOString();
+    const heldAtStart = projectHosts.projectState(projectId)?.held;
+    messagesSent = messages.length;
+    const sendAt = Date.now();
+    const sent = await Promise.all(
+      messages.map(async (message, n) => {
+        const dir = privateDirectory(join(out, String(n + 1)));
+        const journalFile = join(dir, 'journal.jsonl');
+        writeFileSync(journalFile, '', { mode: 0o600 });
+        const advice = await adviseOnce({
+          config,
+          projectId,
+          cwd,
+          message,
+          decisions,
+          stageHost,
+          resolveSource,
+          atlasRoot,
+          threadId: `${values.session ?? 'chorus-advise'}:${n + 1}`,
+          journal: (record) => appendFileSync(journalFile, `${JSON.stringify(record)}\n`),
+          warn: (line) => console.error(line),
+        });
+        return { n, dir, advice, endedAt: Date.now() };
+      }),
+    );
+    const batchEnd = Date.now();
+    const after = await recordWindows('after');
+    const calls = hostCalls.at(-1) ?? [];
+    const batch = {
+      heldAtStart,
+      warm: calls.filter((c) => c.prime === 'warm').length,
+      cold: calls.filter((c) => c.prime === 'cold').length,
+      warmMs: pcts(calls.filter((c) => c.prime === 'warm').map((c) => c.ms)),
+      coldMs: pcts(calls.filter((c) => c.prime === 'cold').map((c) => c.ms)),
+    };
+    for (const { n, dir, advice, endedAt } of sent) {
+      const layer1 = advice.decisions
+        .map((d) => d.elapsedMs)
+        .filter((ms): ms is number => typeof ms === 'number');
+      perMessage.push({
+        index: n,
+        elapsedMs: advice.elapsedMs,
+        endedAfterMs: endedAt - sendAt,
+        wardens: advice.decisions.length,
+        // A Warden with no answer by the deadline, an error, or left out: what a degraded notice counts.
+        unheard: advice.decisions.filter((d) => UNHEARD.has(d.decision)).length,
+        layer1Ms: pcts(layer1),
+        windows: { before: before ?? null, after: after ?? null },
+      });
+      writeChorus(dir, n, advice, startedAt, before, after);
+    }
+    hostReport.batch = { ...batch, elapsedMs: batchEnd - sendAt };
+    refills.push(timeRefill(hostReport.batch as Record<string, unknown>, sendAt, messages.length));
+  }
+  for (let n = 0; !concurrent && n < messages.length; n++) {
     if (n && gapMs) await Bun.sleep(gapMs);
     const dir = messages.length > 1 ? privateDirectory(join(out, String(n + 1))) : out;
     const journalFile = join(dir, 'journal.jsonl');
