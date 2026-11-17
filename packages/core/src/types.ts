@@ -139,6 +139,11 @@ export interface CompletionOpts {
   /** Scheduling hint for providers that queue calls: higher runs first. Default 0. Others ignore it. */
   priority?: number;
   /**
+   * Serve only from a call the provider already holds started; never start one cold. A provider that
+   * pre-starts calls refuses it unsent when none is held; others ignore it.
+   */
+  heldOnly?: boolean;
+  /**
    * Leading text of the final user message that stays the same across calls
    * (owned layer content). Session providers may prime it once and reuse the
    * cached prefix; others ignore it. Messages are sent unchanged either way.

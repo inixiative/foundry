@@ -60,8 +60,10 @@ export interface NativeTextCall {
   usage?: Omit<TokenCounts, 'providerUsage'>;
   /** not-admitted: refused before any native write, so nothing remains owned.
    * native-failed: the runtime settled the turn as failed (primed decisions).
-   * process-lost: the shared decision process was lost or recycled and its exit observed (primed decisions). */
+   * process-lost: the shared decision process was lost or recycled and its exit observed (primed decisions).
+   * not-held: a project-host Warden had no warm member (or its host was starting); refused unsent, skipped. */
   failure?:
+    | 'not-held'
     | 'provider-or-evidence'
     | 'deadline'
     | 'not-admitted'

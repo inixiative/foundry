@@ -12,7 +12,6 @@ import { publishDaemonRuntime } from './daemon/runtime-hook';
 import type { FeedbackService } from './feedback/service';
 import { subscriptionWorker, WORKER_SESSION_RUNTIMES } from './models/registry';
 import { providerBaseUrl, providerContextBudget, providerEnabled } from './models/vendors';
-import { DECISION_DEADLINE_MS } from './providers/decision-budget';
 import {
   type DecisionEvents,
   liveDecisionHosts,
@@ -763,14 +762,9 @@ const atlasRoot = atlasRootOf(config);
 // persistence sinks; archiving the thread disposes them.
 const runtimeManager = new ThreadRuntimeManager({
   config,
-  // A turn's advice waits for its project's host while it starts (opening it if none is open).
+  // A turn marks its project active (opening its Warden host if none is open); it never waits for it.
   ...(live?.projectHosts
-    ? {
-        wardenHostReady: async (projectId: string) => {
-          await projectActivity?.activate(projectId);
-          return live.projectHosts?.whenServing(projectId, DECISION_DEADLINE_MS) ?? false;
-        },
-      }
+    ? { activateWardenHost: (projectId: string) => void projectActivity?.activate(projectId) }
     : {}),
   llm: flowLlm,
   providers,

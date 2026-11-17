@@ -106,6 +106,17 @@ export class KnowledgePersistence {
       } finally {
         restoring.delete(runtime);
       }
+      // why: a catch-up cursor that can't be rebuilt only costs a missed delta, never the thread's learning.
+      try {
+        runtime.flowOrchestrator.catchUp.restore(
+          store.phaseHistory(runtime.thread.id, { phase: 'advice', limit: 5000 }),
+        );
+      } catch (error) {
+        this.events.pushError(
+          `catch-up:${runtime.thread.id}`,
+          `Warden catch-up not restored: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
     };
     const detachPhase = manager.setPhaseJournal((runtime, { node, ...record }) => {
       try {
