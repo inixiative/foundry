@@ -139,7 +139,7 @@ export class ModelSuccession {
           (entry) => entry.family === family && newer.has(entry.id) && entry.id !== missing.model,
         )
       : undefined;
-    const gone = `${model.id} is no longer served (the CLI says it does not exist)`;
+    const gone = `${model.id} is unavailable to this CLI login`;
     if (!next) return `${gone}. Choose another model for this thread, then send again.`;
     changeThreadModel(this.deps, thread, this.successorOf(worker, model, next.id), 'retired');
     return `${gone}. This thread now runs on ${next.id}; send again.`;

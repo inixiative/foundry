@@ -354,7 +354,7 @@ test("a Kingdom project's Codex thread whose pool has no Codex login is refused 
   await expect(routed.prepare('codex-thread', 'codex')).rejects.toThrow(
     'No authorized capacity matches',
   );
-  expect(asked).toEqual([{ runtime: 'codex', model: 'gpt-6-astra' }]);
+  expect(asked).toEqual([{ runtime: 'codex', model: 'gpt-6.2-astra' }]);
   expect(local).toBe(0);
 });
 

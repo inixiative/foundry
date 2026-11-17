@@ -11,6 +11,7 @@ import { localArchive } from '@inixiative/archive/remote';
 import {
   type CorrectionClassification,
   SUBSCRIPTION_DECISION_MODELS,
+  SUBSCRIPTION_WORKER_MODELS,
 } from '@inixiative/foundry-core';
 import { writeFileAtomic } from '../client/private-file';
 import { decisionHost, privateDirectory } from '../providers/decision-host';
@@ -45,7 +46,10 @@ and Codex sessions. Everything runs on this machine; the share outputs hold rule
 
 const STATE = join(homedir(), '.foundry', 'repeats');
 /** The heavier decision models subscription-decisions.md names for roles that need them. */
-const POLISH_MODELS = { claude: 'claude-opus-5-5', codex: 'gpt-6-astra' } as const;
+const POLISH_MODELS = {
+  claude: 'claude-opus-5-5',
+  codex: SUBSCRIPTION_WORKER_MODELS.codex,
+} as const;
 const CACHE = join(STATE, 'classifications.jsonl');
 
 /** This machine's Archive, when it is set up and answering; the harness files cover the rest. */

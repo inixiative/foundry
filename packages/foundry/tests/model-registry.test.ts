@@ -21,6 +21,10 @@ import { defaultConfig } from '../src/viewer/config';
 describe('model registry', () => {
   test('includes current target OpenAI and Claude Code models', () => {
     expect(MODEL_REGISTRY.openai.models.map((model) => model.id)).toEqual([
+      'gpt-6.2-astra',
+      'gpt-6.2-sol',
+      'gpt-6.1-sol',
+      'gpt-6.1-terra',
       'gpt-6-astra',
       'gpt-6-sol',
       'gpt-6-luna',
@@ -32,6 +36,10 @@ describe('model registry', () => {
 
     // A ChatGPT login is refused gpt-5.5, so the subscription entry does not offer it.
     expect(MODEL_REGISTRY.codex.models.map((model) => model.id)).toEqual([
+      'gpt-6.2-astra',
+      'gpt-6.2-sol',
+      'gpt-6.1-sol',
+      'gpt-6.1-terra',
       'gpt-6-astra',
       'gpt-6-sol',
       'gpt-6-luna',
