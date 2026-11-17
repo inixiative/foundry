@@ -239,11 +239,15 @@ function matches(when: HierarchyMatch | undefined, location: HierarchyLocation):
   return true;
 }
 
+/** What separates a role id's namespace from its name (`region:lens-model`). */
+export const ROLE_NAMESPACE_SEPARATOR = ':';
+
 /**
- * Where a role's files sit under a `{role}` in a path: each `:`-separated part of its id is a folder
+ * Where a role's files sit under a `{role}` in a path: each part of its id is a folder
  * (`region:lens-model` is `region/lens-model`), so a namespaced id is a legal path on every filesystem.
  */
-export const roleDirectory = (role: string): string => role.split(':').join('/');
+export const roleDirectory = (role: string): string =>
+  role.split(ROLE_NAMESPACE_SEPARATOR).join('/');
 
 /** Location variables plus `{role}` (as its directory) and `{slot}`. */
 const locationVars = (location: HierarchyLocation) => ({

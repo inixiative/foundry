@@ -13,7 +13,7 @@ import {
 } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join, relative } from 'node:path';
-import { roleDirectory, sha256Hex } from '@inixiative/foundry-core';
+import { expandHierarchyPath, roleDirectory, sha256Hex } from '@inixiative/foundry-core';
 import {
   GLOBAL_ROLE_FILE_TEMPLATE,
   type InstructionNodeSettings,
@@ -39,9 +39,6 @@ export interface LevelRoots {
   readonly org?: string;
 }
 
-const fill = (template: string, role: string, slot: FeedbackSlot) =>
-  template.replace('{role}', roleDirectory(role)).replace('{slot}', slot);
-
 /** The ladder template each rung's role file is written from (the same constants the ladder reads). */
 export const RUNG_TEMPLATE: Readonly<Record<FeedbackLevel, string>> = {
   computer: GLOBAL_ROLE_FILE_TEMPLATE,
@@ -58,12 +55,18 @@ export function roleFilePath(
   roots: LevelRoots,
 ): string {
   if (!isRoleId(role)) throw Error(`Invalid role id: ${role}`);
-  const file = fill(RUNG_TEMPLATE[level], role, slot);
+  // Filled by the ladder's own expander, so a rule is written where the ladder reads it.
+  const home = roots.home ?? homedir();
+  const file = expandHierarchyPath(
+    RUNG_TEMPLATE[level],
+    { role: roleDirectory(role), slot, home },
+    home,
+  )!;
   const project = roots.project;
   const org = roots.org ?? (project ? dirname(project) : undefined);
   switch (level) {
     case 'computer':
-      return file.replace('{home}', roots.home ?? homedir());
+      return file;
     case 'org':
     case 'org-personal':
       if (!org) throw Error('No org directory for this thread');

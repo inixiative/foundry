@@ -10,6 +10,7 @@ import {
   Harness,
   type LLMMessage,
   type LLMProvider,
+  roleDirectory,
 } from '@inixiative/foundry-core';
 import { PLAN_ASK_NOTE } from '../src/agents/chorus-reception';
 import { oneCall } from '../src/agents/domain-librarian';
@@ -68,7 +69,7 @@ const write = (path: string, text: string) => {
 };
 /** A namespaced role's files nest by namespace: `region:conventions` is `roles/region/conventions/`. */
 const roleFile = (dir: string, role: string, slot: string, local = false) =>
-  join(dir, '.foundry', 'roles', ...role.split(':'), `${slot}${local ? '.local' : ''}.md`);
+  join(dir, '.foundry', 'roles', roleDirectory(role), `${slot}${local ? '.local' : ''}.md`);
 /** The project's one region, and so its one Warden (its domain is the region id). */
 const WARDEN = 'conventions';
 /** The generated Warden's role id. */

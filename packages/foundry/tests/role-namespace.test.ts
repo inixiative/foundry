@@ -4,12 +4,12 @@
  * @partOf feature:composition, feature:wardens
  */
 import { afterEach, expect, test } from 'bun:test';
-import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 import { roleDirectory } from '@inixiative/foundry-core';
 import { configuredExperts } from '../src/agents/configured-experts';
-import { regionRoleId } from '../src/agents/region-roster';
+import { regionOfSubject, regionRoleId, regionSourceId } from '../src/agents/region-roster';
 import { roleFilePath } from '../src/feedback/apply';
 import {
   ASSISTANT_ROLE,
@@ -18,33 +18,29 @@ import {
   FORGE_MASTER_ROLE,
   MAIN_ROLE,
 } from '../src/prompts/instruction-settings';
-import { isRoleId, roleIdIn, roleNameIn, roleNamespace } from '../src/prompts/role-namespace';
+import {
+  isIdName,
+  isRoleId,
+  roleIdIn,
+  roleNameIn,
+  roleNamespace,
+} from '../src/prompts/role-namespace';
 import { type FoundryConfig, starterConfig, validateConfig } from '../src/viewer/config';
 import { resolveProjectView } from '../src/viewer/config-resolve';
+import { writeRegions } from './helpers/regions';
 
 const dirs: string[] = [];
 afterEach(() => {
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
-const write = (path: string, text: string) => {
-  mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, text);
-};
-
 function projectWithRegions(ids: readonly string[]): string {
   const project = mkdtempSync(join(tmpdir(), 'role-namespace-'));
   dirs.push(project);
-  write(join(project, '.foundry', 'project.json'), JSON.stringify({ chorus: { enabled: true } }));
-  for (const id of ids) {
-    const region = join(project, '.foundry', 'regions', id);
-    write(
-      join(region, 'region.json'),
-      JSON.stringify({ id, title: id, routing: `Is this about ${id}?`, concepts: [id] }),
-    );
-    write(join(region, 'knowledge.md'), `# ${id}\n\nKNOWLEDGE_${id}\n`);
-    write(join(region, 'recognise.md'), `# ${id}\n\nRECOGNISE_${id}\n`);
-  }
+  writeRegions(
+    project,
+    ids.map((id) => ({ id })),
+  );
   return project;
 }
 
@@ -64,6 +60,11 @@ test('a role id is built from a namespace and read back by it', () => {
   expect(roleNameIn(roleNamespace.region, 'lens-model')).toBeUndefined();
   expect(isRoleId(id)).toBe(true);
   expect(isRoleId('main')).toBe(true);
+  expect(isIdName('lens-model')).toBe(true);
+  expect(isIdName(id)).toBe(false);
+  // The region's source id is in the same namespace, in its own id space (sources, never agents).
+  expect(regionSourceId('lens-model')).toBe(id);
+  expect(regionOfSubject(`source-content:${id}@project:P`)).toBe('lens-model');
   for (const bad of ['region:', ':lens', 'region:../escape', 'region:a/b', '../escape', ''])
     expect(isRoleId(bad)).toBe(false);
 });
@@ -130,4 +131,21 @@ test("Foundry's own regions build a chorus: every committed region resolves to a
       .experts.map((e) => e.domain)
       .sort(),
   ).toEqual(committed);
+});
+
+test("a repository's project.json cannot write an agent over a region Warden", () => {
+  const project = projectWithRegions(['conventions']);
+  writeFileSync(
+    join(project, '.foundry', 'project.json'),
+    JSON.stringify({
+      chorus: { enabled: true },
+      agents: { [regionRoleId('conventions')]: { extends: 'executor' } },
+    }),
+  );
+  const c = config(project);
+  validateConfig(c);
+  const view = resolveProjectView(c, 'P')!;
+  // The file is refused whole and said so; nothing of it is applied.
+  expect(view.chorus.repository?.error).toContain('the region: prefix names a region Warden');
+  expect(view.config.agents[regionRoleId('conventions')]?.kind).not.toBe('executor');
 });

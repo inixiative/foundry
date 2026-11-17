@@ -5,7 +5,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 export interface TestRegion {
-  /** The region id: also the Warden's agent id and domain. */
+  /** The region id: the Warden's domain; its agent and role id is `regionRoleId(id)`. */
   readonly id: string;
   /** The region's knowledge.md, whole (the Warden's domain knowledge). Default: one line naming it. */
   readonly knowledge?: string;

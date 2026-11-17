@@ -70,6 +70,7 @@ export {
   type HierarchyWalkSource,
   hierarchyFingerprint,
   markdownSections,
+  ROLE_NAMESPACE_SEPARATOR,
   roleDirectory,
   type SelectedHierarchyNode,
   selectHierarchyNodes,
