@@ -21,7 +21,7 @@ When detection is on, an accepted turn runs foundry-core's correction detector. 
 
 - Capture through foundry-core's detector and classify contract, with one item per rule.
 - Matching and recurrence.
-- Cartographer routing to Warden roles, falling back to `main`.
+- Cartographer routing to Warden roles, falling back to the thread's role (`thread:coder`, `thread:assistant`, …).
 - The tuning prompt: `ask` by default, `block`, or `blockOn`. A blocking hold runs while the turn is still queued. A stop withdraws it, and `blockTimeoutMs` bounds it.
 - Answers validated through `POST /api/feedback/:id/answer`. An edit replaces the rule's lines.
 - `POST /api/feedback/:id/tune` raises a prompt again. `undo` reverts a change.

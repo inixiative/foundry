@@ -24,7 +24,12 @@ import {
 } from '../src/agents/thread-factory';
 import { ThreadRuntimeManager } from '../src/agents/thread-runtime';
 import { chartered } from '../src/classify';
-import type { RoleComposition } from '../src/prompts/instruction-settings';
+import {
+  ASSISTANT_ROLE,
+  CODER_ROLE,
+  MAIN_ROLE,
+  type RoleComposition,
+} from '../src/prompts/instruction-settings';
 import {
   claudeProjectDirName,
   composeRoleView,
@@ -32,6 +37,7 @@ import {
   instructionStackReport,
   threadCompositionSource,
 } from '../src/prompts/instruction-stack';
+import { roleIdOfAgent } from '../src/prompts/role-namespace';
 import { primedRequest } from '../src/providers/primed-decisions';
 import { type FoundryConfig, starterConfig } from '../src/viewer/config';
 import { writeRegions } from './helpers/regions';
@@ -74,6 +80,8 @@ const roleFile = (dir: string, role: string, slot: string, local = false) =>
 const WARDEN = 'conventions';
 /** The generated Warden's role id. */
 const WARDEN_ROLE = regionRoleId(WARDEN);
+/** The Cartographer's composition role: an agent written in settings is `agent:<key>`. */
+const CARTOGRAPHER_ROLE = roleIdOfAgent('cartographer');
 const REGION = { id: WARDEN, title: 'Conventions', routing: 'Is this about how this repo works?' };
 const REGION_RULES = regionInstructions(REGION);
 
@@ -90,7 +98,7 @@ const view = (role: string, picks: RoleComposition = {}) =>
 
 test('every role composes from the same ladder; everything that applies is on, a role opts out', async () => {
   ladderFiles();
-  const main = await view('main');
+  const main = await view(MAIN_ROLE);
   const warden = await view(WARDEN);
   for (const text of ['PERSONAL_GLOBAL', 'ORG_RULES', 'PROJECT_RULES', 'PROJECT_PERSONAL']) {
     expect(main.slots.instructions.text).toContain(text);
@@ -113,7 +121,7 @@ test('every role composes from the same ladder; everything that applies is on, a
     ),
   ).toContain(`excluded from instructions by composition.roles.${WARDEN}`);
   // Another role's opt-out is its own.
-  expect((await view('main')).slots.instructions.text).toContain('PERSONAL_GLOBAL');
+  expect((await view(MAIN_ROLE)).slots.instructions.text).toContain('PERSONAL_GLOBAL');
   expect((await view(WARDEN, { instructions: false })).slots.instructions.text).toBe('');
 });
 
@@ -122,7 +130,7 @@ test('role files are templated by role and slot at every rung, and stay with the
   write(roleFile(org, WARDEN, 'domainKnowledge'), 'ORG_WARDEN_KNOWLEDGE');
   write(roleFile(repo, WARDEN, 'instructions'), 'PROJECT_WARDEN_INSTRUCTIONS');
   write(roleFile(repo, WARDEN, 'domainKnowledge', true), 'PERSONAL_WARDEN_KNOWLEDGE');
-  write(roleFile(repo, 'main', 'instructions'), 'MAIN_ONLY_INSTRUCTIONS');
+  write(roleFile(repo, MAIN_ROLE, 'instructions'), 'MAIN_ONLY_INSTRUCTIONS');
   const warden = await view(WARDEN);
   expect(warden.slots.instructions.files.map((file) => [file.content, file.level])).toEqual([
     ['COMPUTER_WARDEN_INSTRUCTIONS', 'global'],
@@ -133,7 +141,7 @@ test('role files are templated by role and slot at every rung, and stay with the
     ['PERSONAL_WARDEN_KNOWLEDGE', 'local'],
   ]);
   expect(warden.slots.domainKnowledge.files.at(-1)!.tier).toBe('personal_private');
-  const main = await view('main');
+  const main = await view(MAIN_ROLE);
   expect(main.slots.instructions.text).toContain('MAIN_ONLY_INSTRUCTIONS');
   expect(main.slots.instructions.text).not.toContain('WARDEN');
   expect(warden.slots.instructions.text).not.toContain('MAIN_ONLY');
@@ -179,7 +187,7 @@ test('a role reads a file once: one it pulls into domain knowledge leaves its in
     `[included in domainKnowledge by composition.roles.${WARDEN}]`,
   );
   // The main thread is a separate role: its instructions keep every file.
-  expect((await view('main')).slots.instructions.text).toContain('ORG_RULES');
+  expect((await view(MAIN_ROLE)).slots.instructions.text).toContain('ORG_RULES');
 });
 
 test('a personal node never reaches a team audience, in either slot, even when opted in', async () => {
@@ -384,7 +392,7 @@ test('a composition over the role budget is a clear reported error in every phas
 test('the Cartographer composes too, and over its budget routing reports an error', async () => {
   ladderFiles();
   const c = config();
-  c.composition = { roles: { ...c.composition!.roles, cartographer: { budget: 50 } } };
+  c.composition = { roles: { ...c.composition!.roles, [CARTOGRAPHER_ROLE]: { budget: 50 } } };
   const f = setup(c);
   try {
     const turn = await f.thread.dispatch('worker', 'Route me', undefined, { messageId: 'm1' });
@@ -393,14 +401,14 @@ test('the Cartographer composes too, and over its budget routing reports an erro
       plan?: { routing: { status: string; reason?: string } };
     };
     expect(plan.plan!.routing.status).toBe('error');
-    expect(plan.plan!.routing.reason).toContain('composition.roles.cartographer.budget');
+    expect(plan.plan!.routing.reason).toContain(`composition.roles.${CARTOGRAPHER_ROLE}.budget`);
   } finally {
     await f.close();
   }
   // By default the Cartographer reads its prompt and its role files, not the CLAUDE.md stack: it
   // routes, and the coding rules are the main thread's (the inixiative org CLAUDE.md alone put a
   // routing call ~25,000 characters over budget).
-  write(roleFile(repo, 'cartographer', 'instructions'), 'ROUTING_HINTS');
+  write(roleFile(repo, CARTOGRAPHER_ROLE, 'instructions'), 'ROUTING_HINTS');
   const g = setup(config());
   try {
     await g.thread.dispatch('worker', 'Route me', undefined, { messageId: 'm1' });
@@ -414,7 +422,7 @@ test('the Cartographer composes too, and over its budget routing reports an erro
   // Settings may still hand it the stack, the same way any role picks.
   const all = config();
   all.composition = {
-    roles: { ...all.composition!.roles, cartographer: { instructions: { general: 'all' } } },
+    roles: { ...all.composition!.roles, [CARTOGRAPHER_ROLE]: { instructions: { general: 'all' } } },
   };
   const h = setup(all);
   try {
@@ -508,7 +516,7 @@ test("a role never reads more personal files than the main thread's audience all
   );
   // The Warden's notes reach main's message, so a team main thread makes the Warden team too.
   const c = config();
-  c.composition = { roles: { ...c.composition!.roles, main: { audience: 'team' } } };
+  c.composition = { roles: { ...c.composition!.roles, [MAIN_ROLE]: { audience: 'team' } } };
   const f = setup(c);
   try {
     await f.thread.dispatch('worker', 'Add a script', undefined, { messageId: 'm1' });
@@ -522,27 +530,31 @@ test("a role never reads more personal files than the main thread's audience all
 });
 
 test('a home role file symlinked into the repository stays personal', async () => {
-  write(join(home, '.foundry', 'roles', 'main', 'instructions.md'), 'HOME_ROLE_SECRET');
-  mkdirSync(join(repo, '.foundry', 'roles', 'main'), { recursive: true });
-  symlinkSync(
-    join(home, '.foundry', 'roles', 'main', 'instructions.md'),
-    roleFile(repo, 'main', 'instructions'),
+  write(
+    join(home, '.foundry', 'roles', roleDirectory(MAIN_ROLE), 'instructions.md'),
+    'HOME_ROLE_SECRET',
   );
-  const team = await view('main', { audience: 'team' });
+  mkdirSync(join(repo, '.foundry', 'roles', roleDirectory(MAIN_ROLE)), { recursive: true });
+  symlinkSync(
+    join(home, '.foundry', 'roles', roleDirectory(MAIN_ROLE), 'instructions.md'),
+    roleFile(repo, MAIN_ROLE, 'instructions'),
+  );
+  const team = await view(MAIN_ROLE, { audience: 'team' });
   expect(team.slots.instructions.text).not.toContain('HOME_ROLE_SECRET');
-  expect((await view('main')).slots.instructions.text).toContain('HOME_ROLE_SECRET');
+  expect((await view(MAIN_ROLE)).slots.instructions.text).toContain('HOME_ROLE_SECRET');
 });
 
 test('a slot the role does not receive is not composed, so dedupe never moves text into it', async () => {
   write(join(repo, 'CLAUDE.md'), '# Project\n\n## Rules\n\nKEEP_ME');
-  write(roleFile(repo, 'main', 'domainKnowledge'), '# Project\n\n## Rules\n\nKEEP_ME');
+  write(roleFile(repo, MAIN_ROLE, 'domainKnowledge'), '# Project\n\n## Rules\n\nKEEP_ME');
   const c = config();
   // The main thread receives instructions only (its one instructions source).
-  const source = compositionSource(c, 'main-instructions', 'main', 'instructions', ['instructions'])
-    .bind!({ threadId: 't', cwd: repo });
+  const source = compositionSource(c, 'main-instructions', MAIN_ROLE, 'instructions', [
+    'instructions',
+  ]).bind!({ threadId: 't', cwd: repo });
   expect(await source.load()).toContain('KEEP_ME');
   // A role receiving both slots reads it once, in domain knowledge.
-  const both = await view('main');
+  const both = await view(MAIN_ROLE);
   expect(both.slots.instructions.text).not.toContain('KEEP_ME');
   expect(both.slots.domainKnowledge.text).toContain('KEEP_ME');
 });
@@ -601,19 +613,19 @@ test('a thread role composes its general files per its own picks: coder takes th
   ])
     expect(assistant).not.toContain(text);
   // A Claude Code thread given the assistant role keeps its harness's own global file, nothing of the repo.
-  const claudeAssistant = await load({ worker: 'claude-code', role: 'assistant' });
+  const claudeAssistant = await load({ worker: 'claude-code', role: ASSISTANT_ROLE });
   expect(claudeAssistant).toContain('PERSONAL_GLOBAL');
   expect(claudeAssistant).not.toContain('PROJECT_RULES');
   // A Muse thread given the coder role reads the repository like any coder.
-  expect(await load({ worker: 'muse', role: 'coder' })).toContain('PROJECT_RULES');
+  expect(await load({ worker: 'muse', role: CODER_ROLE })).toContain('PROJECT_RULES');
 });
 
 test("a thread role's role files compose over the shared base main's, base first, at each rung", async () => {
-  write(roleFile(org, 'main', 'instructions'), 'ORG_MAIN');
-  write(roleFile(org, 'assistant', 'instructions'), 'ORG_ASSISTANT');
-  write(roleFile(repo, 'main', 'instructions'), 'REPO_MAIN');
-  write(roleFile(repo, 'assistant', 'instructions'), 'REPO_ASSISTANT');
-  write(roleFile(repo, 'coder', 'instructions'), 'REPO_CODER');
+  write(roleFile(org, MAIN_ROLE, 'instructions'), 'ORG_MAIN');
+  write(roleFile(org, ASSISTANT_ROLE, 'instructions'), 'ORG_ASSISTANT');
+  write(roleFile(repo, MAIN_ROLE, 'instructions'), 'REPO_MAIN');
+  write(roleFile(repo, ASSISTANT_ROLE, 'instructions'), 'REPO_ASSISTANT');
+  write(roleFile(repo, CODER_ROLE, 'instructions'), 'REPO_CODER');
   const c = starterConfig('claude-code', 'fable');
   const source = threadCompositionSource(c, 'main-instructions', 'instructions', ['instructions']);
   const assistant = await source.bind!({ threadId: 't', cwd: repo, worker: 'muse' }).load();
@@ -630,8 +642,8 @@ test("a thread role's role files compose over the shared base main's, base first
 });
 
 test("changing a bound thread's role re-composes its instructions on the next check", async () => {
-  write(roleFile(repo, 'coder', 'instructions'), 'REPO_CODER');
-  write(roleFile(repo, 'assistant', 'instructions'), 'REPO_ASSISTANT');
+  write(roleFile(repo, CODER_ROLE, 'instructions'), 'REPO_CODER');
+  write(roleFile(repo, ASSISTANT_ROLE, 'instructions'), 'REPO_ASSISTANT');
   // Files written in the same millisecond as the read leave the view unfingerprinted (always changed).
   await Bun.sleep(10);
   const meta: { role?: string } = {};
@@ -650,7 +662,7 @@ test("changing a bound thread's role re-composes its instructions on the next ch
   });
   expect(await source.load()).toContain('REPO_CODER');
   expect(source.changed!()).toBe(false);
-  meta.role = 'assistant';
+  meta.role = ASSISTANT_ROLE;
   expect(source.changed!()).toBe(true);
   const next = await source.load();
   expect(next).toContain('REPO_ASSISTANT');
@@ -663,7 +675,7 @@ test("a thread's role change reaches its next turn: the factory binds the role t
   try {
     await f.thread.dispatch('worker', 'First', undefined, { messageId: 'm1' });
     expect(JSON.stringify(f.last('central').messages)).toContain('PROJECT_RULES');
-    f.thread.meta.role = 'assistant';
+    f.thread.meta.role = ASSISTANT_ROLE;
     await f.thread.dispatch('worker', 'Second', undefined, { messageId: 'm2' });
     expect(JSON.stringify(f.last('central').messages)).not.toContain('PROJECT_RULES');
   } finally {
@@ -680,7 +692,7 @@ test('a composition edit reaches the main thread on its next turn', async () => 
     expect(JSON.stringify(f.last('central').messages)).toContain('PROJECT_RULES');
     const next = structuredClone(c);
     // The thread (no role chosen) composes as its worker's default role, coder.
-    next.composition = { roles: { coder: { instructions: { exclude: ['project'] } } } };
+    next.composition = { roles: { [CODER_ROLE]: { instructions: { exclude: ['project'] } } } };
     await f.factory.reconfigure(next);
     await f.thread.dispatch('worker', 'Second', undefined, { messageId: 'm2' });
     expect(JSON.stringify(f.last('central').messages)).not.toContain('PROJECT_RULES');

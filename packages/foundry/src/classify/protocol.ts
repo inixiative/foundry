@@ -63,7 +63,8 @@ function dropStrayWhy(value: Record<string, unknown>): {
  * the domain's instructions. Every trigger has the one bar the charter's first principle sets:
  * NO_COMMENT only when the moment touches nothing in the domain, whatever it says to build or not to
  * use; the snippets are the pointer's remarks. At a handoff (`subagent-spawn`) the moment is the task
- * text a subagent starts from.
+ * text a subagent starts from; at a `milestone`, the call the agent is about to make; at a
+ * `hand-back`, the message a turn handed back.
  */
 export function adviceResponseProtocol(trigger: AdviceTrigger): string {
   return [

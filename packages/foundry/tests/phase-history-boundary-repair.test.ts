@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { LocalSessionStore } from '../src/persistence/local-session-store';
 import { guardOutcomes } from '../src/viewer/ui/inspector-data.js';
-import { durabilityFixture, untilSettled } from './phase-history-durability.test';
+import { durabilityFixture, isHandBack, untilSettled } from './phase-history-durability.test';
 
 // Author coverage for the three boundary repairs (Fable, CORE-006 LI), beside the parent's protected contract.
 
@@ -187,7 +187,7 @@ test('a configured phase-journal refusal at the guard boundary is not admitted: 
   // The turn's reduced rows (spec A) are left out: these assertions are about the calls.
   const rows = f.store
     .phaseHistory(f.thread.id, { turnId: 'turn-1' })
-    .filter((r) => r.phase !== 'middleware-reduced');
+    .filter((r) => r.phase !== 'middleware-reduced' && !isHandBack(r));
   expect(rows.map((r) => r.phase)).toEqual(['route', 'advice', 'guard-outcome']); // no request row could be written
   const outcome = rows[2]!.record as any;
   expect(outcome.status).toBe('reported');
@@ -237,7 +237,7 @@ test("a configured journal refusal at plan seal is recorded as failed, the centr
   expect(
     f.store
       .phaseHistory(f.thread.id, { turnId: 'turn-1' })
-      .filter((r) => r.phase !== 'middleware-reduced')
+      .filter((r) => r.phase !== 'middleware-reduced' && !isHandBack(r))
       .map((r) => r.phase),
   ).not.toContain('route');
   const g = durabilityFixture(join(dir, 'absent.sqlite'), { journal: false });

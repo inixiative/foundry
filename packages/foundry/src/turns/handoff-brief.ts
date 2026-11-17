@@ -6,6 +6,7 @@
 import type { ToolDecision, ToolGate, ToolRequest } from '@inixiative/agent-session';
 import { type PromptBlock, withAfterMessageNotes } from '@inixiative/foundry-core';
 import type { HandoffMoment } from '../agents/flow-orchestrator';
+import { milestoneOf } from './milestones';
 
 /**
  * Every turn that would get injection calls the Wardens, subagents included (Aron, 2026-11-02:
@@ -83,40 +84,63 @@ export function briefedText(
 }
 
 /**
- * How long a handoff waits for its brief before it runs without one. A brief that lands later rides
- * the parent's next turn instead, as a brief made when the subagent starts does.
+ * How long a call waits for the chorus (a handoff's brief, a milestone's advice) before it runs
+ * without it. What lands later rides the parent's next turn instead.
  */
-export const HANDOFF_BRIEF_DEADLINE_MS = 45_000;
+export const CHORUS_AT_CALL_DEADLINE_MS = 45_000;
 
 /**
- * A thread's tool gate with the handoff brief after it: a `pre-use` handoff the gate allowed is
- * briefed, and its text rewritten when a Warden spoke. A deny, a permission ask, any other tool and
- * a brief that fails or comes back empty pass through unchanged.
+ * A thread's tool gate with the chorus asked at the call, after the gate allowed it at `pre-use`:
+ * - a handoff is briefed, and its text rewritten when a Warden spoke (`brief`);
+ * - a milestone (`turns/milestones.ts`) is advised, and what was said rides beside the call as
+ *   context the model reads before it runs, the call itself unchanged (`milestone`; agent-session
+ *   0.15's `context`, PreToolUse `additionalContext`). Wardens never block it.
+ * A deny, a permission ask, any other tool and an answer that fails or comes back empty pass through
+ * unchanged.
  */
-export function withHandoffBrief(
+export function withChorusAtCall(
   gate: ToolGate,
-  brief: (call: HandoffCall) => Promise<string | undefined> | undefined,
+  chorus: {
+    brief: (call: HandoffCall) => Promise<string | undefined> | undefined;
+    milestone: (call: HandoffCall) => Promise<string | undefined> | undefined;
+  },
   options: { turnId: () => string | null; warn?: (line: string) => void },
 ): ToolGate {
   return async (request: ToolRequest): Promise<ToolDecision> => {
     const decision = await gate(request);
     if (decision.behavior !== 'allow' || request.stage !== 'pre-use') return decision;
-    const field = HANDOFF_TOOLS[request.toolName];
-    if (!field) return decision;
     const input = decision.updatedInput ?? request.toolInput;
+    const call: HandoffCall = {
+      ...(request.callId ? { callId: request.callId } : {}),
+      toolName: request.toolName,
+      toolInput: input,
+      turnId: options.turnId(),
+      ...(request.agentId ? { agentId: request.agentId } : {}),
+      ...(request.signal ? { signal: request.signal } : {}),
+    };
+    const field = HANDOFF_TOOLS[request.toolName];
+    if (field) {
+      try {
+        const briefed = await chorus.brief(call);
+        if (!briefed || briefed === input[field]) return decision;
+        return { ...decision, updatedInput: { ...input, [field]: briefed } };
+      } catch (error) {
+        options.warn?.(
+          `handoff brief failed, the call runs unbriefed: ${(error as Error)?.message}`,
+        );
+        return decision;
+      }
+    }
+    if (!milestoneOf(call, 'before')) return decision;
     try {
-      const briefed = await brief({
-        ...(request.callId ? { callId: request.callId } : {}),
-        toolName: request.toolName,
-        toolInput: input,
-        turnId: options.turnId(),
-        ...(request.agentId ? { agentId: request.agentId } : {}),
-        ...(request.signal ? { signal: request.signal } : {}),
-      });
-      if (!briefed || briefed === input[field]) return decision;
-      return { behavior: 'allow', updatedInput: { ...input, [field]: briefed } };
+      const context = await chorus.milestone(call);
+      if (!context) return decision;
+      const held = decision.context ? `${decision.context}\n\n${context}` : context;
+      return { ...decision, context: held };
     } catch (error) {
-      options.warn?.(`handoff brief failed, the call runs unbriefed: ${(error as Error)?.message}`);
+      options.warn?.(
+        `milestone advice failed, the call runs without it: ${(error as Error)?.message}`,
+      );
       return decision;
     }
   };

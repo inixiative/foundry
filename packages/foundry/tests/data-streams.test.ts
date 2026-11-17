@@ -392,10 +392,15 @@ test("a Foundry scope's stream lists its role's threads, and Global leaves them 
   await feedback.open('threads:@feedback');
   expect(forge.data('threads:@forge')[0].payload.threads).toEqual([]);
 
-  expect((await f.post('/api/threads', { id: 'forge-1', role: 'forge-master' })).status).toBe(201);
+  // The viewer names the scope, never its role id; the thread comes back with its scope.
+  expect((await f.post('/api/threads', { id: 'forge-1', scope: 'forge' })).status).toBe(201);
   expect(forge.data('threads:@forge').at(-1).payload).toMatchObject({
-    thread: { threadId: 'forge-1', effectiveRole: 'forge-master' },
+    thread: { threadId: 'forge-1', effectiveRole: 'scope:forge', scope: 'forge' },
   });
+  expect(
+    (await f.post('/api/threads', { id: 'forge-x', scope: 'forge', projectId: 'p' })).status,
+  ).toBe(400);
+  expect((await f.post('/api/threads', { id: 'forge-y', scope: 'nowhere' })).status).toBe(400);
   // Neither Global nor the other scope hears of it.
   const ids = (frames: Array<{ payload: any }>) =>
     frames.flatMap((frame) =>

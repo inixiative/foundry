@@ -24,7 +24,9 @@ export type WardenTriggerKind =
   | 'consumed'
   | 'agent-action'
   | 'agent-plan'
-  | 'subagent-spawn';
+  | 'subagent-spawn'
+  | 'milestone'
+  | 'hand-back';
 
 /**
  * A labelled moment for the Warden prefilter: which Warden domains the trigger touches. Never commit

@@ -15,6 +15,7 @@ import {
   ThreadFactory,
 } from '../src/agents/thread-factory';
 import { ThreadRuntimeManager } from '../src/agents/thread-runtime';
+import { FEEDBACK_ROLE, FORGE_MASTER_ROLE } from '../src/prompts/instruction-settings';
 import { defaultAgents, type FoundryConfig, starterConfig } from '../src/viewer/config';
 
 /** A fresh install: the starter config and its one executor, nothing else. */
@@ -125,7 +126,7 @@ test("a scope's thread holds its brief as a standing layer beside the session br
     manager,
     decisions,
     central,
-  } = harness(fresh(), undefined, 'feedback');
+  } = harness(fresh(), undefined, FEEDBACK_ROLE);
   try {
     await h.send({ id: 'm1', payload: 'What is in the inbox?' });
     expect(decisions).toEqual([]);
@@ -149,7 +150,7 @@ test("a scope's thread holds its brief as a standing layer beside the session br
 
 test("the Forge Master's brief follows a settings edit on the next turn; a Feedback thread on Muse gets none", async () => {
   const config = fresh();
-  const { harness: h, manager, central } = harness(config, undefined, 'forge-master');
+  const { harness: h, manager, central } = harness(config, undefined, FORGE_MASTER_ROLE);
   try {
     await h.send({ id: 'm1', payload: 'What is my default model?' });
     const first = central[0]!.opts?.delivery?.standing.find(
@@ -171,7 +172,7 @@ test("the Forge Master's brief follows a settings edit on the next turn; a Feedb
     manager.disposeAll();
   }
   // The Feedback brief names the inbox tools, which a Muse thread cannot hold.
-  const muse = harness(fresh(), undefined, 'feedback', 'muse');
+  const muse = harness(fresh(), undefined, FEEDBACK_ROLE, 'muse');
   try {
     expect(muse.thread.stack.layers.map((layer) => layer.id)).not.toContain(SCOPE_BRIEF_LAYER);
   } finally {

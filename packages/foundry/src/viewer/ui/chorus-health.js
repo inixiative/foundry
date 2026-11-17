@@ -24,6 +24,8 @@ const MOMENT = {
   'agent-action': "on the turn's actions",
   'subagent-spawn': 'on a handoff',
   consumed: 'on a work item',
+  milestone: 'on a milestone',
+  'hand-back': 'on a hand-back',
 };
 
 /**

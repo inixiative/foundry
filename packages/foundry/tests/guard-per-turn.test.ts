@@ -31,6 +31,8 @@ afterEach(() => {
 });
 const GUARD = '## Response protocol (guard phase';
 const BRIEF = 'trigger: subagent-spawn)';
+const MILESTONE = '## Milestone the agent is about to reach';
+const HAND_BACK = '## Message the agent handed back';
 async function until(predicate: () => boolean, label: string, ms = 2000) {
   const end = performance.now() + ms;
   while (!predicate()) {
@@ -51,6 +53,9 @@ function fixture(
     brief?: string;
     briefDelayMs?: number;
     deadlineMs?: number;
+    milestone?: string;
+    milestoneDelayMs?: number;
+    handBack?: string;
   } = {},
 ) {
   const config = starterConfig('controlled', 'controlled');
@@ -76,6 +81,8 @@ function fixture(
   const aux: LLMMessage[][] = [];
   const guardCalls: LLMMessage[][] = [];
   const briefCalls: LLMMessage[][] = [];
+  const milestoneCalls: LLMMessage[][] = [];
+  const handBackCalls: LLMMessage[][] = [];
   const auxiliary: LLMProvider = {
     id: 'controlled-aux',
     async complete(messages) {
@@ -84,6 +91,15 @@ function fixture(
       if (text.includes(GUARD)) {
         guardCalls.push(structuredClone(messages));
         return { model: 'controlled', content: 'NO_COMMENT' };
+      }
+      if (text.includes(MILESTONE)) {
+        milestoneCalls.push(structuredClone(messages));
+        if (opts.milestoneDelayMs) await Bun.sleep(opts.milestoneDelayMs);
+        return { model: 'controlled', content: opts.milestone ?? 'NO_COMMENT' };
+      }
+      if (text.includes(HAND_BACK)) {
+        handBackCalls.push(structuredClone(messages));
+        return { model: 'controlled', content: opts.handBack ?? 'NO_COMMENT' };
       }
       if (text.includes(BRIEF)) {
         briefCalls.push(structuredClone(messages));
@@ -105,7 +121,7 @@ function fixture(
   };
   const manager = new ThreadRuntimeManager({
     config,
-    ...(opts.deadlineMs !== undefined ? { handoffBriefDeadlineMs: opts.deadlineMs } : {}),
+    ...(opts.deadlineMs !== undefined ? { chorusAtCallDeadlineMs: opts.deadlineMs } : {}),
     log() {},
     warn() {},
     eventStream: events,
@@ -187,7 +203,20 @@ function fixture(
     store
       .phaseHistory(nodeId, turnId ? { turnId } : undefined)
       .filter((r) => r.phase !== 'middleware-reduced');
-  return { manager, thread, runtime, store, aux, guardCalls, briefCalls, central, turn, rows };
+  return {
+    manager,
+    thread,
+    runtime,
+    store,
+    aux,
+    guardCalls,
+    briefCalls,
+    milestoneCalls,
+    handBackCalls,
+    central,
+    turn,
+    rows,
+  };
 }
 
 test('per-turn: the chorus is asked once, when the turn ends, over every guardable call in order; reads never enter the moment', async () => {
@@ -792,4 +821,176 @@ test("a call a subagent makes is journalled on that subagent's node", async () =
     .rows(undefined, 'sub_n')
     .find((r) => r.phase === 'advice' && r.record.wraps === 'handoff-call:toolu_inner');
   expect(inner?.record).toMatchObject({ handoff: { before: true, fromSubagent: 'task_n' } });
+});
+
+// Milestones and the hand-back (Aron, 2026-11-16, after the #261 retrospective: the merge and review
+// rules were in context and skipped at the step they govern). A Claude milestone call is advised at
+// pre-use and the advice returns as the call's context; an observed one (Codex, Muse) rides the next
+// turn; the turn's hand-back message is asked over once, and what is said rides the next turn.
+
+const CHIME =
+  '{"layers":[],"snippets":["Run the full check before merging (docs/rules/merging.md)."],"confidence":0.9}';
+const MERGE = {
+  callId: 'toolu_merge_1',
+  toolName: 'Bash',
+  toolInput: { command: 'gh pr merge 42 --squash' },
+  turnId: 'turn-1',
+};
+
+test('a milestone call is advised at the call: the advice is returned, journalled, and its observation is not asked again', async () => {
+  const f = fixture({ milestone: CHIME });
+  await f.turn('turn-1', 'Ship it');
+  const text = await f.runtime.adviseMilestone(MERGE);
+  expect(text).toContain('# Chimes from the Warden chorus');
+  expect(text).toContain('as you were about to merge a pull request');
+  expect(text).toContain('Run the full check before merging');
+  expect(f.milestoneCalls).toHaveLength(1);
+  expect(f.milestoneCalls[0]!.map((m) => m.content).join('\n')).toContain(
+    'gh pr merge 42 --squash',
+  );
+  const row = f
+    .rows('turn-1')
+    .find((r) => r.phase === 'advice' && r.record.trigger === 'milestone')!;
+  expect(row.record).toMatchObject({
+    wraps: 'milestone-call:toolu_merge_1',
+    milestone: { kind: 'merge', tool: 'Bash', toolCallId: 'toolu_merge_1', before: true },
+  });
+  expect(f.runtime.flowOrchestrator.pendingNotes).toHaveLength(0);
+  // The same call, observed on the native stream: not asked a second time.
+  await f.thread.signals.emit({
+    id: 'sig-merge-observed',
+    kind: 'tool_observation',
+    source: `thread:${f.thread.id}`,
+    timestamp: Date.now(),
+    content: {
+      threadId: f.thread.id,
+      agentId: 'worker',
+      tool: 'Bash',
+      callId: 'toolu_merge_1',
+      inputSummary: JSON.stringify(MERGE.toolInput),
+      ok: true,
+    },
+  });
+  await Bun.sleep(20);
+  expect(f.milestoneCalls).toHaveLength(1);
+  // Not a milestone: nothing is asked.
+  expect(
+    await f.runtime.adviseMilestone({ ...MERGE, callId: 'toolu_ls', toolInput: { command: 'ls' } }),
+  ).toBeUndefined();
+  expect(f.milestoneCalls).toHaveLength(1);
+});
+
+test('an observed milestone (no pre-use stage) is asked once and rides the next turn', async () => {
+  const f = fixture({ milestone: CHIME });
+  await f.turn('turn-1', 'Ship it', [{ tool: 'Bash', input: { command: 'npm publish' } }]);
+  await until(
+    () => f.runtime.flowOrchestrator.pendingNotes.length >= 1,
+    'observed milestone queued',
+  );
+  expect(f.milestoneCalls).toHaveLength(1);
+  expect(f.runtime.flowOrchestrator.pendingNotes.map((n) => n.text).join('\n')).toContain(
+    'after you published a package',
+  );
+  expect(f.milestoneCalls[0]!.map((m) => m.content).join('\n')).toContain(
+    'The main agent has just published a package',
+  );
+});
+
+const observe = (f: ReturnType<typeof fixture>, id: string, content: Record<string, unknown>) =>
+  f.thread.signals.emit({
+    id,
+    kind: 'tool_observation',
+    source: `thread:${f.thread.id}`,
+    timestamp: Date.now(),
+    content: { threadId: f.thread.id, agentId: 'worker', ...content },
+  });
+
+test('an observed milestone that failed or was refused is not asked', async () => {
+  const f = fixture({ milestone: CHIME });
+  await f.turn('turn-1', 'Ship it');
+  await observe(f, 'sig-failed-merge', {
+    tool: 'Bash',
+    callId: 'call-failed',
+    inputSummary: JSON.stringify({ command: 'gh pr merge 3' }),
+    ok: false,
+  });
+  await Bun.sleep(20);
+  expect(f.milestoneCalls).toHaveLength(0);
+});
+
+test("a Codex call to the bridge's set_status, as projected, is the done milestone", async () => {
+  const f = fixture({ milestone: CHIME });
+  await f.turn('turn-1', 'Ship it');
+  const bridge = 'foundry_01a1e7118975733393df9216d60e15a3';
+  await observe(f, 'sig-codex-done', {
+    tool: `${bridge}/mcp__${bridge}__set_status`,
+    callId: 'call-done',
+    inputSummary: JSON.stringify({ status: 'done' }),
+    ok: true,
+  });
+  await until(() => f.milestoneCalls.length === 1, 'done milestone asked');
+  expect(f.milestoneCalls[0]!.map((m) => m.content).join('\n')).toContain(
+    'has just marked the thread done',
+  );
+});
+
+test('a late or withdrawn milestone call is asked once: its observation is not asked again', async () => {
+  for (const how of ['late', 'withdrawn'] as const) {
+    const f = fixture({
+      milestone: CHIME,
+      milestoneDelayMs: 60,
+      deadlineMs: how === 'late' ? 10 : 5000,
+    });
+    await f.turn('turn-1', 'Ship it');
+    const abort = new AbortController();
+    const pending = f.runtime.adviseMilestone({ ...MERGE, signal: abort.signal });
+    if (how === 'withdrawn') abort.abort();
+    expect(await pending).toBeUndefined();
+    await observe(f, `sig-${how}`, {
+      tool: 'Bash',
+      callId: MERGE.callId,
+      inputSummary: JSON.stringify(MERGE.toolInput),
+      ok: true,
+    });
+    await until(() => f.runtime.flowOrchestrator.pendingNotes.length === 1, `${how} queued`);
+    await Bun.sleep(20);
+    expect(f.milestoneCalls).toHaveLength(1);
+  }
+});
+
+test('a milestone past its deadline lets the call run, and the advice rides the next turn; a silent one adds nothing', async () => {
+  const late = fixture({ milestone: CHIME, milestoneDelayMs: 80, deadlineMs: 10 });
+  await late.turn('turn-1', 'Ship it');
+  expect(await late.runtime.adviseMilestone(MERGE)).toBeUndefined();
+  await until(
+    () => late.runtime.flowOrchestrator.pendingNotes.length === 1,
+    'late milestone queued',
+  );
+  const quiet = fixture();
+  await quiet.turn('turn-1', 'Ship it');
+  expect(await quiet.runtime.adviseMilestone(MERGE)).toBeUndefined();
+  expect(quiet.milestoneCalls).toHaveLength(1);
+  expect(quiet.runtime.flowOrchestrator.pendingNotes).toHaveLength(0);
+});
+
+test('the hand-back: a turn that did work has its message asked over once, and what is said rides the next turn', async () => {
+  const f = fixture({ handBack: CHIME });
+  await f.turn('turn-1', 'Ship it', [{ tool: 'Edit', input: { file_path: 'a.ts' } }]);
+  await until(() => f.handBackCalls.length === 1, 'hand-back asked');
+  expect(f.handBackCalls[0]!.map((m) => m.content).join('\n')).toContain('COMPLETED');
+  await until(() => f.runtime.flowOrchestrator.pendingNotes.length === 1, 'hand-back queued');
+  expect(f.runtime.flowOrchestrator.pendingNotes[0]!.text).toContain('on your last hand-back');
+  const row = f
+    .rows('turn-1')
+    .find((r) => r.phase === 'advice' && r.record.trigger === 'hand-back')!;
+  expect(row.record).toMatchObject({ wraps: 'hand-back:turn-1', handBack: { chars: 9 } });
+});
+
+test('a turn that only talked is not asked at its hand-back', async () => {
+  const f = fixture({ handBack: CHIME });
+  await f.turn('turn-1', 'What does pickColumns do?');
+  await f.turn('turn-2', 'And reads?', [{ tool: 'Read', input: { file_path: 'a.ts' } }]);
+  await Bun.sleep(30);
+  expect(f.handBackCalls).toHaveLength(0);
+  expect(f.rows().some((r) => r.record.trigger === 'hand-back')).toBe(false);
 });

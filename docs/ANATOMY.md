@@ -28,6 +28,7 @@ One sheet naming every part of Foundry, so people and agents use the same words.
  │   chorus: one region Warden per region, asked at every trigger              │
  │     user-message ─► advice    consumed ─► advice    subagent-spawn ─► brief │
  │     agent-action ─► guard     after the turn ─► review (writes thread knowledge)
+ │     milestone ─► advice at the call    hand-back ─► advice, next turn           │
  │     each Warden: stage(s) under a charter ─► NO_COMMENT | pointer           │
  │     chime ─► main thread, read under the reception charter                  │
  │                                                                             │
@@ -84,9 +85,9 @@ One sheet naming every part of Foundry, so people and agents use the same words.
 | harnessSettings | Whether a main thread's Claude loads the user's own settings, commands, skills, agents, plugins and hooks (`load`, default) or none (`off`). Project settings only inside a registered project; credentials in them never replace the subscription login. | `composition.harnessSettings`, `pf/providers/harness-settings.ts` | live |
 | harnessLoading | Whether the harness also loads those files (`load`) or Foundry suppresses them (`suppress`), so there is one injection path. Defaults to `suppress` when every view composes instructions. | `composition.harnessLoading` | live |
 | composition view | Roles × slots × ladder nodes: every model-backed role composes each slot from the same ladder; a role opts out of nodes, never in. | `composition.roles` | live |
-| role | Who a composition is for: `main`, each Warden (its region id), the Cartographer. | | live |
+| role | Who a composition is for, a namespaced id (`prompts/role-namespace.ts`): a thread role (`thread:coder`, the shared base `thread:main`), a scope role (`scope:forge`), each Warden (`region:<id>`), the Cartographer (`agent:cartographer`). | | live |
 | slot | `instructions` (the system prompt) and `domainKnowledge` (what the role primes with). Thread knowledge is not a slot. | | live |
-| role file | `.foundry/roles/<role>/<slot>.md` (and `.local.md`) at any rung, e.g. the org's instructions for one Warden. | | live |
+| role file | `.foundry/roles/<namespace>/<name>/<slot>.md` (and `.local.md`) at any rung, e.g. the org's instructions for one Warden. | | live |
 | dedupe | Same file, identical content and identical sections are removed, keeping the most specific copy; every removal is reported in the layer's Selection panel. | `composition.dedupe` | live |
 | role budget | Characters a middleware role may compose (`DEFAULT_ROLE_BUDGET`, 120,000). Over budget the phase does not run and nothing is truncated. `DECISION_INPUT_CAP` (160,000) is the backstop. | `pf/providers/decision-budget.ts` | live |
 | context layer / stack | A managed context cache (`cold → warming → warm → stale`) and the stack that assembles layers under a token budget. | `pc/context-layer.ts`, `pc/context-stack.ts` | live |
@@ -128,7 +129,8 @@ One sheet naming every part of Foundry, so people and agents use the same words.
 | `agent-action` → guard | Once per turn when its tool activity ends, over every write, edit and command in order, for each Warden whose `guardTriggers` name one. Advisory only; never awaited, never holds the hand-back. | `guard: per-turn` (default) or `per-call`; `REGION_GUARD_TRIGGERS` | live |
 | `subagent-spawn` → brief | Every Warden, on the task text handed to a subagent; journalled on the parent and delivered with its next turn. | `FlowOrchestrator.brief` | live |
 | review (post-work review) | After the turn, each Warden reviews the work and writes its thread knowledge (`post-turn` in the pre-filter). | `learning.enabled` | live |
-| `hand-back` | Wardens review the final message before the user sees it, one extra pass at most. | named in `warden-triggers.ts` | proposed |
+| `milestone` → advice | Every Warden, at a call that lands work (open or merge a pull request, publish, `set_status` done, a write to a standing rule file). On Claude asked at `pre-use` and returned as the call's `additionalContext`; on Codex and Muse asked when observed, riding the next turn. Never blocks. | `pf/turns/milestones.ts`; `withChorusAtCall` | live |
+| `hand-back` → advice | Every Warden, over the message a turn that did work (a guarded write, edit or command) handed back; not awaited, rides the next turn. No extra pass before the person sees it. | `ThreadRuntime._handBack` | live |
 | `agent-question` | A Warden answers the agent's question on the user's behalf when confident and backed by a recorded ruling. | named in `warden-triggers.ts` | proposed |
 | chime | What a Warden's yes becomes in the thread: "The <region> Warden chimed in: …". A pointer, never advice text. | `pf/agents/flow-orchestrator.ts` | live |
 | pointer | The parsed answer: `{ relevant, shape, pointer, where, why, level, candidates }`, at most three names, each with its doc section and one line that tells it apart. | `parseWardenPointer`, `pf/classify/pointer.ts` | live |
@@ -169,7 +171,7 @@ One sheet naming every part of Foundry, so people and agents use the same words.
 | classifier / router | Thread agents that classify a message and route it to an executor; keyword fallback on timeout. | agent kinds `classifier`, `router` | off (a fresh install has neither) |
 | feedback lifecycle | `/feedback` records an item on the thread and turn; with detection on, a correction is classified, routed to Warden roles, offered back in a tuning prompt and applied to a role file with provenance. | `pf/feedback/`, `feedback.capture`; [FEEDBACK-LOOP.md](FEEDBACK-LOOP.md) | live (explicit `/feedback`); detection off |
 | tuning prompt | "What happened / what we did / what we intend", shown to the user to sharpen a captured correction (`ask`, `block` or `blockOn`). | | off (with detection) |
-| Forge Master | A thread scope (role `forge-master`): threads for talking to this Foundry about itself, started from the New thread picker or a settings page's "Ask the Forge Master" (which drafts the question). Each holds a standing brief with this install's configuration. A Forge Master Warden is designed, not built. | `pf/agents/scope-roles.ts`, `threads:@forge` | live |
+| Forge Master | A thread scope (role `scope:forge`): threads for talking to this Foundry about itself, started from the New thread picker or a settings page's "Ask the Forge Master" (which drafts the question). Each holds a standing brief with this install's configuration. A Forge Master Warden is designed, not built. | `pf/agents/scope-roles.ts`, `threads:@forge` | live |
 | Feedback scope | A thread scope (role `feedback`): threads that work through the feedback inbox with the person; the viewer shows the inbox beside the thread, and the thread's MCP bridge carries `feedback_inbox`, `feedback_item`, `feedback_status` (read, archive, reopen; tuning answers stay the person's). | `pf/agents/scope-roles.ts`, `pf/tools/feedback-inbox.ts`, `threads:@feedback` | live |
 | MCP bridge | The `foundry` MCP server a native session can pull from mid-turn (`foundry_query`, `foundry_conventions`, … plus `send_to_member`, `pass_conch`, `kingdom_post` when registered). | `pf/mcp/server.ts` | live |
 

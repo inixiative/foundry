@@ -193,10 +193,13 @@ test("Runs on counts the thread's agents; + Add agent joins another thread and R
     await picker.locator('[data-run="apply"]').waitFor();
     expect(await picker.locator('.modal-title').innerText()).toBe('Second opinion runs on');
     // Apply changes this agent's run, not the host's.
-    await picker.locator('[data-run="role"]').selectOption('assistant');
+    await picker.locator('[data-run="role"]').selectOption('thread:assistant');
     await picker.locator('[data-run="apply"]').click();
     await picker.waitFor({ state: 'detached' });
-    await until(async () => (await launchOf('codex')).role === 'assistant', 'the agent changed');
+    await until(
+      async () => (await launchOf('codex')).role === 'thread:assistant',
+      'the agent changed',
+    );
     expect(await launchOf('main')).toMatchObject({
       role: mainBefore.role,
       effectiveRole: mainBefore.effectiveRole,

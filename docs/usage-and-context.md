@@ -360,11 +360,23 @@ formalized because that's how the whole system is working."
 computer, org, org personal, project, project personal) composes every slot of
 every role.
 
-- **Roles.** A main thread composes as its **thread role** (below): `coder`,
-  `assistant`, or one of the user's own. `main` is the shared base under every
-  thread role: its role files compose for every main thread, and it picks
-  nothing itself. Every model-backed middleware role is its agent id: each Warden (a region Warden's id is `region:<region id>`, built by `regionRoleId` from the one namespace registry, `prompts/role-namespace.ts`, so a region named like another role never takes its id; its role files nest by namespace, `.foundry/roles/region/<region id>/`) and the
-  Cartographer (its agent id, or `cartographer`). The Librarian makes no model
+- **Role ids carry a namespace** (Aron, 2026-11-16: "we should really be using
+  prefixes… such that we can't have this on pure names", after a region named
+  `feedback` took the Feedback scope role's bare id and no Foundry with that
+  project could boot). Every role id is `<namespace>:<name>`, the namespaces
+  written once (`prompts/role-namespace.ts`): `thread:` for main-thread roles,
+  `scope:` for the roles that hold a scope, `region:` for region Wardens and
+  `agent:` for agents written in settings. None is bare: a bare
+  `composition.roles` key or `when.roles` entry is refused with the fix. A
+  role's files nest by namespace: `.foundry/roles/<namespace>/<name>/`.
+- **Roles.** A main thread composes as its **thread role** (below):
+  `thread:coder`, `thread:assistant`, or one of the user's own. `thread:main` is
+  the shared base under every thread role: its role files compose for every main
+  thread, and it picks nothing itself. Every model-backed middleware role is its
+  agent's: each Warden's (`region:<region id>`, `regionRoleId`; its role files in
+  `.foundry/roles/region/<region id>/`) and the Cartographer's
+  (`agent:<its agent id>`, default `agent:cartographer`, `roleIdOfAgent`; a
+  written agent's id is a bare key, so it can never take another role's). The Librarian makes no model
   call and has nothing to compose. Classifier and router agents still use their
   settings prompt and visible layers.
 - **Slots.** `instructions` is the system prompt. `domainKnowledge` is the
@@ -384,8 +396,9 @@ every role.
 | project | `.foundry/roles/<role>/<slot>.md` in the repository, root to cwd | team |
 | org or project personal | `.foundry/roles/<role>/<slot>.local.md` in any of those directories | personal_private |
 
-  So "the org's Warden instructions for this project" is a file, for example
-  `~/code/inixiative/.foundry/roles/naming/instructions.md`.
+  `<role>` is the role's directory: its id with each `:` a folder. So "the org's
+  Warden instructions for this project" is a file, for example
+  `~/code/inixiative/.foundry/roles/region/naming/instructions.md`.
   A registered node with `"when": {"roles": [...], "slots": [...]}` can
   read from anywhere else.
 
@@ -401,7 +414,7 @@ The main thread's `instructions` source (type `instructions`; `slot` picks the
 slot, default `instructions`) is its thread role's ladder part, and the only
 path a main thread's instructions take. An executor has no settings part: its
 `prompt` is retired and a saved one is refused by name, with the fix (move it to
-`.foundry/roles/<role>/instructions.md`). Why: every main thread used to get the
+`.foundry/roles/thread/<name>/instructions.md`). Why: every main thread used to get the
 coding executor's prompt ("Active agent: artificer…"), so a Muse thread meant as
 a day-to-day assistant acted as a coder (Aron, 2026-11-10).
 
@@ -411,19 +424,19 @@ have their own instruction set… maybe you can configure your own roles and
 default roles"). A thread role is a composition role a main thread runs as, so
 it needs no machinery beyond the ladder:
 
-- **Built in.** `coder`, the default for `claude-code` and `codex`, takes every
+- **Built in.** `thread:coder`, the default for `claude-code` and `codex`, takes every
   general file (CLAUDE.md, AGENTS.md, rules, auto memory), as Claude Code itself
-  reads them. `assistant`, the default for `muse`, takes general files only from
+  reads them. `thread:assistant`, the default for `muse`, takes general files only from
   the computer-level nodes (`managed`, `global`), so a repository's coding rules
-  never reach it. A worker no role names composes as `coder`. Foundry ships no
+  never reach it. A worker no role names composes as `thread:coder`. Foundry ships no
   role instructions: they are role files the user writes.
-- **Scope roles.** `forge-master` and `feedback` are thread roles that hold a
+- **Scope roles.** `scope:forge` and `scope:feedback` are thread roles that hold a
   scope (Aron, 2026-11-14: "Forge Master and Feedback should just be threads…
   with their own sort of system prompts or scopes"). A thread lives in a project,
   in Global, or in one of these scopes: chosen by the New thread picker's
   **Where**, never by the role picker. A scope thread has no project, runs in the
   daemon's directory, reads general files from the computer-level nodes only (as
-  `assistant`), and holds its scope's brief as a standing layer (`scope-brief`,
+  `thread:assistant`), and holds its scope's brief as a standing layer (`scope-brief`,
   `agents/scope-roles.ts`): the Forge Master's carries this install's
   configuration and is re-read each turn; the Feedback brief explains the inbox
   tools (`feedback_inbox`, `feedback_item`, `feedback_status`) that only a
@@ -431,9 +444,9 @@ it needs no machinery beyond the ladder:
   project thread cannot take one, and a thread cannot move into or out of a
   scope by changing its role. The `threads` stream (Global) leaves scope threads
   out; `threads:@forge` and `threads:@feedback` list them.
-- **Role files.** For thread role X, each rung reads `main`'s role file, then
-  X's (core `HierarchyLocation.baseRoles`). So `~/.foundry/roles/main/instructions.md`
-  reaches every main thread and `~/.foundry/roles/assistant/instructions.md` only
+- **Role files.** For thread role X, each rung reads `thread:main`'s role file, then
+  X's (core `HierarchyLocation.baseRoles`). So `~/.foundry/roles/thread/main/instructions.md`
+  reaches every main thread and `~/.foundry/roles/thread/assistant/instructions.md` only
   assistants.
 - **Harness.** The personal global file follows the thread's worker: a Claude
   Code thread reads `~/.claude/CLAUDE.md`, a Codex thread `$CODEX_HOME/AGENTS.md`,
@@ -443,32 +456,35 @@ it needs no machinery beyond the ladder:
   default. It changes any time (`PATCH /api/threads/:id` `role`, the header's
   Runs on picker) and applies from the next turn: the role and worker reach the
   instructions source through the thread's bound scope, so a change re-composes.
-  A record with no role (from before thread roles) resolves to its worker's
-  default when read; nothing rewrites it. A worker switch moves a thread on its
+  A record with no role (from before thread roles), or with a role that is no
+  longer a thread role, resolves to its worker's default when read; nothing
+  rewrites it (records from before 2026-11-16 were moved to namespaced ids once,
+  by a throwaway script, as settings keys and role folders were). A worker switch moves a thread on its
   old worker's default role to the new worker's (a Claude Code coder switched
   to Muse becomes an assistant); a role chosen otherwise stays.
-- **Your own.** A role entry with `thread` is a thread role. `defaultFor` moves
+- **Your own.** A `thread:<name>` entry with `thread` is a thread role; `thread`
+  on any other namespace is refused. `defaultFor` moves
   workers to it from the built-ins (a worker has one default; two settings roles
   naming the same worker are refused). A built-in's entry merges over its built-in
   picks slot by slot, and its `thread` field by field (a new label keeps its
-  default workers). Thread role ids, and `main`, are composition role ids: no
-  agent or region may take one.
+  default workers). No agent or region can take a thread role's id: each kind has
+  its own namespace.
 
 ```jsonc
 "composition": {
   "roles": {
-    "assistant": { "instructions": { "general": ["managed", "global", "project"] } },
-    "writer": {
+    "thread:assistant": { "instructions": { "general": ["managed", "global", "project"] } },
+    "thread:writer": {
       "thread": { "label": "Writer", "defaultFor": ["muse"] },
       "instructions": { "general": ["global"] }
     },
-    "main": { "audience": "personal_private" }   // main takes only audience
+    "thread:main": { "audience": "personal_private" }   // main takes only audience
   }
 }
 ```
 
 `/feedback` and `/correction` on a main thread write to that thread's role when
-no Warden owns the rule; the feedback edit form lists the thread roles, `main`
+no Warden owns the rule; the feedback edit form lists the thread roles, `thread:main`
 and the project's Wardens.
 
 **Selection.** Everything that applies is on. `composition.roles.<role>` opts
@@ -724,8 +740,8 @@ regions never run (Heralds are not built) and the view says so.
   loading. A role with no general file in either slot (a Warden, the
   Cartographer) takes none by any other route either: an `@` import of
   CLAUDE.md from its role files or the brief, or a slotted settings source
-  naming one, is dropped (`isGeneralFile`). The ids `main`, `cartographer` and
-  every thread role's are reserved: a region may not take them. There is no switch that brings the
+  naming one, is dropped (`isGeneralFile`). A region's Warden is `region:<id>`, so it
+  can never take a thread role's or an agent's id. There is no switch that brings the
   ladder back. With no general files a
   Warden's instructions carry no Claude Code preamble ("these instructions
   OVERRIDE…"), which only frames CLAUDE.md-style files (`RoleView.framed`).
@@ -883,14 +899,14 @@ project personal. (Until 2026-10-17 this example was a hand-named Convention
 Warden in settings; until 2026-11-02 it read the org and project CLAUDE.md as
 domain knowledge, which a Warden no longer can.)
 
-| Rung | coder main thread: instructions (`main` then `coder` role files) | naming Warden: instructions | naming Warden: domain knowledge |
+| Rung | coder main thread: instructions (`thread:main` then `thread:coder` role files) | naming Warden: instructions | naming Warden: domain knowledge |
 |---|---|---|---|
 | (Foundry) | | the Warden charter, then the region's generated prompt | the region's `knowledge.md` |
-| computer | `~/.claude/CLAUDE.md` (+ rules, `RTK.md`), `~/.foundry/roles/main/instructions.md` | `~/.foundry/roles/naming/instructions.md` | `~/.foundry/roles/naming/domainKnowledge.md` |
-| org | `~/code/inixiative/CLAUDE.md`, `.foundry/roles/main/instructions.md` there | its own role file there | `.foundry/roles/naming/domainKnowledge.md` there |
-| org personal | `~/code/inixiative/CLAUDE.local.md` | `.foundry/roles/naming/instructions.local.md` there | `.foundry/roles/naming/domainKnowledge.local.md` there |
+| computer | `~/.claude/CLAUDE.md` (+ rules, `RTK.md`), `~/.foundry/roles/thread/main/instructions.md` | `~/.foundry/roles/region/naming/instructions.md` | `~/.foundry/roles/region/naming/domainKnowledge.md` |
+| org | `~/code/inixiative/CLAUDE.md`, `.foundry/roles/thread/main/instructions.md` there | its own role file there | `.foundry/roles/region/naming/domainKnowledge.md` there |
+| org personal | `~/code/inixiative/CLAUDE.local.md` | `.foundry/roles/region/naming/instructions.local.md` there | `.foundry/roles/region/naming/domainKnowledge.local.md` there |
 | project | `<repo>/CLAUDE.md`, `AGENTS.md`, `.claude/rules` | its role file, then `<repo>/.foundry/warden-brief.md` | its role file |
-| project personal | `<repo>/CLAUDE.local.md`, auto memory | `.foundry/roles/naming/instructions.local.md`, then `<repo>/.foundry/warden-brief.local.md` | `.foundry/roles/naming/domainKnowledge.local.md` |
+| project personal | `<repo>/CLAUDE.local.md`, auto memory | `.foundry/roles/region/naming/instructions.local.md`, then `<repo>/.foundry/warden-brief.local.md` | `.foundry/roles/region/naming/domainKnowledge.local.md` |
 
 **Test cases** (`tests/composition-view.test.ts`, core
 `markdown-hierarchy.test.ts`):

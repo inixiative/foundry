@@ -62,7 +62,7 @@ import {
   artifactVersionId,
   type ThreadRecords,
 } from '../tools/thread-record';
-import { withHandoffBrief } from '../turns/handoff-brief';
+import { withChorusAtCall } from '../turns/handoff-brief';
 import {
   NATIVE_RECORD_QUIET_MS,
   NATIVE_TOOL_QUIET_MS,
@@ -427,7 +427,7 @@ export function createViewer(config: ViewerConfig) {
       events: eventStream,
       // Every runtime: the root thread's Wardens brief a handoff when the subagent starts (the
       // subagent-spawn trigger); the brief is journalled on the parent and rides with its next turn.
-      // A Claude handoff already briefed at its call (`withHandoffBrief`) is skipped by the runtime.
+      // A Claude handoff already briefed at its call (`withChorusAtCall`) is skipped by the runtime.
       onSpawn: (rootThreadId, spawn) => {
         const root = directory.get(rootThreadId);
         if (!root) return;
@@ -1260,11 +1260,14 @@ export function createViewer(config: ViewerConfig) {
       },
     });
     // Private paths are not structural rules: Codex and Muse still start, and get them when they ask.
-    // A handoff the gate allows is briefed by the thread's chorus before it runs (Claude's pre-use),
-    // so the chimes ride into what the subagent reads.
-    const briefed = withHandoffBrief(
+    // A call the gate allows meets the thread's chorus before it runs (Claude's pre-use): a handoff is
+    // briefed so the chimes ride into what the subagent reads; a milestone gets advice beside the call.
+    const briefed = withChorusAtCall(
       gate,
-      (call) => config.threadFactory?.runtime?.get(threadId)?.briefHandoff(call),
+      {
+        brief: (call) => config.threadFactory?.runtime?.get(threadId)?.briefHandoff(call),
+        milestone: (call) => config.threadFactory?.runtime?.get(threadId)?.adviseMilestone(call),
+      },
       {
         turnId: () => turns.runningTurn(threadId),
         warn: (line) => console.warn(`[Gate] ${threadId}: ${line}`),

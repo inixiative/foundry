@@ -165,12 +165,17 @@ test('one real turn: routing, advice, guard and review requests are journalled u
   await turn(turnId, 'Add preferred names');
   expect(toolEmitted).toBe(2);
   // The manager's one controlled auxiliary provider serves routing, advice and guard; each recorded request must equal the matching actual call of turn 2.
-  const auxiliaryCall = (marker: string) => {
-    const hits = f.requests.route.filter((ms) => ms.some((m) => m.content.includes(marker)));
+  const auxiliaryCall = (marker: string, unless?: string) => {
+    const hits = f.requests.route.filter(
+      (ms) =>
+        ms.some((m) => m.content.includes(marker)) &&
+        !(unless && ms.some((m) => m.content.includes(unless))),
+    );
     expect(hits).toHaveLength(2);
     return hits[1]!;
   };
-  expect(f.requests.route).toHaveLength(6);
+  // Two turns of routing, advice and guard, plus each working turn's hand-back advice.
+  expect(f.requests.route).toHaveLength(8);
   expect(f.requests.review).toHaveLength(2);
 
   // Live source moves on: cache, instructions and understanding all change before the journal is read back.
@@ -212,7 +217,9 @@ test('one real turn: routing, advice, guard and review requests are journalled u
     threadKnowledge: 'OWN_V1: legacy callers use display_name (turn 1).',
   });
   expect(participant.request.status).toBe('supplied');
-  expect(participant.request.messages).toEqual(auxiliaryCall('## Response protocol (advice phase'));
+  expect(participant.request.messages).toEqual(
+    auxiliaryCall('## Response protocol (advice phase', '## Message the agent handed back'),
+  );
 
   // Guard: recorded on the dispatch under the observation identity; a completed check, its request and the frozen own understanding.
   expect(Array.isArray(annotations.guards)).toBe(true);

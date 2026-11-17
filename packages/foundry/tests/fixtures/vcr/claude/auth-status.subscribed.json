@@ -1,5 +1,5 @@
 {
-  "version": "2.1.325",
+  "version": "2.1.326",
   "status": 0,
   "body": {
     "kind": "process",
@@ -29,9 +29,9 @@
   "recorded": {
     "service": "claude",
     "cli": "claude",
-    "recordedAt": "2026-11-16T14:49:52.349Z",
-    "agentSession": "0.13.0",
+    "recordedAt": "2026-11-17T03:23:57.834Z",
+    "agentSession": "0.15.0",
     "environment": "terminal",
-    "durationMs": 158
+    "durationMs": 199
   }
 }

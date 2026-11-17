@@ -11,7 +11,7 @@ import type { FoundryConfig } from '../viewer/config';
 /**
  * The scope briefs: what a thread in one of Foundry's own scopes is for (Aron, 2026-11-14: "Forge
  * Master and Feedback should just be threads … with their own sort of system prompts or scopes").
- * The scope is the thread's role (`forge-master`, `feedback`); its brief is held once as a standing
+ * The scope is the thread's role (`scope:forge`, `scope:feedback`); its brief is held once as a standing
  * layer, beside the session briefing, and re-read each turn so a changed configuration reaches the
  * thread as a replacing version, while an unchanged one is not sent again.
  */

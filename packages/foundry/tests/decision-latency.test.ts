@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test';
 import { ContextStack, Harness, type LLMProvider } from '@inixiative/foundry-core';
+import { regionRoleId } from '../src/agents/region-roster';
 import {
   buildAgents,
   buildLayers,
@@ -11,8 +12,10 @@ import { DECISION_LATENCY_BUDGET } from '../src/providers/decision-budget';
 import { type AgentSettingsConfig, type FoundryConfig, starterConfig } from '../src/viewer/config';
 
 const DOMAINS = ['api', 'db', 'ui', 'auth', 'security', 'testing'];
+/** A domain-advising expert's id is a namespaced role id, as a generated region Warden's is. */
+const expertId = (domain: string) => regionRoleId(`${domain}-expert`);
 const expert = (domain: string): AgentSettingsConfig => ({
-  id: `${domain}-expert`,
+  id: expertId(domain),
   kind: 'domain-librarian',
   flowRole: 'domain-advising',
   domain,
@@ -64,7 +67,7 @@ function config(): FoundryConfig {
       maxDepth: 1,
       enabled: true,
     },
-    ...Object.fromEntries(DOMAINS.map((d) => [`${d}-expert`, expert(d)])),
+    ...Object.fromEntries(DOMAINS.map((d) => [expertId(d), expert(d)])),
   };
   c.layers = Object.fromEntries(
     DOMAINS.map((d) => [
@@ -75,7 +78,7 @@ function config(): FoundryConfig {
         segment: 'domain-knowledge',
         prompt: `${d} context`,
         sourceIds: [`${d}-source`],
-        writers: [`${d}-expert`],
+        writers: [expertId(d)],
         staleness: 0,
         enabled: true,
       },

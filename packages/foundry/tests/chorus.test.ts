@@ -65,7 +65,11 @@ import {
 } from '../src/classify';
 import { contentHash } from '../src/persistence/journal-content';
 import { LocalSessionStore } from '../src/persistence/local-session-store';
-import { DEFAULT_ROLE_BUDGET, roleComposition } from '../src/prompts/instruction-settings';
+import {
+  DEFAULT_ROLE_BUDGET,
+  MAIN_ROLE,
+  roleComposition,
+} from '../src/prompts/instruction-settings';
 import { DECISION_INPUT_CAP } from '../src/providers/decision-budget';
 import { describeReadinessChorus, inspectReadiness } from '../src/readiness';
 import { type FoundryConfig, starterConfig, validateConfig } from '../src/viewer/config';
@@ -810,7 +814,7 @@ test("a region's warm-cache key is the content hash of its composed knowledge: e
     );
     // A call whose knowledge is no region's has no chorus key.
     expect(
-      auditor.versions('cartographer', {
+      auditor.versions('agent:cartographer', {
         instructions: [{ subject: 'prompt:agent:cartographer', text: 'ROUTE' }],
         domainKnowledge: [{ subject: 'source-content:docs', text: 'K' }],
       }).chorus,
@@ -898,7 +902,7 @@ test('settings declare no Wardens: a hand-named one is refused by name with the 
   expect(beside.worker).toMatchObject({ id: 'worker', kind: 'executor' });
   expect(beside[regionRoleId('worker')]).toMatchObject({ domain: 'worker' });
   c.agents[regionRoleId('worker')] = { ...c.agents.worker!, id: regionRoleId('worker') };
-  expect(() => validateConfig(c)).toThrow('the region: prefix names a region Warden');
+  expect(() => validateConfig(c)).toThrow("an agent's id is a bare name");
 });
 
 test("a region Warden's domain knowledge is the whole knowledge.md, with the ladder's overlays and source provenance", async () => {
@@ -1203,7 +1207,7 @@ test('budgets admit a region at the 40k-token hard cap and refuse above it, with
     DEFAULT_ROLE_BUDGET + WARDEN_CHARTER.length + 4_000 + 20_000,
   );
   expect(roleComposition(undefined, LOCKS).budget).toBe(DEFAULT_ROLE_BUDGET);
-  expect(roleComposition(undefined, 'main').budget).toBe(Number.POSITIVE_INFINITY);
+  expect(roleComposition(undefined, MAIN_ROLE).budget).toBe(Number.POSITIVE_INFINITY);
   expect(roleComposition({ roles: { [LOCKS]: { budget: 50_000 } } }, LOCKS).budget).toBe(50_000);
 
   const cache = new ContextLayer({ id: 'k' });
