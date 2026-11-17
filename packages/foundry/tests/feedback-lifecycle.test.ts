@@ -22,7 +22,14 @@ import { validateFeedbackSettings } from '../src/feedback/types';
 import { assess } from '../src/feedback/view';
 import { createFoundryMcp } from '../src/mcp/server';
 import { LocalSessionStore } from '../src/persistence/local-session-store';
-import { resolveInstructionLadder } from '../src/prompts/instruction-settings';
+import {
+  ASSISTANT_ROLE,
+  CODER_ROLE,
+  FEEDBACK_ROLE,
+  FORGE_MASTER_ROLE,
+  MAIN_ROLE,
+  resolveInstructionLadder,
+} from '../src/prompts/instruction-settings';
 import { FeedbackInboxTool } from '../src/tools/feedback-inbox';
 import { type FoundryConfig, starterConfig } from '../src/viewer/config';
 import { writeRegions } from './helpers/regions';
@@ -170,7 +177,7 @@ test("routing maps Cartographer domains to Warden roles, and weak routing goes t
       statement: RULE,
       category: 'convention',
       projectId,
-      threadRole: 'assistant',
+      threadRole: ASSISTANT_ROLE,
     });
   const project = regionProject(tempDir('feedback-routing-'));
   let projectId: string | null = 'P';
@@ -190,15 +197,15 @@ test("routing maps Cartographer domains to Warden roles, and weak routing goes t
         source: 'keyword-fallback',
       })
     ).roles,
-  ).toEqual(['assistant']);
+  ).toEqual([ASSISTANT_ROLE]);
   expect(
     (await route({ layers: [], domains: ['unknown'], confidence: 0.9, source: 'model' })).roles,
-  ).toEqual(['assistant']);
+  ).toEqual([ASSISTANT_ROLE]);
   // A thread outside a project has no chorus: every rule goes to the thread's role.
   projectId = null;
   expect(
     (await route({ layers: [], domains: ['convention'], confidence: 0.9, source: 'model' })).roles,
-  ).toEqual(['assistant']);
+  ).toEqual([ASSISTANT_ROLE]);
 });
 
 test('role files resolve per rung; personal repo files are kept out of git', () => {
@@ -207,31 +214,32 @@ test('role files resolve per rung; personal repo files are kept out of git', () 
   mkdirSync(project);
   git(project, 'init', '-q');
   const roots = { home: join(root, 'home'), project, org: root };
-  expect(roleFilePath('computer', 'convention', 'instructions', roots)).toBe(
-    join(root, 'home', '.foundry/roles/convention/instructions.md'),
+  // A bare name is no role id: every role carries its namespace.
+  expect(() => roleFilePath('computer', 'convention', 'instructions', roots)).toThrow(
+    'Invalid role id: convention',
   );
   // A namespaced role's files nest by namespace.
   expect(roleFilePath('computer', WARDEN_ROLE, 'instructions', roots)).toBe(
     join(root, 'home', '.foundry/roles/region/convention/instructions.md'),
   );
-  expect(roleFilePath('project-personal', 'main', 'domainKnowledge', roots)).toBe(
-    join(project, '.foundry/roles/main/domainKnowledge.local.md'),
+  expect(roleFilePath('project-personal', MAIN_ROLE, 'domainKnowledge', roots)).toBe(
+    join(project, '.foundry/roles/thread/main/domainKnowledge.local.md'),
   );
   expect(() => roleFilePath('computer', '../escape', 'instructions', roots)).toThrow(
     'Invalid role',
   );
 
-  const path = roleFilePath('project-personal', 'convention', 'instructions', roots);
+  const path = roleFilePath('project-personal', WARDEN_ROLE, 'instructions', roots);
   guardPersonalFile(path);
   expect(readFileSync(join(project, '.git/info/exclude'), 'utf8')).toContain(
     '.foundry/roles/**/*.local.md',
   );
-  mkdirSync(join(project, '.foundry/roles/convention'), { recursive: true });
+  mkdirSync(join(project, '.foundry/roles/region/convention'), { recursive: true });
   writeFileSync(path, 'x\n');
   expect(git(project, 'status', '--porcelain').stdout.toString()).toBe('');
   // A tracked file is never edited.
-  const tracked = join(project, '.foundry/roles/main/instructions.local.md');
-  mkdirSync(join(project, '.foundry/roles/main'), { recursive: true });
+  const tracked = join(project, '.foundry/roles/thread/main/instructions.local.md');
+  mkdirSync(join(project, '.foundry/roles/thread/main'), { recursive: true });
   writeFileSync(tracked, 'tracked\n');
   git(project, 'add', '-f', tracked);
   expect(() => guardPersonalFile(tracked)).toThrow('tracked');
@@ -246,7 +254,7 @@ test('apply appends one line with the item id; revert removes exactly that line'
     itemId: 'fb_111111111111',
     changeId: 'c1',
     statement: RULE,
-    role: 'convention',
+    role: WARDEN_ROLE,
     slot: 'instructions',
     level: 'computer',
     roots,
@@ -256,7 +264,7 @@ test('apply appends one line with the item id; revert removes exactly that line'
     itemId: 'fb_222222222222',
     changeId: 'c2',
     statement: 'Never add backwards compatibility shims.',
-    role: 'convention',
+    role: WARDEN_ROLE,
     slot: 'instructions',
     level: 'computer',
     roots,
@@ -567,7 +575,7 @@ test('assessment: an applied rule that recurs needs attention; an unsharp one do
     record: {
       itemId: 'fb_a',
       changeId: 'c',
-      role: 'main',
+      role: MAIN_ROLE,
       slot: 'instructions',
       level: 'computer',
       path: '/x',
@@ -608,7 +616,7 @@ test('rungs follow the thread: a worktree under the project writes to the projec
 
 test("a Feedback thread's inbox tools list, read, archive and reopen items, journalled with the thread as actor", async () => {
   const { service, store, thread, live } = setup();
-  live.set('fb-1', new Thread('fb-1', new ContextStack(), { role: 'feedback' }));
+  live.set('fb-1', new Thread('fb-1', new ContextStack(), { role: FEEDBACK_ROLE }));
   const first = service.record(thread, {
     text: 'Merge agentic work yourself.',
     author: { name: 'aron', surface: 'viewer' },
@@ -660,7 +668,7 @@ test("a Feedback thread's inbox tools list, read, archive and reopen items, jour
   expect(off.ok).toBe(false);
   // Only a Feedback thread is answered: the tool sits in the shared registry, so an API executor's
   // tool loop offers it to every thread, and the role is checked here, not only on the bridge.
-  live.set('coder-1', new Thread('coder-1', new ContextStack(), { role: 'coder' }));
+  live.set('coder-1', new Thread('coder-1', new ContextStack(), { role: CODER_ROLE }));
   const coder = await new FeedbackInboxTool(() => service)
     .scoped({ threadId: 'coder-1' })
     .post('feedback_status', { itemIds: [first.id], status: 'archived' });
@@ -691,11 +699,11 @@ test('only a Feedback thread is offered the inbox tools on its bridge', async ()
     const names = (await client.listTools()).tools.map((tool: { name: string }) => tool.name);
     return { client, names };
   };
-  const coder = await connect('coder');
+  const coder = await connect(CODER_ROLE);
   expect(coder.names).not.toContain('feedback_inbox');
-  const forge = await connect('forge-master');
+  const forge = await connect(FORGE_MASTER_ROLE);
   expect(forge.names).not.toContain('feedback_inbox');
-  const feedback = await connect('feedback');
+  const feedback = await connect(FEEDBACK_ROLE);
   expect(feedback.names).toEqual(
     expect.arrayContaining(['feedback_inbox', 'feedback_item', 'feedback_status']),
   );

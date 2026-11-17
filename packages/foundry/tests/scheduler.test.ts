@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { ActionQueue } from '@inixiative/foundry-core';
 import { LocalSessionStore } from '../src/persistence/local-session-store';
+import { CODER_ROLE, FEEDBACK_ROLE, FORGE_MASTER_ROLE } from '../src/prompts/instruction-settings';
 import {
   listSchedulesForAgent,
   removeScheduleAsAgent,
@@ -456,7 +457,7 @@ describe('settings', () => {
     expect(() =>
       validateConfig(
         withSettings({
-          scheduler: { schedules: [{ ...schedule, scope: 'forge', role: 'coder' }] },
+          scheduler: { schedules: [{ ...schedule, scope: 'forge', role: CODER_ROLE }] },
         }),
       ),
     ).toThrow("take the scope's role");
@@ -496,7 +497,7 @@ describe('agent tools', () => {
   test('on its own, the agent drafts', async () => {
     const h = harness();
     const { deps } = agentDeps(h, false);
-    const text = await setScheduleAsAgent(deps, 't1', { role: 'feedback' }, input);
+    const text = await setScheduleAsAgent(deps, 't1', { role: FEEDBACK_ROLE }, input);
     expect(text).toContain('nothing was scheduled');
     expect(h.scheduler.find('digest')).toMatchObject({
       schedule: { draft: { threadId: 't1' } },
@@ -534,12 +535,12 @@ describe('agent tools', () => {
   });
 
   test('a thread’s Where: project, then scope, then Global', () => {
-    expect(threadWhere({ projectId: 'app', role: 'feedback' })).toEqual({
+    expect(threadWhere({ projectId: 'app', role: FEEDBACK_ROLE })).toEqual({
       kind: 'project',
       projectId: 'app',
     });
-    expect(threadWhere({ role: 'forge-master' })).toEqual({ kind: 'scope', scope: 'forge' });
-    expect(threadWhere({ role: 'coder' })).toEqual({ kind: 'global' });
+    expect(threadWhere({ role: FORGE_MASTER_ROLE })).toEqual({ kind: 'scope', scope: 'forge' });
+    expect(threadWhere({ role: CODER_ROLE })).toEqual({ kind: 'global' });
   });
 });
 

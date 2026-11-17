@@ -112,7 +112,7 @@ test('routing that fails shows as degraded: the turn ran without routed layers, 
     // A Cartographer budget nothing fits: routing errors, and the turn goes on without it.
     scenario = await m0Scenario({
       configure: (config) => {
-        config.composition = { roles: { cartographer: { budget: 10 } } };
+        config.composition = { roles: { 'agent:cartographer': { budget: 10 } } };
       },
     });
     const s = scenario;
@@ -134,7 +134,7 @@ test('routing that fails shows as degraded: the turn ran without routed layers, 
     expect(await route.getAttribute('data-status')).toBe('warn');
     expect(await route.locator('.tv-sub').innerText()).toBe('degraded · ran without routing');
     await route
-      .locator('.tv-degraded', { hasText: 'composition.roles.cartographer.budget' })
+      .locator('.tv-degraded', { hasText: 'composition.roles.agent:cartographer.budget' })
       .waitFor();
   } finally {
     await releaseAll([

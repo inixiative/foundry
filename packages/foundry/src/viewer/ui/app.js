@@ -72,7 +72,7 @@ import {
   RIGHT_TABS,
   railView,
   resyncStreams,
-  scopeOfRole,
+  scopeOfThread,
   scopeProjectId,
   selectedEvent,
   selectedSpanId,
@@ -281,7 +281,7 @@ function PanelNavigation() {
 function FeedbackScope({ onSpanSelect, onLayerClick }) {
   // The rail may list every thread (Attention, Open); only a Feedback thread opens beside the inbox.
   const open = allThreads.value.find((t) => t.threadId === activeThreadId.value);
-  const hasThread = scopeOfRole(open?.effectiveRole) === '@feedback';
+  const hasThread = scopeOfThread(open) === '@feedback';
   return html`<div class=${`feedback-scope${hasThread ? ' feedback-scope--thread' : ''}`}>
     <div class="feedback-scope-inbox"><${FeedbackInbox} /></div>
     ${hasThread ? html`<div class="feedback-scope-thread"><${Conversation} onSpanSelect=${onSpanSelect} onLayerClick=${onLayerClick} /></div>` : null}

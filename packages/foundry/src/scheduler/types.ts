@@ -6,6 +6,7 @@
 import { REASONING_EFFORTS } from '@inixiative/foundry-core';
 import { z } from 'zod';
 import { SCOPE_ROLES } from '../prompts/instruction-settings';
+import { isRoleId, roleNameIn, roleNamespace } from '../prompts/role-namespace';
 
 /**
  * When a schedule is due: every N minutes, hours or days from when it was set; a cron line (five
@@ -32,7 +33,15 @@ export const scheduleSchema = z.strictObject({
   when: scheduleWhenSchema,
   /** The worker, role, model and effort its runs start on; absent, the Where's defaults. */
   worker: z.string().min(1).optional(),
-  role: z.string().min(1).optional(),
+  role: z
+    .string()
+    .refine((role) => isRoleId(role) && roleNameIn(roleNamespace.thread, role) !== undefined, {
+      message: 'is a thread role id, thread:<name> (thread:coder, thread:assistant or your own)',
+    })
+    .describe(
+      "The thread role its runs take, thread:<name> (e.g. thread:coder); absent, the Where's default",
+    )
+    .optional(),
   model: z.string().min(1).optional(),
   effort: z.enum(REASONING_EFFORTS).optional(),
   /** A top-level schedule's scope (Forge Master, Feedback); absent, Global. Never on a project's. */

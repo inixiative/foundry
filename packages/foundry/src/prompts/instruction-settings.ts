@@ -10,17 +10,17 @@ import type {
   HierarchySpan,
 } from '@inixiative/foundry-core';
 import { CORPUS_TIERS, type CorpusTier } from '../agents/corpus-compiler';
-import { roleNameIn, roleNamespace } from './role-namespace';
+import { roleIdIn, roleIdProblem, roleNameIn, roleNamespace } from './role-namespace';
 
 /** The two composed slots every role has. Thread knowledge is computed per call, not composed. */
 export const COMPOSITION_SLOTS = ['instructions', 'domainKnowledge'] as const;
 export type CompositionSlot = (typeof COMPOSITION_SLOTS)[number];
 
 /**
- * The shared base under every thread role: its role files (`.foundry/roles/main/{slot}.md`) compose
- * first for every main thread, then the thread role's own. It picks nothing itself.
+ * The shared base under every thread role: its role files (`.foundry/roles/thread/main/{slot}.md`)
+ * compose first for every main thread, then the thread role's own. It picks nothing itself.
  */
-export const MAIN_ROLE = 'main';
+export const MAIN_ROLE = roleIdIn(roleNamespace.thread, 'main');
 
 /**
  * Default budget for a middleware role's composed instructions plus domain knowledge, in characters:
@@ -271,13 +271,13 @@ export const DEFAULT_INSTRUCTION_LADDER: readonly InstructionNodeSettings[] = Ob
 ] satisfies InstructionNodeSettings[]);
 
 /** The built-in thread role for coding workers: every general file, as Claude Code itself reads them. */
-export const CODER_ROLE = 'coder';
+export const CODER_ROLE = roleIdIn(roleNamespace.thread, 'coder');
 /** The built-in thread role for Muse: a day-to-day assistant, not a coder in the repository. */
-export const ASSISTANT_ROLE = 'assistant';
+export const ASSISTANT_ROLE = roleIdIn(roleNamespace.thread, 'assistant');
 /** The built-in thread role of the Forge Master scope: threads about this Foundry itself. */
-export const FORGE_MASTER_ROLE = 'forge-master';
+export const FORGE_MASTER_ROLE = roleIdIn(roleNamespace.scope, 'forge');
 /** The built-in thread role of the Feedback scope: threads that work through the feedback inbox. */
-export const FEEDBACK_ROLE = 'feedback';
+export const FEEDBACK_ROLE = roleIdIn(roleNamespace.scope, 'feedback');
 
 /**
  * The scopes a thread can live in beside a project or Global, each held by its own built-in role
@@ -319,6 +319,9 @@ export const BUILT_IN_THREAD_ROLES: Readonly<
   },
 });
 
+/** Every role Foundry ships, for pointing a bare name at its id. */
+const BUILT_IN_ROLE_IDS: readonly string[] = [MAIN_ROLE, ...Object.keys(BUILT_IN_THREAD_ROLES)];
+
 /** A thread role as it resolves: built-ins, then settings roles with `thread`. */
 export interface ThreadRole {
   readonly id: string;
@@ -335,16 +338,16 @@ export interface ThreadRole {
  * worker from the built-ins, so each worker has one default.
  */
 export function threadRoles(settings: CompositionSettings | undefined): ThreadRole[] {
+  // Only a `thread:` role takes `thread` (`validateCompositionSettings` refuses it elsewhere); read
+  // here the same way, so a scope role's settings never make it a worker's default.
   const written = Object.entries(settings?.roles ?? {}).filter(
     (entry): entry is [string, RoleComposition & { thread: ThreadRoleSettings }] =>
-      !!entry[1]?.thread,
+      !!entry[1]?.thread && roleNameIn(roleNamespace.thread, entry[0]) !== undefined,
   );
-  // A scope role's written `defaultFor` claims no worker (it is never a default).
-  const claiming = written.filter(([id]) => !scopeOfRole(id));
-  const claimed = new Set(claiming.flatMap(([, picks]) => picks.thread.defaultFor ?? []));
+  const claimed = new Set(written.flatMap(([, picks]) => picks.thread.defaultFor ?? []));
   const claimedByOthers = (id: string) =>
     new Set(
-      claiming.flatMap(([other, picks]) => (other === id ? [] : (picks.thread.defaultFor ?? []))),
+      written.flatMap(([other, picks]) => (other === id ? [] : (picks.thread.defaultFor ?? []))),
     );
   const roles = new Map<string, ThreadRole>();
   for (const [id, { thread }] of Object.entries(BUILT_IN_THREAD_ROLES))
@@ -357,18 +360,14 @@ export function threadRoles(settings: CompositionSettings | undefined): ThreadRo
     });
   for (const [id, { thread }] of written) {
     const builtIn = BUILT_IN_THREAD_ROLES[id]?.thread;
-    const scope = scopeOfRole(id);
     roles.set(id, {
       id,
       label: thread.label ?? builtIn?.label ?? id,
-      // A scope role is never a worker's default: it is taken by living in its scope.
-      defaultFor: scope
-        ? []
-        : (thread.defaultFor ??
-          builtIn?.defaultFor.filter((worker) => !claimedByOthers(id).has(worker)) ??
-          []),
+      defaultFor:
+        thread.defaultFor ??
+        builtIn?.defaultFor.filter((worker) => !claimedByOthers(id).has(worker)) ??
+        [],
       builtIn: !!builtIn,
-      ...(scope ? { scope } : {}),
     });
   }
   return [...roles.values()];
@@ -376,7 +375,8 @@ export function threadRoles(settings: CompositionSettings | undefined): ThreadRo
 
 /** Whether `role` is a thread role under `settings`. */
 export const isThreadRole = (settings: CompositionSettings | undefined, role: string): boolean =>
-  role in BUILT_IN_THREAD_ROLES || !!settings?.roles?.[role]?.thread;
+  role in BUILT_IN_THREAD_ROLES ||
+  (!!settings?.roles?.[role]?.thread && roleNameIn(roleNamespace.thread, role) !== undefined);
 
 /** The role a new thread on `worker` takes unless another is chosen: the one defaulting it, else coder. */
 export function defaultThreadRole(
@@ -444,6 +444,11 @@ function checkMatch(where: string, when: unknown): void {
           throw Error(
             `${where}: when.slots names ${slot}; slots are ${COMPOSITION_SLOTS.join(', ')}`,
           );
+    if (key === 'roles')
+      for (const role of value) {
+        const problem = roleIdProblem(role, BUILT_IN_ROLE_IDS);
+        if (problem) throw Error(`${where}: when.roles: ${problem}`);
+      }
   }
 }
 
@@ -572,6 +577,8 @@ export function validateCompositionSettings(
   const defaulted = new Map<string, string>();
   for (const [role, picks] of Object.entries(settings.roles ?? {})) {
     const where = `composition.roles.${role}`;
+    const problem = roleIdProblem(role, BUILT_IN_ROLE_IDS);
+    if (problem) throw Error(`${where}: ${problem}`);
     if (!picks || typeof picks !== 'object' || Array.isArray(picks))
       throw Error(`${where} must be an object`);
     for (const key of Object.keys(picks))
@@ -585,9 +592,9 @@ export function validateCompositionSettings(
         );
     }
     if (picks.thread !== undefined) {
-      if (roleNameIn(roleNamespace.region, role) !== undefined)
+      if (roleNameIn(roleNamespace.thread, role) === undefined)
         throw Error(
-          `${where}.thread: ${role} is a region Warden's role, never a thread role; name the thread role without the ${roleNamespace.region}: prefix`,
+          `${where}.thread: only a thread role takes "thread"; name it "${roleNamespace.thread}:<name>"`,
         );
       const thread = picks.thread as unknown;
       if (!thread || typeof thread !== 'object' || Array.isArray(thread))

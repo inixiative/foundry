@@ -4,6 +4,7 @@
  * @partOf feature:viewer
  */
 import { type Thread, type Trace, threadTitle } from '@inixiative/foundry-core';
+import { scopeOfRole } from '../prompts/instruction-settings';
 
 /** Validate user-provided IDs — alphanumeric, dashes, underscores, dots. Max 128 chars. */
 export function validateId(id: string, label: string): string | null {
@@ -28,12 +29,18 @@ export function traceToJSON(trace: Trace) {
   };
 }
 
-/** Serialize a thread for the API; `effectiveRole` is the thread role it composes as (`meta.role` is what it chose). */
+/**
+ * Serialize a thread for the API; `effectiveRole` is the thread role it composes as (`meta.role` is
+ * what it chose), and `scope` the Foundry scope that role holds (`forge`, `feedback`), so a client
+ * never maps role ids to scopes itself.
+ */
 export function threadToJSON(thread: Thread, effectiveRole?: string) {
+  const scope = scopeOfRole(effectiveRole);
   return {
     threadId: thread.id,
     meta: thread.meta,
     ...(effectiveRole ? { effectiveRole } : {}),
+    ...(scope ? { scope } : {}),
     title: threadTitle(thread.meta) ?? null,
     agents: [...thread.agents.entries()].map(([id, agent]) => ({
       id,

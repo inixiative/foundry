@@ -66,7 +66,7 @@ test('the left column is navigation: pinned scopes, a scrolling project list, an
     viewer.directory.add(
       new Thread('forge-1', new ContextStack(), {
         description: 'Tune the chorus',
-        role: 'forge-master',
+        role: 'scope:forge',
       }),
     );
     const server = Bun.serve({

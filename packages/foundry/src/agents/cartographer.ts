@@ -33,6 +33,7 @@ import {
   servedModel,
 } from '@inixiative/foundry-core';
 import type { RoleComposition } from '../prompts/instruction-settings';
+import { roleIdOfAgent } from '../prompts/role-namespace';
 import { STANDING_LAYERS } from './chorus-reception';
 
 // ---------------------------------------------------------------------------
@@ -232,7 +233,7 @@ export class Cartographer {
 
     this._routePrompt = config.routePrompt ?? DEFAULT_ROUTE_INSTRUCTIONS;
     this._instructions = config.instructions;
-    this._role = config.role ?? 'cartographer';
+    this._role = config.role ?? roleIdOfAgent('cartographer');
     this._budget = config.budget ?? Number.POSITIVE_INFINITY;
 
     // Create the map layer — always warm, holds the serialized topology map

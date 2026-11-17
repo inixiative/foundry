@@ -13,6 +13,7 @@ import {
 } from '@inixiative/foundry-core';
 import type { CompositionSlot } from '../prompts/instruction-settings';
 import { compositionSource, forgetSharedRoleViews } from '../prompts/instruction-stack';
+import { agentIdOfRole } from '../prompts/role-namespace';
 import { configuredProjectWardens } from '../providers/subscription-policy';
 import type { FoundryConfig } from '../viewer/config';
 import { effectiveProject } from '../viewer/config-resolve';
@@ -107,7 +108,8 @@ export function roleSources(
     domainKnowledge?: readonly string[];
   } = {},
 ): ContextSource[] {
-  const agent = config.agents[role];
+  const agentId = agentIdOfRole(role);
+  const agent = agentId ? config.agents[agentId] : undefined;
   const ladder = compositionSource(
     config,
     `${roleLayerId(role, slot)}#composition`,
@@ -121,7 +123,7 @@ export function roleSources(
     const own = fromSettings ? agent!.prompt : options.builtIn;
     const subject = fromSettings
       ? (projectId?: string) =>
-          `prompt:agent:${role}${projectId && config.projects?.[projectId] && effectiveProject(config, projectId)?.agents?.[role] ? `@project:${projectId}` : ''}`
+          `prompt:agent:${agentId}${projectId && config.projects?.[projectId] && agentId && effectiveProject(config, projectId)?.agents?.[agentId] ? `@project:${projectId}` : ''}`
       : () => `prompt:builtin:${role}`;
     return [
       ...(own ? [promptSource(`${roleLayerId(role, slot)}#settings`, own, subject)] : []),

@@ -21,6 +21,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { computeHash } from '../packages/core/src';
 import { RUN_ENV, stampFoundryRun } from '../packages/foundry/src/archives/run-stamp';
+import { MAIN_ROLE } from '../packages/foundry/src/prompts/instruction-settings';
 import {
   CLAUDE_HARNESS_INSTRUCTIONS_OFF,
   composeRoleView,
@@ -61,7 +62,7 @@ type Mode = 'a' | 'b' | 'c';
 
 const EXECUTOR_PROMPT =
   'You are the Artificer, the executor for this Foundry thread. Answer the user directly.';
-const instructions = (await composeRoleView({ cwd, harness: 'claude', role: 'main' })).slots
+const instructions = (await composeRoleView({ cwd, harness: 'claude', role: MAIN_ROLE })).slots
   .instructions.text;
 
 /** One thread's layers at a turn: stable instructions, slow learning and thread-state. */

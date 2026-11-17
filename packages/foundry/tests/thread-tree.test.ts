@@ -5,6 +5,7 @@ import { EventStream, type NativeEvidence, type ThreadMeta } from '@inixiative/f
 import { ArchiveCapture, captureThread } from '../src/archives/capture';
 import { REDUCED_PHASE } from '../src/archives/reduced-middleware';
 import { LocalSessionStore } from '../src/persistence/local-session-store';
+import { CODER_ROLE, FORGE_MASTER_ROLE } from '../src/prompts/instruction-settings';
 import { SubagentRecorder, type SubagentToolCall } from '../src/turns/subagents';
 import { startFakeArchive } from './helpers/fake-archive';
 
@@ -395,9 +396,9 @@ test("a Forge Master or Feedback thread's subagents keep its scope role; a coder
   const store = journal();
   const forge = {
     id: 'forge',
-    meta: { ...main().meta, projectId: undefined, role: 'forge-master' },
+    meta: { ...main().meta, projectId: undefined, role: FORGE_MASTER_ROLE },
   };
-  const coder = { id: 'coder', meta: { ...main().meta, role: 'coder' } };
+  const coder = { id: 'coder', meta: { ...main().meta, role: CODER_ROLE } };
   for (const t of [forge, coder]) {
     store.saveThread(t);
     store.beginTurn(t, `${t.id}-turn`, 'Look');
@@ -410,7 +411,7 @@ test("a Forge Master or Feedback thread's subagents keep its scope role; a coder
       life({ phase: 'started', taskId: `${t.id}-task`, toolUseId: `${t.id}-call`, depth: 1 }),
     );
   const childOf = (id: string) => store.threads().find((x) => x.meta.parentThreadId === id)!;
-  expect(childOf('forge').meta.role).toBe('forge-master');
+  expect(childOf('forge').meta.role).toBe(FORGE_MASTER_ROLE);
   expect(childOf('forge').meta.projectId).toBeUndefined();
   expect(childOf('coder').meta.role).toBeUndefined();
 });

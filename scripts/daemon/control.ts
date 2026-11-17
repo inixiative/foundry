@@ -22,7 +22,6 @@ import {
   supervised,
 } from '../../packages/foundry/src/client/daemon';
 import { clearHold, readHold, writeHold } from '../../packages/foundry/src/daemon/boot-record';
-import { installDaemon } from '../../packages/foundry/src/daemon/install';
 
 const repoRoot = new URL('../..', import.meta.url).pathname.replace(/\/$/, '');
 const home = homedir();
@@ -50,6 +49,9 @@ const isLoaded = async () => {
 };
 
 const install = async () => {
+  // Loaded here only: install pulls in readiness and the providers, which stop, start and status
+  // never need, so a checkout whose dependencies lag still stops and starts its daemon (2026-11-17).
+  const { installDaemon } = await import('../../packages/foundry/src/daemon/install');
   const port = Number.parseInt(process.env.VIEWER_PORT ?? '4500', 10);
   try {
     const { logDir } = await installDaemon({ workingDirectory: repoRoot, port, log: info });

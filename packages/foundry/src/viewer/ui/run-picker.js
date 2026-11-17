@@ -20,10 +20,10 @@ import {
   composerFill,
   createThread,
   currentScope,
+  isScope,
   launchLabels,
   loadLaunch,
   projects,
-  SCOPE_ROLES,
   showToast,
   threadLaunch,
 } from './store.js';
@@ -286,7 +286,6 @@ const SCOPE_CHOICES = [
   ['@forge', 'Forge Master'],
   ['@feedback', 'Feedback'],
 ];
-const isScope = (where) => where != null && Object.hasOwn(SCOPE_ROLES, where);
 /** A Where choice as a select value: '' is Global, else the scope key or project id (never alike). */
 const whereValue = (where) => where ?? '';
 const whereOf = (value) => value || null;
