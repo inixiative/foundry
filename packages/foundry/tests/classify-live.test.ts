@@ -175,6 +175,7 @@ const RECOGNISE = {
   task: 'recognise',
   doc: 'recognise.md',
   outcomes: 'ternary',
+  reason: 'followup',
   escalate: ['yes', 'unsure'],
 };
 
@@ -184,14 +185,11 @@ test('each region Warden runs its stages: stage 1 on its own provider, stage 2 o
     c,
     (host, call) => {
       const body = call.messages[1]!.content;
-      if (host === 'central')
-        return body.includes('SHORT_LOCKS')
-          ? JSON.stringify({
-              snippets: ['locks: UNSURE — a job that may overlap'],
-              layers: [],
-              confidence: 0.5,
-            })
-          : 'NO_COMMENT';
+      if (host === 'central') {
+        if (call.messages.at(-1)!.content.includes('This is a follow-up question'))
+          return 'a job that may overlap\nREVISED: KEEP';
+        return body.includes('SHORT_LOCKS') ? 'UNSURE' : 'NO';
+      }
       return JSON.stringify({ snippets: [POINTER], layers: [], confidence: 0.8 });
     },
     { hosts: ['claude-sonnet-5-5|low'] },
@@ -199,9 +197,16 @@ test('each region Warden runs its stages: stage 1 on its own provider, stage 2 o
   const thread = f.factory.create('staged', { projectId: 'P' });
   const result = await thread.dispatch('worker', 'Add a nightly job that never overlaps.');
 
-  const first = f.calls.filter(
+  const stageOne = f.calls.filter(
     (c) => c.host === 'central' && c.opts.threadId?.includes(':aux:domain:'),
   );
+  const isFollowUp = (c: (typeof stageOne)[number]) =>
+    c.messages.at(-1)!.content.includes('This is a follow-up question');
+  const first = stageOne.filter((c) => !isFollowUp(c));
+  // The why is asked after UNSURE, on the same session, and never after NO.
+  expect(stageOne.filter(isFollowUp).map((c) => c.opts.threadId!.split(':aux:')[1])).toEqual([
+    'domain:locks',
+  ]);
   expect(first.map((c) => c.opts.threadId!.split(':aux:')[1]).sort()).toEqual([
     'domain:locks',
     'domain:queues',

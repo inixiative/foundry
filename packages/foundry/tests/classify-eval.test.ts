@@ -55,6 +55,8 @@ const ARMS = {
     { model: 'claude-sonnet-5-5', effort: 'low', pointer: { any: false }, ...whole('point', PICK) },
   ],
 } as const;
+/** Arm B with stage 1's why asked after its one-word answer, so there is a why to carry. */
+const CARRY = [{ ...ARMS.B[0], reason: 'followup' }, ARMS.B[1]] as const;
 
 const PROBES: WardenProbe[] = [
   { id: 'lock', kind: 'positive', ctx: 'x', moment: '', ask: 'Add a job that never overlaps.' },
@@ -85,19 +87,15 @@ function hosts() {
   });
   const haiku = host('claude-haiku-5-5', (body, system) => {
     const ternary = system.startsWith(RECOGNISE_3WAY);
-    if (body.includes('never overlaps'))
-      return JSON.stringify({
-        snippets: ['locks: YES — a job that must not run twice'],
-        layers: [],
-        confidence: 0.9,
-      });
-    if (body.includes('nightly thing') && ternary)
-      return JSON.stringify({
-        snippets: ['locks: UNSURE — "safer" may mean no overlap'],
-        layers: [],
-        confidence: 0.4,
-      });
-    return NO_COMMENT;
+    // `reason: followup`: the why, asked after the one-word answer.
+    if (body.includes('This is a follow-up question'))
+      return body.includes('nightly thing')
+        ? '"safer" may mean no overlap\nREVISED: KEEP'
+        : 'a job that must not run twice\nREVISED: KEEP';
+    // A one-region recogniser with no why answers one word.
+    if (body.includes('never overlaps')) return 'YES';
+    if (body.includes('nightly thing') && ternary) return 'UNSURE';
+    return 'NO';
   });
   const sonnet = host('claude-sonnet-5-5', () =>
     JSON.stringify({ snippets: [POINTER], layers: [], confidence: 0.8 }),
@@ -129,13 +127,13 @@ describe('the three-way arms, on stub providers', () => {
     expect(stage2.every((c) => c.threadId === 'run:locks:stage:1')).toBe(true);
     const vague = stage2.find((c) => text(c.messages).includes('nightly thing'))!;
     expect(text(vague.messages)).toContain(
-      'Stage 1 (claude-haiku-5-5) was unsure this moment is in your region: "safer" may mean no overlap\nTreat that as no until your own knowledge shows otherwise.',
+      'Stage 1 (claude-haiku-5-5) was unsure this moment is in your region.\nTreat that as no until your own knowledge shows otherwise.',
     );
     expect(text(vague.messages)).toEndWith(ADVICE_RESPONSE_PROTOCOL);
     // Stage 1 answers under the ternary recogniser protocol it was given.
     const first = calls.find((c) => c.host === 'claude-haiku-5-5')!;
     expect(first.messages[0]!.content.startsWith(RECOGNISE_3WAY)).toBe(true);
-    expect(text(first.messages)).toContain('`<region id>: UNSURE — ');
+    expect(text(first.messages)).toContain('- `UNSURE` when');
     expect(answers.map((a) => [a.probeId, a.noComment, a.outcome])).toEqual([
       ['lock', false, 'yes'],
       ['vague', false, 'yes'],
@@ -150,7 +148,6 @@ describe('the three-way arms, on stub providers', () => {
           outcome: 'unsure',
           model: 'claude-haiku-5-5',
           tokens: { input: 100, output: 10 },
-          regions: [{ regionId: 'locks', outcome: 'unsure' }],
         },
         { stage: 1, task: 'point', outcome: 'yes', model: 'claude-sonnet-5-5' },
       ],
@@ -206,7 +203,7 @@ describe('the three-way arms, on stub providers', () => {
       ['vague', 'locks', 1, 1],
       ['none', 'locks', 0, 0],
     ]);
-    expect(raw[4]!.content).toBe(NO_COMMENT);
+    expect(raw[4]!.content).toBe('NO');
     expect(raw[1]!.content).toContain(POINTER);
     expect(raw[0]!.systemHash).not.toBe(raw[1]!.systemHash);
     expect(order.indexOf('turn:lock')).toBeLessThan(order.indexOf('raw:lock'));
@@ -216,7 +213,7 @@ describe('the three-way arms, on stub providers', () => {
 describe('carrying stage 1 from an earlier run', () => {
   const carryRun = async (
     earlier: Awaited<ReturnType<typeof arm>>['answers'],
-    stagesConfig: readonly Record<string, unknown>[] = ARMS.B,
+    stagesConfig: readonly Record<string, unknown>[] = CARRY,
   ) => {
     const config = runOf({ stages: stagesConfig });
     const { haiku, sonnet, calls } = hosts();
@@ -238,7 +235,7 @@ describe('carrying stage 1 from an earlier run', () => {
   };
 
   test('asks only stage 2, on the cells stage 1 escalated, carrying its reading and why', async () => {
-    const live = await arm(ARMS.B);
+    const live = await arm(CARRY);
     const earlier = live.answers;
     const { answers, calls } = await carryRun(earlier);
     expect(calls.some((c) => c.host === 'claude-haiku-5-5')).toBe(false);
@@ -268,7 +265,7 @@ describe('carrying stage 1 from an earlier run', () => {
   });
 
   test('carryWhy false on stage 1 hands stage 2 the outcome without its why, live and carried alike', async () => {
-    const noWhy = [{ ...ARMS.B[0]!, carryWhy: false }, ARMS.B[1]!];
+    const noWhy = [{ ...CARRY[0], carryWhy: false }, CARRY[1]];
     const live = await arm(noWhy);
     const { calls } = await carryRun(live.answers, noWhy);
     for (const run of [live.calls, calls]) {

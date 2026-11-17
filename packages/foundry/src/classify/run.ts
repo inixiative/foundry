@@ -237,8 +237,12 @@ export function carriedSection(carried: Carried): string {
 
 /** The charter, protocol and spec of each stage, as the run will send them. */
 export function stageRuns(
-  options: Pick<ClassifyRunOptions, 'stages' | 'envelope' | 'trigger' | 'role' | 'charters'>,
+  options: Pick<
+    ClassifyRunOptions,
+    'stages' | 'envelope' | 'trigger' | 'role' | 'charters' | 'holds'
+  >,
 ): Omit<StageRun, 'carried' | 'timeoutMs'>[] {
+  const holdsSeveralRegions = (options.holds?.length ?? 0) > 1;
   return options.stages.map((stage, index) => {
     const spec: ProtocolSpec = {
       envelope: options.envelope,
@@ -246,6 +250,7 @@ export function stageRuns(
       task: stage.task,
       outcomes: stage.outcomes,
       reason: stage.reason,
+      ...(holdsSeveralRegions ? { holdsSeveralRegions } : {}),
     };
     const override = options.charters?.[index];
     return {

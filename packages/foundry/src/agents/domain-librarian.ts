@@ -1498,6 +1498,7 @@ export class DomainLibrarian {
       envelope: 'advice',
       trigger: 'user-message',
       charters: this._stages.map((s) => s.charter),
+      holds: this._holds,
     });
     this._stages.forEach((stage, index) => {
       const cacheContent = stage.cache.content;

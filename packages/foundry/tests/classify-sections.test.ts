@@ -43,7 +43,8 @@ describe('default byte-identity', () => {
     // Versions of the pre-split constants on main 8beec5f (the charters hash their text).
     expect(charterVersion(pointCharter({ any: true }))).toBe('charter-e49589e870f6');
     expect(charterVersion(pointCharter({ any: false }))).toBe('charter-cf70d4a673cc');
-    expect(charterVersion(RECOGNISE_CHARTER)).toBe('charter-8449efe23eb0');
+    // The recognise charter left its answer's shape to the protocol (one word, or a group's lines).
+    expect(charterVersion(RECOGNISE_CHARTER)).toBe('charter-17e1f5c8101a');
     expect(charterVersion(REGION_WARDEN_INSTRUCTIONS)).toBe('charter-cd5314acc32f');
     expect(WARDEN_CHARTER).toBe(pointCharter({ any: true }));
   });

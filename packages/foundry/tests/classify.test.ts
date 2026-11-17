@@ -10,6 +10,7 @@ import { DomainLibrarian, type WardenStage } from '../src/agents/domain-libraria
 import {
   ADVICE_RESPONSE_PROTOCOL,
   adviceResponseProtocol,
+  answersInOneWord,
   charterFor,
   DEFAULT_STAGE,
   EVAL_STAGE_KEYS,
@@ -126,13 +127,58 @@ describe('protocols', () => {
     ).toEqual({ error: 'advice response has 1 field(s) outside the protocol' });
   });
 
-  test('a ternary recogniser tags each region line', () => {
+  test('a one-region recogniser with no why answers one exact word', () => {
+    const spec = {
+      envelope: 'advice',
+      trigger: 'user-message',
+      task: 'recognise',
+      outcomes: 'binary',
+      reason: 'none',
+    } as const;
+    expect(answersInOneWord(spec)).toBe(true);
+    const protocol = responseProtocol(spec);
+    expect(protocol).toContain('Respond with exactly one word');
+    expect(protocol).toContain('- `YES` when the moment is in your region.');
+    expect(protocol).not.toContain('UNSURE');
+    expect(protocol).not.toContain('NO_COMMENT');
+    expect(readStageAnswer('YES', spec)).toMatchObject({ outcome: 'yes', remarks: [] });
+    expect(readStageAnswer('  NO\n', spec)).toMatchObject({
+      outcome: 'no',
+      advice: { noComment: true },
+    });
+    expect(readStageAnswer('NO', { ...spec, envelope: 'guard' })).toEqual({
+      outcome: 'no',
+      remarks: [],
+      findings: [],
+    });
+    const malformed = { error: 'advice answer must be exactly one word: YES | NO' };
+    for (const answer of [
+      'Yes',
+      'YES.',
+      'YES — a lock',
+      'UNSURE',
+      'NO_COMMENT',
+      '{"outcome":"yes"}',
+    ])
+      expect(readStageAnswer(answer, spec)).toEqual(malformed);
+    const ternary = { ...spec, outcomes: 'ternary' } as const;
+    expect(responseProtocol(ternary)).toContain('- `UNSURE` when');
+    expect(readStageAnswer('UNSURE', ternary)).toMatchObject({ outcome: 'unsure' });
+    // A why inline, a pointing stage, or a group keeps its own protocol.
+    expect(answersInOneWord({ ...spec, reason: 'inline' })).toBe(false);
+    expect(answersInOneWord({ ...spec, reason: 'followup' })).toBe(true);
+    expect(answersInOneWord({ ...spec, task: 'point' })).toBe(false);
+    expect(answersInOneWord({ ...spec, holdsSeveralRegions: true })).toBe(false);
+  });
+
+  test('a ternary group recogniser tags each region line', () => {
     const spec = {
       envelope: 'advice',
       trigger: 'user-message',
       task: 'recognise',
       outcomes: 'ternary',
       reason: 'none',
+      holdsSeveralRegions: true,
     } as const;
     expect(responseProtocol(spec)).toContain('`<region id>: UNSURE — ');
     expect(
@@ -328,7 +374,7 @@ describe('the stage loop', () => {
       recognise,
       {},
       {
-        one: [advice(['locks: UNSURE — a nightly job that must not overlap'])],
+        one: ['UNSURE'],
         two: [advice([RANKED])],
       },
     );
@@ -348,7 +394,7 @@ describe('the stage loop', () => {
     expect(second[0]!.content).toStartWith(WARDEN_CHARTER);
     expect(second[1]!.content).toContain('- createLock (CONCURRENCY.md)');
     expect(second[1]!.content).toContain(
-      '## An earlier stage\nStage 1 (haiku) was unsure this moment is in your region: a nightly job that must not overlap\nTreat that as no until your own knowledge shows otherwise.',
+      '## An earlier stage\nStage 1 (haiku) was unsure this moment is in your region.\nTreat that as no until your own knowledge shows otherwise.',
     );
     expect(second[1]!.content).toEndWith(ADVICE_RESPONSE_PROTOCOL);
     expect(result).toMatchObject({ snippets: [RANKED], pointer: { pointer: 'createLock' } });
@@ -364,14 +410,14 @@ describe('the stage loop', () => {
   });
 
   test('a no stops the run; an outcome it does not escalate stops it too', async () => {
-    const quiet = twoStage(recognise, {}, { one: ['NO_COMMENT'], two: [] });
+    const quiet = twoStage(recognise, {}, { one: ['NO'], two: [] });
     expect(await quiet.lib.advise('Rename a variable.')).toMatchObject({ noComment: true });
     expect(quiet.two.calls).toHaveLength(0);
     const held = twoStage(
       { ...recognise, escalate: ['yes'] },
       {},
       {
-        one: [advice(['locks: UNSURE — maybe'])],
+        one: ['UNSURE'],
         two: [],
       },
     );
@@ -415,7 +461,7 @@ describe('the stage loop', () => {
       recognise,
       {},
       {
-        one: [advice(['locks: YES — a lock'])],
+        one: ['YES'],
         two: ['Look over here: createLock'],
       },
     );
@@ -435,11 +481,7 @@ describe('the stage loop', () => {
       recognise,
       {},
       {
-        one: [
-          JSON.stringify({
-            findings: [{ severity: 'advisory', description: 'locks: YES — writes SET NX' }],
-          }),
-        ],
+        one: ['YES'],
         two: [JSON.stringify({ findings: [{ severity: 'advisory', description: RANKED }] })],
       },
     );
@@ -501,6 +543,39 @@ describe('the stage loop', () => {
     expect(result).toMatchObject({ noComment: true, classified: { outcome: 'no' } });
   });
 
+  test('a one-word recogniser in debug mode (reason followup) asks why after YES, never after NO', async () => {
+    const config = validateStages('s', [{ task: 'recognise', reason: 'followup' }])[0]!;
+    const librarian = (answers: string[]) => {
+      const { llm, calls } = scripted('haiku', answers);
+      const lib = new DomainLibrarian({
+        domain: 'locks',
+        cache: layer('k', '# Locks'),
+        signals: new SignalBus(0),
+        llm,
+        stages: [{ config }],
+      });
+      return { lib, calls };
+    };
+    const yes = librarian(['YES', 'Two workers must not overlap.\nREVISED: KEEP']);
+    const result = await yes.lib.advise('Stop two workers running the same job.');
+    expect(yes.calls[0]!.messages[1]!.content).toContain('Respond with exactly one word');
+    expect(yes.calls[1]!.messages.at(-2)).toEqual({ role: 'assistant', content: 'YES' });
+    // The why is plain text, kept on the trace; a recogniser's yes alone delivers nothing.
+    expect(result).toMatchObject({
+      noComment: true,
+      classified: {
+        outcome: 'yes',
+        delivered: false,
+        stages: [{ outcome: 'yes', why: 'Two workers must not overlap.', revised: 'keep' }],
+      },
+    });
+    const no = librarian(['NO']);
+    expect(await no.lib.advise('Rename a variable.')).toMatchObject({
+      classified: { outcome: 'no' },
+    });
+    expect(no.calls).toHaveLength(1);
+  });
+
   test('a why asked after the answer is carried to the next stage', async () => {
     const { lib, two } = twoStage(
       { reason: 'followup', escalate: ['yes'] },
@@ -524,7 +599,7 @@ describe('the stage loop', () => {
       stages: [s1!, s2!],
       envelope: 'advice',
       trigger: 'user-message',
-      holds: ['locks'],
+      holds: ['locks', 'jobs'],
       ask: async (run) => {
         asked.push(run.index);
         return { content: advice(['queues: YES — ordering']) };

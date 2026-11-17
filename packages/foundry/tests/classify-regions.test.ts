@@ -194,10 +194,7 @@ test('each stage composes its own doc, journals its own versions, and recomposes
   expect(second.content).toContain('- createLock (CONCURRENCY.md)');
   expect(first.id).toBe(`role:${LOCKS}:domainKnowledge:recognise.md`);
 
-  const answers = [
-    '{"snippets":["locks: YES — a lock"],"layers":[],"confidence":0.8}',
-    'NO_COMMENT',
-  ];
+  const answers = ['YES', 'NO_COMMENT'];
   const llm: LLMProvider = {
     id: 'stub',
     async complete() {

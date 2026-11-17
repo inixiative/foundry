@@ -45,6 +45,7 @@ export {
   type AdviceAnswer,
   type AnswerRepair,
   adviceResponseProtocol,
+  answersInOneWord,
   type Envelope,
   FOLLOWUP_QUESTION,
   GUARD_RESPONSE_PROTOCOL,

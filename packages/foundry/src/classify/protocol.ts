@@ -264,6 +264,37 @@ export interface ProtocolSpec {
   readonly task: StageTask;
   readonly outcomes: StageOutcomes;
   readonly reason: StageReason;
+  /** A group recogniser (`members`) names which of its regions; one region answers in one word. */
+  readonly holdsSeveralRegions?: boolean;
+}
+
+/**
+ * A recogniser of one region asked for no why answers one word: the classification and nothing
+ * else (Aron, 2026-11-17: "L1 should just be yes or no for my region"). A why, when wanted, is asked
+ * after the answer (`reason: followup`), in plain text.
+ */
+export const answersInOneWord = (spec: ProtocolSpec) =>
+  spec.task === 'recognise' && spec.reason !== 'inline' && !spec.holdsSeveralRegions;
+
+const oneWordOutcomes = (outcomes: StageOutcomes) =>
+  outcomes === 'ternary' ? (['YES', 'UNSURE', 'NO'] as const) : (['YES', 'NO'] as const);
+
+function oneWordProtocol(spec: ProtocolSpec): string {
+  const subject = spec.envelope === 'guard' ? "the agent's actions this turn are" : 'the moment is';
+  const lines = [
+    header(spec),
+    'Respond with exactly one word and nothing else: no JSON, no explanation, no punctuation, no formatting.',
+    `- \`YES\` when ${subject} in your region.`,
+  ];
+  if (spec.outcomes === 'ternary')
+    lines.push(
+      `- \`UNSURE\` when ${subject} possibly in your region and your description does not settle it.`,
+    );
+  lines.push(
+    `- \`NO\` when ${nothingMeans(spec)}. This is the expected answer, and the most common one.`,
+  );
+  lines.push('Any other answer is an error.');
+  return lines.join('\n');
 }
 
 const header = (spec: ProtocolSpec) =>
@@ -295,6 +326,7 @@ const REMARKS = {
  * guard protocols; `followup` asks why after the answer, so its protocol is the same as `none`.
  */
 export function responseProtocol(spec: ProtocolSpec): string {
+  if (answersInOneWord(spec)) return oneWordProtocol(spec);
   const plain = spec.reason !== 'inline';
   if (spec.task === 'point' && spec.outcomes === 'binary' && plain)
     return spec.envelope === 'guard'
@@ -369,6 +401,28 @@ export function readStageAnswer(
   spec: ProtocolSpec,
   pointer?: PointerSettings,
 ): StageReading | { error: string } {
+  if (answersInOneWord(spec)) {
+    if (typeof content !== 'string') return { error: `${spec.envelope} response is not text` };
+    const word = content.trim();
+    const allowed: readonly string[] = oneWordOutcomes(spec.outcomes);
+    if (!allowed.includes(word))
+      return {
+        error: `${spec.envelope} answer must be exactly one word: ${allowed.join(' | ')}`,
+      };
+    const outcome = word.toLowerCase() as ClassifyOutcome;
+    return spec.envelope === 'guard'
+      ? { outcome, remarks: [], findings: [] }
+      : {
+          outcome,
+          remarks: [],
+          advice: {
+            layers: [],
+            snippets: [],
+            confidence: 0,
+            ...(outcome === 'no' ? { noComment: true } : {}),
+          },
+        };
+  }
   const ternary = spec.outcomes === 'ternary';
   const plain = spec.reason !== 'inline';
   const outcomeKey = !plain || (ternary && spec.task === 'point');
