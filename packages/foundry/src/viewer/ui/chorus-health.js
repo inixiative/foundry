@@ -49,7 +49,11 @@ export function chorusNotice(chorus) {
   return null;
 }
 
-/** The newest agent message whose turn still has an open degraded chorus (the context bar's line). */
+/**
+ * The newest degraded agent turn, while it is still open (the strip's notice). A clean turn carries no
+ * chorus and is passed over, so an open turn stays shown after clean ones; once the newest degraded
+ * turn is asked again or dismissed, older ones are reached from their turn view.
+ */
 export function lastDegraded(messages) {
   const list = Array.isArray(messages) ? messages : [];
   for (let i = list.length - 1; i >= 0; i--) {

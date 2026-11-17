@@ -467,6 +467,7 @@ const STRIP_DOT = { working: 'working', ready: 'done', degraded: 'attention', fa
 function SystemStrip({ threadId }) {
   const [open, setOpen] = useState(false);
   const [, tick] = useState(0);
+  const [busy, setBusy] = useState(false);
   const now = Date.now();
   const view = stripView(systemActivity.value, now);
   const degraded = lastDegraded(messages.value);
@@ -478,17 +479,26 @@ function SystemStrip({ threadId }) {
   }, [showing]);
   if (!showing) return null;
   const notice = degraded ? chorusNotice(degraded.chorus) : null;
+  const newest = degraded && messages.value.findLast((m) => m?.actor === 'agent') === degraded;
+  const act = async (action) => {
+    setBusy(true);
+    try {
+      await chorusAction(threadId, degraded.turnId, action);
+    } finally {
+      setBusy(false);
+    }
+  };
   const log = systemActivityLog.value;
   return html`<div class="system-strip" role="status" data-state=${degraded ? 'degraded' : view.state}>
     ${
       degraded
         ? html`<div class="system-strip-row" data-chorus-bar="open">
         <span class="system-strip-dot" data-tone="attention"></span>
-        <span class="system-strip-text" title=${notice.text}>On the last turn, ${notice.count} Warden${notice.count === 1 ? '' : 's'} went unheard.</span>
-        <button class="system-strip-action" title="Ask these Wardens again on the same moment; what they say rides with your next message"
-          onClick=${() => chorusAction(threadId, degraded.turnId, 'retry')}>Retry</button>
-        <button class="system-strip-action" title="Close this notice; the turn keeps its record"
-          onClick=${() => chorusAction(threadId, degraded.turnId, 'dismiss')}>Dismiss</button>
+        <span class="system-strip-text" title=${notice.text}>On ${newest ? 'the last turn' : 'an earlier turn'}, ${notice.count} Warden${notice.count === 1 ? '' : 's'} went unheard.</span>
+        <button class="system-strip-action" disabled=${busy} title="Ask these Wardens again on the same moment; what they say rides with your next message"
+          onClick=${() => act('retry')}>Retry</button>
+        <button class="system-strip-action" disabled=${busy} title="Close this notice; the turn keeps its record"
+          onClick=${() => act('dismiss')}>Dismiss</button>
       </div>`
         : null
     }
@@ -1293,7 +1303,6 @@ function AgentMessage({ msg, index, onTraceClick }) {
       `
           : null
       }
-
 
       <!-- Post-execution bar: guards, writeback -->
       <${PipelineBar}

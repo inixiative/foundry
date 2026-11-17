@@ -51,8 +51,7 @@ A Warden is degraded at one moment when the system, not the Warden, decided it s
 
 ## Where it shows
 
-- **In the thread, at that turn.** Under the agent message: "The chorus was degraded on this turn: on the message security (Layer 1 timed out); … The turn went on without them." It has two buttons, **Retry** and **Dismiss**. After a retry it reads "The degraded Wardens were asked again; anything they said rides with your next message." A retry that fails again shows its own notice.
-- **Context bar.** The newest turn's open notice adds a line under the existing setup notice, with the same class: "Chorus degraded on the last turn: N Wardens went unheard. Retry". This is separate from the in-session "could not be held" line, which is a different condition.
+- **The strip above the composer, the one prompt.** The newest degraded turn, while it is still open: "On the last turn, N Wardens went unheard." (or "on an earlier turn", after clean turns), with **Retry** and **Dismiss**; hovering names each Warden, its layer and why. A clean turn carries no chorus and is passed over. Once the newest degraded turn is asked again or dismissed the strip clears, and an older open turn is reached from its turn view (timeouts there have Retry). A retry that fails again shows its own notice. This is separate from the in-session "could not be held" line, which is a different condition.
 - **Thread status colour.** Unchanged. A degraded chorus does not stop the turn (not red), and nothing waits on the person (not orange).
 - **ACP.** The "Foundry: context" item adds a "Chorus degraded…" line and `_meta.foundry.degraded`. A guard row with `degraded` becomes a "Foundry: guard" comment. ACP has no action channel to the daemon for this, so hosts are told and pointed to the viewer for Retry.
 - **Data path.** The message index puts the turn's `chorus` (`TurnChorus`) on its agent row, read in SQLite from `degraded`, `retryOf` and `of`. Those keys are kept inline by the journal's spill (`SQL_READ_KEYS`). A journalled row already emits a `journal` event, so the viewer reconciles without new plumbing. `chorus` is server-owned in the history merge.
@@ -90,6 +89,6 @@ A Warden is degraded at one moment when the system, not the Warden, decided it s
 | Fan-out and delivery | `FlowOrchestrator._between`, `ThreadRuntime._askBetweenTurns`, `betweenTurnNotes`, `queueNotes` (the "chimed in on the handoff" path) |
 | Guard | `ThreadRuntime._guardActivity` → `FlowOrchestrator.postAction` |
 | Thread view refresh | `journal` events on `thread:<id>` → `reconcileTargets` → `messageIndex` |
-| Notice | `context-bar-setup--degraded` in `conversation.js`; a message-level notice beside `TurnFeedback` |
+| Notice | `SystemStrip` in `conversation.js` (`data-chorus-bar`), from `lastDegraded` / `chorusNotice` in `ui/chorus-health.js` |
 | Route reach | `threadFactory.runtime.get(threadId)` (as `viewer/server.ts` already does) |
 | ACP | `packages/acp/src/context.ts`, `guard.ts` |

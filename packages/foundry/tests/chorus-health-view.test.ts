@@ -43,7 +43,7 @@ test('asked again, dismissed or never degraded shows nothing', () => {
   expect(chorusNotice(undefined)).toBeNull();
 });
 
-test("the context bar follows the newest turn's chorus only", () => {
+test('the strip shows the newest degraded turn while it is open; clean turns carry no chorus', () => {
   const open = {
     notices: [{ rowId: 'a', trigger: 'user-message', degraded: [timeout] }],
     open: ['a'],
@@ -57,7 +57,14 @@ test("the context bar follows the newest turn's chorus only", () => {
   expect(
     lastDegraded([
       ...messages,
-      { actor: 'agent', turnId: 't3', chorus: { notices: [], open: [] } },
+      {
+        actor: 'agent',
+        turnId: 't3',
+        chorus: {
+          notices: [{ rowId: 'c', trigger: 'user-message', degraded: [timeout] }],
+          open: [],
+        },
+      },
     ]),
   ).toBeNull();
 });
