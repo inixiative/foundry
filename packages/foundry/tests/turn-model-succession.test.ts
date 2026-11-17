@@ -206,7 +206,7 @@ test('a turn the CLI refuses because the model does not exist moves the thread u
   if (!accepted.ok) throw Error('not accepted');
   await until(() => store.turn(accepted.turnId)?.status === 'failed');
   expect(store.turn(accepted.turnId)?.error).toBe(
-    'claude-opus-5-3 is no longer served (the CLI says it does not exist). This thread now runs on claude-opus-5-5; send again.',
+    'claude-opus-5-3 is unavailable to this CLI login. This thread now runs on claude-opus-5-5; send again.',
   );
   expect(main.meta.model).toEqual({ id: 'claude-opus-5-5' });
   const next = turns.accept({ threadId: 'main', payload: 'B' });

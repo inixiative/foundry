@@ -9,7 +9,7 @@
  * Steps: Welcome → Providers → Default Provider → Executor Model → Classifier Model → Done.
  */
 
-import { html, signal, useEffect, useState } from './lib.js';
+import { html, signal, useState } from './lib.js';
 import { Modal } from './modal.js';
 import { showToast } from './store.js';
 
@@ -25,75 +25,11 @@ export function checkSetupNeeded(config) {
 /** Native harnesses that run a main thread on a subscription login (models/registry.ts SUBSCRIPTION_WORKERS). */
 const SUBSCRIPTION_WORKERS = ['claude-code', 'codex'];
 
-const FALLBACK_PROVIDERS = [
-  {
-    id: 'claude-code',
-    label: 'Claude Code (recommended)',
-    desc: 'CLI subscription: no API key needed, works out of the box',
-    envKey: '',
-    models: [
-      { id: 'fable', label: 'Fable 5.2', tier: 'powerful' },
-      { id: 'opus', label: 'Opus 5.5', tier: 'powerful' },
-      { id: 'sonnet', label: 'Sonnet 5.5', tier: 'standard' },
-      { id: 'haiku', label: 'Haiku 5.5', tier: 'fast' },
-      { id: 'claude-haiku-5-5', label: 'Haiku 5.5', tier: 'fast' },
-    ],
-  },
-  {
-    id: 'codex',
-    label: 'Codex CLI',
-    desc: 'Native Codex harness: use Astra through your authenticated Codex session',
-    envKey: '',
-    models: [
-      { id: 'gpt-6-astra', label: 'GPT-6 Astra', tier: 'powerful' },
-      { id: 'gpt-5.6-sol', label: 'GPT-5.6 Sol', tier: 'powerful' },
-      { id: 'gpt-5.6-terra', label: 'GPT-5.6 Terra', tier: 'standard' },
-      { id: 'gpt-5.6-luna', label: 'GPT-5.6 Luna', tier: 'fast' },
-    ],
-  },
-  {
-    id: 'gemini',
-    label: 'Google Gemini',
-    desc: 'Fast, affordable API access, best for high-volume agent work',
-    envKey: 'GEMINI_API_KEY',
-    models: [
-      { id: 'gemini-3.1-flash-lite', label: 'Gemini 3.1 Flash Lite', tier: 'fast' },
-      { id: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash', tier: 'standard' },
-      { id: 'gemini-3.1-pro-preview', label: 'Gemini 3.1 Pro', tier: 'powerful' },
-      { id: 'gemini-3.5-flash-lite', label: 'Gemini 3.5 Flash Lite', tier: 'fast' },
-    ],
-  },
-  {
-    id: 'anthropic',
-    label: 'Anthropic',
-    desc: 'Direct API, for programmatic access without the Claude Code CLI',
-    envKey: 'ANTHROPIC_API_KEY',
-    models: [
-      { id: 'claude-fable-5-2', label: 'Claude Fable 5.2', tier: 'powerful' },
-      { id: 'claude-opus-5-5', label: 'Claude Opus 5.5', tier: 'powerful' },
-      { id: 'claude-sonnet-5-5', label: 'Claude Sonnet 5.5', tier: 'standard' },
-      { id: 'claude-haiku-5-5', label: 'Claude Haiku 5.5', tier: 'fast' },
-    ],
-  },
-  {
-    id: 'openai',
-    label: 'OpenAI',
-    desc: 'GPT models, an alternative provider',
-    envKey: 'OPENAI_API_KEY',
-    models: [
-      { id: 'gpt-6-astra', label: 'GPT-6 Astra', tier: 'powerful' },
-      { id: 'gpt-5.6-sol', label: 'GPT-5.6 Sol', tier: 'powerful' },
-      { id: 'gpt-5.6-terra', label: 'GPT-5.6 Terra', tier: 'standard' },
-      { id: 'gpt-6-luna', label: 'GPT-6 Luna', tier: 'fast' },
-    ],
-  },
-];
-
 // ---------------------------------------------------------------------------
 // Step components
 // ---------------------------------------------------------------------------
 
-function WelcomeStep({ onNext }) {
+function WelcomeStep({ onNext, loading, error }) {
   return html`
     <div class="wizard-step">
       <div class="wizard-logo"><span class="logo-bracket">${'<'}</span><span class="logo-mark">iXi</span><span class="logo-bracket">${'>'}</span></div>
@@ -107,7 +43,8 @@ function WelcomeStep({ onNext }) {
         You can change everything later in Settings.
       </p>
       <div class="wizard-actions">
-        <button class="wizard-btn primary" onClick=${onNext}>Get Started</button>
+        ${error ? html`<p class="wizard-error" role="alert">${error}</p>` : null}
+        <button class="wizard-btn primary" disabled=${loading} onClick=${onNext}>${loading ? 'Loading models…' : 'Get Started'}</button>
       </div>
     </div>
   `;
@@ -385,7 +322,7 @@ export function Wizard() {
   const isOpen = wizardOpen.value;
   // 0=welcome, 1=enable providers, 2=default provider, 3=executor model, 4=classifier model, 5=done
   const [step, setStep] = useState(0);
-  const [providers, setProviders] = useState(FALLBACK_PROVIDERS);
+  const [providers, setProviders] = useState([]);
   const [enabledProviders, setEnabledProviders] = useState(['claude-code']);
   const [defaultProvider, setDefaultProvider] = useState('claude-code');
   const [executorModel, setExecutorModel] = useState('fable');
@@ -394,20 +331,22 @@ export function Wizard() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
-  useEffect(() => {
-    let cancelled = false;
-    fetch('/api/models')
-      .then((res) => (res.ok ? res.json() : null))
-      .then((body) => {
-        if (!cancelled && Array.isArray(body?.providers) && body.providers.length > 0) {
-          setProviders(body.providers);
-        }
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const startSetup = async () => {
+    setSaving(true);
+    setError('');
+    try {
+      const response = await fetch('/api/models');
+      if (!response.ok) throw new Error('Could not load the available models. Try again.');
+      const registry = await response.json();
+      if (!registry.providers?.length) throw new Error('No model providers are available.');
+      setProviders(registry.providers);
+      setStep(1);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
 
   if (!isOpen) return null;
 
@@ -540,7 +479,7 @@ export function Wizard() {
           )}
         </div>
 
-        ${step === 0 ? html`<${WelcomeStep} onNext=${() => setStep(1)} />` : null}
+        ${step === 0 ? html`<${WelcomeStep} onNext=${startSetup} loading=${saving} error=${error} />` : null}
         ${
           step === 1
             ? html`

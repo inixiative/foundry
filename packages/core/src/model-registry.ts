@@ -171,15 +171,11 @@ const OPENAI_REASONING: ModelReasoning = {
   fallback: 'none',
   outputField: 'max_completion_tokens',
 };
-/** Codex CLI catalogue (~/.codex/models_cache.json): no "none", medium by default. */
+/** Levels accepted by the native CodexAppServerSession used for Foundry threads. */
 const CODEX_REASONING: ModelReasoning = {
   param: 'reasoning_effort',
-  efforts: ['low', 'medium', 'high', 'xhigh', 'max'],
+  efforts: ['low', 'medium', 'high', 'xhigh'],
   fallback: 'medium',
-};
-const CODEX_REASONING_ULTRA: ModelReasoning = {
-  ...CODEX_REASONING,
-  efforts: ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'],
 };
 /** Anthropic: adaptive thinking, steered by output_config.effort, never by reasoning_effort. */
 const CLAUDE_REASONING: ModelReasoning = {
@@ -261,7 +257,7 @@ export interface ModelSweepOption {
   label: string;
 }
 
-export const MODEL_REGISTRY_UPDATED_AT = '2026-11-11';
+export const MODEL_REGISTRY_UPDATED_AT = '2026-11-17';
 
 /**
  * Decision default: Claude Haiku 5.5, the cheapest current Claude model tagged `judgment`. Held here
@@ -278,7 +274,7 @@ export const SUBSCRIPTION_DECISION_MODELS = {
 /** A subscription worker's main-thread model when a thread runs on a worker other than its project's default. */
 export const SUBSCRIPTION_WORKER_MODELS = {
   'claude-code': 'fable',
-  codex: 'gpt-6-astra',
+  codex: 'gpt-6.2-astra',
   muse: 'muse-wonder-1.0',
 } as const;
 
@@ -295,6 +291,37 @@ const STANDARD = [
 const STANDARD_REASONING = [...STANDARD, 'reasoning'] as ModelCapability[];
 const POWERFUL = ['judgment', 'execution', 'domain-advising', 'tool-use'] as ModelCapability[];
 const POWERFUL_REASONING = [...POWERFUL, 'reasoning'] as ModelCapability[];
+
+const CURRENT_GPT_MODELS = [
+  {
+    id: 'gpt-6.2-astra',
+    label: 'GPT-6.2 Astra',
+    family: 'astra',
+    codexWindow: 272_000,
+    codexEffort: 'low',
+  },
+  {
+    id: 'gpt-6.2-sol',
+    label: 'GPT-6.2 Sol',
+    family: 'sol',
+    codexWindow: 500_000,
+    codexEffort: 'medium',
+  },
+  {
+    id: 'gpt-6.1-sol',
+    label: 'GPT-6.1 Sol',
+    family: 'sol',
+    codexWindow: 500_000,
+    codexEffort: 'medium',
+  },
+  {
+    id: 'gpt-6.1-terra',
+    label: 'GPT-6.1 Terra',
+    family: 'terra',
+    codexWindow: 500_000,
+    codexEffort: 'low',
+  },
+] as const;
 
 export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
   'claude-code': {
@@ -582,13 +609,19 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
     credential: 'subscription',
     enabledByDefault: true,
     models: [
-      // Slugs, effort ladders and the 272k session window come from the local
-      // Codex catalogue (~/.codex/models_cache.json); the same models carry a
-      // 1,050,000 window on the platform API, which the openai entry records.
-      // Only models a ChatGPT login serves are listed: Codex refuses gpt-5.5 on a
-      // ChatGPT account ("not supported when using Codex with a ChatGPT account"). The
-      // GPT-6 models need a current Codex: 0.153.4 is refused them, 0.163.0 is served
-      // them (2026-10-16); the GPT-5.6 models run on both.
+      ...CURRENT_GPT_MODELS.map(
+        ({ id, label, family, codexWindow, codexEffort }): FoundryModelInfo => ({
+          id,
+          label,
+          family,
+          tier: family === 'terra' ? 'standard' : 'powerful',
+          costTier: family === 'terra' ? 'medium' : 'high',
+          contextWindow: codexWindow,
+          runtimeKind: 'native-harness',
+          capabilities: family === 'terra' ? STANDARD_REASONING : POWERFUL_REASONING,
+          reasoning: { ...CODEX_REASONING, fallback: codexEffort },
+        }),
+      ),
       {
         id: 'gpt-6-astra',
         family: 'astra',
@@ -598,8 +631,7 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
         contextWindow: 272_000,
         runtimeKind: 'native-harness',
         capabilities: POWERFUL_REASONING,
-        reasoning: CODEX_REASONING_ULTRA,
-        notes: 'The Codex CLI default.',
+        reasoning: CODEX_REASONING,
       },
       {
         id: 'gpt-6-sol',
@@ -610,7 +642,7 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
         contextWindow: 272_000,
         runtimeKind: 'native-harness',
         capabilities: POWERFUL_REASONING,
-        reasoning: CODEX_REASONING_ULTRA,
+        reasoning: CODEX_REASONING,
         notes: 'Workhorse for coding and everyday work.',
       },
       {
@@ -634,7 +666,7 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
         contextWindow: 272_000,
         runtimeKind: 'native-harness',
         capabilities: POWERFUL_REASONING,
-        reasoning: CODEX_REASONING_ULTRA,
+        reasoning: CODEX_REASONING,
       },
       {
         id: 'gpt-5.6-terra',
@@ -645,7 +677,7 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
         contextWindow: 272_000,
         runtimeKind: 'native-harness',
         capabilities: STANDARD_REASONING,
-        reasoning: CODEX_REASONING_ULTRA,
+        reasoning: CODEX_REASONING,
       },
       {
         id: 'gpt-5.6-luna',
@@ -673,6 +705,27 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
     apiRoot: 'https://api.openai.com/v1',
     enabledByDefault: true,
     models: [
+      ...CURRENT_GPT_MODELS.map(
+        ({ id, label, family }): FoundryModelInfo => ({
+          id,
+          label,
+          family,
+          tier: family === 'terra' ? 'standard' : 'powerful',
+          costTier: family === 'terra' ? 'medium' : 'high',
+          contextWindow: 1_050_000,
+          maxOutputTokens: 128_000,
+          runtimeKind: 'api',
+          capabilities: family === 'terra' ? STANDARD_REASONING : POWERFUL_REASONING,
+          reasoning:
+            family === 'terra'
+              ? { ...OPENAI_REASONING, fallback: 'medium' }
+              : {
+                  ...OPENAI_REASONING,
+                  efforts: ['low', 'medium', 'high', 'xhigh', 'max'],
+                  fallback: family === 'astra' ? 'low' : 'medium',
+                },
+        }),
+      ),
       {
         id: 'gpt-6-astra',
         label: 'GPT-6 Astra',

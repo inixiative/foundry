@@ -171,6 +171,46 @@ describe('the three-way arms, on stub providers', () => {
       ['none', 'no'],
     ]);
   });
+
+  test('onRaw gets every call’s text as written, per stage, once its turn is recorded', async () => {
+    const config = runOf({ stages: ARMS.B });
+    const { haiku, sonnet, calls } = hosts();
+    const order: string[] = [];
+    const raw: Array<{
+      probeId: string;
+      domain: string;
+      stage: number;
+      call: number;
+      content: string;
+      systemHash: string;
+    }> = [];
+    await runCharterEval({
+      probes: PROBES,
+      wardensFor: () => [LOCKS],
+      warden: haiku,
+      stages: config.stages,
+      stageProviders: [haiku, sonnet],
+      charters: config.charters,
+      triggers: ['user-message'],
+      onTurn: (turn) => order.push(`turn:${turn.probeId}`),
+      onRaw: (row) => {
+        order.push(`raw:${row.probeId}`);
+        raw.push(row);
+      },
+    });
+    expect(raw).toHaveLength(calls.length);
+    expect(raw.map((r) => [r.probeId, r.domain, r.stage, r.call])).toEqual([
+      ['lock', 'locks', 0, 0],
+      ['lock', 'locks', 1, 1],
+      ['vague', 'locks', 0, 0],
+      ['vague', 'locks', 1, 1],
+      ['none', 'locks', 0, 0],
+    ]);
+    expect(raw[4]!.content).toBe(NO_COMMENT);
+    expect(raw[1]!.content).toContain(POINTER);
+    expect(raw[0]!.systemHash).not.toBe(raw[1]!.systemHash);
+    expect(order.indexOf('turn:lock')).toBeLessThan(order.indexOf('raw:lock'));
+  });
 });
 
 describe('carrying stage 1 from an earlier run', () => {

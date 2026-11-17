@@ -15,7 +15,7 @@
  *     [--roles librarian-reuse] [--session <key>] [--budget <chars>] [--input-cap <chars>] \
  *     [--no-judge] [--regions <dir>] [--primed-sessions <n>] [--pause-at <percent>] [--model <id>] [--effort <level>]
  *     [--experiment <design.md>] [--subagents <processes>] [--stop-at-points <n>] [--stop-seven-day <percent>]
- *     [--carry <earlier run dir>]
+ *     [--carry <earlier run dir>] [--raw]
  *
  * Each Warden is composed exactly as a live thread composes it: the daemon's settings and the
  * composition view (`buildRoleLayers`), bound to the probe's project and working directory. A Warden
@@ -31,6 +31,8 @@
  * --input-cap lift the role budget and the decision input cap for this run only (the size test);
  * shipped defaults never change. A probe's `threadKnowledge` reaches the Warden as live supplies it.
  * --no-judge leaves remarks unjudged for a caller that grades them its own way (warden-size.ts).
+ * --raw writes every call's answer text, as the model wrote it before the strict reading and its
+ * repairs, to <out>/raw.jsonl (private, 0600): one row per call with its probe, Warden, trigger and stage.
  * --primed-sessions sizes the primed pool (default under --session: the largest roster + 8, so no
  * Warden is evicted between turns). --pause-at waits out the Claude login's five-hour window while
  * it is at or above that percent; every window probe lands in <out>/quota.jsonl. --model runs the
@@ -123,6 +125,7 @@ import {
   markEvalRun,
   runCharterEval,
   type WardenDebug,
+  type WardenRawAnswer,
 } from '../../packages/foundry/src/feedback/charter-eval';
 import { readClassifyRun } from '../../packages/foundry/src/feedback/classify-run';
 import { roleComposition } from '../../packages/foundry/src/prompts/instruction-settings';
@@ -155,6 +158,7 @@ const { values } = parseArgs({
     budget: { type: 'string' },
     'input-cap': { type: 'string' },
     'no-judge': { type: 'boolean' },
+    raw: { type: 'boolean' },
     regions: { type: 'string' },
     'primed-sessions': { type: 'string' },
     subagents: { type: 'string' },
@@ -788,6 +792,7 @@ const started = Date.now();
 const answersFile = join(out, 'answers.jsonl');
 const turnsFile = join(out, 'turns.jsonl');
 const debugFile = join(out, 'debug.jsonl');
+const rawFile = join(out, 'raw.jsonl');
 const readRows = <T>(path: string): T[] =>
   values.resume && existsSync(path)
     ? readFileSync(path, 'utf8')
@@ -813,6 +818,11 @@ if (debug)
   writeRows(
     debugFile,
     readRows<WardenDebug>(debugFile).filter((d) => finished.has(turnKey(d.probeId, d.trigger))),
+  );
+if (values.raw)
+  writeRows(
+    rawFile,
+    readRows<WardenRawAnswer>(rawFile).filter((r) => finished.has(turnKey(r.probeId, r.trigger))),
   );
 if (values.resume) console.error(`resuming: ${finished.size} turns already done`);
 let done = 0;
@@ -875,6 +885,9 @@ try {
               }
             : {}),
         }
+      : {}),
+    ...(values.raw
+      ? { onRaw: (row: WardenRawAnswer) => appendFileSync(rawFile, `${JSON.stringify(row)}\n`) }
       : {}),
     onAnswer: (answer) => {
       appendFileSync(answersFile, `${JSON.stringify(answer)}\n`);
