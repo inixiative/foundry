@@ -14,6 +14,7 @@ import {
   stageDocs,
 } from '../classify';
 import { contentHash } from '../persistence/journal-content';
+import { roleIdIn, roleNamespace } from '../prompts/role-namespace';
 import type {
   AgentSettingsConfig,
   ChorusSettings,
@@ -45,6 +46,9 @@ export const REGION_GUARD_TRIGGERS: readonly string[] = [
   'Bash',
   'bash',
 ];
+
+/** The role id of a region's Warden, also its agent id: never a bare name, so it cannot take another role's. */
+export const regionRoleId = (regionId: string): string => roleIdIn(roleNamespace.region, regionId);
 
 /** Source id of a region's knowledge in the project view; the audit log versions it as `source-content:<id>@project:<pid>`. */
 export const regionSourceId = (regionId: string): string => `region:${regionId}`;
@@ -359,7 +363,7 @@ export interface RegionWarden {
  * id, asked on every user message (`invocation: always`) and on every write or exec tool call, its
  * knowledge the region's knowledge.md through a `markdown` source (audited as `source-content`, so
  * composition versions name the exact text). Org and personal overlays reach it through the ladder's
- * role files for role `<region id>` as for any Warden.
+ * role files for role `region:<region id>` (`.foundry/roles/region/<region id>/`) as for any Warden.
  */
 export function regionWardens(
   regions: readonly RegionSummary[],
@@ -380,7 +384,7 @@ function regionWarden(region: RegionSummary, stages: readonly StageConfig[]): Re
   return {
     region,
     agent: {
-      id: region.id,
+      id: regionRoleId(region.id),
       kind: 'domain-librarian',
       flowRole: 'domain-advising',
       domain: region.id,

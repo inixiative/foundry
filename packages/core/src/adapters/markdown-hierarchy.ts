@@ -239,10 +239,16 @@ function matches(when: HierarchyMatch | undefined, location: HierarchyLocation):
   return true;
 }
 
-/** Location variables plus `{role}` and `{slot}`. */
+/**
+ * Where a role's files sit under a `{role}` in a path: each `:`-separated part of its id is a folder
+ * (`region:lens-model` is `region/lens-model`), so a namespaced id is a legal path on every filesystem.
+ */
+export const roleDirectory = (role: string): string => role.split(':').join('/');
+
+/** Location variables plus `{role}` (as its directory) and `{slot}`. */
 const locationVars = (location: HierarchyLocation) => ({
   ...location.vars,
-  ...(location.role !== undefined ? { role: location.role } : {}),
+  ...(location.role !== undefined ? { role: roleDirectory(location.role) } : {}),
   ...(location.slot !== undefined ? { slot: location.slot } : {}),
 });
 
@@ -497,7 +503,9 @@ export async function discoverHierarchy(
       location.baseRoles?.length && templates.some((path) => path.includes('{role}'))
         ? [...new Set([...location.baseRoles, ...(location.role ? [location.role] : [])])]
         : undefined;
-    for (const pass of roles ? roles.map((role) => ({ ...vars, role })) : [vars])
+    for (const pass of roles
+      ? roles.map((role) => ({ ...vars, role: roleDirectory(role) }))
+      : [vars])
       await collect(entry, source, position, base, pass);
   };
 

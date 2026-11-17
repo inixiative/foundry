@@ -13,7 +13,7 @@ import {
 } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join, relative } from 'node:path';
-import { sha256Hex } from '@inixiative/foundry-core';
+import { roleDirectory, sha256Hex } from '@inixiative/foundry-core';
 import {
   GLOBAL_ROLE_FILE_TEMPLATE,
   type InstructionNodeSettings,
@@ -21,6 +21,7 @@ import {
   ladderReadsRoleFile,
   ROLE_FILE_TEMPLATE,
 } from '../prompts/instruction-settings';
+import { isRoleId } from '../prompts/role-namespace';
 import { ruleMarker } from './sharpen';
 import {
   type FeedbackApplyRecord,
@@ -39,7 +40,7 @@ export interface LevelRoots {
 }
 
 const fill = (template: string, role: string, slot: FeedbackSlot) =>
-  template.replace('{role}', role).replace('{slot}', slot);
+  template.replace('{role}', roleDirectory(role)).replace('{slot}', slot);
 
 /** The ladder template each rung's role file is written from (the same constants the ladder reads). */
 export const RUNG_TEMPLATE: Readonly<Record<FeedbackLevel, string>> = {
@@ -56,8 +57,7 @@ export function roleFilePath(
   slot: FeedbackSlot,
   roots: LevelRoots,
 ): string {
-  if (!/^[A-Za-z0-9][A-Za-z0-9_.-]{0,199}$/.test(role) || role.includes('..'))
-    throw Error(`Invalid role id: ${role}`);
+  if (!isRoleId(role)) throw Error(`Invalid role id: ${role}`);
   const file = fill(RUNG_TEMPLATE[level], role, slot);
   const project = roots.project;
   const org = roots.org ?? (project ? dirname(project) : undefined);

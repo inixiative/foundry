@@ -1216,7 +1216,7 @@ class ThreadRuntimeImpl implements ThreadRuntime {
         // A stage reading another doc than the knowledge slot (knowledge.md) composes its own, the
         // same way; the knowledge slot stays what guard defaults and the review read.
         const own = () => {
-          const sourceId = regionDocSourceId(role!, config.doc);
+          const sourceId = regionDocSourceId(dc.domain, config.doc);
           const layer = buildStageKnowledge(deps.config, role!, config.doc, sourceId, {
             resolveSource: deps.resolveSource,
             scope: wardenScope,

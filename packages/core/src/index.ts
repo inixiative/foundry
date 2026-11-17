@@ -70,6 +70,7 @@ export {
   type HierarchyWalkSource,
   hierarchyFingerprint,
   markdownSections,
+  roleDirectory,
   type SelectedHierarchyNode,
   selectHierarchyNodes,
 } from './adapters/markdown-hierarchy';

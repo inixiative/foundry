@@ -443,7 +443,8 @@ test('the decision host launches the project host on the decision login: its own
 // -- Composition: what a thread of the project sends is what the project host holds -------------
 
 /**
- * A git project whose repository enables a two-region chorus. A region's role file overlays its
+ * A git project whose repository enables a two-region chorus. A region's role file (at
+ * `.foundry/roles/region/<region id>/`) overlays its
  * instructions at the root, and a worktree carries its own (an unmerged edit).
  */
 function project(): string {
@@ -451,13 +452,16 @@ function project(): string {
   mkdirSync(join(dir, '.git'));
   write(join(dir, '.foundry', 'project.json'), JSON.stringify({ chorus: { enabled: true } }));
   write(join(dir, 'CLAUDE.md'), 'ROOT_CLAUDE_MD\n');
-  write(join(dir, '.foundry', 'roles', 'lens-model', 'instructions.md'), 'ROOT_ROLE_FILE\n');
+  write(
+    join(dir, '.foundry', 'roles', 'region', 'lens-model', 'instructions.md'),
+    'ROOT_ROLE_FILE\n',
+  );
   write(join(dir, '.foundry', 'warden-brief.md'), 'ROOT_WARDEN_BRIEF\n');
   const worktree = join(dir, '.worktrees', 'feat');
   write(join(worktree, '.git'), 'gitdir: ../../.git/worktrees/feat\n');
   write(join(worktree, 'CLAUDE.md'), 'WORKTREE_CLAUDE_MD\n');
   write(
-    join(worktree, '.foundry', 'roles', 'lens-model', 'instructions.md'),
+    join(worktree, '.foundry', 'roles', 'region', 'lens-model', 'instructions.md'),
     'WORKTREE_ROLE_FILE\n',
   );
   write(join(worktree, '.foundry', 'warden-brief.md'), 'WORKTREE_WARDEN_BRIEF\n');

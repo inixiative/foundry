@@ -16,6 +16,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { NativeEvidence } from '@inixiative/foundry-core';
+import { regionRoleId } from '../src/agents/region-roster';
 import { defaultProfileSource } from '../src/providers/default-profiles';
 import { NativeAuthentication } from '../src/providers/native-authentication';
 import { createPrimedDecisionHost } from '../src/providers/primed-decisions';
@@ -112,7 +113,9 @@ test("a project's region Wardens run on the subscription decision model: an enab
   // Before 2026-10-18 a generated Warden carried no provider or model, so the policy refused the
   // whole settings file once a repository enabled its chorus.
   const resolved = resolveSubscriptionPolicy(config, { cwd: project })!;
-  expect(resolveProjectView(resolved.config, 'P')!.config.agents.locks).toMatchObject({
+  expect(
+    resolveProjectView(resolved.config, 'P')!.config.agents[regionRoleId('locks')],
+  ).toMatchObject({
     kind: 'domain-librarian',
     provider: 'subscription-decisions',
     model: 'claude-haiku-5-5',

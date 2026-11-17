@@ -10,7 +10,7 @@ import {
 } from '@inixiative/foundry-core';
 import { configuredExperts } from '../src/agents/configured-experts';
 import { oneCall } from '../src/agents/domain-librarian';
-import { regionInstructions } from '../src/agents/region-roster';
+import { regionInstructions, regionRoleId } from '../src/agents/region-roster';
 import {
   buildAgents,
   buildLayers,
@@ -44,6 +44,8 @@ const REGION = {
 };
 /** The region Warden's settings prompt, as `regionWardens` generates it. */
 const REGION_RULES = regionInstructions(REGION);
+/** The region Warden's agent and role id. */
+const WARDEN_ID = regionRoleId(REGION.id);
 
 /** A project whose repository enables a one-region chorus. */
 function regionProject(): string {
@@ -151,13 +153,13 @@ test("a region Warden's call: the charter over its region instructions, its know
   const c = config();
   validateConfig(c);
   const view = resolveProjectView(c, 'P')!;
-  expect(view.config.agents.conventions).toMatchObject({
+  expect(view.config.agents[WARDEN_ID]).toMatchObject({
     kind: 'domain-librarian',
     flowRole: 'domain-advising',
     domain: 'conventions',
     prompt: REGION_RULES,
   });
-  expect(view.agents.find((a) => a.id === 'conventions')).toMatchObject({
+  expect(view.agents.find((a) => a.id === WARDEN_ID)).toMatchObject({
     scope: 'project-generated',
   });
 
@@ -260,7 +262,7 @@ test('project agents are standalone or extend a global agent; nothing in between
   expect(superseded.agents.worker).toBeUndefined();
   expect(superseded.agents['p-worker']).toMatchObject({ id: 'p-worker', kind: 'executor' });
   // The region Warden stands beside the project's agents.
-  expect(configuredExperts(superseded).experts.map((e) => e.agentId)).toEqual(['conventions']);
+  expect(configuredExperts(superseded).experts.map((e) => e.agentId)).toEqual([WARDEN_ID]);
 });
 
 test('a settings edit reaches a running thread on its next turn, with a versioned before/after', async () => {
@@ -311,7 +313,7 @@ test('the configured Cartographer instructions drive routing; runtime roles are 
   managers.push(f.manager);
   const thread = f.factory.create('p-thread', { projectId: 'P' });
   expect(thread.getAgent('cartographer')).toBeUndefined();
-  expect(thread.getAgent('conventions')).toBeUndefined();
+  expect(thread.getAgent(WARDEN_ID)).toBeUndefined();
   await thread.dispatch('worker', 'Route me');
   const route = f.last('route');
   expect(route.messages[0]!.content).toBe('CARTOGRAPHER_INSTRUCTIONS');

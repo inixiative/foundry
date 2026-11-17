@@ -8,6 +8,7 @@ import { vendorOfProvider } from '@inixiative/foundry-core';
 import { DEFAULT_STAGES, type StageConfig } from '../classify';
 import { providerEnabled } from '../models/vendors';
 import { roleComposition } from '../prompts/instruction-settings';
+import { isRoleId } from '../prompts/role-namespace';
 import type { AgentSettingsConfig, FoundryConfig } from '../viewer/config';
 import { resolveProjectView } from '../viewer/config-resolve';
 import { threadKnowledgeLayerId } from './domain-librarian';
@@ -45,7 +46,7 @@ export function configuredExperts(config: FoundryConfig): {
   const domains = new Map<string, string>();
   for (const [id, agent] of Object.entries(config.agents)) {
     if (agent.flowRole !== 'domain-advising') continue;
-    if (!identity(id) || agent.id !== id || !identity(agent.domain))
+    if (!isRoleId(id) || agent.id !== id || !identity(agent.domain))
       throw Error(`Invalid configured expert identity: ${id}`);
     if (typeof agent.enabled !== 'boolean') throw Error(`Invalid expert enablement: ${id}`);
     claimedDomains.add(agent.domain);

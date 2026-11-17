@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ActionQueue, ContextStack, Thread, ToolRegistry } from '@inixiative/foundry-core';
 import type { RouteResult } from '../src/agents/cartographer';
+import { regionRoleId } from '../src/agents/region-roster';
 import { captureThread } from '../src/archives/capture';
 import {
   applyChange,
@@ -43,9 +44,10 @@ const git = (cwd: string, ...args: string[]) =>
   Bun.spawnSync(['git', '-C', cwd, ...args], { stdout: 'pipe', stderr: 'pipe' });
 
 /**
- * Project P's settings; its Warden is its one region, `convention` (role, agent id and domain). The
- * regions are written by `regionProject`; settings declare no Wardens.
+ * Project P's settings; its Warden is its one region, `convention` (its domain; its role and agent
+ * id are `region:convention`). The regions are written by `regionProject`; settings declare no Wardens.
  */
+const WARDEN_ROLE = regionRoleId('convention');
 function config(project: string, feedback?: FoundryConfig['feedback']): FoundryConfig {
   const c = starterConfig('central', 'central-model');
   c.projects.P = { id: 'P', path: project };
@@ -175,7 +177,7 @@ test("routing maps Cartographer domains to Warden roles, and weak routing goes t
   expect(
     await route({ layers: [], domains: ['convention'], confidence: 0.9, source: 'model' }),
   ).toMatchObject({
-    roles: ['convention'],
+    roles: [WARDEN_ROLE],
     slot: 'instructions',
     level: 'project-personal',
   });
@@ -207,6 +209,10 @@ test('role files resolve per rung; personal repo files are kept out of git', () 
   const roots = { home: join(root, 'home'), project, org: root };
   expect(roleFilePath('computer', 'convention', 'instructions', roots)).toBe(
     join(root, 'home', '.foundry/roles/convention/instructions.md'),
+  );
+  // A namespaced role's files nest by namespace.
+  expect(roleFilePath('computer', WARDEN_ROLE, 'instructions', roots)).toBe(
+    join(root, 'home', '.foundry/roles/region/convention/instructions.md'),
   );
   expect(roleFilePath('project-personal', 'main', 'domainKnowledge', roots)).toBe(
     join(project, '.foundry/roles/main/domainKnowledge.local.md'),
@@ -290,7 +296,7 @@ test('a detected correction is captured, routed and tuned without holding the tu
     category: 'approach',
   });
   expect(item?.detection?.kind).toBe('repeat');
-  expect(item?.route).toMatchObject({ roles: ['convention'], level: 'org-personal' });
+  expect(item?.route).toMatchObject({ roles: [WARDEN_ROLE], level: 'org-personal' });
   // Every step is a journal row, and a fresh fold over them is the same item.
   const phases = store.feedbackPhases({ projectId: 'P' }).map((p) => p.phase);
   expect(phases).toEqual(['feedback-capture', 'feedback-route']);
@@ -307,9 +313,9 @@ test('apply writes the rule to the routed Warden, invalidates its layers, and un
   const [item] = service.lifecycle.items;
   expect(item?.status).toBe('applied');
   const change = item!.changes[0]!;
-  expect(change.path).toBe(join(root, '.foundry/roles/convention/instructions.local.md'));
+  expect(change.path).toBe(join(root, '.foundry/roles/region/convention/instructions.local.md'));
   expect(readFileSync(change.path, 'utf8')).toContain(`${RULE} ${ruleMarker(item!.id)}`);
-  expect(invalidated).toEqual(['convention']);
+  expect(invalidated).toEqual([WARDEN_ROLE]);
 
   // Use: a later advice call whose Warden segments carry the rule counts as exposure.
   store.appendPhase(thread, {
@@ -329,7 +335,7 @@ test('apply writes the rule to the routed Warden, invalidates its layers, and un
     },
   });
   expect(service.uses(item!.id)).toMatchObject([
-    { threadId: 't1', turnId: 'turn-2', phase: 'advice', roles: ['convention'] },
+    { threadId: 't1', turnId: 'turn-2', phase: 'advice', roles: [WARDEN_ROLE] },
   ]);
 
   service.undo(item!.id, change.changeId);
@@ -352,7 +358,9 @@ test('edit replaces the statement and level before applying; committed levels ar
   await settle();
   const [item] = service.lifecycle.items;
   expect(item?.statement).toBe('Never ask before merging green agentic changes.');
-  expect(item?.changes[0]?.path).toBe(join(home, '.foundry/roles/convention/instructions.md'));
+  expect(item?.changes[0]?.path).toBe(
+    join(home, '.foundry/roles/region/convention/instructions.md'),
+  );
 });
 
 test('blocking tuning holds the turn until answered, and times out to deferred', async () => {

@@ -51,6 +51,7 @@ import {
   resolveInstructionLadder,
   validateCompositionSettings,
 } from '../prompts/instruction-settings';
+import { roleNameIn, roleNamespace } from '../prompts/role-namespace';
 import {
   type KingdomAccessSource,
   validateKingdomAccess,
@@ -1325,11 +1326,16 @@ export function validateConfig(config: FoundryConfig): void {
       ([pid, project]) => [`projects.${pid}.agents`, project?.agents] as const,
     ),
   ] as const)
-    for (const id of Object.keys(agents ?? {}))
+    for (const id of Object.keys(agents ?? {})) {
       if (id === MAIN_ROLE || isThreadRole(config.composition, id))
         throw Error(
           `${owner}.${id}: "${id}" is a thread role's composition role id (or main's); rename the agent`,
         );
+      if (roleNameIn(roleNamespace.region, id) !== undefined)
+        throw Error(
+          `${owner}.${id}: the ${roleNamespace.region}: prefix names a region Warden, which a project's regions generate; rename the agent`,
+        );
+    }
   for (const [id, layer] of Object.entries(config.layers ?? {}))
     validateLayerDefinition('global layers', id, layer);
   for (const [pid, project] of Object.entries(config.projects ?? {}))

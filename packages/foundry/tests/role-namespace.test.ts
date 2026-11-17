@@ -1,0 +1,133 @@
+/**
+ * @atlas
+ * @kind test
+ * @partOf feature:composition, feature:wardens
+ */
+import { afterEach, expect, test } from 'bun:test';
+import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join, resolve } from 'node:path';
+import { roleDirectory } from '@inixiative/foundry-core';
+import { configuredExperts } from '../src/agents/configured-experts';
+import { regionRoleId } from '../src/agents/region-roster';
+import { roleFilePath } from '../src/feedback/apply';
+import {
+  ASSISTANT_ROLE,
+  CODER_ROLE,
+  FEEDBACK_ROLE,
+  FORGE_MASTER_ROLE,
+  MAIN_ROLE,
+} from '../src/prompts/instruction-settings';
+import { isRoleId, roleIdIn, roleNameIn, roleNamespace } from '../src/prompts/role-namespace';
+import { type FoundryConfig, starterConfig, validateConfig } from '../src/viewer/config';
+import { resolveProjectView } from '../src/viewer/config-resolve';
+
+const dirs: string[] = [];
+afterEach(() => {
+  for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
+
+const write = (path: string, text: string) => {
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, text);
+};
+
+function projectWithRegions(ids: readonly string[]): string {
+  const project = mkdtempSync(join(tmpdir(), 'role-namespace-'));
+  dirs.push(project);
+  write(join(project, '.foundry', 'project.json'), JSON.stringify({ chorus: { enabled: true } }));
+  for (const id of ids) {
+    const region = join(project, '.foundry', 'regions', id);
+    write(
+      join(region, 'region.json'),
+      JSON.stringify({ id, title: id, routing: `Is this about ${id}?`, concepts: [id] }),
+    );
+    write(join(region, 'knowledge.md'), `# ${id}\n\nKNOWLEDGE_${id}\n`);
+    write(join(region, 'recognise.md'), `# ${id}\n\nRECOGNISE_${id}\n`);
+  }
+  return project;
+}
+
+function config(project: string): FoundryConfig {
+  const c = starterConfig('central', 'central-model');
+  c.layers = {};
+  c.sources = {};
+  c.projects.P = { id: 'P', path: project };
+  return c;
+}
+
+test('a role id is built from a namespace and read back by it', () => {
+  const id = roleIdIn(roleNamespace.region, 'lens-model');
+  expect(id).toBe('region:lens-model');
+  expect(regionRoleId('lens-model')).toBe(id);
+  expect(roleNameIn(roleNamespace.region, id)).toBe('lens-model');
+  expect(roleNameIn(roleNamespace.region, 'lens-model')).toBeUndefined();
+  expect(isRoleId(id)).toBe(true);
+  expect(isRoleId('main')).toBe(true);
+  for (const bad of ['region:', ':lens', 'region:../escape', 'region:a/b', '../escape', ''])
+    expect(isRoleId(bad)).toBe(false);
+});
+
+test("a namespaced role's files nest by namespace on every rung", () => {
+  expect(roleDirectory('region:lens-model')).toBe('region/lens-model');
+  expect(roleDirectory('main')).toBe('main');
+  const roots = { home: '/home/u', project: '/work/org/repo' };
+  expect(roleFilePath('project', 'region:lens-model', 'instructions', roots)).toBe(
+    '/work/org/repo/.foundry/roles/region/lens-model/instructions.md',
+  );
+  expect(roleFilePath('computer', 'region:lens-model', 'domainKnowledge', roots)).toBe(
+    '/home/u/.foundry/roles/region/lens-model/domainKnowledge.md',
+  );
+  expect(() => roleFilePath('project', 'region:../escape', 'instructions', roots)).toThrow(
+    'Invalid role id',
+  );
+});
+
+test('a region may carry the name of any built-in role: its Warden is its own role', () => {
+  // Foundry's own region `feedback` took the Feedback scope role's id while both were bare names,
+  // and no Foundry with that project could boot (2026-11-16).
+  const names = [
+    MAIN_ROLE,
+    CODER_ROLE,
+    ASSISTANT_ROLE,
+    FORGE_MASTER_ROLE,
+    FEEDBACK_ROLE,
+    'cartographer',
+  ];
+  const c = config(projectWithRegions(names));
+  validateConfig(c);
+  const view = resolveProjectView(c, 'P')!;
+  expect(view.chorus.on).toBe(true);
+  const experts = configuredExperts(view.config).experts;
+  expect(experts.map((e) => e.domain).sort()).toEqual([...names].sort());
+  for (const expert of experts) {
+    expect(expert.agentId).toBe(regionRoleId(expert.domain));
+    expect(names).not.toContain(expert.agentId);
+  }
+});
+
+test("a region Warden's role is never a thread role", () => {
+  const c = config(projectWithRegions(['lens-model']));
+  c.composition = { roles: { [regionRoleId('lens-model')]: { thread: { label: 'Lens' } } } };
+  expect(() => validateConfig(c)).toThrow("is a region Warden's role, never a thread role");
+});
+
+test("Foundry's own regions build a chorus: every committed region resolves to a Warden", () => {
+  const repository = resolve(import.meta.dir, '..', '..', '..');
+  const regionsDir = join(repository, '.foundry', 'regions');
+  const committed = readdirSync(regionsDir, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort();
+  expect(committed.length).toBeGreaterThan(0);
+  const c = config(repository);
+  validateConfig(c);
+  const view = resolveProjectView(c, 'P')!;
+  expect(view.chorus.reason).toBeUndefined();
+  expect(view.chorus).toMatchObject({ on: true, enabledBy: 'repository' });
+  expect(
+    configuredExperts(view.config)
+      .experts.map((e) => e.domain)
+      .sort(),
+  ).toEqual(committed);
+});

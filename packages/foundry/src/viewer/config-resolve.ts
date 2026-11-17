@@ -22,7 +22,7 @@ import {
 import { WARDEN_BRIEF_NODES, wardenBriefNodes, wardenComposition } from '../agents/warden-brief';
 import { defaultStages, type StageConfig, validateStages } from '../classify';
 import { writeFileAtomic } from '../client/private-file';
-import { effectiveThreadRole, isThreadRole, MAIN_ROLE } from '../prompts/instruction-settings';
+import { effectiveThreadRole } from '../prompts/instruction-settings';
 import {
   type AgentExtension,
   type AgentSettingsConfig,
@@ -1286,24 +1286,12 @@ function buildProjectView(
   const entries = Object.entries(project.agents ?? {});
   if (chorus.on) {
     for (const { agent, sources, region } of generated) {
-      if (config.agents[agent.id])
-        throw new Error(
-          `[config] region ${region.id} (${region.path}) has the id of global agent ${JSON.stringify(agent.id)}`,
-        );
-      // The main threads' and the Cartographer's composition roles are not a Warden's to take (a
-      // configured cartographer agent's id is a global agent's, refused above).
-      if (
-        agent.id === MAIN_ROLE ||
-        agent.id === 'cartographer' ||
-        isThreadRole(resolved.composition, agent.id)
-      )
-        throw new Error(
-          `[config] region ${region.id} (${region.path}) has the reserved role id ${JSON.stringify(agent.id)} (a main thread's, a thread role's or the Cartographer's composition role); rename the region`,
-        );
+      // A Warden's id is in the region namespace, which no written agent may use (`validateConfig`),
+      // so only its sources can meet a written one.
       const taken = sources.find((source) => resolved.sources[source.id]);
-      if (project.agents?.[agent.id] || taken)
+      if (taken)
         throw new Error(
-          `[config] region ${region.id} (${region.path}) collides with project agent or source ${JSON.stringify(taken?.id ?? agent.id)}`,
+          `[config] region ${region.id} (${region.path}) collides with source ${JSON.stringify(taken.id)}`,
         );
       // A Warden is a decision role: it runs on the project's decision provider and model, never on the
       // main-thread default (an agent with no model resolves to defaults.model, the executor's).
