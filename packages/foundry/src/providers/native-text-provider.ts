@@ -5,6 +5,7 @@
  */
 import { mkdirSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
+import type { DecisionFailure, InSessionCapacity } from '@inixiative/agent-session';
 import {
   type CompletionOpts,
   type CompletionResult,
@@ -70,6 +71,10 @@ export interface NativeTextCall {
     | 'rate-limited'
     | 'native-failed'
     | 'process-lost';
+  /** The runtime's own refusal or failure code, as it gave it (primed decisions). */
+  reason?: DecisionFailure;
+  /** A project host's capacity as the call went out (agent-session `InSessionCapacity`). */
+  capacity?: InSessionCapacity;
   /** "primed": no per-call process; the warm host proves settlement (turn terminal or process exit). */
   transport?: 'primed';
   /** Primed calls: the native turn reached a terminal or its process exit was observed. */

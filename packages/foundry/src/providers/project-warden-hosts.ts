@@ -376,7 +376,7 @@ export class ProjectWardenHosts {
           /* observers only */
         }
         if (event.type === 'process-recycled' && entry.live?.host === host) {
-          if (/orphaned/.test(event.reason)) this._replace(projectId, 'orphaned out');
+          if (host.snapshot().capacity?.orphanedOut) this._replace(projectId, 'orphaned out');
           else entry.recycles.push(Date.now());
         }
       },

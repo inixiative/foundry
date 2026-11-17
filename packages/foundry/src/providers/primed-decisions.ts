@@ -511,16 +511,11 @@ export function createPrimedDecisionHost(config: PrimedDecisionHostConfig) {
     }
   };
 
-  const failure = (
-    error: DecisionError,
-    heldOnly: boolean,
-  ): NonNullable<NativeTextCall['failure']> =>
+  const failure = (error: DecisionError): NonNullable<NativeTextCall['failure']> =>
     error.dispatch === 'not-dispatched'
-      ? error.reason === 'rate-limited'
-        ? 'rate-limited'
-        : heldOnly && error.reason === 'busy'
-          ? 'not-held'
-          : 'not-admitted'
+      ? error.reason === 'rate-limited' || error.reason === 'not-held'
+        ? error.reason
+        : 'not-admitted'
       : error.reason === 'rate-limited'
         ? 'rate-limited'
         : error.reason === 'timeout' || error.reason === 'aborted'
@@ -606,12 +601,17 @@ export function createPrimedDecisionHost(config: PrimedDecisionHostConfig) {
           const projectHost = projectHostTarget(config.projectHosts, sessionKey, opts);
           heldOnly = !!opts.heldOnly && !!projectHost;
           if (projectHost === 'starting')
-            throw new DecisionError('Project Warden host starting', 'busy', 'not-dispatched', true);
-          if (!projectHost && (opts as AdmittedDecisionOpts).admittedToProjectHost) {
-            heldOnly = true;
-            throw new DecisionError('Project Warden host gone', 'busy', 'not-dispatched', true);
-          }
+            throw new DecisionError(
+              'Project Warden host starting',
+              heldOnly ? 'not-held' : 'busy',
+              'not-dispatched',
+              true,
+            );
+          if (!projectHost && (opts as AdmittedDecisionOpts).admittedToProjectHost)
+            throw new DecisionError('Project Warden host gone', 'not-held', 'not-dispatched', true);
           if (projectHost) target = projectHost;
+          const { capacity } = target.snapshot();
+          if (capacity) call.capacity = capacity;
           result = await target.decide(spec, {
             ...(projectHost && spec.context ? { standby: '' } : {}),
             ...(heldOnly ? { heldOnly: true } : {}),
@@ -675,7 +675,8 @@ export function createPrimedDecisionHost(config: PrimedDecisionHostConfig) {
           if (error instanceof DecisionError) {
             failedHedge = !!error.hedged;
             call.settled = error.settled;
-            call.failure = failure(error, heldOnly);
+            call.reason = error.reason;
+            call.failure = failure(error);
             call.deadline = error.reason === 'timeout';
             call.release = error.settled ? 'released' : 'unknown';
             if (admission)
