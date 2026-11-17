@@ -25,6 +25,7 @@ import { ConfigStore, starterConfig } from '../src/viewer/config';
 import { createViewer } from '../src/viewer/server';
 import { claudeCli } from './helpers/claude-cli';
 import { appServerTransport } from './helpers/subscription-transport';
+import { until } from './helpers/until';
 
 // A thread's main native session comes back when it is gone (docs/reference/CONVERSATIONS.md §4.2,
 // revival; Aron 2026-10-20): its process died, the daemon restarted, or its transcript is gone. The
@@ -383,9 +384,11 @@ test('archive, then a message in the same daemon run, on the real provider: the 
     });
   expect((await say('turn_one', 'before archive')).status).toBe(200);
   expect(cli.launches).toHaveLength(1);
-  await Bun.sleep(20);
+  await until(
+    async () => !!(await adapter.getExternalSessionId('thread_same_run')),
+    'native session bound',
+  );
   const binding = await adapter.getExternalSessionId('thread_same_run');
-  expect(binding).toBeTruthy();
   const archived = viewer.directory.get('thread_same_run')!;
   archived.archive();
   viewer.localStore!.saveThread(archived);
