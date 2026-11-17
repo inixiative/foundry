@@ -803,7 +803,13 @@ export class LocalSessionStore {
   /** Phase records of a thread, oldest first: by turn, by dispatch, or only those with no turn correlation. */
   phaseHistory(
     threadId: string,
-    opts: { turnId?: string; dispatchId?: string; uncorrelated?: boolean; limit?: number } = {},
+    opts: {
+      turnId?: string;
+      dispatchId?: string;
+      phase?: string;
+      uncorrelated?: boolean;
+      limit?: number;
+    } = {},
   ): StoredPhase[] {
     const limit = opts.limit ?? 500;
     if (!Number.isInteger(limit) || limit < 1 || limit > 5000)
@@ -817,6 +823,10 @@ export class LocalSessionStore {
     if (opts.dispatchId !== undefined) {
       where.push('dispatch_id=?');
       params.push(opts.dispatchId);
+    }
+    if (opts.phase !== undefined) {
+      where.push('phase=?');
+      params.push(opts.phase);
     }
     if (opts.uncorrelated) where.push('turn_id IS NULL');
     const rows = this.query(

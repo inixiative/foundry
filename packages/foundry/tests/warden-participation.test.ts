@@ -602,7 +602,7 @@ test('a Warden the decision queue refused for capacity is excluded, not an error
     llm: {
       id: 'queue',
       complete: async (messages) => {
-        throw text(messages).includes('Tidy the Prisma schema') ? refused : loggedOut;
+        throw text(messages).includes('## Message\nTidy the Prisma schema') ? refused : loggedOut;
       },
     },
   });

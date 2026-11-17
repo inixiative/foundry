@@ -15,10 +15,14 @@ import {
   type OwnedAdmissionInspection,
   sameNativeOwner,
 } from '@inixiative/foundry-core';
-import { DECISION_CALL_TIMEOUT_MAX_MS } from './decision-budget';
+import { DECISION_CALL_TIMEOUT_MAX_MS, NOT_HELD_REFUSAL } from './decision-budget';
 import { DECISION_PRIORITY } from './decision-priority';
 import type { NativeTextCall, NativeTextConfig } from './native-text-provider';
-import { createPrimedDecisionHost, projectHostTarget } from './primed-decisions';
+import {
+  type AdmittedDecisionOpts,
+  createPrimedDecisionHost,
+  projectHostTarget,
+} from './primed-decisions';
 import type { ProjectWardenHosts } from './project-warden-hosts';
 
 export interface SubscriptionDecisionConfig extends Omit<NativeTextConfig, 'runId' | 'maxCalls'> {
@@ -303,8 +307,9 @@ export function buildSubscriptionDecisions(
         callTimeoutMs: pending.deadline - Date.now(),
       });
       running.add(run);
-      const result = await run.provider.complete(pending.messages, {
+      const callOpts: AdmittedDecisionOpts = {
         ...opts,
+        ...(pending.unbounded ? { admittedToProjectHost: true } : {}),
         cwd: undefined,
         threadId: undefined,
         timeout: undefined,
@@ -357,7 +362,8 @@ export function buildSubscriptionDecisions(
               throw Error('Subscription observation owner mismatch');
           },
         },
-      });
+      };
+      const result = await run.provider.complete(pending.messages, callOpts);
       check(pending);
       const call = run.snapshot().calls[0];
       // Per-call processes prove release by their exit; a primed call by its settled turn on the warm host.
@@ -413,11 +419,15 @@ export function buildSubscriptionDecisions(
             call.statusProcessExit !== 'pending' &&
             (call.processExit === 'not-started' || call.release === 'released'));
       const limited = settled && call?.failure === 'rate-limited';
-      const error = Error(
-        limited
-          ? 'Subscription decision rate limited; no fallback or retry'
-          : 'Subscription decision failed; no fallback or retry',
-      );
+      // A Warden the project host holds no warm member for is skipped for capacity, not failed.
+      const error =
+        settled && call?.failure === 'not-held'
+          ? reject(NOT_HELD_REFUSAL, true)
+          : Error(
+              limited
+                ? 'Subscription decision rate limited; no fallback or retry'
+                : 'Subscription decision failed; no fallback or retry',
+            );
       if (limited) {
         backoffUntil = Math.max(backoffUntil, Date.now() + backoffMs);
         pressure({ kind: 'rate-limited', until: backoffUntil, backoffMs });
@@ -445,7 +455,14 @@ export function buildSubscriptionDecisions(
       // deadline whose interrupt was acknowledged) leaves nothing owned either. Anything else closes admission.
       const settledFailures =
         call?.transport === 'primed'
-          ? ['not-admitted', 'rate-limited', 'deadline', 'native-failed', 'process-lost']
+          ? [
+              'not-admitted',
+              'not-held',
+              'rate-limited',
+              'deadline',
+              'native-failed',
+              'process-lost',
+            ]
           : ['not-admitted', 'rate-limited'];
       if (!settled || (call?.failure && !settledFailures.includes(call.failure)))
         close(

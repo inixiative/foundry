@@ -175,15 +175,17 @@ export function isReviewSession(sessionKey: string): boolean {
 
 /**
  * The project host serving this decision, when it is a Warden's advice and its project's host serves.
- * A later classify stage is not: the host holds one subagent per Warden, on the decision model (a
- * stage on another model, held beside it, is not built). A project host serves advice only (the
+ * A held-only call (user-message advice, which catches up) gets `starting` while that host is on its
+ * way, so it is skipped, never started cold; any other call goes to primed then. A later classify
+ * stage is not served there: the host holds one subagent per Warden, on the decision model (a stage
+ * on another model, held beside it, is not built). A project host serves advice only (the
  * pre-hook): a guard (its call's priority) and a review stay primed.
  */
 export function projectHostTarget(
   projectHosts: ProjectWardenHosts | undefined,
   sessionKey: string | undefined,
-  opts: Pick<CompletionOpts, 'priority'> = {},
-): ClaudeInSessionDecisions | undefined {
+  opts: Pick<CompletionOpts, 'priority' | 'heldOnly'> = {},
+): ClaudeInSessionDecisions | 'starting' | undefined {
   if (
     !projectHosts ||
     !sessionKey ||
@@ -194,8 +196,12 @@ export function projectHostTarget(
   )
     return undefined;
   const thread = decisionThread(sessionKey);
-  return thread ? projectHosts.serving(thread) : undefined;
+  const serving = thread ? projectHosts.serving(thread) : undefined;
+  return serving === 'starting' && !opts.heldOnly ? undefined : serving;
 }
+
+/** A decision call as the subscription queue hands it on: admitted outside the shared slots, because a project host served it. */
+export type AdmittedDecisionOpts = CompletionOpts & { readonly admittedToProjectHost?: boolean };
 
 /**
  * Launch flags of a project host (beside `--setting-sources ''`), as bare as a subscription launch
@@ -505,11 +511,16 @@ export function createPrimedDecisionHost(config: PrimedDecisionHostConfig) {
     }
   };
 
-  const failure = (error: DecisionError): NonNullable<NativeTextCall['failure']> =>
+  const failure = (
+    error: DecisionError,
+    heldOnly: boolean,
+  ): NonNullable<NativeTextCall['failure']> =>
     error.dispatch === 'not-dispatched'
       ? error.reason === 'rate-limited'
         ? 'rate-limited'
-        : 'not-admitted'
+        : heldOnly && error.reason === 'busy'
+          ? 'not-held'
+          : 'not-admitted'
       : error.reason === 'rate-limited'
         ? 'rate-limited'
         : error.reason === 'timeout' || error.reason === 'aborted'
@@ -580,7 +591,8 @@ export function createPrimedDecisionHost(config: PrimedDecisionHostConfig) {
           target: PrimedSessions = host,
           admission: NativeEvidence | undefined,
           result: DecisionResult | undefined,
-          failedHedge = false;
+          failedHedge = false,
+          heldOnly = false;
         try {
           ({ spec, input } = primedRequest(messages, opts, sessionKey));
           await opts.nativeObservation?.preflight?.(owner);
@@ -588,10 +600,21 @@ export function createPrimedDecisionHost(config: PrimedDecisionHostConfig) {
           if (closed) throw Error('Decision admission closed');
           // A project host's spares hold no thread state (every thread of the project shares them):
           // they split at the stable prefix, and the thread section rides with the moment.
+          // Held-only advice (a user message's, which catches up) is served warm or skipped: a Warden
+          // with no held spare, or a host still starting, is refused unsent. A call admitted outside
+          // the shared slots for a host that has since gone is refused unsent too, never run unbounded.
           const projectHost = projectHostTarget(config.projectHosts, sessionKey, opts);
+          heldOnly = !!opts.heldOnly && !!projectHost;
+          if (projectHost === 'starting')
+            throw new DecisionError('Project Warden host starting', 'busy', 'not-dispatched', true);
+          if (!projectHost && (opts as AdmittedDecisionOpts).admittedToProjectHost) {
+            heldOnly = true;
+            throw new DecisionError('Project Warden host gone', 'busy', 'not-dispatched', true);
+          }
           if (projectHost) target = projectHost;
           result = await target.decide(spec, {
             ...(projectHost && spec.context ? { standby: '' } : {}),
+            ...(heldOnly ? { heldOnly: true } : {}),
             input,
             timeoutMs: Math.min(opts.timeout ?? timeout, timeout),
             signal: abort.signal,
@@ -652,7 +675,7 @@ export function createPrimedDecisionHost(config: PrimedDecisionHostConfig) {
           if (error instanceof DecisionError) {
             failedHedge = !!error.hedged;
             call.settled = error.settled;
-            call.failure = failure(error);
+            call.failure = failure(error, heldOnly);
             call.deadline = error.reason === 'timeout';
             call.release = error.settled ? 'released' : 'unknown';
             if (admission)

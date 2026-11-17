@@ -410,10 +410,11 @@ export interface ThreadRuntimeDeps {
    */
   wardenRoot?: (projectId: string | undefined) => string | undefined;
   /**
-   * Project Warden hosts: resolves once the project's host serves (true), or when none is on its way
-   * (false). A turn's Wardens are not warm while their host starts; the wait is bounded by `warmWithin`.
+   * Project Warden hosts: a turn of the project marks it active (opening its host when none is open).
+   * The turn never waits for the host: a Warden it does not hold warm yet is skipped and catches up
+   * on a later message.
    */
-  wardenHostReady?: (projectId: string) => Promise<boolean>;
+  activateWardenHost?: (projectId: string) => void;
   /** Runtime config; agent kinds decide which dispatches get pre-message routing. */
   config: FoundryConfig;
   /** How long a call waits for the chorus (a handoff's brief, a milestone's advice) before it runs without it (`CHORUS_AT_CALL_DEADLINE_MS`). */
@@ -1473,22 +1474,15 @@ class ThreadRuntimeImpl implements ThreadRuntime {
       // only the global template. Wardens never block: a warm that is late or fails is recorded and
       // the turn goes on (that Warden advises from what it holds, or is skipped with a cold cache).
       const experts = domains.filter((d) => d.expert);
-      // A starting project host: advice waits for it rather than fanning out to primed Wardens.
       const projectId = thread.meta.projectId as string | undefined;
-      const hostReady = experts.length && projectId ? deps.wardenHostReady : undefined;
-      const [warmShortfalls, hostShortfalls] = await Promise.all([
-        flow.warmWithin(
-          experts.map((d) => ({
-            id: d.domain,
-            warm: () => domainLibrarians.get(d.domain)!.warm(),
-          })),
-        ),
-        // The host is one wait, not a shortfall of each Warden's cache: past it, primed serves.
-        hostReady
-          ? flow.warmWithin([{ id: 'project Warden host', warm: () => hostReady(projectId!) }])
-          : [],
-      ]);
-      for (const shortfall of [...warmShortfalls, ...hostShortfalls])
+      if (experts.length && projectId) deps.activateWardenHost?.(projectId);
+      const warmShortfalls = await flow.warmWithin(
+        experts.map((d) => ({
+          id: d.domain,
+          warm: () => domainLibrarians.get(d.domain)!.warm(),
+        })),
+      );
+      for (const shortfall of warmShortfalls)
         warn(
           `  [flow:${thread.id}] ${shortfall.id} not warm (${shortfall.outcome}): ${shortfall.reason}`,
         );
@@ -1685,6 +1679,8 @@ class ThreadRuntimeImpl implements ThreadRuntime {
                   ...(c.repairs?.length ? { repairs: c.repairs } : {}),
                   ...(c.classified ? { classified: c.classified } : {}),
                   ...(c.stageRequests ? { stageRequests: c.stageRequests } : {}),
+                  ...(c.catchesUp ? { catchesUp: true } : {}),
+                  ...(c.earlier ? { earlier: c.earlier } : {}),
                 })),
               // A Warden the pre-filter ruled out is one row with its score: auditable later.
               ...(plan.prefilter ? { prefilter: plan.prefilter } : {}),
