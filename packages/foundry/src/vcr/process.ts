@@ -313,9 +313,18 @@ const hookCallbackIds = (value: JsonRpc | undefined): string[] => {
       ?.flatMap((group) => [...group.matchAll(/"([^"]+)"/g)].map((m) => m[1]!).slice(1)) ?? []
   );
 };
-/** A stdin line as compared on replay: request and hook callback ids are the client's choice, everything else must match. */
+/** The uuid a Claude user message carries: the client's choice, echoed back in `command_lifecycle` frames. */
+const promptUuid = (value: JsonRpc | undefined) => {
+  const uuid = (value as { uuid?: unknown } | undefined)?.uuid;
+  return value?.type === 'user' && typeof uuid === 'string' ? uuid : undefined;
+};
+/** A stdin line as compared on replay: request, hook callback and prompt ids are the client's choice, everything else must match. */
 const comparable = (line: string) => {
   const value = json(line);
+  if (value && promptUuid(value) !== undefined) {
+    const { uuid: _uuid, ...rest } = value as Record<string, unknown>;
+    return JSON.stringify(rest);
+  }
   if (!value || clientRequestId(value) === undefined) return line.trim();
   const { id: _id, request_id: _requestId, ...rest } = value as Record<string, unknown>;
   let text = JSON.stringify(rest);
@@ -364,6 +373,7 @@ function replay(
   // JSON-RPC request ids the client chose live vs now, so replayed responses answer this run's requests.
   const ids = new Map<string, string | number>();
   const hooks = new Map<string, string>();
+  const prompts = new Map<string, string>();
   const close = (code: number) => {
     if (closed) return;
     closed = true;
@@ -380,6 +390,10 @@ function replay(
   const remap = (line: string) => {
     const value = json(line);
     if (!value) return line;
+    // A Claude command lifecycle frame names the prompt uuid this run wrote.
+    const command = (value as { command_uuid?: unknown }).command_uuid;
+    if (value.type === 'command_lifecycle' && typeof command === 'string' && prompts.has(command))
+      return JSON.stringify({ ...value, command_uuid: prompts.get(command) });
     // A Claude hook callback names the callback id this run registered.
     const callback = (value as { request?: { subtype?: string; callback_id?: string } }).request;
     if (
@@ -457,6 +471,10 @@ function replay(
             currentId = clientRequestId(now);
           if (recordedId !== undefined && currentId !== undefined)
             ids.set(String(recordedId), currentId);
+          const recordedPrompt = promptUuid(live),
+            currentPrompt = promptUuid(now);
+          if (recordedPrompt !== undefined && currentPrompt !== undefined)
+            prompts.set(recordedPrompt, currentPrompt);
           const recordedHooks = hookCallbackIds(live),
             currentHooks = hookCallbackIds(now);
           recordedHooks.forEach((id, index) => {

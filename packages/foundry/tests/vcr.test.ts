@@ -406,6 +406,58 @@ describe('process cassettes', () => {
     );
   });
 
+  it('replay maps the uuid a Claude prompt carries to this run’s, in its lifecycle frames too', async () => {
+    const prompt = (uuid: string, text = 'hi') =>
+      JSON.stringify({
+        type: 'user',
+        message: { role: 'user', content: text },
+        uuid,
+        parent_tool_use_id: null,
+      });
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      join(dir, 'session.prompt.json'),
+      JSON.stringify({
+        version: '1',
+        status: 0,
+        body: {
+          kind: 'process',
+          argv: ['claude'],
+          cwd: '{{cwd}}',
+          stdin: [prompt('recorded-uuid')],
+          stdinEnded: false,
+          frames: [
+            {
+              stream: 'stdout',
+              after: 1,
+              data: '{"type":"command_lifecycle","command_uuid":"recorded-uuid","state":"started"}',
+            },
+          ],
+          exit: { after: 2, code: 0, killed: false },
+        },
+      }),
+    );
+    setMode('replay');
+    const cassettes = () =>
+      new ProcessCassettes(
+        new VCR(dir, { service: 'echo', version: () => '1' }).queue('session', 'prompt'),
+        'session',
+      );
+    const child = cassettes().spawn(['claude'], { cwd: dir, env: {} });
+    child.stdin.write(`${prompt('live-uuid')}\n`);
+    const reader = child.stdout.getReader();
+    const frame = JSON.parse(new TextDecoder().decode((await reader.read()).value));
+    expect(frame).toEqual({
+      type: 'command_lifecycle',
+      command_uuid: 'live-uuid',
+      state: 'started',
+    });
+    const other = cassettes().spawn(['claude'], { cwd: dir, env: {} });
+    expect(() => other.stdin.write(`${prompt('live-uuid', 'bye')}\n`)).toThrow(
+      'stdin line 1 differs from the recording (user vs user)',
+    );
+  });
+
   it('replay compares whole requests, plain text included, and refuses to end short', async () => {
     const cassette = (name: string, stdin: string[]) =>
       writeFileSync(
