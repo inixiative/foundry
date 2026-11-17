@@ -45,7 +45,15 @@ export type StreamEvent =
       /** The thread the error is about, when it is one thread's (the viewer shows it on that thread). */
       threadId?: string;
     }
-  | ({ kind: 'activity'; timestamp: number } & SystemActivity);
+  | ({
+      kind: 'activity';
+      timestamp: number;
+      /**
+       * When this key's current outage began (degraded or failed since then without recovering);
+       * absent when it is not in an outage. The viewer advises each thread of an outage once.
+       */
+      outageStartedAt?: number;
+    } & SystemActivity);
 
 export type ActivityEvent = Extract<StreamEvent, { kind: 'activity' }>;
 
@@ -68,6 +76,12 @@ export interface SystemActivity {
   readonly summary: string;
   /** The technical line, for the expanded log. */
   readonly detail: string;
+}
+
+/** Degraded or failed and not yet past its `until`: the key is in an outage at `now`. */
+function isOutage(activity: ActivityEvent, now: number): boolean {
+  if (activity.state !== 'degraded' && activity.state !== 'failed') return false;
+  return activity.until === undefined || now < activity.until;
 }
 
 /**
@@ -93,6 +107,15 @@ export class EventStream {
   /** Push an event into the stream. */
   push(event: StreamEvent): void {
     if (event.kind === 'activity') {
+      const before = this._activities.get(event.key);
+      if (isOutage(event, event.timestamp))
+        event = {
+          ...event,
+          outageStartedAt:
+            before && isOutage(before, event.timestamp)
+              ? (before.outageStartedAt ?? before.timestamp)
+              : event.timestamp,
+        };
       this._activities.delete(event.key);
       this._activities.set(event.key, event);
     }

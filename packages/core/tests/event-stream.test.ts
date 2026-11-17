@@ -176,4 +176,34 @@ describe('EventStream', () => {
     stream.clear();
     expect(stream.activities()).toEqual([]);
   });
+  test('an outage keeps the time it began until the key recovers; a new outage starts again', () => {
+    const stream = new EventStream();
+    const seen: StreamEvent[] = [];
+    stream.subscribe((event) => seen.push(event));
+    const base = { source: 's', summary: 'x', detail: 'd', key: 'a' };
+    const at = (
+      timestamp: number,
+      state: 'working' | 'ready' | 'degraded' | 'failed',
+      until?: number,
+    ) => stream.push({ kind: 'activity', ...base, state, timestamp, ...(until ? { until } : {}) });
+    const started = () => {
+      const last = seen.at(-1);
+      return last?.kind === 'activity' ? last.outageStartedAt : 'not activity';
+    };
+    at(1, 'working');
+    expect(started()).toBeUndefined();
+    at(2, 'degraded');
+    expect(started()).toBe(2);
+    at(3, 'failed');
+    expect(started()).toBe(2);
+    at(4, 'ready');
+    expect(started()).toBeUndefined();
+    at(5, 'failed');
+    expect(started()).toBe(5);
+    expect(stream.activities()[0]?.outageStartedAt).toBe(5);
+    at(6, 'degraded', 7);
+    expect(started()).toBe(5);
+    at(9, 'degraded', 10);
+    expect(started()).toBe(9);
+  });
 });

@@ -6,7 +6,13 @@ import {
   primedEventActivity,
   projectHostActivity,
 } from '../src/viewer/system-activity';
-import { elapsedLabel, READY_SHOWN_MS, shows, stripView } from '../src/viewer/ui/system-strip.js';
+import {
+  advised,
+  elapsedLabel,
+  READY_SHOWN_MS,
+  shows,
+  stripView,
+} from '../src/viewer/ui/system-strip.js';
 
 const host = (over: Partial<ProjectHostState>): ProjectHostState => ({
   status: 'starting',
@@ -119,6 +125,22 @@ describe('the strip', () => {
     expect(view?.others.map((a: { state: string }) => a.state)).toEqual(['working', 'ready']);
     expect(stripView([at('idle', 0)], 1)).toBeNull();
     expect(stripView([at('working', 0)], 12_500)?.elapsed).toBe('12s');
+  });
+
+  test('an outage is advised once per thread: quiet after the person sends a message, back when new', () => {
+    const outage = { ...at('failed', 50), key: 'project-wardens:p', outageStartedAt: 40 };
+    expect(stripView([outage], 1000, undefined)?.head.key).toBe('project-wardens:p');
+    expect(stripView([outage], 1000, 30)?.head.key).toBe('project-wardens:p');
+    expect(stripView([outage], 1000, 45)).toBeNull();
+    expect(stripView([{ ...outage, outageStartedAt: 60 }], 1000, 45)?.head.key).toBe(
+      'project-wardens:p',
+    );
+    expect(advised(at('working', 10), 45)).toBe(false);
+  });
+
+  test('an outage whose fix is Restart stays until acted on', () => {
+    const stopped = { ...at('failed', 50), key: 'decisions:admission', outageStartedAt: 40 };
+    expect(stripView([stopped], 1000, 45)?.head.key).toBe('decisions:admission');
   });
 
   test('elapsed reads in seconds, then minutes', () => {

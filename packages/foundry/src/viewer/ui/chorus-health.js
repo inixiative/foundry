@@ -55,13 +55,26 @@ export function chorusNotice(chorus) {
  * The newest degraded agent turn, while it is still open (the strip's notice). A clean turn carries no
  * chorus and is passed over, so an open turn stays shown after clean ones; once the newest degraded
  * turn is asked again or dismissed, older ones are reached from their turn view.
+ *
+ * Advised once per run of degraded turns (Aron, 2026-11-17: "advise once, but not every fucking round
+ * of a thread"): a degraded turn right after another degraded turn is the same trouble, so only the
+ * first of the run shows; the later ones keep Retry in their turn view. A clean turn ends the run.
  */
 export function lastDegraded(messages) {
   const list = Array.isArray(messages) ? messages : [];
   for (let i = list.length - 1; i >= 0; i--) {
     const message = list[i];
     if (message?.actor !== 'agent' || !message.chorus) continue;
-    return chorusNotice(message.chorus)?.state === 'open' ? message : null;
+    if (chorusNotice(message.chorus)?.state !== 'open') return null;
+    return degradedTurnBefore(list, i) ? null : message;
   }
   return null;
+}
+
+/** Whether the agent turn before `index` was degraded too (asked again or dismissed included). */
+function degradedTurnBefore(list, index) {
+  for (let i = index - 1; i >= 0; i--)
+    if (list[i]?.actor === 'agent')
+      return Array.isArray(list[i].chorus?.notices) && list[i].chorus.notices.length > 0;
+  return false;
 }
