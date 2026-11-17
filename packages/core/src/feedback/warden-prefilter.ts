@@ -182,6 +182,8 @@ export function prefilterState(trigger: PrefilterTrigger, text: string, context?
     'agent-action': "The agent's actions this turn",
     'agent-plan': "The agent's plan",
     'subagent-spawn': 'The task the agent is handing to a subagent',
+    milestone: 'A milestone the agent is about to reach (a pull request, a merge, a publish, done)',
+    'hand-back': 'The message the agent handed back at the end of its turn',
     'post-turn': "The agent's finished turn",
   }[trigger];
   const moment = window(text.trim(), PREFILTER_MOMENT_CHARS);

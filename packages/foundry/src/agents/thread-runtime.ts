@@ -54,11 +54,12 @@ import {
 import { needsPlan } from '../tools/thread-record';
 import {
   briefedText,
-  HANDOFF_BRIEF_DEADLINE_MS,
+  CHORUS_AT_CALL_DEADLINE_MS,
   type HandoffCall,
   handoffMoment,
   subagentAddress,
 } from '../turns/handoff-brief';
+import { milestoneOf } from '../turns/milestones';
 import type { FoundryConfig } from '../viewer/config';
 import { projectChorus, resolveThreadView } from '../viewer/config-resolve';
 import { Cartographer, DEFAULT_ROUTE_INSTRUCTIONS } from './cartographer';
@@ -103,10 +104,16 @@ import {
   consumedNotes,
   FlowOrchestrator,
   type FlowTimingConfig,
+  type HandBackMoment,
   type HandoffMoment,
   type HydrationResult,
+  handBackNotes,
+  handBackText,
   handoffText,
   type InjectionPlan,
+  milestoneNotes,
+  milestoneRecord,
+  milestoneText,
   retryNotes,
   type WorkItemMoment,
   workItemText,
@@ -127,7 +134,7 @@ import {
 import { SCOPE_BRIEF_LAYER, scopeBrief } from './scope-roles';
 import { hasWorkContent } from './thread-namer';
 import type { AdviceTrigger, GuardMode, TriggerPoint } from './warden-triggers';
-import { type ConsumedMatcher, consumedMatcher, workItemOf } from './work-items';
+import { type ConsumedMatcher, clipMomentText, consumedMatcher, workItemOf } from './work-items';
 
 // ---------------------------------------------------------------------------
 // Session identity
@@ -409,8 +416,8 @@ export interface ThreadRuntimeDeps {
   wardenHostReady?: (projectId: string) => Promise<boolean>;
   /** Runtime config; agent kinds decide which dispatches get pre-message routing. */
   config: FoundryConfig;
-  /** How long a handoff waits for its brief before the call runs without it (`HANDOFF_BRIEF_DEADLINE_MS`). */
-  handoffBriefDeadlineMs?: number;
+  /** How long a call waits for the chorus (a handoff's brief, a milestone's advice) before it runs without it (`CHORUS_AT_CALL_DEADLINE_MS`). */
+  chorusAtCallDeadlineMs?: number;
   /** Cheap, fast LLM shared by the Cartographer and Wardens. Scoped per thread and role. */
   llm: LLMProvider;
   /** Unified event feed for the viewer. Optional in tests. */
@@ -541,6 +548,13 @@ export interface ThreadRuntime {
    * brief missed its deadline (it then rides the parent's next turn).
    */
   briefHandoff(call: HandoffCall): Promise<string | undefined>;
+  /**
+   * The milestone trigger before the call runs (Claude's pre-use): the chorus is asked what its domain
+   * says must happen before the milestone a tool call is about to reach, and what was said comes back
+   * as context to ride beside the call. Undefined when the call is no milestone, no Warden spoke, the
+   * thread runs no chorus, or the advice missed its deadline (it then rides the next turn).
+   */
+  adviseMilestone(call: HandoffCall): Promise<string | undefined>;
   dispose(): void;
 }
 
@@ -1021,6 +1035,8 @@ class ThreadRuntimeImpl implements ThreadRuntime {
   private readonly _guardMode: GuardMode;
   /** Handoff calls briefed before their subagent started: their `task_started` is not briefed again. */
   private readonly _briefedCalls = new Set<string>();
+  /** Milestone calls already advised at the call (pre-use): their observation is not asked again. */
+  private readonly _advisedMilestones = new Set<string>();
   /**
    * This thread's own subagents as a SendMessage addresses them (native task id, or the name its Agent
    * call gave it). A SendMessage to anyone else (another session, a teammate) is not a subagent's turn:
@@ -1031,7 +1047,7 @@ class ThreadRuntimeImpl implements ThreadRuntime {
   private readonly _briefedResumes = new Set<string>();
   /** The thread holds the reception charter, so a briefed subagent gets it with its chimes. */
   private _reception = false;
-  private readonly _handoffDeadlineMs: number;
+  private readonly _atCallDeadlineMs: number;
   /** The project's `consumed` trigger, when it is on (`chorus.consumed`). */
   private readonly _consumed: ConsumedMatcher | undefined;
   /** Work items already asked about in this thread, by id and content hash: asked once each. */
@@ -1066,7 +1082,7 @@ class ThreadRuntimeImpl implements ThreadRuntime {
     this._warn = warn;
     this._scopeConfig = deps.config;
     this._guardMode = deps.config.guard ?? 'per-turn';
-    this._handoffDeadlineMs = deps.handoffBriefDeadlineMs ?? HANDOFF_BRIEF_DEADLINE_MS;
+    this._atCallDeadlineMs = deps.chorusAtCallDeadlineMs ?? CHORUS_AT_CALL_DEADLINE_MS;
     this._consumed = consumedMatcher(
       thread.meta.projectId && deps.config.projects?.[thread.meta.projectId as string]
         ? projectChorus(deps.config.projects[thread.meta.projectId as string]!).chorus.consumed
@@ -1719,6 +1735,7 @@ class ThreadRuntimeImpl implements ThreadRuntime {
         // Not awaited: Wardens comment, they never hold the hand-back (the pending entry is on the
         // dispatch's guards before the turn's meta is read below; the outcome reconciles it later).
         const landed = liveId ? this._liveDispatches.get(liveId) : undefined;
+        const didWork = Boolean(landed && (landed.activity.length || landed.overflow));
         if (landed?.activity.length)
           void this._guardActivity(
             { turnId: landed.messageId, observations: landed.activity.splice(0) },
@@ -1731,6 +1748,10 @@ class ThreadRuntimeImpl implements ThreadRuntime {
             },
             landed.overflow,
           );
+        // A turn that did work handed back: the chorus is asked over its message, never holding the
+        // hand-back. A turn that only talked is not asked; its milestones were asked at the call.
+        const handedBack = landed?.messageId ?? ctx.messageId;
+        if (didWork && handedBack && wrapped) void this._handBack(handedBack, result.output);
         // Historical phase record carried on the turn's own result meta (the journalled agent message):
         // the sealed routing outcome with its request, and the guard entries recorded on this live
         // dispatch under their observation identities. Entries still pending here stay pending in the
@@ -2017,10 +2038,12 @@ class ThreadRuntimeImpl implements ThreadRuntime {
     );
     // The main thread took in a work item: the chorus is asked what of its domain the work touches
     // (the consumed trigger, `chorus.consumed`, off by default). A subagent's reads are not asked: its
-    // notes would reach the parent's next turn, never the subagent doing the work.
+    // notes would reach the parent's next turn, never the subagent doing the work. On the catch-all
+    // after the guard's collector, and not awaited, so the turn's activity is never held behind it.
     if (this._consumed && this.domainLibrarians.size)
       this._unsubs.push(
-        signals.on('tool_observation', async (signal) => {
+        signals.onAny((signal) => {
+          if (signal.kind !== 'tool_observation') return;
           if (signal.source === 'flow-orchestrator') return;
           const content = signal.content as ToolSignalContent | undefined;
           if (!content?.tool || content.subagent) return;
@@ -2033,13 +2056,52 @@ class ThreadRuntimeImpl implements ThreadRuntime {
           // item), a fetch by its tool and id.
           if (!item || this._consumedItems.has(item.key)) return;
           this._consumedItems.add(item.key);
-          await this._consumeWorkItem(
+          void this._consumeWorkItem(
             signal.id,
             item,
             this._liveDispatches.get(content.dispatchId ?? '')?.messageId ?? null,
           );
         }),
       );
+
+    // A milestone call observed (Codex and Muse, which have no pre-use stage; or a Claude call the
+    // gate did not reach): the chorus is asked once, and what is said rides the next turn. On the
+    // catch-all, registered after the guard's collector, so the turn's activity is held first.
+    this._unsubs.push(
+      signals.onAny((signal) => {
+        if (signal.kind !== 'tool_observation') return;
+        if (signal.source === 'flow-orchestrator' || !this.domainLibrarians.size) return;
+        const content = signal.content as ToolSignalContent | undefined;
+        if (!content?.tool) return;
+        if (content.callId && this._advisedMilestones.delete(content.callId)) return;
+        // A refused or failed call landed nothing: there is no milestone to ask about.
+        if (content.ok === false) return;
+        const observation = toObservation(content as ToolSignalContent & { tool: string });
+        const moment = milestoneOf(
+          {
+            ...(content.callId ? { callId: content.callId } : {}),
+            toolName: observation.tool,
+            toolInput: observation.input ?? {},
+          },
+          'landed',
+        );
+        if (!moment) return;
+        // Not awaited: the bus runs handlers in turn, and the guard's collector must not wait on the chorus.
+        void this._askBetweenTurns({
+          trigger: 'milestone',
+          ...(content.subagent ? { node: content.subagent.node } : {}),
+          turnId: content.subagent
+            ? content.subagent.turnId
+            : (this._liveDispatches.get(content.dispatchId ?? '')?.messageId ?? null),
+          wraps: moment.milestoneId,
+          label: `milestone ${moment.milestoneId}`,
+          ask: (flow) => flow.milestone(moment),
+          text: milestoneText(moment),
+          record: { milestone: { ...milestoneRecord(moment), signalId: signal.id } },
+          notes: (report) => milestoneNotes(moment, report),
+        });
+      }),
+    );
 
     // Post-work learning: completed executor work and tool observations feed
     // every domain reviewer (text-only auxiliary). Each observation is
@@ -2429,19 +2491,7 @@ class ThreadRuntimeImpl implements ThreadRuntime {
       // Past the deadline, or withdrawn, the call did not take it: it rides the parent's next turn.
       deliver: () => (late ? 'next-turn' : 'return'),
     });
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    let onAbort: (() => void) | undefined;
-    const notes = await Promise.race([
-      asked,
-      new Promise<'late' | 'withdrawn'>((resolve) => {
-        timer = setTimeout(() => resolve('late'), this._handoffDeadlineMs);
-        onAbort = () => resolve('withdrawn');
-        call.signal?.addEventListener('abort', onAbort, { once: true });
-      }),
-    ]).finally(() => {
-      clearTimeout(timer);
-      if (onAbort) call.signal?.removeEventListener('abort', onAbort);
-    });
+    const notes = await this._atCall(asked, call.signal);
     // The subagent's task_started comes next (a spawn's, or a resumed subagent's after a SendMessage):
     // mark the call so it is not briefed again there, also when the brief is late (it rides the
     // parent's next turn). A withdrawn call never ran: nothing waits for it.
@@ -2460,6 +2510,94 @@ class ThreadRuntimeImpl implements ThreadRuntime {
     }
     if (!notes?.length) return undefined;
     return briefedText(moment.prompt, notes, this._reception ? CHORUS_RECEPTION : undefined);
+  }
+
+  async adviseMilestone(call: HandoffCall): Promise<string | undefined> {
+    if (this._disposed || !this.domainLibrarians.size || call.signal?.aborted) return undefined;
+    const moment = milestoneOf(call, 'before');
+    if (!moment) return undefined;
+    const node = call.agentId ? this._subagents.get(subagentAddress(call.agentId)) : undefined;
+    let late = false;
+    const asked = this._askBetweenTurns({
+      trigger: 'milestone',
+      ...(node ? { node } : {}),
+      turnId: call.turnId,
+      wraps: moment.milestoneId,
+      label: `milestone ${moment.milestoneId}`,
+      ask: (flow) => flow.milestone(moment),
+      text: milestoneText(moment),
+      record: {
+        milestone: {
+          ...milestoneRecord(moment),
+          ...(call.callId ? { toolCallId: call.callId } : {}),
+          before: true,
+          ...(call.agentId ? { fromSubagent: call.agentId } : {}),
+        },
+      },
+      notes: (report) => milestoneNotes(moment, report),
+      // Past the deadline, or withdrawn, the call did not take it: it rides the next turn.
+      deliver: () => (late ? 'next-turn' : 'return'),
+    });
+    const notes = await this._atCall(asked, call.signal);
+    // The ask runs to the end whatever the call does (late or withdrawn, it rides the next turn), so
+    // the call's observation, if it comes, is not asked again.
+    if (call.callId) {
+      this._advisedMilestones.add(call.callId);
+      if (this._advisedMilestones.size > MAX_SUBAGENT_TURNS) this._advisedMilestones.clear();
+    }
+    if (notes === 'late' || notes === 'withdrawn') {
+      late = true;
+      this._warn(
+        `  [flow:${this.thread.id}] ${moment.milestoneId}: ${notes === 'late' ? 'advice past its deadline' : 'call withdrawn'}; the call runs without it`,
+      );
+      return undefined;
+    }
+    if (!notes?.length) return undefined;
+    return [...(this._reception ? [CHORUS_RECEPTION] : []), ...notes.map((note) => note.text)].join(
+      '\n\n',
+    );
+  }
+
+  /**
+   * The chorus asked at a call, raced against the at-call deadline and the call's withdrawal: what it
+   * said, or `late` / `withdrawn` (the ask runs on and delivers to the next turn).
+   */
+  private async _atCall<T>(
+    asked: Promise<T>,
+    signal: AbortSignal | undefined,
+  ): Promise<T | 'late' | 'withdrawn'> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let onAbort: (() => void) | undefined;
+    return Promise.race([
+      asked,
+      new Promise<'late' | 'withdrawn'>((resolve) => {
+        timer = setTimeout(() => resolve('late'), this._atCallDeadlineMs);
+        onAbort = () => resolve('withdrawn');
+        signal?.addEventListener('abort', onAbort, { once: true });
+      }),
+    ]).finally(() => {
+      clearTimeout(timer);
+      if (onAbort) signal?.removeEventListener('abort', onAbort);
+    });
+  }
+
+  /** The hand-back trigger: the chorus is asked over the message a turn handed back; it rides the next turn. */
+  private async _handBack(turnId: string, output: unknown): Promise<void> {
+    if (this._disposed || !this.domainLibrarians.size || typeof output !== 'string') return;
+    if (!output.trim()) return;
+    const moment: HandBackMoment = { turnId, ...clipMomentText(output) };
+    await this._askBetweenTurns({
+      trigger: 'hand-back',
+      turnId,
+      wraps: `hand-back:${turnId}`,
+      label: `hand-back ${turnId}`,
+      ask: (flow) => flow.handBack(moment),
+      text: handBackText(moment),
+      record: {
+        handBack: { chars: output.length, ...(moment.clipped ? { clipped: moment.clipped } : {}) },
+      },
+      notes: (report) => handBackNotes(moment, report),
+    });
   }
 
   /** One of this thread's subagents, by every address a SendMessage may use (its name, its task id). */

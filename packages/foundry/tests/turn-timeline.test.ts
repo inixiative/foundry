@@ -70,12 +70,19 @@ test('a recorded turn reads as its steps in order: input, routing, chorus, plan,
     'testing:requested',
   ]);
 
-  // The second turn's Wardens said the same again: recorded as said before, still delivered (no suppression).
+  // The second turn's Wardens said the same again: recorded as said before, still delivered (no suppression);
+  // then what they said on the first turn's hand-back, riding this turn.
   const t2 = (await (
     await s.current.app.request('/api/threads/a/turns/t2/timeline')
   ).json()) as Timeline;
   const chimes = of(t2, 'delivery')[0]!.chimes;
-  expect(chimes.map((c) => c.region)).toEqual(['architecture', 'testing']);
+  expect(chimes.map((c) => c.region)).toEqual([
+    'architecture',
+    'testing',
+    'architecture',
+    'testing',
+  ]);
+  expect(chimes.slice(2).every((c) => c.text.includes('on your last hand-back'))).toBe(true);
   expect(chimes.every((c) => c.saidBefore?.turnId === 't1')).toBe(true);
 
   expect((await s.current.app.request('/api/threads/b/turns/t1/timeline')).status).toBe(404);

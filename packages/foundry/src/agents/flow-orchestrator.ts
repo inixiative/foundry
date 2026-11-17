@@ -77,6 +77,7 @@ import {
 } from './domain-librarian';
 import type { Librarian } from './librarian';
 import type { AdviceTrigger, TriggerPoint } from './warden-triggers';
+import { clipMomentText } from './work-items';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -391,9 +392,36 @@ export interface WorkItemMoment {
   readonly clipped?: number;
 }
 
+/** What a milestone call does (`turns/milestones.ts`). */
+export type MilestoneKind = 'pull-request' | 'merge' | 'publish' | 'done' | 'rule-change';
+
+/** A milestone the agent is about to reach (the `milestone` trigger): the call, as its input names it. */
+export interface MilestoneMoment {
+  /** One id per call: `milestone-call:<tool call id>`. */
+  readonly milestoneId: string;
+  readonly kind: MilestoneKind;
+  readonly tool: string;
+  /** What the call does: the command, the rule file's path, the status. */
+  readonly detail: string;
+  /**
+   * When the chorus hears of it: `before` the call runs (Claude's pre-use gate), or once it has
+   * `landed` (an observed call: Codex, Muse, or a Claude call the gate did not reach).
+   */
+  readonly when: 'before' | 'landed';
+}
+
+/** The message a turn handed back (the `hand-back` trigger), clipped like a work item. */
+export interface HandBackMoment {
+  readonly turnId: string;
+  readonly text: string;
+  /** Characters cut from the message's end, when it was clipped. */
+  readonly clipped?: number;
+}
+
 /**
- * The chorus's answers at a moment between turns: a handoff (`subagent-spawn`, the brief) or a work
- * item (`consumed`). Every Warden's decision, delivered on the next turn.
+ * The chorus's answers at a moment between turns: a handoff (`subagent-spawn`, the brief), a work
+ * item (`consumed`), a milestone call or a hand-back. Every Warden's decision, delivered on the next
+ * turn, or beside a milestone call when it was asked before the call ran.
  */
 export interface BriefReport {
   /** The moment the Wardens were given, frozen: the handoff or work item as text. */
@@ -732,6 +760,25 @@ export class FlowOrchestrator {
    */
   async consume(item: WorkItemMoment): Promise<BriefReport> {
     return this._between('consumed', workItemText(item));
+  }
+
+  /**
+   * The agent is about to reach a milestone (the `milestone` trigger): ask the chorus, once, what its
+   * domain says must happen first. Every Warden answers under the charter through the advice protocol
+   * (NO_COMMENT expected). Asked at the call (Claude's pre-use, `ThreadRuntime.adviseMilestone`), it is
+   * awaited up to its deadline and rides beside the call; asked when the call is observed, it never
+   * blocks and rides the next turn.
+   */
+  async milestone(moment: MilestoneMoment): Promise<BriefReport> {
+    return this._between('milestone', milestoneText(moment));
+  }
+
+  /**
+   * A turn handed back (the `hand-back` trigger): ask the chorus, once, over the message the agent
+   * handed back. The turn has landed, so what is said rides the next turn.
+   */
+  async handBack(moment: HandBackMoment): Promise<BriefReport> {
+    return this._between('hand-back', handBackText(moment));
   }
 
   /**
@@ -1698,6 +1745,51 @@ export function workItemText(item: WorkItemMoment): string {
   }`;
 }
 
+/** What each milestone kind is, as a moment's text and its notes name it. */
+const MILESTONE_ACTS: Readonly<Record<MilestoneKind, string>> = {
+  'pull-request': 'open a pull request',
+  merge: 'merge a pull request',
+  publish: 'publish a package',
+  done: 'mark the thread done',
+  'rule-change': 'change a standing rule file',
+};
+
+/** The same acts once they have landed. */
+const MILESTONE_DONE: Readonly<Record<MilestoneKind, string>> = {
+  'pull-request': 'opened a pull request',
+  merge: 'merged a pull request',
+  publish: 'published a package',
+  done: 'marked the thread done',
+  'rule-change': 'changed a standing rule file',
+};
+
+/** A milestone as the Wardens read it: what the agent is about to do, and the call that does it. */
+export function milestoneText(moment: MilestoneMoment): string {
+  const { text, clipped } = clipMomentText(moment.detail);
+  const lead =
+    moment.when === 'before'
+      ? `The main agent is about to ${MILESTONE_ACTS[moment.kind]} (${moment.tool}). What your domain says must happen before this lands is what to check, whatever the call says.`
+      : `The main agent has just ${MILESTONE_DONE[moment.kind]} (${moment.tool}). What your domain says had to happen before this landed, or must happen now it has, is what to check, whatever the call says.`;
+  return `${lead}\n\n${text}${clipped ? `\n… [${clipped} more chars not shown]` : ''}`;
+}
+
+/** What the journal keeps of a milestone's ask: its id, kind and tool, never the clipped detail twice. */
+export function milestoneRecord(moment: MilestoneMoment): Record<string, unknown> {
+  return {
+    milestoneId: moment.milestoneId,
+    kind: moment.kind,
+    tool: moment.tool,
+    detail: clipMomentText(moment.detail, 500).text,
+  };
+}
+
+/** A hand-back as the Wardens read it: the message the agent ended its turn with. */
+export function handBackText(moment: HandBackMoment): string {
+  return `The main agent ended its turn and handed back this message. What it reports as done, and what it says comes next, is what to check against your domain.\n\n${moment.text || '(empty)'}${
+    moment.clipped ? `\n… [${moment.clipped} more chars not shown]` : ''
+  }`;
+}
+
 /**
  * The notes a moment between turns becomes on the next turn: the "chimed in" delivery, one per Warden
  * that spoke, under a heading that names the moment (`on the handoff to …`, `on the work item …`).
@@ -1721,6 +1813,22 @@ export function briefNotes(handoff: HandoffMoment, report: BriefReport): PromptB
   return betweenTurnNotes(`brief:${handoff.handoffId}`, `on the handoff to ${to}`, report);
 }
 
+/** The notes a milestone's answers become, naming what the agent was about to do. */
+export function milestoneNotes(moment: MilestoneMoment, report: BriefReport): PromptBlock[] {
+  return betweenTurnNotes(
+    `milestone:${moment.milestoneId}`,
+    moment.when === 'before'
+      ? `as you were about to ${MILESTONE_ACTS[moment.kind]}`
+      : `after you ${MILESTONE_DONE[moment.kind]}`,
+    report,
+  );
+}
+
+/** The notes a hand-back's answers become on the next turn. */
+export function handBackNotes(moment: HandBackMoment, report: BriefReport): PromptBlock[] {
+  return betweenTurnNotes(`hand-back:${moment.turnId}`, 'on your last hand-back', report);
+}
+
 /** The notes a retry's answers become on the next turn, naming the moment it asked again (FEAT-008). */
 export function retryNotes(of: string, trigger: AdviceTrigger, report: BriefReport): PromptBlock[] {
   const moment =
@@ -1728,7 +1836,11 @@ export function retryNotes(of: string, trigger: AdviceTrigger, report: BriefRepo
       ? 'the earlier handoff'
       : trigger === 'consumed'
         ? 'the earlier work item'
-        : 'your earlier message';
+        : trigger === 'milestone'
+          ? 'the earlier milestone'
+          : trigger === 'hand-back'
+            ? 'your earlier hand-back'
+            : 'your earlier message';
   return betweenTurnNotes(`retry:${of}`, `on ${moment} (asked again)`, report);
 }
 

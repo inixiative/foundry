@@ -111,9 +111,15 @@ export function classifyTool(
   return { capability, paths };
 }
 
-/** The operation of a call to this thread's Foundry MCP bridge (`mcp__foundry_<id>__<operation>`), if it is one. */
+/**
+ * The operation of a call to this thread's Foundry MCP bridge, if it is one: Claude's
+ * `mcp__foundry_<id>__<operation>`, or the observed `foundry_<id>/mcp__foundry_<id>__<operation>` a
+ * Codex or Muse call is projected as.
+ */
 export function foundryOperation(toolName: string): string | undefined {
-  return /^(?:mcp__)?foundry_[0-9a-f]{32}(?:__|\.|\/)([a-z_]+)$/.exec(toolName)?.[1];
+  return /^(?:foundry_[0-9a-f]{32}\/)?(?:mcp__)?foundry_[0-9a-f]{32}(?:__|\.|\/)([a-z_]+)$/.exec(
+    toolName,
+  )?.[1];
 }
 
 const RANK: Record<PermissionLevel, number> = { allow: 0, prompt: 1, deny: 2 };

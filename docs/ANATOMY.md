@@ -28,6 +28,7 @@ One sheet naming every part of Foundry, so people and agents use the same words.
  │   chorus: one region Warden per region, asked at every trigger              │
  │     user-message ─► advice    consumed ─► advice    subagent-spawn ─► brief │
  │     agent-action ─► guard     after the turn ─► review (writes thread knowledge)
+ │     milestone ─► advice at the call    hand-back ─► advice, next turn           │
  │     each Warden: stage(s) under a charter ─► NO_COMMENT | pointer           │
  │     chime ─► main thread, read under the reception charter                  │
  │                                                                             │
@@ -128,7 +129,8 @@ One sheet naming every part of Foundry, so people and agents use the same words.
 | `agent-action` → guard | Once per turn when its tool activity ends, over every write, edit and command in order, for each Warden whose `guardTriggers` name one. Advisory only; never awaited, never holds the hand-back. | `guard: per-turn` (default) or `per-call`; `REGION_GUARD_TRIGGERS` | live |
 | `subagent-spawn` → brief | Every Warden, on the task text handed to a subagent; journalled on the parent and delivered with its next turn. | `FlowOrchestrator.brief` | live |
 | review (post-work review) | After the turn, each Warden reviews the work and writes its thread knowledge (`post-turn` in the pre-filter). | `learning.enabled` | live |
-| `hand-back` | Wardens review the final message before the user sees it, one extra pass at most. | named in `warden-triggers.ts` | proposed |
+| `milestone` → advice | Every Warden, at a call that lands work (open or merge a pull request, publish, `set_status` done, a write to a standing rule file). On Claude asked at `pre-use` and returned as the call's `additionalContext`; on Codex and Muse asked when observed, riding the next turn. Never blocks. | `pf/turns/milestones.ts`; `withChorusAtCall` | live |
+| `hand-back` → advice | Every Warden, over the message a turn that did work (a guarded write, edit or command) handed back; not awaited, rides the next turn. No extra pass before the person sees it. | `ThreadRuntime._handBack` | live |
 | `agent-question` | A Warden answers the agent's question on the user's behalf when confident and backed by a recorded ruling. | named in `warden-triggers.ts` | proposed |
 | chime | What a Warden's yes becomes in the thread: "The <region> Warden chimed in: …". A pointer, never advice text. | `pf/agents/flow-orchestrator.ts` | live |
 | pointer | The parsed answer: `{ relevant, shape, pointer, where, why, level, candidates }`, at most three names, each with its doc section and one line that tells it apart. | `parseWardenPointer`, `pf/classify/pointer.ts` | live |
