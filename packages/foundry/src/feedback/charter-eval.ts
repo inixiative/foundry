@@ -127,6 +127,12 @@ export interface CharterEvalOptions {
   /** Which cells take debug readings (the Warden asked: a group recogniser, else the region); all when omitted. */
   readonly debugCell?: (probeId: string, domain: string) => boolean;
   /**
+   * Eval only: every call's raw answer text, as the model wrote it, before the strict reading and its
+   * repairs (debug readings included, after the live call they follow). Rows reach `onRaw` once their
+   * turn is recorded, as debug rows do; the text is the run's private data.
+   */
+  readonly onRaw?: (row: WardenRawAnswer) => void;
+  /**
    * A test of the later stages with stage 1 held fixed (`--carry <run dir>`): each cell's row from an
    * earlier run of the same stage 1. A cell whose earlier stage 1 escalated runs from stage 2, carrying
    * that reading as live would; any other cell keeps its earlier row, unasked. Ungrouped Wardens only.
@@ -148,7 +154,23 @@ export interface WardenDebug extends StageDebug {
   readonly trigger: WardenProbeTrigger;
 }
 
+/** One call's raw answer for one cell (`raw.jsonl`). */
+export interface WardenRawAnswer {
+  readonly probeId: string;
+  /** The Warden asked: a group recogniser at its first stage, the member after. */
+  readonly domain: string;
+  readonly trigger: WardenProbeTrigger;
+  /** The stage asked, from 0. */
+  readonly stage: number;
+  /** The call's place in the cell's calls, from 0: a stage's live answer comes before its debug readings. */
+  readonly call: number;
+  /** sha256 of the call's system message. */
+  readonly systemHash: string;
+  readonly content: string;
+}
+
 type DebugSink = (domain: string, reading: StageDebug) => void;
+type RawSink = (domain: string, stage: number, systemHash: string, content: string) => void;
 
 /**
  * Run each probe as one turn per trigger point: every Warden is asked at once, as the live chorus is,
@@ -176,6 +198,7 @@ export async function runCharterEval(
       const asked: WardenProbeAnswer[][] = new Array(wardens.length);
       // Debug rows wait for their turn to be recorded, so a stopped turn leaves none behind.
       const debugged: WardenDebug[][] = new Array(wardens.length);
+      const rawed: WardenRawAnswer[][] = new Array(wardens.length);
       let next = 0;
       await Promise.all(
         Array.from(
@@ -186,6 +209,7 @@ export async function runCharterEval(
               const cell = await askWithRetries(options, probe, wardens[index]!, trigger);
               asked[index] = cell.rows;
               debugged[index] = cell.debug;
+              rawed[index] = cell.raw;
             }
           },
         ),
@@ -222,6 +246,7 @@ export async function runCharterEval(
       }
       options.onTurn?.(turns.at(-1)!);
       for (const row of debugged.flat()) options.onDebug?.(row);
+      for (const row of rawed.flat()) options.onRaw?.(row);
     }
   }
   return { answers, turns };
@@ -244,17 +269,30 @@ async function askWithRetries(
   probe: WardenProbe,
   warden: EvalWarden,
   trigger: WardenProbeTrigger,
-): Promise<{ rows: WardenProbeAnswer[]; debug: WardenDebug[] }> {
+): Promise<{ rows: WardenProbeAnswer[]; debug: WardenDebug[]; raw: WardenRawAnswer[] }> {
   const lost = (rows: WardenProbeAnswer[]) =>
     rows.length > 0 && rows.every((a) => a.error && TRANSPORT_FAILURE.test(a.error));
-  // Each attempt keeps its own debug rows: only the attempt that stands reports them.
+  // Each attempt keeps its own debug and raw rows: only the attempt that stands reports them.
   const attempt = async () => {
     const debug: WardenDebug[] = [];
+    const raw: WardenRawAnswer[] = [];
+    const rawSink: RawSink | undefined = options.onRaw
+      ? (domain, stage, systemHash, content) =>
+          raw.push({
+            probeId: probe.id,
+            domain,
+            trigger,
+            stage,
+            call: raw.length,
+            systemHash,
+            content,
+          })
+      : undefined;
     const sink: DebugSink | undefined =
       options.onDebug && (options.debugCell?.(probe.id, warden.domain) ?? true)
         ? (domain, reading) => debug.push({ probeId: probe.id, domain, trigger, ...reading })
         : undefined;
-    return { rows: await ask(options, probe, warden, trigger, sink), debug };
+    return { rows: await ask(options, probe, warden, trigger, sink, rawSink), debug, raw };
   };
   let cell = await attempt();
   const retried: string[] = [];
@@ -343,6 +381,7 @@ async function ask(
   warden: EvalWarden,
   trigger: WardenProbeTrigger,
   sink?: DebugSink,
+  rawSink?: RawSink,
 ): Promise<WardenProbeAnswer[]> {
   const stages = options.stages ?? SINGLE_STAGE;
   const staged =
@@ -354,13 +393,15 @@ async function ask(
   let tokens: WardenProbeAnswer['tokens'];
   // An unstaged row's one call: its full system message's hash (a staged row has it per stage trace).
   let systemHash: string | undefined;
-  const counted = (provider: LLMProvider): LLMProvider =>
+  const counted = (provider: LLMProvider, domain: string, stage: number): LLMProvider =>
     Object.assign(Object.create(provider) as LLMProvider, {
       complete: async (...args: Parameters<LLMProvider['complete']>) => {
-        systemHash ??= createHash('sha256')
+        const hash = createHash('sha256')
           .update(args[0][0]?.content ?? '')
           .digest('hex');
+        systemHash ??= hash;
         const result = await provider.complete(...args);
+        rawSink?.(domain, stage, hash, result.content);
         // The first call is the live one: debug readings that follow it never replace its count.
         if (result.tokens && !tokens) {
           const { providerUsage: _usage, ...counts } = result.tokens;
@@ -388,7 +429,14 @@ async function ask(
           sink(domain, reading);
         }
       : undefined;
-    const lib = librarian(options, who, stages, counted, holds, timed);
+    const lib = librarian(
+      options,
+      who,
+      stages,
+      (provider, stage) => counted(provider, who.domain, stage),
+      holds,
+      timed,
+    );
     const fromOpts = from ? { from: { index: from.stage + 1, carried: from } } : {};
     if (trigger === 'user-message') {
       const advice = await lib.advise(probe.ask ?? '', undefined, {
@@ -550,7 +598,7 @@ function librarian(
   options: CharterEvalOptions,
   warden: EvalWarden,
   stages: readonly StageConfig[],
-  counted: (provider: LLMProvider) => LLMProvider,
+  counted: (provider: LLMProvider, stage: number) => LLMProvider,
   holds?: readonly string[],
   sink?: DebugSink,
 ): DomainLibrarian {
@@ -562,7 +610,8 @@ function librarian(
   const session = (index: number) =>
     warden.session ? { threadId: index ? `${warden.session}:stage:${index}` : warden.session } : {};
   const llmOpts = (index: number) => ({ maxTokens: 512, temperature: 0, ...session(index) });
-  const provider = (index: number) => counted(options.stageProviders?.[index] ?? options.warden);
+  const provider = (index: number) =>
+    counted(options.stageProviders?.[index] ?? options.warden, index);
   // A group recogniser runs its first stage alone: its yeses fan out to its members' own runs.
   const asked = holds ? stages.slice(0, 1) : stages;
   const bound: WardenStage[] = asked.map((config, index) => {
