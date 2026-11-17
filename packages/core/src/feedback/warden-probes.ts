@@ -118,6 +118,8 @@ export interface ClassifyStageTrace {
   readonly timedOut?: true;
   /** Region ids a recogniser named that it does not hold: counted, never followed. */
   readonly unknownRegions?: readonly string[];
+  /** The sloppy shapes the answer was let in from (protocol `AnswerRepair` names); absent when exact. */
+  readonly repairs?: readonly string[];
 }
 
 /** One Warden's answer on one probe, and the judge's verdict when it spoke. */

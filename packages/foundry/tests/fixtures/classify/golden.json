@@ -196,16 +196,20 @@
           "layers": [],
           "snippets": [],
           "confidence": 0,
-          "error": "advice response contributes nothing; answer NO_COMMENT when there is nothing to add"
+          "noComment": true,
+          "repairs": ["empty-as-no-comment"]
         }
       },
       {
         "answer": "{\"snippets\":[\"x\"],\"layers\":[],\"confidence\":0.5,\"why\":\"extra\"}",
         "result": {
           "layers": [],
-          "snippets": [],
-          "confidence": 0,
-          "error": "advice response has 1 field(s) outside the protocol"
+          "snippets": ["x"],
+          "confidence": 0.5,
+          "pointer": {
+            "relevant": false
+          },
+          "repairs": ["stray-why-dropped"]
         }
       },
       {
@@ -214,7 +218,8 @@
           "layers": [],
           "snippets": [],
           "confidence": 0,
-          "error": "advice response \"snippets\" must not contain empty strings"
+          "noComment": true,
+          "repairs": ["empty-snippets-dropped", "empty-as-no-comment"]
         }
       },
       {
@@ -425,16 +430,20 @@
           "layers": [],
           "snippets": [],
           "confidence": 0,
-          "error": "advice response contributes nothing; answer NO_COMMENT when there is nothing to add"
+          "noComment": true,
+          "repairs": ["empty-as-no-comment"]
         }
       },
       {
         "answer": "{\"snippets\":[\"x\"],\"layers\":[],\"confidence\":0.5,\"why\":\"extra\"}",
         "result": {
           "layers": [],
-          "snippets": [],
-          "confidence": 0,
-          "error": "advice response has 1 field(s) outside the protocol"
+          "snippets": ["x"],
+          "confidence": 0.5,
+          "pointer": {
+            "relevant": false
+          },
+          "repairs": ["stray-why-dropped"]
         }
       },
       {
@@ -443,7 +452,8 @@
           "layers": [],
           "snippets": [],
           "confidence": 0,
-          "error": "advice response \"snippets\" must not contain empty strings"
+          "noComment": true,
+          "repairs": ["empty-snippets-dropped", "empty-as-no-comment"]
         }
       },
       {
@@ -654,16 +664,20 @@
           "layers": [],
           "snippets": [],
           "confidence": 0,
-          "error": "advice response contributes nothing; answer NO_COMMENT when there is nothing to add"
+          "noComment": true,
+          "repairs": ["empty-as-no-comment"]
         }
       },
       {
         "answer": "{\"snippets\":[\"x\"],\"layers\":[],\"confidence\":0.5,\"why\":\"extra\"}",
         "result": {
           "layers": [],
-          "snippets": [],
-          "confidence": 0,
-          "error": "advice response has 1 field(s) outside the protocol"
+          "snippets": ["x"],
+          "confidence": 0.5,
+          "pointer": {
+            "relevant": false
+          },
+          "repairs": ["stray-why-dropped"]
         }
       },
       {
@@ -672,7 +686,8 @@
           "layers": [],
           "snippets": [],
           "confidence": 0,
-          "error": "advice response \"snippets\" must not contain empty strings"
+          "noComment": true,
+          "repairs": ["empty-snippets-dropped", "empty-as-no-comment"]
         }
       },
       {
@@ -883,16 +898,20 @@
           "layers": [],
           "snippets": [],
           "confidence": 0,
-          "error": "advice response contributes nothing; answer NO_COMMENT when there is nothing to add"
+          "noComment": true,
+          "repairs": ["empty-as-no-comment"]
         }
       },
       {
         "answer": "{\"snippets\":[\"x\"],\"layers\":[],\"confidence\":0.5,\"why\":\"extra\"}",
         "result": {
           "layers": [],
-          "snippets": [],
-          "confidence": 0,
-          "error": "advice response has 1 field(s) outside the protocol"
+          "snippets": ["x"],
+          "confidence": 0.5,
+          "pointer": {
+            "relevant": false
+          },
+          "repairs": ["stray-why-dropped"]
         }
       },
       {
@@ -901,7 +920,8 @@
           "layers": [],
           "snippets": [],
           "confidence": 0,
-          "error": "advice response \"snippets\" must not contain empty strings"
+          "noComment": true,
+          "repairs": ["empty-snippets-dropped", "empty-as-no-comment"]
         }
       },
       {
@@ -1112,16 +1132,20 @@
           "layers": [],
           "snippets": [],
           "confidence": 0,
-          "error": "advice response contributes nothing; answer NO_COMMENT when there is nothing to add"
+          "noComment": true,
+          "repairs": ["empty-as-no-comment"]
         }
       },
       {
         "answer": "{\"snippets\":[\"x\"],\"layers\":[],\"confidence\":0.5,\"why\":\"extra\"}",
         "result": {
           "layers": [],
-          "snippets": [],
-          "confidence": 0,
-          "error": "advice response has 1 field(s) outside the protocol"
+          "snippets": ["x"],
+          "confidence": 0.5,
+          "pointer": {
+            "relevant": false
+          },
+          "repairs": ["stray-why-dropped"]
         }
       },
       {
@@ -1130,7 +1154,8 @@
           "layers": [],
           "snippets": [],
           "confidence": 0,
-          "error": "advice response \"snippets\" must not contain empty strings"
+          "noComment": true,
+          "repairs": ["empty-snippets-dropped", "empty-as-no-comment"]
         }
       },
       {
@@ -1341,16 +1366,20 @@
           "layers": [],
           "snippets": [],
           "confidence": 0,
-          "error": "advice response contributes nothing; answer NO_COMMENT when there is nothing to add"
+          "noComment": true,
+          "repairs": ["empty-as-no-comment"]
         }
       },
       {
         "answer": "{\"snippets\":[\"x\"],\"layers\":[],\"confidence\":0.5,\"why\":\"extra\"}",
         "result": {
           "layers": [],
-          "snippets": [],
-          "confidence": 0,
-          "error": "advice response has 1 field(s) outside the protocol"
+          "snippets": ["x"],
+          "confidence": 0.5,
+          "pointer": {
+            "relevant": false
+          },
+          "repairs": ["stray-why-dropped"]
         }
       },
       {
@@ -1359,7 +1388,8 @@
           "layers": [],
           "snippets": [],
           "confidence": 0,
-          "error": "advice response \"snippets\" must not contain empty strings"
+          "noComment": true,
+          "repairs": ["empty-snippets-dropped", "empty-as-no-comment"]
         }
       },
       {
@@ -1552,9 +1582,10 @@
         "answer": "{\"findings\":[]}",
         "result": {
           "findings": [],
+          "noComment": true,
+          "repairs": ["empty-as-no-comment"],
           "ran": true,
-          "status": "invalid-response",
-          "error": "guard response has no findings; answer NO_COMMENT when there is nothing to add",
+          "status": "completed",
           "request": {
             "status": "supplied",
             "phase": "guard",
@@ -1801,9 +1832,10 @@
         "answer": "{\"findings\":[]}",
         "result": {
           "findings": [],
+          "noComment": true,
+          "repairs": ["empty-as-no-comment"],
           "ran": true,
-          "status": "invalid-response",
-          "error": "guard response has no findings; answer NO_COMMENT when there is nothing to add",
+          "status": "completed",
           "request": {
             "status": "supplied",
             "phase": "guard",

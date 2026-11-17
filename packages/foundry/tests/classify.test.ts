@@ -186,7 +186,10 @@ describe('protocols', () => {
         JSON.stringify({ outcome: 'yes', findings: [{ severity: 'advisory', description: 'x' }] }),
         spec,
       ),
-    ).toEqual({ error: 'guard answer requires "why": non-empty string' });
+    ).toMatchObject({ outcome: 'yes', repairs: ['missing-why'] });
+    expect(
+      readStageAnswer(JSON.stringify({ outcome: 'yes', why: 'x', findings: [] }), spec),
+    ).toEqual({ error: 'guard answer "outcome": "yes" carries no remark or layer' });
     expect(
       readStageAnswer(
         JSON.stringify({

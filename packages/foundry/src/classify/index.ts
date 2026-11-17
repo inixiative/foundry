@@ -43,6 +43,7 @@ export {
 export {
   ADVICE_RESPONSE_PROTOCOL,
   type AdviceAnswer,
+  type AnswerRepair,
   adviceResponseProtocol,
   type Envelope,
   FOLLOWUP_QUESTION,

@@ -143,6 +143,8 @@ export interface DomainContribution {
   readonly confidence: number;
   /** The charter's pointer read off the snippets (`Look over here: …`). */
   readonly pointer?: WardenPointer;
+  /** The sloppy shapes the answer was let in from (protocol `AnswerRepair`); absent when it was exact. */
+  readonly repairs?: readonly string[];
   readonly segments: ContributionSegments;
   readonly provenance: ContributionProvenance;
   /**
@@ -319,6 +321,8 @@ export interface GuardOutcome {
   readonly notes?: readonly string[];
   /** The check completed with NO_COMMENT: nothing to add. */
   readonly noComment?: true;
+  /** The sloppy shapes the answer was let in from (protocol `AnswerRepair`); absent when it was exact. */
+  readonly repairs?: readonly string[];
   readonly error?: string;
   /** Provider lifecycle classification of a failed call, "unknown", or "not-admitted" when the call was refused before the provider. */
   readonly admission?: GuardCallEvidence | 'unknown' | 'not-admitted';
@@ -953,6 +957,7 @@ export class FlowOrchestrator {
           | 'confidence'
           | 'prefilter'
           | 'pointer'
+          | 'repairs'
           | 'classified'
           | 'stageRequests'
         >
@@ -1022,12 +1027,14 @@ export class FlowOrchestrator {
     if (result.error) return decided('error', { reason: result.error, ...staged });
     if (result.skipped) return decided('skipped', { reason: result.skipped, ...staged });
     if (result.notStarted) return decided('excluded', { reason: result.notStarted, ...staged });
-    if (result.noComment) return decided('no-comment', staged);
+    const repaired = result.repairs?.length ? { repairs: result.repairs } : {};
+    if (result.noComment) return decided('no-comment', { ...repaired, ...staged });
     return decided('contribute', {
       layers: [...result.layers],
       snippets: [...result.snippets],
       confidence: result.confidence,
       ...(result.pointer ? { pointer: result.pointer } : {}),
+      ...repaired,
       ...staged,
     });
   }
@@ -1411,6 +1418,7 @@ export class FlowOrchestrator {
           ? { notes: r.findings.slice(0, 8).map((f) => f.description.slice(0, 500)) }
           : {}),
         ...(r.status === 'completed' && r.noComment ? { noComment: true as const } : {}),
+        ...(r.status === 'completed' && r.repairs?.length ? { repairs: r.repairs } : {}),
         ...(r.error !== undefined ? { error: r.error } : {}),
         ...(r.admission !== undefined ? { admission: r.admission } : {}),
         ...(r.threadKnowledgeRevision !== undefined

@@ -459,6 +459,7 @@ export async function runStages(options: ClassifyRunOptions): Promise<ClassifyRe
         ...(reading.remarks.length ? { remarks: reading.remarks } : {}),
         ...(reading.regions ? { regions: reading.regions } : {}),
         ...(unknown.length ? { unknownRegions: unknown } : {}),
+        ...(reading.repairs?.length ? { repairs: reading.repairs } : {}),
       }),
     );
     const delivered = reading.outcome === 'yes' && base.stage.task === 'point';

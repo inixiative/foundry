@@ -73,6 +73,7 @@ export interface ChorusWardenDecision {
   readonly reason?: string;
   readonly snippets: readonly string[];
   readonly pointer?: DomainContribution['pointer'];
+  readonly repairs?: DomainContribution['repairs'];
   readonly elapsedMs?: number;
   readonly classified?: DomainContribution['classified'];
   /** The model that answered, when the provider reported it. */
@@ -276,6 +277,7 @@ export async function adviseOnce(opts: ChorusAdviseOptions): Promise<ChorusAdvic
           ...(c.reason ? { reason: c.reason } : {}),
           snippets: [...c.snippets],
           ...(c.pointer ? { pointer: c.pointer } : {}),
+          ...(c.repairs?.length ? { repairs: c.repairs } : {}),
           ...(c.provenance.elapsedMs !== undefined ? { elapsedMs: c.provenance.elapsedMs } : {}),
           ...(c.classified ? { classified: c.classified } : {}),
           ...(c.request.status === 'supplied' && c.request.served
