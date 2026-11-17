@@ -327,3 +327,67 @@ test('Pause now skips the grace; without a way to pause there is nothing to do',
   expect(plain.r.pauseNow()).toBe(false);
   expect(plain.r.status().pauseAt).toBeUndefined();
 });
+
+// Aron, 2026-11-16: a Restart beside "Wardens stopped answering until Foundry restarts", with the
+// blockers counted, and "as soon as all the blockers are done, it can just restart".
+test('a plain restart needs the supervisor, spins down like an update and restarts at zero blockers', () => {
+  const running: RunningTurnRef[] = [{ threadId: 'a', turnId: 't1' }];
+  const finishing = { n: 1 };
+  const restarts: string[] = [];
+  const r = new RestartRoll({
+    running: () => running,
+    waiting: () => 0,
+    finishing: () => finishing.n,
+    prepare: () => {},
+    pollMs: 60_000,
+  });
+  // Unsupervised: nothing can restart this daemon.
+  expect(r.status().canRestart).toBe(false);
+  expect(r.requestRestart('the owner asked')).toBe(false);
+  expect(r.restartNow()).toBe(false);
+
+  r.acceptSupervisorRestart(() => restarts.push('restart'));
+  expect(r.status().canRestart).toBe(true);
+  expect(r.requestRestart('the owner asked')).toBe(true);
+  expect(r.requestRestart('again')).toBe(false);
+  expect(r.status()).toMatchObject({
+    phase: 'spinning-down',
+    reason: 'the owner asked',
+    finishing: 1,
+  });
+  expect(r.status().candidate).toBeUndefined();
+  expect(r.holding()).toBe(true);
+  running.pop();
+  r.check();
+  expect(restarts).toEqual([]);
+  finishing.n = 0;
+  r.check();
+  expect(restarts).toEqual(['restart']);
+  expect(r.status().phase).toBe('restarting');
+});
+
+test('Not now cancels a plain restart; one asked during a postponed update applies it', async () => {
+  const running: RunningTurnRef[] = [{ threadId: 'a', turnId: 't1' }];
+  const restarts: string[] = [];
+  const r = new RestartRoll({
+    running: () => running,
+    waiting: () => 0,
+    prepare: () => {},
+    pollMs: 60_000,
+  });
+  r.acceptSupervisorRestart(() => restarts.push('plain'));
+  r.requestRestart('the owner asked');
+  const opened = r.whenOpen();
+  expect(r.postpone()).toBe(true);
+  await opened;
+  expect(r.status().phase).toBe('idle');
+  expect(r.status().reason).toBeUndefined();
+
+  r.offerUpdate({ candidate: 'c1', restart: () => restarts.push('c1') });
+  r.postpone();
+  expect(r.status().phase).toBe('postponed');
+  expect(r.requestRestart('the owner asked')).toBe(true);
+  running.pop();
+  r.check();
+  expect(restarts).toEqual(['c1']);
+});

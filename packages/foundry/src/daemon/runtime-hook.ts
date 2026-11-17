@@ -20,6 +20,11 @@ export interface DaemonRuntimeHook {
    * `offer.restart` once the last running turn finishes (`daemon/restart-roll.ts`).
    */
   offerUpdate?(offer: UpdateOffer): void;
+  /**
+   * The supervisor's restart (exit so launchd relaunches), handed over once the daemon is up, so
+   * the owner can restart from the viewer without an update.
+   */
+  acceptSupervisorRestart?(restart: () => void): void;
 }
 
 export function publishDaemonRuntime(hook: DaemonRuntimeHook): void {

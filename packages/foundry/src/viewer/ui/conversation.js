@@ -78,6 +78,7 @@ import {
   renameThread,
   resolveLostTurn,
   resolvePrompt,
+  restartHolding,
   rightTab,
   selectedSpanId,
   selectThread,
@@ -92,6 +93,8 @@ import {
   threadStatusOf,
   threadUsage,
   tokenUsage,
+  updateAction,
+  updateState,
   waitingFor,
 } from './store.js';
 import { stripView } from './system-strip.js';
@@ -118,6 +121,7 @@ import {
   ThreadViewSegments,
 } from './thread-views.js';
 import { ThreadToast } from './toast.js';
+import { restartBlockers } from './update-line.js';
 import { uuidv7 } from './uuidv7.js';
 import {
   dictationSupported,
@@ -430,6 +434,29 @@ function ContextBar() {
   `;
 }
 
+/** Activities whose fix is a restart of Foundry: their strip row carries Restart. */
+const NEEDS_RESTART = new Set(['decisions:admission']);
+
+/**
+ * Restart beside "Wardens stopped answering until Foundry restarts" (Aron, 2026-11-16): Foundry
+ * spins down (running turns finish or pause) and restarts once nothing blocks it; while it waits
+ * the row shows the blockers counter. Only when the supervisor can restart this daemon.
+ */
+function RestartAction({ activity }) {
+  if (!NEEDS_RESTART.has(activity.key)) return null;
+  const state = updateState.value;
+  if (restartHolding.value) {
+    const blockers = restartBlockers(state);
+    return html`<span class="system-strip-elapsed" data-restart-blockers=${blockers}>${
+      state.phase === 'restarting' || !blockers
+        ? 'Restarting…'
+        : `Restarting after ${blockers} blocker${blockers === 1 ? '' : 's'}`
+    }</span>`;
+  }
+  if (!state?.canRestart) return null;
+  return html`<button class="system-strip-action" title="Restart Foundry once running turns finish or pause; they resume after it" onClick=${() => updateAction('restart')}>Restart</button>`;
+}
+
 const STRIP_DOT = { working: 'working', ready: 'done', degraded: 'attention', failed: 'problem' };
 
 /**
@@ -467,6 +494,7 @@ function SystemStrip({ threadId }) {
         ? html`<div class="system-strip-row" data-key=${view.head.key}>
         <span class="system-strip-dot" data-tone=${STRIP_DOT[view.state]}></span>
         <span class="system-strip-text">${view.head.summary}</span>
+        <${RestartAction} activity=${view.head} />
         ${view.elapsed ? html`<span class="system-strip-elapsed">${view.elapsed}</span>` : null}
         ${view.others.length ? html`<span class="system-strip-more">+${view.others.length} more</span>` : null}
         ${

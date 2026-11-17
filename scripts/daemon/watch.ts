@@ -21,6 +21,9 @@
  * candidate was marked failed and never retried (2026-11-04, 8c9dc7a0 booting
  * for 19 minutes at load 90–200). The boot's own verdict comes from the
  * supervisor: it boots, throws, or runs past the boot deadline.
+ *
+ * Once the daemon is up the watcher hands it the same restart, so the owner can restart from the
+ * viewer with no update (the daemon spins down first; `RestartRoll.requestRestart`).
  */
 
 import {
@@ -39,6 +42,8 @@ export interface WatchOptions {
   drainTimeoutMs?: number;
   /** How often to look again while draining a daemon that can't spin down. */
   drainPollMs?: number;
+  /** How often to look for the booted daemon to hand it the restart (default a second). */
+  attachPollMs?: number;
   /** Told how long the runtime expects to be gone, so presence reads "restarting" rather than "offline". */
   closeForUpdate?: (expectedBackWithinMs: number) => Promise<void> | void;
   exit?: (code: number) => void;
@@ -78,10 +83,10 @@ export const startUpdateWatcher = (options: WatchOptions): (() => void) => {
   let restarting = false;
   let toldBooting = false;
 
-  const restart = async (candidate: string) => {
+  const restart = async (candidate?: string) => {
     if (restarting) return;
     restarting = true;
-    log(`restarting onto candidate ${candidate.slice(0, 8)}`);
+    log(candidate ? `restarting onto candidate ${candidate.slice(0, 8)}` : 'restarting');
     try {
       await options.closeForUpdate?.(EXPECTED_BACK_WITHIN_MS);
     } catch (error) {
@@ -136,7 +141,24 @@ export const startUpdateWatcher = (options: WatchOptions): (() => void) => {
     }
   };
 
+  // The restart is handed over as soon as the daemon is up, not on the next update check.
+  const attach = () => {
+    const hook = runtime();
+    if (!hook) return false;
+    hook.acceptSupervisorRestart?.(() => void restart());
+    return true;
+  };
+  const attachTimer = attach()
+    ? undefined
+    : setInterval(() => {
+        if (attach()) clearInterval(attachTimer);
+      }, options.attachPollMs ?? 1_000);
+  attachTimer?.unref?.();
+
   const timer = setInterval(tick, options.intervalMs);
   timer.unref?.();
-  return () => clearInterval(timer);
+  return () => {
+    clearInterval(timer);
+    if (attachTimer) clearInterval(attachTimer);
+  };
 };
