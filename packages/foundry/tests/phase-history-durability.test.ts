@@ -19,7 +19,7 @@ import { buildAgents, ThreadFactory } from '../src/agents/thread-factory';
 import { ThreadRuntimeManager } from '../src/agents/thread-runtime';
 import { chartered, GUARD_RESPONSE_PROTOCOL } from '../src/classify';
 import { KnowledgePersistence } from '../src/persistence/knowledge-persistence';
-import { LocalSessionStore } from '../src/persistence/local-session-store';
+import { LocalSessionStore, type StoredPhase } from '../src/persistence/local-session-store';
 import { serializeTrace } from '../src/persistence/trace-record';
 import { starterConfig } from '../src/viewer/config';
 import {
@@ -216,7 +216,7 @@ test("a held guard's exact request is durable before its answer; the late outcom
   // Journalled while the guard provider is still holding: route, advice and the guard request, no outcome.
   const before = f.store
     .phaseHistory(f.thread.id, { turnId: 'turn-1' })
-    .filter((r) => r.phase !== 'middleware-reduced');
+    .filter((r) => r.phase !== 'middleware-reduced' && !isHandBack(r));
   expect(before.map((r) => r.phase)).toEqual(['route', 'advice', 'guard-request']);
   const request = before[2]!;
   expect(request.dispatchId).toBeTruthy();
@@ -284,7 +284,7 @@ test("a held guard's exact request is durable before its answer; the late outcom
   );
   const after = f.store
     .phaseHistory(f.thread.id, { turnId: 'turn-1' })
-    .filter((r) => r.phase !== 'middleware-reduced');
+    .filter((r) => r.phase !== 'middleware-reduced' && !isHandBack(r));
   expect(after.map((r) => r.phase)).toEqual(['route', 'advice', 'guard-request', 'guard-outcome']);
   expect(after[2]).toEqual(request);
   const outcome = after[3]!.record as any;
@@ -467,7 +467,7 @@ test('an observation whose dispatch is no longer live stays explicitly uncorrela
   expect(
     f.store
       .phaseHistory(f.thread.id, { turnId: 'turn-1' })
-      .filter((r) => r.phase !== 'middleware-reduced')
+      .filter((r) => r.phase !== 'middleware-reduced' && !isHandBack(r))
       .map((r) => r.phase),
   ).toEqual(['route', 'advice', 'guard-request', 'guard-outcome']);
   expect(f.store.phaseHistory(f.thread.id, { dispatchId: 'dispatch-gone' })).toHaveLength(2);
@@ -498,7 +498,12 @@ test('an observation whose dispatch is no longer live stays explicitly uncorrela
   expect(routingRequest({ detail: legacy })).toEqual({ state: 'not-recorded' });
 });
 
-export { fixture as durabilityFixture, until as untilSettled };
+/** The hand-back advice a working turn gets, not awaited: these tests are about the guard's rows. */
+function isHandBack(row: StoredPhase): boolean {
+  return row.phase === 'advice' && row.record.trigger === 'hand-back';
+}
+
+export { fixture as durabilityFixture, isHandBack, until as untilSettled };
 
 test('review records say whether their requested record reached the journal; without a journal the status is explicit, not a silent success', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'phase-durability-'));

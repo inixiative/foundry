@@ -26,20 +26,36 @@
 //     a Linear issue or Notion page it fetches; `chorus.consumed` in a project's settings, off by
 //     default), every Warden is asked what of its domain the work touches. Like a brief, what they
 //     say is journalled and rides with the next turn as a note;
+//   - `milestone` (advice phase): when the agent is about to reach a milestone (open or merge a pull
+//     request, publish a package, mark the thread done, change a standing rule file:
+//     `turns/milestones.ts`), every Warden is asked what its domain says must happen first. On
+//     Claude it is asked at the call, before it runs (the tool gate's `pre-use`), and what is said
+//     rides beside the call as context the model reads, the call itself unchanged; on Codex and Muse,
+//     which have no pre-use stage, it is asked when the call is observed and rides the next turn.
+//     Wardens comment, they never block the call;
+//   - `hand-back` (advice phase): when a turn ends, every Warden is asked over the message the agent
+//     handed back (what it reports as done). The turn has already landed, so what is said rides the
+//     next turn; there is no automatic extra pass;
 //   - after the work, every Warden's post-work review (pre-filtered as `post-turn`).
-// Next, each with its own input, protocol text and NO_COMMENT default:
-//   - `agent-question`: answer on the user's behalf when confident and backed by a recorded ruling;
-//   - `hand-back`: process Wardens review the final message before it lands (one extra pass at most).
+// Next, with its own input, protocol text and NO_COMMENT default:
+//   - `agent-question`: answer on the user's behalf when confident and backed by a recorded ruling.
 // ---------------------------------------------------------------------------
 
 /**
  * The points in a thread where Wardens are asked: user-message → advice, consumed → advice on a work
- * item, agent-action → guard, subagent-spawn → brief.
+ * item, agent-action → guard, subagent-spawn → brief, milestone → advice before a milestone call,
+ * hand-back → advice on the message a turn handed back.
  */
-export type TriggerPoint = 'user-message' | 'consumed' | 'agent-action' | 'subagent-spawn';
+export type TriggerPoint =
+  | 'user-message'
+  | 'consumed'
+  | 'agent-action'
+  | 'subagent-spawn'
+  | 'milestone'
+  | 'hand-back';
 
 /** The trigger points answered through the advice protocol (snippets, not findings). */
-export type AdviceTrigger = Extract<TriggerPoint, 'user-message' | 'consumed' | 'subagent-spawn'>;
+export type AdviceTrigger = Exclude<TriggerPoint, 'agent-action'>;
 
 /** How often the guard fires: once over a turn's whole tool activity (default), or on each tool call. */
 export type GuardMode = 'per-turn' | 'per-call';

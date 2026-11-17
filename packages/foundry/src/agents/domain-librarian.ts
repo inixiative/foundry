@@ -1694,7 +1694,11 @@ export class DomainLibrarian {
               ? `\n## Handoff to a subagent\n${message}`
               : trigger === 'consumed'
                 ? `\n## Work item the agent took in\n${message}`
-                : `\n## Message\n${message}`,
+                : trigger === 'milestone'
+                  ? `\n## Milestone the agent is about to reach\n${message}`
+                  : trigger === 'hand-back'
+                    ? `\n## Message the agent handed back\n${message}`
+                    : `\n## Message\n${message}`,
           opts: {},
           observe: (e: PhaseRequestEvidence) =>
             stage.index === 0 ? opts?.observeRequest?.(e as AdviceRequestEvidence) : later.push(e),

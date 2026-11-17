@@ -81,7 +81,11 @@ function readBounded(path: string, root: string | undefined): string | undefined
   }
 }
 
-function clip(text: string, max: number): { text: string; clipped?: number } {
+/** A moment's text cut to `max` characters, with how many were cut: work items, milestones, hand-backs. */
+export function clipMomentText(
+  text: string,
+  max: number = DEFAULT_CONSUMED_MAX_CHARS,
+): { text: string; clipped?: number } {
   return text.length <= max ? { text } : { text: text.slice(0, max), clipped: text.length - max };
 }
 
@@ -119,7 +123,7 @@ export function workItemOf(
       key: `${itemId}:${computeHash(text)}`,
       name,
       tool: observation.tool,
-      ...clip(text, matcher.maxChars),
+      ...clipMomentText(text, matcher.maxChars),
     };
   }
   if (!matcher.tools(observation.tool)) return undefined;
@@ -135,6 +139,6 @@ export function workItemOf(
     key: id ? itemId : `${itemId}:${computeHash(text)}`,
     name,
     tool: observation.tool,
-    ...clip(text, matcher.maxChars),
+    ...clipMomentText(text, matcher.maxChars),
   };
 }

@@ -185,7 +185,7 @@ export interface ChorusRow {
 /** One row's degraded Wardens, and whether it was asked again. */
 export interface ChorusNotice {
   readonly rowId: string;
-  /** The row's trigger point (`user-message`, `subagent-spawn`, `consumed`, `agent-action`). */
+  /** The row's trigger point (`user-message`, `subagent-spawn`, `consumed`, `milestone`, `hand-back`, `agent-action`). */
   readonly trigger: string;
   readonly degraded: readonly DegradedWarden[];
   /** The row that asked these Wardens again, when one did. */
