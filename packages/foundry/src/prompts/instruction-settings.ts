@@ -9,7 +9,6 @@ import type {
   HierarchySource,
   HierarchySpan,
 } from '@inixiative/foundry-core';
-import { CORPUS_TIERS, type CorpusTier } from '../agents/corpus-compiler';
 import { roleIdIn, roleIdProblem, roleNameIn, roleNamespace } from './role-namespace';
 
 /** The two composed slots every role has. Thread knowledge is computed per call, not composed. */
@@ -30,6 +29,24 @@ export const MAIN_ROLE = roleIdIn(roleNamespace.thread, 'main');
  * knowledge, about 100,000 characters; H itself is 20k) is admitted with its instructions.
  */
 export const DEFAULT_ROLE_BUDGET = 120_000;
+
+/** Who a composed file is for, narrowest first. An untiered file is personal_private. */
+export type CorpusTier = 'personal_private' | 'personal_public' | 'team' | 'org';
+
+/** Audiences that may see a file at each tier. */
+const VISIBLE_TO: Record<CorpusTier, readonly CorpusTier[]> = {
+  personal_private: ['personal_private'],
+  personal_public: ['personal_private', 'personal_public', 'team'],
+  team: ['personal_private', 'personal_public', 'team'],
+  org: ['personal_private', 'personal_public', 'team', 'org'],
+};
+
+export const CORPUS_TIERS = Object.keys(VISIBLE_TO) as readonly CorpusTier[];
+
+/** Whether content at `tier` may reach `audience`. */
+export function visibleTo(tier: CorpusTier, audience: CorpusTier): boolean {
+  return VISIBLE_TO[tier].includes(audience);
+}
 
 /** How narrow an audience is: one sees every tier its rank or above. */
 const AUDIENCE_RANK: Readonly<Record<CorpusTier, number>> = {

@@ -21,7 +21,6 @@ import {
   type SourceSelectionReport,
   segmentsText,
 } from '@inixiative/foundry-core';
-import { type CorpusTier, visibleTo } from '../agents/corpus-compiler';
 import {
   nativeAuthenticationMode,
   projectRunsOnKingdom,
@@ -32,6 +31,7 @@ import { resolveProjectView } from '../viewer/config-resolve';
 import {
   COMPOSITION_SLOTS,
   type CompositionSlot,
+  type CorpusTier,
   DEFAULT_INSTRUCTION_LADDER,
   effectiveThreadRole,
   HARNESS_GLOBAL_SOURCE,
@@ -40,6 +40,7 @@ import {
   type RoleComposition,
   resolveInstructionLadder,
   roleComposition,
+  visibleTo,
 } from './instruction-settings';
 
 /**

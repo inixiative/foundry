@@ -12,9 +12,9 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import type { ClaudeCodeSessionConfig } from '@inixiative/agent-session';
 import { ContextStack, FileMemory } from '@inixiative/foundry-core';
-import type { CorpusTier } from '../src/agents/corpus-compiler';
 import { regionRoleId } from '../src/agents/region-roster';
 import { buildLayers, createSourceResolver } from '../src/agents/thread-factory';
+import type { CorpusTier } from '../src/prompts/instruction-settings';
 import {
   ASSISTANT_ROLE,
   CODER_ROLE,

@@ -42,62 +42,35 @@ export {
   type BuildLayersDeps,
   buildAgents,
   buildLayers,
-  type CompiledCorpus,
-  ContradictionDetector,
-  ConvergenceDetector,
-  // Corpus Compiler
-  CorpusCompiler,
-  type CorpusCompilerConfig,
-  type CorpusTier,
-  CrossPollinationDetector,
-  type DocState,
   // Domain Librarian (advise + guard pattern)
   DomainLibrarian,
   type DomainLibrarianConfig,
-  DuplicationDetector,
   // Flow Orchestrator (wires the five FLOW.md roles)
   FlowOrchestrator,
   type FlowOrchestratorConfig,
-  type FluidEntry,
-  type FormalDoc,
   fromSettingsConfig,
   type GuardFinding,
   type GuardReport,
   type GuardResult,
-  // Herald
-  Herald,
-  type HeraldConfig,
-  type HeraldPattern,
-  type HeraldRecommendation,
   type InjectionPlan,
   type InvalidationEvent,
   invalidateComposition,
-  type LayerInheritance,
-  type LayerVisibility,
   // Librarian (signal reconciliation)
   Librarian,
   type LibrarianConfig,
-  type PatternDetector,
   // Project
   Project,
   type ProjectConfig,
   ProjectRegistry,
   type ProjectStatus,
   type ProjectSummary,
-  // Built-in hooks
-  ResourceImbalanceDetector,
   resolveAgentOpts,
-  // Sessions
-  SessionManager,
   type SourceResolver,
-  type ThreadBlueprint,
   // Thread Factory
   ThreadFactory,
   type ThreadFactoryDeps,
-  type ThreadSnapshot,
   type ThreadState,
   type ToolObservation,
-  type VisibilityTier,
 } from './agents';
 // Git — worktree detection for thread→branch assignment
 export {

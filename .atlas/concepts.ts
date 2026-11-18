@@ -9,7 +9,7 @@ export const CONCEPTS: ConceptRegistry = {
   // ── features: what Foundry does for a user ──────────────────────────────────
   'feature:threads': { docs: ['FLOW.md'] }, // thread runtime, sessions, the one turn path, local session store
   'feature:threadTree': { docs: ['THREAD-TREE.md'] }, // native subagents as child threads, reduced middleware entries, stitching
-  'feature:flow': { docs: ['FLOW.md', 'api/PRIMITIVES.md'] }, // the FLOW.md roles: orchestrator, Librarian, Herald
+  'feature:flow': { docs: ['FLOW.md', 'api/PRIMITIVES.md'] }, // the FLOW.md roles: orchestrator, Librarian
   'feature:wardens': { docs: ['FLOW.md', 'subscription-decisions.md'] }, // region Wardens: roster, triggers, reception, in-session, pre-filter
   'feature:toolGate': { docs: ['FLOW.md'] }, // the user's structural tool rules: the only thing that can deny a tool call
   'feature:feedback': { docs: ['FEEDBACK-LOOP.md'] }, // explicit feedback, lifecycle, routing, repeats, correction detection

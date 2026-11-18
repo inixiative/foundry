@@ -45,7 +45,7 @@ export default defineConfig({
     {
       include: [
         `${CORE}/{base-agent,executor}.ts`,
-        `${FOUNDRY}/agents/{librarian,herald,domain-librarian}.ts`,
+        `${FOUNDRY}/agents/{librarian,domain-librarian}.ts`,
       ],
       kind: 'agent',
     },
@@ -110,7 +110,7 @@ export default defineConfig({
 
     // foundry: agents
     {
-      include: `${FOUNDRY}/agents/{flow-orchestrator,librarian,herald,workstream-detector,corpus-compiler,learning-config,configured-experts}.ts`,
+      include: `${FOUNDRY}/agents/{flow-orchestrator,librarian,learning-config,configured-experts}.ts`,
       partOf: 'feature:flow',
     },
     {

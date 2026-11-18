@@ -105,16 +105,6 @@ export {
   type UsageSummary,
 } from '@inixiative/foundry-core';
 
-// Corpus Compiler
-export {
-  type CompiledCorpus,
-  CorpusCompiler,
-  type CorpusCompilerConfig,
-  type CorpusTier,
-  type DocState,
-  type FluidEntry,
-  type FormalDoc,
-} from './corpus-compiler';
 // Domain Librarian — shared advise + guard pattern
 export {
   type AdviseOpts,
@@ -152,22 +142,6 @@ export {
   type OutstandingCall,
   type PlanInput,
 } from './flow-orchestrator';
-// Herald — cross-agent observation & coordination
-export {
-  ContradictionDetector,
-  ConvergenceDetector,
-  CrossPollinationDetector,
-  DuplicationDetector,
-  Herald,
-  type HeraldConfig,
-  type HeraldPattern,
-  type HeraldRecommendation,
-  type LayerVisibility,
-  type PatternDetector,
-  ResourceImbalanceDetector,
-  type ThreadSnapshot,
-  type VisibilityTier,
-} from './herald';
 // Librarian — sole writer to thread-state layer
 export {
   type InjectedLayerRecord,
@@ -192,12 +166,6 @@ export {
   type RoleLayers,
   roleLayerId,
 } from './role-layers';
-// Sessions
-export {
-  type LayerInheritance,
-  SessionManager,
-  type ThreadBlueprint,
-} from './session';
 // Thread Factory
 export {
   type BuildAgentsDeps,
@@ -229,15 +197,3 @@ export {
 } from './thread-runtime';
 // Tool-use loop
 export { type ToolLoopOpts, toolUseLoop } from './tool-loop';
-
-// Workstream-overload detector (Herald PatternDetector for intra-thread topology)
-export {
-  DEFAULT_CONTEXT_HASH_DIVERGENCE,
-  DEFAULT_DISTINCT_AGENT_THRESHOLD,
-  DEFAULT_DISTINCT_SIGNAL_SOURCES,
-  DEFAULT_WINDOW_MS as WORKSTREAM_DETECTOR_DEFAULT_WINDOW_MS,
-  WORKSTREAM_DETECTOR_PROMPT,
-  WorkstreamOverloadDetector,
-  type WorkstreamOverloadEvidence,
-  type WorkstreamOverloadOptions,
-} from './workstream-detector';
