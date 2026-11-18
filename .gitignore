@@ -23,3 +23,6 @@ dist
 # Atlas-generated code map (regenerate with: bunx atlas generate)
 MAP.md
 /tmp/*
+
+.claude/worktrees/
+.claude/settings.local.json
