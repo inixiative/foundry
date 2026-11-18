@@ -504,7 +504,7 @@ test('the decision host launches the project host on the decision login: its own
     prime: 'warm',
     valid: true,
     // The host's capacity as the call went out: nothing queued for a slot, no orphans.
-    capacity: { awaitingSlot: 0, orphans: 0, orphanedOut: false },
+    hostCapacity: { awaitingSlot: 0, orphans: 0, orphanedOut: false },
   });
   // The held text is the composed Warden and its knowledge; no thread's state.
   const holding = tree.memberPrompts[0]!;

@@ -601,9 +601,10 @@ export function createPrimedDecisionHost(config: PrimedDecisionHostConfig) {
           const projectHost = projectHostTarget(config.projectHosts, sessionKey, opts);
           heldOnly = !!opts.heldOnly && !!projectHost;
           if (projectHost === 'starting')
+            // `starting` is only routed to held-only calls (`projectHostTarget`).
             throw new DecisionError(
               'Project Warden host starting',
-              heldOnly ? 'not-held' : 'busy',
+              'not-held',
               'not-dispatched',
               true,
             );
@@ -611,7 +612,7 @@ export function createPrimedDecisionHost(config: PrimedDecisionHostConfig) {
             throw new DecisionError('Project Warden host gone', 'not-held', 'not-dispatched', true);
           if (projectHost) target = projectHost;
           const { capacity } = target.snapshot();
-          if (capacity) call.capacity = capacity;
+          if (capacity) call.hostCapacity = capacity;
           result = await target.decide(spec, {
             ...(projectHost && spec.context ? { standby: '' } : {}),
             ...(heldOnly ? { heldOnly: true } : {}),

@@ -351,6 +351,7 @@ export class ProjectWardenHosts {
     entry.generation++;
     this._report(projectId, reason);
     let proc: ProjectHostProcess | undefined;
+    let orphanedOut = false;
     const host = new ClaudeInSessionDecisions({
       model: this.config.model,
       ...(this.config.effort ? { effort: this.config.effort } : {}),
@@ -376,8 +377,11 @@ export class ProjectWardenHosts {
           /* observers only */
         }
         if (event.type === 'process-recycled' && entry.live?.host === host) {
-          if (host.snapshot().capacity?.orphanedOut) this._replace(projectId, 'orphaned out');
-          else entry.recycles.push(Date.now());
+          // Once: the recycle that orphans the host out; any later one counts as churn.
+          if (!orphanedOut && host.snapshot().capacity?.orphanedOut) {
+            orphanedOut = true;
+            this._replace(projectId, 'orphaned out');
+          } else entry.recycles.push(Date.now());
         }
       },
     });

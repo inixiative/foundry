@@ -74,7 +74,7 @@ export interface NativeTextCall {
   /** The runtime's own refusal or failure code, as it gave it (primed decisions). */
   reason?: DecisionFailure;
   /** A project host's capacity as the call went out (agent-session `InSessionCapacity`). */
-  capacity?: InSessionCapacity;
+  hostCapacity?: InSessionCapacity;
   /** "primed": no per-call process; the warm host proves settlement (turn terminal or process exit). */
   transport?: 'primed';
   /** Primed calls: the native turn reached a terminal or its process exit was observed. */
