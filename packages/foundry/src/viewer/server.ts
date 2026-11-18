@@ -339,6 +339,8 @@ export function createViewer(config: ViewerConfig) {
   let scheduler: Scheduler | null = null;
   let draftAsks: DraftAsks | undefined;
   // `socket` is created below, once its stream families exist; delivery only happens after both do.
+  // The turn service, once the runtime routes build it: a turn the session starts itself goes live there.
+  let liveTurns: ReturnType<typeof registerRuntimeRoutes>['turns'] | undefined;
   const runningTasks = new RunningTasks((threadId, callId) =>
     localStore?.nativeToolUse(threadId, callId),
   );
@@ -525,12 +527,46 @@ export function createViewer(config: ViewerConfig) {
           console.warn(`[Subagents] ${threadId}: ${(error as Error).message}`);
         }
       });
-    // A turn the session started itself lands in its thread's journal and live stream; when it
-    // ends, the thread list sees its new last turn.
+    // A turn the session started itself lands in its thread's journal and live stream, runs live on
+    // the thread (Working, its queue held, stoppable, paused by a restart), and gets the thread's
+    // Wardens over what it did: each tool call is guarded with the turn, a milestone call is advised
+    // at the gate through the running turn, and its answer is handed back. When it ends, the thread
+    // list sees its new last turn.
+    const emitNative = (thread: Thread, kind: string, content: Record<string, unknown>) =>
+      void thread.signals
+        .emit({
+          id: newId(kind === 'native_turn' ? 'sig-nativeturn' : 'sig-tool'),
+          kind,
+          source: 'native-turn',
+          content: { threadId: thread.id, ...content },
+          timestamp: Date.now(),
+        })
+        .catch((error: unknown) =>
+          console.warn(`[Native turns] ${thread.id}: ${(error as Error).message}`),
+        );
     const nativeTurns = new NativeTurnRecorder({
       store: localStore,
       thread: (id) => directory.get(id),
       events: eventStream,
+      opened: (thread, turnId, control) =>
+        liveTurns?.observeNativeTurn(thread.id, turnId, control) ?? null,
+      toolCalled: (thread, turnId, call) => {
+        const live = directory.get(thread.id);
+        if (!live) return;
+        emitNative(live, 'tool_observation', {
+          tool: call.tool,
+          input: call.input,
+          ...(call.output !== undefined ? { output: call.output } : {}),
+          ...(call.ok !== undefined ? { ok: call.ok } : {}),
+          callId: call.callId,
+          agentId: 'native-turn',
+          nativeTurn: { turnId },
+        });
+      },
+      ended: (thread, turnId, outcome, text) => {
+        const live = directory.get(thread.id);
+        if (live) emitNative(live, 'native_turn', { turnId, outcome, text });
+      },
       arrived: (thread) => {
         thread.meta.lastActiveAt = Date.now();
         localStore.saveThread(thread);
@@ -538,9 +574,9 @@ export function createViewer(config: ViewerConfig) {
       },
     });
     for (const source of config.nativeTurnSources ?? [])
-      source.observeNativeTurns((threadId, evidence, task) => {
+      source.observeNativeTurns((threadId, evidence, task, control) => {
         try {
-          nativeTurns.observe(threadId, evidence, task);
+          nativeTurns.observe(threadId, evidence, task, control);
         } catch (error) {
           console.warn(`[Native turns] ${threadId}: ${(error as Error).message}`);
         }
@@ -866,6 +902,7 @@ export function createViewer(config: ViewerConfig) {
     images: imageStore,
   });
   turnsReady = turns;
+  liveTurns = turns;
   turns.onSettled(() => restartRoll.check());
   // A schedule's run is a new thread at its Where whose first turn is the prompt, as the owner set
   // it but never counted as his message (TurnOrigin.schedule). Runs are kept in the journal store.

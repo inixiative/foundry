@@ -19,6 +19,7 @@ import {
   type NativeBridgeLease,
   type NativeBridgeSource,
   type NativeEvidence,
+  type NativeInterruptOutcome,
   type NativeObservation,
   type NativeOwner,
   type NativeSteer,
@@ -162,7 +163,13 @@ export type NativeTurnSink = (
   threadId: string,
   evidence: NativeEvidence,
   task?: TaskLifecycle,
+  control?: NativeTurnControl,
 ) => void;
+
+/** How Foundry acts on a turn the session started itself: stopping it, where the runtime can. */
+export interface NativeTurnControl {
+  readonly interrupt?: (options?: { timeoutMs?: number }) => Promise<NativeInterruptOutcome>;
+}
 
 export class SessionBackedProvider implements LLMProvider {
   readonly id: string;
@@ -1227,9 +1234,12 @@ export class SessionBackedProvider implements LLMProvider {
               event.kind === 'session_end')
           ) {
             const observed = this._ownedProjection(session, event);
+            const control: NativeTurnControl = session.interruptNative
+              ? { interrupt: (options) => session.interruptNative!(options) }
+              : {};
             for (const sink of this._nativeTurnSinks) {
               try {
-                sink(threadId, observed, event.kind === 'task' ? event.task : undefined);
+                sink(threadId, observed, event.kind === 'task' ? event.task : undefined, control);
               } catch {
                 /* an observer's failure never touches the session */
               }

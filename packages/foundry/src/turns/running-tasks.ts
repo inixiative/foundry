@@ -91,6 +91,16 @@ export class RunningTasks {
     return count;
   }
 
+  /**
+   * What a thread's agent started with a tool call and is still running (a background shell, a
+   * monitor), by label: never a turn the session started itself, which no tool call starts.
+   */
+  startedByTools(threadId: string): string[] {
+    return this.list(threadId)
+      .filter((process) => process.endedAt === null && process.toolUseId)
+      .map((process) => process.label ?? process.command ?? process.taskType);
+  }
+
   /** Background processes still running, across threads: a restart stops them. */
   active(): Array<{ threadId: string; label: string }> {
     const found: Array<{ threadId: string; label: string }> = [];

@@ -247,6 +247,9 @@ export function registerRuntimeRoutes(
     feedback: deps.feedback ?? null,
     secrets: deps.secrets ?? null,
     modelSuccession: deps.modelSuccession ?? null,
+    ...(deps.runningTasks
+      ? { backgroundTasks: (threadId: string) => deps.runningTasks?.startedByTools(threadId) ?? [] }
+      : {}),
   });
 
   /** The installed @inixiative/foundry version (the About page shows it). */

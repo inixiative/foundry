@@ -185,6 +185,8 @@ interface ToolSignalContent {
   agentId?: string;
   /** An observed subagent's call: its guard rows go on the subagent's node. */
   subagent?: { node: { id: string; meta: ThreadMeta }; turnId: string | null };
+  /** A call of a turn the session started itself (a Claude wake): guarded with that turn when it ends. */
+  nativeTurn?: { turnId: string };
 }
 
 /** One observed call as the guard reads it: the native projector's summaries count as input and output. */
@@ -219,6 +221,8 @@ type GuardCorrelation =
   | 'no-dispatch-id'
   | 'subagent-turn'
   | 'subagent-call'
+  | 'native-turn'
+  | 'native-turn-call'
   | 'retry';
 
 /** Who a guard moment belongs to: the identity its journal rows carry. */
@@ -1031,6 +1035,11 @@ class ThreadRuntimeImpl implements ThreadRuntime {
       turnId: string | null;
       observations: ToolObservation[];
     }
+  >();
+  /** A turn the session started itself: its tool activity by turn id, guarded once when it ends. */
+  private _nativeTurnActivity = new Map<
+    string,
+    { observations: ToolObservation[]; overflow: number }
   >();
   /** How often the guard fires (settings `guard`, default `per-turn`). */
   private readonly _guardMode: GuardMode;
@@ -1894,7 +1903,11 @@ class ThreadRuntimeImpl implements ThreadRuntime {
           // name. A subagent's call belongs to the subagent's own turn.
           await this._guardActivity(
             {
-              turnId: content.subagent ? content.subagent.turnId : (live?.messageId ?? null),
+              turnId: content.subagent
+                ? content.subagent.turnId
+                : content.nativeTurn
+                  ? content.nativeTurn.turnId
+                  : (live?.messageId ?? null),
               observations: [observation],
             },
             {
@@ -1902,11 +1915,13 @@ class ThreadRuntimeImpl implements ThreadRuntime {
               dispatchId,
               correlation: content.subagent
                 ? 'subagent-call'
-                : live
-                  ? 'live-dispatch'
-                  : dispatchId
-                    ? 'dispatch-not-live'
-                    : 'no-dispatch-id',
+                : content.nativeTurn
+                  ? 'native-turn-call'
+                  : live
+                    ? 'live-dispatch'
+                    : dispatchId
+                      ? 'dispatch-not-live'
+                      : 'no-dispatch-id',
               ...(agentId ? { agentId } : {}),
               ...(live ? { live } : {}),
               ...(node ? { node } : {}),
@@ -1931,6 +1946,21 @@ class ThreadRuntimeImpl implements ThreadRuntime {
             this._subagentActivity.set(key, held);
           }
           if (held.observations.length < MAX_TURN_ACTIVITY) held.observations.push(observation);
+          return;
+        }
+        if (content.nativeTurn) {
+          const key = content.nativeTurn.turnId;
+          let held = this._nativeTurnActivity.get(key);
+          if (!held) {
+            if (this._nativeTurnActivity.size >= MAX_SUBAGENT_TURNS) {
+              const oldest = this._nativeTurnActivity.keys().next().value;
+              if (oldest !== undefined) this._nativeTurnActivity.delete(oldest);
+            }
+            held = { observations: [], overflow: 0 };
+            this._nativeTurnActivity.set(key, held);
+          }
+          if (held.observations.length < MAX_TURN_ACTIVITY) held.observations.push(observation);
+          else held.overflow++;
           return;
         }
         if (live) {
@@ -1971,6 +2001,29 @@ class ThreadRuntimeImpl implements ThreadRuntime {
             node: held.node,
           },
         );
+      }),
+    );
+    // A turn the session started itself ended (a Claude wake on a background task finishing): its
+    // held activity is guarded once, and a wake that did work is handed back, as Foundry's own turns are.
+    this._unsubs.push(
+      signals.on('native_turn', async (signal) => {
+        const content = signal.content as { turnId?: string; text?: unknown } | undefined;
+        if (!content?.turnId) return;
+        const held = this._nativeTurnActivity.get(content.turnId);
+        this._nativeTurnActivity.delete(content.turnId);
+        if (!held) return;
+        if (held.observations.length)
+          void this._guardActivity(
+            { turnId: content.turnId, observations: held.observations },
+            {
+              momentId: signal.id,
+              dispatchId: null,
+              correlation: 'native-turn',
+              agentId: 'native-turn',
+            },
+            held.overflow,
+          );
+        await this._handBack(content.turnId, content.text);
       }),
     );
     // The agent handed a task to a subagent: the chorus briefs the handoff (the subagent-spawn trigger).
@@ -2056,7 +2109,9 @@ class ThreadRuntimeImpl implements ThreadRuntime {
           void this._consumeWorkItem(
             signal.id,
             item,
-            this._liveDispatches.get(content.dispatchId ?? '')?.messageId ?? null,
+            content.nativeTurn?.turnId ??
+              this._liveDispatches.get(content.dispatchId ?? '')?.messageId ??
+              null,
           );
         }),
       );
@@ -2089,7 +2144,9 @@ class ThreadRuntimeImpl implements ThreadRuntime {
           ...(content.subagent ? { node: content.subagent.node } : {}),
           turnId: content.subagent
             ? content.subagent.turnId
-            : (this._liveDispatches.get(content.dispatchId ?? '')?.messageId ?? null),
+            : (content.nativeTurn?.turnId ??
+              this._liveDispatches.get(content.dispatchId ?? '')?.messageId ??
+              null),
           wraps: moment.milestoneId,
           label: `milestone ${moment.milestoneId}`,
           ask: (flow) => flow.milestone(moment),

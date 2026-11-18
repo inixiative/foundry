@@ -994,3 +994,83 @@ test('a turn that only talked is not asked at its hand-back', async () => {
   expect(f.handBackCalls).toHaveLength(0);
   expect(f.rows().some((r) => r.record.trigger === 'hand-back')).toBe(false);
 });
+
+// A turn the session started itself (a Claude wake on a background task finishing, Aron 2026-11-18:
+// "a full turn when things wake up"): its calls are guarded once with that turn when it ends, a
+// milestone it lands is asked on that turn, and a wake that did work has its answer handed back.
+test('a turn the session started itself is guarded once when it ends, its milestone asked on it, and its answer handed back', async () => {
+  const f = fixture({ milestone: CHIME, handBack: CHIME });
+  await f.turn('turn-1', 'Watch the build and merge when green');
+  f.store.startObservedTurn(f.thread, 'wake-1', 'The agent started this turn itself.');
+  const wakeCall = (n: number, tool: string, input: Record<string, unknown>) =>
+    f.thread.signals.emit({
+      id: `sig-wake-${n}`,
+      kind: 'tool_observation',
+      source: 'native-turn',
+      timestamp: Date.now(),
+      content: {
+        threadId: f.thread.id,
+        tool,
+        input,
+        ok: true,
+        callId: `wake-call-${n}`,
+        agentId: 'native-turn',
+        nativeTurn: { turnId: 'wake-1' },
+      },
+    });
+  await wakeCall(1, 'Edit', { file_path: 'a.ts' });
+  await wakeCall(2, 'Bash', { command: 'gh pr merge 42 --squash' });
+  await until(() => f.milestoneCalls.length === 1, 'wake milestone asked');
+  await until(
+    () => f.rows('wake-1').some((r) => r.phase === 'advice' && r.record.trigger === 'milestone'),
+    'milestone journalled on the wake',
+  );
+  // Held for the wake's end: no guard yet.
+  expect(f.guardCalls).toHaveLength(0);
+  await f.thread.signals.emit({
+    id: 'sig-wake-end',
+    kind: 'native_turn',
+    source: 'native-turn',
+    timestamp: Date.now(),
+    content: { threadId: f.thread.id, turnId: 'wake-1', outcome: 'completed', text: 'Merged #42.' },
+  });
+  await until(
+    () => f.rows('wake-1').some((r) => r.phase === 'guard-outcome'),
+    'wake guard outcome',
+  );
+  expect(f.guardCalls).toHaveLength(1);
+  const outcome = f.rows('wake-1').find((r) => r.phase === 'guard-outcome')!;
+  expect(outcome.record).toMatchObject({
+    wraps: 'turn:wake-1',
+    correlation: 'native-turn',
+    observation: { calls: 2, agentId: 'native-turn' },
+  });
+  await until(() => f.handBackCalls.length === 1, 'wake hand-back asked');
+  expect(f.handBackCalls[0]!.map((m) => m.content).join('\n')).toContain('Merged #42.');
+  // Ended again (a duplicate end): nothing is asked twice.
+  await f.thread.signals.emit({
+    id: 'sig-wake-end-2',
+    kind: 'native_turn',
+    source: 'native-turn',
+    timestamp: Date.now(),
+    content: { threadId: f.thread.id, turnId: 'wake-1', outcome: 'completed', text: 'Merged #42.' },
+  });
+  await Bun.sleep(20);
+  expect(f.guardCalls).toHaveLength(1);
+  expect(f.handBackCalls).toHaveLength(1);
+});
+
+test('a turn the session started itself that only talked is neither guarded nor handed back', async () => {
+  const f = fixture({ handBack: CHIME });
+  await f.turn('turn-1', 'Watch the build');
+  await f.thread.signals.emit({
+    id: 'sig-wake-talk',
+    kind: 'native_turn',
+    source: 'native-turn',
+    timestamp: Date.now(),
+    content: { threadId: f.thread.id, turnId: 'wake-2', outcome: 'completed', text: 'Still red.' },
+  });
+  await Bun.sleep(30);
+  expect(f.guardCalls).toHaveLength(0);
+  expect(f.handBackCalls).toHaveLength(0);
+});
