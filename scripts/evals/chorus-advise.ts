@@ -85,7 +85,7 @@ import {
 type PrimedEvent = Parameters<NonNullable<DecisionEvents['onPrimedEvent']>>[0];
 
 import { isDefaultProfile } from '../../packages/foundry/src/providers/default-profiles';
-import { processTreeRssMb } from '../../packages/foundry/src/providers/project-warden-hosts';
+import { processTreeRssMb } from '../../packages/foundry/src/providers/process-table';
 import { resolveSubscriptionPolicy } from '../../packages/foundry/src/providers/subscription-policy';
 import { resolvePrefilterSettings } from '../../packages/foundry/src/providers/warden-prefilter';
 import { ConfigStore } from '../../packages/foundry/src/viewer/config';

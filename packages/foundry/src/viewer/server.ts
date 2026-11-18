@@ -48,6 +48,7 @@ import {
   type KingdomIntegration,
   shareViewerCredential,
 } from '../providers/kingdom-installation-connection';
+import type { ProjectHostState } from '../providers/project-warden-hosts';
 import { FileExternalSessionStore } from '../providers/session-adapter';
 import type { TaskSink } from '../providers/session-backed';
 import { ThreadLaunchSettings } from '../providers/thread-launch';
@@ -99,6 +100,7 @@ import { registerGlossRoutes } from './routes/gloss';
 import { registerKeychainRoutes } from './routes/keychain';
 import { registerKingdomRoutes } from './routes/kingdom';
 import { registerLoginRoutes } from './routes/logins';
+import { registerMachineProcessRoutes } from './routes/machine-processes';
 import { registerModelRoutes } from './routes/models';
 import { registerProfileRoutes } from './routes/profile';
 import { registerRuntimeRoutes, type WorkerSessions } from './routes/runtime';
@@ -123,6 +125,10 @@ export interface ViewerConfig {
   assistProvider?: LLMProvider;
   /** Model for AI assist (optional). */
   assistModel?: string;
+  /** The project Warden hosts' snapshot, for the Status view's process list (`/api/machine/processes`). */
+  decisionHosts?: () => { projects: Record<string, ProjectHostState> } | undefined;
+  /** Every native session binding (`FileExternalSessionStore.all`), for Status → Processes. */
+  sessionBindings?: () => Promise<ReadonlyArray<{ threadId: string; externalSessionId: string }>>;
   /** Decision provider that keeps agent thread names (optional; no naming without it). */
   namingProvider?: LLMProvider;
   /** Each worker's native sessions, for a thread switching worker mid-conversation. */
@@ -1060,6 +1066,12 @@ export function createViewer(config: ViewerConfig) {
       service.dispose();
     });
   }
+  registerMachineProcessRoutes(app, {
+    ...(config.decisionHosts ? { hosts: config.decisionHosts } : {}),
+    projectLabel: (projectId) => configStore.config.projects?.[projectId]?.label,
+    ...(config.sessionBindings ? { sessionBindings: config.sessionBindings } : {}),
+    threadName: (threadId) => directory.get(threadId)?.meta.name?.text,
+  });
   registerControlRoutes(app, {
     harness,
     actions,

@@ -10,7 +10,8 @@
  * and Archives as two equal pills, each linking to its settings; your other machines, each with its
  * open threads and no meters (subscriptions are per login and shared across machines, Aron
  * 2026-11-02); Subscriptions: this machine's Claude and Codex logins per runtime with the balancing
- * scale (subscriptions.js), then any other subscription. Threads, Wardens and Forge
+ * scale (subscriptions.js), then any other subscription; then Processes, everything this Foundry runs
+ * (machine-processes.js). Threads, Wardens and Forge
  * Master live elsewhere.
  */
 
@@ -19,6 +20,7 @@ import { ComingSoon } from './coming-soon.js';
 import { openThreadsLabel, otherMachines } from './device-page.js';
 import { html, useEffect, useState } from './lib.js';
 import { DeviceIcon, MachineIconPicker, machineIcon, machineProfile } from './machine-icons.js';
+import { MachineProcesses } from './machine-processes.js';
 import { RenameModal } from './modal.js';
 import { navigate, settingsPath } from './route.js';
 import {
@@ -255,5 +257,6 @@ export function MachineStatus() {
     </div>
     <${OtherMachines} />
     <${Subscriptions} accounts=${accounts} registry=${registry} />
+    <${MachineProcesses} />
   </section>`;
 }

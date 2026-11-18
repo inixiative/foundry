@@ -446,6 +446,7 @@ First-class cost tracking and usage analytics panel:
 | `/api/analytics` | GET | Aggregated cost/usage analytics |
 | `/api/analytics/calls` | GET | Paginated LLM call log |
 | `/api/analytics/budget` | GET | Budget status and utilization |
+| `/api/machine/processes` | GET | Status → Processes: the daemon's process tree, each process named, with memory, CPU and age (read-only; nothing here stops a process) |
 | `/api/messages/send` | POST | Accept a turn (202); its output arrives on `thread:<id>` |
 | `/ws` | WebSocket | Data streams, scoped per panel (below) |
 

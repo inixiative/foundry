@@ -9,6 +9,7 @@ import {
   type PrimeSpec,
 } from '@inixiative/agent-session';
 import type { EventStream } from '@inixiative/foundry-core';
+import { processTreeRssMb } from './process-table';
 import type { LoginQuotaPause } from './provider-limits';
 import type { ProjectHostPolicy } from './subscription-policy';
 
@@ -129,34 +130,6 @@ interface ProjectEntry {
   recycles: number[];
   /** The project's last turn or thread activity. */
   lastActive: number;
-}
-
-/** Resident memory (MB) of `pid` and every process below it, read from `ps` (scripts/measure-in-session.ts). */
-export function processTreeRssMb(pid: number): number | undefined {
-  try {
-    const out = Bun.spawnSync(['/bin/ps', '-A', '-o', 'pid=,ppid=,rss=']).stdout.toString();
-    const children = new Map<number, number[]>();
-    const rss = new Map<number, number>();
-    for (const line of out.trim().split('\n')) {
-      const [p, pp, kb] = line.trim().split(/\s+/).map(Number) as [number, number, number];
-      if (!Number.isFinite(p)) continue;
-      rss.set(p, kb);
-      children.set(pp, [...(children.get(pp) ?? []), p]);
-    }
-    if (!rss.has(pid)) return undefined;
-    let total = 0;
-    const seen = new Set<number>();
-    const walk = (at: number) => {
-      if (seen.has(at)) return;
-      seen.add(at);
-      total += rss.get(at) ?? 0;
-      for (const child of children.get(at) ?? []) walk(child);
-    };
-    walk(pid);
-    return Math.round(total / 1024);
-  } catch {
-    return undefined;
-  }
 }
 
 /** A roster's identity: the composed text of each Warden it holds (spec hash) and its standby. */
