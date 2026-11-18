@@ -12,6 +12,8 @@ interface FakeTreeProcess {
   crash(): void;
   /** End every dispatcher task, as a dispatcher that dies would: its members are left orphaned. */
   endDispatchers(): void;
+  /** Report this much context on every dispatcher task, as a dispatcher's turn would. */
+  fillDispatchers(contextTokens: number): void;
   readonly exited: boolean;
 }
 
@@ -159,6 +161,25 @@ export function fakeClaudeTree(behavior: { noRoot?: boolean } = {}) {
       endDispatchers: () => {
         for (const [taskId, task] of tasks)
           if (task.type === 'foundry-dispatch') finish(taskId, 'completed');
+      },
+      fillDispatchers: (contextTokens) => {
+        for (const task of tasks.values())
+          if (task.type === 'foundry-dispatch')
+            emit({
+              type: 'assistant',
+              parent_tool_use_id: task.toolUseId,
+              session_id: 'main',
+              message: {
+                role: 'assistant',
+                model: 'claude-haiku-5-5',
+                content: [{ type: 'text', text: '' }],
+                usage: {
+                  input_tokens: 2,
+                  output_tokens: 3,
+                  cache_read_input_tokens: contextTokens,
+                },
+              },
+            });
       },
       get exited() {
         return closed;

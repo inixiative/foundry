@@ -84,6 +84,7 @@ function projectHosts(
     maxRestarts?: number;
     idleMs?: number;
     wardensPerDispatcher?: number;
+    maxRecyclesPerHour?: number;
   } = {},
 ) {
   const tree = fakeClaudeTree({ noRoot: options.noRoot });
@@ -102,6 +103,9 @@ function projectHosts(
       ...(options.idleMs !== undefined ? { idleMs: options.idleMs } : {}),
       ...(options.wardensPerDispatcher !== undefined
         ? { wardensPerDispatcher: options.wardensPerDispatcher }
+        : {}),
+      ...(options.maxRecyclesPerHour !== undefined
+        ? { maxRecyclesPerHour: options.maxRecyclesPerHour }
         : {}),
     },
     healthIntervalMs: 10,
@@ -269,6 +273,20 @@ test('a host whose orphans pass its bound is replaced for that reason, read from
   expect(first.snapshot().capacity?.orphanedOut).toBe(true);
   expect(await until(() => wardens.projectState('P')?.generation === 2)).toBe(true);
   expect(wardens.projectState('P')!.resets).toEqual({ 'orphaned out': 1 });
+});
+
+test('a dispatcher past its context bound is churn, not an orphaned-out host: past the hourly bound the host is replaced for churn', async () => {
+  const { tree, wardens } = projectHosts({ maxRecyclesPerHour: 1 });
+  wardens.openProject('P', roster('locks'));
+  expect(await wardens.projectReady('P', 5_000)).toBe(true);
+  const first = servingHost(wardens, 'A1')!;
+  for (let i = 0; i < 6 && wardens.projectState('P')?.generation === 1; i++) {
+    tree.processes[0]!.fillDispatchers(PROJECT_HOST_DEFAULTS.recycleTokens + 1);
+    await Bun.sleep(30);
+  }
+  expect(first.snapshot().capacity?.orphanedOut).toBe(false);
+  expect(await until(() => wardens.projectState('P')?.generation === 2)).toBe(true);
+  expect(wardens.projectState('P')!.resets).toEqual({ 'recycle churn': 1 });
 });
 
 test('memory: a fan-out peak over the bound is tolerated; sustained growth starts a replacement while the old host serves; the ceiling takes routing off at once', async () => {
