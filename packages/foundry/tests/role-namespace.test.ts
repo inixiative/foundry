@@ -99,7 +99,7 @@ test("a namespaced role's files nest by namespace on every rung", () => {
   expect(roleDirectory('main')).toBe('main');
   expect(roleDirectory(MAIN_ROLE)).toBe('thread/main');
   expect(roleDirectory(FEEDBACK_ROLE)).toBe('scope/feedback');
-  expect(roleDirectory(roleIdOfAgent('cartographer'))).toBe('agent/cartographer');
+  expect(roleDirectory(roleIdOfAgent('worker'))).toBe('agent/worker');
   const roots = { home: '/home/u', project: '/work/org/repo' };
   expect(roleFilePath('project', CODER_ROLE, 'instructions', roots)).toBe(
     '/work/org/repo/.foundry/roles/thread/coder/instructions.md',
@@ -127,9 +127,9 @@ test('a region may carry the name of any built-in role: its Warden is its own ro
     ASSISTANT_ROLE,
     FORGE_MASTER_ROLE,
     FEEDBACK_ROLE,
-    roleIdOfAgent('cartographer'),
+    roleIdOfAgent('worker'),
   ];
-  // Each built-in role's bare name: main, coder, assistant, forge, feedback, cartographer.
+  // Each built-in role's bare name: main, coder, assistant, forge, feedback, worker.
   const names = builtIns.map((role) => role.slice(role.indexOf(':') + 1));
   const c = config(projectWithRegions(names));
   validateConfig(c);
@@ -162,9 +162,9 @@ test('only a thread role takes a thread field, and a role key must carry its nam
 });
 
 test("a written agent's role is agent:<key>; a generated agent's id is its role", () => {
-  expect(roleIdOfAgent('cartographer')).toBe('agent:cartographer');
+  expect(roleIdOfAgent('worker')).toBe('agent:worker');
   expect(roleIdOfAgent('region:x')).toBe('region:x');
-  expect(agentIdOfRole('agent:cartographer')).toBe('cartographer');
+  expect(agentIdOfRole('agent:worker')).toBe('worker');
   expect(agentIdOfRole('region:x')).toBe('region:x');
   expect(agentIdOfRole(CODER_ROLE)).toBeUndefined();
   expect(agentIdOfRole(FEEDBACK_ROLE)).toBeUndefined();

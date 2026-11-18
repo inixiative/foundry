@@ -6,7 +6,7 @@
 /**
  * One turn, read top to bottom in the centre, from the journal's turn timeline
  * (`GET /api/threads/:id/turns/:turnId/timeline`): what Foundry did before the agent ran (input,
- * routing, each region's answer layer by layer, the sealed plan, what was delivered), the agent's
+ * each region's answer layer by layer, the sealed plan, what was delivered), the agent's
  * own work (each tool call with its detail, handoffs), and what Foundry did after (guards,
  * writeback, feedback, Archive capture). Every step keeps its raw record.
  */
@@ -431,7 +431,7 @@ export function TurnView() {
               if (!mine.length) return null;
               return html`<li key=${group} class="tv-group"><h3>${title}</h3><ol>${mine.map((s) => {
                 const i = steps.indexOf(s);
-                return html`<li key=${s.key} data-step-index=${i} class="tv-step ${i === at ? 'is-at' : ''}" data-status=${routeDegraded(s.step) ? 'warn' : flagged(s.step) ? 'error' : 'ok'}
+                return html`<li key=${s.key} data-step-index=${i} class="tv-step ${i === at ? 'is-at' : ''}" data-status=${flagged(s.step) ? 'error' : 'ok'}
                   onClick=${() => setAt(i)}>
                   <div class="tv-step-head">
                     <span class="tv-dot"></span>

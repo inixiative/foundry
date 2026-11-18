@@ -81,7 +81,6 @@ const roleFile = (dir: string, role: string, slot: string, local = false) =>
 const WARDEN = 'conventions';
 /** The generated Warden's role id. */
 const WARDEN_ROLE = regionRoleId(WARDEN);
-/** The Cartographer's composition role: an agent written in settings is `agent:<key>`. */
 const REGION = { id: WARDEN, title: 'Conventions', routing: 'Is this about how this repo works?' };
 const REGION_RULES = regionInstructions(REGION);
 

@@ -391,7 +391,7 @@ test('routing: a project host takes every Warden call (advice, guards, reviews, 
   expect(projectHostTarget(project, 'A1:aux:domain:locks')).toBe(host as never);
   expect(projectHostTarget(project, 'A1:aux:review:g1:domain:locks')).toBe(host as never);
   expect(projectHostTarget(project, 'A1:aux:domain:locks:stage:1')).toBe(host as never);
-  expect(projectHostTarget(project, 'A1:aux:cartographer')).toBeUndefined();
+  expect(projectHostTarget(project, 'A1:aux:agent:worker')).toBeUndefined();
   // A host still starting holds only held-only advice (refused unsent); any other call goes primed.
   const starting = { serving: () => 'starting' } as unknown as ProjectWardenHosts;
   expect(projectHostTarget(starting, 'A1:aux:domain:locks')).toBeUndefined();

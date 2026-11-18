@@ -11,7 +11,7 @@
  *
  *   applyFlowFrame   `flow:<threadId>` snapshot/append → panel state
  *   threadGraph      thread + subagent hierarchy (meta.parentThreadId), big subtrees folded
- *   turnFlowGraph    one turn's loop: input → assessment ∥ routing → sealed plan → layers → executor → delivery ∥ guards ∥ tasks → learning
+ *   turnFlowGraph    one turn's loop: input → assessment → sealed plan → layers → executor → delivery ∥ guards ∥ tasks → learning
  *   learningLoop     per-domain lanes across turns: assessed revision → writeback → the revision a later turn assessed
  */
 
@@ -331,7 +331,6 @@ function layoutTree(nodes, edges, { gapX = 24, gapY = 56 } = {}) {
 // Turn flow
 // ---------------------------------------------------------------------------
 
-// A routing error is degraded, not failed: the turn went on with its standing layers.
 const TURN_STATUS = {
   completed: 'ok',
   failed: 'error',

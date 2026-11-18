@@ -61,7 +61,7 @@ function config(paths: { P?: string; Q?: string } = {}) {
   return c;
 }
 interface Call {
-  phase: 'central' | 'pre' | 'post' | 'route';
+  phase: 'central' | 'pre' | 'post';
   provider: string;
   messages: LLMMessage[];
   opts: CompletionOpts;
@@ -77,13 +77,11 @@ function setup(
   const provider = (id: string): LLMProvider => ({
     id,
     async complete(messages, opts = {}) {
-      const phase: Call['phase'] = opts.threadId?.endsWith(':cartographer')
-        ? 'route'
-        : opts.threadId?.includes(':review:')
-          ? 'post'
-          : opts.threadId?.includes(':aux:')
-            ? 'pre'
-            : 'central';
+      const phase: Call['phase'] = opts.threadId?.includes(':review:')
+        ? 'post'
+        : opts.threadId?.includes(':aux:')
+          ? 'pre'
+          : 'central';
       const call = { phase, provider: id, messages: structuredClone(messages), opts: { ...opts } };
       calls.push(call);
       const domain = opts.threadId?.split(':domain:').at(-1) ?? 'compatibility';
@@ -92,21 +90,15 @@ function setup(
         content:
           phase === 'central'
             ? 'COMPLETED: additive migration and regression verified'
-            : phase === 'route'
-              ? JSON.stringify({
-                  domains: ['compatibility', 'testing'],
-                  layers: ['compatibility-reference', 'testing-reference'],
-                  confidence: 1,
-                })
-              : phase === 'pre'
-                ? JSON.stringify({ layers: [`${domain}-reference`], snippets: [], confidence: 1 })
-                : review
-                  ? await review(call)
-                  : JSON.stringify({
-                      knowledge: `PRIVATE_${domain}: ${messages.some((m) => m.content.includes('additive migration')) ? 'additive migration verified' : 'observed completed work'}`,
-                      facts: [],
-                      reason: `OWNED_${domain}_REASON`,
-                    }),
+            : phase === 'pre'
+              ? JSON.stringify({ layers: [`${domain}-reference`], snippets: [], confidence: 1 })
+              : review
+                ? await review(call)
+                : JSON.stringify({
+                    knowledge: `PRIVATE_${domain}: ${messages.some((m) => m.content.includes('additive migration')) ? 'additive migration verified' : 'observed completed work'}`,
+                    facts: [],
+                    reason: `OWNED_${domain}_REASON`,
+                  }),
       };
     },
   });

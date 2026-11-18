@@ -179,7 +179,7 @@ test('expert loop: before work, after post-hooks (pending, commit, NO_COMMENT), 
         role: /advises before|reviews after/i.test(
           await text(drawer(page).locator('.expert-role')),
         ),
-        notExecutor: /Not\s*the central executor, router or classifier/i.test(
+        notExecutor: /Not\s*the central executor; not a shared thread fact/i.test(
           await text(drawer(page).locator('.expert-role')),
         ),
         leaked: dt.includes(A) || dt.includes(T),

@@ -48,7 +48,7 @@ export const learned = (thread: string, d: Domain) =>
   });
 
 export interface Call {
-  phase: 'pre' | 'guard' | 'post' | 'route' | 'central';
+  phase: 'pre' | 'guard' | 'post' | 'central';
   thread: string;
   domain?: Domain;
   messages: LLMMessage[];
@@ -242,18 +242,14 @@ export async function m0Scenario(options: ScenarioOptions = {}) {
         const id = opts.threadId ?? '';
         const domain = domains.find((d) => id.endsWith(`:domain:${d}`));
         // The guard shares the Warden's advice session; its phase shows in the protocol it carries.
-        const phase = id.endsWith(':cartographer')
-          ? 'route'
-          : id.includes(':review:')
-            ? 'post'
-            : messages.some((m) => m.content.includes('## Response protocol (guard phase'))
-              ? 'guard'
-              : 'pre';
+        const phase = id.includes(':review:')
+          ? 'post'
+          : messages.some((m) => m.content.includes('## Response protocol (guard phase'))
+            ? 'guard'
+            : 'pre';
         const call = copyCall(phase, messages, opts, domain);
         let content: string;
-        if (phase === 'route')
-          content = JSON.stringify({ domains, layers: domains, confidence: 1 });
-        else if (!domain) throw Error('Unowned expert request');
+        if (!domain) throw Error('Unowned expert request');
         else if (phase === 'guard') content = noComment;
         else if (phase === 'pre')
           content = JSON.stringify({

@@ -802,8 +802,8 @@ test("a region's warm-cache key is the content hash of its composed knowledge: e
     );
     // A call whose knowledge is no region's has no chorus key.
     expect(
-      auditor.versions('agent:cartographer', {
-        instructions: [{ subject: 'prompt:agent:cartographer', text: 'ROUTE' }],
+      auditor.versions('agent:worker', {
+        instructions: [{ subject: 'prompt:agent:worker', text: 'RULES' }],
         domainKnowledge: [{ subject: 'source-content:docs', text: 'K' }],
       }).chorus,
     ).toBeUndefined();
@@ -954,7 +954,7 @@ test("a region Warden's domain knowledge is the whole knowledge.md, with the lad
 });
 
 interface Call {
-  phase: 'central' | 'pre' | 'post' | 'route';
+  phase: 'central' | 'pre' | 'post';
   messages: LLMMessage[];
   opts: CompletionOpts;
 }
@@ -965,26 +965,20 @@ function setup(c: FoundryConfig, pointer: string) {
   const provider = (id: string): LLMProvider => ({
     id,
     async complete(messages, opts = {}) {
-      const phase: Call['phase'] = opts.threadId?.endsWith(':cartographer')
-        ? 'route'
-        : opts.threadId?.includes(':review:')
-          ? 'post'
-          : opts.threadId?.includes(':aux:')
-            ? 'pre'
-            : 'central';
+      const phase: Call['phase'] = opts.threadId?.includes(':review:')
+        ? 'post'
+        : opts.threadId?.includes(':aux:')
+          ? 'pre'
+          : 'central';
       calls.push({ phase, messages: structuredClone(messages), opts: { ...opts } });
       return {
         model: 'controlled',
         content:
           phase === 'central'
             ? 'done'
-            : phase === 'route'
-              ? JSON.stringify({ layers: [], domains: [], confidence: 1 })
-              : phase === 'pre'
-                ? opts.threadId?.includes('domain:concurrency-locks')
-                  ? JSON.stringify({ layers: [], snippets: [pointer], confidence: 0.9 })
-                  : 'NO_COMMENT'
-                : 'NO_COMMENT',
+            : phase === 'pre' && opts.threadId?.includes('domain:concurrency-locks')
+              ? JSON.stringify({ layers: [], snippets: [pointer], confidence: 0.9 })
+              : 'NO_COMMENT',
       };
     },
   });
