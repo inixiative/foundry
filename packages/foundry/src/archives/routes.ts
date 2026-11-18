@@ -20,13 +20,18 @@ export function registerArchiveRoutes(
   events: EventStream,
   /** Each captured thread snapshot, e.g. to derive the thread's linked work. */
   observe?: (snapshot: ArchiveSnapshot) => void,
-  options: { connect?: ArchiveConnector; up?: () => Promise<void> } = {},
+  options: {
+    connect?: ArchiveConnector;
+    up?: () => Promise<void>;
+    /** A thread capture skipped because the Archive already holds it as the journal stands. */
+    unchanged?: (threadId: string) => void;
+  } = {},
 ) {
   const { connect = () => localArchive(), up = startLocalArchive } = options;
   // Resolved until found, so an Archive set up while Foundry runs is picked up on the next retry.
   let client: ArchiveClient | undefined;
   const archive = () => (client ??= connect());
-  const capture = new ArchiveCapture(journal, archive, events, observe);
+  const capture = new ArchiveCapture(journal, archive, events, observe, options.unchanged);
   app.use('/api/archives/*', async (c, next) => {
     c.header('Cache-Control', 'no-store');
     await next();

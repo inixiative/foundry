@@ -51,6 +51,14 @@ export const NATIVE_OUTCOME_UNRESOLVED =
   'Foundry lost track of the last turn after a restart. Check the files it touched, then Continue (or Retry the turn).';
 
 /** What a turn held across a restart needs to run again: the message as the executor gets it. */
+/** The last snapshot of a thread the Archive accepted: the source and mark it was built from, and what the Archive holds. */
+export interface ArchiveCaptureRecord {
+  readonly sourceId: string;
+  readonly mark: string;
+  readonly archiveId: string;
+  readonly digest: string;
+  readonly storedAt: number;
+}
 export interface RestartHeldRequest {
   payload: string;
   origin?: Record<string, unknown>;
@@ -495,6 +503,10 @@ export class LocalSessionStore {
         recorded_at INTEGER NOT NULL
       );
       CREATE INDEX IF NOT EXISTS scheduler_runs_schedule ON scheduler_runs(schedule_id, due_at);
+      CREATE TABLE IF NOT EXISTS archive_captures (
+        thread_id TEXT PRIMARY KEY REFERENCES session_threads(id), source_id TEXT NOT NULL,
+        mark TEXT NOT NULL, archive_id TEXT NOT NULL, digest TEXT NOT NULL, stored_at INTEGER NOT NULL
+      );
     `);
       // v6: one order over a main thread's messages and conversation entries (the journal seq a
       // member reads by). Existing messages are ordered as they were written.
@@ -2202,6 +2214,48 @@ export class LocalSessionStore {
       phases,
       turns,
     };
+  }
+
+  /**
+   * What a thread's Archive snapshot reads from its journal rows, as one cheap mark read from the
+   * indexes: the newest row of each append-only table, the phase count (pruned raw middleware rows
+   * move it, costing one needless capture), each turn's state, and the volatile tool records.
+   */
+  archiveRecordsMark(threadId: string): string {
+    const row = this.query(
+      `SELECT
+        (SELECT MAX(seq) FROM session_messages WHERE thread_id=?1) AS messages,
+        (SELECT MAX(seq) FROM session_native WHERE thread_id=?1) AS native,
+        (SELECT MAX(seq) FROM session_native_tools WHERE thread_id=?1) AS tools,
+        (SELECT MAX(seq) || ':' || COUNT(*) FROM session_phase WHERE thread_id=?1) AS phases,
+        (SELECT group_concat(turn, ',') FROM (SELECT id || ':' || status || ':' || IFNULL(ended_at, '') || ':' || IFNULL(error, '') AS turn
+          FROM session_turns WHERE thread_id=?1 ORDER BY started_at, id)) AS turns`,
+    ).get(threadId);
+    const volatile = [...this.volatileTools.values()]
+      .filter((value) => value.record.owner.threadId === threadId)
+      .map((value) => `${value.record.id}:${value.record.digest}`);
+    return JSON.stringify([row, volatile]);
+  }
+
+  /** The last snapshot of a thread the Archive accepted, as capture recorded it. */
+  archiveCaptureOf(threadId: string): ArchiveCaptureRecord | undefined {
+    const row = this.query(
+      'SELECT source_id AS sourceId, mark, archive_id AS archiveId, digest, stored_at AS storedAt FROM archive_captures WHERE thread_id=?',
+    ).get(threadId) as ArchiveCaptureRecord | null;
+    return row ?? undefined;
+  }
+
+  recordArchiveCapture(threadId: string, capture: ArchiveCaptureRecord): void {
+    this.query(
+      'INSERT INTO archive_captures(thread_id, source_id, mark, archive_id, digest, stored_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(thread_id) DO UPDATE SET source_id=excluded.source_id, mark=excluded.mark, archive_id=excluded.archive_id, digest=excluded.digest, stored_at=excluded.stored_at',
+    ).run(
+      threadId,
+      capture.sourceId,
+      capture.mark,
+      capture.archiveId,
+      capture.digest,
+      capture.storedAt,
+    );
   }
 
   /** Bounded summary index, newest page first. Summary fields are projected inside SQLite

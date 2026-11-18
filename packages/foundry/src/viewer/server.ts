@@ -655,9 +655,14 @@ export function createViewer(config: ViewerConfig) {
   };
   // Archive capture covers every journalled thread at startup and after each turn.
   const archiveCapture = localStore
-    ? registerArchiveRoutes(app, localStore, eventStream, (snapshot) => {
-        void threadContext.observe(snapshot);
-      }).capture
+    ? registerArchiveRoutes(
+        app,
+        localStore,
+        eventStream,
+        (snapshot) => void threadContext.observe(snapshot),
+        // A thread the Archive already holds is not rebuilt; its work context is still derived.
+        { unchanged: (threadId) => void threadContext.refresh(threadId) },
+      ).capture
     : undefined;
   if (!localStore) for (const thread of directory.all()) void threadContext.refresh(thread.id);
   const configStore = config.configStore ?? new ConfigStore(config.configDir ?? '.foundry');
