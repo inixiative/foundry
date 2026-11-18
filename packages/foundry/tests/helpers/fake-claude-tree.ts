@@ -10,6 +10,8 @@ interface FakeTreeProcess {
   readonly pid: number;
   /** End it as a crash would. */
   crash(): void;
+  /** End every dispatcher task, as a dispatcher that dies would: its members are left orphaned. */
+  endDispatchers(): void;
   readonly exited: boolean;
 }
 
@@ -41,7 +43,7 @@ export function fakeClaudeTree(behavior: { noRoot?: boolean } = {}) {
       exit(code);
     };
     const pending = new Map<string, (response: Record<string, unknown>) => void>();
-    const tasks = new Map<string, { toolUseId: string }>();
+    const tasks = new Map<string, { toolUseId: string; type: string }>();
     const control = (request: Record<string, unknown>) =>
       new Promise<Record<string, unknown>>((resolve) => {
         const id = `cli-${++seq}`;
@@ -96,7 +98,7 @@ export function fakeClaudeTree(behavior: { noRoot?: boolean } = {}) {
       if (output?.permissionDecision !== 'allow') return;
       const taskId = `task_${++seq}`;
       const prompt = output.updatedInput?.prompt ?? '';
-      tasks.set(taskId, { toolUseId });
+      tasks.set(taskId, { toolUseId, type });
       started.push(type);
       emit({
         type: 'system',
@@ -154,6 +156,10 @@ export function fakeClaudeTree(behavior: { noRoot?: boolean } = {}) {
       env: options.env,
       pid: ++pid,
       crash: () => end(1),
+      endDispatchers: () => {
+        for (const [taskId, task] of tasks)
+          if (task.type === 'foundry-dispatch') finish(taskId, 'completed');
+      },
       get exited() {
         return closed;
       },

@@ -254,6 +254,23 @@ test('a host process that dies: routing falls back at once, and a new host is st
   expect(Object.keys(wardens.projectState('P')!.resets)[0]).toMatch(/^process ended/);
 });
 
+test('a host whose orphans pass its bound is replaced for that reason, read from its capacity', async () => {
+  const { tree, wardens } = projectHosts();
+  wardens.openProject('P', roster('locks'));
+  expect(await wardens.projectReady('P', 5_000)).toBe(true);
+  const first = servingHost(wardens, 'A1')!;
+  // Each dispatcher that dies orphans its members; a used orphan stays held and its role is refilled.
+  for (let i = 0; i < 12 && !first.snapshot().capacity?.orphanedOut; i++) {
+    tree.processes[0]!.endDispatchers();
+    await Bun.sleep(30);
+    if (first.serving())
+      await first.decide(spec('locks'), { input: `M${i}`, standby: '' }).catch(() => {});
+  }
+  expect(first.snapshot().capacity?.orphanedOut).toBe(true);
+  expect(await until(() => wardens.projectState('P')?.generation === 2)).toBe(true);
+  expect(wardens.projectState('P')!.resets).toEqual({ 'orphaned out': 1 });
+});
+
 test('memory: a fan-out peak over the bound is tolerated; sustained growth starts a replacement while the old host serves; the ceiling takes routing off at once', async () => {
   const { tree, rss, wardens } = projectHosts();
   wardens.openProject('P', roster('locks'));
@@ -429,7 +446,11 @@ test('the decision host launches the project host on the decision login: its own
     }),
   ).rejects.toThrow();
   expect(Date.now() - at).toBeLessThan(1_000);
-  expect(early.snapshot().calls[0]).toMatchObject({ failure: 'not-held', valid: false });
+  expect(early.snapshot().calls[0]).toMatchObject({
+    failure: 'not-held',
+    reason: 'not-held',
+    valid: false,
+  });
   expect(tree.processes.length).toBe(0);
   wardens.markOpening('P', false);
   // Admitted to the host by the queue, but the host is gone by the time it runs: refused unsent too,
@@ -441,7 +462,11 @@ test('the decision host launches the project host on the decision login: its own
     admittedToProjectHost: true,
   };
   await expect(orphan.provider.complete(messages('T7'), admitted)).rejects.toThrow();
-  expect(orphan.snapshot().calls[0]).toMatchObject({ failure: 'not-held', valid: false });
+  expect(orphan.snapshot().calls[0]).toMatchObject({
+    failure: 'not-held',
+    reason: 'not-held',
+    valid: false,
+  });
   expect(tree.processes.length).toBe(0);
   wardens.openProject('P', [{ spec: held, standby: '' }]);
   expect(await wardens.projectReady('P', 5_000)).toBe(true);
@@ -475,7 +500,12 @@ test('the decision host launches the project host on the decision login: its own
   expect(answer.content).toBe(
     'ANS:\n## Your understanding of this thread\nT7 knows\n\n## Message\nadd a lock',
   );
-  expect(run.snapshot().calls[0]).toMatchObject({ prime: 'warm', valid: true });
+  expect(run.snapshot().calls[0]).toMatchObject({
+    prime: 'warm',
+    valid: true,
+    // The host's capacity as the call went out: nothing queued for a slot, no orphans.
+    hostCapacity: { awaitingSlot: 0, orphans: 0, orphanedOut: false },
+  });
   // The held text is the composed Warden and its knowledge; no thread's state.
   const holding = tree.memberPrompts[0]!;
   expect(holding).toContain('LOCKS WARDEN');
@@ -493,7 +523,11 @@ test('the decision host launches the project host on the decision login: its own
       { threadId: 'T7:aux:domain:naming', stablePrefix: other, heldOnly: true },
     ),
   ).rejects.toThrow();
-  expect(unheld.snapshot().calls[0]).toMatchObject({ failure: 'not-held', valid: false });
+  expect(unheld.snapshot().calls[0]).toMatchObject({
+    failure: 'not-held',
+    reason: 'not-held',
+    valid: false,
+  });
   expect(tree.memberPrompts.some((p) => p.includes('NAMING WARDEN'))).toBe(false);
 });
 
