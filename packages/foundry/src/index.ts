@@ -25,16 +25,6 @@ export {
   MuninnMemory,
 } from './adapters/muninn-memory';
 export { PostgresMemory } from './adapters/postgres-memory';
-// Heavy-infra adapters
-export {
-  type RedisClient,
-  type RedisEntry,
-  RedisMemory,
-} from './adapters/redis-memory';
-export {
-  SupermemoryAdapter,
-  type SupermemoryConfig,
-} from './adapters/supermemory';
 // Foundry agents (re-exports core + adds foundry-specific agents)
 export {
   type AdviseResult,
@@ -74,7 +64,6 @@ export {
 } from './agents';
 // Git — worktree detection for thread→branch assignment
 export {
-  diffStat,
   findByBranch,
   findByPath,
   type GitWorktree,
@@ -89,13 +78,11 @@ export {
 export {
   type AnthropicConfig,
   AnthropicProvider,
-  VoyageEmbeddingProvider,
 } from './providers/anthropic';
 // LLM Providers
 export type { ClaudeContextBudget } from './providers/claude-context-budget';
 export {
   type GeminiConfig,
-  GeminiEmbeddingProvider,
   GeminiProvider,
 } from './providers/gemini';
 export {
@@ -114,10 +101,7 @@ export {
   type NativeAuthenticationSource,
 } from './providers/native-authentication';
 export {
-  createCursorProvider,
-  createOllamaProvider,
   type OpenAIConfig,
-  OpenAIEmbeddingProvider,
   OpenAIProvider,
 } from './providers/openai';
 

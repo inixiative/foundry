@@ -48,7 +48,6 @@ export {
   type HarnessResult,
   type HydrationAdapter,
   // Hydration
-  HydrationRegistry,
   type Intervention,
   // Interventions
   InterventionLog,
@@ -76,7 +75,6 @@ export {
   type PromptStatus,
   type PromptUrgency,
   RESTRICTED_POLICY,
-  RefSource,
   type RequestContext,
   type SessionEvent,
   type Signal,

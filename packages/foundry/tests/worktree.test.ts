@@ -2,13 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import {
-  diffStat,
-  findByBranch,
-  findByPath,
-  getCurrentBranch,
-  listWorktrees,
-} from '../src/git/worktree';
+import { findByBranch, findByPath, getCurrentBranch, listWorktrees } from '../src/git/worktree';
 
 const decoder = new TextDecoder();
 
@@ -123,12 +117,5 @@ describe('git/worktree utilities', () => {
     await expect(getCurrentBranch(repoRoot)).resolves.toBe('main');
     await expect(getCurrentBranch(featureRoot)).resolves.toBe('feature-auth');
     await expect(getCurrentBranch(detachedRoot)).resolves.toBeNull();
-  });
-
-  test('diffStat reports branch-level changes between worktrees', async () => {
-    const stat = await diffStat(repoRoot, 'main', 'feature-auth');
-
-    expect(stat).toContain('feature.txt');
-    expect(stat).toContain('1 file changed');
   });
 });

@@ -7,8 +7,6 @@ import { parseClaudeUsage } from '@inixiative/agent-session';
 import type {
   CompletionOpts,
   CompletionResult,
-  EmbeddingProvider,
-  EmbeddingResult,
   LLMMessage,
   LLMProvider,
   LLMStreamEvent,
@@ -232,66 +230,5 @@ export class AnthropicProvider implements LLMProvider {
     if (tokens) yield { type: 'usage', tokens };
 
     yield { type: 'done', finishReason };
-  }
-}
-
-/**
- * Voyage AI embedding adapter (Anthropic's recommended embedding provider).
- * Also works with any provider that follows the /v1/embeddings OpenAI-compatible format
- * by overriding baseUrl.
- */
-export class VoyageEmbeddingProvider implements EmbeddingProvider {
-  readonly id = 'voyage';
-
-  private _apiKey: string;
-  private _model: string;
-  private _baseUrl: string;
-
-  constructor(config: {
-    apiKey: string;
-    model?: string;
-    baseUrl?: string;
-  }) {
-    this._apiKey = config.apiKey;
-    this._model = config.model ?? 'voyage-3';
-    this._baseUrl = (config.baseUrl ?? 'https://api.voyageai.com').replace(/\/$/, '');
-  }
-
-  async embed(text: string): Promise<EmbeddingResult> {
-    const results = await this._request([text]);
-    return results[0];
-  }
-
-  async embedBatch(texts: string[]): Promise<EmbeddingResult[]> {
-    return this._request(texts);
-  }
-
-  private async _request(input: string[]): Promise<EmbeddingResult[]> {
-    if (input.length === 0) return [];
-
-    const res = await fetch(`${this._baseUrl}/v1/embeddings`, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        authorization: `Bearer ${this._apiKey}`,
-      },
-      body: JSON.stringify({ model: this._model, input }),
-    });
-
-    if (!res.ok) {
-      const text = await res.text();
-      throw new Error(`Voyage API ${res.status}: ${text}`);
-    }
-
-    const data = (await res.json()) as {
-      data: Array<{ embedding: number[]; index: number }>;
-      usage: { total_tokens: number };
-    };
-
-    const tokensPerItem = Math.ceil((data.usage?.total_tokens ?? 0) / input.length);
-
-    return data.data
-      .sort((a, b) => a.index - b.index)
-      .map((d) => ({ embedding: d.embedding, tokens: tokensPerItem }));
   }
 }

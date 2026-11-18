@@ -160,11 +160,6 @@ export interface CompletionResult {
   readonly delivery?: import('./session-delivery').SessionDeliveryReport;
 }
 
-export interface EmbeddingResult {
-  readonly embedding: number[];
-  readonly tokens?: number;
-}
-
 export interface LLMStreamEvent {
   type: 'text' | 'usage' | 'done' | 'error';
   text?: string;
@@ -207,10 +202,4 @@ export interface LLMProvider {
    * `threadPrefix` starts at once. `messages` end at those prefixes; no decision is made. Optional.
    */
   prestart?(messages: LLMMessage[], opts: CompletionOpts): void;
-}
-
-export interface EmbeddingProvider {
-  readonly id: string;
-  embed(text: string): Promise<EmbeddingResult>;
-  embedBatch?(texts: string[]): Promise<EmbeddingResult[]>;
 }

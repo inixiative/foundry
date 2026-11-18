@@ -337,8 +337,3 @@ export async function branchCommits(
     : [];
   return { base, commits };
 }
-
-/** Diff stat between two branches (for Herald cross-thread comparison). */
-export async function diffStat(repoRoot: string, base: string, head: string): Promise<string> {
-  return git(['diff', `${base}...${head}`, '--stat'], repoRoot);
-}

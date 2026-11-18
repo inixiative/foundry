@@ -78,7 +78,7 @@ export default defineConfig({
       include: `${CORE}/{context-layer,context-stack,cache-lifecycle,hydrator}.ts`,
       partOf: 'primitive:contextLayers',
     },
-    { include: `${CORE}/{middleware,retry}.ts`, partOf: 'primitive:middleware' },
+    { include: `${CORE}/middleware.ts`, partOf: 'primitive:middleware' },
     {
       include: `${CORE}/{signal,event-stream,intervention,action-prompt,bounded-set}.ts`,
       partOf: 'primitive:signals',

@@ -6,8 +6,6 @@
 import type {
   CompletionOpts,
   CompletionResult,
-  EmbeddingProvider,
-  EmbeddingResult,
   LLMMessage,
   LLMProvider,
   LLMStreamEvent,
@@ -249,100 +247,4 @@ export class OpenAIProvider implements LLMProvider {
 
     yield { type: 'done', finishReason };
   }
-}
-
-/**
- * OpenAI Embeddings adapter.
- * Works with text-embedding-3-small, text-embedding-3-large, ada-002,
- * and any OpenAI-compatible embedding endpoint.
- */
-export class OpenAIEmbeddingProvider implements EmbeddingProvider {
-  readonly id = 'openai-embed';
-
-  private _apiKey: string;
-  private _model: string;
-  private _apiRoot: string;
-
-  constructor(config: {
-    apiKey: string;
-    model?: string;
-    baseUrl?: string;
-  }) {
-    this._apiKey = config.apiKey;
-    this._model = config.model ?? 'text-embedding-3-small';
-    this._apiRoot = openAiApiRoot(config.baseUrl ?? DEFAULT_BASE);
-  }
-
-  async embed(text: string): Promise<EmbeddingResult> {
-    const results = await this._request([text]);
-    return results[0];
-  }
-
-  async embedBatch(texts: string[]): Promise<EmbeddingResult[]> {
-    return this._request(texts);
-  }
-
-  private async _request(input: string[]): Promise<EmbeddingResult[]> {
-    if (input.length === 0) return [];
-
-    const res = await fetch(`${this._apiRoot}/embeddings`, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        authorization: `Bearer ${this._apiKey}`,
-      },
-      body: JSON.stringify({ model: this._model, input }),
-    });
-
-    if (!res.ok) {
-      const text = await res.text();
-      throw new Error(`OpenAI Embeddings API ${res.status}: ${text}`);
-    }
-
-    const data = (await res.json()) as {
-      data: Array<{ embedding: number[]; index: number }>;
-      usage: { prompt_tokens: number; total_tokens: number };
-    };
-
-    const tokensPerItem = Math.ceil((data.usage?.total_tokens ?? 0) / input.length);
-
-    return data.data
-      .sort((a, b) => a.index - b.index)
-      .map((d) => ({ embedding: d.embedding, tokens: tokensPerItem }));
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Convenience factories for common OpenAI-compatible providers
-// ---------------------------------------------------------------------------
-
-/** Create a provider pointing at Cursor's OpenAI-compatible API. */
-export function createCursorProvider(config: {
-  apiKey: string;
-  baseUrl: string;
-  defaultModel?: string;
-}): OpenAIProvider {
-  return new OpenAIProvider(
-    {
-      apiKey: config.apiKey,
-      baseUrl: config.baseUrl,
-      defaultModel: config.defaultModel ?? 'cursor',
-    },
-    'cursor',
-  );
-}
-
-/** Create a provider pointing at a local Ollama instance. */
-export function createOllamaProvider(config?: {
-  baseUrl?: string;
-  defaultModel?: string;
-}): OpenAIProvider {
-  return new OpenAIProvider(
-    {
-      apiKey: 'ollama', // Ollama ignores auth
-      baseUrl: config?.baseUrl ?? 'http://localhost:11434/v1',
-      defaultModel: config?.defaultModel ?? 'llama3.2:3b',
-    },
-    'ollama',
-  );
 }

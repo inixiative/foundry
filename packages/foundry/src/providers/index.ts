@@ -18,17 +18,15 @@ export {
   assembledToMessages,
   type CompletionOpts,
   type CompletionResult,
-  type EmbeddingProvider,
-  type EmbeddingResult,
   type LLMMessage,
   type LLMProvider,
   type LLMStreamEvent,
   splitSystemMessage,
 } from '@inixiative/foundry-core';
-export { type AnthropicConfig, AnthropicProvider, VoyageEmbeddingProvider } from './anthropic';
+export { type AnthropicConfig, AnthropicProvider } from './anthropic';
 // LLM Providers (API-level)
 export type { ClaudeContextBudget } from './claude-context-budget';
-export { type GeminiConfig, GeminiEmbeddingProvider, GeminiProvider } from './gemini';
+export { type GeminiConfig, GeminiProvider } from './gemini';
 export {
   KingdomAuthentication,
   type KingdomInferenceAssignment,
@@ -46,10 +44,7 @@ export {
   type NativeTextConfig,
 } from './native-text-provider';
 export {
-  createCursorProvider,
-  createOllamaProvider,
   type OpenAIConfig,
-  OpenAIEmbeddingProvider,
   OpenAIProvider,
   openAiApiRoot,
 } from './openai';
