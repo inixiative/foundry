@@ -7,7 +7,7 @@
 // Foundry's live-first policy: the mode is explicit (replay never calls live; record always
 // does), a recording is stamped with who/what/when, and a recording whose structure drifted
 // from the committed cassette is written beside it as pending instead of overwriting it.
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { basename, dirname, extname, join } from 'node:path';
 import { compareSignatures, type Signature, signatureOf } from './signature';
 
@@ -104,6 +104,8 @@ export class VCR {
   private readonly saving = new Set<Promise<unknown>>();
   /** Once one recording drifted, this instance's later ones (its outcome) go to pending with it. */
   private drifted = false;
+  /** This instance's writes before any drift, with what each target held before, to hold back on a drift. */
+  private readonly undrifted = new Map<string, { target: string; previous: string | undefined }>();
 
   constructor(fixturesDir: string, opts: VCROptions) {
     this.fixturesDir = fixturesDir;
@@ -243,6 +245,11 @@ export class VCR {
       };
       const next: Fixture = { version, ...fixture, recorded };
       const target = this.targetPath(fixturePath, next);
+      if (!this.drifted && !this.undrifted.has(fixturePath))
+        this.undrifted.set(fixturePath, {
+          target,
+          previous: existsSync(target) ? readFileSync(target, 'utf-8') : undefined,
+        });
       write(target, next);
       VCR.written.set(fixturePath, target);
       return target;
@@ -275,11 +282,25 @@ export class VCR {
     if (!differences.length) return out;
     const pending = pendingPath;
     this.drifted = true;
+    this.holdBackUndrifted();
     VCR.drift.push({ cassette: fixturePath, pending, differences });
     console.warn(
       `VCR: live drift in "${basename(fixturePath)}"; kept the committed cassette and wrote ${basename(pending)}\n  ${differences.join('\n  ')}`,
     );
     return pending;
+  }
+
+  // why: a test's cassettes must come from one run, so its earlier matching recordings go to pending too.
+  private holdBackUndrifted(): void {
+    for (const [fixturePath, { target, previous }] of this.undrifted) {
+      if (!existsSync(target)) continue;
+      const pending = target.replace(/\.json$/, '.pending.json');
+      writeFileSync(pending, readFileSync(target, 'utf-8'));
+      if (previous === undefined) rmSync(target);
+      else writeFileSync(target, previous);
+      VCR.written.set(fixturePath, pending);
+    }
+    this.undrifted.clear();
   }
 
   private async saveFixture<T>(

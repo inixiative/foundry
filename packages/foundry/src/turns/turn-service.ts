@@ -85,6 +85,8 @@ export interface TurnServiceDeps {
     ModelSuccession,
     'revived' | 'beforeTurn' | 'release' | 'modelMissing'
   > | null;
+  /** The background commands the thread's agent has running now (their labels), for the restart note. */
+  backgroundTasks?: (threadId: string) => string[];
 }
 
 export interface TurnRequest {
@@ -146,6 +148,13 @@ export interface TurnOrigin {
 /** What a paused thread's agent reads after the restart (`pauseForRestart`). */
 export const RESTART_RESUME_NOTE =
   'Foundry paused your previous turn for a restart onto an update. Pick up where you left off: your work so far is in this session. Background commands and subagents may have stopped; check any you were waiting on and start them again if they are still needed.';
+
+/** The restart note, naming the background commands that were running when the turn was paused. */
+export function restartResumeNote(background: readonly string[]): string {
+  if (!background.length) return RESTART_RESUME_NOTE;
+  const listed = background.map((label) => `- ${label}`).join('\n');
+  return `${RESTART_RESUME_NOTE}\n\nThese background commands were running when Foundry paused the turn; the restart stopped them:\n${listed}`;
+}
 
 /** A settled turn's result as the routes and the requesting client receive it. */
 export type CompletedTurn = ReturnType<TurnService['completeResult']>;
@@ -684,15 +693,95 @@ export class TurnService {
         this.live.delete(turnId);
         if (thread.size() === 0 && this.queues.get(threadId) === thread)
           this.queues.delete(threadId);
-        for (const listener of this.settledListeners) {
-          try {
-            listener(threadId, turnId);
-          } catch (error) {
-            console.warn(`[Turns] settled listener failed: ${(error as Error).message ?? error}`);
-          }
-        }
+        this.notifySettled(threadId, turnId);
       });
     return { ok: true, turnId, threadId, queued, settled, payload: request.payload };
+  }
+
+  /**
+   * A turn the thread's native session started itself (a Claude Code wake: a background task's
+   * notification) runs as the thread's live turn: it shows working, holds the thread's queue so a
+   * message sent meanwhile waits behind it, and stops or pauses for a restart through the session's
+   * own interrupt. The journal is the recorder's (`turns/native-turns.ts`); this only makes it live.
+   * `null` while the thread runs a turn Foundry sent, or holds a message waiting for one: the recorder
+   * asks again on the wake's next event. The session ending ends it (`killed`), so it never holds the
+   * queue past its session.
+   */
+  observeNativeTurn(
+    threadId: string,
+    turnId: string,
+    control: { interrupt?: NativeInterrupt },
+  ): { end(outcome: 'completed' | 'failed', text: string): void } | null {
+    const thread = this.deps.directory.get(threadId);
+    if (!thread || thread.disposed || this.live.has(turnId)) return null;
+    // A turn Foundry runs, or a message waiting for one, keeps the thread; a turn whose native answer
+    // already came (finishing its hand-back) doesn't: the wake goes live and runs after it.
+    for (const other of this.live.values())
+      if (other.threadId === threadId && (other.phase === 'queued' || !other.nativeSettled))
+        return null;
+    if (!this.deps.streams.turns.canOpen(turnId)) return null;
+    const buffer = this.deps.streams.turns.open(turnId, threadId, thread.meta.projectId);
+    const refusal = 'the agent started this turn itself; your message runs next';
+    let ended!: () => void;
+    const done = new Promise<void>((resolve) => {
+      ended = resolve;
+    });
+    const state: LiveTurn = {
+      threadId,
+      phase: 'running',
+      cancelRequested: false,
+      admitted: true,
+      nativeSettled: false,
+      ...(control.interrupt ? { interrupt: control.interrupt } : {}),
+      // The runtime takes more input only into a turn Foundry sent: a message waits for this one.
+      steer: { reason: refusal },
+      steerRefusal: 'the agent started this turn itself',
+      resume: { payload: '' },
+      cancelQueued: () => {},
+      settleSteered: () => {},
+    };
+    this.live.set(turnId, state);
+    let queue = this.queues.get(threadId);
+    if (!queue) {
+      queue = createSerializedQueue();
+      this.queues.set(threadId, queue);
+    }
+    const held = queue;
+    buffer.start();
+    buffer.steerable({ available: false, reason: refusal });
+    this.deps.streams.threadsChanged(threadId);
+    void held
+      .run(() => done)
+      .finally(() => {
+        state.phase = 'settled';
+        this.live.delete(turnId);
+        if (held.size() === 0 && this.queues.get(threadId) === held) this.queues.delete(threadId);
+        this.deps.streams.threadsChanged(threadId);
+        this.notifySettled(threadId, turnId);
+      });
+    return {
+      end: (outcome, text) => {
+        if (state.nativeSettled) return;
+        state.nativeSettled = true;
+        state.nativeOutcome = outcome;
+        if (outcome === 'completed') buffer.complete({ id: turnId, threadId, content: text });
+        else buffer.fail(text, { id: turnId, threadId, error: text });
+        // Paused for a restart but it finished on its own first: nothing is left to resume.
+        if (state.continuation && outcome === 'completed' && !state.stopAsked)
+          void this.interrupt(threadId, state.continuation);
+        ended();
+      },
+    };
+  }
+
+  private notifySettled(threadId: string, turnId: string): void {
+    for (const listener of this.settledListeners) {
+      try {
+        listener(threadId, turnId);
+      } catch (error) {
+        console.warn(`[Turns] settled listener failed: ${(error as Error).message ?? error}`);
+      }
+    }
   }
 
   private readonly settledListeners = new Set<(threadId: string, turnId: string) => void>();
@@ -756,7 +845,7 @@ export class TurnService {
     if (!state.interrupt) return state.admitted && state.steer ? 'cannot' : 'not-yet';
     const resumed = this.accept({
       threadId,
-      payload: RESTART_RESUME_NOTE,
+      payload: restartResumeNote(this.deps.backgroundTasks?.(threadId) ?? []),
       origin: {
         member: { kind: 'local', id: `restart:${turnId}` },
         displayName: 'Foundry',

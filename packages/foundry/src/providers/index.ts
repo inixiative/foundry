@@ -77,6 +77,7 @@ export {
 } from './session-adapter';
 export {
   formatMessagesForNativeSession,
+  type NativeTurnControl,
   type NativeTurnSink,
   SessionBackedProvider,
   type SessionBackedProviderConfig,
