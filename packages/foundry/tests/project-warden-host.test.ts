@@ -15,7 +15,6 @@ import {
 } from '@inixiative/foundry-core';
 import { composeProjectRoster, warmWardens, withChorusThread } from '../src/agents/chorus-thread';
 import { createSourceResolver } from '../src/agents/thread-factory';
-import { DECISION_PRIORITY } from '../src/providers/decision-priority';
 import { defaultProfileSource } from '../src/providers/default-profiles';
 import {
   type AdmittedDecisionOpts,
@@ -386,23 +385,39 @@ test('serving: a starting host skips its Wardens (they catch up later); a failed
   expect(wardens.serving('A1')).toBeDefined();
 });
 
-test('routing: a project host takes advice only; guards, reviews and later stages stay primed', () => {
+test('routing: a project host takes every Warden call (advice, guards, reviews, later stages); other roles stay primed', () => {
   const host = { serving: () => true } as unknown;
   const project = { serving: () => host } as unknown as ProjectWardenHosts;
   expect(projectHostTarget(project, 'A1:aux:domain:locks')).toBe(host as never);
-  expect(
-    projectHostTarget(project, 'A1:aux:domain:locks', { priority: DECISION_PRIORITY.turn }),
-  ).toBe(host as never);
-  expect(
-    projectHostTarget(project, 'A1:aux:domain:locks', { priority: DECISION_PRIORITY.guard }),
-  ).toBeUndefined();
-  expect(projectHostTarget(project, 'A1:aux:review:g1:domain:locks')).toBeUndefined();
-  expect(projectHostTarget(project, 'A1:aux:domain:locks:stage:1')).toBeUndefined();
+  expect(projectHostTarget(project, 'A1:aux:review:g1:domain:locks')).toBe(host as never);
+  expect(projectHostTarget(project, 'A1:aux:domain:locks:stage:1')).toBe(host as never);
   expect(projectHostTarget(project, 'A1:aux:cartographer')).toBeUndefined();
   // A host still starting holds only held-only advice (refused unsent); any other call goes primed.
   const starting = { serving: () => 'starting' } as unknown as ProjectWardenHosts;
   expect(projectHostTarget(starting, 'A1:aux:domain:locks')).toBeUndefined();
   expect(projectHostTarget(starting, 'A1:aux:domain:locks', { heldOnly: true })).toBe('starting');
+});
+
+test('lanes: a later stage on another model gets its own hosts, opened, touched and closed with the decision ones', async () => {
+  const { wardens } = projectHosts();
+  expect(wardens.lane('claude-haiku-5-5', 'low')).toBe(wardens);
+  const sonnet = wardens.lane('claude-sonnet-5-5', 'low');
+  expect(sonnet).not.toBe(wardens);
+  expect(wardens.lane('claude-sonnet-5-5', 'low')).toBe(sonnet);
+  expect(sonnet.config.model).toBe('claude-sonnet-5-5');
+  expect(wardens.lanes()).toEqual([sonnet]);
+  wardens.markOpening('P', true);
+  expect(sonnet.serving('A1')).toBe('starting');
+  wardens.markOpening('P', false);
+  sonnet.openProject('P', roster('locks'));
+  wardens.openProject('P', roster('locks'));
+  expect(Object.keys(wardens.snapshot().projects).sort()).toEqual([
+    'P',
+    'P (claude-sonnet-5-5 at low)',
+  ]);
+  expect(sonnet.projectState('P')?.lane).toBe('claude-sonnet-5-5 at low');
+  await wardens.closeProject('P');
+  expect(sonnet.projectState('P')).toBeUndefined();
 });
 
 test('settings: Claude decisions resolve to project Wardens with the host defaults, by default or named; projectHost is refused on primed Wardens', () => {
@@ -535,9 +550,10 @@ test('the decision host launches the project host on the decision login: its own
     DISABLE_TELEMETRY: '1',
     DISABLE_AUTOUPDATER: '1',
   });
-  // The host's own subagent cap survives the credential strip: one Warden, one dispatcher → 8 over the default.
+  // The host's own subagent cap survives the credential strip: one Warden, one dispatcher, a guard
+  // and a cold review member per concurrent turn → 10 over the default.
   expect(launch.env.CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS).toBe(
-    String((Number(process.env.CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS) || 20) + 8),
+    String((Number(process.env.CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS) || 20) + 10),
   );
   expect(
     Object.entries(launch.env).flatMap(([key, value]) =>

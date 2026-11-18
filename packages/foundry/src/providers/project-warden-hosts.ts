@@ -81,6 +81,8 @@ export interface ProjectHostState {
   readonly resets: Readonly<Record<string, number>>;
   /** Hosts started for this project so far. */
   readonly generation: number;
+  /** A later classify stage's host (`lane`): its model and effort, e.g. `claude-sonnet-5-5 at low`. */
+  readonly lane?: string;
 }
 
 /** Health reads a host may miss in a row (not serving) before it is replaced: a recycle can blink. */
@@ -167,18 +169,54 @@ const rosterKey = (roster: Roster) =>
 /**
  * One Foundry-owned Warden host per project, opened with the project's roster when its chorus is
  * built and supervised here (restarted with backoff, replaced blue/green past its bounds). The
- * decision host routes a thread's Warden advice to its project's host while it serves, and to primed
- * sessions otherwise (fail-open).
+ * decision host routes a thread's Warden calls (advice, guards, reviews) to its project's host while
+ * it serves, and to primed sessions otherwise (fail-open); a later stage on another model has its own
+ * host per project (`lane`).
  */
 export class ProjectWardenHosts {
   private readonly _projects = new Map<string, ProjectEntry>();
+  /** Hosts of later classify stages on another model or effort, by `model|effort` (`lane`). */
+  private readonly _lanes = new Map<string, ProjectWardenHosts>();
+  /** This registry's own lane, when it is one (`lane`). */
+  private readonly _laneName?: string;
   private readonly _opening = new Set<string>();
   private _launcher?: ProjectHostLauncher;
   private _quota?: LoginQuotaPause;
   private _health?: ReturnType<typeof setInterval>;
   private _closed = false;
 
-  constructor(readonly config: ProjectWardenHostsConfig) {}
+  constructor(
+    readonly config: ProjectWardenHostsConfig,
+    laneName?: string,
+  ) {
+    if (laneName) this._laneName = laneName;
+  }
+
+  /**
+   * The project hosts of a later classify stage on another model or effort (the default chain's
+   * Layer 2, Sonnet low): one more Foundry-owned process per project, held and supervised like this
+   * registry's, opened, touched and closed with it. This registry itself for its own model and effort.
+   * The stage's decision host binds its launcher (`createPrimedDecisionHost`).
+   */
+  lane(model: string, effort: string | undefined): ProjectWardenHosts {
+    if (model === this.config.model && effort === this.config.effort) return this;
+    const key = `${model}|${effort ?? ''}`;
+    let lane = this._lanes.get(key);
+    if (!lane) {
+      const config: ProjectWardenHostsConfig = { ...this.config, model };
+      if (effort) config.effort = effort;
+      else delete config.effort;
+      lane = new ProjectWardenHosts(config, `${model}${effort ? ` at ${effort}` : ''}`);
+      this._lanes.set(key, lane);
+      if (this._closed) void lane.close();
+    }
+    return lane;
+  }
+
+  /** Every lane opened so far (`lane`), this registry's own excluded. */
+  lanes(): ProjectWardenHosts[] {
+    return [...this._lanes.values()];
+  }
 
   /**
    * The host serving this thread's Warden calls now: its project's, while it serves; `starting`
@@ -206,13 +244,19 @@ export class ProjectWardenHosts {
   markOpening(projectId: string, opening: boolean): void {
     if (opening) this._opening.add(projectId);
     else this._opening.delete(projectId);
+    for (const lane of this._lanes.values()) lane.markOpening(projectId, opening);
   }
 
-  snapshot() {
+  snapshot(): { projects: Record<string, ProjectHostState> } {
     return {
-      projects: Object.fromEntries(
-        [...this._projects.keys()].map((id) => [id, this.projectState(id)!]),
-      ),
+      projects: Object.fromEntries([
+        ...[...this._projects.keys()].map((id) => [id, this.projectState(id)!] as const),
+        ...[...this._lanes.values()].flatMap((lane) =>
+          Object.entries(lane.snapshot().projects).map(
+            ([id, state]) => [`${id} (${state.lane})`, state] as const,
+          ),
+        ),
+      ]),
     };
   }
 
@@ -280,6 +324,7 @@ export class ProjectWardenHosts {
   touchProject(projectId: string): boolean {
     const entry = this._projects.get(projectId);
     if (entry) entry.lastActive = Date.now();
+    for (const lane of this._lanes.values()) lane.touchProject(projectId);
     return !!entry;
   }
 
@@ -290,6 +335,7 @@ export class ProjectWardenHosts {
 
   /** Stop holding this project's Wardens (its chorus is off or gone, or it went idle). */
   async closeProject(projectId: string): Promise<void> {
+    await Promise.all([...this._lanes.values()].map((lane) => lane.closeProject(projectId)));
     const entry = this._projects.get(projectId);
     if (!entry) return;
     this._projects.delete(projectId);
@@ -324,6 +370,7 @@ export class ProjectWardenHosts {
       ...(quotaResetsAt !== undefined ? { quotaResetsAt } : {}),
       resets: { ...entry.resets },
       generation: entry.generation,
+      ...(this._laneName ? { lane: this._laneName } : {}),
     };
   }
 
@@ -396,9 +443,10 @@ export class ProjectWardenHosts {
       // Slices refilled at once, each by its own dispatcher (agent-session 0.12.0).
       dispatchers: Math.max(1, Math.ceil(size / bounds.wardensPerDispatcher)),
       // A used spare's replacement starts while it still answers: every Warden can hold its spares
-      // and a replacement per thread advising at once, plus the root and its dispatchers.
+      // and a replacement per thread advising or guarding at once, plus a cold member per thread
+      // reviewing (a review carries no spare: it runs `_direct`), plus the root and its dispatchers.
       maxSubagents:
-        size * (spares + 1) * bounds.concurrentTurns +
+        size * (spares + 2) * bounds.concurrentTurns +
         2 +
         2 * Math.max(1, Math.ceil(size / bounds.wardensPerDispatcher)),
       // One dispatcher's members: past it the host stops serving and is replaced.
@@ -559,6 +607,7 @@ export class ProjectWardenHosts {
   async close(): Promise<void> {
     this._closed = true;
     clearInterval(this._health);
+    await Promise.all([...this._lanes.values()].map((lane) => lane.close()));
     const projects = [...this._projects.values()];
     this._projects.clear();
     for (const entry of projects) clearTimeout(entry.retry);

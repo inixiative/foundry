@@ -178,13 +178,19 @@ export function liveDecisionHosts(
     ...policy,
     source: subscription.decision,
     ...(projectHosts ? { projectHosts } : {}),
-    // Every decision role stays primed: a key per classify stage and a review key per Warden, plus
-    // the Cartographer, the router roles and the feedback lifecycle. An evicted key re-primes cold.
-    // Sized for the largest chorus any project runs (region Wardens are per project).
-    primedSessions: Math.max(
-      16,
-      (largestStageCount(config, onDecisionHost) + 1) * largestRoster(config) + 8,
-    ),
+    // With project hosts every Warden call (advice, guard, review, stage) runs in its project's one
+    // process: primed keeps the other decision roles and a project's Wardens only while its host is
+    // not serving, at the fixed default (Aron, 2026-11-18: "Those are supposed to be singletons").
+    // Primed Wardens (`decisionRuntime: claude`, the evals' baseline) keep a key per classify stage
+    // and a review key per Warden, sized for the largest chorus any project runs.
+    ...(projectHosts
+      ? {}
+      : {
+          primedSessions: Math.max(
+            16,
+            (largestStageCount(config, onDecisionHost) + 1) * largestRoster(config) + 8,
+          ),
+        }),
     ...opts.events,
   });
   const stageHosts = new Map<string, ReturnType<typeof createSubscriptionDecisions>>();
@@ -205,16 +211,22 @@ export function liveDecisionHosts(
         ...(decisions.quota ? { quota: decisions.quota } : {}),
         model: m,
         ...(e ? { effort: e } : {}),
-        // A key per stage this host serves, per Warden.
-        primedSessions: Math.max(
-          16,
-          largestStageCount(
-            config,
-            (stage) => (stage.model ?? policy.model) === m && (stage.effort ?? policy.effort) === e,
-          ) *
-            largestRoster(config) +
-            8,
-        ),
+        // Its stage held in each project's host on this model (a lane of the decision one's).
+        ...(projectHosts
+          ? { projectHosts: projectHosts.lane(m, e) }
+          : {
+              // A key per stage this host serves, per Warden.
+              primedSessions: Math.max(
+                16,
+                largestStageCount(
+                  config,
+                  (stage) =>
+                    (stage.model ?? policy.model) === m && (stage.effort ?? policy.effort) === e,
+                ) *
+                  largestRoster(config) +
+                  8,
+              ),
+            }),
         ...opts.events,
       });
       stageHosts.set(key, host);
@@ -222,11 +234,24 @@ export function liveDecisionHosts(
     }
     return host.provider;
   };
+  /**
+   * The project hosts holding a classify stage on this model and effort: the decision ones for the
+   * decision pair, else the stage host's lane (that stage host started if it was not: it binds the
+   * lane's launcher).
+   */
+  const stageProjectHosts = (
+    model: string | undefined,
+    effort: StageEffort | undefined,
+  ): ProjectWardenHosts | undefined => {
+    if (!projectHosts) return undefined;
+    stageHost(model, effort);
+    return projectHosts.lane(model ?? policy.model, effort ?? policy.effort);
+  };
   return {
     decisions,
     stageHost,
     /** Every project's Warden host (open one with `openProject`). */
-    ...(projectHosts ? { projectHosts } : {}),
+    ...(projectHosts ? { projectHosts, stageProjectHosts } : {}),
     /** Stops the decision host, every stage host and every project host. */
     shutdown: async () => {
       await Promise.all([
