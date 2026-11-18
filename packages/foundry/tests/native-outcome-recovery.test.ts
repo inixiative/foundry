@@ -435,3 +435,50 @@ test("a decision session's lost admission is settled without touching the turn's
   expect(store.unsettledAdmissions(thread.id)).toEqual([]);
   expect(store.messageIndex(thread.id).messages.at(-1)?.meta?.recovery).toBeUndefined();
 });
+
+// 2026-11-18: 114 threads refused every message after a restart. A Muse turn the session started
+// itself (a cron, a wake) journals each event as an `observed:<turn>` row with `nativeOutcome:
+// 'unknown'` and no `admissionId`; read as an admission it looked lost, and Continue threw
+// "No native admission to settle". Foundry never admitted those turns, so they never block.
+test('an observed turn the session started itself is never a lost admission', () => {
+  const { store, thread } = setup();
+  store.startObservedTurn(thread, 'turn_cron', 'check flights');
+  for (const kind of ['native_status', 'text'] as const)
+    store.appendObservedNative(thread, 'turn_cron', {
+      schema: 1,
+      nativeOutcome: 'unknown',
+      nativeSessionId: SESSION,
+      correlation: 'native-turn',
+      kind,
+    });
+  store.recoverInterrupted();
+
+  expect(store.unsettledAdmissions(thread.id)).toEqual([]);
+  expect(store.threadsWithUnknownAdmissions()).toEqual([]);
+  store.beginTurn(thread, 'turn-next', 'why?');
+  expect(() => store.assertNativeCapacity(thread, nextOwner(thread, 'turn-next'))).not.toThrow();
+  const recovery = new NativeOutcomeRecovery({ store, homes: () => [], bootedAt: Date.now() + 1 });
+  expect(recovery.resolveByOwner(thread.id, 'continue')).toEqual([]);
+});
+
+test('a real lost turn still blocks beside observed rows, and the owner can settle it', () => {
+  const { store, thread } = setup();
+  store.startObservedTurn(thread, 'turn_cron', 'check flights');
+  store.appendObservedNative(thread, 'turn_cron', {
+    schema: 1,
+    nativeOutcome: 'unknown',
+    kind: 'native_status',
+  });
+  lostTurn(store, thread);
+
+  expect(store.unsettledAdmissions(thread.id).map((a) => a.admissionId)).toEqual(['adm-turn-lost']);
+  store.beginTurn(thread, 'turn-next', 'why?');
+  expect(() => store.assertNativeCapacity(thread, nextOwner(thread, 'turn-next'))).toThrow(
+    NATIVE_OUTCOME_UNRESOLVED,
+  );
+  const recovery = new NativeOutcomeRecovery({ store, homes: () => [], bootedAt: Date.now() + 1 });
+  expect(recovery.resolveByOwner(thread.id, 'continue').map((a) => a.turnId)).toEqual([
+    'turn-lost',
+  ]);
+  expect(() => store.assertNativeCapacity(thread, nextOwner(thread, 'turn-next'))).not.toThrow();
+});
