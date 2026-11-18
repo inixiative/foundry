@@ -653,7 +653,7 @@ function config(path: string, runtime: 'claude' | 'claude-project'): FoundryConf
       enabled: true,
     },
   };
-  c.defaults.classifierProvider = 'flow';
+  c.defaults.decisionProvider = 'flow';
   c.layers = {};
   c.sources = {};
   c.projects.P = { id: 'P', path };

@@ -11,7 +11,6 @@ import {
   type LLMProvider,
   SignalBus,
 } from '@inixiative/foundry-core';
-import { Cartographer } from '../src/agents/cartographer';
 import { PLAN_ASK_NOTE } from '../src/agents/chorus-reception';
 import { DomainLibrarian, oneCall, type ToolObservation } from '../src/agents/domain-librarian';
 import { FlowOrchestrator } from '../src/agents/flow-orchestrator';
@@ -48,9 +47,8 @@ const phaseOf = (messages: readonly LLMMessage[]) => {
       ? 'guard'
       : all.includes('Response protocol (post-work review)')
         ? 'review'
-        : 'route';
+        : 'other';
 };
-const ROUTE = JSON.stringify({ layers: [], domains: [], confidence: 0 });
 
 // ---------------------------------------------------------------------------
 // The protocol: NO_COMMENT is strict, cheap and the expected answer
@@ -240,7 +238,7 @@ function runtimeFixture(advice: string) {
         const phase = phaseOf(messages);
         return {
           model: 'flow',
-          content: phase === 'advice' ? advice : phase === 'route' ? ROUTE : NO_COMMENT,
+          content: phase === 'advice' ? advice : NO_COMMENT,
         };
       },
     },
@@ -314,11 +312,6 @@ function roster(domains: Record<string, string>, answer = () => NO_COMMENT) {
   });
   const stack = new ContextStack(layers);
   const librarian = new Librarian({ stack, signals });
-  const cartographer = new Cartographer({
-    stack,
-    signals,
-    llm: { id: 'route', complete: async () => ({ model: 'x', content: ROUTE }) },
-  });
   const libs = new Map(
     layers.map((cache) => [
       cache.id,
@@ -343,12 +336,10 @@ function roster(domains: Record<string, string>, answer = () => NO_COMMENT) {
     stack,
     signals,
     librarian,
-    cartographer,
     domainLibrarians: libs,
   });
   cleanups.push(() => {
     flow.dispose();
-    cartographer.dispose();
     librarian.dispose();
   });
   return { flow, calls };
@@ -479,11 +470,6 @@ test('24 Wardens, every one asked on every turn: a queue sized for the roster ad
   });
   const stack = new ContextStack(layers);
   const librarian = new Librarian({ stack, signals });
-  const cartographer = new Cartographer({
-    stack,
-    signals,
-    llm: { id: 'route', complete: async () => ({ model: 'x', content: ROUTE }) },
-  });
   const counted = (domain: string): LLMProvider => ({
     id: decisions.provider.id,
     complete(messages, opts) {
@@ -510,13 +496,11 @@ test('24 Wardens, every one asked on every turn: a queue sized for the roster ad
     stack,
     signals,
     librarian,
-    cartographer,
     domainLibrarians: libs,
     adviseTimeoutMs: 2_000,
   });
   cleanups.push(() => {
     flow.dispose();
-    cartographer.dispose();
     librarian.dispose();
   });
 
@@ -595,11 +579,6 @@ test('a Warden the decision queue refused for capacity is excluded, not an error
   cache.set('Prisma `schema.prisma`: false polymorphism.');
   const stack = new ContextStack([cache]);
   const librarian = new Librarian({ stack, signals });
-  const cartographer = new Cartographer({
-    stack,
-    signals,
-    llm: { id: 'route', complete: async () => ({ model: 'x', content: ROUTE }) },
-  });
   const lib = new DomainLibrarian({
     domain: 'schema',
     cache,
@@ -615,12 +594,10 @@ test('a Warden the decision queue refused for capacity is excluded, not an error
     stack,
     signals,
     librarian,
-    cartographer,
     domainLibrarians: new Map([['schema', lib]]),
   });
   cleanups.push(() => {
     flow.dispose();
-    cartographer.dispose();
     librarian.dispose();
   });
   const plan = await flow.preMessage('Tidy the Prisma schema');

@@ -4,7 +4,6 @@ import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ActionQueue, ContextStack, Thread, ToolRegistry } from '@inixiative/foundry-core';
-import type { RouteResult } from '../src/agents/cartographer';
 import { regionRoleId } from '../src/agents/region-roster';
 import { captureThread } from '../src/archives/capture';
 import {
@@ -15,7 +14,6 @@ import {
   roleFilePath,
 } from '../src/feedback/apply';
 import { FeedbackLifecycle } from '../src/feedback/lifecycle';
-import { routeFeedback } from '../src/feedback/routing';
 import { type ClassifyCorrection, FeedbackService } from '../src/feedback/service';
 import { lintStatement, parseMatch, ruleMarker } from '../src/feedback/sharpen';
 import { validateFeedbackSettings } from '../src/feedback/types';
@@ -77,7 +75,6 @@ function setup(
   options: {
     feedback?: FoundryConfig['feedback'];
     classify?: ClassifyCorrection;
-    route?: RouteResult;
     match?: { itemId: string; confidence: number } | null;
   } = {},
 ) {
@@ -112,10 +109,6 @@ function setup(
     config: () => config(project, options.feedback),
     queue,
     thread: (id) => live.get(id),
-    cartographer: () => ({
-      route: async () =>
-        options.route ?? { layers: [], domains: ['convention'], confidence: 0.9, source: 'model' },
-    }),
     classify:
       options.classify ??
       (async (input) => {
@@ -166,46 +159,6 @@ test('a match answer names a known candidate with a bounded confidence', () => {
   expect(parseMatch('{"itemId":"fb_bbbbbbbbbbbb","confidence":0.8}', candidates)).toBeNull();
   expect(parseMatch('{"itemId":"fb_aaaaaaaaaaaa","confidence":3}', candidates)).toBeNull();
   expect(parseMatch('not json', candidates)).toBeNull();
-});
-
-test("routing maps Cartographer domains to Warden roles, and weak routing goes to the thread's role", async () => {
-  const route = (result: RouteResult) =>
-    routeFeedback({
-      cartographer: { route: async () => result },
-      config: config(project),
-      itemId: 'fb_x',
-      statement: RULE,
-      category: 'convention',
-      projectId,
-      threadRole: ASSISTANT_ROLE,
-    });
-  const project = regionProject(tempDir('feedback-routing-'));
-  let projectId: string | null = 'P';
-  expect(
-    await route({ layers: [], domains: ['convention'], confidence: 0.9, source: 'model' }),
-  ).toMatchObject({
-    roles: [WARDEN_ROLE],
-    slot: 'instructions',
-    level: 'project-personal',
-  });
-  expect(
-    (
-      await route({
-        layers: [],
-        domains: ['convention'],
-        confidence: 0.1,
-        source: 'keyword-fallback',
-      })
-    ).roles,
-  ).toEqual([ASSISTANT_ROLE]);
-  expect(
-    (await route({ layers: [], domains: ['unknown'], confidence: 0.9, source: 'model' })).roles,
-  ).toEqual([ASSISTANT_ROLE]);
-  // A thread outside a project has no chorus: every rule goes to the thread's role.
-  projectId = null;
-  expect(
-    (await route({ layers: [], domains: ['convention'], confidence: 0.9, source: 'model' })).roles,
-  ).toEqual([ASSISTANT_ROLE]);
 });
 
 test('role files resolve per rung; personal repo files are kept out of git', () => {
@@ -295,7 +248,7 @@ test('a detected correction is captured, routed and tuned without holding the tu
   const [prompt] = queue.pending();
   expect(prompt?.kind).toBe('choice');
   expect(prompt?.meta?.feedback).toMatchObject({ blocking: false });
-  expect(prompt?.message).toContain('convention');
+  expect(prompt?.message).toContain(CODER_ROLE);
   const [item] = service.lifecycle.items;
   expect(item).toMatchObject({
     statement: RULE,
@@ -304,19 +257,19 @@ test('a detected correction is captured, routed and tuned without holding the tu
     category: 'approach',
   });
   expect(item?.detection?.kind).toBe('repeat');
-  expect(item?.route).toMatchObject({ roles: [WARDEN_ROLE], level: 'org-personal' });
+  expect(item?.route).toMatchObject({ roles: [CODER_ROLE], level: 'org-personal' });
   // Every step is a journal row, and a fresh fold over them is the same item.
   const phases = store.feedbackPhases({ projectId: 'P' }).map((p) => p.phase);
   expect(phases).toEqual(['feedback-capture', 'feedback-route']);
   expect(new FeedbackLifecycle(store.feedbackPhases()).get(item!.id)).toEqual(item);
 });
 
-test('apply writes the rule to the routed Warden, invalidates its layers, and undo reverts it', async () => {
+test('a rule edited onto a Warden is written to it, invalidates its layers, and undo reverts it', async () => {
   const { service, thread, queue, invalidated, root, store } = setup();
   service.turnAccepted(thread, 'turn-1', 'From now on merge it yourself once green.');
   await settle();
   const [prompt] = queue.pending();
-  queue.resolve(prompt!.id, 'apply');
+  queue.resolve(prompt!.id, 'edit', { input: JSON.stringify({ roles: [WARDEN_ROLE] }) });
   await settle();
   const [item] = service.lifecycle.items;
   expect(item?.status).toBe('applied');
@@ -364,6 +317,7 @@ test('edit replaces the statement and level before applying; committed levels ar
   queue.resolve(prompt!.id, 'edit', {
     input: JSON.stringify({
       statement: 'Never ask before merging green agentic changes.',
+      roles: [WARDEN_ROLE],
       level: 'computer',
     }),
   });
@@ -481,7 +435,6 @@ test('a recurrence of an applied rule is counted on the item and re-tuned', asyn
     config: () => config(first.project),
     queue: first.queue,
     thread: () => first.thread,
-    cartographer: () => undefined,
     classify: async () => ({
       isCorrection: true,
       category: 'approach',

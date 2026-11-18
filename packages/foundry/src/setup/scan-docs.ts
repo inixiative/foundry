@@ -280,10 +280,7 @@ function emitConfigSnippet(
     sourceIds: [sourceId],
     staleness: 60_000,
     enabled: true,
-    activation: 'conditional',
-    condition: {
-      tags: ['docs', 'documentation', 'readme', 'api'],
-    },
+    activation: 'on-demand',
   };
 
   return { source, layer };

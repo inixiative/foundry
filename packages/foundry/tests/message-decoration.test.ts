@@ -12,7 +12,6 @@ import {
   type MessageDecoration,
   SignalBus,
 } from '@inixiative/foundry-core';
-import { Cartographer } from '../src/agents/cartographer';
 import { DomainLibrarian } from '../src/agents/domain-librarian';
 import { FlowOrchestrator, type InjectionPlan } from '../src/agents/flow-orchestrator';
 import { Librarian } from '../src/agents/librarian';
@@ -21,8 +20,8 @@ import { ThreadRuntimeManager } from '../src/agents/thread-runtime';
 import { starterConfig } from '../src/viewer/config';
 
 // Parallel message decoration (CORE-002 "Message Decoration", CORE-003 G3a).
-// Every enabled domain assesses the same frozen input concurrently with
-// routing; decisions, provenance and three named segments are explicit;
+// Every enabled domain assesses the same frozen input concurrently;
+// decisions, provenance and three named segments are explicit;
 // composition order is the configured order; late results cannot mutate a
 // sealed plan; hydration prepares without committing the delivery ledger.
 
@@ -37,7 +36,6 @@ type Responder = (messages: LLMMessage[]) => Promise<string> | string;
 
 interface SetupOpts {
   responders?: Record<string, Responder>;
-  routeDomains?: string[];
   limit?: number;
   timeoutMs?: number;
   planTimeoutMs?: number;
@@ -57,18 +55,6 @@ function setup(names: string[], opts: SetupOpts = {}) {
   const stack = new ContextStack(layers);
   const librarian = new Librarian({ stack, signals });
   const calls = new Map<string, number>();
-  const route: LLMProvider = {
-    id: 'route',
-    complete: async () => ({
-      model: 'mock',
-      content: JSON.stringify({
-        layers: opts.routeDomains ?? [names[0]],
-        domains: opts.routeDomains ?? [names[0]],
-        confidence: 1,
-      }),
-    }),
-  };
-  const cartographer = new Cartographer({ stack, signals, llm: route });
   const domains = new Map(
     names.map((name, index) => [
       name,
@@ -95,7 +81,6 @@ function setup(names: string[], opts: SetupOpts = {}) {
     stack,
     signals,
     librarian,
-    cartographer,
     domainLibrarians: domains,
     maxAdviseParallel: opts.limit,
     adviseTimeoutMs: opts.timeoutMs,
@@ -104,7 +89,6 @@ function setup(names: string[], opts: SetupOpts = {}) {
   });
   cleanups.push(() => {
     flow.dispose();
-    cartographer.dispose();
     librarian.dispose();
   });
   return { flow, stack, librarian, signals, calls, layers };
@@ -242,19 +226,6 @@ describe('parallel message decoration', () => {
     expect(plan.omissions).toEqual([{ domain: 'second', reason: 'budget' }]);
   });
 
-  test("a domain contributing against the router's selection is an observable conflict", async () => {
-    const { flow } = setup(['chosen', 'unchosen'], { routeDomains: ['chosen'] });
-    const plan = await flow.preMessage('Router disagrees');
-    expect(plan.contributions.map((c) => callOutcomeLabel(c.outcome))).toEqual([
-      'answered:spoke',
-      'answered:spoke',
-    ]);
-    expect(plan.conflicts).toEqual([
-      { kind: 'routing-excluded', domain: 'unchosen', detail: expect.any(String) },
-    ]);
-    expect(plan.routing.domains).toEqual(['chosen']);
-  });
-
   test('hydration prepares pending ledger records and commit only happens on explicit delivery evidence', async () => {
     const { flow, librarian, layers, signals } = setup(['security']);
     const loaded: string[] = [];
@@ -276,139 +247,17 @@ describe('parallel message decoration', () => {
   });
 });
 
-describe('bounded routing and whole-plan deadlines', () => {
-  function routerStub(fn: () => Promise<unknown>): Cartographer {
-    return { route: fn, dispose() {}, buildMap() {} } as unknown as Cartographer;
-  }
-
-  function withRouter(
-    names: string[],
-    router: Cartographer,
-    extra: Partial<ConstructorParameters<typeof FlowOrchestrator>[0]> = {},
-  ) {
-    const signals = new SignalBus();
-    const layers = names.map((name) => {
-      const layer = new ContextLayer({ id: name, prompt: `Instructions for ${name}` });
-      layer.set(`DOMAIN-${name}-REVISION-A`);
-      return layer;
-    });
-    const stack = new ContextStack(layers);
-    const librarian = new Librarian({ stack, signals });
-    const domains = new Map(
-      names.map((name, i) => [
-        name,
-        new DomainLibrarian({
-          domain: name,
-          cache: layers[i],
-          signals,
-          llm: { id: name, complete: async () => ({ model: 'mock', content: contribute(name) }) },
-        }),
-      ]),
-    );
-    const flow = new FlowOrchestrator({
-      stack,
-      signals,
-      librarian,
-      cartographer: router,
-      domainLibrarians: domains,
-      ...extra,
-    });
-    cleanups.push(() => {
-      flow.dispose();
-      librarian.dispose();
-    });
-    return { flow, librarian };
-  }
-
-  test('a stalled router is recorded as a timeout, never as a confident empty route', async () => {
-    let release!: () => void;
-    const held = new Promise<void>((r) => {
-      release = r;
-    });
-    let lateRouted = false;
-    const router = routerStub(async () => {
-      await held;
-      lateRouted = true;
-      return { layers: ['security'], domains: ['late'], confidence: 1 };
-    });
-    const { flow } = withRouter(['security'], router, { routingTimeoutMs: 10 });
-
-    const plan = await flow.preMessage('Route me');
-    expect(plan.routing.status).toBe('timeout');
-    expect(plan.routing.reason).toContain('10ms');
-    expect(plan.routing.confidence).toBe(0);
-    expect(plan.routing.domains).toEqual([]);
-    expect(plan.confidence).toBe(0);
-    expect(plan.snippets).toEqual(['ADVICE-security']);
-    expect(plan.outstanding).toEqual([
-      expect.objectContaining({ kind: 'route', participant: 'cartographer' }),
-    ]);
-    expect(flow.outstandingCalls).toBe(1);
-
-    const sealed = JSON.stringify(plan);
-    release();
-    await sleep(5);
-    expect(lateRouted).toBe(true);
-    expect(JSON.stringify(plan)).toBe(sealed);
-    expect(flow.outstandingCalls).toBe(0);
-  });
-
-  test('a router error is recorded as an error with its reason', async () => {
-    const router = routerStub(async () => {
-      throw new Error('router down');
-    });
-    const { flow } = withRouter(['security'], router);
-    const plan = await flow.preMessage('Route me');
-    expect(plan.routing.status).toBe('error');
-    expect(plan.routing.reason).toContain('router down');
-    expect(plan.snippets).toEqual(['ADVICE-security']);
-  });
-
-  test("the real Cartographer's keyword fallback is labelled fallback, not a model route", async () => {
-    const signals = new SignalBus();
-    const layer = new ContextLayer({ id: 'security-patterns', prompt: 'Security' });
-    layer.set('OWASP top 10');
-    const stack = new ContextStack([layer]);
-    const librarian = new Librarian({ stack, signals });
-    const cartographer = new Cartographer({
-      stack,
-      signals,
-      llm: {
-        id: 'broken',
-        complete: async () => {
-          throw new Error('model unavailable');
-        },
-      },
-    });
-    const flow = new FlowOrchestrator({
-      stack,
-      signals,
-      librarian,
-      cartographer,
-      domainLibrarians: new Map(),
-    });
-    cleanups.push(() => {
-      flow.dispose();
-      cartographer.dispose();
-      librarian.dispose();
-    });
-    const plan = await flow.preMessage('Check the security patterns');
-    expect(plan.routing.status).toBe('fallback');
-    expect(plan.routing.reason).toContain('model unavailable');
-  });
-
+describe('bounded settings and whole-plan deadlines', () => {
   test('bounded settings must be finite positive numbers', () => {
     const signals = new SignalBus();
     const stack = new ContextStack([]);
     const librarian = new Librarian({ stack, signals });
-    const cartographer = routerStub(async () => ({ layers: [], domains: [], confidence: 0 }));
     cleanups.push(() => librarian.dispose());
     const make = (extra: Record<string, unknown>) =>
       new FlowOrchestrator({
         stack,
         signals,
         librarian,
-        cartographer,
         domainLibrarians: new Map(),
         ...extra,
       });
@@ -416,7 +265,7 @@ describe('bounded routing and whole-plan deadlines', () => {
     for (const bad of [0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
       expect(() => make({ maxAdviseParallel: bad })).toThrow(/maxAdviseParallel/);
     }
-    for (const key of ['adviseTimeoutMs', 'routingTimeoutMs', 'planTimeoutMs']) {
+    for (const key of ['adviseTimeoutMs', 'planTimeoutMs']) {
       for (const bad of [0, -5, Number.NaN, Number.POSITIVE_INFINITY]) {
         expect(() => make({ [key]: bad })).toThrow(new RegExp(key));
       }
@@ -520,11 +369,9 @@ describe('production runtime delivery', () => {
       domains: [{ domain: 'security', layerId: 'security', guardTriggers: [] }],
       llm: {
         id: 'flow',
-        complete: async (_messages, opts) => ({
+        complete: async () => ({
           model: 'mock',
-          content: opts?.threadId?.endsWith(':cartographer')
-            ? '{"domains":["security"],"layers":["security"],"confidence":1}'
-            : '{"layers":["security"],"snippets":["GENERATED-ADVICE-ONLY"],"confidence":1}',
+          content: '{"layers":["security"],"snippets":["GENERATED-ADVICE-ONLY"],"confidence":1}',
         }),
       },
     });
@@ -616,72 +463,6 @@ describe('production runtime delivery', () => {
     expect(delivery.committed).toContain('security');
     const ledger = runtime.get('drift')!.librarian.state.injectedLayers;
     expect(ledger.find((r) => r.id === 'security')!.hash).toBe(layerPart(layer).hash);
-  });
-
-  test('a stalled router does not block production delivery and is recorded on the artifact', async () => {
-    const config = starterConfig('mock', 'mock');
-    config.agents = {
-      worker: {
-        id: 'worker',
-        kind: 'executor',
-        provider: 'mock',
-        model: 'mock',
-        prompt: '',
-        temperature: 0,
-        visibleLayers: [],
-        peers: [],
-        maxDepth: 1,
-        enabled: true,
-      },
-    };
-    const layer = new ContextLayer({ id: 'security', prompt: 'Review security' });
-    layer.set('Known security conventions');
-    const stack = new ContextStack([layer]);
-    const provider: LLMProvider = {
-      id: 'mock',
-      complete: async () => ({ model: 'mock', content: 'done' }),
-    };
-    let release!: () => void;
-    const held = new Promise<void>((r) => {
-      release = r;
-    });
-    cleanups.push(() => release());
-    const runtime = new ThreadRuntimeManager({
-      config,
-      log: () => {},
-      warn: () => {},
-      domains: [{ domain: 'security', layerId: 'security', guardTriggers: [] }],
-      flow: { routingTimeoutMs: 15, adviseTimeoutMs: 200 },
-      llm: {
-        id: 'flow',
-        complete: async (_messages, opts) => {
-          if (opts?.threadId?.endsWith(':cartographer')) {
-            await held;
-          }
-          return {
-            model: 'mock',
-            content: '{"layers":["security"],"snippets":["ADVICE-security"],"confidence":1}',
-          };
-        },
-      },
-    });
-    cleanups.push(() => runtime.disposeAll());
-    const factory = new ThreadFactory({
-      stack,
-      agents: buildAgents(config, stack, { provider }),
-      runtime,
-    });
-    const thread = factory.create('stalled-router', { projectId: 'P', cwd: tmpdir() });
-
-    const outcome = await Promise.race([
-      thread.dispatch('worker', 'Go'),
-      sleep(300).then(() => 'blocked' as const),
-    ]);
-    if (outcome === 'blocked') throw new Error('dispatch blocked');
-    const plan = (outcome.meta as { injection: { plan: InjectionPlan } }).injection.plan;
-    expect(plan.routing.status).toBe('timeout');
-    expect(plan.snippets).toEqual(['ADVICE-security']);
-    expect(runtime.get('stalled-router')!.flowOrchestrator.outstandingCalls).toBe(1);
   });
 
   test('a sealed plan is exposed to the executor and later advice cannot change it', async () => {

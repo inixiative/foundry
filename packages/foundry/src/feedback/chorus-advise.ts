@@ -5,7 +5,7 @@
  */
 // One user message through a live thread's chorus, headless: what Foundry would deliver to a fresh
 // Claude Code session for that message. The thread is built the way the daemon builds one (the
-// factory, the per-thread runtime with its Cartographer, region Wardens and FlowOrchestrator, the
+// factory, the per-thread runtime with its region Wardens and FlowOrchestrator, the
 // harness), so the advice plan, its deadline and budget and the decoration are the live ones. Only
 // the central agent's model call is replaced: it captures what the executor would send and answers
 // nothing. Oracle's `chorus` replay arm reads the result (scripts/evals/chorus-advise.ts).
@@ -40,13 +40,12 @@ export interface ChorusAdviseOptions {
   readonly cwd: string;
   /** The user's message, as typed. */
   readonly message: string;
-  /** The decision provider the Cartographer and every Warden run on (the daemon's decision host). */
+  /** The decision provider every Warden runs on (the daemon's decision host). */
   readonly decisions: LLMProvider;
   /** A classify stage's own host (`ThreadRuntimeDeps.stageHost`). */
   readonly stageHost?: ThreadRuntimeDeps['stageHost'];
   readonly resolveSource: SourceResolver;
-  readonly atlasRoot?: string;
-  /** Every phase record (route, advice) the runtime journals, as the daemon's journal receives it. */
+  /** Every phase record (advice) the runtime journals, as the daemon's journal receives it. */
   readonly journal?: (record: PhaseRecordInput) => void;
   /** The thread's id; its Wardens' primed sessions are keyed by it (`<thread>:aux:domain:<d>`). */
   readonly threadId?: string;
@@ -125,7 +124,6 @@ export interface ChorusAdvice {
   readonly liveSystemPrompt: string;
   readonly decisions: readonly ChorusWardenDecision[];
   readonly omissions: InjectionPlan['omissions'];
-  readonly routing: Pick<InjectionPlan['routing'], 'status' | 'domains' | 'confidence' | 'reason'>;
   readonly elapsedMs: number;
   readonly decoration: MessageDecoration;
   /** The regions the thread composed as Wardens, in configured order. */
@@ -134,7 +132,6 @@ export interface ChorusAdvice {
   readonly timing: {
     readonly maxAdviseParallel: number | null;
     readonly adviseTimeoutMs: number;
-    readonly routingTimeoutMs: number;
     readonly planTimeoutMs: number | null;
     readonly contributionBudget: number | null;
   };
@@ -199,7 +196,6 @@ export async function adviseOnce(opts: ChorusAdviseOptions): Promise<ChorusAdvic
       agentProvider: capture,
       ...(opts.stageHost ? { stageHost: opts.stageHost } : {}),
       resolveSource: opts.resolveSource,
-      ...(opts.atlasRoot ? { atlasRoot: opts.atlasRoot } : {}),
       ...(opts.journal ? { journal: opts.journal } : {}),
       ...(opts.secretNote ? { secretNote: opts.secretNote } : {}),
       threadId,
@@ -288,12 +284,6 @@ export async function adviseOnce(opts: ChorusAdviseOptions): Promise<ChorusAdvic
           ...(c.stageRequests ? { stageRequests: c.stageRequests } : {}),
         })),
         omissions: plan.omissions,
-        routing: {
-          status: plan.routing.status,
-          domains: plan.routing.domains,
-          confidence: plan.routing.confidence,
-          ...(plan.routing.reason ? { reason: plan.routing.reason } : {}),
-        },
         elapsedMs,
         decoration,
         composed: domains,

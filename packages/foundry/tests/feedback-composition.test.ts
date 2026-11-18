@@ -1,4 +1,4 @@
-// The point of the lifecycle: an applied rule reaches the routed Warden through the composition view,
+// The point of the lifecycle: a rule applied to a Warden reaches it through the composition view,
 // and that call is counted as its use.
 import { afterEach, expect, test } from 'bun:test';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -78,7 +78,7 @@ function config(project: string): FoundryConfig {
   return c;
 }
 
-test('an applied rule is in the routed Warden’s composed instructions on the next turn, and counts as a use', async () => {
+test('a rule applied to a Warden is in its composed instructions on the next turn, and counts as a use', async () => {
   const project = await mkdtemp(join(tmpdir(), 'feedback-composition-'));
   const home = await mkdtemp(join(tmpdir(), 'feedback-home-'));
   dirs.push(project, home);
@@ -87,23 +87,13 @@ test('an applied rule is in the routed Warden’s composed instructions on the n
   const provider = (id: string): LLMProvider => ({
     id,
     async complete(messages: LLMMessage[], opts: CompletionOpts = {}) {
-      const phase = opts.threadId?.endsWith(':cartographer')
-        ? 'route'
-        : opts.threadId?.includes(':aux:')
-          ? 'pre'
-          : opts.threadId?.includes(':review:')
-            ? 'post'
-            : 'central';
+      const phase = opts.threadId?.includes(':aux:')
+        ? 'pre'
+        : opts.threadId?.includes(':review:')
+          ? 'post'
+          : 'central';
       calls.push({ phase, messages: structuredClone(messages) });
-      return {
-        model: 'controlled',
-        content:
-          phase === 'central'
-            ? 'done'
-            : phase === 'route'
-              ? JSON.stringify({ layers: [], domains: ['conventions'], confidence: 0.9 })
-              : 'NO_COMMENT',
-      };
+      return { model: 'controlled', content: phase === 'central' ? 'done' : 'NO_COMMENT' };
     },
   });
   const central = provider('central'),
@@ -147,7 +137,6 @@ test('an applied rule is in the routed Warden’s composed instructions on the n
     config: () => c,
     queue,
     thread: (id) => (id === thread.id ? thread : undefined),
-    cartographer: (id) => manager.get(id)?.cartographer,
     classify: async () => ({
       isCorrection: true,
       category: 'convention',
@@ -163,12 +152,9 @@ test('an applied rule is in the routed Warden’s composed instructions on the n
 
   await thread.dispatch('worker', 'First turn');
   const [item] = await service.intervention(thread, 'Merge it yourself once green.');
-  expect(item?.route).toMatchObject({
-    roles: [regionRoleId('conventions')],
-    level: 'project-personal',
-  });
+  expect(item?.route).toMatchObject({ level: 'project-personal' });
   const prompt = queue.pending()[0]!;
-  service.submit(item!.id, 'apply');
+  service.submit(item!.id, 'edit', JSON.stringify({ roles: [regionRoleId('conventions')] }));
   await new Promise((resolve) => setTimeout(resolve, 10));
   expect(queue.get(prompt.id)?.status).not.toBe('pending');
   expect(service.lifecycle.get(item!.id)?.status).toBe('applied');

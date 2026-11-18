@@ -21,7 +21,7 @@ const FILTERS = [
   ['tools', 'Tools'],
   ['flags', 'Flags'],
 ];
-const BEFORE = new Set(['input', 'route', 'chorus', 'plan', 'delivery']);
+const BEFORE = new Set(['input', 'chorus', 'plan', 'delivery']);
 const WORK = new Set(['tool', 'handoff']);
 const GROUPS = [
   ['before', 'Foundry, before'],
@@ -30,7 +30,6 @@ const GROUPS = [
 ];
 const LABELS = {
   input: 'Your message',
-  route: 'Routing',
   chorus: 'Wardens',
   plan: 'Plan sealed',
   delivery: 'Delivered to the session',
@@ -49,12 +48,8 @@ const clip = (value, max = 1200) => {
 };
 const time = (at) => (at ? new Date(at).toLocaleTimeString() : '');
 
-/** Routing that failed: the turn went on with its standing layers, unrouted (degraded, not failed). */
-const routeDegraded = (step) => step.kind === 'route' && step.status === 'error';
-
-/** Is the step worth a flag: an error, a refusal, a guard finding, a failed capture, degraded routing? */
+/** Is the step worth a flag: an error, a refusal, a guard finding, a failed capture? */
 function flagged(step) {
-  if (routeDegraded(step)) return true;
   if (step.kind === 'tool') return step.error;
   if (step.kind === 'guard')
     return step.failed.length > 0 || step.regions.some((r) => r.findings > 0);
@@ -68,16 +63,12 @@ function summary(step) {
   switch (step.kind) {
     case 'input':
       return step.text;
-    case 'route':
-      return routeDegraded(step)
-        ? 'degraded · ran without routing'
-        : [step.status, step.domains.join(', ')].filter(Boolean).join(' · ');
     case 'chorus': {
       const spoke = step.regions.filter((r) => outcomeSpoke(r.outcome)).length;
       return `${step.regions.length} Wardens asked · ${spoke} reminded`;
     }
     case 'plan':
-      return `${step.layers.length} layers${step.confidence != null ? ` · confidence ${step.confidence}` : ''}`;
+      return `${step.layers.length} layers`;
     case 'delivery': {
       const sent = step.parts.filter((p) => p.outcome === 'sent').length;
       return `${sent} sent · ${step.parts.length - sent} already held · ${step.chimes.length} reminders`;
@@ -201,12 +192,6 @@ function Detail({ step }) {
       return html`<${DeliveryBody} step=${step} />`;
     case 'guard':
       return html`<${GuardBody} step=${step} />`;
-    case 'route':
-      return routeDegraded(step)
-        ? html`<div class="tv-degraded">Routing was skipped on this turn: the turn ran with its standing layers, no routed ones.${step.reason ? html`<div class="tv-dim">Why: ${step.reason}</div>` : null}</div>`
-        : step.reason
-          ? html`<div class="tv-dim">${step.reason}</div>`
-          : null;
     case 'plan':
       return step.layers.length
         ? html`<div class="tv-dim">Layers: ${step.layers.join(', ')}</div>`

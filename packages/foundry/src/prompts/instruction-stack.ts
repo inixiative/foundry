@@ -413,7 +413,7 @@ export async function composeRoleView(
         ? EMPTY_STACK
         : await discoverInstructionStack({ ...discover, slot, unslotted: general });
   }
-  // A role that takes no general files in any slot (a region Warden, the Cartographer) takes none by
+  // A role that takes no general files in any slot (a region Warden) takes none by
   // any other route either: not as an `@` import of its role files or brief, not as a slotted source.
   const takesNoGeneral = COMPOSITION_SLOTS.every((slot) => {
     const general = generals[slot];
@@ -699,13 +699,8 @@ function deliveredPicks(
   config: FoundryConfig,
   role: string,
   delivered: readonly CompositionSlot[],
-  defaults?: RoleComposition,
 ): RoleComposition {
-  const settings = config.composition;
-  const { budget: _budget, thread: _thread, ...picks } = roleComposition(settings, role);
-  for (const other of COMPOSITION_SLOTS)
-    if (settings?.roles?.[role]?.[other] === undefined && defaults?.[other] !== undefined)
-      picks[other] = defaults[other];
+  const { budget: _budget, thread: _thread, ...picks } = roleComposition(config.composition, role);
   for (const other of COMPOSITION_SLOTS) if (!delivered.includes(other)) picks[other] = false;
   return picks;
 }
@@ -735,8 +730,6 @@ export function compositionSource(
   role: string,
   slot: CompositionSlot,
   delivered: readonly CompositionSlot[],
-  /** The role's built-in picks; a slot the settings pick for wins whole. */
-  defaults?: RoleComposition,
 ): ContextSource {
   const harness = workerHarness(config.defaults.provider);
   return instructionStackSource(id, {
@@ -744,7 +737,7 @@ export function compositionSource(
     harnessLoadsGlobalFor: (projectId) => codexReadsUserHome(config, projectId),
     role,
     slot,
-    picks: deliveredPicks(config, role, delivered, defaults),
+    picks: deliveredPicks(config, role, delivered),
     ...ladderOptions(config),
   });
 }

@@ -3,7 +3,6 @@ import {
   guardOutcomes,
   learningEntries,
   participantRequest,
-  routingRequest,
 } from '../src/viewer/ui/inspector-data.js';
 
 // Inspector projections for the historical phase record (Fable, CORE-006 LI). Recorded fields only;
@@ -11,77 +10,14 @@ import {
 
 const supplied = {
   status: 'supplied',
-  phase: 'route',
-  providerId: 'controlled-route',
+  phase: 'guard',
+  providerId: 'controlled-provider',
   capturedAt: 7,
   messages: [
     { role: 'system', content: 'S' },
     { role: 'user', content: 'U' },
   ],
 };
-
-test('routing: recorded status, selection and exact request; missing plan or older trace is not recorded', () => {
-  const trace = {
-    root: {
-      annotations: {
-        injectionPlan: {
-          routing: {
-            status: 'routed',
-            domains: ['architecture'],
-            layers: ['architecture'],
-            confidence: 1,
-            elapsedMs: 3,
-            request: supplied,
-          },
-        },
-      },
-    },
-  };
-  expect(routingRequest(trace)).toEqual({
-    state: 'recorded',
-    status: 'routed',
-    reason: null,
-    domains: ['architecture'],
-    layers: ['architecture'],
-    confidence: 1,
-    elapsedMs: 3,
-    request: {
-      state: 'recorded',
-      phase: 'route',
-      providerId: 'controlled-route',
-      capturedAt: 7,
-      messages: supplied.messages,
-    },
-  });
-  const fallback = routingRequest({
-    root: {
-      annotations: {
-        injectionPlan: {
-          routing: {
-            status: 'fallback',
-            reason: 'no route within 10ms',
-            domains: [],
-            layers: [],
-            confidence: 0,
-            request: { status: 'not-sent', phase: 'route', reason: 'empty-map' },
-          },
-        },
-      },
-    },
-  });
-  expect(fallback).toMatchObject({
-    state: 'recorded',
-    status: 'fallback',
-    reason: 'no route within 10ms',
-    request: { state: 'not-sent', reason: 'empty-map' },
-  });
-  expect(routingRequest({ root: { annotations: {} } })).toEqual({ state: 'not-recorded' });
-  expect(routingRequest(undefined)).toEqual({ state: 'not-recorded' });
-  expect(
-    routingRequest({ root: { annotations: { injectionPlan: { routing: { status: 'routed' } } } } })
-      .request,
-  ).toEqual({ state: 'not-recorded' }); // older plan without request
-});
 
 test('guards: per-observation status with per-expert outcomes; pending and failed checks are never an all-clear; absent record is null', () => {
   const trace = {
@@ -157,7 +93,7 @@ test('guards: per-observation status with per-expert outcomes; pending and faile
     request: {
       state: 'recorded',
       phase: 'guard',
-      providerId: 'controlled-route',
+      providerId: 'controlled-provider',
       capturedAt: 7,
       messages: supplied.messages,
     },

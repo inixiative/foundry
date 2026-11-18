@@ -4,14 +4,13 @@ import { mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
-  Classifier,
   ContextStack,
+  Executor,
   FileMemory,
   Harness,
   type InjectionArtifact,
   type LLMMessage,
   type LLMProvider,
-  Router,
   type Signal,
   ToolRegistry,
 } from '@inixiative/foundry-core';
@@ -131,50 +130,38 @@ async function setup(opts: { dir?: string; sourceExtras?: Record<string, unknown
 const noise = (id: string, i: number): Signal => ({
   id,
   kind: 'dispatch',
-  source: 'harness:classifier',
+  source: 'harness:enricher',
   timestamp: Date.now() + i,
   content: {
     threadId: 't',
-    agentId: 'classifier',
+    agentId: 'enricher',
     payload: `irrelevant dispatch ${i} ${'x'.repeat(700)}`,
     ok: true,
   },
 });
 const sha = (s: string) => createHash('sha256').update(s).digest('hex');
 
-test('actual classifier/router dispatch audit is retained but excluded from its own Harness executor input', async () => {
+test('an earlier stage’s dispatch audit is retained but excluded from its own Harness executor input', async () => {
   const { factory, runtime, memory, captured } = await setup();
   const t = factory.create('work', { projectId: 'P' });
   try {
-    t.register(
-      new Classifier({
-        id: 'classifier',
-        stack: t.stack,
-        handler: async () => ({ value: { category: 'bug' }, confidence: 1 }),
-      }),
-    );
-    t.register(
-      new Router({
-        id: 'router',
-        stack: t.stack,
-        handler: async () => ({ value: { destination: 'worker' }, confidence: 1 }),
-      }),
-    );
+    t.register(new Executor({ id: 'enricher', stack: t.stack, handler: async () => 'noted' }));
     const harness = new Harness(t);
-    harness.setClassifier('classifier');
-    harness.setRouter('router');
+    harness.setFlow({
+      stages: [
+        { agentId: 'enricher', role: 'enrich', invocation: 'always' },
+        { agentId: 'worker', role: 'execute', invocation: 'always' },
+      ],
+    });
     const result = await harness.send({
       id: 'logical-current',
       payload: 'Zephyr rollback migration',
     });
     const audit = memory
       .all('dispatch')
-      .filter((e) => ['classifier', 'router'].includes(JSON.parse(e.content).agentId));
-    expect(audit).toHaveLength(2);
-    expect(audit.map((e) => JSON.parse(e.content).messageId)).toEqual([
-      'logical-current',
-      'logical-current',
-    ]);
+      .filter((e) => JSON.parse(e.content).agentId === 'enricher');
+    expect(audit).toHaveLength(1);
+    expect(audit.map((e) => JSON.parse(e.content).messageId)).toEqual(['logical-current']);
     const artifact = result.result.meta?.injection as InjectionArtifact;
     const selection = artifact.layers?.find((l) => l.id === 'memory')?.selection?.sources[0]
       ?.report;

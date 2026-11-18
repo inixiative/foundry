@@ -5,15 +5,43 @@
  */
 /**
  * What a thread touches, in Atlas concepts: the files its recent turns read and wrote (the tool
- * calls the journal holds), mapped through the project's `atlas graph` (the same read the
- * Cartographer uses). Also which other threads in the project touch the same concepts.
+ * calls the journal holds), mapped through the project's `atlas graph`. Also which other threads in
+ * the project touch the same concepts.
  */
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { READ_TOOLS, WRITE_TOOLS } from '@inixiative/foundry-core';
-import { type AtlasGraph, readAtlasGraph } from '../agents/cartographer';
 import type { LocalSessionStore } from '../persistence/local-session-store';
 import { turnFiles } from './turn-flow';
+
+/** The shape of `atlas graph --json` (see @inixiative/atlas src/commands/graph.ts), the fields read here. */
+export interface AtlasGraph {
+  conceptToFiles: Record<string, string[]>;
+  usesConsumers: Record<string, string[]>;
+  /** A concept's doc, resolved to a repo path (its gloss section). */
+  thesaurus?: Record<string, { phrases: string[]; doc?: string }>;
+  /** Each file's kind and the concepts it is part of and uses. */
+  fileToConcepts?: Record<string, { kind: string[]; partOf: string[]; uses: string[] }>;
+}
+
+/**
+ * The project's `atlas graph --json`, or null when the repo has no atlas or the CLI fails. Uses the
+ * repo's own atlas devDep (`--no-install`): never npm, where "atlas" is an unrelated package.
+ */
+export async function readAtlasGraph(root: string): Promise<AtlasGraph | null> {
+  try {
+    const proc = Bun.spawn(['bunx', '--no-install', 'atlas', 'graph', '--json'], {
+      cwd: root,
+      stdout: 'pipe',
+      stderr: 'pipe',
+    });
+    const stdout = await new Response(proc.stdout).text();
+    if ((await proc.exited) !== 0) return null;
+    return JSON.parse(stdout) as AtlasGraph;
+  } catch {
+    return null;
+  }
+}
 
 const TURNS = 40;
 const CACHE_MS = 60_000;

@@ -7,7 +7,6 @@ import {
   type LLMProvider,
   SignalBus,
 } from '@inixiative/foundry-core';
-import { Cartographer } from '../src/agents/cartographer';
 import { DomainLibrarian } from '../src/agents/domain-librarian';
 import { FlowOrchestrator, type FlowTimingConfig } from '../src/agents/flow-orchestrator';
 import { Librarian } from '../src/agents/librarian';
@@ -42,19 +41,6 @@ function harness(
   }
   const stack = new ContextStack([...caches.values()]);
   const librarian = new Librarian({ stack, signals });
-  const cartographer = new Cartographer({
-    stack,
-    signals,
-    llm: {
-      id: 'controlled-route',
-      async complete() {
-        return {
-          model: 'controlled',
-          content: JSON.stringify({ layers: [], domains: Object.keys(domains), confidence: 1 }),
-        };
-      },
-    },
-  });
   const experts = new Map(
     Object.entries(domains).map(([id, d]) => {
       const llm: LLMProvider = {
@@ -80,7 +66,6 @@ function harness(
     stack,
     signals,
     librarian,
-    cartographer,
     domainLibrarians: experts,
     ...timing,
   });
@@ -90,7 +75,6 @@ function harness(
     caches,
     dispose() {
       flow.dispose();
-      cartographer.dispose();
       librarian.dispose();
     },
   };

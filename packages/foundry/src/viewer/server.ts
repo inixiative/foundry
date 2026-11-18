@@ -761,7 +761,6 @@ export function createViewer(config: ViewerConfig) {
         config: () => configStore.config,
         queue: config.actionQueue ?? null,
         thread: (id) => directory.get(id),
-        cartographer: (id) => config.threadFactory?.runtime?.get(id)?.cartographer,
         ...(feedbackProvider
           ? {
               classify: (input) => classifyCorrection(feedbackProvider, input),

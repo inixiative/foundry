@@ -9,7 +9,7 @@ export const CONCEPTS: ConceptRegistry = {
   // ── features: what Foundry does for a user ──────────────────────────────────
   'feature:threads': { docs: ['FLOW.md'] }, // thread runtime, sessions, the one turn path, local session store
   'feature:threadTree': { docs: ['THREAD-TREE.md'] }, // native subagents as child threads, reduced middleware entries, stitching
-  'feature:flow': { docs: ['FLOW.md', 'api/PRIMITIVES.md'] }, // the FLOW.md roles: orchestrator, Cartographer, Librarian, Herald, routed agents
+  'feature:flow': { docs: ['FLOW.md', 'api/PRIMITIVES.md'] }, // the FLOW.md roles: orchestrator, Librarian, Herald
   'feature:wardens': { docs: ['FLOW.md', 'subscription-decisions.md'] }, // region Wardens: roster, triggers, reception, in-session, pre-filter
   'feature:toolGate': { docs: ['FLOW.md'] }, // the user's structural tool rules: the only thing that can deny a tool call
   'feature:feedback': { docs: ['FEEDBACK-LOOP.md'] }, // explicit feedback, lifecycle, routing, repeats, correction detection
@@ -29,7 +29,7 @@ export const CONCEPTS: ConceptRegistry = {
   'feature:conversations': { docs: ['reference/CONVERSATIONS.md'] }, // agent conversations: the wrapper of a main thread members reach through Kingdom
 
   // ── primitives: reusable building blocks (core is all primitives) ──────────
-  'primitive:agents': { docs: ['api/PRIMITIVES.md'] }, // BaseAgent, classifier, router, executor, decider, clarifier, Harness, tool loop
+  'primitive:agents': { docs: ['api/PRIMITIVES.md'] }, // BaseAgent, executor, Harness, tool loop
   'primitive:thread': { docs: ['api/PRIMITIVES.md'] }, // core Thread, ownership scope, ids
   'primitive:contextLayers': { docs: ['api/PRIMITIVES.md', 'FLOW.md'] }, // ContextLayer, ContextStack, cache lifecycle, hydration
   'primitive:middleware': { docs: ['api/PRIMITIVES.md'] }, // middleware chain, hooks, retry

@@ -6,7 +6,6 @@ import {
   type Signal,
   SignalBus,
 } from '@inixiative/foundry-core';
-import { Cartographer } from '../src/agents/cartographer';
 import { DomainLibrarian, oneCall } from '../src/agents/domain-librarian';
 import { FlowOrchestrator } from '../src/agents/flow-orchestrator';
 import { Librarian } from '../src/agents/librarian';
@@ -314,21 +313,10 @@ test("orchestrator: the guard report and emitted observation carry each domain's
   learn(testing.lib, 'TEST_OWN');
   const stack = new ContextStack([arch.cache, testing.cache, malformed.cache]);
   const librarian = new Librarian({ stack, signals });
-  const cartographer = new Cartographer({
-    stack,
-    signals,
-    llm: {
-      id: 'controlled-route',
-      async complete() {
-        return { model: 'controlled', content: '{"layers":[],"domains":[],"confidence":1}' };
-      },
-    },
-  });
   const flow = new FlowOrchestrator({
     stack,
     signals,
     librarian,
-    cartographer,
     domainLibrarians: new Map([
       ['architecture', arch.lib],
       ['testing', testing.lib],
@@ -398,7 +386,6 @@ test("orchestrator: the guard report and emitted observation carry each domain's
     expect(JSON.stringify(report)).not.toContain('looks fine');
   } finally {
     flow.dispose();
-    cartographer.dispose();
     librarian.dispose();
   }
 });

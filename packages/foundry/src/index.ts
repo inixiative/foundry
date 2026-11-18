@@ -42,9 +42,6 @@ export {
   type BuildLayersDeps,
   buildAgents,
   buildLayers,
-  // Cartographer (context routing)
-  Cartographer,
-  type CartographerConfig,
   type CompiledCorpus,
   ContradictionDetector,
   ConvergenceDetector,
@@ -53,13 +50,11 @@ export {
   type CorpusCompilerConfig,
   type CorpusTier,
   CrossPollinationDetector,
-  classificationOverrideRule,
   type DocState,
   // Domain Librarian (advise + guard pattern)
   DomainLibrarian,
   type DomainLibrarianConfig,
   DuplicationDetector,
-  emitOnPatternRule,
   // Flow Orchestrator (wires the five FLOW.md roles)
   FlowOrchestrator,
   type FlowOrchestratorConfig,
@@ -77,15 +72,11 @@ export {
   type InjectionPlan,
   type InvalidationEvent,
   invalidateComposition,
-  keywordClassify,
-  keywordRoute,
   type LayerInheritance,
   type LayerVisibility,
   // Librarian (signal reconciliation)
   Librarian,
   type LibrarianConfig,
-  lowConfidenceRule,
-  type MapEntry,
   type PatternDetector,
   // Project
   Project,
@@ -93,17 +84,9 @@ export {
   ProjectRegistry,
   type ProjectStatus,
   type ProjectSummary,
-  parseJSON,
   // Built-in hooks
-  type ReactionContext,
-  type ReactionRule,
-  // Reactive Middleware
-  ReactiveMiddleware,
-  type ReactiveMiddlewareConfig,
   ResourceImbalanceDetector,
-  type RouteResult,
   resolveAgentOpts,
-  rewarmOnAgentRule,
   // Sessions
   SessionManager,
   type SourceResolver,
@@ -114,7 +97,6 @@ export {
   type ThreadSnapshot,
   type ThreadState,
   type ToolObservation,
-  type TopologyMap,
   type VisibilityTier,
 } from './agents';
 // Git — worktree detection for thread→branch assignment
@@ -249,7 +231,6 @@ export {
   defaultConfig,
   type ExecutionEnv,
   type FoundryConfig,
-  type InvocationConditionOverride,
   isAgentExtension,
   type LayerSettingsConfig,
   type LayerSettingsOverride,

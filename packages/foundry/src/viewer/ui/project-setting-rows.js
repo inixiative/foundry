@@ -29,7 +29,7 @@ export function ChorusSwitch({ projectId, onSaved }) {
 }
 
 const GROUPS = [
-  ['defaults', 'Defaults', 'The worker, its model and the classifier'],
+  ['defaults', 'Defaults', 'The worker, its model and the decision model'],
   ['feedback', 'Feedback', 'How corrections are captured and routed'],
   ['agents', 'Agents', 'Standalone, or extending a global agent'],
   ['layers', 'Layers', 'Merged over the global layers'],

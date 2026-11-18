@@ -27,7 +27,7 @@ test('the decision default is a registered judgment model, not a hardcoded id', 
   });
   expect(
     resolveDecisionModel(
-      apiConfig({ classifierProvider: 'deepseek', classifierModel: 'deepseek-flash' }),
+      apiConfig({ decisionProvider: 'deepseek', decisionModel: 'deepseek-flash' }),
     ),
   ).toEqual({ provider: 'deepseek', model: 'deepseek-flash' });
 });
@@ -45,7 +45,7 @@ test('decisions fail before making requests when disabled or missing a credentia
 });
 
 test('a model that is not tagged for judgment is refused', () => {
-  const config = apiConfig({ classifierProvider: 'openai', classifierModel: 'not-a-model' });
+  const config = apiConfig({ decisionProvider: 'openai', decisionModel: 'not-a-model' });
   expect(() => createDecisionProvider(config, { OPENAI_API_KEY: 'controlled-key' })).toThrow(
     'tagged for judgment',
   );
@@ -61,7 +61,7 @@ test('any provider with a judgment model can run decisions, including a keyless 
   }) as typeof fetch;
   try {
     const local = createDecisionProvider(
-      apiConfig({ classifierProvider: 'ollama', classifierModel: 'llama3.2:3b' }),
+      apiConfig({ decisionProvider: 'ollama', decisionModel: 'llama3.2:3b' }),
       {},
     );
     expect(local.id).toBe('ollama-decisions');
@@ -113,7 +113,7 @@ test('decision and OpenAI worker identities coexist and OpenAI decisions run Lun
   }) as typeof fetch;
   try {
     const decisions = createDecisionProvider(
-      apiConfig({ classifierProvider: 'openai', classifierModel: 'gpt-6-luna' }),
+      apiConfig({ decisionProvider: 'openai', decisionModel: 'gpt-6-luna' }),
       { OPENAI_API_KEY: 'controlled-key' },
     );
     const worker = new OpenAIProvider({ apiKey: 'controlled-key', defaultModel: 'gpt-6-sol' });

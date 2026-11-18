@@ -1,7 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { ContextLayer, type ContextSource } from '../src/context-layer';
 import { ContextStack } from '../src/context-stack';
-import { Decider } from '../src/decider';
 import { Executor } from '../src/executor';
 import { Thread, threadTitle } from '../src/thread';
 

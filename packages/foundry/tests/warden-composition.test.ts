@@ -77,7 +77,7 @@ function config(project = regionProject()): FoundryConfig {
 }
 
 interface Call {
-  phase: 'central' | 'pre' | 'post' | 'route';
+  phase: 'central' | 'pre' | 'post';
   messages: LLMMessage[];
   opts: CompletionOpts;
 }
@@ -87,24 +87,20 @@ function setup(c: FoundryConfig) {
   const provider = (id: string): LLMProvider => ({
     id,
     async complete(messages, opts = {}) {
-      const phase: Call['phase'] = opts.threadId?.endsWith(':cartographer')
-        ? 'route'
-        : opts.threadId?.includes(':review:')
-          ? 'post'
-          : opts.threadId?.includes(':aux:')
-            ? 'pre'
-            : 'central';
+      const phase: Call['phase'] = opts.threadId?.includes(':review:')
+        ? 'post'
+        : opts.threadId?.includes(':aux:')
+          ? 'pre'
+          : 'central';
       calls.push({ phase, messages: structuredClone(messages), opts: { ...opts } });
       return {
         model: 'controlled',
         content:
           phase === 'central'
             ? 'done'
-            : phase === 'route'
-              ? JSON.stringify({ layers: ['conventions'], domains: [], confidence: 1 })
-              : phase === 'pre'
-                ? JSON.stringify({ layers: ['conventions'], snippets: [], confidence: 1 })
-                : 'NO_COMMENT',
+            : phase === 'pre'
+              ? JSON.stringify({ layers: ['conventions'], snippets: [], confidence: 1 })
+              : 'NO_COMMENT',
       };
     },
   });
@@ -188,7 +184,7 @@ test('a thread without a project, or in a project whose chorus is off, has no Wa
   expect(f.calls.some((call) => call.phase === 'pre')).toBe(false);
 });
 
-test('settings declare no Wardens: a hand-named one is refused by name, with the fix', () => {
+test('settings declare no Wardens: one written there is a kind settings do not configure', () => {
   const warden = {
     id: 'conventions-warden',
     kind: 'domain-librarian',
@@ -204,39 +200,27 @@ test('settings declare no Wardens: a hand-named one is refused by name, with the
   const global = config();
   global.agents['conventions-warden'] = warden;
   expect(() => validateConfig(global)).toThrow(
-    'agents.conventions-warden is a hand-named Warden (domain-librarian): the hand-named Warden roster is retired',
+    'global agent "conventions-warden": kind "domain-librarian" is not configurable (executor)',
   );
   const project = config();
   project.projects.P!.agents = { 'p-warden': { ...warden, id: 'p-warden' } };
   expect(() => validateConfig(project)).toThrow(
-    'projects.P.agents.p-warden is a hand-named Warden',
+    'project "P" agent "p-warden": kind "domain-librarian" is not configurable',
   );
   const decider = config();
   decider.agents.old = { ...warden, id: 'old', kind: 'decider' } as unknown as AgentSettingsConfig;
-  expect(() => validateConfig(decider)).toThrow('agents.old is a hand-named Warden (decider)');
-  expect(() => validateConfig(decider)).toThrow('"chorus": { "enabled": true }');
+  expect(() => validateConfig(decider)).toThrow('kind "decider" is not configurable');
 });
 
 const SORTER: AgentSettingsConfig = {
   id: 'sorter',
-  kind: 'classifier',
+  kind: 'executor',
   prompt: 'SORTER_INSTRUCTIONS',
   visibleLayers: [],
   peers: [],
   maxDepth: 1,
   enabled: true,
 };
-const CARTOGRAPHER: AgentSettingsConfig = {
-  id: 'cartographer',
-  kind: 'cartographer',
-  flowRole: 'context-routing',
-  prompt: 'CARTOGRAPHER_INSTRUCTIONS',
-  visibleLayers: [],
-  peers: [],
-  maxDepth: 1,
-  enabled: true,
-};
-
 test('project agents are standalone or extend a global agent; nothing in between', () => {
   const c = config();
   c.agents.sorter = SORTER;
@@ -244,9 +228,6 @@ test('project agents are standalone or extend a global agent; nothing in between
   expect(() => validateConfig(c)).toThrow('is not a global agent');
   c.projects.P!.agents = { sorter: { extends: 'sorter', override: ['instructions'] } };
   expect(() => validateConfig(c)).toThrow('overrides instructions without a prompt');
-  // An executor adds no instructions (2026-11-10): an extension that gives one a prompt is refused.
-  c.projects.P!.agents = { worker: { extends: 'worker', prompt: 'Use Bun' } };
-  expect(() => validateConfig(c)).toThrow("an executor's prompt is retired");
   c.projects.P!.agents = { sorter: { extends: 'sorter', prompt: 'Use Bun' } };
   validateConfig(c);
   const view = resolveProjectView(c, 'P')!;
@@ -269,7 +250,20 @@ test('a settings edit reaches a running thread on its next turn, with a versione
   const dir = tempDir('live-settings');
   const store = new ConfigStore(dir);
   const initial = config();
-  initial.agents.cartographer = CARTOGRAPHER;
+  initial.sources.notes = {
+    id: 'notes',
+    label: 'Notes',
+    type: 'inline',
+    uri: 'NOTE_TEXT',
+    enabled: true,
+  };
+  initial.layers.notes = {
+    id: 'notes',
+    prompt: 'NOTES_INSTRUCTIONS',
+    sourceIds: ['notes'],
+    staleness: 0,
+    enabled: true,
+  };
   await store.save(initial);
   const f = setup(structuredClone(store.config));
   managers.push(f.manager);
@@ -278,54 +272,34 @@ test('a settings edit reaches a running thread on its next turn, with a versione
 
   await thread.dispatch('worker', 'First turn');
   expect(f.last('pre').messages[0]!.content).toBe(chartered(REGION_RULES));
-  expect(f.last('route').messages[0]!.content).toBe('CARTOGRAPHER_INSTRUCTIONS');
+  expect(f.last('central').messages[0]!.content).toContain('NOTES_INSTRUCTIONS');
 
   await store.update((draft) => {
-    draft.agents.cartographer!.prompt = 'EDITED_CARTOGRAPHER';
+    draft.layers.notes!.prompt = 'EDITED_NOTES';
   });
   await store.settled();
 
   await thread.dispatch('worker', 'Second turn');
   expect(f.last('pre').messages[0]!.content).toBe(chartered(REGION_RULES));
-  expect(f.last('route').messages[0]!.content).toBe('EDITED_CARTOGRAPHER');
+  expect(f.last('central').messages[0]!.content).toContain('EDITED_NOTES');
 
-  const [log] = await store.history('agent:cartographer');
+  const [log] = await store.history('layer:notes');
   const edit = log!.entries.at(-1)!;
   expect(edit.author).toBe('user');
-  expect(edit.snapshot.before).toMatchObject({ prompt: 'CARTOGRAPHER_INSTRUCTIONS' });
-  expect(edit.snapshot.after).toMatchObject({ prompt: 'EDITED_CARTOGRAPHER' });
+  expect(edit.snapshot.before).toMatchObject({ prompt: 'NOTES_INSTRUCTIONS' });
+  expect(edit.snapshot.after).toMatchObject({ prompt: 'EDITED_NOTES' });
 });
 
-test('the configured Cartographer instructions drive routing; runtime roles are never thread agents', async () => {
+test('runtime roles are never thread agents', async () => {
   const c = config();
-  c.agents.cartographer = {
-    id: 'cartographer',
-    kind: 'cartographer',
-    flowRole: 'context-routing',
-    prompt: 'CARTOGRAPHER_INSTRUCTIONS',
-    visibleLayers: [],
-    peers: [],
-    maxDepth: 1,
-    enabled: true,
-  };
   validateConfig(c);
   const f = setup(c);
   managers.push(f.manager);
   const thread = f.factory.create('p-thread', { projectId: 'P' });
-  expect(thread.getAgent('cartographer')).toBeUndefined();
   expect(thread.getAgent(WARDEN_ID)).toBeUndefined();
-  await thread.dispatch('worker', 'Route me');
-  const route = f.last('route');
-  expect(route.messages[0]!.content).toBe('CARTOGRAPHER_INSTRUCTIONS');
-  expect(route.messages[1]!.content).toContain('## Response protocol (routing)');
-
-  for (const kind of ['librarian', 'herald']) {
+  for (const kind of ['librarian', 'herald', 'cartographer', 'classifier', 'router']) {
     const bad = config();
-    bad.agents[kind] = {
-      ...c.agents.cartographer,
-      id: kind,
-      kind,
-    } as unknown as AgentSettingsConfig;
+    bad.agents[kind] = { ...SORTER, id: kind, kind } as unknown as AgentSettingsConfig;
     expect(() => validateConfig(bad)).toThrow('is not configurable');
   }
 });
@@ -398,16 +372,4 @@ test('ambiguous or unbuildable project agents are refused before they are saved'
     worker: { extends: 'worker', kind: 'router' } as unknown as AgentSettingsConfig,
   };
   expect(() => validateConfig(c)).toThrow('cannot be set on an extension');
-  c.projects.P!.agents = {};
-  c.agents.cartographer = {
-    id: 'cartographer',
-    kind: 'cartographer',
-    flowRole: 'context-routing',
-    prompt: 'Rules.\nRespond with JSON: {"mode": "route"}',
-    visibleLayers: [],
-    peers: [],
-    maxDepth: 1,
-    enabled: true,
-  };
-  expect(() => validateConfig(c)).toThrow('must not state a response format');
 });

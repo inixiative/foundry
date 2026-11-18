@@ -3,64 +3,6 @@ import { ContextStack, Harness, type LLMProvider } from '@inixiative/foundry-cor
 import { buildAgents, ThreadFactory } from '../src/agents/thread-factory';
 import { starterConfig } from '../src/viewer/config';
 
-for (const output of [
-  '',
-  'not json',
-  '{"destination":"missing"}',
-  '{"destination":"classifier"}',
-]) {
-  test(`invalid production router output falls back to a real executor: ${output}`, async () => {
-    const config = starterConfig('mock', 'mock');
-    config.agents = Object.fromEntries(
-      (['classifier', 'router', 'artificer'] as const).map((id) => [
-        id,
-        {
-          id,
-          kind: id === 'artificer' ? ('executor' as const) : id,
-          provider: 'mock',
-          model: 'mock',
-          prompt: id,
-          temperature: 0,
-          maxTokens: 100,
-          visibleLayers: [],
-          peers: [],
-          maxDepth: 1,
-          enabled: true,
-        },
-      ]),
-    );
-    const stack = new ContextStack();
-    const calls: string[] = [];
-    const provider: LLMProvider = {
-      id: 'mock',
-      complete: async (_messages, opts) => {
-        calls.push(opts?.threadId ?? '');
-        return {
-          content: opts?.threadId?.includes(':aux:') ? output : 'ACTUAL_EXECUTOR_RESULT',
-          model: 'mock',
-        };
-      },
-    };
-    const thread = new ThreadFactory({
-      stack,
-      agents: buildAgents(config, stack, { provider }),
-    }).create('route-failure');
-    const harness = new Harness(thread);
-    harness.setClassifier('classifier');
-    harness.setRouter('router');
-    harness.setDefaultExecutor('artificer');
-    try {
-      const result = await harness.send({ id: 'turn', payload: 'Build the sample' });
-      expect(result.result.output).toBe('ACTUAL_EXECUTOR_RESULT');
-      expect(result.route?.reasoning).toContain('fallback');
-      expect(result.route?.confidence).toBeLessThan(0.9);
-      expect(calls.filter((id) => id === 'route-failure')).toHaveLength(1);
-    } finally {
-      thread.dispose();
-    }
-  });
-}
-
 for (const streaming of [false, true]) {
   test(`production ${streaming ? 'streaming' : 'complete'} provider errors are failures, not successful assistant text`, async () => {
     const config = starterConfig('mock', 'mock');

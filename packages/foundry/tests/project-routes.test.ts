@@ -153,7 +153,7 @@ test('every shared project setting has a repository layer; machine and person se
     'capacity',
     'label',
     'defaults.nativeAuthenticationId',
-    'defaults.classifierProvider',
+    'defaults.decisionProvider',
   ]) {
     expect((await get(path)).personalOnly).toBeString();
     const refused = await put('everyone', { [path]: path === 'toolRules' ? {} : 'x' });

@@ -29,7 +29,6 @@ import {
   knowledgeInspectionSummary,
   learningEntries,
   liveRuntimeLabel,
-  routingRequest,
   selectionSummary,
   traceInjection,
   traceSpans,
@@ -58,7 +57,6 @@ import {
   selectedEvent,
   selectedSpanId,
   showToast,
-  submitIntervention,
   threadData,
   threadStatusOf,
   updateThreadWorktree,
@@ -566,30 +564,11 @@ const drawerTone = (outcome) => ({ ok: 'ok', skip: 'cold' })[outcomeTone(outcome
 const guardCheckTone = (o) =>
   !o.outcome && o.reference === 'unreferenced' ? 'running' : drawerTone(o.outcome);
 
-/** Routing and guard phases of the selected turn, from the retained trace. Historical; nothing recomputed. */
+/** Guard phases of the selected turn, from the retained trace. Historical; nothing recomputed. */
 function PhaseHistory({ trace }) {
-  const routing = routingRequest(trace);
   const guards = guardOutcomes(trace);
-  const tone = (s) =>
-    s === 'routed' || s === 'reported' ? 'ok' : s === 'pending' ? 'cold' : 'stale';
+  const tone = (s) => (s === 'reported' ? 'ok' : s === 'pending' ? 'cold' : 'stale');
   return html`
-    <${Section} title="Routing (historical)" open=${false}>
-      <div class="phase-routing" data-state=${routing.state} data-status=${routing.state === 'recorded' ? routing.status : 'unrecorded'}>
-        ${
-          routing.state !== 'recorded'
-            ? html`<div class="detail-null">Routing not recorded for this turn.</div>`
-            : html`
-          <div class="detail-meta-row">
-            <div class="detail-meta"><label>Status</label><span class="detail-status ${tone(routing.status)}">${routing.status}</span></div>
-            <div class="detail-meta"><label>Domains</label><span>${routing.domains.length ? routing.domains.join(', ') : 'none'}</span></div>
-            <div class="detail-meta"><label>Layers</label><span>${routing.layers.length ? routing.layers.join(', ') : 'none'}</span></div>
-            ${routing.confidence !== null ? html`<div class="detail-meta"><label>Confidence</label><span>${routing.confidence}</span></div>` : null}
-          </div>
-          ${routing.reason ? html`<div class="detail-meta"><label>Reason</label><span>${routing.reason}</span></div>` : null}
-          <${RecordedRequest} request=${routing.request} title="Routing request" />`
-        }
-      </div>
-    </${Section}>
     <${Section} title=${`Guard outcomes (historical${guards ? `, ${guards.length}` : ''})`} open=${false}>
       ${
         !guards
@@ -726,7 +705,7 @@ function ExpertUnderstanding({ layerId }) {
       <div class="detail-meta"><label>Role</label><span>domain expert layer</span></div>
       <div class="detail-meta"><label>Advises before</label><span>each message, from its three parts</span></div>
       <div class="detail-meta"><label>Reviews after</label><span>completion; revises only its own understanding</span></div>
-      <div class="detail-meta"><label>Not</label><span>the central executor, router or classifier; not a shared thread fact</span></div>
+      <div class="detail-meta"><label>Not</label><span>the central executor; not a shared thread fact</span></div>
     </div>
     ${
       !loaded
@@ -832,8 +811,6 @@ function SelectedReviewHistory({ trace }) {
 // ---------------------------------------------------------------------------
 
 function SpanDetail({ span, traceId, threadId }) {
-  const isOverrideable = span.kind === 'route' || span.kind === 'classify';
-
   return html`
     <div class="detail-content">
       <div class="detail-header">
@@ -879,38 +856,6 @@ function SpanDetail({ span, traceId, threadId }) {
           : null
       }
 
-      ${
-        isOverrideable
-          ? html`
-        <${Section} title="Correction" open=${false}>
-          <${OverrideForm} threadId=${threadId} traceId=${traceId} spanId=${span.id} />
-        </${Section}>
-      `
-          : null
-      }
-    </div>
-  `;
-}
-
-function OverrideForm({ threadId, traceId, spanId }) {
-  const [correction, setCorrection] = useState('');
-  const [reason, setReason] = useState('');
-  const [submitted, setSubmitted] = useState(false);
-
-  if (submitted) return html`<div class="detail-ok">Correction submitted</div>`;
-
-  return html`
-    <div class="override-form">
-      <textarea class="override-input" placeholder="What should this have been?"
-        value=${correction} onInput=${(e) => setCorrection(e.target.value)} rows="3"></textarea>
-      <input class="override-reason" placeholder="Reason (optional)"
-        value=${reason} onInput=${(e) => setReason(e.target.value)} />
-      <button class="override-submit" disabled=${!correction.trim()}
-        onClick=${async () => {
-          await submitIntervention(threadId, traceId, spanId, correction, reason);
-          setSubmitted(true);
-        }}
-      >Submit Correction</button>
     </div>
   `;
 }
@@ -1232,8 +1177,6 @@ export function CreateLayerForm({ onCreated }) {
 
 export function CreateAgentForm({ onCreated }) {
   const [id, setId] = useState('');
-  const [kind, setKind] = useState('executor');
-  const [prompt, setPrompt] = useState('');
   const [temperature, setTemperature] = useState('');
   const [saving, setSaving] = useState(false);
 
@@ -1242,9 +1185,9 @@ export function CreateAgentForm({ onCreated }) {
     setSaving(true);
     const data = {
       id: id.trim(),
-      kind,
+      kind: 'executor',
       // An executor adds no instructions: a main thread's come from its thread role's role files.
-      prompt: kind === 'executor' ? '' : prompt,
+      prompt: '',
       visibleLayers: [],
       peers: [],
       maxDepth: 3,
@@ -1265,23 +1208,7 @@ export function CreateAgentForm({ onCreated }) {
           <input aria-label="ID" class="settings-input" placeholder="e.g. code-reviewer"
             value=${id} onInput=${(e) => setId(e.target.value)} />
         </div>
-        <div class="settings-field">
-          <label class="settings-label">Kind</label>
-          <select aria-label="Kind" class="settings-input" value=${kind} onChange=${(e) => setKind(e.target.value)}>
-            <option value="executor">Executor</option>
-            <option value="classifier">Classifier</option>
-            <option value="router">Router</option>
-          </select>
-        </div>
-        ${
-          kind === 'executor'
-            ? html`<p class="settings-desc">An executor's instructions come from its thread's role: .foundry/roles/&lt;role&gt;/instructions.md.</p>`
-            : html`<div class="settings-field">
-                <label class="settings-label">System Prompt</label>
-                <textarea aria-label="System Prompt" class="settings-input" rows="4" placeholder="What this agent does..."
-                  value=${prompt} onInput=${(e) => setPrompt(e.target.value)}></textarea>
-              </div>`
-        }
+        <p class="settings-desc">An executor's instructions come from its thread's role: .foundry/roles/&lt;role&gt;/instructions.md.</p>
         <div class="settings-row">
           <div class="settings-field"><label class="settings-label">Temperature</label>
             <input aria-label="Temperature" class="settings-input small" type="number" step="0.1" min="0" max="2"

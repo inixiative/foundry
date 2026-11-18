@@ -32,8 +32,6 @@ import {
   type ChorusSettings,
   checkProjectView,
   type FoundryConfig,
-  type InvocationCondition,
-  type InvocationConditionOverride,
   isAgentExtension,
   type LayerSettingsConfig,
   type LayerSettingsOverride,
@@ -324,71 +322,6 @@ function listField<T>(
   };
 }
 
-function conditionField(
-  base: InvocationCondition | undefined,
-  override: InvocationConditionOverride | null | undefined,
-  scope: ResolvedLayerDefinition['scope'] | 'agent-override' | 'agent-only',
-  label: string,
-): { value: InvocationCondition | undefined; provenance: FieldProvenance } {
-  if (override === undefined) {
-    return {
-      value: base ? { ...base } : undefined,
-      provenance: {
-        origin: scope === 'project-only' || scope === 'agent-only' ? 'project' : 'global',
-        strategy: scope === 'project-only' || scope === 'agent-only' ? 'project-only' : 'inherit',
-        globalValue: base,
-        resolvedValue: base,
-      },
-    };
-  }
-
-  if (override === null) {
-    return {
-      value: undefined,
-      provenance: {
-        origin: 'project',
-        strategy: 'clear',
-        globalValue: base,
-        projectValue: null,
-        resolvedValue: undefined,
-      },
-    };
-  }
-
-  const categories = listField(base?.categories, override.categories, scope, `${label}.categories`);
-  const tags = listField(base?.tags, override.tags, scope, `${label}.tags`);
-  const routes = listField(base?.routes, override.routes, scope, `${label}.routes`);
-
-  const value = pruneUndefined({
-    categories: categories.value,
-    tags: tags.value,
-    routes: routes.value,
-  }) as InvocationCondition;
-
-  const hasAny = Object.keys(value).length > 0;
-  const origin = [categories, tags, routes].some((f) => f.provenance.origin === 'merged')
-    ? 'merged'
-    : [categories, tags, routes].some((f) => f.provenance.origin === 'project')
-      ? 'project'
-      : 'global';
-  const strategy = [categories, tags, routes].some((f) => f.provenance.strategy === 'merge')
-    ? 'merge'
-    : base === undefined
-      ? 'project-only'
-      : 'override';
-
-  return {
-    value: hasAny ? value : undefined,
-    provenance: {
-      origin,
-      strategy,
-      globalValue: base,
-      projectValue: override,
-      resolvedValue: hasAny ? value : undefined,
-    },
-  };
-}
-
 function browserField(
   base: BrowserConfig | undefined,
   override: BrowserConfigOverride | null | undefined,
@@ -549,7 +482,6 @@ const EXTENSION_KEYS = new Set([
   'guardTriggers',
   'peers',
   'browser',
-  'condition',
 ]);
 
 /** A project agent extending a global one. Instructions compose here; domain knowledge on its layer. */
@@ -671,15 +603,6 @@ function extendAgent(
   if (browser.value === undefined) delete resolved.browser;
   else resolved.browser = browser.value;
   fields.browser = browser.provenance;
-  const condition = conditionField(
-    base.condition,
-    extension.condition,
-    scope,
-    `${label}.condition`,
-  );
-  if (condition.value === undefined) delete resolved.condition;
-  else resolved.condition = condition.value;
-  fields.condition = condition.provenance;
   return { id, scope: 'project-extension', extends: extension.extends, config: resolved, fields };
 }
 
@@ -797,15 +720,6 @@ function resolveLayerDefinition(
   const activation = scalarField(base?.activation, project.activation, scope);
   resolved.activation = activation.value;
   fields.activation = activation.provenance;
-
-  const condition = conditionField(
-    base?.condition,
-    project.condition,
-    scope,
-    `project.layers.${id}.condition`,
-  );
-  resolved.condition = condition.value;
-  fields.condition = condition.provenance;
 
   return {
     id,
@@ -972,9 +886,8 @@ export function effectiveProject(
 }
 
 /**
- * A repository's agents are executors only, on a model their worker runs: decision roles (classifier,
- * router, Cartographer) run on this machine's subscription decision profile, which the repository
- * can't reach. Checked on the built view, so an agent extending a global one is judged by its kind.
+ * A repository's agents run on a model their worker runs. Checked on the built view, so an agent
+ * extending a global one is judged with what it inherits.
  */
 function checkRepositoryAgents(
   view: FoundryConfig,
@@ -983,11 +896,6 @@ function checkRepositoryAgents(
 ): void {
   for (const [id, entry] of Object.entries(theirs.agents ?? {})) {
     if (mine.agents?.[id]) continue;
-    const agent = view.agents[id];
-    if (agent && agent.kind !== 'executor')
-      throw Error(
-        `agents.${id} is a ${agent.kind}: decision roles run on this machine's subscription`,
-      );
     const model = (entry as { model?: string }).model;
     if (model && !registryModel(view.defaults.provider, model))
       throw Error(`agents.${id}.model ${model} is not a ${view.defaults.provider} model`);
@@ -1313,10 +1221,10 @@ function buildProjectView(
       // A Warden is a decision role: it runs on the project's decision provider and model, never on the
       // main-thread default (an agent with no model resolves to defaults.model, the executor's).
       const decision = {
-        ...(resolved.defaults.classifierProvider
-          ? { provider: resolved.defaults.classifierProvider }
+        ...(resolved.defaults.decisionProvider
+          ? { provider: resolved.defaults.decisionProvider }
           : {}),
-        ...(resolved.defaults.classifierModel ? { model: resolved.defaults.classifierModel } : {}),
+        ...(resolved.defaults.decisionModel ? { model: resolved.defaults.decisionModel } : {}),
       };
       agents.set(agent.id, generatedAgent({ ...agent, ...decision }, region));
       for (const source of sources) resolved.sources[source.id] = source;

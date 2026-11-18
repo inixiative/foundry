@@ -608,7 +608,7 @@ this person have no "for everyone" form, and the file may not carry them
   loosen them;
 - `sources`, which read files and Archive projects on this machine, so a cloned
   repository can't point them outside itself;
-- decision routing (`defaults.classifierProvider`, `defaults.classifierModel`, and
+- decision routing (`defaults.decisionProvider`, `defaults.decisionModel`, and
   an agent's `provider`, `tools` or sampling), so a cloned repository can't move
   work onto a paid API. An agent the repository adds must be an executor (an
   extension judged by the agent it extends) on a model its worker runs: decision

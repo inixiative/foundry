@@ -49,8 +49,6 @@ export function terminalMessagePatch(event, fallback = '', source = 'response') 
     traceId: event.traceId,
     trace: event.trace,
     traceSnapshot: event.traceSnapshot,
-    classification: event.classification,
-    route: event.route,
     meta: event.meta,
     streaming: false,
     error: !completed && event.type !== 'done',

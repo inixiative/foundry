@@ -7,7 +7,6 @@ import {
   type LLMMessage,
   SignalBus,
 } from '@inixiative/foundry-core';
-import { Cartographer } from '../src/agents/cartographer';
 import { degradedAnswer } from '../src/agents/chorus-degraded';
 import { DomainLibrarian } from '../src/agents/domain-librarian';
 import { FlowOrchestrator } from '../src/agents/flow-orchestrator';
@@ -27,7 +26,6 @@ afterEach(async () => {
 });
 
 const text = (messages: readonly LLMMessage[]) => messages.map((m) => m.content).join('\n');
-const ROUTE = JSON.stringify({ layers: [], domains: [], confidence: 0 });
 const said = (domain = 'a') => [
   { domain, outcome: { status: 'answered', result: 'no-comment' } as const },
 ];
@@ -164,11 +162,6 @@ function chorus(answer: (message: string, opts: CompletionOpts | undefined) => s
   cache.set('Prisma `schema.prisma`: false polymorphism.');
   const stack = new ContextStack([cache]);
   const librarian = new Librarian({ stack, signals });
-  const cartographer = new Cartographer({
-    stack,
-    signals,
-    llm: { id: 'route', complete: async () => ({ model: 'x', content: ROUTE }) },
-  });
   const asked: Array<{ message: string; heldOnly?: boolean }> = [];
   const lib = new DomainLibrarian({
     domain: 'schema',
@@ -187,12 +180,10 @@ function chorus(answer: (message: string, opts: CompletionOpts | undefined) => s
     stack,
     signals,
     librarian,
-    cartographer,
     domainLibrarians: new Map([['schema', lib]]),
   });
   cleanups.push(() => {
     flow.dispose();
-    cartographer.dispose();
     librarian.dispose();
   });
   return { flow, asked };

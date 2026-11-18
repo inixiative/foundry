@@ -51,7 +51,6 @@ test('the default and decision models are single validated choices', async () =>
     apiTokens: false,
     default: { provider: 'claude-code', model: 'fable' },
     decision: { provider: 'claude-code', model: 'claude-haiku-5-5' },
-    decisionRoles: [],
   });
 
   // A subscription model runs decisions on its runtime's login.

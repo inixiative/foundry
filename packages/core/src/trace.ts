@@ -6,7 +6,7 @@
 import type { TokenCounts } from './token-counts';
 /**
  * A single span in a message's journey through the system.
- * Each stage (classify, route, dispatch, writeback, middleware) creates a span.
+ * Each stage (dispatch, writeback, middleware) creates a span.
  */
 export interface Span {
   readonly id: string;
@@ -53,8 +53,6 @@ export interface Span {
 
 export type SpanKind =
   | 'ingress'
-  | 'classify'
-  | 'route'
   | 'dispatch'
   | 'execute'
   | 'decide'
@@ -76,7 +74,7 @@ function nextSpanId(): string {
  * A Trace is the full journey of a single message through the system.
  *
  * Created at ingress, it accumulates spans as the message flows through
- * classify → route → dispatch → middleware → execute → writeback → egress.
+ * dispatch → middleware → execute → writeback → egress.
  * Each span can have child spans (e.g. a dispatch span contains an execute span,
  * a fan span contains multiple dispatch children).
  *

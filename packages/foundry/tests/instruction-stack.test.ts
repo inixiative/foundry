@@ -469,9 +469,6 @@ test('instruction settings are validated: tiers, parents, cycles, sources', () =
     ],
   ] as const)
     expect(() => validateConfig(config(instructions))).toThrow(message);
-  expect(() =>
-    validateConfig({ ...starterConfig(), instructions: {} } as unknown as FoundryConfig),
-  ).toThrow('is now "composition"');
 });
 
 test('thread roles: coder for Claude Code and Codex, assistant for Muse; settings add roles and move defaults', () => {

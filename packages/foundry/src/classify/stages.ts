@@ -29,7 +29,7 @@ export interface PointerSettings {
 }
 
 export interface StageConfig {
-  /** Who answers; omitted, the decision model (`subscriptionOnly.model` / `defaults.classifierModel`). */
+  /** Who answers; omitted, the decision model (`subscriptionOnly.model` / `defaults.decisionModel`). */
   readonly model?: string;
   /** Omitted, the decision effort. */
   readonly effort?: StageEffort;

@@ -9,13 +9,9 @@ import { ContextLayer, ContextStack, TokenTracker } from '@inixiative/foundry-co
 import {
   buildAgents,
   buildLayers,
-  keywordClassify,
-  keywordRoute,
-  parseJSON,
   type SourceResolver,
   ThreadFactory,
 } from '../src/agents/thread-factory';
-import { auxiliarySessionId } from '../src/agents/thread-runtime';
 import type { FoundryConfig } from '../src/viewer/config';
 
 // ---------------------------------------------------------------------------
@@ -245,57 +241,7 @@ describe('buildAgents', () => {
     expect(agents.has('active')).toBe(true);
     expect(agents.has('inactive')).toBe(false);
   });
-
-  test('builds classifier agent kind', () => {
-    const config = minimalConfig({
-      agents: {
-        classifier: {
-          id: 'classifier',
-          kind: 'classifier',
-          prompt: '',
-          provider: 'mock',
-          model: 'mock-model',
-          temperature: 0,
-          visibleLayers: [],
-          peers: [],
-          maxDepth: 1,
-          enabled: true,
-        },
-      },
-    });
-
-    const stack = new ContextStack(buildLayers(config, { sourceResolver: noopResolver }));
-    const agents = buildAgents(config, stack, { provider: mockProvider() });
-    expect(agents.has('classifier')).toBe(true);
-  });
-
-  test('builds router agent kind', () => {
-    const config = minimalConfig({
-      agents: {
-        router: {
-          id: 'router',
-          kind: 'router',
-          prompt: '',
-          provider: 'mock',
-          model: 'mock-model',
-          temperature: 0,
-          visibleLayers: [],
-          peers: [],
-          maxDepth: 1,
-          enabled: true,
-        },
-      },
-    });
-
-    const stack = new ContextStack(buildLayers(config, { sourceResolver: noopResolver }));
-    const agents = buildAgents(config, stack, { provider: mockProvider() });
-    expect(agents.has('router')).toBe(true);
-  });
 });
-
-// ---------------------------------------------------------------------------
-// ThreadFactory
-// ---------------------------------------------------------------------------
 
 describe('ThreadFactory', () => {
   test('creates thread with correct ID', () => {
@@ -464,62 +410,6 @@ describe('ThreadFactory', () => {
     expect(summary.byAgent.find((b) => b.key === 'executor-answer')).toBeDefined();
   });
 
-  test('classifier and router use per-thread auxiliary session identity and the thread cwd', async () => {
-    const optsLog: CompletionOpts[] = [];
-    const provider: LLMProvider = {
-      id: 'mock',
-      async complete(_messages: LLMMessage[], opts?: CompletionOpts): Promise<CompletionResult> {
-        optsLog.push(opts ?? {});
-        return { content: '{"category":"bug","destination":"artificer"}', model: 'mock-model' };
-      },
-    };
-    const config = minimalConfig({
-      agents: {
-        classifier: {
-          id: 'classifier',
-          kind: 'classifier',
-          prompt: 'Classify',
-          provider: 'mock',
-          model: 'mock-model',
-          temperature: 0,
-          visibleLayers: [],
-          peers: [],
-          maxDepth: 1,
-          enabled: true,
-        },
-        router: {
-          id: 'router',
-          kind: 'router',
-          prompt: 'Route',
-          provider: 'mock',
-          model: 'mock-model',
-          temperature: 0,
-          visibleLayers: [],
-          peers: [],
-          maxDepth: 1,
-          enabled: true,
-        },
-        artificer: { ...minimalConfig().agents['executor-answer'], id: 'artificer' },
-      },
-    });
-    const stack = new ContextStack(buildLayers(config, { sourceResolver: noopResolver }));
-    const factory = new ThreadFactory({ stack, agents: buildAgents(config, stack, { provider }) });
-    const a = factory.create('a', { cwd: '/work/a' });
-    const b = factory.create('b', { cwd: '/work/b' });
-
-    await a.dispatch('classifier', 'fix the bug');
-    await a.dispatch('router', { payload: 'fix the bug', classification: { category: 'bug' } });
-    await b.dispatch('classifier', 'fix the bug');
-
-    expect(optsLog.map((o) => o.threadId)).toEqual([
-      auxiliarySessionId('a', 'agent:classifier'),
-      auxiliarySessionId('a', 'agent:router'),
-      auxiliarySessionId('b', 'agent:classifier'),
-    ]);
-    expect(optsLog.map((o) => o.cwd)).toEqual(['/work/a', '/work/a', '/work/b']);
-    expect(optsLog.every((o) => o.threadId !== 'a' && o.threadId !== 'b')).toBe(true);
-  });
-
   test('an executor adds no instructions of its own: the provider gets the user message alone', async () => {
     const provider = mockProvider('response text');
     const config = minimalConfig();
@@ -539,103 +429,6 @@ describe('ThreadFactory', () => {
 // ---------------------------------------------------------------------------
 // Shared fallback handlers
 // ---------------------------------------------------------------------------
-
-describe('keywordClassify', () => {
-  test('classifies bug-related keywords', () => {
-    expect(keywordClassify('fix the auth bug').value.category).toBe('bug');
-    expect(keywordClassify("there's an error").value.category).toBe('bug');
-  });
-
-  test('classifies feature-related keywords', () => {
-    expect(keywordClassify('add a new feature').value.category).toBe('feature');
-    expect(keywordClassify('build the dashboard').value.category).toBe('feature');
-  });
-
-  test('classifies refactor keywords', () => {
-    expect(keywordClassify('refactor the auth module').value.category).toBe('refactor');
-    expect(keywordClassify('clean up the code').value.category).toBe('refactor');
-  });
-
-  test('classifies question keywords', () => {
-    expect(keywordClassify('how does auth work?').value.category).toBe('question');
-    expect(keywordClassify('why is it slow?').value.category).toBe('question');
-  });
-
-  test('classifies convention keywords', () => {
-    expect(keywordClassify('update the coding convention').value.category).toBe('convention');
-    expect(keywordClassify('change the style guide').value.category).toBe('convention');
-  });
-
-  test('falls back to general', () => {
-    expect(keywordClassify('hello world').value.category).toBe('general');
-  });
-
-  test('returns confidence 0.7', () => {
-    expect(keywordClassify('anything').confidence).toBe(0.7);
-  });
-});
-
-describe('keywordRoute', () => {
-  const config = minimalConfig();
-  config.agents = { artificer: { ...config.agents['executor-answer'], id: 'artificer' } };
-
-  test('uses the configured executor instead of inventing artificer', () => {
-    expect(keywordRoute({ category: 'bug' }, minimalConfig()).value.destination).toBe(
-      'executor-answer',
-    );
-    expect(() => keywordRoute({ category: 'bug' }, minimalConfig({ agents: {} }))).toThrow(
-      'no enabled executor',
-    );
-  });
-
-  test('routes bugs to artificer', () => {
-    const route = keywordRoute({ category: 'bug' }, config);
-    expect(route.value.destination).toBe('artificer');
-  });
-
-  test('routes features to artificer', () => {
-    const route = keywordRoute({ category: 'feature' }, config);
-    expect(route.value.destination).toBe('artificer');
-  });
-
-  test('routes questions to artificer', () => {
-    const route = keywordRoute({ category: 'question' }, config);
-    expect(route.value.destination).toBe('artificer');
-  });
-
-  test('unknown category falls back to general', () => {
-    const route = keywordRoute({ category: 'unknown' }, config);
-    expect(route.value.destination).toBe('artificer');
-  });
-});
-
-describe('parseJSON', () => {
-  test('parses plain JSON', () => {
-    const result = parseJSON('{"category": "bug"}');
-    expect(result.category).toBe('bug');
-  });
-
-  test('parses fenced JSON', () => {
-    const result = parseJSON('```json\n{"category": "feature"}\n```');
-    expect(result.category).toBe('feature');
-  });
-
-  test('extracts braced JSON from surrounding text', () => {
-    const result = parseJSON('Here is the result: {"category": "refactor"} done');
-    expect(result.category).toBe('refactor');
-  });
-
-  test('returns fallback on garbage input', () => {
-    const result = parseJSON('not json at all');
-    expect(result.category).toBe('general');
-    expect(result.reasoning).toBe('parse failure');
-  });
-
-  test('handles fenced block without json tag', () => {
-    const result = parseJSON('```\n{"key": "value"}\n```');
-    expect(result.key).toBe('value');
-  });
-});
 
 test('a tool-using executor keeps the native configuration its completion reports', async () => {
   const { ToolRegistry } = await import('@inixiative/foundry-core');

@@ -7,7 +7,6 @@ import {
   type LLMProvider,
   SignalBus,
 } from '@inixiative/foundry-core';
-import { Cartographer } from '../src/agents/cartographer';
 import {
   DomainLibrarian,
   type GuardFinding,
@@ -67,26 +66,6 @@ function setup() {
 
   // Librarian (signal reconciliation)
   const librarian = new Librarian({ signals, stack });
-
-  // Cartographer (context routing) — mock LLM routes messages to layers by keyword
-  const cartographerLLM = mockLLM({
-    'Fix the JWT validation': JSON.stringify({
-      layers: ['auth-conventions', 'security-patterns'],
-      domains: ['auth', 'security'],
-      confidence: 0.9,
-    }),
-    'Fix auth middleware': JSON.stringify({
-      layers: ['auth-conventions', 'security-patterns'],
-      domains: ['auth', 'security'],
-      confidence: 0.9,
-    }),
-    'write a test': JSON.stringify({
-      layers: ['testing-patterns'],
-      domains: ['testing'],
-      confidence: 0.8,
-    }),
-  });
-  const cartographer = new Cartographer({ stack, signals, llm: cartographerLLM });
 
   // Domain librarians
   const conventionLib = new DomainLibrarian({
@@ -175,14 +154,13 @@ function setup() {
 
   // Wire it all together
   const orchestrator = new FlowOrchestrator({
-    cartographer,
     domainLibrarians,
     librarian,
     stack,
     signals,
   });
 
-  return { orchestrator, signals, stack, librarian, cartographer };
+  return { orchestrator, signals, stack, librarian };
 }
 
 // ---------------------------------------------------------------------------
@@ -191,14 +169,12 @@ function setup() {
 
 describe('FlowOrchestrator', () => {
   describe('preMessage flow', () => {
-    it('routes an auth message to auth + security layers', async () => {
+    it('consults every domain and takes the layers of one that contributes', async () => {
       const { orchestrator } = setup();
       const plan = await orchestrator.preMessage('Fix the JWT validation in auth middleware');
 
       expect(plan.layers).toContain('auth-conventions');
-      expect(plan.layers).toContain('security-patterns');
-      expect(plan.domainsConsulted).toContain('auth');
-      expect(plan.confidence).toBeGreaterThan(0.5);
+      expect(plan.domainsConsulted).toEqual(['convention', 'security', 'memory']);
     });
 
     it('does NOT include testing layers for auth message', async () => {
@@ -207,13 +183,6 @@ describe('FlowOrchestrator', () => {
 
       expect(plan.layers).not.toContain('testing-patterns');
       expect(plan.layers).not.toContain('architecture-boundaries');
-    });
-
-    it('routes a testing message to testing layers', async () => {
-      const { orchestrator } = setup();
-      const plan = await orchestrator.preMessage('How should I write a test for the login flow?');
-
-      expect(plan.layers).toContain('testing-patterns');
     });
 
     it('emits context_loaded signals only on delivery commit (not preMessage, not hydration)', async () => {
@@ -438,7 +407,7 @@ describe('FlowOrchestrator', () => {
         id: 'evict-2',
         kind: 'context_evicted',
         source: 'lifecycle',
-        content: { layerId: 'security-patterns' },
+        content: { layerId: 'auth-conventions' },
         timestamp: Date.now(),
       });
 
@@ -552,9 +521,8 @@ describe('FlowOrchestrator', () => {
 
 describe('warming never holds the turn (Wardens never block)', () => {
   it('a warm that hangs or fails comes back as a recorded shortfall within the advise deadline', async () => {
-    const { cartographer, librarian, stack, signals } = setup();
+    const { librarian, stack, signals } = setup();
     const orchestrator = new FlowOrchestrator({
-      cartographer,
       domainLibrarians: new Map(),
       librarian,
       stack,
@@ -587,9 +555,7 @@ describe('compaction before any plan', () => {
     const signals = new SignalBus();
     const stack = new ContextStack();
     const librarian = new Librarian({ signals, stack });
-    const cartographer = new Cartographer({ stack, signals, llm: mockLLM({}) });
     const flow = new FlowOrchestrator({
-      cartographer,
       domainLibrarians: new Map(),
       librarian,
       stack,
@@ -628,9 +594,7 @@ describe('compaction before any plan', () => {
     });
     const stack = new ContextStack([instructions]);
     const librarian = new Librarian({ signals, stack });
-    const cartographer = new Cartographer({ stack, signals, llm: mockLLM({}) });
     const flow = new FlowOrchestrator({
-      cartographer,
       domainLibrarians: new Map(),
       librarian,
       stack,
@@ -647,7 +611,7 @@ describe('compaction before any plan', () => {
 
 describe('catch-up: a Warden that missed messages is asked on them with the next one', () => {
   function catchUp() {
-    const { cartographer, librarian, stack, signals } = setup();
+    const { librarian, stack, signals } = setup();
     const asked: string[] = [];
     const state = { fail: false };
     const layer = new ContextLayer({ id: 'arch-cache' });
@@ -666,7 +630,6 @@ describe('catch-up: a Warden that missed messages is asked on them with the next
       },
     });
     const orchestrator = new FlowOrchestrator({
-      cartographer,
       domainLibrarians: new Map([['arch', arch]]),
       librarian,
       stack,

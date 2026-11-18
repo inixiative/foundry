@@ -476,13 +476,6 @@ test('a Foundry project links to one Kingdom project; a Kingdom-capacity login b
     projectId: kingdomProjectId,
   });
   expect(capacityKingdomProject(linked, linked.projects[projectId]!)).toBe(kingdomProjectId);
-  // The old place for it is refused by name, with the fix.
-  await expect(
-    store.update((draft) => {
-      (draft.projects[projectId]!.kingdomCapacity as unknown as Record<string, unknown>).projectId =
-        kingdomProjectId;
-    }),
-  ).rejects.toThrow('kingdomCapacity.projectId is gone');
   await expect(
     setKingdomProject(store, projectId, {
       kingdom: 'https://elsewhere.example',

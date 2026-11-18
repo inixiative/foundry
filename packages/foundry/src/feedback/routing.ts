@@ -3,12 +3,11 @@
  * @kind service
  * @partOf feature:feedback
  */
-import type { Cartographer, RouteResult } from '../agents/cartographer';
 import { configuredExperts } from '../agents/configured-experts';
 import { MAIN_ROLE, threadRoles } from '../prompts/instruction-settings';
 import type { FoundryConfig } from '../viewer/config';
 import { resolveProjectView } from '../viewer/config-resolve';
-import type { FeedbackCategory, FeedbackLevel, FeedbackRouteRecord, FeedbackSlot } from './types';
+import type { FeedbackCategory, FeedbackLevel, FeedbackSlot } from './types';
 
 /**
  * Every role a feedback item may be applied to: the thread roles, the shared base `main`, and the
@@ -47,37 +46,4 @@ export function wardenRoles(
   const view = projectId ? resolveProjectView(config, projectId)?.config : undefined;
   if (!view) return new Map();
   return new Map(configuredExperts(view).experts.map((e) => [e.domain, e.agentId]));
-}
-
-/**
- * Route a sharpened rule to the Warden(s) whose domain it belongs to, with the thread's Cartographer.
- * No domain, or a keyword fallback, goes to the thread's own role (`threadRole`): weak routing is
- * said, never dressed up.
- */
-export async function routeFeedback(input: {
-  cartographer: Pick<Cartographer, 'route'>;
-  config: FoundryConfig;
-  itemId: string;
-  statement: string;
-  category: FeedbackCategory;
-  projectId: string | null | undefined;
-  threadRole: string;
-  timeoutMs?: number;
-}): Promise<FeedbackRouteRecord> {
-  const result: RouteResult = await input.cartographer.route(input.statement, undefined, {
-    ...(input.timeoutMs !== undefined ? { timeoutMs: input.timeoutMs } : {}),
-  });
-  const wardens = wardenRoles(input.config, input.projectId);
-  const source = result.source ?? 'model';
-  const roles =
-    source === 'model'
-      ? [...new Set(result.domains.map((d) => wardens.get(d)).filter((r): r is string => !!r))]
-      : [];
-  return {
-    itemId: input.itemId,
-    roles: roles.length ? roles : [input.threadRole],
-    slot: slotFor(input.category),
-    level: defaultLevel(input.category, !!input.projectId),
-    route: { domains: result.domains, source, confidence: result.confidence },
-  };
 }

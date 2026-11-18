@@ -73,16 +73,6 @@ export interface DeliveredChime {
 export type TimelineStep =
   | { kind: 'input'; at: number | null; text: string; chars: number }
   | {
-      kind: 'route';
-      at: number | null;
-      status: string | null;
-      domains: string[];
-      layers: string[];
-      confidence: number | null;
-      reason: string | null;
-      elapsedMs: number | null;
-    }
-  | {
       kind: 'chorus';
       at: number | null;
       trigger: string;
@@ -93,7 +83,6 @@ export type TimelineStep =
   | {
       kind: 'plan';
       at: number | null;
-      confidence: number | null;
       elapsedMs: number | null;
       layers: string[];
       omissions: unknown[];
@@ -313,20 +302,6 @@ export function turnTimeline(detail: TurnDetail, sources: TurnTimelineSources = 
       chars: user.content.length,
     });
 
-  for (const row of phases.filter((p) => p.phase === 'route')) {
-    const routing = isObject(row.record.routing) ? row.record.routing : {};
-    steps.push({
-      kind: 'route',
-      at: num(routing.finishedAt) ?? row.storedAt,
-      status: str(routing.status) ?? null,
-      domains: strings(routing.domains),
-      layers: strings(routing.layers),
-      confidence: num(routing.confidence),
-      reason: str(routing.reason) ?? null,
-      elapsedMs: num(routing.elapsedMs),
-    });
-  }
-
   const adviceRows = phases.filter((p) => p.phase === 'advice');
   const chorus = (row: StoredPhase): TimelineStep => {
     const r = row.record;
@@ -356,7 +331,6 @@ export function turnTimeline(detail: TurnDetail, sources: TurnTimelineSources = 
     steps.push({
       kind: 'plan',
       at: num(plan.sealedAt),
-      confidence: num(plan.confidence),
       elapsedMs: num(plan.elapsed),
       layers: strings(plan.layers),
       omissions: Array.isArray(plan.omissions) ? plan.omissions : [],

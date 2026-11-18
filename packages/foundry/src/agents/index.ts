@@ -19,10 +19,6 @@ export {
   CapabilityDeniedError,
   // Capability gate
   CapabilityGate,
-  type Classification,
-  Classifier,
-  type ClassifierConfig,
-  type ClassifyHandler,
   // Context primitives
   ContextLayer,
   type ContextLayerConfig,
@@ -33,10 +29,6 @@ export {
   type CostTable,
   computeHash,
   DEFAULT_COST_TABLE,
-  type DecideHandler,
-  Decider,
-  type DeciderConfig,
-  type Decision,
   type Dispatch,
   type DispatchContext,
   type DispatchOutcome,
@@ -73,7 +65,6 @@ export {
   type MiddlewareNext,
   type MiddlewareTier,
   type ModelPricing,
-  matchesCondition,
   type PermissionLevel,
   type PermissionPolicy,
   type PipelineStep,
@@ -87,10 +78,6 @@ export {
   RESTRICTED_POLICY,
   RefSource,
   type RequestContext,
-  type Route,
-  type RouteHandler,
-  Router,
-  type RouterConfig,
   type SessionEvent,
   type Signal,
   // Signals
@@ -118,15 +105,6 @@ export {
   type UsageSummary,
 } from '@inixiative/foundry-core';
 
-// Foundry-specific: built-in hooks
-// Cartographer — context routing (reads map, routes slices)
-export {
-  Cartographer,
-  type CartographerConfig,
-  type MapEntry,
-  type RouteResult,
-  type TopologyMap,
-} from './cartographer';
 // Corpus Compiler
 export {
   type CompiledCorpus,
@@ -173,8 +151,6 @@ export {
   type LayerRevision,
   type OutstandingCall,
   type PlanInput,
-  type RoutingOutcome,
-  type RoutingStatus,
 } from './flow-orchestrator';
 // Herald — cross-agent observation & coordination
 export {
@@ -208,17 +184,6 @@ export {
   type ProjectStatus,
   type ProjectSummary,
 } from './project';
-// Reactive Middleware
-export {
-  classificationOverrideRule,
-  emitOnPatternRule,
-  lowConfidenceRule,
-  type ReactionContext,
-  type ReactionRule,
-  ReactiveMiddleware,
-  type ReactiveMiddlewareConfig,
-  rewarmOnAgentRule,
-} from './reactive';
 // Composition view — each middleware role's composed slots
 export {
   buildRoleLayer,
@@ -240,16 +205,13 @@ export {
   buildAgents,
   buildLayers,
   createSourceResolver,
-  keywordClassify,
-  keywordRoute,
-  parseJSON,
   resolveAgentOpts,
   type SourceResolver,
   type SourceResolverDeps,
   ThreadFactory,
   type ThreadFactoryDeps,
 } from './thread-factory';
-// Thread Runtime — per-thread Librarian, Cartographer, Wardens, orchestrator, bridges
+// Thread Runtime — per-thread Librarian, Wardens, orchestrator, bridges
 export {
   auxiliarySessionId,
   type CorrelatedToolObservation,

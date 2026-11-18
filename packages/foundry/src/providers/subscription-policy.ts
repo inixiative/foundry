@@ -184,8 +184,8 @@ export const PROJECT_HOST_DEFAULTS = {
 } as const satisfies Omit<ProjectHostPolicy, 'setupDeadlineMs'>;
 /**
  * Sized for a full chorus: every Warden is asked on every user message, and every
- * guard-triggered Warden on every action, so one turn fans out ~25 advice calls plus the
- * Cartographer, then guards per tool call and a review per Warden. Each Claude decision is its own
+ * guard-triggered Warden on every action, so one turn fans out ~25 advice calls, then guards per
+ * tool call and a review per Warden. Each Claude decision is its own
  * CLI process (~130-230 MB measured 2026-10-12), so 16 at once is ~2-4 GB. Queues are deep enough that
  * a burst of guards never refuses admission; a call still waiting at its deadline did not run, and
  * the turn goes on without it. Decisions run at low effort: the model's default (medium) adds ~0.5 s.
@@ -213,10 +213,8 @@ export interface SubscriptionResolution {
    * Each gets an adapter; one without a login runs only a Kingdom-capacity project's threads. */
   offered: SubscriptionWorker[];
   decision: DecisionProfileSource;
-  /** Effective configuration: every enabled decision role runs on the subscription decision profile. */
+  /** Effective configuration: the decision defaults are the subscription decision profile. */
   config: FoundryConfig;
-  /** Decision roles whose saved provider/model differed from the subscription decision profile. */
-  rerouted: string[];
 }
 
 /** A login decisions run on: Claude's or Codex's (primed sessions); never Muse Code's. */
@@ -407,18 +405,6 @@ export function configuredProjectWardens(
 }
 
 /**
- * `claude-in-session` (a thread's Wardens held inside its own Claude Code process) was removed on
- * 2026-11-03 for the per-project host. A saved setting naming it is refused with the fix (no alias).
- */
-function refuseRemovedDecisionRuntime(settings: unknown): void {
-  const runtime = (settings as { decisionRuntime?: unknown } | undefined)?.decisionRuntime;
-  if (runtime === 'claude-in-session')
-    throw Error(
-      'subscriptionOnly.decisionRuntime "claude-in-session" is gone: Claude Wardens are held in each project\'s host (claude-project), the default for Claude decisions. Remove "decisionRuntime" (or write "claude-project"); "claude" keeps primed Wardens (docs/subscription-decisions.md, "Project Warden host")',
-    );
-}
-
-/**
  * Subscription-only is the default. `apiTokens: true` is the only way to construct API
  * providers. Without it every main thread runs on a subscription worker (Claude Code, Codex or Muse Code, its
  * project's default or the one chosen for the thread) and the decision profile (Claude by default,
@@ -438,7 +424,6 @@ export function resolveSubscriptionPolicy(
       throw Error('apiTokens and subscriptionOnly are exclusive; remove one of them');
     return undefined;
   }
-  refuseRemovedDecisionRuntime(config.subscriptionOnly);
   const settings = subscriptionSettingsSchema.parse(config.subscriptionOnly ?? {});
   if (
     config.kingdomInference?.length ||
@@ -524,11 +509,11 @@ export function resolveSubscriptionPolicy(
   )
     throw Error('Codex decisions cannot acknowledge a different observed model');
   const policy: SubscriptionPolicy = {
-    // The setup wizard records the decision model as the subscription classifier default.
+    // The setup wizard records the decision model as the subscription decision default.
     model:
       settings.model ??
-      (config.defaults.classifierProvider === SUBSCRIPTION_DECISIONS
-        ? config.defaults.classifierModel
+      (config.defaults.decisionProvider === SUBSCRIPTION_DECISIONS
+        ? config.defaults.decisionModel
         : undefined) ??
       SUBSCRIPTION_DECISION_MODELS[decision.runtime],
     ...(settings.expectedObservedModel
@@ -559,7 +544,7 @@ export function resolveSubscriptionPolicy(
     !registryModel(runtimeProvider[decision.runtime], policy.model)
   )
     throw Error(
-      `Decision model ${policy.model} is a ${other} model; set subscriptionOnly.model or defaults.classifierModel for ${decision.runtime} decisions`,
+      `Decision model ${policy.model} is a ${other} model; set subscriptionOnly.model or defaults.decisionModel for ${decision.runtime} decisions`,
     );
   const takes = policy.effort && modelEfforts(runtimeProvider[decision.runtime], policy.model);
   if (takes && policy.effort && !takes.includes(policy.effort))
@@ -582,7 +567,7 @@ export function resolveSubscriptionPolicy(
     Object.values(pools).flatMap((pool) => (pool ?? []).map((login) => login.id)),
   );
 
-  const { config: effective, rerouted } = routeDecisions(config, policy.model);
+  const effective = withSubscriptionDecisionDefaults(config, policy.model);
   // Each view is checked against its own worker: the global defaults, then every project's.
   const check = (view: FoundryConfig, pooled = false) => {
     const worker = view.defaults.provider;
@@ -594,8 +579,8 @@ export function resolveSubscriptionPolicy(
       (view.defaults.nativeAuthenticationId !== undefined &&
         !logins.has(view.defaults.nativeAuthenticationId)) ||
       view.defaults.kingdomOwnerKey ||
-      view.defaults.classifierProvider !== SUBSCRIPTION_DECISIONS ||
-      view.defaults.classifierModel !== policy.model
+      view.defaults.decisionProvider !== SUBSCRIPTION_DECISIONS ||
+      view.defaults.decisionModel !== policy.model
     )
       throw Error(
         'Subscription-only defaults require a configured worker login and the subscription decision model',
@@ -652,7 +637,6 @@ export function resolveSubscriptionPolicy(
     offered,
     decision,
     config: effective,
-    rerouted,
   });
 }
 
@@ -684,56 +668,26 @@ export function threadWorkerRequirement(
   return undefined;
 }
 
-/** Decision roles (every enabled non-executor agent) run on the subscription decision profile.
- * Explicit sampling, tool and review overrides are still refused by the policy check. */
-function routeDecisions(
+/** The global and project decision defaults as the subscription decision profile. */
+function withSubscriptionDecisionDefaults(
   config: FoundryConfig,
   decisionModel: string,
-): { config: FoundryConfig; rerouted: string[] } {
-  const effective = structuredClone(config),
-    rerouted: string[] = [];
-  const route = (
-    scope: string,
-    id: string,
-    agent: ProjectAgentSettings,
-    inherited?: AgentSettingsConfig,
-  ) => {
-    if (
-      (inherited?.kind ?? (agent as AgentSettingsConfig).kind) === 'executor' ||
-      (agent.enabled ?? inherited?.enabled) === false
-    )
-      return;
-    if (inherited && agent.provider === undefined && agent.model === undefined) return;
-    if (agent.provider === SUBSCRIPTION_DECISIONS && agent.model === decisionModel) return;
-    rerouted.push(
-      `${scope}${id} (${agent.provider ?? inherited?.provider ?? 'default'}/${agent.model ?? inherited?.model ?? 'default'})`,
-    );
-    agent.provider = SUBSCRIPTION_DECISIONS;
-    agent.model = decisionModel;
-  };
+): FoundryConfig {
+  const effective = structuredClone(config);
   effective.defaults = {
     ...effective.defaults,
-    classifierProvider: SUBSCRIPTION_DECISIONS,
-    classifierModel: decisionModel,
+    decisionProvider: SUBSCRIPTION_DECISIONS,
+    decisionModel,
   };
-  for (const [id, agent] of Object.entries(effective.agents)) route('', id, agent);
-  for (const [projectId, project] of Object.entries(effective.projects)) {
+  for (const project of Object.values(effective.projects))
     if (
       project.defaults &&
-      ('classifierProvider' in project.defaults || 'classifierModel' in project.defaults)
+      ('decisionProvider' in project.defaults || 'decisionModel' in project.defaults)
     )
       project.defaults = {
         ...project.defaults,
-        classifierProvider: SUBSCRIPTION_DECISIONS,
-        classifierModel: decisionModel,
+        decisionProvider: SUBSCRIPTION_DECISIONS,
+        decisionModel,
       };
-    for (const [id, agent] of Object.entries(project.agents ?? {}))
-      route(
-        `${projectId}/`,
-        id,
-        agent,
-        isAgentExtension(agent) ? config.agents[agent.extends] : undefined,
-      );
-  }
-  return { config: effective, rerouted };
+  return effective;
 }

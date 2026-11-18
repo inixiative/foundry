@@ -134,7 +134,7 @@ describe('scanRepoDocs', () => {
     expect(layer.id).toBe('docs');
     expect(layer.domain).toBe('docs');
     expect(layer.sourceIds).toEqual([source.id]);
-    expect(layer.activation).toBe('conditional');
+    expect(layer.activation).toBe('on-demand');
     expect(layer.writers).toBeUndefined();
     // No docs Warden: settings declare none since the hand-named roster was retired.
     expect(Object.keys(plan.settings!).sort()).toEqual(['layer', 'source']);

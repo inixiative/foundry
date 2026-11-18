@@ -21,7 +21,6 @@ import {
   expertParticipants,
   guardOutcomes,
   learningEntries,
-  routingRequest,
 } from './inspector-data.js';
 import { CLOSED_STATUSES } from './thread-status.js';
 
@@ -333,7 +332,6 @@ function layoutTree(nodes, edges, { gapX = 24, gapY = 56 } = {}) {
 // ---------------------------------------------------------------------------
 
 // A routing error is degraded, not failed: the turn went on with its standing layers.
-const ROUTE_STATUS = { routed: 'ok', fallback: 'warn', timeout: 'warn', error: 'warn' };
 const TURN_STATUS = {
   completed: 'ok',
   failed: 'error',
@@ -455,44 +453,7 @@ export function turnFlowGraph(turn, { learning = [] } = {}) {
     }),
   ];
 
-  // Harness stages ahead of the executor (a configured classifier or router).
-  for (const kind of ['classify', 'route']) {
-    const span = spans.find((s) => s.kind === kind);
-    if (!span) continue;
-    col++;
-    const id = add({
-      id: `span:${kind}`,
-      kind: 'stage',
-      col,
-      label: kind === 'classify' ? 'Classifier' : 'Router',
-      sub: [span.agentId, fmtMs(span.durationMs)].filter(Boolean).join(' · '),
-      status: span.status === 'error' ? 'error' : 'ok',
-      detail: {
-        span: span.name,
-        agent: span.agentId,
-        duration: fmtMs(span.durationMs),
-        status: span.status,
-      },
-    });
-    for (const from of last) link(from, id, null);
-    last = [id];
-  }
-
-  // Pre-message: the Cartographer routes while every domain assesses the same frozen input.
-  const routing = routingRequest(record);
-  const routed =
-    routing.state === 'recorded'
-      ? routing
-      : plan?.routing
-        ? {
-            status: plan.routing.status,
-            reason: plan.routing.reason,
-            domains: plan.routing.domains ?? [],
-            layers: plan.routing.layers ?? [],
-            confidence: plan.routing.confidence ?? null,
-            elapsedMs: plan.routing.elapsedMs ?? null,
-          }
-        : null;
+  // Pre-message: every domain assesses the same frozen input.
   const contributions = Array.isArray(plan?.contributions) ? plan.contributions : null;
   const participants = contributions
     ? contributions.map((c) => ({
@@ -520,27 +481,7 @@ export function turnFlowGraph(turn, { learning = [] } = {}) {
         fallback: null,
       }));
   const assessed = [];
-  if (routed || participants.length) col++;
-  if (routed) {
-    assessed.push(
-      add({
-        id: 'routing',
-        kind: 'routing',
-        col,
-        label: 'Cartographer',
-        sub: [routed.status, fmtMs(routed.elapsedMs)].filter(Boolean).join(' · '),
-        status: ROUTE_STATUS[routed.status] ?? 'warn',
-        detail: {
-          status: routed.status,
-          reason: routed.reason,
-          domains: routed.domains?.join(', ') || 'none',
-          layers: routed.layers?.join(', ') || 'none',
-          confidence: routed.confidence,
-          elapsed: fmtMs(routed.elapsedMs),
-        },
-      }),
-    );
-  }
+  if (participants.length) col++;
   for (const p of participants) {
     assessed.push(
       add({
@@ -595,7 +536,6 @@ export function turnFlowGraph(turn, { learning = [] } = {}) {
             layers: plan.layers?.join(', ') || 'none',
             snippets: turn.snippets,
             consulted: plan.domainsConsulted?.join(', ') || 'none',
-            confidence: plan.confidence,
             outstanding: outstanding || null,
             omitted: plan.omissions?.map((o) => `${o.domain}: ${o.reason}`).join('; ') || null,
             fresh: plan.fresh,
@@ -603,24 +543,11 @@ export function turnFlowGraph(turn, { learning = [] } = {}) {
         : { note: "No sealed plan on this turn's injection; phase rows only." },
     });
     for (const from of last) {
-      const p = from === 'routing' ? routed : participants.find((x) => `domain:${x.id}` === from);
-      const label =
-        from === 'routing'
-          ? [
-              routed?.domains?.length ? plural(routed.domains.length, 'domain') : null,
-              Number.isFinite(routed?.confidence) ? `conf ${routed.confidence}` : null,
-            ]
-              .filter(Boolean)
-              .join(' · ')
-          : p
-            ? outcomeLabel(p.outcome) + (p.snippets ? ` · ${plural(p.snippets, 'snippet')}` : '')
-            : null;
-      link(
-        from,
-        id,
-        label || null,
-        from === 'routing' ? ROUTE_STATUS[routed?.status] : p ? outcomeTone(p.outcome) : undefined,
-      );
+      const p = participants.find((x) => `domain:${x.id}` === from);
+      const label = p
+        ? outcomeLabel(p.outcome) + (p.snippets ? ` · ${plural(p.snippets, 'snippet')}` : '')
+        : null;
+      link(from, id, label || null, p ? outcomeTone(p.outcome) : undefined);
     }
     last = [id];
   }

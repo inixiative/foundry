@@ -39,7 +39,7 @@ export interface PromptBlock {
    * plain layer blocks leave it unset and are classified by the artifact builder.
    */
   readonly segment?: string;
-  /** Who produced this block (a domain, the router, a layer id). */
+  /** Who produced this block (a domain, Foundry, a layer id). */
   readonly source?: string;
   /**
    * "after-message": a per-turn note appended to the end of the user's message rather than placed

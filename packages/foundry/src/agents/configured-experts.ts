@@ -8,7 +8,7 @@ import { vendorOfProvider } from '@inixiative/foundry-core';
 import { DEFAULT_STAGES, type StageConfig } from '../classify';
 import { providerEnabled } from '../models/vendors';
 import { roleComposition } from '../prompts/instruction-settings';
-import { isIdName, isRoleId, roleIdOfAgent } from '../prompts/role-namespace';
+import { isIdName, isRoleId } from '../prompts/role-namespace';
 import type { AgentSettingsConfig, FoundryConfig } from '../viewer/config';
 import { resolveProjectView } from '../viewer/config-resolve';
 import { threadKnowledgeLayerId } from './domain-librarian';
@@ -97,8 +97,6 @@ export function configuredExperts(config: FoundryConfig): {
       agent.executionEnv !== undefined ||
       agent.permissions !== undefined ||
       agent.peers.length ||
-      agent.invocation === 'conditional' ||
-      agent.condition !== undefined ||
       agent.visibleLayers.some((layer) => layer !== 'thread-state')
     )
       throw Error(`Unsupported configured expert tools, delegation or context policy: ${id}`);
@@ -153,14 +151,6 @@ export function largestStageCount(
       largest = Math.max(largest, view.chorus.roles.warden.stages.filter(counts).length);
   }
   return largest;
-}
-
-/** The Cartographer's role in the composition view: the enabled cartographer agent's, else `agent:cartographer`. */
-export function cartographerRoleId(config: FoundryConfig): string {
-  return roleIdOfAgent(
-    Object.values(config.agents).find((a) => a.enabled && a.kind === 'cartographer')?.id ??
-      'cartographer',
-  );
 }
 
 export interface ResolvedThreadDomain extends Omit<ThreadDomainConfig, 'layerId'> {

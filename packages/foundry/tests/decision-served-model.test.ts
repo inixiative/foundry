@@ -8,7 +8,6 @@ import {
   SignalBus,
   servedModel,
 } from '@inixiative/foundry-core';
-import { Cartographer } from '../src/agents/cartographer';
 import { DomainLibrarian, oneCall } from '../src/agents/domain-librarian';
 import { FlowOrchestrator } from '../src/agents/flow-orchestrator';
 import { Librarian } from '../src/agents/librarian';
@@ -56,15 +55,6 @@ function harness(slowDomain?: Promise<void>) {
     id,
     complete: answer,
   });
-  const cartographer = new Cartographer({
-    stack,
-    signals,
-    llm: provider('route', async () => ({
-      model: 'gpt-6-luna',
-      native: native(),
-      content: JSON.stringify({ layers: [], domains: ['architecture', 'security'], confidence: 1 }),
-    })),
-  });
   const advice = JSON.stringify({ layers: [], snippets: ['Keep the reader'], confidence: 1 });
   const architecture = new DomainLibrarian({
     domain: 'architecture',
@@ -90,7 +80,6 @@ function harness(slowDomain?: Promise<void>) {
     stack,
     signals,
     librarian,
-    cartographer,
     domainLibrarians: new Map([
       ['architecture', architecture],
       ['security', security],
@@ -102,13 +91,12 @@ function harness(slowDomain?: Promise<void>) {
     architecture,
     dispose() {
       flow.dispose();
-      cartographer.dispose();
       librarian.dispose();
     },
   };
 }
 
-test('route and advice requests record what served them; a call that missed the deadline records nothing', async () => {
+test('advice requests record what served them; a call that missed the deadline records nothing', async () => {
   let release!: () => void;
   const h = harness(
     new Promise<void>((resolve) => {
@@ -120,10 +108,6 @@ test('route and advice requests record what served them; a call that missed the 
       messageId: 'turn-1',
       threadId: 'thread-1',
       projectId: 'project-1',
-    });
-    expect(plan.routing.request).toMatchObject({
-      status: 'supplied',
-      served: { model: 'gpt-6-luna', effort: 'low' },
     });
     const byDomain = Object.fromEntries(plan.contributions.map((c) => [c.domain, c]));
     expect(byDomain.architecture!.request).toMatchObject({

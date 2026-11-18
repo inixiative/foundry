@@ -1,10 +1,7 @@
 import { describe, expect, test } from 'bun:test';
-import { Classifier } from '../src/classifier';
 import { ContextLayer, type ContextSource } from '../src/context-layer';
 import { ContextStack } from '../src/context-stack';
-import { Decider } from '../src/decider';
 import { Executor } from '../src/executor';
-import { Router } from '../src/router';
 
 function source(id: string, content: string): ContextSource {
   return { id, load: async () => content };
@@ -143,40 +140,5 @@ describe('BaseAgent.withStack', () => {
 
     const result = await executor.withStack(stack).run('go');
     expect(result.output).toBe('docs content');
-  });
-
-  test('Classifier, Router and Decider clones preserve their class', async () => {
-    const stack = new ContextStack([new ContextLayer({ id: 'docs' })]);
-    stack.getLayer('docs')!.set('taxonomy');
-
-    const classifier = new Classifier<string>({
-      id: 'c',
-      stack: new ContextStack(),
-      handler: async (context) => ({ value: { category: context } }),
-    });
-    const router = new Router<string>({
-      id: 'r',
-      stack: new ContextStack(),
-      handler: async (context) => ({ value: { destination: context } }),
-    });
-    const decider = new Decider<string, string>({
-      id: 'd',
-      stack: new ContextStack(),
-      handler: async (context) => ({ value: context }),
-    });
-
-    const c2 = classifier.withStack(stack);
-    const r2 = router.withStack(stack);
-    const d2 = decider.withStack(stack);
-
-    expect(c2).toBeInstanceOf(Classifier);
-    expect(r2).toBeInstanceOf(Router);
-    expect(d2).toBeInstanceOf(Decider);
-    expect(d2).not.toBeInstanceOf(Classifier);
-
-    expect((await c2.run('x')).output.value.category).toBe('taxonomy');
-    expect((await r2.run('x')).output.value.destination).toBe('taxonomy');
-    expect((await d2.run('x')).output.value).toBe('taxonomy');
-    expect((await classifier.run('x')).output.value.category).toBe('');
   });
 });

@@ -54,11 +54,7 @@ function buildConfig(): FoundryConfig {
       staleness: 60_000,
       writers: ['librarian'],
       enabled: true,
-      activation: 'conditional',
-      condition: {
-        categories: ['question'],
-        tags: ['architecture'],
-      },
+      activation: 'on-demand',
     },
   };
 
@@ -79,9 +75,6 @@ function buildConfig(): FoundryConfig {
         blockedUrls: ['https://blocked.example/**'],
         shareSession: true,
       },
-      condition: {
-        tags: ['global-agent'],
-      },
       enabled: true,
     },
   };
@@ -100,7 +93,6 @@ function buildConfig(): FoundryConfig {
             allowedUrls: { append: ['https://project.example/**'] },
             blockedUrls: { remove: ['https://blocked.example/**'] },
           },
-          condition: null,
         },
       },
       layers: {
@@ -108,9 +100,6 @@ function buildConfig(): FoundryConfig {
           prompt: 'Project docs',
           sourceIds: { append: ['project-docs'] },
           writers: { remove: ['librarian'], append: ['project-librarian'] },
-          condition: {
-            tags: { append: ['project'] },
-          },
         },
         'project-layer': {
           id: 'project-layer',
@@ -148,10 +137,7 @@ describe('ConfigStore project resolution', () => {
     expect(resolved!.layers.docs.prompt).toBe('Project docs');
     expect(resolved!.layers.docs.sourceIds).toEqual(['global-docs', 'project-docs']);
     expect(resolved!.layers.docs.writers).toEqual(['project-librarian']);
-    expect(resolved!.layers.docs.condition).toEqual({
-      categories: ['question'],
-      tags: ['architecture', 'project'],
-    });
+    expect(resolved!.layers.docs.activation).toBe('on-demand');
 
     expect(resolved!.layers['project-layer'].sourceIds).toEqual(['project-docs']);
 
@@ -163,7 +149,6 @@ describe('ConfigStore project resolution', () => {
       blockedUrls: [],
       shareSession: true,
     });
-    expect(resolved!.agents.executor.condition).toBeUndefined();
   });
 
   test('resolveProject preserves explicit empty replacements on project-only lists', async () => {
@@ -211,14 +196,6 @@ describe('ConfigStore project resolution', () => {
     expect(system!.scope).toBe('global');
     expect(system!.fields.prompt.origin).toBe('global');
     expect(system!.fields.prompt.strategy).toBe('inherit');
-  });
-
-  test('a pre-vendor providers settings file is refused by name, not converted', async () => {
-    writeFileSync(
-      join(dir, 'settings.json'),
-      JSON.stringify({ providers: { 'claude-code': { enabled: true } } }),
-    );
-    await expect(store.load()).rejects.toThrow('settings key "providers" is now "vendors"');
   });
 });
 

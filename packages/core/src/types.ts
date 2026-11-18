@@ -5,29 +5,15 @@
  */
 import type { TokenCounts } from './token-counts';
 // ---------------------------------------------------------------------------
-// Shared types — used by harness for conditional invocation/activation
+// Shared types — used by harness for on-demand invocation/activation
 // ---------------------------------------------------------------------------
-
-/**
- * Condition for conditional invocation/activation.
- * Matches when ANY specified field matches (OR across fields, OR within arrays).
- */
-export interface InvocationCondition {
-  /** Match if classification.category is one of these. */
-  categories?: string[];
-  /** Match if any classification tag overlaps with these. */
-  tags?: string[];
-  /** Match if route.destination is one of these. */
-  routes?: string[];
-}
 
 /**
  * Minimal agent mode config — what the harness needs from config.
  * Full AgentSettingsConfig lives in @inixiative/foundry.
  */
 export interface AgentModeConfig {
-  invocation?: 'always' | 'on-demand' | 'conditional';
-  condition?: InvocationCondition;
+  invocation?: 'always' | 'on-demand';
 }
 
 /**
@@ -35,8 +21,7 @@ export interface AgentModeConfig {
  * Full LayerSettingsConfig lives in @inixiative/foundry.
  */
 export interface LayerModeConfig {
-  activation?: 'always' | 'on-demand' | 'conditional';
-  condition?: InvocationCondition;
+  activation?: 'always' | 'on-demand';
 }
 
 // ---------------------------------------------------------------------------
