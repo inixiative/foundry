@@ -1101,6 +1101,7 @@ const viewer = await startViewer({
   configDir: FOUNDRY_DIR,
   // Opening a thread of a project opens its Warden host, so it is warm by the first turn.
   projectActive: (projectId) => void projectActivity?.activate(projectId),
+  ...(live?.projectHosts ? { decisionHosts: () => live.projectHosts?.snapshot() } : {}),
   assistProvider: provider,
   assistModel: config.defaults.model,
   namingProvider: flowLlm,

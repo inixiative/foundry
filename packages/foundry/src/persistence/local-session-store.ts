@@ -993,6 +993,19 @@ export class LocalSessionStore {
     );
   }
 
+  /** The thread whose executor evidence names this native session (a Claude session, a Codex thread). */
+  threadOfNativeSession(sessionId: string): string | undefined {
+    const row = this.query(
+      `SELECT thread_id FROM session_native
+        WHERE admission_id NOT LIKE 'observed:%'
+          AND (json_extract(record, '$.externalSessionId') = ?1
+            OR json_extract(record, '$.nativeSessionId') = ?1
+            OR json_extract(record, '$.threadId') = ?1)
+        ORDER BY rowid DESC LIMIT 1`,
+    ).get(sessionId) as { thread_id: string } | null;
+    return row?.thread_id;
+  }
+
   /** Threads with a turn queued or running. */
   openTurnThreads(): string[] {
     return (

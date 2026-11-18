@@ -10135,3 +10135,36 @@ a.thread-ref:hover {
 .keychain-table td input {
   max-width: 220px;
 }
+
+/* Status → Processes: everything this Foundry runs (machine-processes.js). */
+.machine-processes {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 1px;
+}
+.machine-process-num {
+  flex: 0 0 auto;
+  min-width: 36px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-dim);
+}
+.machine-process-open {
+  color: var(--text-dim);
+}
+.machine-process-open:hover {
+  color: var(--accent);
+}
+.machine-status-dot.is-daemon,
+.machine-status-dot.is-warden-host {
+  background: var(--ok);
+}
+.machine-status-dot.is-thread,
+.machine-status-dot.is-session {
+  background: var(--accent);
+}
+.machine-status-dot.is-one-shot {
+  background: var(--warn);
+}
