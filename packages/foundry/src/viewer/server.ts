@@ -1084,6 +1084,18 @@ export function createViewer(config: ViewerConfig) {
   // A viewer without this machine's logins (API tokens, tests) has no pools to show.
   else app.get('/api/providers/pools', (c) => c.json({ pools: [], setups: [], kingdom: [] }));
 
+  // The browser reads Warden call outcomes with core's own import-free module.
+  app.get('/ui/call-outcome-core.js', async (c) =>
+    c.body(
+      new Bun.Transpiler({ loader: 'ts' }).transformSync(
+        await Bun.file(
+          new URL(import.meta.resolve('@inixiative/foundry-core/call-outcome')),
+        ).text(),
+      ),
+      200,
+      { 'Content-Type': 'application/javascript' },
+    ),
+  );
   // The browser and offline verifier execute the same import-free proof module.
   app.get('/ui/delivery-evidence.js', async (c) =>
     c.body(

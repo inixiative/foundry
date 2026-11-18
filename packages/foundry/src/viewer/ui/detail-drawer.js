@@ -555,12 +555,16 @@ function RecordedRequest({ request, title }) {
   </${Section}>`;
 }
 
-/** A call outcome in the drawer's status classes: ok when it spoke or found something, cold when it stayed quiet or was never sent, stale otherwise. */
 /** A guard check's label: how it ended, or `pending` while its request waits on an answer. */
 const guardCheckLabel = (o) =>
   o.outcome ? outcomeLabel(o.outcome) : o.reference === 'unreferenced' ? 'pending' : 'unrecorded';
 
+/** A call outcome in the drawer's status classes: ok when it spoke or found something, cold when it stayed quiet or was never sent, stale otherwise. */
 const drawerTone = (outcome) => ({ ok: 'ok', skip: 'cold' })[outcomeTone(outcome)] ?? 'stale';
+
+/** A guard check's status class: its outcome's, or running while its request waits on an answer. */
+const guardCheckTone = (o) =>
+  !o.outcome && o.reference === 'unreferenced' ? 'running' : drawerTone(o.outcome);
 
 /** Routing and guard phases of the selected turn, from the retained trace. Historical; nothing recomputed. */
 function PhaseHistory({ trace }) {
@@ -610,7 +614,7 @@ function PhaseHistory({ trace }) {
             <div class="guard-outcome" key=${o.domain} data-domain=${o.domain} data-outcome=${guardCheckLabel(o)}>
               <div class="detail-meta-row">
                 <div class="detail-meta"><label>Expert</label><span>${o.domain}</span></div>
-                <div class="detail-meta"><label>Check</label><span class="detail-status ${o.outcome ? drawerTone(o.outcome) : o.reference === 'unreferenced' ? 'running' : drawerTone(o.outcome)}">${guardCheckLabel(o)}</span></div>
+                <div class="detail-meta"><label>Check</label><span class="detail-status ${guardCheckTone(o)}">${guardCheckLabel(o)}</span></div>
                 <div class="detail-meta"><label>Findings</label><span>${o.outcome?.status === 'answered' ? o.findings : 'none (not answered)'}</span></div>
                 ${o.revision !== null ? html`<div class="detail-meta"><label>Understanding revision</label><span>${o.revision}</span></div>` : null}
               </div>
@@ -1507,7 +1511,7 @@ function KnowledgeInspection({ threadId }) {
             (
               o,
             ) => html`<div class="guard-outcome" key=${o.domain} data-domain=${o.domain} data-outcome=${guardCheckLabel(o)}>
-            <div class="detail-meta"><label>${o.domain}</label><span class="detail-status ${drawerTone(o.outcome)}">${guardCheckLabel(o)}</span></div>
+            <div class="detail-meta"><label>${o.domain}</label><span class="detail-status ${guardCheckTone(o)}">${guardCheckLabel(o)}</span></div>
             <${RecordedRequest} request=${o.request} title="Guard request" /></div>`,
           )}
         </div>`,

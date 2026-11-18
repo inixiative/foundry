@@ -17,6 +17,7 @@ import {
 } from '@inixiative/foundry-core';
 import {
   DECISION_CALL_TIMEOUT_MAX_MS,
+  type DecisionFailedCause,
   NOT_HELD_REFUSAL,
   QUOTA_PAUSED_REFUSAL,
   type RefusedUnsentCause,
@@ -231,7 +232,7 @@ export function buildSubscriptionDecisions(
       /* Observers cannot change scheduling. */
     }
   };
-  /** `notSent`: refused unsent for capacity or because nothing was held warm; auth, config and budget refusals are failures. */
+  /** `notSent`: refused before dispatch (not held warm, closed, full, expired, used up); a refused priority is a failure. */
   const reject = (message: string, notSent?: RefusedUnsentCause) => {
     const error = notSent
       ? Object.assign(Error(message), { notSentCause: notSent })
@@ -268,11 +269,11 @@ export function buildSubscriptionDecisions(
     if (!closed) pressure({ kind: 'closed', reason });
     closed = true;
     unsubscribeQuota?.();
-    refuseQueued('Subscription decision admission closed');
+    refuseQueued('Subscription decision admission closed', 'not-admitted');
   };
   const check = (pending: Pending) => {
     if (closed || Date.now() >= pending.deadline)
-      throw reject('Subscription decision expired or revoked');
+      throw reject('Subscription decision expired or revoked', 'not-admitted');
   };
   const find = (owner: NativeOwner, id: string) => {
     const record = records.get(id);
@@ -489,16 +490,31 @@ export function buildSubscriptionDecisions(
       // A Warden the project host holds no warm member for is skipped for capacity, not failed.
       // Rate limited on a login now paused as used up: said once by the pause, not failed every round.
       const paused = limited && quotaPausedUntil() !== undefined;
+      // Past its deadline or cancelled once dispatched: the call failed for that, not the provider.
+      const failedCause: DecisionFailedCause | undefined =
+        call?.failure === 'deadline'
+          ? call.reason === 'aborted'
+            ? 'aborted'
+            : 'timeout'
+          : undefined;
       const error =
         settled && call?.failure === 'not-held'
           ? reject(NOT_HELD_REFUSAL, 'not-held')
           : paused
             ? reject(QUOTA_PAUSED_REFUSAL, 'not-admitted')
-            : Error(
-                limited
-                  ? 'Subscription decision rate limited; no fallback or retry'
-                  : 'Subscription decision failed; no fallback or retry',
-              );
+            : settled && call?.failure === 'not-admitted'
+              ? reject(
+                  'Subscription decision refused before dispatch; no fallback or retry',
+                  'not-admitted',
+                )
+              : Object.assign(
+                  Error(
+                    limited
+                      ? 'Subscription decision rate limited; no fallback or retry'
+                      : 'Subscription decision failed; no fallback or retry',
+                  ),
+                  failedCause ? { failedCause } : {},
+                );
       if (limited && !paused) {
         backoffUntil = Math.max(backoffUntil, Date.now() + backoffMs);
         pressure({ kind: 'rate-limited', until: backoffUntil, backoffMs });
@@ -591,7 +607,9 @@ export function buildSubscriptionDecisions(
     },
     complete(messages, opts = {}) {
       if (closed || attempts >= config.maxCalls)
-        return Promise.reject(reject('Subscription decision admission closed or full'));
+        return Promise.reject(
+          reject('Subscription decision admission closed or full', 'not-admitted'),
+        );
       if (quotaPausedUntil() !== undefined)
         return Promise.reject(reject(QUOTA_PAUSED_REFUSAL, 'not-admitted'));
       const priority = opts.priority ?? DECISION_PRIORITY.turn;

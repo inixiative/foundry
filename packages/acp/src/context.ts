@@ -9,7 +9,7 @@
  * before the executor runs, so the host sees them before the agent's first output.
  */
 
-import { ADVICE_RESULTS, callOutcomeLabel, parseCallOutcome } from '@inixiative/foundry-core';
+import { ADVICE_RESULTS, recordedOutcomeLabel } from '@inixiative/foundry-core';
 
 type Record_ = Record<string, unknown>;
 const isRecord = (value: unknown): value is Record_ =>
@@ -17,10 +17,7 @@ const isRecord = (value: unknown): value is Record_ =>
 const strings = (value: unknown) =>
   Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : [];
 
-const outcomeLabel = (value: unknown) => {
-  const outcome = parseCallOutcome(value, ADVICE_RESULTS);
-  return outcome ? callOutcomeLabel(outcome) : 'unknown';
-};
+const outcomeLabel = (value: unknown) => recordedOutcomeLabel(value, ADVICE_RESULTS) ?? 'unknown';
 
 export interface ContextSummary {
   readonly text: string;

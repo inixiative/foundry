@@ -157,7 +157,7 @@ const contributionsOf = (result: { meta?: Record<string, unknown> }) =>
       plan?: {
         contributions: Array<{
           domain: string;
-          decision: string;
+          outcome: { status: string; result?: string; cause?: string };
           snippets: string[];
           classified?: {
             outcome?: string;

@@ -75,6 +75,7 @@ export {
   type StageDebug,
   type StageRun,
   stageRuns,
+  unansweredOutcome,
 } from './run';
 export {
   DEFAULT_STAGE,

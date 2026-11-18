@@ -501,8 +501,11 @@ for (const [name, transport, closes] of [
     const t = transport();
     const { decisions, close } = primedDecisions(t);
     try {
+      // An API-key login is refused before anything is sent; the others were sent and failed.
       await expect(decisions.provider.complete(messages)).rejects.toThrow(
-        'Subscription decision failed; no fallback or retry',
+        name === 'an API-key login'
+          ? 'Subscription decision refused before dispatch; no fallback or retry'
+          : 'Subscription decision failed; no fallback or retry',
       );
       expect(t.turns.length).toBe(name === 'an API-key login' ? 0 : 1);
       expect(decisions.snapshot().closed).toBe(closes);

@@ -3,7 +3,7 @@
  * @kind helper
  * @partOf primitive:decisions
  */
-import type { CallNotSentCause, NotSentCall } from '@inixiative/foundry-core';
+import type { CallFailedCause, CallNotSentCause, NotSentCall } from '@inixiative/foundry-core';
 
 /**
  * Latency budget for Foundry's pre-message decisions. Advisors must be fast: the
@@ -57,6 +57,15 @@ export const QUOTA_PAUSED_REFUSAL = "Wardens paused: the login's usage is used u
 
 /** Why the decision queue refused a call before any provider saw it: not held warm, or not admitted. */
 export type RefusedUnsentCause = Extract<CallNotSentCause, 'not-held' | 'not-admitted'>;
+
+/** Why a dispatched decision ended without an answer, when the queue knows: out of time, or cancelled. */
+export type DecisionFailedCause = Extract<CallFailedCause, 'timeout' | 'aborted'>;
+
+/** How a dispatched decision failed: the queue's timeout or cancellation, otherwise a provider error. */
+export function decisionFailedCause(err: unknown): CallFailedCause {
+  const cause = (err as { failedCause?: unknown } | null)?.failedCause;
+  return cause === 'timeout' || cause === 'aborted' ? cause : 'provider-error';
+}
 
 /** The call as never sent when the decision queue refused it unsent; undefined when it failed. */
 export function refusedUnsent(err: unknown): NotSentCall | undefined {

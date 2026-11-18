@@ -25,7 +25,7 @@ test('a Layer 1 timeout inside the stage run is a silent timeout at layer 1', ()
     degradedWardens([
       {
         domain: 'db',
-        outcome: { status: 'failed', cause: 'provider-error' },
+        outcome: { status: 'failed', cause: 'timeout' },
         reason: 'stage 1 timed out',
         classified: {
           stages: [stage(0, { timedOut: true, error: 'no answer within 900ms' })],

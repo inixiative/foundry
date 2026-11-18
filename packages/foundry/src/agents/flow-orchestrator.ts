@@ -365,7 +365,7 @@ export interface GuardReport {
   prefilter?: PrefilterRun;
   /** Per-domain outcome, in configured order. Distinguishes a completed all-clear from a failed or malformed check. */
   outcomes: GuardOutcome[];
-  /** Domains whose check did not complete: provider-error, invalid-response or not-admitted. No all-clear exists for them. */
+  /** Domains whose check did not complete: any failure, or not sent because not held, not admitted or over budget. No all-clear exists for them. */
   failed: string[];
   /** Time taken for the full guard flow (ms). */
   elapsed: number;
@@ -429,7 +429,7 @@ export interface HandBackMoment {
 export interface BriefReport {
   /** The moment the Wardens were given, frozen: the handoff or work item as text. */
   readonly input: PlanInput;
-  /** Per Warden, in configured order: contribute (the brief), no-comment, skipped, excluded, timeout or error. */
+  /** Per Warden, in configured order: its call outcome (spoke with the brief, no comment, not sent or failed). */
   readonly contributions: DomainContribution[];
   /** The pre-filter's call for this handoff, when it is on. */
   readonly prefilter?: PrefilterRun;
@@ -1525,13 +1525,15 @@ export class FlowOrchestrator {
           : {}),
       });
     }
-    // Not completed: failed, or refused unsent by the queue (a cold Warden has nothing to check yet).
+    // Not completed: failed, or refused unsent by the queue or role budget (a cold Warden has nothing to check yet).
     const failed = outcomes
       .filter(
         (o) =>
           o.outcome.status === 'failed' ||
           (o.outcome.status === 'not-sent' &&
-            (o.outcome.cause === 'not-admitted' || o.outcome.cause === 'not-held')),
+            (o.outcome.cause === 'not-admitted' ||
+              o.outcome.cause === 'not-held' ||
+              o.outcome.cause === 'over-budget')),
       )
       .map((o) => o.domain);
 

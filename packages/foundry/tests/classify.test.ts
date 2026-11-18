@@ -530,7 +530,7 @@ describe('the stage loop', () => {
         return { content: advice(['queues: YES — ordering']) };
       },
     });
-    expect(unknown).toMatchObject({ malformed: true, delivered: false });
+    expect(unknown).toMatchObject({ failure: 'invalid-response', delivered: false });
     expect(unknown.stages[0]).toMatchObject({ unknownRegions: ['queues'] });
     const fanned = await runStages({
       stages: [s1!, s2!],

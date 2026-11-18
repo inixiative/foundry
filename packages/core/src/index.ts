@@ -2,7 +2,6 @@
 // @inixiative/foundry-core — the engine
 // ---------------------------------------------------------------------------
 
-// Action Prompts (agent→human interaction)
 export {
   type ActionOption,
   type ActionPrompt,
@@ -91,6 +90,23 @@ export {
   type LifecycleHandler,
   type LifecycleRule,
 } from './cache-lifecycle';
+// Action Prompts (agent→human interaction)
+export {
+  ADVICE_RESULTS,
+  type AdviceOutcome,
+  type AdviceResult,
+  adviceSpoke,
+  type CallFailedCause,
+  type CallNotSentCause,
+  type CallOutcome,
+  callOutcomeLabel,
+  GUARD_CHECK_RESULTS,
+  type GuardCheckOutcome,
+  type GuardCheckResult,
+  type NotSentCall,
+  parseCallOutcome,
+  recordedOutcomeLabel,
+} from './call-outcome';
 // Capabilities (permission flags + gating)
 export {
   BROWSER_POLICY,
@@ -323,31 +339,16 @@ export { idAtTime, newId, timeFromId } from './id';
 export { type Intervention, InterventionLog, type InterventionThread } from './intervention';
 // Message utilities
 export {
-  ADVICE_RESULTS,
-  type AdviceOutcome,
-  type AdviceResult,
-  adviceSpoke,
   assembledToMessages,
   type BuildInjectionArtifactOpts,
   buildInjectionArtifact,
-  type CallFailedCause,
-  type CallNotSentCause,
-  type CallOutcome,
-  callOutcomeLabel,
   type DecorationParticipant,
   type DeliveryRecord,
-  GUARD_CHECK_RESULTS,
-  type GuardCheckOutcome,
-  type GuardCheckResult,
   type InjectionArtifact,
   type InjectionBlock,
   type InjectionSegmentKind,
-  type LearningReviewOutcome,
-  type LearningReviewResult,
   type MessageDecoration,
-  type NotSentCall,
   type ParticipantRequest,
-  parseCallOutcome,
   splitSystemMessage,
 } from './messages';
 // Middleware

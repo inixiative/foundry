@@ -77,7 +77,11 @@ export function degradedAnswer(
   if (outcome.status === 'not-sent') {
     // A used-up login is said once in the strip (its pause), not as a degraded Warden every round.
     if (answer.reason === QUOTA_PAUSED_REFUSAL) return undefined;
-    if (outcome.cause === 'not-admitted' || (outcome.cause === 'not-held' && !answer.catchesUp))
+    if (
+      outcome.cause === 'not-admitted' ||
+      outcome.cause === 'over-budget' ||
+      (outcome.cause === 'not-held' && !answer.catchesUp)
+    )
       return { domain, kind: 'not-started', layer, silent: true, reason };
     if (outcome.cause === 'cold' && context.notWarm?.has(domain))
       return { domain, kind: 'not-started', layer, silent: true, reason: 'not warm in time' };

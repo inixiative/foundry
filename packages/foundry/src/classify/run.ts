@@ -10,6 +10,8 @@
 
 import type {
   AnswerRepair,
+  CallFailedCause,
+  CallOutcome,
   ClassifyOutcome,
   ClassifyStageTrace,
   NotSentCall,
@@ -63,7 +65,13 @@ export type StageCall =
       /** The same prompt with only its response protocol replaced (debug's inline reading). */
       readonly reask?: (protocol: string) => Promise<{ content: string; tokens?: Tokens }>;
     }
-  | { readonly error: string; readonly docHash?: string; readonly cause?: unknown }
+  | {
+      readonly error: string;
+      readonly docHash?: string;
+      readonly cause?: unknown;
+      /** Why the call failed; a provider rejection when not said. */
+      readonly failure?: CallFailedCause;
+    }
   | { readonly notSent: NotSentCall };
 
 export interface ClassifyRunOptions {
@@ -196,11 +204,22 @@ export interface ClassifyResult {
   /** Why a later stage did not decide: the previous stage's outcome stands. */
   readonly fallback?: 'timeout' | 'error' | 'malformed';
   readonly stages: readonly ClassifyStageTrace[];
-  /** The first stage failed or answered out of shape (`malformed`). */
+  /** The first stage failed: no answer in time, a rejected call, or an answer out of shape. */
   readonly error?: string;
-  readonly malformed?: true;
+  readonly failure?: CallFailedCause;
   /** The first stage was never sent (not held warm, or not admitted). */
   readonly notSent?: NotSentCall;
+}
+
+/** A run, or a result built from one, that ended unanswered: not sent, or sent and failed. */
+export function unansweredOutcome(run: {
+  readonly notSent?: NotSentCall;
+  readonly error?: string;
+  readonly failure?: CallFailedCause;
+}): Exclude<CallOutcome<never>, { readonly status: 'answered' }> | undefined {
+  if (run.notSent) return { status: 'not-sent', cause: run.notSent.cause };
+  if (run.error !== undefined) return { status: 'failed', cause: run.failure ?? 'provider-error' };
+  return undefined;
 }
 
 /** A run as the journal keeps it: its outcome, whether it reached the thread, why not, and every stage. */
@@ -380,7 +399,7 @@ export async function runStages(options: ClassifyRunOptions): Promise<ClassifyRe
     if (call === TIMED_OUT) {
       void pending.catch(() => undefined);
       traces.push(trace({ timedOut: true, error: `no answer within ${Math.round(timeoutMs!)}ms` }));
-      return stop('timeout', { error: `stage ${index + 1} timed out` });
+      return stop('timeout', { error: `stage ${index + 1} timed out`, failure: 'timeout' });
     }
     if ('notSent' in call) {
       traces.push(trace({ error: `not sent (${call.notSent.cause}): ${call.notSent.reason}` }));
@@ -388,7 +407,7 @@ export async function runStages(options: ClassifyRunOptions): Promise<ClassifyRe
     }
     if ('error' in call) {
       traces.push(trace({ error: call.error, ...(call.docHash ? { docHash: call.docHash } : {}) }));
-      return stop('error', { error: call.error });
+      return stop('error', { error: call.error, failure: call.failure ?? 'provider-error' });
     }
     const meta = {
       ...(call.docHash ? { docHash: call.docHash } : {}),
@@ -401,7 +420,7 @@ export async function runStages(options: ClassifyRunOptions): Promise<ClassifyRe
     if ('error' in read) {
       await debug(base, call, undefined, {});
       traces.push(trace({ ...meta, malformed: true, error: read.error }));
-      return stop('malformed', { error: read.error, malformed: true });
+      return stop('malformed', { error: read.error, failure: 'invalid-response' });
     }
     let reading = read;
     let unknown: string[] = [];
@@ -421,7 +440,7 @@ export async function runStages(options: ClassifyRunOptions): Promise<ClassifyRe
         );
         return stop('malformed', {
           error: 'the recogniser named only regions it does not hold',
-          malformed: true,
+          failure: 'invalid-response',
         });
       }
       reading = {

@@ -31,6 +31,7 @@ import {
 } from '@inixiative/foundry-core';
 import {
   type AdviseResult,
+  adviceOutcomeOf,
   DomainLibrarian,
   type GuardResult,
   oneCall,
@@ -332,19 +333,17 @@ function rowOf(result: AdviseResult | GuardResult, classified?: ClassifyResult):
     ...(repairs.length ? { repairs } : {}),
   };
   const guard = 'outcome' in result;
-  const notSent = guard
-    ? result.outcome.status === 'not-sent'
-      ? { cause: result.outcome.cause, reason: result.error ?? callOutcomeLabel(result.outcome) }
-      : undefined
-    : result.notSent;
-  // A call the queue or role budget never admitted is counted apart: re-asked, never a silence.
-  if (notSent?.cause === 'not-admitted' || notSent?.cause === 'not-held')
+  const outcome = guard ? result.outcome : adviceOutcomeOf(result);
+  // A call the queue never admitted is counted apart: re-asked, never a silence.
+  if (
+    outcome.status === 'not-sent' &&
+    (outcome.cause === 'not-admitted' || outcome.cause === 'not-held')
+  )
     return { noComment: false, error: 'not-admitted', ...staged };
-  if (notSent) return { noComment: false, error: notSent.reason, ...staged };
-  const failed = guard
-    ? result.outcome.status === 'failed' && (result.error ?? callOutcomeLabel(result.outcome))
-    : result.error;
-  if (failed) return { noComment: false, error: failed, ...staged };
+  if (outcome.status !== 'answered') {
+    const reason = guard ? result.error : (result.error ?? result.notSent?.reason);
+    return { noComment: false, error: reason ?? callOutcomeLabel(outcome), ...staged };
+  }
   // A run that fell back is not the configuration's answer: its failed stage's error, counted apart
   // (and re-asked when the transport lost it), never a yes or a silence.
   if (classified?.fallback) {

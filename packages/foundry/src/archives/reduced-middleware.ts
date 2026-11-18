@@ -10,9 +10,8 @@
  */
 import {
   ADVICE_RESULTS,
-  callOutcomeLabel,
   GUARD_CHECK_RESULTS,
-  parseCallOutcome,
+  recordedOutcomeLabel,
 } from '@inixiative/foundry-core';
 
 /** Phase rows that carry a middleware call's full input, reduced at the end of their turn. */
@@ -52,10 +51,8 @@ interface PhaseRow {
 type Rec = Record<string, unknown>;
 const obj = (value: unknown): Rec | undefined =>
   value && typeof value === 'object' && !Array.isArray(value) ? (value as Rec) : undefined;
-const outcomeLabel = (value: unknown, results: readonly string[]) => {
-  const outcome = parseCallOutcome(value, results);
-  return outcome ? callOutcomeLabel(outcome) : 'unknown';
-};
+const outcomeLabel = (value: unknown, results: readonly string[]) =>
+  recordedOutcomeLabel(value, results) ?? 'unknown';
 const served = (request: unknown) => {
   const s = obj(obj(request)?.served);
   return typeof s?.model === 'string'

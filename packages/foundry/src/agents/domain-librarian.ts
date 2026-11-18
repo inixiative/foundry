@@ -22,6 +22,7 @@
 import { createHash } from 'node:crypto';
 import {
   type AdviceOutcome,
+  type CallFailedCause,
   type CompletionOpts,
   type CompositionSnapshot,
   ContextLayer,
@@ -61,11 +62,12 @@ import {
   type StageDebug,
   type StageRun,
   stageRuns,
+  unansweredOutcome,
   WARDEN_CHARTER,
   type WardenPointer,
   withRegionInstructions,
 } from '../classify';
-import { refusedUnsent } from '../providers/decision-budget';
+import { decisionFailedCause, refusedUnsent } from '../providers/decision-budget';
 import { DECISION_PRIORITY } from '../providers/decision-priority';
 import type { AdviceTrigger } from './warden-triggers';
 
@@ -91,8 +93,8 @@ export interface AdviseResult {
   notSent?: NotSentCall;
   /** The model call failed; nothing was advised. */
   error?: string;
-  /** The failure was an answer out of the advice shape, not a rejected call. */
-  malformed?: true;
+  /** Why it failed: no answer in time, cancelled, rejected by the provider, or out of the advice shape. */
+  failure?: CallFailedCause;
   /** A Warden with configured stages: the run, stage by stage (absent for the default single stage). */
   classified?: ClassifyResult;
   /** The exact input of every stage past the first (the first is `observeRequest`'s), frozen at its call. */
@@ -101,9 +103,8 @@ export interface AdviseResult {
 
 /** How one advise call ended, as the one outcome every reader of a Warden call shares. */
 export function adviceOutcomeOf(result: AdviseResult): AdviceOutcome {
-  if (result.error)
-    return { status: 'failed', cause: result.malformed ? 'invalid-response' : 'provider-error' };
-  if (result.notSent) return { status: 'not-sent', cause: result.notSent.cause };
+  const unanswered = unansweredOutcome(result);
+  if (unanswered) return unanswered;
   return { status: 'answered', result: result.noComment ? 'no-comment' : 'spoke' };
 }
 
@@ -1559,7 +1560,7 @@ export class DomainLibrarian {
     if (!cacheContent) return { error: `cold-cache: ${run.stage.doc}`, docHash };
     if (!first) {
       const over = this.budgetError(system, cacheContent, stage.cache);
-      if (over) return { error: over, docHash };
+      if (over) return { notSent: { cause: 'over-budget', reason: over } };
     }
     const stablePrefix = domainCachePrefix(this.domain, cacheContent);
     const threadPrefix = threadSection(frame.understanding);
@@ -1667,7 +1668,12 @@ export class DomainLibrarian {
       const notSent = refusedUnsent(err);
       if (notSent) return { notSent };
       // Model failure: nothing, but say why so the composer records an error, not silence.
-      return { error: (err as Error)?.message ?? String(err), docHash, cause: err };
+      return {
+        error: (err as Error)?.message ?? String(err),
+        failure: decisionFailedCause(err),
+        docHash,
+        cause: err,
+      };
     }
   }
 
@@ -1695,7 +1701,7 @@ export class DomainLibrarian {
         layers: [],
         snippets: [],
         confidence: 0,
-        notSent: { cause: 'not-admitted', reason: over },
+        notSent: { cause: 'over-budget', reason: over },
       };
 
     // The domain's instructions (system) stay exactly as configured and inspectable through
@@ -1756,7 +1762,7 @@ export class DomainLibrarian {
         snippets: [],
         confidence: 0,
         error: run.error ?? 'no answer',
-        ...(run.malformed ? { malformed: true as const } : {}),
+        failure: run.failure ?? 'provider-error',
         ...classified,
       };
     const { repairs: _answerRepairs, ...advice } = run.final.advice!;
@@ -1832,7 +1838,7 @@ export class DomainLibrarian {
     if (over)
       return {
         findings: [],
-        outcome: { status: 'not-sent', cause: 'not-admitted' },
+        outcome: { status: 'not-sent', cause: 'over-budget' },
         error: over,
         admission: 'not-admitted',
         request: { status: 'not-sent', phase: 'guard', reason: over },
@@ -1886,35 +1892,23 @@ export class DomainLibrarian {
     const supplied: ParticipantRequest = evidence
       ? { status: 'supplied', ...evidence, ...(served ? { served } : {}) }
       : { status: 'not-sent', phase: 'guard', reason: 'no call' };
-    // A call the decision queue refused unsent did not run: not sent, not a provider error.
-    if (run.notSent)
+    // A call refused unsent did not run; a rejected or unreadable call is not a completed check.
+    // Whether a model ran, or native work is still running, is only known when the provider
+    // classifies it; an answer out of the guard shape did reach a model.
+    const unanswered = unansweredOutcome(run);
+    if (unanswered || !run.final) {
+      const outcome = unanswered ?? ({ status: 'failed', cause: 'provider-error' } as const);
+      const admission =
+        outcome.status === 'not-sent'
+          ? ('not-admitted' as const)
+          : outcome.cause === 'invalid-response'
+            ? undefined
+            : classifyGuardCall(failure);
       return {
         findings: [],
-        outcome: { status: 'not-sent', cause: run.notSent.cause },
-        error: boundedError(run.notSent.reason),
-        admission: 'not-admitted',
-        request: supplied,
-        ...withRevision,
-        ...classified,
-      };
-    if (!run.final) {
-      // An answer that is not a guard result is never presented as a completed all-clear.
-      if (run.malformed)
-        return {
-          findings: [],
-          outcome: { status: 'failed', cause: 'invalid-response' },
-          error: run.error!,
-          request: supplied,
-          ...withRevision,
-          ...classified,
-        };
-      // A rejected call is not a completed check. Whether a model ran, or native work is still
-      // running, is only known when the provider classifies it; otherwise it is unknown.
-      return {
-        findings: [],
-        outcome: { status: 'failed', cause: 'provider-error' },
-        error: boundedError(run.error ?? 'no answer'),
-        admission: classifyGuardCall(failure),
+        outcome,
+        error: boundedError(run.notSent?.reason ?? run.error ?? 'no answer'),
+        ...(admission ? { admission } : {}),
         request: supplied,
         ...withRevision,
         ...classified,

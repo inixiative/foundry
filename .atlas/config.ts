@@ -87,7 +87,7 @@ export default defineConfig({
     { include: `${CORE}/{tools,native-tools,capability}.ts`, partOf: 'primitive:tools' },
     { include: `${CORE}/model-registry.ts`, partOf: 'primitive:modelRegistry' },
     {
-      include: `${CORE}/{session-delivery,messages,delivery-evidence,native-evidence}.ts`,
+      include: `${CORE}/{session-delivery,messages,call-outcome,delivery-evidence,native-evidence}.ts`,
       partOf: 'primitive:nativeSessions',
     },
     { include: `${CORE}/{token-tracker,token-counts}.ts`, partOf: 'feature:usage' },
