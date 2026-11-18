@@ -14,7 +14,7 @@ test('the context item names the unheard Wardens and reads the sealed row, not a
         phase: 'advice',
         record: {
           trigger: 'user-message',
-          participants: [{ domain: 'security', decision: 'timeout' }],
+          participants: [{ domain: 'security', outcome: { status: 'failed', cause: 'timeout' } }],
           degraded,
         },
       },
@@ -23,12 +23,12 @@ test('the context item names the unheard Wardens and reads the sealed row, not a
         record: {
           trigger: 'user-message',
           retryOf: 'p1',
-          participants: [{ domain: 'security', decision: 'contribute' }],
+          participants: [{ domain: 'security', outcome: { status: 'answered', result: 'spoke' } }],
         },
       },
     ],
   })!;
-  expect(summary.participants).toEqual([{ domain: 'security', decision: 'timeout' }]);
+  expect(summary.participants).toEqual([{ domain: 'security', outcome: 'failed:timeout' }]);
   expect(summary.degraded).toEqual(degraded);
   expect(summary.text).toContain(
     'Some Wardens went unheard; the turn went on without them: security (Layer 1 timed out).',

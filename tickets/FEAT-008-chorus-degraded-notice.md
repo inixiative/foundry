@@ -18,19 +18,20 @@ A Warden is degraded at one moment when the system, not the Warden, decided it s
 
 | Recorded as | Degraded as | Silent? |
 |---|---|---|
-| advice `decision: 'timeout'` (the orchestrator's deadline fired; the call still runs) | `timeout`. Layer 1 for a one-layer Warden (the default), unknown for a staged one | yes |
-| advice `decision: 'error'` | `timeout` when the failing stage's trace says `timedOut`, else `error`; layer = that stage + 1 (1 for a one-layer Warden) | yes |
-| advice `decision: 'excluded'`, or guard status `not-admitted` (never admitted in time) | `not-started` | yes |
-| advice `skipped: cold-cache` for a Warden whose cache missed its warm deadline (`warmWithin` shortfall) | `not-started`, "not warm in time" | yes |
-| a check in `GuardReport.failed` (`provider-error`, `invalid-response`) | `error`, with the layer from its staged run | yes |
+| outcome `failed: timeout` (the orchestrator's deadline fired; the call still runs) | `timeout`. Layer 1 for a one-layer Warden (the default), unknown for a staged one | yes |
+| outcome `failed: provider-error`, `invalid-response` or `aborted` | `timeout` when the failing stage's trace says `timedOut`, else `error`; layer = that stage + 1 (1 for a one-layer Warden) | yes |
+| outcome `not-sent: not-admitted` or `not-sent: over-budget`, or `not-sent: not-held` that does not catch up | `not-started` | yes |
+| outcome `not-sent: cold` for a Warden whose cache missed its warm deadline (`warmWithin` shortfall) | `not-started`, "not warm in time" | yes |
 | `classified.fallback` (a later layer failed after Layer 1 answered) and the Warden did not speak | the failing layer, its kind | yes: Layer 1 said yes, and the pointer was lost |
 | the same, but the Warden did speak (a pointing Layer 1's answer stood) | the failing layer, its kind | **no**: shown as "spoke from Layer 1 only, unconfirmed" |
 | the whole fan-out failed (a between-turn ask threw; the guard flow threw) | every Warden that would have been asked, `error` | yes |
 
+Guard checks map the same way: a guard's outcome is the same list (`answered: findings | all-clear` in place of advice's results).
+
 **Not degraded:**
-- `no-comment` and `contribute`.
-- `skipped` (prefilter, guard triggers, or a cold cache with no warm deadline missed).
-- `omitted`. The Warden spoke; the composition budget chose, and the choice is recorded in `omissions`. Asking again would hit the same budget.
+- `answered` in any form: `spoke`, `no-comment`, `omitted-budget` (the Warden spoke; the composition budget chose, recorded in `omissions`; asking again would hit the same budget), `findings`, `all-clear`.
+- `not-sent: prefiltered`, `not-sent: trigger-gated`, and `not-sent: cold` with no warm deadline missed.
+- `not-sent: not-admitted` from a paused login (`QUOTA_PAUSED_REFUSAL`): the strip says the pause once, and the Warden catches up on the next message.
 
 **Known limits:**
 - **Guard stages have no per-stage deadline**, so a slow guard is a provider error, never "Layer 1 timed out".

@@ -213,7 +213,11 @@ test('consumed: a ticket file the thread reads is asked about once; the pointer 
     wraps: 'Read:tickets/ENG-12.md',
     workItem: { itemId: 'Read:tickets/ENG-12.md', name: 'tickets/ENG-12.md', tool: 'Read' },
     participants: [
-      { domain: 'concurrency', decision: 'contribute', snippets: [POINTER, LESS_LIKELY] },
+      {
+        domain: 'concurrency',
+        outcome: { status: 'answered', result: 'spoke' },
+        snippets: [POINTER, LESS_LIKELY],
+      },
     ],
   });
   // The chime is the pointer as the Warden wrote it: no question, no verdict added by Foundry.
@@ -288,7 +292,13 @@ test('consumed: a fetched Linear issue is a work item; a silent chorus is journa
     '(mcp__plugin_linear_linear__get_issue: ENG-40)',
   );
   expect(f.consumedRows()[0]!.record).toMatchObject({
-    participants: [{ domain: 'concurrency', decision: 'no-comment', snippets: [] }],
+    participants: [
+      {
+        domain: 'concurrency',
+        outcome: { status: 'answered', result: 'no-comment' },
+        snippets: [],
+      },
+    ],
   });
   expect(f.runtime.flowOrchestrator.pendingNotes).toHaveLength(0);
 });

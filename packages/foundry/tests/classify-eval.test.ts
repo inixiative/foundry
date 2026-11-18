@@ -449,3 +449,53 @@ test('reason inline and followup, through the eval: the why lands on the stage t
   });
   expect(replies).toHaveLength(0);
 });
+
+describe('retries follow the call outcome', () => {
+  test('a call the queue did not admit is asked again', async () => {
+    let calls = 0;
+    const provider: LLMProvider = {
+      id: 'stub',
+      complete: async () => {
+        if (calls++ === 0)
+          throw Object.assign(Error('Subscription decision refused before dispatch'), {
+            notSentCause: 'not-admitted',
+          });
+        return {
+          model: 'haiku',
+          content: JSON.stringify({ snippets: [POINTER], layers: [], confidence: 0.8 }),
+        };
+      },
+    };
+    const { answers } = await runCharterEval({
+      probes: [PROBES[2]!],
+      wardensFor: () => [LOCKS],
+      warden: provider,
+      triggers: ['user-message'],
+      retryDelayMs: 0,
+    });
+    expect(calls).toBe(2);
+    expect(answers[0]).toMatchObject({ noComment: false, retried: ['not-admitted'] });
+    expect(answers[0]!.error).toBeUndefined();
+  });
+
+  test('a Warden over its role budget is never asked again, even when its reason reads like a timeout', async () => {
+    let calls = 0;
+    const provider: LLMProvider = {
+      id: 'stub',
+      complete: async () => {
+        calls++;
+        return { model: 'haiku', content: NO_COMMENT };
+      },
+    };
+    const { answers } = await runCharterEval({
+      probes: [PROBES[2]!],
+      wardensFor: () => [{ ...LOCKS, domain: 'timeout', session: 'run:timeout', budget: 1 }],
+      warden: provider,
+      triggers: ['user-message'],
+      retryDelayMs: 0,
+    });
+    expect(calls).toBe(0);
+    expect(answers[0]!.error).toMatch(/^over-budget: /);
+    expect(answers[0]).not.toHaveProperty('retried');
+  });
+});

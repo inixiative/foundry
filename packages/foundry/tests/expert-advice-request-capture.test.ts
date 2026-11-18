@@ -2,6 +2,7 @@ import { expect, test } from 'bun:test';
 import {
   ContextLayer,
   ContextStack,
+  callOutcomeLabel,
   type LLMMessage,
   type LLMProvider,
   SignalBus,
@@ -113,7 +114,7 @@ test('recorded request equals the exact provider input, is frozen with the seale
     const prepared = await h.flow.hydrateDelta(plan);
     const supplied = h.calls.get('architecture')![0]!;
     const c = plan.contributions[0]!;
-    expect(c.decision).toBe('contribute');
+    expect(callOutcomeLabel(c.outcome)).toBe('answered:spoke');
     expect(c.request.status).toBe('supplied');
     if (c.request.status !== 'supplied') throw Error('unreachable');
     expect(c.request.messages).toEqual(supplied); // exact equality with what the provider received
@@ -177,7 +178,7 @@ test('concurrent experts: each recorded request is attributed to its own domain 
     const plan = await h.flow.preMessage('Add preferred names');
     expect(plan.contributions.map((c) => c.domain)).toEqual(['architecture', 'testing']);
     for (const c of plan.contributions) {
-      expect(c.decision).toBe('contribute');
+      expect(callOutcomeLabel(c.outcome)).toBe('answered:spoke');
       if (c.request.status !== 'supplied') throw Error(`${c.domain} request not supplied`);
       expect(c.request.messages).toEqual(h.calls.get(c.domain)![0]!);
       expect(c.request.providerId).toBe(`controlled-${c.domain}`);
@@ -222,12 +223,12 @@ test('provider error, timeout and late settlement: the request is retained with 
     const plan = await h.flow.preMessage('Add preferred names');
     const prepared = await h.flow.hydrateDelta(plan);
     const [erroring, slow] = plan.contributions;
-    expect(erroring!.decision).toBe('error');
+    expect(callOutcomeLabel(erroring!.outcome)).toBe('failed:provider-error');
     expect(erroring!.reason).toBe('CONTROLLED_PROVIDER_FAILURE');
     expect(erroring!.request.status).toBe('supplied');
     if (erroring!.request.status === 'supplied')
       expect(erroring!.request.messages).toEqual(h.calls.get('erroring')![0]!);
-    expect(slow!.decision).toBe('timeout');
+    expect(callOutcomeLabel(slow!.outcome)).toBe('failed:timeout');
     expect(slow!.request.status).toBe('supplied');
     if (slow!.request.status === 'supplied') {
       expect(slow!.request.messages).toEqual(h.calls.get('slow')![0]!);
@@ -243,10 +244,14 @@ test('provider error, timeout and late settlement: the request is retained with 
     expect(JSON.stringify({ plan, decoration: prepared.decoration })).toBe(sealed);
     expect(sealed).not.toContain('LATE_ANSWER');
     expect(
-      prepared.decoration.participants.map((p) => [p.id, p.decision, p.request?.status]),
+      prepared.decoration.participants.map((p) => [
+        p.id,
+        callOutcomeLabel(p.outcome),
+        p.request?.status,
+      ]),
     ).toEqual([
-      ['erroring', 'error', 'supplied'],
-      ['slow', 'timeout', 'supplied'],
+      ['erroring', 'failed:provider-error', 'supplied'],
+      ['slow', 'failed:timeout', 'supplied'],
     ]);
   } finally {
     h.dispose();
@@ -258,7 +263,7 @@ test('cold cache and deadline exclusion record why no request was made; no reque
   try {
     const plan = await cold.flow.preMessage('Add preferred names');
     expect(plan.contributions[0]).toMatchObject({
-      decision: 'skipped',
+      outcome: { status: 'not-sent', cause: 'cold' },
       reason: 'cold-cache',
       request: { status: 'not-sent', phase: 'advice', reason: 'cold-cache' },
     });
@@ -280,10 +285,10 @@ test('cold cache and deadline exclusion record why no request was made; no reque
   try {
     const plan = await excluded.flow.preMessage('Add preferred names');
     const [first, queued] = plan.contributions;
-    expect(first!.decision).toBe('timeout');
+    expect(callOutcomeLabel(first!.outcome)).toBe('failed:timeout');
     expect(first!.request.status).toBe('supplied');
     expect(queued).toMatchObject({
-      decision: 'excluded',
+      outcome: { status: 'not-sent', cause: 'not-admitted' },
       reason: 'deadline-queued',
       request: { status: 'not-sent', phase: 'advice', reason: 'deadline-queued' },
     });
@@ -340,7 +345,7 @@ test('inspector: reloaded records project the exact recorded request; not-sent a
       participants: [
         {
           id: 'architecture',
-          decision: 'contribute',
+          outcome: { status: 'answered', result: 'spoke' },
           segments: { instructions: 'I', domainKnowledge: 'D', threadKnowledge: '' },
           provenance: {},
         },

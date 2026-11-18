@@ -159,7 +159,6 @@ export {
 } from './domain-librarian';
 // Flow Orchestrator — wires the five FLOW.md roles together
 export {
-  type ContributionDecision,
   type ContributionProvenance,
   type ContributionSegments,
   type DeliveryEvidence,

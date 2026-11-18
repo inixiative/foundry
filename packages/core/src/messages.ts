@@ -3,6 +3,8 @@
  * @kind helper
  * @partOf primitive:nativeSessions
  */
+
+import type { AdviceOutcome } from './call-outcome';
 import type {
   CompositionSnapshot,
   LayerInstanceState,
@@ -36,8 +38,7 @@ export interface InjectionBlock {
 /** One decorator's recorded participation in a turn. */
 export interface DecorationParticipant {
   readonly id: string;
-  /** contribute | no-comment | skipped | error | timeout | excluded | omitted */
-  readonly decision: string;
+  readonly outcome: AdviceOutcome;
   readonly reason?: string;
   /** The three named inputs the participant worked from, never inferred. */
   readonly segments: {

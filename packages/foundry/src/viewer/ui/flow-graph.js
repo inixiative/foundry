@@ -14,6 +14,8 @@
  *   turnFlowGraph    one turn's loop: input → assessment ∥ routing → sealed plan → layers → executor → delivery ∥ guards ∥ tasks → learning
  *   learningLoop     per-domain lanes across turns: assessed revision → writeback → the revision a later turn assessed
  */
+
+import { outcomeLabel, outcomeTone } from './call-outcome.js';
 import {
   deliverySummary,
   expertParticipants,
@@ -332,15 +334,6 @@ function layoutTree(nodes, edges, { gapX = 24, gapY = 56 } = {}) {
 
 // A routing error is degraded, not failed: the turn went on with its standing layers.
 const ROUTE_STATUS = { routed: 'ok', fallback: 'warn', timeout: 'warn', error: 'warn' };
-const DECISION_STATUS = {
-  contribute: 'ok',
-  'no-comment': 'skip',
-  skipped: 'skip',
-  error: 'error',
-  timeout: 'warn',
-  excluded: 'skip',
-  omitted: 'warn',
-};
 const TURN_STATUS = {
   completed: 'ok',
   failed: 'error',
@@ -504,7 +497,7 @@ export function turnFlowGraph(turn, { learning = [] } = {}) {
   const participants = contributions
     ? contributions.map((c) => ({
         id: c.domain,
-        decision: c.decision,
+        outcome: c.outcome ?? null,
         reason: c.reason ?? null,
         revision: c.provenance?.threadKnowledgeRevision ?? null,
         confidence: c.confidence ?? null,
@@ -516,7 +509,7 @@ export function turnFlowGraph(turn, { learning = [] } = {}) {
       }))
     : (expertParticipants(null, turn.phases)?.participants ?? []).map((p) => ({
         id: p.id,
-        decision: p.decision,
+        outcome: p.outcome,
         reason: p.reason,
         revision: p.revision,
         confidence: p.confidence,
@@ -556,12 +549,16 @@ export function turnFlowGraph(turn, { learning = [] } = {}) {
         col,
         domain: p.id,
         label: p.id,
-        sub: [p.decision, p.revision === null ? null : `rev ${p.revision}`, fmtMs(p.elapsedMs)]
+        sub: [
+          outcomeLabel(p.outcome),
+          p.revision === null ? null : `rev ${p.revision}`,
+          fmtMs(p.elapsedMs),
+        ]
           .filter(Boolean)
           .join(' · '),
-        status: DECISION_STATUS[p.decision] ?? 'warn',
+        status: outcomeTone(p.outcome),
         detail: {
-          decision: p.decision,
+          outcome: outcomeLabel(p.outcome),
           reason: p.reason,
           'assessed revision': p.revision,
           confidence: p.confidence,
@@ -616,13 +613,13 @@ export function turnFlowGraph(turn, { learning = [] } = {}) {
               .filter(Boolean)
               .join(' · ')
           : p
-            ? p.decision + (p.snippets ? ` · ${plural(p.snippets, 'snippet')}` : '')
+            ? outcomeLabel(p.outcome) + (p.snippets ? ` · ${plural(p.snippets, 'snippet')}` : '')
             : null;
       link(
         from,
         id,
         label || null,
-        from === 'routing' ? ROUTE_STATUS[routed?.status] : DECISION_STATUS[p?.decision],
+        from === 'routing' ? ROUTE_STATUS[routed?.status] : p ? outcomeTone(p.outcome) : undefined,
       );
     }
     last = [id];
@@ -786,7 +783,10 @@ export function turnFlowGraph(turn, { learning = [] } = {}) {
           correlation: g.correlation,
           domains:
             g.outcomes
-              .map((o) => `${o.domain}: ${o.status}${o.findings ? ` (${o.findings})` : ''}`)
+              .map(
+                (o) =>
+                  `${o.domain}: ${outcomeLabel(o.outcome)}${o.findings ? ` (${o.findings})` : ''}`,
+              )
               .join('; ') || 'none',
           error: g.error,
         },
@@ -869,12 +869,12 @@ export function learningLoop(flow, { maxTurns = 16 } = {}) {
     const contributions = Array.isArray(turn.plan?.contributions)
       ? turn.plan.contributions.map((c) => ({
           id: c.domain,
-          decision: c.decision,
+          outcome: c.outcome ?? null,
           revision: c.provenance?.threadKnowledgeRevision ?? null,
         }))
       : (expertParticipants(null, turn.phases)?.participants ?? []).map((p) => ({
           id: p.id,
-          decision: p.decision,
+          outcome: p.outcome,
           revision: p.revision,
         }));
     for (const c of contributions) {
@@ -907,14 +907,14 @@ export function learningLoop(flow, { maxTurns = 16 } = {}) {
         domain,
         turnId: turn.turnId,
         label: a.revision === null ? 'assessed' : `assessed rev ${a.revision}`,
-        sub: a.decision,
-        status: DECISION_STATUS[a.decision] ?? 'warn',
+        sub: outcomeLabel(a.outcome),
+        status: outcomeTone(a.outcome),
         revision: a.revision,
         target: { type: 'turn', threadId: turn.threadId, turnId: turn.turnId },
         detail: {
           turn: turn.turnId,
           input: turn.input?.preview,
-          decision: a.decision,
+          outcome: outcomeLabel(a.outcome),
           'assessed revision': a.revision,
         },
         ...at(t * 2, domain),

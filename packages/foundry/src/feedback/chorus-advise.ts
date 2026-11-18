@@ -11,6 +11,7 @@
 // nothing. Oracle's `chorus` replay arm reads the result (scripts/evals/chorus-advise.ts).
 
 import {
+  type AdviceOutcome,
   Harness,
   type InjectionArtifact,
   type LLMMessage,
@@ -23,7 +24,7 @@ import {
 } from '@inixiative/foundry-core';
 import { CHORUS_RECEPTION_LAYER } from '../agents/chorus-reception';
 import { withChorusThread } from '../agents/chorus-thread';
-import { threadKnowledgeLayerId } from '../agents/domain-librarian';
+import { adviceOutcomeOf, threadKnowledgeLayerId } from '../agents/domain-librarian';
 import type { DomainContribution, InjectionPlan } from '../agents/flow-orchestrator';
 import { configureHarness, type SourceResolver } from '../agents/thread-factory';
 import type { PhaseRecordInput, ThreadRuntimeDeps } from '../agents/thread-runtime';
@@ -69,7 +70,7 @@ export interface ChorusAdviseOptions {
 /** One Warden's decision on the message, as the sealed plan recorded it. */
 export interface ChorusWardenDecision {
   readonly domain: string;
-  readonly decision: DomainContribution['decision'];
+  readonly outcome: DomainContribution['outcome'];
   readonly reason?: string;
   readonly snippets: readonly string[];
   readonly pointer?: DomainContribution['pointer'];
@@ -87,7 +88,7 @@ export interface ChorusWardenDecision {
 /** One Warden's priming decision (`prime`): what it answered and how long it took. */
 export interface ChorusPrime {
   readonly domain: string;
-  readonly outcome: 'answered' | 'skipped' | 'error';
+  readonly outcome: AdviceOutcome;
   readonly reason?: string;
   readonly elapsedMs: number;
 }
@@ -219,17 +220,17 @@ export async function adviseOnce(opts: ChorusAdviseOptions): Promise<ChorusAdvic
                   threadKnowledge: lib.threadKnowledge.content,
                   trigger: 'user-message',
                 });
-                const failed = result.error ?? result.skipped ?? result.notStarted;
+                const reason = result.error ?? result.notSent?.reason;
                 return {
                   domain: lib.domain,
-                  outcome: result.error ? 'error' : failed ? 'skipped' : 'answered',
-                  ...(failed ? { reason: failed } : {}),
+                  outcome: adviceOutcomeOf(result),
+                  ...(reason ? { reason } : {}),
                   elapsedMs: Date.now() - started,
                 };
               } catch (error) {
                 return {
                   domain: lib.domain,
-                  outcome: 'error',
+                  outcome: { status: 'failed', cause: 'provider-error' },
                   reason: (error as Error).message,
                   elapsedMs: Date.now() - started,
                 };
@@ -273,7 +274,7 @@ export async function adviseOnce(opts: ChorusAdviseOptions): Promise<ChorusAdvic
         liveSystemPrompt: fresh.systemPrompt,
         decisions: plan.contributions.map((c) => ({
           domain: c.domain,
-          decision: c.decision,
+          outcome: c.outcome,
           ...(c.reason ? { reason: c.reason } : {}),
           snippets: [...c.snippets],
           ...(c.pointer ? { pointer: c.pointer } : {}),

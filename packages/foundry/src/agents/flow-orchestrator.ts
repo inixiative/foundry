@@ -39,10 +39,14 @@
 // ---------------------------------------------------------------------------
 
 import {
+  type AdviceOutcome,
   type AnswerRepair,
+  adviceSpoke,
   type ContextStack,
+  callOutcomeLabel,
   computeHash,
   copyMessageIdentity,
+  type GuardCheckOutcome,
   type LayerState,
   type LogicalMessageIdentity,
   layerPart,
@@ -55,11 +59,7 @@ import {
   type SignalBus,
 } from '@inixiative/foundry-core';
 import { type ClassifiedSummary, classifiedSummary, type WardenPointer } from '../classify';
-import {
-  DECISION_DEADLINE_MS,
-  NOT_HELD_REFUSAL,
-  QUOTA_PAUSED_REFUSAL,
-} from '../providers/decision-budget';
+import { DECISION_DEADLINE_MS, QUOTA_PAUSED_REFUSAL } from '../providers/decision-budget';
 import {
   type PrefilterOutcome,
   type PrefilterSkip,
@@ -70,13 +70,13 @@ import type { Cartographer, RouteRequestEvidence, RouteResult } from './cartogra
 import {
   type AdviceRequestEvidence,
   activityTools,
+  adviceOutcomeOf,
   type CacheComposition,
   type DomainLibrarian,
   type EarlierMessages,
   type GuardCallEvidence,
   type GuardFinding,
   type GuardResult,
-  type GuardStatus,
   type PhaseRequestEvidence,
   renderTurnActivity,
   type TurnActivity,
@@ -89,27 +89,6 @@ import { clipMomentText } from './work-items';
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
-
-/**
- * What one domain decided about one input.
- * - contribute: the domain answered with something to add.
- * - no-comment: the domain answered NO_COMMENT; nothing reaches the thread.
- * - skipped: no call was made: it holds no knowledge yet (a cold cache), or the pre-filter was
- *   confident the moment is outside its domain (`prefilter` carries the score).
- * - error: the domain's model call failed.
- * - timeout: the domain started but had not answered by its deadline (call still outstanding).
- * - excluded: the domain never started: the plan deadline passed while it was queued, or the
- *   decision queue never admitted its call.
- * - omitted: the domain contributed but the composition budget excluded it.
- */
-export type ContributionDecision =
-  | 'contribute'
-  | 'no-comment'
-  | 'skipped'
-  | 'error'
-  | 'timeout'
-  | 'excluded'
-  | 'omitted';
 
 /** The three named inputs a domain worked from. Explicit, never inferred. */
 export interface ContributionSegments {
@@ -140,7 +119,11 @@ export interface ContributionProvenance {
 /** One domain's recorded participation in a turn. */
 export interface DomainContribution {
   readonly domain: string;
-  readonly decision: ContributionDecision;
+  /**
+   * How its advice call ended: not sent (cold, prefiltered, not held, not admitted), failed (timeout,
+   * provider error, invalid response), or answered (spoke, no-comment, or omitted by the budget).
+   */
+  readonly outcome: AdviceOutcome;
   /** The trigger point it was asked at. */
   readonly trigger: TriggerPoint;
   readonly reason?: string;
@@ -169,6 +152,10 @@ export interface DomainContribution {
   /** The missed user messages it was asked on with this one (`user-message` only). */
   readonly earlier?: { readonly count: number; readonly dropped: number };
 }
+
+/** A cold or prefiltered Warden was given nothing: no call, so no inputs and no missed messages. */
+export const givenNothing = (outcome: AdviceOutcome): boolean =>
+  outcome.status === 'not-sent' && (outcome.cause === 'cold' || outcome.cause === 'prefiltered');
 
 /** The immutable input every participant assessed. */
 export interface PlanInput {
@@ -324,10 +311,11 @@ export interface InvalidationEvent {
   source?: string;
 }
 
-/** One domain guard's outcome for one observation. Only `completed` certifies its findings. */
+/** One domain guard's outcome for one observation. Only an `answered` outcome certifies its findings. */
 export interface GuardOutcome {
   readonly domain: string;
-  readonly status: GuardStatus;
+  /** How the check ended; only `answered` certifies its findings. */
+  readonly outcome: GuardCheckOutcome;
   readonly findings: number;
   /** What this domain said (its findings' descriptions), when it spoke. */
   readonly notes?: readonly string[];
@@ -377,7 +365,7 @@ export interface GuardReport {
   prefilter?: PrefilterRun;
   /** Per-domain outcome, in configured order. Distinguishes a completed all-clear from a failed or malformed check. */
   outcomes: GuardOutcome[];
-  /** Domains whose check did not complete: provider-error, invalid-response or not-admitted. No all-clear exists for them. */
+  /** Domains whose check did not complete: any failure, or not sent because not held, not admitted or over budget. No all-clear exists for them. */
   failed: string[];
   /** Time taken for the full guard flow (ms). */
   elapsed: number;
@@ -441,7 +429,7 @@ export interface HandBackMoment {
 export interface BriefReport {
   /** The moment the Wardens were given, frozen: the handoff or work item as text. */
   readonly input: PlanInput;
-  /** Per Warden, in configured order: contribute (the brief), no-comment, skipped, excluded, timeout or error. */
+  /** Per Warden, in configured order: its call outcome (spoke with the brief, no comment, not sent or failed). */
   readonly contributions: DomainContribution[];
   /** The pre-filter's call for this handoff, when it is on. */
   readonly prefilter?: PrefilterRun;
@@ -1017,19 +1005,16 @@ export class FlowOrchestrator {
     // records why. Recorded input is what the provider interface was given, not native receipt.
     let observed: AdviceRequestEvidence | null = null;
     let served: ServedModel | null = null;
-    const request = (
-      decision: ContributionDecision,
-      reason: string | undefined,
-    ): ParticipantRequest =>
+    const request = (outcome: AdviceOutcome, reason: string | undefined): ParticipantRequest =>
       observed
         ? suppliedRequest(observed, served)
         : {
             status: 'not-sent',
             phase: 'advice',
-            reason: reason ?? `${decision} before any provider call`,
+            reason: reason ?? `${callOutcomeLabel(outcome)} before any provider call`,
           };
     const decided = (
-      decision: ContributionDecision,
+      outcome: AdviceOutcome,
       extra: Partial<
         Pick<
           DomainContribution,
@@ -1047,28 +1032,30 @@ export class FlowOrchestrator {
       > = {},
     ): DomainContribution => ({
       domain: p.lib.domain,
-      decision,
+      outcome,
       trigger,
       layers: [],
       snippets: [],
       confidence: 0,
       ...extra,
-      ...(earlier && decision !== 'skipped'
+      ...(earlier && !givenNothing(outcome)
         ? { earlier: { count: earlier.messages.length, dropped: earlier.dropped } }
         : {}),
-      // A skipped domain was given nothing: no call, so no inputs to record.
-      segments:
-        decision === 'skipped'
-          ? { instructions: '', domainKnowledge: '', threadKnowledge: '' }
-          : segments,
+      segments: givenNothing(outcome)
+        ? { instructions: '', domainKnowledge: '', threadKnowledge: '' }
+        : segments,
       provenance: provenance(),
-      request: request(decision, extra.reason),
+      request: request(outcome, extra.reason),
     });
+    const notSent = (cause: Extract<AdviceOutcome, { status: 'not-sent' }>['cause']) =>
+      ({ status: 'not-sent', cause }) as const;
+    const failed = (cause: Extract<AdviceOutcome, { status: 'failed' }>['cause']) =>
+      ({ status: 'failed', cause }) as const;
 
-    if (!p.cache) return decided('skipped', { reason: 'cold-cache' });
-    if (skip) return decided('skipped', { reason: 'prefilter', prefilter: skip });
-    // Queued behind the pool until the plan deadline passed: never started.
-    if (clock.passed()) return decided('excluded', { reason: 'deadline-queued' });
+    if (!p.cache) return decided(notSent('cold'), { reason: 'cold-cache' });
+    if (skip) return decided(notSent('prefiltered'), { reason: 'prefilter', prefilter: skip });
+    // Queued behind the pool until the plan deadline passed: never sent.
+    if (clock.passed()) return decided(notSent('not-admitted'), { reason: 'deadline-queued' });
 
     const task = p.lib
       .advise(input.message, input.threadState, {
@@ -1100,11 +1087,12 @@ export class FlowOrchestrator {
       // The provider call itself is still running; count it until it settles.
       this._trackOutstanding(task);
       outstanding.push({ kind: 'advise', participant: p.lib.domain, startedAt });
-      return decided('timeout', { reason: raced.reason });
+      return decided(failed('timeout'), { reason: raced.reason });
     }
-    const outcome = raced.value;
-    if (outcome.kind === 'error') return decided('error', { reason: outcome.error });
-    const { result } = outcome;
+    const settled = raced.value;
+    if (settled.kind === 'error')
+      return decided(failed('provider-error'), { reason: settled.error });
+    const { result } = settled;
     // A staged Warden's run is journalled whatever it decided, with every later stage's exact input.
     const staged = {
       ...(result.classified ? { classified: classifiedSummary(result.classified) } : {}),
@@ -1112,22 +1100,22 @@ export class FlowOrchestrator {
         ? { stageRequests: result.stageRequests.map((e) => suppliedRequest(e)) }
         : {}),
     };
-    if (result.error) return decided('error', { reason: result.error, ...staged });
-    if (result.skipped) return decided('skipped', { reason: result.skipped, ...staged });
-    if (result.notStarted)
-      return decided('excluded', {
-        reason: result.notStarted,
+    const outcome = adviceOutcomeOf(result);
+    if (outcome.status === 'failed') return decided(outcome, { reason: result.error, ...staged });
+    if (outcome.status === 'not-sent')
+      return decided(outcome, {
+        reason: result.notSent?.reason,
         // Skipped unsent on a user message: it catches up on the next one, so it is not degraded.
         // A used-up quota is said once in the strip, not as a degraded Warden every round.
         ...(catchingUp &&
-        (result.notStarted === NOT_HELD_REFUSAL || result.notStarted === QUOTA_PAUSED_REFUSAL)
+        (outcome.cause === 'not-held' || result.notSent?.reason === QUOTA_PAUSED_REFUSAL)
           ? { catchesUp: true as const }
           : {}),
         ...staged,
       });
     const repaired = result.repairs?.length ? { repairs: result.repairs } : {};
-    if (result.noComment) return decided('no-comment', { ...repaired, ...staged });
-    return decided('contribute', {
+    if (outcome.result === 'no-comment') return decided(outcome, { ...repaired, ...staged });
+    return decided(outcome, {
       layers: [...result.layers],
       snippets: [...result.snippets],
       confidence: result.confidence,
@@ -1196,11 +1184,15 @@ export class FlowOrchestrator {
     let budgetUsed = 0;
 
     const contributions = assessed.map((c) => {
-      if (c.decision !== 'contribute') return c;
+      if (!adviceSpoke(c.outcome)) return c;
       const size = c.snippets.join('\n').length;
       if (budgetUsed + size > this._contributionBudget) {
         omissions.push({ domain: c.domain, reason: 'budget' });
-        return { ...c, decision: 'omitted' as const, reason: 'budget' };
+        return {
+          ...c,
+          outcome: { status: 'answered', result: 'omitted-budget' } as const,
+          reason: 'budget',
+        };
       }
       budgetUsed += size;
       for (const layer of c.layers) layerSet.add(layer);
@@ -1477,8 +1469,9 @@ export class FlowOrchestrator {
             const refused = (err as { admission?: unknown })?.admission === 'not-admitted';
             return {
               findings: [],
-              ran: true,
-              status: refused ? 'not-admitted' : 'provider-error',
+              outcome: refused
+                ? { status: 'not-sent', cause: 'not-admitted' }
+                : { status: 'failed', cause: 'provider-error' },
               admission: refused ? 'not-admitted' : 'unknown',
               error: String((err as Error)?.message ?? err).slice(0, 200),
               threadKnowledgeRevision: frozen[i].threadKnowledgeRevision,
@@ -1507,16 +1500,17 @@ export class FlowOrchestrator {
     for (let i = 0; i < domainsToCheck.length; i++) {
       const r = results[i];
       domainsChecked.push(domainsToCheck[i].domain);
-      if (r.status === 'completed') findings.push(...r.findings);
+      const answered = r.outcome.status === 'answered';
+      if (answered) findings.push(...r.findings);
       outcomes.push({
         domain: domainsToCheck[i].domain,
-        status: r.status,
-        findings: r.status === 'completed' ? r.findings.length : 0,
-        ...(r.status === 'completed' && r.findings.length
+        outcome: r.outcome,
+        findings: answered ? r.findings.length : 0,
+        ...(answered && r.findings.length
           ? { notes: r.findings.slice(0, 8).map((f) => f.description.slice(0, 500)) }
           : {}),
-        ...(r.status === 'completed' && r.noComment ? { noComment: true as const } : {}),
-        ...(r.status === 'completed' && r.repairs?.length ? { repairs: r.repairs } : {}),
+        ...(answered && r.noComment ? { noComment: true as const } : {}),
+        ...(answered && r.repairs?.length ? { repairs: r.repairs } : {}),
         ...(r.error !== undefined ? { error: r.error } : {}),
         ...(r.admission !== undefined ? { admission: r.admission } : {}),
         ...(r.threadKnowledgeRevision !== undefined
@@ -1531,12 +1525,15 @@ export class FlowOrchestrator {
           : {}),
       });
     }
+    // Not completed: failed, or refused unsent by the queue or role budget (a cold Warden has nothing to check yet).
     const failed = outcomes
       .filter(
         (o) =>
-          o.status === 'provider-error' ||
-          o.status === 'invalid-response' ||
-          o.status === 'not-admitted',
+          o.outcome.status === 'failed' ||
+          (o.outcome.status === 'not-sent' &&
+            (o.outcome.cause === 'not-admitted' ||
+              o.outcome.cause === 'not-held' ||
+              o.outcome.cause === 'over-budget')),
       )
       .map((o) => o.domain);
 
@@ -1710,8 +1707,8 @@ function composeDecoration(
   // Only a contribution the budget dropped is news to the session (its notes are missing). Silence,
   // skips and failures add nothing to the turn, not even a line; the journal keeps every decision.
   const decisions = plan.contributions
-    .filter((c) => c.decision === 'omitted')
-    .map((c) => `${c.domain}: ${c.decision}${c.reason ? ` (${c.reason})` : ''}`);
+    .filter((c) => c.outcome.status === 'answered' && c.outcome.result === 'omitted-budget')
+    .map((c) => `${c.domain}: omitted${c.reason ? ` (${c.reason})` : ''}`);
   const routingLine =
     plan.routing.status === 'routed'
       ? `Router selected domains: ${plan.routing.domains.length ? plan.routing.domains.join(', ') : 'none'} (confidence ${plan.routing.confidence}).`
@@ -1736,7 +1733,7 @@ function composeDecoration(
   // appended to the end of the user's message as its own note.
   // A contribution of layers only adds context; it has nothing to say.
   for (const c of plan.contributions) {
-    if (c.decision !== 'contribute' || !c.snippets.length) continue;
+    if (!adviceSpoke(c.outcome) || !c.snippets.length) continue;
     blocks.push({
       role: 'content',
       id: `decoration:${c.domain}`,
@@ -1760,7 +1757,7 @@ function composeDecoration(
       const deliveredCacheHash = deliveredByDomain.get(c.domain);
       return {
         id: c.domain,
-        decision: c.decision,
+        outcome: c.outcome,
         ...(c.reason ? { reason: c.reason } : {}),
         segments: c.segments,
         request: c.request,
@@ -1855,7 +1852,7 @@ export function handBackText(moment: HandBackMoment): string {
  */
 function betweenTurnNotes(idPrefix: string, heading: string, report: BriefReport): PromptBlock[] {
   return report.contributions
-    .filter((c) => c.decision === 'contribute' && c.snippets.length)
+    .filter((c) => adviceSpoke(c.outcome) && c.snippets.length)
     .map((c) => ({
       role: 'content' as const,
       id: `${idPrefix}:${c.domain}`,

@@ -25,8 +25,25 @@ test('a Layer 1 timeout inside the stage run is a silent timeout at layer 1', ()
     degradedWardens([
       {
         domain: 'db',
-        decision: 'error',
+        outcome: { status: 'failed', cause: 'timeout' },
         reason: 'stage 1 timed out',
+        classified: {
+          stages: [stage(0, { timedOut: true, error: 'no answer within 900ms' })],
+        },
+      },
+    ]),
+  ).toEqual([
+    { domain: 'db', kind: 'timeout', layer: 1, silent: true, reason: 'no answer within 900ms' },
+  ]);
+});
+
+test('a provider error whose stage trace timed out still reads as a timeout at layer 1', () => {
+  expect(
+    degradedWardens([
+      {
+        domain: 'db',
+        outcome: { status: 'failed', cause: 'provider-error' },
+        reason: 'stage 1 failed',
         classified: {
           stages: [stage(0, { timedOut: true, error: 'no answer within 900ms' })],
         },
@@ -39,7 +56,13 @@ test('a Layer 1 timeout inside the stage run is a silent timeout at layer 1', ()
 
 test("the orchestrator's deadline (no stage reported) is a silent timeout at an unknown layer", () => {
   expect(
-    degradedWardens([{ domain: 'db', decision: 'timeout', reason: 'no answer within 8000ms' }]),
+    degradedWardens([
+      {
+        domain: 'db',
+        outcome: { status: 'failed', cause: 'timeout' },
+        reason: 'no answer within 8000ms',
+      },
+    ]),
   ).toEqual([
     { domain: 'db', kind: 'timeout', layer: null, silent: true, reason: 'no answer within 8000ms' },
   ]);
@@ -50,7 +73,7 @@ test('a Layer 2 failure after a recognising yes is silent: the pointer was lost'
     degradedWardens([
       {
         domain: 'locks',
-        decision: 'no-comment',
+        outcome: { status: 'answered', result: 'no-comment' },
         classified: {
           fallback: 'timeout',
           stages: [stage(0, { outcome: 'yes' }), stage(1, { timedOut: true, error: 'late' })],
@@ -65,7 +88,7 @@ test("a Layer 2 failure where a pointing Layer 1's answer stood is shown, not si
     degradedWardens([
       {
         domain: 'locks',
-        decision: 'contribute',
+        outcome: { status: 'answered', result: 'spoke' },
         classified: {
           fallback: 'error',
           stages: [stage(0, { outcome: 'yes' }), stage(1, { error: 'provider failed' })],
@@ -80,11 +103,15 @@ test("a Layer 2 failure where a pointing Layer 1's answer stood is shown, not si
 test('never admitted is not-started; real answers and skips are not degraded', () => {
   expect(
     degradedWardens([
-      { domain: 'a', decision: 'excluded', reason: 'deadline-queued' },
-      { domain: 'b', decision: 'no-comment' },
-      { domain: 'c', decision: 'contribute' },
-      { domain: 'd', decision: 'skipped', reason: 'cold-cache' },
-      { domain: 'e', decision: 'omitted', reason: 'budget' },
+      {
+        domain: 'a',
+        outcome: { status: 'not-sent', cause: 'not-admitted' },
+        reason: 'deadline-queued',
+      },
+      { domain: 'b', outcome: { status: 'answered', result: 'no-comment' } },
+      { domain: 'c', outcome: { status: 'answered', result: 'spoke' } },
+      { domain: 'd', outcome: { status: 'not-sent', cause: 'cold' }, reason: 'cold-cache' },
+      { domain: 'e', outcome: { status: 'answered', result: 'omitted-budget' }, reason: 'budget' },
     ]),
   ).toEqual([
     { domain: 'a', kind: 'not-started', layer: null, silent: true, reason: 'deadline-queued' },
@@ -93,21 +120,27 @@ test('never admitted is not-started; real answers and skips are not degraded', (
 
 test('guard: the checks the report lists as failed, with the layer from the staged run', () => {
   expect(
-    degradedGuards(
-      [
-        { domain: 'ok', status: 'completed', noComment: true, findings: 0 },
-        { domain: 'spoke', status: 'completed', findings: 1 },
-        { domain: 'refused', status: 'not-admitted', error: 'queue full' },
-        {
-          domain: 'late',
-          status: 'provider-error',
-          error: 'stage 1 failed',
-          classified: { stages: [stage(0, { error: 'provider timed out' })] },
-        },
-        { domain: 'cold', status: 'cold-cache' },
-      ],
-      ['refused', 'late'],
-    ),
+    degradedGuards([
+      {
+        domain: 'ok',
+        outcome: { status: 'answered', result: 'all-clear' },
+        noComment: true,
+        findings: 0,
+      },
+      { domain: 'spoke', outcome: { status: 'answered', result: 'findings' }, findings: 1 },
+      {
+        domain: 'refused',
+        outcome: { status: 'not-sent', cause: 'not-admitted' },
+        error: 'queue full',
+      },
+      {
+        domain: 'late',
+        outcome: { status: 'failed', cause: 'provider-error' },
+        error: 'stage 1 failed',
+        classified: { stages: [stage(0, { error: 'provider timed out' })] },
+      },
+      { domain: 'cold', outcome: { status: 'not-sent', cause: 'cold' } },
+    ]),
   ).toEqual([
     { domain: 'refused', kind: 'not-started', layer: null, silent: true, reason: 'queue full' },
     { domain: 'late', kind: 'error', layer: 1, silent: true, reason: 'provider timed out' },
@@ -119,9 +152,13 @@ test('a one-layer Warden fails at Layer 1 by definition; a cold Warden that miss
   expect(
     degradedWardens(
       [
-        { domain: 'db', decision: 'timeout', reason: 'no answer within 8000ms' },
-        { domain: 'cold', decision: 'skipped', reason: 'cold-cache' },
-        { domain: 'empty', decision: 'skipped', reason: 'cold-cache' },
+        {
+          domain: 'db',
+          outcome: { status: 'failed', cause: 'timeout' },
+          reason: 'no answer within 8000ms',
+        },
+        { domain: 'cold', outcome: { status: 'not-sent', cause: 'cold' }, reason: 'cold-cache' },
+        { domain: 'empty', outcome: { status: 'not-sent', cause: 'cold' }, reason: 'cold-cache' },
       ],
       context,
     ),
@@ -224,13 +261,31 @@ test('retries: advice on its recorded moment, the guard on exactly its recorded 
 
 test('a Warden refused because the login is used up is not degraded, in an advice row or a guard', () => {
   expect(
-    degradedWardens([{ domain: 'db', decision: 'excluded', reason: QUOTA_PAUSED_REFUSAL }]),
+    degradedWardens([
+      {
+        domain: 'db',
+        outcome: { status: 'not-sent', cause: 'not-admitted' },
+        reason: QUOTA_PAUSED_REFUSAL,
+      },
+    ]),
   ).toEqual([]);
   expect(
-    degradedGuards([{ domain: 'db', status: 'not-admitted', error: QUOTA_PAUSED_REFUSAL }], ['db']),
+    degradedGuards([
+      {
+        domain: 'db',
+        outcome: { status: 'not-sent', cause: 'not-admitted' },
+        error: QUOTA_PAUSED_REFUSAL,
+      },
+    ]),
   ).toEqual([]);
   // Any other refusal still is.
   expect(
-    degradedGuards([{ domain: 'db', status: 'not-admitted', error: 'deadline-queued' }], ['db']),
+    degradedGuards([
+      {
+        domain: 'db',
+        outcome: { status: 'not-sent', cause: 'not-admitted' },
+        error: 'deadline-queued',
+      },
+    ]),
   ).toHaveLength(1);
 });

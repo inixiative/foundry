@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import {
   ContextStack,
+  callOutcomeLabel,
   Executor,
   FileMemory,
   type LLMMessage,
@@ -126,9 +127,9 @@ test('one message through a live-built thread: the chimes on the message, the re
     'advise-thread:aux:domain:concurrency-locks',
     'advise-thread:aux:domain:lens-model',
   ]);
-  expect(advice.decisions.map((d) => [d.domain, d.decision])).toEqual([
-    ['concurrency-locks', 'contribute'],
-    ['lens-model', 'no-comment'],
+  expect(advice.decisions.map((d) => [d.domain, callOutcomeLabel(d.outcome)])).toEqual([
+    ['concurrency-locks', 'answered:spoke'],
+    ['lens-model', 'answered:no-comment'],
   ]);
   expect(advice.decisions[0]!.pointer).toMatchObject({ pointer: 'createLock', level: 'exact' });
   expect(advice.notes).toEqual([
@@ -193,8 +194,8 @@ test('prime warms every Warden with one decision on its own session before the m
   expect(wardenCalls.filter((id) => id.endsWith('lens-model'))).toHaveLength(2);
   expect(calls.slice(0, primedAt).filter((id) => id.includes(':aux:domain:'))).toHaveLength(2);
   expect(advice.primed?.map((p) => [p.domain, p.outcome])).toEqual([
-    ['concurrency-locks', 'answered'],
-    ['lens-model', 'answered'],
+    ['concurrency-locks', { status: 'answered', result: 'spoke' }],
+    ['lens-model', { status: 'answered', result: 'no-comment' }],
   ]);
   // Priming reaches nothing: the message carries only its own advice.
   expect(advice.notes).toEqual([

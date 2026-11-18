@@ -19,7 +19,7 @@ const participantsFixture = {
     participants: [
       {
         id: 'architecture',
-        decision: 'contribute',
+        outcome: { status: 'answered', result: 'spoke' },
         segments: { instructions: 'I_A', domainKnowledge: 'D_A', threadKnowledge: 'T_A rev1' },
         provenance: {
           threadKnowledgeRevision: 1,
@@ -32,7 +32,7 @@ const participantsFixture = {
       },
       {
         id: 'testing',
-        decision: 'no-comment',
+        outcome: { status: 'answered', result: 'no-comment' },
         segments: { instructions: 'I_T', domainKnowledge: 'D_T', threadKnowledge: '' },
         provenance: { threadKnowledgeRevision: 0, snippets: [] },
       },
@@ -45,7 +45,7 @@ test('participants: exact recorded segments, revision, decision and guidance; em
   expect(record.participants.map((p: any) => p.id)).toEqual(['architecture', 'testing']);
   const [a, t] = record.participants;
   expect(a!).toMatchObject({
-    decision: 'contribute',
+    outcome: { status: 'answered', result: 'spoke' },
     revision: 1,
     cacheHash: 'c1',
     revisionDrift: false,
@@ -56,7 +56,12 @@ test('participants: exact recorded segments, revision, decision and guidance; em
     domainKnowledge: 'D_A',
     threadKnowledge: 'T_A rev1',
   });
-  expect(t!).toMatchObject({ decision: 'no-comment', revision: 0, reason: null, snippets: [] });
+  expect(t!).toMatchObject({
+    outcome: { status: 'answered', result: 'no-comment' },
+    revision: 0,
+    reason: null,
+    snippets: [],
+  });
   expect(t!.segments.threadKnowledge).toBe('');
   expect(record.omissions).toEqual([{ id: 'security', reason: 'timeout' }]);
 });
@@ -66,7 +71,9 @@ test('participants: no decoration means not recorded (null), never an empty part
   expect(expertParticipants(undefined)).toBeNull();
   const partial = expertParticipants({
     decoration: {
-      participants: [{ id: 'x', decision: 'contribute', segments: {}, provenance: {} }],
+      participants: [
+        { id: 'x', outcome: { status: 'answered', result: 'spoke' }, segments: {}, provenance: {} },
+      ],
     },
   })!;
   expect(partial.participants[0]!.segments).toEqual({

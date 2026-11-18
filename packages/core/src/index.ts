@@ -91,6 +91,23 @@ export {
   type LifecycleHandler,
   type LifecycleRule,
 } from './cache-lifecycle';
+// One outcome per Warden call (advice, guard, the debug reason query)
+export {
+  ADVICE_RESULTS,
+  type AdviceOutcome,
+  type AdviceResult,
+  adviceSpoke,
+  type CallFailedCause,
+  type CallNotSentCause,
+  type CallOutcome,
+  callOutcomeLabel,
+  GUARD_CHECK_RESULTS,
+  type GuardCheckOutcome,
+  type GuardCheckResult,
+  type NotSentCall,
+  parseCallOutcome,
+  recordedOutcomeLabel,
+} from './call-outcome';
 // Capabilities (permission flags + gating)
 export {
   BROWSER_POLICY,

@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   ContextStack,
+  callOutcomeLabel,
   EventStream,
   Executor,
   Harness,
@@ -77,12 +78,12 @@ test('flow snapshot: recent turns as recorded flows, learning history and commit
   expect(
     t1.plan.contributions.map((c: any) => [
       c.domain,
-      c.decision,
+      callOutcomeLabel(c.outcome),
       c.provenance.threadKnowledgeRevision,
     ]),
   ).toEqual([
-    ['architecture', 'contribute', 0],
-    ['testing', 'contribute', 0],
+    ['architecture', 'answered:spoke', 0],
+    ['testing', 'answered:spoke', 0],
   ]);
   expect(t2.plan.contributions.map((c: any) => c.provenance.threadKnowledgeRevision)).toEqual([
     1, 1,

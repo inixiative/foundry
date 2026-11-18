@@ -56,7 +56,7 @@ async function observedState(failed: boolean) {
     });
     const originalActivity = structuredClone(librarian.state.recentActivity);
     const report = await flow.postAction(oneCall(observation));
-    expect(report.outcomes[0]!.status).toBe(failed ? 'provider-error' : 'completed');
+    expect(report.outcomes[0]!.outcome.status).toBe(failed ? 'failed' : 'answered');
     return { originalActivity, activity: structuredClone(librarian.state.recentActivity) };
   } finally {
     flow.dispose();
@@ -104,7 +104,7 @@ test('legacy guard reports say unrecorded and never expose private inputs or err
         guardOutcomes: [
           {
             domain: 'architecture',
-            status: 'provider-error',
+            outcome: { status: 'failed', cause: 'provider-error' },
             error: 'PRIVATE_ERROR',
             request: 'PRIVATE_REQUEST',
           },
@@ -112,7 +112,9 @@ test('legacy guard reports say unrecorded and never expose private inputs or err
       },
       timestamp: 2,
     });
-    expect(librarian.state.recentActivity.at(-1)).toBe('Guard (architecture): provider-error');
+    expect(librarian.state.recentActivity.at(-1)).toBe(
+      'Guard (architecture): failed:provider-error',
+    );
     expect(librarian.layer.content).not.toContain('PRIVATE_');
   } finally {
     librarian.dispose();

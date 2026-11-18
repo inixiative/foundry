@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import {
   ContextLayer,
   ContextStack,
+  callOutcomeLabel,
   computeHash,
   Executor,
   type LLMMessage,
@@ -139,7 +140,9 @@ describe('parallel message decoration', () => {
     const plan = await flow.preMessage('All of you');
     expect([...calls.keys()].sort()).toEqual(['a', 'b', 'c', 'd']);
     expect(
-      plan.contributions.filter((c) => c.decision === 'contribute').map((c) => c.domain),
+      plan.contributions
+        .filter((c) => callOutcomeLabel(c.outcome) === 'answered:spoke')
+        .map((c) => c.domain),
     ).toEqual(['a', 'b', 'c', 'd']);
   });
 
@@ -158,7 +161,7 @@ describe('parallel message decoration', () => {
     });
     const plan = await flow.preMessage('Wait for nobody');
     const slow = plan.contributions.find((c) => c.domain === 'slow')!;
-    expect(slow.decision).toBe('timeout');
+    expect(callOutcomeLabel(slow.outcome)).toBe('failed:timeout');
     expect(plan.snippets).toEqual(['ADVICE-fast']);
     expect(plan.domainsConsulted).toEqual(['fast', 'slow']);
     expect(Object.isFrozen(plan)).toBe(true);
@@ -181,9 +184,11 @@ describe('parallel message decoration', () => {
     });
     const plan = await flow.preMessage('Some fail');
     const broken = plan.contributions.find((c) => c.domain === 'broken')!;
-    expect(broken.decision).toBe('error');
+    expect(callOutcomeLabel(broken.outcome)).toBe('failed:provider-error');
     expect(broken.reason).toContain('adviser exploded');
-    expect(plan.contributions.find((c) => c.domain === 'ok')!.decision).toBe('contribute');
+    expect(callOutcomeLabel(plan.contributions.find((c) => c.domain === 'ok')!.outcome)).toBe(
+      'answered:spoke',
+    );
     expect(plan.snippets).toEqual(['ADVICE-ok']);
   });
 
@@ -191,10 +196,10 @@ describe('parallel message decoration', () => {
     const { flow, calls } = setup(['cold', 'stale', 'warm'], { cold: ['cold'], stale: ['stale'] });
     const plan = await flow.preMessage('Freshness matters');
     const byDomain = Object.fromEntries(plan.contributions.map((c) => [c.domain, c]));
-    expect(byDomain.cold.decision).toBe('skipped');
+    expect(callOutcomeLabel(byDomain.cold.outcome)).toBe('not-sent:cold');
     expect(byDomain.cold.reason).toBe('cold-cache');
     expect(calls.has('cold')).toBe(false);
-    expect(byDomain.stale.decision).toBe('contribute');
+    expect(callOutcomeLabel(byDomain.stale.outcome)).toBe('answered:spoke');
     expect(byDomain.stale.provenance.cacheState).toBe('stale');
     expect(byDomain.warm.provenance.cacheState).toBe('warm');
   });
@@ -222,23 +227,28 @@ describe('parallel message decoration', () => {
     const block = prepared.decoration.blocks.find((b) => b.source === 'security')!;
     expect(block.segment).toBe('domain-knowledge');
     expect(block.text).toContain('ADVICE-security');
-    expect(prepared.decoration.participants.map((p) => [p.id, p.decision])).toEqual([
-      ['security', 'contribute'],
-    ]);
+    expect(
+      prepared.decoration.participants.map((p) => [p.id, callOutcomeLabel(p.outcome)]),
+    ).toEqual([['security', 'answered:spoke']]);
   });
 
   test('budget exclusions are recorded as omissions, not silently dropped', async () => {
     const { flow } = setup(['first', 'second'], { budget: 'ADVICE-first'.length });
     const plan = await flow.preMessage('Tight budget');
     expect(plan.snippets).toEqual(['ADVICE-first']);
-    expect(plan.contributions.find((c) => c.domain === 'second')!.decision).toBe('omitted');
+    expect(callOutcomeLabel(plan.contributions.find((c) => c.domain === 'second')!.outcome)).toBe(
+      'answered:omitted-budget',
+    );
     expect(plan.omissions).toEqual([{ domain: 'second', reason: 'budget' }]);
   });
 
   test("a domain contributing against the router's selection is an observable conflict", async () => {
     const { flow } = setup(['chosen', 'unchosen'], { routeDomains: ['chosen'] });
     const plan = await flow.preMessage('Router disagrees');
-    expect(plan.contributions.map((c) => c.decision)).toEqual(['contribute', 'contribute']);
+    expect(plan.contributions.map((c) => callOutcomeLabel(c.outcome))).toEqual([
+      'answered:spoke',
+      'answered:spoke',
+    ]);
     expect(plan.conflicts).toEqual([
       { kind: 'routing-excluded', domain: 'unchosen', detail: expect.any(String) },
     ]);
@@ -437,11 +447,11 @@ describe('bounded routing and whole-plan deadlines', () => {
     });
     const plan = await flow.preMessage('Plan deadline');
     const byDomain = Object.fromEntries(plan.contributions.map((c) => [c.domain, c]));
-    expect(byDomain.first.decision).toBe('timeout');
+    expect(callOutcomeLabel(byDomain.first.outcome)).toBe('failed:timeout');
     expect(byDomain.first.reason).toContain('plan deadline');
-    expect(byDomain.second.decision).toBe('excluded');
+    expect(callOutcomeLabel(byDomain.second.outcome)).toBe('not-sent:not-admitted');
     expect(byDomain.second.reason).toBe('deadline-queued');
-    expect(byDomain.third.decision).toBe('excluded');
+    expect(callOutcomeLabel(byDomain.third.outcome)).toBe('not-sent:not-admitted');
     expect(calls.has('second')).toBe(false);
     expect(calls.has('third')).toBe(false);
     expect(plan.outstanding.map((o) => o.participant)).toEqual(['first']);
@@ -548,9 +558,9 @@ describe('production runtime delivery', () => {
     expect(artifact.userMessage).toBe('ORIGINAL-USER-MESSAGE');
     expect(artifact.providerMessages).toEqual(getProviderInput());
     expect(JSON.stringify(artifact.providerMessages)).toContain('GENERATED-ADVICE-ONLY');
-    expect(artifact.decoration?.participants.map((p) => [p.id, p.decision])).toEqual([
-      ['security', 'contribute'],
-    ]);
+    expect(
+      artifact.decoration?.participants.map((p) => [p.id, callOutcomeLabel(p.outcome)]),
+    ).toEqual([['security', 'answered:spoke']]);
     expect(
       artifact.decoration?.blocks.some(
         (b) => b.source === 'security' && b.segment === 'domain-knowledge',

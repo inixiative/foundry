@@ -3,8 +3,10 @@ import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
+  type AdviceOutcome,
   ContextLayer,
   ContextStack,
+  callOutcomeLabel,
   type LLMMessage,
   type LLMProvider,
   SignalBus,
@@ -266,12 +268,12 @@ test('a NO_COMMENT adds nothing to the message delivered to the native session',
   const message = 'Harden the security of the webhook endpoint';
   const result = await silent.thread.dispatch('worker', message, undefined, { messageId: 'm1' });
   const injection = result.meta?.injection as
-    | { plan?: { contributions: Array<{ domain: string; decision: string }> } }
+    | { plan?: { contributions: Array<{ domain: string; outcome: AdviceOutcome }> } }
     | undefined;
   const plan = injection?.plan;
   // Consulted (the trigger fired), answered NO_COMMENT, and journalled as such.
-  expect(plan?.contributions.map((c) => [c.domain, c.decision])).toEqual([
-    ['security', 'no-comment'],
+  expect(plan?.contributions.map((c) => [c.domain, callOutcomeLabel(c.outcome)])).toEqual([
+    ['security', 'answered:no-comment'],
   ]);
   const delivered = text(silent.inputs[0]!);
   expect(delivered).toContain(message);
@@ -370,8 +372,10 @@ test('user-message: every Warden is asked on every message, whatever it says', a
     calls.length = 0;
     const plan = await flow.preMessage(message);
     expect(calls).toEqual(Object.keys(DOMAINS).map((domain) => ({ domain, phase: 'advice' })));
-    expect(plan.contributions.map((c) => [c.domain, c.decision, c.trigger])).toEqual(
-      Object.keys(DOMAINS).map((domain) => [domain, 'no-comment', 'user-message']),
+    expect(
+      plan.contributions.map((c) => [c.domain, callOutcomeLabel(c.outcome), c.trigger]),
+    ).toEqual(
+      Object.keys(DOMAINS).map((domain) => [domain, 'answered:no-comment', 'user-message']),
     );
   }
 });
@@ -385,7 +389,7 @@ test('agent-action: every Warden whose guard triggers name the tool is asked; th
     }),
   );
   expect(calls).toEqual(Object.keys(DOMAINS).map((domain) => ({ domain, phase: 'guard' })));
-  expect(edit.outcomes.every((o) => o.status === 'completed' && o.noComment)).toBe(true);
+  expect(edit.outcomes.every((o) => o.outcome.status === 'answered' && o.noComment)).toBe(true);
   expect(edit.skipped).toEqual([]);
 
   calls.length = 0;
@@ -553,15 +557,16 @@ test('24 Wardens, every one asked on every turn: a queue sized for the roster ad
     const before = calls.length;
     const plan = await flow.preMessage(turn.say);
     for (const c of plan.contributions) {
-      if (['error', 'timeout', 'excluded'].includes(c.decision))
-        problems.push(`${c.domain} ${c.decision} ${c.reason}`);
-      if (c.decision !== 'skipped') decided++;
-      if (c.decision === 'no-comment') silent++;
+      if (c.outcome.status === 'failed' || callOutcomeLabel(c.outcome) === 'not-sent:not-admitted')
+        problems.push(`${c.domain} ${callOutcomeLabel(c.outcome)} ${c.reason}`);
+      if (c.outcome.status !== 'not-sent') decided++;
+      if (callOutcomeLabel(c.outcome) === 'answered:no-comment') silent++;
     }
     if (turn.act?.length) {
       const report = await flow.postAction({ turnId: null, observations: turn.act });
       for (const o of report.outcomes) {
-        if (o.status !== 'completed') problems.push(`${o.domain} guard ${o.status} ${o.error}`);
+        if (o.outcome.status !== 'answered')
+          problems.push(`${o.domain} guard ${callOutcomeLabel(o.outcome)} ${o.error}`);
         decided++;
         if (o.noComment) silent++;
       }
@@ -582,7 +587,7 @@ test('24 Wardens, every one asked on every turn: a queue sized for the roster ad
 
 test('a Warden the decision queue refused for capacity is excluded, not an error; any other refusal is an error', async () => {
   const refused = Object.assign(Error('Subscription decision expired in queue'), {
-    decisionCapacity: true,
+    notSentCause: 'not-admitted',
   });
   const loggedOut = Error('Authenticated native subscription required');
   const signals = new SignalBus();
@@ -619,12 +624,14 @@ test('a Warden the decision queue refused for capacity is excluded, not an error
     librarian.dispose();
   });
   const plan = await flow.preMessage('Tidy the Prisma schema');
-  expect(plan.contributions.map((c) => [c.decision, c.reason])).toEqual([
-    ['excluded', 'Subscription decision expired in queue'],
+  expect(plan.contributions.map((c) => [callOutcomeLabel(c.outcome), c.reason])).toEqual([
+    ['not-sent:not-admitted', 'Subscription decision expired in queue'],
   ]);
   // A refusal that is not capacity (logged out, misconfigured) is a failure, never a quiet skip.
   const broken = await flow.preMessage('Add an index');
-  expect(broken.contributions.map((c) => c.decision)).toEqual(['error']);
+  expect(broken.contributions.map((c) => callOutcomeLabel(c.outcome))).toEqual([
+    'failed:provider-error',
+  ]);
 });
 
 test('the charter eval asks every Warden per probe as one turn, under the candidate charter, and judges every remark', async () => {

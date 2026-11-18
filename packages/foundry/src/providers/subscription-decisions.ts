@@ -17,8 +17,11 @@ import {
 } from '@inixiative/foundry-core';
 import {
   DECISION_CALL_TIMEOUT_MAX_MS,
+  type DecisionFailedCause,
   NOT_HELD_REFUSAL,
   QUOTA_PAUSED_REFUSAL,
+  type RefusedUnsentCause,
+  refusedUnsent,
 } from './decision-budget';
 import { DECISION_PRIORITY } from './decision-priority';
 import type { NativeTextCall, NativeTextConfig } from './native-text-provider';
@@ -230,18 +233,18 @@ export function buildSubscriptionDecisions(
       /* Observers cannot change scheduling. */
     }
   };
-  /** `capacity`: refused for queue capacity (full, shed, expired waiting), not for auth, config or budget. */
-  const reject = (message: string, capacity = false) => {
-    const error = capacity
-      ? Object.assign(Error(message), { decisionCapacity: true })
+  /** `notSent`: refused before dispatch (not held warm, closed, full, expired, used up); a refused priority is a failure. */
+  const reject = (message: string, notSent?: RefusedUnsentCause) => {
+    const error = notSent
+      ? Object.assign(Error(message), { notSentCause: notSent })
       : Error(message);
     outcomes.set(error, { admission: 'not-admitted', settlement: 'settled' });
     return error;
   };
-  const refuseQueued = (message: string, capacity: boolean) => {
+  const refuseQueued = (message: string, notSent?: RefusedUnsentCause) => {
     for (const pending of queue.splice(0)) {
       clearTimeout(pending.timer);
-      pending.reject(reject(message, capacity));
+      pending.reject(reject(message, notSent));
     }
   };
   /**
@@ -254,7 +257,7 @@ export function buildSubscriptionDecisions(
     clearTimeout(backoffTimer);
     backoffTimer = undefined;
     if (until !== undefined) {
-      refuseQueued(QUOTA_PAUSED_REFUSAL, true);
+      refuseQueued(QUOTA_PAUSED_REFUSAL, 'not-admitted');
       pressure({ kind: 'quota-paused', until });
       return;
     }
@@ -267,11 +270,11 @@ export function buildSubscriptionDecisions(
     if (!closed) pressure({ kind: 'closed', reason });
     closed = true;
     unsubscribeQuota?.();
-    refuseQueued('Subscription decision admission closed', false);
+    refuseQueued('Subscription decision admission closed', 'not-admitted');
   };
   const check = (pending: Pending) => {
     if (closed || Date.now() >= pending.deadline)
-      throw reject('Subscription decision expired or revoked');
+      throw reject('Subscription decision expired or revoked', 'not-admitted');
   };
   const find = (owner: NativeOwner, id: string) => {
     const record = records.get(id);
@@ -303,7 +306,7 @@ export function buildSubscriptionDecisions(
       }
       return;
     }
-    if (quotaPausedUntil() !== undefined) return refuseQueued(QUOTA_PAUSED_REFUSAL, true);
+    if (quotaPausedUntil() !== undefined) return refuseQueued(QUOTA_PAUSED_REFUSAL, 'not-admitted');
     if (Date.now() < backoffUntil) {
       backoffTimer ??= setTimeout(() => {
         backoffTimer = undefined;
@@ -354,7 +357,7 @@ export function buildSubscriptionDecisions(
           Promise.resolve(opts.nativeObservation?.preflight?.(owner)),
           new Promise<never>((_, fail) => {
             preflightTimer = setTimeout(
-              () => fail(reject('Subscription preflight deadline')),
+              () => fail(reject('Subscription preflight deadline', 'not-admitted')),
               Math.max(0, pending.deadline - Date.now()),
             );
           }),
@@ -364,7 +367,7 @@ export function buildSubscriptionDecisions(
       }
       check(pending);
       if (attempts >= config.maxCalls || pending.deadline - Date.now() < 100)
-        throw reject('Subscription decision budget exhausted');
+        throw reject('Subscription decision budget exhausted', 'not-admitted');
       attempts++;
       run = createRun({
         ...config,
@@ -475,7 +478,7 @@ export function buildSubscriptionDecisions(
       outcomes.set(completion, { admission: 'attempted', settlement: 'settled' });
       backoffMs = initialBackoff;
       pending.resolve(completion);
-    } catch {
+    } catch (caught) {
       const call = run?.snapshot().calls[0];
       const settled =
         !call ||
@@ -488,16 +491,34 @@ export function buildSubscriptionDecisions(
       // A Warden the project host holds no warm member for is skipped for capacity, not failed.
       // Rate limited on a login now paused as used up: said once by the pause, not failed every round.
       const paused = limited && quotaPausedUntil() !== undefined;
+      // Past its deadline or cancelled once dispatched: the call failed for that, not the provider.
+      const failedCause: DecisionFailedCause | undefined =
+        call?.failure === 'deadline'
+          ? call.reason === 'aborted'
+            ? 'aborted'
+            : 'timeout'
+          : undefined;
+      // Refused here before any run was made (expired, revoked, preflight late, out of calls): kept as given.
       const error =
-        settled && call?.failure === 'not-held'
-          ? reject(NOT_HELD_REFUSAL, true)
-          : paused
-            ? reject(QUOTA_PAUSED_REFUSAL, true)
-            : Error(
-                limited
-                  ? 'Subscription decision rate limited; no fallback or retry'
-                  : 'Subscription decision failed; no fallback or retry',
-              );
+        !run && refusedUnsent(caught)
+          ? (caught as Error)
+          : settled && call?.failure === 'not-held'
+            ? reject(NOT_HELD_REFUSAL, 'not-held')
+            : paused
+              ? reject(QUOTA_PAUSED_REFUSAL, 'not-admitted')
+              : settled && call?.failure === 'not-admitted'
+                ? reject(
+                    'Subscription decision refused before dispatch; no fallback or retry',
+                    'not-admitted',
+                  )
+                : Object.assign(
+                    Error(
+                      limited
+                        ? 'Subscription decision rate limited; no fallback or retry'
+                        : 'Subscription decision failed; no fallback or retry',
+                    ),
+                    failedCause ? { failedCause } : {},
+                  );
       if (limited && !paused) {
         backoffUntil = Math.max(backoffUntil, Date.now() + backoffMs);
         pressure({ kind: 'rate-limited', until: backoffUntil, backoffMs });
@@ -590,9 +611,11 @@ export function buildSubscriptionDecisions(
     },
     complete(messages, opts = {}) {
       if (closed || attempts >= config.maxCalls)
-        return Promise.reject(reject('Subscription decision admission closed or full'));
+        return Promise.reject(
+          reject('Subscription decision admission closed or full', 'not-admitted'),
+        );
       if (quotaPausedUntil() !== undefined)
-        return Promise.reject(reject(QUOTA_PAUSED_REFUSAL, true));
+        return Promise.reject(reject(QUOTA_PAUSED_REFUSAL, 'not-admitted'));
       const priority = opts.priority ?? DECISION_PRIORITY.turn;
       if (!Number.isFinite(priority))
         return Promise.reject(reject('Subscription decision priority refused'));
@@ -607,11 +630,14 @@ export function buildSubscriptionDecisions(
         if (scope.length < limit) continue;
         const lowest = Math.min(...scope.map((p) => p.priority));
         const victim = lowest < priority ? scope.find((p) => p.priority === lowest) : undefined;
-        if (!victim) return Promise.reject(reject('Subscription decision queue full', true));
+        if (!victim)
+          return Promise.reject(reject('Subscription decision queue full', 'not-admitted'));
         queue.splice(queue.indexOf(victim), 1);
         clearTimeout(victim.timer);
         shed++;
-        victim.reject(reject('Subscription decision shed under load; no fallback or retry', true));
+        victim.reject(
+          reject('Subscription decision shed under load; no fallback or retry', 'not-admitted'),
+        );
         pressure({
           kind: 'shed',
           threadId: victim.thread,
@@ -658,7 +684,7 @@ export function buildSubscriptionDecisions(
               const index = queue.indexOf(pending);
               if (index >= 0) {
                 queue.splice(index, 1);
-                rejectCall(reject('Subscription decision expired in queue', true));
+                rejectCall(reject('Subscription decision expired in queue', 'not-admitted'));
               }
             },
             Math.min(opts.timeout || config.callTimeoutMs, config.callTimeoutMs),

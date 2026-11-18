@@ -38,7 +38,7 @@ for (const fault of ['provider refusal', 'malformed JSON', 'missing findings'] a
     };
     const completed = await good.lib.guard(oneCall(observation));
     const failed = await bad.lib.guard(oneCall(observation));
-    expect(completed).toMatchObject({ findings: [], ran: true });
+    expect(completed).toMatchObject({ findings: [] });
     expect(good.requests).toHaveLength(1);
     expect(bad.requests).toHaveLength(1);
     // Do not prescribe a new result shape; require the failure to remain observable.

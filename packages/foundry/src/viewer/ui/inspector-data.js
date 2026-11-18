@@ -605,7 +605,7 @@ export function expertParticipants(injection, phases) {
       decoration = {
         participants: sealed.record.participants.map((p) => ({
           id: p.domain,
-          decision: p.decision,
+          outcome: p.outcome,
           reason: p.reason,
           segments: p.segments,
           request: p.request,
@@ -630,7 +630,7 @@ export function expertParticipants(injection, phases) {
       : null;
     return {
       id: String(p?.id ?? 'unknown'),
-      decision: typeof p?.decision === 'string' ? p.decision : 'unrecorded',
+      outcome: p?.outcome && typeof p.outcome === 'object' ? p.outcome : null,
       reason: typeof p?.reason === 'string' && p.reason.length ? p.reason : null,
       segments: {
         instructions: typeof segments.instructions === 'string' ? segments.instructions : null,
@@ -782,7 +782,7 @@ function durableGuardEntries(trace) {
             return {
               ...o,
               domain,
-              status: typeof o?.status === 'string' ? o.status : 'unrecorded',
+              outcome: o?.outcome && typeof o.outcome === 'object' ? o.outcome : null,
               findings: Number.isInteger(o?.findings) ? o.findings : 0,
               request,
               reference,
@@ -795,7 +795,7 @@ function durableGuardEntries(trace) {
       .filter((r) => !referenced.has(r.id))
       .map((r) => ({
         domain: String(r.record.domain ?? 'unknown'),
-        status: 'pending',
+        outcome: null,
         findings: 0,
         threadKnowledgeRevision: r.record.threadKnowledgeRevision,
         request: r.record.request,
@@ -831,7 +831,7 @@ export function guardOutcomes(trace) {
     const outcomes = Array.isArray(entry?.outcomes)
       ? entry.outcomes.map((x) => ({
           domain: String(x?.domain ?? 'unknown'),
-          status: typeof x?.status === 'string' ? x.status : 'unrecorded',
+          outcome: x?.outcome && typeof x.outcome === 'object' ? x.outcome : null,
           findings: Number.isInteger(x?.findings) ? x.findings : 0,
           error: typeof x?.error === 'string' && x.error.length ? x.error : null,
           admission: x?.admission === undefined ? null : x.admission,

@@ -50,7 +50,7 @@ test('advisory guard findings and operator corrections are retained as audit-onl
     },
   });
   const result = await lib.guard(oneCall({ tool: 'Write', input: { file_path: 'contacts.ts' } }));
-  expect(result.status).toBe('completed');
+  expect(result.outcome.status).toBe('answered');
   // A Warden only points (advisory); a critical finding comes from a programmatic guard.
   const programmatic = new DomainLibrarian({
     domain: 'memory',
@@ -65,8 +65,8 @@ test('advisory guard findings and operator corrections are retained as audit-onl
   });
   expect(
     (await programmatic.guard(oneCall({ tool: 'Write', input: { file_path: 'contacts.ts' } })))
-      .status,
-  ).toBe('completed');
+      .outcome.status,
+  ).toBe('answered');
   await new InterventionLog().intervene(
     { id: owner.threadId, signals },
     'trace',

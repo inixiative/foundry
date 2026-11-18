@@ -110,7 +110,12 @@ test('guard history joins the referenced input and preserves another same-domain
       status: 'reported',
       requests: { architecture: 'request-1' },
       outcomes: [
-        { domain: 'architecture', status: 'completed', findings: 0, requestRecord: 'request-1' },
+        {
+          domain: 'architecture',
+          outcome: { status: 'answered', result: 'all-clear' },
+          findings: 0,
+          requestRecord: 'request-1',
+        },
       ],
     },
   };
@@ -124,11 +129,11 @@ test('guard history joins the referenced input and preserves another same-domain
     },
   });
   const outcomes = (actual ?? []).flatMap((entry) => entry.outcomes);
-  expect(outcomes.find((entry) => entry.status === 'completed')?.request.messages[0].content).toBe(
-    'ORIGINAL_REQUEST',
-  );
-  expect(outcomes.filter((entry) => entry.status === 'pending')).toHaveLength(1);
-  expect(outcomes.find((entry) => entry.status === 'pending')?.request.messages[0].content).toBe(
+  expect(
+    outcomes.find((entry) => entry.outcome?.status === 'answered')?.request.messages[0].content,
+  ).toBe('ORIGINAL_REQUEST');
+  expect(outcomes.filter((entry) => entry.outcome === null)).toHaveLength(1);
+  expect(outcomes.find((entry) => entry.outcome === null)?.request.messages[0].content).toBe(
     'SECOND_REQUEST',
   );
 });

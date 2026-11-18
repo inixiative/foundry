@@ -209,7 +209,9 @@ test('a failed Warden on the message is degraded, shown on the turn, and Retry a
   expect(sealed.record).toMatchObject({
     trigger: 'user-message',
     moment: 'Snapshot the audit rows',
-    participants: [{ domain: 'architecture', decision: 'error' }],
+    participants: [
+      { domain: 'architecture', outcome: { status: 'failed', cause: 'provider-error' } },
+    ],
     degraded: [{ domain: 'architecture', kind: 'error', layer: 1, silent: true }],
   });
   // Silence is unchanged: the turn went on without it and nothing it would have said reached the session.
@@ -254,7 +256,7 @@ test('a failed Warden on the message is degraded, shown on the turn, and Retry a
   expect(retry.record).toMatchObject({
     trigger: 'user-message',
     retryOf: sealed.id,
-    participants: [{ domain: 'architecture', decision: 'contribute' }],
+    participants: [{ domain: 'architecture', outcome: { status: 'answered', result: 'spoke' } }],
   });
   expect(retry.record.degraded).toBeUndefined();
   // The notice is resolved: the row was asked again and answered.

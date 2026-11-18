@@ -104,14 +104,14 @@ test('guards: per-observation status with per-expert outcomes; pending and faile
             outcomes: [
               {
                 domain: 'architecture',
-                status: 'completed',
+                outcome: { status: 'answered', result: 'findings' },
                 findings: 1,
                 threadKnowledgeRevision: 1,
                 request: { ...supplied, phase: 'guard' },
               },
               {
                 domain: 'testing',
-                status: 'provider-error',
+                outcome: { status: 'failed', cause: 'provider-error' },
                 findings: 0,
                 error: 'CONTROLLED_REFUSAL',
                 admission: {
@@ -147,7 +147,7 @@ test('guards: per-observation status with per-expert outcomes; pending and faile
   });
   expect(guards[0]!.outcomes[0]).toEqual({
     domain: 'architecture',
-    status: 'completed',
+    outcome: { status: 'answered', result: 'findings' },
     findings: 1,
     error: null,
     admission: null,
@@ -164,7 +164,7 @@ test('guards: per-observation status with per-expert outcomes; pending and faile
   });
   expect(guards[0]!.outcomes[1]).toMatchObject({
     domain: 'testing',
-    status: 'provider-error',
+    outcome: { status: 'failed', cause: 'provider-error' },
     findings: 0,
     error: 'CONTROLLED_REFUSAL',
     admission: { nativeOutcome: 'unknown' },

@@ -3,15 +3,13 @@
  * @kind service
  * @partOf feature:wardens
  */
+import { ADVICE_RESULTS, type AdviceOutcome, parseCallOutcome } from '@inixiative/foundry-core';
 import type { EarlierMessages } from './domain-librarian';
 
 /** A Warden catching up is asked on at most this many user messages at once, the current one included. */
 export const CATCH_UP_MAX_MESSAGES = 5;
 /** And on at most about 4k tokens of them; the current message is always sent whole. */
 export const CATCH_UP_MAX_CHARS = 16_000;
-
-/** Decisions that answered a user message: a chime, `NO_COMMENT`, or the pre-filter ruling it out. */
-const ANSWERED = new Set(['contribute', 'no-comment']);
 
 /** One journalled advice row, as `restore` reads it (`advice` phase, oldest first). */
 export interface CatchUpRow {
@@ -23,13 +21,17 @@ export interface CatchUpRow {
 /** One Warden's answer at a moment, as the orchestrator or the journal records it. */
 export interface CatchUpAnswer {
   readonly domain: string;
-  readonly decision: string;
-  readonly reason?: string;
+  readonly outcome: AdviceOutcome;
 }
 
-/** Whether this answer counts as answering the message: a chime, `NO_COMMENT`, or a pre-filter skip. */
-export const answeredMessage = (answer: CatchUpAnswer): boolean =>
-  ANSWERED.has(answer.decision) || (answer.decision === 'skipped' && answer.reason === 'prefilter');
+/**
+ * Whether this answer counts as answering the message: a chime, `NO_COMMENT`, or the pre-filter
+ * ruling it out. A chime the budget left out did not reach the thread, so it is asked again.
+ */
+export const answeredMessage = ({ outcome }: CatchUpAnswer): boolean =>
+  outcome.status === 'answered'
+    ? outcome.result !== 'omitted-budget'
+    : outcome.status === 'not-sent' && outcome.cause === 'prefiltered';
 
 /**
  * Each Warden's cursor over a thread's user messages (Aron: "wardens should try and inject in the
@@ -134,18 +136,17 @@ export class WardenCatchUp {
 
 function rowAnswers(value: unknown): CatchUpAnswer[] {
   if (!Array.isArray(value)) return [];
-  return value.flatMap((p) =>
-    p && typeof p.domain === 'string' && typeof p.decision === 'string'
-      ? [{ domain: p.domain, decision: p.decision }]
-      : [],
-  );
+  return value.flatMap((p) => {
+    const outcome = parseCallOutcome(p?.outcome, ADVICE_RESULTS);
+    return p && typeof p.domain === 'string' && outcome ? [{ domain: p.domain, outcome }] : [];
+  });
 }
 
 function prefilteredAnswers(value: unknown): CatchUpAnswer[] {
   if (!Array.isArray(value)) return [];
   return value.flatMap((p) =>
     p && typeof p.domain === 'string'
-      ? [{ domain: p.domain, decision: 'skipped', reason: 'prefilter' }]
+      ? [{ domain: p.domain, outcome: { status: 'not-sent', cause: 'prefiltered' } as const }]
       : [],
   );
 }

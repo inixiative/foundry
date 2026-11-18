@@ -139,7 +139,7 @@ One sheet naming every part of Foundry, so people and agents use the same words.
 | choose-one set (`any`) | `Choose one: Related systems; pick the one whose job matches.` when close siblings can't be told apart; the main thread picks. | shape `choose-one`; `pointer.any` (on) | live |
 | pointer level | How specific a pointer is: `exact`, `candidates` or `class` (the pointer ladder Oracle scores). | `PointerLevel` | live |
 | `NO_COMMENT` | The default answer: exactly that string. It adds nothing to the thread and is journalled as `no-comment`, so silence is measurable. | every phase protocol | live |
-| `excluded` / `not-admitted` | A Warden the queue never ran in time (advice / guard); the turn goes on without it. | | live |
+| `not-sent:not-admitted` | A Warden the queue never ran in time (advice and guard); the turn goes on without it. One of the call outcomes. | `CallOutcome`, `pc/call-outcome.ts` | live |
 | pre-filter | A local model scores, per Warden, whether a moment is in its domain and skips only confident noes; fails open and journals every skip. Superseded as policy by "ask every region, every time"; the code stays. | `prefilter`, `pf/providers/warden-prefilter.ts`, `prefilter-model.ts` | off |
 | Herald | A region role for live data (what other agents and teammates are doing), beside Wardens' static knowledge. The socket exists (`chorus.heralds`, region `role: "herald"`); Herald regions never run and have no charter. | `pf/agents/herald.ts` (class, nothing constructs it) | proposed |
 

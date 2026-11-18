@@ -21,6 +21,9 @@
 import {
   ContextLayer,
   type ContextStack,
+  callOutcomeLabel,
+  GUARD_CHECK_RESULTS,
+  parseCallOutcome,
   type Signal,
   type SignalBus,
 } from '@inixiative/foundry-core';
@@ -303,7 +306,7 @@ export class Librarian {
   private _handleGuardObservation(data?: {
     guardOutcomes?: Array<{
       domain?: string;
-      status?: string;
+      outcome?: unknown;
       findings?: number;
       noComment?: boolean;
     }>;
@@ -321,18 +324,12 @@ export class Librarian {
       // Silence is not activity: a guard that answered NO_COMMENT adds nothing to the shared state.
       if (outcome?.noComment === true) continue;
       const domain = typeof outcome?.domain === 'string' ? outcome.domain.slice(0, 60) : 'unknown';
-      const status = [
-        'completed',
-        'skipped',
-        'cold-cache',
-        'provider-error',
-        'invalid-response',
-        'not-admitted',
-      ].includes(outcome?.status ?? '')
-        ? outcome.status
-        : 'outcome not recorded';
+      const parsed = parseCallOutcome(outcome?.outcome, GUARD_CHECK_RESULTS);
+      const status = parsed ? callOutcomeLabel(parsed) : 'outcome not recorded';
       const count =
-        status === 'completed' && Number.isSafeInteger(outcome.findings) && outcome.findings! >= 0
+        parsed?.status === 'answered' &&
+        Number.isSafeInteger(outcome.findings) &&
+        outcome.findings! >= 0
           ? `; ${outcome.findings} findings`
           : '';
       this._pushActivity(`Guard (${domain}): ${status}${count}`);

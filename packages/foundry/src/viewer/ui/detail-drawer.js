@@ -15,6 +15,7 @@
  * The layer, agent and creation views are exported for the Settings sections (runtime-panels.js).
  */
 
+import { outcomeLabel, outcomeNoComment, outcomeTone } from './call-outcome.js';
 import {
   deliveredUnderstanding,
   deliverySummary,
@@ -554,16 +555,23 @@ function RecordedRequest({ request, title }) {
   </${Section}>`;
 }
 
+/** A guard check's label: how it ended, or `pending` while its request waits on an answer. */
+const guardCheckLabel = (o) =>
+  o.outcome ? outcomeLabel(o.outcome) : o.reference === 'unreferenced' ? 'pending' : 'unrecorded';
+
+/** A call outcome in the drawer's status classes: ok when it spoke or found something, cold when it stayed quiet or was never sent, stale otherwise. */
+const drawerTone = (outcome) => ({ ok: 'ok', skip: 'cold' })[outcomeTone(outcome)] ?? 'stale';
+
+/** A guard check's status class: its outcome's, or running while its request waits on an answer. */
+const guardCheckTone = (o) =>
+  !o.outcome && o.reference === 'unreferenced' ? 'running' : drawerTone(o.outcome);
+
 /** Routing and guard phases of the selected turn, from the retained trace. Historical; nothing recomputed. */
 function PhaseHistory({ trace }) {
   const routing = routingRequest(trace);
   const guards = guardOutcomes(trace);
   const tone = (s) =>
-    s === 'completed' || s === 'routed' || s === 'reported'
-      ? 'ok'
-      : s === 'pending' || s === 'skipped' || s === 'cold-cache'
-        ? 'cold'
-        : 'stale';
+    s === 'routed' || s === 'reported' ? 'ok' : s === 'pending' ? 'cold' : 'stale';
   return html`
     <${Section} title="Routing (historical)" open=${false}>
       <div class="phase-routing" data-state=${routing.state} data-status=${routing.state === 'recorded' ? routing.status : 'unrecorded'}>
@@ -603,11 +611,11 @@ function PhaseHistory({ trace }) {
           ${g.conflict ? html`<div class="detail-meta guard-conflict" data-conflict=${g.conflict}><label>Conflict</label><span>${g.conflict}: ${g.duplicates.join(', ')} (earliest outcome shown; others retained)</span></div>` : null}
           ${g.outcomes.map(
             (o) => html`
-            <div class="guard-outcome" key=${o.domain} data-domain=${o.domain} data-status=${o.status}>
+            <div class="guard-outcome" key=${o.domain} data-domain=${o.domain} data-outcome=${guardCheckLabel(o)}>
               <div class="detail-meta-row">
                 <div class="detail-meta"><label>Expert</label><span>${o.domain}</span></div>
-                <div class="detail-meta"><label>Check</label><span class="detail-status ${tone(o.status)}">${o.status}</span></div>
-                <div class="detail-meta"><label>Findings</label><span>${o.status === 'completed' ? o.findings : 'none (not completed)'}</span></div>
+                <div class="detail-meta"><label>Check</label><span class="detail-status ${guardCheckTone(o)}">${guardCheckLabel(o)}</span></div>
+                <div class="detail-meta"><label>Findings</label><span>${o.outcome?.status === 'answered' ? o.findings : 'none (not answered)'}</span></div>
                 ${o.revision !== null ? html`<div class="detail-meta"><label>Understanding revision</label><span>${o.revision}</span></div>` : null}
               </div>
               ${o.error ? html`<div class="detail-meta"><label>Error</label><span>${o.error}</span></div>` : null}
@@ -639,10 +647,10 @@ function ExpertParticipants({ injection, phases, trace }) {
     <div class="detail-null">Each domain expert advised from three recorded inputs before the central executor ran. Shown as prepared then; later learning does not change this record.</div>
     ${record.participants.map(
       (p) => html`
-      <div class="expert-participant" key=${p.id} data-domain=${p.id} data-decision=${p.decision} data-revision=${p.revision === null ? 'unrecorded' : String(p.revision)}>
+      <div class="expert-participant" key=${p.id} data-domain=${p.id} data-outcome=${outcomeLabel(p.outcome)} data-revision=${p.revision === null ? 'unrecorded' : String(p.revision)}>
         <div class="detail-meta-row">
           <div class="detail-meta"><label>Expert</label><span>${p.id}</span></div>
-          <div class="detail-meta"><label>Decision</label><span class="detail-status ${p.decision === 'contribute' ? 'ok' : p.decision === 'no-comment' || p.decision === 'skipped' ? 'cold' : 'stale'}">${p.decision}</span></div>
+          <div class="detail-meta"><label>Outcome</label><span class="detail-status ${drawerTone(p.outcome)}">${outcomeLabel(p.outcome)}</span></div>
           <div class="detail-meta"><label>Understanding revision then</label><span>${p.revision === null ? 'not recorded' : p.revision}${p.revisionDrift ? ' (drifted before delivery)' : ''}</span></div>
           ${(() => {
             const d = deliveredUnderstanding(trace, p.id);
@@ -662,9 +670,9 @@ function ExpertParticipants({ injection, phases, trace }) {
           })()}
           ${p.confidence !== null ? html`<div class="detail-meta"><label>Confidence</label><span>${p.confidence}</span></div>` : null}
         </div>
-        <div class="detail-meta participant-rationale" data-state=${p.reason ? 'recorded' : 'absent'}><label>Rationale</label><span>${p.reason ?? (p.decision === 'no-comment' ? 'No comment: nothing to add.' : 'No rationale recorded for this decision.')}</span></div>
+        <div class="detail-meta participant-rationale" data-state=${p.reason ? 'recorded' : 'absent'}><label>Rationale</label><span>${p.reason ?? (outcomeNoComment(p.outcome) ? 'No comment: nothing to add.' : 'No rationale recorded for this decision.')}</span></div>
         <div class="detail-meta participant-guidance"><label>Attributed guidance</label>
-          <span>${p.snippets.length ? html`<ul class="participant-snippets">${p.snippets.map((s, i) => html`<li key=${i}>${s}</li>`)}</ul>` : p.decision === 'no-comment' ? 'No comment: nothing to add.' : 'No guidance recorded.'}</span></div>
+          <span>${p.snippets.length ? html`<ul class="participant-snippets">${p.snippets.map((s, i) => html`<li key=${i}>${s}</li>`)}</ul>` : outcomeNoComment(p.outcome) ? 'No comment: nothing to add.' : 'No guidance recorded.'}</span></div>
         ${['instructions', 'domainKnowledge', 'threadKnowledge'].map(
           (key) => html`
           <${Section} key=${key} title=${segmentTitle[key]} open=${true}>
@@ -1502,8 +1510,8 @@ function KnowledgeInspection({ threadId }) {
           ${g.outcomes.map(
             (
               o,
-            ) => html`<div class="guard-outcome" key=${o.domain} data-domain=${o.domain} data-status=${o.status}>
-            <div class="detail-meta"><label>${o.domain}</label><span class="detail-status ${o.status === 'completed' ? 'ok' : o.status === 'pending' ? 'cold' : 'stale'}">${o.status}</span></div>
+            ) => html`<div class="guard-outcome" key=${o.domain} data-domain=${o.domain} data-outcome=${guardCheckLabel(o)}>
+            <div class="detail-meta"><label>${o.domain}</label><span class="detail-status ${guardCheckTone(o)}">${guardCheckLabel(o)}</span></div>
             <${RecordedRequest} request=${o.request} title="Guard request" /></div>`,
           )}
         </div>`,

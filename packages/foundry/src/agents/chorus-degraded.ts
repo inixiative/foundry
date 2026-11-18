@@ -3,7 +3,12 @@
  * @kind service
  * @partOf feature:wardens
  */
-import type { ClassifyStageTrace, NativeEvidence } from '@inixiative/foundry-core';
+import type {
+  AdviceOutcome,
+  ClassifyStageTrace,
+  GuardCheckOutcome,
+  NativeEvidence,
+} from '@inixiative/foundry-core';
 import type { ClassifiedSummary } from '../classify';
 import { QUOTA_PAUSED_REFUSAL } from '../providers/decision-budget';
 import type { ToolObservation } from './domain-librarian';
@@ -27,11 +32,10 @@ export interface DegradedWarden {
 /** One Warden's recorded answer, as the advice rows journal it (and a guard outcome maps onto). */
 export interface ChorusAnswer {
   readonly domain: string;
-  /** `contribute`, `no-comment`, `timeout`, `error`, `excluded`, `skipped`, `omitted`. */
-  readonly decision: string;
+  readonly outcome: AdviceOutcome;
   readonly reason?: string;
   readonly classified?: Pick<ClassifiedSummary, 'fallback' | 'stages'>;
-  /** Skipped unsent on a user message: it catches up on the next one (warden-catch-up). */
+  /** Not held warm on a user message: it catches up on the next one (warden-catch-up). */
   readonly catchesUp?: boolean;
 }
 
@@ -52,37 +56,44 @@ export interface DegradedContext {
 }
 
 /**
- * Whether one Warden's answer was degraded, and how. Undefined when it was a real answer or a skip.
- * The failing stage is the last trace: `runStages` stops at the first stage that fails. A budget
- * `omitted` is not degraded: the Warden spoke and the composition policy chose (it is in `omissions`),
- * and asking again hits the same budget.
+ * Whether one Warden's answer was degraded, and how. Undefined when it was a real answer or a skip
+ * (prefiltered, trigger-gated, cold with nothing to know yet). The failing stage is the last trace:
+ * `runStages` stops at the first stage that fails. A budget omission is not degraded: the Warden spoke
+ * and the composition policy chose (it is in `omissions`), and asking again hits the same budget.
  */
 export function degradedAnswer(
   answer: ChorusAnswer,
   context: DegradedContext = {},
 ): DegradedWarden | undefined {
-  const { domain, decision, classified } = answer;
+  const { domain, outcome, classified } = answer;
   const failed = failedStage(classified?.stages);
   const single = context.stageCount?.(domain) === 1;
   const layer = failed ? failed.stage + 1 : single ? 1 : null;
   const reason = clip(failed?.error ?? answer.reason);
-  if (decision === 'timeout') return { domain, kind: 'timeout', layer, silent: true, reason };
-  // A used-up login is said once in the strip (its pause), not as a degraded Warden every round.
-  if (decision === 'excluded')
-    return answer.catchesUp || answer.reason === QUOTA_PAUSED_REFUSAL
-      ? undefined
-      : { domain, kind: 'not-started', layer, silent: true, reason };
-  if (decision === 'skipped' && answer.reason === 'cold-cache' && context.notWarm?.has(domain))
-    return { domain, kind: 'not-started', layer, silent: true, reason: 'not warm in time' };
-  if (decision === 'error')
-    return { domain, kind: failed?.timedOut ? 'timeout' : 'error', layer, silent: true, reason };
+  if (outcome.status === 'failed')
+    return outcome.cause === 'timeout'
+      ? { domain, kind: 'timeout', layer, silent: true, reason }
+      : { domain, kind: failed?.timedOut ? 'timeout' : 'error', layer, silent: true, reason };
+  if (outcome.status === 'not-sent') {
+    // A used-up login is said once in the strip (its pause), not as a degraded Warden every round.
+    if (answer.reason === QUOTA_PAUSED_REFUSAL) return undefined;
+    if (
+      outcome.cause === 'not-admitted' ||
+      outcome.cause === 'over-budget' ||
+      (outcome.cause === 'not-held' && !answer.catchesUp)
+    )
+      return { domain, kind: 'not-started', layer, silent: true, reason };
+    if (outcome.cause === 'cold' && context.notWarm?.has(domain))
+      return { domain, kind: 'not-started', layer, silent: true, reason: 'not warm in time' };
+    return undefined;
+  }
   // A later layer failed and the earlier layer's outcome stood (classify `runStages`'s fallback).
   if (classified?.fallback && failed)
     return {
       domain,
       kind: failed.timedOut ? 'timeout' : 'error',
       layer,
-      silent: decision !== 'contribute',
+      silent: outcome.result !== 'spoke',
       reason,
     };
   return undefined;
@@ -114,10 +125,10 @@ export function allDegraded(
   }));
 }
 
-/** A guard outcome as the journal keeps it: its status, and its staged run when it had one. */
+/** A guard outcome as the journal keeps it: how it ended, and its staged run when it had one. */
 export interface GuardAnswer {
   readonly domain: string;
-  readonly status: string;
+  readonly outcome: GuardCheckOutcome;
   readonly noComment?: boolean;
   readonly findings?: number;
   readonly error?: string;
@@ -125,26 +136,21 @@ export interface GuardAnswer {
 }
 
 /**
- * The degraded Wardens of one guard over a moment: the checks the report already lists as not
- * completed (`GuardReport.failed`), plus a completed check whose Layer 2 failed. A guard's stages run
- * under no per-stage deadline, so a slow guard is a provider error, never a stage timeout.
+ * The degraded Wardens of one guard over a moment: a check that failed or was refused unsent, plus an
+ * answered check whose Layer 2 failed. A guard's stages run under no per-stage deadline, so a slow
+ * guard is a provider error, never a stage timeout.
  */
 export function degradedGuards(
   outcomes: readonly GuardAnswer[],
-  failed: readonly string[],
   context: DegradedContext = {},
 ): DegradedWarden[] {
-  const notCompleted = new Set(failed);
   return degradedWardens(
     outcomes.map((o) => ({
       domain: o.domain,
-      decision: notCompleted.has(o.domain)
-        ? o.status === 'not-admitted'
-          ? 'excluded'
-          : 'error'
-        : o.status === 'completed' && !o.noComment && o.findings
-          ? 'contribute'
-          : 'no-comment',
+      outcome:
+        o.outcome.status === 'answered'
+          ? { status: 'answered', result: !o.noComment && o.findings ? 'spoke' : 'no-comment' }
+          : o.outcome,
       ...(o.error ? { reason: o.error } : {}),
       ...(o.classified ? { classified: o.classified } : {}),
     })),

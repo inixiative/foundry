@@ -73,7 +73,7 @@ function turnWithWardens(store: LocalSessionStore, t: ReturnType<typeof main>, t
       participants: [
         ...['docs', 'testing', 'security'].map((domain) => ({
           domain,
-          decision: 'no-comment',
+          outcome: { status: 'answered', result: 'no-comment' },
           snippets: [],
           segments: {
             instructions: BULK,
@@ -88,7 +88,7 @@ function turnWithWardens(store: LocalSessionStore, t: ReturnType<typeof main>, t
         })),
         {
           domain: 'conventions',
-          decision: 'contribute',
+          outcome: { status: 'answered', result: 'spoke' },
           snippets: ['Never rename public settings keys (fb_1).'],
           segments: {
             instructions: BULK,
@@ -145,7 +145,7 @@ test('each Warden call reaches Archive as a small reduced entry: state and resul
   }
   const byRole = Object.fromEntries(mw.map((e) => [JSON.parse(e.text).role, JSON.parse(e.text)]));
   expect(byRole.conventions).toMatchObject({
-    decision: 'contribute',
+    outcome: 'answered:spoke',
     result: ['Never rename public settings keys (fb_1).'],
     state: {
       charter: 'charter-abc',
@@ -154,9 +154,9 @@ test('each Warden call reaches Archive as a small reduced entry: state and resul
     },
   });
   // NO_COMMENT is recorded: it is the denominator of every exposure count.
-  expect(byRole.docs).toMatchObject({ decision: 'no-comment', result: null });
+  expect(byRole.docs).toMatchObject({ outcome: 'answered:no-comment', result: null });
   expect(byRole.cartographer).toMatchObject({
-    decision: 'routed',
+    outcome: 'routed',
     result: { layers: ['conventions'] },
   });
   expect(mw.find((e) => JSON.parse(e.text).role === 'conventions')).toMatchObject({
@@ -204,7 +204,7 @@ test('raw middleware rows age out after the retention window; reduced rows and e
       participants: [
         {
           domain: 'conventions',
-          decision: 'no-comment',
+          outcome: { status: 'answered', result: 'no-comment' },
           snippets: [],
           request: supplied(
             { model: 'claude-haiku-5-5' },

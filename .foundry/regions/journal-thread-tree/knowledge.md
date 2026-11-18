@@ -337,9 +337,9 @@ lineage: {
     role: 'warden:conventions',              // or 'cartographer'
     trigger: 'user-message' | 'agent-action' | 'subagent-spawn' | …,  // TriggerPoint (pf/agents/warden-triggers.ts); new charter triggers join it
     wraps: 'turn:<id> for a message or a turn\'s actions, a tool call id (guard: per-call), handoff:<child> for a brief',
-    decision: ContributionDecision,          // pf/agents/flow-orchestrator.ts:69-81, incl. 'omitted'
+    outcome: AdviceOutcome,                  // foundry-core call-outcome.ts: { status: 'not-sent', cause } | { status: 'failed', cause } | { status: 'answered', result }
     result: 'the text it chimed in with' | null,
-    reason?: 'cold-cache' | 'deadline-queued' | ...,
+    reason?: 'why it was not sent or failed, in words',
     state: {
       charter: 'charter-1a2b3c4d5e6f',                         // WARDEN_CHARTER_VERSION
       instructions: 'cv_…', domainKnowledge: 'cv_…',          // composition version ids (spec B)

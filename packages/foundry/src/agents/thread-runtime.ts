@@ -7,6 +7,7 @@ import {
   type CompletionOpts,
   ContextLayer,
   type ContextStack,
+  callOutcomeLabel,
   computeHash,
   type DeliveryRecord,
   type DispatchObservation,
@@ -104,6 +105,7 @@ import {
   consumedNotes,
   FlowOrchestrator,
   type FlowTimingConfig,
+  givenNothing,
   type HandBackMoment,
   type HandoffMoment,
   type HydrationResult,
@@ -1674,10 +1676,10 @@ class ThreadRuntimeImpl implements ThreadRuntime {
               inputHash: plan.input.hash,
               sealedAt: plan.sealedAt,
               participants: plan.contributions
-                .filter((c) => c.decision !== 'skipped')
+                .filter((c) => !givenNothing(c.outcome))
                 .map((c) => ({
                   domain: c.domain,
-                  decision: c.decision,
+                  outcome: c.outcome,
                   ...(c.reason ? { reason: c.reason } : {}),
                   // What it chimed in with (empty for NO_COMMENT).
                   snippets: c.snippets,
@@ -1699,8 +1701,8 @@ class ThreadRuntimeImpl implements ThreadRuntime {
               skipped: Object.fromEntries(
                 Object.entries(
                   Object.groupBy(
-                    plan.contributions.filter((c) => c.decision === 'skipped'),
-                    (c) => c.reason ?? 'skipped',
+                    plan.contributions.filter((c) => givenNothing(c.outcome)),
+                    (c) => callOutcomeLabel(c.outcome),
                   ),
                 ).map(([reason, list]) => [reason, (list ?? []).map((c) => c.domain)]),
               ),
@@ -1717,7 +1719,9 @@ class ThreadRuntimeImpl implements ThreadRuntime {
               ),
             });
             ctx.annotations.phaseJournal = { route: routeJournal, advice: adviceJournal };
-            const decided = plan.contributions.map((c) => `${c.domain}:${c.decision}`).join(', ');
+            const decided = plan.contributions
+              .map((c) => `${c.domain}:${callOutcomeLabel(c.outcome)}`)
+              .join(', ');
             log(
               `  [flow:${thread.id}] decorated: ${decided || 'no domains'} → ${plan.layers.length} layers, ${plan.snippets.length} snippets (${plan.elapsed}ms)`,
             );
@@ -2403,7 +2407,7 @@ class ThreadRuntimeImpl implements ThreadRuntime {
         elapsed: report.elapsed,
         requests: requestsJournal(),
         requestJournal: requestJournalStates(),
-        ...degradedField(degradedGuards(report.outcomes, report.failed, this._degradedContext())),
+        ...degradedField(degradedGuards(report.outcomes, this._degradedContext())),
         ...(owner.retryOf ? { retryOf: owner.retryOf } : {}),
         outcomes: report.outcomes.map(({ request, ...rest }) => ({
           ...rest,
@@ -2824,10 +2828,10 @@ class ThreadRuntimeImpl implements ThreadRuntime {
           inputHash: report.input.hash,
           sealedAt: report.sealedAt,
           participants: report.contributions
-            .filter((c) => c.decision !== 'skipped')
+            .filter((c) => !givenNothing(c.outcome))
             .map((c) => ({
               domain: c.domain,
-              decision: c.decision,
+              outcome: c.outcome,
               ...(c.reason ? { reason: c.reason } : {}),
               snippets: c.snippets,
               segments: c.segments,
@@ -2845,8 +2849,8 @@ class ThreadRuntimeImpl implements ThreadRuntime {
           skipped: Object.fromEntries(
             Object.entries(
               Object.groupBy(
-                report.contributions.filter((c) => c.decision === 'skipped'),
-                (c) => c.reason ?? 'skipped',
+                report.contributions.filter((c) => givenNothing(c.outcome)),
+                (c) => callOutcomeLabel(c.outcome),
               ),
             ).map(([reason, list]) => [reason, (list ?? []).map((c) => c.domain)]),
           ),

@@ -3,6 +3,7 @@ import {
   type CompletionResult,
   ContextLayer,
   ContextStack,
+  callOutcomeLabel,
   type LLMProvider,
   SignalBus,
 } from '@inixiative/foundry-core';
@@ -13,7 +14,7 @@ import {
   oneCall,
   type TurnActivity,
 } from '../src/agents/domain-librarian';
-import { FlowOrchestrator } from '../src/agents/flow-orchestrator';
+import { FlowOrchestrator, type InjectionPlan } from '../src/agents/flow-orchestrator';
 import { Librarian } from '../src/agents/librarian';
 
 // ---------------------------------------------------------------------------
@@ -671,8 +672,8 @@ describe('catch-up: a Warden that missed messages is asked on them with the next
       stack,
       signals,
     });
-    const decision = (plan: { contributions: readonly { domain: string; decision: string }[] }) =>
-      plan.contributions.find((c) => c.domain === 'arch')!.decision;
+    const decision = (plan: InjectionPlan) =>
+      callOutcomeLabel(plan.contributions.find((c) => c.domain === 'arch')!.outcome);
     return { orchestrator, asked, state, decision };
   }
   const missedSection = (text: string) =>
@@ -685,11 +686,15 @@ describe('catch-up: a Warden that missed messages is asked on them with the next
 
   it('answered, then missed two (no answer moves nothing), then catches up on both; NO_COMMENT moves the cursor', async () => {
     const { orchestrator, asked, state, decision } = catchUp();
-    expect(decision(await orchestrator.preMessage('first message'))).toBe('no-comment');
+    expect(decision(await orchestrator.preMessage('first message'))).toBe('answered:no-comment');
     expect(missedSection(asked.at(-1)!)).toBe('');
     state.fail = true;
-    expect(decision(await orchestrator.preMessage('second message'))).not.toBe('no-comment');
-    expect(decision(await orchestrator.preMessage('third message'))).not.toBe('no-comment');
+    expect(decision(await orchestrator.preMessage('second message'))).not.toBe(
+      'answered:no-comment',
+    );
+    expect(decision(await orchestrator.preMessage('third message'))).not.toBe(
+      'answered:no-comment',
+    );
     // The failed call on the third carried the second: a failure does not move the cursor.
     expect(missedSection(asked.at(-1)!)).toContain('second message');
     state.fail = false;

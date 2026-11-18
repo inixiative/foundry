@@ -15,7 +15,11 @@ import {
 import { scopedProvider, ThreadRuntimeManager } from '../src/agents/thread-runtime';
 import { KnowledgePersistence } from '../src/persistence/knowledge-persistence';
 import { LocalSessionStore } from '../src/persistence/local-session-store';
-import { NOT_HELD_REFUSAL } from '../src/providers/decision-budget';
+import {
+  decisionFailedCause,
+  NOT_HELD_REFUSAL,
+  refusedUnsent,
+} from '../src/providers/decision-budget';
 import {
   buildNativeTextProvider,
   type NativeTextConfig,
@@ -398,8 +402,8 @@ test('actual factory classification, routing, advice, guard and learning use the
     expect(runtime.learningState.domains.docs.capacity).toBe('settled');
     expect(
       (await lib.guard(oneCall({ tool: 'Write', input: { file: 'docs.md' }, output: 'updated' })))
-        .status,
-    ).toBe('completed');
+        .outcome.status,
+    ).toBe('answered');
     factory.create('B', { projectId: 'Q' });
     expect(manager.get('B')!.domainLibrarians.get('docs')!.threadKnowledge.content).toBe('');
     expect(f.transport.launches.length).toBeGreaterThanOrEqual(4);
@@ -427,11 +431,48 @@ test('a stalled preflight expires before status or native spawn', async () => {
     })
     .catch((error) => error);
   expect(error).toBeInstanceOf(Error);
+  // Refused before any run: the call reads as not sent, not as a failed decision.
+  expect(refusedUnsent(error)).toEqual({
+    cause: 'not-admitted',
+    reason: 'Subscription preflight deadline',
+  });
   expect(f.provider.completionLifecycle!.admission!({ error })).toBe('not-admitted');
   expect(f.provider.completionLifecycle!.settlement({ error })).toBe('settled');
   expect(f.transport.launches).toHaveLength(0);
   expect(f.snapshot().attempts).toBe(0);
   f.close();
+});
+
+test('closing during preflight refuses the call as not sent', async () => {
+  const f = fixture();
+  let release!: () => void;
+  const preflighting = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let entered = false;
+  const pending = f.provider
+    .complete(messages, {
+      nativeObservation: {
+        owner,
+        preflight: () => {
+          entered = true;
+          return preflighting;
+        },
+        register() {},
+        observe() {},
+      },
+    })
+    .catch((error) => error);
+  await until(() => entered);
+  f.close();
+  release();
+  const error = await pending;
+  expect(refusedUnsent(error)).toEqual({
+    cause: 'not-admitted',
+    reason: 'Subscription decision expired or revoked',
+  });
+  expect(f.transport.launches).toHaveLength(0);
+  expect(f.snapshot().attempts).toBe(0);
 });
 
 test('total attempt bounds reject without paid fallback or extra launches', async () => {
@@ -449,7 +490,9 @@ test('total attempt bounds reject without paid fallback or extra launches', asyn
   );
   const first = f.provider.complete(messages);
   await until(() => transport.writes === 1);
-  await expect(f.provider.complete(messages)).rejects.toThrow('closed or full');
+  const full = await f.provider.complete(messages).catch((error) => error);
+  expect(refusedUnsent(full)?.cause).toBe('not-admitted');
+  expect(full.message).toContain('closed or full');
   finish('done');
   await first;
   await expect(f.provider.complete(messages)).rejects.toThrow('closed or full');
@@ -488,11 +531,16 @@ test('queue bound rejects excess waiting calls before native admission', async (
   const first = f.provider.complete(messages);
   await until(() => transport.writes === 1);
   const queued = f.provider.complete(messages).catch((error) => error);
-  await expect(f.provider.complete(messages)).rejects.toThrow('queue full');
+  const overflow = await f.provider.complete(messages).catch((error) => error);
+  expect(refusedUnsent(overflow)).toEqual({
+    cause: 'not-admitted',
+    reason: 'Subscription decision queue full',
+  });
   expect(f.snapshot().queued).toBe(1);
   f.close();
   finish('done');
-  expect(await queued).toBeInstanceOf(Error);
+  // Waiting when admission closed: refused unsent, not failed.
+  expect(refusedUnsent(await queued)?.cause).toBe('not-admitted');
   await expect(first).rejects.toThrow('failed');
   expect(transport.launches).toHaveLength(1);
 });
@@ -537,6 +585,19 @@ test('unproved native process exit closes admission and retains unknown ownershi
     expect(original.transport.launches).toHaveLength(1);
   } finally {
     terminate?.();
+    f.close();
+  }
+}, 5000);
+
+test('a dispatched decision out of time fails as a timeout, not a provider error', async () => {
+  const f = fixture(subscriptionTransport({ response: () => new Promise(() => {}) }), 250);
+  try {
+    const error = await f.provider.complete(messages).catch((error) => error);
+    expect(error).toBeInstanceOf(Error);
+    expect(refusedUnsent(error)).toBeUndefined();
+    expect(decisionFailedCause(error)).toBe('timeout');
+    expect(f.transport.launches).toHaveLength(1);
+  } finally {
     f.close();
   }
 }, 5000);
@@ -660,11 +721,11 @@ test('a Warden its project host holds no warm spare for is a capacity refusal: s
     decisions.provider.complete([{ role: 'user', content: 'x' }], { threadId: 't1:aux:domain:a' });
   const error = await ask().catch((e: unknown) => e);
   expect(error).toBeInstanceOf(Error);
-  expect((error as { decisionCapacity?: boolean }).decisionCapacity).toBe(true);
+  expect((error as { notSentCause?: string }).notSentCause).toBe('not-held');
   expect((error as Error).message).toBe(NOT_HELD_REFUSAL);
   // The refusal left nothing owned: admission stays open, so the next call is admitted (and refused
   // for capacity again), not shut out as closed.
   const again = await ask().catch((e: unknown) => e);
-  expect((again as { decisionCapacity?: boolean }).decisionCapacity).toBe(true);
+  expect((again as { notSentCause?: string }).notSentCause).toBe('not-held');
   decisions.close();
 });

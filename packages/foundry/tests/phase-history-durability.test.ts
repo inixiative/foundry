@@ -250,7 +250,7 @@ test("a held guard's exact request is durable before its answer; the late outcom
   expect(pending[0]!.outcomes).toEqual([
     {
       domain: 'architecture',
-      status: 'pending',
+      outcome: null,
       findings: 0,
       error: null,
       admission: null,
@@ -297,7 +297,7 @@ test("a held guard's exact request is durable before its answer; the late outcom
   });
   expect(outcome.outcomes[0]).toMatchObject({
     domain: 'architecture',
-    status: 'completed',
+    outcome: { status: 'answered', result: 'all-clear' },
     findings: 0,
     requestRecord: request.id,
     requestState: 'supplied',
@@ -310,7 +310,7 @@ test("a held guard's exact request is durable before its answer; the late outcom
   expect(settled[0]).toMatchObject({ status: 'reported', failed: [], findings: 0 });
   expect(settled[0]!.outcomes[0]).toMatchObject({
     domain: 'architecture',
-    status: 'completed',
+    outcome: { status: 'answered', result: 'all-clear' },
     request: { state: 'recorded', messages: guardCall },
   });
   expect(routingRequest({ detail: reopened.turnDetail(f.thread.id, 'turn-1') })).toMatchObject({
@@ -343,7 +343,7 @@ test('successful, failed and thrown guard controls: findings are recorded, a pro
   expect(one[0]).toMatchObject({ status: 'reported', failed: [], findings: 1, critical: 0 });
   expect(one[0]!.outcomes[0]).toMatchObject({
     domain: 'architecture',
-    status: 'completed',
+    outcome: { status: 'answered', result: 'findings' },
     findings: 1,
     request: { state: 'recorded' },
   });
@@ -360,7 +360,7 @@ test('successful, failed and thrown guard controls: findings are recorded, a pro
   expect(two[0]).toMatchObject({ status: 'reported', failed: ['architecture'], findings: 0 });
   expect(two[0]!.outcomes[0]).toMatchObject({
     domain: 'architecture',
-    status: 'provider-error',
+    outcome: { status: 'failed', cause: 'provider-error' },
     error: 'CONTROLLED_GUARD_REFUSAL',
     admission: 'unknown',
     request: { state: 'recorded' },
@@ -376,7 +376,7 @@ test('successful, failed and thrown guard controls: findings are recorded, a pro
   const report = await f.runtime.flowOrchestrator.postAction(oneCall({ tool: 'Write', input: {} }));
   expect(report.outcomes[0]).toMatchObject({
     domain: 'architecture',
-    status: 'provider-error',
+    outcome: { status: 'failed', cause: 'provider-error' },
     request: { status: 'unobserved', phase: 'guard' },
   });
   expect(participantRequest(report.outcomes[0]!.request)).toEqual({
@@ -409,7 +409,7 @@ test('a failed central turn retains the sealed routing and advice requests with 
   const advice = detail.phases[1]!.record as any;
   expect(advice.participants[0]).toMatchObject({
     domain: 'architecture',
-    decision: 'contribute',
+    outcome: { status: 'answered', result: 'spoke' },
     segments: {
       instructions: f.runtime.domainLibrarians.get('architecture')!.advisePrompt,
       domainKnowledge: 'DOMAIN_BEFORE: existing readers keep working.',
@@ -421,7 +421,7 @@ test('a failed central turn retains the sealed routing and advice requests with 
   const participants = expertParticipants(detail.injection, detail.phases)!;
   expect(participants.participants[0]).toMatchObject({
     id: 'architecture',
-    decision: 'contribute',
+    outcome: { status: 'answered', result: 'spoke' },
     segments: { domainKnowledge: 'DOMAIN_BEFORE: existing readers keep working.' },
     request: { state: 'recorded', phase: 'advice' },
   });

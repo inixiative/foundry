@@ -9,16 +9,20 @@
  * before the executor runs, so the host sees them before the agent's first output.
  */
 
+import { ADVICE_RESULTS, recordedOutcomeLabel } from '@inixiative/foundry-core';
+
 type Record_ = Record<string, unknown>;
 const isRecord = (value: unknown): value is Record_ =>
   !!value && typeof value === 'object' && !Array.isArray(value);
 const strings = (value: unknown) =>
   Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : [];
 
+const outcomeLabel = (value: unknown) => recordedOutcomeLabel(value, ADVICE_RESULTS) ?? 'unknown';
+
 export interface ContextSummary {
   readonly text: string;
   readonly routing: Record_ | null;
-  readonly participants: Array<{ domain: string; decision: string; reason?: string }>;
+  readonly participants: Array<{ domain: string; outcome: string; reason?: string }>;
   /** Wardens the system kept quiet (timed out, failed, not admitted), as the row records them (FEAT-008). */
   readonly degraded: Record_[];
 }
@@ -62,7 +66,7 @@ export function contextSummary(turn: unknown): ContextSummary | null {
     .filter(isRecord)
     .map((p) => ({
       domain: typeof p.domain === 'string' ? p.domain : 'unknown',
-      decision: typeof p.decision === 'string' ? p.decision : 'unknown',
+      outcome: outcomeLabel(p.outcome),
       ...(typeof p.reason === 'string' && p.reason ? { reason: p.reason } : {}),
     }));
 
@@ -82,7 +86,7 @@ export function contextSummary(turn: unknown): ContextSummary | null {
   if (participants.length)
     lines.push(
       'Wardens:',
-      ...participants.map((p) => `- ${p.domain}: ${p.decision}${p.reason ? ` (${p.reason})` : ''}`),
+      ...participants.map((p) => `- ${p.domain}: ${p.outcome}${p.reason ? ` (${p.reason})` : ''}`),
     );
   const degraded = degradedOf(advice?.record);
   const line = degradedLine(degraded);

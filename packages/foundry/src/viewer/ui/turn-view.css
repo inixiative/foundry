@@ -227,8 +227,8 @@
   gap: 4px;
   font-size: 12.5px;
 }
-.tv-regions li[data-decision="no-comment"],
-.tv-regions li[data-decision="abstain"] {
+.tv-regions li[data-outcome="answered:no-comment"],
+.tv-regions li[data-outcome^="not-sent:"] {
   opacity: 0.6;
 }
 .tv-decision {
@@ -237,10 +237,10 @@
   border-radius: 5px;
   background: hsl(var(--muted));
 }
-.tv-regions li[data-decision="contribute"] .tv-decision {
+.tv-regions li[data-outcome="answered:spoke"] .tv-decision {
   background: hsl(var(--app-primary) / 0.3);
 }
-.tv-regions li[data-decision="error"] .tv-decision {
+.tv-regions li[data-outcome^="failed:"] .tv-decision {
   background: hsl(7 100% 74% / 0.3);
 }
 .tv-layer,
@@ -330,7 +330,7 @@
   text-transform: uppercase;
   color: hsl(var(--muted-foreground));
 }
-.tv-wardens tr[data-decision="contribute"] td:first-child {
+.tv-wardens tr[data-outcome="answered:spoke"] td:first-child {
   color: var(--accent);
 }
 .tv-wardens tr.is-timeout td {
