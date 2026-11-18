@@ -89,7 +89,7 @@ A live run compares each new recording's structure with the committed cassette. 
   - if it is an intended change, run `bun run vcr:accept`.
 - **Volatile differences** are printed as `notice:` lines but do not hold a recording back. These are changes that follow model behavior or transient service state: thinking tokens, rate-limit events, reconnect errors, CLI stderr logging, MCP startup chatter, Claude UI chatter (`system:commands_changed`, `system:ui_invalidate`) and Claude's prompt-cache diagnostics (`message.diagnostics`: a reason on a cache miss, `null` on a hit).
 - Model text is not structure. It differs on every run. What a turn did is structure: an assistant turn's content-block types (text, tool_use) and a status probe's kept answer are part of the kind.
-- Once a recording drifts, the rest of that test's recordings (its outcome) are held back with it, so committed cassettes always come from one run.
+- Once a recording drifts, every other recording of that test is held back with it, those written before the drift too: each earlier one moves to `.pending.json` and its committed cassette is restored. So committed cassettes always come from one run, and the replay never mixes a new recording with an old one.
 - **A failed live run** holds back every recording it changed as `.pending.json` and restores the committed cassettes, even when the structure matched. The replay pass then runs against the committed cassettes.
 - `bun run test:live -t "<filter>"` leaves earlier pending drift alone; a full run supersedes it.
 

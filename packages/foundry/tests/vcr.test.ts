@@ -218,6 +218,30 @@ describe('live drift', () => {
     expect(read('outcome.x.json').body).toEqual({ ok: true });
     expect(read('outcome.x.pending.json').body).toEqual({ ok: false });
   });
+
+  it('a recording that matched before a later one drifted is held back too, so cassettes come from one run', async () => {
+    const committed = new VCR(dir, { service: 'svc', version: () => '1' })
+      .queue('a', 'x')
+      .queue('b', 'x');
+    await committed.capture('a', async () => ({ n: 1 }));
+    await committed.capture('b', async () => ({ n: 1 }));
+    const before = readFileSync(join(dir, 'a.x.json'), 'utf-8');
+    const vcr = new VCR(dir, { service: 'svc', version: () => '1' })
+      .queue('a', 'x')
+      .queue('b', 'x')
+      .queue('c', 'x');
+    await vcr.capture('a', async () => ({ n: 2 }));
+    expect(read('a.x.json').body).toEqual({ n: 2 });
+    await vcr.capture('b', async () => ({ n: 'drifted' }));
+    await vcr.capture('c', async () => ({ n: 3 }));
+    expect(readFileSync(join(dir, 'a.x.json'), 'utf-8')).toBe(before);
+    expect(read('a.x.pending.json').body).toEqual({ n: 2 });
+    expect(read('b.x.json').body).toEqual({ n: 1 });
+    expect(read('b.x.pending.json').body).toEqual({ n: 'drifted' });
+    expect(existsSync(join(dir, 'c.x.json'))).toBe(false);
+    expect(read('c.x.pending.json').body).toEqual({ n: 3 });
+    expect(vcr.load<{ n: number }>(join(dir, 'a.x.json')).body).toEqual({ n: 2 });
+  });
 });
 
 describe('drift classification', () => {
