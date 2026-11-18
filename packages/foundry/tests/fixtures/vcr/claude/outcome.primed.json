@@ -7,10 +7,11 @@
       true
     ],
     "observedModel": "claude-haiku-5-5",
-    "launches": 3,
+    "launches": 2,
     "statusChecks": 1,
-    "primerCarriedContext": true,
-    "forks": 2,
+    "systemPromptCarriedContext": true,
+    "persisted": 0,
+    "cachesStableTextOnly": true,
     "textOnly": true,
     "cyclesSentOnlyTheMessage": true,
     "receipts": [
@@ -24,13 +25,15 @@
         "settled": true,
         "prime": "warm"
       }
-    ]
+    ],
+    "secondReadTheStableText": true,
+    "secondWroteNothingForAnHour": true
   },
   "recorded": {
     "service": "claude",
     "cli": "claude",
-    "recordedAt": "2026-11-18T01:43:23.192Z",
-    "agentSession": "0.17.1",
+    "recordedAt": "2026-11-18T18:19:46.523Z",
+    "agentSession": "0.18.0",
     "environment": "terminal"
   }
 }

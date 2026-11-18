@@ -10,6 +10,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { CLAUDE_DECISION_CACHE_ENV } from '@inixiative/agent-session';
 import { foundryRunKind } from '../src/archives/run-stamp';
 import { defaultProfileSource } from '../src/providers/default-profiles';
 import { createPrimedDecisionHost } from '../src/providers/primed-decisions';
@@ -185,7 +186,7 @@ function claudeDecisions(
 
 const flag = (argv: string[], name: string) => argv[argv.indexOf(name) + 1];
 
-test('Claude decisions run text-only on the shared Claude login, primed once per role and forked per cycle', async () => {
+test('Claude decisions run text-only on the shared Claude login, the role held in the system prompt, a fresh session per cycle', async () => {
   const transport = claudeTransport();
   const run = claudeDecisions(transport);
   const cache = '## Domain cache (api)\nroutes live under src/api\n';
@@ -205,11 +206,9 @@ test('Claude decisions run text-only on the shared Claude login, primed once per
     expect(run.statusChecks).toBe(1);
     // A shared registration on the user's login while the host lives.
     expect(existsSync(join(run.root, '.claude', '.foundry-auth-shared'))).toBe(true);
-    const [primer, ...branches] = transport.launches;
-    expect(primer!.inputs[0]).toContain('routes live under src/api');
-    expect(primer!.inputs[0]).toContain('Reply with OK only');
-    // Each decision forks the primed session and sends only the per-cycle part.
-    const decided = branches.filter((launch) => launch.inputs.length);
+    // Each decision is a fresh session that sends only the per-cycle part; the stable text rides in
+    // the system prompt.
+    const decided = transport.launches.filter((launch) => launch.inputs.length);
     expect(decided.map((launch) => launch.inputs[0])).toEqual([
       '\n## Message\none',
       '\n## Message\ntwo',
@@ -228,11 +227,17 @@ test('Claude decisions run text-only on the shared Claude login, primed once per
           value && /API_KEY|AUTH_TOKEN|BASE_URL|CLAUDE_CONFIG_DIR/.test(key) ? [key] : [],
         ),
       ).toEqual([]);
+      // The system prompt is cached for an hour, each decision's input for five minutes.
+      expect(launch.env).toMatchObject(CLAUDE_DECISION_CACHE_ENV);
     }
     // agent-session hands the base context over in a private file, never on argv.
-    expect(primer!.base).toContain("Foundry's internal decision middleware");
-    expect(primer!.base).toContain('ADVISE');
-    for (const launch of decided) expect(launch.argv).toContain('--fork-session');
+    for (const launch of decided) {
+      expect(launch.base).toContain("Foundry's internal decision middleware");
+      expect(launch.base).toContain('ADVISE');
+      expect(launch.base).toContain('routes live under src/api');
+      expect(launch.argv).toContain('--no-session-persistence');
+      expect(launch.argv).not.toContain('--resume');
+    }
     // The host's folder is stamped for Archive: its sessions are Foundry's own, never a person's work.
     const [host] = readdirSync(join(run.root, 'receipts')).filter((name) =>
       name.startsWith('primed-'),

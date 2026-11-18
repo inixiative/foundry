@@ -7,9 +7,10 @@
       true,
       true
     ],
-    "primers": 2,
-    "primersCarriedComposition": true,
-    "secondPrimerChanged": true,
+    "systemPrompts": 2,
+    "systemPromptsCarriedComposition": true,
+    "secondSystemPromptChanged": true,
+    "cachesStableTextOnly": true,
     "cyclesSentOnlyTheTurn": true,
     "receipts": [
       {
@@ -32,8 +33,8 @@
   "recorded": {
     "service": "claude",
     "cli": "claude",
-    "recordedAt": "2026-11-18T01:43:36.031Z",
-    "agentSession": "0.17.1",
+    "recordedAt": "2026-11-18T18:20:04.536Z",
+    "agentSession": "0.18.0",
     "environment": "terminal"
   }
 }
