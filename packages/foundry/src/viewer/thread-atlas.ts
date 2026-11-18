@@ -10,48 +10,24 @@
  */
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
+import type { Graph } from '@inixiative/atlas';
 import { READ_TOOLS, WRITE_TOOLS } from '@inixiative/foundry-core';
+import { fetchAtlasGraph } from '../atlas-graph';
 import type { LocalSessionStore } from '../persistence/local-session-store';
 import { turnFiles } from './turn-flow';
 
-/** The shape of `atlas graph --json` (see @inixiative/atlas src/commands/graph.ts), the fields read here. */
-export interface AtlasGraph {
-  conceptToFiles: Record<string, string[]>;
-  usesConsumers: Record<string, string[]>;
-  /** A concept's doc, resolved to a repo path (its gloss section). */
-  thesaurus?: Record<string, { phrases: string[]; doc?: string }>;
-  /** Each file's kind and the concepts it is part of and uses. */
-  fileToConcepts?: Record<string, { kind: string[]; partOf: string[]; uses: string[] }>;
-}
-
-/**
- * The project's `atlas graph --json`, or null when the repo has no atlas or the CLI fails. Uses the
- * repo's own atlas devDep (`--no-install`): never npm, where "atlas" is an unrelated package.
- */
-export async function readAtlasGraph(root: string): Promise<AtlasGraph | null> {
-  try {
-    const proc = Bun.spawn(['bunx', '--no-install', 'atlas', 'graph', '--json'], {
-      cwd: root,
-      stdout: 'pipe',
-      stderr: 'pipe',
-    });
-    const stdout = await new Response(proc.stdout).text();
-    if ((await proc.exited) !== 0) return null;
-    return JSON.parse(stdout) as AtlasGraph;
-  } catch {
-    return null;
-  }
-}
+/** A project's Atlas graph, or null when its CLI fails (the panels then say so). */
+const readGraph = (root: string): Promise<Graph | null> => fetchAtlasGraph(root).catch(() => null);
 
 const TURNS = 40;
 const CACHE_MS = 60_000;
-const graphs = new Map<string, { at: number; graph: AtlasGraph | null }>();
+const graphs = new Map<string, { at: number; graph: Graph | null }>();
 
 /** The project's graph, cached a minute (a spawn per read is too slow for a panel). */
-async function graphOf(root: string): Promise<AtlasGraph | null> {
+async function graphOf(root: string): Promise<Graph | null> {
   const hit = graphs.get(root);
   if (hit && Date.now() - hit.at < CACHE_MS) return hit.graph;
-  const graph = await readAtlasGraph(root);
+  const graph = await readGraph(root);
   graphs.set(root, { at: Date.now(), graph });
   return graph;
 }
@@ -93,7 +69,7 @@ export interface ConceptTouch {
 
 /** The concepts a set of read and written paths fall in, most-touched first. */
 export function conceptsTouched(
-  graph: AtlasGraph,
+  graph: Pick<Graph, 'conceptToFiles' | 'thesaurus'>,
   paths: { read: Set<string>; written: Set<string> },
 ): ConceptTouch[] {
   const touches: ConceptTouch[] = [];

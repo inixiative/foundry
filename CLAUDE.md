@@ -92,7 +92,7 @@ Foundry is subscription-only by default and all Claude for now (2026-10-11): the
 
 1. **Don't reinvent Claude Code.** Wrap it, don't replace it.
 2. **Pull over push.** Inject predicted context, let the session pull the rest via MCP.
-3. **Progressive depth.** Basic layers every message, deeper layers only on domain shift / low confidence / cross-cutting signals. Most steady-state messages reuse cached middleware output.
+3. **Progressive depth.** Standing layers reach every message; an on-demand layer joins a turn only when that turn's Warden plan asks for it, and delta hydration sends only layers that changed. Every Warden is asked at every trigger point; `NO_COMMENT` is the cheap default.
 4. **One writer, many readers.** The Librarian is the sole writer to thread-state. Wardens and guards emit signals; the Librarian reconciles.
 5. **No backwards-compat cruft.** Remove unused systems entirely. No optional fallbacks, no re-exporting removed types, no `_unused` vars.
 6. **Every execution is a training step.** Map rebuilds, memory entries, convention proposals, signal ingestion all happen after each interaction.

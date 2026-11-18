@@ -202,7 +202,7 @@
   {
     "path": "agents.*.flowRole",
     "scope": "foundry",
-    "description": "FLOW.md role: context-routing, domain-advising, execution, correctness-checking, signal-reconciliation."
+    "description": "The agent's part in a turn: execution (an executor) or domain-advising (a generated Warden)."
   },
   {
     "path": "agents.*.domain",

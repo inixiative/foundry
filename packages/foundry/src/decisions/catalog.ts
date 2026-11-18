@@ -7,6 +7,7 @@ import { createHash } from 'node:crypto';
 import { mkdir, readFile, realpath, stat } from 'node:fs/promises';
 import { dirname, isAbsolute, relative, resolve, sep } from 'node:path';
 import { z } from 'zod';
+import { fetchAtlasGraph } from '../atlas-graph';
 import { writeFileAtomic } from '../client/private-file';
 import type { TypeSafeShadowCatalog } from '../providers/typesafe-shadow';
 
@@ -271,7 +272,7 @@ export async function refreshDecisionCatalog(options: {
   if (Buffer.byteLength(manifestText) > 1_048_576) throw Error('Decision manifest exceeds 1 MiB');
   const graph = options.loadGraph
     ? await options.loadGraph()
-    : await loadAtlasGraph(options.atlasRoot);
+    : await fetchAtlasGraph(options.atlasRoot);
   const snapshot = await buildDecisionCatalog({
     manifest: JSON.parse(manifestText),
     graph,
@@ -280,22 +281,4 @@ export async function refreshDecisionCatalog(options: {
   await mkdir(dirname(options.outputPath), { recursive: true, mode: 0o700 });
   writeFileAtomic(options.outputPath, JSON.stringify(snapshot, null, 2) + '\n', 0o600);
   return snapshot;
-}
-
-async function loadAtlasGraph(root: string): Promise<unknown> {
-  const process = Bun.spawn(['bunx', '--no-install', 'atlas', 'graph', '--json'], {
-    cwd: root,
-    stdout: 'pipe',
-    stderr: 'ignore',
-  });
-  const timer = setTimeout(() => process.kill(), 15_000);
-  try {
-    const stdout = await new Response(process.stdout).text();
-    if ((await process.exited) !== 0)
-      throw Error('Atlas graph generation failed; no fresh decision catalog published');
-    if (Buffer.byteLength(stdout) > 20_000_000) throw Error('Atlas graph exceeds 20 MB');
-    return JSON.parse(stdout);
-  } finally {
-    clearTimeout(timer);
-  }
 }

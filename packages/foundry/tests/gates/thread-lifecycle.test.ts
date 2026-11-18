@@ -29,6 +29,7 @@ function setup() {
   const stack = new ContextStack([layer]);
   const agents = new Map<string, BaseAgent>([
     ['worker', new Executor({ id: 'worker', stack, handler: async () => 'done' })],
+    ['reviewer', new Executor({ id: 'reviewer', stack, handler: async () => 'looked' })],
   ]);
   const events = new EventStream();
   const runtime = new ThreadRuntimeManager({
@@ -196,10 +197,18 @@ test('G2: harness stages do not duplicate dispatch observations', async () => {
       observed.push(event);
     });
     const harness = new Harness(a);
-    harness.setDefaultExecutor('worker');
+    harness.setFlow({
+      stages: [
+        { agentId: 'reviewer', role: 'enrich', invocation: 'always' },
+        { agentId: 'worker', role: 'execute', invocation: 'always' },
+      ],
+    });
     await harness.send({ id: 'dedup-turn', payload: 'Fix it' });
-    expect(observed).toHaveLength(1);
-    expect((observed[0]!.content as { agentId: string }).agentId).toBe('worker');
+    expect(observed).toHaveLength(2);
+    expect(observed.map((event) => (event.content as { agentId: string }).agentId).sort()).toEqual([
+      'reviewer',
+      'worker',
+    ]);
   } finally {
     runtime.disposeAll();
   }

@@ -32,6 +32,7 @@ import {
   COMPOSITION_SLOTS,
   type CompositionSlot,
   type CorpusTier,
+  corpusTierRank,
   DEFAULT_INSTRUCTION_LADDER,
   effectiveThreadRole,
   HARNESS_GLOBAL_SOURCE,
@@ -133,13 +134,6 @@ export interface InstructionStackOptions {
   /** Which nodes' unslotted files compose into the slot. Default: all for instructions, none otherwise. */
   unslotted?: 'all' | readonly string[];
 }
-
-const TIER_RANK: Readonly<Record<CorpusTier, number>> = {
-  personal_private: 0,
-  personal_public: 1,
-  team: 2,
-  org: 3,
-};
 
 const isFile = (path: string) => {
   try {
@@ -260,7 +254,7 @@ export async function discoverInstructionStack(
         projectPath: options.projectPath,
       },
     },
-    { tierRank: (tier) => TIER_RANK[tier as CorpusTier] },
+    { tierRank: (tier) => corpusTierRank(tier as CorpusTier) },
   );
   return {
     files: stack.files.map((file) => ({

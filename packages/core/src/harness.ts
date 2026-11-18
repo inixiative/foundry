@@ -11,6 +11,8 @@ import type { FanResult, Thread } from './thread';
 import { Trace } from './trace';
 import type { AgentModeConfig, LayerModeConfig } from './types';
 
+type LayerActivation = NonNullable<LayerModeConfig['activation']>;
+
 export interface Message<T = unknown> {
   readonly id: string;
   readonly payload: T;
@@ -134,7 +136,7 @@ export class Harness {
 
   // Agent/layer invocation metadata (from config)
   private _agentModes: Map<string, { invocation: string }> = new Map();
-  private _layerModes: Map<string, { activation: string }> = new Map();
+  private _layerModes: Map<string, { activation: LayerActivation }> = new Map();
 
   private _pipeline: PipelineStep[] = [];
   private _traces: Trace[] = [];
@@ -171,7 +173,7 @@ export class Harness {
   }
 
   /** Register activation mode for a layer (from config). */
-  setLayerMode(layerId: string, activation: string): void {
+  setLayerMode(layerId: string, activation: LayerActivation): void {
     this._layerModes.set(layerId, { activation });
   }
 
@@ -566,7 +568,7 @@ export class Harness {
     return this._agentModes;
   }
 
-  get layerModes(): ReadonlyMap<string, { activation: string }> {
+  get layerModes(): ReadonlyMap<string, { activation: LayerActivation }> {
     return this._layerModes;
   }
 

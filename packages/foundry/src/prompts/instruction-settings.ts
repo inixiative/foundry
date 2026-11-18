@@ -31,30 +31,16 @@ export const MAIN_ROLE = roleIdIn(roleNamespace.thread, 'main');
 export const DEFAULT_ROLE_BUDGET = 120_000;
 
 /** Who a composed file is for, narrowest first. An untiered file is personal_private. */
-export type CorpusTier = 'personal_private' | 'personal_public' | 'team' | 'org';
+export const CORPUS_TIERS = ['personal_private', 'personal_public', 'team', 'org'] as const;
+export type CorpusTier = (typeof CORPUS_TIERS)[number];
 
-/** Audiences that may see a file at each tier. */
-const VISIBLE_TO: Record<CorpusTier, readonly CorpusTier[]> = {
-  personal_private: ['personal_private'],
-  personal_public: ['personal_private', 'personal_public', 'team'],
-  team: ['personal_private', 'personal_public', 'team'],
-  org: ['personal_private', 'personal_public', 'team', 'org'],
-};
+/** Where a tier sits in that order: 0 is the narrowest. */
+export const corpusTierRank = (tier: CorpusTier): number => CORPUS_TIERS.indexOf(tier);
 
-export const CORPUS_TIERS = Object.keys(VISIBLE_TO) as readonly CorpusTier[];
-
-/** Whether content at `tier` may reach `audience`. */
+/** Whether content at `tier` may reach `audience`: an audience sees its own tier and every wider one. */
 export function visibleTo(tier: CorpusTier, audience: CorpusTier): boolean {
-  return VISIBLE_TO[tier].includes(audience);
+  return corpusTierRank(tier) >= corpusTierRank(audience);
 }
-
-/** How narrow an audience is: one sees every tier its rank or above. */
-const AUDIENCE_RANK: Readonly<Record<CorpusTier, number>> = {
-  personal_private: 0,
-  personal_public: 1,
-  team: 2,
-  org: 3,
-};
 
 export interface CompositionDedupe {
   content?: boolean;
@@ -682,10 +668,10 @@ export function roleComposition(
   // widest audience any of them composes for.
   const widest = threadRoles(settings)
     .map((other) => settings?.roles?.[other.id]?.audience ?? main)
-    .reduce((a, b) => (AUDIENCE_RANK[b] > AUDIENCE_RANK[a] ? b : a), main);
+    .reduce((a, b) => (corpusTierRank(b) > corpusTierRank(a) ? b : a), main);
   return {
     ...picks,
-    audience: thread || AUDIENCE_RANK[own] >= AUDIENCE_RANK[widest] ? own : widest,
+    audience: thread || corpusTierRank(own) >= corpusTierRank(widest) ? own : widest,
     budget: picks.budget ?? (thread ? Number.POSITIVE_INFINITY : DEFAULT_ROLE_BUDGET),
   };
 }

@@ -35,7 +35,7 @@ export interface PromptBlock {
   readonly text: string;
   /**
    * Explicit injection segment (instructions, domain-knowledge,
-   * thread-knowledge, routing, guard-findings). Decorated blocks declare it;
+   * thread-knowledge, warden-decisions, guard-findings). Decorated blocks declare it;
    * plain layer blocks leave it unset and are classified by the artifact builder.
    */
   readonly segment?: string;

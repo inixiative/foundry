@@ -824,7 +824,7 @@ test('settings declare no Wardens: one written there is refused, and a malformed
   const handNamed = {
     id: 'librarian-reuse',
     kind: 'domain-librarian' as const,
-    flowRole: 'domain-advising',
+    flowRole: 'domain-advising' as const,
     domain: 'reuse',
     prompt: 'REUSE_RULES',
     enabled: true,

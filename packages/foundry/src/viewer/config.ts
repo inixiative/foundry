@@ -533,8 +533,8 @@ export interface AgentSettingsConfig {
   id: string;
   /** What the agent does in a turn (an executor; a generated Warden is a domain-librarian). */
   kind: AgentKind;
-  /** FLOW.md role: context-routing, domain-advising, execution, correctness-checking, signal-reconciliation. */
-  flowRole?: string;
+  /** The agent's part in a turn: execution (an executor) or domain-advising (a generated Warden). */
+  flowRole?: 'execution' | 'domain-advising';
   /** Domain this agent operates in (e.g., "docs", "security", "cross-thread"). */
   domain?: string;
   /**
@@ -868,6 +868,11 @@ function validateLayerDefinition(owner: string, id: string, layer: unknown): voi
   if (isRoleLayerId(id))
     throw new Error(
       `invalid layer ${JSON.stringify(id)} in ${owner}: "role:" layers are a role's generated composition slots, never configured`,
+    );
+  const activation = (layer as { activation?: unknown } | null | undefined)?.activation;
+  if (activation !== undefined && activation !== 'always' && activation !== 'on-demand')
+    throw new Error(
+      `invalid layer ${JSON.stringify(id)} in ${owner}: activation must be "always" or "on-demand"`,
     );
   const segment = (layer as { segment?: unknown } | null | undefined)?.segment;
   if (segment !== undefined && segment !== 'domain-knowledge' && segment !== 'thread-knowledge')

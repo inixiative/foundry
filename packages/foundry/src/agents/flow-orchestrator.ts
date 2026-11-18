@@ -1584,7 +1584,7 @@ function composeDecoration(
       role: 'content',
       id: 'decoration:decisions',
       source: 'foundry',
-      segment: 'routing',
+      segment: 'warden-decisions',
       text: [
         ...(decisions.length ? [`Domain decisions: ${decisions.join('; ')}.`] : []),
         ...(plan.conflicts.length

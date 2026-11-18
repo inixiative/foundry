@@ -66,9 +66,12 @@ the cheap decision model.
 
 ## Phase 3: Self-Improvement
 
-Feedback given in Foundry (`/feedback`, `/correction`, or detection when `feedback.capture` is on) is
-captured into the feedback lifecycle and, once applied, written to a role file the composition view
-reads on the next turn (docs/FEEDBACK-LOOP.md).
+Feedback is captured into the feedback lifecycle three ways today: `/feedback <text>` in a thread's
+message box (or a message's ⋯ → feedback), which records it on the thread's last turn and never sends
+it to the model; `/correction <text>` typed in an ACP host (foundry-acp), which records a correction
+against the session's last turn; and detection on accepted turns, only when `feedback.capture` is on
+(off by default). `/correction` in the viewer's message box is not built yet. Once applied, feedback is
+written to a role file the composition view reads on the next turn (docs/FEEDBACK-LOOP.md).
 
 ---
 

@@ -19,7 +19,7 @@ export type InjectionSegmentKind =
   | 'instructions'
   | 'domain-knowledge'
   | 'thread-knowledge'
-  | 'routing'
+  | 'warden-decisions'
   | 'guard-findings';
 
 export interface InjectionBlock {
@@ -177,7 +177,6 @@ export interface BuildInjectionArtifactOpts {
   readonly userMessage: string;
   readonly assembled: AssembledContext;
   readonly layerFreshness?: Record<string, { state?: string; lastWarmed?: number | null }>;
-  readonly routing?: string;
   readonly guardFindings?: string;
   /** Decoration blocks are appended after the assembled layers, in order. */
   readonly decoration?: MessageDecoration;
@@ -198,8 +197,8 @@ function segmentKindForBlock(block: PromptBlock): InjectionSegmentKind {
 
 function blockTitle(kind: InjectionSegmentKind): string {
   switch (kind) {
-    case 'routing':
-      return 'Tags / Routing';
+    case 'warden-decisions':
+      return 'Warden Decisions';
     case 'instructions':
       return 'Instructions';
     case 'domain-knowledge':
@@ -232,15 +231,11 @@ function makeBlock(
  * Build a segmented reading view of the context supplied to an executor.
  *
  * The artifact keeps Foundry's intervention boundaries visible: the user
- * message remains separate from injected routing, instructions, domain
- * knowledge, thread state, and guard findings.
+ * message remains separate from injected Warden decisions, instructions,
+ * domain knowledge, thread state, and guard findings.
  */
 export function buildInjectionArtifact(opts: BuildInjectionArtifactOpts): InjectionArtifact {
   const blocks: InjectionBlock[] = [];
-
-  if (opts.routing?.trim()) {
-    blocks.push(makeBlock('routing', 'route', opts.routing.trim()));
-  }
 
   for (const block of [...opts.assembled.blocks, ...(opts.decoration?.blocks ?? [])]) {
     if (!block.text.trim()) continue;
@@ -266,7 +261,7 @@ export function buildInjectionArtifact(opts: BuildInjectionArtifactOpts): Inject
   }
 
   const order: InjectionSegmentKind[] = [
-    'routing',
+    'warden-decisions',
     'instructions',
     'domain-knowledge',
     'thread-knowledge',

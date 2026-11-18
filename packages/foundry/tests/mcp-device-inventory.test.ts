@@ -27,7 +27,7 @@ for (const enrolled of [false, true])
     const device = enrolled ? enrollLocalDevice('Controlled device', path) : null;
     const mcp = createFoundryMcp({
       thread: owner,
-      sessionManager: manager,
+      liveThreads: manager,
       deviceIdentityPath: path,
     });
     const client = new Client({ name: 'controlled-device-client', version: '1' });

@@ -208,8 +208,9 @@ node's file (`CLAUDE.local.md` pointing at private notes) may point anywhere: it
 reaches no shared audience. Refused files are listed in the Selection panel.
 A repository inside a credential directory (`~/.config/nvim`) has its
 instruction files refused too. The role's
-`composition.roles.<role>.audience` (default `personal_private`) filters by tier through the corpus
-`VISIBLE_TO` rules, so personal files never reach a `team` or `org` audience.
+`composition.roles.<role>.audience` (default `personal_private`) filters by tier through the one
+tier order (`CORPUS_TIERS`, narrowest first: an audience sees its own tier and every wider one), so
+personal files never reach a `team` or `org` audience.
 
 Then repeats are removed, keeping the most specific copy (the later one in the
 order). Dedupe runs after the audience filter, so a personal copy never hides
