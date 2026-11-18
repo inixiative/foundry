@@ -10,7 +10,7 @@
 
 import { ContextStack, type LLMMessage, type LLMProvider, newId } from '@inixiative/foundry-core';
 import type { StageEffort } from '../classify';
-import { isStageSession, isWardenSession, primedRequest } from '../providers/primed-decisions';
+import { isWardenSession, primedRequest } from '../providers/primed-decisions';
 import type { Roster } from '../providers/project-warden-hosts';
 import type { FoundryConfig } from '../viewer/config';
 import { buildAgents, buildLayers, type SourceResolver, ThreadFactory } from './thread-factory';
@@ -162,15 +162,13 @@ export async function composeProjectRoster(
     },
   });
   const held = new Map<string, ProjectRosterEntry>();
-  const recorder = (
-    id: string,
-    accepts: (key: string) => boolean,
-    stage?: ProjectRosterEntry['stage'],
-  ): LLMProvider => ({
+  // Every Warden call a decision host receives is held by that host's project host: the decision
+  // host's own (first stages, and later stages on its model) or a stage host's lane.
+  const recorder = (id: string, stage?: ProjectRosterEntry['stage']): LLMProvider => ({
     ...refuse(id),
     prestart: (messages: LLMMessage[], callOpts) => {
       const key = callOpts.threadId;
-      if (!key || !isWardenSession(key) || !accepts(key)) return;
+      if (!key || !isWardenSession(key)) return;
       const domain = /:aux:domain:(.+?)(?::stage:\d+)?$/.exec(key)?.[1];
       if (!domain) return;
       const { spec } = primedRequest(messages, callOpts, key);
@@ -180,12 +178,12 @@ export async function composeProjectRoster(
       if (!held.has(at)) held.set(at, { domain, spec, ...(stage ? { stage } : {}) });
     },
   });
-  const recording = recorder(opts.decisions.id, (key) => !isStageSession(key));
+  const recording = recorder(opts.decisions.id);
   const stageHost = opts.stageHost;
   const recordingStages: ThreadRuntimeDeps['stageHost'] = stageHost
     ? (model, effort) => {
         const served = stageHost(model, effort);
-        return served ? recorder(served.id, isStageSession, { model, effort }) : served;
+        return served ? recorder(served.id, { model, effort }) : served;
       }
     : undefined;
   return withChorusThread(

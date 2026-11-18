@@ -868,8 +868,10 @@ const holdProjectRoster = async (projectId: string) => {
       if (!hosts) continue;
       lanes.set(hosts, [...(lanes.get(hosts) ?? []), { spec, standby: '' }]);
     }
-    for (const lane of projectHosts.lanes()) if (!lanes.has(lane)) lanes.set(lane, []);
     for (const [hosts, entries] of lanes) hosts.openProject(projectId, entries);
+    // A lane this project's stages no longer use holds nothing for it.
+    for (const lane of projectHosts.lanes())
+      if (!lanes.has(lane)) await lane.closeProject(projectId);
   } catch (error) {
     console.warn(
       `[project-wardens] ${projectId}: roster not composed (${(error as Error).message}); primed Wardens serve it`,

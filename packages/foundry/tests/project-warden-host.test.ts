@@ -396,6 +396,10 @@ test('routing: a project host takes every Warden call (advice, guards, reviews, 
   const starting = { serving: () => 'starting' } as unknown as ProjectWardenHosts;
   expect(projectHostTarget(starting, 'A1:aux:domain:locks')).toBeUndefined();
   expect(projectHostTarget(starting, 'A1:aux:domain:locks', { heldOnly: true })).toBe('starting');
+  // Held-only binds the first stage: a later stage's escalation goes primed while the host starts.
+  expect(
+    projectHostTarget(starting, 'A1:aux:domain:locks:stage:1', { heldOnly: true }),
+  ).toBeUndefined();
 });
 
 test('lanes: a later stage on another model gets its own hosts, opened, touched and closed with the decision ones', async () => {
@@ -774,4 +778,29 @@ test('claude-project: a handoff brief (flow.brief) asks every Warden through the
   expect(calls.every((c) => c.routed)).toBe(true);
   // The handoff's charter is the advice charter: the brief is served by a held spare.
   expect(calls.every((c) => c.held)).toBe(true);
+});
+
+test("claude-project: a later stage on another model is recorded with its model, so it is held by that model's lane", async () => {
+  isolatedHome();
+  const dir = project();
+  const stages: Array<string | undefined> = [];
+  const roster = await composeProjectRoster({
+    config: config(dir, 'claude-project'),
+    projectId: 'P',
+    decisions: nothing,
+    stageHost: (model, effort) => {
+      stages.push(model);
+      return model === 'claude-sonnet-5-5' && effort === 'low'
+        ? { ...nothing, id: 'sonnet' }
+        : null;
+    },
+    resolveSource: createSourceResolver({ memory: new FileMemory(join(tempDir('mem'), 'm')) }),
+  });
+  expect(stages).toContain('claude-sonnet-5-5');
+  const first = roster.filter((e) => !e.stage);
+  const later = roster.filter((e) => e.stage);
+  expect(first.map((e) => e.domain).sort()).toEqual(['concurrency-locks', 'lens-model']);
+  expect(later.map((e) => e.domain).sort()).toEqual(['concurrency-locks', 'lens-model']);
+  for (const entry of later)
+    expect(entry.stage).toEqual({ model: 'claude-sonnet-5-5', effort: 'low' });
 });

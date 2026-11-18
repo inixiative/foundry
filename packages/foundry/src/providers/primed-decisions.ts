@@ -181,7 +181,9 @@ export function isStageSession(sessionKey: string): boolean {
  * classify stage) and its project's host serves. Each decision host holds its own model's project
  * hosts (a stage on another model: that stage host's lane), so a stage reaching this one runs here. A
  * held-only call (user-message advice, which catches up) gets `starting` while that host is on its
- * way, so it is skipped, never started cold; any other call goes to primed then (fail-open). Advice
+ * way, so it is skipped, never started cold; any other call goes to primed then (fail-open). Held-only
+ * binds a Warden's first stage only: a later stage escalates a yes already given, so it runs cold on
+ * the host, or primed while the host starts, rather than lose the escalation. Advice
  * and guard compose one system, so a guard is served by the same held spares; a review carries no
  * spare and runs as a cold member of the host, still no process of its own.
  */
@@ -193,7 +195,12 @@ export function projectHostTarget(
   if (!projectHosts || !sessionKey || !isWardenSession(sessionKey)) return undefined;
   const thread = decisionThread(sessionKey);
   const serving = thread ? projectHosts.serving(thread) : undefined;
-  return serving === 'starting' && !opts.heldOnly ? undefined : serving;
+  return serving === 'starting' && !heldOnlyFor(sessionKey, opts) ? undefined : serving;
+}
+
+/** Whether a call is held-only: user-message advice at a Warden's first stage, never a later one. */
+export function heldOnlyFor(sessionKey: string, opts: Pick<CompletionOpts, 'heldOnly'>): boolean {
+  return !!opts.heldOnly && !isStageSession(sessionKey);
 }
 
 /** A decision call as the subscription queue hands it on: admitted outside the shared slots, because a project host served it. */
@@ -609,7 +616,7 @@ export function createPrimedDecisionHost(config: PrimedDecisionHostConfig) {
           // with no held spare, or a host still starting, is refused unsent. A call admitted outside
           // the shared slots for a host that has since gone is refused unsent too, never run unbounded.
           const projectHost = projectHostTarget(config.projectHosts, sessionKey, opts);
-          heldOnly = !!opts.heldOnly && !!projectHost;
+          heldOnly = heldOnlyFor(sessionKey, opts) && !!projectHost;
           if (projectHost === 'starting')
             // `starting` is only routed to held-only calls (`projectHostTarget`).
             throw new DecisionError(
