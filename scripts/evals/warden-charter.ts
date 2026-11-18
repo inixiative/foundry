@@ -122,6 +122,7 @@ import {
   type EvalWarden,
   evalProjectRoster,
   judge,
+  machineLoad,
   markEvalRun,
   runCharterEval,
   type WardenDebug,
@@ -699,7 +700,7 @@ const recordWindow = async (phase: string) => {
   lastWindowCheck = Date.now();
   appendFileSync(
     quotaFile,
-    `${JSON.stringify({ at: new Date().toISOString(), phase, windows, load: Bun.spawnSync(['uptime']).stdout.toString().trim() })}\n`,
+    `${JSON.stringify({ at: new Date().toISOString(), phase, windows, load: machineLoad() })}\n`,
     { mode: 0o600 },
   );
   return windows;

@@ -43,6 +43,7 @@ import { homedir } from 'node:os';
 import { basename, join, relative, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import {
+  type MachineLoad,
   POINTER_LEVELS,
   parseWardenPointerJudgement,
   requireExperiment,
@@ -57,7 +58,7 @@ import { FileMemory } from '../../packages/core/src/adapters/file-memory';
 import { buildRoleLayers } from '../../packages/foundry/src/agents/role-layers';
 import { createSourceResolver } from '../../packages/foundry/src/agents/thread-factory';
 import { PROMPT_SECTIONS } from '../../packages/foundry/src/classify';
-import { markEvalRun } from '../../packages/foundry/src/feedback/charter-eval';
+import { machineLoad, markEvalRun } from '../../packages/foundry/src/feedback/charter-eval';
 import {
   claudeUsageWindows,
   decisionHost,
@@ -618,13 +619,12 @@ interface CellMeta {
   startedAt: string;
   endedAt?: string;
   exit?: number;
-  uptimeBefore: string;
-  uptimeAfter?: string;
+  loadBefore: MachineLoad;
+  loadAfter?: MachineLoad;
   windowBefore?: Record<string, number>;
   windowAfter?: Record<string, number>;
 }
 
-const uptime = () => Bun.spawnSync(['uptime']).stdout.toString().trim();
 const windowPercent = () => claudeUsageWindows(ROOT);
 
 async function run() {
@@ -697,7 +697,7 @@ async function run() {
       const meta: CellMeta = {
         ...job,
         startedAt: new Date().toISOString(),
-        uptimeBefore: uptime(),
+        loadBefore: machineLoad(),
         ...(await windowPercent().then((w) => (w ? { windowBefore: w } : {}))),
       };
       const proc = Bun.spawn(
@@ -736,7 +736,7 @@ async function run() {
       Object.assign(meta, {
         endedAt: new Date().toISOString(),
         exit,
-        uptimeAfter: uptime(),
+        loadAfter: machineLoad(),
         ...(await windowPercent().then((w) => (w ? { windowAfter: w } : {}))),
       });
       writePrivate(join(out, 'meta.json'), JSON.stringify(meta, null, 1));
@@ -1042,7 +1042,7 @@ function report() {
         .map((p) => JSON.parse(readFileSync(p, 'utf8')) as CellMeta);
       return {
         cells: metas.length,
-        load: metas.map((m) => m.uptimeBefore.replace(/.*load averages?: /, '')),
+        load: metas.map((m) => `${m.loadBefore.average.join(' ')} on ${m.loadBefore.cpus} CPUs`),
       };
     };
     const tokensOf = (a: WardenProbeAnswer) =>

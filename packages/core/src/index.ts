@@ -275,6 +275,7 @@ export {
   CORRECTION_TARGET_PROMPT,
   type CorrectionTarget,
   correctionTargetMessages,
+  type MachineLoad,
   MISS_KINDS,
   type MissKind,
   POINTER_LEVELS,

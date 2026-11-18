@@ -11,11 +11,13 @@
 // scores runs the same way.
 
 import { createHash } from 'node:crypto';
+import { availableParallelism, loadavg } from 'node:os';
 import { RUN_ENV, stampRunDirectory } from '@inixiative/archive/exemption';
 import {
   type ClassifyStageTrace,
   ContextLayer,
   type LLMProvider,
+  type MachineLoad,
   parseWardenJudgement,
   probeTriggers,
   SignalBus,
@@ -51,6 +53,12 @@ import type { Roster } from '../providers/project-warden-hosts';
 export function markEvalRun(state: string): void {
   process.env[RUN_ENV] = 'oracle';
   stampRunDirectory(state, 'oracle');
+}
+
+/** The machine's load averages and CPU count now, recorded with every eval turn and window probe so speed can be read against load. */
+export function machineLoad(): MachineLoad {
+  const [one = 0, five = 0, fifteen = 0] = loadavg().map((l) => Math.round(l * 100) / 100);
+  return { average: [one, five, fifteen], cpus: availableParallelism() };
 }
 
 /** One Warden as the eval composes it: its own instructions and domain knowledge. */
@@ -195,6 +203,7 @@ export async function runCharterEval(
       // The gate may have closed the run (a quota stop): a turn it closed is not asked.
       if (options.done?.(probe.id, trigger)) continue;
       const started = Date.now();
+      const loadAtStart = machineLoad();
       const asked: WardenProbeAnswer[][] = new Array(wardens.length);
       // Debug rows wait for their turn to be recorded, so a stopped turn leaves none behind.
       const debugged: WardenDebug[][] = new Array(wardens.length);
@@ -218,6 +227,9 @@ export async function runCharterEval(
       turns.push({
         probeId: probe.id,
         trigger,
+        startedAt: new Date(started).toISOString(),
+        loadAtStart,
+        loadAtEnd: machineLoad(),
         calls: rows.length,
         wallMs: Date.now() - started,
         notAdmitted: rows.filter((a) => a.error === 'not-admitted').length,
