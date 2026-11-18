@@ -49,3 +49,6 @@ export const DECISION_INPUT_CAP = 160_000;
 
 /** The capacity refusal of held-only advice with no warm call held: the Warden was skipped unsent and catches up. */
 export const NOT_HELD_REFUSAL = 'Warden not held warm on its project host; skipped unsent';
+
+/** The capacity refusal while the decision login's usage is used up: skipped unsent until it resets. */
+export const QUOTA_PAUSED_REFUSAL = "Wardens paused: the login's usage is used up until it resets";

@@ -3,6 +3,7 @@
  * @kind service
  * @partOf feature:threads, feature:viewer
  */
+import { fullWindowsResetAt } from '@inixiative/agent-session';
 import type { Thread, ThreadSnooze, WindowReading } from '@inixiative/foundry-core';
 
 /**
@@ -24,10 +25,8 @@ export function quotaResetAt(readings: readonly WindowReading[], now: number): n
     undefined,
   );
   if (!latest) return undefined;
-  const resets = Object.values(latest.windows)
-    .filter((w) => w.usedPercent >= 100 && w.resetsAt !== undefined && w.resetsAt > now)
-    .map((w) => w.resetsAt!);
-  return resets.length ? Math.max(...resets) : undefined;
+  const at = fullWindowsResetAt(Object.values(latest.windows));
+  return at !== undefined && at > now ? at : undefined;
 }
 
 export function resolveSnooze(

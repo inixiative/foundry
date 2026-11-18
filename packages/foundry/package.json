@@ -30,7 +30,7 @@
   },
   "dependencies": {
     "@anthropic-ai/claude-code": "^2.1.92",
-    "@inixiative/agent-session": "^0.17.0",
+    "@inixiative/agent-session": "^0.17.1",
     "@inixiative/archive": "^0.34.0",
     "@inixiative/config": "^0.5.224",
     "@inixiative/foundry-core": "workspace:*",

@@ -11,6 +11,7 @@
  * login, one probe in flight at a time. A Kingdom-pool login's limits are Kingdom's to report.
  */
 import {
+  fullWindowsResetAt,
   type LimitSnapshot,
   museLimitSnapshot,
   probeClaudeLimits,
@@ -114,6 +115,26 @@ export function forgetLoginLimits(login: NativeProfileSource): void {
       key.startsWith(login.runtime === 'codex' ? 'codex:' : 'claude-code:')
     )
       cache.delete(key);
+}
+
+/**
+ * When a used-up login's usage frees up: the latest reset among its windows at their limit, or
+ * undefined when it is not used up or that reset is not known. A cached reading that already shows
+ * it used up is trusted until its reset; any other is read again, since it may predate the limit.
+ */
+export async function fetchLoginQuotaResetAt(
+  login: NativeProfileSource,
+  now = Date.now(),
+  probes: Record<SubscriptionWorker, Probe> = PROBES,
+): Promise<number | undefined> {
+  const resetAt = (limits: LimitSnapshot | undefined) => {
+    const at = limits?.blocked ? fullWindowsResetAt(limits.windows) : undefined;
+    return at !== undefined && at > now ? at : undefined;
+  };
+  const cached = resetAt(await loginLimits(login, probes));
+  if (cached !== undefined) return cached;
+  forgetLoginLimits(login);
+  return resetAt(await loginLimits(login, probes));
 }
 
 /** The limits of every subscription login among `accounts`. */

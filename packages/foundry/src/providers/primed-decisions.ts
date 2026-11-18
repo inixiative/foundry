@@ -42,6 +42,7 @@ import {
 } from './native-text-provider';
 import { assertPrivateProfile, assertProfile } from './private-profile';
 import type { ProjectWardenHosts } from './project-warden-hosts';
+import { fetchLoginQuotaResetAt } from './provider-limits';
 import { formatMessagesForNativeSession } from './session-backed';
 
 type DecisionProcess = ReturnType<CodexSpawn>;
@@ -729,10 +730,13 @@ export function createPrimedDecisionHost(config: PrimedDecisionHostConfig) {
     };
   };
 
+  /** When this host's used-up login frees up (undefined: not used up, or not known); no model turn. */
+  const fetchQuotaResetAt = () => fetchLoginQuotaResetAt(source);
+
   // Project Warden hosts: this host starts each project's host process on its own decision login.
   if (config.projectHosts) {
     if (!claude) throw Error('Project Warden hosts run on a Claude decision login');
-    config.projectHosts.bindLauncher(async (projectId, extension) => {
+    config.projectHosts.bindLauncher(fetchQuotaResetAt, async (projectId, extension) => {
       await claude.ready();
       // Below the stamped root: Archive drops it as Foundry's own run.
       const dir = join(
@@ -795,6 +799,7 @@ export function createPrimedDecisionHost(config: PrimedDecisionHostConfig) {
     hostId,
     receiptsPath,
     createRun,
+    fetchQuotaResetAt,
     releaseFailures: () => releaseFailures,
     close: async () => {
       try {

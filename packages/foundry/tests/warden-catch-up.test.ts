@@ -18,7 +18,7 @@ import {
   WardenCatchUp,
 } from '../src/agents/warden-catch-up';
 import { NO_COMMENT } from '../src/classify';
-import { NOT_HELD_REFUSAL } from '../src/providers/decision-budget';
+import { NOT_HELD_REFUSAL, QUOTA_PAUSED_REFUSAL } from '../src/providers/decision-budget';
 
 const cleanups: Array<() => unknown> = [];
 afterEach(async () => {
@@ -225,6 +225,23 @@ test('a Warden not held warm is skipped unsent, not degraded, and catches up on 
   // Answered: the third message carries nothing earlier.
   await flow.preMessage('Rename the column');
   expect(asked.at(-1)!.message).not.toContain('Messages since you last answered');
+});
+
+test('a Warden paused on a used-up login is skipped unsent, not degraded, and catches up after the reset', async () => {
+  let paused = true;
+  const { flow, asked } = chorus(() => {
+    if (paused) throw Object.assign(Error(QUOTA_PAUSED_REFUSAL), { decisionCapacity: true });
+    return NO_COMMENT;
+  });
+  const first = await flow.preMessage('Tidy the Prisma schema');
+  const skipped = first.contributions[0]!;
+  expect(skipped).toMatchObject({ decision: 'excluded', catchesUp: true });
+  // The strip says it once; no degraded Warden and no Retry each round.
+  expect(degradedAnswer(skipped)).toBeUndefined();
+  paused = false;
+  const second = await flow.preMessage('Add an index');
+  expect(second.contributions[0]).toMatchObject({ decision: 'no-comment' });
+  expect(asked.at(-1)!.message).toContain('Tidy the Prisma schema');
 });
 
 test('a capacity refusal that is not the held-only skip is still degraded (Retry offered)', async () => {
