@@ -111,7 +111,7 @@ Each Warden maintains knowledge, advises when asked, and guards when triggered. 
 | **Architecture** | Module boundaries, deps | "Cross-module work?" | "Does this respect boundaries?" |
 | **Memory** | Past decisions, failures | "Have we seen this before?" | "This pattern failed last time" |
 
-Memory is meant to be special in guard mode: **programmatic pattern matching** against known failure modes (grep + structured memory, not LLM reasoning), so it could run on every tool call for free. **Not built:** the memory domain sets `programmaticGuard: true` (`agents/thread-runtime.ts:196`) but nothing supplies a `guardFn`, so `DomainLibrarian.guard` falls through to the LLM guard (`agents/domain-librarian.ts:1259-1271`). Every guard is an LLM call today.
+Memory is meant to be special in guard mode: **programmatic pattern matching** against known failure modes (grep + structured memory, not LLM reasoning), so it could run on every tool call for free. **Not built:** no Warden is given a programmatic guard or a `guardFn`; every guard is an LLM call today.
 
 ### When a Warden weighs in: the charter, trigger points and NO_COMMENT
 

@@ -160,8 +160,6 @@ export function resolveThreadDomains(
   config: FoundryConfig,
   available: ReadonlyMap<string, Pick<ContextLayer, 'definition' | 'segment'>>,
   options: {
-    /** Domain defaults by name (guard triggers, programmatic guard) for configured Wardens without their own. */
-    policy: readonly ThreadDomainConfig[];
     /** Wardens registered in code over a stack layer (tests, research runs); never from settings. */
     programmatic: readonly ThreadDomainConfig[];
     llm: LLMProvider;
@@ -244,13 +242,11 @@ export function resolveThreadDomains(
           `[expert-review-profile-override] domain=${diagnosticLabel(domain)} agent=${diagnosticLabel(agentId)}: explicit learning.review takes precedence for post-review; changed=${changed.join(',')}. Advise/guard profile is unchanged. Inspect learning.review and this expert's profile; these are requested settings, not native acknowledgment.`,
         );
     }
-    const policy = options.policy.find((d) => d.domain === domain);
     return {
       domain,
       expert: { agentId, source: 'configured' },
       budget: roleComposition(config.composition, agentId).budget,
-      guardTriggers: [...(agent.guardTriggers ?? policy?.guardTriggers ?? [])],
-      programmaticGuard: policy?.programmaticGuard,
+      guardTriggers: [...(agent.guardTriggers ?? [])],
       adviseProvider: provider,
       adviseOpts: { ...opts, maxTokens: 512 },
       reviewProvider,

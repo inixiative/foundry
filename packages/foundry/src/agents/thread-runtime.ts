@@ -356,27 +356,9 @@ export interface ThreadDomainConfig {
   guardPrompt?: string;
   reviewPrompt?: string;
   reviewOpts?: CompletionOpts;
-  programmaticGuard?: boolean;
   /** Characters its instructions plus domain knowledge may take. Default: unbounded. */
   budget?: number;
 }
-
-/**
- * Built-in domain policy: the guard triggers (and programmatic guard) a configured Warden of that
- * domain uses when its settings name none. Passed as `domains`, they also register code Wardens over
- * layers of those names.
- */
-export const DEFAULT_THREAD_DOMAINS: ThreadDomainConfig[] = [
-  { domain: 'docs', layerId: 'docs', guardTriggers: ['file_write', 'Write'] },
-  { domain: 'conventions', layerId: 'conventions', guardTriggers: ['file_write', 'Write', 'Edit'] },
-  {
-    domain: 'security',
-    layerId: 'security',
-    guardTriggers: ['file_write', 'Write', 'Edit', 'Bash', 'bash'],
-  },
-  { domain: 'architecture', layerId: 'architecture', guardTriggers: ['file_write', 'Write'] },
-  { domain: 'memory', layerId: 'memory', guardTriggers: [], programmaticGuard: true },
-];
 
 /** A later classify stage's composed doc, and the source it composes from. */
 interface StageDoc {
@@ -808,7 +790,6 @@ export class ThreadRuntimeManager {
       config,
       new Map(thread.stack.layers.map((l) => [l.id, l])),
       {
-        policy: this._deps.domains ?? DEFAULT_THREAD_DOMAINS,
         programmatic: this._deps.domains ?? [],
         llm: this._deps.llm,
         providers: this._deps.providers,
@@ -908,7 +889,6 @@ export class ThreadRuntimeManager {
               .map((l) => [l.id, l]),
           ),
           {
-            policy: this._deps.domains ?? DEFAULT_THREAD_DOMAINS,
             programmatic: this._deps.domains ?? [],
             llm: this._deps.llm,
             providers: this._deps.providers,
@@ -1260,7 +1240,6 @@ class ThreadRuntimeImpl implements ThreadRuntime {
           guardTriggers: dc.guardTriggers,
           advisePrompt: dc.advisePrompt,
           guardPrompt: dc.guardPrompt,
-          programmaticGuard: dc.programmaticGuard,
           threadKnowledgeLayer,
           maxKnowledgeChars: deps.learning?.maxKnowledgeChars,
           stages: bound,

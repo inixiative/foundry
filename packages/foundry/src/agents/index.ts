@@ -181,7 +181,6 @@ export {
 export {
   auxiliarySessionId,
   type CorrelatedToolObservation,
-  DEFAULT_THREAD_DOMAINS,
   type LearningConfig,
   type ScopedProviderIdentity,
   type SignalSink,
