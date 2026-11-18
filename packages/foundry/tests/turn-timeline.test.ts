@@ -1,6 +1,7 @@
 import './helpers/isolate-archive';
 import { afterEach, expect, test } from 'bun:test';
 import type { NativeEvidence } from '@inixiative/foundry-core';
+import { type AdviceOutcome, callOutcomeLabel } from '@inixiative/foundry-core';
 import type { TurnDetail } from '../src/persistence/local-session-store';
 import { type TimelineStep, turnTimeline } from '../src/viewer/turn-timeline';
 import { m0Scenario } from './helpers/m0-domain-loop';
@@ -44,9 +45,9 @@ test('a recorded turn reads as its steps in order: input, routing, chorus, plan,
   });
   const chorus = of(t1, 'chorus')[0]!;
   expect(chorus.trigger).toBe('user-message');
-  expect(chorus.regions.map((r) => [r.region, r.decision])).toEqual([
-    ['architecture', 'contribute'],
-    ['testing', 'contribute'],
+  expect(chorus.regions.map((r) => [r.region, r.outcome && callOutcomeLabel(r.outcome)])).toEqual([
+    ['architecture', 'answered:spoke'],
+    ['testing', 'answered:spoke'],
   ]);
   const delivery = of(t1, 'delivery')[0]!;
   expect(delivery.chimes.map((c) => [c.region, c.saidBefore])).toEqual([
@@ -164,7 +165,10 @@ test('a retry of the message chorus (FEAT-008) is its own step in the work, not 
     phases: [
       row(
         'p1',
-        { trigger: 'user-message', participants: [{ domain: 'db', decision: 'timeout' }] },
+        {
+          trigger: 'user-message',
+          participants: [{ domain: 'db', outcome: { status: 'failed', cause: 'timeout' } }],
+        },
         2,
       ),
       row(
@@ -172,7 +176,9 @@ test('a retry of the message chorus (FEAT-008) is its own step in the work, not 
         {
           trigger: 'user-message',
           retryOf: 'p1',
-          participants: [{ domain: 'db', decision: 'contribute', snippets: ['x'] }],
+          participants: [
+            { domain: 'db', outcome: { status: 'answered', result: 'spoke' }, snippets: ['x'] },
+          ],
         },
         20,
       ),
@@ -181,8 +187,11 @@ test('a retry of the message chorus (FEAT-008) is its own step in the work, not 
   const steps = turnTimeline(detail).steps;
   const chorus = steps.filter((s) => s.kind === 'chorus');
   expect(
-    chorus.map((s) => (s as { regions: { decision: string }[] }).regions[0]!.decision),
-  ).toEqual(['timeout', 'contribute']);
+    chorus.map((s) => (s as { regions: { outcome: AdviceOutcome | null }[] }).regions[0]!.outcome),
+  ).toEqual([
+    { status: 'failed', cause: 'timeout' },
+    { status: 'answered', result: 'spoke' },
+  ]);
   // The sealed chorus comes before the plan's place; the retry sits with the work, by its time.
   expect(steps.findIndex((s) => s === chorus[1])).toBe(steps.length - 2);
 });

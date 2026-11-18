@@ -3,7 +3,13 @@ import { afterEach, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { ContextLayer, ContextStack, type LLMMessage, SignalBus } from '@inixiative/foundry-core';
+import {
+  ContextLayer,
+  ContextStack,
+  callOutcomeLabel,
+  type LLMMessage,
+  SignalBus,
+} from '@inixiative/foundry-core';
 import { Cartographer } from '../src/agents/cartographer';
 import { DomainLibrarian, oneCall } from '../src/agents/domain-librarian';
 import { FlowOrchestrator } from '../src/agents/flow-orchestrator';
@@ -135,12 +141,15 @@ test('a confident no skips the Warden, journalled with its score; an unsure one 
   const plan = await flow.preMessage('Add a column to the invites table');
   const by = Object.fromEntries(plan.contributions.map((c) => [c.domain, c]));
   expect(by.voice).toMatchObject({
-    decision: 'skipped',
+    outcome: { status: 'not-sent', cause: 'prefiltered' },
     reason: 'prefilter',
     prefilter: { score: 0.05, skipBelow: 0.2 },
   });
-  expect(by.schema).toMatchObject({ decision: 'skipped', prefilter: { score: 0.15 } });
-  expect(by.ship!.decision).toBe('no-comment');
+  expect(by.schema).toMatchObject({
+    outcome: { status: 'not-sent', cause: 'prefiltered' },
+    prefilter: { score: 0.15 },
+  });
+  expect(callOutcomeLabel(by.ship!.outcome)).toBe('answered:no-comment');
   expect(plan.prefilter).toMatchObject({ status: 'scored', skipped: 2 });
   expect(calls).toEqual([{ domain: 'ship', phase: 'advice' }]);
   // One call per trigger, every Warden's question in it.
@@ -173,7 +182,10 @@ test('a missing model fails open: every Warden is asked, and the warning fires o
   const { flow, calls } = roster(['voice', 'schema'], prefilter);
 
   const plan = await flow.preMessage('Add a column');
-  expect(plan.contributions.map((c) => c.decision)).toEqual(['no-comment', 'no-comment']);
+  expect(plan.contributions.map((c) => callOutcomeLabel(c.outcome))).toEqual([
+    'answered:no-comment',
+    'answered:no-comment',
+  ]);
   expect(plan.prefilter).toMatchObject({ status: 'unavailable' });
   const report = await flow.postAction(oneCall({ tool: 'Edit', input: {} }));
   expect(report.domainsChecked).toEqual(['voice', 'schema']);
@@ -295,7 +307,7 @@ test('a thread skips a ruled-out Warden at advice and at review, each journalled
   expect(plan?.contributions).toEqual([
     expect.objectContaining({
       domain: 'security',
-      decision: 'skipped',
+      outcome: { status: 'not-sent', cause: 'prefiltered' },
       reason: 'prefilter',
       prefilter: { score: 0.02, skipBelow: DEFAULT_PREFILTER.skipBelow },
     }),

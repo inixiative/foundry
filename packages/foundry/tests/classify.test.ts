@@ -452,7 +452,7 @@ describe('the stage loop', () => {
     );
     expect(two.calls[0]!.messages[1]!.content).toEndWith(GUARD_RESPONSE_PROTOCOL);
     expect(result).toMatchObject({
-      status: 'completed',
+      outcome: { status: 'answered', result: 'findings' },
       findings: [{ description: RANKED, pointer: { pointer: 'createLock' } }],
       classified: { outcome: 'yes', finalStage: 1 },
     });

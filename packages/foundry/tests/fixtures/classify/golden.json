@@ -42,7 +42,8 @@
           "layers": [],
           "snippets": [],
           "confidence": 0,
-          "error": "advice NO_COMMENT must be the whole answer, with nothing else"
+          "error": "advice NO_COMMENT must be the whole answer, with nothing else",
+          "malformed": true
         }
       },
       {
@@ -51,7 +52,8 @@
           "layers": [],
           "snippets": [],
           "confidence": 0,
-          "error": "advice NO_COMMENT must be the whole answer, with nothing else"
+          "error": "advice NO_COMMENT must be the whole answer, with nothing else",
+          "malformed": true
         }
       },
       {
@@ -187,7 +189,8 @@
           "layers": [],
           "snippets": [],
           "confidence": 0,
-          "error": "advice answer is neither NO_COMMENT nor a JSON object"
+          "error": "advice answer is neither NO_COMMENT nor a JSON object",
+          "malformed": true
         }
       },
       {
@@ -228,7 +231,8 @@
           "layers": [],
           "snippets": [],
           "confidence": 0,
-          "error": "advice answer must be NO_COMMENT or a JSON object, received an array"
+          "error": "advice answer must be NO_COMMENT or a JSON object, received an array",
+          "malformed": true
         }
       }
     ]
@@ -276,7 +280,8 @@
           "layers": [],
           "snippets": [],
           "confidence": 0,
-          "error": "advice NO_COMMENT must be the whole answer, with nothing else"
+          "error": "advice NO_COMMENT must be the whole answer, with nothing else",
+          "malformed": true
         }
       },
       {
@@ -285,7 +290,8 @@
           "layers": [],
           "snippets": [],
           "confidence": 0,
-          "error": "advice NO_COMMENT must be the whole answer, with nothing else"
+          "error": "advice NO_COMMENT must be the whole answer, with nothing else",
+          "malformed": true
         }
       },
       {
@@ -421,7 +427,8 @@
           "layers": [],
           "snippets": [],
           "confidence": 0,
-          "error": "advice answer is neither NO_COMMENT nor a JSON object"
+          "error": "advice answer is neither NO_COMMENT nor a JSON object",
+          "malformed": true
         }
       },
       {
@@ -462,7 +469,8 @@
           "layers": [],
           "snippets": [],
           "confidence": 0,
-          "error": "advice answer must be NO_COMMENT or a JSON object, received an array"
+          "error": "advice answer must be NO_COMMENT or a JSON object, received an array",
+          "malformed": true
         }
       }
     ]
@@ -510,7 +518,8 @@
           "layers": [],
           "snippets": [],
           "confidence": 0,
-          "error": "advice NO_COMMENT must be the whole answer, with nothing else"
+          "error": "advice NO_COMMENT must be the whole answer, with nothing else",
+          "malformed": true
         }
       },
       {
@@ -519,7 +528,8 @@
           "layers": [],
           "snippets": [],
           "confidence": 0,
-          "error": "advice NO_COMMENT must be the whole answer, with nothing else"
+          "error": "advice NO_COMMENT must be the whole answer, with nothing else",
+          "malformed": true
         }
       },
       {
@@ -655,7 +665,8 @@
           "layers": [],
           "snippets": [],
           "confidence": 0,
-          "error": "advice answer is neither NO_COMMENT nor a JSON object"
+          "error": "advice answer is neither NO_COMMENT nor a JSON object",
+          "malformed": true
         }
       },
       {
@@ -696,7 +707,8 @@
           "layers": [],
           "snippets": [],
           "confidence": 0,
-          "error": "advice answer must be NO_COMMENT or a JSON object, received an array"
+          "error": "advice answer must be NO_COMMENT or a JSON object, received an array",
+          "malformed": true
         }
       }
     ]
@@ -744,7 +756,8 @@
           "layers": [],
           "snippets": [],
           "confidence": 0,
-          "error": "advice NO_COMMENT must be the whole answer, with nothing else"
+          "error": "advice NO_COMMENT must be the whole answer, with nothing else",
+          "malformed": true
         }
       },
       {
@@ -753,7 +766,8 @@
           "layers": [],
           "snippets": [],
           "confidence": 0,
-          "error": "advice NO_COMMENT must be the whole answer, with nothing else"
+          "error": "advice NO_COMMENT must be the whole answer, with nothing else",
+          "malformed": true
         }
       },
       {
@@ -889,7 +903,8 @@
           "layers": [],
           "snippets": [],
           "confidence": 0,
-          "error": "advice answer is neither NO_COMMENT nor a JSON object"
+          "error": "advice answer is neither NO_COMMENT nor a JSON object",
+          "malformed": true
         }
       },
       {
@@ -930,7 +945,8 @@
           "layers": [],
           "snippets": [],
           "confidence": 0,
-          "error": "advice answer must be NO_COMMENT or a JSON object, received an array"
+          "error": "advice answer must be NO_COMMENT or a JSON object, received an array",
+          "malformed": true
         }
       }
     ]
@@ -978,7 +994,8 @@
           "layers": [],
           "snippets": [],
           "confidence": 0,
-          "error": "advice NO_COMMENT must be the whole answer, with nothing else"
+          "error": "advice NO_COMMENT must be the whole answer, with nothing else",
+          "malformed": true
         }
       },
       {
@@ -987,7 +1004,8 @@
           "layers": [],
           "snippets": [],
           "confidence": 0,
-          "error": "advice NO_COMMENT must be the whole answer, with nothing else"
+          "error": "advice NO_COMMENT must be the whole answer, with nothing else",
+          "malformed": true
         }
       },
       {
@@ -1123,7 +1141,8 @@
           "layers": [],
           "snippets": [],
           "confidence": 0,
-          "error": "advice answer is neither NO_COMMENT nor a JSON object"
+          "error": "advice answer is neither NO_COMMENT nor a JSON object",
+          "malformed": true
         }
       },
       {
@@ -1164,7 +1183,8 @@
           "layers": [],
           "snippets": [],
           "confidence": 0,
-          "error": "advice answer must be NO_COMMENT or a JSON object, received an array"
+          "error": "advice answer must be NO_COMMENT or a JSON object, received an array",
+          "malformed": true
         }
       }
     ]
@@ -1212,7 +1232,8 @@
           "layers": [],
           "snippets": [],
           "confidence": 0,
-          "error": "advice NO_COMMENT must be the whole answer, with nothing else"
+          "error": "advice NO_COMMENT must be the whole answer, with nothing else",
+          "malformed": true
         }
       },
       {
@@ -1221,7 +1242,8 @@
           "layers": [],
           "snippets": [],
           "confidence": 0,
-          "error": "advice NO_COMMENT must be the whole answer, with nothing else"
+          "error": "advice NO_COMMENT must be the whole answer, with nothing else",
+          "malformed": true
         }
       },
       {
@@ -1357,7 +1379,8 @@
           "layers": [],
           "snippets": [],
           "confidence": 0,
-          "error": "advice answer is neither NO_COMMENT nor a JSON object"
+          "error": "advice answer is neither NO_COMMENT nor a JSON object",
+          "malformed": true
         }
       },
       {
@@ -1398,7 +1421,8 @@
           "layers": [],
           "snippets": [],
           "confidence": 0,
-          "error": "advice answer must be NO_COMMENT or a JSON object, received an array"
+          "error": "advice answer must be NO_COMMENT or a JSON object, received an array",
+          "malformed": true
         }
       }
     ]
@@ -1427,8 +1451,10 @@
         "result": {
           "findings": [],
           "noComment": true,
-          "ran": true,
-          "status": "completed",
+          "outcome": {
+            "status": "answered",
+            "result": "all-clear"
+          },
           "request": {
             "status": "supplied",
             "phase": "guard",
@@ -1469,8 +1495,10 @@
               "description": "Less likely: makeSerializedQueue (QUEUES.md § Serialized) — ordering."
             }
           ],
-          "ran": true,
-          "status": "completed",
+          "outcome": {
+            "status": "answered",
+            "result": "findings"
+          },
           "request": {
             "status": "supplied",
             "phase": "guard",
@@ -1517,8 +1545,10 @@
               "description": "makeSerializedQueue (QUEUES.md) — ordering."
             }
           ],
-          "ran": true,
-          "status": "completed",
+          "outcome": {
+            "status": "answered",
+            "result": "findings"
+          },
           "request": {
             "status": "supplied",
             "phase": "guard",
@@ -1565,8 +1595,10 @@
               "description": "makeSerializedQueue (QUEUES.md) — ordering."
             }
           ],
-          "ran": true,
-          "status": "completed",
+          "outcome": {
+            "status": "answered",
+            "result": "findings"
+          },
           "request": {
             "status": "supplied",
             "phase": "guard",
@@ -1584,8 +1616,10 @@
           "findings": [],
           "noComment": true,
           "repairs": ["empty-as-no-comment"],
-          "ran": true,
-          "status": "completed",
+          "outcome": {
+            "status": "answered",
+            "result": "all-clear"
+          },
           "request": {
             "status": "supplied",
             "phase": "guard",
@@ -1601,8 +1635,10 @@
         "answer": "{\"findings\":[{\"severity\":\"critical\",\"description\":\"x\"}]}",
         "result": {
           "findings": [],
-          "ran": true,
-          "status": "invalid-response",
+          "outcome": {
+            "status": "failed",
+            "cause": "invalid-response"
+          },
           "error": "guard finding 0 requires \"severity\": \"advisory\"",
           "request": {
             "status": "supplied",
@@ -1619,8 +1655,10 @@
         "answer": "{\"findings\":[{\"severity\":\"advisory\",\"description\":\"x\",\"suggestion\":\"do y\"}]}",
         "result": {
           "findings": [],
-          "ran": true,
-          "status": "invalid-response",
+          "outcome": {
+            "status": "failed",
+            "cause": "invalid-response"
+          },
           "error": "guard finding 0 has 1 field(s) outside the protocol",
           "request": {
             "status": "supplied",
@@ -1637,8 +1675,10 @@
         "answer": "NO_COMMENT please",
         "result": {
           "findings": [],
-          "ran": true,
-          "status": "invalid-response",
+          "outcome": {
+            "status": "failed",
+            "cause": "invalid-response"
+          },
           "error": "guard NO_COMMENT must be the whole answer, with nothing else",
           "request": {
             "status": "supplied",
@@ -1677,8 +1717,10 @@
         "result": {
           "findings": [],
           "noComment": true,
-          "ran": true,
-          "status": "completed",
+          "outcome": {
+            "status": "answered",
+            "result": "all-clear"
+          },
           "request": {
             "status": "supplied",
             "phase": "guard",
@@ -1719,8 +1761,10 @@
               "description": "Less likely: makeSerializedQueue (QUEUES.md § Serialized) — ordering."
             }
           ],
-          "ran": true,
-          "status": "completed",
+          "outcome": {
+            "status": "answered",
+            "result": "findings"
+          },
           "request": {
             "status": "supplied",
             "phase": "guard",
@@ -1767,8 +1811,10 @@
               "description": "makeSerializedQueue (QUEUES.md) — ordering."
             }
           ],
-          "ran": true,
-          "status": "completed",
+          "outcome": {
+            "status": "answered",
+            "result": "findings"
+          },
           "request": {
             "status": "supplied",
             "phase": "guard",
@@ -1815,8 +1861,10 @@
               "description": "makeSerializedQueue (QUEUES.md) — ordering."
             }
           ],
-          "ran": true,
-          "status": "completed",
+          "outcome": {
+            "status": "answered",
+            "result": "findings"
+          },
           "request": {
             "status": "supplied",
             "phase": "guard",
@@ -1834,8 +1882,10 @@
           "findings": [],
           "noComment": true,
           "repairs": ["empty-as-no-comment"],
-          "ran": true,
-          "status": "completed",
+          "outcome": {
+            "status": "answered",
+            "result": "all-clear"
+          },
           "request": {
             "status": "supplied",
             "phase": "guard",
@@ -1851,8 +1901,10 @@
         "answer": "{\"findings\":[{\"severity\":\"critical\",\"description\":\"x\"}]}",
         "result": {
           "findings": [],
-          "ran": true,
-          "status": "invalid-response",
+          "outcome": {
+            "status": "failed",
+            "cause": "invalid-response"
+          },
           "error": "guard finding 0 requires \"severity\": \"advisory\"",
           "request": {
             "status": "supplied",
@@ -1869,8 +1921,10 @@
         "answer": "{\"findings\":[{\"severity\":\"advisory\",\"description\":\"x\",\"suggestion\":\"do y\"}]}",
         "result": {
           "findings": [],
-          "ran": true,
-          "status": "invalid-response",
+          "outcome": {
+            "status": "failed",
+            "cause": "invalid-response"
+          },
           "error": "guard finding 0 has 1 field(s) outside the protocol",
           "request": {
             "status": "supplied",
@@ -1887,8 +1941,10 @@
         "answer": "NO_COMMENT please",
         "result": {
           "findings": [],
-          "ran": true,
-          "status": "invalid-response",
+          "outcome": {
+            "status": "failed",
+            "cause": "invalid-response"
+          },
           "error": "guard NO_COMMENT must be the whole answer, with nothing else",
           "request": {
             "status": "supplied",

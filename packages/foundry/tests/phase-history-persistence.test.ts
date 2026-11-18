@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import {
   ContextLayer,
   ContextStack,
+  callOutcomeLabel,
   EventStream,
   Harness,
   type LLMMessage,
@@ -233,12 +234,16 @@ test('one real turn: routing, advice, guard and review requests are journalled u
   });
   // The fixture's one controlled auxiliary provider answers the guard with its routing-shaped JSON, which is not a guard result:
   // the record must say so explicitly (not completed, listed as failed), never an all-clear.
-  expect(guard.failed).toEqual(guard.outcomes[0].status === 'completed' ? [] : ['architecture']);
+  expect(guard.failed).toEqual(
+    guard.outcomes[0].outcome.status === 'answered' ? [] : ['architecture'],
+  );
   expect(typeof guard.observation.dispatchId).toBe('string'); // the live dispatch's own id from the middleware context, not guessed
   expect(guard.outcomes).toHaveLength(1);
   const outcome = guard.outcomes[0];
   expect(outcome).toMatchObject({ domain: 'architecture', threadKnowledgeRevision: 1 });
-  expect(['completed', 'invalid-response', 'provider-error']).toContain(outcome.status); // the configured advice provider answered the guard; whatever it returned, the status is explicit
+  expect(['answered', 'failed:invalid-response', 'failed:provider-error']).toContain(
+    outcome.outcome.status === 'answered' ? 'answered' : callOutcomeLabel(outcome.outcome),
+  ); // the configured advice provider answered the guard; whatever it returned, the status is explicit
   expect(outcome.request.status).toBe('supplied');
   expect(outcome.request.messages).toEqual(auxiliaryCall('## Response protocol (guard phase'));
   const guardUser = outcome.request.messages.find((m: any) => m.role === 'user').content;

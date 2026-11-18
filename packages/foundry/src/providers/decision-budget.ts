@@ -3,6 +3,8 @@
  * @kind helper
  * @partOf primitive:decisions
  */
+import type { CallNotSentCause, NotSentCall } from '@inixiative/foundry-core';
+
 /**
  * Latency budget for Foundry's pre-message decisions. Advisors must be fast: the
  * budget holds by structure (one concurrent round of decisions per message, each on
@@ -47,8 +49,18 @@ export const DECISION_LATENCY_BUDGET = {
  */
 export const DECISION_INPUT_CAP = 160_000;
 
-/** The capacity refusal of held-only advice with no warm call held: the Warden was skipped unsent and catches up. */
+/** The refusal of held-only advice with no warm call held: the Warden was skipped unsent and catches up. */
 export const NOT_HELD_REFUSAL = 'Warden not held warm on its project host; skipped unsent';
 
 /** The capacity refusal while the decision login's usage is used up: skipped unsent until it resets. */
 export const QUOTA_PAUSED_REFUSAL = "Wardens paused: the login's usage is used up until it resets";
+
+/** Why the decision queue refused a call before any provider saw it: not held warm, or not admitted. */
+export type RefusedUnsentCause = Extract<CallNotSentCause, 'not-held' | 'not-admitted'>;
+
+/** The call as never sent when the decision queue refused it unsent; undefined when it failed. */
+export function refusedUnsent(err: unknown): NotSentCall | undefined {
+  const cause = (err as { notSentCause?: unknown } | null)?.notSentCause;
+  if (cause !== 'not-held' && cause !== 'not-admitted') return undefined;
+  return { cause, reason: (err as Error)?.message ?? String(err) };
+}

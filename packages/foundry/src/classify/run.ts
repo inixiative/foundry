@@ -12,6 +12,7 @@ import type {
   AnswerRepair,
   ClassifyOutcome,
   ClassifyStageTrace,
+  NotSentCall,
   ServedModel,
   TokenCounts,
 } from '@inixiative/foundry-core';
@@ -63,7 +64,7 @@ export type StageCall =
       readonly reask?: (protocol: string) => Promise<{ content: string; tokens?: Tokens }>;
     }
   | { readonly error: string; readonly docHash?: string; readonly cause?: unknown }
-  | { readonly notStarted: string };
+  | { readonly notSent: NotSentCall };
 
 export interface ClassifyRunOptions {
   readonly stages: readonly StageConfig[];
@@ -198,8 +199,8 @@ export interface ClassifyResult {
   /** The first stage failed or answered out of shape (`malformed`). */
   readonly error?: string;
   readonly malformed?: true;
-  /** The first stage was never admitted. */
-  readonly notStarted?: string;
+  /** The first stage was never sent (not held warm, or not admitted). */
+  readonly notSent?: NotSentCall;
 }
 
 /** A run as the journal keeps it: its outcome, whether it reached the thread, why not, and every stage. */
@@ -381,9 +382,9 @@ export async function runStages(options: ClassifyRunOptions): Promise<ClassifyRe
       traces.push(trace({ timedOut: true, error: `no answer within ${Math.round(timeoutMs!)}ms` }));
       return stop('timeout', { error: `stage ${index + 1} timed out` });
     }
-    if ('notStarted' in call) {
-      traces.push(trace({ error: `not started: ${call.notStarted}` }));
-      return stop('error', { notStarted: call.notStarted });
+    if ('notSent' in call) {
+      traces.push(trace({ error: `not sent (${call.notSent.cause}): ${call.notSent.reason}` }));
+      return stop('error', { notSent: call.notSent });
     }
     if ('error' in call) {
       traces.push(trace({ error: call.error, ...(call.docHash ? { docHash: call.docHash } : {}) }));

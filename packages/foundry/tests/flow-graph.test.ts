@@ -137,8 +137,16 @@ const turn = {
       phase: 'advice',
       record: {
         participants: [
-          { domain: 'architecture', decision: 'contribute', threadKnowledgeRevision: 2 },
-          { domain: 'security', decision: 'timeout', reason: 'deadline' },
+          {
+            domain: 'architecture',
+            outcome: { status: 'answered', result: 'spoke' },
+            threadKnowledgeRevision: 2,
+          },
+          {
+            domain: 'security',
+            outcome: { status: 'failed', cause: 'timeout' },
+            reason: 'deadline',
+          },
         ],
       },
     },
@@ -294,7 +302,7 @@ test('turn flow: input → harness stages → routing ∥ domains → sealed pha
   expect(byId.get('routing')).toMatchObject({ status: 'warn', sub: 'fallback · 900 ms' });
   expect(byId.get('domain:architecture')).toMatchObject({
     status: 'ok',
-    sub: 'contribute · rev 2',
+    sub: 'answered:spoke · rev 2',
   });
   expect(byId.get('domain:security').status).toBe('warn');
   expect(byId.get('plan')).toMatchObject({ status: 'skip', sub: 'journalled phases only' });
@@ -321,7 +329,7 @@ test('turn flow: input → harness stages → routing ∥ domains → sealed pha
   const edge = (from: string, to: string) =>
     g.edges.find((e: any) => e.from === from && e.to === to);
   expect(edge('routing', 'plan').label).toBe('1 domain · conf 0.4');
-  expect(edge('domain:security', 'plan').label).toBe('timeout');
+  expect(edge('domain:security', 'plan').label).toBe('failed:timeout');
   expect(edge('executor', 'guard:0')).toMatchObject({ label: 'Bash', status: 'error' });
   expect(edge('executor', 'delivery').label).toBe('1 drift');
   expect(edge('delivery', 'learn:architecture').label).toBe('learned');
@@ -355,7 +363,7 @@ test('turn flow: a sealed plan supplies timings; a running turn with no delivery
       contributions: [
         {
           domain: 'architecture',
-          decision: 'no-comment',
+          outcome: { status: 'answered', result: 'no-comment' },
           provenance: { threadKnowledgeRevision: 0, elapsedMs: 17 },
           snippets: [],
         },
@@ -374,7 +382,7 @@ test('turn flow: a sealed plan supplies timings; a running turn with no delivery
   expect(byId.get('plan')).toMatchObject({ status: 'warn', sub: '1 layer · 42 ms' });
   expect(byId.get('domain:architecture')).toMatchObject({
     status: 'skip',
-    sub: 'no-comment · rev 0 · 17 ms',
+    sub: 'answered:no-comment · rev 0 · 17 ms',
   });
   expect(byId.get('routing').sub).toBe('routed · 30 ms');
   expect(byId.get('executor').status).toBe('pending');
@@ -395,7 +403,7 @@ const loopTurn = (turnId: string, startedAt: number, revisions: Record<string, n
       record: {
         participants: Object.entries(revisions).map(([domain, r]) => ({
           domain,
-          decision: 'contribute',
+          outcome: { status: 'answered', result: 'spoke' },
           threadKnowledgeRevision: r,
         })),
       },

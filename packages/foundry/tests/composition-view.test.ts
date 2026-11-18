@@ -5,6 +5,7 @@ import { dirname, join } from 'node:path';
 import {
   type CompletionOpts,
   ContextStack,
+  callOutcomeLabel,
   claudemdSource,
   FileMemory,
   Harness,
@@ -368,13 +369,14 @@ test('a composition over the role budget is a clear reported error in every phas
     await f.thread.dispatch('worker', 'Add a script', undefined, { messageId: 'm1' });
     expect(f.calls.filter((call) => call.phase === 'advise')).toHaveLength(0);
     const advice = await f.lib.advise('Add a script');
-    expect(advice.error).toContain('exceed its budget of 3000');
-    expect(advice.error).toContain(`composition.roles.${WARDEN_ROLE}.budget`);
-    expect(advice.error).toContain(
+    expect(advice.notSent?.cause).toBe('not-admitted');
+    expect(advice.notSent?.reason).toContain('exceed its budget of 3000');
+    expect(advice.notSent?.reason).toContain(`composition.roles.${WARDEN_ROLE}.budget`);
+    expect(advice.notSent?.reason).toContain(
       `${roleFile(org, WARDEN_ROLE, 'domainKnowledge')} (domainKnowledge`,
     );
     const guard = await f.lib.guard(oneCall({ tool: 'Write', input: { file_path: 'a.ts' } }));
-    expect(guard.status).toBe('not-admitted');
+    expect(callOutcomeLabel(guard.outcome)).toBe('not-sent:not-admitted');
     expect(guard.error).toContain('exceed its budget');
     expect(guard.request).toMatchObject({ status: 'not-sent' });
     await f.runtime.learningSettled();

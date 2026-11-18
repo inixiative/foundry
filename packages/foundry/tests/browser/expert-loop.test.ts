@@ -146,7 +146,7 @@ test('expert loop: before work, after post-hooks (pending, commit, NO_COMMENT), 
       const node = drawer(p).locator(`.expert-participant[data-domain="${domain}"]`).first();
       return {
         present: (await node.count()) > 0,
-        decision: await node.getAttribute('data-decision'),
+        outcome: await node.getAttribute('data-outcome'),
         revision: await node.getAttribute('data-revision'),
         instructions: await text(node.locator(`.participant-segment[data-segment="instructions"]`)),
         domainKnowledge: await text(
@@ -328,7 +328,7 @@ test('expert loop: before work, after post-hooks (pending, commit, NO_COMMENT), 
     check(
       "turn 2 historical preparation: architecture worked from its instructions, domain knowledge and revision-1 understanding with attributed guidance; testing's thread understanding was empty at revision 0; learning barrier recorded pending",
       p2a.present &&
-        p2a.decision === 'contribute' &&
+        p2a.outcome === 'answered:spoke' &&
         p2a.revision === '1' &&
         p2a.instructions.includes(instructions('architecture')) &&
         p2a.domainKnowledge.includes(domainKnowledge('architecture')) &&

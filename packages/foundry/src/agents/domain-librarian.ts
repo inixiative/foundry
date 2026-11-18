@@ -21,12 +21,15 @@
 
 import { createHash } from 'node:crypto';
 import {
+  type AdviceOutcome,
   type CompletionOpts,
   type CompositionSnapshot,
   ContextLayer,
   computeHash,
+  type GuardCheckOutcome,
   type LLMMessage,
   type LLMProvider,
+  type NotSentCall,
   newId,
   type OmittedSource,
   type ParticipantRequest,
@@ -62,6 +65,7 @@ import {
   type WardenPointer,
   withRegionInstructions,
 } from '../classify';
+import { refusedUnsent } from '../providers/decision-budget';
 import { DECISION_PRIORITY } from '../providers/decision-priority';
 import type { AdviceTrigger } from './warden-triggers';
 
@@ -83,16 +87,24 @@ export interface AdviseResult {
   noComment?: true;
   /** The sloppy shapes the answer was let in from (protocol `AnswerRepair`); absent when it was exact. */
   repairs?: readonly AnswerRepair[];
-  /** Why no call was made, when none was (e.g. a cold cache). */
-  skipped?: string;
-  /** The provider never admitted the call (queue expiry, shed, admission closed): it did not run. */
-  notStarted?: string;
+  /** No call was sent: a cold cache, nothing held warm, or the queue or role budget refused it. */
+  notSent?: NotSentCall;
   /** The model call failed; nothing was advised. */
   error?: string;
+  /** The failure was an answer out of the advice shape, not a rejected call. */
+  malformed?: true;
   /** A Warden with configured stages: the run, stage by stage (absent for the default single stage). */
   classified?: ClassifyResult;
   /** The exact input of every stage past the first (the first is `observeRequest`'s), frozen at its call. */
   stageRequests?: PhaseRequestEvidence[];
+}
+
+/** How one advise call ended, as the one outcome every reader of a Warden call shares. */
+export function adviceOutcomeOf(result: AdviseResult): AdviceOutcome {
+  if (result.error)
+    return { status: 'failed', cause: result.malformed ? 'invalid-response' : 'provider-error' };
+  if (result.notSent) return { status: 'not-sent', cause: result.notSent.cause };
+  return { status: 'answered', result: result.noComment ? 'no-comment' : 'spoke' };
 }
 
 /** Caller-supplied inputs for one advise call. */
@@ -718,23 +730,6 @@ export function activityTools(activity: TurnActivity): string[] {
   return [...new Set(activity.observations.map((o) => o.tool))];
 }
 
-/**
- * How a guard check ended. Only `completed` certifies its findings (or its empty
- * all-clear); every other status means no check result exists for this activity.
- * - skipped: trigger-gated out.
- * - cold-cache: triggered, but the domain has no knowledge to check against; no call made.
- * - provider-error: the provider call rejected; whether a model ran is not implied.
- * - invalid-response: the provider answered, but not with the guard schema.
- * - not-admitted: the call was refused before the provider, e.g. its request could not be journalled.
- */
-export type GuardStatus =
-  | 'completed'
-  | 'skipped'
-  | 'cold-cache'
-  | 'provider-error'
-  | 'invalid-response'
-  | 'not-admitted';
-
 /** Structured lifecycle classification of a failed guard call, when the provider exposes one. */
 export interface GuardCallEvidence {
   readonly nativeOutcome: string;
@@ -744,20 +739,22 @@ export interface GuardCallEvidence {
 
 /** Guard result: a completed check with findings (possibly none), or an explicit non-result. */
 export interface GuardResult {
-  /** Findings of a completed check. Empty means all clear only when `status` is `completed`. */
+  /** Findings of an answered check. Empty means all clear only when the outcome is `answered`. */
   findings: GuardFinding[];
   /** A completed check whose answer was NO_COMMENT: nothing to add. */
   noComment?: true;
   /** The sloppy shapes the answer was let in from (protocol `AnswerRepair`); absent when it was exact. */
   repairs?: readonly AnswerRepair[];
-  /** Whether the guard was triggered for this activity (false only when trigger-gated out). */
-  ran: boolean;
-  /** Distinguishes a completed check from a skipped, cold, failed or malformed one. */
-  status: GuardStatus;
-  /** Bounded reason for a non-completed status. Never carries the model's text. */
+  /**
+   * How the check ended. Only `answered` certifies its findings (or its empty all-clear); not-sent
+   * (trigger-gated, cold, not held, not admitted) and failed (provider error, invalid response) mean
+   * no check result exists for this activity.
+   */
+  outcome: GuardCheckOutcome;
+  /** Bounded reason when the outcome is not `answered`. Never carries the model's text. */
   error?: string;
   /**
-   * For `provider-error`: the provider's own lifecycle classification of the call when it
+   * For `failed:provider-error`: the provider's own lifecycle classification of the call when it
    * exposes one, otherwise "unknown". A rejected local waiter does not mean native work stopped.
    */
   admission?: GuardCallEvidence | 'unknown' | 'not-admitted';
@@ -1667,7 +1664,8 @@ export class DomainLibrarian {
     } catch (err) {
       // Never admitted (queue expiry, shed, admission closed): the Warden did not run. The turn goes
       // on without it, and that is recorded as such, not as a model failure.
-      if (refusedForCapacity(err)) return { notStarted: (err as Error)?.message ?? String(err) };
+      const notSent = refusedUnsent(err);
+      if (notSent) return { notSent };
       // Model failure: nothing, but say why so the composer records an error, not silence.
       return { error: (err as Error)?.message ?? String(err), docHash, cause: err };
     }
@@ -1683,11 +1681,22 @@ export class DomainLibrarian {
     const frozen = head === this._cache ? opts?.cache : undefined;
     const cacheContent = frozen ?? head.content;
     if (!cacheContent) {
-      return { layers: [], snippets: [], confidence: 0, skipped: 'cold-cache' };
+      return {
+        layers: [],
+        snippets: [],
+        confidence: 0,
+        notSent: { cause: 'cold', reason: 'cold-cache' },
+      };
     }
     const system = this.advisePrompt;
     const over = this.budgetError(system, cacheContent, head);
-    if (over) return { layers: [], snippets: [], confidence: 0, error: over };
+    if (over)
+      return {
+        layers: [],
+        snippets: [],
+        confidence: 0,
+        notSent: { cause: 'not-admitted', reason: over },
+      };
 
     // The domain's instructions (system) stay exactly as configured and inspectable through
     // `advisePrompt`. Each stage's response protocol is supplied separately (classify/), so custom
@@ -1737,8 +1746,8 @@ export class DomainLibrarian {
     const classified = this._defaultStages
       ? {}
       : { classified: run, ...(later.length ? { stageRequests: later } : {}) };
-    if (run.notStarted)
-      return { layers: [], snippets: [], confidence: 0, notStarted: run.notStarted, ...classified };
+    if (run.notSent)
+      return { layers: [], snippets: [], confidence: 0, notSent: run.notSent, ...classified };
     // Protocol failure: an explicit, bounded error that never carries the model's text. A response
     // that is not advice is never presented as successful empty advice.
     if (!run.final)
@@ -1747,6 +1756,7 @@ export class DomainLibrarian {
         snippets: [],
         confidence: 0,
         error: run.error ?? 'no answer',
+        ...(run.malformed ? { malformed: true as const } : {}),
         ...classified,
       };
     const { repairs: _answerRepairs, ...advice } = run.final.advice!;
@@ -1784,9 +1794,8 @@ export class DomainLibrarian {
     if (!this.guards(activity)) {
       return {
         findings: [],
-        ran: false,
-        status: 'skipped',
-        request: { status: 'not-sent', phase: 'guard', reason: 'skipped' },
+        outcome: { status: 'not-sent', cause: 'trigger-gated' },
+        request: { status: 'not-sent', phase: 'guard', reason: 'trigger-gated' },
       };
     }
 
@@ -1796,8 +1805,7 @@ export class DomainLibrarian {
       await this._emitFindings(findings, activity);
       return {
         findings,
-        ran: true,
-        status: 'completed',
+        outcome: { status: 'answered', result: findings.length ? 'findings' : 'all-clear' },
         request: { status: 'not-sent', phase: 'guard', reason: 'programmatic' },
       };
     }
@@ -1808,8 +1816,7 @@ export class DomainLibrarian {
     if (!cacheContent) {
       return {
         findings: [],
-        ran: true,
-        status: 'cold-cache',
+        outcome: { status: 'not-sent', cause: 'cold' },
         error: 'cold-cache',
         request: { status: 'not-sent', phase: 'guard', reason: 'cold-cache' },
       };
@@ -1825,8 +1832,7 @@ export class DomainLibrarian {
     if (over)
       return {
         findings: [],
-        ran: true,
-        status: 'not-admitted',
+        outcome: { status: 'not-sent', cause: 'not-admitted' },
         error: over,
         admission: 'not-admitted',
         request: { status: 'not-sent', phase: 'guard', reason: over },
@@ -1880,13 +1886,12 @@ export class DomainLibrarian {
     const supplied: ParticipantRequest = evidence
       ? { status: 'supplied', ...evidence, ...(served ? { served } : {}) }
       : { status: 'not-sent', phase: 'guard', reason: 'no call' };
-    // A call the decision queue never admitted did not run: not-admitted, not a provider error.
-    if (run.notStarted)
+    // A call the decision queue refused unsent did not run: not sent, not a provider error.
+    if (run.notSent)
       return {
         findings: [],
-        ran: true,
-        status: 'not-admitted',
-        error: boundedError(run.notStarted),
+        outcome: { status: 'not-sent', cause: run.notSent.cause },
+        error: boundedError(run.notSent.reason),
         admission: 'not-admitted',
         request: supplied,
         ...withRevision,
@@ -1897,8 +1902,7 @@ export class DomainLibrarian {
       if (run.malformed)
         return {
           findings: [],
-          ran: true,
-          status: 'invalid-response',
+          outcome: { status: 'failed', cause: 'invalid-response' },
           error: run.error!,
           request: supplied,
           ...withRevision,
@@ -1908,8 +1912,7 @@ export class DomainLibrarian {
       // running, is only known when the provider classifies it; otherwise it is unknown.
       return {
         findings: [],
-        ran: true,
-        status: 'provider-error',
+        outcome: { status: 'failed', cause: 'provider-error' },
         error: boundedError(run.error ?? 'no answer'),
         admission: classifyGuardCall(failure),
         request: supplied,
@@ -1927,8 +1930,7 @@ export class DomainLibrarian {
       findings,
       ...(!findings.length ? { noComment: true as const } : {}),
       ...(runRepairs(run).length ? { repairs: runRepairs(run) } : {}),
-      ran: true,
-      status: 'completed',
+      outcome: { status: 'answered', result: findings.length ? 'findings' : 'all-clear' },
       request: supplied,
       ...withRevision,
       ...classified,
@@ -2037,14 +2039,6 @@ function classifyGuardCall(err: unknown): GuardCallEvidence | 'unknown' {
     }
   }
   return 'unknown';
-}
-
-/**
- * Whether the decision queue refused the call for capacity (expired waiting, shed, queue full): the
- * Warden never ran and the turn goes on. Auth, configuration and budget refusals are failures.
- */
-function refusedForCapacity(err: unknown): boolean {
-  return (err as { decisionCapacity?: unknown } | null)?.decisionCapacity === true;
 }
 
 /** `segments` when they compose exactly `text`; otherwise `text` as one part, `subject`. */

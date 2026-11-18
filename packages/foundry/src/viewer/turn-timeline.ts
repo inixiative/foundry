@@ -3,7 +3,16 @@
  * @kind service
  * @partOf feature:threads, feature:viewer
  */
-import type { ClassifyStageTrace, NativeEvidence } from '@inixiative/foundry-core';
+import {
+  ADVICE_RESULTS,
+  type AdviceOutcome,
+  adviceSpoke,
+  type ClassifyStageTrace,
+  GUARD_CHECK_RESULTS,
+  type GuardCheckOutcome,
+  type NativeEvidence,
+  parseCallOutcome,
+} from '@inixiative/foundry-core';
 import { REDUCED_PHASE } from '../archives/reduced-middleware';
 import { parseWardenPointer, type WardenPointer } from '../classify';
 import type { StoredLearning, StoredPhase, TurnDetail } from '../persistence/local-session-store';
@@ -43,13 +52,13 @@ export interface ChorusLayer {
 
 export interface ChorusRegion {
   readonly region: string;
-  /** `contribute` (it chimed in), `no-comment`, `abstain`, `error`, `excluded`, … as journalled. */
-  readonly decision: string;
+  /** How its call ended, as journalled; null for a row that carries no outcome. */
+  readonly outcome: AdviceOutcome | null;
   readonly reason: string | null;
   /** What it said (empty for NO_COMMENT). */
   readonly said: readonly string[];
   readonly pointer: WardenPointer | null;
-  /** A Warden with configured stages: each layer it ran. A single-stage Warden has none; `decision` is its answer. */
+  /** A Warden with configured stages: each layer it ran. A single-stage Warden has none; `outcome` is its answer. */
   readonly layers: readonly ChorusLayer[];
   readonly served: { model: string; effort?: string } | null;
 }
@@ -125,7 +134,7 @@ export type TimelineStep =
       status: string | null;
       regions: {
         region: string;
-        status: string;
+        outcome: GuardCheckOutcome | null;
         findings: number;
         notes: string[];
         layers: ChorusLayer[];
@@ -193,6 +202,12 @@ function served(request: unknown): ChorusRegion['served'] {
     : null;
 }
 
+/** A journalled participant that chimed in. */
+const spoke = (participant: Record<string, unknown>) => {
+  const outcome = parseCallOutcome(participant.outcome, ADVICE_RESULTS);
+  return !!outcome && adviceSpoke(outcome);
+};
+
 /** What a region said, as one comparable key: its parsed pointer, else its remarks. */
 function pointerKey(region: string, said: readonly string[]): string | null {
   if (!said.length) return null;
@@ -206,7 +221,7 @@ function chorusRegion(participant: Record<string, unknown>): ChorusRegion {
   const pointer = said.length ? parseWardenPointer(said) : null;
   return {
     region: str(participant.domain) ?? '',
-    decision: str(participant.decision) ?? 'unknown',
+    outcome: parseCallOutcome(participant.outcome, ADVICE_RESULTS) ?? null,
     reason: str(participant.reason) ?? null,
     said,
     pointer: pointer?.relevant ? pointer : null,
@@ -261,7 +276,7 @@ function guardStep(row: StoredPhase): TimelineStep {
     status: str(r.status) ?? null,
     regions: outcomes.map((o) => ({
       region: str(o.domain) ?? '',
-      status: str(o.status) ?? 'unknown',
+      outcome: parseCallOutcome(o.outcome, GUARD_CHECK_RESULTS) ?? null,
       findings: num(o.findings) ?? 0,
       notes: strings(o.notes),
       layers: chorusLayers(o.classified),
@@ -365,7 +380,7 @@ export function turnTimeline(detail: TurnDetail, sources: TurnTimelineSources = 
       for (const p of Array.isArray(row.record.participants)
         ? row.record.participants.filter(isObject)
         : []) {
-        if (p.decision !== 'contribute') continue;
+        if (!spoke(p)) continue;
         const key = pointerKey(str(p.domain) ?? '', strings(p.snippets));
         if (key && !earlier.has(key)) earlier.set(key, row.turnId);
       }
@@ -373,7 +388,7 @@ export function turnTimeline(detail: TurnDetail, sources: TurnTimelineSources = 
     const saidNow = new Map(
       onMessage.flatMap((row) =>
         (Array.isArray(row.record.participants) ? row.record.participants.filter(isObject) : [])
-          .filter((p) => p.decision === 'contribute')
+          .filter(spoke)
           .map((p) => [str(p.domain) ?? '', strings(p.snippets)] as const),
       ),
     );

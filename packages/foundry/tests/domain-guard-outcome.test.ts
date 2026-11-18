@@ -71,8 +71,7 @@ test('NO_COMMENT and actual findings both complete; findings are normalized and 
   expect(cleared).toMatchObject({
     findings: [],
     noComment: true,
-    ran: true,
-    status: 'completed',
+    outcome: { status: 'answered', result: 'all-clear' },
     threadKnowledgeRevision: 0,
     request: { status: 'supplied', phase: 'guard', providerId: 'controlled-guard-architecture' },
   });
@@ -85,8 +84,7 @@ test('NO_COMMENT and actual findings both complete; findings are normalized and 
   );
   const result = await found.lib.guard(oneCall(observation), 'COMMON_EVIDENCE');
   expect(result).toMatchObject({
-    ran: true,
-    status: 'completed',
+    outcome: { status: 'answered', result: 'findings' },
     threadKnowledgeRevision: 0,
     findings: [
       {
@@ -135,7 +133,10 @@ test('invalid schema is an explicit invalid-response with a bounded error that n
   ]) {
     const f = fixture(() => bad);
     const result = await f.lib.guard(oneCall(observation));
-    expect(result).toMatchObject({ findings: [], ran: true, status: 'invalid-response' });
+    expect(result).toMatchObject({
+      findings: [],
+      outcome: { status: 'failed', cause: 'invalid-response' },
+    });
     expect(result.admission).toBeUndefined();
     expect(typeof result.error).toBe('string');
     expect(result.error!.length).toBeLessThan(200);
@@ -166,8 +167,7 @@ test("provider error is a provider-error with the provider's lifecycle classific
   const refused = await plain.lib.guard(oneCall(observation));
   expect(refused).toMatchObject({
     findings: [],
-    ran: true,
-    status: 'provider-error',
+    outcome: { status: 'failed', cause: 'provider-error' },
     error: 'CONTROLLED_REFUSAL_WITH_NO_CHECK',
     admission: 'unknown',
     threadKnowledgeRevision: 0,
@@ -189,7 +189,7 @@ test("provider error is a provider-error with the provider's lifecycle classific
   });
   const unknownNative = await classified.lib.guard(oneCall(observation));
   expect(unknownNative).toMatchObject({
-    status: 'provider-error',
+    outcome: { status: 'failed', cause: 'provider-error' },
     admission: { nativeOutcome: 'unknown', localOutcome: 'rejected', dispatch: 'attempted' },
   });
   expect(JSON.stringify(unknownNative)).not.toContain('PARTIAL_PRIVATE');
@@ -218,15 +218,13 @@ test('scoped no-admission: a trigger-gated tool is skipped and a cold cache is c
   const gated = fixture(() => 'NO_COMMENT');
   expect(await gated.lib.guard(oneCall({ tool: 'Read', input: {} }))).toEqual({
     findings: [],
-    ran: false,
-    status: 'skipped',
-    request: { status: 'not-sent', phase: 'guard', reason: 'skipped' },
+    outcome: { status: 'not-sent', cause: 'trigger-gated' },
+    request: { status: 'not-sent', phase: 'guard', reason: 'trigger-gated' },
   });
   const cold = fixture(() => 'NO_COMMENT', { knowledge: null });
   expect(await cold.lib.guard(oneCall(observation))).toEqual({
     findings: [],
-    ran: true,
-    status: 'cold-cache',
+    outcome: { status: 'not-sent', cause: 'cold' },
     error: 'cold-cache',
     request: { status: 'not-sent', phase: 'guard', reason: 'cold-cache' },
   });
@@ -294,7 +292,7 @@ test("configured instructions stay verbatim under the charter as the system mess
     },
   );
   expect(unknownRevision.threadKnowledgeRevision).toBeUndefined();
-  expect(unknownRevision.status).toBe('completed');
+  expect(unknownRevision.outcome.status).toBe('answered');
 });
 
 test("orchestrator: the guard report and emitted observation carry each domain's outcome; a failed check is never counted as an all-clear; each guard sees only its own frozen understanding", async () => {
@@ -353,14 +351,14 @@ test("orchestrator: the guard report and emitted observation carry each domain's
     expect(report.outcomes.map(({ request, ...rest }) => rest)).toEqual([
       {
         domain: 'architecture',
-        status: 'completed',
+        outcome: { status: 'answered', result: 'findings' },
         findings: 1,
         notes: ['Add a migration test'],
         threadKnowledgeRevision: 1,
       },
       {
         domain: 'testing',
-        status: 'provider-error',
+        outcome: { status: 'failed', cause: 'provider-error' },
         findings: 0,
         error: 'CONTROLLED_REFUSAL',
         admission: { nativeOutcome: 'unknown', localOutcome: 'rejected', dispatch: 'attempted' },
@@ -368,7 +366,7 @@ test("orchestrator: the guard report and emitted observation carry each domain's
       },
       {
         domain: 'security',
-        status: 'invalid-response',
+        outcome: { status: 'failed', cause: 'invalid-response' },
         findings: 0,
         error: 'guard response has 1 field(s) outside the protocol',
         threadKnowledgeRevision: 0,

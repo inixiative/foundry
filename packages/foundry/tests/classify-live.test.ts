@@ -233,7 +233,7 @@ test('each region Warden runs its stages: stage 1 on its own provider, stage 2 o
   const contributions = contributionsOf(result);
   const locks = contributions.find((c) => c.domain === 'locks')!;
   expect(locks).toMatchObject({
-    decision: 'contribute',
+    outcome: { status: 'answered', result: 'spoke' },
     snippets: [POINTER],
     classified: {
       outcome: 'yes',
@@ -252,7 +252,7 @@ test('each region Warden runs its stages: stage 1 on its own provider, stage 2 o
     stageRequests: [{ status: 'supplied', stage: 1, providerId: 'claude-sonnet-5-5' }],
   });
   expect(contributions.find((c) => c.domain === 'queues')).toMatchObject({
-    decision: 'no-comment',
+    outcome: { status: 'answered', result: 'no-comment' },
     classified: { outcome: 'no', delivered: false },
   });
 });
@@ -297,7 +297,7 @@ test('a project that writes no stages runs the default chain: Layer 1 points wit
 
   const contributions = contributionsOf(result);
   expect(contributions.find((c) => c.domain === 'locks')).toMatchObject({
-    decision: 'contribute',
+    outcome: { status: 'answered', result: 'spoke' },
     snippets: [POINTER],
     classified: {
       outcome: 'yes',
@@ -309,7 +309,7 @@ test('a project that writes no stages runs the default chain: Layer 1 points wit
     },
   });
   expect(contributions.find((c) => c.domain === 'queues')).toMatchObject({
-    decision: 'no-comment',
+    outcome: { status: 'answered', result: 'no-comment' },
     classified: { outcome: 'no', delivered: false },
   });
   expect(f.manager.get(thread.id)!.domainLibrarians.get('locks')!.stageCount).toBe(
@@ -397,7 +397,7 @@ test('a later stage that outlives its share of the advise deadline keeps the pre
   const locks = contributionsOf(result).find((c) => c.domain === 'locks')!;
   // Stage 1 pointed: its pointer stands and reaches the thread; the timeout is on the record.
   expect(locks).toMatchObject({
-    decision: 'contribute',
+    outcome: { status: 'answered', result: 'spoke' },
     snippets: [POINTER],
     classified: {
       outcome: 'yes',

@@ -50,6 +50,7 @@ import { homedir } from 'node:os';
 import { basename, join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import {
+  adviceSpoke,
   type CompletionOpts,
   type LLMProvider,
   type ParticipantRequest,
@@ -567,7 +568,7 @@ const writeChorus = (
     },
   };
   writeFileSync(join(dir, 'chorus.json'), JSON.stringify(chorus, null, 1), { mode: 0o600 });
-  const spoke = advice.decisions.filter((d) => d.decision === 'contribute').map((d) => d.domain);
+  const spoke = advice.decisions.filter((d) => adviceSpoke(d.outcome)).map((d) => d.domain);
   console.error(
     `chorus: ${advice.decisions.length} Wardens, ${spoke.length} chimed in${spoke.length ? ` (${spoke.join(', ')})` : ''}; ${usage.calls} calls, ${usage.totals.total} tokens`,
   );

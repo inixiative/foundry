@@ -3,6 +3,7 @@ import {
   type CompletionResult,
   ContextLayer,
   ContextStack,
+  callOutcomeLabel,
   type LLMProvider,
   SignalBus,
   servedModel,
@@ -129,7 +130,7 @@ test('route and advice requests record what served them; a call that missed the 
       status: 'supplied',
       served: { model: 'claude-opus-5-5', effort: 'medium' },
     });
-    expect(byDomain.security!.decision).toBe('timeout');
+    expect(callOutcomeLabel(byDomain.security!.outcome)).toBe('failed:timeout');
     expect(byDomain.security!.request).not.toHaveProperty('served');
   } finally {
     release();
@@ -143,7 +144,7 @@ test('a completed guard check records what served it', async () => {
     const result = await h.architecture.guard(
       oneCall({ tool: 'Write', input: { file_path: 'a.ts' } }),
     );
-    expect(result.status).toBe('invalid-response');
+    expect(callOutcomeLabel(result.outcome)).toBe('failed:invalid-response');
     expect(result.request).toMatchObject({
       status: 'supplied',
       served: { model: 'claude-opus-5-5', effort: 'medium' },

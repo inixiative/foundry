@@ -194,13 +194,14 @@ test('a Warden reads its pointer over all its remarks, in advice and in guard', 
     ],
   });
   const guarded = await warden.guard(oneCall({ tool: 'Write', input: { text: 'SET NX' } }));
-  expect(guarded.status).toBe('completed');
+  expect(guarded.outcome.status).toBe('answered');
   expect(guarded.findings[0]!.pointer).toMatchObject({ shape: 'choose-one', level: 'candidates' });
   expect(guarded.findings[1]!.pointer).toBeUndefined();
   expect(seen.at(-1)).toContain(GUARD_RESPONSE_PROTOCOL);
   // A verdict-shaped guard answer is an invalid response, never a completed check.
   answers.guard = JSON.stringify({ findings: [{ severity: 'critical', description: LOCK }] });
-  expect((await warden.guard(oneCall({ tool: 'Write', input: {} }))).status).toBe(
-    'invalid-response',
-  );
+  expect((await warden.guard(oneCall({ tool: 'Write', input: {} }))).outcome).toEqual({
+    status: 'failed',
+    cause: 'invalid-response',
+  });
 });

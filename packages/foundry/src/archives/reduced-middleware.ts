@@ -8,6 +8,12 @@
  * and its result, never the message it was sent. Raw middleware rows stay in the journal under a
  * retention setting; Archive only ever gets these.
  */
+import {
+  ADVICE_RESULTS,
+  callOutcomeLabel,
+  GUARD_CHECK_RESULTS,
+  parseCallOutcome,
+} from '@inixiative/foundry-core';
 
 /** Phase rows that carry a middleware call's full input, reduced at the end of their turn. */
 export const RAW_MIDDLEWARE_PHASES = ['route', 'advice', 'guard-request', 'guard-outcome'] as const;
@@ -22,7 +28,8 @@ export interface ReducedMiddleware {
   readonly trigger: string;
   /** What it was asked about: `turn:<id>` for a message or a turn's actions, a tool call id (`guard: per-call`), `handoff:<child>` for a brief. */
   readonly wraps: string;
-  readonly decision: string;
+  /** How the call ended: a Warden call's `callOutcomeLabel` (`answered:spoke`, `not-sent:cold`), the route's status. */
+  readonly outcome: string;
   readonly reason?: string;
   /** What it said: snippets or notes; null when it had nothing to add. */
   readonly result: unknown;
@@ -45,6 +52,10 @@ interface PhaseRow {
 type Rec = Record<string, unknown>;
 const obj = (value: unknown): Rec | undefined =>
   value && typeof value === 'object' && !Array.isArray(value) ? (value as Rec) : undefined;
+const outcomeLabel = (value: unknown, results: readonly string[]) => {
+  const outcome = parseCallOutcome(value, results);
+  return outcome ? callOutcomeLabel(outcome) : 'unknown';
+};
 const served = (request: unknown) => {
   const s = obj(obj(request)?.served);
   return typeof s?.model === 'string'
@@ -73,7 +84,7 @@ export function reduceMiddleware(
         role: 'cartographer',
         trigger: 'user-message',
         wraps,
-        decision: String(routing.status ?? 'unknown'),
+        outcome: String(routing.status ?? 'unknown'),
         ...(typeof routing.reason === 'string' ? { reason: routing.reason } : {}),
         result: {
           ...(Array.isArray(routing.layers) ? { layers: routing.layers } : {}),
@@ -95,7 +106,7 @@ export function reduceMiddleware(
           role: String(p.domain),
           trigger: String(r.trigger ?? 'user-message'),
           wraps,
-          decision: String(p.decision),
+          outcome: outcomeLabel(p.outcome, ADVICE_RESULTS),
           ...(typeof p.reason === 'string' ? { reason: p.reason } : {}),
           result: snippets.length ? snippets : null,
           state: {
@@ -129,7 +140,7 @@ export function reduceMiddleware(
           role: String(o.domain),
           trigger: String(r.trigger ?? 'agent-action'),
           wraps,
-          decision: String(o.status ?? 'unknown'),
+          outcome: outcomeLabel(o.outcome, GUARD_CHECK_RESULTS),
           ...(typeof o.error === 'string' ? { reason: o.error } : {}),
           result: notes.length ? notes : null,
           state: {

@@ -398,8 +398,8 @@ test('actual factory classification, routing, advice, guard and learning use the
     expect(runtime.learningState.domains.docs.capacity).toBe('settled');
     expect(
       (await lib.guard(oneCall({ tool: 'Write', input: { file: 'docs.md' }, output: 'updated' })))
-        .status,
-    ).toBe('completed');
+        .outcome.status,
+    ).toBe('answered');
     factory.create('B', { projectId: 'Q' });
     expect(manager.get('B')!.domainLibrarians.get('docs')!.threadKnowledge.content).toBe('');
     expect(f.transport.launches.length).toBeGreaterThanOrEqual(4);
@@ -660,11 +660,11 @@ test('a Warden its project host holds no warm spare for is a capacity refusal: s
     decisions.provider.complete([{ role: 'user', content: 'x' }], { threadId: 't1:aux:domain:a' });
   const error = await ask().catch((e: unknown) => e);
   expect(error).toBeInstanceOf(Error);
-  expect((error as { decisionCapacity?: boolean }).decisionCapacity).toBe(true);
+  expect((error as { notSentCause?: string }).notSentCause).toBe('not-held');
   expect((error as Error).message).toBe(NOT_HELD_REFUSAL);
   // The refusal left nothing owned: admission stays open, so the next call is admitted (and refused
   // for capacity again), not shut out as closed.
   const again = await ask().catch((e: unknown) => e);
-  expect((again as { decisionCapacity?: boolean }).decisionCapacity).toBe(true);
+  expect((again as { notSentCause?: string }).notSentCause).toBe('not-held');
   decisions.close();
 });

@@ -335,10 +335,14 @@ test('apply writes the rule to the routed Warden, invalidates its layers, and un
       participants: [
         {
           domain: 'convention',
-          decision: 'contribute',
+          outcome: { status: 'answered', result: 'spoke' },
           segments: { instructions: readFileSync(change.path, 'utf8') },
         },
-        { domain: 'docs', decision: 'no-comment', segments: { instructions: 'other' } },
+        {
+          domain: 'docs',
+          outcome: { status: 'answered', result: 'no-comment' },
+          segments: { instructions: 'other' },
+        },
       ],
     },
   });

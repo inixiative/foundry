@@ -92,8 +92,18 @@ test('guard join: missing and foreign references are labelled, the foreign reque
         status: 'reported',
         requests: { architecture: 'req-b' }, // recorded mapping points at another observation's request
         outcomes: [
-          { domain: 'architecture', status: 'completed', findings: 0, requestRecord: 'req-b' },
-          { domain: 'testing', status: 'completed', findings: 0, requestRecord: 'req-gone' },
+          {
+            domain: 'architecture',
+            outcome: { status: 'answered', result: 'all-clear' },
+            findings: 0,
+            requestRecord: 'req-b',
+          },
+          {
+            domain: 'testing',
+            outcome: { status: 'answered', result: 'all-clear' },
+            findings: 0,
+            requestRecord: 'req-gone',
+          },
         ],
       },
     },
@@ -106,7 +116,13 @@ test('guard join: missing and foreign references are labelled, the foreign reque
         correlation: 'live-dispatch',
         status: 'reported',
         requests: {},
-        outcomes: [{ domain: 'architecture', status: 'completed', findings: 3 }],
+        outcomes: [
+          {
+            domain: 'architecture',
+            outcome: { status: 'answered', result: 'findings' },
+            findings: 3,
+          },
+        ],
       },
     },
   ];
@@ -120,17 +136,17 @@ test('guard join: missing and foreign references are labelled, the foreign reque
     findings: null,
   });
   const [arch, testing, ...rest] = a.outcomes;
-  expect(rest.map((o: any) => [o.status, o.requestRecord])).toEqual([['pending', 'req-a']]); // A's own unreferenced request stays pending, never attached to the outcome
+  expect(rest.map((o: any) => [o.outcome, o.requestRecord])).toEqual([[null, 'req-a']]); // A's own unreferenced request stays pending, never attached to the outcome
   expect(arch).toMatchObject({
     domain: 'architecture',
-    status: 'completed',
+    outcome: { status: 'answered', result: 'all-clear' },
     reference: 'foreign',
     requestRecord: 'req-b',
     request: { state: 'not-recorded' },
   }); // never coalesced from another observation
   expect(testing).toMatchObject({
     domain: 'testing',
-    status: 'completed',
+    outcome: { status: 'answered', result: 'all-clear' },
     reference: 'missing',
     requestRecord: 'req-gone',
     request: { state: 'not-recorded' },
@@ -140,7 +156,7 @@ test('guard join: missing and foreign references are labelled, the foreign reque
     outcomes: [
       {
         domain: 'architecture',
-        status: 'pending',
+        outcome: null,
         reference: 'unreferenced',
         requestRecord: 'req-b',
         request: { state: 'recorded', messages: [{ role: 'system', content: 'B_INPUT' }] },
@@ -152,7 +168,7 @@ test('guard join: missing and foreign references are labelled, the foreign reque
   expect(
     a.outcomes.some(
       (o: any) =>
-        o.status === 'pending' &&
+        o.outcome === null &&
         o.requestRecord === 'req-a' &&
         o.request.messages[0].content === 'A_INPUT',
     ),
@@ -196,7 +212,7 @@ test('a configured phase-journal refusal at the guard boundary is not admitted: 
   expect(outcome.requests).toEqual({ architecture: 'failed' });
   const refusedOutcome = outcome.outcomes[0];
   expect(refusedOutcome.domain).toBe('architecture');
-  expect(refusedOutcome.status).toBe('not-admitted');
+  expect(refusedOutcome.outcome).toEqual({ status: 'not-sent', cause: 'not-admitted' });
   expect(refusedOutcome.admission).toBe('not-admitted');
   expect(refusedOutcome.requestRecord).toBeNull();
   expect(refusedOutcome.requestState).toBe('supplied');
@@ -205,7 +221,7 @@ test('a configured phase-journal refusal at the guard boundary is not admitted: 
   expect(view[0]).toMatchObject({ status: 'reported', failed: ['architecture'] });
   expect(view[0]!.outcomes[0]).toMatchObject({
     domain: 'architecture',
-    status: 'not-admitted',
+    outcome: { status: 'not-sent', cause: 'not-admitted' },
     reference: 'journal-failed',
     requestRecord: null,
     request: { state: 'not-recorded' },
@@ -259,5 +275,5 @@ test("a configured journal refusal at plan seal is recorded as failed, the centr
     requests: { architecture: 'absent' },
     outcome: 'absent',
   });
-  expect(absent.phases.guards[0].outcomes[0].status).toBe('completed');
+  expect(absent.phases.guards[0].outcomes[0].outcome.status).toBe('answered');
 });

@@ -3,6 +3,7 @@ import {
   type CompletionOpts,
   ContextLayer,
   ContextStack,
+  callOutcomeLabel,
   type LLMMessage,
   SignalBus,
 } from '@inixiative/foundry-core';
@@ -27,7 +28,9 @@ afterEach(async () => {
 
 const text = (messages: readonly LLMMessage[]) => messages.map((m) => m.content).join('\n');
 const ROUTE = JSON.stringify({ layers: [], domains: [], confidence: 0 });
-const said = (domain = 'a') => [{ domain, decision: 'no-comment' }];
+const said = (domain = 'a') => [
+  { domain, outcome: { status: 'answered', result: 'no-comment' } as const },
+];
 
 // ---------------------------------------------------------------------------
 // The cursor
@@ -41,16 +44,16 @@ test('a Warden first asked starts at the current message; one that missed messag
   const m2 = c.message('two');
   // Not answered (skipped unsent, timed out, errored): the cursor stays at m1.
   expect(c.missedBy('a', m2)).toBeUndefined();
-  c.answered(m2, [{ domain: 'a', decision: 'excluded' }]);
+  c.answered(m2, [{ domain: 'a', outcome: { status: 'not-sent', cause: 'not-admitted' } }]);
   const m3 = c.message('three');
-  c.answered(m3, [{ domain: 'a', decision: 'timeout' }]);
+  c.answered(m3, [{ domain: 'a', outcome: { status: 'failed', cause: 'timeout' } }]);
   const m4 = c.message('four');
   expect(c.missedBy('a', m4)).toEqual({ messages: ['two', 'three'], dropped: 0 });
   c.answered(m4, said());
   expect(c.missedBy('a', c.message('five'))).toBeUndefined();
   // A Warden added mid-thread is not handed the thread's history.
   expect(c.missedBy('b', c.current)).toBeUndefined();
-  c.answered(c.current, [{ domain: 'b', decision: 'excluded' }]);
+  c.answered(c.current, [{ domain: 'b', outcome: { status: 'not-sent', cause: 'not-admitted' } }]);
   expect(c.missedBy('b', c.message('six'))).toEqual({ messages: ['five'], dropped: 0 });
 });
 
@@ -82,8 +85,8 @@ test('a pre-filter skip counts as answered; any other skip does not; cursors nev
   c.answered(c.message('one'), said());
   const m2 = c.message('two');
   c.answered(m2, [
-    { domain: 'a', decision: 'skipped', reason: 'prefilter' },
-    { domain: 'b', decision: 'skipped', reason: 'no cache' },
+    { domain: 'a', outcome: { status: 'not-sent', cause: 'prefiltered' } },
+    { domain: 'b', outcome: { status: 'not-sent', cause: 'cold' } },
   ]);
   const m3 = c.message('three');
   expect(c.missedBy('a', m3)).toBeUndefined();
@@ -99,7 +102,7 @@ test('a duplicate prepare of one message keeps its number; a Retry that answers 
   c.answered(c.message('one', 'msg-1'), said());
   const m2 = c.message('two', 'msg-2');
   expect(c.message('two', 'msg-2')).toBe(m2);
-  c.answered(m2, [{ domain: 'a', decision: 'timeout' }]);
+  c.answered(m2, [{ domain: 'a', outcome: { status: 'failed', cause: 'timeout' } }]);
   c.answeredMoment('two', said());
   expect(c.missedBy('a', c.message('three', 'msg-3'))).toBeUndefined();
 });
@@ -115,16 +118,16 @@ test('restore rebuilds messages and cursors from the journalled advice rows', ()
       trigger: 'user-message',
       moment: 'one',
       participants: [
-        { domain: 'a', decision: 'no-comment' },
-        { domain: 'b', decision: 'contribute' },
+        { domain: 'a', outcome: { status: 'answered', result: 'no-comment' } },
+        { domain: 'b', outcome: { status: 'answered', result: 'spoke' } },
       ],
     }),
     row('r2', 't2', {
       trigger: 'user-message',
       moment: 'two',
       participants: [
-        { domain: 'a', decision: 'excluded', catchesUp: true },
-        { domain: 'b', decision: 'timeout' },
+        { domain: 'a', outcome: { status: 'not-sent', cause: 'not-held' }, catchesUp: true },
+        { domain: 'b', outcome: { status: 'failed', cause: 'timeout' } },
       ],
     }),
     // A brief or a consumed item is not a user message.
@@ -133,12 +136,12 @@ test('restore rebuilds messages and cursors from the journalled advice rows', ()
     row('r4', null, {
       trigger: 'user-message',
       retryOf: 'r2',
-      participants: [{ domain: 'b', decision: 'no-comment' }],
+      participants: [{ domain: 'b', outcome: { status: 'answered', result: 'no-comment' } }],
     }),
     row('r5', 't3', {
       trigger: 'user-message',
       moment: 'three',
-      participants: [{ domain: 'b', decision: 'error' }],
+      participants: [{ domain: 'b', outcome: { status: 'failed', cause: 'provider-error' } }],
       prefiltered: [{ domain: 'c' }],
     }),
   ];
@@ -196,7 +199,7 @@ function chorus(answer: (message: string, opts: CompletionOpts | undefined) => s
 }
 
 const notHeld = () => {
-  throw Object.assign(Error(NOT_HELD_REFUSAL), { decisionCapacity: true });
+  throw Object.assign(Error(NOT_HELD_REFUSAL), { notSentCause: 'not-held' });
 };
 
 test('a Warden not held warm is skipped unsent, not degraded, and catches up on the next user message', async () => {
@@ -207,14 +210,17 @@ test('a Warden not held warm is skipped unsent, not degraded, and catches up on 
   });
   const first = await flow.preMessage('Tidy the Prisma schema');
   const skipped = first.contributions[0]!;
-  expect(skipped).toMatchObject({ decision: 'excluded', catchesUp: true });
+  expect(skipped).toMatchObject({
+    outcome: { status: 'not-sent', cause: 'not-held' },
+    catchesUp: true,
+  });
   expect(asked[0]!.heldOnly).toBe(true);
   // No Retry is offered: the next message carries it.
   expect(degradedAnswer(skipped)).toBeUndefined();
   held = true;
   const second = await flow.preMessage('Add an index');
   expect(second.contributions[0]).toMatchObject({
-    decision: 'no-comment',
+    outcome: { status: 'answered', result: 'no-comment' },
     earlier: { count: 1, dropped: 0 },
   });
   const last = asked.at(-1)!.message;
@@ -230,29 +236,34 @@ test('a Warden not held warm is skipped unsent, not degraded, and catches up on 
 test('a Warden paused on a used-up login is skipped unsent, not degraded, and catches up after the reset', async () => {
   let paused = true;
   const { flow, asked } = chorus(() => {
-    if (paused) throw Object.assign(Error(QUOTA_PAUSED_REFUSAL), { decisionCapacity: true });
+    if (paused) throw Object.assign(Error(QUOTA_PAUSED_REFUSAL), { notSentCause: 'not-admitted' });
     return NO_COMMENT;
   });
   const first = await flow.preMessage('Tidy the Prisma schema');
   const skipped = first.contributions[0]!;
-  expect(skipped).toMatchObject({ decision: 'excluded', catchesUp: true });
+  expect(skipped).toMatchObject({
+    outcome: { status: 'not-sent', cause: 'not-admitted' },
+    catchesUp: true,
+  });
   // The strip says it once; no degraded Warden and no Retry each round.
   expect(degradedAnswer(skipped)).toBeUndefined();
   paused = false;
   const second = await flow.preMessage('Add an index');
-  expect(second.contributions[0]).toMatchObject({ decision: 'no-comment' });
+  expect(second.contributions[0]).toMatchObject({
+    outcome: { status: 'answered', result: 'no-comment' },
+  });
   expect(asked.at(-1)!.message).toContain('Tidy the Prisma schema');
 });
 
 test('a capacity refusal that is not the held-only skip is still degraded (Retry offered)', async () => {
   const { flow } = chorus(() => {
     throw Object.assign(Error('Subscription decision expired in queue'), {
-      decisionCapacity: true,
+      notSentCause: 'not-admitted',
     });
   });
   const plan = await flow.preMessage('Tidy the Prisma schema');
   const answer = plan.contributions[0]!;
-  expect(answer.decision).toBe('excluded');
+  expect(callOutcomeLabel(answer.outcome)).toBe('not-sent:not-admitted');
   expect(answer.catchesUp).toBeUndefined();
   expect(degradedAnswer(answer)).toMatchObject({ domain: 'schema' });
 });
@@ -264,10 +275,10 @@ test('a Retry on a user message is not held-only, and when it answers the Warden
     return NO_COMMENT;
   });
   const first = await flow.preMessage('Tidy the Prisma schema');
-  expect(first.contributions[0]!.decision).toBe('error');
+  expect(callOutcomeLabel(first.contributions[0]!.outcome)).toBe('failed:provider-error');
   failing = false;
   const retried = await flow.retry('user-message', 'Tidy the Prisma schema', ['schema']);
-  expect(retried.contributions[0]!.decision).toBe('no-comment');
+  expect(callOutcomeLabel(retried.contributions[0]!.outcome)).toBe('answered:no-comment');
   expect(asked.at(-1)!.heldOnly).toBeUndefined();
   await flow.preMessage('Add an index');
   expect(asked.at(-1)!.message).not.toContain('Messages since you last answered');

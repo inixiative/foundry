@@ -282,7 +282,7 @@ function seedPlanAndWork(
       contributions: [
         {
           domain: 'permissions',
-          decision: 'contribute',
+          outcome: { status: 'answered', result: 'spoke' },
           snippets: [
             'Grants already split view from prompt.resolve in the rebac schema; see docs/claude/PERMISSIONS.md, "Thread grants".',
           ],

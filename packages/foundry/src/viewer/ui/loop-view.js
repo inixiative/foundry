@@ -11,6 +11,7 @@
  * closed = landed). Then the agent's recorded loop (its goal, steps, stop check and rounds). Below
  * it, today's graph panel: the thread tree, each turn's flow and the learning loop.
  */
+import { outcomeSpoke } from './call-outcome.js';
 import { html } from './lib.js';
 import { lifecycle } from './lifecycle.js';
 import { InlineMarkdown } from './markdown.js';
@@ -38,7 +39,7 @@ export function pointerRows(flow) {
   for (const turn of flow.turns ?? []) {
     const contributions = Array.isArray(turn.plan?.contributions) ? turn.plan.contributions : [];
     for (const c of contributions)
-      if (c.decision === 'contribute')
+      if (outcomeSpoke(c.outcome))
         rows.push({
           key: `${turn.turnId}:${c.domain}`,
           turnId: turn.turnId,

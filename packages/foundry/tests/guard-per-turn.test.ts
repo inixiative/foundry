@@ -415,7 +415,7 @@ test('subagent-spawn: the chorus briefs the handoff from the task text; the brie
     participants: [
       {
         domain: 'architecture',
-        decision: 'contribute',
+        outcome: { status: 'answered', result: 'spoke' },
         snippets: ['Snapshots are column-only: use pickColumns (fb_7).'],
       },
     ],
@@ -445,7 +445,7 @@ test('subagent-spawn: the chorus briefs the handoff from the task text; the brie
     role: 'architecture',
     trigger: 'subagent-spawn',
     wraps: 'handoff:sub_child',
-    decision: 'contribute',
+    outcome: 'answered:spoke',
     result: ['Snapshots are column-only: use pickColumns (fb_7).'],
   });
 });
@@ -476,7 +476,13 @@ test('a silent brief is journalled (silence is measurable) and queues no note', 
     .rows('turn-1')
     .find((r) => r.phase === 'advice' && r.record.trigger === 'subagent-spawn')!;
   expect(brief.record).toMatchObject({
-    participants: [{ domain: 'architecture', decision: 'no-comment', snippets: [] }],
+    participants: [
+      {
+        domain: 'architecture',
+        outcome: { status: 'answered', result: 'no-comment' },
+        snippets: [],
+      },
+    ],
   });
   expect(f.runtime.flowOrchestrator.pendingNotes).toHaveLength(0);
 });
@@ -608,7 +614,7 @@ test("a handoff is briefed at its call: the chimes ride into the subagent's prom
   expect(row.record).toMatchObject({
     wraps: 'handoff-call:toolu_spawn_1',
     handoff: { toolCallId: 'toolu_spawn_1', tool: 'Agent', before: true },
-    participants: [{ domain: 'architecture', decision: 'contribute' }],
+    participants: [{ domain: 'architecture', outcome: { status: 'answered', result: 'spoke' } }],
   });
   // Nothing rides the parent's next turn: the subagent already has it.
   expect(f.runtime.flowOrchestrator.pendingNotes).toHaveLength(0);

@@ -16,6 +16,7 @@ import { RUN_ENV, stampRunDirectory } from '@inixiative/archive/exemption';
 import {
   type ClassifyStageTrace,
   ContextLayer,
+  callOutcomeLabel,
   type LLMProvider,
   type MachineLoad,
   parseWardenJudgement,
@@ -330,16 +331,20 @@ function rowOf(result: AdviseResult | GuardResult, classified?: ClassifyResult):
       : {}),
     ...(repairs.length ? { repairs } : {}),
   };
-  if ('status' in result) {
-    if (result.status !== 'completed')
-      return {
-        noComment: false,
-        error: result.status === 'not-admitted' ? 'not-admitted' : (result.error ?? result.status),
-        ...staged,
-      };
-  } else if (result.notStarted) return { noComment: false, error: 'not-admitted', ...staged };
-  else if (result.error || result.skipped)
-    return { noComment: false, error: result.error ?? result.skipped!, ...staged };
+  const guard = 'outcome' in result;
+  const notSent = guard
+    ? result.outcome.status === 'not-sent'
+      ? { cause: result.outcome.cause, reason: result.error ?? callOutcomeLabel(result.outcome) }
+      : undefined
+    : result.notSent;
+  // A call the queue or role budget never admitted is counted apart: re-asked, never a silence.
+  if (notSent?.cause === 'not-admitted' || notSent?.cause === 'not-held')
+    return { noComment: false, error: 'not-admitted', ...staged };
+  if (notSent) return { noComment: false, error: notSent.reason, ...staged };
+  const failed = guard
+    ? result.outcome.status === 'failed' && (result.error ?? callOutcomeLabel(result.outcome))
+    : result.error;
+  if (failed) return { noComment: false, error: failed, ...staged };
   // A run that fell back is not the configuration's answer: its failed stage's error, counted apart
   // (and re-asked when the transport lost it), never a yes or a silence.
   if (classified?.fallback) {
@@ -354,7 +359,7 @@ function rowOf(result: AdviseResult | GuardResult, classified?: ClassifyResult):
     return classified.outcome === 'yes' && classified.final.remarks.length
       ? { noComment: false, text: classified.final.remarks.join('\n'), ...staged }
       : { noComment: true, ...staged };
-  if ('status' in result)
+  if (guard)
     return result.noComment
       ? { noComment: true, ...staged }
       : {

@@ -146,7 +146,7 @@ test('a cold cache is skipped explicitly before any model call', async () => {
     layers: [],
     snippets: [],
     confidence: 0,
-    skipped: 'cold-cache',
+    notSent: { cause: 'cold', reason: 'cold-cache' },
   });
   expect(calls).toHaveLength(0);
 });

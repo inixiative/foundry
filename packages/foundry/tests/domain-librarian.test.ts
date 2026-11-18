@@ -184,7 +184,7 @@ describe('DomainLibrarian', () => {
         }),
       );
 
-      expect(result.ran).toBe(true);
+      expect(result.outcome.status).not.toBe('not-sent');
       expect(result.findings).toHaveLength(1);
       expect(result.findings[0].severity).toBe('advisory');
       expect(result.findings[0].description).toContain('snake_case');
@@ -199,7 +199,7 @@ describe('DomainLibrarian', () => {
         }),
       );
 
-      expect(result.ran).toBe(false);
+      expect(result.outcome.status).toBe('not-sent');
       expect(result.findings).toHaveLength(0);
     });
 
@@ -288,7 +288,7 @@ describe('DomainLibrarian', () => {
         }),
       );
 
-      expect(result.ran).toBe(true);
+      expect(result.outcome.status).not.toBe('not-sent');
       expect(result.findings).toHaveLength(1);
       expect(result.findings[0].description).toContain('Race condition');
     });
@@ -303,7 +303,7 @@ describe('DomainLibrarian', () => {
         }),
       );
 
-      expect(result.ran).toBe(true);
+      expect(result.outcome.status).not.toBe('not-sent');
       expect(result.findings).toHaveLength(0);
     });
 
@@ -317,7 +317,7 @@ describe('DomainLibrarian', () => {
         }),
       );
 
-      expect(result.ran).toBe(true);
+      expect(result.outcome.status).not.toBe('not-sent');
       expect(result.findings).toHaveLength(2);
     });
   });

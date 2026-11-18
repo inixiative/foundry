@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { ContextLayer, ContextStack, SignalBus } from '@inixiative/foundry-core';
+import { ContextLayer, ContextStack, callOutcomeLabel, SignalBus } from '@inixiative/foundry-core';
 import { Cartographer } from '../src/agents/cartographer';
 import { DomainLibrarian } from '../src/agents/domain-librarian';
 import { FlowOrchestrator } from '../src/agents/flow-orchestrator';
@@ -71,9 +71,9 @@ test('malformed advice remains an inspectable error beside a valid contribution'
   });
   try {
     const plan = await flow.preMessage('Add preferred names without losing existing data');
-    expect(plan.contributions.map((c) => [c.domain, c.decision])).toEqual([
-      ['architecture', 'error'],
-      ['testing', 'contribute'],
+    expect(plan.contributions.map((c) => [c.domain, callOutcomeLabel(c.outcome)])).toEqual([
+      ['architecture', 'failed:invalid-response'],
+      ['testing', 'answered:spoke'],
     ]);
     expect(plan.snippets).toEqual(['Verify legacy readers after reopening']);
     const failed = plan.contributions[0]!;
@@ -87,7 +87,7 @@ test('malformed advice remains an inspectable error beside a valid contribution'
     const sealed = JSON.stringify(plan);
     const prepared = await flow.hydrateDelta(plan);
     const participant = prepared.decoration.participants.find((p) => p.id === 'architecture')!;
-    expect(participant.decision).toBe('error');
+    expect(callOutcomeLabel(participant.outcome)).toBe('failed:invalid-response');
     expect(participant.reason).toBe(failed.reason);
     expect(participant.segments).toEqual(failed.segments);
     expect(JSON.stringify(prepared.decoration)).not.toContain('PRIVATE_MALFORMED_OUTPUT');

@@ -11,6 +11,7 @@
  * writeback, feedback, Archive capture). Every step keeps its raw record.
  */
 
+import { outcomeLabel, outcomeSpoke } from './call-outcome.js';
 import { html, useEffect, useRef, useState } from './lib.js';
 import { authFetch, chorusAction, closeTurnView, openTurnDetail, turnViewTarget } from './store.js';
 
@@ -57,7 +58,7 @@ function flagged(step) {
   if (step.kind === 'tool') return step.error;
   if (step.kind === 'guard')
     return step.failed.length > 0 || step.regions.some((r) => r.findings > 0);
-  if (step.kind === 'chorus') return step.regions.some((r) => r.decision === 'error');
+  if (step.kind === 'chorus') return step.regions.some((r) => r.outcome?.status === 'failed');
   if (step.kind === 'archive') return step.state === 'failed';
   return false;
 }
@@ -72,7 +73,7 @@ function summary(step) {
         ? 'degraded · ran without routing'
         : [step.status, step.domains.join(', ')].filter(Boolean).join(' · ');
     case 'chorus': {
-      const spoke = step.regions.filter((r) => r.decision === 'contribute').length;
+      const spoke = step.regions.filter((r) => outcomeSpoke(r.outcome)).length;
       return `${step.regions.length} Wardens asked · ${spoke} reminded`;
     }
     case 'plan':
@@ -136,19 +137,19 @@ function ToolBody({ step }) {
   </div>`;
 }
 
+/** Spoke first, then failed, then the quiet ones. */
+const regionRank = (r) => (outcomeSpoke(r.outcome) ? 0 : r.outcome?.status === 'failed' ? 1 : 2);
+
 /** Each region's answer, layer by layer: recognise (yes / no and why), then confirm and pick. */
 function ChorusBody({ step }) {
-  const order = { contribute: 0, error: 1 };
-  const regions = [...step.regions].sort(
-    (a, b) => (order[a.decision] ?? 2) - (order[b.decision] ?? 2),
-  );
+  const regions = [...step.regions].sort((a, b) => regionRank(a) - regionRank(b));
   const quiet = Object.entries(step.skipped ?? {}).flatMap(([why, ids]) =>
     ids.map((id) => `${id} (${why})`),
   );
   return html`<div class="tv-typed">
     <ul class="tv-regions">${regions.map(
-      (r) => html`<li key=${r.region} data-decision=${r.decision}>
-        <b>${r.region}</b> <span class="tv-decision">${r.decision}</span>
+      (r) => html`<li key=${r.region} data-outcome=${outcomeLabel(r.outcome)}>
+        <b>${r.region}</b> <span class="tv-decision">${outcomeLabel(r.outcome)}</span>
         ${r.served ? html` <span class="tv-dim">${r.served.model}${r.served.effort ? ` · ${r.served.effort}` : ''}</span>` : null}
         ${r.layers.map(
           (layer) =>
@@ -272,7 +273,7 @@ function TurnSummary({ steps, calls, took }) {
   const handoffs = steps.filter((s) => s.kind === 'handoff').length;
   const chorus = steps.find((s) => s.kind === 'chorus');
   const regions = chorus?.regions ?? [];
-  const spoke = regions.filter((r) => r.decision === 'contribute').length;
+  const spoke = regions.filter((r) => outcomeSpoke(r.outcome)).length;
   const timedOut = regions.filter((r) => r.layers.some((l) => l.timedOut)).length;
   const tokens = (calls ?? []).reduce((n, c) => n + callTokens(c), 0);
   const did = [
@@ -294,11 +295,10 @@ function WardenTable({ step, target }) {
   const regions = step?.regions ?? [];
   if (!regions.length) return null;
   const timedOut = regions.some((r) => r.layers.some((l) => l.timedOut));
-  const order = { contribute: 0, error: 1 };
-  const rows = [...regions].sort((a, b) => (order[a.decision] ?? 2) - (order[b.decision] ?? 2));
+  const rows = [...regions].sort((a, b) => regionRank(a) - regionRank(b));
   const cell = (r, n) => {
     const l = r.layers.find((x) => x.layer === n);
-    if (!l) return n === 1 && !r.layers.length ? r.decision : '—';
+    if (!l) return n === 1 && !r.layers.length ? outcomeLabel(r.outcome) : '—';
     return `${l.timedOut ? 'timed out' : (l.outcome ?? (l.error ? 'error' : '—'))}${l.elapsedMs != null ? ` · ${(l.elapsedMs / 1000).toFixed(1)} s` : ''}`;
   };
   return html`<section class="tv-wardens" aria-label="Wardens">
@@ -313,7 +313,7 @@ function WardenTable({ step, target }) {
       <tbody>${rows.map(
         (
           r,
-        ) => html`<tr key=${r.region} data-decision=${r.decision} class=${r.layers.some((l) => l.timedOut) ? 'is-timeout' : ''}>
+        ) => html`<tr key=${r.region} data-outcome=${outcomeLabel(r.outcome)} class=${r.layers.some((l) => l.timedOut) ? 'is-timeout' : ''}>
           <td>${r.region}</td><td>${cell(r, 1)}</td><td>${cell(r, 2)}</td>
           <td>${r.pointer?.pointer ? `† ${r.pointer.pointer}${r.pointer.where ? ` · ${r.pointer.where}` : ''}` : ''}</td>
         </tr>`,

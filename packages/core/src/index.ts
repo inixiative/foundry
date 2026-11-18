@@ -323,16 +323,31 @@ export { idAtTime, newId, timeFromId } from './id';
 export { type Intervention, InterventionLog, type InterventionThread } from './intervention';
 // Message utilities
 export {
+  ADVICE_RESULTS,
+  type AdviceOutcome,
+  type AdviceResult,
+  adviceSpoke,
   assembledToMessages,
   type BuildInjectionArtifactOpts,
   buildInjectionArtifact,
+  type CallFailedCause,
+  type CallNotSentCause,
+  type CallOutcome,
+  callOutcomeLabel,
   type DecorationParticipant,
   type DeliveryRecord,
+  GUARD_CHECK_RESULTS,
+  type GuardCheckOutcome,
+  type GuardCheckResult,
   type InjectionArtifact,
   type InjectionBlock,
   type InjectionSegmentKind,
+  type LearningReviewOutcome,
+  type LearningReviewResult,
   type MessageDecoration,
+  type NotSentCall,
   type ParticipantRequest,
+  parseCallOutcome,
   splitSystemMessage,
 } from './messages';
 // Middleware
