@@ -73,6 +73,83 @@ test('journal capture writes every page to the local Archive, retains partial tu
   expect(latest(archive)?.coverage.reasoning).toBe('unavailable');
 });
 
+test('an unchanged thread is written again to an Archive that no longer holds it', async () => {
+  const { archive, journal } = fixture();
+  const client = archive.client();
+  const first = new ArchiveCapture(journal, () => client, new EventStream());
+  await first.flush();
+  first.close();
+  archive.wipe();
+  const capture = new ArchiveCapture(journal, () => client, new EventStream());
+  cleanup.push(() => capture.close());
+  await capture.flush();
+  expect(archive.listings()[0]?.revision).toBe(1);
+  expect(capture.errors.size).toBe(0);
+});
+
+test('a thread the Archive already holds is not rebuilt, across a restart, and a running turn is captured at most every 30 seconds', async () => {
+  const { archive, journal, t } = fixture();
+  const client = archive.client();
+  const first = new ArchiveCapture(journal, () => client, new EventStream());
+  await first.flush();
+  first.close();
+  expect(archive.listings()[0]?.revision).toBe(1);
+  // A restarted Foundry knows what the Archive holds and skips the unchanged thread.
+  const skipped: string[] = [];
+  const built: ArchiveSnapshot[] = [];
+  const events = new EventStream();
+  const capture = new ArchiveCapture(
+    journal,
+    () => client,
+    events,
+    (snapshot) => built.push(snapshot),
+    (threadId) => skipped.push(threadId),
+  );
+  cleanup.push(() => capture.close());
+  await capture.flush();
+  expect(skipped).toEqual([t.id]);
+  expect(built).toHaveLength(0);
+  expect(capture.stored.get(t.id)?.archiveId).toBe(archive.listings()[0]!.id);
+  expect(archive.listings()[0]?.revision).toBe(1);
+  // A turn starts: its first event is captured soon; later ones wait for the bound.
+  journal.beginTurn(t, 'turn-1', 'Question');
+  events.push({ kind: 'journal', threadId: t.id, turnId: 'turn-1', timestamp: Date.now() });
+  await Bun.sleep(400);
+  expect(archive.listings()[0]?.revision).toBe(2);
+  journal.appendPhase(t, {
+    id: 'p-1',
+    turnId: 'turn-1',
+    dispatchId: 'd',
+    phase: 'handoff',
+    record: { at: 1 },
+  });
+  events.push({ kind: 'journal', threadId: t.id, turnId: 'turn-1', timestamp: Date.now() });
+  await Bun.sleep(400);
+  expect(archive.listings()[0]?.revision).toBe(2);
+  // The turn closes: its closing capture runs at once.
+  journal.completeTurn(
+    t,
+    'turn-1',
+    'Answer',
+    {},
+    {
+      id: 'trace-1',
+      messageId: 'turn-1',
+      startedAt: 1,
+      root: {},
+      summary: {},
+      spans: [],
+    },
+  );
+  events.push({ kind: 'journal', threadId: t.id, turnId: 'turn-1', timestamp: Date.now() });
+  await Bun.sleep(400);
+  expect(archive.listings()[0]?.revision).toBe(3);
+  expect(conversational(latest(archive)).map((entry) => entry.text)).toEqual([
+    'Question',
+    'Answer',
+  ]);
+});
+
 test('a missing or failing local Archive records the thread, still reports its snapshot, and the retry captures it', async () => {
   const { archive, journal, t } = fixture();
   journal.beginTurn(t, 'turn-a', 'Remember this');

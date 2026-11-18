@@ -246,6 +246,8 @@ export function startFakeArchive(token = 'fake-archive-token-0000000000000000') 
     listings,
     grantLibrary: (library: { integrationId: string; resourceId: string; name: string }) =>
       libraries.push(library),
+    /** Forgets every stored session, as a reset Archive would. */
+    wipe: () => archives.clear(),
     /** Answers every authenticated request with a server error until set back. */
     fail(value: boolean) {
       failing = value;

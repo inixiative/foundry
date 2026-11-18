@@ -3,6 +3,7 @@
  * @kind service
  * @partOf integration:archive
  */
+
 import { userInfo } from 'node:os';
 import { resolve } from 'node:path';
 import {
@@ -23,7 +24,7 @@ import {
 } from '@inixiative/foundry-core';
 import { workerArchiveRuntime } from '../models/registry';
 import { contentHash } from '../persistence/journal-content';
-import type { LocalSessionStore } from '../persistence/local-session-store';
+import type { ArchiveCaptureRecord, LocalSessionStore } from '../persistence/local-session-store';
 import { WORKER_SWITCH_PHASE } from '../turns/journal-history';
 import type { ArchiveWriter } from './local';
 import { RAW_MIDDLEWARE_PHASES, REDUCED_PHASE, type ReducedMiddleware } from './reduced-middleware';
@@ -101,9 +102,12 @@ function lineageOf(
     };
   }
   if (!meta.parentThreadId) return undefined;
-  const parents = new Map(journal.threads().map((t) => [t.id, t.meta.parentThreadId]));
   let root = meta.parentThreadId;
-  for (let hops = 0; parents.get(root) && hops < 100; hops++) root = parents.get(root)!;
+  for (let hops = 0; hops < 100; hops++) {
+    const parent = journal.threadMeta(root)?.parentThreadId;
+    if (!parent) break;
+    root = parent;
+  }
   const spawn = meta.spawn;
   const clip = (value: string | undefined, max: number) =>
     value ? value.slice(0, max) : undefined;
@@ -128,8 +132,9 @@ export function captureThread(
   sourceId: string,
   threadId: string,
 ): ArchiveSnapshot {
-  const thread = journal.threads().find((thread) => thread.id === threadId);
-  if (!thread) throw new Error('Unknown archive source thread');
+  const meta = journal.threadMeta(threadId);
+  if (!meta) throw new Error('Unknown archive source thread');
+  const thread = { id: threadId, meta };
   const entries: ArchiveEntry[] = [];
   const records = journal.archiveRecords(threadId);
   const actor = localActor();
@@ -294,14 +299,48 @@ export function captureThread(
   });
 }
 
+/**
+ * What a thread's snapshot is built from, apart from its capture time: the journal rows it reads and
+ * the parts of its meta and this process it stamps. Capture skips a thread whose mark matches the
+ * snapshot the Archive last accepted, since building one reads every row the thread holds.
+ */
+export function captureMark(journal: LocalSessionStore, threadId: string): string | undefined {
+  const meta = journal.threadMeta(threadId);
+  if (!meta) return undefined;
+  return JSON.stringify([
+    CAPTURE_FORMAT,
+    journal.archiveRecordsMark(threadId),
+    threadTitle(meta)?.text,
+    meta.projectId,
+    meta.worker,
+    meta.tags,
+    meta.parentThreadId,
+    meta.forkedFrom,
+    meta.spawn,
+    meta.depth,
+    localActor(),
+    stampedRun(),
+  ]);
+}
+
+/** The version of what `captureThread` builds: bump it with any change to a snapshot's content, so every thread is captured again. */
+const CAPTURE_FORMAT = 1;
+/** Recorded for a capture the Archive dropped (a run it does not keep): it holds no row to check. */
+const DROPPED_DIGEST = 'dropped';
 const RETRY_MS = 30_000;
+/** A thread with a turn running is captured at most this often; its closing capture runs at once. */
+const OPEN_TURN_CAPTURE_MS = 30_000;
+const DEBOUNCE_MS = 250;
 
 /**
  * Writes each journalled thread to the local Archive. The journal stays the source of truth, so a
  * failed write (no local Archive yet, server down) is recorded and the thread captured again later.
  */
 export class ArchiveCapture {
-  private readonly pending = new Set<string>();
+  /** Threads waiting to be captured, each with when it is due. */
+  private readonly pending = new Map<string, number>();
+  /** When each thread's snapshot was last built, for the open-turn bound. */
+  private readonly built = new Map<string, number>();
   private readonly unsubscribe: () => void;
   private readonly retry: ReturnType<typeof setInterval>;
   private timer: ReturnType<typeof setTimeout> | undefined;
@@ -318,18 +357,24 @@ export class ArchiveCapture {
   readonly stored = new Map<string, { at: number; archiveId: string }>();
   /** The last claim refusal per session (or `hold`), for diagnosis; capture goes on regardless. */
   readonly claimErrors = new Map<string, string>();
+  /** Threads whose last capture left a claim unfulfilled, and when to capture them again. */
+  private readonly unfulfilled = new Map<string, number>();
   constructor(
     readonly journal: LocalSessionStore,
     private readonly writer: () => ArchiveWriter | undefined,
     events: EventStream,
     /** Each thread's snapshot as built, whether or not the Archive accepted it. */
     private readonly captured?: (snapshot: ArchiveSnapshot) => void,
+    /** A thread skipped because the Archive already holds its snapshot as the journal stands. */
+    private readonly unchanged?: (threadId: string) => void,
   ) {
     this.unsubscribe = events.subscribe((event) => {
       if (event.kind === 'journal' && event.outcome !== 'failed') this.schedule(event.threadId);
     });
     this.retry = setInterval(() => {
       for (const threadId of this.errors.keys()) this.schedule(threadId);
+      for (const [threadId, due] of this.unfulfilled)
+        if (due <= Date.now()) this.schedule(threadId);
     }, RETRY_MS);
     this.retry.unref();
     this.claimant = `foundry:${contentHash(resolve(journal.path)).slice(0, 16)}`;
@@ -338,18 +383,41 @@ export class ArchiveCapture {
     for (const thread of journal.threads()) this.schedule(thread.id);
     journal.onClose(() => this.close());
   }
+  /**
+   * Captures a thread soon: after a short debounce, or, while it has a turn running, no sooner than
+   * the open-turn bound after its last build, so a working thread is not rebuilt on every event.
+   */
   schedule(threadId: string) {
     if (this.closed) return;
-    this.pending.add(threadId);
-    this.timer ??= setTimeout(() => void this.flush(), 250);
-    this.timer.unref();
+    const now = Date.now();
+    const last = this.built.get(threadId);
+    const due =
+      last !== undefined && this.journal.openTurn(threadId)
+        ? Math.max(now + DEBOUNCE_MS, last + OPEN_TURN_CAPTURE_MS)
+        : now + DEBOUNCE_MS;
+    this.pending.set(threadId, Math.min(this.pending.get(threadId) ?? due, due));
+    this.arm();
   }
-  /** Captures every pending thread; flushes run one at a time so revisions land in order. */
-  flush(): Promise<void> {
+  private arm() {
     if (this.timer) clearTimeout(this.timer);
     this.timer = undefined;
-    const threads = [...this.pending];
+    if (this.closed || !this.pending.size) return;
+    const next = Math.min(...this.pending.values());
+    this.timer = setTimeout(() => void this.flushDue(), Math.max(0, next - Date.now()));
+    this.timer.unref();
+  }
+  private flushDue(): Promise<void> {
+    const now = Date.now();
+    const threads = [...this.pending].filter(([, due]) => due <= now).map(([id]) => id);
+    for (const id of threads) this.pending.delete(id);
+    this.arm();
+    return this.chain.run(() => this.write(threads));
+  }
+  /** Captures every pending thread now; flushes run one at a time so revisions land in order. */
+  flush(): Promise<void> {
+    const threads = [...this.pending.keys()];
     this.pending.clear();
+    this.arm();
     return this.chain.run(() => this.write(threads));
   }
   private async write(threads: string[]) {
@@ -357,8 +425,30 @@ export class ArchiveCapture {
     const writer = this.writer();
     const sourceId = await writer?.sourceId().catch(() => undefined);
     for (const threadId of threads) {
+      // The journal may close while a write awaits the Archive.
+      if (this.closed) return;
+      // Read before the build, so a row written meanwhile leaves the mark stale and is captured next.
+      const mark = captureMark(this.journal, threadId);
+      const last = this.journal.archiveCaptureOf(threadId);
+      if (
+        writer &&
+        sourceId &&
+        mark !== undefined &&
+        last?.sourceId === sourceId &&
+        last.mark === mark &&
+        !this.errors.has(threadId) &&
+        !this.unfulfilled.has(threadId) &&
+        (await this.holds(writer, last))
+      ) {
+        if (this.closed) return;
+        this.stored.set(threadId, { at: last.storedAt, archiveId: last.archiveId });
+        this.unchanged?.(threadId);
+        continue;
+      }
+      if (this.closed) return;
       let snapshot: ArchiveSnapshot;
       const readAt = Date.now();
+      this.built.set(threadId, readAt);
       try {
         snapshot = captureThread(this.journal, sourceId ?? this.unsentSourceId, threadId);
       } catch {
@@ -380,8 +470,20 @@ export class ArchiveCapture {
         const sessions = nativeSessions(this.journal, threadId);
         await this.claim(writer, sessions);
         const stored = await writer.capture(snapshot);
-        await this.fulfil(writer, sessions, stored.id);
+        const fulfilled = await this.fulfil(writer, sessions, stored.id);
+        if (this.closed) return;
         this.stored.set(threadId, { at: readAt, archiveId: stored.id });
+        // A claim left unfulfilled is retried later, so the thread is not marked as held meanwhile.
+        if (!fulfilled) this.unfulfilled.set(threadId, Date.now() + RENEW_MS);
+        else this.unfulfilled.delete(threadId);
+        if (mark !== undefined && fulfilled)
+          this.journal.recordArchiveCapture(threadId, {
+            sourceId,
+            mark,
+            archiveId: stored.id,
+            digest: stored.dropped ? DROPPED_DIGEST : stored.digest,
+            storedAt: readAt,
+          });
         this.errors.delete(threadId);
       } catch {
         this.errors.set(
@@ -418,13 +520,28 @@ export class ArchiveCapture {
       this.claimErrors.set('hold', (error as Error).message);
     }
   }
+  /** Whether every claim was fulfilled. */
   private async fulfil(writer: ArchiveWriter, sessions: NativeSession[], archiveId: string) {
+    let fulfilled = true;
     for (const session of sessions)
       try {
         await writer.fulfilClaim({ claimant: this.claimant, ...session, archiveId });
       } catch (error) {
+        fulfilled = false;
         this.claimErrors.set(`${session.source}:${session.sessionId}`, (error as Error).message);
       }
+    return fulfilled;
+  }
+  /**
+   * Whether the Archive still holds the snapshot capture last wrote: a reset Archive, or one whose
+   * row changed, is written again. A deleted session stays deleted (its tombstone refuses the same
+   * transcript anyway).
+   */
+  private async holds(writer: ArchiveWriter, last: ArchiveCaptureRecord) {
+    const head = await writer.head(last.archiveId).catch(() => null);
+    if (head === null) return false;
+    if (!head) return last.digest === DROPPED_DIGEST;
+    return head.deleted === true || head.digest === last.digest;
   }
   close() {
     if (this.closed) return;
@@ -452,7 +569,7 @@ const RENEW_MS = 2 * 60_000;
  * follows its session's claim.
  */
 function nativeSessions(journal: LocalSessionStore, threadId: string): NativeSession[] {
-  const meta = journal.threads().find((t) => t.id === threadId)?.meta;
+  const meta = journal.threadMeta(threadId);
   // A Muse Code session is not a claimable source in Archive (claims name Claude Code and Codex
   // sessions only); naming its id as either would be a wrong claim. Archive's Muse collector takes it.
   if (meta?.worker === 'muse') return [];

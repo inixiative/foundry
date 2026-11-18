@@ -513,6 +513,8 @@ test('Foundry claims the native sessions it drives while it writes them, and ful
     claimant: 'someone-else',
     expiresAt: Date.now() + 60_000,
   });
+  // The thread changes, so it is captured again (an unchanged one is skipped).
+  store.saveThread({ ...t, meta: { ...t.meta, description: 'Main thread, changed' } });
   capture.schedule(t.id);
   await capture.flush();
   expect(capture.errors.has(t.id)).toBe(false);
