@@ -55,7 +55,7 @@
       },
       "dependencies": {
         "@anthropic-ai/claude-code": "^2.1.92",
-        "@inixiative/agent-session": "^0.17.1",
+        "@inixiative/agent-session": "^0.17.0",
         "@inixiative/archive": "^0.34.0",
         "@inixiative/config": "^0.5.224",
         "@inixiative/foundry-core": "workspace:*",
@@ -137,7 +137,7 @@
 
     "@iconify/utils": ["@iconify/utils@3.1.7", "", { "dependencies": { "@antfu/install-pkg": "^2.0.1", "@iconify/types": "^2.0.0", "import-meta-resolve": "^4.2.0" } }, "sha512-JZHlwdID+dy+lTgbYC8NEC4zeugqeYsc6jewvzb4c58kHauJn+X7rNwQjxz5p2qSjqaEeQoLkCIQ9v/H4PK0/w=="],
 
-    "@inixiative/agent-session": ["@inixiative/agent-session@0.17.1", "", { "dependencies": { "@inixiative/json-rules": "^3.23.0", "@muse-code/sdk": "1.4.20" } }, "sha512-vcbtwwRNRbP1qqHIf4QrinUl4mu1AEE/cKFAhSboEWX+tuQyHwTkpOwbFyVnla9nPGw8eQEw1Gi4n9rv2X1pvQ=="],
+    "@inixiative/agent-session": ["@inixiative/agent-session@0.17.0", "", { "dependencies": { "@inixiative/json-rules": "^3.23.0", "@muse-code/sdk": "1.4.20" } }, "sha512-Vh+uyZWfCmCyBfsrLIkvd7FG8MpF+vIhsV7akp0tQbv4m9GoLF7kO25jWUc5OVde75PMv6aET3HTzRh4CqOzVA=="],
 
     "@inixiative/archive": ["@inixiative/archive@0.34.0", "", { "dependencies": { "@inixiative/agent-session": "^0.12.0", "@inixiative/signet": "^0.14.0", "@prisma/client": "^6.6.0", "js-tiktoken": "1.0.21", "prisma": "^6.6.0", "zod": "^4.3.6" }, "bin": { "archive": "src/cli.ts" } }, "sha512-6jNG0JDBiXSQGCmwFMMYeumKGpSHVQyQnqTI5ySNAVYvgt6di2u9Z/dy1a4Kqd8MKQ469WxeRdTvob8vWB3qmw=="],
 

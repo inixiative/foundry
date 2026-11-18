@@ -29,8 +29,8 @@
   "recorded": {
     "service": "claude",
     "cli": "claude",
-    "recordedAt": "2026-11-18T01:43:23.192Z",
-    "agentSession": "0.17.1",
+    "recordedAt": "2026-11-18T00:15:03.186Z",
+    "agentSession": "0.17.0",
     "environment": "terminal"
   }
 }
