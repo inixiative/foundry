@@ -36,6 +36,8 @@ import {
   followProjectActivity,
   type ProjectActivity,
   type ProjectHostState,
+  type ProjectWardenHosts,
+  type Roster,
 } from './providers/project-warden-hosts';
 import { SubscriptionAuthentication } from './providers/subscription-authentication';
 import {
@@ -281,7 +283,7 @@ const live = subscription
             project: {
               projectOf: (threadId: string) => threadMeta?.(threadId)?.projectId,
               onProject: (projectId: string, state: ProjectHostState) => {
-                const line = `[project-wardens] ${projectId} ${state.status}: ${state.held}/${state.expected} held${state.setupMs !== undefined ? `, set up in ${state.setupMs} ms` : ''}${state.rssMb !== undefined ? `, ${state.rssMb} MB` : ''}${state.reason ? ` (${state.reason})` : ''}`;
+                const line = `[project-wardens] ${projectId}${state.lane ? ` (${state.lane})` : ''} ${state.status}: ${state.held}/${state.expected} held${state.setupMs !== undefined ? `, set up in ${state.setupMs} ms` : ''}${state.rssMb !== undefined ? `, ${state.rssMb} MB` : ''}${state.reason ? ` (${state.reason})` : ''}`;
                 console.log(line);
                 // Shown above the composer of the project's threads; failed for good also toasts.
                 eventStream.pushActivity(
@@ -303,7 +305,7 @@ const live = subscription
   : undefined;
 if (live?.projectHosts)
   console.log(
-    "Wardens: each project's held warm in one Foundry-owned process; guards, reviews and later stages stay primed",
+    "Wardens: each project's held warm in one Foundry-owned process per model (advice, guards, reviews, later stages)",
   );
 const decisions = live?.decisions;
 const flowLlm = decisions?.provider ?? createDecisionProvider(config, providerKeys);
@@ -859,10 +861,17 @@ const holdProjectRoster = async (projectId: string) => {
       atlasRoot,
       warn: (line) => console.warn(line),
     });
-    projectHosts.openProject(
-      projectId,
-      roster.map(({ spec }) => ({ spec, standby: '' })),
-    );
+    // Each stage in the project host of its model: the decision host's, or a later stage's lane.
+    const lanes = new Map<ProjectWardenHosts, Array<Roster[number]>>([[projectHosts, []]]);
+    for (const { spec, stage } of roster) {
+      const hosts = stage ? live?.stageProjectHosts?.(stage.model, stage.effort) : projectHosts;
+      if (!hosts) continue;
+      lanes.set(hosts, [...(lanes.get(hosts) ?? []), { spec, standby: '' }]);
+    }
+    for (const [hosts, entries] of lanes) hosts.openProject(projectId, entries);
+    // A lane this project's stages no longer use holds nothing for it.
+    for (const lane of projectHosts.lanes())
+      if (!lanes.has(lane)) await lane.closeProject(projectId);
   } catch (error) {
     console.warn(
       `[project-wardens] ${projectId}: roster not composed (${(error as Error).message}); primed Wardens serve it`,

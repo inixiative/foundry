@@ -32,8 +32,14 @@ export function projectHostActivity(
   projectLabel: string,
   state: ProjectHostState,
 ): SystemActivity {
-  const base = { key: `project-wardens:${projectId}`, source: 'project-wardens', projectId };
-  const detail = `${projectId} ${state.status}: ${state.held}/${state.expected} held${state.setupMs !== undefined ? `, set up in ${state.setupMs} ms` : ''}${state.rssMb !== undefined ? `, ${state.rssMb} MB` : ''}${state.reason ? ` (${state.reason})` : ''}`;
+  // A later stage's lane (Layer 2 on its own model) is its own line, never the decision host's.
+  const base = {
+    key: `project-wardens:${projectId}${state.lane ? `:${state.lane}` : ''}`,
+    source: 'project-wardens',
+    projectId,
+  };
+  if (state.lane) projectLabel = `${projectLabel} (${state.lane})`;
+  const detail = `${projectId}${state.lane ? ` (${state.lane})` : ''} ${state.status}: ${state.held}/${state.expected} held${state.setupMs !== undefined ? `, set up in ${state.setupMs} ms` : ''}${state.rssMb !== undefined ? `, ${state.rssMb} MB` : ''}${state.reason ? ` (${state.reason})` : ''}`;
   const count = state.expected;
   const reason = state.reason;
   if (state.status === 'closed' || reason === 'idle' || reason === 'no Wardens')

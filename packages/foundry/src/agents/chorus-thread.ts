@@ -9,7 +9,8 @@
 // host composes its roster from it, so the host holds exactly what a thread of the project sends.
 
 import { ContextStack, type LLMMessage, type LLMProvider, newId } from '@inixiative/foundry-core';
-import { isStageSession, isWardenSession, primedRequest } from '../providers/primed-decisions';
+import type { StageEffort } from '../classify';
+import { isWardenSession, primedRequest } from '../providers/primed-decisions';
 import type { Roster } from '../providers/project-warden-hosts';
 import type { FoundryConfig } from '../viewer/config';
 import { buildAgents, buildLayers, type SourceResolver, ThreadFactory } from './thread-factory';
@@ -130,15 +131,24 @@ export async function warmWardens(live: ThreadRuntime): Promise<void> {
 export interface ProjectRosterEntry {
   readonly domain: string;
   readonly spec: Roster[number]['spec'];
+  /**
+   * A later classify stage on another model or effort (the default chain's Layer 2): held by that
+   * stage's own project host (`ProjectWardenHosts.lane`). Absent: the decision host's stage.
+   */
+  readonly stage?: {
+    readonly model: string | undefined;
+    readonly effort: StageEffort | undefined;
+  };
 }
 
 /**
- * A project's Warden roster for its host (`decisionRuntime: claude-project`): each Warden composed as
- * a thread of the project composes it (charter, region instructions, region knowledge; at the
- * project's root), split at the stable prefix, so the held part carries no thread state. Built from a
- * hidden thread: its Wardens warm and pre-start against a provider that records what each would hold
- * and answers nothing. Only a Warden's own first stage on the decision host is held (later stages and
- * other models stay primed).
+ * A project's Warden roster for its hosts (`decisionRuntime: claude-project`): each Warden stage
+ * composed as a thread of the project composes it (charter, region instructions, region knowledge;
+ * at the project's root), split at the stable prefix, so the held part carries no thread state. Built
+ * from a hidden thread: its Wardens warm and pre-start against providers that record what each would
+ * hold and answer nothing. A Warden's first stage is held in the decision host's project host; a later
+ * stage on another model or effort is held in that stage's (`stage`); a later stage on the decision
+ * model is not held (it runs as a cold member of the project host when a first stage escalates).
  */
 export async function composeProjectRoster(
   opts: Omit<ChorusThreadOptions, 'cwd' | 'agentProvider' | 'journal'>,
@@ -152,21 +162,34 @@ export async function composeProjectRoster(
     },
   });
   const held = new Map<string, ProjectRosterEntry>();
-  const recording: LLMProvider = {
-    ...refuse(opts.decisions.id),
+  // Every Warden call a decision host receives is held by that host's project host: the decision
+  // host's own (first stages, and later stages on its model) or a stage host's lane.
+  const recorder = (id: string, stage?: ProjectRosterEntry['stage']): LLMProvider => ({
+    ...refuse(id),
     prestart: (messages: LLMMessage[], callOpts) => {
       const key = callOpts.threadId;
-      if (!key || !isWardenSession(key) || isStageSession(key)) return;
-      const domain = /:aux:domain:(.+)$/.exec(key)?.[1];
+      if (!key || !isWardenSession(key)) return;
+      const domain = /:aux:domain:(.+?)(?::stage:\d+)?$/.exec(key)?.[1];
       if (!domain) return;
       const { spec } = primedRequest(messages, callOpts, key);
+      const lane = stage ? `${stage.model ?? ''}|${stage.effort ?? ''}` : '';
       // Advice and guard compose one system for a region Warden: the first is the one held.
-      if (!held.has(spec.hash ?? spec.key)) held.set(spec.hash ?? spec.key, { domain, spec });
+      const at = `${lane}\0${spec.hash ?? spec.key}`;
+      if (!held.has(at)) held.set(at, { domain, spec, ...(stage ? { stage } : {}) });
     },
-  };
+  });
+  const recording = recorder(opts.decisions.id);
+  const stageHost = opts.stageHost;
+  const recordingStages: ThreadRuntimeDeps['stageHost'] = stageHost
+    ? (model, effort) => {
+        const served = stageHost(model, effort);
+        return served ? recorder(served.id, { model, effort }) : served;
+      }
+    : undefined;
   return withChorusThread(
     {
       ...opts,
+      ...(recordingStages ? { stageHost: recordingStages } : {}),
       cwd: root,
       decisions: recording,
       agentProvider: refuse,

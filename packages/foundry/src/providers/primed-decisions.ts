@@ -30,7 +30,6 @@ import {
 import { stampFoundryRun } from '../archives/run-stamp';
 import { CLAUDE_HARNESS_INSTRUCTIONS_OFF } from '../prompts/instruction-stack';
 import { DECISION_CALL_TIMEOUT_MAX_MS, DECISION_INPUT_CAP } from './decision-budget';
-import { DECISION_PRIORITY } from './decision-priority';
 import { type NativeProfileSource, profileEnvironment, withProfile } from './default-profiles';
 import { NativeAuthentication, withoutCompetingCredentials } from './native-authentication';
 import { nativeTextEnvironment } from './native-text-environment';
@@ -171,43 +170,37 @@ export function isWardenSession(sessionKey: string): boolean {
   return role.startsWith('domain:') || /^review:[^:]+:domain:/.test(role);
 }
 
-/** A later classify stage of a Warden (`domain:<d>:stage:<n>`): its own primed session, never a project host's. */
+/** A later classify stage of a Warden (`domain:<d>:stage:<n>`). */
 export function isStageSession(sessionKey: string): boolean {
   const at = sessionKey.indexOf(AUXILIARY);
   return at > 0 && /^domain:.+:stage:\d+$/.test(sessionKey.slice(at + AUXILIARY.length));
 }
 
-/** A Warden's post-work review (`review:<generation>:domain:<d>`). */
-export function isReviewSession(sessionKey: string): boolean {
-  const at = sessionKey.indexOf(AUXILIARY);
-  return at > 0 && /^review:[^:]+:domain:/.test(sessionKey.slice(at + AUXILIARY.length));
-}
-
 /**
- * The project host serving this decision, when it is a Warden's advice and its project's host serves.
- * A held-only call (user-message advice, which catches up) gets `starting` while that host is on its
- * way, so it is skipped, never started cold; any other call goes to primed then. A later classify
- * stage is not served there: the host holds one subagent per Warden, on the decision model (a stage
- * on another model, held beside it, is not built). A project host serves advice only (the
- * pre-hook): a guard (its call's priority) and a review stay primed.
+ * The project host serving this decision, when it is a Warden's call (advice, guard, review or a later
+ * classify stage) and its project's host serves. Each decision host holds its own model's project
+ * hosts (a stage on another model: that stage host's lane), so a stage reaching this one runs here. A
+ * held-only call (user-message advice, which catches up) gets `starting` while that host is on its
+ * way, so it is skipped, never started cold; any other call goes to primed then (fail-open). Held-only
+ * binds a Warden's first stage only: a later stage escalates a yes already given, so it runs cold on
+ * the host, or primed while the host starts, rather than lose the escalation. Advice
+ * and guard compose one system, so a guard is served by the same held spares; a review carries no
+ * spare and runs as a cold member of the host, still no process of its own.
  */
 export function projectHostTarget(
   projectHosts: ProjectWardenHosts | undefined,
   sessionKey: string | undefined,
-  opts: Pick<CompletionOpts, 'priority' | 'heldOnly'> = {},
+  opts: Pick<CompletionOpts, 'heldOnly'> = {},
 ): ClaudeInSessionDecisions | 'starting' | undefined {
-  if (
-    !projectHosts ||
-    !sessionKey ||
-    !isWardenSession(sessionKey) ||
-    isStageSession(sessionKey) ||
-    isReviewSession(sessionKey) ||
-    (opts.priority ?? DECISION_PRIORITY.turn) < DECISION_PRIORITY.turn
-  )
-    return undefined;
+  if (!projectHosts || !sessionKey || !isWardenSession(sessionKey)) return undefined;
   const thread = decisionThread(sessionKey);
   const serving = thread ? projectHosts.serving(thread) : undefined;
-  return serving === 'starting' && !opts.heldOnly ? undefined : serving;
+  return serving === 'starting' && !heldOnlyFor(sessionKey, opts) ? undefined : serving;
+}
+
+/** Whether a call is held-only: user-message advice at a Warden's first stage, never a later one. */
+export function heldOnlyFor(sessionKey: string, opts: Pick<CompletionOpts, 'heldOnly'>): boolean {
+  return !!opts.heldOnly && !isStageSession(sessionKey);
 }
 
 /** A decision call as the subscription queue hands it on: admitted outside the shared slots, because a project host served it. */
@@ -623,7 +616,7 @@ export function createPrimedDecisionHost(config: PrimedDecisionHostConfig) {
           // with no held spare, or a host still starting, is refused unsent. A call admitted outside
           // the shared slots for a host that has since gone is refused unsent too, never run unbounded.
           const projectHost = projectHostTarget(config.projectHosts, sessionKey, opts);
-          heldOnly = !!opts.heldOnly && !!projectHost;
+          heldOnly = heldOnlyFor(sessionKey, opts) && !!projectHost;
           if (projectHost === 'starting')
             // `starting` is only routed to held-only calls (`projectHostTarget`).
             throw new DecisionError(

@@ -424,11 +424,11 @@ test('a stage naming a model no host serves is refused by name; the default stag
   expect(plain.factory.create('plain', { projectId: 'P' })).toBeDefined();
 });
 
-test('a later stage is its own primed session, never held in a project host', () => {
+test('a later stage is served by the project host of the decision host it reaches (its own lane on another model)', () => {
   expect(isStageSession('T:aux:domain:locks:stage:1')).toBe(true);
   expect(isStageSession('T:aux:domain:locks')).toBe(false);
   expect(isStageSession('T:aux:review:g1:domain:locks')).toBe(false);
   const serving = { serving: () => ({}) } as unknown as Parameters<typeof projectHostTarget>[0];
   expect(projectHostTarget(serving, 'T:aux:domain:locks')).toBeDefined();
-  expect(projectHostTarget(serving, 'T:aux:domain:locks:stage:1')).toBeUndefined();
+  expect(projectHostTarget(serving, 'T:aux:domain:locks:stage:1')).toBeDefined();
 });

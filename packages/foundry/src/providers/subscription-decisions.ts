@@ -142,7 +142,10 @@ export function createSubscriptionDecisions(config: SubscriptionDecisionConfig) 
         : {}),
       ...(projectHosts
         ? {
+            // Only a turn's advice skips the slots; guards and reviews keep their class caps on the
+            // host too, so a burst of background reviews never holds up the next turn's advice.
             unbounded: (key: string, opts: CompletionOpts) =>
+              (opts.priority ?? DECISION_PRIORITY.turn) >= DECISION_PRIORITY.turn &&
               !!projectHostTarget(projectHosts, key, opts),
           }
         : {}),
