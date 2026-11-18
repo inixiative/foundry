@@ -2007,7 +2007,9 @@ class ThreadRuntimeImpl implements ThreadRuntime {
     // held activity is guarded once, and a wake that did work is handed back, as Foundry's own turns are.
     this._unsubs.push(
       signals.on('native_turn', async (signal) => {
-        const content = signal.content as { turnId?: string; text?: unknown } | undefined;
+        const content = signal.content as
+          | { turnId?: string; text?: unknown; outcome?: string }
+          | undefined;
         if (!content?.turnId) return;
         const held = this._nativeTurnActivity.get(content.turnId);
         this._nativeTurnActivity.delete(content.turnId);
@@ -2023,7 +2025,8 @@ class ThreadRuntimeImpl implements ThreadRuntime {
             },
             held.overflow,
           );
-        await this._handBack(content.turnId, content.text);
+        // Only a finished turn hands back; a stopped or failed one said nothing to weigh in on.
+        if (content.outcome === 'completed') await this._handBack(content.turnId, content.text);
       }),
     );
     // The agent handed a task to a subagent: the chorus briefs the handoff (the subagent-spawn trigger).

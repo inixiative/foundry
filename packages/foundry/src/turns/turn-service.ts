@@ -703,8 +703,9 @@ export class TurnService {
    * notification) runs as the thread's live turn: it shows working, holds the thread's queue so a
    * message sent meanwhile waits behind it, and stops or pauses for a restart through the session's
    * own interrupt. The journal is the recorder's (`turns/native-turns.ts`); this only makes it live.
-   * `null` when the thread is busy with a turn Foundry runs, or the session can't be stopped: then it
-   * is only journalled.
+   * `null` while the thread runs a turn Foundry sent, or holds a message waiting for one: the recorder
+   * asks again on the wake's next event. The session ending ends it (`killed`), so it never holds the
+   * queue past its session.
    */
   observeNativeTurn(
     threadId: string,
@@ -713,7 +714,11 @@ export class TurnService {
   ): { end(outcome: 'completed' | 'failed', text: string): void } | null {
     const thread = this.deps.directory.get(threadId);
     if (!thread || thread.disposed || this.live.has(turnId)) return null;
-    if (this.queues.get(threadId)?.size() || this.runningTurn(threadId)) return null;
+    // A turn Foundry runs, or a message waiting for one, keeps the thread; a turn whose native answer
+    // already came (finishing its hand-back) doesn't: the wake goes live and runs after it.
+    for (const other of this.live.values())
+      if (other.threadId === threadId && (other.phase === 'queued' || !other.nativeSettled))
+        return null;
     if (!this.deps.streams.turns.canOpen(turnId)) return null;
     const buffer = this.deps.streams.turns.open(turnId, threadId, thread.meta.projectId);
     const refusal = 'the agent started this turn itself; your message runs next';

@@ -340,7 +340,7 @@ export function createViewer(config: ViewerConfig) {
   let draftAsks: DraftAsks | undefined;
   // `socket` is created below, once its stream families exist; delivery only happens after both do.
   // The turn service, once the runtime routes build it: a turn the session starts itself goes live there.
-  let liveTurns: ReturnType<typeof registerRuntimeRoutes>['turns'] | undefined;
+  let turnsReady: ReturnType<typeof registerRuntimeRoutes>['turns'] | undefined;
   const runningTasks = new RunningTasks((threadId, callId) =>
     localStore?.nativeToolUse(threadId, callId),
   );
@@ -532,24 +532,33 @@ export function createViewer(config: ViewerConfig) {
     // Wardens over what it did: each tool call is guarded with the turn, a milestone call is advised
     // at the gate through the running turn, and its answer is handed back. When it ends, the thread
     // list sees its new last turn.
-    const emitNative = (thread: Thread, kind: string, content: Record<string, unknown>) =>
-      void thread.signals
-        .emit({
-          id: newId(kind === 'native_turn' ? 'sig-nativeturn' : 'sig-tool'),
-          kind,
-          source: 'native-turn',
-          content: { threadId: thread.id, ...content },
-          timestamp: Date.now(),
-        })
+    // One chain per thread: a turn's end reaches its guard only after every call it made has.
+    const nativeSignals = new Map<string, Promise<void>>();
+    const emitNative = (thread: Thread, kind: string, content: Record<string, unknown>) => {
+      const next = (nativeSignals.get(thread.id) ?? Promise.resolve())
+        .then(() =>
+          thread.signals.emit({
+            id: newId(kind === 'native_turn' ? 'sig-nativeturn' : 'sig-tool'),
+            kind,
+            source: 'native-turn',
+            content: { threadId: thread.id, ...content },
+            timestamp: Date.now(),
+          }),
+        )
         .catch((error: unknown) =>
           console.warn(`[Native turns] ${thread.id}: ${(error as Error).message}`),
         );
+      nativeSignals.set(thread.id, next);
+      void next.finally(() => {
+        if (nativeSignals.get(thread.id) === next) nativeSignals.delete(thread.id);
+      });
+    };
     const nativeTurns = new NativeTurnRecorder({
       store: localStore,
       thread: (id) => directory.get(id),
       events: eventStream,
       opened: (thread, turnId, control) =>
-        liveTurns?.observeNativeTurn(thread.id, turnId, control) ?? null,
+        turnsReady?.observeNativeTurn(thread.id, turnId, control) ?? null,
       toolCalled: (thread, turnId, call) => {
         const live = directory.get(thread.id);
         if (!live) return;
@@ -838,7 +847,6 @@ export function createViewer(config: ViewerConfig) {
   }
   // The spin-down before a restart onto an update (`daemon/restart-roll.ts`): built before the turn
   // path so a turn reaching the front of its queue can wait for it.
-  let turnsReady: ReturnType<typeof registerRuntimeRoutes>['turns'] | undefined;
   const restartRoll = new RestartRoll({
     running: () => turnsReady?.runningTurns() ?? [],
     // A turn blocked on its person (its agent's approval or question) is paused without the grace.
@@ -902,7 +910,6 @@ export function createViewer(config: ViewerConfig) {
     images: imageStore,
   });
   turnsReady = turns;
-  liveTurns = turns;
   turns.onSettled(() => restartRoll.check());
   // A schedule's run is a new thread at its Where whose first turn is the prompt, as the owner set
   // it but never counted as his message (TurnOrigin.schedule). Runs are kept in the journal store.

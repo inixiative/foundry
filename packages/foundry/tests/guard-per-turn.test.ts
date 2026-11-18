@@ -1074,3 +1074,34 @@ test('a turn the session started itself that only talked is neither guarded nor 
   expect(f.guardCalls).toHaveLength(0);
   expect(f.handBackCalls).toHaveLength(0);
 });
+
+test('a turn the session started itself that failed is guarded but not handed back', async () => {
+  const f = fixture({ handBack: CHIME });
+  await f.turn('turn-1', 'Watch the build');
+  f.store.startObservedTurn(f.thread, 'wake-f', 'The agent started this turn itself.');
+  await f.thread.signals.emit({
+    id: 'sig-wakef-1',
+    kind: 'tool_observation',
+    source: 'native-turn',
+    timestamp: Date.now(),
+    content: {
+      threadId: f.thread.id,
+      tool: 'Edit',
+      input: { file_path: 'a.ts' },
+      ok: true,
+      callId: 'wakef-call-1',
+      agentId: 'native-turn',
+      nativeTurn: { turnId: 'wake-f' },
+    },
+  });
+  await f.thread.signals.emit({
+    id: 'sig-wakef-end',
+    kind: 'native_turn',
+    source: 'native-turn',
+    timestamp: Date.now(),
+    content: { threadId: f.thread.id, turnId: 'wake-f', outcome: 'failed', text: 'Stopped.' },
+  });
+  await until(() => f.guardCalls.length === 1, 'failed wake guarded');
+  await Bun.sleep(20);
+  expect(f.handBackCalls).toHaveLength(0);
+});

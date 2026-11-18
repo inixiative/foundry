@@ -31,6 +31,7 @@ afterEach(async () => {
 function wakeViewer() {
   const dir = mkdtempSync(join(tmpdir(), 'foundry-wake-'));
   const started: string[] = [];
+  let hold: Promise<void> | undefined;
   const main = new Thread('main', new ContextStack());
   main.register(
     new Executor({
@@ -38,6 +39,7 @@ function wakeViewer() {
       stack: main.stack,
       handler: async (_context, payload) => {
         started.push(String(payload));
+        await hold;
         return `done:${payload}`;
       },
     }),
@@ -74,7 +76,8 @@ function wakeViewer() {
     correlation: 'native-turn',
     ...fields,
   });
-  const lifecycle = (taskId: string) => ({ taskId, taskType: 'claude-wake' });
+  const kinds = new Map<string, string>();
+  const lifecycle = (taskId: string) => ({ taskId, taskType: kinds.get(taskId) ?? 'claude-wake' });
   const finish = (taskId: string, status = 'completed', summary?: string) =>
     sink!('main', evidence(taskId, { kind: 'task' }), {
       ...lifecycle(taskId),
@@ -101,7 +104,8 @@ function wakeViewer() {
     started,
     interrupts,
     /** The session starts a turn itself and says something in it. */
-    wake: (taskId: string, text: string) => {
+    wake: (taskId: string, text: string, kind = 'claude-wake') => {
+      kinds.set(taskId, kind);
       sink!(
         'main',
         evidence(taskId, { kind: 'task' }),
@@ -111,6 +115,14 @@ function wakeViewer() {
       sink!('main', evidence(taskId, { kind: 'text', text }), undefined, control(taskId));
     },
     finish,
+    /** Another event of a turn already started. */
+    say: (taskId: string, fields: Partial<NativeEvidence>) =>
+      sink!('main', evidence(taskId, fields), undefined, control(taskId)),
+    /** Foundry's own turns wait on this until it resolves. */
+    holdTurns: (until: Promise<void>) => {
+      hold = until;
+    },
+    thread: main,
     turns: () => viewer.localStore!.archiveRecords('main').turns,
     steer: (id: string) => post(`/api/threads/main/turns/${id}/steer`),
     send: (id: string) =>
@@ -220,4 +232,57 @@ test('the restart note names the background commands that were running', () => {
     2,
   );
   expect(tasks.startedByTools('main')).toEqual(['Run the test suite']);
+});
+
+test('a turn Muse starts itself is journalled but never holds the thread', async () => {
+  const v = wakeViewer();
+  v.wake('cron-1', 'Ran the nightly report.', 'muse-cron');
+  expect(v.turns()).toHaveLength(1);
+  expect(v.viewer.liveTurns()).toBe(0);
+  v.finish('cron-1', 'completed', 'Report sent.');
+  expect(v.viewer.localStore!.turn(v.turns()[0]!.id)?.status).toBe('completed');
+});
+
+test('a wake that starts while a Foundry turn runs goes live on its next event once the thread is free', async () => {
+  const v = wakeViewer();
+  let release!: () => void;
+  v.holdTurns(
+    new Promise<void>((resolve) => {
+      release = resolve;
+    }),
+  );
+  expect((await v.send('busy')).status).toBe(202);
+  await until(() => v.started.length === 1, 'Foundry turn running');
+  v.wake('wake-4', 'Background job done.');
+  expect(v.viewer.liveTurns()).toBe(1);
+  release();
+  await until(() => v.viewer.liveTurns() === 0, 'Foundry turn settled');
+  v.say('wake-4', { kind: 'text', text: 'Looking at the output.' });
+  expect(v.viewer.liveTurns()).toBe(1);
+  v.finish('wake-4', 'completed', 'All good.');
+  await until(() => v.viewer.liveTurns() === 0, 'wake settled');
+});
+
+test("a wake's end reaches the thread only after every call it made, even one with no result", async () => {
+  const v = wakeViewer();
+  const order: string[] = [];
+  v.thread.signals.on('tool_observation', async (signal) => {
+    await Bun.sleep(10);
+    order.push(`call:${(signal.content as { callId: string }).callId}`);
+  });
+  v.thread.signals.on('native_turn', async () => {
+    order.push('end');
+  });
+  v.wake('wake-5', 'Starting.');
+  v.say('wake-5', {
+    kind: 'tool_use',
+    callId: 'c1',
+    toolName: 'Bash',
+    toolInput: { command: 'ls' },
+  });
+  v.say('wake-5', { kind: 'tool_result', callId: 'c1', toolOutput: 'a.ts' });
+  v.say('wake-5', { kind: 'tool_use', callId: 'c2', toolName: 'Edit', toolInput: {} });
+  v.finish('wake-5', 'completed', 'Done.');
+  await until(() => order.includes('end'), 'end delivered');
+  expect(order).toEqual(['call:c1', 'call:c2', 'end']);
 });

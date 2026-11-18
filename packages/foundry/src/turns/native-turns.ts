@@ -67,7 +67,18 @@ interface Open {
   readonly calls: Map<string, { tool: string; input: Record<string, unknown> }>;
 }
 
-const FAILED = new Set(['failed', 'interrupted', 'cancelled', 'error', 'timedOut', 'rejected']);
+// `unknown` is a wake a message of the person's ended by starting: what it said stands.
+const FAILED = new Set([
+  'failed',
+  'interrupted',
+  'cancelled',
+  'error',
+  'timedOut',
+  'rejected',
+  'killed',
+]);
+/** The turns that run live on the thread: a Claude wake. Muse's own turns are only journalled. */
+const LIVE_KINDS = new Set(['claude-wake']);
 const idOf = (...parts: string[]) => sha256Hex(parts.join('\0')).slice(0, 24);
 
 /**
@@ -86,6 +97,8 @@ export class NativeTurnRecorder {
   private readonly woke = new Map<string, string>();
   /** Turns whose trigger described itself: a later bare kind never replaces those words. */
   private readonly described = new Set<string>();
+  /** Each turn's kind, from its `started` lifecycle, which comes before any of its events. */
+  private readonly kinds = new Map<string, string>();
 
   constructor(private readonly deps: NativeTurnRecorderDeps) {}
 
@@ -115,6 +128,7 @@ export class NativeTurnRecorder {
     if (!native) return;
     const key = `${thread.id}:${native}`;
     if (task) {
+      if (task.taskType) this.kinds.set(key, task.taskType);
       // What woke it: the trigger's own words, else the trigger's kind once it is known.
       if (task.description) this.woke.set(key, opening(task.description));
       else if (!this.described.has(key) && task.taskType !== 'muse-turn')
@@ -165,17 +179,27 @@ export class NativeTurnRecorder {
 
   private start(thread: ThreadRecord, key: string, control: NativeTurnControl = {}): Open {
     const known = this.open.get(key);
-    if (known) return known;
+    if (known) {
+      // The thread was busy when it opened: it goes live once the thread is free.
+      if (!known.live) this.goLive(thread, key, known, control);
+      return known;
+    }
     const run: Open = { turnId: `turn_${idOf(key)}`, calls: new Map() };
     this.open.set(key, run);
     this.deps.store.startObservedTurn(thread, run.turnId, this.woke.get(key) ?? describe());
+    this.goLive(thread, key, run, control);
+    this.changed(thread, run.turnId);
+    return run;
+  }
+
+  private goLive(thread: ThreadRecord, key: string, run: Open, control: NativeTurnControl): void {
+    const kind = this.kinds.get(key);
+    if (!kind || !LIVE_KINDS.has(kind)) return;
     try {
       run.live = this.deps.opened?.(thread, run.turnId, control) ?? null;
     } catch {
       run.live = null;
     }
-    this.changed(thread, run.turnId);
-    return run;
   }
 
   private end(thread: ThreadRecord, key: string, task: Lifecycle): void {
@@ -184,16 +208,14 @@ export class NativeTurnRecorder {
     // nothing (Muse's skill, goal and verify reminders after every turn), left nothing to record.
     const empty = !this.open.has(key) && !task.summary;
     if (empty && (task.status === 'unqueued' || outcome === 'completed')) {
-      this.woke.delete(key);
-      this.described.delete(key);
+      this.forget(key);
       return;
     }
-    const run = this.start(thread, key);
+    const run = this.open.get(key) ?? this.start(thread, key);
     const text = task.summary ?? run.lastText ?? task.reason ?? '';
     this.deps.store.endObservedTurn(thread, run.turnId, text, outcome);
     this.open.delete(key);
-    this.woke.delete(key);
-    this.described.delete(key);
+    this.forget(key);
     this.changed(thread, run.turnId);
     // Calls whose result never came are still what the turn did.
     for (const [callId, call] of run.calls) this.report(thread, run.turnId, { callId, ...call });
@@ -213,6 +235,12 @@ export class NativeTurnRecorder {
     } catch {
       /* an observer's failure never touches the record */
     }
+  }
+
+  private forget(key: string): void {
+    this.woke.delete(key);
+    this.described.delete(key);
+    this.kinds.delete(key);
   }
 
   private changed(thread: ThreadRecord, turnId: string): void {
