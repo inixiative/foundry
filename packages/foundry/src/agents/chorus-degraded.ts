@@ -5,6 +5,7 @@
  */
 import type { ClassifyStageTrace, NativeEvidence } from '@inixiative/foundry-core';
 import type { ClassifiedSummary } from '../classify';
+import { QUOTA_PAUSED_REFUSAL } from '../providers/decision-budget';
 import type { ToolObservation } from './domain-librarian';
 import type { AdviceTrigger } from './warden-triggers';
 
@@ -66,8 +67,9 @@ export function degradedAnswer(
   const layer = failed ? failed.stage + 1 : single ? 1 : null;
   const reason = clip(failed?.error ?? answer.reason);
   if (decision === 'timeout') return { domain, kind: 'timeout', layer, silent: true, reason };
+  // A used-up login is said once in the strip (its pause), not as a degraded Warden every round.
   if (decision === 'excluded')
-    return answer.catchesUp
+    return answer.catchesUp || answer.reason === QUOTA_PAUSED_REFUSAL
       ? undefined
       : { domain, kind: 'not-started', layer, silent: true, reason };
   if (decision === 'skipped' && answer.reason === 'cold-cache' && context.notWarm?.has(domain))

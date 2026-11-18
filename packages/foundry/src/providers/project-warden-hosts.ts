@@ -9,6 +9,7 @@ import {
   type PrimeSpec,
 } from '@inixiative/agent-session';
 import type { EventStream } from '@inixiative/foundry-core';
+import type { LoginQuotaPause } from './provider-limits';
 import type { ProjectHostPolicy } from './subscription-policy';
 
 /**
@@ -74,7 +75,7 @@ export interface ProjectHostState {
   readonly peakRssMb?: number;
   /** Starts that failed in a row. */
   readonly failures: number;
-  /** The login's usage is used up: the host starts again once it resets, at this time. */
+  /** The decision login's usage is used up until this time: its Wardens are paused, a start waits for it. */
   readonly quotaResetsAt?: number;
   /** Process replacements so far, by reason. */
   readonly resets: Readonly<Record<string, number>>;
@@ -116,8 +117,11 @@ interface ProjectEntry {
   failures: number;
   generation: number;
   failed?: string;
-  /** A start failed on a used-up login: the retry waits for its reset, and no failure counts. */
-  quotaResetsAt?: number;
+  /**
+   * A start waits for the login's used-up usage to reset: why it was starting (the pause's end starts
+   * it with that reason, `retry` once the start itself ran); no failure counts.
+   */
+  quotaWait?: string;
   readonly resets: Record<string, number>;
   /** Dispatcher recycles of the serving host, by time. */
   recycles: number[];
@@ -170,7 +174,7 @@ export class ProjectWardenHosts {
   private readonly _projects = new Map<string, ProjectEntry>();
   private readonly _opening = new Set<string>();
   private _launcher?: ProjectHostLauncher;
-  private _fetchQuotaResetAt?: () => Promise<number | undefined>;
+  private _quota?: LoginQuotaPause;
   private _health?: ReturnType<typeof setInterval>;
   private _closed = false;
 
@@ -178,7 +182,8 @@ export class ProjectWardenHosts {
 
   /**
    * The host serving this thread's Warden calls now: its project's, while it serves; `starting`
-   * while the project's host is on its way (opening, starting or retrying), so its Wardens are
+   * while the project's host is on its way (opening, starting, retrying or waiting out a used-up
+   * login), so its Wardens are
    * skipped and catch up later rather than starting cold; undefined otherwise (no host for the
    * project, or it failed: primed serves).
    */
@@ -188,7 +193,11 @@ export class ProjectWardenHosts {
     const entry = this._projects.get(projectId);
     const host = entry?.live?.host;
     if (host?.serving()) return host;
-    if (entry ? !entry.failed && (entry.starting || entry.retry) : this._opening.has(projectId))
+    if (
+      entry
+        ? !entry.failed && (entry.starting || entry.retry || entry.quotaWait)
+        : this._opening.has(projectId)
+    )
       return 'starting';
     return undefined;
   }
@@ -208,15 +217,21 @@ export class ProjectWardenHosts {
   }
 
   /**
-   * The decision host's launcher (it owns the decision login and the private directory), and when
-   * that login's used-up usage frees up.
+   * The decision host's launcher (it owns the decision login and the private directory), and that
+   * login's used-up pause: while it holds no host starts, and when it ends the waiting ones start.
    */
-  bindLauncher(
-    fetchQuotaResetAt: () => Promise<number | undefined>,
-    launcher: ProjectHostLauncher,
-  ): void {
-    this._fetchQuotaResetAt = fetchQuotaResetAt;
+  bindLauncher(quota: LoginQuotaPause, launcher: ProjectHostLauncher): void {
+    this._quota = quota;
     this._launcher = launcher;
+    quota.onChange((until) => {
+      for (const [projectId, entry] of this._projects) {
+        if (until === undefined && entry.quotaWait) {
+          const reason = entry.quotaWait;
+          entry.quotaWait = undefined;
+          this._replace(projectId, reason);
+        } else this._report(projectId);
+      }
+    });
   }
 
   /**
@@ -289,6 +304,7 @@ export class ProjectWardenHosts {
     if (!entry) return undefined;
     const live = entry.live;
     const holding = live?.host.holding() ?? { expected: entry.roster.length, held: 0 };
+    const quotaResetsAt = this._quota?.pausedUntil();
     return {
       status: this._closed
         ? 'closed'
@@ -305,7 +321,7 @@ export class ProjectWardenHosts {
       ...(live?.rssMb !== undefined ? { rssMb: live.rssMb } : {}),
       ...(live?.peakRssMb !== undefined ? { peakRssMb: live.peakRssMb } : {}),
       failures: entry.failures,
-      ...(entry.quotaResetsAt !== undefined ? { quotaResetsAt: entry.quotaResetsAt } : {}),
+      ...(quotaResetsAt !== undefined ? { quotaResetsAt } : {}),
       resets: { ...entry.resets },
       generation: entry.generation,
     };
@@ -344,6 +360,12 @@ export class ProjectWardenHosts {
   private _replace(projectId: string, reason: string): void {
     const entry = this._projects.get(projectId);
     if (!entry || this._closed || entry.starting || entry.retry || entry.failed) return;
+    // The login is out of usage: a start now would only fail; the pause's end starts it.
+    if (this._quota?.pausedUntil() !== undefined) {
+      entry.quotaWait = reason;
+      this._report(projectId);
+      return;
+    }
     if (reason !== 'start' && reason !== 'retry')
       entry.resets[reason] = (entry.resets[reason] ?? 0) + 1;
     entry.starting = this._start(projectId, entry, reason).finally(() => {
@@ -415,15 +437,14 @@ export class ProjectWardenHosts {
       if (this._closed || this._projects.get(projectId) !== entry) return;
       const message = (error as Error).message;
       // A used-up login is not a failing host: it starts again once the usage resets.
-      const resetAt = await this._fetchQuotaResetAt?.().catch(() => undefined);
+      const resetAt = await this._quota?.read().catch(() => undefined);
       if (this._closed || this._projects.get(projectId) !== entry) return;
-      if (resetAt !== undefined && resetAt > Date.now()) {
-        entry.quotaResetsAt = resetAt;
+      if (resetAt !== undefined) {
+        entry.failures = 0;
+        entry.quotaWait = 'retry';
         this._report(projectId, `usage used up (${message}); again at its reset`);
-        this._retryIn(projectId, entry, resetAt - Date.now());
         return;
       }
-      entry.quotaResetsAt = undefined;
       entry.failures++;
       if (entry.failures >= bounds.maxRestarts) {
         entry.failed = `${entry.failures} starts failed in a row (last: ${message}); primed Wardens serve this project`;
@@ -436,7 +457,6 @@ export class ProjectWardenHosts {
       return;
     }
     entry.failures = 0;
-    entry.quotaResetsAt = undefined;
     const previous = entry.live;
     const running: RunningHost = {
       host,

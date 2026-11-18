@@ -201,6 +201,8 @@ export function liveDecisionHosts(
       host = createSubscriptionDecisions({
         ...policy,
         source: subscription.decision,
+        // The same login: one used-up pause, the decision host's.
+        ...(decisions.quota ? { quota: decisions.quota } : {}),
         model: m,
         ...(e ? { effort: e } : {}),
         // A key per stage this host serves, per Warden.

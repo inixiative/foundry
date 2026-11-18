@@ -14,10 +14,10 @@ const SHED_SHOWN_MS = 30_000;
 
 const seconds = (ms: number) => `${Math.max(1, Math.round(ms / 1000))}s`;
 
-/** A reset as this machine's clock reads it: "4:10 PM", with the day when it is not within a day. */
+/** A reset as this machine's clock reads it: "4:10 PM" today, with the day ("Tue 4:10 PM") on any other. */
 export function resetTime(at: number, now = Date.now()): string {
   const time = { hour: 'numeric', minute: '2-digit' } as const;
-  return at - now < 20 * 3_600_000
+  return new Date(at).toDateString() === new Date(now).toDateString()
     ? new Date(at).toLocaleTimeString([], time)
     : new Date(at).toLocaleString([], { weekday: 'short', ...time });
 }
@@ -43,10 +43,12 @@ export function projectHostActivity(
       summary: `${projectLabel}'s Wardens are resting until someone works in the project.`,
       detail,
     };
-  if (state.quotaResetsAt !== undefined && state.status !== 'serving')
+  // The login is out of usage: a serving host's Wardens cannot answer either. The strip says it once,
+  // as the decision login's pause (`decisions:rate-limit`); each project's line is for the log.
+  if (state.quotaResetsAt !== undefined)
     return {
       ...base,
-      state: 'degraded',
+      state: 'idle',
       until: state.quotaResetsAt,
       summary: `${projectLabel}'s Wardens are paused: the Claude login's usage is used up until ${resetTime(state.quotaResetsAt)}.`,
       detail,
@@ -106,6 +108,14 @@ export function decisionPressureActivity(
       state: 'failed',
       summary: 'Wardens stopped answering until Foundry restarts.',
       detail: `Decision admission closed until restart: ${event.reason}`,
+    };
+  if (event.kind === 'quota-resumed')
+    return {
+      key: 'decisions:rate-limit',
+      source: 'subscription-decisions',
+      state: 'idle',
+      summary: "The Wardens' Claude login has usage again; they are answering.",
+      detail: 'Decision login usage available again; decisions run',
     };
   if (event.kind === 'quota-paused')
     return {

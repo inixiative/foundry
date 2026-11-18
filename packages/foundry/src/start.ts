@@ -247,7 +247,9 @@ const decisionEvents: DecisionEvents = {
           ? `Decision admission closed until restart: ${event.reason}`
           : event.kind === 'quota-paused'
             ? `Decision login usage used up; decisions paused until ${new Date(event.until).toISOString()}`
-            : `Decision subscription rate limited; backing off ${Math.round(event.backoffMs / 1000)}s`;
+            : event.kind === 'quota-resumed'
+              ? 'Decision login usage available again; decisions run'
+              : `Decision subscription rate limited; backing off ${Math.round(event.backoffMs / 1000)}s`;
     console.warn(`[subscription-decisions] ${message}`);
     eventStream.pushActivity(decisionPressureActivity(event));
     // Closed until restart: the person has to act, so it toasts too.

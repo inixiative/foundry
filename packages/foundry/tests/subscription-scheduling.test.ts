@@ -7,6 +7,7 @@ import { DECISION_PRIORITY } from '../src/providers/decision-priority';
 import { defaultProfileSource } from '../src/providers/default-profiles';
 import { NativeAuthentication } from '../src/providers/native-authentication';
 import { createPrimedDecisionHost } from '../src/providers/primed-decisions';
+import { makeLoginQuotaPause } from '../src/providers/provider-limits';
 import {
   buildSubscriptionDecisions,
   type DecisionPressure,
@@ -203,7 +204,7 @@ test('a rate limit on a used-up login pauses every decision until its reset, the
   const reset = Date.now() + 400;
   const { decisions, pressure } = scheduler(limited, {
     rateLimitBackoffMs: 50,
-    fetchQuotaResetAt: async () => reset,
+    quota: makeLoginQuotaPause({ fetchResetAt: async () => reset }),
   });
   expect(await ask(decisions, 'one', 'A')).toContain('rate limited');
   await Bun.sleep(20);
@@ -216,6 +217,12 @@ test('a rate limit on a used-up login pauses every decision until its reset, the
   expect(limited.turns).toHaveLength(1);
   await Bun.sleep(reset - Date.now() + 30);
   expect(decisions.snapshot().quotaPausedUntil).toBeUndefined();
+  // Said once each way: paused, then resumed, with no rate limit in between.
+  expect(pressure.map((event) => event.kind)).toEqual([
+    'rate-limited',
+    'quota-paused',
+    'quota-resumed',
+  ]);
   // Admitted again: the scheduler runs it (the primed host, knowing the login blocked, sends no turn).
   const before = pressure.length;
   expect(await ask(decisions, 'three', 'C')).toContain('rate limited; no fallback or retry');
@@ -231,7 +238,7 @@ test('a rate limit with no known reset keeps the ordinary backoff and no pause',
   });
   const { decisions, pressure } = scheduler(limited, {
     rateLimitBackoffMs: 50,
-    fetchQuotaResetAt: async () => undefined,
+    quota: makeLoginQuotaPause({ fetchResetAt: async () => undefined }),
   });
   expect(await ask(decisions, 'one', 'A')).toContain('rate limited');
   await Bun.sleep(20);

@@ -160,14 +160,18 @@ test('a used-up login is one paused notice until its reset, project and decision
     'Kingdom',
     host({ quotaResetsAt: reset, failures: 0, reason: 'usage used up; again at its reset' }),
   );
-  expect(paused).toMatchObject({ state: 'degraded', until: reset });
+  // Said once, by the decisions line below; the project's line goes to the log.
+  expect(paused).toMatchObject({ state: 'idle', until: reset });
   expect(paused.summary).toBe(
     `Kingdom's Wardens are paused: the Claude login's usage is used up until ${resetTime(reset)}.`,
   );
-  // Back serving: the pause is over even before the stored reset is cleared.
+  // A serving host on a used-up login is still paused: the reset comes from the one login pause.
   expect(
     projectHostActivity('proj_1', 'Kingdom', host({ status: 'serving', quotaResetsAt: reset }))
       .summary,
+  ).toContain('paused');
+  expect(
+    projectHostActivity('proj_1', 'Kingdom', host({ status: 'serving' })).summary,
   ).not.toContain('paused');
   const decisions = decisionPressureActivity({ kind: 'quota-paused', until: reset }, now);
   // The same key as a rate limit: the pause replaces that notice instead of adding one.
@@ -179,4 +183,7 @@ test('a reset within the day is a time; further off it carries the day', () => {
   const now = new Date(2026, 10, 17, 9, 0).getTime();
   expect(resetTime(now + 3 * 3_600_000, now)).not.toMatch(/Mon|Tue|Wed|Thu|Fri|Sat|Sun/);
   expect(resetTime(now + 3 * 86_400_000, now)).toMatch(/Fri/);
+  // Three hours on from 9:30 PM is past midnight: another day, so the day is named.
+  const late = new Date(2026, 10, 17, 21, 30).getTime();
+  expect(resetTime(late + 3 * 3_600_000, late)).toMatch(/Wed/);
 });

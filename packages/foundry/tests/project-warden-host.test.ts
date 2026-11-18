@@ -31,6 +31,7 @@ import {
   ProjectWardenHosts,
   type Roster,
 } from '../src/providers/project-warden-hosts';
+import { makeLoginQuotaPause } from '../src/providers/provider-limits';
 import {
   PROJECT_HOST_DEFAULTS,
   resolveSubscriptionPolicy,
@@ -114,24 +115,23 @@ function projectHosts(
     rss: (pid) => rss.get(pid) ?? 100,
     onProject: (projectId, state) => states.push({ projectId, ...state }),
   });
-  wardens.bindLauncher(
-    async () => options.quotaResetAt?.(),
-    async (_projectId, host) => {
-      const session = new ClaudeCodeSession({
-        spawn: tree.spawn,
-        maxTurns: null,
-        persistSession: false,
+  const quota = makeLoginQuotaPause({ fetchResetAt: async () => options.quotaResetAt?.() });
+  cleanup.push(() => quota.close());
+  wardens.bindLauncher(quota, async (_projectId, host) => {
+    const session = new ClaudeCodeSession({
+      spawn: tree.spawn,
+      maxTurns: null,
+      persistSession: false,
+    });
+    session.extend(host);
+    const ended = new Promise<string>((resolve) => {
+      session.onEvent((event) => {
+        if (event.kind === 'session_end') resolve('ended');
       });
-      session.extend(host);
-      const ended = new Promise<string>((resolve) => {
-        session.onEvent((event) => {
-          if (event.kind === 'session_end') resolve('ended');
-        });
-      });
-      await session.start();
-      return { pid: tree.processes.at(-1)!.pid, ended, stop: async () => session.kill() };
-    },
-  );
+    });
+    await session.start();
+    return { pid: tree.processes.at(-1)!.pid, ended, stop: async () => session.kill() };
+  });
   cleanup.push(() => wardens.close());
   return { tree, rss, states, wardens };
 }

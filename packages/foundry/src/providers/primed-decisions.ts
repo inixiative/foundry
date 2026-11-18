@@ -42,7 +42,11 @@ import {
 } from './native-text-provider';
 import { assertPrivateProfile, assertProfile } from './private-profile';
 import type { ProjectWardenHosts } from './project-warden-hosts';
-import { fetchLoginQuotaResetAt } from './provider-limits';
+import {
+  fetchLoginQuotaResetAt,
+  type LoginQuotaPause,
+  makeLoginQuotaPause,
+} from './provider-limits';
 import { formatMessagesForNativeSession } from './session-backed';
 
 type DecisionProcess = ReturnType<CodexSpawn>;
@@ -98,6 +102,11 @@ export interface PrimedDecisionHostConfig {
    * and to the primed host otherwise.
    */
   projectHosts?: ProjectWardenHosts;
+  /**
+   * Another host's pause on this same login (a classify stage host shares the decision host's), so the
+   * login's used-up state is one; absent, this host makes and owns its own (Claude logins only).
+   */
+  quota?: LoginQuotaPause;
   /**
    * Claude: serve decisions as subagents of a bounded pool of side processes (agent-session
    * ClaudeSubagentSessions) instead of one primed process per key: `processes` side sessions, each
@@ -306,6 +315,20 @@ export function createPrimedDecisionHost(config: PrimedDecisionHostConfig) {
     }
   };
   const claude = runtime === 'claude' ? claudeLogin() : undefined;
+  /** This login used up: one pause for its scheduler and its project hosts, from the host's own readings first. */
+  const ownsQuota = !config.quota && runtime === 'claude';
+  const quota =
+    config.quota ??
+    (ownsQuota
+      ? makeLoginQuotaPause({
+          fetchResetAt: () => fetchLoginQuotaResetAt(source),
+          hostLimits: () => host.limits(),
+        })
+      : undefined);
+  const onEvent = (event: PrimedEvent) => {
+    if (event.type === 'limits') quota?.observe(event.limits);
+    config.onEvent?.(event);
+  };
   const claudeSpawn = (
     argv: string[],
     options: { cwd: string; env: Record<string, string | undefined> },
@@ -335,7 +358,7 @@ export function createPrimedDecisionHost(config: PrimedDecisionHostConfig) {
           maxMembers: config.subagents.membersPerProcess,
           maxSessionsPerGroup: config.subagents.processes,
           timeoutMs: config.callTimeoutMs,
-          onEvent: config.onEvent,
+          onEvent,
           // The side session's own environment (autoupdate off, held moment calls) without inherited keys or endpoints: a Claude decision runs on the subscription login.
           spawn: (argv, options) =>
             claudeSpawn(argv, options, {
@@ -354,7 +377,7 @@ export function createPrimedDecisionHost(config: PrimedDecisionHostConfig) {
             maxConcurrent: config.maxConcurrent,
             maxSessions: config.primedSessions ?? CLAUDE_PRIMED_SESSIONS,
             timeoutMs: config.callTimeoutMs,
-            onEvent: config.onEvent,
+            onEvent,
             // Synchronous launcher: the login was verified and registered before the first decision.
             spawn: (argv, options) => claudeSpawn(argv, options, claude.env()),
           })
@@ -367,7 +390,7 @@ export function createPrimedDecisionHost(config: PrimedDecisionHostConfig) {
             maxConcurrent: config.maxConcurrent,
             timeoutMs: config.callTimeoutMs,
             clientName: 'foundry-decisions',
-            onEvent: config.onEvent,
+            onEvent,
             spawn: async (argv, options) => {
               const launch = await auth.prepare(`primed-decisions:${hostId}`, 'codex');
               let child: DecisionProcess;
@@ -730,13 +753,12 @@ export function createPrimedDecisionHost(config: PrimedDecisionHostConfig) {
     };
   };
 
-  /** When this host's used-up login frees up (undefined: not used up, or not known); no model turn. */
-  const fetchQuotaResetAt = () => fetchLoginQuotaResetAt(source);
-
   // Project Warden hosts: this host starts each project's host process on its own decision login.
   if (config.projectHosts) {
     if (!claude) throw Error('Project Warden hosts run on a Claude decision login');
-    config.projectHosts.bindLauncher(fetchQuotaResetAt, async (projectId, extension) => {
+    if (!quota) throw Error('Project Warden hosts need the decision login pause');
+    const loginQuota = quota;
+    config.projectHosts.bindLauncher(loginQuota, async (projectId, extension) => {
       await claude.ready();
       // Below the stamped root: Archive drops it as Foundry's own run.
       const dir = join(
@@ -768,6 +790,7 @@ export function createPrimedDecisionHost(config: PrimedDecisionHostConfig) {
       const ended = new Promise<string>((resolve) => {
         session.onEvent((event) => {
           if (event.kind === 'session_end') resolve(event.transportOutcome ?? 'ended');
+          if (event.kind === 'rate_limit' && event.limits) loginQuota.observe(event.limits);
         });
       });
       try {
@@ -799,9 +822,10 @@ export function createPrimedDecisionHost(config: PrimedDecisionHostConfig) {
     hostId,
     receiptsPath,
     createRun,
-    fetchQuotaResetAt,
+    quota,
     releaseFailures: () => releaseFailures,
     close: async () => {
+      if (ownsQuota) quota?.close();
       try {
         await host.close();
       } finally {

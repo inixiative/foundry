@@ -8,6 +8,7 @@ import {
   journalActivity,
   turnChorus,
 } from '../src/agents/chorus-degraded';
+import { QUOTA_PAUSED_REFUSAL } from '../src/providers/decision-budget';
 
 // FEAT-008: a Warden the system kept quiet (timeout, error, never admitted) at Layer 1 or Layer 2.
 
@@ -219,4 +220,17 @@ test('retries: advice on its recorded moment, the guard on exactly its recorded 
   expect(
     journalActivity({ activity: { calls: [{ callId: 'c1' }], overflow: 3 } }, nativeHistory),
   ).toEqual({ unavailable: 'the row elided calls past its bound' });
+});
+
+test('a Warden refused because the login is used up is not degraded, in an advice row or a guard', () => {
+  expect(
+    degradedWardens([{ domain: 'db', decision: 'excluded', reason: QUOTA_PAUSED_REFUSAL }]),
+  ).toEqual([]);
+  expect(
+    degradedGuards([{ domain: 'db', status: 'not-admitted', error: QUOTA_PAUSED_REFUSAL }], ['db']),
+  ).toEqual([]);
+  // Any other refusal still is.
+  expect(
+    degradedGuards([{ domain: 'db', status: 'not-admitted', error: 'deadline-queued' }], ['db']),
+  ).toHaveLength(1);
 });

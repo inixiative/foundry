@@ -4,7 +4,13 @@ import { join } from 'node:path';
 import type { LimitSnapshot } from '@inixiative/agent-session';
 import { defaultProfileSource } from '../src/providers/default-profiles';
 import type { ProviderAccount } from '../src/providers/provider-accounts';
-import { fetchLoginQuotaResetAt, providerLimits } from '../src/providers/provider-limits';
+import {
+  fetchLoginQuotaResetAt,
+  LOGIN_UNREAD,
+  makeLoginQuotaPause,
+  providerLimits,
+  usedUpResetAt,
+} from '../src/providers/provider-limits';
 
 const account = (
   provider: string,
@@ -113,7 +119,7 @@ describe('when a used-up login frees up', () => {
     expect(calls()).toBe(2);
   });
 
-  test('not used up, a reset already past, or a full window with no reset: unknown', async () => {
+  test('not used up or a reset already past: free; a full window with no reset: read again later', async () => {
     const free = probing(
       reading(false, [{ id: 'five_hour', usedPercent: 30, windowMinutes: 300 }]),
     );
@@ -128,9 +134,130 @@ describe('when a used-up login frees up', () => {
         { id: 'seven_day', usedPercent: 100, windowMinutes: 10080 },
       ]),
     );
-    expect(await fetchLoginQuotaResetAt(login('unknown'), 1000, unknown.probes)).toBeUndefined();
-    expect(
-      await fetchLoginQuotaResetAt(login('none'), 1000, probing(undefined).probes),
-    ).toBeUndefined();
+    // Used up with no known reset: agent-session refuses it too, so it pauses until the next read.
+    expect(await fetchLoginQuotaResetAt(login('unknown'), 1000, unknown.probes)).toBe(
+      1000 + 15 * 60_000,
+    );
+    expect(await fetchLoginQuotaResetAt(login('none'), 1000, probing(undefined).probes)).toBe(
+      LOGIN_UNREAD,
+    );
+  });
+
+  test("any window at its limit binds, a model's own weekly one too: agent-session's rule", () => {
+    const limits = reading(true, [
+      { id: 'five_hour', usedPercent: 40, windowMinutes: 300, resetsAt: 5000 },
+      { id: 'seven_day_opus', usedPercent: 100, windowMinutes: 10080, resetsAt: 90_000 },
+    ]);
+    expect(usedUpResetAt(limits, 1000)).toBe(90_000);
+  });
+});
+
+describe('a login quota pause', () => {
+  const used = (resetsAt: number): LimitSnapshot => ({
+    runtime: 'claude',
+    source: 'stream',
+    observedAt: Date.now(),
+    blocked: true,
+    windows: [{ id: 'five_hour', usedPercent: 100, windowMinutes: 300, resetsAt }],
+  });
+
+  test("the host's own reading pauses it with no read of the login, and its reset ends it", async () => {
+    let fetched = 0;
+    const reset = Date.now() + 120;
+    const pause = makeLoginQuotaPause({
+      fetchResetAt: async () => {
+        fetched++;
+        return undefined;
+      },
+      hostLimits: () => used(reset),
+    });
+    const told: Array<number | undefined> = [];
+    pause.onChange((until) => told.push(until));
+    expect(await pause.read()).toBe(reset);
+    expect(fetched).toBe(0);
+    expect(pause.pausedUntil()).toBe(reset);
+    await Bun.sleep(reset - Date.now() + 40);
+    expect(pause.pausedUntil()).toBeUndefined();
+    expect(told).toEqual([reset, undefined]);
+    pause.close();
+  });
+
+  test('a reading the host reports pauses at once; a long pause is read again and ends when freed', async () => {
+    let resetAt: number | undefined = Date.now() + 60_000;
+    const pause = makeLoginQuotaPause({ fetchResetAt: async () => resetAt, recheckMs: 60 });
+    const told: Array<number | undefined> = [];
+    pause.onChange((until) => told.push(until));
+    pause.observe(used(resetAt));
+    expect(pause.pausedUntil()).toBe(resetAt);
+    // Signed in again, say: the next read finds usage, and the pause ends before its reset.
+    resetAt = undefined;
+    await Bun.sleep(150);
+    expect(pause.pausedUntil()).toBeUndefined();
+    expect(told).toHaveLength(2);
+    expect(told.at(-1)).toBeUndefined();
+    pause.close();
+  });
+
+  test('reads of the login after rate limits are spaced, not one a retry', async () => {
+    let fetched = 0;
+    const pause = makeLoginQuotaPause({
+      fetchResetAt: async () => {
+        fetched++;
+        return undefined;
+      },
+    });
+    expect(await pause.read()).toBeUndefined();
+    expect(await pause.read()).toBeUndefined();
+    expect(fetched).toBe(1);
+    pause.close();
+  });
+
+  test('a recheck the login does not answer keeps the pause; only a full read brings it earlier', async () => {
+    const far = Date.now() + 60_000;
+    let answer: number | undefined | typeof LOGIN_UNREAD = LOGIN_UNREAD;
+    const pause = makeLoginQuotaPause({ fetchResetAt: async () => answer, recheckMs: 40 });
+    const told: Array<number | undefined> = [];
+    pause.onChange((until) => told.push(until));
+    pause.observe(used(far));
+    // A host's one rejected window, resetting sooner, does not cut a longer pause short.
+    pause.observe(used(Date.now() + 5_000));
+    expect(pause.pausedUntil()).toBe(far);
+    await Bun.sleep(120);
+    expect(pause.pausedUntil()).toBe(far);
+    expect(told).toEqual([far]);
+    // A full read that answers may move it earlier.
+    const sooner = Date.now() + 30_000;
+    answer = sooner;
+    await Bun.sleep(120);
+    expect(pause.pausedUntil()).toBe(sooner);
+    expect(told).toEqual([far, sooner]);
+    pause.close();
+  });
+
+  test("a pause's end reads the login again: a later window still at its limit carries it on", async () => {
+    const soon = Date.now() + 60;
+    const later = Date.now() + 60_000;
+    const pause = makeLoginQuotaPause({ fetchResetAt: async () => later });
+    const told: Array<number | undefined> = [];
+    pause.onChange((until) => told.push(until));
+    // The host's rate-limit event named only the five-hour window.
+    pause.observe(used(soon));
+    await Bun.sleep(120);
+    expect(pause.pausedUntil()).toBe(later);
+    expect(told).toEqual([soon, later]);
+    pause.close();
+  });
+
+  test('used up with no known reset pauses until the login is read again', () => {
+    const pause = makeLoginQuotaPause({ fetchResetAt: async () => undefined, recheckMs: 5_000 });
+    pause.observe({
+      runtime: 'claude',
+      source: 'stream',
+      observedAt: Date.now(),
+      blocked: true,
+      windows: [{ id: 'seven_day', usedPercent: 100, windowMinutes: 10080 }],
+    });
+    expect(pause.pausedUntil()).toBeGreaterThan(Date.now());
+    pause.close();
   });
 });
