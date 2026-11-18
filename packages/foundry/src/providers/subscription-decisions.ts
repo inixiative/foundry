@@ -21,6 +21,7 @@ import {
   NOT_HELD_REFUSAL,
   QUOTA_PAUSED_REFUSAL,
   type RefusedUnsentCause,
+  refusedUnsent,
 } from './decision-budget';
 import { DECISION_PRIORITY } from './decision-priority';
 import type { NativeTextCall, NativeTextConfig } from './native-text-provider';
@@ -356,7 +357,7 @@ export function buildSubscriptionDecisions(
           Promise.resolve(opts.nativeObservation?.preflight?.(owner)),
           new Promise<never>((_, fail) => {
             preflightTimer = setTimeout(
-              () => fail(reject('Subscription preflight deadline')),
+              () => fail(reject('Subscription preflight deadline', 'not-admitted')),
               Math.max(0, pending.deadline - Date.now()),
             );
           }),
@@ -366,7 +367,7 @@ export function buildSubscriptionDecisions(
       }
       check(pending);
       if (attempts >= config.maxCalls || pending.deadline - Date.now() < 100)
-        throw reject('Subscription decision budget exhausted');
+        throw reject('Subscription decision budget exhausted', 'not-admitted');
       attempts++;
       run = createRun({
         ...config,
@@ -477,7 +478,7 @@ export function buildSubscriptionDecisions(
       outcomes.set(completion, { admission: 'attempted', settlement: 'settled' });
       backoffMs = initialBackoff;
       pending.resolve(completion);
-    } catch {
+    } catch (caught) {
       const call = run?.snapshot().calls[0];
       const settled =
         !call ||
@@ -497,24 +498,27 @@ export function buildSubscriptionDecisions(
             ? 'aborted'
             : 'timeout'
           : undefined;
+      // Refused here before any run was made (expired, revoked, preflight late, out of calls): kept as given.
       const error =
-        settled && call?.failure === 'not-held'
-          ? reject(NOT_HELD_REFUSAL, 'not-held')
-          : paused
-            ? reject(QUOTA_PAUSED_REFUSAL, 'not-admitted')
-            : settled && call?.failure === 'not-admitted'
-              ? reject(
-                  'Subscription decision refused before dispatch; no fallback or retry',
-                  'not-admitted',
-                )
-              : Object.assign(
-                  Error(
-                    limited
-                      ? 'Subscription decision rate limited; no fallback or retry'
-                      : 'Subscription decision failed; no fallback or retry',
-                  ),
-                  failedCause ? { failedCause } : {},
-                );
+        !run && refusedUnsent(caught)
+          ? (caught as Error)
+          : settled && call?.failure === 'not-held'
+            ? reject(NOT_HELD_REFUSAL, 'not-held')
+            : paused
+              ? reject(QUOTA_PAUSED_REFUSAL, 'not-admitted')
+              : settled && call?.failure === 'not-admitted'
+                ? reject(
+                    'Subscription decision refused before dispatch; no fallback or retry',
+                    'not-admitted',
+                  )
+                : Object.assign(
+                    Error(
+                      limited
+                        ? 'Subscription decision rate limited; no fallback or retry'
+                        : 'Subscription decision failed; no fallback or retry',
+                    ),
+                    failedCause ? { failedCause } : {},
+                  );
       if (limited && !paused) {
         backoffUntil = Math.max(backoffUntil, Date.now() + backoffMs);
         pressure({ kind: 'rate-limited', until: backoffUntil, backoffMs });

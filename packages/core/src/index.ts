@@ -2,6 +2,7 @@
 // @inixiative/foundry-core — the engine
 // ---------------------------------------------------------------------------
 
+// Action Prompts (agent→human interaction)
 export {
   type ActionOption,
   type ActionPrompt,
@@ -90,7 +91,7 @@ export {
   type LifecycleHandler,
   type LifecycleRule,
 } from './cache-lifecycle';
-// Action Prompts (agent→human interaction)
+// One outcome per Warden call (advice, guard, the debug reason query)
 export {
   ADVICE_RESULTS,
   type AdviceOutcome,

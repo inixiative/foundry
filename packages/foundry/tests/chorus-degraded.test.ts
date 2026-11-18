@@ -37,6 +37,23 @@ test('a Layer 1 timeout inside the stage run is a silent timeout at layer 1', ()
   ]);
 });
 
+test('a provider error whose stage trace timed out still reads as a timeout at layer 1', () => {
+  expect(
+    degradedWardens([
+      {
+        domain: 'db',
+        outcome: { status: 'failed', cause: 'provider-error' },
+        reason: 'stage 1 failed',
+        classified: {
+          stages: [stage(0, { timedOut: true, error: 'no answer within 900ms' })],
+        },
+      },
+    ]),
+  ).toEqual([
+    { domain: 'db', kind: 'timeout', layer: 1, silent: true, reason: 'no answer within 900ms' },
+  ]);
+});
+
 test("the orchestrator's deadline (no stage reported) is a silent timeout at an unknown layer", () => {
   expect(
     degradedWardens([

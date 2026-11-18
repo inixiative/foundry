@@ -277,6 +277,8 @@ function threadKnowledge(
 
 /** A failure of the call itself, not of the Warden's answer. */
 const TRANSPORT_FAILURE = /not-admitted|decision (?:failed|rate limited)|timed? ?out|ECONN|exited/i;
+/** A refusal asking again cannot clear: the role is over its budget (rowOf prefixes it). */
+const OVER_BUDGET = /^over-budget: /;
 
 async function askWithRetries(
   options: CharterEvalOptions,
@@ -285,7 +287,8 @@ async function askWithRetries(
   trigger: WardenProbeTrigger,
 ): Promise<{ rows: WardenProbeAnswer[]; debug: WardenDebug[]; raw: WardenRawAnswer[] }> {
   const lost = (rows: WardenProbeAnswer[]) =>
-    rows.length > 0 && rows.every((a) => a.error && TRANSPORT_FAILURE.test(a.error));
+    rows.length > 0 &&
+    rows.every((a) => a.error && TRANSPORT_FAILURE.test(a.error) && !OVER_BUDGET.test(a.error));
   // Each attempt keeps its own debug and raw rows: only the attempt that stands reports them.
   const attempt = async () => {
     const debug: WardenDebug[] = [];
@@ -341,8 +344,14 @@ function rowOf(result: AdviseResult | GuardResult, classified?: ClassifyResult):
   )
     return { noComment: false, error: 'not-admitted', ...staged };
   if (outcome.status !== 'answered') {
-    const reason = guard ? result.error : (result.error ?? result.notSent?.reason);
-    return { noComment: false, error: reason ?? callOutcomeLabel(outcome), ...staged };
+    const reason =
+      (guard ? result.error : (result.error ?? result.notSent?.reason)) ??
+      callOutcomeLabel(outcome);
+    const error =
+      outcome.status === 'not-sent' && outcome.cause === 'over-budget'
+        ? `over-budget: ${reason}`
+        : reason;
+    return { noComment: false, error, ...staged };
   }
   // A run that fell back is not the configuration's answer: its failed stage's error, counted apart
   // (and re-asked when the transport lost it), never a yes or a silence.

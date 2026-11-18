@@ -2,11 +2,12 @@ import { describe, expect, test } from 'bun:test';
 import {
   type CompletionOpts,
   ContextLayer,
+  callOutcomeLabel,
   type LLMMessage,
   type LLMProvider,
   SignalBus,
 } from '@inixiative/foundry-core';
-import { DomainLibrarian, type WardenStage } from '../src/agents/domain-librarian';
+import { adviceOutcomeOf, DomainLibrarian, type WardenStage } from '../src/agents/domain-librarian';
 import {
   ADVICE_RESPONSE_PROTOCOL,
   adviceResponseProtocol,
@@ -382,6 +383,43 @@ describe('the stage loop', () => {
       classified: { outcome: 'unsure', delivered: false },
     });
     expect(held.two.calls).toHaveLength(0);
+  });
+
+  test('a later stage over the role budget is not sent: the previous stage’s outcome stands, as on any later failure', async () => {
+    const [s1, s2] = validateStages('test', [{ escalate: ['yes'] }, {}]);
+    const one = scripted('haiku', [
+      advice([RANKED]),
+      JSON.stringify({ findings: [{ severity: 'advisory', description: RANKED }] }),
+    ]);
+    const two = scripted('sonnet', []);
+    const stages: WardenStage[] = [
+      { config: s1!, cache: layer('recognise', '# Locks') },
+      {
+        config: s2!,
+        llm: two.llm,
+        cache: layer('knowledge', `# Locks\n${'- createLock\n'.repeat(400)}`),
+      },
+    ];
+    const lib = new DomainLibrarian({
+      domain: 'locks',
+      cache: stages[0]!.cache!,
+      signals: new SignalBus(0),
+      llm: one.llm,
+      stages,
+      guardTriggers: ['Write'],
+      budget: 2_000,
+    });
+    const advised = await lib.advise('Add a lock.');
+    expect(callOutcomeLabel(adviceOutcomeOf(advised))).toBe('answered:spoke');
+    expect(advised.classified).toMatchObject({ fallback: 'error', finalStage: 0, outcome: 'yes' });
+    expect(advised.classified?.stages.at(-1)?.error).toStartWith('not sent (over-budget): ');
+    const guarded = await lib.guard({
+      turnId: 't',
+      observations: [{ tool: 'Write', input: { content: 'redis.set(k, 1, "NX")' } }],
+    });
+    expect(guarded.outcome).toEqual({ status: 'answered', result: 'findings' });
+    expect(guarded.classified).toMatchObject({ fallback: 'error', finalStage: 0 });
+    expect(two.calls).toHaveLength(0);
   });
 
   test('a later stage that outlives its share of the deadline leaves the previous outcome, journalled', async () => {

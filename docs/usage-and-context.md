@@ -548,8 +548,7 @@ reported as this budget's named error, not the cap's. (The retired hand-named
 Wardens composed to 30,000–56,000 characters per role.) Over budget, the phase does not
 run and nothing is truncated:
 
-- advice reports `error`;
-- guard reports `not-admitted`;
+- advice and guard report the outcome `not-sent:over-budget`; a later stage over budget is not sent either, and the stage before it stands, as on any later-stage failure (fallback `error`);
 - review records `error` instead of being admitted, and the review lane stays open;
 - routing reports `error`.
 
