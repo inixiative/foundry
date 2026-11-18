@@ -1,7 +1,9 @@
 import { describe, expect, test } from 'bun:test';
+import { Hono } from 'hono';
 import { elapsedSeconds, parseProcessTable, processTree } from '../src/providers/process-table';
 import type { ProjectHostState } from '../src/providers/project-warden-hosts';
 import { machineProcesses } from '../src/viewer/machine-processes';
+import { registerMachineProcessRoutes } from '../src/viewer/routes/machine-processes';
 
 const PS = `
   100     1 4852832 11.8    03:33 /Users/a/.bun/bin/bun run /x/scripts/daemon/supervisor.ts
@@ -14,6 +16,8 @@ const PS = `
   107   100  238640  0.0    03:03 claude --print --model claude-haiku-5-5 --effort low --max-turns 1 --safe-mode
   108   100  234544  0.1    03:03 claude --print --model claude-haiku-5-5 --effort low --max-turns 1 --safe-mode
   109   100  143760  0.0    03:16 npm exec localtunnel --port 4500
+  110   100    2048  0.0    00:05 /bin/zsh -c grep -rn mcp packages --token=sk-secret
+  111   100   20480  0.0    00:40 /opt/homebrew/bin/cloudflared tunnel --url http://localhost:4500
   200     1    1024  0.0    00:01 /bin/zsh
 `;
 
@@ -29,7 +33,7 @@ describe('the process table', () => {
 
   test('parses each row and keeps the command whole', () => {
     const table = parseProcessTable(PS);
-    expect(table).toHaveLength(11);
+    expect(table).toHaveLength(13);
     expect(table[3]).toMatchObject({ pid: 103, ppid: 100, cpu: 1.1, ageSeconds: 93_784 });
     expect(table[3]?.command).toEndWith('--resume sess-abc');
   });
@@ -75,7 +79,13 @@ describe('the Status view process list', () => {
   test('a tree total is its own memory plus everything below it', () => {
     const thread = byPid(103);
     expect(thread?.treeRssMb).toBe(409 + 51 + 141 + 110);
-    expect(root?.children).toHaveLength(6);
+    expect(root?.children).toHaveLength(8);
+  });
+
+  test("a shell that mentions mcp is not an MCP server, and its command line isn't sent", () => {
+    expect(byPid(110)).toMatchObject({ role: 'other', label: 'zsh', command: 'zsh' });
+    expect(byPid(111)).toMatchObject({ role: 'tunnel', label: 'Tunnel' });
+    expect(byPid(103)?.command).toEndWith('--resume sess-abc');
   });
 
   test('an unknown session is still a native session, and an absent root is undefined', () => {
@@ -83,5 +93,20 @@ describe('the Status view process list', () => {
     expect(bare?.children.find((child) => child.pid === 103)?.label).toBe('Native session');
     expect(bare?.children.find((child) => child.pid === 101)?.role).toBe('session');
     expect(machineProcesses(table, 999)).toBeUndefined();
+  });
+});
+
+describe('GET /api/machine/processes', () => {
+  test('reads this process as the root and names threads from the session bindings', async () => {
+    const app = new Hono();
+    registerMachineProcessRoutes(app, {
+      projectLabel: () => undefined,
+      sessionBindings: async () => [{ threadId: 't1:auth:x:y', externalSessionId: 'sess-abc' }],
+      threadName: () => undefined,
+    });
+    const res = await app.request('/api/machine/processes');
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { root: { pid: number; role: string } | null };
+    expect(body.root).toMatchObject({ pid: process.pid, role: 'daemon' });
   });
 });

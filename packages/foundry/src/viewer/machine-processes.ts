@@ -33,10 +33,11 @@ export interface MachineProcess {
   readonly rssMb: number;
   readonly cpu: number;
   readonly ageSeconds: number;
+  /** The command line; for an `other` process (an agent's shell, which can carry what a person typed) only its label. */
+  readonly command: string;
   /** This process and everything below it. */
   readonly treeRssMb: number;
   readonly treeCpu: number;
-  readonly command: string;
   readonly children: MachineProcess[];
 }
 
@@ -91,11 +92,15 @@ function identify(
     if (/\bapp-server\b/.test(command)) return { role: 'session', label: 'Codex app server' };
     return { role: 'session', label: 'Native session', ...withModel };
   }
-  if (/\/mcp\/proxy\.ts\b/.test(command)) return { role: 'mcp', label: 'Foundry tools bridge' };
-  if (/playwright[-/]mcp|@playwright\/mcp/.test(command))
+  // Only the program and its first arguments: a shell's script can mention anything.
+  const head = command.split(/\s+/).slice(0, 3).join(' ');
+  if (/\/mcp\/proxy\.ts\b/.test(head)) return { role: 'mcp', label: 'Foundry tools bridge' };
+  if (/playwright[-/]mcp|@playwright\/mcp/.test(head))
     return { role: 'mcp', label: 'Playwright MCP' };
-  if (/\bmcp\b/i.test(command)) return { role: 'mcp', label: 'MCP server' };
-  if (/\blocaltunnel\b|\/lt\s+--port\b/.test(command)) return { role: 'tunnel', label: 'Tunnel' };
+  if (/(?:^|[/@\s-])mcp(?:$|[\s@/-]|-server)/i.test(head))
+    return { role: 'mcp', label: 'MCP server' };
+  if (/\blocaltunnel\b|(?:^|\/)lt\s+--port\b|(?:^|\/)cloudflared\b/.test(head))
+    return { role: 'tunnel', label: 'Tunnel' };
   const [program = command, first] = command.split(/\s+/);
   const name = program.split('/').pop() ?? program;
   return {
@@ -131,17 +136,18 @@ export function machineProcesses(
       .filter((child) => !seen.has(child.pid))
       .map((child) => build(child, false));
     const rssMb = Math.round(row.rssKb / 1024);
+    const what = isRoot
+      ? { role: 'daemon' as const, label: 'Foundry daemon' }
+      : identify(row, sources, hostByPid);
     return {
       pid: row.pid,
-      ...(isRoot
-        ? { role: 'daemon' as const, label: 'Foundry daemon' }
-        : identify(row, sources, hostByPid)),
+      ...what,
       rssMb,
       cpu: row.cpu,
       ageSeconds: row.ageSeconds,
       treeRssMb: rssMb + kids.reduce((mb, kid) => mb + kid.treeRssMb, 0),
       treeCpu: Math.round((row.cpu + kids.reduce((cpu, kid) => cpu + kid.treeCpu, 0)) * 10) / 10,
-      command: row.command,
+      command: what.role === 'other' ? what.label : row.command,
       children: kids,
     };
   };

@@ -30,10 +30,14 @@ function useProcesses() {
           (error) => live && setState((s) => ({ ...s, error: String(error.message ?? error) })),
         );
     read();
-    const timer = setInterval(read, PROCESSES_EVERY_MS);
+    // A hidden tab (or a phone on the tunnel left open) doesn't keep the daemon reading `ps`.
+    const timer = setInterval(() => document.hidden || read(), PROCESSES_EVERY_MS);
+    const onVisible = () => document.hidden || read();
+    document.addEventListener('visibilitychange', onVisible);
     return () => {
       live = false;
       clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisible);
     };
   }, []);
   return state;
@@ -50,7 +54,12 @@ const age = (s) =>
         : `${Math.floor(s / 86_400)}d`;
 const modelName = (model) => model?.replace(/^claude-/, '').replace(/-\d+(-\d+)*$/, '');
 
-/** Siblings of one kind (role, label, model) with no children of their own fold into a group. */
+/**
+ * Siblings of one kind (role, label, model) with no children of their own fold into a group. Each
+ * row's `key` is its group's kind, or its pid alone, so an open group stays open as members come
+ * and go, and a group that shrinks back to single rows doesn't hand its state to one of them.
+ */
+const single = (p) => ({ ...p, key: `pid:${p.pid}`, count: 1, members: [p] });
 function fold(children) {
   const groups = new Map();
   for (const child of children) {
@@ -62,10 +71,11 @@ function fold(children) {
   return [...groups.values()]
     .flatMap((members) =>
       members.length < FOLD_FROM
-        ? members.map((p) => ({ ...p, count: 1, members: [p] }))
+        ? members.map(single)
         : [
             {
               ...members[0],
+              key: `kind:${members[0].role}\0${members[0].label}\0${members[0].model ?? ''}`,
               count: members.length,
               members,
               treeRssMb: members.reduce((mb, p) => mb + p.treeRssMb, 0),
@@ -111,11 +121,9 @@ function ProcessRow({ process, depth }) {
     ${
       open
         ? html`<ul class="machine-processes">
-            ${(
-              process.count > 1 ? rows.map((p) => ({ ...p, count: 1, members: [p] })) : fold(rows)
-            ).map(
+            ${(process.count > 1 ? rows.map(single) : fold(rows)).map(
               (child) =>
-                html`<${ProcessRow} key=${child.pid} process=${child} depth=${depth + 1} />`,
+                html`<${ProcessRow} key=${child.key} process=${child} depth=${depth + 1} />`,
             )}
           </ul>`
         : null
@@ -132,8 +140,8 @@ export function MachineProcesses() {
     ${
       root
         ? html`<ul class="machine-processes">
-            <${ProcessRow} process=${{ ...root, children: [], count: 1, members: [root], treeRssMb: root.rssMb, treeCpu: root.cpu }} depth=${0} />
-            ${fold(root.children).map((child) => html`<${ProcessRow} key=${child.pid} process=${child} depth=${0} />`)}
+            <${ProcessRow} key="daemon" process=${{ ...single(root), children: [], treeRssMb: root.rssMb, treeCpu: root.cpu }} depth=${0} />
+            ${fold(root.children).map((child) => html`<${ProcessRow} key=${child.key} process=${child} depth=${0} />`)}
           </ul>`
         : null
     }

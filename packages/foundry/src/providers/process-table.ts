@@ -28,21 +28,16 @@ export function elapsedSeconds(etime: string): number {
   return Number(days) * 86_400 + h * 3600 + m * 60 + s;
 }
 
-/** Parses `ps -A -o pid=,ppid=,rss=,%cpu=,etime=,command=` output. */
+const ROW = /^\s*(\d+)\s+(\d+)\s+(\d+)\s+([\d.]+)\s+(\S+)\s+(.*)$/;
+const MEMORY_ROW = /^\s*(\d+)\s+(\d+)\s+(\d+)\s*$/;
+
+/** Parses `ps -A -o pid=,ppid=,rss=,%cpu=,etime=,command=` output (in the C locale). */
 export function parseProcessTable(out: string): ProcessRow[] {
   const rows: ProcessRow[] = [];
   for (const line of out.split('\n')) {
-    const match = /^\s*(\d+)\s+(\d+)\s+(\d+)\s+([\d.]+)\s+(\S+)\s+(.*)$/.exec(line);
+    const match = ROW.exec(line);
     if (!match) continue;
-    const [, pid, ppid, rss, cpu, etime, command] = match as unknown as [
-      string,
-      string,
-      string,
-      string,
-      string,
-      string,
-      string,
-    ];
+    const [, pid = '', ppid = '', rss = '', cpu = '', etime = '', command = ''] = match;
     rows.push({
       pid: Number(pid),
       ppid: Number(ppid),
@@ -55,16 +50,42 @@ export function parseProcessTable(out: string): ProcessRow[] {
   return rows;
 }
 
-/** The whole table now, or undefined when `ps` can't run. */
-export function readProcessTable(): ProcessRow[] | undefined {
+const PS = '/bin/ps';
+const FULL_COLUMNS = 'pid=,ppid=,rss=,%cpu=,etime=,command=';
+// why: a comma-decimal locale prints %cpu as `3,6`, which no row pattern would read.
+const PS_ENV = { ...process.env, LC_ALL: 'C' };
+
+/** The whole table, read without blocking the event loop; undefined when `ps` can't run. */
+export async function fetchProcessTable(): Promise<ProcessRow[] | undefined> {
   try {
-    const out = Bun.spawnSync([
-      '/bin/ps',
-      '-A',
-      '-o',
-      'pid=,ppid=,rss=,%cpu=,etime=,command=',
-    ]).stdout.toString();
-    return parseProcessTable(out);
+    const run = Bun.spawn([PS, '-A', '-o', FULL_COLUMNS], { env: PS_ENV, stdout: 'pipe' });
+    const [out, code] = await Promise.all([new Response(run.stdout).text(), run.exited]);
+    return code === 0 ? parseProcessTable(out) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Pid, parent and memory only: the narrow read the Warden hosts' health check runs every tick. */
+function readMemoryTable(): ProcessRow[] | undefined {
+  try {
+    const run = Bun.spawnSync([PS, '-A', '-o', 'pid=,ppid=,rss='], { env: PS_ENV });
+    if (!run.success) return undefined;
+    const rows: ProcessRow[] = [];
+    for (const line of run.stdout.toString().split('\n')) {
+      const match = MEMORY_ROW.exec(line);
+      if (!match) continue;
+      const [, pid = '', ppid = '', rss = ''] = match;
+      rows.push({
+        pid: Number(pid),
+        ppid: Number(ppid),
+        rssKb: Number(rss),
+        cpu: 0,
+        ageSeconds: 0,
+        command: '',
+      });
+    }
+    return rows;
   } catch {
     return undefined;
   }
@@ -73,7 +94,11 @@ export function readProcessTable(): ProcessRow[] | undefined {
 /** Each process's children, by parent pid. */
 export function childrenByParent(table: readonly ProcessRow[]): Map<number, ProcessRow[]> {
   const children = new Map<number, ProcessRow[]>();
-  for (const row of table) children.set(row.ppid, [...(children.get(row.ppid) ?? []), row]);
+  for (const row of table) {
+    const siblings = children.get(row.ppid);
+    if (siblings) siblings.push(row);
+    else children.set(row.ppid, [row]);
+  }
   return children;
 }
 
@@ -94,9 +119,9 @@ export function processTree(table: readonly ProcessRow[], pid: number): ProcessR
   return out;
 }
 
-/** Resident memory (MB) of `pid` and every process below it (scripts/measure-in-session.ts). */
+/** Resident memory (MB) of `pid` and every process below it. */
 export function processTreeRssMb(pid: number): number | undefined {
-  const table = readProcessTable();
+  const table = readMemoryTable();
   if (!table) return undefined;
   const tree = processTree(table, pid);
   if (!tree.length) return undefined;

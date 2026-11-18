@@ -127,6 +127,8 @@ export interface ViewerConfig {
   assistModel?: string;
   /** The project Warden hosts' snapshot, for the Status view's process list (`/api/machine/processes`). */
   decisionHosts?: () => { projects: Record<string, ProjectHostState> } | undefined;
+  /** Every native session binding (`FileExternalSessionStore.all`), for Status → Processes. */
+  sessionBindings?: () => Promise<ReadonlyArray<{ threadId: string; externalSessionId: string }>>;
   /** Decision provider that keeps agent thread names (optional; no naming without it). */
   namingProvider?: LLMProvider;
   /** Each worker's native sessions, for a thread switching worker mid-conversation. */
@@ -1067,9 +1069,7 @@ export function createViewer(config: ViewerConfig) {
   registerMachineProcessRoutes(app, {
     ...(config.decisionHosts ? { hosts: config.decisionHosts } : {}),
     projectLabel: (projectId) => configStore.config.projects?.[projectId]?.label,
-    ...(localStore
-      ? { threadOfSession: (sessionId: string) => localStore.threadOfNativeSession(sessionId) }
-      : {}),
+    ...(config.sessionBindings ? { sessionBindings: config.sessionBindings } : {}),
     threadName: (threadId) => directory.get(threadId)?.meta.name?.text,
   });
   registerControlRoutes(app, {
