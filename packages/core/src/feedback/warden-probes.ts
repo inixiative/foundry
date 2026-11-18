@@ -159,10 +159,21 @@ export interface WardenProbeAnswer {
   readonly repairs?: readonly AnswerRepair[];
 }
 
+/** The machine's load averages (1, 5 and 15 minutes) and its CPU count, read at one instant. */
+export interface MachineLoad {
+  readonly average: readonly [number, number, number];
+  readonly cpus: number;
+}
+
 /** One probe run as a turn: every Warden asked at once, as the live chorus is. */
 export interface WardenProbeTurn {
   readonly probeId: string;
   readonly trigger?: WardenProbeTrigger;
+  /** When the first ask went out; absent on runs recorded before 2026-11-18. */
+  readonly startedAt?: string;
+  /** Machine load when the turn started and when its last answer came; absent before 2026-11-18. */
+  readonly loadAtStart?: MachineLoad;
+  readonly loadAtEnd?: MachineLoad;
   /** Warden calls made for this probe. */
   readonly calls: number;
   /** Wall clock from the first ask to the last answer. */

@@ -47,6 +47,7 @@ import { homedir } from 'node:os';
 import { basename, dirname, join, relative, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import {
+  type MachineLoad,
   POINTER_LEVELS,
   type PointerLevel,
   parseWardenPointerJudgement,
@@ -172,7 +173,8 @@ interface QuotaRow {
   at: string;
   phase: string;
   windows?: Record<string, number>;
-  load?: string;
+  // why: runs recorded before 2026-11-18 hold uptime's text, not a MachineLoad.
+  load?: MachineLoad | string;
 }
 interface Run {
   dir: string;
@@ -468,11 +470,16 @@ function windowGrowth(rows: readonly QuotaRow[]): number | null {
   }
   return growth;
 }
-const loadOf = (rows: readonly QuotaRow[]) => {
-  const loads = rows
-    .map((r) => /load averages?: ([\d.]+)/.exec(r.load ?? '')?.[1])
-    .filter((x): x is string => !!x)
-    .map(Number);
+const oneMinute = (load: MachineLoad | string | undefined) =>
+  typeof load === 'string'
+    ? Number(/load averages?: ([\d.]+)/.exec(load)?.[1] ?? Number.NaN)
+    : (load?.average[0] ?? Number.NaN);
+/** Machine load over the run: every turn's start when turns record it, else the window probes. */
+const loadOf = (rows: readonly QuotaRow[], turns: readonly WardenProbeTurn[] = []) => {
+  const fromTurns = turns.map((t) => oneMinute(t.loadAtStart)).filter(Number.isFinite);
+  const loads = fromTurns.length
+    ? fromTurns
+    : rows.map((r) => oneMinute(r.load)).filter(Number.isFinite);
   return loads.length
     ? { min: Math.min(...loads), max: Math.max(...loads), mean: mean(loads) }
     : null;
@@ -735,6 +742,43 @@ function time(
       momentsFired: asRate(fired.filter((m) => m.answers.length > 0).length, ms.length),
       wall: quantiles(fired.filter((m) => m.turn).map((m) => m.turn!.wallMs)),
     },
+    byLoad: speedByLoad(ms),
+  };
+}
+
+/** Bands of 1-minute load per CPU at a turn's start, so speed reads against how busy the machine was. */
+const LOAD_PER_CPU_BANDS = [0, 1, 2, 4, 8, 16, 20, 24, 28, 32, 48] as const;
+/**
+ * Speed against machine load: per band, the moment's wall time and each call's time; plus one point
+ * per moment (start, load per CPU, wall, calls) to graph. Only turns that recorded their load count.
+ */
+function speedByLoad(ms: readonly Moment[]) {
+  const loaded = ms.flatMap((m) => {
+    const load = m.turn?.loadAtStart;
+    return m.turn && load ? [{ m, turn: m.turn, perCpu: load.average[0] / load.cpus }] : [];
+  });
+  const bands = LOAD_PER_CPU_BANDS.map((from, i) => {
+    const to = LOAD_PER_CPU_BANDS[i + 1] ?? null;
+    const own = loaded.filter((x) => x.perCpu >= from && (to === null || x.perCpu < to));
+    return {
+      loadPerCpu: { from, to },
+      moment: quantiles(own.map((x) => x.turn.wallMs)),
+      call: quantiles(
+        own.flatMap((x) =>
+          x.m.answers.flatMap((a) => (!a.error && a.elapsedMs !== undefined ? [a.elapsedMs] : [])),
+        ),
+      ),
+    };
+  });
+  return {
+    momentsWithLoad: asRate(loaded.length, ms.length),
+    bands: bands.filter((b) => b.moment.n > 0),
+    points: loaded.map((x) => ({
+      at: x.turn.startedAt ?? null,
+      loadPerCpu: Math.round(x.perCpu * 100) / 100,
+      wallMs: x.turn.wallMs,
+      calls: x.turn.calls,
+    })),
   };
 }
 
@@ -851,7 +895,7 @@ function provenance(
     knowledge: s.knowledge ?? null,
     roster: s.roster?.length ?? null,
     session: s.session ?? null,
-    load: loadOf(r.quota),
+    load: loadOf(r.quota, r.turns),
     sharedWindow: true as const,
   };
 }
@@ -990,6 +1034,8 @@ function chorusStage(
             : t1.moment.max,
       },
       addedWhenFired: t2.addedWhenFired,
+      // why: stage 2 ran as its own run on stage 1's yeses; its load reads in its own report.
+      byLoad: t1.byLoad,
     },
     recognition: w,
     accumulated: accumulated(ms, w),
@@ -1421,6 +1467,19 @@ function renderStage(st: StageReport, title: string): string {
     `| per moment (wall, every call in flight) | ${s(t.moment.p50)} | ${s(t.moment.p95)} | ${s(t.moment.max)} | ${t.moment.n} |`,
     `| added only when fired (moments fired ${r(t.addedWhenFired.momentsFired)}) | ${s(t.addedWhenFired.wall.p50)} | ${s(t.addedWhenFired.wall.p95)} | ${s(t.addedWhenFired.wall.max)} | ${t.addedWhenFired.wall.n} |`,
     '',
+    ...(t.byLoad?.bands.length
+      ? [
+          `Speed by machine load (1-minute load per CPU at the turn's start; moments with a load reading ${r(t.byLoad.momentsWithLoad)}; one point per moment in report.json \`time.byLoad.points\` to graph):`,
+          '',
+          '| load per CPU | moment p50 | moment p95 | moments | call p50 | call p95 | calls |',
+          '|---|---|---|---|---|---|---|',
+          ...t.byLoad.bands.map(
+            (b) =>
+              `| ${b.loadPerCpu.from}${b.loadPerCpu.to === null ? '+' : `–${b.loadPerCpu.to}`} | ${s(b.moment.p50)} | ${s(b.moment.p95)} | ${b.moment.n} | ${s(b.call.p50)} | ${s(b.call.p95)} | ${b.call.n} |`,
+          ),
+          '',
+        ]
+      : []),
     '### 4. Per-Warden individual error',
     '',
     `regions ${w.regions}, speaking ${w.speaking}, never fired ${w.neverFired}; macro precision ${f(w.macroPrecision)} / recall ${f(w.macroRecall)}; regions at precision ≥ 0.8: ${r(w.precisionAtLeast80)}; mean miss rate ${f(w.meanMissRate)}; mean false-positive rate ${f(w.meanFalsePositiveRate, 3)}`,
