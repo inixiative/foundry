@@ -8,8 +8,8 @@
   "recorded": {
     "service": "claude",
     "cli": "claude",
-    "recordedAt": "2026-11-18T01:45:16.288Z",
-    "agentSession": "0.17.1",
+    "recordedAt": "2026-11-18T18:21:42.801Z",
+    "agentSession": "0.18.0",
     "environment": "terminal"
   }
 }
