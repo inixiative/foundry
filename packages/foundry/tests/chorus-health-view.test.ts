@@ -69,6 +69,27 @@ test('the strip shows the newest degraded turn while it is open; clean turns car
   ).toBeNull();
 });
 
+test('a run of degraded turns is advised once: only its first shows; a clean turn starts a new run', () => {
+  const open = (rowId: string) => ({
+    notices: [{ rowId, trigger: 'user-message', degraded: [timeout] }],
+    open: [rowId],
+  });
+  const first = { actor: 'agent', turnId: 't1', chorus: open('a') };
+  const second = { actor: 'agent', turnId: 't2', chorus: open('b') };
+  expect(lastDegraded([first])?.turnId).toBe('t1');
+  expect(lastDegraded([first, { actor: 'user', turnId: 't2' }, second])).toBeNull();
+  const dismissed = { ...first, chorus: { ...open('a'), open: [] } };
+  expect(lastDegraded([dismissed, { actor: 'user', turnId: 't2' }, second])).toBeNull();
+  expect(
+    lastDegraded([
+      first,
+      { actor: 'agent', turnId: 'clean' },
+      { actor: 'user', turnId: 't2' },
+      second,
+    ])?.turnId,
+  ).toBe('t2');
+});
+
 test("a turn's chorus is the journal's: a later index row replaces what this tab's own response held", () => {
   const open = { notices: [{ rowId: 'a', degraded: [timeout] }], open: ['a'] };
   const local = [

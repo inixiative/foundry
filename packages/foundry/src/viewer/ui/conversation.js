@@ -97,7 +97,7 @@ import {
   updateState,
   waitingFor,
 } from './store.js';
-import { stripView } from './system-strip.js';
+import { NEEDS_RESTART, stripView } from './system-strip.js';
 import { agentCountOf, openThreadAgents, threadAgents } from './thread-agents.js';
 import {
   harnessName,
@@ -434,9 +434,6 @@ function ContextBar() {
   `;
 }
 
-/** Activities whose fix is a restart of Foundry: their strip row carries Restart. */
-const NEEDS_RESTART = new Set(['decisions:admission']);
-
 /**
  * Restart beside "Wardens stopped answering until Foundry restarts" (Aron, 2026-11-16): Foundry
  * spins down (running turns finish or pause) and restarts once nothing blocks it; while it waits
@@ -469,7 +466,11 @@ function SystemStrip({ threadId }) {
   const [, tick] = useState(0);
   const [busy, setBusy] = useState(false);
   const now = Date.now();
-  const view = stripView(systemActivity.value, now);
+  const view = stripView(
+    systemActivity.value,
+    now,
+    messages.value.findLast((m) => m?.actor === 'user')?.timestamp,
+  );
   const degraded = lastDegraded(messages.value);
   const showing = !!view || !!degraded;
   useEffect(() => {

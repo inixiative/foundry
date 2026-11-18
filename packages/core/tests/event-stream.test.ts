@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { EventStream, type StreamEvent } from '../src/event-stream';
+import { EventStream, OUTAGE_GRACE_MS, type StreamEvent } from '../src/event-stream';
 
 function makeEvent(kind: StreamEvent['kind'], threadId: string = 'main'): StreamEvent {
   if (kind === 'session') {
@@ -175,5 +175,49 @@ describe('EventStream', () => {
     ]);
     stream.clear();
     expect(stream.activities()).toEqual([]);
+  });
+  test('an outage keeps the time it began until the key recovers; a new outage starts again', () => {
+    const stream = new EventStream();
+    const seen: StreamEvent[] = [];
+    stream.subscribe((event) => seen.push(event));
+    const base = { source: 's', summary: 'x', detail: 'd', key: 'a' };
+    const at = (
+      timestamp: number,
+      state: 'working' | 'ready' | 'degraded' | 'failed',
+      until?: number,
+    ) => stream.push({ kind: 'activity', ...base, state, timestamp, ...(until ? { until } : {}) });
+    const started = () => {
+      const last = seen.at(-1);
+      return last?.kind === 'activity' ? last.outageStartedAt : 'not activity';
+    };
+    at(1, 'working');
+    expect(started()).toBeUndefined();
+    at(2, 'degraded');
+    expect(started()).toBe(2);
+    at(3, 'failed');
+    expect(started()).toBe(2);
+    at(4, 'ready');
+    expect(started()).toBeUndefined();
+    at(5, 'failed');
+    expect(started()).toBe(5);
+    expect(stream.activities()[0]?.outageStartedAt).toBe(5);
+    // A rate limit's next attempt lands after its `until`: the same outage, not a new notice.
+    at(6, 'degraded', 7);
+    expect(started()).toBe(5);
+    at(9, 'degraded', 10);
+    expect(started()).toBe(5);
+    // A retry between failed starts stays in the outage.
+    at(11, 'working');
+    expect(started()).toBe(5);
+    at(12, 'degraded');
+    expect(started()).toBe(5);
+    at(13, 'ready');
+    at(14, 'working');
+    expect(started()).toBeUndefined();
+    // Quiet for longer than the grace after its `until`: a later limit is a new outage.
+    at(20, 'degraded', 21);
+    expect(started()).toBe(20);
+    at(21 + OUTAGE_GRACE_MS, 'degraded', 22 + OUTAGE_GRACE_MS);
+    expect(started()).toBe(21 + OUTAGE_GRACE_MS);
   });
 });
