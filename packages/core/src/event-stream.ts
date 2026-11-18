@@ -78,10 +78,24 @@ export interface SystemActivity {
   readonly detail: string;
 }
 
-/** Degraded or failed and not yet past its `until`: the key is in an outage at `now`. */
-function isOutage(activity: ActivityEvent, now: number): boolean {
-  if (activity.state !== 'degraded' && activity.state !== 'failed') return false;
-  return activity.until === undefined || now < activity.until;
+/** How long after its `until` an outage still counts as the same one: a rate limit's next attempt lands after it. */
+export const OUTAGE_GRACE_MS = 5 * 60_000;
+
+/**
+ * When the outage `event` belongs to began, or undefined when it is in none. Degraded or failed starts
+ * one; a later degraded, failed or working event of the key (a retry) stays in it. It ends on ready or
+ * idle, or once `OUTAGE_GRACE_MS` has passed since its `until` with nothing to say it went on.
+ */
+function outageStartedAt(
+  event: ActivityEvent,
+  before: ActivityEvent | undefined,
+): number | undefined {
+  if (event.state === 'ready' || event.state === 'idle') return undefined;
+  const began = before?.outageStartedAt;
+  const until = before?.until;
+  if (began !== undefined && (until === undefined || event.timestamp < until + OUTAGE_GRACE_MS))
+    return began;
+  return event.state === 'working' ? undefined : event.timestamp;
 }
 
 /**
@@ -108,14 +122,9 @@ export class EventStream {
   push(event: StreamEvent): void {
     if (event.kind === 'activity') {
       const before = this._activities.get(event.key);
-      if (isOutage(event, event.timestamp))
-        event = {
-          ...event,
-          outageStartedAt:
-            before && isOutage(before, event.timestamp)
-              ? (before.outageStartedAt ?? before.timestamp)
-              : event.timestamp,
-        };
+      const { outageStartedAt: _given, ...fresh } = event;
+      const started = outageStartedAt(event, before);
+      event = started === undefined ? fresh : { ...fresh, outageStartedAt: started };
       this._activities.delete(event.key);
       this._activities.set(event.key, event);
     }

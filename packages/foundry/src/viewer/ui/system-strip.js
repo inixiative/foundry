@@ -20,8 +20,8 @@ export const NEEDS_RESTART = new Set(['decisions:admission']);
 /**
  * Whether this thread was already advised of the activity's outage (Aron, 2026-11-17: "advise once,
  * but not every fucking round of a thread"): the person sent a message here after the outage began,
- * with the strip in view. It stays quiet until the outage ends; a new outage is advised again. One
- * whose fix is an action (Restart) stays until acted on.
+ * with the strip in view. It stays quiet until the outage ends, retries in it included; a new outage
+ * is advised again. One whose fix is an action (Restart) stays until acted on.
  */
 export function advised(activity, advisedAt) {
   if (advisedAt === undefined || activity?.outageStartedAt === undefined) return false;

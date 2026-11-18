@@ -136,6 +136,8 @@ describe('the strip', () => {
       'project-wardens:p',
     );
     expect(advised(at('working', 10), 45)).toBe(false);
+    // A retry inside an advised outage stays quiet too.
+    expect(advised({ ...at('working', 50), outageStartedAt: 40 }, 45)).toBe(true);
   });
 
   test('an outage whose fix is Restart stays until acted on', () => {
