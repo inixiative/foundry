@@ -29,7 +29,6 @@ import {
   type SubscriptionDecisionConfig,
 } from '../src/providers/subscription-decisions';
 import { starterConfig } from '../src/viewer/config';
-import { routedAgents } from './helpers/routed-agents';
 import { subscriptionTransport } from './helpers/subscription-transport';
 import {
   DECIDED,
@@ -271,7 +270,7 @@ test('tool and model overrides fail before any subprocess', async () => {
   f.close();
 });
 
-test('actual factory classification, routing, advice, guard and learning use the subscription lifecycle and retain private thread knowledge', async () => {
+test('actual factory advice, guard and learning use the subscription lifecycle and retain private thread knowledge', async () => {
   const f = fixture(
     subscriptionTransport({
       // Each Warden phase answers in its own strict protocol; the other roles share one routing answer.
@@ -300,9 +299,6 @@ test('actual factory classification, routing, advice, guard and learning use the
       provider: 'central',
       model: 'worker-model',
       prompt: '',
-      visibleLayers: [],
-      peers: [],
-      maxDepth: 1,
       enabled: true,
     },
     [EXPERT]: {
@@ -314,17 +310,11 @@ test('actual factory classification, routing, advice, guard and learning use the
       model: 'test-model',
       tools: false,
       prompt: 'Assess the supplied documentation',
-      visibleLayers: [],
       domainKnowledge: ['docs-source'],
-      peers: [],
-      maxDepth: 1,
       enabled: true,
       guardTriggers: ['Write'],
     },
   };
-  const defaults = routedAgents('central', { provider: f.provider.id, model: 'test-model' });
-  c.agents.classifier = { ...defaults.classifier, visibleLayers: ['docs'] };
-  c.agents.router = { ...defaults.router, visibleLayers: ['docs'] };
   c.layers = {
     docs: {
       id: 'docs',
@@ -387,13 +377,6 @@ test('actual factory classification, routing, advice, guard and learning use the
   try {
     const thread = factory.create('A', { projectId: 'P' }),
       runtime = manager.get('A')!;
-    const beforeRouting = f.transport.launches.length;
-    await thread.dispatch('classifier', 'Update documentation');
-    await thread.dispatch('router', {
-      payload: 'Update documentation',
-      classification: { category: 'feature' },
-    });
-    expect(f.transport.launches.length).toBeGreaterThanOrEqual(beforeRouting + 2);
     await thread.dispatch('worker', 'Update documentation', undefined, { messageId: 'A1' });
     await runtime.learningSettled();
     const lib = runtime.domainLibrarians.get('docs')!;
@@ -406,7 +389,7 @@ test('actual factory classification, routing, advice, guard and learning use the
     ).toBe('answered');
     factory.create('B', { projectId: 'Q' });
     expect(manager.get('B')!.domainLibrarians.get('docs')!.threadKnowledge.content).toBe('');
-    expect(f.transport.launches.length).toBeGreaterThanOrEqual(4);
+    expect(f.transport.launches.length).toBeGreaterThanOrEqual(3);
     expect(
       f.transport.launches.every((p) => p.exited && p.argv.includes('--strict-mcp-config')),
     ).toBe(true);

@@ -4,7 +4,7 @@
 > Every design decision traces back to two constraints: **token budget** and **latency**.
 > Every architectural choice answers one question: **how does the system get smarter after each interaction?**
 >
-> **How it is built today (2026-10-12).** This document mixes the design with what exists; [What exists vs what needs building](#what-exists-vs-what-needs-building) is the ledger. In short: the Artificer is a native Claude Code or Codex session run through agent-session. Standing context reaches it through the system prompt (`--append-system-prompt-file`, `packages/foundry/src/providers/native-launch.ts:144`) plus per-turn deltas (`providers/session-delivery.ts`; see [Delivery](#delivery-what-a-native-session-receives-each-turn)). Foundry observes tool calls on the native event stream, not through Claude Code hooks, and its structural tool gate (`packages/foundry/src/turns/tool-gate.ts`) answers the CLI's permission requests. Wardens are a chorus: their advice is appended to the user's message ("The <domain> Warden chimed in:"), advice runs under a deadline (`adviseTimeoutMs`) and a Warden that times out is skipped, and only structural rules deny. (Exception being fixed: the expert-cache warm before a turn has no deadline yet.) There is no `.foundry-context.md`, no PostToolUse hook, and no MCP push. The Herald exists as code but is not wired.
+> **How it is built today (2026-10-12).** This document mixes the design with what exists; [What exists vs what needs building](#what-exists-vs-what-needs-building) is the ledger. In short: the Artificer is a native Claude Code or Codex session run through agent-session. Standing context reaches it through the system prompt (`--append-system-prompt-file`, `packages/foundry/src/providers/native-launch.ts:144`) plus per-turn deltas (`providers/session-delivery.ts`; see [Delivery](#delivery-what-a-native-session-receives-each-turn)). Foundry observes tool calls on the native event stream, not through Claude Code hooks, and its structural tool gate (`packages/foundry/src/turns/tool-gate.ts`) answers the CLI's permission requests. Wardens are a chorus: their advice is appended to the user's message ("The <domain> Warden chimed in:"), advice runs under a deadline (`adviseTimeoutMs`) and a Warden that times out is skipped, and only structural rules deny. (Exception being fixed: the expert-cache warm before a turn has no deadline yet.) There is no `.foundry-context.md`, no PostToolUse hook, and no MCP push. The Herald is not wired: the Herald class moved to the private chorus repo, packages/heralds/reference/ (2026-11-18, R-2026-11-18-27); the `chorus.heralds` settings, `ask_herald` and the heralds skill stay as placeholders.
 
 ---
 
@@ -31,25 +31,15 @@ Foundry is a nervous system wrapped around an **Artificer** — a native Claude 
 
 Claude Code does what it's already good at — tool use, file access, codebase reasoning. Foundry adds what it doesn't have: persistent memory, project conventions, multi-thread awareness, correctness checking, and an observation loop that makes everything smarter over time.
 
-### The five roles in the flow
+### The four roles in the flow
 
-The harness has five roles, defined by *where they show up* in the message lifecycle. Each role can be one agent or many — that's an implementation decision, not an architecture one.
+The harness has four roles, defined by *where they show up* in the message lifecycle. Each role can be one agent or many — that's an implementation decision, not an architecture one.
 
 ```
 MESSAGE ARRIVES (user or system)
        │
        ▼
-┌─ 1. CONTEXT ROUTING ─────────────────────────────────────────────┐
-│                                                                    │
-│  Read the topology map. Decide what context slices this message    │
-│  needs. Route, never modify. See the whole project so the          │
-│  executor doesn't have to.                                         │
-│                                                                    │
-│  → "This message needs auth-conventions and security-patterns"     │
-└────────────────────────────────────────────────────────────────────┘
-       │
-       ▼
-┌─ 2. DOMAIN ADVISING ─────────────────────────────────────────────┐
+┌─ 1. DOMAIN ADVISING ─────────────────────────────────────────────┐
 │                                                                    │
 │  Each domain checks its warm cache against the message.            │
 │  Docs: which docs to hydrate. Conventions: which rules apply.      │
@@ -60,17 +50,17 @@ MESSAGE ARRIVES (user or system)
 └────────────────────────────────────────────────────────────────────┘
        │
        ▼
-┌─ 3. EXECUTION ───────────────────────────────────────────────────┐
+┌─ 2. EXECUTION ───────────────────────────────────────────────────┐
 │                                                                    │
 │  The real agent does the real work. Full tool access, real          │
 │  codebase reasoning. This is the expensive model.                  │
 │                                                                    │
-│  If it discovers a gap mid-work → pulls from context routing       │
-│  and domain advisors via MCP bridge (on demand).                   │
+│  If it discovers a gap mid-work → pulls context from Foundry       │
+│  via the MCP bridge (on demand).                                   │
 └────────────────────────────────────────────────────────────────────┘
        │
        ▼
-┌─ 4. CORRECTNESS CHECKING ────────────────────────────────────────┐
+┌─ 3. CORRECTNESS CHECKING ────────────────────────────────────────┐
 │                                                                    │
 │  When the turn's tool activity ends, domain agents guard it once,  │
 │  over every write, edit and command of the turn, in order.         │
@@ -82,14 +72,14 @@ MESSAGE ARRIVES (user or system)
 └────────────────────────────────────────────────────────────────────┘
        │
        ▼
-┌─ 5. SIGNAL RECONCILIATION & SYSTEM LEARNING ─────────────────────┐
+┌─ 4. SIGNAL RECONCILIATION & SYSTEM LEARNING ─────────────────────┐
 │                                                                    │
 │  Consume ALL signals from every role. Classify by type             │
 │  (correction, convention, taste, ADR, security). Reconcile         │
 │  into the thread-state layer (one coherent view, one writer).      │
 │                                                                    │
-│  Post-execution: map rebuilds, memory entries, convention          │
-│  proposals → feeds the corpus pipeline.                            │
+│  Post-execution: memory entries, convention proposals → feeds      │
+│  the corpus pipeline.                                              │
 │                                                                    │
 │  Every execution is a training step. This is the gradient.         │
 └────────────────────────────────────────────────────────────────────┘
@@ -101,14 +91,13 @@ These are the agents we've named so far. Each implements one or more roles. The 
 
 | Role | Agent(s) | Notes |
 |------|----------|-------|
-| **Context routing** | Cartographer | Reads everything, owns the topology map, routes slices. |
 | **Domain advising** | Wardens (formerly called Domain Librarians): a project's region Wardens, one per concept region (`.foundry/regions`, its chorus enabled). The hand-named Docs/Convention/Security/Architecture/Memory roster was retired 2026-10-17 | Each holds its region's knowledge. Advise mode: "does this moment touch something in my region, and where is it written?" |
-| **Domain advising** (cross-thread) | Herald | Design: watch all threads, detect convergence, divergence, resource conflicts. **Not wired**: the class exists (`agents/herald.ts`) but no runtime constructs it (`viewer/config.ts:301`). |
+| **Domain advising** (cross-thread) | Herald | Design: watch all threads, detect convergence, divergence, resource conflicts. **Not wired**: the Herald class moved to the private chorus repo, packages/heralds/reference/ (2026-11-18, R-2026-11-18-27); the `chorus.heralds` settings, `ask_herald` and the heralds skill stay as placeholders. |
 | **Execution** | Artificer (the native Claude Code or Codex session running under the harness) | The real work. Full tool access, capable model. |
 | **Correctness checking** | Wardens (guard mode) | Same agents as advising, different mode. Guard mode, once per turn: "did what the agent did this turn violate anything in my domain?" |
 | **Signal reconciliation** | Librarian (singular — distinct from the plural Wardens) | Sole writer to thread-state. Classifies signals, reconciles, trigger-gates guards, feeds writeback. |
 
-A role can compose many subagents — the Librarian might delegate security checking to three specialized subagents, the Cartographer might have a doc-map builder and a dependency-graph builder underneath. The flow doesn't change. What matters is that after a tool call, *something* checks conventions, *something* checks security, and the results flow into *one* reconciliation point.
+A role can compose many subagents — the Librarian might delegate security checking to three specialized subagents. The flow doesn't change. What matters is that after a tool call, *something* checks conventions, *something* checks security, and the results flow into *one* reconciliation point.
 
 ### Wardens — the shared pattern
 
@@ -122,7 +111,7 @@ Each Warden maintains knowledge, advises when asked, and guards when triggered. 
 | **Architecture** | Module boundaries, deps | "Cross-module work?" | "Does this respect boundaries?" |
 | **Memory** | Past decisions, failures | "Have we seen this before?" | "This pattern failed last time" |
 
-Memory is meant to be special in guard mode: **programmatic pattern matching** against known failure modes (grep + structured memory, not LLM reasoning), so it could run on every tool call for free. **Not built:** the memory domain sets `programmaticGuard: true` (`agents/thread-runtime.ts:196`) but nothing supplies a `guardFn`, so `DomainLibrarian.guard` falls through to the LLM guard (`agents/domain-librarian.ts:1259-1271`). Every guard is an LLM call today.
+Memory is meant to be special in guard mode: **programmatic pattern matching** against known failure modes (grep + structured memory, not LLM reasoning), so it could run on every tool call for free. **Not built:** no Warden is given a programmatic guard or a `guardFn`; every guard is an LLM call today.
 
 ### When a Warden weighs in: the charter, trigger points and NO_COMMENT
 
@@ -139,7 +128,7 @@ Turning `any` off (`pointer: { any: false }` on a stage) removes the choose-one 
 
 **Stages** (`@inixiative/foundry/classify`, Aron 2026-10-18: "it's the same thing in Oracle as it is in Foundry"). A Warden's answer is one classification run of at most three stages, the same code live, in Foundry's evals and in Oracle's experiments. Each stage names who answers (`model`, `effort`; omitted, the decision model's), the region doc it reads (`doc`, default `knowledge.md`), its outcomes (`binary` yes / NO_COMMENT, or `ternary` with unsure), its `reason` (`none`, the live default; `inline`, the why with every decision; `followup`, "why?" asked on the same session after a yes or unsure, never after a no, and carried to the next stage like an inline why), its `task` (`recognise`, which only names the regions the moment is in, one `<region id>: <why>` line each, under the recognise charter; or `point`, under the Warden charter) and, but for the last, which outcomes it `escalate`s, with its why unless `carryWhy` is false. The default is the two-layer chain (Aron, 2026-11-02; `DEFAULT_STAGES`): Layer 1 on the decision model (Haiku 5.5, low) points with its why `inline` and escalates each yes, without that why (`carryWhy: false`), within a quarter of the deadline (`deadline: 0.25`); Layer 2, Sonnet 5.5 low, points on the same `knowledge.md`, so Sonnet runs only on a Layer 1 yes. Why: Oracle finding `2026-11-01-l2-nowhy`: 93/114 recall and 34.5/1350 false yes on template's dev cells, against the 92 / 37 bar; asking Haiku for its why lifted its recall, and not passing it kept Sonnet's false yeses down. Layer 2 needs a stage host, which only subscription decisions start: with API-token decisions the default is the single stage (`defaultStages`). The charter is chosen by task and role and stays Foundry's, with the sections the stage's modes add (`classify/charters/<prompt>/modes/<mode>/`: additive by default, an `overrides` dagger only where a mode must replace a section it contradicts); the response protocol is generated from the stage (`responseProtocol`: the default is exactly the advice and guard protocols above), and every answer is read strictly under it (`readStageAnswer`): a malformed answer is counted on the stage's trace, never guessed. An escalated outcome reaches the next stage as an "An earlier stage" section carrying its tag and why; an unsure is to be treated as no until the stage's own doc shows otherwise. Each stage gets its share of the trigger's deadline (`deadline`, default an even split), capped by what the run has left; the last stage gets all that is left. The guard has no trigger deadline today, so a staged guard's stages each run on their provider's own call timeout. A later stage that times out, fails or answers out of shape leaves the previous stage's outcome, with the fallback journalled; a final unsure, and a recogniser's yes, reach the thread as nothing. Only a pointing stage's yes is delivered. Each later stage keeps its own primed session (`<thread>:aux:domain:<d>:stage:<n>`) and, on another model or effort, its own decision host; a project host holds one subagent per Warden, so a stage on a second model there is not built. A project sets its stages per role (`chorus.wardens.stages`; [usage-and-context.md](usage-and-context.md#chorus-projectsidchorus)); Heralds have the socket (`chorus.heralds`, region `role: "herald"`) and are not built.
 
-**The reception charter** (`CHORUS_RECEPTION`) is the main thread's counterpart, fixed in Foundry: a thread whose project runs a chorus holds it once as the standing layer `chorus-reception` (`chorus.reception: false` leaves it out, e.g. for an Oracle baseline; a thread with no Wardens never gets it). It says a chime is a pointer to verify, not advice; follow a ranked pointer's top first; read every member of an all-of set; pick from a choose-one set and say which and why in the plan; set a wrong chime aside in one line; silence is not evidence that nothing exists. It also carries the acknowledgement rule (Aron, 2026-10-17): a pointer at a system the instruction, ticket or spec contradicts needs the instruction to name that system and say to replace or bypass it; otherwise the main thread asks one short question naming it and its doc section before building ("This doesn't match what we have (X, doc §); confirm?"); when acknowledged, it proceeds and uses the system as the comparison, stating the material difference in its plan. The chime text itself stays a pointer. The inixiative org states the same rule in `~/code/inixiative/CLAUDE.md`, which the ladder's `org` node composes. Whether the main thread follows it is measured by Oracle's replays (the Reception and Early conflict detection gauges), not here. A replay's `chorus` arm (built for plan runs) gets exactly what a live thread delivers on the first message: `scripts/evals/chorus-advise.ts` builds the project's thread headless the way the daemon does (its decision hosts, region Wardens, FlowOrchestrator and harness), sends the message once with the executor's call captured, and writes `chorus.json`: the reception charter as the system-prompt append, each Warden's decision with its exact input (`requests.jsonl`) and token cost, and the first prompt a fresh live session receives (the per-turn context, thread state and routing block, as `# System Context`, then the message with its chimes appended as the executor sends it). `--prime` warms the Wardens' keys first, as a later live turn finds them. Guard and `consumed` notes ride a later turn, so a one-turn plan run never sees them.
+**The reception charter** (`CHORUS_RECEPTION`) is the main thread's counterpart, fixed in Foundry: a thread whose project runs a chorus holds it once as the standing layer `chorus-reception` (`chorus.reception: false` leaves it out, e.g. for an Oracle baseline; a thread with no Wardens never gets it). It says a chime is a pointer to verify, not advice; follow a ranked pointer's top first; read every member of an all-of set; pick from a choose-one set and say which and why in the plan; set a wrong chime aside in one line; silence is not evidence that nothing exists. It also carries the acknowledgement rule (Aron, 2026-10-17): a pointer at a system the instruction, ticket or spec contradicts needs the instruction to name that system and say to replace or bypass it; otherwise the main thread asks one short question naming it and its doc section before building ("This doesn't match what we have (X, doc §); confirm?"); when acknowledged, it proceeds and uses the system as the comparison, stating the material difference in its plan. The chime text itself stays a pointer. The inixiative org states the same rule in `~/code/inixiative/CLAUDE.md`, which the ladder's `org` node composes. Whether the main thread follows it is measured by Oracle's replays (the Reception and Early conflict detection gauges), not here. A replay's `chorus` arm (built for plan runs) gets exactly what a live thread delivers on the first message: `scripts/evals/chorus-advise.ts` builds the project's thread headless the way the daemon does (its decision hosts, region Wardens, FlowOrchestrator and harness), sends the message once with the executor's call captured, and writes `chorus.json`: the reception charter as the system-prompt append, each Warden's decision with its exact input (`requests.jsonl`) and token cost, and the first prompt a fresh live session receives (the per-turn context and thread state, as `# System Context`, then the message with its chimes appended as the executor sends it). `--prime` warms the Wardens' keys first, as a later live turn finds them. Guard and `consumed` notes ride a later turn, so a one-turn plan run never sees them.
 
 **Trigger points.** A Warden is asked at a named trigger point. Every Warden the point reaches is asked unless the **pre-filter**, when turned on, rules it out: one local decision-model call per trigger scores, per Warden, whether the moment is about its domain, and a Warden is skipped only on a confident no ([subscription decisions, Warden pre-filter](subscription-decisions.md#warden-pre-filter)). It fails open: an unsure score, a failed call or a missing model asks the Warden. It is not a keyword or path filter, which would fail silently; every skip is journalled with its score, so a Warden that should have spoken is auditable. It is off by default (`prefilter.enabled` in settings; no local model clears the bar yet), and when on it runs before advice, before the turn's guard, before a handoff brief and before the post-work review. Deciding what to say stays the Warden's job under the charter.
 
@@ -188,9 +177,9 @@ When debugging:
 
 1. **Don't reinvent Claude Code.** It already has tool use, file discovery, and codebase reasoning. Wrap it, don't replace it.
 2. **Middleware = LLM-backed decision slices.** Each middleware consumes a warm cache + the message and produces a decision. That's an LLM call, not a boolean check. The warm cache is the *input* to the call, not a substitute for it.
-3. **Cheap models for decisions, capable models for work.** Context routing, domain advising, and correctness checking all use Claude Haiku 5.5 through the subscription. The executor session uses whatever the native CLI is running (Opus 5.5 or Fable 5.2 for heavy work).
+3. **Cheap models for decisions, capable models for work.** Domain advising and correctness checking both use Claude Haiku 5.5 through the subscription. The executor session uses whatever the native CLI is running (Opus 5.5 or Fable 5.2 for heavy work).
 4. **Pull over push.** Don't frontload every possible context. Inject what the middleware predicts is needed, let the session pull the rest via MCP.
-5. **Progressive depth, not blanket evaluation.** Basic layers run every message. Deeper layers run only when something changes — domain shift, confidence drop, new trigger. Most steady-state messages hit only classification + map match. The system escalates to deeper middleware and guards based on what the basic layers detect.
+5. **Trigger-gated guards, not blanket evaluation.** Every Warden is asked at each trigger point that reaches it, and `NO_COMMENT` is the expected answer; guards run once per turn, only when a Warden's `guardTriggers` name a call of the turn.
 6. **Backpropagation is the whole point.** Every execution updates caches, memory, and maps. The system improves after every interaction, not just when someone edits a config.
 7. **Grep is always available.** When a summary says "this might be relevant" but isn't sure, programmatic search resolves it without an LLM call.
 
@@ -200,106 +189,39 @@ When debugging:
 
 | Flow role | Model Tier | Examples | Why |
 |-----------|-----------|----------|-----|
-| Context routing | Fast/Cheap | Claude Haiku 5.5 (subscription); configurable | Map lookup + routing decision |
 | Domain advising | Fast/Cheap | Claude Haiku 5.5 (subscription); configurable | Small context, structured output |
 | Execution | Capable | Whatever the native CLI runs (Opus 5.5, Fable 5.2) | The real work |
 | On-demand context (MCP) | Fast/Cheap | Claude Haiku 5.5 (subscription); configurable | Cache lookup + formatting |
 | Correctness checking | Fast/Cheap | Claude Haiku 5.5 (subscription); configurable | Narrow slice, yes/no + reasoning |
 | Signal reconciliation | Mostly programmatic | (rarely) Claude Haiku 5.5 | Reducer logic, LLM only on genuine conflicts |
-| Map building/rebuild | Fast/Cheap | Claude Haiku 5.5 (subscription); configurable | Summarization task |
 
 ---
 
-## Progressive Depth — Tiered Frequency Model
-
-Not every layer runs on every message. Not every guard runs on every tool call. The system escalates from cheap/fast basics to expensive/deep analysis only when something triggers it.
-
-```mermaid
-flowchart TB
-    MSG["Message arrives"]
-    CLASSIFY["CLASSIFY (always)\nFast LLM: category + tags"]
-    MAP["MAP MATCH (always)\nProgrammatic: 0ms"]
-
-    SHIFTED{"Domain shifted\nfrom last message?"}
-    CONV["Convention Middleware\n(Fast LLM)"]
-    MEM["Memory Middleware\n(Fast LLM)"]
-    DOC["Doc Hydration\n(I/O)"]
-    REUSE["Reuse last\nmiddleware output"]
-
-    CROSS{"Cross-cutting\ntags present?"}
-    THREAD["Thread Awareness\n(Fast LLM)"]
-
-    LOW_CONF{"Confidence\nbelow threshold?"}
-    DEEP["Deep layers:\nfull memory search,\nHerald analysis (not wired)"]
-
-    INJECT["Inject context\n→ session"]
-
-    MSG --> CLASSIFY
-    CLASSIFY --> MAP
-    MAP --> SHIFTED
-    SHIFTED -->|"YES"| CONV
-    SHIFTED -->|"YES"| MEM
-    SHIFTED -->|"YES"| DOC
-    SHIFTED -->|"NO"| REUSE
-    CONV --> CROSS
-    MEM --> CROSS
-    DOC --> CROSS
-    REUSE --> CROSS
-    CROSS -->|"YES"| THREAD
-    CROSS -->|"NO"| LOW_CONF
-    THREAD --> LOW_CONF
-    LOW_CONF -->|"YES"| DEEP
-    LOW_CONF -->|"NO"| INJECT
-    DEEP --> INJECT
-
-    style CLASSIFY fill:#1a2e1a,stroke:#4a8a4a,color:#fff
-    style DEEP fill:#2e1a1a,stroke:#8a4a4a,color:#fff
-```
-
-### Middleware tiers
-
-| Tier | What runs | Trigger | Steady-state frequency |
-|------|-----------|---------|----------------------|
-| **Always** | Classification + map match | Every message | Every message |
-| **On domain shift** | Convention, memory, doc hydration middleware | Classification output differs from last N messages | ~20% of messages in a focused session |
-| **On cross-cutting signals** | Thread awareness middleware | Classification tags indicate multi-domain or shared-resource work | ~5% of messages |
-| **On low confidence** | Deep memory search, Herald analysis (not wired), full map rebuild | Basic layers return low-confidence or empty results | ~2% of messages |
+## Guards and thread state
 
 ### Guard tiers
 
-Every guard fires at most once per turn, over the turn's whole tool activity; a Warden is asked when one of its `guardTriggers` names a call of the turn.
-
-| Guard | Asked when the turn has | Skips |
-|-------|---------|-------|
-| Convention Guard | a file write or edit | Turns of reads, bash commands, grep only |
-| Security Guard | a code write or command | Turns of reads or non-code edits only |
-| Architecture Advisor | a file creation or cross-module import | Turns of edits within one module |
-| Memory Advisor | any guardable call. Designed as a programmatic pattern match; today an LLM call, because no `guardFn` is supplied | Turns with no guardable call |
+Every guard fires at most once per turn, over the turn's whole tool activity; a Warden is asked when one of its `guardTriggers` names a call of the turn. Every region Warden carries the same triggers (`REGION_GUARD_TRIGGERS`, `agents/region-roster.ts`): file writes and edits (`Write`, `Edit`, `MultiEdit`, `NotebookEdit`, `file_write`) and shell commands (`Bash`). So a turn that wrote, edited or ran a command is guarded once by every Warden of the project's chorus, over those calls in order, and a turn of reads and searches only is not guarded. There are no per-domain guard tiers: those belonged to the hand-named roster retired on 2026-10-17.
 
 ### The thread-state layer makes this work
 
-The tiered model requires every middleware predicate to answer "should I run?" That question requires knowing what the thread already knows — current domain, what's in context, recent activity. If each middleware independently reconstructs this from dispatch logs, you've defeated the purpose of tiering.
+Every middleware predicate needs what the thread already knows — what's in context, recent activity, active flags. If each middleware reconstructed this from dispatch logs, every turn would pay for it.
 
 The solution: one of the warm caches IS the thread summary. A thread-state layer (~200-500 tokens, always warm) that the writeback loop keeps current:
 
 ```
 Thread State Layer:
 {
-  "domain": "auth",
   "recentActivity": ["edited auth/middleware.ts", "read auth/service.ts"],
   "inContext": ["auth-conventions", "security-patterns"],
-  "lastClassification": { "category": "feature", "tags": ["security", "api"] },
-  "messageCount": 12,
-  "compactionState": "none"
+  "flags": ["security-concern-active"]
 }
 ```
 
 Every predicate becomes a cache read:
-- **"Domain shifted?"** → `threadState.domain !== currentClassification.category`
 - **"Need thread awareness?"** → check `recentActivity` for cross-module patterns
-- **"Convention guard relevant?"** → tool call touches files outside `threadState.domain`
 
-No LLM calls, no dispatch log scanning. The awareness layer IS the state. This is why awareness layers must be first-class primitives — they're not a dashboard feature, they're the mechanism that makes the entire tiered system efficient.
+No LLM calls, no dispatch log scanning. The awareness layer IS the state. This is why awareness layers must be first-class primitives — they're not a dashboard feature, they're the mechanism that keeps every predicate a cache read.
 
 ### One writer, many readers
 
@@ -307,10 +229,9 @@ Multiple Wardens and guards (and, once wired, the Herald) run in parallel — al
 
 ```
 Parallel agents (readers + signal emitters):
-  Classification ──────→ { category: "feature", tags: ["security"] }
-  Convention Warden ───→ "auth conventions applied"
-  Security Warden ─────→ "clean"
-  Architecture Warden ─→ "cross-module edit detected"
+  Warden (region auth) ──→ "pointed at the session middleware"
+  Warden (region locks) ─→ NO_COMMENT
+  Warden (region ui) ────→ "cross-module edit detected"
   Herald (not wired) ──→ "thread B editing same file"
   Tool observation ─────→ "edited auth/middleware.ts"
            │
@@ -322,10 +243,10 @@ Librarian (sole writer):
 
 Why sole writer matters:
 - **Coherence** — the layer is always a consistent snapshot, never a race between parallel writers
-- **Reconciliation** — when classification says "auth" but the Architecture Warden says "cross-module," the Librarian reconciles: `{ domain: "auth", flags: ["cross-module"] }`. That's a judgment call, not last-write-wins.
+- **Reconciliation** — when a Warden says "cross-module," the Librarian adds it to the one state: `{ flags: ["cross-module"] }`, not last-write-wins.
 - **Predicates stay simple** — every Warden reads one coherent state
 
-The Librarian is mostly a programmatic reducer: last classification wins for domain, append-only for activity, union for flags. It only needs a Fast LLM call when signals genuinely conflict and need reconciliation — which is rare in a focused session.
+The Librarian is mostly a programmatic reducer: append-only for activity, union for flags. It only needs a Fast LLM call when signals genuinely conflict and need reconciliation — which is rare in a focused session.
 
 ### Session Store vs Thread-State Layer
 
@@ -333,23 +254,19 @@ These are two different data structures serving two different purposes. They are
 
 ```
 SESSION STORE (append-only event log, grows with session):
-  [event] classified: category=auth, tags=[security, api]
   [event] dispatched: executor on auth/middleware.ts
   [event] tool_call: file_write auth/middleware.ts
   [event] sentinel: convention guard clean
   [event] sentinel: security guard flagged SQL injection
   [event] signal: correction emitted
-  [event] classified: category=auth (same domain)
   [event] dispatched: executor on auth/service.ts
   ... (hundreds of events over a session)
 
 THREAD-STATE LAYER (materialized view, always compact ~200-500 tokens):
   {
-    "domain": "auth",
-    "messageCount": 12,
+    "recentActivity": ["edited auth/middleware.ts", "read auth/service.ts"],
     "inContext": ["auth-conventions", "security-patterns"],
-    "flags": ["security-concern-active"],
-    "compactionState": "none"
+    "flags": ["security-concern-active"]
   }
 ```
 
@@ -368,14 +285,6 @@ THREAD-STATE LAYER (materialized view, always compact ~200-500 tokens):
 
 **Thread restart = store replay (design only; `Thread.fromSession` is not built).** `Thread.fromSession(store, sessionId)` would replay the store to reconstruct warm caches, thread-state, and dispatch history. Same hydration pattern as layers, applied to the whole thread. User closes terminal, comes back tomorrow → thread resumes, not cold-starts.
 
-### Why this works
-
-Most consecutive messages in the same thread are about the same topic. If messages 5 through 12 are all about auth middleware, the convention/memory/doc middleware output from message 5 is still valid at message 12. Re-running it is waste.
-
-The classification tier is always cheap (~200ms, one Fast LLM call). It's the gatekeeper — but it doesn't decide alone. It compares its output against the thread-state layer (0ms read) to determine whether downstream middleware needs to fire.
-
-**Cost impact:** A 50-message session where 80% of messages reuse cached middleware output runs ~10 middleware stacks instead of 50. At Flash rates, that's $0.04 instead of $0.20. Already cheap, now cheaper.
-
 ---
 
 ## The Four Communication Channels
@@ -385,7 +294,7 @@ Every interaction between Foundry and the executor session flows through one of 
 ```mermaid
 flowchart LR
     subgraph FOUNDRY ["Foundry Harness"]
-        CTX["Context Routing\n+ Domain Advising"]
+        CTX["Domain Advising"]
         CHK["Correctness Checking"]
         REC["Signal Reconciliation\n+ System Learning"]
         CACHES[("Warm Caches\nMemory\nDocs\nConventions\nMap")]
@@ -410,16 +319,16 @@ flowchart LR
 
 | Channel | Flow roles | Direction | Mechanism | When | Latency |
 |---------|-----------|-----------|-----------|------|---------|
-| ① Pre-message | Context routing + domain advising | Foundry → Session | System prompt at session start (`--append-system-prompt-file`) plus changed layers and Warden notes with the user message (`providers/session-delivery.ts`) | Before session starts or on new message | Measure with `scripts/measure-decisions.ts`; the 2026-10-12 measurement was about 1.7 s median, warm |
+| ① Pre-message | Domain advising | Foundry → Session | System prompt at session start (`--append-system-prompt-file`) plus changed layers and Warden notes with the user message (`providers/session-delivery.ts`) | Before session starts or on new message | Measure with `scripts/measure-decisions.ts`; the 2026-10-12 measurement was about 1.7 s median, warm |
 | ② Mid-session | On-demand context (execution pulls) | Session → Foundry | MCP tools | Agent discovers a gap mid-work | ~200ms per query |
 | ③ Post-action | Correctness checking | Session → Foundry | Tool calls observed on the native event stream; the tool gate answers permission requests before a call runs | After matching tool calls | Async capture |
 | ④ Feedback | Correctness checking → execution | Foundry → Session | Signals reconciled by the Librarian; reach the session on a later turn at best. **No MCP push is built.** | When guards flag something | Next turn |
 
 ---
 
-## Loop 1: Pre-Message — Context Routing + Domain Advising
+## Loop 1: Pre-Message — Domain Advising
 
-When a message arrives, context routing and domain advising run to contextualize before the executor sees it. (The named Wardens in this diagram are the original design's examples; today's Wardens are a project's region Wardens, the hand-named roster having been retired 2026-10-17.)
+When a message arrives, domain advising runs to contextualize it before the executor sees it. (The named Wardens in this diagram are the original design's examples; today's Wardens are a project's region Wardens, the hand-named roster having been retired 2026-10-17.)
 
 ```mermaid
 flowchart TB
@@ -428,28 +337,20 @@ flowchart TB
     subgraph MW_LAYER ["WARDENS (advise mode, parallel where independent)"]
         direction TB
 
-        subgraph MW1 ["Docs Warden"]
-            CACHE_DOC[("Warm Cache:\nDoc Map\n(what exists, where,\nhow stale)")]
-            LLM_DOC["Fast LLM:\nWhat docs does this\nmessage need?"]
-            OUT_DOC["Output:\ncontextSlice[]"]
-            CACHE_DOC --> LLM_DOC
-            LLM_DOC --> OUT_DOC
+        subgraph MW1 ["Region Warden (one per concept region)"]
+            CACHE_R1[("Warm Cache:\nits region's knowledge.md\n(what exists there, where)")]
+            LLM_R1["Fast LLM, under the charter:\nDoes this moment touch\nmy region?"]
+            OUT_R1["Output:\nNO_COMMENT, or a pointer\n(name, where, why)"]
+            CACHE_R1 --> LLM_R1
+            LLM_R1 --> OUT_R1
         end
 
-        subgraph MW2 ["Convention Warden"]
-            CACHE_CONV[("Warm Cache:\nProject conventions\n+ recent corrections")]
-            LLM_CONV["Fast LLM:\nAny conventions relevant\nto this request?"]
-            OUT_CONV["Output:\nconventions to inject"]
-            CACHE_CONV --> LLM_CONV
-            LLM_CONV --> OUT_CONV
-        end
-
-        subgraph MW3 ["Memory Warden"]
-            CACHE_MEM[("Warm Cache:\nMemory index\n(what we remember)")]
-            LLM_MEM["Fast LLM:\nAnything in memory\nrelevant here?"]
-            OUT_MEM["Output:\nmemory entries"]
-            CACHE_MEM --> LLM_MEM
-            LLM_MEM --> OUT_MEM
+        subgraph MW2 ["Region Warden (the next region)"]
+            CACHE_R2[("Warm Cache:\nits region's knowledge.md")]
+            LLM_R2["Fast LLM, under the charter"]
+            OUT_R2["Output:\nNO_COMMENT or a pointer"]
+            CACHE_R2 --> LLM_R2
+            LLM_R2 --> OUT_R2
         end
 
         subgraph MW4 ["Herald (cross-thread; not wired)"]
@@ -499,11 +400,11 @@ Doc Map Cache (~500 tokens):
 
 The middleware LLM sees this compact index + the message and says "pull auth-conventions and security-patterns." It doesn't see 20k tokens of full docs — it sees 500 tokens of map and makes a routing decision.
 
-When the router says "pull auth-api-docs," that layer gets hydrated (file I/O, not LLM) and delivered with the turn.
+When the middleware says "pull auth-api-docs," that layer gets hydrated (file I/O, not LLM) and delivered with the turn.
 
 ### Delivery: what a native session receives each turn
 
-**An unwrapped thread receives nothing from Foundry.** A fresh install configures one executor with no instructions and no layers, classifier, router or Wardens (`defaultAgents`, `viewer/config.ts`). Such a thread makes no Cartographer call and keeps thread-state off its stack, so the session gets the user's message as typed: no standing part, no per-turn text (`wrapsThread`, `agents/thread-runtime.ts`). The first configured layer or decision role wraps it from the next turn, and the parts below apply.
+**An unwrapped thread receives nothing from Foundry.** A fresh install configures one executor with no instructions and no layers or Wardens (`defaultAgents`, `viewer/config.ts`). Such a thread keeps thread-state off its stack, so the session gets the user's message as typed: no standing part, no per-turn text (`wrapsThread`, `agents/thread-runtime.ts`). The first configured layer or Warden wraps it from the next turn, and the parts below apply.
 
 A wrapped thread's context has three parts, and each reaches a native session (Claude Code, Codex) differently:
 
@@ -511,9 +412,9 @@ A wrapped thread's context has three parts, and each reaches a native session (C
 |---|---|---|
 | Stable | composed instructions (`instructions` layer), the executor's own prompt | once, in the session's base context; an edited instruction file is a new hash (below) |
 | Slowly changing | Warden thread knowledge, memory; a post-hoc review may update them every cycle | in the base context when the session starts, then as a delta whenever a layer's hash changes |
-| Per turn | Cartographer routing (the decoration) | every turn, with the user message |
+| Per turn | the decisions block (`decoration:decisions`): domains omitted by budget and unresolved conflicts | with the user message, only on a turn that has either |
 | Warden notes | each Warden that chimed in: `The <domain> Warden chimed in:` and its points; a NO_COMMENT adds nothing | every turn, appended to the end of the user's message (`placement: "after-message"`) |
-| Thread-state | the Librarian's layer (domain, recent activity, flags; not the ledger or timestamps) | every turn, with the per-turn text; never in the base (`perTurn`), so the system prompt stays byte-stable |
+| Thread-state | the Librarian's layer (recent activity, flags; not the ledger or timestamps) | every turn, with the per-turn text; never in the base (`perTurn`), so the system prompt stays byte-stable |
 
 **The guarantee.** A session holds every standing part (each warm layer with its prompt, plus the executor's instructions as one `agent` part) at its current hash, and the latest version in its context is the current one. Each part is labelled `## Context: <id>`, in the system prompt and in a delta. The mechanics:
 
@@ -612,39 +513,23 @@ flowchart TB
     HOOK["Tool call observed\non the native event stream"]
     CAPTURE["Foundry captures:\ntool name, input, output,\nfiles affected, session state"]
 
-    subgraph GUARDS ["WARDENS (guard mode, parallel, trigger-gated by Librarian)"]
+    subgraph GUARDS ["WARDENS (guard mode, parallel, once per turn)"]
         direction TB
 
-        subgraph G1 ["Convention Warden — guard"]
-            GC_CACHE[("Warm Cache:\nNaming conventions\nCode patterns\nProject structure")]
-            GC_LLM["Fast LLM:\nDoes this tool output\nviolate any conventions?"]
-            GC_OUT["Finding or ✓"]
-            GC_CACHE --> GC_LLM
-            GC_LLM --> GC_OUT
+        subgraph G1 ["Region Warden — guard"]
+            GR1_CACHE[("Warm Cache:\nits region's knowledge.md")]
+            GR1_LLM["Fast LLM, under the charter:\nDoes the turn's activity\ncross my region?"]
+            GR1_OUT["Finding or NO_COMMENT"]
+            GR1_CACHE --> GR1_LLM
+            GR1_LLM --> GR1_OUT
         end
 
-        subgraph G2 ["Security Warden — guard"]
-            GS_CACHE[("Warm Cache:\nSecurity patterns\nOWASP rules\nKnown vuln patterns")]
-            GS_LLM["Fast LLM:\nAny security concern\nin this change?"]
-            GS_OUT["Finding or ✓"]
-            GS_CACHE --> GS_LLM
-            GS_LLM --> GS_OUT
-        end
-
-        subgraph G3 ["Architecture Warden — guard"]
-            GA_CACHE[("Warm Cache:\nModule boundaries\nDependency rules\nFile organization")]
-            GA_LLM["Fast LLM:\nDoes this change respect\narchitecture boundaries?"]
-            GA_OUT["Finding or ✓"]
-            GA_CACHE --> GA_LLM
-            GA_LLM --> GA_OUT
-        end
-
-        subgraph G4 ["Memory Warden — guard"]
-            GM_CACHE[("Warm Cache:\nPast decisions\nReverted changes\nKnown pitfalls")]
-            GM_CHECK["Designed programmatic;\ntoday an LLM call\n(no guardFn supplied)"]
-            GM_OUT["Finding or ✓"]
-            GM_CACHE --> GM_CHECK
-            GM_CHECK --> GM_OUT
+        subgraph G2 ["Region Warden (the next region) — guard"]
+            GR2_CACHE[("Warm Cache:\nits region's knowledge.md")]
+            GR2_LLM["Fast LLM, under the charter"]
+            GR2_OUT["Finding or NO_COMMENT"]
+            GR2_CACHE --> GR2_LLM
+            GR2_LLM --> GR2_OUT
         end
     end
 
@@ -655,11 +540,9 @@ flowchart TB
 
     TOOL --> HOOK
     HOOK --> CAPTURE
-    CAPTURE --> GATE{"Tool type\ngates which\nguards fire"}
-    GATE -->|"file write"| G1
-    GATE -->|"code write"| G2
-    GATE -->|"file create /\ncross-module"| G3
-    GATE -->|"any"| G4
+    CAPTURE --> GATE{"Turn ended: did it write,\nedit or run a command?\n(guardTriggers)"}
+    GATE -->|"yes"| GUARDS
+    GATE -->|"reads only"| NOTHING
     GUARDS --> FINDINGS
     FINDINGS -->|"critical\n(security, breaking)"| PUSH_MCP
     FINDINGS -->|"advisory\n(style, suggestion)"| SIGNAL
@@ -676,31 +559,21 @@ There's no separate "guard" agent type. The same Wardens that advise pre-message
 
 | | Advise mode (pre-message) | Guard mode (post-action) |
 |---|---|---|
-| **Runs when** | Before session starts (tiered by domain shift) | After matching tool calls (trigger-gated by Librarian) |
+| **Runs when** | At each trigger point: every user message, a subagent handoff, a consumed work item, a milestone, a hand-back | Once when the turn's tool activity ends, if it made a call the Warden's `guardTriggers` name |
 | **Input** | User message + warm cache | Tool call observation + warm cache |
 | **Output** | Context to inject | Finding (or all-clear) |
 | **Urgency** | Bounded by a deadline: a Warden that times out is skipped and the turn proceeds | Non-blocking (async) |
-| **Gating** | Classification domain shift | Tool call type (file-write, code-write, etc.) |
+| **Gating** | None: every Warden is asked, unless the pre-filter (off by default) is confident the moment is outside its domain | Tool call type (writes, edits, commands) |
 
-Guard mode fires once per turn and is trigger-gated: a turn of reads doesn't fire the Convention Warden's guard, a turn of only bash commands doesn't fire the Security Warden. A turn that makes 50 tool calls, 15 of them file writes, runs the convention guard once, over those 15 writes in order, not 15 times. The Memory Warden is asked whenever the turn had any guardable call. It was designed as free programmatic pattern matching; today it runs the LLM guard, because nothing supplies its `guardFn`.
+Guard mode fires once per turn and is trigger-gated: a turn of reads and searches only is not guarded. A turn that makes 50 tool calls, 15 of them file writes, asks each Warden's guard once, over those 15 writes in order, not 15 times (`guard: "per-call"` in settings restores a guard per call).
 
-**Why the guard layer matters:** As a session grows and the context window fills, agents become more random. The guard-mode Wardens don't degrade with session length because they compare tool outputs against their own warm caches — stable, compact, independent of the session's growing context. At message 50, the Security Warden is comparing against the same security patterns it had at message 1. The guards are the mechanism that keeps the session aligned as context pressure mounts.
+**Why the guard layer matters:** As a session grows and the context window fills, agents become more random. The guard-mode Wardens don't degrade with session length because they compare tool outputs against their own warm caches — stable, compact, independent of the session's growing context. At message 50, a Warden is comparing against the same region knowledge it had at message 1. The guards are the mechanism that keeps the session aligned as context pressure mounts.
 
 When a Warden in guard mode finds something:
 
 - **Critical findings** (security, breaking changes) → designed to push immediately into the session. **Not built:** there is no push path; a critical finding is a signal like any other.
 - **All findings today** → emitted as signals to the Librarian. The session doesn't see them immediately; they feed into writeback and inform later advise-mode decisions.
 - A guard never blocks a tool call. Only the structural tool rules deny (CLAUDE.md, "Wardens are a chorus").
-
-### The Memory Warden is special
-
-Unlike the other Wardens, the Memory Warden is designed not to need an LLM call in guard mode: **programmatic pattern matching** against known failure modes. (Not built yet: with no `guardFn`, it runs the LLM guard.)
-
-- "The last time someone edited this file and used that pattern, it was reverted in PR #847"
-- "This function signature was changed 3 times in the last month — it's unstable"
-- "A similar approach was tried in thread-feature-auth and abandoned"
-
-The design is grep + structured memory, not LLM reasoning: fast and free.
 
 ---
 
@@ -778,14 +651,12 @@ stateDiagram-v2
         direction TB
         Config: Load project config
         Layers: Build + warm layer caches
-        Map: Cartographer builds\ndoc map (Fast LLM)
-        Agents: Register Cartographer,\nLibrarian + Wardens
+        Agents: Register Librarian\n+ Wardens
         MCP: Start MCP server
         Session: Start Artificer (native session)\nwith composed system prompt
 
         Config --> Layers
-        Layers --> Map
-        Map --> Agents
+        Layers --> Agents
         Agents --> MCP
         MCP --> Session
     }
@@ -809,10 +680,8 @@ stateDiagram-v2
     }
 
     Active --> Stale: layer staleness\ntimer fires
-    Stale --> Active: background re-warm\n+ map rebuild
+    Stale --> Active: background re-warm
 
-    Active --> Spawned: router middleware says\n"new thread needed"
-    Spawned --> Bootstrap: child thread inherits\nparent layer configs
 
     Active --> [*]: thread archived
 ```
@@ -821,13 +690,12 @@ stateDiagram-v2
 
 **Cold start (~2-5s):**
 - Build all layer caches (parallel I/O)
-- Build doc map (one Fast LLM call)
 - Start MCP server
 - Start Artificer (native session through agent-session) with the composed system prompt
 - First message has full middleware overhead
 
 **Steady state (pre-message overhead: about 1.7 s median warm in the 2026-10-12 measurement; measure with `scripts/measure-decisions.ts`):**
-- Caches are warm, map is built
+- Caches are warm
 - Middleware runs against warm caches (parallel Fast LLM calls)
 - Session is already running
 - MCP server is ready for pulls
@@ -837,21 +705,15 @@ stateDiagram-v2
 
 ## Complete Decision Reference
 
-Every branching point in the system, who decides, and how. (Named Wardens are the original design's examples; today each is a project's region Warden.)
+Every branching point in the system, who decides, and how. Every Warden is a project's region Warden, one per concept region.
 
 | Decision | Flow role | Agent | Model | Input | Speed |
 |----------|----------|-------|-------|-------|-------|
-| What context slices does this message need? | Context routing | Cartographer | Fast LLM | Message + topology map | ~200ms |
-| Which docs to hydrate? | Domain advising | Docs Warden | Fast LLM | Message + doc map cache | ~200ms |
-| Which conventions apply? | Domain advising | Convention Warden | Fast LLM | Message + convention cache | ~200ms |
-| Any relevant memory? | Domain advising | Memory Warden | Fast LLM | Message + memory index | ~200ms |
+| Does this moment touch my region, and where is it written? | Domain advising | Each region Warden | Fast LLM (Haiku 5.5, a yes confirmed by Sonnet 5.5) | Moment + region knowledge | under the advise deadline |
 | Sibling threads relevant? | Domain advising | Herald (not wired) | Fast LLM | Message + thread summaries | — |
-| Session needs context mid-work? | Execution (MCP) | Cartographer | Fast LLM | Query + map | ~200ms |
-| Does this edit violate conventions? | Correctness checking | Convention Warden | Fast LLM | Observation + convention cache | ~200ms |
-| Security concern in this change? | Correctness checking | Security Warden | Fast LLM | Observation + security cache | ~200ms |
-| Does this respect architecture? | Correctness checking | Architecture Warden | Fast LLM | Observation + architecture cache | ~200ms |
-| Seen this pattern fail before? | Correctness checking | Memory Warden | Fast LLM today (programmatic by design) | Observation + failure mode index | ~200ms |
-| Which guards fire on this tool call? | Correctness checking | Librarian | Programmatic | Tool call type | 0ms |
+| Session needs context mid-work? | Execution (MCP) | `foundry` MCP server | Programmatic | Query + the thread's context layers | ~200ms |
+| Did the turn's writes, edits or commands cross my region? | Correctness checking | Each region Warden | Fast LLM | The turn's tool activity + region knowledge | async |
+| Which guards fire on this turn? | Correctness checking | FlowOrchestrator | Programmatic | The turn's tool call types against `guardTriggers` | 0ms |
 | Push finding or defer? | Correctness checking | Librarian | Not built (everything defers) | Finding severity | — |
 | Reconcile signals into thread state | Signal reconciliation | Librarian | Programmatic (rarely Fast LLM) | All signals | ~0ms |
 | Layer stale? | System learning | Staleness timer | Programmatic | `lastWarmed + staleness` | 0ms |
@@ -863,13 +725,12 @@ Every branching point in the system, who decides, and how. (Named Wardens are th
 
 | Flow role | Failure | Impact | Recovery |
 |-----------|---------|--------|----------|
-| Context routing | Classification is wrong | Wrong layers frontloaded | Session's own reasoning + MCP correct for it; writeback captures the miss for next time |
 | Domain advising | Advise LLM call fails | Missing context injection for that domain | Session proceeds with partial context; MCP available for on-demand pulls; retry in background |
 | Domain advising | Layer fails to warm | Domain has empty cache | Domain knows its cache is cold and says so; session relies on MCP + native tools |
 | Execution | Artificer (native session) crashes | Work interrupted | Foundry has full observation log; can restart session with context rebuilt from Session Store |
 | Execution (MCP) | MCP server unavailable | Session can't pull on-demand context | Session falls back to the native CLI's tools (grep, file read); degraded but functional |
 | Correctness checking | Guard LLM call fails | Missed finding for one observation | Other guards still running; that guard retries on next observation; signal emitted so writeback knows |
-| Signal reconciliation | Fast LLM unavailable | Reconciliation and advising stall | Fall back to programmatic heuristics (keyword match against map, default routing); degrade gracefully |
+| Signal reconciliation | Fast LLM unavailable | Reconciliation and advising stall | Fall back to programmatic heuristics; degrade gracefully |
 | System learning | Token budget exceeded | Can't fit all matched layers | Drop the lowest-priority layers; map always survives; MCP fills gaps on demand |
 | System learning | Memory backend down | No persistent memory | Thread-local observations still available; file-based caches still warm; memory writes queue for retry |
 
@@ -879,9 +740,9 @@ Every branching point in the system, who decides, and how. (Named Wardens are th
 
 ### Built
 - Context layers with warm/stale lifecycle; context stack with budget-aware assembly; **ContextStackView** for middleware (`ctx.stack.hasLayer()`, `ctx.stack.getContent()`).
-- Middleware chain with tiered execution (`useWhen()`, `packages/core/src/middleware.ts:68`) and composable **retry middleware** (`packages/core/src/retry.ts`).
+- Middleware chain with tiered execution (`useWhen()`, `packages/core/src/middleware.ts:68`).
 - **Message idempotency** — `BoundedSet` dedup at harness ingress (`packages/core/src/harness.ts`).
-- Signal bus with typed pub/sub; trace system with full span tree; session manager with thread spawning and blueprints.
+- Signal bus with typed pub/sub; trace system with full span tree.
 - **Native sessions** — the Artificer is a persistent native Claude Code or Codex session run through `@inixiative/agent-session` (`providers/session-adapter.ts`). Standing context goes in the system prompt, changes as per-turn deltas ([Delivery](#delivery-what-a-native-session-receives-each-turn)).
 - **Turn service** — per-thread queue, `queued` turn status, stop (`turns/turn-service.ts`).
 - **Tool gate** — structural `toolRules` decide each tool request through core's `permissionLevel` (`turns/tool-gate.ts`); asks go to the ActionQueue; Claude permission prompts and Codex approvals both route to it.
@@ -892,14 +753,12 @@ Every branching point in the system, who decides, and how. (Named Wardens are th
 - **Warden framework** — shared advise + guard pattern (`agents/domain-librarian.ts`, `DomainLibrarian`), one instance generated per concept region of a project (`agents/region-roster.ts`), never written in settings; instructions and domain knowledge composed by the composition view ([usage-and-context.md](usage-and-context.md)). Decisions run Claude Haiku 5.5 on agent-session primed sessions (`providers/primed-decisions.ts`).
 - **Guard trigger-gating** — a turn's tool observations are held on its dispatch and reach `FlowOrchestrator.postAction` once when the turn's tool activity ends; it fires each Warden whose triggers name a call of the turn (`guard: per-turn`; `per-call` restores a guard per call).
 - **Handoff brief** — a Claude handoff (`Agent`/`Task`/`SendMessage`) is briefed at its call, before it runs, and the chimes ride into the subagent's text (`turns/handoff-brief.ts`); a Codex or Muse subagent is briefed at `task_started` and the brief rides the parent's next turn.
-- **Cartographer** — context routing with keyword fallback. `packages/foundry/src/agents/cartographer.ts`
 
 ### Not built
-- **Herald wiring** — `agents/herald.ts` exists; nothing constructs it at runtime.
-- **Programmatic memory guard** — no `guardFn` is supplied, so the memory guard is an LLM call.
+- **Herald wiring** — the Herald class moved to the private chorus repo, packages/heralds/reference/ (2026-11-18, R-2026-11-18-27); the `chorus.heralds` settings, `ask_herald` and the heralds skill stay as placeholders.
 - **Push of critical findings** into a running session.
 - **`Thread.fromSession`** store replay.
-- **Writeback pipeline** — post-execution signal processing into the corpus pipeline (Oracle `docs/VISION.md` §7): map rebuilds, memory entries, convention proposals queued for review. `CorpusCompiler.ingestFromSignalBus` (`agents/corpus-compiler.ts`) and `recompileOn` (`agents/domain-librarian.ts`) exist with no caller.
+- **Writeback pipeline** — post-execution signal processing into the corpus pipeline (Oracle `docs/VISION.md` §7): map rebuilds, memory entries, convention proposals queued for review. `recompileOn` (`agents/domain-librarian.ts`) exists with no caller.
 - **Feedback lifecycle, beyond its first slice** — Oracle recurrence and committed rungs (design in Oracle `docs/foundry/FEEDBACK-LOOP.md`; what is built: [FEEDBACK-LOOP.md](FEEDBACK-LOOP.md)). The first slice (capture, tuning, routing, role-file changes, the Feedback view) is built in `packages/foundry/src/feedback/`.
 
 ---

@@ -194,9 +194,6 @@ function config(project: string): FoundryConfig {
       prompt: '',
       provider: 'central',
       model: 'central-model',
-      visibleLayers: [],
-      peers: [],
-      maxDepth: 1,
       enabled: true,
     },
   };
@@ -489,10 +486,9 @@ test('enabled without regions, the project has no chorus and the view says why; 
     `Chorus: project Q runs 2 region Wardens (${Math.round(resolveProjectView(c, 'Q')!.chorus.regions.reduce((n, r) => n + r.bytes, 0) / 1024)} KB of knowledge) from 1 layer (project: 2 at ${join(project, '.foundry', 'regions')})`,
   );
 
-  // The setting is checked, and the old keys are refused by name, with what to write instead.
+  // The setting is checked: an unknown key is refused.
   for (const [bad, message] of [
-    [{ source: 'roster' }, 'chorus.source is gone: the hand-named Warden roster is retired'],
-    [{ source: 'regions' }, 'Write "enabled": true instead of "source": "regions"'],
+    [{ source: 'roster' }, 'chorus.source is not a chorus setting'],
     [{ enabled: 'yes' }, 'chorus.enabled must be true or false'],
     [{ regions: '' }, 'chorus.regions must be a path'],
     [{ regions: 'x', layers: [{ regions: 'y' }] }, 'names both regions and layers'],
@@ -513,13 +509,7 @@ test('enabled without regions, the project has no chorus and the view says why; 
     c.projects.Q = { id: 'Q', path: project, chorus: bad as never };
     expect(() => validateConfig(c)).toThrow(message);
   }
-  c.projects.Q = { id: 'Q', path: project, wardens: 'regions' } as never;
-  expect(() => validateConfig(c)).toThrow('projects.Q.wardens is now projects.Q.chorus');
-  c.projects.Q = { id: 'Q', path: project, regions: 'x' } as never;
-  expect(() => validateConfig(c)).toThrow('projects.Q.regions is now projects.Q.chorus');
   delete c.projects.Q;
-  (c as unknown as Record<string, unknown>).wardens = 'regions';
-  expect(() => validateConfig(c)).toThrow('settings key "wardens" is gone');
 });
 
 test("the chorus is opt-in: regions present but not enabled are off; the repository's .foundry/project.json enables it and the machine's settings win", async () => {
@@ -623,13 +613,11 @@ test("the chorus is opt-in: regions present but not enabled are off; the reposit
   expect(mine.regions.map((r) => r.id)).toEqual(['concurrency-locks', 'lens-model']);
   delete c.projects.P!.chorus;
 
-  // A malformed repository file is reported, never thrown, and never turns the chorus on. A file
-  // written for the retired roster (`source`) is one of them, named with its fix.
+  // A malformed repository file is reported, never thrown, and never turns the chorus on.
   for (const [text, message] of [
     ['{ not json', 'JSON'],
     [JSON.stringify({ wardens: 'regions' }), 'wardens is not a repository setting'],
-    [JSON.stringify({ chorus: { source: 'roster' } }), 'chorus.source is gone'],
-    [JSON.stringify({ chorus: { source: 'regions' } }), 'Write "enabled": true'],
+    [JSON.stringify({ chorus: { source: 'roster' } }), 'chorus.source is not a chorus setting'],
     [JSON.stringify(['chorus']), 'must be an object'],
   ] as const) {
     write(repositoryFile, text);
@@ -814,8 +802,8 @@ test("a region's warm-cache key is the content hash of its composed knowledge: e
     );
     // A call whose knowledge is no region's has no chorus key.
     expect(
-      auditor.versions('agent:cartographer', {
-        instructions: [{ subject: 'prompt:agent:cartographer', text: 'ROUTE' }],
+      auditor.versions('agent:worker', {
+        instructions: [{ subject: 'prompt:agent:worker', text: 'RULES' }],
         domainKnowledge: [{ subject: 'source-content:docs', text: 'K' }],
       }).chorus,
     ).toBeUndefined();
@@ -830,35 +818,31 @@ test("a region's warm-cache key is the content hash of its composed knowledge: e
   expect(regionOfSubject('file:/x/region:y.md')).toBeUndefined();
 });
 
-test('settings declare no Wardens: a hand-named one is refused by name with the fix, and a malformed region names itself', () => {
+test('settings declare no Wardens: one written there is refused, and a malformed region names itself', () => {
   const { project, regions } = projectWithRegions();
   const c = config(project);
   const handNamed = {
     id: 'librarian-reuse',
     kind: 'domain-librarian' as const,
-    flowRole: 'domain-advising',
+    flowRole: 'domain-advising' as const,
     domain: 'reuse',
     prompt: 'REUSE_RULES',
-    visibleLayers: [],
-    peers: [],
-    maxDepth: 1,
     enabled: true,
   };
   c.agents['librarian-reuse'] = handNamed;
   expect(() => validateConfig(c)).toThrow(
-    'agents.librarian-reuse is a hand-named Warden (domain-librarian): the hand-named Warden roster is retired',
+    'global agent "librarian-reuse": kind "domain-librarian" is not configurable (executor)',
   );
-  expect(() => validateConfig(c)).toThrow('"chorus": { "enabled": true }');
-  // The retired decider kind, or the flow role alone, is the same Warden.
   c.agents['librarian-reuse'] = { ...handNamed, kind: 'decider' as never };
-  expect(() => validateConfig(c)).toThrow(
-    'agents.librarian-reuse is a hand-named Warden (decider)',
-  );
+  expect(() => validateConfig(c)).toThrow('kind "decider" is not configurable');
+  // The flow role alone does not make a Warden: an expert's id is a region's role id.
   c.agents['librarian-reuse'] = { ...handNamed, kind: 'executor' };
-  expect(() => validateConfig(c)).toThrow('agents.librarian-reuse is a hand-named Warden');
+  expect(() => validateConfig(c)).toThrow('Invalid configured expert identity: librarian-reuse');
   delete c.agents['librarian-reuse'];
   c.projects.P!.agents = { tooling: { ...handNamed, id: 'tooling', domain: 'tooling' } };
-  expect(() => validateConfig(c)).toThrow('projects.P.agents.tooling is a hand-named Warden');
+  expect(() => validateConfig(c)).toThrow(
+    'project "P" agent "tooling": kind "domain-librarian" is not configurable',
+  );
   delete c.projects.P!.agents;
   validateConfig(c);
 
@@ -970,7 +954,7 @@ test("a region Warden's domain knowledge is the whole knowledge.md, with the lad
 });
 
 interface Call {
-  phase: 'central' | 'pre' | 'post' | 'route';
+  phase: 'central' | 'pre' | 'post';
   messages: LLMMessage[];
   opts: CompletionOpts;
 }
@@ -981,26 +965,20 @@ function setup(c: FoundryConfig, pointer: string) {
   const provider = (id: string): LLMProvider => ({
     id,
     async complete(messages, opts = {}) {
-      const phase: Call['phase'] = opts.threadId?.endsWith(':cartographer')
-        ? 'route'
-        : opts.threadId?.includes(':review:')
-          ? 'post'
-          : opts.threadId?.includes(':aux:')
-            ? 'pre'
-            : 'central';
+      const phase: Call['phase'] = opts.threadId?.includes(':review:')
+        ? 'post'
+        : opts.threadId?.includes(':aux:')
+          ? 'pre'
+          : 'central';
       calls.push({ phase, messages: structuredClone(messages), opts: { ...opts } });
       return {
         model: 'controlled',
         content:
           phase === 'central'
             ? 'done'
-            : phase === 'route'
-              ? JSON.stringify({ layers: [], domains: [], confidence: 1 })
-              : phase === 'pre'
-                ? opts.threadId?.includes('domain:concurrency-locks')
-                  ? JSON.stringify({ layers: [], snippets: [pointer], confidence: 0.9 })
-                  : 'NO_COMMENT'
-                : 'NO_COMMENT',
+            : phase === 'pre' && opts.threadId?.includes('domain:concurrency-locks')
+              ? JSON.stringify({ layers: [], snippets: [pointer], confidence: 0.9 })
+              : 'NO_COMMENT',
       };
     },
   });
@@ -1240,28 +1218,6 @@ test('the primed pool is sized for the largest chorus any project runs', () => {
   c.projects.P!.enabled = true;
   c.projects.P!.chorus = { enabled: false };
   expect(largestRoster(c)).toBe(0);
-});
-
-test('a settings file holding a whole roster names every hand-named Warden in one error', () => {
-  const { project } = projectWithRegions();
-  const c = config(project);
-  const warden = (id: string) => ({
-    id,
-    kind: 'domain-librarian' as const,
-    flowRole: 'domain-advising',
-    domain: id,
-    prompt: 'X',
-    visibleLayers: [],
-    peers: [],
-    maxDepth: 1,
-    enabled: false,
-  });
-  c.agents['librarian-a'] = warden('librarian-a');
-  c.agents['librarian-b'] = warden('librarian-b');
-  c.projects.P!.agents = { 'librarian-c': warden('librarian-c') };
-  expect(() => validateConfig(c)).toThrow(
-    'agents.librarian-a is a hand-named Warden (domain-librarian); agents.librarian-b is a hand-named Warden (domain-librarian); projects.P.agents.librarian-c is a hand-named Warden (domain-librarian): the hand-named Warden roster is retired',
-  );
 });
 
 test("settings may not take a region's source id, and the brief's nodes are refused with the chorus off too", () => {

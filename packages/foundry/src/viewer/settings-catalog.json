@@ -57,7 +57,7 @@
   {
     "path": "learning",
     "scope": "foundry",
-    "description": "Background domain review phase; does not override classifier/router or executor profiles."
+    "description": "Background domain review phase; does not override decision or executor profiles."
   },
   {
     "path": "feedback",
@@ -112,7 +112,7 @@
   {
     "path": "defaults",
     "scope": "foundry",
-    "description": "Global defaults: executor provider/model + classifier provider/model."
+    "description": "Global defaults: executor provider/model + decision provider/model."
   },
   {
     "path": "defaults.provider",
@@ -140,14 +140,14 @@
     "description": "Reasoning effort for Codex threads; omitted, Codex's own default."
   },
   {
-    "path": "defaults.classifierProvider",
+    "path": "defaults.decisionProvider",
     "scope": "foundry",
-    "description": "Classifier/router provider. Defaults to same as executor if omitted."
+    "description": "The decision roles' provider (Wardens, feedback routing); omitted, the decision default."
   },
   {
-    "path": "defaults.classifierModel",
+    "path": "defaults.decisionModel",
     "scope": "foundry",
-    "description": "Classifier/router model. Defaults to same as executor if omitted."
+    "description": "The decision roles' model; omitted, the decision default."
   },
   {
     "path": "vendors",
@@ -197,12 +197,12 @@
   {
     "path": "agents.*.kind",
     "scope": "foundry",
-    "description": "What the agent does in a turn (executor, classifier, router…)."
+    "description": "What the agent does in a turn (an executor; a generated Warden is a domain-librarian)."
   },
   {
     "path": "agents.*.flowRole",
     "scope": "foundry",
-    "description": "FLOW.md role: context-routing, domain-advising, execution, correctness-checking, signal-reconciliation."
+    "description": "The agent's part in a turn: execution (an executor) or domain-advising (a generated Warden)."
   },
   {
     "path": "agents.*.domain",
@@ -232,17 +232,7 @@
   {
     "path": "agents.*.temperature",
     "scope": "foundry",
-    "description": "Temperature, set per agent. Classifiers/routers want 0, creative agents want higher."
-  },
-  {
-    "path": "agents.*.visibleLayers",
-    "scope": "foundry",
-    "description": "Which layers this agent can READ (empty = all). These are the layers whose content appears in this agent's assembled context."
-  },
-  {
-    "path": "agents.*.ownedLayers",
-    "scope": "foundry",
-    "description": "Which layers this agent can WRITE (empty = none). The Librarian owns thread-state. A Warden owns no configured layer: it writes only its generated thread-knowledge layer, and reads its knowledge from the composition view."
+    "description": "Temperature, set per agent. Decisions want 0, creative agents want higher."
   },
   {
     "path": "agents.*.domainKnowledge",
@@ -255,19 +245,9 @@
     "description": "Tool names that trigger this configured Warden's post-action guard. [] disables guards."
   },
   {
-    "path": "agents.*.peers",
-    "scope": "foundry",
-    "description": "Peer agent IDs for delegation."
-  },
-  {
-    "path": "agents.*.maxDepth",
-    "scope": "foundry",
-    "description": "Max call-chain depth."
-  },
-  {
     "path": "agents.*.tools",
     "scope": "foundry",
-    "description": "Whether this agent can use tools (true) or is text-only (false). Default: true for executors, false for classifier/router."
+    "description": "Whether this agent can use tools (true) or is text-only (false). Default: true."
   },
   {
     "path": "agents.*.thinking",
@@ -280,14 +260,9 @@
     "description": "Permission level for code execution runtimes. Default: \"bypass\"."
   },
   {
-    "path": "agents.*.executionEnv",
-    "scope": "foundry",
-    "description": "Execution environment for this agent's tool calls. Default: \"bash\" (via Claude Code provider). See ExecutionEnv type for options."
-  },
-  {
     "path": "agents.*.browser",
     "scope": "foundry",
-    "description": "Browser-specific config. Only relevant when executionEnv includes browser access."
+    "description": "Browser-specific config."
   },
   {
     "path": "agents.*.browser.mode",
@@ -337,27 +312,7 @@
   {
     "path": "agents.*.invocation",
     "scope": "foundry",
-    "description": "When this agent runs in the pipeline: - \"always\": runs on every request (default for classifier, router) - \"on-demand\": available but only invoked when middleware/router explicitly requests it - \"conditional\": runs when its condition matches the current classification/route context"
-  },
-  {
-    "path": "agents.*.condition",
-    "scope": "foundry",
-    "description": "Condition for \"conditional\" invocation. Ignored for other modes."
-  },
-  {
-    "path": "agents.*.condition.categories",
-    "scope": "foundry",
-    "description": "Match if classification.category is one of these."
-  },
-  {
-    "path": "agents.*.condition.tags",
-    "scope": "foundry",
-    "description": "Match if any classification tag overlaps with these."
-  },
-  {
-    "path": "agents.*.condition.routes",
-    "scope": "foundry",
-    "description": "Match if route.destination is one of these."
+    "description": "When this agent runs in the pipeline: - \"always\": runs on every request - \"on-demand\": available but only invoked when middleware explicitly requests it"
   },
   {
     "path": "layers",
@@ -378,11 +333,6 @@
     "path": "layers.*.description",
     "scope": "foundry",
     "description": "Human-readable description of this layer's job in the system. File path relative to project root (e.g., \".foundry/layers/conventions.md\"). Explains: what knowledge domain it covers, when it's relevant, who writes to it, what the warmed content looks like."
-  },
-  {
-    "path": "layers.*.contentShape",
-    "scope": "foundry",
-    "description": "What shape the warmed content takes; helps humans and agents understand what's inside. E.g., \"JSON array of convention objects\", \"Markdown documentation index\", \"Compact thread-state JSON\"."
   },
   {
     "path": "layers.*.prompt",
@@ -417,27 +367,7 @@
   {
     "path": "layers.*.activation",
     "scope": "foundry",
-    "description": "When instances of this layer are included in context assembly: - \"always\": included on every request (default for system, conventions) - \"on-demand\": only included when explicitly requested via route.contextSlice or middleware - \"conditional\": included when its condition matches classification/route context"
-  },
-  {
-    "path": "layers.*.condition",
-    "scope": "foundry",
-    "description": "Condition for \"conditional\" activation. Ignored for other modes."
-  },
-  {
-    "path": "layers.*.condition.categories",
-    "scope": "foundry",
-    "description": "Match if classification.category is one of these."
-  },
-  {
-    "path": "layers.*.condition.tags",
-    "scope": "foundry",
-    "description": "Match if any classification tag overlaps with these."
-  },
-  {
-    "path": "layers.*.condition.routes",
-    "scope": "foundry",
-    "description": "Match if route.destination is one of these."
+    "description": "When instances of this layer are included in context assembly: - \"always\": included on every request - \"on-demand\": only included when middleware explicitly requests it"
   },
   {
     "path": "sources",
@@ -623,11 +553,6 @@
     "path": "layers.*.writers",
     "scope": "project",
     "description": "Change which agents may write the layer in this project: replace, or append and remove ids."
-  },
-  {
-    "path": "layers.*.condition",
-    "scope": "project",
-    "description": "Change or clear (null) when a conditional layer is included in this project."
   },
   {
     "path": "sources",

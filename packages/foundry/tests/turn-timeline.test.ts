@@ -15,7 +15,7 @@ type Timeline = ReturnType<typeof turnTimeline>;
 const of = <K extends TimelineStep['kind']>(timeline: Timeline, kind: K) =>
   timeline.steps.filter((s): s is Extract<TimelineStep, { kind: K }> => s.kind === kind);
 
-test('a recorded turn reads as its steps in order: input, routing, chorus, plan, delivery, guard, writeback, archive', async () => {
+test('a recorded turn reads as its steps in order: input, chorus, plan, delivery, guard, writeback, archive', async () => {
   const s = await m0Scenario();
   cleanup.push(() => s.close());
   await s.send('a', 't1', 'Perform the migration');
@@ -30,7 +30,6 @@ test('a recorded turn reads as its steps in order: input, routing, chorus, plan,
   expect(t1).toMatchObject({ threadId: 'a', turnId: 't1', status: 'completed' });
   expect([...new Set(t1.steps.map((step) => step.kind))]).toEqual([
     'input',
-    'route',
     'chorus',
     'plan',
     'delivery',
@@ -39,10 +38,6 @@ test('a recorded turn reads as its steps in order: input, routing, chorus, plan,
     'archive',
   ]);
   expect(of(t1, 'input')[0]).toMatchObject({ text: 'Perform the migration' });
-  expect(of(t1, 'route')[0]).toMatchObject({
-    status: 'routed',
-    domains: ['architecture', 'testing'],
-  });
   const chorus = of(t1, 'chorus')[0]!;
   expect(chorus.trigger).toBe('user-message');
   expect(chorus.regions.map((r) => [r.region, r.outcome && callOutcomeLabel(r.outcome)])).toEqual([

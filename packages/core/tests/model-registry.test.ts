@@ -43,14 +43,14 @@ describe('the registry is reachable from core alone', () => {
     });
     expect(
       resolveDecisionModel({
-        defaults: { classifierProvider: 'deepseek', classifierModel: 'deepseek-flash' },
+        defaults: { decisionProvider: 'deepseek', decisionModel: 'deepseek-flash' },
       }),
     ).toEqual({ provider: 'deepseek', model: 'deepseek-flash' });
     // The subscription decision profile is not a registered provider: it belongs
     // to the native path, so the API-token resolver hands back its own defaults.
     expect(
       resolveDecisionModel({
-        defaults: { classifierProvider: 'subscription-decisions', classifierModel: 'gpt-6-luna' },
+        defaults: { decisionProvider: 'subscription-decisions', decisionModel: 'gpt-6-luna' },
       }),
     ).toEqual({ provider: DECISION_PROVIDER, model: DECISION_MODEL });
   });

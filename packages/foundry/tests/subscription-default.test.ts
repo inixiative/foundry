@@ -97,10 +97,9 @@ test("a fresh configuration is subscription-only: Claude worker and Claude Haiku
   expect(statSync(resolved.policy.directory).mode & 0o777).toBe(0o700);
   expect(resolved.config.defaults).toMatchObject({
     provider: 'claude-code',
-    classifierProvider: 'subscription-decisions',
-    classifierModel: 'claude-haiku-5-5',
+    decisionProvider: 'subscription-decisions',
+    decisionModel: 'claude-haiku-5-5',
   });
-  expect(resolved.rerouted).toEqual([]);
 });
 
 test("a project's region Wardens run on the subscription decision model: an enabled chorus loads under subscription-only", () => {
@@ -125,8 +124,8 @@ test("a project's region Wardens run on the subscription decision model: an enab
 test('Codex decisions are a setting: decisionRuntime selects the Codex login and its Luna default', () => {
   const root = userHome(),
     config = defaultConfig();
-  delete config.defaults.classifierProvider;
-  delete config.defaults.classifierModel;
+  delete config.defaults.decisionProvider;
+  delete config.defaults.decisionModel;
   config.subscriptionOnly = { decisionRuntime: 'codex' };
   const resolved = resolveSubscriptionPolicy(config, { cwd: root })!;
   expect(resolved.decision).toMatchObject({
@@ -140,8 +139,8 @@ test('Codex decisions are a setting: decisionRuntime selects the Codex login and
     hedgeAfterMs: 4000,
   });
   // The recorded decision model wins over the runtime default.
-  config.defaults.classifierProvider = 'subscription-decisions';
-  config.defaults.classifierModel = 'gpt-5.6-terra';
+  config.defaults.decisionProvider = 'subscription-decisions';
+  config.defaults.decisionModel = 'gpt-5.6-terra';
   expect(resolveSubscriptionPolicy(config, { cwd: root })!.policy.model).toBe('gpt-5.6-terra');
   // A named source must match the requested runtime.
   config.nativeAuthentication = [
@@ -216,27 +215,14 @@ test('the settings API opts in to API tokens and back out explicitly', async () 
   expect((await store.patch('apiTokens', { enabled: false })).apiTokens).toBeUndefined();
 });
 
-test('saved decision roles run on subscription decisions without rewriting the saved configuration', () => {
+test('saved decision defaults run on subscription decisions without rewriting the saved configuration', () => {
   userHome();
   const config = defaultConfig();
   config.defaults = {
     provider: 'claude-code',
     model: 'opus',
-    classifierProvider: 'gemini',
-    classifierModel: 'gemini-3.1-flash-lite-preview',
-  };
-  config.agents.librarian = {
-    id: 'librarian',
-    kind: 'classifier',
-    prompt: 'Reconcile',
-    provider: 'claude-code',
-    model: 'opus',
-    temperature: 0,
-    tools: false,
-    visibleLayers: [],
-    peers: [],
-    maxDepth: 1,
-    enabled: true,
+    decisionProvider: 'gemini',
+    decisionModel: 'gemini-3.1-flash-lite-preview',
   };
   config.agents.artificer = {
     id: 'artificer',
@@ -245,54 +231,20 @@ test('saved decision roles run on subscription decisions without rewriting the s
     provider: 'claude-code',
     model: 'opus',
     tools: true,
-    visibleLayers: [],
-    peers: [],
-    maxDepth: 5,
     enabled: true,
-  };
-  config.projects = {
-    P: {
-      id: 'P',
-      path: '/tmp/p',
-      agents: {
-        classifier: {
-          id: 'classifier',
-          kind: 'classifier',
-          prompt: 'Classify',
-          provider: 'openai',
-          model: 'gpt-5.6-luna',
-          tools: false,
-          visibleLayers: [],
-          ownedLayers: [],
-          peers: [],
-          maxDepth: 1,
-          enabled: true,
-        },
-      },
-    },
   };
   const before = JSON.stringify(config);
   expect(() => validateConfig(config)).not.toThrow();
   const resolved = resolveSubscriptionPolicy(config)!;
   expect(JSON.stringify(config)).toBe(before);
-  expect(resolved.rerouted).toEqual([
-    'librarian (claude-code/opus)',
-    'P/classifier (openai/gpt-5.6-luna)',
-  ]);
-  expect(resolved.config.agents.librarian).toMatchObject({
-    provider: 'subscription-decisions',
-    model: 'claude-haiku-5-5',
+  expect(resolved.config.defaults).toMatchObject({
+    decisionProvider: 'subscription-decisions',
+    decisionModel: 'claude-haiku-5-5',
   });
   expect(resolved.config.agents.artificer).toMatchObject({
     provider: 'claude-code',
     model: 'opus',
   });
-  expect(resolved.config.projects.P!.agents!.classifier).toMatchObject({
-    provider: 'subscription-decisions',
-    model: 'claude-haiku-5-5',
-  });
-  config.agents.librarian.thinking = 'high';
-  expect(() => validateConfig(config)).toThrow('sampling override');
 });
 
 test('default profiles are selected by omission, so the child never overrides CLAUDE_CONFIG_DIR or CODEX_HOME', async () => {
@@ -696,8 +648,8 @@ test('a fresh install starts subscription-only with no settings, API provider or
     expect(saved.apiTokens).toBeUndefined();
     expect(saved.defaults).toMatchObject({
       provider: 'claude-code',
-      classifierProvider: 'subscription-decisions',
-      classifierModel: 'claude-haiku-5-5',
+      decisionProvider: 'subscription-decisions',
+      decisionModel: 'claude-haiku-5-5',
     });
     expect(existsSync(foundry.probe)).toBe(false);
     expect(statSync(join(foundry.cwd, '.foundry', 'decision-receipts')).mode & 0o777).toBe(0o700);

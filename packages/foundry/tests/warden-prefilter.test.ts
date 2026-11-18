@@ -10,7 +10,6 @@ import {
   type LLMMessage,
   SignalBus,
 } from '@inixiative/foundry-core';
-import { Cartographer } from '../src/agents/cartographer';
 import { DomainLibrarian, oneCall } from '../src/agents/domain-librarian';
 import { FlowOrchestrator } from '../src/agents/flow-orchestrator';
 import { Librarian } from '../src/agents/librarian';
@@ -68,17 +67,6 @@ function roster(domains: string[], prefilter?: WardenPrefilter) {
   });
   const stack = new ContextStack(layers);
   const librarian = new Librarian({ stack, signals });
-  const cartographer = new Cartographer({
-    stack,
-    signals,
-    llm: {
-      id: 'route',
-      complete: async () => ({
-        model: 'x',
-        content: JSON.stringify({ layers: [], domains: [], confidence: 0 }),
-      }),
-    },
-  });
   const phaseOf = (messages: readonly LLMMessage[]) =>
     messages.some((m) => String(m.content).includes('Response protocol (guard phase'))
       ? 'guard'
@@ -107,13 +95,11 @@ function roster(domains: string[], prefilter?: WardenPrefilter) {
     stack,
     signals,
     librarian,
-    cartographer,
     domainLibrarians: libs,
     ...(prefilter ? { prefilter, threadId: 't1' } : {}),
   });
   cleanups.push(() => {
     flow.dispose();
-    cartographer.dispose();
     librarian.dispose();
   });
   return { flow, calls };
@@ -243,9 +229,6 @@ test('a thread skips a ruled-out Warden at advice and at review, each journalled
       model: 'mock',
       prompt: '',
       temperature: 0,
-      visibleLayers: [],
-      peers: [],
-      maxDepth: 1,
       enabled: true,
     },
   };

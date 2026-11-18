@@ -89,14 +89,14 @@ function layers(turn: number): Array<{ id: string; kind: 'stable' | 'slow'; text
   ];
 }
 
-/** Per-turn decoration: the Cartographer's routing line and one Warden's advice. */
+/** Per-turn decoration: one Warden's advice. */
 const decoration = (turn: number) =>
-  `Router selected domains: conventions (confidence 0.${(turn % 9) + 1}).\nDomain decisions: conventions: contribute.\n\n## conventions advice\n- Turn ${turn}: prefer the existing ledger over new bookkeeping.`;
+  `Domain decisions: conventions: contribute.\n\n## conventions advice\n- Turn ${turn}: prefer the existing ledger over new bookkeeping.`;
 
 const QUESTIONS = [
   'In one sentence: what is a context layer in Foundry?',
   'In one sentence: who is the sole writer of thread-state?',
-  'In one sentence: what does the Cartographer do?',
+  'In one sentence: what does the Librarian do?',
   'In one sentence: what are Wardens?',
   'In one sentence: what does Kingdom do?',
   'In one sentence: what model do decision roles use?',

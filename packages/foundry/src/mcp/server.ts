@@ -79,8 +79,8 @@ export interface FoundryMcpConfig {
   thread: Thread;
   /** Optional isolated local profile; never accepted from tool arguments. */
   deviceIdentityPath?: string;
-  /** Registry of registered Thread objects (SessionManager or equivalent). */
-  sessionManager?: LiveThreadRegistry;
+  /** The live threads this bridge may reach (a live-thread registry). */
+  liveThreads?: LiveThreadRegistry;
   /** Live runtime manager; pins the runtime object and generation. */
   runtime?: ThreadRuntimeManager;
   /** Tool registry holding a scoped-capable memory tool for retained-record retrieval. */
@@ -181,7 +181,7 @@ export function createFoundryMcpServer(config: FoundryMcpConfig): McpServer {
 export function createFoundryMcp(config: FoundryMcpConfig): FoundryMcp {
   const authority = bindLiveAuthority({
     thread: config.thread,
-    registry: config.sessionManager,
+    registry: config.liveThreads,
     runtime: config.runtime,
   });
   const { thread } = authority;
@@ -895,7 +895,7 @@ export function createFoundryMcp(config: FoundryMcpConfig): FoundryMcp {
     "List summaries of other live threads in this thread's project. Use to avoid conflicting work. Threads outside the project, and all threads when this one has no project, are not disclosed.",
     {},
     guarded<Record<string, never>>('foundry_threads', async () => {
-      if (!config.sessionManager && !config.runtime)
+      if (!config.liveThreads && !config.runtime)
         return {
           status: 'unavailable',
           text: 'Thread awareness is not available (no live thread registry is bound to this bridge).',

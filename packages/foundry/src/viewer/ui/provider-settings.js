@@ -251,11 +251,7 @@ function SelectionCard({ current, providersById }) {
       <span class="settings-label">Decision model</span>
       <span class="model-selection-value" data-choice="decision">${name(current.decision)}</span>
     </div>
-    <p class="settings-desc decision-hint">${
-      current.decisionRoles.length
-        ? `The decision roles you added (${current.decisionRoles.join(', ')}) run on it.`
-        : 'Decision roles (a classifier or router you add, and the Wardens of a project that has them on) run on it. Threads are unwrapped by default, so nothing uses it yet.'
-    }</p>
+    <p class="settings-desc decision-hint">The Wardens of a project that has them on, and feedback, run on it.</p>
     ${current.issue ? html`<p class="settings-desc" role="alert">${current.issue}</p>` : null}
     <div class="model-selection-row">
       <span class="settings-label">API keys</span>

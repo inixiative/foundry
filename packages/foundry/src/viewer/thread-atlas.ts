@@ -5,25 +5,29 @@
  */
 /**
  * What a thread touches, in Atlas concepts: the files its recent turns read and wrote (the tool
- * calls the journal holds), mapped through the project's `atlas graph` (the same read the
- * Cartographer uses). Also which other threads in the project touch the same concepts.
+ * calls the journal holds), mapped through the project's `atlas graph`. Also which other threads in
+ * the project touch the same concepts.
  */
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
+import type { Graph } from '@inixiative/atlas';
 import { READ_TOOLS, WRITE_TOOLS } from '@inixiative/foundry-core';
-import { type AtlasGraph, readAtlasGraph } from '../agents/cartographer';
+import { fetchAtlasGraph } from '../atlas-graph';
 import type { LocalSessionStore } from '../persistence/local-session-store';
 import { turnFiles } from './turn-flow';
 
+/** A project's Atlas graph, or null when its CLI fails (the panels then say so). */
+const readGraph = (root: string): Promise<Graph | null> => fetchAtlasGraph(root).catch(() => null);
+
 const TURNS = 40;
 const CACHE_MS = 60_000;
-const graphs = new Map<string, { at: number; graph: AtlasGraph | null }>();
+const graphs = new Map<string, { at: number; graph: Graph | null }>();
 
 /** The project's graph, cached a minute (a spawn per read is too slow for a panel). */
-async function graphOf(root: string): Promise<AtlasGraph | null> {
+async function graphOf(root: string): Promise<Graph | null> {
   const hit = graphs.get(root);
   if (hit && Date.now() - hit.at < CACHE_MS) return hit.graph;
-  const graph = await readAtlasGraph(root);
+  const graph = await readGraph(root);
   graphs.set(root, { at: Date.now(), graph });
   return graph;
 }
@@ -65,7 +69,7 @@ export interface ConceptTouch {
 
 /** The concepts a set of read and written paths fall in, most-touched first. */
 export function conceptsTouched(
-  graph: AtlasGraph,
+  graph: Pick<Graph, 'conceptToFiles' | 'thesaurus'>,
   paths: { read: Set<string>; written: Set<string> },
 ): ConceptTouch[] {
   const touches: ConceptTouch[] = [];

@@ -27,7 +27,7 @@ import {
 import type { ConversationMember } from '@inixiative/signet';
 import { memberPostReception } from '../agents/chorus-reception';
 import type { PlanDrafter } from '../agents/plan-drafter';
-import type { ThreadFactory } from '../agents/thread-factory';
+import { configureHarness, type ThreadFactory } from '../agents/thread-factory';
 import type { ThreadNamer } from '../agents/thread-namer';
 import type { PauseAnswer } from '../daemon/restart-roll';
 import type { FeedbackService } from '../feedback/service';
@@ -250,23 +250,6 @@ export const TURN_NEVER_SENT_AFTER_RESTART =
   'Held across a restart but could not run again; nothing reached the runtime, safe to send again';
 export const CANCELLED_BEFORE_DISPATCH = 'Turn cancelled before native dispatch';
 
-function configureHarness(harness: Harness, configStore: ConfigStore): void {
-  const config = configStore.config;
-  for (const [id, agentCfg] of Object.entries(config.agents)) {
-    if (!agentCfg.enabled || !harness.thread.agents.has(id)) continue;
-    if (agentCfg.kind === 'classifier') harness.setClassifier(id);
-    else if (agentCfg.kind === 'router') harness.setRouter(id);
-  }
-
-  const executorId = Object.entries(config.agents).find(
-    ([id, agent]) => agent.kind === 'executor' && agent.enabled && harness.thread.agents.has(id),
-  )?.[0];
-  harness.setDefaultExecutor(
-    executorId ?? (harness.thread.agents.has('artificer') ? 'artificer' : ''),
-  );
-  harness.loadModes(config.agents, config.layers);
-}
-
 /**
  * Build layer-injection provenance for a turn.
  *
@@ -337,7 +320,7 @@ export class TurnService {
     if (existing && (existing.thread === thread || !thread)) return existing;
     if (!thread) return null;
     const scoped = new Harness(thread);
-    configureHarness(scoped, this.deps.configStore);
+    configureHarness(scoped, this.deps.configStore.config);
     this.harnesses.set(threadId, scoped);
     return scoped;
   }
@@ -1112,7 +1095,7 @@ export class TurnService {
   completeResult(
     thread: Thread,
     turnId: string,
-    result: Pick<HarnessResult, 'result' | 'trace' | 'classification' | 'route' | 'timestamp'>,
+    result: Pick<HarnessResult, 'result' | 'trace' | 'timestamp'>,
     postExecutionError?: string,
   ) {
     const { localStore } = this.deps;
@@ -1162,8 +1145,6 @@ export class TurnService {
       trace: result.trace.summary(),
       // Preserve the full volatile trace for browser evidence before memory is lost.
       ...(unsaved ? { traceSnapshot: serializeTrace(result.trace) } : {}),
-      classification: result.classification?.value ?? null,
-      route: result.route?.value ?? null,
       timestamp: result.timestamp,
     };
   }

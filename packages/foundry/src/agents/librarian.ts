@@ -12,7 +12,6 @@
 // zero dispatch log scanning.
 //
 // The Librarian is mostly a programmatic reducer:
-// - Last classification wins for domain
 // - Append-only for recentActivity (capped ring buffer)
 // - Union for flags and inContext
 // - LLM call only when signals genuinely conflict (rare)
@@ -41,15 +40,11 @@ export interface InjectedLayerRecord {
   id: string;
   /** Content hash at injection time. If the layer's hash differs now, re-inject. */
   hash: string;
-  /** Message number when this was last injected. */
-  messageNum: number;
   /** Timestamp of injection. */
   injectedAt: number;
 }
 
 export interface ThreadState {
-  /** Current primary domain (e.g., "auth", "payments", "testing") */
-  domain: string;
   /** Recent activity descriptions (ring buffer, max 10) */
   recentActivity: string[];
   /** Layer IDs currently in context (convenience — derived from injectedLayers). */
@@ -60,13 +55,6 @@ export interface ThreadState {
    * Post-action hooks read this to understand the session's context window.
    */
   injectedLayers: InjectedLayerRecord[];
-  /** Last classification result */
-  lastClassification: {
-    category: string;
-    tags: string[];
-  } | null;
-  /** Total messages processed */
-  messageCount: number;
   /** Active flags (e.g., "security-concern-active", "cross-module") */
   flags: string[];
   /** Timestamp of last update */
@@ -76,12 +64,9 @@ export interface ThreadState {
 /** Fresh empty state — must be a function to avoid shared array references. */
 function emptyState(): ThreadState {
   return {
-    domain: '',
     recentActivity: [],
     inContext: [],
     injectedLayers: [],
-    lastClassification: null,
-    messageCount: 0,
     flags: [],
     lastUpdated: 0,
   };
@@ -165,17 +150,12 @@ export class Librarian {
   /**
    * Whether the executor's assembly reads thread-state: on the stack while something wraps the
    * thread (layers, decision roles, Wardens), off it for an unwrapped thread. The state is kept
-   * either way; the Cartographer and Wardens read it from the layer, not the stack.
+   * either way; the Wardens read it from the layer, not the stack.
    */
   setDelivered(on: boolean): void {
     const present = this._stack.getLayer(this._layer.id) === this._layer;
     if (on && !present) this._stack.addLayer(this._layer, 0);
     else if (!on && present) this._stack.removeLayer(this._layer.id);
-  }
-
-  /** Check if the domain has shifted from the current state. */
-  domainShifted(newCategory: string): boolean {
-    return this._state.domain !== '' && this._state.domain !== newCategory;
   }
 
   /** Stop listening to signals. */
@@ -195,10 +175,6 @@ export class Librarian {
 
     // Route signal to the appropriate reducer
     switch (kind) {
-      case 'classification':
-        this._handleClassification(content as any);
-        break;
-
       case 'dispatch':
         this._handleDispatch(content as any);
         break;
@@ -263,29 +239,6 @@ export class Librarian {
   // -----------------------------------------------------------------------
   // Per-signal-kind handlers
   // -----------------------------------------------------------------------
-
-  private _handleClassification(data: { category?: string; tags?: string[] }): void {
-    if (!data) return;
-
-    const category = data.category ?? '';
-    const tags = data.tags ?? [];
-
-    // Domain shift detection: last classification wins
-    if (category && category !== this._state.domain) {
-      this._state.domain = category;
-    }
-
-    this._state.lastClassification = { category, tags };
-    this._state.messageCount++;
-
-    // Clear stale flags on domain shift
-    if (this.domainShifted(category)) {
-      // Keep persistent flags (security), clear transient ones
-      this._state.flags = this._state.flags.filter(
-        (f) => f.startsWith('security') || f === 'cross-module',
-      );
-    }
-  }
 
   private _handleDispatch(data: {
     agentId?: string;
@@ -361,7 +314,6 @@ export class Librarian {
     const record: InjectedLayerRecord = {
       id: data.layerId,
       hash: data.hash ?? '',
-      messageNum: this._state.messageCount,
       injectedAt: Date.now(),
     };
 

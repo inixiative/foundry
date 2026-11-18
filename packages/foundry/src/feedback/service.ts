@@ -15,7 +15,6 @@ import {
   scrubSecrets,
   type Thread,
 } from '@inixiative/foundry-core';
-import type { Cartographer } from '../agents/cartographer';
 import { REDUCED_PHASE } from '../archives/reduced-middleware';
 import type { AuditLog } from '../audit/audit-log';
 import type { LocalSessionStore } from '../persistence/local-session-store';
@@ -29,7 +28,7 @@ import type { FoundryConfig } from '../viewer/config';
 import { effectiveProject, threadRoleOf } from '../viewer/config-resolve';
 import { applyChange, type LevelRoots, revertChange } from './apply';
 import { activeChanges, type FeedbackItem, FeedbackLifecycle } from './lifecycle';
-import { defaultLevel, feedbackRoleChoices, routeFeedback, slotFor, wardenRoles } from './routing';
+import { defaultLevel, feedbackRoleChoices, slotFor, wardenRoles } from './routing';
 import {
   lintStatement,
   type MatchResult,
@@ -72,7 +71,6 @@ export interface FeedbackServiceDeps {
   config: () => FoundryConfig;
   queue: ActionQueue | null;
   thread: (threadId: string) => Thread | undefined;
-  cartographer: (threadId: string) => Pick<Cartographer, 'route'> | undefined;
   /** The decision calls; without them only explicit feedback is recorded (no detection, no tuning). */
   classify?: ClassifyCorrection;
   match?: MatchFeedback;
@@ -431,26 +429,12 @@ export class FeedbackService {
     // A recurrence of a rule that is not applied counts; only an applied rule that came back is re-tuned.
     if (recurring && !activeChanges(recurring).length) return item;
     if (!recurring) {
-      const cartographer = this.deps.cartographer(thread.id);
-      const threadRole = threadRoleOf(this.deps.config(), thread.meta);
-      const route: FeedbackRouteRecord = cartographer
-        ? await routeFeedback({
-            cartographer,
-            config: this.deps.config(),
-            itemId,
-            statement: record.statement,
-            category: found.category,
-            projectId,
-            threadRole,
-            timeoutMs: opts.blocking ? this.settings(thread).blockTimeoutMs : 30_000,
-          })
-        : {
-            itemId,
-            roles: [threadRole],
-            slot: slotFor(found.category),
-            level: defaultLevel(found.category, !!projectId),
-            route: { domains: [], source: 'empty-map', confidence: 0 },
-          };
+      const route: FeedbackRouteRecord = {
+        itemId,
+        roles: [threadRoleOf(this.deps.config(), thread.meta)],
+        slot: slotFor(found.category),
+        level: defaultLevel(found.category, !!projectId),
+      };
       this.journal(thread, input.turnId, { phase: 'feedback-route', record: route });
     }
     if (opts.signal?.aborted) return item;
@@ -541,7 +525,7 @@ export class FeedbackService {
     return {
       happened,
       did: item.sharp
-        ? `Captured rule ${item.id}: "${item.statement}" (${item.category ?? 'unclassified'}). Routed to ${roles} (${slot})${route && route.route.source !== 'model' ? ', weak routing' : ''}.`
+        ? `Captured rule ${item.id}: "${item.statement}" (${item.category ?? 'unclassified'}). Routed to ${roles} (${slot}).`
         : `Captured feedback ${item.id}, but it is not yet a crisp rule: "${item.statement}".`,
       intend: item.sharp
         ? `Add it to ${roles}'s ${slot} at ${route?.level ?? 'project-personal'}.`

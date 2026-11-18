@@ -424,12 +424,9 @@ function regionWarden(region: RegionSummary, stages: readonly StageConfig[]): Re
       prompt: regionInstructions(region),
       temperature: 0,
       tools: false,
-      visibleLayers: [],
       // The knowledge slot is the region's knowledge.md; a stage reading another doc composes its own.
       domainKnowledge: [regionSourceId(region.id)],
       guardTriggers: [...REGION_GUARD_TRIGGERS],
-      peers: [],
-      maxDepth: 1,
       invocation: 'always',
       enabled: true,
     },

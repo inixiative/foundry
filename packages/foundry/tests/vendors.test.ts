@@ -97,9 +97,6 @@ test('vendor settings refuse unknown vendors, missing modes and a coming-soon su
     }),
   ).toThrow('contextBudget applies to Claude Code only');
   const config = defaultConfig();
-  expect(() => validateConfig({ ...config, providers: {} } as unknown as typeof config)).toThrow(
-    'settings key "providers" is now "vendors"',
-  );
   expect(() => validateConfig({ ...config, installationName: ' ' })).toThrow(
     'installationName must be 1 to 120 characters',
   );

@@ -45,23 +45,10 @@ const supplied = (served: object, versions?: object) => ({
   ...(versions ? { versions } : {}),
 });
 
-/** A turn with routing and four Wardens: three NO_COMMENT, one that chimed in. */
+/** A turn with four Wardens: three NO_COMMENT, one that chimed in. */
 function turnWithWardens(store: LocalSessionStore, t: ReturnType<typeof main>, turnId: string) {
   store.beginTurn(t, turnId, 'Rename the public settings key');
   store.startTurn(t, turnId);
-  store.appendPhase(t, {
-    id: `route-${turnId}`,
-    turnId,
-    dispatchId: 'd',
-    phase: 'route',
-    record: {
-      routing: {
-        status: 'routed',
-        layers: ['conventions'],
-        request: supplied({ model: 'claude-haiku-5-5' }),
-      },
-    },
-  });
   store.appendPhase(t, {
     id: `advice-${turnId}`,
     turnId,
@@ -131,11 +118,11 @@ test('each Warden call reaches Archive as a small reduced entry: state and resul
   const phases = store.phaseHistory(t.id);
   expect(phases.filter((p) => p.phase === 'advice')).toHaveLength(1);
   const reduced = phases.filter((p) => p.phase === REDUCED_PHASE);
-  expect(reduced).toHaveLength(5);
+  expect(reduced).toHaveLength(4);
 
   const snapshot = captureThread(store, Bun.randomUUIDv7(), t.id);
   const mw = snapshot.entries.filter((e) => e.id.startsWith('mw:'));
-  expect(mw).toHaveLength(5);
+  expect(mw).toHaveLength(4);
   expect(snapshot.entries.some((e) => e.sourceRef.startsWith('phase:advice'))).toBe(false);
   for (const entry of mw) {
     expect(entry.text.length).toBeLessThan(2_000);
@@ -155,10 +142,6 @@ test('each Warden call reaches Archive as a small reduced entry: state and resul
   });
   // NO_COMMENT is recorded: it is the denominator of every exposure count.
   expect(byRole.docs).toMatchObject({ outcome: 'answered:no-comment', result: null });
-  expect(byRole.cartographer).toMatchObject({
-    outcome: 'routed',
-    result: { layers: ['conventions'] },
-  });
   expect(mw.find((e) => JSON.parse(e.text).role === 'conventions')).toMatchObject({
     model: 'claude-haiku-5-5',
     effort: 'low',
@@ -177,7 +160,7 @@ test('a turn a restart interrupted is reduced on start, its raw rows kept', () =
   expect(store.compactClosedTurns()).toEqual([t.id]);
   expect(store.compactClosedTurns()).toEqual([]);
   const phases = store.phaseHistory(t.id).map((p) => p.phase);
-  expect(phases.filter((p) => p === REDUCED_PHASE)).toHaveLength(5);
+  expect(phases.filter((p) => p === REDUCED_PHASE)).toHaveLength(4);
   expect(phases).toContain('advice');
 });
 
@@ -222,11 +205,11 @@ test('raw middleware rows age out after the retention window; reduced rows and e
   expect(store.pruneRawMiddleware(Date.now() - 86_400_000).rows).toBe(0);
   // Past it, the raw rows go, the reduced rows stay, and the content only they held is released.
   const pruned = store.pruneRawMiddleware(Date.now() + 1);
-  expect(pruned.rows).toBe(3);
+  expect(pruned.rows).toBe(2);
   expect(pruned.content).toBeGreaterThan(0);
   const phases = store.phaseHistory(t.id).map((p) => p.phase);
-  expect(phases.some((p) => p === 'advice' || p === 'route')).toBe(false);
-  expect(phases.filter((p) => p === REDUCED_PHASE)).toHaveLength(6);
+  expect(phases.some((p) => p === 'advice')).toBe(false);
+  expect(phases.filter((p) => p === REDUCED_PHASE)).toHaveLength(5);
   // Exposure is still counted, once, from the reduced row.
   expect(store.phasesContaining('(fb_1)', 0).map((r) => [r.phase, r.roles])).toEqual([
     [REDUCED_PHASE, ['conventions']],
@@ -541,7 +524,7 @@ test('a guard outcome landing after its turn closed is reduced at once', () => {
     },
   });
   // A request whose outcome never came is not reduced: it stays raw, and retention keeps it.
-  expect(store.phaseHistory(t.id).filter((p) => p.phase === REDUCED_PHASE)).toHaveLength(5);
+  expect(store.phaseHistory(t.id).filter((p) => p.phase === REDUCED_PHASE)).toHaveLength(4);
   store.appendPhase(t, {
     id: 'guard-late',
     turnId: 'turn-1',
@@ -586,10 +569,10 @@ test('retention only removes raw rows a reduced row covers', () => {
     record: { domain: 'security', request: supplied({ model: 'claude-haiku-5-5' }) },
   });
   store.completeTurn(t, 'turn-1', 'Done', {}, trace('turn-1'));
-  expect(store.pruneRawMiddleware(Date.now() + 1).rows).toBe(2);
+  expect(store.pruneRawMiddleware(Date.now() + 1).rows).toBe(1);
   const left = store.phaseHistory(t.id).map((p) => p.id);
   expect(left).toContain('guard-orphan');
-  expect(left.filter((id) => id.startsWith('mw:'))).toHaveLength(5);
+  expect(left.filter((id) => id.startsWith('mw:'))).toHaveLength(4);
 });
 
 test('a long turn is reduced whole, past any read window', () => {
@@ -612,7 +595,7 @@ test('a long turn is reduced whole, past any read window', () => {
   const reduced = (store as unknown as { query(sql: string): { get(): { n: number } } })
     .query(`SELECT COUNT(*) AS n FROM session_phase WHERE phase='${REDUCED_PHASE}'`)
     .get().n;
-  expect(reduced).toBe(5 + 1_100);
+  expect(reduced).toBe(4 + 1_100);
 });
 
 test("a fork archives with Archive's fork lineage, its source and no root: it is top-level", () => {

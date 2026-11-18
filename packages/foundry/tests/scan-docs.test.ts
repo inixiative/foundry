@@ -86,7 +86,6 @@ describe('scanRepoDocs', () => {
     expect(plan.chosen!.approxTokens).toBeGreaterThanOrEqual(200);
     expect(plan.strategy).toBe('inline');
     expect(plan.settings).toBeDefined();
-    expect(plan.settings!.layer.contentShape).toMatch(/full markdown content/i);
   });
 
   test('chooses topology strategy for large corpora', async () => {
@@ -102,7 +101,6 @@ describe('scanRepoDocs', () => {
     const plan = await scanRepoDocs(repo);
     expect(plan.strategy).toBe('topology');
     expect(plan.chosen!.approxTokens).toBeGreaterThan(3_000);
-    expect(plan.settings!.layer.contentShape).toMatch(/topology|index/i);
   });
 
   test('reports none when corpus is below minTokens', async () => {
@@ -134,7 +132,7 @@ describe('scanRepoDocs', () => {
     expect(layer.id).toBe('docs');
     expect(layer.domain).toBe('docs');
     expect(layer.sourceIds).toEqual([source.id]);
-    expect(layer.activation).toBe('conditional');
+    expect(layer.activation).toBe('on-demand');
     expect(layer.writers).toBeUndefined();
     // No docs Warden: settings declare none since the hand-named roster was retired.
     expect(Object.keys(plan.settings!).sort()).toEqual(['layer', 'source']);

@@ -11,7 +11,6 @@ import {
   type LLMProvider,
   SignalBus,
 } from '@inixiative/foundry-core';
-import { Cartographer } from '../src/agents/cartographer';
 import { DomainLibrarian, oneCall } from '../src/agents/domain-librarian';
 import { FlowOrchestrator } from '../src/agents/flow-orchestrator';
 import { Librarian } from '../src/agents/librarian';
@@ -26,7 +25,6 @@ import {
   expertParticipants,
   guardOutcomes,
   participantRequest,
-  routingRequest,
 } from '../src/viewer/ui/inspector-data.js';
 
 // Pending and late phase durability (Fable, CORE-006 LI). Real runtime, factory, Harness, orchestrator, experts,
@@ -70,9 +68,6 @@ function fixture(
       model: 'controlled',
       prompt: '',
       temperature: 0,
-      visibleLayers: [],
-      peers: [],
-      maxDepth: 1,
       enabled: true,
     },
   };
@@ -89,11 +84,6 @@ function fixture(
         return {
           model: 'controlled',
           content: await (opts.guard ?? (() => 'NO_COMMENT'))(messages),
-        };
-      if (messages.some((m) => m.content.includes('## Message to route')))
-        return {
-          model: 'controlled',
-          content: '{"domains":["architecture"],"layers":["architecture"],"confidence":1}',
         };
       return {
         model: 'controlled',
@@ -213,12 +203,12 @@ test("a held guard's exact request is durable before its answer; the late outcom
         .some((r) => r.phase === 'guard-request'),
     'guard request journalled',
   );
-  // Journalled while the guard provider is still holding: route, advice and the guard request, no outcome.
+  // Journalled while the guard provider is still holding: advice and the guard request, no outcome.
   const before = f.store
     .phaseHistory(f.thread.id, { turnId: 'turn-1' })
     .filter((r) => r.phase !== 'middleware-reduced' && !isHandBack(r));
-  expect(before.map((r) => r.phase)).toEqual(['route', 'advice', 'guard-request']);
-  const request = before[2]!;
+  expect(before.map((r) => r.phase)).toEqual(['advice', 'guard-request']);
+  const request = before[1]!;
   expect(request.dispatchId).toBeTruthy();
   expect(request.turnId).toBe('turn-1');
   expect(request.record).toMatchObject({
@@ -270,7 +260,6 @@ test("a held guard's exact request is durable before its answer; the late outcom
     (detail.messages.find((m) => m.actor === 'agent')!.meta as any).phases.guards[0].status,
   ).toBe('pending');
   expect((detail.messages.find((m) => m.actor === 'agent')!.meta as any).phases.journal).toEqual({
-    route: 'durable',
     advice: 'durable',
   });
   // Late answer: the outcome row references the original request; the request row is unchanged.
@@ -285,9 +274,9 @@ test("a held guard's exact request is durable before its answer; the late outcom
   const after = f.store
     .phaseHistory(f.thread.id, { turnId: 'turn-1' })
     .filter((r) => r.phase !== 'middleware-reduced' && !isHandBack(r));
-  expect(after.map((r) => r.phase)).toEqual(['route', 'advice', 'guard-request', 'guard-outcome']);
-  expect(after[2]).toEqual(request);
-  const outcome = after[3]!.record as any;
+  expect(after.map((r) => r.phase)).toEqual(['advice', 'guard-request', 'guard-outcome']);
+  expect(after[1]).toEqual(request);
+  const outcome = after[2]!.record as any;
   expect(outcome).toMatchObject({
     status: 'reported',
     correlation: 'live-dispatch',
@@ -312,11 +301,6 @@ test("a held guard's exact request is durable before its answer; the late outcom
     domain: 'architecture',
     outcome: { status: 'answered', result: 'all-clear' },
     request: { state: 'recorded', messages: guardCall },
-  });
-  expect(routingRequest({ detail: reopened.turnDetail(f.thread.id, 'turn-1') })).toMatchObject({
-    state: 'recorded',
-    status: 'routed',
-    request: { state: 'recorded', providerId: 'controlled-aux' },
   });
 });
 
@@ -386,7 +370,7 @@ test('successful, failed and thrown guard controls: findings are recorded, a pro
   });
 });
 
-test('a failed central turn retains the sealed routing and advice requests with their three parts; the inspector reads them without an artifact', async () => {
+test('a failed central turn retains the sealed advice requests with their three parts; the inspector reads them without an artifact', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'phase-durability-'));
   const path = join(dir, 'sessions.sqlite');
   const f = fixture(path, {
@@ -398,15 +382,15 @@ test('a failed central turn retains the sealed routing and advice requests with 
   const failed = await f.turn('turn-1', 'Add preferred names');
   expect(failed.ok).toBe(false);
   await until(
-    () => f.store.phaseHistory(f.thread.id, { turnId: 'turn-1' }).length >= 2,
+    () => f.store.phaseHistory(f.thread.id, { turnId: 'turn-1' }).length >= 1,
     'sealed rows',
   );
   const detail = f.store.turnDetail(f.thread.id, 'turn-1')!;
   expect(detail.turn.status).toBe('failed');
   expect(detail.injection).toBeNull();
   const phases = detail.phases.map((r) => r.phase);
-  expect(phases.slice(0, 2)).toEqual(['route', 'advice']);
-  const advice = detail.phases[1]!.record as any;
+  expect(phases.slice(0, 1)).toEqual(['advice']);
+  const advice = detail.phases[0]!.record as any;
   expect(advice.participants[0]).toMatchObject({
     domain: 'architecture',
     outcome: { status: 'answered', result: 'spoke' },
@@ -426,11 +410,6 @@ test('a failed central turn retains the sealed routing and advice requests with 
     request: { state: 'recorded', phase: 'advice' },
   });
   expect(JSON.stringify(detail)).not.toContain('DOMAIN_AFTER');
-  expect(routingRequest({ detail })).toMatchObject({
-    state: 'recorded',
-    status: 'routed',
-    request: { state: 'recorded' },
-  });
 });
 
 test('an observation whose dispatch is no longer live stays explicitly uncorrelated; journal appends are idempotent; a fresh journal reads empty phases', async () => {
@@ -469,7 +448,7 @@ test('an observation whose dispatch is no longer live stays explicitly uncorrela
       .phaseHistory(f.thread.id, { turnId: 'turn-1' })
       .filter((r) => r.phase !== 'middleware-reduced' && !isHandBack(r))
       .map((r) => r.phase),
-  ).toEqual(['route', 'advice', 'guard-request', 'guard-outcome']);
+  ).toEqual(['advice', 'guard-request', 'guard-outcome']);
   expect(f.store.phaseHistory(f.thread.id, { dispatchId: 'dispatch-gone' })).toHaveLength(2);
   const row = loose[0]!;
   f.store.appendPhase(f.thread, {
@@ -495,7 +474,6 @@ test('an observation whose dispatch is no longer live stays explicitly uncorrela
   const legacy = fresh.turnDetail('legacy', 'old-turn')!;
   expect(legacy.phases).toEqual([]);
   expect(guardOutcomes({ detail: legacy })).toBeNull();
-  expect(routingRequest({ detail: legacy })).toEqual({ state: 'not-recorded' });
 });
 
 /** The hand-back advice a working turn gets, not awaited: these tests are about the guard's rows. */
@@ -544,5 +522,5 @@ test('review records say whether their requested record reached the journal; wit
       g.store.turnDetail(g.thread.id, 'turn-1')!.messages.find((m) => m.actor === 'agent')!
         .meta as any
     ).phases.journal,
-  ).toEqual({ route: 'absent', advice: 'absent' });
+  ).toEqual({ advice: 'absent' });
 });

@@ -17,8 +17,6 @@ import { agentIdOfRole } from '../prompts/role-namespace';
 import { configuredProjectWardens } from '../providers/subscription-policy';
 import type { FoundryConfig } from '../viewer/config';
 import { effectiveProject } from '../viewer/config-resolve';
-import { CARTOGRAPHER_PICKS } from './cartographer';
-import { cartographerRoleId } from './configured-experts';
 
 /** Turns a configured source id into a ContextSource (thread-factory's `SourceResolver`). */
 export type ResolveSource = (sourceId: string, config: FoundryConfig) => ContextSource | null;
@@ -80,7 +78,7 @@ export function buildStageKnowledge(
   );
 }
 
-/** One slot of a role that receives `delivered` (the Cartographer: instructions only). */
+/** One slot of a role that receives `delivered`. */
 export function buildRoleLayer(
   config: FoundryConfig,
   role: string,
@@ -116,7 +114,6 @@ export function roleSources(
     role,
     slot,
     delivered,
-    role === cartographerRoleId(config) ? CARTOGRAPHER_PICKS : undefined,
   );
   if (slot === 'instructions') {
     const fromSettings = !!agent?.prompt?.trim();

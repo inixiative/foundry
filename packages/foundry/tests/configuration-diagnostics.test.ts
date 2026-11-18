@@ -6,7 +6,7 @@ import { ContextLayer, ContextStack, type LLMProvider, Thread } from '@inixiativ
 import { resolveThreadDomains } from '../src/agents/configured-experts';
 import { regionRoleId } from '../src/agents/region-roster';
 import { buildAgents, buildLayers, ThreadFactory } from '../src/agents/thread-factory';
-import { DEFAULT_THREAD_DOMAINS, ThreadRuntimeManager } from '../src/agents/thread-runtime';
+import { ThreadRuntimeManager } from '../src/agents/thread-runtime';
 import { type FoundryConfig, starterConfig } from '../src/viewer/config';
 import { resolveProjectView } from '../src/viewer/config-resolve';
 import { writeRegions } from './helpers/regions';
@@ -145,7 +145,7 @@ test('explicit review override is reported while requested phase settings and pr
     const resolved = resolveThreadDomains(
       view,
       new Map(buildLayers(view, { sourceResolver: () => null }).map((l) => [l.id, l])),
-      { policy: DEFAULT_THREAD_DOMAINS, programmatic: [], llm: f.llm, providers: f.providers },
+      { programmatic: [], llm: f.llm, providers: f.providers },
     ).find((d) => d.domain === 'docs')!;
     expect(resolved.adviseOpts).toMatchObject({ model: 'expert-model', tools: false, maxTurns: 1 });
     expect(resolved.adviseOpts!.thinking).toBeUndefined();

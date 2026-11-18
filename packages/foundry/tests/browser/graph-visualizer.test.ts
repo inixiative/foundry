@@ -108,7 +108,6 @@ test('graph panel: thread graph, live turn flow, learning loop, inspect, pan/zoo
     expect(nodes).toEqual(
       expect.arrayContaining([
         'input',
-        'routing',
         'domain:architecture',
         'domain:testing',
         'plan',

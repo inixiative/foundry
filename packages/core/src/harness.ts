@@ -5,16 +5,13 @@
  */
 import type { ExecutionResult } from './base-agent';
 import { BoundedSet } from './bounded-set';
-import type { ClarificationResult, ClarifyPayload } from './clarifier';
-import type { Classification } from './classifier';
 import type { ContextLayer } from './context-layer';
 import type { LayerFilter } from './context-stack';
-import type { Decision } from './decider';
-import { newId } from './id';
-import type { Route } from './router';
-import type { BackgroundHandle, FanResult, Thread } from './thread';
+import type { FanResult, Thread } from './thread';
 import { Trace } from './trace';
-import type { AgentModeConfig, InvocationCondition, LayerModeConfig } from './types';
+import type { AgentModeConfig, LayerModeConfig } from './types';
+
+type LayerActivation = NonNullable<LayerModeConfig['activation']>;
 
 export interface Message<T = unknown> {
   readonly id: string;
@@ -24,14 +21,10 @@ export interface Message<T = unknown> {
 
 export interface HarnessResult<T = unknown> {
   readonly messageId: string;
-  readonly classification?: Decision<Classification>;
-  readonly route?: Decision<Route>;
-  /** Set when a clarify stage ran; when `needed`, execution was skipped. */
-  readonly clarification?: ClarificationResult;
   readonly result: ExecutionResult<T>;
   readonly trace: Trace;
   readonly timestamp: number;
-  /** Which agents were invoked (and how: always/conditional/on-demand). */
+  /** Which agents were invoked (and how: always/on-demand/background). */
   readonly invokedAgents?: Array<{ id: string; mode: string }>;
   /** Which layers were active in the final context. */
   readonly activeLayers?: string[];
@@ -58,19 +51,16 @@ export interface PipelineStep<TIn = unknown, TOut = unknown> {
 // ---------------------------------------------------------------------------
 
 export interface FlowStage {
-  /** Agent ID for this stage. Use "routed" to use route.destination. */
-  agentId: string | 'routed';
+  /** Agent ID for this stage. */
+  agentId: string;
   /** Pipeline role (for tracing and UI). */
-  role: 'classify' | 'route' | 'clarify' | 'execute' | 'enrich' | 'guard' | 'observe';
+  role: 'execute' | 'enrich' | 'guard' | 'observe';
   /**
    * When this stage runs:
    * - "always": every request
    * - "on-demand": only when explicitly requested by middleware or prior stage
-   * - "conditional": when condition matches classification/route context
    */
-  invocation: 'always' | 'on-demand' | 'conditional';
-  /** Condition for conditional invocation. */
-  condition?: InvocationCondition;
+  invocation: 'always' | 'on-demand';
   /**
    * Run this stage in the background (fire-and-forget).
    * The stage dispatches but doesn't block the pipeline response.
@@ -82,16 +72,12 @@ export interface FlowStage {
 export interface FlowConfig {
   /** Ordered pipeline stages. */
   stages: FlowStage[];
-  /** Default executor if no route specifies a destination. */
-  defaultExecutor?: string;
 }
 
 /**
  * Context available to middleware for requesting on-demand agents/layers.
  */
 export interface RequestContext {
-  readonly classification?: Decision<Classification>;
-  readonly route?: Decision<Route>;
   /** Request an on-demand agent to run after the current stage. */
   requestAgent(agentId: string): void;
   /** Request an on-demand layer to be included in context assembly. */
@@ -103,34 +89,6 @@ export interface RequestContext {
   readonly stageResults: ReadonlyMap<string, unknown>;
   /** Arbitrary data passed between stages — stages can read/write freely. */
   readonly data: Map<string, unknown>;
-}
-
-// ---------------------------------------------------------------------------
-// Condition matching
-// ---------------------------------------------------------------------------
-
-export function matchesCondition(
-  condition: InvocationCondition | undefined,
-  classification?: Decision<Classification>,
-  route?: Decision<Route>,
-): boolean {
-  if (!condition) return false;
-
-  // Match ANY field (OR across fields)
-  if (condition.categories?.length && classification?.value) {
-    if (condition.categories.includes(classification.value.category)) return true;
-  }
-
-  if (condition.tags?.length && classification?.value) {
-    const classTags = classification.value.tags ?? [];
-    if (condition.tags.some((t) => classTags.includes(t))) return true;
-  }
-
-  if (condition.routes?.length && route?.value) {
-    if (condition.routes.includes(route.value.destination)) return true;
-  }
-
-  return false;
 }
 
 // ---------------------------------------------------------------------------
@@ -159,11 +117,11 @@ interface SendOptions {
  * Supports two configuration styles that both execute through a single
  * flow pipeline:
  *
- * 1. **Classic sugar** (setClassifier/setRouter/setDefaultExecutor) —
- *    internally builds a FlowConfig with classify → route → execute stages.
+ * 1. **Default executor** (setDefaultExecutor) — internally builds a FlowConfig
+ *    with the on-demand agents from the configured modes and one execute stage.
  *
  * 2. **Explicit flow** (setFlow) — full control over pipeline stages with
- *    invocation modes (always/on-demand/conditional).
+ *    invocation modes (always/on-demand).
  *
  * Every message gets a Trace — a full record of its journey
  * with timing, layer visibility, inputs/outputs at each stage.
@@ -171,19 +129,14 @@ interface SendOptions {
 export class Harness {
   readonly thread: Thread;
 
-  // Classic mode fields — used to build a FlowConfig on demand
-  private _classifierId: string | null = null;
-  private _routerId: string | null = null;
   private _defaultExecutorId: string | null = null;
 
   // Explicit flow config (takes precedence over classic fields)
   private _explicitFlow: FlowConfig | null = null;
 
   // Agent/layer invocation metadata (from config)
-  private _agentModes: Map<string, { invocation: string; condition?: InvocationCondition }> =
-    new Map();
-  private _layerModes: Map<string, { activation: string; condition?: InvocationCondition }> =
-    new Map();
+  private _agentModes: Map<string, { invocation: string }> = new Map();
+  private _layerModes: Map<string, { activation: LayerActivation }> = new Map();
 
   private _pipeline: PipelineStep[] = [];
   private _traces: Trace[] = [];
@@ -204,16 +157,6 @@ export class Harness {
     this._seenMessages = new BoundedSet<string>(Math.max(this._dedupCapacity, 1));
   }
 
-  // -- Classic configuration (sugar for flow) --
-
-  setClassifier(agentId: string): void {
-    this._classifierId = agentId;
-  }
-
-  setRouter(agentId: string): void {
-    this._routerId = agentId;
-  }
-
   setDefaultExecutor(agentId: string): void {
     this._defaultExecutorId = agentId;
   }
@@ -225,13 +168,13 @@ export class Harness {
   }
 
   /** Register invocation mode for an agent (from config). */
-  setAgentMode(agentId: string, invocation: string, condition?: InvocationCondition): void {
-    this._agentModes.set(agentId, { invocation, condition });
+  setAgentMode(agentId: string, invocation: string): void {
+    this._agentModes.set(agentId, { invocation });
   }
 
   /** Register activation mode for a layer (from config). */
-  setLayerMode(layerId: string, activation: string, condition?: InvocationCondition): void {
-    this._layerModes.set(layerId, { activation, condition });
+  setLayerMode(layerId: string, activation: LayerActivation): void {
+    this._layerModes.set(layerId, { activation });
   }
 
   /** Bulk-load modes from config. */
@@ -240,10 +183,10 @@ export class Harness {
     layers: Record<string, LayerModeConfig>,
   ): void {
     for (const [id, cfg] of Object.entries(agents)) {
-      this.setAgentMode(id, cfg.invocation ?? 'always', cfg.condition);
+      this.setAgentMode(id, cfg.invocation ?? 'always');
     }
     for (const [id, cfg] of Object.entries(layers)) {
-      this.setLayerMode(id, cfg.activation ?? 'always', cfg.condition);
+      this.setLayerMode(id, cfg.activation ?? 'always');
     }
   }
 
@@ -376,106 +319,34 @@ export class Harness {
   }
 
   /**
-   * Build a layer filter that respects activation modes.
-   *
-   * - "always" layers: always included
-   * - "conditional" layers: included when condition matches
-   * - "on-demand" layers: included only if in requestedLayers or route.contextSlice
+   * Build a layer filter that respects activation modes: "always" layers are always included,
+   * "on-demand" layers only when middleware requested them for this message.
    */
-  buildLayerFilter(
-    classification?: Decision<Classification>,
-    route?: Decision<Route>,
-    requestedLayers?: ReadonlySet<string>,
-  ): LayerFilter {
-    const routeSlice = route?.value?.contextSlice ? new Set(route.value.contextSlice) : null;
-
+  buildLayerFilter(requestedLayers?: ReadonlySet<string>): LayerFilter {
     return (layer: ContextLayer) => {
-      const mode = this._layerModes.get(layer.id);
-      const activation = mode?.activation ?? 'always';
-
-      switch (activation) {
-        case 'always':
-          return true;
-
-        case 'conditional':
-          return matchesCondition(mode?.condition, classification, route);
-
-        case 'on-demand':
-          // Included if router requested it via contextSlice, or middleware requested it
-          if (routeSlice?.has(layer.id)) return true;
-          if (requestedLayers?.has(layer.id)) return true;
-          return false;
-
-        default:
-          return true;
-      }
+      const activation = this._layerModes.get(layer.id)?.activation ?? 'always';
+      if (activation === 'on-demand') return !!requestedLayers?.has(layer.id);
+      return true;
     };
   }
 
   // -- Resolve effective flow --
 
   /**
-   * If an explicit flow is set, use it. Otherwise build one from classic
-   * setClassifier/setRouter/setDefaultExecutor fields + conditional agents
-   * from _agentModes.
+   * If an explicit flow is set, use it. Otherwise build one from the on-demand agents in
+   * _agentModes and the default executor.
    */
   private _resolveFlow(): FlowConfig {
     if (this._explicitFlow) return this._explicitFlow;
 
     const stages: FlowStage[] = [];
-
-    // Classify stage
-    if (this._classifierId) {
-      stages.push({
-        agentId: this._classifierId,
-        role: 'classify',
-        invocation: 'always',
-      });
-    }
-
-    // Route stage
-    if (this._routerId) {
-      stages.push({
-        agentId: this._routerId,
-        role: 'route',
-        invocation: 'always',
-      });
-    }
-
-    // Conditional agents from _agentModes (enrich role)
     for (const [agentId, mode] of this._agentModes) {
-      // Skip classifier/router/executor — they have explicit stages
-      if (agentId === this._classifierId) continue;
-      if (agentId === this._routerId) continue;
       if (agentId === this._defaultExecutorId) continue;
-
-      if (mode.invocation === 'conditional') {
-        stages.push({
-          agentId,
-          role: 'enrich',
-          invocation: 'conditional',
-          condition: mode.condition,
-        });
-      } else if (mode.invocation === 'on-demand') {
-        stages.push({
-          agentId,
-          role: 'enrich',
-          invocation: 'on-demand',
-        });
-      }
+      if (mode.invocation === 'on-demand')
+        stages.push({ agentId, role: 'enrich', invocation: 'on-demand' });
     }
-
-    // Execute stage (uses routed destination or default)
-    stages.push({
-      agentId: 'routed',
-      role: 'execute',
-      invocation: 'always',
-    });
-
-    return {
-      stages,
-      defaultExecutor: this._defaultExecutorId ?? undefined,
-    };
+    stages.push({ agentId: this._defaultExecutorId ?? '', role: 'execute', invocation: 'always' });
+    return { stages };
   }
 
   // -- Unified flow pipeline --
@@ -496,110 +367,15 @@ export class Harness {
     const stageResults = new Map<string, ExecutionResult>();
     let executorInput = false;
 
-    let classification: Decision<Classification> | undefined;
-    let route: Decision<Route> | undefined;
-    let clarification: ClarificationResult | undefined;
     let lastExecuteAgentId: string | undefined;
 
     try {
-      // Decision stages (classify, route) read the same frozen input concurrently: neither waits for
-      // the other, and the router receives the message, not the classification. Their results are
-      // applied in configured stage order, so the outcome does not depend on which answered first.
-      const decisionStages = flow.stages.filter(
-        (stage) =>
-          !stage.background &&
-          stage.invocation === 'always' &&
-          (stage.role === 'classify' || stage.role === 'route') &&
-          stage.agentId !== 'routed' &&
-          this.thread.getAgent(stage.agentId),
-      );
-      if (decisionStages.length) {
-        const layerFilter = this.buildLayerFilter(undefined, undefined, requestedLayers);
-        const settled = await Promise.allSettled(
-          decisionStages.map(async (stage) => {
-            const span = trace.startDetached(`${stage.role}:${stage.agentId}`, stage.role, {
-              agentId: stage.agentId,
-              threadId: this.thread.id,
-              input: message.payload,
-              annotations: { invocation: stage.invocation },
-            });
-            try {
-              const result = await this.thread.dispatch(
-                stage.agentId,
-                message.payload,
-                layerFilter,
-                {
-                  role: stage.role,
-                  messageId: message.id,
-                  invocation: stage.invocation,
-                  recordInjection: (artifact) => {
-                    span.annotations.injection = artifact;
-                  },
-                  nativeObservation: opts?.nativeObservation,
-                  recordNative: (evidence) => {
-                    span.annotations.native = evidence;
-                  },
-                  recordCompleted: (output) => {
-                    span.annotations.executorCompletion = { output };
-                  },
-                },
-              );
-              if (result.meta?.injection) span.annotations.injection = result.meta.injection;
-              trace.endSpan(span, result.output);
-              return result;
-            } catch (error) {
-              trace.endSpan(span, undefined, error);
-              throw error;
-            }
-          }),
-        );
-        for (const [index, stage] of decisionStages.entries()) {
-          const outcome = settled[index]!;
-          if (outcome.status === 'rejected') throw outcome.reason;
-          invokedAgents.push({ id: stage.agentId, mode: stage.invocation });
-          stageResults.set(stage.agentId, outcome.value);
-          if (stage.role === 'classify') {
-            classification = outcome.value.output as Decision<Classification>;
-            if (classification?.value) {
-              await this.thread.signals.emit({
-                id: newId('sig-classify'),
-                kind: 'classification',
-                source: `harness:${stage.agentId}`,
-                content: classification.value,
-                confidence: classification.confidence,
-                timestamp: Date.now(),
-              });
-            }
-          } else route = outcome.value.output as Decision<Route>;
-        }
-      }
-      const concurrent = new Set(decisionStages);
-
-      // Run the remaining stages in order
       for (const stage of flow.stages) {
-        if (concurrent.has(stage)) continue;
-        // Should this stage run?
-        if (stage.invocation === 'on-demand') {
-          const resolvedId = stage.agentId === 'routed' ? route?.value?.destination : stage.agentId;
-          if (!resolvedId || !requestedAgents.has(resolvedId)) continue;
-        }
+        if (stage.invocation === 'on-demand' && !requestedAgents.has(stage.agentId)) continue;
 
-        if (stage.invocation === 'conditional') {
-          if (!matchesCondition(stage.condition, classification, route)) continue;
-        }
-
-        // Resolve agent ID
-        const agentId =
-          stage.agentId === 'routed'
-            ? (route?.value?.destination ?? flow.defaultExecutor)
-            : stage.agentId;
-
+        const agentId = stage.agentId;
         if (!agentId) {
-          if (stage.role === 'execute') {
-            throw new Error(
-              'No target agent: router returned no destination and no default executor is configured',
-            );
-          }
+          if (stage.role === 'execute') throw new Error('No default executor is configured');
           continue;
         }
         if (!this.thread.getAgent(agentId)) {
@@ -609,7 +385,7 @@ export class Harness {
         }
 
         // Build layer filter for this dispatch
-        const layerFilter = this.buildLayerFilter(classification, route, requestedLayers);
+        const layerFilter = this.buildLayerFilter(requestedLayers);
 
         // Background stages — fire-and-forget, report via onBackground callback
         if (stage.background) {
@@ -650,25 +426,10 @@ export class Harness {
           annotations: { invocation: stage.invocation },
         });
 
-        // A conditional route stage runs after classification and receives it; clarify stages also
-        // receive the classification; others get raw payload
-        const stagePayload =
-          stage.role === 'route' && classification
-            ? { payload: message.payload, classification: classification.value }
-            : stage.role === 'clarify'
-              ? ({
-                  message:
-                    typeof message.payload === 'string'
-                      ? message.payload
-                      : JSON.stringify(message.payload),
-                  classification: classification?.value ?? { category: 'unknown' },
-                } satisfies ClarifyPayload)
-              : message.payload;
-
         // The thread observes this dispatch once at its boundary; the stage
         // only contributes correlation. Only the execute stage streams deltas:
-        // classifier/router/enricher output isn't user-visible content.
-        const result = await this.thread.dispatch(agentId, stagePayload, layerFilter, {
+        // enricher output isn't user-visible content.
+        const result = await this.thread.dispatch(agentId, message.payload, layerFilter, {
           onDelta: stage.role === 'execute' ? opts?.onDelta : undefined,
           requestLayer: (layerId) => requestedLayers.add(layerId),
           role: stage.role,
@@ -701,41 +462,19 @@ export class Harness {
           lastExecuteAgentId = agentId;
         }
 
-        // Capture classification/route from appropriate stages
-        if (stage.role === 'classify') {
-          classification = result.output as Decision<Classification>;
-          if (classification?.value) {
-            await this.thread.signals.emit({
-              id: newId('sig-classify'),
-              kind: 'classification',
-              source: `harness:${agentId}`,
-              content: classification.value,
-              confidence: classification.confidence,
-              timestamp: Date.now(),
-            });
-          }
-        } else if (stage.role === 'route') {
-          route = result.output as Decision<Route>;
-        } else if (stage.role === 'clarify') {
-          clarification = (result.output as Decision<ClarificationResult>).value;
-        }
-
         if (trace.current && result.meta?.injection) {
           trace.current.annotations.injection = result.meta.injection;
         }
         trace.end(result.output);
-
-        // Circuit breaker: an underspecified request returns questions instead of executing
-        if (clarification?.needed) break;
       }
 
       // Run any remaining on-demand agents requested by middleware
-      for (const agentId of clarification?.needed ? [] : requestedAgents) {
+      for (const agentId of requestedAgents) {
         const alreadyRan = invokedAgents.some((a) => a.id === agentId);
         if (alreadyRan) continue;
         if (!this.thread.getAgent(agentId)) continue;
 
-        const layerFilter = this.buildLayerFilter(classification, route, requestedLayers);
+        const layerFilter = this.buildLayerFilter(requestedLayers);
         trace.start(`on-demand:${agentId}`, 'enrich', { agentId });
         const result = await this.thread.dispatch(agentId, message.payload, layerFilter, {
           role: 'enrich',
@@ -752,19 +491,15 @@ export class Harness {
 
       // Final result: from last execute-role agent, or last invoked agent
       const finalAgentId = lastExecuteAgentId ?? invokedAgents[invokedAgents.length - 1]?.id;
-      const finalResult = clarification?.needed
-        ? ({ output: null, contextHash: '' } as ExecutionResult)
-        : ((finalAgentId ? stageResults.get(finalAgentId) : undefined) ??
-          ({ output: null, contextHash: '' } as ExecutionResult));
+      const finalResult =
+        (finalAgentId ? stageResults.get(finalAgentId) : undefined) ??
+        ({ output: null, contextHash: '' } as ExecutionResult);
 
-      const layerFilter = this.buildLayerFilter(classification, route, requestedLayers);
+      const layerFilter = this.buildLayerFilter(requestedLayers);
       const activeLayers = this.thread.stack.layers.filter(layerFilter).map((l) => l.id);
 
       return {
         messageId: message.id,
-        classification,
-        route,
-        clarification,
         result: finalResult,
         trace,
         timestamp: Date.now(),
@@ -796,13 +531,8 @@ export class Harness {
   }
 
   /** Explicitly invoke an on-demand agent (for use by middleware or external callers). */
-  async invokeOnDemand<T>(
-    agentId: string,
-    payload: T,
-    classification?: Decision<Classification>,
-    route?: Decision<Route>,
-  ): Promise<ExecutionResult> {
-    const layerFilter = this.buildLayerFilter(classification, route);
+  async invokeOnDemand<T>(agentId: string, payload: T): Promise<ExecutionResult> {
+    const layerFilter = this.buildLayerFilter();
     return this.thread.dispatch(agentId, payload, layerFilter, {
       role: 'enrich',
       invocation: 'on-demand',
@@ -829,16 +559,16 @@ export class Harness {
     return this._explicitFlow;
   }
 
-  /** Get the effective flow (explicit or built from classic settings). */
+  /** Get the effective flow (explicit or built from the default executor). */
   get effectiveFlow(): FlowConfig {
     return this._resolveFlow();
   }
 
-  get agentModes(): ReadonlyMap<string, { invocation: string; condition?: InvocationCondition }> {
+  get agentModes(): ReadonlyMap<string, { invocation: string }> {
     return this._agentModes;
   }
 
-  get layerModes(): ReadonlyMap<string, { activation: string; condition?: InvocationCondition }> {
+  get layerModes(): ReadonlyMap<string, { activation: LayerActivation }> {
     return this._layerModes;
   }
 

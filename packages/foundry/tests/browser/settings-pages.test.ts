@@ -158,7 +158,7 @@ test('settings and analytics are addressable pages scoped to Foundry or a projec
     expect(await google.locator('.mode-chip').first().textContent()).toBe(
       'Subscription: coming soon',
     );
-    expect(await page.locator('.decision-hint').textContent()).toContain('nothing uses it yet');
+    expect(await page.locator('.decision-hint').textContent()).toContain('Wardens');
 
     // Expanding a vendor shows each mode's models; a model becomes the default in one click.
     const openai = page.locator('.vendor-row[data-vendor="openai"]');

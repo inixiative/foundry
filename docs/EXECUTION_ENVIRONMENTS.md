@@ -26,14 +26,7 @@ Each execution environment trades off differently across these concerns.
 
 ### `bash` — Direct Shell
 
-The default. Agent generates shell commands executed on the host system.
-
-```json
-{
-  "id": "executor-fix",
-  "executionEnv": "bash"
-}
-```
+Agent generates shell commands executed on the host system.
 
 **When to use:**
 - File search (grep, find, ripgrep)
@@ -57,14 +50,6 @@ low for data transformation (piping through sed/awk/jq is verbose and fragile).
 Bash semantics in a sandboxed environment. Uses [just-bash](https://github.com/nichochar/just-bash)
 to provide shell commands without real filesystem access. The agent thinks
 it's using bash, but everything runs in-memory.
-
-```json
-{
-  "id": "executor-sandbox",
-  "executionEnv": "just-bash",
-  "permissions": "bypass"
-}
-```
 
 **When to use:**
 - Multi-tenant environments (multiple users sharing one server)
@@ -107,13 +92,6 @@ const executor = new Executor({
 
 Agent writes TypeScript/JavaScript that runs in a V8 isolate or Bun subprocess.
 Instead of piping data through bash, the agent writes real code.
-
-```json
-{
-  "id": "executor-data",
-  "executionEnv": "typescript"
-}
-```
 
 **When to use:**
 - Data filtering and transformation (where bash pipes get ugly)
@@ -159,7 +137,6 @@ navigate commands. Works like a human using a screen reader.
 ```json
 {
   "id": "executor-browse",
-  "executionEnv": "browser",
   "browser": {
     "mode": "playwright-mcp",
     "screenshots": true,
@@ -189,7 +166,6 @@ Instead of "click the button with text 'Submit'", the agent writes
 ```json
 {
   "id": "executor-browse-js",
-  "executionEnv": "browser",
   "browser": {
     "mode": "js-execute",
     "screenshots": false,
@@ -219,7 +195,6 @@ data extraction and complex interactions.
 ```json
 {
   "id": "executor-browse-hybrid",
-  "executionEnv": "browser",
   "browser": {
     "mode": "hybrid",
     "screenshots": true,
@@ -237,30 +212,6 @@ data extraction and complex interactions.
 
 ---
 
-### `hybrid` — Multi-Environment
-
-Agent can use multiple execution environments, choosing per-task. The router
-or the agent itself decides which environment fits.
-
-```json
-{
-  "id": "executor-fullstack",
-  "executionEnv": "hybrid",
-  "browser": {
-    "mode": "hybrid",
-    "screenshots": true
-  }
-}
-```
-
-**When to use:**
-- Full-stack agents that need to read code (bash), transform data (typescript),
-  and verify in browser (browser)
-- Investigation/debugging workflows
-- Agents that triage and delegate to the right execution mode
-
----
-
 ## Decision Matrix
 
 | Task | Best Env | Why |
@@ -272,49 +223,30 @@ or the agent itself decides which environment fits.
 | Extract table data from a page | `browser` (js-execute) | `querySelectorAll('tr')` + map — returns clean JSON |
 | Multi-step API workflow | `typescript` | Chain fetch calls, handle errors, return summary |
 | Sandboxed code review | `just-bash` | Agent reads code without write access |
-| End-to-end app verification | `hybrid` | Read code (bash) → check browser (browser) → verify API (typescript) |
+| End-to-end app verification | several tools | Read code (bash) → check browser (browser) → verify API (typescript) |
 
 ---
 
 ## Configuring Agents
+
+An executor's browser settings live in `agents.<id>.browser`.
 
 ### In `.foundry/settings.json`
 
 ```json
 {
   "agents": {
-    "executor-build": {
-      "id": "executor-build",
-      "kind": "executor",
-      "executionEnv": "bash",
-      "prompt": "...",
-      "provider": "claude-code",
-      "model": "sonnet",
-      "enabled": true
-    },
     "executor-verify": {
       "id": "executor-verify",
       "kind": "executor",
-      "executionEnv": "browser",
       "browser": {
         "mode": "hybrid",
         "screenshots": true,
         "maxNavigations": 10,
         "allowedUrls": ["http://localhost:*/*"]
       },
-      "prompt": "Verify the implementation by checking the running app in the browser.",
       "provider": "claude-code",
       "model": "sonnet",
-      "enabled": true
-    },
-    "executor-sandbox": {
-      "id": "executor-sandbox",
-      "kind": "executor",
-      "executionEnv": "just-bash",
-      "prompt": "Review and analyze the codebase. Read-only — no changes.",
-      "provider": "claude-code",
-      "model": "haiku",
-      "permissions": "bypass",
       "enabled": true
     }
   }
@@ -323,7 +255,7 @@ or the agent itself decides which environment fits.
 
 ### Per-Project Overrides
 
-A project can override execution environments for its agents:
+A project can override an agent's browser settings:
 
 ```json
 {
@@ -332,8 +264,7 @@ A project can override execution environments for its agents:
       "id": "web-app",
       "path": "/path/to/web-app",
       "agents": {
-        "executor-build": {
-          "executionEnv": "hybrid",
+        "executor-verify": {
           "browser": {
             "mode": "playwright-mcp",
             "allowedUrls": ["http://localhost:3000/*"]
@@ -586,13 +517,12 @@ accidentally use LLM credentials.
 
 ## Wiring Tools into Agents
 
-### Thread Factory Integration
+### Registry and Gate
 
-The `ThreadFactory` reads `executionEnv` from agent config and wires
-the appropriate tools into the agent's handler:
+Register the tools once and gate browser use:
 
 ```typescript
-import { ThreadFactory, PlaywrightBrowser, HttpApi } from "@inixiative/foundry";
+import { PlaywrightBrowser, HttpApi } from "@inixiative/foundry";
 import { ToolRegistry, BROWSER_POLICY, CapabilityGate } from "@inixiative/foundry-core";
 
 // 1. Create registry and register tools
@@ -610,12 +540,7 @@ registry.register(api, "Local dev API");
 // 2. Create capability gate for browser agents
 const gate = new CapabilityGate(BROWSER_POLICY, actionQueue);
 
-// 3. Agents access tools through registry in their handlers
-const factory = new ThreadFactory({
-  provider,
-  tokenTracker,
-  sourceResolver,
-});
+// 3. Agents access tools through the registry in their handlers
 ```
 
 ### Agent Handler Example
@@ -704,11 +629,6 @@ const sqliteMemory = new SqliteMemory(".foundry/memory.db");
 const sqliteTool = MemoryToolAdapter.fromSqliteMemory(sqliteMemory);
 registry.register(sqliteTool, "Indexed memory with full-text search");
 
-// Supermemory (hosted, scored results)
-const supermemory = new SupermemoryAdapter({ apiKey: "..." });
-const superTool = MemoryToolAdapter.fromSupermemory(supermemory);
-registry.register(superTool, "Hosted memory with semantic search");
-
 // Any custom backend
 const custom = MemoryToolAdapter.from("muninndb", myMuninnAdapter);
 registry.register(custom, "MuninnDB knowledge graph");
@@ -743,14 +663,12 @@ Register multiple memory tools for different purposes:
 ```typescript
 registry.register(MemoryToolAdapter.fromFileMemory(localMemory, "memory-local"),
   "Local project memory");
-registry.register(MemoryToolAdapter.fromRedisMemory(redisMemory, "memory-shared"),
+registry.register(MemoryToolAdapter.fromPostgresMemory(postgresMemory, "memory-shared"),
   "Shared team memory");
-registry.register(MemoryToolAdapter.fromSupermemory(superMemory, "memory-semantic"),
-  "Semantic search across all knowledge");
 
 // Agent discovers what's available:
 registry.allByKind("memory");
-// → [memory-local, memory-shared, memory-semantic]
+// → [memory-local, memory-shared]
 ```
 
 ---

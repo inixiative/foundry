@@ -59,9 +59,6 @@ function config(project: string): FoundryConfig {
       prompt: '',
       provider: 'central',
       model: 'central-model',
-      visibleLayers: [],
-      peers: [],
-      maxDepth: 1,
       enabled: true,
     },
   };
@@ -73,7 +70,7 @@ function config(project: string): FoundryConfig {
 }
 
 interface Call {
-  phase: 'central' | 'pre' | 'post' | 'route';
+  phase: 'central' | 'pre' | 'post';
   messages: LLMMessage[];
 }
 
@@ -102,24 +99,20 @@ async function setup(options: { retrieved?: () => string } = {}) {
   const provider = (id: string): LLMProvider => ({
     id,
     async complete(messages: LLMMessage[], opts: CompletionOpts = {}) {
-      const phase: Call['phase'] = opts.threadId?.endsWith(':cartographer')
-        ? 'route'
-        : opts.threadId?.includes(':review:')
-          ? 'post'
-          : opts.threadId?.includes(':aux:')
-            ? 'pre'
-            : 'central';
+      const phase: Call['phase'] = opts.threadId?.includes(':review:')
+        ? 'post'
+        : opts.threadId?.includes(':aux:')
+          ? 'pre'
+          : 'central';
       calls.push({ phase, messages: structuredClone(messages) });
       return {
         model: 'controlled',
         content:
           phase === 'central'
             ? 'done'
-            : phase === 'route'
-              ? JSON.stringify({ layers: [], domains: [], confidence: 1 })
-              : phase === 'pre'
-                ? JSON.stringify({ layers: [], snippets: [], confidence: 1 })
-                : 'NO_COMMENT',
+            : phase === 'pre'
+              ? JSON.stringify({ layers: [], snippets: [], confidence: 1 })
+              : 'NO_COMMENT',
       };
     },
   });

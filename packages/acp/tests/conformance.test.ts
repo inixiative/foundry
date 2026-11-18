@@ -220,7 +220,7 @@ test("T3's sequence: v2 initialize gets a v1 answer; cancel then an immediate ne
   expect(f.viewer.directory.get(sessionId)!.meta.tags).toEqual(['acp', 'acp:t3-code']);
 });
 
-test('every ACP turn runs the middleware: the context item reports the sealed routing and each Warden', async () => {
+test('every ACP turn runs the middleware: the context item reports each Warden', async () => {
   const scenario = await m0Scenario();
   const daemon = serveDaemon(scenario.current);
   cleanup.push(async () => {
@@ -243,9 +243,8 @@ test('every ACP turn runs the middleware: the context item reports the sealed ro
   ).toEqual({
     stopReason: 'end_turn',
   });
-  // The thread's Cartographer and both Wardens were asked before the executor ran.
+  // Both Wardens were asked before the executor ran.
   const calls = scenario.calls.filter((call) => call.thread === sessionId);
-  expect(calls.some((call) => call.phase === 'route')).toBe(true);
   expect(
     calls
       .filter((call) => call.phase === 'pre')
@@ -267,7 +266,6 @@ test('every ACP turn runs the middleware: the context item reports the sealed ro
     context.content?.[0]?.type === 'content' && context.content[0].content.type === 'text'
       ? context.content[0].content.text
       : '';
-  expect(text).toContain('Routing (');
   expect(text).toContain('- architecture:');
   expect(text).toContain('- testing:');
   const foundry = (

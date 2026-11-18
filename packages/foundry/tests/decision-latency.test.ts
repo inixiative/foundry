@@ -23,48 +23,20 @@ const expert = (domain: string): AgentSettingsConfig => ({
   provider: 'decisions',
   model: 'luna',
   tools: false,
-  visibleLayers: [],
   domainKnowledge: [`${domain}-source`],
-  peers: [],
-  maxDepth: 1,
   enabled: true,
 });
 
-/** Six experts, classifier, router and Cartographer on one decision provider; a central worker. */
+/** Six experts on one decision provider; a central worker. */
 function config(): FoundryConfig {
   const c = starterConfig('central', 'central-model');
   c.agents = {
-    classifier: {
-      id: 'classifier',
-      kind: 'classifier',
-      prompt: 'Classify the message.',
-      provider: 'decisions',
-      model: 'luna',
-      visibleLayers: [],
-      peers: [],
-      maxDepth: 1,
-      enabled: true,
-    },
-    router: {
-      id: 'router',
-      kind: 'router',
-      prompt: 'Route to worker.',
-      provider: 'decisions',
-      model: 'luna',
-      visibleLayers: [],
-      peers: [],
-      maxDepth: 1,
-      enabled: true,
-    },
     worker: {
       id: 'worker',
       kind: 'executor',
       prompt: '',
       provider: 'central',
       model: 'central-model',
-      visibleLayers: [],
-      peers: [],
-      maxDepth: 1,
       enabled: true,
     },
     ...Object.fromEntries(DOMAINS.map((d) => [expertId(d), expert(d)])),
@@ -120,19 +92,8 @@ function providers(delayMs: number) {
       peak = Math.max(peak, live);
       await Bun.sleep(delayMs);
       live--;
-      const content = id.includes(':aux:agent:classifier')
-        ? JSON.stringify({ category: 'feature', tags: [], complexity: 'low' })
-        : id.includes(':aux:agent:router')
-          ? JSON.stringify({ destination: 'worker', contextSlice: [], priority: 5 })
-          : id.endsWith(':cartographer')
-            ? JSON.stringify({
-                domains: DOMAINS,
-                layers: DOMAINS.map((d) => `${d}-reference`),
-                confidence: 1,
-              })
-            : 'NO_COMMENT';
       void messages;
-      return { content, model: 'luna' };
+      return { content: 'NO_COMMENT', model: 'luna' };
     },
   };
   const central: LLMProvider = {
@@ -184,8 +145,6 @@ test('the pre-message phase is one concurrent round: message to worker start cos
   });
   const thread = factory.create('lead', { cwd: '/tmp' });
   const harness = new Harness(thread);
-  harness.setClassifier('classifier');
-  harness.setRouter('router');
   harness.setDefaultExecutor('worker');
   try {
     for (const layer of stack.layers) await layer.warm?.();
@@ -193,10 +152,10 @@ test('the pre-message phase is one concurrent round: message to worker start cos
     const result = await harness.send({ id: 'm1', payload: 'Add a login endpoint' });
     const toWorker = p.workerStartedAt - started;
     expect(result.result.output).toBe('done');
-    // classifier + router + Cartographer + six experts
-    expect(p.calls).toBe(9);
-    expect(p.peak).toBe(9);
-    // One round of decisions, not classify -> route -> advise (3 rounds), within the structural budget.
+    // six experts, all at once
+    expect(p.calls).toBe(6);
+    expect(p.peak).toBe(6);
+    // One round of decisions, within the structural budget.
     expect(toWorker).toBeLessThan(
       delayMs * DECISION_LATENCY_BUDGET.messageToWorkerInDecisionRounds,
     );

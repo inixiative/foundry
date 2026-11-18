@@ -6,7 +6,7 @@
 /**
  * Setup Wizard — first-run configuration flow.
  * Shows when setupComplete is false/undefined in the config.
- * Steps: Welcome → Providers → Default Provider → Executor Model → Classifier Model → Done.
+ * Steps: Welcome → Providers → Default Provider → Executor Model → Decision Model → Done.
  */
 
 import { html, signal, useState } from './lib.js';
@@ -184,7 +184,7 @@ function ExecutorModelStep({ providers, provider, selected, onSelect, onNext, on
   `;
 }
 
-function ClassifierModelStep({
+function DecisionModelStep({
   providers,
   enabledProviders,
   provider,
@@ -207,7 +207,7 @@ function ClassifierModelStep({
       <h2 class="wizard-heading">Decision Model</h2>
       <p class="wizard-desc">
         Your messages go straight to the executor: nothing runs before it by default.
-        This model is for decision roles: a classifier or router you add later, and a project's Wardens.
+        This model is for decision roles: a project's Wardens and feedback routing.
         A fast, cheap model works best there.
       </p>
 
@@ -267,13 +267,13 @@ function DoneStep({
   enabledProviders,
   provider,
   executorModel,
-  classifierProvider,
-  classifierModel,
+  decisionProvider,
+  decisionModel,
 }) {
   const execProv = providers.find((p) => p.id === provider);
   const execMod = execProv?.models.find((m) => m.id === executorModel);
-  const classProv = providers.find((p) => p.id === classifierProvider);
-  const classMod = classProv?.models.find((m) => m.id === classifierModel);
+  const classProv = providers.find((p) => p.id === decisionProvider);
+  const classMod = classProv?.models.find((m) => m.id === decisionModel);
   const enabledNames = enabledProviders
     .map((id) => providers.find((p) => p.id === id)?.label)
     .filter(Boolean);
@@ -293,7 +293,7 @@ function DoneStep({
         </div>
         <div class="wizard-summary-row">
           <span class="wizard-summary-label">Decisions</span>
-          <span class="wizard-summary-value">${classMod?.label || classifierModel}${classifierProvider !== provider ? ` (${classProv?.label?.split(' ')[0]})` : ''}</span>
+          <span class="wizard-summary-value">${classMod?.label || decisionModel}${decisionProvider !== provider ? ` (${classProv?.label?.split(' ')[0]})` : ''}</span>
         </div>
       </div>
       <p class="wizard-desc dim">
@@ -320,14 +320,14 @@ async function patchSettings(section, body) {
 
 export function Wizard() {
   const isOpen = wizardOpen.value;
-  // 0=welcome, 1=enable providers, 2=default provider, 3=executor model, 4=classifier model, 5=done
+  // 0=welcome, 1=enable providers, 2=default provider, 3=executor model, 4=decision model, 5=done
   const [step, setStep] = useState(0);
   const [providers, setProviders] = useState([]);
   const [enabledProviders, setEnabledProviders] = useState(['claude-code']);
   const [defaultProvider, setDefaultProvider] = useState('claude-code');
   const [executorModel, setExecutorModel] = useState('fable');
-  const [classifierProvider, setClassifierProvider] = useState('');
-  const [classifierModel, setClassifierModel] = useState('');
+  const [decisionProvider, setDecisionProvider] = useState('');
+  const [decisionModel, setDecisionModel] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -374,33 +374,33 @@ export function Wizard() {
 
   const handleExecutorNext = () => {
     // Subscription default: Claude Haiku 5.5 decisions on the Claude login.
-    // Otherwise default the classifier to the fastest model on the same provider.
-    if (!classifierProvider) {
+    // Otherwise default the decision model to the fastest model on the same provider.
+    if (!decisionProvider) {
       const subscription =
         SUBSCRIPTION_WORKERS.includes(defaultProvider) && enabledProviders.includes('claude-code');
       const id = subscription ? 'claude-code' : defaultProvider;
-      setClassifierProvider(id);
+      setDecisionProvider(id);
       const prov = providers.find((p) => p.id === id);
       const fast = subscription
         ? prov?.models.find((m) => m.id === 'claude-haiku-5-5')
         : prov?.models.find((m) => m.tier === 'fast');
-      setClassifierModel(fast?.id || prov?.models[0]?.id || '');
+      setDecisionModel(fast?.id || prov?.models[0]?.id || '');
     }
     setStep(4);
   };
 
-  const handleClassifierProviderChange = (id) => {
-    setClassifierProvider(id);
+  const handleDecisionProviderChange = (id) => {
+    setDecisionProvider(id);
     const prov = providers.find((p) => p.id === id);
     const fast = prov?.models.find((m) => m.tier === 'fast');
-    setClassifierModel(fast?.id || prov?.models[0]?.id || '');
+    setDecisionModel(fast?.id || prov?.models[0]?.id || '');
   };
 
   const close = () => {
     wizardOpen.value = false;
   };
 
-  // Saves from the classifier step: the success screen shows only once every save landed, and a
+  // Saves from the decision-model step: the success screen shows only once every save landed, and a
   // failure leaves the step editable with the reason.
   const handleFinish = async () => {
     setSaving(true);
@@ -428,22 +428,22 @@ export function Wizard() {
       // A Claude Code or Codex worker with native decisions stays subscription-only; any other choice opts in to API tokens.
       const subscription =
         SUBSCRIPTION_WORKERS.includes(defaultProvider) &&
-        SUBSCRIPTION_WORKERS.includes(classifierProvider);
+        SUBSCRIPTION_WORKERS.includes(decisionProvider);
       await patchSettings('apiTokens', { enabled: !subscription });
       if (subscription)
         await patchSettings('subscriptionOnly', {
           // Claude decisions hold Wardens in project hosts (the default runtime, named so a saved
           // `codex` or `claude` is replaced).
-          decisionRuntime: classifierProvider === 'codex' ? 'codex' : 'claude-project',
-          model: classifierModel,
+          decisionRuntime: decisionProvider === 'codex' ? 'codex' : 'claude-project',
+          model: decisionModel,
         });
 
       // Update defaults — executor model is the global default
       await patchSettings('defaults', {
         provider: defaultProvider,
         model: executorModel,
-        classifierProvider: subscription ? 'subscription-decisions' : classifierProvider,
-        classifierModel,
+        decisionProvider: subscription ? 'subscription-decisions' : decisionProvider,
+        decisionModel,
       });
 
       // Mark setup complete
@@ -524,13 +524,13 @@ export function Wizard() {
         ${
           step === 4
             ? html`
-          <${ClassifierModelStep}
+          <${DecisionModelStep}
             providers=${providers}
             enabledProviders=${enabledProviders}
-            provider=${classifierProvider}
-            selected=${classifierModel}
-            onSelect=${setClassifierModel}
-            onSelectProvider=${handleClassifierProviderChange}
+            provider=${decisionProvider}
+            selected=${decisionModel}
+            onSelect=${setDecisionModel}
+            onSelectProvider=${handleDecisionProviderChange}
             onNext=${handleFinish}
             onBack=${() => setStep(3)}
             saving=${saving}
@@ -547,8 +547,8 @@ export function Wizard() {
             enabledProviders=${enabledProviders}
             provider=${defaultProvider}
             executorModel=${executorModel}
-            classifierProvider=${classifierProvider}
-            classifierModel=${classifierModel}
+            decisionProvider=${decisionProvider}
+            decisionModel=${decisionModel}
           />
         `
             : null

@@ -435,7 +435,7 @@ export const worktrees = signal([]); // GitWorktree[] from GET /api/worktrees
 export const tokenUsage = signal(null);
 
 // Conversation — chat messages (user + agent responses)
-// Each entry: { actor: "user"|"agent", content, timestamp, traceId?, classification?, route?, error? }
+// Each entry: { actor: "user"|"agent", content, timestamp, traceId?, error? }
 export const messages = signal([]);
 /** Current owned learning inspection for the active thread: { threadId, payload, error, loadedAt }. Live, not historical. */
 export const knowledgeInspection = signal(null);
@@ -2444,28 +2444,6 @@ export async function chorusAction(threadId, turnId, action) {
     showToast(`${action === 'retry' ? 'Retry' : 'Dismiss'} failed: ${err.message}`, 'error', {
       thread: threadId,
     });
-  }
-}
-
-export async function submitIntervention(threadId, traceId, spanId, correction, reason) {
-  try {
-    const res = await authFetch(`/api/threads/${encodeURIComponent(threadId)}/interventions`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        traceId,
-        spanId,
-        actual: null,
-        correction,
-        operator: 'ui',
-        reason: reason || 'manual override from viewer',
-      }),
-    });
-    const result = await res.json();
-    showToast('Correction submitted', 'ok', { thread: threadId });
-    return result;
-  } catch (err) {
-    showToast(`Override failed: ${err.message}`, 'error', { thread: threadId });
   }
 }
 

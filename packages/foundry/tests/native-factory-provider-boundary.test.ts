@@ -121,9 +121,6 @@ test('real SessionBackedProvider → factory → runtime: both expert reviews re
       model: 'controlled',
       prompt: '',
       temperature: 0,
-      visibleLayers: [],
-      peers: [],
-      maxDepth: 1,
       enabled: true,
     },
   } as any;

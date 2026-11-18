@@ -15,19 +15,19 @@ import {
 } from '@inixiative/foundry-core';
 
 /** Phase rows that carry a middleware call's full input, reduced at the end of their turn. */
-export const RAW_MIDDLEWARE_PHASES = ['route', 'advice', 'guard-request', 'guard-outcome'] as const;
+export const RAW_MIDDLEWARE_PHASES = ['advice', 'guard-request', 'guard-outcome'] as const;
 
 export const REDUCED_PHASE = 'middleware-reduced';
 
 export interface ReducedMiddleware {
   /** Stable per call: `<source row id>` or `<source row id>:<domain>`. */
   readonly callId: string;
-  /** `cartographer`, or the Warden's domain. */
+  /** The Warden's domain. */
   readonly role: string;
   readonly trigger: string;
   /** What it was asked about: `turn:<id>` for a message or a turn's actions, a tool call id (`guard: per-call`), `handoff:<child>` for a brief. */
   readonly wraps: string;
-  /** How the call ended: a Warden call's `callOutcomeLabel` (`answered:spoke`, `not-sent:cold`), the route's status. */
+  /** How the call ended: a Warden call's `callOutcomeLabel` (`answered:spoke`, `not-sent:cold`). */
   readonly outcome: string;
   readonly reason?: string;
   /** What it said: snippets or notes; null when it had nothing to add. */
@@ -74,26 +74,6 @@ export function reduceMiddleware(
     const r = row.record;
     // A row says what it wraps (a handoff, a call, a turn); one that does not wraps its turn.
     const wraps = typeof r.wraps === 'string' ? r.wraps : `turn:${row.turnId ?? 'none'}`;
-    if (row.phase === 'route') {
-      const routing = obj(r.routing) ?? {};
-      out.push({
-        callId: row.id,
-        role: 'cartographer',
-        trigger: 'user-message',
-        wraps,
-        outcome: String(routing.status ?? 'unknown'),
-        ...(typeof routing.reason === 'string' ? { reason: routing.reason } : {}),
-        result: {
-          ...(Array.isArray(routing.layers) ? { layers: routing.layers } : {}),
-          ...(Array.isArray(routing.domains) ? { domains: routing.domains } : {}),
-        },
-        state: { ...(obj(obj(routing.request)?.versions) ?? {}) },
-        ...(served(routing.request) ? { served: served(routing.request)! } : {}),
-        at: row.storedAt,
-        sources: [row.id],
-      });
-      continue;
-    }
     if (row.phase === 'advice') {
       for (const p of (r.participants as Rec[] | undefined) ?? []) {
         const snippets = Array.isArray(p.snippets) ? (p.snippets as string[]) : [];

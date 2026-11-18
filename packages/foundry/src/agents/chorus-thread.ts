@@ -4,7 +4,7 @@
  * @partOf feature:wardens, feature:evals
  */
 // A thread of a project built the way the daemon builds one (the factory, the per-thread runtime
-// with its Cartographer, region Wardens and FlowOrchestrator), but nobody's: hidden, learning off,
+// with its region Wardens and FlowOrchestrator), but nobody's: hidden, learning off,
 // disposed when its caller is done. chorus-advise sends one message through it; the project Warden
 // host composes its roster from it, so the host holds exactly what a thread of the project sends.
 
@@ -27,15 +27,14 @@ export interface ChorusThreadOptions {
   readonly projectId: string;
   /** Where the thread works: the instruction ladder composes from here. */
   readonly cwd: string;
-  /** The decision provider the Cartographer and every Warden run on (the daemon's decision host). */
+  /** The decision provider every Warden runs on (the daemon's decision host). */
   readonly decisions: LLMProvider;
   /** The provider of every other agent (the executor and other non-decision roles), by provider id. */
   readonly agentProvider: (id: string) => LLMProvider;
   /** A classify stage's own host (`ThreadRuntimeDeps.stageHost`). */
   readonly stageHost?: ThreadRuntimeDeps['stageHost'];
   readonly resolveSource: SourceResolver;
-  readonly atlasRoot?: string;
-  /** Every phase record (route, advice) the runtime journals, as the daemon's journal receives it. */
+  /** Every phase record (advice) the runtime journals, as the daemon's journal receives it. */
   readonly journal?: (record: PhaseRecordInput) => void;
   /** The secret scratch pad's reminder for a message (`ThreadRuntimeDeps.secretNote`). */
   readonly secretNote?: ThreadRuntimeDeps['secretNote'];
@@ -83,7 +82,6 @@ export async function withChorusThread<T>(
     learning: { enabled: false },
     resolveSource: opts.resolveSource,
     ...(opts.stageHost ? { stageHost: opts.stageHost } : {}),
-    ...(opts.atlasRoot ? { atlasRoot: opts.atlasRoot } : {}),
     ...(opts.secretNote ? { secretNote: opts.secretNote } : {}),
     log: opts.log ?? (() => {}),
     warn: opts.warn ?? ((line) => console.warn(line)),
@@ -109,7 +107,6 @@ export async function withChorusThread<T>(
     if (!live) throw Error('the thread has no runtime');
     if (!live.domainLibrarians.size)
       throw Error(`project ${opts.projectId} runs no Wardens: its chorus is off or empty`);
-    await live.ready;
     return await use({ thread, live, central });
   } finally {
     runtime.disposeAll();

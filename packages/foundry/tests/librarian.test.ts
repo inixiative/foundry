@@ -39,36 +39,10 @@ describe('Librarian', () => {
     expect(stack.layers[0].isWarm).toBe(true);
   });
 
-  it('initial state has empty domain and zero messages', () => {
+  it('initial state has no activity and no flags', () => {
     const state = librarian.state;
-    expect(state.domain).toBe('');
-    expect(state.messageCount).toBe(0);
     expect(state.recentActivity).toHaveLength(0);
     expect(state.flags).toHaveLength(0);
-  });
-
-  it('updates domain on classification signal', async () => {
-    await signals.emit(
-      makeSignal('classification', {
-        category: 'auth',
-        tags: ['security', 'api'],
-      }),
-    );
-
-    expect(librarian.state.domain).toBe('auth');
-    expect(librarian.state.lastClassification?.category).toBe('auth');
-    expect(librarian.state.lastClassification?.tags).toContain('security');
-    expect(librarian.state.messageCount).toBe(1);
-  });
-
-  it('detects domain shift', async () => {
-    await signals.emit(makeSignal('classification', { category: 'auth', tags: [] }));
-    expect(librarian.domainShifted('auth')).toBe(false);
-    expect(librarian.domainShifted('payments')).toBe(true);
-
-    await signals.emit(makeSignal('classification', { category: 'payments', tags: [] }));
-    expect(librarian.state.domain).toBe('payments');
-    expect(librarian.domainShifted('payments')).toBe(false);
   });
 
   it('tracks recent activity from dispatch signals', async () => {
@@ -155,16 +129,14 @@ describe('Librarian', () => {
   });
 
   it('writes serialized state to the layer', async () => {
-    await signals.emit(makeSignal('classification', { category: 'auth', tags: ['api'] }));
+    await signals.emit(makeSignal('context_loaded', { layerId: 'auth-conventions' }));
 
     const layerContent = librarian.layer.content;
     const parsed = JSON.parse(layerContent) as ThreadState;
-    expect(parsed.domain).toBe('auth');
-    expect(parsed.messageCount).toBe(1);
+    expect(parsed.inContext).toEqual(['auth-conventions']);
   });
 
   it('layer stays warm after updates', async () => {
-    await signals.emit(makeSignal('classification', { category: 'auth', tags: [] }));
     await signals.emit(makeSignal('dispatch', { agentId: 'executor' }));
 
     expect(librarian.layer.isWarm).toBe(true);
@@ -172,15 +144,14 @@ describe('Librarian', () => {
   });
 
   it('dispose stops listening to signals', async () => {
-    await signals.emit(makeSignal('classification', { category: 'auth', tags: [] }));
-    expect(librarian.state.messageCount).toBe(1);
+    await signals.emit(makeSignal('dispatch', { agentId: 'before' }));
+    expect(librarian.state.recentActivity).toHaveLength(1);
 
     librarian.dispose();
 
-    await signals.emit(makeSignal('classification', { category: 'payments', tags: [] }));
+    await signals.emit(makeSignal('dispatch', { agentId: 'after' }));
     // Should NOT have updated since we disposed
-    expect(librarian.state.messageCount).toBe(1);
-    expect(librarian.state.domain).toBe('auth');
+    expect(librarian.state.recentActivity).toHaveLength(1);
   });
 
   it('handles unknown signal kinds gracefully', async () => {
@@ -190,15 +161,12 @@ describe('Librarian', () => {
     expect(librarian.state.recentActivity[0]).toContain('some_custom_signal');
   });
 
-  it('full lifecycle: classify → dispatch → tool → guard → writeback', async () => {
-    // 1. Message classified
-    await signals.emit(makeSignal('classification', { category: 'auth', tags: ['security'] }));
-
-    // 2. Context loaded
+  it('full lifecycle: context → dispatch → tool → guard → writeback', async () => {
+    // 1. Context loaded
     await signals.emit(makeSignal('context_loaded', { layerId: 'auth-conventions' }));
     await signals.emit(makeSignal('context_loaded', { layerId: 'security-patterns' }));
 
-    // 3. Executor dispatched
+    // 2. Executor dispatched
     await signals.emit(
       makeSignal('dispatch', {
         agentId: 'executor-fix',
@@ -206,7 +174,7 @@ describe('Librarian', () => {
       }),
     );
 
-    // 4. Tool calls observed
+    // 3. Tool calls observed
     await signals.emit(
       makeSignal('tool_observation', {
         tool: 'file_read',
@@ -220,22 +188,19 @@ describe('Librarian', () => {
       }),
     );
 
-    // 5. Guard result
+    // 4. Guard result
     await signals.emit(
       makeSignal('correction', 'Convention guard: use camelCase for function names'),
     );
 
     // Verify final state
     const state = librarian.state;
-    expect(state.domain).toBe('auth');
-    expect(state.messageCount).toBe(1);
     expect(state.inContext).toContain('auth-conventions');
     expect(state.inContext).toContain('security-patterns');
     expect(state.recentActivity.length).toBeGreaterThanOrEqual(4);
-    expect(state.lastClassification?.tags).toContain('security');
 
     // Verify layer is readable JSON
     const parsed = JSON.parse(librarian.layer.content);
-    expect(parsed.domain).toBe('auth');
+    expect(parsed.inContext).toContain('security-patterns');
   });
 });

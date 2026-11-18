@@ -1,13 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import {
-  Classifier,
-  ContextLayer,
-  ContextStack,
-  Executor,
-  Harness,
-  type Signal,
-  Thread,
-} from '../src';
+import { ContextLayer, ContextStack, Executor, Harness, type Signal, Thread } from '../src';
 
 function makeThread(id = 't') {
   const layer = new ContextLayer({ id: 'system' });
@@ -281,36 +273,29 @@ describe('Dispatch observations at the thread boundary', () => {
   });
 });
 
-describe('Decider dispatch metadata', () => {
-  test('Decider handlers receive threadId and cwd from the dispatching thread', async () => {
+describe('Dispatch metadata', () => {
+  test('agent handlers receive threadId and cwd from the dispatching thread', async () => {
     const thread = makeThread('meta-thread');
     let seen: unknown;
     thread.register(
-      new Classifier<string>({
-        id: 'classifier',
+      new Executor<string, string>({
+        id: 'worker',
         stack: thread.stack,
         handler: async (_context, _payload, meta) => {
           seen = meta;
-          return { value: { category: 'bug' } };
+          return 'done';
         },
       }),
     );
 
-    await thread.dispatch('classifier', 'Fix it');
+    await thread.dispatch('worker', 'Fix it');
     expect(seen).toMatchObject({ threadId: 'meta-thread', cwd: '/work/t' });
   });
 });
 
 describe('Harness observation signals', () => {
-  test('a classified turn emits classification and dispatch signals on the thread bus', async () => {
+  test('a turn emits a dispatch signal on the thread bus', async () => {
     const thread = makeThread('obs');
-    thread.register(
-      new Classifier<string>({
-        id: 'classifier',
-        stack: thread.stack,
-        handler: async () => ({ value: { category: 'bug', tags: ['qa'] }, confidence: 1 }),
-      }),
-    );
     thread.register(
       new Executor({ id: 'worker', stack: thread.stack, handler: async () => 'done' }),
     );
@@ -320,27 +305,12 @@ describe('Harness observation signals', () => {
     });
 
     const harness = new Harness(thread);
-    harness.setClassifier('classifier');
     harness.setDefaultExecutor('worker');
     await harness.send({ id: 'turn-1', payload: 'Fix the bug' });
 
-    const classification = seen.filter((s) => s.kind === 'classification');
-    expect(classification).toHaveLength(1);
-    expect(classification[0].content).toMatchObject({ category: 'bug', tags: ['qa'] });
-    expect(classification[0].source).toBe('harness:classifier');
-
     const dispatches = seen.filter((s) => s.kind === 'dispatch');
-    expect(dispatches.map((s) => (s.content as { agentId: string }).agentId)).toEqual([
-      'classifier',
-      'worker',
-    ]);
+    expect(dispatches.map((s) => (s.content as { agentId: string }).agentId)).toEqual(['worker']);
     expect(dispatches[0].content).toMatchObject({
-      agentId: 'classifier',
-      role: 'classify',
-      messageId: 'turn-1',
-      invocation: 'always',
-    });
-    expect(dispatches[1].content).toMatchObject({
       agentId: 'worker',
       role: 'execute',
       messageId: 'turn-1',
@@ -369,9 +339,8 @@ describe('Harness observation signals', () => {
     let background: Promise<void> | undefined;
     harness.onBackground(() => {});
     harness.setFlow({
-      defaultExecutor: 'worker',
       stages: [
-        { agentId: 'routed', role: 'execute', invocation: 'always' },
+        { agentId: 'worker', role: 'execute', invocation: 'always' },
         { agentId: 'observer', role: 'observe', invocation: 'always', background: true },
       ],
     });

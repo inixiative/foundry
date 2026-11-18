@@ -376,14 +376,14 @@ test('capture stamps what Foundry ran: the executor per turn, decision roles per
     observedAt: 2,
   });
   journal.appendNative(t, { ...executor, toolName: 'Read', toolOutput: 'x', callId: 'c1' });
-  const route = {
+  const warden = {
     schema: 1 as const,
-    admissionId: 'route',
+    admissionId: 'warden',
     nativeOutcome: 'unknown' as const,
-    owner: owner(`${t.id}:aux:cartographer`),
+    owner: owner(`${t.id}:aux:domain:architecture`),
   };
-  journal.registerNative(t, route);
-  journal.appendNative(t, { ...route, text: 'routing', observedAt: 3 });
+  journal.registerNative(t, warden);
+  journal.appendNative(t, { ...warden, text: 'warden answer', observedAt: 3 });
   const supplied = (served?: object) => ({
     status: 'supplied',
     phase: 'advice',
@@ -397,10 +397,9 @@ test('capture stamps what Foundry ran: the executor per turn, decision roles per
       id,
       turnId: 'turn-a',
       dispatchId: 'd',
-      phase: id as 'route' | 'advice',
+      phase: id as 'advice',
       record,
     });
-  phase('route', { routing: { request: supplied({ model: 'gpt-6-luna', effort: 'low' }) } });
   phase('advice', {
     participants: [
       { domain: 'architecture', request: supplied({ model: 'gpt-6-luna', effort: 'low' }) },
@@ -443,16 +442,11 @@ test('capture stamps what Foundry ran: the executor per turn, decision roles per
     expect(call).toMatchObject({ model: 'claude-opus-5-5', effort: 'high' });
     expect(snapshot.entries.find((e) => e.kind === 'tool-result')).not.toHaveProperty('model');
     // A decision role's native text never inherits the executor's model.
-    const routing = snapshot.entries.find(
-      (e) => e.kind === 'assistant' && e.text.includes('routing'),
+    const decision = snapshot.entries.find(
+      (e) => e.kind === 'assistant' && e.text.includes('warden answer'),
     );
-    expect(routing).not.toHaveProperty('model');
+    expect(decision).not.toHaveProperty('model');
     // Middleware calls reach Archive reduced, one entry per call, each with the model that served it.
-    expect(entry('middleware:route')).toEqual({
-      model: 'gpt-6-luna',
-      effort: 'low',
-      kind: 'event',
-    });
     expect(entry('middleware:advice:architecture')).toEqual({
       model: 'gpt-6-luna',
       effort: 'low',
@@ -465,8 +459,8 @@ test('capture stamps what Foundry ran: the executor per turn, decision roles per
     expect((await archive.client().list())[0]?.models).toEqual(
       expect.arrayContaining([
         { model: 'claude-opus-5-5', effort: 'high', entries: 2 },
-        // The Cartographer and one Warden on gpt-6-luna; the other Warden on Opus.
-        { model: 'gpt-6-luna', effort: 'low', entries: 2 },
+        // One Warden on gpt-6-luna; the other Warden on Opus.
+        { model: 'gpt-6-luna', effort: 'low', entries: 1 },
         { model: 'claude-opus-5-5', entries: 1 },
       ]),
     );

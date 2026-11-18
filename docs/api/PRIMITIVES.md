@@ -8,11 +8,7 @@ Bring your own agents, harness, memory systems, and docs. Foundry provides the c
 
 **Context Layers** are independently managed caches. Each has its own sources, staleness, and lifecycle. Agents don't see raw sources — they see merged, filtered slices of the layer stack.
 
-**Agents** come in two modes:
-- **Executors** take context + payload, do work, return full results
-- **Deciders** take context + payload, return only a slim decision — the context stays behind
-
-**Classifiers** and **Routers** are Deciders. They have pre-warmed context (taxonomy, topology) and return lightweight decisions without leaking that context to callers.
+**Agents** are **Executors**: they take context + payload, do work, return full results.
 
 **Traces** record every message's full journey through the system. Every stage is a span with input, output, timing, and which layers were visible.
 
@@ -179,68 +175,6 @@ const result = await worker.run("write a function");
 // result.output = "full results here"
 ```
 
-### Decider
-
-Context + payload in, slim decision out. Context stays behind.
-
-```ts
-import { Decider, type Decision } from "@foundry/agent-primitives";
-
-const decider = new Decider({
-  id: "priority-checker",
-  stack,
-  handler: async (context, payload) => {
-    return {
-      value: "high",         // The decision
-      confidence: 0.9,       // 0-1
-      reasoning: "matches P0 pattern",  // Brief, not the full context
-    } satisfies Decision<string>;
-  },
-});
-```
-
-### Classifier
-
-Decider that returns a category.
-
-```ts
-import { Classifier, type Classification } from "@foundry/agent-primitives";
-
-const classifier = new Classifier({
-  id: "signal-classifier",
-  stack,  // Pre-warmed with taxonomy
-  handler: async (context, payload) => ({
-    value: {
-      category: "convention",
-      subcategory: "naming",
-      tags: ["style", "typescript"],
-    } satisfies Classification,
-    confidence: 0.85,
-  }),
-});
-```
-
-### Router
-
-Decider that returns a destination.
-
-```ts
-import { Router, type Route } from "@foundry/agent-primitives";
-
-const router = new Router({
-  id: "task-router",
-  stack,  // Pre-warmed with topology map
-  handler: async (context, payload) => ({
-    value: {
-      destination: "executor-auth",    // Agent or thread to send to
-      priority: 10,
-      contextSlice: ["docs", "auth"],  // Which layers the destination should see
-    } satisfies Route,
-    confidence: 0.9,
-  }),
-});
-```
-
 ---
 
 ## Middleware
@@ -330,10 +264,10 @@ import { Trace, type Span } from "@foundry/agent-primitives";
 const trace = new Trace("msg-1");
 
 // Start spans (nested — child of current)
-trace.start("classify", "classify", {
-  agentId: "classifier",
+trace.start("execute", "execute", {
+  agentId: "code-writer",
   input: payload,
-  layerIds: ["docs", "taxonomy"],
+  layerIds: ["docs"],
 });
 
 // End current span
@@ -357,7 +291,7 @@ interface Span {
   readonly id: string;
   readonly parentId?: string;
   readonly name: string;
-  readonly kind: SpanKind;  // "ingress" | "classify" | "route" | "dispatch" | "execute" | "decide" | "middleware" | "writeback" | "egress" | "fan" | string
+  readonly kind: SpanKind;  // "ingress" | "dispatch" | "execute" | "decide" | "middleware" | "writeback" | "egress" | "fan" | string
   readonly agentId?: string;
   readonly threadId?: string;
   readonly layerIds?: string[];
@@ -381,24 +315,14 @@ interface Span {
 Reference-based context loading. Pass pointers, not content.
 
 ```ts
-import { HydrationRegistry, RefSource, type ContextRef } from "@foundry/agent-primitives";
+import type { ContextRef, HydrationAdapter } from "@foundry/agent-primitives";
 
-const registry = new HydrationRegistry();
-registry.register(memory.asAdapter());  // "sqlite" system
-registry.register(docs.asAdapter());    // "markdown" system
+// Refs — pointers into your systems
+const ref: ContextRef = { system: "sqlite", locator: "conv-1" };
 
-// Create refs — pointers into your systems
-const refs: ContextRef[] = [
-  { system: "sqlite", locator: "conv-1" },
-  { system: "markdown", locator: "docs/auth.md" },
-];
-
-// Hydrate on demand
-const content = await registry.hydrateAll(refs);
-
-// Or use as a ContextSource on a layer
-const source = new RefSource("auth-context", refs, registry);
-layer.addSource(source);
+// An adapter hydrates refs for one system (memory adapters expose one)
+const adapter: HydrationAdapter = memory.asAdapter();  // adapter.system === "sqlite"
+const content = await adapter.hydrate(ref);
 ```
 
 ---
@@ -416,12 +340,10 @@ const thread = new Thread("main", stack, {
   maxDispatches: 10000,
 });
 
-thread.register(classifier);
-thread.register(router);
 thread.register(executor);
 
 // Dispatch (runs through middleware chain)
-const result = await thread.dispatch("classifier", payload, filterOverride?);
+const result = await thread.dispatch("executor", payload, filterOverride?);
 
 // Fan out (allSettled — partial failures don't kill the rest)
 const results = await thread.fan(["agent-1", "agent-2"], payload);
@@ -439,14 +361,12 @@ thread.meta  // { description, tags, status, createdAt, lastActiveAt }
 
 ## Harness
 
-Entry point. Classify → route → dispatch, auto-traced.
+Entry point. Dispatches each message to the executor, auto-traced.
 
 ```ts
 import { Harness } from "@foundry/agent-primitives";
 
 const harness = new Harness(thread, { maxTraces: 1000 });
-harness.setClassifier("classifier");
-harness.setRouter("router");
 harness.setDefaultExecutor("executor-answer");
 
 const result = await harness.send({
@@ -454,62 +374,16 @@ const result = await harness.send({
   payload: "Fix the auth bug",
 });
 
-// result.classification  — what the classifier decided
-// result.route           — where the router sent it
 // result.result          — the executor's output
 // result.trace           — full Trace object, drillable
 
-// Direct dispatch (bypass classify/route)
+// Direct dispatch to a named agent
 await harness.dispatch("executor-fix", payload);
 
 // Trace history
 harness.traces                           // all traces
 harness.getTrace("trace-id")             // by trace id
 harness.getTraceForMessage("msg-1")      // by message id
-```
-
----
-
-## Sessions
-
-Lazy thread resolution. Router says "send to X" — if X doesn't exist, it's created.
-
-```ts
-import { SessionManager } from "@foundry/agent-primitives";
-
-const sessions = new SessionManager();
-sessions.add(mainThread);
-
-// Register blueprints for lazy creation
-sessions.addBlueprint({
-  match: /^feature-.*/,  // String or RegExp
-  async create(destinationId, parent) {
-    const childStack = SessionManager.inheritLayers(parent!, {
-      share: ["docs"],          // Same layer instance
-      copy: ["conventions"],    // Snapshot copy
-    });
-    const child = new Thread(destinationId, childStack, {
-      description: `Feature thread: ${destinationId}`,
-    });
-    child.register(makeExecutor(destinationId));
-    return child;
-  },
-});
-
-// Resolve — finds existing or spawns from blueprint
-const thread = await sessions.resolve("feature-auth", mainThread);
-
-// Dispatch across threads
-await sessions.dispatch("feature-auth", payload, {
-  sourceThread: mainThread,
-  agentId: "executor",
-});
-
-// Tree
-sessions.parentOf("feature-auth")   // → mainThread
-sessions.childrenOf("main")         // → [feature-auth thread]
-sessions.active                     // non-archived threads
-sessions.archived                   // archived threads
 ```
 
 ---

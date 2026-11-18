@@ -181,9 +181,6 @@ test('settings naming a retired model move in one update audited as model succes
     prompt: '',
     provider: 'claude-code',
     model,
-    visibleLayers: [],
-    peers: [],
-    maxDepth: 1,
     enabled: true,
   });
   config.agents = {
@@ -218,11 +215,11 @@ test('settings naming a retired model move in one update audited as model succes
     ...paired.defaults,
     provider: 'codex',
     model: 'gpt-6-astra',
-    classifierProvider: 'claude-code',
-    classifierModel: 'claude-opus-5-1',
+    decisionProvider: 'claude-code',
+    decisionModel: 'claude-opus-5-1',
   };
   expect(settingSuccessions(paired, registry)).toContainEqual({
-    path: 'defaults.classifierModel',
+    path: 'defaults.decisionModel',
     provider: 'claude-code',
     from: 'claude-opus-5-1',
     to: 'claude-opus-5-5',

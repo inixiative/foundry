@@ -7,7 +7,7 @@
  * Conversation — center panel. Always chat mode.
  *
  * User types a message → harness processes it → agent responds.
- * Each agent response shows classification/route badges and a trace link.
+ * Each agent response shows a trace link.
  * Clicking "trace" opens trace details in the right pane (detail drawer).
  */
 
@@ -1240,26 +1240,13 @@ function AgentMessage({ msg, index, onTraceClick }) {
         traceId=${msg.traceId}
       />
 
-      <!-- Classification + route badges (inline) -->
+      <!-- Trace link (inline) -->
       ${
-        msg.classification || hasTrace
+        hasTrace
           ? html`
         <div class="chat-pipeline">
-          ${
-            msg.classification
-              ? html`
-            <span class="chat-badge classify">${msg.classification.category}</span>
-          `
-              : null
-          }
-          ${
-            hasTrace
-              ? html`
-            <button class="chat-trace-btn" onClick=${() => onTraceClick(msg.traceId)}
-              title=${`Inspect this turn in the detail panel${msg.trace?.totalDurationMs ? ` · ${(msg.trace.totalDurationMs / 1000).toFixed(1)} s` : ''}`}>Inspect</button>
-          `
-              : null
-          }
+          <button class="chat-trace-btn" onClick=${() => onTraceClick(msg.traceId)}
+            title=${`Inspect this turn in the detail panel${msg.trace?.totalDurationMs ? ` · ${(msg.trace.totalDurationMs / 1000).toFixed(1)} s` : ''}`}>Inspect</button>
         </div>
       `
           : null

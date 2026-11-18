@@ -225,9 +225,6 @@ export async function liveWatchFixture(
       model: 'fable',
       prompt: '',
       enabled: true,
-      visibleLayers: [],
-      peers: [],
-      maxDepth: 1,
       temperature: 0,
     },
   };

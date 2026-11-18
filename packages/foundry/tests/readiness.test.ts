@@ -14,16 +14,13 @@ function team() {
   config.apiTokens = true; // OpenAI experts on the OpenAI decision provider
   config.defaults = {
     ...config.defaults,
-    classifierProvider: 'openai',
-    classifierModel: 'gpt-5.6-luna',
+    decisionProvider: 'openai',
+    decisionModel: 'gpt-5.6-luna',
   };
   config.agents.worker = {
     id: 'worker',
     kind: 'executor',
     prompt: '',
-    visibleLayers: [],
-    peers: [],
-    maxDepth: 1,
     enabled: true,
   };
   // The project's one Warden is its region `docs` (settings declare none).
@@ -76,9 +73,6 @@ test('readiness refuses a hand-named Warden in settings and catches unavailable 
       flowRole: 'domain-advising',
       domain: 'docs',
       prompt: 'PRIVATE_EXPERT',
-      visibleLayers: [],
-      peers: [],
-      maxDepth: 1,
       enabled: true,
     },
   };
@@ -236,8 +230,8 @@ test('keyless providers read as ready: a local Ollama has no credential to be mi
   config.defaults = {
     provider: 'meta',
     model: 'muse-spark-1.3',
-    classifierProvider: 'ollama',
-    classifierModel: 'llama3.2:3b',
+    decisionProvider: 'ollama',
+    decisionModel: 'llama3.2:3b',
   };
   const report = await inspectReadiness(config, {
     environment: { MODEL_API_KEY: 'synthetic' },
@@ -262,8 +256,8 @@ test('keyless providers read as ready: a local Ollama has no credential to be mi
   config.defaults = {
     provider: 'openai',
     model: 'gpt-5.6-luna',
-    classifierProvider: 'openai',
-    classifierModel: 'gpt-5.6-luna',
+    decisionProvider: 'openai',
+    decisionModel: 'gpt-5.6-luna',
   };
   const keyed = await inspectReadiness(config, { environment: {}, which: () => '/controlled/cli' });
   expect(keyed.issues.some((item) => item.code === 'provider-credential-missing')).toBe(true);

@@ -36,9 +36,6 @@ function fixture(central: LLMProvider, tools?: ToolRegistry) {
       model: 'controlled',
       prompt: '',
       temperature: 0,
-      visibleLayers: [],
-      peers: [],
-      maxDepth: 1,
       enabled: true,
     },
   } as any;

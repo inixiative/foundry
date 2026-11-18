@@ -5,8 +5,8 @@
  */
 /**
  * The "Foundry: context" item: what the middleware decided for a turn, read from the turn's
- * sealed route and advice phase rows on the `flow:<threadId>` stream. These rows are written
- * before the executor runs, so the host sees them before the agent's first output.
+ * sealed advice phase row on the `flow:<threadId>` stream. These rows are written
+ * before the executor runs, so the host sees it before the agent's first output.
  */
 
 import { ADVICE_RESULTS, recordedOutcomeLabel } from '@inixiative/foundry-core';
@@ -14,14 +14,11 @@ import { ADVICE_RESULTS, recordedOutcomeLabel } from '@inixiative/foundry-core';
 type Record_ = Record<string, unknown>;
 const isRecord = (value: unknown): value is Record_ =>
   !!value && typeof value === 'object' && !Array.isArray(value);
-const strings = (value: unknown) =>
-  Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : [];
 
 const outcomeLabel = (value: unknown) => recordedOutcomeLabel(value, ADVICE_RESULTS) ?? 'unknown';
 
 export interface ContextSummary {
   readonly text: string;
-  readonly routing: Record_ | null;
   readonly participants: Array<{ domain: string; outcome: string; reason?: string }>;
   /** Wardens the system kept quiet (timed out, failed, not admitted), as the row records them (FEAT-008). */
   readonly degraded: Record_[];
@@ -45,19 +42,16 @@ export function degradedLine(degraded: readonly Record_[]): string | null {
   return `Some Wardens went unheard; the turn went on without them: ${what.join(', ')}. Retry is in the Foundry viewer.`;
 }
 
-/** The summary for one flow-stream turn, or null while neither phase row has been recorded. */
+/** The summary for one flow-stream turn, or null while its advice row has not been recorded. */
 export function contextSummary(turn: unknown): ContextSummary | null {
   if (!isRecord(turn) || !Array.isArray(turn.phases)) return null;
   const rows = turn.phases.filter(isRecord);
-  const route = rows.find((row) => row.phase === 'route');
   // The sealed advice row; a retry (FEAT-008) is a later row with `retryOf`.
   const advice = rows.find(
     (row) => row.phase === 'advice' && !(isRecord(row.record) && row.record.retryOf),
   );
-  if (!route && !advice) return null;
+  if (!advice) return null;
 
-  const routing =
-    isRecord(route?.record) && isRecord(route.record.routing) ? route.record.routing : null;
   const participants = (
     isRecord(advice?.record) && Array.isArray(advice.record.participants)
       ? advice.record.participants
@@ -71,18 +65,6 @@ export function contextSummary(turn: unknown): ContextSummary | null {
     }));
 
   const lines: string[] = [];
-  if (routing) {
-    const status = typeof routing.status === 'string' ? routing.status : 'unknown';
-    const confidence =
-      typeof routing.confidence === 'number' ? `, confidence ${routing.confidence.toFixed(2)}` : '';
-    const layers = strings(routing.layers);
-    const domains = strings(routing.domains);
-    lines.push(
-      `Routing (${status}${confidence}): ${layers.length ? `layers ${layers.join(', ')}` : 'no layers'}${
-        domains.length ? `; domains ${domains.join(', ')}` : ''
-      }`,
-    );
-  }
   if (participants.length)
     lines.push(
       'Wardens:',
@@ -92,8 +74,7 @@ export function contextSummary(turn: unknown): ContextSummary | null {
   const line = degradedLine(degraded);
   if (line) lines.push(line);
   return {
-    text: lines.join('\n') || 'No routing or advice recorded.',
-    routing,
+    text: lines.join('\n') || 'No advice recorded.',
     participants,
     degraded,
   };

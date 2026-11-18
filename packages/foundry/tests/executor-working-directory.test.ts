@@ -44,9 +44,6 @@ for (const withTools of [true, false])
         prompt: '',
         provider: 'central',
         model: 'central-model',
-        visibleLayers: [],
-        peers: [],
-        maxDepth: 1,
         enabled: true,
       },
     };

@@ -18,12 +18,11 @@ Foundry is a **context management and orchestration layer** for AI agents. It ma
 │  │ Context Stack │  │ Anthropic│  │ File     │  │ PR Fixtures   │  │
 │  │ Thread        │  │ OpenAI   │  │ SQLite   │  │ Diff Scoring  │  │
 │  │ Harness       │  │ Gemini   │  │ Postgres │  │ LLM Scoring   │  │
-│  │               │  │          │  │ Redis    │  │ Regression    │  │
-│  │ Herald        │  │ Runtime  │  │ HTTP     │  │ Trends        │  │
-│  │ ActiveMemory  │  │ Adapters │  │ Markdown │  │               │  │
-│  │ CorpusCompiler│  │          │  │          │  │               │  │
+│  │               │  │          │  │          │  │ Regression    │  │
+│  │ ActiveMemory  │  │ Runtime  │  │ HTTP     │  │ Trends        │  │
+│  │               │  │ Adapters │  │ Markdown │  │               │  │
 │  │ TokenTracker  │  │ Streaming│  │          │  │               │  │
-│  │ Trace/Session │  │          │  │          │  │               │  │
+│  │ Trace         │  │          │  │          │  │               │  │
 │  └───────────────┘  └──────────┘  └──────────┘  └───────────────┘  │
 │                                                                       │
 │  ┌───────────────────────────────────────────────────────────────┐    │
@@ -116,9 +115,6 @@ interface AgentLLMConfig {
 
 **Agent types:**
 - `Executor` — takes context + payload, does work, returns full result
-- `Decider` — returns only a slim decision (context stays behind)
-- `Classifier` — Decider subclass for classification
-- `Router` — Decider subclass for routing to destinations
 
 ### Thread
 
@@ -129,7 +125,6 @@ const thread = new Thread("main", stack, {
   description: "Primary agent thread",
   tags: ["production"],
 });
-thread.register(classifier);
 thread.register(executor);
 await thread.dispatch("executor", payload);
 ```
@@ -142,37 +137,17 @@ Entry point for external callers. Every message gets a full Trace.
 
 ```ts
 const harness = new Harness(thread);
-harness.setClassifier("classifier");
-harness.setRouter("router");
 harness.setDefaultExecutor("executor");
 
 const result = await harness.send({ id: "msg-1", payload: "build auth" });
 // result.trace contains the full span tree
 ```
 
-### Session Manager
-
-Manages a tree of threads with lazy creation via blueprints.
-
-```ts
-const session = new SessionManager();
-session.add(mainThread);
-session.addBlueprint({
-  match: /^feature-/,
-  create: (id, parent) => {
-    const stack = SessionManager.inheritLayers(parent, { copyAll: true });
-    return new Thread(id, stack);
-  },
-});
-// "feature-auth" thread created on first dispatch
-await session.dispatch("feature-auth", payload, { sourceThread: mainThread });
-```
-
 ### Trace
 
 Full span tree of a message's journey. Each span records: kind, status, duration, input/output, error, annotations, context hash, layer visibility.
 
-**Span kinds:** `ingress`, `classify`, `route`, `dispatch`, `execute`, `decide`, `middleware`, `writeback`, `egress`, `fan`
+**Span kinds:** `ingress`, `dispatch`, `execute`, `decide`, `middleware`, `writeback`, `egress`, `fan`
 
 ### Signal Bus
 
@@ -184,32 +159,6 @@ thread.signals.on("correction", async (signal) => {
 });
 thread.signals.emit({ kind: "correction", content: "Use try/catch", source: "reviewer" });
 ```
-
-### Herald
-
-Cross-agent observation layer. Herald monitors agent interactions and detects emergent patterns across the system.
-
-**5 Pattern Detectors:**
-
-| Detector | What it catches |
-|----------|----------------|
-| Duplication | Multiple agents producing overlapping work |
-| Contradiction | Agents emitting conflicting outputs or recommendations |
-| Convergence | Independent agents arriving at the same conclusion |
-| Cross-pollination | Useful context from one agent applicable to another |
-| Resource imbalance | Uneven load or token usage across agents |
-
-### Corpus Compiler
-
-Three-stage pipeline for converting raw context into optimized compiled form.
-
-```
-fluid → formal → compiled
-```
-
-- **Fluid** — raw, unstructured context (notes, signals, corrections)
-- **Formal** — validated and structured (typed entries with metadata)
-- **Compiled** — optimized for token efficiency (deduplicated, compressed, indexed)
 
 ### Token Tracker
 
@@ -223,7 +172,6 @@ Per-provider, per-model, per-agent cost accounting with budget enforcement.
 ### Other Primitives
 
 - **CacheLifecycle** — rule-based lifecycle management with event queuing
-- **HydrationRegistry** — ref-based context hydration (deferred loading)
 - **MiddlewareChain** — composable pre/post dispatch hooks
 - **InterventionLog** — manual operator overrides with correction signals
 - **EventStream** — unified event bus (5K event history, push/pull)
@@ -245,14 +193,10 @@ interface LLMProvider {
 
 **Implementations:**
 - `AnthropicProvider` — Anthropic Messages API (API key in header, system message extracted)
-- `OpenAIProvider` — OpenAI Chat Completions (configurable baseUrl for Cursor, Ollama, Azure)
+- `OpenAIProvider` — OpenAI Chat Completions
 - `GeminiProvider` — Google Gemini (API key in `x-goog-api-key` header, not URL)
 
 **Streaming:** All three providers support streaming via `AsyncGenerator<LLMStreamEvent>`, enabling token-by-token output for real-time UIs and progressive rendering.
-
-**Embedding Providers:** `VoyageEmbeddingProvider`, `OpenAIEmbeddingProvider`, `GeminiEmbeddingProvider`
-
-**Convenience factories:** `createCursorProvider()`, `createOllamaProvider()`
 
 ### Bridge Functions
 
@@ -280,7 +224,6 @@ Memory backends implementing `ContextSource` and `HydrationAdapter`.
 | `SqliteMemory` | None (Bun built-in) | SQLite database |
 | `MarkdownDocs` | None | Markdown file parsing |
 | `HttpMemory` | None | Remote HTTP API |
-| `RedisMemory` | redis (peer dep) | Redis key-value |
 | `PostgresMemory` | prisma (peer dep) | PostgreSQL + pgvector |
 
 Each adapter provides:
@@ -407,7 +350,7 @@ are ⌥ chords; their plain forms act only where no message box is shown. Hold �
 
 Full configuration UI with five tabs:
 
-- **Agents** — prompt, provider, model, temperature, maxTokens, visible layers, peers
+- **Agents** — prompt, provider, model, temperature, maxTokens
 - **Layers** — prompt, staleness, maxTokens, source IDs
 - **Providers** — enabled/disabled, base URL, model catalog with tier badges
 - **Sources** — type, URI, enabled
@@ -471,7 +414,7 @@ open re-checks the paired Kingdoms, and losing authorization from every paired K
 
 The viewer's graph panel (center panel → Graph, or `g`) holds `flow:<threadId>` only while a flow
 view is on screen: the thread graph (subagent threads under their parent), one turn's loop
-(input → routing ∥ domain assessment → sealed plan → delivered layers → executor → guards → delivery
+(input → domain assessment → sealed plan → delivered layers → executor → guards → delivery
 → writeback), and the learning loop per domain across turns. Builders live in `ui/flow-graph.js`;
 task-list sources (the executor's `TodoWrite` / `update_plan` input) in `viewer/turn-flow.ts`.
 
@@ -509,10 +452,9 @@ PostgreSQL with pgvector extension.
 | Production code | ~16,300 lines (69 source files) |
 | Test code | ~8,000+ lines (29 test files) |
 | Tests passing | 472+ |
-| Agent primitives | 25+ (including Herald, CorpusCompiler) |
+| Agent primitives | 25+ |
 | Lifecycle hooks | 16 hook points |
-| Pattern detectors | 5 |
-| Memory adapters | 6 |
+| Memory adapters | 5 |
 | LLM providers | 3 |
 | Runtime adapters | 3 |
 | Eval rubrics | 5 |

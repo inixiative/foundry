@@ -58,8 +58,8 @@ export type MainThreadLab = (typeof MAIN_THREAD_LABS)[number];
  * not a provider category, it is a tag every entry carries. The other tags name
  * work Foundry already distinguishes:
  *
- * - judgment        classifier/router/decider agent kinds and the decision
- *                   provider: which archive, which middleware, which domain.
+ * - judgment        the decision provider: which archive, which middleware,
+ *                   which domain.
  * - execution       the executor kind (Artificer): tools on, multi-turn.
  * - domain-advising the `domain-advising` flow role: read an owned domain layer
  *                   and advise/guard from it.
@@ -2027,8 +2027,8 @@ export function mainThreadLab(providerId: string): MainThreadLab | undefined {
 /** The part of a Foundry configuration `resolveDecisionModel` reads. */
 export interface DecisionModelDefaults {
   defaults: {
-    classifierProvider?: string;
-    classifierModel?: string;
+    decisionProvider?: string;
+    decisionModel?: string;
   };
 }
 
@@ -2037,10 +2037,10 @@ export function resolveDecisionModel(config: DecisionModelDefaults): {
   provider: string;
   model: string;
 } {
-  const configured = config.defaults.classifierProvider;
-  // A classifier provider outside the registry — the subscription decision
+  const configured = config.defaults.decisionProvider;
+  // A decision provider outside the registry — the subscription decision
   // profile — belongs to the native path, which constructs its own client.
   const provider = configured && MODEL_REGISTRY[configured] ? configured : DECISION_PROVIDER;
-  const model = (provider === configured && config.defaults.classifierModel) || DECISION_MODEL;
+  const model = (provider === configured && config.defaults.decisionModel) || DECISION_MODEL;
   return { provider, model };
 }

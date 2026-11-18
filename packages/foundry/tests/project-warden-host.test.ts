@@ -391,7 +391,7 @@ test('routing: a project host takes every Warden call (advice, guards, reviews, 
   expect(projectHostTarget(project, 'A1:aux:domain:locks')).toBe(host as never);
   expect(projectHostTarget(project, 'A1:aux:review:g1:domain:locks')).toBe(host as never);
   expect(projectHostTarget(project, 'A1:aux:domain:locks:stage:1')).toBe(host as never);
-  expect(projectHostTarget(project, 'A1:aux:cartographer')).toBeUndefined();
+  expect(projectHostTarget(project, 'A1:aux:agent:worker')).toBeUndefined();
   // A host still starting holds only held-only advice (refused unsent); any other call goes primed.
   const starting = { serving: () => 'starting' } as unknown as ProjectWardenHosts;
   expect(projectHostTarget(starting, 'A1:aux:domain:locks')).toBeUndefined();
@@ -647,13 +647,10 @@ function config(path: string, runtime: 'claude' | 'claude-project'): FoundryConf
       prompt: '',
       provider: 'central',
       model: 'central-model',
-      visibleLayers: [],
-      peers: [],
-      maxDepth: 1,
       enabled: true,
     },
   };
-  c.defaults.classifierProvider = 'flow';
+  c.defaults.decisionProvider = 'flow';
   c.layers = {};
   c.sources = {};
   c.projects.P = { id: 'P', path };

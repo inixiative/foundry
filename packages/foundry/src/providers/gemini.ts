@@ -6,8 +6,6 @@
 import type {
   CompletionOpts,
   CompletionResult,
-  EmbeddingProvider,
-  EmbeddingResult,
   LLMMessage,
   LLMProvider,
   LLMStreamEvent,
@@ -282,83 +280,5 @@ export class GeminiProvider implements LLMProvider {
     }
 
     yield { type: 'done', finishReason };
-  }
-}
-
-/**
- * Gemini Embedding adapter.
- * Uses the embedContent / batchEmbedContents endpoints.
- */
-export class GeminiEmbeddingProvider implements EmbeddingProvider {
-  readonly id = 'gemini-embed';
-
-  private _apiKey: string;
-  private _model: string;
-  private _baseUrl: string;
-
-  constructor(config: {
-    apiKey: string;
-    model?: string;
-    baseUrl?: string;
-  }) {
-    this._apiKey = config.apiKey;
-    this._model = config.model ?? 'text-embedding-004';
-    this._baseUrl = (config.baseUrl ?? DEFAULT_BASE).replace(/\/$/, '');
-  }
-
-  async embed(text: string): Promise<EmbeddingResult> {
-    const url = `${this._baseUrl}/v1beta/models/${this._model}:embedContent`;
-
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        'x-goog-api-key': this._apiKey,
-      },
-      body: JSON.stringify({
-        model: `models/${this._model}`,
-        content: { parts: [{ text }] },
-      }),
-    });
-
-    if (!res.ok) {
-      const errText = await res.text();
-      throw new Error(`Gemini Embedding API ${res.status}: ${errText}`);
-    }
-
-    const data = (await res.json()) as {
-      embedding: { values: number[] };
-    };
-
-    return { embedding: data.embedding.values };
-  }
-
-  async embedBatch(texts: string[]): Promise<EmbeddingResult[]> {
-    const url = `${this._baseUrl}/v1beta/models/${this._model}:batchEmbedContents`;
-
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        'x-goog-api-key': this._apiKey,
-      },
-      body: JSON.stringify({
-        requests: texts.map((text) => ({
-          model: `models/${this._model}`,
-          content: { parts: [{ text }] },
-        })),
-      }),
-    });
-
-    if (!res.ok) {
-      const errText = await res.text();
-      throw new Error(`Gemini Batch Embedding API ${res.status}: ${errText}`);
-    }
-
-    const data = (await res.json()) as {
-      embeddings: Array<{ values: number[] }>;
-    };
-
-    return data.embeddings.map((e) => ({ embedding: e.values }));
   }
 }

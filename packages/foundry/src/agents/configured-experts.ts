@@ -8,7 +8,7 @@ import { vendorOfProvider } from '@inixiative/foundry-core';
 import { DEFAULT_STAGES, type StageConfig } from '../classify';
 import { providerEnabled } from '../models/vendors';
 import { roleComposition } from '../prompts/instruction-settings';
-import { isIdName, isRoleId, roleIdOfAgent } from '../prompts/role-namespace';
+import { isIdName, isRoleId } from '../prompts/role-namespace';
 import type { AgentSettingsConfig, FoundryConfig } from '../viewer/config';
 import { resolveProjectView } from '../viewer/config-resolve';
 import { threadKnowledgeLayerId } from './domain-librarian';
@@ -50,10 +50,6 @@ export function configuredExperts(config: FoundryConfig): {
     claimedDomains.add(agent.domain);
     if (!agent.enabled) continue;
     if (agent.kind !== 'domain-librarian') throw Error(`Unsupported configured expert kind: ${id}`);
-    if (agent.ownedLayers?.length)
-      throw Error(
-        `Expert ${id} owns layers (${agent.ownedLayers.join(', ')}); a Warden reads its knowledge from the composition view: list the sources in agents.${id}.domainKnowledge and drop ownedLayers`,
-      );
     if (
       agent.domainKnowledge !== undefined &&
       (!Array.isArray(agent.domainKnowledge) ||
@@ -94,14 +90,9 @@ export function configuredExperts(config: FoundryConfig): {
     if (
       (agent.tools !== undefined && agent.tools !== false) ||
       agent.browser !== undefined ||
-      agent.executionEnv !== undefined ||
-      agent.permissions !== undefined ||
-      agent.peers.length ||
-      agent.invocation === 'conditional' ||
-      agent.condition !== undefined ||
-      agent.visibleLayers.some((layer) => layer !== 'thread-state')
+      agent.permissions !== undefined
     )
-      throw Error(`Unsupported configured expert tools, delegation or context policy: ${id}`);
+      throw Error(`Unsupported configured expert tools or permissions: ${id}`);
     if (agent.timeout !== undefined && (!Number.isSafeInteger(agent.timeout) || agent.timeout < 1))
       throw Error(`Invalid expert timeout: ${id}`);
     if (
@@ -155,14 +146,6 @@ export function largestStageCount(
   return largest;
 }
 
-/** The Cartographer's role in the composition view: the enabled cartographer agent's, else `agent:cartographer`. */
-export function cartographerRoleId(config: FoundryConfig): string {
-  return roleIdOfAgent(
-    Object.values(config.agents).find((a) => a.enabled && a.kind === 'cartographer')?.id ??
-      'cartographer',
-  );
-}
-
 export interface ResolvedThreadDomain extends Omit<ThreadDomainConfig, 'layerId'> {
   /** Programmatic domains only: the stack layer it reads. A configured Warden reads its role's view. */
   layerId?: string;
@@ -177,8 +160,6 @@ export function resolveThreadDomains(
   config: FoundryConfig,
   available: ReadonlyMap<string, Pick<ContextLayer, 'definition' | 'segment'>>,
   options: {
-    /** Domain defaults by name (guard triggers, programmatic guard) for configured Wardens without their own. */
-    policy: readonly ThreadDomainConfig[];
     /** Wardens registered in code over a stack layer (tests, research runs); never from settings. */
     programmatic: readonly ThreadDomainConfig[];
     llm: LLMProvider;
@@ -261,13 +242,11 @@ export function resolveThreadDomains(
           `[expert-review-profile-override] domain=${diagnosticLabel(domain)} agent=${diagnosticLabel(agentId)}: explicit learning.review takes precedence for post-review; changed=${changed.join(',')}. Advise/guard profile is unchanged. Inspect learning.review and this expert's profile; these are requested settings, not native acknowledgment.`,
         );
     }
-    const policy = options.policy.find((d) => d.domain === domain);
     return {
       domain,
       expert: { agentId, source: 'configured' },
       budget: roleComposition(config.composition, agentId).budget,
-      guardTriggers: [...(agent.guardTriggers ?? policy?.guardTriggers ?? [])],
-      programmaticGuard: policy?.programmaticGuard,
+      guardTriggers: [...(agent.guardTriggers ?? [])],
       adviseProvider: provider,
       adviseOpts: { ...opts, maxTokens: 512 },
       reviewProvider,

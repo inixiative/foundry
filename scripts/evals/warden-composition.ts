@@ -30,10 +30,7 @@ import type {
   SourceSegment,
 } from '../../packages/core/src';
 import { FileMemory } from '../../packages/core/src/adapters/file-memory';
-import {
-  atlasRootOf,
-  createSourceResolver,
-} from '../../packages/foundry/src/agents/thread-factory';
+import { createSourceResolver } from '../../packages/foundry/src/agents/thread-factory';
 import { WARDEN_CHARTER } from '../../packages/foundry/src/classify';
 import { adviseOnce } from '../../packages/foundry/src/feedback/chorus-advise';
 import { resolveSubscriptionPolicy } from '../../packages/foundry/src/providers/subscription-policy';
@@ -95,7 +92,6 @@ const advice = await adviseOnce({
   decisions: silent,
   stageHost: () => silent,
   resolveSource: createSourceResolver({ memory }),
-  atlasRoot: atlasRootOf(config),
   warn: () => {},
 });
 

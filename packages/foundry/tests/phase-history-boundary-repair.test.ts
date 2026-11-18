@@ -204,8 +204,8 @@ test('a configured phase-journal refusal at the guard boundary is not admitted: 
   const rows = f.store
     .phaseHistory(f.thread.id, { turnId: 'turn-1' })
     .filter((r) => r.phase !== 'middleware-reduced' && !isHandBack(r));
-  expect(rows.map((r) => r.phase)).toEqual(['route', 'advice', 'guard-outcome']); // no request row could be written
-  const outcome = rows[2]!.record as any;
+  expect(rows.map((r) => r.phase)).toEqual(['advice', 'guard-outcome']); // no request row could be written
+  const outcome = rows[1]!.record as any;
   expect(outcome.status).toBe('reported');
   expect(outcome.failed).toEqual(['architecture']);
   expect(outcome.requestJournal).toEqual({ architecture: 'failed' });
@@ -242,20 +242,19 @@ test("a configured journal refusal at plan seal is recorded as failed, the centr
   closes.push(() => f.store.close());
   (
     f.store as unknown as { db: Database }
-  ).db.exec(`CREATE TRIGGER refuse_route BEFORE INSERT ON session_phase WHEN NEW.phase = 'route'
-    BEGIN SELECT RAISE(ABORT, 'CONTROLLED_ROUTE_REFUSAL'); END`);
+  ).db.exec(`CREATE TRIGGER refuse_advice BEFORE INSERT ON session_phase WHEN NEW.phase = 'advice'
+    BEGIN SELECT RAISE(ABORT, 'CONTROLLED_ADVICE_REFUSAL'); END`);
   const done = await f.turn('turn-1', 'Add preferred names');
   expect(done.ok).toBe(true);
   const meta = f.store.turnDetail(f.thread.id, 'turn-1')!.messages.find((m) => m.actor === 'agent')!
     .meta as any;
-  expect(meta.phases.journal).toEqual({ route: 'failed', advice: 'durable' });
-  expect(meta.phases.routing.request.status).toBe('supplied'); // supplied input retained on the turn even though its durable row was refused
+  expect(meta.phases.journal).toEqual({ advice: 'failed' });
   expect(
     f.store
       .phaseHistory(f.thread.id, { turnId: 'turn-1' })
       .filter((r) => r.phase !== 'middleware-reduced' && !isHandBack(r))
       .map((r) => r.phase),
-  ).not.toContain('route');
+  ).not.toContain('advice');
   const g = durabilityFixture(join(dir, 'absent.sqlite'), { journal: false });
   closes.push(() => g.store.close());
   expect((await g.turn('turn-1', 'Add preferred names')).ok).toBe(true);
@@ -270,7 +269,7 @@ test("a configured journal refusal at plan seal is recorded as failed, the centr
   const absent = g.store
     .turnDetail(g.thread.id, 'turn-1')!
     .messages.find((m) => m.actor === 'agent')!.meta as any;
-  expect(absent.phases.journal).toEqual({ route: 'absent', advice: 'absent' });
+  expect(absent.phases.journal).toEqual({ advice: 'absent' });
   expect(absent.phases.guards[0].journal).toEqual({
     requests: { architecture: 'absent' },
     outcome: 'absent',

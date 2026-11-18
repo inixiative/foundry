@@ -69,14 +69,11 @@ function config(path: string): FoundryConfig {
       prompt: '',
       provider: 'central',
       model: 'central-model',
-      visibleLayers: [],
-      peers: [],
-      maxDepth: 1,
       enabled: true,
     },
   };
   // Region Wardens run on the decision provider, as subscription-resolved settings route them.
-  c.defaults.classifierProvider = 'flow';
+  c.defaults.decisionProvider = 'flow';
   c.layers = {};
   c.sources = {};
   c.composition = { preset: 'none', nodes: {} };
@@ -84,7 +81,7 @@ function config(path: string): FoundryConfig {
   return c;
 }
 
-/** The decision host: the Cartographer routes nothing, concurrency-locks points, the rest stay silent. */
+/** The decision host: concurrency-locks points, the rest stay silent. */
 function decisions(calls: string[]): LLMProvider {
   return {
     id: 'flow',
@@ -93,11 +90,9 @@ function decisions(calls: string[]): LLMProvider {
       calls.push(threadId);
       return {
         model: 'controlled',
-        content: threadId.endsWith(':cartographer')
-          ? JSON.stringify({ layers: [], domains: [], confidence: 1 })
-          : threadId.includes('domain:concurrency-locks')
-            ? JSON.stringify({ layers: [], snippets: [POINTER], confidence: 0.9 })
-            : 'NO_COMMENT',
+        content: threadId.includes('domain:concurrency-locks')
+          ? JSON.stringify({ layers: [], snippets: [POINTER], confidence: 0.9 })
+          : 'NO_COMMENT',
       };
     },
   };
@@ -122,7 +117,7 @@ test('one message through a live-built thread: the chimes on the message, the re
     log() {},
     warn() {},
   });
-  // Every Warden was asked once, on its own primed session, plus the Cartographer.
+  // Every Warden was asked once, on its own primed session.
   expect(calls.filter((id) => id.includes(':aux:domain:')).sort()).toEqual([
     'advise-thread:aux:domain:concurrency-locks',
     'advise-thread:aux:domain:lens-model',
@@ -147,24 +142,20 @@ test('one message through a live-built thread: the chimes on the message, the re
   expect(advice.standing.filter((p) => p.chorus).map((p) => p.id)).toEqual([
     CHORUS_RECEPTION_LAYER,
   ]);
-  // The routing block is per-turn context: it rides the user prompt as `# System Context`, ahead of
-  // the message, never the system prompt. The first prompt is exactly that.
-  const routing = advice.decoration.blocks.find((b) => b.id === 'decoration:routing')!;
-  expect(routing.placement).toBeUndefined();
-  // The turn also carries the Librarian's thread state, a per-turn layer of every wrapped thread.
-  expect(advice.turnText).toEndWith(`\n\n${routing.text}`);
+  // The turn carries the Librarian's thread state, a per-turn layer of every wrapped thread: it rides
+  // the user prompt as `# System Context`, ahead of the message, never the system prompt.
   expect(advice.turnText).toStartWith('Current thread state.');
   expect(advice.nativePrompt).toBe(
     `# System Context\n\n${advice.turnText}\n\n# User Message\n\n${advice.message}`,
   );
-  expect(advice.liveSystemPrompt).not.toContain(routing.text);
+  expect(advice.liveSystemPrompt).not.toContain(advice.turnText);
   // Every composed region has its decision and exact input; the orchestrator's live defaults ran.
   expect(advice.composed).toEqual(['concurrency-locks', 'lens-model']);
   expect(advice.decisions.every((d) => d.request.status === 'supplied')).toBe(true);
   expect(advice.timing).toMatchObject({ adviseTimeoutMs: 60_000, contributionBudget: null });
   expect(advice.primed).toBeUndefined();
-  // The route and advice phase records, as the daemon journals them.
-  expect(journal.map((r) => r.phase)).toEqual(['route', 'advice']);
+  // The advice phase record, as the daemon journals it.
+  expect(journal.map((r) => r.phase)).toEqual(['advice']);
 });
 
 test('prime warms every Warden with one decision on its own session before the message', async () => {

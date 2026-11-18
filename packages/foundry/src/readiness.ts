@@ -36,7 +36,6 @@ import {
   type SubscriptionResolution,
 } from './providers/subscription-policy';
 import { resolvePrefilterSettings, WardenPrefilter } from './providers/warden-prefilter';
-import { describeLegacyItem, findLegacyStarter } from './setup/legacy-starter';
 import { type FoundryConfig, validateConfig } from './viewer/config';
 import {
   type ResolvedChorus,
@@ -343,16 +342,6 @@ export async function inspectReadiness(
     ...(chorus ? { chorus } : {}),
     ...(nativeClis ? { nativeClis } : {}),
   });
-  // Read before validation: a starter's prompt executors are refused now (executor prompts are
-  // retired), and its removal is the fix.
-  const legacy = findLegacyStarter(saved);
-  if (legacy.length)
-    issue(
-      'warning',
-      'global',
-      'legacy-starter-defaults',
-      `Starter defaults from an older install wrap every thread: ${legacy.map(describeLegacyItem).join(', ')}. Remove them with \`bun run setup --remove-legacy-defaults\` (edited items are kept).`,
-    );
   let subscription: SubscriptionResolution | undefined;
   try {
     validateConfig(saved);
@@ -495,10 +484,7 @@ export async function inspectReadiness(
         ...(expert ? { domain: expert.domain } : {}),
       });
       checkProvider(provider, scope);
-      if (
-        ['classifier', 'router', 'domain-librarian'].includes(agent.kind) &&
-        ['claude-code', 'codex'].includes(provider)
-      )
+      if (agent.kind === 'domain-librarian' && ['claude-code', 'codex'].includes(provider))
         issue(
           'warning',
           scope,

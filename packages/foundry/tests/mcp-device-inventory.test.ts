@@ -4,9 +4,9 @@ import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ContextStack, Thread } from '@inixiative/foundry-core';
-import { SessionManager } from '../src/agents/session';
 import { enrollLocalDevice } from '../src/devices/local-inventory';
 import { createFoundryMcp } from '../src/mcp/server';
+import { liveThreads } from './helpers/live-threads';
 
 const resolve = createRequire(new URL('../package.json', import.meta.url)).resolve;
 const { Client } = await import(resolve('@modelcontextprotocol/sdk/client/index.js'));
@@ -21,13 +21,13 @@ for (const enrolled of [false, true])
       projectId: 'foreign-project',
       cwd: '/private/foreign',
     });
-    const manager = new SessionManager();
+    const manager = liveThreads();
     manager.add(owner);
     manager.add(foreign);
     const device = enrolled ? enrollLocalDevice('Controlled device', path) : null;
     const mcp = createFoundryMcp({
       thread: owner,
-      sessionManager: manager,
+      liveThreads: manager,
       deviceIdentityPath: path,
     });
     const client = new Client({ name: 'controlled-device-client', version: '1' });

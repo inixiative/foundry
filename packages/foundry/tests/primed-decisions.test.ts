@@ -7,7 +7,6 @@ import {
   type LLMProvider,
   SignalBus,
 } from '@inixiative/foundry-core';
-import { Cartographer } from '../src/agents/cartographer';
 import { DomainLibrarian, oneCall } from '../src/agents/domain-librarian';
 import { primedRequest } from '../src/providers/primed-decisions';
 
@@ -85,22 +84,4 @@ test('advice and guard declare their domain cache as the stable prefix of the me
     expect(call.messages[1]!.content.startsWith(prefix!)).toBe(true);
     expect(call.messages[1]!.content.length).toBeGreaterThan(prefix!.length);
   }
-});
-
-test('routing declares the topology map (and atlas) as its stable prefix', async () => {
-  const { llm, calls } = recording('{"layers":[],"domains":[],"confidence":0.5}');
-  const layer = new ContextLayer({ id: 'auth-docs' });
-  layer.set('Auth docs.');
-  const carto = new Cartographer({
-    stack: new ContextStack([layer]),
-    signals: new SignalBus(),
-    llm,
-  });
-  await carto.route('Where are the auth docs?', 'state');
-  const prefix = calls[0]!.opts!.stablePrefix!;
-  expect(prefix).toStartWith('## Available context (topology map)\n');
-  expect(calls[0]!.messages[1]!.content.startsWith(prefix)).toBe(true);
-  expect(calls[0]!.messages[1]!.content.slice(prefix.length)).toContain(
-    '## Message to route\nWhere are the auth docs?',
-  );
 });

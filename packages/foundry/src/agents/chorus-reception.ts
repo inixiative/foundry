@@ -86,8 +86,8 @@ export const FOUNDRY_TOOLS_NOTE_VERSION = `foundry-tools-${computeHash(FOUNDRY_T
 export const FOUNDRY_TOOLS_LAYER = 'foundry-tools';
 
 /**
- * Foundry's standing layers: fixed text held on every thread that has them, never routed by the
- * Cartographer, and not what makes a thread wrapped (a fresh install's thread holds the briefing and
+ * Foundry's standing layers: fixed text held on every thread that has them, never requested per
+ * turn, and not what makes a thread wrapped (a fresh install's thread holds the briefing and
  * stays unwrapped otherwise).
  */
 export const STANDING_LAYERS: ReadonlySet<string> = new Set([

@@ -170,7 +170,7 @@ export async function scanRepoDocs(
 
   const strategy: DocsStrategy = chosen.approxTokens >= topologyThreshold ? 'topology' : 'inline';
 
-  const settings = emitConfigSnippet(chosen, strategy, opts);
+  const settings = emitConfigSnippet(chosen, opts);
 
   const rationale = explainChoice(chosen, candidates, strategy, topologyThreshold);
 
@@ -253,11 +253,7 @@ function isDir(p: string): boolean {
 // Config emission
 // ---------------------------------------------------------------------------
 
-function emitConfigSnippet(
-  chosen: DocsCandidate,
-  strategy: Exclude<DocsStrategy, 'none'>,
-  opts: ScanOptions,
-): DocsConfigSnippet {
+function emitConfigSnippet(chosen: DocsCandidate, opts: ScanOptions): DocsConfigSnippet {
   const sourceId = opts.sourceId ?? DEFAULT_SOURCE_ID;
   const layerId = opts.layerId ?? DEFAULT_LAYER_ID;
 
@@ -272,18 +268,11 @@ function emitConfigSnippet(
   const layer: LayerSettingsConfig = {
     id: layerId,
     domain: 'docs',
-    contentShape:
-      strategy === 'topology'
-        ? 'Compact path+H1+H2 index of the docs corpus; bodies hydrate on demand.'
-        : 'Full markdown content of the docs corpus, joined with path headers.',
     prompt: 'Project documentation: an index of the docs corpus to read from.',
     sourceIds: [sourceId],
     staleness: 60_000,
     enabled: true,
-    activation: 'conditional',
-    condition: {
-      tags: ['docs', 'documentation', 'readme', 'api'],
-    },
+    activation: 'on-demand',
   };
 
   return { source, layer };

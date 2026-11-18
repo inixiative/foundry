@@ -91,11 +91,6 @@ export interface FeedbackRouteRecord {
   readonly roles: string[];
   readonly slot: FeedbackSlot;
   readonly level: FeedbackLevel;
-  readonly route: {
-    domains: string[];
-    source: 'model' | 'keyword-fallback' | 'empty-map';
-    confidence: number;
-  };
 }
 
 export type TuneAnswer = 'apply' | 'edit' | 'reroute' | 'dismiss' | 'later' | 'timeout' | 'undo';

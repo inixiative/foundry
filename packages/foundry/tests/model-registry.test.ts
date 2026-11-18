@@ -57,7 +57,7 @@ describe('model registry', () => {
     expect(config.defaults).toMatchObject({
       provider: 'claude-code',
       model: 'fable',
-      classifierModel: 'claude-haiku-5-5',
+      decisionModel: 'claude-haiku-5-5',
     });
     // Every vendor mode a registry provider serves, at its registry default.
     expect(config.vendors.anthropic).toEqual({
@@ -256,8 +256,8 @@ describe('shipped defaults name a model that is actually served', () => {
     const { SUBSCRIPTION_DECISIONS } = await import('../src/providers/subscription-policy');
     for (const config of [defaultConfig(), starterConfig(), starterConfig('claude-code', 'opus')])
       expect(config.defaults).toMatchObject({
-        classifierProvider: SUBSCRIPTION_DECISIONS,
-        classifierModel: DECISION_MODEL,
+        decisionProvider: SUBSCRIPTION_DECISIONS,
+        decisionModel: DECISION_MODEL,
       });
     expect(DECISION_MODEL).toBe('claude-haiku-5-5');
     // The subscription decision profile is the Claude login; Haiku 5.5 is registered on it and on the API.

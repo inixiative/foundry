@@ -9,17 +9,12 @@ import { fileURLToPath } from 'node:url';
 import type { TokenCounts } from '@inixiative/foundry-core';
 import {
   type BaseAgent,
-  type Classification,
-  Classifier,
   type CompletionOpts,
   type CompletionResult,
   ContextLayer,
   type ContextSource,
   ContextStack,
   claudemdSource,
-  DECISION_MODEL,
-  type Decision,
-  type ExecuteMeta,
   Executor,
   type FileMemory,
   type Harness,
@@ -28,8 +23,6 @@ import {
   type LLMProvider,
   MarkdownDocs,
   type OwnershipScope,
-  type Route,
-  Router,
   resolveModelAliasToModelId,
   Thread,
   type ThreadConfig,
@@ -41,7 +34,6 @@ import { ArchiveContextSource, archiveContextSchema } from '../archives/context-
 import { type NativeToolJournal, nativeBridgeSource } from '../mcp/native-bridge';
 import type { CompositionSlot } from '../prompts/instruction-settings';
 import { threadCompositionSource } from '../prompts/instruction-stack';
-import { DECISION_DEADLINE_MS } from '../providers/decision-budget';
 import {
   type AgentSettingsConfig,
   DEFAULT_EXECUTOR_ID,
@@ -50,7 +42,7 @@ import {
 import { resolveProjectView, resolveThreadView } from '../viewer/config-resolve';
 import { configuredExperts } from './configured-experts';
 import { createNativeToolProjector } from './native-tool-projection';
-import { auxiliarySessionId, type ThreadRuntimeManager } from './thread-runtime';
+import type { ThreadRuntimeManager } from './thread-runtime';
 import { toolUseLoop } from './tool-loop';
 
 // ---------------------------------------------------------------------------
@@ -236,8 +228,8 @@ export function buildAgents(
 
   for (const [id, agentCfg] of Object.entries(config.agents)) {
     if (!agentCfg.enabled) continue;
-    // The runtime owns the Cartographer and the Wardens; they are never thread agents.
-    if (agentCfg.flowRole === 'domain-advising' || agentCfg.kind === 'cartographer') continue;
+    // The runtime owns the Wardens; they are never thread agents.
+    if (agentCfg.flowRole === 'domain-advising') continue;
     const providerId = agentCfg.provider || config.defaults.provider;
     const provider = deps.providers ? deps.providers.get(providerId) : deps.provider;
     if (!provider) throw new Error(`No provider registered for ${providerId} (agent ${id})`);
@@ -249,19 +241,14 @@ export function buildAgents(
 }
 
 /**
- * A thread's harness as the daemon drives it: the configured classifier and router stages, the first
- * enabled executor as the default (else the default executor id), and each agent's and layer's
- * invocation mode.
+ * A thread's harness as the daemon drives it: the first enabled executor the thread holds as the
+ * default (else the default executor id), and each agent's and layer's invocation mode.
  */
 export function configureHarness(harness: Harness, config: FoundryConfig): void {
-  for (const [id, agentCfg] of Object.entries(config.agents)) {
-    if (!agentCfg.enabled) continue;
-    if (agentCfg.kind === 'classifier') harness.setClassifier(id);
-    else if (agentCfg.kind === 'router') harness.setRouter(id);
-  }
   harness.setDefaultExecutor(
-    Object.entries(config.agents).find(([_, a]) => a.kind === 'executor' && a.enabled)?.[0] ??
-      DEFAULT_EXECUTOR_ID,
+    Object.entries(config.agents).find(
+      ([id, agent]) => agent.kind === 'executor' && agent.enabled && harness.thread.agents.has(id),
+    )?.[0] ?? DEFAULT_EXECUTOR_ID,
   );
   harness.loadModes(config.agents, config.layers);
 }
@@ -280,23 +267,6 @@ export function defaultThreadModel(config: FoundryConfig): ThreadModel | undefin
   if (!named) return undefined;
   const id = resolveModelAliasToModelId(executor?.provider || config.defaults.provider, named);
   return id === named ? { id } : { id, alias: named };
-}
-
-/**
- * The Cartographer's atlas root: the first atlas-mapped project (it has `.atlas/` or `MAP.md`), else
- * `cwd` when it is mapped.
- */
-export function atlasRootOf(
-  config: FoundryConfig,
-  cwd: string = process.cwd(),
-): string | undefined {
-  const mapped = (dir: string) => existsSync(`${dir}/.atlas`) || existsSync(`${dir}/MAP.md`);
-  return (
-    Object.values(config.projects)
-      .map((p) => p.path)
-      .filter((p): p is string => !!p)
-      .find(mapped) ?? (mapped(cwd) ? cwd : undefined)
-  );
 }
 
 // ---------------------------------------------------------------------------
@@ -347,7 +317,7 @@ export interface ThreadFactoryDeps {
   ) => string | undefined;
   /**
    * Optional per-thread runtime manager. When present, every created thread
-   * is wired (Librarian, Cartographer, Wardens, orchestrator, event bridges)
+   * is wired (Librarian, Wardens, orchestrator, event bridges)
    * before it is returned, and archiving the thread tears that wiring down.
    */
   runtime?: ThreadRuntimeManager;
@@ -401,7 +371,7 @@ export class ThreadFactory {
 
   /**
    * Settings changed. New threads build from `config`. Live threads swap edited layer sources and
-   * thread agents now, and take Cartographer and Warden instructions on their next turn. Returns
+   * thread agents now, and take Warden instructions on their next turn. Returns
    * what only a new thread picks up.
    */
   async reconfigure(config: FoundryConfig): Promise<string[]> {
@@ -607,130 +577,6 @@ function buildAgent(
   const opts = resolveAgentOpts(agentCfg, config);
 
   switch (agentCfg.kind) {
-    case 'classifier':
-      return new Classifier<string>({
-        id,
-        stack,
-        handler: async (ctx, payload, meta) => {
-          if (!agentCfg.prompt) return keywordClassify(payload);
-          try {
-            const result = await complete(
-              [
-                {
-                  role: 'system',
-                  content: `${ctx}\n\n${agentCfg.prompt}\n\nYou are a classifier. You have no tools. Respond with JSON only — no tool calls, no code execution, no file operations.`,
-                },
-                { role: 'user', content: payload },
-              ],
-              {
-                ...opts,
-                maxTokens: 256,
-                maxTurns: 1,
-                timeout: Math.min(opts.timeout ?? DECISION_DEADLINE_MS, DECISION_DEADLINE_MS),
-                ...auxiliaryIdentity(meta, `agent:${id}`, deps.provider),
-              },
-            );
-            const parsed = parseJSON(result.content);
-            if (
-              !parsed ||
-              typeof parsed.category !== 'string' ||
-              !parsed.category.trim() ||
-              parsed.reasoning === 'parse failure'
-            ) {
-              throw new Error('Invalid classifier JSON');
-            }
-            return {
-              value: {
-                category: (parsed.category as string) || 'general',
-                subcategory: parsed.subcategory as string,
-              },
-              confidence: 0.9,
-              reasoning: (parsed.reasoning as string) || 'LLM classification',
-            };
-          } catch (err) {
-            console.warn(
-              `[buildAgent] LLM classify failed, falling back to keyword:`,
-              (err as Error).message,
-            );
-            return keywordClassify(payload);
-          }
-        },
-      });
-
-    case 'router':
-      return new Router<{ payload: string; classification: Classification } | string>({
-        id,
-        stack,
-        handler: async (ctx, input, meta) => {
-          // Routing runs concurrently with classification on the frozen message, so it normally has no
-          // classification; a conditional route stage that ran after the classifier still receives one.
-          const payload = typeof input === 'string' ? input : String(input?.payload ?? '');
-          const classified = typeof input === 'object' && input !== null && !!input.classification;
-          const classification = classified ? input.classification : keywordClassify(payload).value;
-
-          if (!agentCfg.prompt) return keywordRoute(classification, config);
-          try {
-            const result = await complete(
-              [
-                {
-                  role: 'system',
-                  content: `${ctx}\n\n${agentCfg.prompt}\n\nYou are a router. You have no tools. Respond with JSON only — no tool calls, no code execution, no file operations.`,
-                },
-                {
-                  role: 'user',
-                  content: classified
-                    ? `Classification: ${JSON.stringify(classification)}\nMessage: ${payload}`
-                    : `Message: ${payload}`,
-                },
-              ],
-              {
-                ...opts,
-                maxTokens: 256,
-                maxTurns: 1,
-                timeout: Math.min(opts.timeout ?? DECISION_DEADLINE_MS, DECISION_DEADLINE_MS),
-                ...auxiliaryIdentity(meta, `agent:${id}`, deps.provider),
-              },
-            );
-            const parsed = parseJSON(result.content);
-            const target =
-              typeof parsed?.destination === 'string'
-                ? config.agents[parsed.destination]
-                : undefined;
-            if (!target || target.kind !== 'executor' || !target.enabled) {
-              throw new Error('Router did not select an enabled configured executor');
-            }
-            if (
-              parsed.contextSlice !== undefined &&
-              (!Array.isArray(parsed.contextSlice) ||
-                !parsed.contextSlice.every((id) => typeof id === 'string' && !!config.layers[id]))
-            ) {
-              throw new Error('Router returned an invalid context slice');
-            }
-            return {
-              value: {
-                destination: parsed.destination as string,
-                // No slice named: no on-demand layer is requested.
-                contextSlice: (parsed.contextSlice as string[] | undefined) ?? [],
-                priority: (parsed.priority as number) ?? 5,
-              },
-              confidence: 0.9,
-              reasoning: (parsed.reasoning as string) || 'LLM routing',
-            };
-          } catch (err) {
-            console.warn(
-              `[buildAgent] LLM route failed, falling back to keyword:`,
-              (err as Error).message,
-            );
-            const fallback = keywordRoute(classification, config);
-            return {
-              ...fallback,
-              confidence: 0,
-              reasoning: `fallback: ${(err as Error).message}; ${fallback.reasoning}`,
-            };
-          }
-        },
-      });
-
     case 'executor': {
       const tools = deps.tools;
       const useToolLoop = tools && tools.size > 0 && opts.tools !== false;
@@ -887,37 +733,6 @@ function buildAgent(
 // Provider helpers
 // ---------------------------------------------------------------------------
 
-/**
- * Session identity for a thread's auxiliary decision (classifier/router).
- * Never the bare thread id: that belongs to the central executor session.
- */
-function auxiliaryIdentity(
-  meta: ExecuteMeta | undefined,
-  role: string,
-  provider: LLMProvider,
-): Pick<CompletionOpts, 'threadId' | 'cwd' | 'nativeObservation'> {
-  if (!meta?.threadId) return {};
-  return {
-    threadId: auxiliarySessionId(meta.threadId, role),
-    cwd: meta.cwd,
-    ...(meta.nativeObservation && provider.nativeOwnership === 'required-prewrite'
-      ? {
-          nativeObservation: {
-            ...meta.nativeObservation,
-            bridge: undefined,
-            // Stopping a turn stops its executor, never an auxiliary role's session.
-            interruptible: undefined,
-            steerable: undefined,
-            observe: (evidence) => {
-              meta.recordNative?.(evidence);
-              return meta.nativeObservation!.observe(evidence);
-            },
-          },
-        }
-      : {}),
-  };
-}
-
 function trackedComplete(agentId: string, deps: BuildAgentsDeps) {
   const { provider, tokenTracker } = deps;
   return async (messages: LLMMessage[], opts?: CompletionOpts): Promise<CompletionResult> => {
@@ -935,97 +750,25 @@ function trackedComplete(agentId: string, deps: BuildAgentsDeps) {
 }
 
 // ---------------------------------------------------------------------------
-// Shared fallback handlers (no LLM needed)
-// ---------------------------------------------------------------------------
-
-export function keywordClassify(payload: string): Decision<Classification> {
-  const lower = payload.toLowerCase();
-  let category = 'general';
-  if (lower.includes('bug') || lower.includes('fix') || lower.includes('error')) category = 'bug';
-  else if (lower.includes('feature') || lower.includes('add') || lower.includes('build'))
-    category = 'feature';
-  else if (lower.includes('refactor') || lower.includes('clean')) category = 'refactor';
-  else if (lower.includes('question') || lower.includes('how') || lower.includes('why'))
-    category = 'question';
-  else if (lower.includes('convention') || lower.includes('style')) category = 'convention';
-  return { value: { category }, confidence: 0.7, reasoning: `keyword: ${category}` };
-}
-
-export function keywordRoute(
-  classification: Classification,
-  config: FoundryConfig,
-): Decision<Route> {
-  const layerIds = Object.keys(config.layers);
-  const routeMap: Record<string, { dest: string; layers: string[] }> = {
-    bug: { dest: 'artificer', layers: layerIds },
-    feature: { dest: 'artificer', layers: ['system', 'conventions'] },
-    refactor: { dest: 'artificer', layers: ['system', 'conventions'] },
-    question: { dest: 'artificer', layers: ['system', 'memory'] },
-    convention: { dest: 'artificer', layers: ['conventions', 'memory'] },
-    general: { dest: 'artificer', layers: ['system'] },
-  };
-  const route = routeMap[classification.category] ?? routeMap.general;
-  const candidates = Object.entries(config.agents).filter(
-    ([, agent]) => agent.enabled && agent.kind === 'executor',
-  );
-  const destination = candidates.find(([id]) => id === route.dest)?.[0] ?? candidates[0]?.[0];
-  if (!destination) throw new Error('Routing failed and no enabled executor is configured');
-  return {
-    value: {
-      destination,
-      contextSlice: route.layers.filter((id) => !!config.layers[id]),
-      priority: 5,
-    },
-    confidence: 0.8,
-    reasoning: `rule: ${classification.category} → ${destination}`,
-  };
-}
-
-// ---------------------------------------------------------------------------
 // Config → CompletionOpts resolver
 // ---------------------------------------------------------------------------
 
 /**
- * Resolve canonical agent config into CompletionOpts.
- *
- * Per-kind defaults (maxTokens chosen automatically):
- * - classifier/router: tools=false, 256 max output tokens, no thinking
- * - executor: tools=true, 16384 max output tokens, thinking from config
+ * Resolve canonical agent config into CompletionOpts: an executor's model (else the default
+ * model), tools on unless turned off, 16384 max output tokens, thinking from config.
  */
 export function resolveAgentOpts(
   agentCfg: AgentSettingsConfig,
   config: FoundryConfig,
 ): CompletionOpts {
-  const isLightweight = agentCfg.kind === 'classifier' || agentCfg.kind === 'router';
-
   return {
-    model:
-      agentCfg.model ||
-      (isLightweight ? (config.defaults.classifierModel ?? DECISION_MODEL) : config.defaults.model),
+    model: agentCfg.model || config.defaults.model,
     temperature: agentCfg.temperature ?? 0,
-    maxTokens: isLightweight ? 256 : 16384,
-    tools: agentCfg.tools ?? !isLightweight,
+    maxTokens: 16384,
+    tools: agentCfg.tools ?? true,
     thinking: agentCfg.thinking ?? 'none',
     permissions: agentCfg.permissions,
     timeout: agentCfg.timeout,
     cacheControl: agentCfg.cacheControl,
   };
-}
-
-export function parseJSON(text: string): Record<string, unknown> {
-  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/);
-  const raw = fenced ? fenced[1] : text;
-  try {
-    return JSON.parse(raw.trim());
-  } catch {
-    const braced = raw.match(/\{[\s\S]*\}/);
-    if (braced) {
-      try {
-        return JSON.parse(braced[0]);
-      } catch {
-        /* fall through */
-      }
-    }
-    return { category: 'general', reasoning: 'parse failure' };
-  }
 }

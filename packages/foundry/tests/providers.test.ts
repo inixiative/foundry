@@ -8,11 +8,7 @@ import {
 } from '@inixiative/foundry-core';
 import { AnthropicProvider } from '../src/providers/anthropic';
 import { GeminiProvider } from '../src/providers/gemini';
-import {
-  createCursorProvider,
-  createOllamaProvider,
-  OpenAIProvider,
-} from '../src/providers/openai';
+import { OpenAIProvider } from '../src/providers/openai';
 
 // ---------------------------------------------------------------------------
 // assembledToMessages
@@ -279,21 +275,6 @@ describe('OpenAIProvider', () => {
     } finally {
       globalThis.fetch = originalFetch;
     }
-  });
-});
-
-describe('OpenAI convenience factories', () => {
-  test('createCursorProvider sets correct id and base', () => {
-    const provider = createCursorProvider({
-      apiKey: 'cursor-key',
-      baseUrl: 'https://cursor.sh/api',
-    });
-    expect(provider.id).toBe('cursor');
-  });
-
-  test('createOllamaProvider sets correct defaults', () => {
-    const provider = createOllamaProvider();
-    expect(provider.id).toBe('ollama');
   });
 });
 
