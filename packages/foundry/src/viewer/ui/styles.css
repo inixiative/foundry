@@ -2374,16 +2374,6 @@ body {
   border-color: var(--text-dim);
 }
 
-.detail-peer-chip {
-  display: inline-block;
-  padding: 1px 6px;
-  border: 1px solid var(--line);
-  border-radius: 3px;
-  font-size: 10px;
-  color: var(--text-dim);
-  margin: 2px;
-}
-
 /* ---- Action bar / buttons ---- */
 
 .action-bar {

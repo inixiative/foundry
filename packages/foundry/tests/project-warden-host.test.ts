@@ -647,9 +647,6 @@ function config(path: string, runtime: 'claude' | 'claude-project'): FoundryConf
       prompt: '',
       provider: 'central',
       model: 'central-model',
-      visibleLayers: [],
-      peers: [],
-      maxDepth: 1,
       enabled: true,
     },
   };

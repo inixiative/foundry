@@ -58,9 +58,6 @@ function setup(opts: SetupOpts = {}) {
       model: 'mock',
       prompt: '',
       temperature: 0,
-      visibleLayers: [],
-      peers: [],
-      maxDepth: 1,
       enabled: true,
     },
   };
@@ -505,7 +502,7 @@ describe('per-domain thread knowledge and causal learning', () => {
     });
     cleanups.push(() => release());
     const { runtime, factory } = setup({
-      learning: { timeoutMs: 1_000, barrierMs: 20 },
+      learning: { timeoutMs: 1_000 },
       reviewers: {
         security: async () => {
           await held;
@@ -577,7 +574,7 @@ describe('per-domain thread knowledge and causal learning', () => {
     const started: string[] = [];
     const { runtime, factory } = setup({
       domains: ['security', 'docs'],
-      learning: { timeoutMs: 1_000, barrierMs: 10 },
+      learning: { timeoutMs: 1_000 },
       reviewers: {
         security: async (messages) => {
           started.push('security');

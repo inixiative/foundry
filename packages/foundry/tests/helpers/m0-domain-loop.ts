@@ -128,9 +128,6 @@ export async function m0Scenario(options: ScenarioOptions = {}) {
         model: 'controlled',
         prompt: '',
         temperature: 0,
-        visibleLayers: [],
-        peers: [],
-        maxDepth: 1,
         enabled: true,
       },
     };

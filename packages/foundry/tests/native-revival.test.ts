@@ -255,9 +255,6 @@ test("the owner's message to an archived thread brings it back: same id and jour
       model: 'mock',
       prompt: '',
       temperature: 0,
-      visibleLayers: [],
-      peers: [],
-      maxDepth: 1,
       enabled: true,
     },
   };
@@ -346,9 +343,6 @@ test('archive, then a message in the same daemon run, on the real provider: the 
       model: 'haiku',
       prompt: '',
       temperature: 0,
-      visibleLayers: [],
-      peers: [],
-      maxDepth: 1,
       enabled: true,
     },
   };

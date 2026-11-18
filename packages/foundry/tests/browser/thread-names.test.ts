@@ -63,9 +63,6 @@ test('thread names: the Foundry name shows until a person names the thread; bran
       model: 'mock',
       prompt: '',
       temperature: 0,
-      visibleLayers: [],
-      peers: [],
-      maxDepth: 1,
       enabled: true,
     },
   };

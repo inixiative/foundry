@@ -186,7 +186,6 @@ export {
   DEFAULT_EXECUTOR_ID,
   defaultAgents,
   defaultConfig,
-  type ExecutionEnv,
   type FoundryConfig,
   isAgentExtension,
   type LayerSettingsConfig,

@@ -54,9 +54,6 @@ function fixture(opts: { guard?: FoundryConfig['guard']; brief?: string } = {}) 
       model: 'controlled',
       prompt: '',
       temperature: 0,
-      visibleLayers: [],
-      peers: [],
-      maxDepth: 1,
       enabled: true,
     },
   };

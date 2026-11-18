@@ -19,9 +19,6 @@ function setup() {
     model: 'mock',
     temperature: 0,
     maxTokens: 256,
-    visibleLayers: [],
-    peers: [],
-    maxDepth: 1,
     enabled: true,
   };
   config.agents = {

@@ -692,9 +692,6 @@ test('an identified dispatch is not refused because the instructions layer repor
     model: 'mock',
     temperature: 0,
     maxTokens: 256,
-    visibleLayers: [],
-    peers: [],
-    maxDepth: 1,
     enabled: true,
   };
   const config = {

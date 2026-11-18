@@ -1064,7 +1064,6 @@ export function AgentDetail({ agentId }) {
         ${def.provider ? html`<div class="detail-meta"><label>Provider</label><span>${def.provider}</span></div>` : null}
         ${def.model ? html`<div class="detail-meta"><label>Model</label><span class="mono">${def.model}</span></div>` : null}
         ${def.temperature != null ? html`<div class="detail-meta"><label>Temp</label><span>${def.temperature}</span></div>` : null}
-        ${def.maxDepth != null ? html`<div class="detail-meta"><label>Max Depth</label><span>${def.maxDepth}</span></div>` : null}
       </div>
 
       ${
@@ -1072,37 +1071,6 @@ export function AgentDetail({ agentId }) {
           ? html`
         <${Section} title="Prompt">
           <pre class="detail-json">${def.prompt}</pre>
-        </${Section}>
-      `
-          : null
-      }
-
-      ${
-        def.visibleLayers?.length > 0
-          ? html`
-        <${Section} title="Visible Layers" open=${false}>
-          <div class="detail-layers">
-            ${def.visibleLayers.map(
-              (id) => html`
-              <span key=${id} class="detail-layer-chip" style="border-color: ${layerColor(id)}">
-                <span class="detail-layer-dot" style="background: ${layerColor(id)}"></span>
-                ${id}
-              </span>
-            `,
-            )}
-          </div>
-        </${Section}>
-      `
-          : null
-      }
-
-      ${
-        def.peers?.length > 0
-          ? html`
-        <${Section} title="Peers" open=${false}>
-          <div class="detail-peers">
-            ${def.peers.map((p) => html`<span key=${p} class="detail-peer-chip">${p}</span>`)}
-          </div>
         </${Section}>
       `
           : null
@@ -1188,9 +1156,6 @@ export function CreateAgentForm({ onCreated }) {
       kind: 'executor',
       // An executor adds no instructions: a main thread's come from its thread role's role files.
       prompt: '',
-      visibleLayers: [],
-      peers: [],
-      maxDepth: 3,
       enabled: true,
     };
     if (temperature !== '') data.temperature = parseFloat(temperature);

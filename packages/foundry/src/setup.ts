@@ -394,14 +394,10 @@ async function configureDefaults(config: FoundryConfig) {
 
 const agentEditor: ItemEditor<AgentSettingsConfig> = {
   label: 'Agents',
-  summarize: (id, a) => {
-    const layers = (a.visibleLayers?.length || 0) + (a.ownedLayers?.length || 0);
-    const peers = a.peers?.length || 0;
-    return `${id}  (${a.kind}, ${a.model || 'default'}, ${layers} layers, ${peers} peers)${a.enabled ? '' : ' [disabled]'}`;
-  },
+  summarize: (id, a) =>
+    `${id}  (${a.kind}, ${a.model || 'default'})${a.enabled ? '' : ' [disabled]'}`,
   async create(config) {
-    console.log('\n  An agent is a named actor with a role — it reads layers, makes decisions,');
-    console.log('  and can delegate to other agents.\n');
+    console.log('\n  An agent is a named actor with a role: an executor does the real work.\n');
 
     const id = await ask('Agent ID (e.g. code-reviewer)');
     if (!id) return null;
@@ -421,62 +417,12 @@ const agentEditor: ItemEditor<AgentSettingsConfig> = {
     const model = await ask('Model', config.defaults.model);
     const temp = await ask('Temperature', '0');
 
-    // Layers — what can this agent see and write?
-    const layerIds = Object.keys(config.layers);
-    let visibleLayers: string[] = [];
-    let ownedLayers: string[] = [];
-
-    if (layerIds.length > 0) {
-      console.log('\n  Which layers can this agent READ? (its visible context)');
-      console.log('  Available layers: ' + layerIds.join(', '));
-      const vis = await ask('Visible layers (comma-separated, empty = all)');
-      if (vis)
-        visibleLayers = vis
-          .split(',')
-          .map((s) => s.trim())
-          .filter(Boolean);
-
-      console.log('\n  Which layers can this agent WRITE? (its owned domain)');
-      const own = await ask('Owned layers (comma-separated, empty = none)');
-      if (own)
-        ownedLayers = own
-          .split(',')
-          .map((s) => s.trim())
-          .filter(Boolean);
-    }
-
-    // Peers — who can this agent delegate to?
-    const agentIds = Object.keys(config.agents).filter((a) => a !== id);
-    let peers: string[] = [];
-    if (agentIds.length > 0) {
-      console.log('\n  Which agents can this agent delegate to?');
-      console.log('  Available agents: ' + agentIds.join(', '));
-      const p = await ask('Peer agent IDs (comma-separated, empty = none)');
-      if (p)
-        peers = p
-          .split(',')
-          .map((s) => s.trim())
-          .filter(Boolean);
-    }
-
     // Write description file
     let description: string | undefined;
     if (roleDesc) {
       const descPath = `.foundry/agents/${id}.md`;
       const descContent =
-        [
-          `# ${id}`,
-          '',
-          roleDesc,
-          '',
-          `**Kind**: ${kind}`,
-          `**Model**: ${model}`,
-          visibleLayers.length > 0
-            ? `**Reads**: ${visibleLayers.join(', ')}`
-            : '**Reads**: all layers',
-          ownedLayers.length > 0 ? `**Writes**: ${ownedLayers.join(', ')}` : '**Writes**: none',
-          peers.length > 0 ? `**Delegates to**: ${peers.join(', ')}` : '',
-        ]
+        [`# ${id}`, '', roleDesc, '', `**Kind**: ${kind}`, `**Model**: ${model}`]
           .filter(Boolean)
           .join('\n') + '\n';
 
@@ -496,10 +442,6 @@ const agentEditor: ItemEditor<AgentSettingsConfig> = {
         provider: config.defaults.provider,
         model,
         temperature: parseFloat(temp) || 0,
-        visibleLayers,
-        ownedLayers: ownedLayers.length > 0 ? ownedLayers : undefined,
-        peers,
-        maxDepth: 5,
         tools: true,
         enabled: true,
       },
@@ -508,9 +450,6 @@ const agentEditor: ItemEditor<AgentSettingsConfig> = {
   async edit(id, item, config) {
     console.log(`\n  Editing agent: ${id}\n`);
     if (item.description) console.log(`    Description: ${item.description}`);
-    if (item.visibleLayers?.length) console.log(`    Reads: ${item.visibleLayers.join(', ')}`);
-    if (item.ownedLayers?.length) console.log(`    Writes: ${item.ownedLayers.join(', ')}`);
-    if (item.peers?.length) console.log(`    Delegates to: ${item.peers.join(', ')}`);
     console.log();
 
     item.model = await ask('Model', item.model || config.defaults.model);
@@ -528,9 +467,8 @@ const agentEditor: ItemEditor<AgentSettingsConfig> = {
 const layerEditor: ItemEditor<LayerSettingsConfig> = {
   label: 'Layers',
   summarize: (id, l) => {
-    const shape = l.contentShape ? ` [${l.contentShape}]` : '';
     const writers = l.writers?.length ? ` writers: ${l.writers.join(',')}` : '';
-    return `${id}${shape}${writers}${l.enabled ? '' : ' [disabled]'}`;
+    return `${id}${writers}${l.enabled ? '' : ' [disabled]'}`;
   },
   async create(config) {
     console.log('\n  A layer is a knowledge shelf — a token-budgeted window into a domain.');
@@ -545,7 +483,6 @@ const layerEditor: ItemEditor<LayerSettingsConfig> = {
     const jobDesc = await ask("Purpose (e.g. 'OWASP rules and auth patterns')");
 
     const prompt = await ask("Instruction prompt (how to use this layer's content)", jobDesc);
-    const contentShape = await ask("Content shape (e.g. 'JSON array', 'Markdown index')", '');
 
     // Staleness — explain in context
     console.log('\n  Staleness: How long (ms) before this layer needs re-warming?');
@@ -603,7 +540,6 @@ const layerEditor: ItemEditor<LayerSettingsConfig> = {
           '',
           `**Activation**: ${activation}`,
           writerIds.length > 0 ? `**Writers**: ${writerIds.join(', ')}` : '**Writers**: any agent',
-          contentShape ? `**Content shape**: ${contentShape}` : '',
         ]
           .filter(Boolean)
           .join('\n') + '\n';
@@ -619,7 +555,6 @@ const layerEditor: ItemEditor<LayerSettingsConfig> = {
       {
         id,
         description,
-        contentShape: contentShape || undefined,
         prompt,
         sourceIds,
         staleness: parseInt(staleness) || 0,
@@ -632,11 +567,9 @@ const layerEditor: ItemEditor<LayerSettingsConfig> = {
   async edit(id, item, config) {
     console.log(`\n  Editing layer: ${id}\n`);
     if (item.description) console.log(`    Description: ${item.description}`);
-    if (item.contentShape) console.log(`    Content shape: ${item.contentShape}`);
     console.log();
 
     item.prompt = await ask('Prompt', item.prompt);
-    item.contentShape = (await ask('Content shape', item.contentShape || '')) || undefined;
     item.staleness = parseInt(await ask('Staleness ms', String(item.staleness))) || 0;
     const enabled = await confirm('Enabled?', item.enabled);
     item.enabled = enabled;

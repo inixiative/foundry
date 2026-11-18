@@ -485,8 +485,6 @@ export interface LearningConfig {
   reviewProvider?: LLMProvider;
   /** Monotonic clock seam for deterministic deadline-boundary tests. */
   clock?: () => number;
-  /** Deprecated compatibility setting. Validated, but central work never waits for review. */
-  barrierMs?: number;
   /** Maximum characters a reviewer may write as thread knowledge. Default 4 000. */
   maxKnowledgeChars?: number;
 }
@@ -1162,8 +1160,6 @@ class ThreadRuntimeImpl implements ThreadRuntime {
     this._resolveSource = deps.resolveSource;
     this.domainLibrarians = new Map();
     this._learningTimeoutMs = positiveMs('learning.timeoutMs', deps.learning?.timeoutMs, 10_000);
-    // Retained configuration is validated for compatibility, but never adds a central wait.
-    positiveMs('learning.barrierMs', deps.learning?.barrierMs, 5_000);
     this._hardTimeoutMs = positiveMs(
       'learning.hardTimeoutMs',
       deps.learning?.hardTimeoutMs,

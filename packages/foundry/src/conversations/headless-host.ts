@@ -101,9 +101,6 @@ async function main() {
         model: 'claude-opus-5-5',
         prompt: '',
         temperature: 0,
-        visibleLayers: [],
-        peers: [],
-        maxDepth: 1,
         enabled: true,
       },
     };

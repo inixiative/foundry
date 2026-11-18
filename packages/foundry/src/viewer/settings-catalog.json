@@ -235,16 +235,6 @@
     "description": "Temperature, set per agent. Decisions want 0, creative agents want higher."
   },
   {
-    "path": "agents.*.visibleLayers",
-    "scope": "foundry",
-    "description": "Which layers this agent can READ (empty = all). These are the layers whose content appears in this agent's assembled context."
-  },
-  {
-    "path": "agents.*.ownedLayers",
-    "scope": "foundry",
-    "description": "Which layers this agent can WRITE (empty = none). The Librarian owns thread-state. A Warden owns no configured layer: it writes only its generated thread-knowledge layer, and reads its knowledge from the composition view."
-  },
-  {
     "path": "agents.*.domainKnowledge",
     "scope": "foundry",
     "description": "Warden: source ids its domain knowledge composes from, before the composition view's files (docs/usage-and-context.md, \"Composition view\"). A project extension appends its own."
@@ -253,16 +243,6 @@
     "path": "agents.*.guardTriggers",
     "scope": "foundry",
     "description": "Tool names that trigger this configured Warden's post-action guard. [] disables guards."
-  },
-  {
-    "path": "agents.*.peers",
-    "scope": "foundry",
-    "description": "Peer agent IDs for delegation."
-  },
-  {
-    "path": "agents.*.maxDepth",
-    "scope": "foundry",
-    "description": "Max call-chain depth."
   },
   {
     "path": "agents.*.tools",
@@ -280,14 +260,9 @@
     "description": "Permission level for code execution runtimes. Default: \"bypass\"."
   },
   {
-    "path": "agents.*.executionEnv",
-    "scope": "foundry",
-    "description": "Execution environment for this agent's tool calls. Default: \"bash\" (via Claude Code provider). See ExecutionEnv type for options."
-  },
-  {
     "path": "agents.*.browser",
     "scope": "foundry",
-    "description": "Browser-specific config. Only relevant when executionEnv includes browser access."
+    "description": "Browser-specific config."
   },
   {
     "path": "agents.*.browser.mode",
@@ -358,11 +333,6 @@
     "path": "layers.*.description",
     "scope": "foundry",
     "description": "Human-readable description of this layer's job in the system. File path relative to project root (e.g., \".foundry/layers/conventions.md\"). Explains: what knowledge domain it covers, when it's relevant, who writes to it, what the warmed content looks like."
-  },
-  {
-    "path": "layers.*.contentShape",
-    "scope": "foundry",
-    "description": "What shape the warmed content takes; helps humans and agents understand what's inside. E.g., \"JSON array of convention objects\", \"Markdown documentation index\", \"Compact thread-state JSON\"."
   },
   {
     "path": "layers.*.prompt",

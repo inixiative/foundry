@@ -14,9 +14,6 @@ for (const streaming of [false, true]) {
         model: 'mock',
         prompt: '',
         temperature: 0,
-        visibleLayers: [],
-        peers: [],
-        maxDepth: 1,
         enabled: true,
       },
     };

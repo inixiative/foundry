@@ -438,13 +438,10 @@ function standaloneAgent(
   if (
     typeof agent.kind !== 'string' ||
     typeof agent.prompt !== 'string' ||
-    !Array.isArray(agent.visibleLayers) ||
-    !Array.isArray(agent.peers) ||
-    typeof agent.maxDepth !== 'number' ||
     typeof agent.enabled !== 'boolean'
   )
     throw new Error(
-      `[config] project agent ${JSON.stringify(id)} is standalone and needs a full definition (kind, prompt, visibleLayers, peers, maxDepth, enabled), or "extends" a global agent`,
+      `[config] project agent ${JSON.stringify(id)} is standalone and needs a full definition (kind, prompt, enabled), or "extends" a global agent`,
     );
   const config = { ...agent, id };
   const fields: Record<string, FieldProvenance> = {};
@@ -468,19 +465,15 @@ const EXTENSION_KEYS = new Set([
   'provider',
   'model',
   'temperature',
-  'maxDepth',
   'tools',
   'thinking',
   'permissions',
-  'executionEnv',
   'timeout',
   'cacheControl',
   'enabled',
   'invocation',
   'description',
-  'visibleLayers',
   'guardTriggers',
-  'peers',
   'browser',
 ]);
 
@@ -561,11 +554,9 @@ function extendAgent(
     'provider',
     'model',
     'temperature',
-    'maxDepth',
     'tools',
     'thinking',
     'permissions',
-    'executionEnv',
     'timeout',
     'cacheControl',
     'enabled',
@@ -579,14 +570,6 @@ function extendAgent(
     else target[key] = field.value;
     fields[key] = field.provenance;
   }
-  const visibleLayers = listField(
-    base.visibleLayers,
-    extension.visibleLayers,
-    scope,
-    `${label}.visibleLayers`,
-  );
-  resolved.visibleLayers = visibleLayers.value ?? [];
-  fields.visibleLayers = visibleLayers.provenance;
   const guardTriggers = listField(
     base.guardTriggers,
     extension.guardTriggers,
@@ -596,9 +579,6 @@ function extendAgent(
   if (guardTriggers.value === undefined) delete resolved.guardTriggers;
   else resolved.guardTriggers = guardTriggers.value;
   fields.guardTriggers = guardTriggers.provenance;
-  const peers = listField(base.peers, extension.peers, scope, `${label}.peers`);
-  resolved.peers = peers.value ?? [];
-  fields.peers = peers.provenance;
   const browser = browserField(base.browser, extension.browser, scope, `${label}.browser`);
   if (browser.value === undefined) delete resolved.browser;
   else resolved.browser = browser.value;

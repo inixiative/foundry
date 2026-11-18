@@ -21,9 +21,6 @@ function team() {
     id: 'worker',
     kind: 'executor',
     prompt: '',
-    visibleLayers: [],
-    peers: [],
-    maxDepth: 1,
     enabled: true,
   };
   // The project's one Warden is its region `docs` (settings declare none).
@@ -76,9 +73,6 @@ test('readiness refuses a hand-named Warden in settings and catches unavailable 
       flowRole: 'domain-advising',
       domain: 'docs',
       prompt: 'PRIVATE_EXPERT',
-      visibleLayers: [],
-      peers: [],
-      maxDepth: 1,
       enabled: true,
     },
   };

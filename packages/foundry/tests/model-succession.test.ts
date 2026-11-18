@@ -181,9 +181,6 @@ test('settings naming a retired model move in one update audited as model succes
     prompt: '',
     provider: 'claude-code',
     model,
-    visibleLayers: [],
-    peers: [],
-    maxDepth: 1,
     enabled: true,
   });
   config.agents = {

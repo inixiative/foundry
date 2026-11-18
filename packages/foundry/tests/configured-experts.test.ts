@@ -52,9 +52,6 @@ function config(paths: { P?: string; Q?: string } = {}) {
       prompt: '',
       provider: 'central',
       model: 'central-model',
-      visibleLayers: [],
-      peers: [],
-      maxDepth: 1,
       enabled: true,
     },
   };

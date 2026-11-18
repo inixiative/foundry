@@ -231,9 +231,6 @@ test('saved decision defaults run on subscription decisions without rewriting th
     provider: 'claude-code',
     model: 'opus',
     tools: true,
-    visibleLayers: [],
-    peers: [],
-    maxDepth: 5,
     enabled: true,
   };
   const before = JSON.stringify(config);

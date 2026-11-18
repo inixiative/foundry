@@ -50,10 +50,6 @@ export function configuredExperts(config: FoundryConfig): {
     claimedDomains.add(agent.domain);
     if (!agent.enabled) continue;
     if (agent.kind !== 'domain-librarian') throw Error(`Unsupported configured expert kind: ${id}`);
-    if (agent.ownedLayers?.length)
-      throw Error(
-        `Expert ${id} owns layers (${agent.ownedLayers.join(', ')}); a Warden reads its knowledge from the composition view: list the sources in agents.${id}.domainKnowledge and drop ownedLayers`,
-      );
     if (
       agent.domainKnowledge !== undefined &&
       (!Array.isArray(agent.domainKnowledge) ||
@@ -94,12 +90,9 @@ export function configuredExperts(config: FoundryConfig): {
     if (
       (agent.tools !== undefined && agent.tools !== false) ||
       agent.browser !== undefined ||
-      agent.executionEnv !== undefined ||
-      agent.permissions !== undefined ||
-      agent.peers.length ||
-      agent.visibleLayers.some((layer) => layer !== 'thread-state')
+      agent.permissions !== undefined
     )
-      throw Error(`Unsupported configured expert tools, delegation or context policy: ${id}`);
+      throw Error(`Unsupported configured expert tools or permissions: ${id}`);
     if (agent.timeout !== undefined && (!Number.isSafeInteger(agent.timeout) || agent.timeout < 1))
       throw Error(`Invalid expert timeout: ${id}`);
     if (

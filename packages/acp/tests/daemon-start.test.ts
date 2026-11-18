@@ -129,9 +129,6 @@ async function holdingDaemon(dir: string, launchPath: string, port = 0) {
       model: 'controlled',
       prompt: '',
       enabled: true,
-      visibleLayers: [],
-      peers: [],
-      maxDepth: 1,
       temperature: 0,
     },
   };

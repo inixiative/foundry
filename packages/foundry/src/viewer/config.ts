@@ -494,23 +494,6 @@ export type ListPatch<T> =
   | { append?: T[]; remove: T[] };
 
 /**
- * Execution environment — where an agent runs its tool calls.
- *
- * - "bash": Direct shell access (default for Claude Code provider). Full system access.
- * - "just-bash": Virtualized bash via just-bash (isolated, no real filesystem).
- *   Use for sandboxed agents that need shell semantics without system access.
- * - "typescript": TypeScript/JS execution in isolate (V8/Bun). Agents write code
- *   to filter data, call APIs, transform results — fewer tokens than bash pipelines.
- * - "browser": Browser automation via Playwright MCP or JS execution in page.
- *   Two modes: click-based (Playwright snapshot → click/fill) or code-based
- *   (agent writes JS executed in page context — more token-efficient).
- * - "hybrid": Multiple environments available. Agent chooses per-task.
- *
- * See docs/EXECUTION_ENVIRONMENTS.md for guidance on when to use each.
- */
-export type ExecutionEnv = 'bash' | 'just-bash' | 'typescript' | 'browser' | 'hybrid';
-
-/**
  * Browser-specific configuration for agents with browser access.
  */
 export interface BrowserConfig {
@@ -569,40 +552,19 @@ export interface AgentSettingsConfig {
   /** Temperature, set per agent. Decisions want 0, creative agents want higher. */
   temperature?: number;
   /**
-   * Which layers this agent can READ (empty = all).
-   * These are the layers whose content appears in this agent's assembled context.
-   */
-  visibleLayers: string[];
-  /**
-   * Which layers this agent can WRITE (empty = none). The Librarian owns thread-state. A Warden owns
-   * no configured layer: it writes only its generated thread-knowledge layer, and reads its
-   * knowledge from the composition view.
-   */
-  ownedLayers?: string[];
-  /**
    * Warden: source ids its domain knowledge composes from, before the composition view's files
    * (docs/usage-and-context.md, "Composition view"). A project extension appends its own.
    */
   domainKnowledge?: string[];
   /** Tool names that trigger this configured Warden's post-action guard. [] disables guards. */
   guardTriggers?: string[];
-  /** Peer agent IDs for delegation. */
-  peers: string[];
-  /** Max call-chain depth. */
-  maxDepth: number;
   /** Whether this agent can use tools (true) or is text-only (false). Default: true. */
   tools?: boolean;
   /** Extended thinking / reasoning effort. "none" | "low" | "medium" | "high" | number (budget tokens). */
   thinking?: 'none' | 'low' | 'medium' | 'high' | number;
   /** Permission level for code execution runtimes. Default: "bypass". */
   permissions?: 'bypass' | 'restricted';
-  /**
-   * Execution environment for this agent's tool calls.
-   * Default: "bash" (via Claude Code provider).
-   * See ExecutionEnv type for options.
-   */
-  executionEnv?: ExecutionEnv;
-  /** Browser-specific config. Only relevant when executionEnv includes browser access. */
+  /** Browser-specific config. */
   browser?: BrowserConfig;
   /** Per-call timeout in ms. */
   timeout?: number;
@@ -623,30 +585,20 @@ export type AgentChunk = 'instructions' | 'domainKnowledge';
 
 /**
  * A project agent composed with a global one. Instructions (`prompt`) and domain knowledge
- * (`domainKnowledge`, sources for the parent's owned layer) are appended to the parent's under
+ * (`domainKnowledge`, its sources) are appended to the parent's under
  * a heading per chunk; a chunk named in `override` replaces the parent's instead. Identity
- * (kind, role, domain, owned layer) is the parent's; other fields override, lists patch.
+ * (kind, role, domain) is the parent's; other fields override, lists patch.
  */
 export interface AgentExtension
   extends Omit<
     Partial<AgentSettingsConfig>,
-    | 'id'
-    | 'kind'
-    | 'flowRole'
-    | 'domain'
-    | 'ownedLayers'
-    | 'visibleLayers'
-    | 'guardTriggers'
-    | 'peers'
-    | 'browser'
+    'id' | 'kind' | 'flowRole' | 'domain' | 'guardTriggers' | 'browser'
   > {
   /** Global agent id. */
   extends: string;
   domainKnowledge?: string[];
   override?: AgentChunk[];
-  visibleLayers?: ListPatch<string>;
   guardTriggers?: ListPatch<string>;
-  peers?: ListPatch<string>;
   browser?: BrowserConfigOverride | null;
 }
 
@@ -684,11 +636,6 @@ export interface LayerSettingsConfig {
    * what the warmed content looks like.
    */
   description?: string;
-  /**
-   * What shape the warmed content takes; helps humans and agents understand what's inside.
-   * E.g., "JSON array of convention objects", "Markdown documentation index", "Compact thread-state JSON".
-   */
-  contentShape?: string;
   /** Instruction prompt for this layer. */
   prompt: string;
   /**
@@ -868,10 +815,6 @@ export function defaultAgents(): Record<string, AgentSettingsConfig> {
       flowRole: 'execution',
       prompt: '',
       tools: true,
-      visibleLayers: [],
-      ownedLayers: [],
-      peers: [],
-      maxDepth: 5,
       enabled: true,
     },
   };
@@ -1733,9 +1676,6 @@ export class ConfigStore {
           provider: agent.llm?.provider ?? this._config.defaults.provider,
           model: agent.llm?.model ?? this._config.defaults.model,
           temperature: agent.llm?.temperature,
-          visibleLayers: agent.llm?.sources ?? [],
-          peers: agent.peers,
-          maxDepth: agent.llm?.maxDepth ?? 3,
           enabled: true,
         };
       }

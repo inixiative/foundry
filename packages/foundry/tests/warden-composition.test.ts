@@ -63,9 +63,6 @@ function config(project = regionProject()): FoundryConfig {
       prompt: '',
       provider: 'central',
       model: 'central-model',
-      visibleLayers: [],
-      peers: [],
-      maxDepth: 1,
       enabled: true,
     },
   };
@@ -192,9 +189,6 @@ test('settings declare no Wardens: one written there is a kind settings do not c
     domain: 'conventions',
     prompt: 'RULES',
     tools: false,
-    visibleLayers: [],
-    peers: [],
-    maxDepth: 1,
     enabled: true,
   } as AgentSettingsConfig;
   const global = config();
@@ -216,9 +210,6 @@ const SORTER: AgentSettingsConfig = {
   id: 'sorter',
   kind: 'executor',
   prompt: 'SORTER_INSTRUCTIONS',
-  visibleLayers: [],
-  peers: [],
-  maxDepth: 1,
   enabled: true,
 };
 test('project agents are standalone or extend a global agent; nothing in between', () => {

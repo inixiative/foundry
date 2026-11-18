@@ -194,9 +194,6 @@ function config(project: string): FoundryConfig {
       prompt: '',
       provider: 'central',
       model: 'central-model',
-      visibleLayers: [],
-      peers: [],
-      maxDepth: 1,
       enabled: true,
     },
   };
@@ -830,9 +827,6 @@ test('settings declare no Wardens: one written there is refused, and a malformed
     flowRole: 'domain-advising',
     domain: 'reuse',
     prompt: 'REUSE_RULES',
-    visibleLayers: [],
-    peers: [],
-    maxDepth: 1,
     enabled: true,
   };
   c.agents['librarian-reuse'] = handNamed;

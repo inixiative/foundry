@@ -23,10 +23,7 @@ const expert = (domain: string): AgentSettingsConfig => ({
   provider: 'decisions',
   model: 'luna',
   tools: false,
-  visibleLayers: [],
   domainKnowledge: [`${domain}-source`],
-  peers: [],
-  maxDepth: 1,
   enabled: true,
 });
 
@@ -40,9 +37,6 @@ function config(): FoundryConfig {
       prompt: '',
       provider: 'central',
       model: 'central-model',
-      visibleLayers: [],
-      peers: [],
-      maxDepth: 1,
       enabled: true,
     },
     ...Object.fromEntries(DOMAINS.map((d) => [expertId(d), expert(d)])),

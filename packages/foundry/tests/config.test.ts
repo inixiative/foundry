@@ -66,9 +66,6 @@ function buildConfig(): FoundryConfig {
       provider: 'anthropic',
       model: 'claude-sonnet-4-6',
       temperature: 0,
-      visibleLayers: ['system', 'docs'],
-      peers: ['reviewer', 'planner'],
-      maxDepth: 3,
       browser: {
         mode: 'hybrid',
         allowedUrls: ['https://global.example/**'],
@@ -87,8 +84,6 @@ function buildConfig(): FoundryConfig {
       agents: {
         executor: {
           extends: 'executor',
-          visibleLayers: { append: ['project-layer'] },
-          peers: { replace: ['answerer'] },
           browser: {
             allowedUrls: { append: ['https://project.example/**'] },
             blockedUrls: { remove: ['https://blocked.example/**'] },
@@ -141,8 +136,6 @@ describe('ConfigStore project resolution', () => {
 
     expect(resolved!.layers['project-layer'].sourceIds).toEqual(['project-docs']);
 
-    expect(resolved!.agents.executor.visibleLayers).toEqual(['system', 'docs', 'project-layer']);
-    expect(resolved!.agents.executor.peers).toEqual(['answerer']);
     expect(resolved!.agents.executor.browser).toEqual({
       mode: 'hybrid',
       allowedUrls: ['https://global.example/**', 'https://project.example/**'],
