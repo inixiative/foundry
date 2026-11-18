@@ -43,6 +43,9 @@ import {
 } from './journal-content';
 import type { PersistedTraceRecord } from './trace-record';
 
+/** `session_native` rows of turns Foundry admitted; `observed:<turn>` rows are turns it only watched. */
+const ADMITTED = "admission_id NOT LIKE 'observed:%'";
+
 /** The admission guard's refusal while a lost turn's outcome is unsettled (`unsettledAdmissions`). */
 export const NATIVE_OUTCOME_UNRESOLVED =
   'Foundry lost track of the last turn after a restart. Check the files it touched, then Continue (or Retry the turn).';
@@ -2700,18 +2703,22 @@ export class LocalSessionStore {
    * (a restart mid-turn) before the runtime's terminal arrived. Each blocks a new admission on
    * the same pool key until it is settled from the native session's own record
    * (`turns/native-outcome-recovery.ts`) or by the owner (`settleAdmission`).
+   * Observed turns (`observed:<turn>`: a Muse turn the session started itself, an observed
+   * subagent's run) were never admitted by Foundry, so they are never lost and never block. An
+   * admission is keyed by its `admission_id` column, the same key `settleAdmission` reads.
    */
   unsettledAdmissions(threadId: string, providerSessionKey?: string): UnsettledAdmission[] {
     // Nearly every thread has none: skip the full read unless an unknown outcome was ever recorded.
     if (
       !this.query(
-        "SELECT 1 FROM session_native WHERE thread_id=? AND json_extract(record, '$.nativeOutcome')='unknown' LIMIT 1",
+        `SELECT 1 FROM session_native WHERE thread_id=? AND ${ADMITTED} AND json_extract(record, '$.nativeOutcome')='unknown' LIMIT 1`,
       ).get(threadId)
     )
       return [];
     const rows = this.query(
-      'SELECT record, stored_at AS storedAt FROM session_native WHERE thread_id=? ORDER BY seq',
-    ).all(threadId) as { record: string; storedAt: number }[];
+      `SELECT admission_id AS admissionId, record, stored_at AS storedAt FROM session_native
+        WHERE thread_id=? AND ${ADMITTED} ORDER BY seq`,
+    ).all(threadId) as { admissionId: string; record: string; storedAt: number }[];
     const admissions = new Map<string, UnsettledAdmission & { settled: boolean }>();
     for (const row of rows) {
       const e = JSON.parse(row.record) as NativeEvidence;
@@ -2722,13 +2729,13 @@ export class LocalSessionStore {
         e.owner.providerSessionKey !== providerSessionKey
       )
         continue;
-      const prior = admissions.get(e.admissionId!);
+      const prior = admissions.get(row.admissionId);
       const settled =
         prior?.settled === true ||
         e.nativeOutcome !== 'unknown' ||
         (e.dispatch === 'not-dispatched' && e.localOutcome === 'rejected');
-      admissions.set(e.admissionId!, {
-        admissionId: e.admissionId!,
+      admissions.set(row.admissionId, {
+        admissionId: row.admissionId,
         turnId: prior?.turnId ?? e.owner?.messageId ?? '',
         // The thread's own executor session, not a decision or review session inside its turn.
         main:
@@ -2787,7 +2794,7 @@ export class LocalSessionStore {
   threadsWithUnknownAdmissions(): string[] {
     return (
       this.query(
-        "SELECT DISTINCT thread_id AS threadId FROM session_native WHERE json_extract(record, '$.nativeOutcome')='unknown'",
+        `SELECT DISTINCT thread_id AS threadId FROM session_native WHERE ${ADMITTED} AND json_extract(record, '$.nativeOutcome')='unknown'`,
       ).all() as Array<{ threadId: string }>
     )
       .map((row) => row.threadId)
