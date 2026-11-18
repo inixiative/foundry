@@ -55,7 +55,11 @@ import {
   type SignalBus,
 } from '@inixiative/foundry-core';
 import { type ClassifiedSummary, classifiedSummary, type WardenPointer } from '../classify';
-import { DECISION_DEADLINE_MS, NOT_HELD_REFUSAL } from '../providers/decision-budget';
+import {
+  DECISION_DEADLINE_MS,
+  NOT_HELD_REFUSAL,
+  QUOTA_PAUSED_REFUSAL,
+} from '../providers/decision-budget';
 import {
   type PrefilterOutcome,
   type PrefilterSkip,
@@ -1114,7 +1118,9 @@ export class FlowOrchestrator {
       return decided('excluded', {
         reason: result.notStarted,
         // Skipped unsent on a user message: it catches up on the next one, so it is not degraded.
-        ...(catchingUp && result.notStarted === NOT_HELD_REFUSAL
+        // A used-up quota is said once in the strip, not as a degraded Warden every round.
+        ...(catchingUp &&
+        (result.notStarted === NOT_HELD_REFUSAL || result.notStarted === QUOTA_PAUSED_REFUSAL)
           ? { catchesUp: true as const }
           : {}),
         ...staged,

@@ -7,6 +7,7 @@ import { DECISION_PRIORITY } from '../src/providers/decision-priority';
 import { defaultProfileSource } from '../src/providers/default-profiles';
 import { NativeAuthentication } from '../src/providers/native-authentication';
 import { createPrimedDecisionHost } from '../src/providers/primed-decisions';
+import { makeLoginQuotaPause } from '../src/providers/provider-limits';
 import {
   buildSubscriptionDecisions,
   type DecisionPressure,
@@ -191,6 +192,58 @@ test('a rate limit backs off and signals, without closing admission or retrying'
   // The account is known to be blocked: the second decision is refused before any turn is sent.
   expect(limited.turns).toHaveLength(1);
   expect(pressure.at(-1)).toMatchObject({ kind: 'rate-limited', backoffMs: 300 });
+});
+
+test('a rate limit on a used-up login pauses every decision until its reset, then runs again', async () => {
+  const limited = appServerTransport({
+    failure: {
+      message: "You've hit your usage limit. Try again later.",
+      codexErrorInfo: 'usageLimitExceeded',
+    },
+  });
+  const reset = Date.now() + 400;
+  const { decisions, pressure } = scheduler(limited, {
+    rateLimitBackoffMs: 50,
+    quota: makeLoginQuotaPause({ fetchResetAt: async () => reset }),
+  });
+  expect(await ask(decisions, 'one', 'A')).toContain('rate limited');
+  await Bun.sleep(20);
+  expect(pressure).toContainEqual({ kind: 'quota-paused', until: reset });
+  expect(decisions.snapshot()).toMatchObject({ quotaPausedUntil: reset });
+  // Paused: refused at once, as capacity, and no turn reaches the used-up login.
+  const started = Date.now();
+  expect(await ask(decisions, 'two', 'B')).toContain('Wardens paused');
+  expect(Date.now() - started).toBeLessThan(50);
+  expect(limited.turns).toHaveLength(1);
+  await Bun.sleep(reset - Date.now() + 30);
+  expect(decisions.snapshot().quotaPausedUntil).toBeUndefined();
+  // Said once each way: paused, then resumed, with no rate limit in between.
+  expect(pressure.map((event) => event.kind)).toEqual([
+    'rate-limited',
+    'quota-paused',
+    'quota-resumed',
+  ]);
+  // Admitted again: the scheduler runs it (the primed host, knowing the login blocked, sends no turn).
+  const before = pressure.length;
+  expect(await ask(decisions, 'three', 'C')).toContain('rate limited; no fallback or retry');
+  expect(pressure.slice(before)).toMatchObject([{ kind: 'rate-limited' }]);
+});
+
+test('a rate limit with no known reset keeps the ordinary backoff and no pause', async () => {
+  const limited = appServerTransport({
+    failure: {
+      message: "You've hit your usage limit. Try again later.",
+      codexErrorInfo: 'usageLimitExceeded',
+    },
+  });
+  const { decisions, pressure } = scheduler(limited, {
+    rateLimitBackoffMs: 50,
+    quota: makeLoginQuotaPause({ fetchResetAt: async () => undefined }),
+  });
+  expect(await ask(decisions, 'one', 'A')).toContain('rate limited');
+  await Bun.sleep(20);
+  expect(pressure.map((event) => event.kind)).toEqual(['rate-limited']);
+  expect(decisions.snapshot().quotaPausedUntil).toBeUndefined();
 });
 
 test('shared decision holders and an exclusive worker lock exclude each other on one profile', async () => {

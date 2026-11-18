@@ -31,6 +31,7 @@ import {
   ProjectWardenHosts,
   type Roster,
 } from '../src/providers/project-warden-hosts';
+import { makeLoginQuotaPause } from '../src/providers/provider-limits';
 import {
   PROJECT_HOST_DEFAULTS,
   resolveSubscriptionPolicy,
@@ -85,6 +86,8 @@ function projectHosts(
     idleMs?: number;
     wardensPerDispatcher?: number;
     maxRecyclesPerHour?: number;
+    /** When the decision login's used-up usage resets (default: not used up). */
+    quotaResetAt?: () => number | undefined;
   } = {},
 ) {
   const tree = fakeClaudeTree({ noRoot: options.noRoot });
@@ -112,7 +115,9 @@ function projectHosts(
     rss: (pid) => rss.get(pid) ?? 100,
     onProject: (projectId, state) => states.push({ projectId, ...state }),
   });
-  wardens.bindLauncher(async (_projectId, host) => {
+  const quota = makeLoginQuotaPause({ fetchResetAt: async () => options.quotaResetAt?.() });
+  cleanup.push(() => quota.close());
+  wardens.bindLauncher(quota, async (_projectId, host) => {
     const session = new ClaudeCodeSession({
       spawn: tree.spawn,
       maxTurns: null,
@@ -327,6 +332,35 @@ test('a host that never sets up is retried with backoff, then the project stays 
   expect(wardens.serving('A1')).toBeUndefined();
   expect(states.at(-1)!.reason).toMatch(/2 starts failed in a row/);
 }, 20_000);
+
+test('a start on a used-up login waits for the reset, counts no failure and keeps the Wardens skipped, not on stand-ins', async () => {
+  let resetAt: number | undefined;
+  const { tree, states, wardens } = projectHosts({
+    noRoot: true,
+    maxRestarts: 1,
+    quotaResetAt: () => resetAt,
+  });
+  resetAt = Date.now() + 6_000;
+  wardens.openProject('P', roster('locks'));
+  expect(await until(() => wardens.projectState('P')?.quotaResetsAt !== undefined, 10_000)).toBe(
+    true,
+  );
+  // One failure in a row would fail it for good (maxRestarts 1); a used-up login does not count.
+  expect(wardens.projectState('P')).toMatchObject({
+    status: 'starting',
+    failures: 0,
+    quotaResetsAt: resetAt,
+  });
+  expect(wardens.serving('A1')).toBe('starting');
+  expect(states.at(-1)!.reason).toMatch(/usage used up/);
+  expect(tree.processes.length).toBe(1);
+  // At the reset it starts again; usage freed, the next failure counts as before.
+  resetAt = undefined;
+  expect(await until(() => wardens.projectState('P')?.status === 'failed', 15_000)).toBe(true);
+  expect(tree.processes.length).toBe(2);
+  expect(wardens.projectState('P')).toMatchObject({ failures: 1 });
+  expect(wardens.projectState('P')!.quotaResetsAt).toBeUndefined();
+}, 30_000);
 
 test('serving: a starting host skips its Wardens (they catch up later); a failed, closed or replaced one does not', async () => {
   const { tree, rss, wardens } = projectHosts();

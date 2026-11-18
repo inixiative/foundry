@@ -15,7 +15,11 @@ import {
   type OwnedAdmissionInspection,
   sameNativeOwner,
 } from '@inixiative/foundry-core';
-import { DECISION_CALL_TIMEOUT_MAX_MS, NOT_HELD_REFUSAL } from './decision-budget';
+import {
+  DECISION_CALL_TIMEOUT_MAX_MS,
+  NOT_HELD_REFUSAL,
+  QUOTA_PAUSED_REFUSAL,
+} from './decision-budget';
 import { DECISION_PRIORITY } from './decision-priority';
 import type { NativeTextCall, NativeTextConfig } from './native-text-provider';
 import {
@@ -24,6 +28,7 @@ import {
   projectHostTarget,
 } from './primed-decisions';
 import type { ProjectWardenHosts } from './project-warden-hosts';
+import type { LoginQuotaPause } from './provider-limits';
 
 export interface SubscriptionDecisionConfig extends Omit<NativeTextConfig, 'runId' | 'maxCalls'> {
   maxCalls: number;
@@ -51,10 +56,19 @@ export interface SubscriptionDecisionConfig extends Omit<NativeTextConfig, 'runI
   inputCap?: number;
   /** Project Warden hosts: each project's Wardens held in one Claude Code process (advice only). */
   projectHosts?: ProjectWardenHosts;
+  /**
+   * The decision login's used-up pause (`makeLoginQuotaPause`), read after a rate-limited decision:
+   * while it holds every decision is refused at once, for capacity, until the login's usage resets.
+   */
+  quota?: LoginQuotaPause;
 }
 export type DecisionPressure =
   | { kind: 'shed'; threadId: string; priority: number; queued: number }
   | { kind: 'rate-limited'; until: number; backoffMs: number }
+  /** The login's usage is used up: every decision is refused at once until `until`, its reset. */
+  | { kind: 'quota-paused'; until: number }
+  /** The used-up login has usage again (its reset, or a new reading): decisions run. */
+  | { kind: 'quota-resumed' }
   /** Admission closed for good: every later decision is refused until restart. */
   | { kind: 'closed'; reason: string };
 type TextRun = {
@@ -105,11 +119,24 @@ export function createSubscriptionDecisions(config: SubscriptionDecisionConfig) 
     ...(config.inputCap !== undefined ? { inputCap: config.inputCap } : {}),
     onEvent: onPrimedEvent,
     ...(config.projectHosts ? { projectHosts: config.projectHosts } : {}),
+    ...(config.quota ? { quota: config.quota } : {}),
   });
-  const { projectHosts, ...bounds } = options;
+  const { projectHosts, quota: sharedQuota, onPressure, ...bounds } = options;
   const decisions = buildSubscriptionDecisions(
     {
       ...bounds,
+      ...(primed.quota ? { quota: primed.quota } : {}),
+      // A shared pause is announced by the host that owns it: the strip hears it once.
+      ...(onPressure
+        ? {
+            onPressure: sharedQuota
+              ? (event: DecisionPressure) => {
+                  if (event.kind !== 'quota-paused' && event.kind !== 'quota-resumed')
+                    onPressure(event);
+                }
+              : onPressure,
+          }
+        : {}),
       ...(projectHosts
         ? {
             unbounded: (key: string, opts: CompletionOpts) =>
@@ -121,6 +148,8 @@ export function createSubscriptionDecisions(config: SubscriptionDecisionConfig) 
   );
   return {
     ...decisions,
+    /** This login's used-up pause, for a stage host on the same login to share. */
+    quota: primed.quota,
     close: () => {
       decisions.close();
       void primed.close();
@@ -145,7 +174,7 @@ export function buildSubscriptionDecisions(
   },
   createRun: (config: NativeTextConfig) => TextRun,
 ) {
-  const { onPressure, unbounded, ...bounds } = options;
+  const { onPressure, unbounded, quota, ...bounds } = options;
   const config = structuredClone(bounds);
   if (
     !Number.isSafeInteger(config.maxCalls) ||
@@ -189,6 +218,8 @@ export function buildSubscriptionDecisions(
     backoffUntil = 0,
     backoffMs = initialBackoff;
   let backoffTimer: ReturnType<typeof setTimeout> | undefined;
+  /** The login used up: decisions are refused at once until its reset (`quota`). */
+  const quotaPausedUntil = () => quota?.pausedUntil();
   const running = new Set<TextRun>(),
     runningPriorities: number[] = [],
     lastServed = new Map<string, number>();
@@ -207,13 +238,36 @@ export function buildSubscriptionDecisions(
     outcomes.set(error, { admission: 'not-admitted', settlement: 'settled' });
     return error;
   };
+  const refuseQueued = (message: string, capacity: boolean) => {
+    for (const pending of queue.splice(0)) {
+      clearTimeout(pending.timer);
+      pending.reject(reject(message, capacity));
+    }
+  };
+  /**
+   * The login used up: every waiting decision is refused for capacity and new ones are refused at once
+   * until the reset, so no Warden (a stand-in included) keeps asking a login that cannot answer. Said
+   * once; when it has usage again, decisions run with a fresh backoff.
+   */
+  const unsubscribeQuota = quota?.onChange((until) => {
+    if (closed) return;
+    clearTimeout(backoffTimer);
+    backoffTimer = undefined;
+    if (until !== undefined) {
+      refuseQueued(QUOTA_PAUSED_REFUSAL, true);
+      pressure({ kind: 'quota-paused', until });
+      return;
+    }
+    backoffUntil = 0;
+    backoffMs = initialBackoff;
+    pressure({ kind: 'quota-resumed' });
+    pump();
+  });
   const close = (reason = 'shut down') => {
     if (!closed) pressure({ kind: 'closed', reason });
     closed = true;
-    for (const pending of queue.splice(0)) {
-      clearTimeout(pending.timer);
-      pending.reject(reject('Subscription decision admission closed'));
-    }
+    unsubscribeQuota?.();
+    refuseQueued('Subscription decision admission closed', false);
   };
   const check = (pending: Pending) => {
     if (closed || Date.now() >= pending.deadline)
@@ -238,6 +292,18 @@ export function buildSubscriptionDecisions(
     return chosen;
   };
   const pump = () => {
+    // Whether the login is used up is being read: what waits is not sent to fail on it meanwhile.
+    if (quota?.reading()) {
+      if (!backoffTimer) {
+        backoffTimer = setTimeout(() => {
+          backoffTimer = undefined;
+          pump();
+        }, 250);
+        (backoffTimer as { unref?: () => void }).unref?.();
+      }
+      return;
+    }
+    if (quotaPausedUntil() !== undefined) return refuseQueued(QUOTA_PAUSED_REFUSAL, true);
     if (Date.now() < backoffUntil) {
       backoffTimer ??= setTimeout(() => {
         backoffTimer = undefined;
@@ -420,18 +486,23 @@ export function buildSubscriptionDecisions(
             (call.processExit === 'not-started' || call.release === 'released'));
       const limited = settled && call?.failure === 'rate-limited';
       // A Warden the project host holds no warm member for is skipped for capacity, not failed.
+      // Rate limited on a login now paused as used up: said once by the pause, not failed every round.
+      const paused = limited && quotaPausedUntil() !== undefined;
       const error =
         settled && call?.failure === 'not-held'
           ? reject(NOT_HELD_REFUSAL, true)
-          : Error(
-              limited
-                ? 'Subscription decision rate limited; no fallback or retry'
-                : 'Subscription decision failed; no fallback or retry',
-            );
-      if (limited) {
+          : paused
+            ? reject(QUOTA_PAUSED_REFUSAL, true)
+            : Error(
+                limited
+                  ? 'Subscription decision rate limited; no fallback or retry'
+                  : 'Subscription decision failed; no fallback or retry',
+              );
+      if (limited && !paused) {
         backoffUntil = Math.max(backoffUntil, Date.now() + backoffMs);
         pressure({ kind: 'rate-limited', until: backoffUntil, backoffMs });
         backoffMs = Math.min(backoffMs * 2, 60_000);
+        void quota?.read();
       }
       outcomes.set(error, {
         admission: call?.admission ? 'attempted' : 'not-admitted',
@@ -520,6 +591,8 @@ export function buildSubscriptionDecisions(
     complete(messages, opts = {}) {
       if (closed || attempts >= config.maxCalls)
         return Promise.reject(reject('Subscription decision admission closed or full'));
+      if (quotaPausedUntil() !== undefined)
+        return Promise.reject(reject(QUOTA_PAUSED_REFUSAL, true));
       const priority = opts.priority ?? DECISION_PRIORITY.turn;
       if (!Number.isFinite(priority))
         return Promise.reject(reject('Subscription decision priority refused'));
@@ -627,6 +700,7 @@ export function buildSubscriptionDecisions(
       attempts,
       shed,
       ...(backoffUntil > Date.now() ? { backoffUntil } : {}),
+      ...(quotaPausedUntil() !== undefined ? { quotaPausedUntil: quotaPausedUntil() } : {}),
     }),
   };
 }

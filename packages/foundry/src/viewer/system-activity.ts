@@ -14,6 +14,14 @@ const SHED_SHOWN_MS = 30_000;
 
 const seconds = (ms: number) => `${Math.max(1, Math.round(ms / 1000))}s`;
 
+/** A reset as this machine's clock reads it: "4:10 PM" today, with the day ("Tue 4:10 PM") on any other. */
+export function resetTime(at: number, now = Date.now()): string {
+  const time = { hour: 'numeric', minute: '2-digit' } as const;
+  return new Date(at).toDateString() === new Date(now).toDateString()
+    ? new Date(at).toLocaleTimeString([], time)
+    : new Date(at).toLocaleString([], { weekday: 'short', ...time });
+}
+
 /**
  * A project's Warden host, said plainly: starting, refreshing or restarting is work in progress;
  * serving with no reason is ready; a failed start is degraded until the retry; failed for good is red.
@@ -33,6 +41,16 @@ export function projectHostActivity(
       ...base,
       state: 'idle',
       summary: `${projectLabel}'s Wardens are resting until someone works in the project.`,
+      detail,
+    };
+  // The login is out of usage: a serving host's Wardens cannot answer either. The strip says it once,
+  // as the decision login's pause (`decisions:rate-limit`); each project's line is for the log.
+  if (state.quotaResetsAt !== undefined)
+    return {
+      ...base,
+      state: 'idle',
+      until: state.quotaResetsAt,
+      summary: `${projectLabel}'s Wardens are paused: the Claude login's usage is used up until ${resetTime(state.quotaResetsAt)}.`,
       detail,
     };
   if (state.status === 'failed')
@@ -90,6 +108,23 @@ export function decisionPressureActivity(
       state: 'failed',
       summary: 'Wardens stopped answering until Foundry restarts.',
       detail: `Decision admission closed until restart: ${event.reason}`,
+    };
+  if (event.kind === 'quota-resumed')
+    return {
+      key: 'decisions:rate-limit',
+      source: 'subscription-decisions',
+      state: 'idle',
+      summary: "The Wardens' Claude login has usage again; they are answering.",
+      detail: 'Decision login usage available again; decisions run',
+    };
+  if (event.kind === 'quota-paused')
+    return {
+      key: 'decisions:rate-limit',
+      source: 'subscription-decisions',
+      state: 'degraded',
+      until: event.until,
+      summary: `The Wardens' Claude login is out of usage; they pause until it resets at ${resetTime(event.until, now)}.`,
+      detail: `Decision login usage used up; decisions refused until ${new Date(event.until).toISOString()}`,
     };
   if (event.kind === 'rate-limited')
     return {
