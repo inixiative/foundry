@@ -4,7 +4,7 @@
  * @partOf feature:flow
  */
 // ---------------------------------------------------------------------------
-// Flow Orchestrator — wires the five FLOW.md roles into a coherent pipeline
+// Flow Orchestrator — wires the FLOW.md roles into a coherent pipeline
 //
 // Pre-message flow (parallel message decoration, CORE-002):
 //   1. Freeze    — capture the user message, thread state and every domain's

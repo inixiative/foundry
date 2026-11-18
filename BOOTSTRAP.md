@@ -2,8 +2,8 @@
 
 > **Not the default.** This is a strategy for building a wrapped stack by hand. A fresh install is one
 > executor and nothing else: the thread is unwrapped, and the user's message reaches the native session
-> as typed (`defaultAgents` in `packages/foundry/src/viewer/config.ts`). Every layer, classifier, router
-> and executor below is an opt-in setting.
+> as typed (`defaultAgents` in `packages/foundry/src/viewer/config.ts`). Every layer and source below
+> is an opt-in setting.
 
 A practical plan for setting up a default Foundry instance with self-improvement
 loops that compound over time. Start minimal, let the system learn.
@@ -28,7 +28,7 @@ and writeback pipeline figure out what matters. Your job is to seed the right
 | `project-context` | 5min | 6,000 | Hydrated from project files (README, package.json, tsconfig, key dirs). Per-thread. |
 | `conventions` | 60s | 4,000 | Coding standards, naming, patterns. Starts seeded, grows via correction signals. |
 | `domain` | 5min | 6,000 | Domain knowledge — business rules, API contracts, schema shapes. Hydrated from docs/sources. |
-| `learnings` | 30s | 8,000 | Auto-accumulated from signals. Corpus compiler promotes fluid entries here. |
+| `learnings` | 30s | 8,000 | Accumulated from signals. |
 | `memory` | 15s | 8,000 | Working memory — recent context, decisions, thread-local state. High churn. |
 | `scratch` | 10s | 4,000 | Ephemeral. Mid-run observations, hypotheses. |
 
@@ -39,260 +39,36 @@ and writeback pipeline figure out what matters. Your job is to seed the right
 
 ### Layer Activation Modes
 
-| Layer | Activation | Condition |
-|---|---|---|
-| `system` | always | — |
-| `project-context` | always | — |
-| `conventions` | always | — |
-| `domain` | conditional | categories: bug, feature, refactor |
-| `learnings` | always | — |
-| `memory` | always | — |
-| `scratch` | conditional | Only during executor dispatch |
+A layer is `always` (in every assembly) or `on-demand` (only when a Warden's contribution or other
+middleware asks for it on that turn).
+
+| Layer | Activation |
+|---|---|
+| `system` | always |
+| `project-context` | always |
+| `conventions` | always |
+| `domain` | on-demand |
+| `learnings` | always |
+| `memory` | always |
+| `scratch` | on-demand |
 
 ---
 
-## Phase 2: Agent Pipeline
+## Phase 2: Agents
 
-### Model Strategy
-
-Use **tiered models** — don't burn Opus tokens on classification:
-
-| Agent | Model | Temp | Max Tokens | Exec Env | Reasoning |
-|---|---|---|---|---|---|
-| `classifier` | haiku | 0 | 256 | — | Fast, cheap. Classification is pattern matching. |
-| `router` | haiku | 0 | 256 | — | Routing is a lookup, not reasoning. |
-| `planner` | sonnet | 0.2 | 2,048 | — | Needs to reason about decomposition. |
-| `executor-fix` | sonnet | 0 | 8,192 | bash | Bug fixing needs precision + shell access. |
-| `executor-build` | sonnet | 0.3 | 8,192 | bash | Feature work benefits from slight creativity. |
-| `executor-answer` | sonnet | 0.1 | 4,096 | — | Explanations should be clear, not creative. |
-| `executor-verify` | sonnet | 0 | 4,096 | browser | Visual verification of changes in running app. |
-| `executor-sandbox` | haiku | 0 | 4,096 | just-bash | Read-only code analysis. Safe to bypass perms. |
-| `reviewer` | sonnet | 0 | 4,096 | — | Self-review needs to be strict. |
-| `distiller` | haiku | 0 | 1,024 | — | Extracting signals from traces is mechanical. |
-
-**Thinking levels:** For providers that support extended thinking (Claude), use it
-on the planner and executor-fix agents. These are the agents where step-by-step
-reasoning actually improves output quality. Don't use thinking on classifier/router —
-it's wasted latency.
-
-### Agent Definitions
-
-```
-classifier
-  kind: classifier
-  prompt: |
-    Classify the message into exactly one category.
-    Categories: bug, feature, refactor, question, architecture, convention, devops, general
-    Consider the project context and recent thread history.
-    Respond with JSON: {"category": "...", "confidence": 0-1, "tags": [...], "reasoning": "..."}
-  visibleLayers: [system, project-context]
-  invocation: always
-
-router
-  kind: router
-  prompt: |
-    Route to the best executor for this task. Consider:
-    - Classification category and confidence
-    - Which context layers are relevant (include by ID)
-    - Whether this needs planning (complexity > medium)
-    Available executors: executor-fix, executor-build, executor-answer
-    Available meta-agents: planner, reviewer
-    Respond with JSON: {"destination": "...", "contextSlice": [...], "priority": 1-10, "needsPlanning": bool, "reasoning": "..."}
-  visibleLayers: [system, project-context, conventions]
-  invocation: always
-
-planner
-  kind: executor
-  prompt: |
-    Break down this task into concrete steps. Each step should be:
-    - Specific enough to execute without ambiguity
-    - Assigned to an executor agent
-    - Ordered by dependency
-    Consider token budget and whether steps can parallelize.
-    Respond with a structured plan.
-  visibleLayers: [system, project-context, conventions, domain]
-  invocation: conditional
-  condition: { routes: ["planner"] }
-
-executor-fix
-  kind: executor
-  prompt: |
-    You are a bug-fixing specialist.
-    1. Reproduce the issue mentally from the description
-    2. Identify root cause using project context and conventions
-    3. Propose a minimal fix that doesn't break existing behavior
-    4. Note any conventions or patterns you relied on
-    If you override or disagree with a convention, emit a signal explaining why.
-  visibleLayers: []  (all layers)
-  invocation: conditional
-  condition: { categories: ["bug"], routes: ["executor-fix"] }
-
-executor-build
-  kind: executor
-  prompt: |
-    You are a feature implementation specialist.
-    1. Understand the requirement in context of the existing architecture
-    2. Design the minimal change that fulfills the requirement
-    3. Follow project conventions strictly
-    4. If you discover a new pattern worth codifying, note it
-  visibleLayers: []
-  invocation: conditional
-  condition: { categories: ["feature", "refactor", "architecture"], routes: ["executor-build"] }
-
-executor-answer
-  kind: executor
-  prompt: |
-    You are a technical Q&A specialist.
-    Answer clearly and concisely using project context.
-    Reference specific files, functions, or conventions when relevant.
-    If you don't know, say so — don't fabricate.
-  visibleLayers: []
-  invocation: conditional
-  condition: { categories: ["question", "general"], routes: ["executor-answer"] }
-
-executor-verify
-  kind: executor
-  executionEnv: browser
-  browser:
-    mode: hybrid
-    screenshots: true
-    maxNavigations: 10
-    allowedUrls: ["http://localhost:*/*"]
-  prompt: |
-    You verify implementations by checking the running app in the browser.
-    1. Navigate to the relevant page
-    2. Snapshot the page to understand structure
-    3. Verify the expected behavior (element exists, form works, data displays)
-    4. Take a screenshot for evidence
-    5. Report: pass/fail with specific observations
-    Use JS execution for data extraction. Use click-based for interaction testing.
-    Keep navigation minimal — each page load costs tokens.
-  visibleLayers: [system, project-context]
-  invocation: on-demand
-
-executor-sandbox
-  kind: executor
-  executionEnv: just-bash
-  prompt: |
-    You are a read-only code analyst. You have shell access to explore the
-    codebase but cannot modify anything (your filesystem is virtualized).
-    Use grep, find, cat, and other read commands to understand the code.
-    Summarize findings concisely — your output feeds other agents.
-  visibleLayers: [system, project-context, conventions]
-  invocation: on-demand
-  permissions: bypass
-
-reviewer
-  kind: executor
-  prompt: |
-    Review the previous executor's output for:
-    1. Correctness — does it actually solve the problem?
-    2. Convention compliance — does it follow project standards?
-    3. Completeness — are there edge cases or missing pieces?
-    4. Signal extraction — what should the system learn from this?
-    Emit correction signals for any issues found.
-    Emit convention signals for any new patterns worth codifying.
-  visibleLayers: []
-  invocation: on-demand
-
-distiller
-  kind: executor
-  prompt: |
-    Extract learnings from completed traces. For each trace:
-    1. What worked well? (convention signal)
-    2. What was corrected? (already captured as correction signal)
-    3. Any new patterns? (convention signal)
-    4. Any domain knowledge discovered? (emit as domain signal)
-    Be concise. Each signal should be one clear statement.
-  visibleLayers: [system, conventions, learnings]
-  invocation: on-demand
-```
+A Foundry thread runs one executor: the native session (Claude Code, Codex or Muse Code) on the
+thread's worker and model. An executor adds no instructions of its own; a main thread's come from its
+thread role's role files (`.foundry/roles/thread/<role>/instructions.md`). Middleware around it comes
+from a project's region Wardens, turned on per project (`"chorus": { "enabled": true }`), which run on
+the cheap decision model.
 
 ---
 
-## Phase 3: Self-Improvement Loops
+## Phase 3: Self-Improvement
 
-These are the feedback mechanisms that make Foundry get better over time.
-
-### Loop 1: Correction → Convention (immediate)
-
-```
-Operator corrects a classification/route/output
-  → InterventionLog emits correction signal (confidence: 1.0)
-  → Librarian reconciles the signal into thread-state
-  → CorpusCompiler ingests as fluid entry
-  → After N corrections on same topic → auto-promote to formal doc
-  → Formal doc compiles into conventions/learnings layer
-```
-
-**Setup:** Wire the signal bus into CorpusCompiler at startup:
-
-```typescript
-corpus.ingestFromSignalBus(signals);
-```
-
-### Loop 2: Review → Refinement (per-dispatch)
-
-```
-Executor produces output
-  → Reviewer agent evaluates output (on-demand, triggered by hook)
-  → Reviewer emits convention/correction signals
-  → Signals flow into the corpus via Librarian reconciliation
-```
-
-Nothing wires this loop today: the lifecycle hook registry it assumed was removed, unwired, on 2026-11-01.
-
-### Loop 3: Distillation → Knowledge (periodic)
-
-```
-Every N traces (or on schedule):
-  → Distiller agent reviews recent traces
-  → Extracts patterns, conventions, domain knowledge as signals
-  → Corpus compiler clusters related signals
-  → Auto-promotes clusters with enough evidence to formal docs
-  → Compiled corpus refreshes learnings layer
-```
-
-**Setup:** Run distillation on a timer or trace count threshold:
-
-```typescript
-let traceCount = 0;
-harness.onTrace((trace) => {
-  traceCount++;
-  if (traceCount % 10 === 0) {
-    // Every 10 traces, run distillation
-    distiller.run(recentTraceSummaries(10));
-  }
-});
-```
-
-### Loop 4: Herald → Cross-Thread Learning (continuous)
-
-```
-Herald snapshots all threads every 5s
-  → Detects duplication, contradiction, convergence
-  → Injects recommendations as signals into target threads
-  → Cross-pollination: learnings from thread A appear in thread B
-```
-
-**Setup:** Herald is already built. Start it:
-
-```typescript
-const herald = new Herald(threadRegistry, signals);
-herald.start(); // 5s default interval
-```
-
-### Loop 5: Corpus Tier Promotion (manual + automatic)
-
-```
-Fluid entries cluster → formal docs (draft)
-  → docs accumulate confidence from usage/signals
-  → personal_private (always) → personal_public (confidence ≥ 0.6)
-  → personal_public → team (confidence ≥ 0.7, sources ≥ 5)
-  → team → org (confidence ≥ 0.8, sources ≥ 10)
-```
-
-This is the path from "one agent learned something" to "the whole org knows it."
+Feedback given in Foundry (`/feedback`, `/correction`, or detection when `feedback.capture` is on) is
+captured into the feedback lifecycle and, once applied, written to a role file the composition view
+reads on the next turn (docs/FEEDBACK-LOOP.md).
 
 ---
 
@@ -307,25 +83,22 @@ When a thread is created for a project, hydrate these layers:
 | `project-context` | README.md, package.json, key config files | FileMemory or inline |
 | `domain` | docs/ directory, API specs, schema files | FileMemory or HTTP |
 | `conventions` | .foundry/memory (conventions kind) | FileMemory |
-| `learnings` | Compiled corpus (active formal docs) | CorpusCompiler.loadIntoStack() |
 
 ### Thread Hydration (per-dispatch)
 
 Each dispatch through the harness:
 
 1. **ContextStack.warmAll()** — refresh any stale layers from sources
-2. **RunContext layer** gets payload + classification + route info
-3. **Visible layers filtered** per agent config
-4. **ContextStack.assemble()** builds the prompt blocks
+2. **Activation** — on-demand layers join only when requested for this turn
+3. **ContextStack.assemble()** builds the prompt blocks
 
 ### Source Types to Configure
 
 ```
 system-prompt     → inline (static text, your core identity)
 conventions-src   → file (.foundry/memory, kind=convention)
-domain-src        → file (project docs) OR http (API specs) OR supermemory
+domain-src        → file (project docs) OR markdown (a docs directory)
 memory-src        → file (.foundry/memory, kind=*)
-learnings-src     → inline (dynamically compiled from corpus)
 project-src       → file (README, package.json, tsconfig — per project)
 ```
 
@@ -333,13 +106,11 @@ project-src       → file (README, package.json, tsconfig — per project)
 
 ## Phase 5: Token Budget
 
-**Token budget:** Set based on your model's context window.
-- Haiku agents (classifier/router): 4K budget (they only see system + project-context)
-- Sonnet agents (executors): 32K budget (they see everything)
-- Leave headroom for the actual conversation (at least 50% of context window)
+**Token budget:** Set based on your model's context window. Leave headroom for the actual
+conversation (at least 50% of the context window).
 
-Progressive hydration keeps cost low: the Cartographer routes only the layers a
-message needs, and MCP lets the session pull additional context on demand.
+Progressive hydration keeps cost low: on-demand layers join only when a turn asks for them, and MCP
+lets the session pull additional context on demand.
 
 ---
 
@@ -369,11 +140,9 @@ Run this in order:
    - Known patterns / anti-patterns
    - Domain glossary (if any)
 4. `bun run start` — system comes up with thin layers
-5. Send test messages through the viewer — watch classification, routing, execution
-6. **Intervene** on bad classifications/routes — corrections become signals
+5. Send test messages through the viewer — watch the Wardens' advice and the execution
+6. Give `/feedback` on what goes wrong — applied rules reach the role they name
 7. After ~20 interactions, check the learnings layer — it should be accumulating
-8. After ~50 interactions, run the distiller manually — see what it extracts
-9. After ~100 interactions, check corpus tier promotions — conventions should be solidifying
 
 ---
 
@@ -382,10 +151,7 @@ Run this in order:
 After a few hundred interactions:
 
 - **Conventions layer** has grown from seed → 20+ entries, all from real corrections
-- **Learnings layer** has auto-promoted patterns from signal clusters
-- **Classification accuracy** improved — fewer operator corrections over time
-- **Router confidence** higher — routes are more precise as domain layer fills in
-- **Cross-thread patterns detected** — Herald flagged duplications and contradictions
+- **Fewer operator corrections over time** — the same feedback stops recurring
 - **Token budget respected** — progressive hydration keeps context under control
 - **Trace history shows improvement** — earlier traces have more corrections, later ones fewer
 

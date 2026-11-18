@@ -77,7 +77,7 @@ If Foundry *is* the agent the editor talks to, every turn from every ACP host en
                                   ▼   loopback HTTP + WS (the viewer's own API)
    ┌──────────── @inixiative/foundry  (packages/foundry, BSL 1.1) ─────────────┐
    │  daemon (launchd) · TurnService · viewer + data streams · FlowOrchestrator │
-   │  Cartographer, Wardens, Librarian · persistence · MCP bridge · Kingdom    │
+   │  Wardens, Librarian · persistence · MCP bridge · Kingdom                  │
    └──────────────┬──────────────────────────────────────┬─────────────────────┘
                   ▼                                      ▼
    @inixiative/foundry-core (packages/core, MIT)    @inixiative/agent-session (MIT)
@@ -139,8 +139,8 @@ foundry-acp is the **second client of the daemon's API**, the one the viewer use
 TurnService.accept             (beginTurn: 409 duplicate, 503 not durable; 202 to the caller)
   → per-thread SerializedQueue  (a busy thread queues; cancel before start never dispatches)
   → Harness.send               (pc/harness.ts:277)
-  → classify ∥ route ∥ flow.prepare (early start, pf/agents/thread-runtime.ts:905-915)
-  → flow-pre-message           (preMessage → hydrateDelta; route/advice phase rows sealed before the executor, :930-988)
+  → flow.prepare               (early start, pf/agents/thread-runtime.ts:905-915)
+  → flow-pre-message           (preMessage → hydrateDelta; advice phase row sealed before the executor, :930-988)
   → Executor → SessionBackedProvider → HarnessSession.send (native preflight, admission, interruptible)
   → commitDelivery, postAction guards, Warden review (unchanged)
   → thread:<id> appends and the sender's terminal → viewer tab   and   → foundry-acp → session/update
@@ -178,7 +178,7 @@ ACP-originated threads are ordinary threads, so the viewer shows them live: flow
 | Source | ACP update | Slice |
 |---|---|---|
 | Turn sent (the item opens at send, before the daemon accepts it; `packages/acp/src/turn.ts:68`) | `tool_call {toolCallId: "foundry-context:<turnId>", title: "Foundry: context", kind: "think", status: "in_progress"}`, so the host is never silent while the middleware runs. | 1 |
-| `flow:<id>` turn append whose phases include the sealed `route`/`advice` rows (written before the executor, `thread-runtime.ts:946-988`) | `tool_call_update {status: "completed", content: <summary>, _meta: {foundry: {threadId, turnId, routing, participants}}}`. The summary names the routing outcome (status, layers, domains, confidence) and each Warden's decision and reason. When the executor's first output arrives first, the proxy reads the same rows from the turn-detail route (they are durable before the executor runs), so the item completes as the answer starts. A turn with no rows recorded completes saying so; a send Foundry refused completes with the refusal. | 1 |
+| `flow:<id>` turn append whose phases include the sealed `advice` row (written before the executor, `thread-runtime.ts:946-988`) | `tool_call_update {status: "completed", content: <summary>, _meta: {foundry: {threadId, turnId, participants, degraded}}}`. The summary lists each Warden's outcome and reason, and any Wardens that went unheard (degraded). When the executor's first output arrives first, the proxy reads the same row from the turn-detail route (it is durable before the executor runs), so the item completes as the answer starts. A turn with no rows recorded completes saying so; a send Foundry refused completes with the refusal. | 1 |
 | `thread:<id>` `{kind: 'delta', text}` | `agent_message_chunk {content: {type: "text", text}}` | 1 |
 | `{kind: 'activity', row}` text rows | `agent_message_chunk` with the row's `appended` text; a snapshot row that extends the text already sent sends only the new suffix. | 1 |
 | `{kind: 'activity', row}` tool rows | First sight of a row: `tool_call {toolCallId: <admissionId>:<callId>, title, kind, status, rawInput, locations}`; later states: `tool_call_update {title, kind, status: completed \| failed, rawOutput, content}` (title and kind repeated, because T3 rebuilds a call's label from each update). Live ids are the stream row id (`<admissionId>:tool:<callId>`, `pf/viewer/stream-buffer.ts:176`); `session/load` replay uses `<turnId>:<callId>` (`packages/acp/src/session-state.ts:158`), so a replayed call does not match its live id. `kind` comes from the tool name (Paseo renders `read/edit/delete/search/execute/fetch/think/switch_mode`, `acp-agent.ts:3774-3792`); `locations` from `file_path`/`path`/`notebook_path` in the input. | 1 |
@@ -232,7 +232,7 @@ Nothing is ACP-specific: every point applies equally to viewer turns, because th
 
 ### 5.1 Pre-turn injection
 
-Unchanged. `flow.prepare` starts early, in parallel with classify and route (`thread-runtime.ts:905-915`); `preMessage` → `hydrateDelta` follows (`pf/agents/flow-orchestrator.ts:441,846`); the native session holds the standing layers in its base context, and each turn carries the decoration plus only the layers whose hash changed, as `# System Context` text (FLOW.md "Delivery", `pf/providers/session-delivery.ts`); `commitDelivery` records what the provider reports it delivered; a pre-message failure is non-fatal.
+Unchanged. `flow.prepare` starts early (`thread-runtime.ts:905-915`); `preMessage` → `hydrateDelta` follows (`pf/agents/flow-orchestrator.ts:441,846`); the native session holds the standing layers in its base context, and each turn carries the decoration plus only the layers whose hash changed, as `# System Context` text (FLOW.md "Delivery", `pf/providers/session-delivery.ts`); `commitDelivery` records what the provider reports it delivered; a pre-message failure is non-fatal.
 
 **Host instruction wrappers (slice 2).** T3 wraps prompts for ACP agents as `<t3_code_instructions>…</t3_code_instructions>\n\n<user_request>…</user_request>` (`t3:packages/provider-core/src/server/orchestrationInstructions.ts:93`). The prompt reaches the native agent verbatim. Before feedback capture and classification, known wrappers are stripped into turn metadata, so a host's instructions never count as Aron's words.
 
@@ -340,7 +340,7 @@ ACP over stdio has no remote mode of its own.
 
 **Slice 1 (built 2026-10-11, main a302b41):** TurnService with the per-thread queue; the interrupt route; `cwd` → project with global fallback; `LiveActivity` input/output and exact text deltas; `./client`; the ACP launch file (its capability removed 2026-11-02, §2.2); `NativeObservation.interruptible`; foundry-acp with `initialize`, `session/new`, `session/resume`, `session/prompt`, `session/cancel` and `session/update` (the context item, message chunks, tool calls); demo deleted. Tests: cases 1–8.
 
-**Verified for slice 1:** the repo's full check and browser suite; foundry-acp driven as a subprocess with Paseo's and T3's request sequences (`packages/acp/tests/conformance.test.ts`); T3's own `effect-acp` `AcpClient` and its `AcpSessionRuntime`, and Paseo's own `GenericACPAgentClient` (SDK 0.17.1), all from scratch copies with zero decode failures; a live run on Claude through an isolated Foundry (real routing and Warden decisions in the context item, a real `Bash` tool call, cancel, the next turn).
+**Verified for slice 1:** the repo's full check and browser suite; foundry-acp driven as a subprocess with Paseo's and T3's request sequences (`packages/acp/tests/conformance.test.ts`); T3's own `effect-acp` `AcpClient` and its `AcpSessionRuntime`, and Paseo's own `GenericACPAgentClient` (SDK 0.17.1), all from scratch copies with zero decode failures; a live run on Claude through an isolated Foundry (real Warden decisions in the context item, a real `Bash` tool call, cancel, the next turn).
 
 **Known gaps from slice 1:**
 - ~~A queued turn is journalled `active` from acceptance.~~ Fixed in slice 2 (Aron, 2026-10-11): a turn is `queued` until the executor takes its input (Harness `onExecutorInput`) or its executor admission registers, then `active`; restart recovery fails a queued turn as never sent and keeps `interrupted` for an active one.

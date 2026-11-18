@@ -33,8 +33,8 @@ One sheet naming every part of Foundry, so people and agents use the same words.
  │     chime ─► main thread, read under the reception charter                  │
  │                                                                             │
  │   decision runtime: decision host ─► primed pool (Haiku, low) ─ scheduler   │
- │   other roles: Cartographer (routing), Librarian (thread state),            │
- │                feedback lifecycle, Forge Master and Feedback scopes         │
+ │   other roles: Librarian (thread state), feedback lifecycle,                │
+ │                Forge Master and Feedback scopes                             │
  │   journal ─► Archive capture (one session per node, Warden calls reduced)   │
  └───────────────┬─────────────────────────────────────────────────────────────┘
                  │ Installation socket, Signets (enrolled keys)
@@ -61,13 +61,13 @@ One sheet naming every part of Foundry, so people and agents use the same words.
 | Artificer / executor | The native Claude Code (or Codex, or Muse Code) session running as the main thread's executor. "Artificer" is the role name in [FLOW.md](FLOW.md); code says `executor`. | `pf/providers/session-adapter.ts`, `session-backed.ts` | live |
 | worker | The subscription harness a thread's main session runs on: `claude-code`, `codex` or `muse` (Muse Code, on the user's own Muse login; main threads only, never decisions). Set when the thread is created; a project has a default. | `ThreadMeta.worker`, `SUBSCRIPTION_WORKERS` (`pf/models/registry.ts`) | live |
 | turn | One message and the work it starts. A turn accepted while the thread is busy is `queued`, not `active`, so restart recovery drops it rather than marking it interrupted. | `pf/turns/turn-service.ts` (`TurnService`, per-thread `SerializedQueue`) | live |
-| unwrapped / wrapped thread | A thread with no layer, classifier, router, Warden or conversation is unwrapped: the message reaches the native session as typed, with no Cartographer call or thread state. A fresh install's threads are unwrapped. | `wrapsThread`, `pf/agents/thread-runtime.ts` | live |
+| unwrapped / wrapped thread | A thread with no layer, Warden or conversation is unwrapped: the message reaches the native session as typed, with no thread state. A fresh install's threads are unwrapped. | `wrapsThread`, `pf/agents/thread-runtime.ts` | live |
 | project / global scope | A registered repository a thread works in; its chorus, settings cascade and capacity hang off it. A cwd outside every project uses the global (unscoped) scope and is never refused. | `projects` in settings; `.foundry/project.json` in the repo | live |
 | thread tree | A main thread is the root of a tree of nodes, each archived as its own Archive session linked to its parent. | [THREAD-TREE.md](THREAD-TREE.md) spec A | live |
 | node | One conversation in the tree: the main thread or a subagent at any depth. A middleware call is never a node. | spec A | live |
 | subagent | A child the agent spawns (Claude `Agent`/`Task`, a Codex sub-agent). `task_started` makes it an observed thread on its own node and fires the `subagent-spawn` trigger. Work you want done without a voice in the thread is a subagent. | `pf/turns/subagents.ts` | live |
 | member | A second party in a thread: `owner`, `local` (an in-process agent, your own Codex included) or `signet` (remote, through Kingdom). Not "participant", which the flow orchestrator uses for a Warden contribution. | `ConversationMember` (`@inixiative/signet`), `pf/conversations/` | live (local members per thread: proposed, BOARD-001 slice 2a) |
-| reduced entry | A Warden or Cartographer call stored in the node it wrapped as its state and result (`middleware-reduced` row), never the message it received, so Archive does not hold every Warden's input per turn. | spec A, `pf/persistence/` | live |
+| reduced entry | A Warden call stored in the node it wrapped as its state and result (`middleware-reduced` row), never the message it received, so Archive does not hold every Warden's input per turn. | spec A, `pf/persistence/` | live |
 | journal | The local, append-only record of every turn, phase row and middleware call; the source for the viewer, the Archive capture and Oracle. | `pf/persistence/local-session-store.ts` | live |
 | Archive capture | Foundry writes each node's snapshot to the machine's local Archive, which syncs onward. Foundry keeps no archive store of its own. | `pf/archives/`; [session-archives.md](session-archives.md) | live |
 | tool gate | Structural `toolRules`: the only thing that can deny a tool call, in every permission mode. Wardens never block. | `pf/turns/tool-gate.ts`, `toolRules` | live |
@@ -79,13 +79,13 @@ One sheet naming every part of Foundry, so people and agents use the same words.
 | ladder / levels | One ordered stack composes every role's context: computer (personal) → org → org personal → project → project personal. The more specific level wins. | [usage-and-context.md](usage-and-context.md) "Standing instructions" | live |
 | default ladder (`claude-code` preset) | With nothing configured, the nodes are Claude Code's own discovery: `managed`, `global`, `org`, `project`, `local` (`CLAUDE.local.md`), `memory` (auto memory). | `pf/prompts/instruction-settings.ts` | live |
 | node | One rung of the ladder: a scope, shared or personal, its files and its tier. `composition.nodes` registers more. | `composition.nodes`; core `discoverHierarchy` (`pc/adapters/markdown-hierarchy.ts`) | live |
-| corpus tier | Who a file may reach: `personal_private`, `team`, `org`. Personal files never reach a team or org audience. | `VISIBLE_TO` rules in core | live |
+| corpus tier | Who a file may reach: `personal_private`, `team`, `org`. Personal files never reach a team or org audience. | `VISIBLE_TO` rules in `pf/prompts/instruction-settings.ts` | live |
 | audience | The tier a role composes for (`composition.roles.<role>.audience`, default `personal_private`). | | live |
 | CLAUDE.md composition | Foundry composes `CLAUDE.md`, `CLAUDE.local.md`, `AGENTS.md`, rules and auto memory itself, resolving `@path` imports as Claude Code does, for any harness. The `instructions` source on the `instructions` layer. | `pf/prompts/instruction-stack.ts`, `claudemdSource` | off (a fresh install composes nothing; add an `instructions` source) |
 | harnessSettings | Whether a main thread's Claude loads the user's own settings, commands, skills, agents, plugins and hooks (`load`, default) or none (`off`). Project settings only inside a registered project; credentials in them never replace the subscription login. | `composition.harnessSettings`, `pf/providers/harness-settings.ts` | live |
 | harnessLoading | Whether the harness also loads those files (`load`) or Foundry suppresses them (`suppress`), so there is one injection path. Defaults to `suppress` when every view composes instructions. | `composition.harnessLoading` | live |
 | composition view | Roles × slots × ladder nodes: every model-backed role composes each slot from the same ladder; a role opts out of nodes, never in. | `composition.roles` | live |
-| role | Who a composition is for, a namespaced id (`prompts/role-namespace.ts`): a thread role (`thread:coder`, the shared base `thread:main`), a scope role (`scope:forge`), each Warden (`region:<id>`), the Cartographer (`agent:cartographer`). | | live |
+| role | Who a composition is for, a namespaced id (`prompts/role-namespace.ts`): a thread role (`thread:coder`, the shared base `thread:main`), a scope role (`scope:forge`), each Warden (`region:<id>`). | | live |
 | slot | `instructions` (the system prompt) and `domainKnowledge` (what the role primes with). Thread knowledge is not a slot. | | live |
 | role file | `.foundry/roles/<namespace>/<name>/<slot>.md` (and `.local.md`) at any rung, e.g. the org's instructions for one Warden. | | live |
 | dedupe | Same file, identical content and identical sections are removed, keeping the most specific copy; every removal is reported in the layer's Selection panel. | `composition.dedupe` | live |
@@ -141,22 +141,22 @@ One sheet naming every part of Foundry, so people and agents use the same words.
 | `NO_COMMENT` | The default answer: exactly that string. It adds nothing to the thread and is journalled as `no-comment`, so silence is measurable. | every phase protocol | live |
 | `not-sent:not-admitted` | A Warden the queue never ran in time (advice and guard); the turn goes on without it. One of the call outcomes. | `CallOutcome`, `pc/call-outcome.ts` | live |
 | pre-filter | A local model scores, per Warden, whether a moment is in its domain and skips only confident noes; fails open and journals every skip. Superseded as policy by "ask every region, every time"; the code stays. | `prefilter`, `pf/providers/warden-prefilter.ts`, `prefilter-model.ts` | off |
-| Herald | A region role for live data (what other agents and teammates are doing), beside Wardens' static knowledge. The socket exists (`chorus.heralds`, region `role: "herald"`); Herald regions never run and have no charter. | `pf/agents/herald.ts` (class, nothing constructs it) | proposed |
+| Herald | A region role for live data (what other agents and teammates are doing), beside Wardens' static knowledge. The socket exists (`chorus.heralds`, region `role: "herald"`); Herald regions never run and have no charter. | The Herald class moved to the private chorus repo, packages/heralds/reference/ (2026-11-18, R-2026-11-18-27); the `chorus.heralds` settings, `ask_herald` and the heralds skill stay as placeholders | proposed |
 
 ## The decision runtime
 
 | Term | What and why | Where | Status |
 |---|---|---|---|
-| decision | One fast, tool-less model call by a middleware role (a Warden stage, the Cartographer, a classifier, naming, feedback). | `CompletionOpts` | live |
+| decision | One fast, tool-less model call by a middleware role (a Warden stage, naming, feedback). | `CompletionOpts` | live |
 | decision model | The model decisions run on: Claude Haiku 5.5 (`claude-haiku-5-5`) at `low` effort by default; GPT-5.6 Luna with Codex decisions. | `DECISION_MODEL` (`pc/model-registry.ts`), `subscriptionOnly.model`, `.effort` | live |
 | subscription decisions | Decisions run on the machine's own subscription login, with no API provider constructed and no paid fallback. `apiTokens: true` is the only way to use API keys. | `subscriptionOnly`, `pf/providers/subscription-decisions.ts`, `subscription-policy.ts`; [subscription-decisions.md](subscription-decisions.md) | live |
-| decision runtime | Claude with Wardens in project hosts (default, or `claude-project`), `claude` (Claude, every Warden primed: the evals' baseline), or `codex`. `claude-in-session` was removed on 2026-11-03 and is refused by name. | `subscriptionOnly.decisionRuntime` | live (project hosts) |
+| decision runtime | Claude with Wardens in project hosts (default, or `claude-project`), `claude` (Claude, every Warden primed: the evals' baseline), or `codex`. | `subscriptionOnly.decisionRuntime` | live (project hosts) |
 | decision host | The process-wide host that runs every decision on the decision model and effort. | `liveDecisionHosts`, `pf/providers/decision-host.ts` (`decisionHost` is the offline variant for evals and reports) | live |
 | stage host | An extra decision host started for a stage that names another model or effort, on the same login and bounds. | `stageHost` in `liveDecisionHosts` | live (Sonnet 5.5 low, the default Layer 2, on the decision login; only subscription decisions start one) |
 | primed pool | The warm sessions decisions run on: one primed key per role (a key per stage on the host plus a review key per Warden, plus 8), at least 16; an evicted key re-primes cold. Not a setting. | `primedSessions`, `pf/providers/primed-decisions.ts`; agent-session `ClaudePrimedSessions` / `CodexPrimedSessions` | live |
 | prime | Starting a role's session once with its instructions and stable context (`stablePrefix`); each decision then forks it and sends only the per-call part, so no cycle sees another's. | | live |
 | hedge | A Codex decision still running after `hedgeAfterMs` (4,000) is started again on a second branch; the first to finish wins. Claude decisions are not hedged. | `subscriptionOnly.hedgeAfterMs` | live (Codex decisions only) |
-| decision deadline | The safety-net deadline for every decision, queue time included: 60 s. Advice and routing default to it. | `DECISION_DEADLINE_MS`; `callTimeoutMs`; `adviseTimeoutMs`, `routingTimeoutMs` | live |
+| decision deadline | The safety-net deadline for every decision, queue time included: 60 s. Advice defaults to it. | `DECISION_DEADLINE_MS`; `callTimeoutMs`; `adviseTimeoutMs` | live |
 | maxConcurrent | Decisions running at once across all threads (16). Guards may hold at most three quarters of the slots and reviews half, so a turn waiting to start always finds capacity. | `subscriptionOnly.maxConcurrent`; `DECISION_PRIORITY` (`turn > guard > review`) | live |
 | decision receipts | Private records of each decision's ownership, model and settlement, never its text. | `subscriptionOnly.directory` (`.foundry/decision-receipts`) | live |
 | project Warden host | Every Warden of a project held warm in one Foundry-owned Claude Code process on the decision login, while someone works in the project; every thread of it sends its advice there (guards, reviews and Layer 2 stay primed; primed serves while no host does). Replaced the per-thread in-session runtime (THREAD-TREE spec C) on 2026-11-03. | `subscriptionOnly.projectHost`, `pf/providers/project-warden-hosts.ts`; [subscription-decisions.md](subscription-decisions.md), "Project Warden host" | live (default for Claude decisions) |
@@ -166,10 +166,8 @@ One sheet naming every part of Foundry, so people and agents use the same words.
 
 | Term | What and why | Where | Status |
 |---|---|---|---|
-| Cartographer | Context routing: reads the topology map and decides which layers a message needs; never modifies. At most one per configuration. | `pf/agents/cartographer.ts` | live (on a wrapped thread) |
 | Librarian | Programmatic, no model call: the sole writer of thread state; reconciles signals. Takes no settings. | `pf/agents/librarian.ts` | live |
-| classifier / router | Thread agents that classify a message and route it to an executor; keyword fallback on timeout. | agent kinds `classifier`, `router` | off (a fresh install has neither) |
-| feedback lifecycle | `/feedback` records an item on the thread and turn; with detection on, a correction is classified, routed to Warden roles, offered back in a tuning prompt and applied to a role file with provenance. | `pf/feedback/`, `feedback.capture`; [FEEDBACK-LOOP.md](FEEDBACK-LOOP.md) | live (explicit `/feedback`); detection off |
+| feedback lifecycle | `/feedback` records an item on the thread and turn; with detection on, a correction is classified, routed to the thread's role, offered back in a tuning prompt and applied to a role file with provenance. | `pf/feedback/`, `feedback.capture`; [FEEDBACK-LOOP.md](FEEDBACK-LOOP.md) | live (explicit `/feedback`); detection off |
 | tuning prompt | "What happened / what we did / what we intend", shown to the user to sharpen a captured correction (`ask`, `block` or `blockOn`). | | off (with detection) |
 | Forge Master | A thread scope (role `scope:forge`): threads for talking to this Foundry about itself, started from the New thread picker or a settings page's "Ask the Forge Master" (which drafts the question). Each holds a standing brief with this install's configuration. A Forge Master Warden is designed, not built. | `pf/agents/scope-roles.ts`, `threads:@forge` | live |
 | Feedback scope | A thread scope (role `feedback`): threads that work through the feedback inbox with the person; the viewer shows the inbox beside the thread, and the thread's MCP bridge carries `feedback_inbox`, `feedback_item`, `feedback_status` (read, archive, reopen; tuning answers stay the person's). | `pf/agents/scope-roles.ts`, `pf/tools/feedback-inbox.ts`, `threads:@feedback` | live |
@@ -262,12 +260,12 @@ Oracle is the test harness: it replays real work against Foundry and measures wh
 
 | Old word | Replaced by | Retired |
 |---|---|---|
-| The hand-named Warden roster (Docs, Convention, Security, Architecture, Memory, …) and its advise-style charter | Region Wardens, one per region, under the point charter. `domain-advising` / `domain-librarian` / `decider` agents in settings and `chorus.source` are refused by name. | 2026-10-17 |
+| The hand-named Warden roster (Docs, Convention, Security, Architecture, Memory, …) and its advise-style charter | Region Wardens, one per region, under the point charter. Settings declare only executors. | 2026-10-17 |
 | `chorus.source: "regions"` | `chorus.enabled: true` | 2026-10-17 |
 | Domain Librarians (as the name for Wardens) | Wardens (the code keeps `domain-librarian`) | before 2026-10-12 |
 | Pre-filter on by default | Off; ask every region, every time | 2026-10-15 |
 | Guard per tool call | One guard per turn (`guard: per-call` remains a setting) | 2026-10-15 |
-| The starter stack (system / conventions / memory layers, classifier → router → three executors) | An unwrapped thread; `setup --remove-legacy-defaults` removes leftovers | 2026-10-16 |
+| The starter stack (system / conventions / memory layers, classifier → router → three executors) | An unwrapped thread | 2026-10-16 |
 | Supervised mode | Removed (it was a pass-through) | 2026-09-30 |
 | Kastle / Castle | Kingdom, owner, integration, Signet | 2026-09-30 |
 | Connection (Kingdom model) | Integration (`connectionId` → `integrationId`). The viewer's per-WebSocket `connectionId` is unrelated. | 2026-10-12 |

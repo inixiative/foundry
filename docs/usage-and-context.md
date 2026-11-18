@@ -374,11 +374,8 @@ every role.
   the shared base under every thread role: its role files compose for every main
   thread, and it picks nothing itself. Every model-backed middleware role is its
   agent's: each Warden's (`region:<region id>`, `regionRoleId`; its role files in
-  `.foundry/roles/region/<region id>/`) and the Cartographer's
-  (`agent:<its agent id>`, default `agent:cartographer`, `roleIdOfAgent`; a
-  written agent's id is a bare key, so it can never take another role's). The Librarian makes no model
-  call and has nothing to compose. Classifier and router agents still use their
-  settings prompt and visible layers.
+  `.foundry/roles/region/<region id>/`). The Librarian makes no model
+  call and has nothing to compose.
 - **Slots.** `instructions` is the system prompt. `domainKnowledge` is the
   context the role primes with. Thread knowledge is not a slot: each Warden
   computes it per call, from its own review history.
@@ -413,8 +410,7 @@ part:
 The main thread's `instructions` source (type `instructions`; `slot` picks the
 slot, default `instructions`) is its thread role's ladder part, and the only
 path a main thread's instructions take. An executor has no settings part: its
-`prompt` is retired and a saved one is refused by name, with the fix (move it to
-`.foundry/roles/thread/<name>/instructions.md`). Why: every main thread used to get the
+instructions come from its thread role (`.foundry/roles/thread/<name>/instructions.md`). Why: every main thread used to get the
 coding executor's prompt ("Active agent: artificer…"), so a Muse thread meant as
 a day-to-day assistant acted as a coder (Aron, 2026-11-10).
 
@@ -533,8 +529,6 @@ instructions: a role never reads the same text twice. Every removal is
 reported, with `duplicateOf` naming the slot that kept it. A slot the role does
 not receive is not composed, so dedupe never moves text into it:
 
-- the Cartographer receives instructions only, since its domain knowledge is
-  the map it builds;
 - the main thread receives the slots its enabled `instructions` sources name.
 
 **Budgets, per role.** `budget` bounds instructions plus domain knowledge, in
@@ -549,8 +543,7 @@ Wardens composed to 30,000–56,000 characters per role.) Over budget, the phase
 run and nothing is truncated:
 
 - advice and guard report the outcome `not-sent:over-budget`; a later stage over budget is not sent either, and the stage before it stands, as on any later-stage failure (fallback `error`);
-- review records `error` instead of being admitted, and the review lane stays open;
-- routing reports `error`.
+- review records `error` instead of being admitted, and the review lane stays open.
 
 The message names the role, the sizes, the setting and the three largest
 files, and marks those a role opted in. For example: "naming Warden (role
@@ -578,11 +571,10 @@ retire it." Why: region Wardens anticipated 23% of the corrections to the
 roster's 3% (finding `2026-10-15-region-wardens-vs-roster`), and two charters
 with opposite rules (the roster's advise-style "name the rule, then say what to
 do instead" against the region charter's point-only) invited confusion.
-Settings declare no Wardens: a `domain-advising`, `domain-librarian` or
-`decider` agent in `agents` or `projects[id].agents` is refused by name
-(`refuseHandNamedWardens`) with the fix, and `chorus.source` is refused by
-name too (`"source": "regions"` becomes `"enabled": true`; `"roster"` has no
-replacement). There is no alias, migration or fallback.
+Settings declare no Wardens: settings agents are executors only, so a Warden
+kind in `agents` or `projects[id].agents` is refused by the kind check, and
+`chorus.source` is not a chorus setting (`"enabled": true` turns the chorus on).
+There is no alias, migration or fallback.
 
 ```
 <project>/.foundry/project.json   the repository's own Foundry settings, committed: any project
@@ -736,8 +728,7 @@ regions never run (Heralds are not built) and the view says so.
   picks (`exclude`, `budget`, `audience`); one naming nodes in `general` is not
   applied and is reported (`view.chorus.ignoredComposition`, the Knowledge
   page), never thrown, so a teammate's committed region never stops settings
-  loading. A role with no general file in either slot (a Warden, the
-  Cartographer) takes none by any other route either: an `@` import of
+  loading. A role with no general file in either slot (a Warden) takes none by any other route either: an `@` import of
   CLAUDE.md from its role files or the brief, or a slotted settings source
   naming one, is dropped (`isGeneralFile`). A region's Warden is `region:<id>`, so it
   can never take a thread role's or an agent's id. There is no switch that brings the
@@ -870,7 +861,6 @@ re-reads:
 configured layer. Its only written layer is its generated
 `thread-knowledge:<domain>`, owned by the thread, its project and the domain,
 and written by its post-work review. The Librarian alone writes thread-state.
-`ownedLayers` on a Warden is refused.
 
 **Priming.** Wardens are fresh each call, never a continuing conversation. A
 Warden's primed decision session is its composed instructions (system) plus its
@@ -885,8 +875,8 @@ turn. A changed composition is a new prime hash, and the next call re-primes
 
 **Chiming in.** A Warden's advice is appended to the end of the user's message:
 `The <domain> Warden chimed in:` followed by its points. It is placed after the
-message (`PromptBlock.placement: "after-message"`), not in the context. Routing
-stays in the per-turn context, and a contribution of layers only adds context.
+message (`PromptBlock.placement: "after-message"`), not in the context. A
+contribution of layers only adds context.
 Most turns a Warden has nothing to add: it answers `NO_COMMENT`, which adds
 nothing to the message. Every Warden runs under the fixed Warden charter
 ([FLOW.md](FLOW.md#when-a-warden-weighs-in-the-charter-trigger-points-and-no_comment)).
@@ -914,7 +904,7 @@ domain knowledge, which a Warden no longer can.)
 - role and slot templating;
 - dedupe across one role's slots;
 - a personal node never reaching a team audience;
-- a budget overflow reported in every phase, Cartographer included;
+- a budget overflow reported in every phase;
 - re-priming only on a composition change;
 - the chimed-in append;
 - the naming Warden's knowledge unchanged under the default config.

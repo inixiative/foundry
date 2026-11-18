@@ -35,7 +35,7 @@ export {
   // Domain Librarian (advise + guard pattern)
   DomainLibrarian,
   type DomainLibrarianConfig,
-  // Flow Orchestrator (wires the five FLOW.md roles)
+  // Flow Orchestrator (wires the FLOW.md roles)
   FlowOrchestrator,
   type FlowOrchestratorConfig,
   fromSettingsConfig,
