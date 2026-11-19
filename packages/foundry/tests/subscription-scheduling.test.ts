@@ -3,10 +3,10 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { servedModel } from '@inixiative/foundry-core';
+import { createDecisionLoginHost } from '../src/providers/decision-login-host';
 import { DECISION_PRIORITY } from '../src/providers/decision-priority';
 import { defaultProfileSource } from '../src/providers/default-profiles';
 import { NativeAuthentication } from '../src/providers/native-authentication';
-import { createPrimedDecisionHost } from '../src/providers/primed-decisions';
 import { makeLoginQuotaPause } from '../src/providers/provider-limits';
 import {
   buildSubscriptionDecisions,
@@ -48,7 +48,7 @@ function scheduler(
     onPressure: (event) => pressure.push(event),
     ...bounds,
   };
-  const primed = createPrimedDecisionHost({
+  const primed = createDecisionLoginHost({
     source: config.source,
     directory,
     model: config.model,

@@ -67,7 +67,7 @@ export function dispatcherCount(size: number, wardensPerDispatcher: number): num
   );
 }
 
-/** A project host's process, started by the decision host (`createPrimedDecisionHost`). */
+/** A project host's process, started by the decision host (`createDecisionLoginHost`). */
 export interface ProjectHostProcess {
   readonly pid?: number;
   /** Settles with the reason once the process has ended. */
@@ -189,7 +189,7 @@ export class ProjectWardenHosts {
    * The project hosts of a later classify stage on another model or effort (the default chain's
    * Layer 2, Sonnet low): one more Foundry-owned process per project, held and supervised like this
    * registry's, opened, touched and closed with it. This registry itself for its own model and effort.
-   * The stage's decision host binds its launcher (`createPrimedDecisionHost`).
+   * The stage's decision host binds its launcher (`createDecisionLoginHost`).
    */
   lane(model: string, effort: string | undefined): ProjectWardenHosts {
     if (model === this.config.model && effort === this.config.effort) return this;

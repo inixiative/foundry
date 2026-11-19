@@ -24,8 +24,8 @@ import {
   validateGuardResponse,
   WARDEN_CHARTER,
 } from '../src/classify';
+import { createDecisionLoginHost } from '../src/providers/decision-login-host';
 import { defaultProfileSource } from '../src/providers/default-profiles';
-import { createPrimedDecisionHost } from '../src/providers/primed-decisions';
 import { buildSubscriptionDecisions } from '../src/providers/subscription-decisions';
 import { starterConfig } from '../src/viewer/config';
 import { appServerTransport } from './helpers/subscription-transport';
@@ -442,7 +442,7 @@ test('24 Wardens, every one asked on every turn: a queue sized for the roster ad
     maxConcurrent: 16,
     callTimeoutMs: 20_000,
   };
-  const primed = createPrimedDecisionHost({
+  const primed = createDecisionLoginHost({
     source,
     directory,
     model: config.model,

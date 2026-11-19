@@ -17,9 +17,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { NativeEvidence } from '@inixiative/foundry-core';
 import { regionRoleId } from '../src/agents/region-roster';
+import { createDecisionLoginHost } from '../src/providers/decision-login-host';
 import { defaultProfileSource } from '../src/providers/default-profiles';
 import { NativeAuthentication } from '../src/providers/native-authentication';
-import { createPrimedDecisionHost } from '../src/providers/primed-decisions';
 import {
   ClaudeCodeSessionAdapter,
   InMemoryExternalSessionStore,
@@ -293,7 +293,7 @@ function primedDecisions(
     callTimeoutMs: 2000,
     ...bounds,
   };
-  const primed = createPrimedDecisionHost({
+  const primed = createDecisionLoginHost({
     source: config.source,
     directory,
     model: config.model,
@@ -696,7 +696,7 @@ test("shutdown stops live worker and decision processes so the user's profile lo
   const directory = join(root, 'receipts');
   mkdirSync(directory, { mode: 0o700 });
   const codex = appServerTransport({ hang: true });
-  const primed = createPrimedDecisionHost({
+  const primed = createDecisionLoginHost({
     source: defaultProfileSource('codex'),
     directory,
     model: 'gpt-5.6-luna',
