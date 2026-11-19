@@ -88,12 +88,6 @@ export interface ThreadPlan {
     readonly path?: string;
     readonly reason: string;
   }[];
-  /**
-   * Who wrote it: the thread's agent (`set_plan`), or Foundry's draft when a turn that brought new
-   * work ended with no plan recorded. A draft is shown as one and the agent's next `set_plan`
-   * replaces it whole.
-   */
-  readonly draftedBy?: 'agent' | 'foundry';
   readonly updatedAt: number;
 }
 

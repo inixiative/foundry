@@ -48,7 +48,7 @@ import type { FeedbackPhase } from '../feedback/types';
 import { workerHostsFoundryTools } from '../models/registry';
 import { roleComposition, scopeOfRole } from '../prompts/instruction-settings';
 import type { SessionAdapter } from '../providers/session-adapter';
-import { needsPlan } from '../tools/thread-record';
+import { needsNameCheck, needsPlan } from '../tools/thread-record';
 import {
   briefedText,
   CHORUS_AT_CALL_DEADLINE_MS,
@@ -74,6 +74,7 @@ import {
   FOUNDRY_TOOLS_LAYER,
   FOUNDRY_TOOLS_NOTE,
   FOUNDRY_TOOLS_NOTE_VERSION,
+  NAME_CHECK_NOTE,
   PLAN_ASK_NOTE,
   STANDING_LAYERS,
 } from './chorus-reception';
@@ -1379,6 +1380,8 @@ class ThreadRuntimeImpl implements ThreadRuntime {
     // the same frozen input and picks up the sealed plan. Composition stays deterministic (configured
     // order, hashes). The input is frozen when the message arrives: thread state is as of the previous
     // turn. Layer hydration (focus, warming) happens only in the executor dispatch that uses the plan.
+    // When this thread was last asked to check its name: the ask is once per window, not every turn.
+    let nameCheckedAt = 0;
     const prepare = async (
       message: string,
       identity: { messageId: string; threadId: string; projectId?: string } | undefined,
@@ -1416,6 +1419,19 @@ class ThreadRuntimeImpl implements ThreadRuntime {
             text: PLAN_ASK_NOTE,
           },
         ]);
+      // A name set over 30 minutes ago: ask the agent to check it on this turn, never a turn of its own.
+      if (needsNameCheck(thread.meta, nameCheckedAt)) {
+        nameCheckedAt = Date.now();
+        flow.queueNotes([
+          {
+            role: 'content',
+            id: `name-check:${identity?.messageId ?? nameCheckedAt}`,
+            source: 'foundry',
+            placement: 'after-message',
+            text: NAME_CHECK_NOTE,
+          },
+        ]);
+      }
       // A secret the person sent without $$: the agent tells them, once, how to mark it next time.
       const secretNote = identity?.messageId ? deps.secretNote?.(identity.messageId) : undefined;
       if (secretNote)

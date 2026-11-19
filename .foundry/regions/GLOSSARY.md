@@ -2003,8 +2003,8 @@ The retired settings history file; a hard cut, no longer written, read or migrat
 **settings.rejected-<ts>.json**  
 Where settings that failed to boot are set aside. *Region:* [Install, daemon, devices and git](install-daemon/knowledge.md)
 
-**settleTask**  
-Signet action posting a task-settlement request; never renews or auto-retries; receipts gate output. *Region:* [Kingdom pairing, access and Signets](kingdom/knowledge.md)
+**completeTask**  
+Signet action posting a task-completion request; never renews or auto-retries; receipts gate output. *Region:* [Kingdom pairing, access and Signets](kingdom/knowledge.md)
 
 **setup**  
 Class: setup, doctor, readiness, legacy starter removal, docs scan, startup self-test, the foundry CLI. *Region:* [Install, daemon, devices and git](install-daemon/knowledge.md)
@@ -2046,10 +2046,10 @@ Kingdom's only grant for using an integration: resources, operations, lens and l
 `<configDir>/kingdom/<host>/signet-<signetId>.json` (0600): renewal credential, current DPoP access token, key path. *Region:* [Kingdom pairing, access and Signets](kingdom/knowledge.md)
 
 **SignetClient**  
-Renews its access token and signs each call: describe, execute, settleTask, verifyAuthority, run actions. *Region:* [Kingdom pairing, access and Signets](kingdom/knowledge.md)
+Renews its access token and signs each call: describe, execute, completeTask, verifyAuthority, run actions. *Region:* [Kingdom pairing, access and Signets](kingdom/knowledge.md)
 
 **signets**  
-Class: the Signet protocol and SignetClient: DPoP presentation, renewal, cancellation, task settlement. *Region:* [Kingdom pairing, access and Signets](kingdom/knowledge.md)
+Class: the Signet protocol and SignetClient: DPoP presentation, renewal, cancellation, task completion. *Region:* [Kingdom pairing, access and Signets](kingdom/knowledge.md)
 
 **silence precision**  
 NO_COMMENT when nothing of the Warden's applied. *Region:* [Warden pre-filter and evals](warden-prefilter-evals/knowledge.md)

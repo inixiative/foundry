@@ -84,7 +84,7 @@ export type ProjectHostLauncher = (
 
 /** One project host, as the daemon reports it. */
 export interface ProjectHostState {
-  /** `failed`: it could not be started `maxRestarts` times in a row; the project runs primed Wardens. */
+  /** `failed`: not started `maxRestarts` times in a row; its Wardens are skipped until a start succeeds. */
   readonly status: 'starting' | 'serving' | 'failed' | 'closed';
   readonly reason?: string;
   readonly expected: number;
@@ -163,8 +163,8 @@ const rosterKey = (roster: Roster) =>
  * One Foundry-owned Warden host per project, opened with the project's roster when its chorus is
  * built and supervised here (restarted with backoff, replaced blue/green past its bounds). The
  * decision host routes a thread's Warden calls (advice, guards, reviews) to its project's host while
- * it serves, and to primed sessions otherwise (fail-open); a later stage on another model has its own
- * host per project (`lane`).
+ * it serves, and refuses them unsent otherwise, never on primed (`projectHostTarget`); a later stage
+ * on another model has its own host per project (`lane`).
  */
 export class ProjectWardenHosts {
   private readonly _projects = new Map<string, ProjectEntry>();
@@ -216,7 +216,7 @@ export class ProjectWardenHosts {
    * while the project's host is on its way (opening, starting, retrying or waiting out a used-up
    * login), so its Wardens are
    * skipped and catch up later rather than starting cold; undefined otherwise (no host for the
-   * project, or it failed: primed serves).
+   * project, or it failed: its Wardens are skipped too).
    */
   serving(threadId: string): ClaudeInSessionDecisions | 'starting' | undefined {
     const projectId = this.config.projectOf(threadId);
@@ -486,7 +486,7 @@ export class ProjectWardenHosts {
       }
       entry.failures++;
       if (entry.failures >= bounds.maxRestarts) {
-        entry.failed = `${entry.failures} starts failed in a row (last: ${message}); primed Wardens serve this project`;
+        entry.failed = `${entry.failures} starts failed in a row (last: ${message}); this project's Wardens are skipped until a start succeeds`;
         this._report(projectId, entry.failed);
         return;
       }
@@ -572,8 +572,8 @@ export class ProjectWardenHosts {
         const now = Date.now();
         entry.recycles = entry.recycles.filter((at) => now - at < HOUR_MS);
         if (rss !== undefined && rss > bounds.hardRssMb) {
-          // Past the ceiling it can grow ~400 MB/s: routing leaves it now (primed serves the
-          // project), and it stops once its calls in flight settle.
+          // Past the ceiling it can grow ~400 MB/s: routing leaves it now (the project's Wardens
+          // are skipped until its replacement serves), and it stops once its calls in flight settle.
           entry.live = undefined;
           void this._retire(live);
           this._replace(projectId, 'memory ceiling');

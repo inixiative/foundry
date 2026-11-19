@@ -12,9 +12,9 @@
 const short = (sha) => (sha ? sha.slice(0, 8) : '');
 const turns = (n) => `${n} turn${n === 1 ? '' : 's'}`;
 
-/** What a restart still waits for: each running turn and each plan draft being written. */
+/** What a restart still waits for: each running turn. */
 export function restartBlockers(state) {
-  return (state?.running?.length ?? 0) + (state?.finishing ?? 0);
+  return state?.running?.length ?? 0;
 }
 
 /** One line for the update state, or null when there is nothing to say. */
@@ -36,8 +36,6 @@ export function updateLine(state) {
           ? `${turns(unpaused)} running, paused in ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')} unless ${unpaused === 1 ? 'it finishes' : 'they finish'}`
           : `${turns(unpaused)} running`,
       );
-    if (state.finishing)
-      parts.push(`${state.finishing} plan draft${state.finishing === 1 ? '' : 's'} being written`);
     return `Restarting: ${blockers} blocker${blockers === 1 ? '' : 's'} left (${parts.join(', ')})`;
   }
   if (state.phase === 'spinning-down') {
@@ -55,9 +53,7 @@ export function updateLine(state) {
     if (unpaused && state.pauseAtLocal) return `Update ready: pausing ${turns(unpaused)} now`;
     if (running)
       return `Update ready: restarting when ${turns(running)} finish${running === 1 ? 'es' : ''}`;
-    return state.finishing
-      ? 'Update ready: restarting when the last plan draft is written'
-      : 'Update ready: restarting now';
+    return 'Update ready: restarting now';
   }
   if (state.phase === 'restarting')
     return state.reason ? 'Restarting…' : 'Restarting onto the update…';

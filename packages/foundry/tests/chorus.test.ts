@@ -27,6 +27,7 @@ import {
 import {
   CHORUS_RECEPTION,
   CHORUS_RECEPTION_LAYER,
+  NAME_CHECK_NOTE,
   PLAN_ASK_NOTE,
 } from '../src/agents/chorus-reception';
 import { configuredWardens, largestRoster } from '../src/agents/configured-wardens';
@@ -1085,6 +1086,32 @@ test('region Wardens run under the Warden charter, and their pointer reaches the
   const none = loose.factory.create('no-project');
   expect(loose.manager.get(none.id)!.wardens.size).toBe(0);
   expect(none.stack.getLayer(CHORUS_RECEPTION_LAYER)).toBeUndefined();
+  // Not even one working inside a project's directory: Wardens come from a project, never from a cwd.
+  const inside = loose.factory.create('no-project-in-repo', { cwd: project });
+  expect(inside.meta.projectId).toBeUndefined();
+  expect(loose.manager.get(inside.id)!.wardens.size).toBe(0);
+  await inside.dispatch('worker', 'Add a SET NX lock around the sync job');
+  expect(loose.all('pre')).toEqual([]);
+});
+
+test('a thread named over 30 minutes ago asks its agent to check the name on its next turn, once a window', async () => {
+  const { project } = projectWithRegions();
+  const c = config(project);
+  validateConfig(c);
+  const f = setup(c, 'NO_COMMENT');
+  const thread = f.factory.create('named-thread', { projectId: 'P' });
+  thread.meta.foundryName = { text: 'Add a sync lock', updatedAt: Date.now() - 31 * 60_000 };
+  const lastUser = () =>
+    f
+      .all('central')
+      .at(-1)!
+      .messages.filter((m) => m.role === 'user')
+      .at(-1)!.content;
+  await thread.dispatch('worker', 'Add a SET NX lock around the sync job');
+  expect(lastUser()).toEndWith(NAME_CHECK_NOTE);
+  // Asked this window: the next turn does not ask again.
+  await thread.dispatch('worker', 'Also cover the retry path');
+  expect(lastUser()).not.toContain(NAME_CHECK_NOTE);
 });
 
 test('each region Warden decision is followed by its debug reason, journalled as its own linked row', async () => {

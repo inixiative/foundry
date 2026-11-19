@@ -80,6 +80,10 @@ This thread runs in Foundry. A person follows it among many others, so keep it l
 export const PLAN_ASK_NOTE =
   'Foundry: this thread has no plan yet. If this message asks for more than a quick answer, record your plan with set_plan before you start, and set_status before you hand back.';
 
+/** The line Foundry adds to a turn of a thread whose name was set over 30 minutes ago (`needsNameCheck`). */
+export const NAME_CHECK_NOTE =
+  "Foundry: this thread's name was set over 30 minutes ago. Make sure it still says what the thread is working on (3 to 7 plain words): call rename_thread with the right name, the same one if it still fits.";
+
 export const FOUNDRY_TOOLS_NOTE_VERSION = `foundry-tools-${computeHash(FOUNDRY_TOOLS_NOTE).slice(0, 12)}`;
 
 /** The id of the standing layer that carries the session briefing on every thread. */

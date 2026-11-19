@@ -11,12 +11,6 @@ export interface ThreadNamerOptions {
   provider: LLMProvider;
   /** A thread's Foundry name changed; persist and publish it. */
   changed(thread: Thread): void;
-  /** Quiet period after a turn before a refresh decision runs, so a burst of turns costs one. */
-  quietMs?: number;
-  /** Least time between refresh decisions for one thread. */
-  minIntervalMs?: number;
-  /** Least completed turns between refresh decisions for one thread. */
-  minTurns?: number;
 }
 
 export const NAMING_INSTRUCTIONS =
@@ -97,15 +91,6 @@ export function hasWorkContent(text: string): boolean {
   return [...words(text)].some((w) => !FILLER.has(w) && (w.length >= 3 || /\p{N}/u.test(w)));
 }
 
-/** A rename is churn unless the work words changed: under half shared (Jaccard), or no current name. */
-export function meaningfullyDifferent(current: string | undefined, next: string): boolean {
-  if (!current) return true;
-  const a = words(current),
-    b = words(next);
-  const shared = [...a].filter((w) => b.has(w)).length;
-  return shared / (a.size + b.size - shared || 1) < 0.5;
-}
-
 function parseName(content: string): { keep: true } | { title: string } | undefined {
   try {
     const parsed: unknown = JSON.parse(content.trim().replace(/^```(?:json)?\s*|\s*```$/g, ''));
@@ -120,79 +105,57 @@ function parseName(content: string): { keep: true } | { title: string } | undefi
 }
 
 type State = {
-  turns: number;
   /** The person's recent messages: what a name is decided from. */
   asked: string[];
   /** The agent's recent replies, clipped short: secondary context. */
   replies: string[];
-  timer?: ReturnType<typeof setTimeout>;
   running: boolean;
-  decidedAt?: number;
 };
 
 /**
- * Foundry's thread names, decided by its decision model from what the person asked (not by the
- * thread's agent). A thread is named as soon as its first message that names work is sent
- * (`messageSent`), refreshed after completed turns (`turnCompleted`), then
- * re-checked once it has gone quiet, at most every `minIntervalMs` and `minTurns`; the decision
- * keeps the name unless the work moved, and a near-identical rename is dropped. A person's
- * name (`meta.name`), or one the thread's agent gave (`rename_thread`), stops all of it. Runs off the turn path, at review priority.
+ * A thread's first Foundry name, decided by its decision model from what the person asked (not by
+ * the thread's agent): named as soon as its first message that names work is sent (`messageSent`),
+ * or after a completed turn while it is still unnamed (`turnCompleted`: the first decision failed, or
+ * the first message named no work). A named thread is never decided again here: once its name is 30
+ * minutes old, its own agent is asked on a turn to check it (`NAME_CHECK_NOTE`, Aron 2026-11-18). A
+ * person's name (`meta.name`), or one the thread's agent gave (`rename_thread`), stops it. Runs off
+ * the turn path, at review priority.
  */
 export class ThreadNamer {
   private readonly states = new WeakMap<Thread, State>();
-  private readonly quietMs: number;
-  private readonly minIntervalMs: number;
-  private readonly minTurns: number;
 
-  constructor(private readonly options: ThreadNamerOptions) {
-    this.quietMs = options.quietMs ?? 15_000;
-    this.minIntervalMs = options.minIntervalMs ?? 10 * 60_000;
-    this.minTurns = options.minTurns ?? 3;
-  }
+  constructor(private readonly options: ThreadNamerOptions) {}
 
   /** The first-name trigger: the person sent a message on an unnamed thread. Named from it at once. */
   messageSent(thread: Thread, user: string): void {
     if (thread.disposed || thread.meta.name || thread.meta.foundryName || !hasWorkContent(user))
       return;
-    const state = this.states.get(thread) ?? { turns: 0, asked: [], replies: [], running: false };
+    const state = this.states.get(thread) ?? { asked: [], replies: [], running: false };
     this.states.set(thread, state);
     if (state.running || state.asked.length) return;
     state.asked.push(user.slice(0, CLIP));
     void this.decide(thread, state);
   }
 
-  /** The refresh trigger: a turn on `thread` completed with this exchange. A turn whose message names
-   * no work (a greeting) is skipped: the name waits for a turn that does. */
+  /** The first-name retry: a turn on a still unnamed `thread` completed with this exchange. A turn
+   * whose message names no work (a greeting) is skipped: the name waits for a turn that does. */
   turnCompleted(thread: Thread, exchange: { user: string; agent: string }): void {
-    // A name the person or the thread's agent gave outranks Foundry's own.
     if (
       thread.disposed ||
       thread.meta.name ||
-      thread.meta.foundryName?.by === 'agent' ||
+      thread.meta.foundryName ||
       !hasWorkContent(exchange.user)
     )
       return;
-    const state = this.states.get(thread) ?? { turns: 0, asked: [], replies: [], running: false };
+    const state = this.states.get(thread) ?? { asked: [], replies: [], running: false };
     this.states.set(thread, state);
-    state.turns++;
     // The person's message carries the work; the reply is clipped short, context only.
     const asked = exchange.user.slice(0, CLIP);
     if (state.asked.at(-1) !== asked) state.asked.push(asked);
     state.replies.push(exchange.agent.slice(0, AGENT_CLIP));
     state.asked.splice(0, Math.max(0, state.asked.length - RECENT));
     state.replies.splice(0, Math.max(0, state.replies.length - RECENT / 2));
-    const named = thread.meta.foundryName;
-    const last = state.decidedAt ?? named?.updatedAt ?? 0;
-    if (named && (state.turns < this.minTurns || Date.now() - last < this.minIntervalMs)) return;
-    if (state.timer) clearTimeout(state.timer);
-    state.timer = setTimeout(
-      () => {
-        state.timer = undefined;
-        void this.decide(thread, state);
-      },
-      named ? this.quietMs : 0,
-    );
-    state.timer.unref?.();
+    void this.decide(thread, state);
   }
 
   private async decide(thread: Thread, state: State): Promise<void> {
@@ -239,15 +202,12 @@ export class ThreadNamer {
         timeout: 15_000,
       });
       const decision = parseName(result.content);
-      if (!decision) return;
-      state.decidedAt = Date.now();
-      state.turns = 0;
       if (
+        !decision ||
         !('title' in decision) ||
         thread.disposed ||
         thread.meta.name ||
-        thread.meta.foundryName !== current ||
-        !meaningfullyDifferent(current?.text, decision.title)
+        thread.meta.foundryName !== current
       )
         return;
       thread.meta.foundryName = { text: decision.title, updatedAt: Date.now() };

@@ -21,7 +21,6 @@ import { conversationActLevel } from '@inixiative/signet';
 import type { Server } from 'bun';
 import { Hono } from 'hono';
 import { serveStatic } from 'hono/bun';
-import { PlanDrafter } from '../agents/plan-drafter';
 import { invalidateComposition } from '../agents/role-layers';
 import { ThreadNamer } from '../agents/thread-namer';
 import { registerArchiveRoutes } from '../archives/routes';
@@ -129,13 +128,13 @@ export interface ViewerConfig {
   decisionHosts?: () => { projects: Record<string, ProjectHostState> } | undefined;
   /** Every native session binding (`FileExternalSessionStore.all`), for Status → Processes. */
   sessionBindings?: () => Promise<ReadonlyArray<{ threadId: string; externalSessionId: string }>>;
-  /** Decision provider that keeps agent thread names (optional; no naming without it). */
+  /** Decision provider for a thread's first name (optional; no first name without it). */
   namingProvider?: LLMProvider;
   /** Each worker's native sessions, for a thread switching worker mid-conversation. */
   workerSessions?: WorkerSessions;
   /** A project is active: a thread of it was opened here (its Warden host opens before the first turn). */
   projectActive?: (projectId: string) => void;
-  /** Decision provider for the feedback lifecycle (optional; no capture without it). */
+  /** Decision provider for the feedback lifecycle (optional; without it, corrections are recorded as said and nothing is captured). The daemon wires none. */
   feedbackProvider?: LLMProvider;
   /** Token tracker for analytics (optional but recommended). */
   tokenTracker?: TokenTracker;
@@ -608,14 +607,6 @@ export function createViewer(config: ViewerConfig) {
   const namer = config.namingProvider
     ? new ThreadNamer({ provider: config.namingProvider, changed: threadChanged })
     : undefined;
-  // The same decision provider drafts a plan when a turn that brought work ended without one.
-  const planDrafter = config.namingProvider
-    ? new PlanDrafter({
-        provider: config.namingProvider,
-        changed: threadChanged,
-        settled: () => restartRoll.check(),
-      })
-    : undefined;
   const threadContext = new ThreadContextTracker({
     thread: (id) => directory.get(id),
     changed: threadChanged,
@@ -863,7 +854,6 @@ export function createViewer(config: ViewerConfig) {
     waitingOnPerson: (turn) => blockedOnPerson(config.actionQueue, turn),
     pause: async (turn) => turnsReady?.pauseForRestart(turn.threadId, turn.turnId) ?? 'not-yet',
     waiting: () => turnsReady?.queuedCount() ?? 0,
-    finishing: () => planDrafter?.drafting() ?? 0,
     background: () => runningTasks.active(),
     prepare: () => {
       const held = turnsReady?.holdQueuedForRestart() ?? 0;
@@ -906,7 +896,6 @@ export function createViewer(config: ViewerConfig) {
     configStore,
     projectRegistry: config.projectRegistry,
     namer,
-    planDrafter,
     threadContext,
     runningTasks,
     ...(config.tokenTracker ? { tokenTracker: config.tokenTracker } : {}),

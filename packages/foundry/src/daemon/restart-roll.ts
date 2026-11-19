@@ -66,8 +66,6 @@ export interface RollStatus {
   running: RunningTurnRef[];
   /** Of those, the ones asked to pause: they stop, and resume after the restart. */
   pausing: RunningTurnRef[];
-  /** Other work the restart waits for (plan drafts being written after a turn). */
-  finishing: number;
   /** Background processes agents started; a restart stops them. */
   background: Array<{ threadId: string; label: string }>;
   /** Accepted turns waiting for the restart (they run after it). */
@@ -90,8 +88,6 @@ export interface RestartRollDeps {
   pause?(turn: RunningTurnRef): Promise<PauseAnswer>;
   /** Accepted turns not yet running. */
   waiting(): number;
-  /** Work a turn left behind that the restart also waits for (a plan draft being written). */
-  finishing?(): number;
   /** Background processes agents started, which a restart stops (shown, not waited for). */
   background?(): Array<{ threadId: string; label: string }>;
   /** Hold every waiting turn in the journal so the next boot runs it. */
@@ -175,7 +171,6 @@ export class RestartRoll {
         : {}),
       running,
       pausing: running.filter((turn) => this.paused.has(turn.turnId)),
-      finishing: this.phase === 'spinning-down' ? (this.deps.finishing?.() ?? 0) : 0,
       background: this.phase === 'idle' ? [] : (this.deps.background?.() ?? []),
       waiting: this.phase === 'idle' ? 0 : this.deps.waiting(),
     };
@@ -289,7 +284,7 @@ export class RestartRoll {
         this.allPausedAt ??= this.now();
       else this.allPausedAt = undefined;
     }
-    const busy = running.length + (this.deps.finishing?.() ?? 0) + this.inFlight;
+    const busy = running.length + this.inFlight;
     if (busy === 0) this.restart('every running turn finished or paused');
     else if (this.allPausedAt !== undefined && this.now() >= this.allPausedAt + PAUSE_SETTLE_MS)
       this.restart(
