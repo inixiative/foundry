@@ -170,7 +170,8 @@ export type ProjectHostPolicy = Required<
  */
 export const PROJECT_HOST_DEFAULTS = {
   sparesPerWarden: 1,
-  // why: one dispatcher refilled 75 held Wardens in ~20 s (2026-11-02).
+  // why: the most Wardens one dispatcher holds; a dispatcher types its starts in a row, and one
+  // refilling 75 took ~20 s (2026-11-02). The count of dispatchers is `dispatcherCount`.
   wardensPerDispatcher: 8,
   concurrentTurns: 2,
   maxRssMb: 1_536,
@@ -180,7 +181,8 @@ export const PROJECT_HOST_DEFAULTS = {
   restartBackoffMs: 5_000,
   maxRestarts: 5,
   /** As primed roles are evicted after 30 minutes idle. */
-  idleMs: 1_800_000,
+  // why: a chorus stays up three hours after the project was last touched (Aron, 2026-11-19).
+  idleMs: 10_800_000,
 } as const satisfies Omit<ProjectHostPolicy, 'setupDeadlineMs'>;
 /**
  * Sized for a full chorus: every Warden is asked on every user message, and every

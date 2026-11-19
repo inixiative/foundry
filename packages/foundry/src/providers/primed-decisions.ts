@@ -15,6 +15,7 @@ import {
   type CodexSpawn,
   DecisionError,
   type DecisionResult,
+  IN_SESSION_HOST_CHARTER,
   type PrimedEvent,
   type PrimedSessions,
   type PrimeSpec,
@@ -767,6 +768,8 @@ export function createPrimedDecisionHost(config: PrimedDecisionHostConfig) {
         cwd: dir,
         maxTurns: null,
         persistSession: false,
+        // why: without its charter a Haiku host declined the setup message twice (2026-11-19).
+        baseContext: IN_SESSION_HOST_CHARTER,
         // The login's profile; the Wardens are their own instructions, never the user's CLAUDE.md.
         env: { ...profileEnvironment('claude', source.profileDirectory), ...PROJECT_HOST_ENV },
         spawn: (argv, options) => {
