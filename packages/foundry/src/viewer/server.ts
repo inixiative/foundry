@@ -193,6 +193,10 @@ export interface ViewerConfig {
 export function createViewer(config: ViewerConfig) {
   const { harness, eventStream, interventions, port = 4500 } = config;
   const app = new Hono();
+  app.onError((error, c) => {
+    console.error(`[Viewer] ${c.req.method} ${c.req.path} failed: ${error.message}`);
+    return c.json({ error: error.message }, 500);
+  });
   const configDir = config.configDir ?? '.foundry';
   const kingdom = new KingdomInstallationConnections(config.kingdomIntegrations ?? [], {
     configDir,
