@@ -2220,6 +2220,7 @@ export class LocalSessionStore {
    * What a thread's Archive snapshot reads from its journal rows, as one cheap mark read from the
    * indexes: the newest row of each append-only table, the phase count (pruned raw middleware rows
    * move it, costing one needless capture), each turn's state, and the volatile tool records.
+   * The thread atlas keys its path cache on it too (`viewer/thread-atlas.ts`): narrowing it can leave that cache stale.
    */
   archiveRecordsMark(threadId: string): string {
     const row = this.query(
@@ -2501,6 +2502,40 @@ export class LocalSessionStore {
     const agent = messages.find((message) => message.actor === 'agent');
     const root = trace?.root as { annotations?: { injection?: unknown } } | undefined;
     const injection = agent?.meta?.injection ?? root?.annotations?.injection ?? null;
+    const toolUses = this.toolUsesOf(threadId, turnId, toolNames, agent?.meta?.nativeHistory);
+    return {
+      threadId,
+      turnId,
+      turn,
+      messages,
+      trace,
+      injection,
+      phases: this.phaseHistory(threadId, { turnId }),
+      toolUses,
+    };
+  }
+
+  /** The native `tool_use` records of the named tools on one turn (journalled rows, then those recorded
+   * inline on the completion), without the turn's trace, phases or other messages. */
+  turnToolUses(threadId: string, turnId: string, toolNames: readonly string[]): NativeEvidence[] {
+    // Only the completion's inline history is read, not the whole message (they run to tens of kB).
+    const row = this.query(
+      "SELECT record -> '$.meta.nativeHistory' AS history FROM session_messages WHERE thread_id=? AND turn_id=? AND actor='agent'",
+    ).get(threadId, turnId) as { history: string | null } | null;
+    return this.toolUsesOf(
+      threadId,
+      turnId,
+      toolNames,
+      row?.history ? this.decode(row.history) : undefined,
+    );
+  }
+
+  private toolUsesOf(
+    threadId: string,
+    turnId: string,
+    toolNames: readonly string[],
+    inlineHistory: unknown,
+  ): NativeEvidence[] {
     const marks = toolNames.map(() => '?').join(',');
     const journalled = toolNames.length
       ? (
@@ -2512,8 +2547,8 @@ export class LocalSessionStore {
           ) as { record: string }[]
         ).map((row) => JSON.parse(row.record) as NativeEvidence)
       : [];
-    const inline = Array.isArray(agent?.meta?.nativeHistory)
-      ? (agent.meta.nativeHistory as NativeEvidence[]).filter(
+    const inline = Array.isArray(inlineHistory)
+      ? (inlineHistory as NativeEvidence[]).filter(
           (e) =>
             e?.kind === 'tool_use' &&
             typeof e.toolName === 'string' &&
@@ -2521,17 +2556,7 @@ export class LocalSessionStore {
         )
       : [];
     const seen = new Set(journalled.map((e) => JSON.stringify(e)));
-    const toolUses = [...journalled, ...inline.filter((e) => !seen.has(JSON.stringify(e)))];
-    return {
-      threadId,
-      turnId,
-      turn,
-      messages,
-      trace,
-      injection,
-      phases: this.phaseHistory(threadId, { turnId }),
-      toolUses,
-    };
+    return [...journalled, ...inline.filter((e) => !seen.has(JSON.stringify(e)))];
   }
 
   /** Full owned detail for one turn, fetched lazily. The injection is the recorded artifact. */
@@ -2897,12 +2922,21 @@ export class LocalSessionStore {
     ).run(evidence.admissionId, thread.id, owner.messageId, JSON.stringify(evidence), Date.now());
   }
 
-  traces(limit = 50): PersistedTraceRecord[] {
+  /** The newest traces' summaries (the whole trace where none was stored). Only the summary leaves
+   * SQLite: full traces run to tens of kB each and decoding them blocked every other request. */
+  traceSummaries(limit = 50): unknown[] {
     const current = (
-      this.query('SELECT record FROM session_traces ORDER BY seq DESC LIMIT ?').all(
-        boundedLimit(limit),
-      ) as Array<{ record: string }>
-    ).map((row) => this.decode<PersistedTraceRecord>(row.record));
+      this.query(
+        "SELECT record -> '$.summary' AS summary, seq FROM session_traces ORDER BY seq DESC LIMIT ?",
+      ).all(boundedLimit(limit)) as Array<{ summary: string | null; seq: number }>
+    ).map((row) => {
+      const summary = row.summary === null ? null : this.decode<unknown>(row.summary);
+      if (summary !== null && summary !== undefined) return summary;
+      const whole = this.query('SELECT record FROM session_traces WHERE seq=?').get(row.seq) as {
+        record: string;
+      };
+      return this.decode<PersistedTraceRecord>(whole.record);
+    });
     const archived = this.query(
       'SELECT record, checksum, provenance FROM checkpoint_traces ORDER BY id DESC LIMIT ?',
     ).all(limit - current.length) as Array<{
@@ -2910,7 +2944,13 @@ export class LocalSessionStore {
       checksum: string;
       provenance: string;
     }>;
-    return [...current, ...archived.map((row) => this.decodeCheckpointTrace(row))];
+    return [
+      ...current,
+      ...archived.map((row) => {
+        const trace = this.decodeCheckpointTrace(row);
+        return trace.summary ?? trace;
+      }),
+    ];
   }
 
   trace(id: string): PersistedTraceRecord | undefined {

@@ -499,7 +499,7 @@ export function registerRuntimeRoutes(
     if (!Number.isSafeInteger(limit) || limit < 1 || limit > 10_000)
       return c.json({ error: 'invalid limit' }, 400);
 
-    if (localStore) return c.json(localStore.traces(limit).map((trace) => trace.summary ?? trace));
+    if (localStore) return c.json(localStore.traceSummaries(limit));
 
     const summaries = turns
       .all()
