@@ -48,6 +48,7 @@ import {
   createPrimedPool,
   type DecisionProcess,
   heldOnlyFor,
+  isWardenSession,
   primedRequest,
   projectHostTarget,
 } from './primed-decisions';
@@ -516,6 +517,9 @@ export function createDecisionLoginHost(config: DecisionLoginHostConfig) {
           heldOnly = false;
         try {
           ({ spec, input } = primedRequest(messages, opts, sessionKey));
+          // Project hosts serve only Warden calls; with them there is no pool to send any other call to.
+          if (!pool && !isWardenSession(sessionKey))
+            throw Error('No primed pool with project Warden hosts; not a Warden call');
           await opts.nativeObservation?.preflight?.(owner);
           await claude?.ready();
           if (closed) throw Error('Decision admission closed');
@@ -535,7 +539,6 @@ export function createDecisionLoginHost(config: DecisionLoginHostConfig) {
             );
           heldOnly = heldOnlyFor(sessionKey, opts) && !!projectHost;
           if (projectHost) target = projectHost;
-          // Project hosts serve only Warden calls; with them there is no pool to send any other call to.
           if (!target) throw Error('No primed pool with project Warden hosts; not a Warden call');
           const { capacity } = target.snapshot();
           if (capacity) call.hostCapacity = capacity;

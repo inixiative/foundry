@@ -764,6 +764,7 @@ test('the daemon\'s decision hosts build no primed pool with project hosts, for 
 test('with project hosts the decision host builds no primed pool: a Warden call is served by its project host, any other call is refused unsent and starts nothing', async () => {
   const { hosts, directory } = decisionLoginHome('no-pool-host');
   const tree = fakeClaudeTree();
+  let statusChecks = 0;
   const wardens = new ProjectWardenHosts({
     model: 'claude-haiku-5-5',
     effort: 'low',
@@ -780,7 +781,10 @@ test('with project hosts the decision host builds no primed pool: a Warden call 
     maxConcurrent: 1,
     callTimeoutMs: 3_000,
     spawn: tree.spawn,
-    statusSpawn: () => subscriptionStatusProcess(true),
+    statusSpawn: () => {
+      statusChecks++;
+      return subscriptionStatusProcess(true);
+    },
     projectHosts: wardens,
   });
   cleanup.push(async () => {
@@ -804,6 +808,16 @@ test('with project hosts the decision host builds no primed pool: a Warden call 
       model: 'claude-haiku-5-5',
       maxCalls: 1,
     });
+  // A call that is not a Warden's has nowhere to go: refused before the login is even checked, and
+  // nothing starts.
+  const other = newRun();
+  await expect(
+    other.provider.complete(messages, { threadId: 'decision:self-test' }),
+  ).rejects.toThrow();
+  expect(other.snapshot().calls[0]).toMatchObject({ failure: 'not-admitted', valid: false });
+  expect(other.snapshot().calls[0]).not.toHaveProperty('reason');
+  expect(statusChecks).toBe(0);
+  expect(tree.processes).toHaveLength(0);
   wardens.openProject('P', [{ spec: held, standby: '' }]);
   expect(await wardens.projectReady('P', 5_000)).toBe(true);
   const warden = newRun();
@@ -821,13 +835,6 @@ test('with project hosts the decision host builds no primed pool: a Warden call 
   expect(tree.processes).toHaveLength(1);
   expect(tree.processes[0]!.argv).toContain('--disable-slash-commands');
   expect(basename(tree.processes[0]!.cwd!)).toMatch(/^project-/);
-  // A call that is not a Warden's has nowhere to go: refused before anything is sent.
-  const other = newRun();
-  await expect(
-    other.provider.complete(messages, { threadId: 'decision:self-test' }),
-  ).rejects.toThrow();
-  expect(other.snapshot().calls[0]).toMatchObject({ failure: 'not-admitted', valid: false });
-  expect(tree.processes).toHaveLength(1);
   expect(poolFolders(hosts)).toEqual([]);
   // Without project hosts the same host builds the pool, in its folder's fixture/.
   const pooled = createDecisionLoginHost({
@@ -839,6 +846,7 @@ test('with project hosts the decision host builds no primed pool: a Warden call 
     spawn: tree.spawn,
     statusSpawn: () => subscriptionStatusProcess(true),
   });
+  cleanup.push(() => pooled.close());
   expect(pooled.pool?.runtime).toBe('claude');
   expect(existsSync(join(hosts, `primed-${pooled.hostId}`, 'fixture'))).toBe(true);
   await pooled.close();
