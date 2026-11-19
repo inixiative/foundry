@@ -20,6 +20,7 @@ import {
   NOT_HELD_REFUSAL,
   refusedUnsent,
 } from '../src/providers/decision-budget';
+import { DECISION_PRIORITY } from '../src/providers/decision-priority';
 import {
   buildNativeTextProvider,
   type NativeTextConfig,
@@ -710,5 +711,62 @@ test('a Warden its project host holds no warm spare for is a capacity refusal: s
   // for capacity again), not shut out as closed.
   const again = await ask().catch((e: unknown) => e);
   expect((again as { notSentCause?: string }).notSentCause).toBe('not-held');
+  decisions.close();
+});
+
+test('a Warden whose host does not serve is refused before it is queued, at guard priority too: a full slot never makes it wait', async () => {
+  const runs: string[] = [];
+  const gates: Array<() => void> = [];
+  const createRun = (_config: NativeTextConfig) => ({
+    provider: {
+      id: 'fake',
+      async complete(
+        _messages: unknown,
+        opts: { nativeObservation?: { owner: { providerSessionKey?: string } } } = {},
+      ) {
+        runs.push(opts.nativeObservation!.owner.providerSessionKey!);
+        await new Promise<void>((resolve) => gates.push(resolve));
+        throw Error('released');
+      },
+    },
+    snapshot: () => ({ closed: false, calls: [] as never }),
+    close: () => {},
+  });
+  const decisions = buildSubscriptionDecisions(
+    {
+      source: {
+        id: 's',
+        runtime: 'claude',
+        mode: 'native-profile',
+        profileDirectory: '/x',
+      } as never,
+      directory: '/tmp',
+      model: 'm',
+      maxCalls: 100,
+      maxQueued: 100,
+      callTimeoutMs: 20_000,
+      maxConcurrent: 1,
+      // The lane holding later stages is down; first stages serve.
+      unserved: (key) => key.includes(':stage:'),
+    },
+    createRun as never,
+  );
+  // The one shared slot is taken.
+  const busy = decisions.provider
+    .complete([{ role: 'user', content: 'x' }], { threadId: 't1:aux:router' })
+    .catch(() => undefined);
+  await until(() => runs.length === 1);
+  const at = Date.now();
+  const error = await decisions.provider
+    .complete([{ role: 'user', content: 'x' }], {
+      threadId: 't1:aux:domain:a:stage:1',
+      priority: DECISION_PRIORITY.guard,
+    })
+    .catch((e: unknown) => e);
+  expect(Date.now() - at).toBeLessThan(1_000);
+  expect(refusedUnsent(error)).toEqual({ cause: 'not-held', reason: NOT_HELD_REFUSAL });
+  expect(runs).toEqual(['t1:aux:router']);
+  for (const release of gates.splice(0)) release();
+  await busy;
   decisions.close();
 });

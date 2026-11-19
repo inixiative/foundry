@@ -204,9 +204,6 @@ export function heldOnlyFor(sessionKey: string, opts: Pick<CompletionOpts, 'held
   return !!opts.heldOnly && !isStageSession(sessionKey);
 }
 
-/** A decision call as the subscription queue hands it on: admitted outside the shared slots, because a project host served it. */
-export type AdmittedDecisionOpts = CompletionOpts & { readonly admittedToProjectHost?: boolean };
-
 /**
  * Launch flags of a project host (beside `--setting-sources ''`), as bare as a subscription launch
  * goes (Aron, 2026-11-02: "wardens should be as bare as possible"; `--bare` and
@@ -615,8 +612,8 @@ export function createPrimedDecisionHost(config: PrimedDecisionHostConfig) {
           // they split at the stable prefix, and the thread section rides with the moment.
           // A Warden whose project host does not serve is refused unsent, never run on primed.
           // Held-only advice (a user message's, which catches up) is served warm or skipped: a Warden
-          // with no held spare is refused unsent too. A call admitted outside the shared slots for a
-          // host that has since gone is refused unsent, never run unbounded.
+          // with no held spare is refused unsent too. The queue refuses one before queueing it; a host
+          // that went while the call waited is caught here.
           const projectHost = projectHostTarget(config.projectHosts, sessionKey);
           if (projectHost === 'not-serving')
             throw new DecisionError(
@@ -625,8 +622,6 @@ export function createPrimedDecisionHost(config: PrimedDecisionHostConfig) {
               'not-dispatched',
               true,
             );
-          if (!projectHost && (opts as AdmittedDecisionOpts).admittedToProjectHost)
-            throw new DecisionError('Project Warden host gone', 'not-held', 'not-dispatched', true);
           heldOnly = heldOnlyFor(sessionKey, opts) && !!projectHost;
           if (projectHost) target = projectHost;
           const { capacity } = target.snapshot();

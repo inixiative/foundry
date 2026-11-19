@@ -25,11 +25,7 @@ import {
 } from './decision-budget';
 import { DECISION_PRIORITY } from './decision-priority';
 import type { NativeTextCall, NativeTextConfig } from './native-text-provider';
-import {
-  type AdmittedDecisionOpts,
-  createPrimedDecisionHost,
-  projectHostTarget,
-} from './primed-decisions';
+import { createPrimedDecisionHost, projectHostTarget } from './primed-decisions';
 import type { ProjectWardenHosts } from './project-warden-hosts';
 import type { LoginQuotaPause } from './provider-limits';
 
@@ -143,11 +139,14 @@ export function createSubscriptionDecisions(config: SubscriptionDecisionConfig) 
       ...(projectHosts
         ? {
             // Only a turn's advice skips the slots; guards and reviews keep their class caps on the
-            // host too, so a burst of background reviews never holds up the next turn's advice. A
-            // turn's Warden whose host does not serve skips them too: it is refused unsent at once.
+            // host too, so a burst of background reviews never holds up the next turn's advice.
             unbounded: (key: string, opts: CompletionOpts) =>
               (opts.priority ?? DECISION_PRIORITY.turn) >= DECISION_PRIORITY.turn &&
-              !!projectHostTarget(projectHosts, key),
+              typeof projectHostTarget(projectHosts, key) === 'object',
+            // A Warden whose host (or a later stage's lane) does not serve is refused before it is
+            // queued, at every priority: a skipped later stage never waits out its share in the queue
+            // and lets the earlier stage's answer stand (R-2026-11-18-38).
+            unserved: (key: string) => projectHostTarget(projectHosts, key) === 'not-serving',
           }
         : {}),
     },
@@ -178,10 +177,12 @@ export function buildSubscriptionDecisions(
   options: Omit<SubscriptionDecisionConfig, 'projectHosts'> & {
     /** Calls (by provider session key and options) served in a project host: no shared slot. */
     unbounded?: (sessionKey: string, opts: CompletionOpts) => boolean;
+    /** Calls (by provider session key) whose project host does not serve: refused unsent, never queued. */
+    unserved?: (sessionKey: string) => boolean;
   },
   createRun: (config: NativeTextConfig) => TextRun,
 ) {
-  const { onPressure, unbounded, quota, ...bounds } = options;
+  const { onPressure, unbounded, unserved, quota, ...bounds } = options;
   const config = structuredClone(bounds);
   if (
     !Number.isSafeInteger(config.maxCalls) ||
@@ -392,9 +393,8 @@ export function buildSubscriptionDecisions(
         callTimeoutMs: pending.deadline - Date.now(),
       });
       running.add(run);
-      const callOpts: AdmittedDecisionOpts = {
+      const callOpts: CompletionOpts = {
         ...opts,
-        ...(pending.unbounded ? { admittedToProjectHost: true } : {}),
         cwd: undefined,
         threadId: undefined,
         timeout: undefined,
@@ -673,6 +673,7 @@ export function buildSubscriptionDecisions(
         return Promise.reject(reject('Subscription decision scope or model refused'));
       const id = Bun.randomUUIDv7(),
         threadId = opts.threadId ?? `decision:${id}`;
+      if (unserved?.(threadId)) return Promise.reject(reject(NOT_HELD_REFUSAL, 'not-held'));
       const owner = freezeEvidence({
         ...(opts.nativeObservation?.owner ?? { threadId, generation: id, dispatchId: id }),
         providerSessionKey: threadId,

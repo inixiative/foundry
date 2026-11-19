@@ -1091,6 +1091,12 @@ test('region Wardens run under the Warden charter, and their pointer reaches the
   const none = loose.factory.create('no-project');
   expect(loose.manager.get(none.id)!.wardens.size).toBe(0);
   expect(none.stack.getLayer(CHORUS_RECEPTION_LAYER)).toBeUndefined();
+  // Not even one working inside a project's directory: Wardens come from a project, never from a cwd.
+  const inside = loose.factory.create('no-project-in-repo', { cwd: project });
+  expect(inside.meta.projectId).toBeUndefined();
+  expect(loose.manager.get(inside.id)!.wardens.size).toBe(0);
+  await inside.dispatch('worker', 'Add a SET NX lock around the sync job');
+  expect(loose.all('pre')).toEqual([]);
 });
 
 test('a thread named over 30 minutes ago asks its agent to check the name on its next turn, once a window', async () => {

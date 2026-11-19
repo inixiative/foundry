@@ -684,8 +684,8 @@ try {
             ...(refillMs !== undefined ? { refillAfterPrimeMs: refillMs } : {}),
             warm: calls.filter((c) => c.prime === 'warm').length,
             cold: calls.filter((c) => c.prime === 'cold').length,
-            // Advice calls the host did not serve went to primed sessions (fail-open).
-            primed: Math.max(0, advice.decisions.length - calls.length),
+            // Advice calls the host did not serve: skipped unsent (not held, or no host serving).
+            unserved: Math.max(0, advice.decisions.length - calls.length),
             warmMs: pcts(calls.filter((c) => c.prime === 'warm').map((c) => c.ms)),
             coldMs: pcts(calls.filter((c) => c.prime === 'cold').map((c) => c.ms)),
           }

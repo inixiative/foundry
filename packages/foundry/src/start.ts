@@ -832,8 +832,8 @@ configStore.watch();
 // `followProjectActivity`, subscribed once startup is done) and closes after `projectHost.idleMs`
 // without any. Its roster is composed from a hidden thread at the project's root, as a thread of the
 // project composes its Wardens; settings changes and a minute's timer refresh open hosts only (a
-// region's files may change on disk; the same roster changes nothing). Until a host serves, calls
-// go to primed Wardens.
+// region's files may change on disk; the same roster changes nothing). Until a host serves, its
+// Wardens are skipped (refused unsent), never sent to primed.
 const projectHosts = live?.projectHosts;
 const holdProjectRoster = async (projectId: string) => {
   if (!projectHosts || !decisions) return;

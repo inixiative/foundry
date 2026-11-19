@@ -1,6 +1,6 @@
 ---
 name: plan
-description: Use before starting any task that will edit files in a Foundry thread, again when it changes, and before handing back; also when Foundry adds "this thread has no plan yet" to a message. Covers set_plan (record or update the plan, mark to move one outcome), get_plan (read it back after a compaction), clear_plan, and Foundry's own drafts; the person sees the plan in the Plan tab.
+description: Use before starting any task that will edit files in a Foundry thread, again when it changes, and before handing back; also when Foundry adds "this thread has no plan yet" to a message. Covers set_plan (record or update the plan, mark to move one outcome), get_plan (read it back after a compaction), and clear_plan; the person sees the plan in the Plan tab.
 ---
 
 # The thread's plan (`set_plan`)

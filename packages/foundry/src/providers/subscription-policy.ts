@@ -145,8 +145,8 @@ export interface SubscriptionPolicy {
   hedgeAfterMs?: number;
   /**
    * Where a thread's Wardens run: held in its project's host (Claude decisions by default; advice,
-   * guards, reviews and later stages, each skipped while its host does not serve, except a later stage,
-   * which still runs primed then), or primed sessions (Codex decisions, or `decisionRuntime: claude`).
+   * guards, reviews and later stages, each skipped while its host or lane does not serve), or primed
+   * sessions (Codex decisions, or `decisionRuntime: claude`).
    */
   wardens: 'primed' | 'project';
   /** Project hosts: their composition and bounds, defaults filled. */

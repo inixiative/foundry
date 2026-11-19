@@ -18,7 +18,6 @@ import { composeProjectRoster, warmWardens, withChorusThread } from '../src/agen
 import { createSourceResolver } from '../src/agents/thread-factory';
 import { defaultProfileSource } from '../src/providers/default-profiles';
 import {
-  type AdmittedDecisionOpts,
   createPrimedDecisionHost,
   isStageSession,
   isWardenSession,
@@ -538,21 +537,6 @@ test('the decision host launches the project host on the decision login: its own
   });
   expect(tree.processes.length).toBe(0);
   wardens.markOpening('P', false);
-  // Admitted to the host by the queue, but the host is gone by the time it runs: refused unsent too,
-  // never run cold on primed outside the queue's slots.
-  const orphan = newRun(1);
-  const admitted: AdmittedDecisionOpts = {
-    threadId: 'T7:aux:domain:locks',
-    stablePrefix: cache,
-    admittedToProjectHost: true,
-  };
-  await expect(orphan.provider.complete(messages('T7'), admitted)).rejects.toThrow();
-  expect(orphan.snapshot().calls[0]).toMatchObject({
-    failure: 'not-held',
-    reason: 'not-held',
-    valid: false,
-  });
-  expect(tree.processes.length).toBe(0);
   // No host serving: a Warden call that is not held-only (a guard, a brief, a Retry) and a review are
   // refused unsent as well, never run on primed (Aron, 2026-11-18: "it should not be handling warden
   // calls at all").
