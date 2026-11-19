@@ -25,7 +25,9 @@ import {
   projectHostTarget,
 } from '../src/providers/primed-decisions';
 import {
+  dispatcherCount,
   followProjectActivity,
+  MAX_DISPATCHERS,
   type ProjectHostState,
   ProjectWardenHosts,
   type Roster,
@@ -175,6 +177,15 @@ test('a project host holds the roster before any thread; every thread of the pro
   expect(await wardens.projectReady('P', 5_000)).toBe(true);
   expect(wardens.projectState('P')).toMatchObject({ expected: 3, held: 3 });
   expect(await until(() => tree.processes[0]!.exited)).toBe(true);
+});
+
+test('dispatchers: one while the roster fits a slice, else the square root, never over 8 Wardens each or 24 dispatchers', () => {
+  expect([1, 8, 9, 16, 32, 64, 75, 106, 400].map((size) => dispatcherCount(size, 8))).toEqual([
+    1, 1, 3, 4, 6, 8, 10, 14, 24,
+  ]);
+  // A smaller slice setting makes more dispatchers, still capped.
+  expect(dispatcherCount(5, 2)).toBe(3);
+  expect(dispatcherCount(100, 1)).toBe(MAX_DISPATCHERS);
 });
 
 test('the roster is cut into slices of wardensPerDispatcher, each refilled by its own dispatcher', async () => {

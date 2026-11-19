@@ -47,6 +47,26 @@ export interface ProjectWardenHostsConfig {
 
 export type Roster = ReadonlyArray<{ spec: PrimeSpec; standby: string }>;
 
+/** No host runs more dispatchers than this, however large its roster. */
+export const MAX_DISPATCHERS = 24;
+
+/**
+ * How many dispatchers hold a roster of `size` Wardens (Aron, 2026-11-19): one while the whole
+ * roster fits a single dispatcher's slice; past that the square root of the roster, rounded up,
+ * so dispatchers and Wardens per dispatcher grow together, but never more than
+ * `wardensPerDispatcher` Wardens each, and never more than `MAX_DISPATCHERS`. Why: reloads run in
+ * parallel and measured about the same from one to eight Wardens per dispatcher (2026-11-19, 8 to
+ * 64 Wardens), small rosters reloaded a little faster on several dispatchers, and setup slowed as
+ * dispatchers passed about 48.
+ */
+export function dispatcherCount(size: number, wardensPerDispatcher: number): number {
+  if (size <= wardensPerDispatcher) return 1;
+  return Math.min(
+    MAX_DISPATCHERS,
+    Math.max(Math.ceil(Math.sqrt(size)), Math.ceil(size / wardensPerDispatcher)),
+  );
+}
+
 /** A project host's process, started by the decision host (`createPrimedDecisionHost`). */
 export interface ProjectHostProcess {
   readonly pid?: number;
@@ -407,6 +427,7 @@ export class ProjectWardenHosts {
     this._report(projectId, reason);
     let proc: ProjectHostProcess | undefined;
     let orphanedOut = false;
+    const dispatchers = dispatcherCount(size, bounds.wardensPerDispatcher);
     const host = new ClaudeInSessionDecisions({
       model: this.config.model,
       ...(this.config.effort ? { effort: this.config.effort } : {}),
@@ -414,14 +435,11 @@ export class ProjectWardenHosts {
       timeoutMs: this.config.timeoutMs,
       sparesPerRole: spares,
       // Slices refilled at once, each by its own dispatcher (agent-session 0.12.0).
-      dispatchers: Math.max(1, Math.ceil(size / bounds.wardensPerDispatcher)),
+      dispatchers,
       // A used spare's replacement starts while it still answers: every Warden can hold its spares
       // and a replacement per thread advising or guarding at once, plus a cold member per thread
       // reviewing (a review carries no spare: it runs `_direct`), plus the root and its dispatchers.
-      maxSubagents:
-        size * (spares + 2) * bounds.concurrentTurns +
-        2 +
-        2 * Math.max(1, Math.ceil(size / bounds.wardensPerDispatcher)),
+      maxSubagents: size * (spares + 2) * bounds.concurrentTurns + 2 + 2 * dispatchers,
       // One dispatcher's members: past it the host stops serving and is replaced.
       maxOrphans: size * (spares + 1),
       setupDeadlineMs,

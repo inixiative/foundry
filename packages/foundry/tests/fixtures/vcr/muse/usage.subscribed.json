@@ -15,7 +15,7 @@
       {
         "after": 0,
         "stream": "stdout",
-        "data": "{\"allowance\":null,\"reason\":\"server_sent_no_usage\"}",
+        "data": "{\"allowance\":{\"tier\":\"Muse Code Everyday Usage\"}}",
         "kept": true
       }
     ],
@@ -28,9 +28,9 @@
   "recorded": {
     "service": "muse",
     "cli": "muse",
-    "recordedAt": "2026-11-19T02:02:08.196Z",
-    "agentSession": "0.18.0",
+    "recordedAt": "2026-11-19T05:09:04.561Z",
+    "agentSession": "0.20.0",
     "environment": "terminal",
-    "durationMs": 3834
+    "durationMs": 3882
   }
 }
