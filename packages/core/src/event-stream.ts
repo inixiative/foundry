@@ -5,9 +5,7 @@
  */
 import type { ActionPrompt } from './action-prompt';
 import type { LifecycleEvent } from './cache-lifecycle';
-import type { DispatchContext } from './middleware';
 import type { Signal } from './signal';
-import type { Dispatch } from './thread';
 
 /** Session lifecycle events (minimal type for event stream). */
 export interface SessionEvent {
@@ -31,11 +29,9 @@ export type StreamEvent =
       outcome?: 'durable' | 'failed';
     }
   | { kind: 'layer'; threadId: string; event: LifecycleEvent }
-  | { kind: 'dispatch'; threadId: string; dispatch: Dispatch }
   | { kind: 'signal'; threadId: string; signal: Signal }
   | { kind: 'prompt'; threadId: string; prompt: ActionPrompt }
   | { kind: 'session'; event: SessionEvent }
-  | { kind: 'middleware'; threadId: string; phase: 'before' | 'after'; context: DispatchContext }
   | {
       kind: 'error';
       source: string;
@@ -99,10 +95,117 @@ function outageStartedAt(
 }
 
 /**
+ * What one stored event may hold: the stream is a log for viewers, not the signals' record (the
+ * SignalBus keeps those). `nodes` and `chars` bound the whole copy, since a shared subtree is
+ * copied once per reference.
+ */
+export const EVENT_BOUNDS = {
+  string: 2_000,
+  items: 50,
+  depth: 10,
+  nodes: 5_000,
+  chars: 200_000,
+} as const;
+
+/** A value cut while copying an event: where, so its emitter can be fixed. */
+export interface EventCopyProblem {
+  readonly path: string;
+  readonly problem: 'cycle' | 'depth' | 'size' | 'unreadable';
+}
+
+/**
+ * A JSON-safe, bounded copy of `value`: strings cut to `EVENT_BOUNDS.string`, arrays to
+ * `EVENT_BOUNDS.items`, nesting to `EVENT_BOUNDS.depth`, the whole copy to `EVENT_BOUNDS.nodes`
+ * values and `EVENT_BOUNDS.chars` string characters; a cycle becomes "[cycle]", a value that
+ * throws when read "[unreadable]", a function or symbol is dropped, a bigint becomes its digits
+ * and anything with `toJSON` is copied as what it returns (applied once, as `JSON.stringify` does).
+ * Every cut is reported with its path. It never throws.
+ */
+export function boundedPlainCopy(
+  value: unknown,
+  report: (problem: EventCopyProblem) => void = () => {},
+): unknown {
+  const ancestors = new Set<object>();
+  let nodes = 0;
+  let chars = 0;
+  let full = false;
+  const cut = (path: string, problem: EventCopyProblem['problem'], placeholder: string) => {
+    report({ path, problem });
+    return placeholder;
+  };
+  const copy = (item: unknown, path: string, depth: number, converted = false): unknown => {
+    if (full) return undefined;
+    if (++nodes > EVENT_BOUNDS.nodes || chars > EVENT_BOUNDS.chars) {
+      full = true;
+      return cut(path, 'size', '[truncated]');
+    }
+    if (typeof item === 'string') {
+      const kept = Math.min(EVENT_BOUNDS.string, EVENT_BOUNDS.chars - chars);
+      chars += Math.min(item.length, kept);
+      return item.length > kept ? `${item.slice(0, kept)}… [+${item.length - kept} chars]` : item;
+    }
+    if (typeof item === 'number') return Number.isFinite(item) ? item : null;
+    if (item === null || typeof item === 'boolean') return item;
+    if (typeof item === 'bigint') return item.toString();
+    if (typeof item !== 'object') return undefined;
+    if (ancestors.has(item)) return cut(path, 'cycle', '[cycle]');
+    if (depth >= EVENT_BOUNDS.depth) return cut(path, 'depth', '[too deep]');
+    ancestors.add(item);
+    try {
+      const json = (item as { toJSON?: unknown }).toJSON;
+      if (!converted && typeof json === 'function') {
+        const plain = json.call(item);
+        return plain === item ? copyFields(item, path, depth) : copy(plain, path, depth, true);
+      }
+      if (Array.isArray(item)) {
+        const kept: unknown[] = [];
+        for (const [i, entry] of item.slice(0, EVENT_BOUNDS.items).entries()) {
+          if (full) break;
+          kept.push(copy(entry, `${path}[${i}]`, depth + 1) ?? null);
+        }
+        if (item.length > kept.length) kept.push(`… [+${item.length - kept.length} items]`);
+        return kept;
+      }
+      if (item instanceof Error)
+        return { name: item.name, message: copy(item.message, path, depth) };
+      return copyFields(item, path, depth);
+    } catch {
+      return cut(path, 'unreadable', '[unreadable]');
+    } finally {
+      ancestors.delete(item);
+    }
+  };
+  const copyFields = (item: object, path: string, depth: number): Record<string, unknown> => {
+    const out: Record<string, unknown> = {};
+    for (const key of Object.keys(item)) {
+      if (full) break;
+      let entry: unknown;
+      try {
+        entry = (item as Record<string, unknown>)[key];
+      } catch {
+        out[key] = cut(`${path}.${key}`, 'unreadable', '[unreadable]');
+        continue;
+      }
+      const kept = copy(entry, `${path}.${key}`, depth + 1);
+      if (kept !== undefined) out[key] = kept;
+    }
+    return out;
+  };
+  try {
+    return copy(value, '', 0);
+  } catch {
+    return cut('', 'unreadable', '[unreadable]');
+  }
+}
+
+/** How many distinct problem sites are warned about before the stream goes quiet. */
+const MAX_WARNED_SITES = 200;
+
+/**
  * Unified event stream across all threads and sessions.
  *
  * The UI subscribes to this — it's the single source of truth for
- * what's happening in the system. Every layer state change, every dispatch,
+ * what's happening in the system. Every layer state change, every journal write,
  * every signal, every thread spawn shows up here in order.
  *
  * Supports both push (subscribe) and pull (recent history) access patterns.
@@ -118,8 +221,22 @@ export class EventStream {
     this._maxHistory = maxHistory;
   }
 
-  /** Push an event into the stream. */
-  push(event: StreamEvent): void {
+  /** Problem sites already warned about, by event, signal kind, source and path. */
+  private _warned = new Set<string>();
+
+  /**
+   * Push an event into the stream. What is kept, and handed to listeners, is a bounded plain copy
+   * (`boundedPlainCopy`): emitters hand over live objects, and a viewer must always be able to
+   * serialize what it reads. A cycle is warned once per site, naming its path.
+   */
+  push(given: StreamEvent): void {
+    let event = boundedPlainCopy(given, ({ path, problem }) => {
+      const signal = given.kind === 'signal' ? given.signal : undefined;
+      const site = `${given.kind}:${signal?.kind ?? ''}:${signal?.source ?? ''}:${path}`;
+      if (this._warned.has(site) || this._warned.size >= MAX_WARNED_SITES) return;
+      this._warned.add(site);
+      console.warn(`[EventStream] ${problem} at ${site} (copied as a placeholder)`);
+    }) as StreamEvent;
     if (event.kind === 'activity') {
       const before = this._activities.get(event.key);
       const { outageStartedAt: _given, ...fresh } = event;
@@ -157,23 +274,26 @@ export class EventStream {
   recent(opts?: {
     kind?: StreamEvent['kind'];
     threadId?: string;
+    /** Any further condition; scanned newest first, so a bounded read stops at its limit. */
+    where?: (event: StreamEvent) => boolean;
     limit?: number;
   }): ReadonlyArray<StreamEvent> {
-    let events: StreamEvent[] = this._history;
-
-    if (opts?.kind) {
-      events = events.filter((e) => e.kind === opts.kind);
+    const limit = opts?.limit !== undefined && opts.limit > 0 ? opts.limit : 100;
+    const kept: StreamEvent[] = [];
+    for (let i = this._history.length - 1; i >= 0 && kept.length < limit; i--) {
+      const e = this._history[i];
+      if (opts?.kind && e.kind !== opts.kind) continue;
+      // Session events are global.
+      if (
+        opts?.threadId &&
+        e.kind !== 'session' &&
+        !('threadId' in e && e.threadId === opts.threadId)
+      )
+        continue;
+      if (opts?.where && !opts.where(e)) continue;
+      kept.push(e);
     }
-
-    if (opts?.threadId) {
-      events = events.filter((e) => {
-        if (e.kind === 'session') return true; // session events are global
-        return 'threadId' in e && e.threadId === opts.threadId;
-      });
-    }
-
-    const limit = opts?.limit ?? 100;
-    return events.slice(-limit);
+    return kept.reverse();
   }
 
   /** Push an error event — surfaced as a toast in the viewer UI, on its thread when it names one. */

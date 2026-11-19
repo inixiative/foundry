@@ -149,7 +149,7 @@ export const createWebSocketServer = ({
           .run(() => dispatch(ws, msg))
           .catch((err) => {
             console.error(
-              `[Viewer] ws dispatch failed (${msg.action}): ${err instanceof Error ? err.message : String(err)}`,
+              `[Viewer] ws dispatch failed (${msg.action}${msg.action === 'ping' ? '' : ` ${msg.stream}`}): ${err instanceof Error ? err.message : String(err)}`,
             );
             sendTo(ws, {
               type: 'error',
