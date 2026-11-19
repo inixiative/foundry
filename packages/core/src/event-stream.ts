@@ -5,9 +5,7 @@
  */
 import type { ActionPrompt } from './action-prompt';
 import type { LifecycleEvent } from './cache-lifecycle';
-import type { DispatchContext } from './middleware';
 import type { Signal } from './signal';
-import type { Dispatch } from './thread';
 
 /** Session lifecycle events (minimal type for event stream). */
 export interface SessionEvent {
@@ -31,11 +29,9 @@ export type StreamEvent =
       outcome?: 'durable' | 'failed';
     }
   | { kind: 'layer'; threadId: string; event: LifecycleEvent }
-  | { kind: 'dispatch'; threadId: string; dispatch: Dispatch }
   | { kind: 'signal'; threadId: string; signal: Signal }
   | { kind: 'prompt'; threadId: string; prompt: ActionPrompt }
   | { kind: 'session'; event: SessionEvent }
-  | { kind: 'middleware'; threadId: string; phase: 'before' | 'after'; context: DispatchContext }
   | {
       kind: 'error';
       source: string;
@@ -98,6 +94,73 @@ function outageStartedAt(
   return event.state === 'working' ? undefined : event.timestamp;
 }
 
+/** What one stored event may hold: the stream is a log for viewers, not the signals' record (the SignalBus keeps those). */
+export const EVENT_BOUNDS = { string: 2_000, items: 50, depth: 10 } as const;
+
+/** A cycle or unsupported value found while copying an event: where, so its emitter can be fixed. */
+export interface EventCopyProblem {
+  readonly path: string;
+  readonly problem: 'cycle' | 'depth';
+}
+
+/**
+ * A JSON-safe, bounded copy of `value`: strings cut to `EVENT_BOUNDS.string`, arrays to
+ * `EVENT_BOUNDS.items`, nesting to `EVENT_BOUNDS.depth`; a cycle becomes "[cycle]", a function or
+ * symbol is dropped, a bigint becomes its digits and anything with `toJSON` is copied as that.
+ * Every cycle or depth cut is reported with its path.
+ */
+export function boundedPlainCopy(
+  value: unknown,
+  report: (problem: EventCopyProblem) => void = () => {},
+): unknown {
+  const ancestors = new Set<object>();
+  const copy = (item: unknown, path: string, depth: number): unknown => {
+    if (typeof item === 'string')
+      return item.length > EVENT_BOUNDS.string
+        ? `${item.slice(0, EVENT_BOUNDS.string)}… [+${item.length - EVENT_BOUNDS.string} chars]`
+        : item;
+    if (typeof item === 'number') return Number.isFinite(item) ? item : null;
+    if (item === null || typeof item === 'boolean') return item;
+    if (typeof item === 'bigint') return item.toString();
+    if (typeof item !== 'object') return undefined;
+    if (ancestors.has(item)) {
+      report({ path, problem: 'cycle' });
+      return '[cycle]';
+    }
+    if (depth >= EVENT_BOUNDS.depth) {
+      report({ path, problem: 'depth' });
+      return '[too deep]';
+    }
+    const json = (item as { toJSON?: unknown }).toJSON;
+    if (typeof json === 'function') return copy(json.call(item), path, depth);
+    ancestors.add(item);
+    try {
+      if (Array.isArray(item)) {
+        const kept = item
+          .slice(0, EVENT_BOUNDS.items)
+          .map((entry, i) => copy(entry, `${path}[${i}]`, depth + 1) ?? null);
+        if (item.length > EVENT_BOUNDS.items)
+          kept.push(`… [+${item.length - EVENT_BOUNDS.items} items]`);
+        return kept;
+      }
+      if (item instanceof Error)
+        return { name: item.name, message: copy(item.message, path, depth) };
+      const out: Record<string, unknown> = {};
+      for (const [key, entry] of Object.entries(item)) {
+        const kept = copy(entry, `${path}.${key}`, depth + 1);
+        if (kept !== undefined) out[key] = kept;
+      }
+      return out;
+    } finally {
+      ancestors.delete(item);
+    }
+  };
+  return copy(value, '', 0);
+}
+
+/** How many distinct problem sites are warned about before the stream goes quiet. */
+const MAX_WARNED_SITES = 200;
+
 /**
  * Unified event stream across all threads and sessions.
  *
@@ -118,8 +181,22 @@ export class EventStream {
     this._maxHistory = maxHistory;
   }
 
-  /** Push an event into the stream. */
-  push(event: StreamEvent): void {
+  /** Problem sites already warned about, by event, signal kind, source and path. */
+  private _warned = new Set<string>();
+
+  /**
+   * Push an event into the stream. What is kept, and handed to listeners, is a bounded plain copy
+   * (`boundedPlainCopy`): emitters hand over live objects, and a viewer must always be able to
+   * serialize what it reads. A cycle is warned once per site, naming its path.
+   */
+  push(given: StreamEvent): void {
+    let event = boundedPlainCopy(given, ({ path, problem }) => {
+      const signal = given.kind === 'signal' ? given.signal : undefined;
+      const site = `${given.kind}:${signal?.kind ?? ''}:${signal?.source ?? ''}:${path}`;
+      if (this._warned.has(site) || this._warned.size >= MAX_WARNED_SITES) return;
+      this._warned.add(site);
+      console.warn(`[EventStream] ${problem} at ${site} (copied as a placeholder)`);
+    }) as StreamEvent;
     if (event.kind === 'activity') {
       const before = this._activities.get(event.key);
       const { outageStartedAt: _given, ...fresh } = event;
@@ -157,23 +234,26 @@ export class EventStream {
   recent(opts?: {
     kind?: StreamEvent['kind'];
     threadId?: string;
+    /** Any further condition; scanned newest first, so a bounded read stops at its limit. */
+    where?: (event: StreamEvent) => boolean;
     limit?: number;
   }): ReadonlyArray<StreamEvent> {
-    let events: StreamEvent[] = this._history;
-
-    if (opts?.kind) {
-      events = events.filter((e) => e.kind === opts.kind);
+    const limit = opts?.limit !== undefined && opts.limit > 0 ? opts.limit : 100;
+    const kept: StreamEvent[] = [];
+    for (let i = this._history.length - 1; i >= 0 && kept.length < limit; i--) {
+      const e = this._history[i];
+      if (opts?.kind && e.kind !== opts.kind) continue;
+      // Session events are global.
+      if (
+        opts?.threadId &&
+        e.kind !== 'session' &&
+        !('threadId' in e && e.threadId === opts.threadId)
+      )
+        continue;
+      if (opts?.where && !opts.where(e)) continue;
+      kept.push(e);
     }
-
-    if (opts?.threadId) {
-      events = events.filter((e) => {
-        if (e.kind === 'session') return true; // session events are global
-        return 'threadId' in e && e.threadId === opts.threadId;
-      });
-    }
-
-    const limit = opts?.limit ?? 100;
-    return events.slice(-limit);
+    return kept.reverse();
   }
 
   /** Push an error event — surfaced as a toast in the viewer UI, on its thread when it names one. */
