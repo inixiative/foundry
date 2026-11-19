@@ -204,8 +204,9 @@ export function buildSubscriptionDecisions(
     throw Error('Invalid subscription decision bounds');
   const maxConcurrent = config.maxConcurrent ?? 1,
     maxQueuedPerThread = config.maxQueuedPerThread ?? config.maxQueued;
-  // Background classes never take every slot, so a turn waiting to start finds capacity; debug
-  // reasons hold at most a quarter, so they never squeeze guards below half.
+  // Background classes never take every slot, so a turn waiting to start finds capacity. The caps
+  // nest: a call is admitted only while its class and every background class above it are under
+  // their caps, so reviews and debug together never pass review's half.
   const classShare = (priority: number) =>
     priority >= DECISION_PRIORITY.guard
       ? 3 / 4
@@ -216,6 +217,14 @@ export function buildSubscriptionDecisions(
     priority >= DECISION_PRIORITY.turn
       ? maxConcurrent
       : Math.max(1, Math.floor(maxConcurrent * classShare(priority)));
+  const backgroundLevels = [DECISION_PRIORITY.guard, DECISION_PRIORITY.review];
+  const classHasRoom = (priority: number) =>
+    [
+      priority,
+      ...(priority < DECISION_PRIORITY.turn
+        ? backgroundLevels.filter((level) => level > priority)
+        : []),
+    ].every((level) => runningPriorities.filter((p) => p <= level).length < classCap(level));
   const queue: Pending[] = [],
     records = new Map<string, Record>(),
     outcomes = new WeakMap<object, Outcome>();
@@ -291,8 +300,7 @@ export function buildSubscriptionDecisions(
   const next = (): Pending | undefined => {
     if (!queue.length) return undefined;
     const priority = Math.max(...queue.map((p) => p.priority));
-    if (runningPriorities.filter((p) => p <= priority).length >= classCap(priority))
-      return undefined;
+    if (!classHasRoom(priority)) return undefined;
     const candidates = queue.filter((p) => p.priority === priority);
     const served = (p: Pending) => lastServed.get(p.thread) ?? -1;
     const chosen = candidates.reduce((best, p) =>
