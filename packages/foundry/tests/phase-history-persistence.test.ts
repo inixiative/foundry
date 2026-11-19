@@ -116,7 +116,7 @@ test('one real turn: advice, guard and review requests are journalled under thei
   const path = join(dir, 'sessions.sqlite');
   const f = fixture(path);
   closes.push(() => f.store.close());
-  const domainLib = f.runtime.wardens.get('architecture')!;
+  const warden = f.runtime.wardens.get('architecture')!;
   let toolEmitted = 0;
   f.thread.middleware.use('test-tool-observation', async (ctx, next) => {
     // A real tool observation on the live dispatch, with the dispatch's own id: emitted while the dispatch is live.
@@ -157,8 +157,8 @@ test('one real turn: advice, guard and review requests are journalled under thei
   };
   // Turn 1 commits the Warden's own understanding durably (revision 1); turn 2 is the turn under inspection.
   await turn('turn-0', 'Migrate contacts');
-  expect(domainLib.threadKnowledge.revision).toBe(1);
-  expect(domainLib.threadKnowledge.content).toContain('OWN_V1');
+  expect(warden.threadKnowledge.revision).toBe(1);
+  expect(warden.threadKnowledge.content).toContain('OWN_V1');
   const turnId = 'turn-1';
   await turn(turnId, 'Add preferred names');
   expect(toolEmitted).toBe(2);
@@ -178,7 +178,7 @@ test('one real turn: advice, guard and review requests are journalled under thei
 
   // Live source moves on: cache, instructions and understanding all change before the journal is read back.
   f.layer.set('DOMAIN_AFTER: changed after the turn.');
-  domainLib.threadKnowledge.learn(
+  warden.threadKnowledge.learn(
     'OWN_V3: later interpretation.',
     { kind: 'dispatch', id: 'later-work', ok: true, timestamp: 2 },
     'architecture-reviewer',
@@ -202,7 +202,7 @@ test('one real turn: advice, guard and review requests are journalled under thei
     ) ?? annotations.decoration?.participants?.find((p: any) => p.id === 'architecture');
   expect(participant).toBeDefined();
   expect(participant.segments).toEqual({
-    instructions: domainLib.advisePrompt,
+    instructions: warden.advisePrompt,
     domainKnowledge: 'DOMAIN_BEFORE: existing readers keep working.',
     threadKnowledge: 'OWN_V1: legacy callers use display_name (turn 1).',
   });
@@ -218,7 +218,7 @@ test('one real turn: advice, guard and review requests are journalled under thei
   expect(guard).toMatchObject({
     status: 'reported',
     observation: { tool: 'Write', callId: 'call-2', agentId: 'worker', calls: 1 },
-    domainsChecked: ['architecture'],
+    wardensChecked: ['architecture'],
     findings: 0,
   });
   // The fixture's one controlled auxiliary provider answers the guard with its routing-shaped JSON, which is not a guard result:
@@ -253,7 +253,7 @@ test('one real turn: advice, guard and review requests are journalled under thei
   expect(learned).toBeDefined();
   expect(learned.job.base.revision).toBe(1);
   expect(learned.revision).toBe(2); // persistence status is a separate runtime record, not asserted here
-  expect(domainLib.threadKnowledge.revision).toBeGreaterThanOrEqual(2);
+  expect(warden.threadKnowledge.revision).toBeGreaterThanOrEqual(2);
   expect(learned.request).toMatchObject({
     status: 'supplied',
     phase: 'review',
@@ -265,7 +265,7 @@ test('one real turn: advice, guard and review requests are journalled under thei
     content: chartered('CUSTOM_REVIEW: track architecture decisions.'),
   });
   const reviewUser = learned.request.messages[1].content;
-  expect(reviewUser).toContain(reviewResponseProtocol(domainLib.threadKnowledge.maxChars));
+  expect(reviewUser).toContain(reviewResponseProtocol(warden.threadKnowledge.maxChars));
   for (const part of [
     '## Completed work',
     `review: ${learned.job.id}`,

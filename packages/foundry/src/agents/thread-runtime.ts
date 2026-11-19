@@ -1703,10 +1703,13 @@ class ThreadRuntimeImpl implements ThreadRuntime {
             { domain: string; hash: string; revision?: number }
           >();
           for (const c of plan.contributions) {
-            const lib = wardens.get(c.domain);
-            if (!lib) continue;
-            assessedByLayer.set(lib.cache.id, { domain: c.domain, hash: c.provenance.cacheHash });
-            assessedByLayer.set(lib.threadKnowledge.layer.id, {
+            const warden = wardens.get(c.domain);
+            if (!warden) continue;
+            assessedByLayer.set(warden.cache.id, {
+              domain: c.domain,
+              hash: c.provenance.cacheHash,
+            });
+            assessedByLayer.set(warden.threadKnowledge.layer.id, {
               domain: c.domain,
               hash: c.provenance.threadKnowledgeHash,
               revision: c.provenance.threadKnowledgeRevision,
@@ -2274,7 +2277,7 @@ class ThreadRuntimeImpl implements ThreadRuntime {
           correlation,
           status: 'reported',
           finishedAt: Date.now(),
-          domainsChecked: report.domainsChecked,
+          wardensChecked: report.wardensChecked,
           skipped: report.skipped,
           prefiltered: report.prefiltered,
           ...(report.prefilter ? { prefilter: report.prefilter } : {}),
@@ -2285,7 +2288,6 @@ class ThreadRuntimeImpl implements ThreadRuntime {
             severity: finding.severity,
             description: finding.description.slice(0, 500),
             ...(finding.location ? { location: finding.location.slice(0, 200) } : {}),
-            ...(finding.suggestion ? { suggestion: finding.suggestion.slice(0, 500) } : {}),
           })),
           elapsed: report.elapsed,
           requests: requestsJournal(),
@@ -2313,7 +2315,7 @@ class ThreadRuntimeImpl implements ThreadRuntime {
       Object.assign(entry, {
         status: 'reported',
         finishedAt: Date.now(),
-        domainsChecked: report.domainsChecked,
+        wardensChecked: report.wardensChecked,
         outcomes: report.outcomes,
         failed: report.failed,
         findings: report.findings.length,
@@ -2322,7 +2324,7 @@ class ThreadRuntimeImpl implements ThreadRuntime {
       });
       if (report.findings.length > 0) {
         this._log(
-          `  [flow:${this.thread.id}] guard: ${report.findings.length} advisory findings from ${report.domainsChecked.join(', ')} over ${activity.observations.length} call(s) (${report.elapsed}ms)`,
+          `  [flow:${this.thread.id}] guard: ${report.findings.length} advisory findings from ${report.wardensChecked.join(', ')} over ${activity.observations.length} call(s) (${report.elapsed}ms)`,
         );
       }
     } catch (err) {
@@ -2708,7 +2710,7 @@ class ThreadRuntimeImpl implements ThreadRuntime {
     // As before a turn: a Warden whose cache is still warming (a thread just started) is waited for
     // within the deadline, not skipped as cold.
     const shortfalls = await flow.warmWithin(
-      [...this.wardens].map(([id, lib]) => ({ id, warm: () => lib.warm() })),
+      [...this.wardens].map(([id, warden]) => ({ id, warm: () => warden.warm() })),
     );
     for (const shortfall of shortfalls)
       this._warn(
@@ -3145,8 +3147,8 @@ class ThreadRuntimeImpl implements ThreadRuntime {
   knowledgeSnapshot(): ThreadKnowledgeBundle {
     const owner = this._owner();
     const domains: Record<string, ThreadKnowledgeSnapshot> = {};
-    for (const [domain, lib] of this.wardens) {
-      domains[domain] = lib.threadKnowledge.snapshot(owner);
+    for (const [domain, warden] of this.wardens) {
+      domains[domain] = warden.threadKnowledge.snapshot(owner);
     }
     return { ...owner, capturedAt: Date.now(), domains };
   }
@@ -3178,9 +3180,9 @@ class ThreadRuntimeImpl implements ThreadRuntime {
     }
     const entries = Object.entries(bundle.domains ?? {});
     for (const [domain, snapshot] of entries) {
-      const lib = this.wardens.get(domain);
-      if (!lib) throw new Error(`Knowledge bundle names unknown domain "${domain}"`);
-      lib.threadKnowledge.validate(snapshot, owner);
+      const warden = this.wardens.get(domain);
+      if (!warden) throw new Error(`Knowledge bundle names unknown domain "${domain}"`);
+      warden.threadKnowledge.validate(snapshot, owner);
     }
     this._epoch += 1;
     for (const [domain, snapshot] of entries) {
@@ -3195,8 +3197,8 @@ class ThreadRuntimeImpl implements ThreadRuntime {
   private _onCompletedWork(signalId: string, observation: DispatchObservation): void {
     if (this._disposed) return;
     if (observation.threadId && observation.threadId !== this.thread.id) {
-      for (const lib of this.wardens.values())
-        lib.threadKnowledge.record({
+      for (const warden of this.wardens.values())
+        warden.threadKnowledge.record({
           decision: 'foreign',
           author: 'runtime',
           reason: 'dispatch names another thread; private payload was not admitted',
@@ -3242,8 +3244,8 @@ class ThreadRuntimeImpl implements ThreadRuntime {
 
     if (!observation.ok) {
       // Failed work is evidence of failure only. Nothing it produced is promoted.
-      for (const [domain, lib] of this.wardens) {
-        const record = lib.threadKnowledge.record({
+      for (const [domain, warden] of this.wardens) {
+        const record = warden.threadKnowledge.record({
           decision: 'rejected',
           reason: `failed work is not promoted: ${observation.error ?? 'unknown error'}`,
           evidence,
@@ -3284,11 +3286,11 @@ class ThreadRuntimeImpl implements ThreadRuntime {
             .filter(Boolean)
             .join('\n\n'),
           undefined,
-          [...this.wardens.values()].filter((lib) => lib.cache.content),
+          [...this.wardens.values()].filter((warden) => warden.cache.content),
         )
         .catch(() => undefined),
     );
-    for (const [domain, lib] of this.wardens) {
+    for (const [domain, warden] of this.wardens) {
       const lease = this._closedReviews.get(domain)!;
       if (lease.closed) {
         this._deferReview(
@@ -3315,7 +3317,7 @@ class ThreadRuntimeImpl implements ThreadRuntime {
           while (!this._closedReviews.get(domain)!.closed && !this._disposed) {
             const nextInput = this._queuedEvidence.get(domain)?.shift();
             if (!nextInput) break;
-            await this._reviewWith(domain, lib, nextInput);
+            await this._reviewWith(domain, warden, nextInput);
           }
         })
         .catch((err) => {
@@ -3324,14 +3326,14 @@ class ThreadRuntimeImpl implements ThreadRuntime {
         .finally(() => {
           this._learningQueues.delete(domain);
           if (this._reviewStates.get(domain)?.capacity === 'settled')
-            void this._releaseReview(domain, lib);
+            void this._releaseReview(domain, warden);
         });
       this._learningQueues.set(domain, next);
     }
   }
 
-  private async _reviewWith(domain: string, lib: Warden, input: ReviewInput): Promise<void> {
-    const knowledge = lib.threadKnowledge;
+  private async _reviewWith(domain: string, warden: Warden, input: ReviewInput): Promise<void> {
+    const knowledge = warden.threadKnowledge;
     const author = `${domain}-reviewer`;
     if (this._disposed) {
       void this._emitLearning(
@@ -3391,10 +3393,10 @@ class ThreadRuntimeImpl implements ThreadRuntime {
     }
     // A composition over the role's budget is a configuration error, reported per review; the lane
     // stays open so a settings change (a raised budget, an opt-out) takes effect on the next one.
-    const segments = lib.reviewContext();
+    const segments = warden.reviewContext();
     // Captured with the segments: what they are composed of (journalled as version ids).
-    const composition = lib.composition('review');
-    const over = lib.budgetError(segments.instructions, segments.domainKnowledge);
+    const composition = warden.composition('review');
+    const over = warden.budgetError(segments.instructions, segments.domainKnowledge);
     if (over) {
       await this._emitLearning(
         domain,
@@ -3414,18 +3416,18 @@ class ThreadRuntimeImpl implements ThreadRuntime {
       admittedAt,
       eligibleUntil: admittedAt + this._hardTimeoutMs,
       segments,
-      requested: lib.reviewOptions,
-      providerId: lib.reviewProviderId,
+      requested: warden.reviewOptions,
+      providerId: warden.reviewProviderId,
       budgets: {
         maxKnowledgeChars: knowledge.maxChars,
         maxResponseChars: 20_000,
-        nativeTokens: ['claude-code', 'codex'].includes(lib.reviewProviderId)
+        nativeTokens: ['claude-code', 'codex'].includes(warden.reviewProviderId)
           ? 'requested-unenforced'
           : 'requested-unverified',
         nativeEffort:
-          lib.reviewOptions.thinking === undefined
+          warden.reviewOptions.thinking === undefined
             ? 'not-requested'
-            : ['claude-code', 'codex'].includes(lib.reviewProviderId)
+            : ['claude-code', 'codex'].includes(warden.reviewProviderId)
               ? 'requested-unenforced'
               : 'requested-unverified',
       },
@@ -3552,8 +3554,8 @@ class ThreadRuntimeImpl implements ThreadRuntime {
     const inspect = (): Promise<boolean> => {
       if (inspecting) return inspecting;
       inspecting = (async () => {
-        if (!registered?.admissionId || !registered.owner || !lib.canInspectReview) return false;
-        const snapshot = await lib.inspectReview(registered.owner, registered.admissionId);
+        if (!registered?.admissionId || !registered.owner || !warden.canInspectReview) return false;
+        const snapshot = await warden.inspectReview(registered.owner, registered.admissionId);
         if (
           !snapshot ||
           snapshot.evidence.admissionId !== registered.admissionId ||
@@ -3566,7 +3568,7 @@ class ThreadRuntimeImpl implements ThreadRuntime {
         auditNative(retained);
         if (retained.nativeOutcome === 'completed')
           nativeReady({
-            ...lib.parseReviewAnswer(retained.content),
+            ...warden.parseReviewAnswer(retained.content),
             admission: 'attempted',
             capacity: state.capacity,
           });
@@ -3589,7 +3591,7 @@ class ThreadRuntimeImpl implements ThreadRuntime {
                 'exact native admission and RPC settled; closed eligibility and deferred evidence remain closed',
               ),
             );
-            await this._releaseReview(domain, lib, state);
+            await this._releaseReview(domain, warden, state);
           }
         }
         return true;
@@ -3623,7 +3625,7 @@ class ThreadRuntimeImpl implements ThreadRuntime {
     };
     let outcome: ReviewResult;
     try {
-      const local = lib
+      const local = warden
         .review(
           freezeOwned(structuredClone(input)),
           job,
@@ -3743,7 +3745,7 @@ class ThreadRuntimeImpl implements ThreadRuntime {
     }
     // Capability and current observation availability are separate. A read miss
     // or transient exception cannot close an admitted job's bounded eligibility.
-    const inspectable = !!registered && lib.canInspectReview;
+    const inspectable = !!registered && warden.canInspectReview;
     if (inspectable) {
       const observed = await inspect();
       // Older adapters can explicitly establish local settlement without an
@@ -3773,7 +3775,7 @@ class ThreadRuntimeImpl implements ThreadRuntime {
       }
       if (retained?.nativeOutcome === 'completed')
         outcome = {
-          ...lib.parseReviewAnswer(retained.content),
+          ...warden.parseReviewAnswer(retained.content),
           admission: 'attempted',
           capacity: state.capacity,
         };
@@ -3997,16 +3999,16 @@ class ThreadRuntimeImpl implements ThreadRuntime {
 
   private async _releaseReview(
     domain: string,
-    lib: Warden,
+    warden: Warden,
     state = this._reviewStates.get(domain),
   ): Promise<void> {
     if (!state || state.capacity !== 'settled' || state.cleanup) return;
     state.cleanup = 'releasing';
-    const nativeOwned = !!state.native?.admissionId && lib.canInspectReview;
+    const nativeOwned = !!state.native?.admissionId && warden.canInspectReview;
     const audit = () => {
       void this._emitLearning(
         domain,
-        lib.threadKnowledge.record({
+        warden.threadKnowledge.record({
           decision: 'native-cleanup',
           job: state.job,
           evidence: state.job.evidence,
@@ -4025,7 +4027,7 @@ class ThreadRuntimeImpl implements ThreadRuntime {
       audit();
     }
     try {
-      state.cleanup = await lib.releaseReviewIdle(state.native);
+      state.cleanup = await warden.releaseReviewIdle(state.native);
     } catch {
       state.cleanup = 'failed';
     }
@@ -4062,12 +4064,12 @@ class ThreadRuntimeImpl implements ThreadRuntime {
     const swaps: Array<() => void> = [];
     for (const dc of domains) {
       next.add(dc.domain);
-      const lib = this.wardens.get(dc.domain);
+      const warden = this.wardens.get(dc.domain);
       const held = this._roleLayers.get(dc.domain);
       const same = dc.configuredAgentId
         ? held?.role === dc.configuredAgentId
-        : !!dc.layerId && lib?.cache === this.thread.stack.getLayer(dc.layerId);
-      if (!lib || !same) {
+        : !!dc.layerId && warden?.cache === this.thread.stack.getLayer(dc.layerId);
+      if (!warden || !same) {
         deferred.push(`Warden ${dc.domain} applies to new threads`);
         continue;
       }
@@ -4106,7 +4108,7 @@ class ThreadRuntimeImpl implements ThreadRuntime {
         ] as const);
       swaps.push(() => {
         for (const [layer, sources] of fresh) replaceRoleSources(layer, sources, this._wardenScope);
-        lib.reconfigure(dc);
+        warden.reconfigure(dc);
       });
     }
     for (const swap of swaps) swap();
@@ -4117,10 +4119,10 @@ class ThreadRuntimeImpl implements ThreadRuntime {
   dispose(): void {
     if (this._disposed) return;
     this._disposed = true;
-    for (const [domain, lib] of this.wardens) {
+    for (const [domain, warden] of this.wardens) {
       this._closeReview(domain, 'runtime disposed; queued work was not admitted');
       if (this._reviewStates.get(domain)?.capacity === 'settled')
-        void this._releaseReview(domain, lib);
+        void this._releaseReview(domain, warden);
     }
 
     for (const unsub of this._unsubs) unsub();

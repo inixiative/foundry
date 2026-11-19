@@ -119,9 +119,9 @@ export async function withChorusThread<T>(
 /** Warm every Warden of a hidden thread and ask each to pre-start (what a live thread does after a turn). */
 export async function warmWardens(live: ThreadRuntime): Promise<void> {
   await Promise.all(
-    [...live.wardens.values()].map(async (lib) => {
-      await lib.warm();
-      lib.prestart();
+    [...live.wardens.values()].map(async (warden) => {
+      await warden.warm();
+      warden.prestart();
     }),
   );
 }

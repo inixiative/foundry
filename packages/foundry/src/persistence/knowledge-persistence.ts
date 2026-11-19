@@ -239,10 +239,10 @@ export class KnowledgePersistence {
     if (!bundle.domains || typeof bundle.domains !== 'object' || Array.isArray(bundle.domains))
       throw new Error('Invalid knowledge domain map');
     for (const [domain, snapshot] of Object.entries(bundle.domains)) {
-      const librarian = runtime.wardens.get(domain);
-      if (!librarian)
+      const warden = runtime.wardens.get(domain);
+      if (!warden)
         throw new Error(`Stored knowledge domain requires a configuration migration: ${domain}`);
-      librarian.threadKnowledge.validate(snapshot, owner);
+      warden.threadKnowledge.validate(snapshot, owner);
       if (!Number.isSafeInteger(snapshot.revision) || snapshot.evidence.length > 200)
         throw new Error(`Invalid knowledge revision or evidence bound: ${domain}`);
     }

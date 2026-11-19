@@ -12,7 +12,7 @@ import { oneCall, Warden } from '../src/agents/warden';
 import { chartered, GUARD_RESPONSE_PROTOCOL, validateGuardResponse } from '../src/classify';
 
 // Author cases for the guard-phase outcome contract (Fable, CORE-006 LI). Controlled providers only; no model.
-// The parent's protected domain-guard-evidence fixture proves failures differ from a completed all-clear;
+// The parent's protected warden-guard-evidence fixture proves failures differ from a completed all-clear;
 // these pin the statuses, bounded errors, protocol/parts layout, private-state isolation and the report.
 
 const observation = {
@@ -329,7 +329,7 @@ test("orchestrator: the guard report and emitted observation carry each domain's
   });
   try {
     const report = await flow.postAction(oneCall(observation));
-    expect(report.domainsChecked).toEqual(['architecture', 'testing', 'security']);
+    expect(report.wardensChecked).toEqual(['architecture', 'testing', 'security']);
     expect(report.skipped).toEqual([]);
     expect(report.findings).toEqual([
       { severity: 'advisory', description: 'Add a migration test', pointer: { relevant: false } },

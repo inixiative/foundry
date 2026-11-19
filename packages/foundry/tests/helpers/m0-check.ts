@@ -15,8 +15,8 @@ const own = [
   'packages/foundry/src/agents/thread-runtime.ts',
   'packages/foundry/src/agents/flow-orchestrator.ts',
   'packages/foundry/src/agents/warden.ts',
-  'packages/foundry/tests/domain-middleware-loop.test.ts',
-  'packages/foundry/tests/helpers/m0-domain-loop.ts',
+  'packages/foundry/tests/warden-middleware-loop.test.ts',
+  'packages/foundry/tests/helpers/m0-warden-loop.ts',
   'packages/foundry/tests/helpers/m0-check.ts',
 ];
 const dependencies = [
@@ -39,12 +39,12 @@ async function hashes(files: string[]) {
   );
 }
 const before = { owned: await hashes(own), dependencies: await hashes(dependencies) };
-const scenario = ['packages/foundry/tests/domain-middleware-loop.test.ts'];
+const scenario = ['packages/foundry/tests/warden-middleware-loop.test.ts'];
 const focused = [
   ...scenario,
   ...[
     'owned-learning',
-    'domain-learning',
+    'warden-learning',
     'learning-capacity',
     'native-learning-settlement',
     'knowledge-recovery',
@@ -71,7 +71,7 @@ const commands =
           '--types',
           'bun',
           ...scenario,
-          'packages/foundry/tests/helpers/m0-domain-loop.ts',
+          'packages/foundry/tests/helpers/m0-warden-loop.ts',
           'packages/foundry/tests/helpers/m0-check.ts',
         ],
         ['git', 'diff', '--check'],

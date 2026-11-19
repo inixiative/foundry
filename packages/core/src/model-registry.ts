@@ -61,8 +61,9 @@ export type MainThreadLab = (typeof MAIN_THREAD_LABS)[number];
  * - judgment        the decision provider: which archive, which middleware,
  *                   which domain.
  * - execution       the executor kind (Artificer): tools on, multi-turn.
- * - warden-advice   the `warden` flow role (a Warden): read an owned domain layer
- *                   and advise/guard from it.
+ * - warden-advice   the `warden` flow role (a Warden): answer whether a moment
+ *                   touches its region and point at where it is written
+ *                   (advise, guard), from its region's composed knowledge.
  * - learning-review the background `learning.review` pass over finished work.
  * - tool-use        CompletionOpts.tools / toolDefinitions.
  * - reasoning       CompletionOpts.thinking (reasoning effort / think budget).

@@ -2,7 +2,7 @@ import { expect, test } from 'bun:test';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { join, resolve } from 'node:path';
-import { bounded, gate, m0Scenario } from '../helpers/m0-domain-loop';
+import { bounded, gate, m0Scenario } from '../helpers/m0-warden-loop';
 
 // Ordering controls for historical navigation ownership: real M0 factory/journal/viewer/store in isolated
 // Chromium; only HTTP delivery order is controlled at the disposable server. No native or model process.

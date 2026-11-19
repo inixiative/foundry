@@ -329,7 +329,6 @@ test('turn flow: a sealed plan supplies timings; a running turn with no delivery
     plan: {
       elapsed: 42,
       layers: ['architecture'],
-      wardensConsulted: ['architecture'],
       outstanding: [{ kind: 'advise', participant: 'security' }],
       contributions: [
         {

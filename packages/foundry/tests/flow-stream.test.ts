@@ -25,7 +25,7 @@ import {
 } from '../src/viewer/ui/flow-graph.js';
 import { createWebSocketServer } from '../src/ws/handler';
 import { connectStreams } from './helpers/data-stream';
-import { instructions, interpretation, m0Scenario } from './helpers/m0-domain-loop';
+import { instructions, interpretation, m0Scenario } from './helpers/m0-warden-loop';
 
 const cleanup: Array<() => void | Promise<void>> = [];
 afterEach(async () => {

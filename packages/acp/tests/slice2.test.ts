@@ -471,7 +471,7 @@ test('thinking, the plan tool and Warden notes project as thought chunks, a plan
       record: {
         observation: { tool: 'Edit' },
         status: 'reported',
-        domainsChecked: ['security'],
+        wardensChecked: ['security'],
         findings: 1,
         notes: [{ severity: 'advisory', description: 'Secrets file touched', location: '.env' }],
       },

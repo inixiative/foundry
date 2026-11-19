@@ -102,7 +102,7 @@ export async function m0Scenario(options: ScenarioOptions = {}) {
   // every directory above them, and a checkout may sit under other CLAUDE.md files.
   const parent = process.env.FOUNDRY_M0_OUTPUT_DIR ?? tmpdir();
   await mkdir(parent, { recursive: true });
-  const dir = await mkdtemp(join(parent, 'm0-domain-loop-'));
+  const dir = await mkdtemp(join(parent, 'm0-warden-loop-'));
   const calls: Call[] = [],
     signals: Array<{ thread: string; signal: Signal }> = [],
     turns: unknown[] = [],

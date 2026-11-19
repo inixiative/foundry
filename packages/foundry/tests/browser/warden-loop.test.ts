@@ -12,7 +12,7 @@ import {
   learned,
   m0Scenario,
   noComment,
-} from '../helpers/m0-domain-loop';
+} from '../helpers/m0-warden-loop';
 
 // M1/M2 warden-loop inspection over the production factory/runtime/HTTP/SQLite (Astra's M0 helper,
 // unedited, composed with a disposable server). Controlled reviewer/central answers only; no model or
@@ -55,7 +55,7 @@ test('Warden loop: before work, after post-hooks (pending, commit, NO_COMMENT), 
     'packages/foundry/src/viewer/ui/inspector-data.js',
     'packages/foundry/src/viewer/ui/store.js',
     'packages/foundry/src/viewer/ui/thread-tree.js',
-    'packages/foundry/tests/helpers/m0-domain-loop.ts',
+    'packages/foundry/tests/helpers/m0-warden-loop.ts',
   ])
     report.sourceHashes[f] = sha(f);
   const held = gate<void>();

@@ -32,10 +32,9 @@ export function guardComments(turn: unknown): GuardComment[] {
     const tool = isRecord(record.observation) ? record.observation.tool : undefined;
     const lines = notes.map((note) => {
       const where = typeof note.location === 'string' ? ` (${note.location})` : '';
-      const fix = typeof note.suggestion === 'string' ? ` Suggestion: ${note.suggestion}` : '';
-      return `- Note: ${String(note.description)}${where}.${fix}`;
+      return `- Note: ${String(note.description)}${where}.`;
     });
-    const domains = Array.isArray(record.domainsChecked) ? record.domainsChecked.join(', ') : '';
+    const domains = Array.isArray(record.wardensChecked) ? record.wardensChecked.join(', ') : '';
     return [
       {
         id: row.id,

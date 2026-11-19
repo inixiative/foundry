@@ -147,7 +147,7 @@ describe('parallel message decoration', () => {
     const slow = plan.contributions.find((c) => c.domain === 'slow')!;
     expect(callOutcomeLabel(slow.outcome)).toBe('failed:timeout');
     expect(plan.snippets).toEqual(['ADVICE-fast']);
-    expect(plan.wardensConsulted).toEqual(['fast', 'slow']);
+    expect(plan.contributions.map((c) => c.domain)).toEqual(['fast', 'slow']);
     expect(Object.isFrozen(plan)).toBe(true);
     expect(Object.isFrozen(plan.contributions)).toBe(true);
 

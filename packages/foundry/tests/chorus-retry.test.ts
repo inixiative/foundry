@@ -298,7 +298,7 @@ test('a failed guard is degraded; Retry guards the same calls with only the fail
     retryOf: outcome.id,
     correlation: 'retry',
     status: 'reported',
-    domainsChecked: ['architecture'],
+    wardensChecked: ['architecture'],
     failed: [],
   });
   expect(retried.record.degraded).toBeUndefined();

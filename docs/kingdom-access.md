@@ -58,7 +58,7 @@ Provider OAuth renewal remains Kingdom's responsibility under the Integration's 
 
 Controlled tests cover project/thread isolation, credential schema/permissions, fresh revocation, wrong grants/resources, concurrent attribution, redirects, oversized responses, and uncertain executions without retries. An actual SDK subprocess uses the production native bridge and persists the original admission's execution reference. The Kingdom test additionally runs the real access routes and PostgreSQL locks: two concurrent Foundry reads sharing one remaining request result in one provider dispatch, followed by denial after token revocation.
 
-All provider content in these checks is synthetic. Grant editing and access inspection are available in the viewer. Live accounts, capacity/spread controls and the bounded native domain-learning pilot remain separate rollout work.
+All provider content in these checks is synthetic. Grant editing and access inspection are available in the viewer. Live accounts, capacity/spread controls and the bounded native Warden learning pilot remain separate rollout work.
 
 MCP and a future CLI wrapper should use the same Kingdom authorization layer. They present an enrolled Signet rather than an upstream password. Each enrollment is Signet-scoped; discovery across all permitted Integrations remains a separate authorization change, not something the frontend silently assumes.
 

@@ -152,7 +152,7 @@ test('a confident no skips the Warden, journalled with its score; an unsure one 
     { domain: 'voice', score: 0.05, skipBelow: 0.2 },
     { domain: 'schema', score: 0.15, skipBelow: 0.2 },
   ]);
-  expect(report.domainsChecked).toEqual(['ship']);
+  expect(report.wardensChecked).toEqual(['ship']);
   expect(calls).toEqual([{ domain: 'ship', phase: 'guard' }]);
 });
 
@@ -174,7 +174,7 @@ test('a missing model fails open: every Warden is asked, and the warning fires o
   ]);
   expect(plan.prefilter).toMatchObject({ status: 'unavailable' });
   const report = await flow.postAction(oneCall({ tool: 'Edit', input: {} }));
-  expect(report.domainsChecked).toEqual(['voice', 'schema']);
+  expect(report.wardensChecked).toEqual(['voice', 'schema']);
   expect(report.prefilter).toMatchObject({ status: 'unavailable' });
   expect(calls).toHaveLength(4);
   expect(warnings).toEqual([{ ok: false, reason: 'TypeSafe decision transport failed' }]);

@@ -653,8 +653,6 @@ export interface GuardFinding {
   description: string;
   /** Which file/line/tool the finding relates to. */
   location?: string;
-  /** Suggested fix, if any. */
-  suggestion?: string;
   /** The charter's output contract read off the description (`Look over here: …`). */
   pointer?: WardenPointer;
 }
@@ -1871,7 +1869,6 @@ export class Warden {
           severity: finding.severity,
           description: finding.description,
           location: finding.location,
-          suggestion: finding.suggestion,
           tool: tools.join(', '),
           tools,
           turnId: activity.turnId,

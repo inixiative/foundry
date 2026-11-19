@@ -3,7 +3,7 @@ import { expect, test } from 'bun:test';
 import type { StreamEvent } from '@inixiative/foundry-core';
 import { selectedDetailTarget } from '../src/viewer/ui/conversation-state.js';
 import { guardOutcomes } from '../src/viewer/ui/inspector-data.js';
-import { gate, learned, m0Scenario, noComment, until } from './helpers/m0-domain-loop';
+import { gate, learned, m0Scenario, noComment, until } from './helpers/m0-warden-loop';
 
 test('selected detail refresh requires the original active thread and exact turn', () => {
   const selected = { threadId: 'a', turnId: 'original' };

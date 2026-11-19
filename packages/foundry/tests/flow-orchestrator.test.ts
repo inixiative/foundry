@@ -146,7 +146,7 @@ describe('FlowOrchestrator', () => {
       const plan = await orchestrator.preMessage('Fix the JWT validation in auth middleware');
 
       expect(plan.layers).toContain('auth-conventions');
-      expect(plan.wardensConsulted).toEqual(['convention', 'security']);
+      expect(plan.contributions.map((c) => c.domain)).toEqual(['convention', 'security']);
     });
 
     it('does NOT include testing layers for auth message', async () => {
@@ -232,8 +232,8 @@ describe('FlowOrchestrator', () => {
         }),
       );
 
-      expect(report.domainsChecked).toContain('convention');
-      expect(report.domainsChecked).toContain('security');
+      expect(report.wardensChecked).toContain('convention');
+      expect(report.wardensChecked).toContain('security');
     });
 
     it('skips convention guard on file_read', async () => {
@@ -245,8 +245,8 @@ describe('FlowOrchestrator', () => {
         }),
       );
 
-      expect(report.domainsChecked).not.toContain('convention');
-      expect(report.domainsChecked).not.toContain('security');
+      expect(report.wardensChecked).not.toContain('convention');
+      expect(report.wardensChecked).not.toContain('security');
     });
 
     it('reports the advisory findings a Warden points at', async () => {
@@ -323,7 +323,7 @@ describe('FlowOrchestrator', () => {
       );
 
       // Convention guard should have flagged snake_case
-      expect(report.domainsChecked).toContain('convention');
+      expect(report.wardensChecked).toContain('convention');
 
       // 4. Librarian should have updated thread state throughout
       expect(librarian.state.inContext.length).toBeGreaterThan(0);

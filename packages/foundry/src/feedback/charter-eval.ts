@@ -373,9 +373,7 @@ function rowOf(result: AdviseResult | GuardResult, classified?: ClassifyResult):
       : {
           noComment: false,
           ...staged,
-          text: result.findings
-            .map((f) => [f.description, f.suggestion].filter(Boolean).join(' '))
-            .join('\n'),
+          text: result.findings.map((f) => f.description).join('\n'),
         };
   // Advice without a snippet adds nothing a Warden would say to the thread.
   return result.noComment || !result.snippets.length
@@ -454,7 +452,7 @@ async function ask(
           sink(domain, reading);
         }
       : undefined;
-    const lib = librarian(
+    const instance = makeWarden(
       options,
       who,
       stages,
@@ -464,7 +462,7 @@ async function ask(
     );
     const fromOpts = from ? { from: { index: from.stage + 1, carried: from } } : {};
     if (trigger === 'user-message') {
-      const advice = await lib.advise(probe.ask ?? '', undefined, {
+      const advice = await instance.advise(probe.ask ?? '', undefined, {
         ...threadKnowledge(probe, who),
         ...fromOpts,
       });
@@ -474,7 +472,7 @@ async function ask(
         debugMs,
       };
     }
-    const guard = await lib.guard(
+    const guard = await instance.guard(
       oneCall({ tool: PROBE_MOMENT_TOOL, input: { turn: probe.moment } }),
       undefined,
       { ...threadKnowledge(probe, who), ...fromOpts },
@@ -606,20 +604,20 @@ export async function evalProjectRoster(
   };
   const stages = options.stages ?? SINGLE_STAGE;
   for (const warden of wardens) {
-    const lib = librarian(
+    const instance = makeWarden(
       { ...options, probes: [], wardensFor: () => [], warden: recording },
       warden,
       stages,
       (provider) => provider,
     );
-    await lib.warm();
-    lib.prestart();
+    await instance.warm();
+    instance.prestart();
   }
   return [...held.values()];
 }
 
 /** A Warden as live builds it, bound to the eval's providers: one stage per config, each its own doc. */
-function librarian(
+function makeWarden(
   options: CharterEvalOptions,
   warden: EvalWarden,
   stages: readonly StageConfig[],

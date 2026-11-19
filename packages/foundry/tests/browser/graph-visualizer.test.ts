@@ -2,7 +2,7 @@ import { expect, test } from 'bun:test';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { join, resolve } from 'node:path';
-import { m0Scenario } from '../helpers/m0-domain-loop';
+import { m0Scenario } from '../helpers/m0-warden-loop';
 import { releaseAll } from '../helpers/release-all';
 
 // Graph panel over the production factory/runtime/HTTP/SQLite (the M0 domain loop: two Wardens,

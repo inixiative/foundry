@@ -13,7 +13,7 @@ import {
   noComment,
   privateReason,
   until,
-} from './helpers/m0-domain-loop';
+} from './helpers/m0-warden-loop';
 
 type Turn = Awaited<ReturnType<Awaited<ReturnType<typeof m0Scenario>>['send']>>;
 type MessageBody = {

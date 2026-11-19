@@ -202,8 +202,6 @@ export interface InjectionPlan {
   layers: string[];
   /** Inline snippets from contributing domains, in configured domain order. */
   snippets: string[];
-  /** Every domain that assessed the input. */
-  wardensConsulted: string[];
   /** Time taken for the full pre-message flow (ms). */
   elapsed: number;
   /** Whether this plan was generated fresh or is a reuse of a previous plan. */
@@ -351,7 +349,7 @@ export interface GuardReport {
   /** All findings across all domains. */
   findings: GuardFinding[];
   /** Which domain guards were triggered (completed or not). */
-  domainsChecked: string[];
+  wardensChecked: string[];
   /** Domains whose guard triggers name none of the activity's tools: not asked. */
   skipped: string[];
   /** Domains the pre-filter skipped: confident the activity is outside their domain. Not asked. */
@@ -474,7 +472,7 @@ export interface FlowOrchestratorConfig extends FlowTimingConfig {
 // ---------------------------------------------------------------------------
 
 interface Participant {
-  lib: Warden;
+  warden: Warden;
   cache: string;
   /** What `cache` is composed of and left out, frozen with it. */
   cacheComposition: CacheComposition;
@@ -689,7 +687,7 @@ export class FlowOrchestrator {
       'user-message',
       message,
       threadState,
-      participants.filter((p) => p.cache).map((p) => p.lib),
+      participants.filter((p) => p.cache).map((p) => p.warden),
     );
     const assessments = runBounded(participants, this._maxAdviseParallel, (p) =>
       this._assess(
@@ -697,9 +695,9 @@ export class FlowOrchestrator {
         input,
         clock,
         outstanding,
-        prefilterSkip(prefiltered, p.lib.domain),
+        prefilterSkip(prefiltered, p.warden.domain),
         'user-message',
-        this.catchUp.missedBy(p.lib.domain, seq),
+        this.catchUp.missedBy(p.warden.domain, seq),
         true,
       ),
     );
@@ -741,16 +739,16 @@ export class FlowOrchestrator {
 
   /** Every Warden with what it would assess against, frozen now, before any await. */
   private _participants(): Participant[] {
-    return [...this._domains.values()].map((lib) => ({
-      lib,
-      cache: lib.cache.content,
-      cacheComposition: lib.cacheComposition(),
-      cacheHash: lib.cache.hash,
-      cacheState: lib.cache.checkStaleness(),
-      cacheLastWarmed: lib.cache.lastWarmed,
-      threadKnowledge: lib.threadKnowledge.content,
-      threadKnowledgeRevision: lib.threadKnowledge.revision,
-      threadKnowledgeHash: lib.threadKnowledge.hash,
+    return [...this._domains.values()].map((warden) => ({
+      warden,
+      cache: warden.cache.content,
+      cacheComposition: warden.cacheComposition(),
+      cacheHash: warden.cache.hash,
+      cacheState: warden.cache.checkStaleness(),
+      cacheLastWarmed: warden.cache.lastWarmed,
+      threadKnowledge: warden.threadKnowledge.content,
+      threadKnowledgeRevision: warden.threadKnowledge.revision,
+      threadKnowledgeHash: warden.threadKnowledge.hash,
     }));
   }
 
@@ -841,14 +839,14 @@ export class FlowOrchestrator {
       threadStateHash: computeHash(threadState),
       capturedAt: start,
     };
-    const participants = this._participants().filter((p) => !only || only.has(p.lib.domain));
+    const participants = this._participants().filter((p) => !only || only.has(p.warden.domain));
     const clock = this._clock(start);
     const outstanding: OutstandingCall[] = [];
     const prefiltered = await this.prefilter(
       trigger,
       message,
       threadState,
-      participants.filter((p) => p.cache).map((p) => p.lib),
+      participants.filter((p) => p.cache).map((p) => p.warden),
     );
     const { contributions, asks } = contributionsWithoutAsks(
       await runBounded(participants, this._maxAdviseParallel, (p) =>
@@ -857,7 +855,7 @@ export class FlowOrchestrator {
           input,
           clock,
           outstanding,
-          prefilterSkip(prefiltered, p.lib.domain),
+          prefilterSkip(prefiltered, p.warden.domain),
           trigger,
         ),
       ),
@@ -908,7 +906,7 @@ export class FlowOrchestrator {
       trigger,
       text,
       context,
-      wardens.map((lib) => ({ domain: lib.domain, instructions: lib.advisePrompt })),
+      wardens.map((warden) => ({ domain: warden.domain, instructions: warden.advisePrompt })),
       this._threadId,
     );
   }
@@ -930,7 +928,7 @@ export class FlowOrchestrator {
     // thread. The global Librarian thread-state is passed to advise as a
     // fourth input but is never presented as the domain's thread knowledge.
     const segments: ContributionSegments = {
-      instructions: p.lib.advisePrompt,
+      instructions: p.warden.advisePrompt,
       domainKnowledge: p.cache,
       threadKnowledge: p.threadKnowledge,
     };
@@ -979,7 +977,7 @@ export class FlowOrchestrator {
         >
       > = {},
     ): AssessedContribution => ({
-      domain: p.lib.domain,
+      domain: p.warden.domain,
       outcome,
       trigger,
       layers: [],
@@ -1005,7 +1003,7 @@ export class FlowOrchestrator {
     // Queued behind the pool until the plan deadline passed: never sent.
     if (clock.passed()) return decided(notSent('not-admitted'), { reason: 'deadline-queued' });
 
-    const task = p.lib
+    const task = p.warden
       .advise(input.message, input.threadState, {
         cache: p.cache,
         cacheComposition: p.cacheComposition,
@@ -1034,7 +1032,7 @@ export class FlowOrchestrator {
       // The late answer, whenever it arrives, is ignored: the plan is sealed.
       // The provider call itself is still running; count it until it settles.
       this._trackOutstanding(task);
-      outstanding.push({ kind: 'advise', participant: p.lib.domain, startedAt });
+      outstanding.push({ kind: 'advise', participant: p.warden.domain, startedAt });
       return decided(failed('timeout'), { reason: raced.reason });
     }
     const settled = raced.value;
@@ -1149,15 +1147,9 @@ export class FlowOrchestrator {
       return c;
     });
 
-    const wardensConsulted: string[] = [];
-    for (const domain of contributions.map((c) => c.domain)) {
-      if (!wardensConsulted.includes(domain)) wardensConsulted.push(domain);
-    }
-
     const plan: InjectionPlan = {
       layers: [...layerSet],
       snippets,
-      wardensConsulted,
       elapsed: Date.now() - startTime,
       fresh,
       input,
@@ -1258,7 +1250,7 @@ export class FlowOrchestrator {
     }
 
     const deliveredByDomain = new Map<string, string>();
-    for (const [domain, lib] of this._domains) deliveredByDomain.set(domain, lib.cache.hash);
+    for (const [domain, warden] of this._domains) deliveredByDomain.set(domain, warden.cache.hash);
 
     return {
       content: parts.join('\n\n---\n\n'),
@@ -1344,7 +1336,7 @@ export class FlowOrchestrator {
 
   /** Whether some Warden's guard triggers name this tool: the calls a turn's activity collects. */
   guardsTool(tool: string): boolean {
-    for (const lib of this._domains.values()) if (lib.guardTriggers.has(tool)) return true;
+    for (const warden of this._domains.values()) if (warden.guardTriggers.has(tool)) return true;
     return false;
   }
 
@@ -1359,10 +1351,10 @@ export class FlowOrchestrator {
     // The agent-action trigger point asks every domain whose guard triggers name a call of the activity.
     const triggered: Warden[] = [];
     const skipped: string[] = [];
-    for (const [, domainLib] of this._domains) {
-      if (hooks?.only && !hooks.only.has(domainLib.domain)) continue;
-      if (domainLib.guards(activity)) triggered.push(domainLib);
-      else skipped.push(domainLib.domain);
+    for (const [, warden] of this._domains) {
+      if (hooks?.only && !hooks.only.has(warden.domain)) continue;
+      if (warden.guards(activity)) triggered.push(warden);
+      else skipped.push(warden.domain);
     }
     // The pre-filter rules out the Wardens it is confident the activity is outside of.
     const prefiltered = await this.prefilter(
@@ -1431,12 +1423,12 @@ export class FlowOrchestrator {
 
     // Collect findings and per-domain outcomes
     const findings: GuardFinding[] = [];
-    const domainsChecked: string[] = [];
+    const wardensChecked: string[] = [];
     const outcomes: GuardOutcome[] = [];
     const asks = new Map<string, DebugReasonAsk>();
     for (let i = 0; i < domainsToCheck.length; i++) {
       const r = results[i];
-      domainsChecked.push(domainsToCheck[i].domain);
+      wardensChecked.push(domainsToCheck[i].domain);
       const answered = r.outcome.status === 'answered';
       if (answered) findings.push(...r.findings);
       outcomes.push({
@@ -1489,7 +1481,7 @@ export class FlowOrchestrator {
           ...(o.callId ? { callId: o.callId } : {}),
         })),
         filesAffected: [...new Set(activity.observations.flatMap((o) => o.filesAffected ?? []))],
-        guardsRan: domainsChecked,
+        guardsRan: wardensChecked,
         guardsSkipped: skipped,
         guardsPrefiltered: ruledOut,
         guardOutcomes: outcomes,
@@ -1502,7 +1494,7 @@ export class FlowOrchestrator {
     return this._sealedWithAsks(
       {
         findings,
-        domainsChecked,
+        wardensChecked,
         skipped,
         prefiltered: ruledOut,
         ...(prefiltered ? { prefilter: prefilterRun(prefiltered, ruledOut.length) } : {}),

@@ -205,27 +205,27 @@ export async function adviseOnce(opts: ChorusAdviseOptions): Promise<ChorusAdvic
     async ({ thread, live }) => {
       const primed = opts.prime
         ? await Promise.all(
-            [...live.wardens.values()].map(async (lib): Promise<ChorusPrime> => {
+            [...live.wardens.values()].map(async (warden): Promise<ChorusPrime> => {
               const started = Date.now();
               try {
-                await lib.warm();
-                lib.prestart();
-                const result = await lib.advise(PRIME_MESSAGE, live.librarian.layer.content, {
-                  cache: lib.cache.content,
-                  cacheComposition: lib.cacheComposition(),
-                  threadKnowledge: lib.threadKnowledge.content,
+                await warden.warm();
+                warden.prestart();
+                const result = await warden.advise(PRIME_MESSAGE, live.librarian.layer.content, {
+                  cache: warden.cache.content,
+                  cacheComposition: warden.cacheComposition(),
+                  threadKnowledge: warden.threadKnowledge.content,
                   trigger: 'user-message',
                 });
                 const reason = result.error ?? result.notSent?.reason;
                 return {
-                  domain: lib.domain,
+                  domain: warden.domain,
                   outcome: adviceOutcomeOf(result),
                   ...(reason ? { reason } : {}),
                   elapsedMs: Date.now() - started,
                 };
               } catch (error) {
                 return {
-                  domain: lib.domain,
+                  domain: warden.domain,
                   outcome: { status: 'failed', cause: 'provider-error' },
                   reason: (error as Error).message,
                   elapsedMs: Date.now() - started,

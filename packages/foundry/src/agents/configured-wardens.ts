@@ -146,7 +146,7 @@ export function largestStageCount(
   return largest;
 }
 
-export interface ResolvedCodeWarden extends Omit<CodeWardenConfig, 'layerId'> {
+export interface ResolvedThreadWarden extends Omit<CodeWardenConfig, 'layerId'> {
   /** Wardens registered in code only: the stack layer it reads. A configured Warden reads its role's view. */
   layerId?: string;
   /** A Warden resolved from settings (a project's region Warden): its agent id. Absent for one registered in code. */
@@ -169,7 +169,7 @@ export function resolveThreadWardens(
     /** Existing runtime reporting hook; emitted once after complete validation. */
     warn?: (line: string) => void;
   },
-): ResolvedCodeWarden[] {
+): ResolvedThreadWarden[] {
   const { wardens, claimedDomains } = configuredWardens(config);
   const diagnostics = new Set<string>();
   const providers = new Map([
@@ -203,7 +203,7 @@ export function resolveThreadWardens(
         'Native Warden cache/temperature setting cannot be enforced by the current adapter',
       );
   };
-  const result: ResolvedCodeWarden[] = wardens.map(({ agentId, domain, agent }) => {
+  const result: ResolvedThreadWarden[] = wardens.map(({ agentId, domain, agent }) => {
     const provider = providerFor(agent.provider || config.defaults.provider);
     const model = agent.model || config.defaults.model;
     if (!model?.trim()) throw Error(`Warden model unavailable: ${agentId}`);
