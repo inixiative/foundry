@@ -4,12 +4,7 @@
  * @partOf primitive:decisions
  */
 import type { LLMProvider } from '@inixiative/foundry-core';
-import {
-  MODEL_REGISTRY,
-  modelHasCapability,
-  registryModel,
-  resolveDecisionModel,
-} from '@inixiative/foundry-core';
+import { MODEL_REGISTRY, modelHasCapability, resolveDecisionModel } from '@inixiative/foundry-core';
 import { providerBaseUrl, providerEnabled } from '../models/vendors';
 import type { FoundryConfig } from '../viewer/config';
 import { AnthropicProvider } from './anthropic';
@@ -19,9 +14,8 @@ export type DecisionDefaults = Pick<FoundryConfig, 'defaults' | 'vendors'>;
 
 /**
  * Decisions run on any registered model tagged `judgment`. There is no judgment
- * provider kind: a keyless local Ollama and a hosted frontier model are both
- * eligible, and the configuration chooses between them. The worker model is
- * never used as a fallback.
+ * provider kind: any hosted model with that tag is eligible, and the configuration
+ * chooses between them. The worker model is never used as a fallback.
  */
 export function createDecisionProvider(
   config: DecisionDefaults,
@@ -33,12 +27,7 @@ export function createDecisionProvider(
     throw Error(
       `Foundry decisions require ${provider} to be enabled; the worker model will not be used as a fallback.`,
     );
-  // A local server has no fixed catalogue, so its served model cannot be tagged in advance.
-  if (
-    registryModel(provider, model)
-      ? !modelHasCapability(provider, model, 'judgment')
-      : registered.credential !== 'local'
-  )
+  if (!modelHasCapability(provider, model, 'judgment'))
     throw Error(
       `Foundry decisions require a model tagged for judgment; ${provider}/${model} is not.`,
     );

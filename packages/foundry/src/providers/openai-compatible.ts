@@ -13,7 +13,7 @@ import {
 import { OpenAIProvider, openAiApiRoot } from './openai';
 
 export interface RegisteredProviderConfig {
-  /** Omit for a local provider (Ollama, vLLM); a placeholder bearer is sent. */
+  /** Required for every provider this builds; a missing key throws, naming the provider's variable. */
   apiKey?: string;
   /** Overrides the registry's apiRoot. Normalized: a bare origin gains /v1. */
   baseUrl?: string;
@@ -22,9 +22,6 @@ export interface RegisteredProviderConfig {
   id?: string;
   headers?: Record<string, string>;
 }
-
-/** Local hosts require a bearer the server ignores; the OpenAI client library refuses an empty one. */
-const LOCAL_PLACEHOLDER_KEY = 'local';
 
 const OPENROUTER_HEADERS = {
   // Required for app attribution; the request succeeds without it, the ranking page does not exist.
@@ -65,11 +62,11 @@ export function createRegisteredProvider(
   const provider = registeredProvider(providerId);
   if (!['openai', 'openai-compatible', 'xai'].includes(provider.type))
     throw Error(`Provider is not OpenAI-compatible: ${providerId}`);
-  if (provider.credential === 'api-key' && !config.apiKey?.trim())
-    throw Error(`${providerId} requires ${provider.envKey}`);
+  const apiKey = config.apiKey?.trim();
+  if (!apiKey) throw Error(`${providerId} requires ${provider.envKey}`);
 
   const options = {
-    apiKey: config.apiKey?.trim() || LOCAL_PLACEHOLDER_KEY,
+    apiKey,
     apiRoot: providerApiRoot(providerId, config.baseUrl),
     defaultModel: config.defaultModel ?? provider.models[0]!.id,
     reasoning: providerReasoning(providerId),

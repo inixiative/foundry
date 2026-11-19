@@ -29,7 +29,7 @@ export type ProviderType =
   | 'custom';
 export type RuntimeKind = 'api' | 'native-harness' | 'typed-decision';
 
-/** Who trains the models a provider serves. Gateways and local hosts serve many labs and carry none. */
+/** Who trains the models a provider serves. Gateways serve many labs and carry none. */
 export type ModelLab =
   | 'anthropic'
   | 'openai'
@@ -86,7 +86,7 @@ export const MODEL_CAPABILITIES: readonly ModelCapability[] = [
 ] as const;
 
 /** How the provider is paid for. `envKey` is present exactly when this is "api-key". */
-export type ProviderCredential = 'api-key' | 'subscription' | 'local';
+export type ProviderCredential = 'api-key' | 'subscription';
 
 /** Effort levels hosts publish. A superset of CompletionOpts.thinking. */
 export const REASONING_EFFORTS = [
@@ -235,7 +235,7 @@ const MUSE_CODE_REASONING: ModelReasoning = {
 export interface FoundryProviderInfo {
   id: string;
   type: ProviderType;
-  /** Absent for gateways and local hosts. */
+  /** Absent for gateways. */
   lab?: ModelLab;
   label: string;
   description: string;
@@ -937,7 +937,7 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
     type: 'openai-compatible',
     // Llama is not Meta's frontier line any more; Muse Spark replaced it in April 2026
     // and there is no "Llama 5". The open-weight Llama entries under openrouter,
-    // together, fireworks and ollama are the older line, and stay where they are.
+    // together and fireworks are the older line, and stay where they are.
     label: 'Meta (Muse Spark)',
     description:
       "Meta's Model API. OpenAI-compatible; it also serves an Anthropic-compatible /v1/messages. The documented key variable is the unprefixed MODEL_API_KEY.",
@@ -1501,7 +1501,7 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
         costTier: 'low',
         runtimeKind: 'api',
         capabilities: STANDARD,
-        notes: 'Free tier; the cheapest hosted judgment model that needs no local runtime.',
+        notes: 'Free tier; the cheapest hosted judgment model.',
       },
       {
         id: 'qwen/qwen3.8-27b:free',
@@ -1638,103 +1638,6 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
       },
     ],
   },
-  ollama: {
-    id: 'ollama',
-    type: 'openai-compatible',
-    label: 'Ollama (local)',
-    description:
-      'Local Ollama server. No credential: clients must send a bearer, the server ignores it.',
-    credential: 'local',
-    apiRoot: 'http://localhost:11434/v1',
-    enabledByDefault: true,
-    models: [
-      {
-        id: 'llama3.2:3b',
-        label: 'Llama 3.2 3B',
-        tier: 'fast',
-        costTier: 'low',
-        contextWindow: 128_000,
-        runtimeKind: 'api',
-        capabilities: FAST,
-        notes: 'ollama pull llama3.2:3b — the cheapest working judgment model.',
-      },
-      {
-        id: 'llama3.1:8b',
-        label: 'Llama 3.1 8B',
-        tier: 'fast',
-        costTier: 'low',
-        contextWindow: 128_000,
-        runtimeKind: 'api',
-        capabilities: FAST,
-      },
-      {
-        id: 'llama3.3:70b',
-        label: 'Llama 3.3 70B',
-        tier: 'standard',
-        costTier: 'low',
-        contextWindow: 128_000,
-        runtimeKind: 'api',
-        capabilities: STANDARD,
-      },
-      {
-        id: 'llama4:16x17b',
-        label: 'Llama 4 Scout',
-        tier: 'standard',
-        costTier: 'low',
-        contextWindow: 10_000_000,
-        runtimeKind: 'api',
-        capabilities: STANDARD,
-      },
-      {
-        id: 'llama4:128x17b',
-        label: 'Llama 4 Maverick',
-        tier: 'powerful',
-        costTier: 'low',
-        contextWindow: 1_000_000,
-        runtimeKind: 'api',
-        capabilities: POWERFUL,
-      },
-      {
-        id: 'qwen3:8b',
-        label: 'Qwen3 8B',
-        tier: 'fast',
-        costTier: 'low',
-        runtimeKind: 'api',
-        capabilities: FAST,
-      },
-      {
-        id: 'gpt-oss:20b',
-        label: 'GPT-OSS 20B',
-        tier: 'fast',
-        costTier: 'low',
-        runtimeKind: 'api',
-        capabilities: FAST_REASONING,
-        reasoning: EFFORT_ONLY,
-      },
-    ],
-  },
-  vllm: {
-    id: 'vllm',
-    type: 'openai-compatible',
-    label: 'vLLM (local)',
-    description:
-      'Local vLLM server on port 8000. Keyless unless started with --api-key; the model id is whatever --served-model-name says.',
-    credential: 'local',
-    apiRoot: 'http://localhost:8000/v1',
-    enabledByDefault: true,
-    models: [
-      {
-        id: 'NousResearch/Meta-Llama-3-8B-Instruct',
-        label: 'vLLM served model',
-        tier: 'standard',
-        costTier: 'low',
-        runtimeKind: 'api',
-        capabilities: STANDARD,
-        notes:
-          "vLLM's own quickstart example. Replace with this server's --served-model-name; vLLM has no fixed catalogue.",
-      },
-    ],
-  },
   mistral: {
     id: 'mistral',
     lab: 'mistral',
@@ -1837,7 +1740,7 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
  *
  * - subscription: the person's own subscription login, through a native CLI transport (Claude Code,
  *   Codex). `comingSoon` marks a vendor that sells a subscription Foundry has no transport for yet.
- * - api: an API key (or, for a local server, none), through the registry provider named here.
+ * - api: an API key, through the registry provider named here.
  *
  * Each mode names the registry provider that serves it, so the provider table stays the one source
  * of models, transports and credentials; the vendor only groups them.
@@ -1846,7 +1749,7 @@ export type ProviderMode = 'subscription' | 'api';
 export interface ModelVendor {
   id: string;
   label: string;
-  /** Absent for gateways and local hosts. */
+  /** Absent for gateways. */
   lab?: ModelLab;
   subscription?: { provider: string } | { comingSoon: true };
   api?: { provider: string };
@@ -1895,11 +1798,9 @@ export const MODEL_VENDORS: readonly ModelVendor[] = [
   { id: 'groq', label: 'Groq', api: { provider: 'groq' } },
   { id: 'mistral', label: 'Mistral AI', lab: 'mistral', api: { provider: 'mistral' } },
   { id: 'moonshot', label: 'Moonshot AI (Kimi)', lab: 'moonshot', api: { provider: 'kimi' } },
-  { id: 'ollama', label: 'Ollama (local)', api: { provider: 'ollama' } },
   { id: 'openrouter', label: 'OpenRouter', api: { provider: 'openrouter' } },
   { id: 'together', label: 'Together AI', api: { provider: 'together' } },
   { id: 'typesafe', label: 'TypeSafe (Jev)', lab: 'typesafe', api: { provider: 'typesafe' } },
-  { id: 'vllm', label: 'vLLM (local)', api: { provider: 'vllm' } },
   { id: 'zhipu', label: 'Zhipu (GLM)', lab: 'zhipu', api: { provider: 'glm' } },
 ];
 
@@ -1932,7 +1833,7 @@ export function modelOptionsByCapability(...capabilities: ModelCapability[]): Mo
 
 /**
  * The efforts a registered model accepts, in order; undefined for a model the registry does not
- * list (a local server's), which callers take as "not known, don't narrow".
+ * list (a custom endpoint's), which callers take as "not known, don't narrow".
  */
 export function modelEfforts(
   providerId: string,

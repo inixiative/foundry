@@ -48,11 +48,6 @@ import type { FeedbackPhase } from '../feedback/types';
 import { workerHostsFoundryTools } from '../models/registry';
 import { roleComposition, scopeOfRole } from '../prompts/instruction-settings';
 import type { SessionAdapter } from '../providers/session-adapter';
-import {
-  type PrefilterOutcome,
-  prefilterSkip,
-  type WardenPrefilter,
-} from '../providers/warden-prefilter';
 import { needsNameCheck, needsPlan } from '../tools/thread-record';
 import {
   briefedText,
@@ -413,8 +408,6 @@ export interface ThreadRuntimeDeps {
   providers?: ReadonlyMap<string, LLMProvider>;
   /** Pre-message deadlines, concurrency and budget. Validated by the orchestrator. */
   flow?: FlowTimingConfig;
-  /** The process's Warden pre-filter (settings `prefilter`, off by default); absent asks every Warden. */
-  prefilter?: WardenPrefilter;
   /** Post-work learning deadline and knowledge size. */
   learning?: LearningConfig;
   /** `false` asks no Warden debug reason on this manager's threads, whatever the chorus settings say. */
@@ -980,8 +973,6 @@ class ThreadRuntimeImpl implements ThreadRuntime {
   private _learningQueues = new Map<string, Promise<void>>();
   private _learningOutstanding = 0;
   private _reviewed = new Set<string>();
-  /** The pre-filter's one call per completed turn, shared by every Warden's review of it. */
-  private _reviewPrefilter = new WeakMap<ReviewInput, Promise<PrefilterOutcome | undefined>>();
   /** Tool calls keyed by dispatch id, then call id: exactly one entry per executed call. */
   private _toolsByDispatch = new Map<string, Map<string, CorrelatedToolObservation>>();
   /** Observations that named no dispatch of this thread. Visible, never attributed. */
@@ -1107,8 +1098,8 @@ class ThreadRuntimeImpl implements ThreadRuntime {
         const record = signal.content as
           | (Partial<LearningRecord> & { domain?: string })
           | undefined;
-        // Silence is not activity: a NO_COMMENT or pre-filtered review adds nothing to the shared state.
-        if (record?.decision === 'no-comment' || record?.decision === 'prefiltered') return;
+        // Silence is not activity: a NO_COMMENT review adds nothing to the shared state.
+        if (record?.decision === 'no-comment') return;
         return factualSignals.emit({
           ...signal,
           content: {
@@ -1377,7 +1368,6 @@ class ThreadRuntimeImpl implements ThreadRuntime {
       stack,
       signals,
       ...deps.flow,
-      ...(deps.prefilter ? { prefilter: deps.prefilter, threadId: thread.id } : {}),
     });
 
     // Pre-message decoration: every domain assesses the frozen input in
@@ -1597,11 +1587,6 @@ class ThreadRuntimeImpl implements ThreadRuntime {
                     ...(c.catchesUp ? { catchesUp: true } : {}),
                     ...(c.earlier ? { earlier: c.earlier } : {}),
                   })),
-                // A Warden the pre-filter ruled out is one row with its score: auditable later.
-                ...(plan.prefilter ? { prefilter: plan.prefilter } : {}),
-                prefiltered: plan.contributions
-                  .filter((c) => c.prefilter)
-                  .map((c) => ({ domain: c.domain, ...c.prefilter })),
                 skipped: Object.fromEntries(
                   Object.entries(
                     Object.groupBy(
@@ -2295,8 +2280,6 @@ class ThreadRuntimeImpl implements ThreadRuntime {
           finishedAt: Date.now(),
           wardensChecked: report.wardensChecked,
           skipped: report.skipped,
-          prefiltered: report.prefiltered,
-          ...(report.prefilter ? { prefilter: report.prefilter } : {}),
           failed: report.failed,
           findings: report.findings.length,
           // What the Wardens said: a comment on the turn's actions (shown to hosts), never a block.
@@ -2805,10 +2788,6 @@ class ThreadRuntimeImpl implements ThreadRuntime {
               ...(c.classified ? { classified: c.classified } : {}),
               ...(c.stageRequests ? { stageRequests: c.stageRequests } : {}),
             })),
-          ...(report.prefilter ? { prefilter: report.prefilter } : {}),
-          prefiltered: report.contributions
-            .filter((c) => c.prefilter)
-            .map((c) => ({ domain: c.domain, ...c.prefilter })),
           skipped: Object.fromEntries(
             Object.entries(
               Object.groupBy(
@@ -3288,24 +3267,6 @@ class ThreadRuntimeImpl implements ThreadRuntime {
       ok: true,
       toolObservations,
     });
-    // The post-turn trigger: one pre-filter call over the finished work, before any review runs.
-    this._reviewPrefilter.set(
-      input,
-      this.flowOrchestrator
-        .prefilter(
-          'post-turn',
-          [
-            input.userMessage,
-            input.output,
-            toolObservations.map((t) => `${t.tool}: ${JSON.stringify(t.input)}`).join('\n'),
-          ]
-            .filter(Boolean)
-            .join('\n\n'),
-          undefined,
-          [...this.wardens.values()].filter((warden) => warden.cache.content),
-        )
-        .catch(() => undefined),
-    );
     for (const [domain, warden] of this.wardens) {
       const lease = this._closedReviews.get(domain)!;
       if (lease.closed) {
@@ -3391,20 +3352,6 @@ class ThreadRuntimeImpl implements ThreadRuntime {
     const lease = this._closedReviews.get(domain)!;
     if (lease.closed) {
       this._deferReview(domain, input, lease.reason ?? 'review admission closed');
-      return;
-    }
-    // Ruled out by the pre-filter: no review call, one journalled record with the score.
-    const skip = prefilterSkip(await this._reviewPrefilter.get(input), domain);
-    if (skip) {
-      await this._emitLearning(
-        domain,
-        knowledge.record({
-          decision: 'prefiltered',
-          reason: `pre-filter score ${skip.score.toFixed(3)} < ${skip.skipBelow}`,
-          evidence: input.evidence,
-          author,
-        }),
-      );
       return;
     }
     // A composition over the role's budget is a configuration error, reported per review; the lane

@@ -82,7 +82,6 @@ import {
   type SubscriptionSettings,
   validateLoginPools,
 } from '../providers/subscription-policy';
-import { type PrefilterSettings, validatePrefilterSettings } from '../providers/warden-prefilter';
 import { type SchedulerSettings, validateSchedulerSettings } from '../scheduler/types';
 import { type SecretsSettings, validateSecretsSettings } from '../secrets/scratch';
 
@@ -206,11 +205,6 @@ export interface FoundryConfig {
   secrets?: SecretsSettings;
   /** The local journal (docs/THREAD-TREE.md spec A). */
   journal?: JournalSettings;
-  /**
-   * The Warden pre-filter: a local decision model skips a Warden on a confident "not my domain".
-   * Off by default (every Warden is asked); `{ "enabled": true }` opts in. See docs/subscription-decisions.md.
-   */
-  prefilter?: PrefilterSettings;
   /**
    * How often the Wardens' guard fires: `per-turn` (default), once over a turn's whole tool activity
    * when the turn's tool activity ends; or `per-call`, on each tool call (Aron, 2026-10-15).
@@ -529,8 +523,7 @@ export interface BrowserConfigOverride
 }
 
 /**
- * Agent kinds. Executors are thread agents. A Warden (`warden`, flowRole
- * `warden`) is never written in settings: each is generated from a project's regions
+ * Agent kinds. Executors are thread agents. A Warden (`warden`) is never written in settings: each is generated from a project's regions
  * (`agents/region-roster.ts`), so it appears only in a project view. The Librarian is programmatic and the Herald is not
  * wired, so neither takes settings.
  */
@@ -544,8 +537,6 @@ export interface AgentSettingsConfig {
   id: string;
   /** What the agent does in a turn: `executor`, or `warden` for a generated Warden. */
   kind: AgentKind;
-  /** The agent's part in a turn: `execution` (an executor) or `warden` (a generated Warden). */
-  flowRole?: 'execution' | 'warden';
   /** Domain this agent operates in (e.g., "docs", "security", "cross-thread"). */
   domain?: string;
   /**
@@ -603,7 +594,7 @@ export type AgentChunk = 'instructions' | 'domainKnowledge';
 export interface AgentExtension
   extends Omit<
     Partial<AgentSettingsConfig>,
-    'id' | 'kind' | 'flowRole' | 'domain' | 'guardTriggers' | 'browser'
+    'id' | 'kind' | 'domain' | 'guardTriggers' | 'browser'
   > {
   /** Global agent id. */
   extends: string;
@@ -823,7 +814,6 @@ export function defaultAgents(): Record<string, AgentSettingsConfig> {
     [DEFAULT_EXECUTOR_ID]: {
       id: DEFAULT_EXECUTOR_ID,
       kind: 'executor',
-      flowRole: 'execution',
       prompt: '',
       tools: true,
       enabled: true,
@@ -894,7 +884,7 @@ function validateLayerDefinition(owner: string, id: string, layer: unknown): voi
 
 /**
  * Every declared agent has a kind something runs. Settings declare executors only; a project view
- * also holds its generated region Wardens (`warden`, flowRole `warden`).
+ * also holds its generated region Wardens (`warden`).
  */
 function validateAgentKinds(
   owner: string,
@@ -907,8 +897,6 @@ function validateAgentKinds(
       throw Error(
         `${owner} agent ${JSON.stringify(id)}: kind ${JSON.stringify(agent.kind)} is not configurable (${kinds.join(', ')})`,
       );
-    if (agent.kind === 'warden' && agent.flowRole !== 'warden')
-      throw Error(`${owner} agent ${JSON.stringify(id)}: a Warden's flowRole is warden`);
     // Each phase supplies its response protocol; a second shape in the instructions contradicts it.
     if (agent.kind === 'warden' && /respond with json/i.test(agent.prompt ?? ''))
       throw Error(
@@ -1138,7 +1126,6 @@ export function validateConfig(config: FoundryConfig): void {
   validateJournalSettings(config.journal);
   validateFeedbackSettings('feedback', config.feedback);
   validateSecretsSettings('secrets', config.secrets);
-  validatePrefilterSettings('prefilter', config.prefilter);
   validateLoginPoolReferences(config);
   if (config.guard !== undefined && !GUARD_MODES.includes(config.guard))
     throw Error(`guard must be one of ${GUARD_MODES.map((m) => `"${m}"`).join(', ')}`);

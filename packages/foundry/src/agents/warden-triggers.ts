@@ -6,12 +6,9 @@
 // ---------------------------------------------------------------------------
 // Warden trigger points — the moments a Warden is asked
 //
-// Every Warden a trigger point reaches is asked, unless the pre-filter (`prefilter` in settings, off
-// by default; providers/warden-prefilter.ts) is on and confident the moment is outside its domain, and
-// decides under the fixed charter (`warden-charter.ts`) whether it has anything to add. NO_COMMENT
-// is the default answer and adds nothing to the thread. The pre-filter fails open: an unsure score,
-// a failed call or a missing model asks the Warden, and every skip is journalled with its score, so a
-// missed ask is auditable.
+// Every Warden a trigger point reaches is asked, every time (no routing, no pre-filter), and decides
+// under the fixed charter (`warden-charter.ts`) whether it has anything to add. NO_COMMENT is the
+// default answer and adds nothing to the thread.
 //
 // Implemented:
 //   - `user-message` (advice phase): every Warden, on every user message;
@@ -36,7 +33,7 @@
 //   - `hand-back` (advice phase): when a turn ends, every Warden is asked over the message the agent
 //     handed back (what it reports as done). The turn has already landed, so what is said rides the
 //     next turn; there is no automatic extra pass;
-//   - after the work, every Warden's post-work review (pre-filtered as `post-turn`).
+//   - after the work, every Warden's post-work review.
 // Next, with its own input, protocol text and NO_COMMENT default:
 //   - `agent-question`: answer on the user's behalf when confident and backed by a recorded ruling.
 // ---------------------------------------------------------------------------

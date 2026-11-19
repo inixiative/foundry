@@ -122,11 +122,9 @@ describe('capability tags', () => {
 
   test('a credential is declared for every provider and envKey follows it', () => {
     for (const provider of Object.values(MODEL_REGISTRY)) {
-      expect(['api-key', 'subscription', 'local']).toContain(provider.credential);
+      expect(['api-key', 'subscription']).toContain(provider.credential);
       expect(!!provider.envKey).toBe(provider.credential === 'api-key');
     }
-    expect(MODEL_REGISTRY.ollama.credential).toBe('local');
-    expect(MODEL_REGISTRY.vllm.credential).toBe('local');
     expect(MODEL_REGISTRY['claude-code'].credential).toBe('subscription');
     expect(MODEL_REGISTRY.codex.credential).toBe('subscription');
   });
@@ -141,13 +139,10 @@ describe('capability tags', () => {
     expect(modelCapabilities('no-such-provider', 'gpt-6-astra')).toEqual([]);
   });
 
-  test('a keyless local model can serve judgment, which is the point of registering one', () => {
-    const local = modelOptionsByCapability('judgment').filter((option) =>
-      ['ollama', 'vllm'].includes(option.provider),
+  test('hosted judgment models are registered; execution never lands on a typed-decision host', () => {
+    expect(providersWithCapability('judgment').map((provider) => provider.id)).toContain(
+      'deepseek',
     );
-    expect(local.length).toBeGreaterThan(0);
-    expect(local.some((option) => option.model === 'llama3.2:3b')).toBe(true);
-    expect(providersWithCapability('judgment').map((provider) => provider.id)).toContain('ollama');
     expect(providersWithCapability('execution').map((provider) => provider.id)).not.toContain(
       'typesafe',
     );
@@ -155,12 +150,12 @@ describe('capability tags', () => {
 
   test('capabilities and the API root reach the saved config and the viewer', () => {
     // The API root is the registry's unless the user overrides it; settings carry only an override.
-    expect(defaultConfig().vendors.ollama!.api!.baseUrl).toBeUndefined();
-    expect(MODEL_REGISTRY.ollama.apiRoot).toBe('http://localhost:11434/v1');
+    expect(defaultConfig().vendors.deepseek!.api!.baseUrl).toBeUndefined();
+    expect(MODEL_REGISTRY.deepseek.apiRoot).toBe('https://api.deepseek.com');
     const viewer = registryForViewer();
-    const ollama = viewer.providers.find((provider) => provider.id === 'ollama');
-    expect(ollama).toMatchObject({ credential: 'local', envKey: '' });
-    expect(ollama?.models[0]?.capabilities).toContain('judgment');
+    const deepseek = viewer.providers.find((provider) => provider.id === 'deepseek');
+    expect(deepseek).toMatchObject({ credential: 'api-key', envKey: 'DEEPSEEK_API_KEY' });
+    expect(deepseek?.models[0]?.capabilities).toContain('judgment');
     expect(
       viewer.providers.find((provider) => provider.id === 'typesafe')?.models[0]?.runtimeKind,
     ).toBe('typed-decision');

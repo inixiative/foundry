@@ -7,7 +7,6 @@ import type { PrimedEvent } from '@inixiative/agent-session';
 import type { SystemActivity } from '@inixiative/foundry-core';
 import type { ProjectHostState } from '../providers/project-warden-hosts';
 import type { DecisionPressure } from '../providers/subscription-decisions';
-import type { PrefilterHealth } from '../providers/warden-prefilter';
 
 /** How long a shed decision stays in the strip when nothing replaces it. */
 const SHED_SHOWN_MS = 30_000;
@@ -163,32 +162,5 @@ export function primedEventActivity(event: PrimedEvent): SystemActivity | undefi
       event.type === 'violation'
         ? `Decision violated the text-only policy (${event.detail}); process recycled`
         : `Decision process recycled (${event.reason}); roles re-prime on the next decision`,
-  };
-}
-
-/** The Warden pre-filter: down or missing means every Warden is asked (slower, still correct). */
-export function prefilterActivity(health: PrefilterHealth | 'not-installed'): SystemActivity {
-  const base = { key: 'warden-prefilter', source: 'warden-prefilter' };
-  if (health === 'not-installed')
-    return {
-      ...base,
-      state: 'degraded',
-      summary:
-        'The Warden pre-filter is not installed, so every Warden is asked. Run foundry-acp setup.',
-      detail:
-        'Warden pre-filter model not installed (run `foundry-acp setup`); every Warden is asked',
-    };
-  if (health.ok)
-    return {
-      ...base,
-      state: 'ready',
-      summary: 'The Warden pre-filter is ready.',
-      detail: 'Warden pre-filter: ready',
-    };
-  return {
-    ...base,
-    state: 'degraded',
-    summary: 'The Warden pre-filter is down, so every Warden is asked.',
-    detail: `Warden pre-filter unavailable (${health.reason ?? 'unknown'}); every Warden is asked`,
   };
 }

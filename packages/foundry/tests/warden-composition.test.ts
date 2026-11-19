@@ -148,7 +148,6 @@ test("a region Warden's call: the charter over its region instructions, its know
   const view = resolveProjectView(c, 'P')!;
   expect(view.config.agents[WARDEN_ID]).toMatchObject({
     kind: 'warden',
-    flowRole: 'warden',
     domain: 'conventions',
     prompt: REGION_RULES,
   });
@@ -185,7 +184,6 @@ test('settings declare no Wardens: one written there is a kind settings do not c
   const warden = {
     id: 'conventions-warden',
     kind: 'warden',
-    flowRole: 'warden',
     domain: 'conventions',
     prompt: 'RULES',
     tools: false,

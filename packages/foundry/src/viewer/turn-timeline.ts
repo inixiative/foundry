@@ -95,7 +95,6 @@ export type TimelineStep =
       trigger: string;
       regions: ChorusRegion[];
       skipped: Record<string, string[]>;
-      prefiltered: string[];
     }
   | {
       kind: 'plan';
@@ -360,9 +359,6 @@ export function turnTimeline(detail: TurnDetail, sources: TurnTimelineSources = 
         chorusRegion(p, debug.get(wardenCallId(row.id, str(p.domain) ?? ''))),
       ),
       skipped,
-      prefiltered: (Array.isArray(r.prefiltered) ? r.prefiltered.filter(isObject) : []).flatMap(
-        (p) => (str(p.domain) ? [str(p.domain)!] : []),
-      ),
     };
   };
   // A retry (FEAT-008) asked on the message again later: its chimes ride with the next turn, not this one.

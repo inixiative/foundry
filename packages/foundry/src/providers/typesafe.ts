@@ -122,11 +122,6 @@ export interface TypeSafeClientOptions {
   /** Name of an environment variable, never the secret itself. */
   apiKeyEnv?: string;
   model?: string;
-  /**
-   * Where the System One API is served. Default `https://api.typesafe.ai`. Self-hosted decision
-   * models that implement `POST /v1/systemone` (Kev and its kin) take their local URL.
-   */
-  baseUrl?: string;
   /** Deadline covers fetch, response parsing, and retries. Default 10 seconds. */
   timeoutMs?: number;
   /** Retries only 429/529, at most 3. Default 2. */
@@ -136,15 +131,15 @@ export interface TypeSafeClientOptions {
   fetch?: (url: string, init: RequestInit) => Promise<Response>;
 }
 
+const TYPESAFE_ENDPOINT = 'https://api.typesafe.ai/v1/systemone';
+
 /** Typed decisions, separate from chat completions and native coding sessions. */
 export class TypeSafeDecisionClient {
   readonly id = 'typesafe-decisions';
   private readonly timeoutMs: number;
   private readonly maxRetries: number;
-  private readonly endpoint: string;
   constructor(private readonly options: TypeSafeClientOptions) {
     this.timeoutMs = options.timeoutMs ?? 10_000;
-    this.endpoint = `${(options.baseUrl ?? 'https://api.typesafe.ai').replace(/\/+$/, '')}/v1/systemone`;
     this.maxRetries = options.maxRetries ?? 2;
     if (!Number.isInteger(this.timeoutMs) || this.timeoutMs < 1)
       throw new TypeSafeError('TypeSafe timeoutMs must be a positive integer');
@@ -176,7 +171,7 @@ export class TypeSafeDecisionClient {
     try {
       for (let attempt = 0; ; attempt++) {
         activeSignal.throwIfAborted();
-        const response = await send(this.endpoint, {
+        const response = await send(TYPESAFE_ENDPOINT, {
           method: 'POST',
           redirect: 'error',
           signal: activeSignal,

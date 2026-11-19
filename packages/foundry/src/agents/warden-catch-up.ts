@@ -25,13 +25,11 @@ export interface CatchUpAnswer {
 }
 
 /**
- * Whether this answer counts as answering the message: a chime, `NO_COMMENT`, or the pre-filter
- * ruling it out. A chime the budget left out did not reach the thread, so it is asked again.
+ * Whether this answer counts as answering the message: a chime or `NO_COMMENT`. A chime the budget
+ * left out did not reach the thread, so it is asked again.
  */
 export const answeredMessage = ({ outcome }: CatchUpAnswer): boolean =>
-  outcome.status === 'answered'
-    ? outcome.result !== 'omitted-budget'
-    : outcome.status === 'not-sent' && outcome.cause === 'prefiltered';
+  outcome.status === 'answered' && outcome.result !== 'omitted-budget';
 
 /**
  * Each Warden's cursor over a thread's user messages (Aron: "wardens should try and inject in the
@@ -126,10 +124,7 @@ export class WardenCatchUp {
       }
       if (seq === undefined) continue;
       seqOfRow.set(row.id, seq);
-      this.answered(seq, [
-        ...rowAnswers(record.participants),
-        ...prefilteredAnswers(record.prefiltered),
-      ]);
+      this.answered(seq, rowAnswers(record.participants));
     }
   }
 }
@@ -140,13 +135,4 @@ function rowAnswers(value: unknown): CatchUpAnswer[] {
     const outcome = parseCallOutcome(p?.outcome, ADVICE_RESULTS);
     return p && typeof p.domain === 'string' && outcome ? [{ domain: p.domain, outcome }] : [];
   });
-}
-
-function prefilteredAnswers(value: unknown): CatchUpAnswer[] {
-  if (!Array.isArray(value)) return [];
-  return value.flatMap((p) =>
-    p && typeof p.domain === 'string'
-      ? [{ domain: p.domain, outcome: { status: 'not-sent', cause: 'prefiltered' } as const }]
-      : [],
-  );
 }

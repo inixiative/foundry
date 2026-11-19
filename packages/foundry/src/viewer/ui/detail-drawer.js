@@ -1082,7 +1082,6 @@ export function AgentDetail({ agentId }) {
         <div class="detail-meta-row" style="margin-top: 8px">
           <div class="detail-meta"><label>Status</label><span>${def.enabled ? 'enabled' : 'disabled'}</span></div>
           ${def.invocation ? html`<div class="detail-meta"><label>Invocation</label><span>${def.invocation}</span></div>` : null}
-          ${def.flowRole ? html`<div class="detail-meta"><label>Flow Role</label><span>${def.flowRole}</span></div>` : null}
         </div>
       `
           : null

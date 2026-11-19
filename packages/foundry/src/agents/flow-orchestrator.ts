@@ -64,12 +64,6 @@ import {
   type WardenPointer,
 } from '../classify';
 import { DECISION_DEADLINE_MS, QUOTA_PAUSED_REFUSAL } from '../providers/decision-budget';
-import {
-  type PrefilterOutcome,
-  type PrefilterSkip,
-  prefilterSkip,
-  type WardenPrefilter,
-} from '../providers/warden-prefilter';
 import type { Librarian } from './librarian';
 import {
   type AdviceRequestEvidence,
@@ -81,7 +75,6 @@ import {
   type GuardFinding,
   type GuardResult,
   type PhaseRequestEvidence,
-  renderTurnActivity,
   type TurnActivity,
   type Warden,
 } from './warden';
@@ -123,15 +116,13 @@ export interface ContributionProvenance {
 export interface WardenContribution {
   readonly domain: string;
   /**
-   * How its advice call ended: not sent (cold, prefiltered, not held, not admitted), failed (timeout,
+   * How its advice call ended: not sent (cold, not held, not admitted), failed (timeout,
    * provider error, invalid response), or answered (spoke, no-comment, or omitted by the budget).
    */
   readonly outcome: AdviceOutcome;
   /** The trigger point it was asked at. */
   readonly trigger: TriggerPoint;
   readonly reason?: string;
-  /** Skipped by the pre-filter: its score and the threshold it fell below. */
-  readonly prefilter?: PrefilterSkip;
   readonly layers: string[];
   readonly snippets: string[];
   readonly confidence: number;
@@ -175,9 +166,9 @@ function contributionsWithoutAsks(assessed: readonly AssessedContribution[]): {
   return { contributions, asks };
 }
 
-/** A cold or prefiltered Warden was given nothing: no call, so no inputs and no missed messages. */
+/** A cold Warden was given nothing: no call, so no inputs and no missed messages. */
 export const givenNothing = (outcome: AdviceOutcome): boolean =>
-  outcome.status === 'not-sent' && (outcome.cause === 'cold' || outcome.cause === 'prefiltered');
+  outcome.status === 'not-sent' && outcome.cause === 'cold';
 
 /** The immutable input every participant assessed. */
 export interface PlanInput {
@@ -220,16 +211,9 @@ export interface InjectionPlan {
   }>;
   /** Provider calls still running when the plan was sealed. Not cancelled. */
   readonly outstanding: OutstandingCall[];
-  /** The pre-filter's call for this trigger, when it is on. `unavailable` asked every Warden. */
-  readonly prefilter?: PrefilterRun;
   /** When the plan was sealed. Nothing may change it afterwards. */
   readonly sealedAt: number;
 }
-
-/** What the pre-filter did at one trigger: journalled with the Wardens' decisions. */
-export type PrefilterRun =
-  | { readonly status: 'scored'; readonly elapsedMs: number; readonly skipped: number }
-  | { readonly status: 'unavailable'; readonly elapsedMs: number; readonly reason: string };
 
 /** A call's frozen input as a journalled request, with the model that answered when known. */
 function suppliedRequest(e: PhaseRequestEvidence, served?: ServedModel | null): ParticipantRequest {
@@ -243,12 +227,6 @@ function suppliedRequest(e: PhaseRequestEvidence, served?: ServedModel | null): 
     ...(e.composition ? { composition: e.composition } : {}),
     ...(e.stage !== undefined ? { stage: e.stage } : {}),
   };
-}
-
-function prefilterRun(outcome: PrefilterOutcome, skipped: number): PrefilterRun {
-  return outcome.status === 'scored'
-    ? { status: 'scored', elapsedMs: outcome.elapsedMs, skipped }
-    : { status: 'unavailable', elapsedMs: outcome.elapsedMs, reason: outcome.reason };
 }
 
 /** Assessed versus prepared revision of one layer. */
@@ -352,10 +330,6 @@ export interface GuardReport {
   wardensChecked: string[];
   /** Domains whose guard triggers name none of the activity's tools: not asked. */
   skipped: string[];
-  /** Domains the pre-filter skipped: confident the activity is outside their domain. Not asked. */
-  prefiltered: Array<{ domain: string } & PrefilterSkip>;
-  /** The pre-filter's call for this activity, when it is on. */
-  prefilter?: PrefilterRun;
   /** Per-domain outcome, in configured order. Distinguishes a completed all-clear from a failed or malformed check. */
   outcomes: GuardOutcome[];
   /** Domains whose check did not complete: any failure, or not sent because not held, not admitted or over budget. No all-clear exists for them. */
@@ -424,8 +398,6 @@ export interface BriefReport {
   readonly input: PlanInput;
   /** Per Warden, in configured order: its call outcome (spoke with the brief, no comment, not sent or failed). */
   readonly contributions: WardenContribution[];
-  /** The pre-filter's call for this handoff, when it is on. */
-  readonly prefilter?: PrefilterRun;
   /** Calls that timed out and are still running. */
   readonly outstanding: OutstandingCall[];
   readonly elapsed: number;
@@ -461,10 +433,6 @@ export interface FlowOrchestratorConfig extends FlowTimingConfig {
   stack: ContextStack;
   /** Signal bus for emitting orchestration events. */
   signals: SignalBus;
-  /** The Warden pre-filter (settings `prefilter`, off by default); absent asks every Warden. */
-  prefilter?: WardenPrefilter;
-  /** The thread the pre-filter's calls are made for. */
-  threadId?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -510,8 +478,6 @@ export class FlowOrchestrator {
   private _adviseTimeoutMs: number;
   private _planTimeoutMs: number | undefined;
   private _contributionBudget: number;
-  private _prefilter: WardenPrefilter | undefined;
-  private _threadId: string;
 
   /** Provider calls that timed out but are still running. */
   private _outstanding = new Set<symbol>();
@@ -554,8 +520,6 @@ export class FlowOrchestrator {
     )!;
     this._planTimeoutMs = positiveFiniteMs('planTimeoutMs', config.planTimeoutMs, undefined);
     this._contributionBudget = positiveBudget('contributionBudget', config.contributionBudget);
-    this._prefilter = config.prefilter;
-    this._threadId = config.threadId ?? 'thread';
 
     // Subscribe to signals that invalidate the current plan
     this._unsubscribes.push(this._signals.onAny((signal) => this._handleInvalidation(signal)));
@@ -681,21 +645,14 @@ export class FlowOrchestrator {
         ? this.catchUp.message(message, currentMessage?.messageId)
         : this.catchUp.current;
 
-    // 2. Assess: the user-message trigger point asks every Warden the pre-filter does not rule out;
-    //    each decides under the charter (bounded pool).
-    const prefiltered = await this.prefilter(
-      'user-message',
-      message,
-      threadState,
-      participants.filter((p) => p.cache).map((p) => p.warden),
-    );
+    // 2. Assess: the user-message trigger point asks every Warden; each decides under the charter
+    //    (bounded pool).
     const assessments = runBounded(participants, this._maxAdviseParallel, (p) =>
       this._assess(
         p,
         input,
         clock,
         outstanding,
-        prefilterSkip(prefiltered, p.warden.domain),
         'user-message',
         this.catchUp.missedBy(p.warden.domain, seq),
         true,
@@ -706,15 +663,7 @@ export class FlowOrchestrator {
 
     // 3. Compose in configured order and seal.
     const plan = this._compose(input, contributions, outstanding, start, fresh);
-    return this._sealedWithAsks(
-      prefiltered
-        ? deepFreeze({
-            ...plan,
-            prefilter: prefilterRun(prefiltered, contributions.filter((c) => c.prefilter).length),
-          })
-        : plan,
-      asks,
-    );
+    return this._sealedWithAsks(plan, asks);
   }
 
   /**
@@ -772,8 +721,7 @@ export class FlowOrchestrator {
   /**
    * The agent handed a task to a subagent: ask the chorus, once, what the subagent must know that
    * the task text leaves out. Every Warden decides under the charter through the advice protocol
-   * (NO_COMMENT expected); the pre-filter, when on, rules out the ones it is confident the task is
-   * outside of. Asked at the call (Claude's pre-use, `ThreadRuntime.briefHandoff`), it is awaited up to
+   * (NO_COMMENT expected). Asked at the call (Claude's pre-use, `ThreadRuntime.briefHandoff`), it is awaited up to
    * its deadline and rides into the subagent's text; asked when the subagent starts, it never blocks.
    */
   async brief(handoff: HandoffMoment): Promise<BriefReport> {
@@ -842,33 +790,15 @@ export class FlowOrchestrator {
     const participants = this._participants().filter((p) => !only || only.has(p.warden.domain));
     const clock = this._clock(start);
     const outstanding: OutstandingCall[] = [];
-    const prefiltered = await this.prefilter(
-      trigger,
-      message,
-      threadState,
-      participants.filter((p) => p.cache).map((p) => p.warden),
-    );
     const { contributions, asks } = contributionsWithoutAsks(
       await runBounded(participants, this._maxAdviseParallel, (p) =>
-        this._assess(
-          p,
-          input,
-          clock,
-          outstanding,
-          prefilterSkip(prefiltered, p.warden.domain),
-          trigger,
-        ),
+        this._assess(p, input, clock, outstanding, trigger),
       ),
     );
     return this._sealedWithAsks(
       deepFreeze({
         input,
         contributions,
-        ...(prefiltered
-          ? {
-              prefilter: prefilterRun(prefiltered, contributions.filter((c) => c.prefilter).length),
-            }
-          : {}),
         outstanding,
         elapsed: Date.now() - start,
         sealedAt: Date.now(),
@@ -890,33 +820,11 @@ export class FlowOrchestrator {
     return this._pendingNotes;
   }
 
-  /**
-   * The pre-filter's one call for a trigger, over the Wardens that would be asked. Undefined when
-   * it is off. Never throws: an unavailable model comes back as `unavailable`, and every Warden is
-   * asked.
-   */
-  async prefilter(
-    trigger: TriggerPoint | 'post-turn',
-    text: string,
-    context: string | undefined,
-    wardens: readonly Warden[],
-  ): Promise<PrefilterOutcome | undefined> {
-    if (!this._prefilter || !wardens.length) return undefined;
-    return this._prefilter.score(
-      trigger,
-      text,
-      context,
-      wardens.map((warden) => ({ domain: warden.domain, instructions: warden.advisePrompt })),
-      this._threadId,
-    );
-  }
-
   private async _assess(
     p: Participant,
     input: PlanInput,
     clock: PlanClock,
     outstanding: OutstandingCall[],
-    skip?: PrefilterSkip,
     trigger: AdviceTrigger = 'user-message',
     earlier?: EarlierMessages,
     /** A user message's own advice: served warm or skipped, and what it skips it catches up on. */
@@ -967,7 +875,6 @@ export class FlowOrchestrator {
           | 'layers'
           | 'snippets'
           | 'confidence'
-          | 'prefilter'
           | 'pointer'
           | 'repairs'
           | 'classified'
@@ -999,7 +906,6 @@ export class FlowOrchestrator {
       ({ status: 'failed', cause }) as const;
 
     if (!p.cache) return decided(notSent('cold'), { reason: 'cold-cache' });
-    if (skip) return decided(notSent('prefiltered'), { reason: 'prefilter', prefilter: skip });
     // Queued behind the pool until the plan deadline passed: never sent.
     if (clock.passed()) return decided(notSent('not-admitted'), { reason: 'deadline-queued' });
 
@@ -1349,26 +1255,13 @@ export class FlowOrchestrator {
     const threadState = this._librarian.layer.content;
 
     // The agent-action trigger point asks every domain whose guard triggers name a call of the activity.
-    const triggered: Warden[] = [];
+    const domainsToCheck: Warden[] = [];
     const skipped: string[] = [];
     for (const [, warden] of this._domains) {
       if (hooks?.only && !hooks.only.has(warden.domain)) continue;
-      if (warden.guards(activity)) triggered.push(warden);
+      if (warden.guards(activity)) domainsToCheck.push(warden);
       else skipped.push(warden.domain);
     }
-    // The pre-filter rules out the Wardens it is confident the activity is outside of.
-    const prefiltered = await this.prefilter(
-      'agent-action',
-      renderTurnActivity(activity),
-      threadState,
-      triggered,
-    );
-    const ruledOut: GuardReport['prefiltered'] = [];
-    const domainsToCheck = triggered.filter((d) => {
-      const skip = prefilterSkip(prefiltered, d.domain);
-      if (skip) ruledOut.push({ domain: d.domain, ...skip });
-      return !skip;
-    });
 
     // Freeze each domain's OWN thread understanding before any await, so every guard checks
     // against one revision and no other domain's private interpretation can enter its request.
@@ -1483,7 +1376,6 @@ export class FlowOrchestrator {
         filesAffected: [...new Set(activity.observations.flatMap((o) => o.filesAffected ?? []))],
         guardsRan: wardensChecked,
         guardsSkipped: skipped,
-        guardsPrefiltered: ruledOut,
         guardOutcomes: outcomes,
         guardsFailed: failed,
         findingsCount: findings.length,
@@ -1496,8 +1388,6 @@ export class FlowOrchestrator {
         findings,
         wardensChecked,
         skipped,
-        prefiltered: ruledOut,
-        ...(prefiltered ? { prefilter: prefilterRun(prefiltered, ruledOut.length) } : {}),
         outcomes,
         failed,
         elapsed: Date.now() - start,

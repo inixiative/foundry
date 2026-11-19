@@ -240,38 +240,6 @@ export {
   styleOf,
 } from './feedback/review-findings';
 export {
-  fixtureProbe,
-  labelAgreement,
-  type ParsedWardenLabels,
-  parseWardenLabels,
-  type UnlabelledFixture,
-  WARDEN_LABEL_PROMPT,
-  type WardenAgreement,
-  type WardenFixture,
-  type WardenLabel,
-  type WardenRosterEntry,
-  type WardenTriggerKind,
-  wardenLabelMessages,
-  wardenLabelPrefix,
-} from './feedback/warden-labels';
-export {
-  PREFILTER_CONTEXT_CHARS,
-  PREFILTER_DESCRIPTION_CHARS,
-  PREFILTER_MOMENT_CHARS,
-  PREFILTER_SWEEP,
-  type PrefilterPair,
-  type PrefilterPoint,
-  type PrefilterScore,
-  type PrefilterTrigger,
-  percentiles,
-  prefilterConsistency,
-  prefilterDescription,
-  prefilterQuestion,
-  prefilterSkips,
-  prefilterState,
-  scorePrefilter,
-} from './feedback/warden-prefilter';
-export {
   type AnswerRepair,
   type Authorship,
   type CharterScore,

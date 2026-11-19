@@ -20,7 +20,7 @@ import { defaultWorkers, resolveSubscriptionPolicy } from './subscription-policy
 /** Where a provider's account comes from. Never carries a secret: an API key is reported by its variable name. */
 export interface ProviderAccount {
   provider: string;
-  source: 'login' | 'profile' | 'gateway' | 'kingdom' | 'api-key' | 'local' | 'none';
+  source: 'login' | 'profile' | 'gateway' | 'kingdom' | 'api-key' | 'none';
   detail: string;
   /** Local evidence only (profile usable, CLI on PATH, variable set); the provider can still refuse. */
   ready: boolean;
@@ -115,14 +115,6 @@ export function providerAccounts(config: FoundryConfig, inputs: Inputs = {}): Pr
         };
       }
       const uses = main ? (['main thread'] as const) : [];
-      if (info?.credential === 'local')
-        return {
-          provider: provider.id,
-          source: 'local',
-          detail: provider.baseUrl || info.apiRoot || '',
-          ready: true,
-          uses: [...uses],
-        };
       const envKey = info?.envKey ?? '';
       if (!apiTokens)
         return {

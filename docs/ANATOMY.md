@@ -128,7 +128,7 @@ One sheet naming every part of Foundry, so people and agents use the same words.
 | `consumed` → advice | Every Warden, when the main thread takes in a work item (a ticket or spec file it reads, a Linear issue or Notion page it fetches). Rides with the next turn as notes. | `pf/agents/work-items.ts`; `chorus.consumed` | off |
 | `agent-action` → guard | Once per turn when its tool activity ends, over every write, edit and command in order, for each Warden whose `guardTriggers` name one. Advisory only; never awaited, never holds the hand-back. | `guard: per-turn` (default) or `per-call`; `REGION_GUARD_TRIGGERS` | live |
 | `subagent-spawn` → brief | Every Warden, on the task text handed to a subagent; journalled on the parent and delivered with its next turn. | `FlowOrchestrator.brief` | live |
-| review (post-work review) | After the turn, each Warden reviews the work and writes its thread knowledge (`post-turn` in the pre-filter). | `learning.enabled` | live |
+| review (post-work review) | After the turn, each Warden reviews the work and writes its thread knowledge. | `learning.enabled` | live |
 | `milestone` → advice | Every Warden, at a call that lands work (open or merge a pull request, publish, `set_status` done, a write to a standing rule file). On Claude asked at `pre-use` and returned as the call's `additionalContext`; on Codex and Muse asked when observed, riding the next turn. Never blocks. | `pf/turns/milestones.ts`; `withChorusAtCall` | live |
 | `hand-back` → advice | Every Warden, over the message a turn that did work (a guarded write, edit or command) handed back; not awaited, rides the next turn. No extra pass before the person sees it. | `ThreadRuntime._handBack` | live |
 | `agent-question` | A Warden answers the agent's question on the user's behalf when confident and backed by a recorded ruling. | named in `warden-triggers.ts` | proposed |
@@ -140,7 +140,6 @@ One sheet naming every part of Foundry, so people and agents use the same words.
 | pointer level | How specific a pointer is: `exact`, `candidates` or `class` (the pointer ladder Oracle scores). | `PointerLevel` | live |
 | `NO_COMMENT` | The default answer: exactly that string. It adds nothing to the thread and is journalled as `no-comment`, so silence is measurable. | every phase protocol | live |
 | `not-sent:not-admitted` | A Warden the queue never ran in time (advice and guard); the turn goes on without it. One of the call outcomes. | `CallOutcome`, `pc/call-outcome.ts` | live |
-| pre-filter | A local model scores, per Warden, whether a moment is in its domain and skips only confident noes; fails open and journals every skip. Superseded as policy by "ask every region, every time"; the code stays. | `prefilter`, `pf/providers/warden-prefilter.ts`, `prefilter-model.ts` | off |
 | Herald | A region role for live data (what other agents and teammates are doing), beside Wardens' static knowledge. The socket exists (`chorus.heralds`, region `role: "herald"`); Herald regions never run and have no charter. | The Herald class moved to the private chorus repo, packages/heralds/reference/ (2026-11-18, R-2026-11-18-27); the `chorus.heralds` settings, `ask_herald` and the heralds skill stay as placeholders | proposed |
 
 ## The decision runtime
@@ -261,8 +260,8 @@ Oracle is the test harness: it replays real work against Foundry and measures wh
 |---|---|---|
 | The hand-named Warden roster (Docs, Convention, Security, Architecture, Memory, …) and its advise-style charter | Region Wardens, one per region, under the point charter. Settings declare only executors. | 2026-10-17 |
 | `chorus.source: "regions"` | `chorus.enabled: true` | 2026-10-17 |
-| Domain Librarians (as the name for Wardens) | Wardens; the code's `DomainLibrarian`, kind `domain-librarian`, flowRole `domain-advising`, `ThreadDomainConfig`, `domain_learning` and `ConfiguredExpert` became `Warden`, kind and flowRole `warden`, `CodeWardenConfig`, `warden_learning` and `ConfiguredWarden` | prose before 2026-10-12; code 2026-11-19 |
-| Pre-filter on by default | Off; ask every region, every time | 2026-10-15 |
+| Domain Librarians (as the name for Wardens) | Wardens; the code's `DomainLibrarian`, kind `domain-librarian`, flowRole `domain-advising`, `ThreadDomainConfig`, `domain_learning` and `ConfiguredExpert` became `Warden`, kind `warden` (`flowRole` removed 2026-11-19: `kind` says it), `CodeWardenConfig`, `warden_learning` and `ConfiguredWarden` | prose before 2026-10-12; code 2026-11-19 |
+| The Warden pre-filter (`prefilter`, `providers/warden-prefilter.ts`, `prefilter-model.ts`, the Kev model under `~/.foundry/models`, the `prefiltered` outcome, its eval `scripts/evals/warden-prefilter.ts` and core `warden-labels`) and every local model provider (Ollama, vLLM, the `local` credential) | Every region Warden asked every time, on Claude Haiku; hosted API-key providers only (R-2026-11-19-04) | off 2026-10-15; removed 2026-11-19 |
 | Guard per tool call | One guard per turn (`guard: per-call` remains a setting) | 2026-10-15 |
 | The starter stack (system / conventions / memory layers, classifier → router → three executors) | An unwrapped thread | 2026-10-16 |
 | Supervised mode | Removed (it was a pass-through) | 2026-09-30 |

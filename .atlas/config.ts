@@ -99,11 +99,7 @@ export default defineConfig({
       partOf: 'feature:feedback',
     },
     { include: `${CORE}/feedback/archive-turns.ts`, partOf: 'integration:archive' },
-    {
-      include: `${CORE}/feedback/{experiment-gate,warden-probes,warden-labels}.ts`,
-      partOf: 'feature:evals',
-    },
-    { include: `${CORE}/feedback/warden-prefilter.ts`, partOf: 'feature:wardens' },
+    { include: `${CORE}/feedback/{experiment-gate,warden-probes}.ts`, partOf: 'feature:evals' },
 
     // foundry: agents
     {
@@ -145,10 +141,6 @@ export default defineConfig({
 
     // foundry: classification and Wardens
     { include: `${FOUNDRY}/classify/**`, partOf: 'primitive:classify' },
-    {
-      include: `${FOUNDRY}/providers/{warden-prefilter,prefilter-model,in-session-wardens}.ts`,
-      partOf: 'feature:wardens',
-    },
     { include: `${FOUNDRY}/readiness.ts`, partOf: 'feature:wardens' },
 
     // foundry: feedback and evals
