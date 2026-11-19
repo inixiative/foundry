@@ -299,9 +299,8 @@ export const FIRST_MESSAGE_NAME_MAX_CHARS = 60;
 const REDACTED_MARKER = /\[REDACTED:[a-z-]+\]/g;
 
 /**
- * A thread's first name, made from its first message's words with no model call (Aron, 2026-11-18:
- * "Number 3 seems fine"; this session read that as showing the first message's words until the agent
- * names the thread). The name reaches places the message does not (sibling listings, Kingdom's
+ * A thread's first name, made from its first message's words with no model call (R-2026-11-19-10:
+ * "As you're typing, the first sentence seems fine, and then the first turn should name it"). The name reaches places the message does not (sibling listings, Kingdom's
  * review link, local members' wake text), so credentials are scrubbed (`scrubSecrets`), lifted
  * secret references and code-fence markers dropped, and control and format characters (bidi
  * overrides, zero-width marks) removed. One line, cut at a word boundary to

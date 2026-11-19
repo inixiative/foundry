@@ -332,7 +332,22 @@ test('an open observer sees externally admitted work without reload, without dup
     // Own submission then another external one: exactly one row per turn, one provider call per submission.
     await observer.locator('.chat-input').fill('Own submitted work');
     await observer.locator('.chat-input').press('Enter');
-    await observer.locator('.chat-agent').filter({ hasText: 'OBSERVED_WORK_2' }).waitFor();
+    await observer
+      .locator('.chat-agent')
+      .filter({ hasText: 'OBSERVED_WORK_2' })
+      .waitFor()
+      .catch(async (error: Error) => {
+        // On a miss, say what the tab shows and what the server ran, so a CI failure is readable.
+        const store = f.viewer.localStore!;
+        const turns = store
+          .recentTurnIds('main', 10)
+          .map((id) => store.turn(id))
+          .map((t) => `${t?.id}:${t?.status}${t?.error ? `(${t.error})` : ''}`);
+        const shown = await observer.locator('.chat-user, .chat-agent').allInnerTexts();
+        throw Error(
+          `${error.message}\nprovider calls: ${f.inputs.length}\nturns: ${turns.join(', ')}\nshown: ${JSON.stringify(shown).slice(0, 1500)}\npage errors: ${f.report.errors.join(' | ')}`,
+        );
+      });
     await observer.waitForFunction(
       async () => (await import(`${location.origin}/ui/store.js`)).inflight.value === 0,
     );
