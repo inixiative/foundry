@@ -1,21 +1,15 @@
 import './helpers/isolate-archive';
 import { afterEach, expect, test } from 'bun:test';
 import { createRequire } from 'node:module';
-import {
-  ContextStack,
-  type LLMProvider,
-  Thread,
-  type ThreadPlan,
-  ToolRegistry,
-} from '@inixiative/foundry-core';
-import { NAME_CHECK_NOTE, PLAN_ASK_NOTE } from '../src/agents/chorus-reception';
-import { ThreadNamer } from '../src/agents/thread-namer';
+import { ContextStack, Thread, type ThreadPlan, ToolRegistry } from '@inixiative/foundry-core';
+import { NAME_ASK_NOTE, NAME_CHECK_NOTE, PLAN_ASK_NOTE } from '../src/agents/chorus-reception';
 import { createFoundryMcp } from '../src/mcp/server';
 import {
   type ArtifactVersionRecord,
   applyPlanPatch,
   markPlanOutcomeByPerson,
   NAME_CHECK_AFTER_MS,
+  nameThreadFromMessage,
   needsNameCheck,
   needsPlan,
   planPatchSchema,
@@ -245,29 +239,15 @@ test('the loop: set_loop starts it, loop_round records rounds, the limit says st
   expect(thread.meta.loop?.rounds).toEqual([]);
 });
 
-test("rename_thread sets the Foundry name as the agent's; a person's name stays and the namer leaves the agent's alone", async () => {
+test("rename_thread sets the Foundry name as the agent's; a person's name stays", async () => {
   const { thread, call } = await bridge();
   expect(await call('rename_thread', { name: 'Fix flaky login test' })).toEqual({
     isError: false,
     text: 'Thread renamed: Fix flaky login test.',
   });
   expect(thread.meta.foundryName).toMatchObject({ text: 'Fix flaky login test', by: 'agent' });
-
-  let decisions = 0;
-  const provider: LLMProvider = {
-    id: 'naming',
-    async complete() {
-      decisions++;
-      return { content: '{"title":"Something else entirely"}', model: 'haiku' };
-    },
-  };
-  const namer = new ThreadNamer({
-    provider,
-    changed() {},
-  });
-  namer.turnCompleted(thread, { user: 'Now look at the signup page layout', agent: 'ok' });
-  await Bun.sleep(10);
-  expect(decisions).toBe(0);
+  // A later message never takes over the agent's name.
+  expect(nameThreadFromMessage(thread, 'Now look at the signup page layout')).toBe(false);
   expect(thread.meta.foundryName?.text).toBe('Fix flaky login test');
 
   thread.meta.name = { text: 'My name', updatedAt: Date.now() };
@@ -320,22 +300,25 @@ test('a plan is due on new work: none, or every outcome done', () => {
   expect(PLAN_ASK_NOTE).toContain('set_plan');
 });
 
-test("a name is checked once it is 30 minutes old, at most once a window; a person's name and an unnamed thread never", () => {
+test("a first-message name is asked about at once, an agent's once it is 30 minutes old, at most once a window; a person's name and an unnamed thread never", () => {
   const now = 10 * NAME_CHECK_AFTER_MS;
   const named = (updatedAt: number, by?: 'agent') => ({
     foundryName: { text: 'Fix login', updatedAt, ...(by ? { by } : {}) },
   });
   expect(needsNameCheck({}, 0, now)).toBe(false);
-  expect(needsNameCheck(named(now - NAME_CHECK_AFTER_MS + 1), 0, now)).toBe(false);
-  expect(needsNameCheck(named(now - NAME_CHECK_AFTER_MS), 0, now)).toBe(true);
-  // A name the agent gave is checked too; its rename resets the window.
+  // Only the first message's words: due at once, however fresh.
+  expect(needsNameCheck(named(now), 0, now)).toBe(true);
+  // A name the agent gave is checked once it is 30 minutes old; its rename resets the window.
+  expect(needsNameCheck(named(now - NAME_CHECK_AFTER_MS + 1, 'agent'), 0, now)).toBe(false);
   expect(needsNameCheck(named(now - NAME_CHECK_AFTER_MS, 'agent'), 0, now)).toBe(true);
   // Asked on an earlier turn of this window: not again until the window passes.
   expect(needsNameCheck(named(0), now - 1_000, now)).toBe(false);
   expect(needsNameCheck(named(0), now - NAME_CHECK_AFTER_MS, now)).toBe(true);
+  expect(needsNameCheck(named(0, 'agent'), now - 1_000, now)).toBe(false);
   // A person's name is theirs.
   expect(needsNameCheck({ ...named(0), name: { text: 'Mine', updatedAt: 0 } }, 0, now)).toBe(false);
   expect(NAME_CHECK_NOTE).toContain('rename_thread');
+  expect(NAME_ASK_NOTE).toContain('rename_thread');
 });
 
 test("the viewer's records service writes on the thread's journalled meta", async () => {

@@ -48,7 +48,7 @@ import type { FeedbackPhase } from '../feedback/types';
 import { workerHostsFoundryTools } from '../models/registry';
 import { roleComposition, scopeOfRole } from '../prompts/instruction-settings';
 import type { SessionAdapter } from '../providers/session-adapter';
-import { needsNameCheck, needsPlan } from '../tools/thread-record';
+import { hasWorkContent, needsNameCheck, needsPlan } from '../tools/thread-record';
 import {
   briefedText,
   CHORUS_AT_CALL_DEADLINE_MS,
@@ -74,6 +74,7 @@ import {
   FOUNDRY_TOOLS_LAYER,
   FOUNDRY_TOOLS_NOTE,
   FOUNDRY_TOOLS_NOTE_VERSION,
+  NAME_ASK_NOTE,
   NAME_CHECK_NOTE,
   PLAN_ASK_NOTE,
   STANDING_LAYERS,
@@ -114,7 +115,6 @@ import {
   roleSources,
 } from './role-layers';
 import { SCOPE_BRIEF_LAYER, scopeBrief } from './scope-roles';
-import { hasWorkContent } from './thread-namer';
 import {
   activityTools,
   isThreadKnowledgeLayerId,
@@ -1419,8 +1419,12 @@ class ThreadRuntimeImpl implements ThreadRuntime {
             text: PLAN_ASK_NOTE,
           },
         ]);
-      // A name set over 30 minutes ago: ask the agent to check it on this turn, never a turn of its own.
-      if (needsNameCheck(thread.meta, nameCheckedAt)) {
+      // A name the agent did not give, or the agent's own 30 minutes on: ask it to name the thread on
+      // this turn, never a turn of its own; only a worker holding Foundry's tools has rename_thread.
+      if (
+        workerHostsFoundryTools(thread.meta.worker) &&
+        needsNameCheck(thread.meta, nameCheckedAt)
+      ) {
         nameCheckedAt = Date.now();
         flow.queueNotes([
           {
@@ -1428,7 +1432,7 @@ class ThreadRuntimeImpl implements ThreadRuntime {
             id: `name-check:${identity?.messageId ?? nameCheckedAt}`,
             source: 'foundry',
             placement: 'after-message',
-            text: NAME_CHECK_NOTE,
+            text: thread.meta.foundryName?.by === 'agent' ? NAME_CHECK_NOTE : NAME_ASK_NOTE,
           },
         ]);
       }

@@ -209,6 +209,7 @@ export {
   type FeedbackTag,
   parseCorrectionClassifications,
   proseOf,
+  SECRET_REFERENCE_PATTERN,
   SHAPED_SECRET_PATTERNS,
   scrubSecrets,
   type TranscriptTurn,

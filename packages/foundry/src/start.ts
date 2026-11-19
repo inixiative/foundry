@@ -1068,8 +1068,6 @@ const viewer = await startViewer({
   sessionBindings: () => sessionStore.all(),
   assistProvider: provider,
   assistModel: config.defaults.model,
-  // A thread's first name only; once named, its own agent checks the name (NAME_CHECK_NOTE).
-  namingProvider: flowLlm,
   // A thread switching worker leaves its session on the old one behind (ended, never resumed).
   workerSessions: {
     binding: async (worker, threadId) => {
@@ -1130,16 +1128,23 @@ console.log();
 // Startup self-test — verify the LLM provider actually works
 // ---------------------------------------------------------------------------
 
-await runStartupSelfTest({
-  enabled: selfTestRequested,
-  provider: decisions?.provider ?? provider,
-  model: decisions ? decisionModel : config.defaults.model,
-  // A Foundry-owned folder, stamped for Archive: the self-test is Foundry's session, not the user's.
-  cwd: stampFoundryRun(privateDirectory(resolve(FOUNDRY_DIR, 'self-test'))),
-  log: console.log,
-  warn: console.warn,
-  error: console.error,
-});
+// With project hosts, each host's start proves the decision login (auth status, then its setup turn);
+// a self-test decision would need the primed pool, so it is not run.
+if (selfTestRequested && live?.projectHosts)
+  console.log(
+    "Provider self-test: not run; the decision login is checked when a project's Warden host starts (claude auth status, then its setup turn)",
+  );
+else
+  await runStartupSelfTest({
+    enabled: selfTestRequested,
+    provider: decisions?.provider ?? provider,
+    model: decisions ? decisionModel : config.defaults.model,
+    // A Foundry-owned folder, stamped for Archive: the self-test is Foundry's session, not the user's.
+    cwd: stampFoundryRun(privateDirectory(resolve(FOUNDRY_DIR, 'self-test'))),
+    log: console.log,
+    warn: console.warn,
+    error: console.error,
+  });
 
 // A staged update spins the daemon down: running turns finish, new ones wait, then it restarts
 // and runs them (`daemon/restart-roll.ts`).

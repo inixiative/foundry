@@ -1276,7 +1276,9 @@ test('a local member hears what was posted, is woken while it speaks, posts back
   expect(h.conversations.deliverNotes(codex.id, woke)).toEqual([]);
 
   // Its answer in its own thread stays there; it speaks through post_to_conversation.
-  expect(h.conversations.postFromLocal(codex.id, 'Looks right to me.')).toBe('Posted to main.');
+  expect(h.conversations.postFromLocal(codex.id, 'Looks right to me.')).toBe(
+    'Posted to Codex, what do you think of the plan?.',
+  );
   const post = h.conversations.view('main').posts.at(-1)!;
   expect(post).toMatchObject({
     member: { kind: 'local', id: codex.id },
@@ -1342,7 +1344,7 @@ test('a listening local member hears everything and is never woken, except by so
   expect(notes[4]).toContain('the host agent, to you');
   const sendSeq = /entry (\d+)/.exec(notes[4]!)![1]!;
   expect(h.conversations.postFromLocal(codex.id, 'Summary: …', { inReplyTo: sendSeq })).toBe(
-    'Posted to main.',
+    'Posted to just thinking out loud.',
   );
 });
 
@@ -1358,7 +1360,7 @@ test('a local member holds the conch only when given it; a refused post is an er
   h.conversations.giveConch('main', { kind: 'local', id: codex.id });
   expect(h.conversations.view('main').floor.holder).toEqual({ kind: 'local', id: codex.id });
   await until(() => codex.store.recentTurnIds(codex.id, 10).length === 1, 'woken with the conch');
-  expect(h.conversations.postFromLocal(codex.id, 'now me')).toBe('Posted to main.');
+  expect(h.conversations.postFromLocal(codex.id, 'now me')).toBe('Posted to anyone?.');
 });
 
 test('a local member must be a thread of the same project, not the host itself, and no cycle', async () => {

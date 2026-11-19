@@ -19,7 +19,7 @@ export type ThreadStatus = 'idle' | 'active' | 'waiting' | 'archived';
 export interface ThreadName {
   readonly text: string;
   readonly updatedAt: number;
-  /** A Foundry name the thread's agent gave (`rename_thread`): Foundry's namer leaves it alone. */
+  /** A Foundry name the thread's agent gave (`rename_thread`); without it, the first message's words. */
   readonly by?: 'agent';
 }
 
@@ -251,8 +251,8 @@ export interface ThreadMeta {
   name?: ThreadName;
 
   /**
-   * Name Foundry gives the thread from the person's messages (its first message, then again when
-   * the work moves) while no person has named it. Never set once a person has.
+   * The thread's name while no person has named it: its first message's words, until its agent names
+   * it (`rename_thread`, `by: 'agent'`). Never set once a person has.
    */
   foundryName?: ThreadName;
 

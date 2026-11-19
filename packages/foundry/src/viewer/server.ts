@@ -22,7 +22,6 @@ import type { Server } from 'bun';
 import { Hono } from 'hono';
 import { serveStatic } from 'hono/bun';
 import { invalidateComposition } from '../agents/role-layers';
-import { ThreadNamer } from '../agents/thread-namer';
 import { registerArchiveRoutes } from '../archives/routes';
 import { ThreadContextTracker } from '../archives/thread-context';
 import { CompositionAuditor } from '../audit/compositions';
@@ -128,8 +127,6 @@ export interface ViewerConfig {
   decisionHosts?: () => { projects: Record<string, ProjectHostState> } | undefined;
   /** Every native session binding (`FileExternalSessionStore.all`), for Status → Processes. */
   sessionBindings?: () => Promise<ReadonlyArray<{ threadId: string; externalSessionId: string }>>;
-  /** Decision provider for a thread's first name (optional; no first name without it). */
-  namingProvider?: LLMProvider;
   /** Each worker's native sessions, for a thread switching worker mid-conversation. */
   workerSessions?: WorkerSessions;
   /** A project is active: a thread of it was opened here (its Warden host opens before the first turn). */
@@ -604,9 +601,6 @@ export function createViewer(config: ViewerConfig) {
       console.warn(`[Viewer] thread ${thread.id} metadata not saved: ${(error as Error).message}`);
     }
   };
-  const namer = config.namingProvider
-    ? new ThreadNamer({ provider: config.namingProvider, changed: threadChanged })
-    : undefined;
   const threadContext = new ThreadContextTracker({
     thread: (id) => directory.get(id),
     changed: threadChanged,
@@ -895,7 +889,6 @@ export function createViewer(config: ViewerConfig) {
     threadFactory: config.threadFactory,
     configStore,
     projectRegistry: config.projectRegistry,
-    namer,
     threadContext,
     runningTasks,
     ...(config.tokenTracker ? { tokenTracker: config.tokenTracker } : {}),

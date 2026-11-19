@@ -22,7 +22,7 @@ Foundry already shows what it can see: working, queued, a failed turn, an approv
 
 ## Name (`rename_thread`)
 
-Foundry names a new thread from the person's first message. Rename it when the outcome becomes clear or changes: the outcome in 3–7 plain words ("Fix flaky login test", not "Working on tests"; no status words). Once you rename it, Foundry's namer leaves it to you. A name the person gave is theirs: the tool refuses, and you ask them.
+A new thread shows the person's first message's words until you name it; on a thread with Foundry's context, Foundry asks you to on that first turn. Rename it when the outcome becomes clear or changes: the outcome in 3–7 plain words ("Fix flaky login test", not "Working on tests"; no status words). Foundry asks you to check your name every 30 minutes of work. A name the person gave is theirs: the tool refuses, and you ask them.
 
 ## Here, or a new one
 

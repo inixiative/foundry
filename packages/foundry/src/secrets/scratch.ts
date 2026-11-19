@@ -9,7 +9,12 @@ import {
   type ScratchPadSummary,
   SecretScratchPad,
 } from '@inixiative/agent-session';
-import { contextSecretHits, SHAPED_SECRET_PATTERNS, type Thread } from '@inixiative/foundry-core';
+import {
+  contextSecretHits,
+  SECRET_REFERENCE_PATTERN,
+  SHAPED_SECRET_PATTERNS,
+  type Thread,
+} from '@inixiative/foundry-core';
 import { foundryOperation } from '../turns/tool-gate';
 import type { Keychain } from './keychain';
 
@@ -204,7 +209,7 @@ export class SecretScratch {
     const note = secretNote({
       lifted: lifted.recognised,
       // Judged with the lifted references taken out: `API_KEY=†m.1` is a lifted key, not one in plain text.
-      plain: contextSecretHits(lifted.text.replace(/†[A-Za-z0-9_.:/-]+\.\d+/g, '')) > 0,
+      plain: contextSecretHits(lifted.text.replace(SECRET_REFERENCE_PATTERN, '')) > 0,
     });
     if (note) {
       this._notes.set(messageId, note);
