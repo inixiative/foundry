@@ -94,68 +94,108 @@ function outageStartedAt(
   return event.state === 'working' ? undefined : event.timestamp;
 }
 
-/** What one stored event may hold: the stream is a log for viewers, not the signals' record (the SignalBus keeps those). */
-export const EVENT_BOUNDS = { string: 2_000, items: 50, depth: 10 } as const;
+/**
+ * What one stored event may hold: the stream is a log for viewers, not the signals' record (the
+ * SignalBus keeps those). `nodes` and `chars` bound the whole copy, since a shared subtree is
+ * copied once per reference.
+ */
+export const EVENT_BOUNDS = {
+  string: 2_000,
+  items: 50,
+  depth: 10,
+  nodes: 5_000,
+  chars: 200_000,
+} as const;
 
-/** A cycle or unsupported value found while copying an event: where, so its emitter can be fixed. */
+/** A value cut while copying an event: where, so its emitter can be fixed. */
 export interface EventCopyProblem {
   readonly path: string;
-  readonly problem: 'cycle' | 'depth';
+  readonly problem: 'cycle' | 'depth' | 'size' | 'unreadable';
 }
 
 /**
  * A JSON-safe, bounded copy of `value`: strings cut to `EVENT_BOUNDS.string`, arrays to
- * `EVENT_BOUNDS.items`, nesting to `EVENT_BOUNDS.depth`; a cycle becomes "[cycle]", a function or
- * symbol is dropped, a bigint becomes its digits and anything with `toJSON` is copied as that.
- * Every cycle or depth cut is reported with its path.
+ * `EVENT_BOUNDS.items`, nesting to `EVENT_BOUNDS.depth`, the whole copy to `EVENT_BOUNDS.nodes`
+ * values and `EVENT_BOUNDS.chars` string characters; a cycle becomes "[cycle]", a value that
+ * throws when read "[unreadable]", a function or symbol is dropped, a bigint becomes its digits
+ * and anything with `toJSON` is copied as what it returns (applied once, as `JSON.stringify` does).
+ * Every cut is reported with its path. It never throws.
  */
 export function boundedPlainCopy(
   value: unknown,
   report: (problem: EventCopyProblem) => void = () => {},
 ): unknown {
   const ancestors = new Set<object>();
-  const copy = (item: unknown, path: string, depth: number): unknown => {
-    if (typeof item === 'string')
-      return item.length > EVENT_BOUNDS.string
-        ? `${item.slice(0, EVENT_BOUNDS.string)}… [+${item.length - EVENT_BOUNDS.string} chars]`
-        : item;
+  let nodes = 0;
+  let chars = 0;
+  let full = false;
+  const cut = (path: string, problem: EventCopyProblem['problem'], placeholder: string) => {
+    report({ path, problem });
+    return placeholder;
+  };
+  const copy = (item: unknown, path: string, depth: number, converted = false): unknown => {
+    if (full) return undefined;
+    if (++nodes > EVENT_BOUNDS.nodes || chars > EVENT_BOUNDS.chars) {
+      full = true;
+      return cut(path, 'size', '[truncated]');
+    }
+    if (typeof item === 'string') {
+      const kept = Math.min(EVENT_BOUNDS.string, EVENT_BOUNDS.chars - chars);
+      chars += Math.min(item.length, kept);
+      return item.length > kept ? `${item.slice(0, kept)}… [+${item.length - kept} chars]` : item;
+    }
     if (typeof item === 'number') return Number.isFinite(item) ? item : null;
     if (item === null || typeof item === 'boolean') return item;
     if (typeof item === 'bigint') return item.toString();
     if (typeof item !== 'object') return undefined;
-    if (ancestors.has(item)) {
-      report({ path, problem: 'cycle' });
-      return '[cycle]';
-    }
-    if (depth >= EVENT_BOUNDS.depth) {
-      report({ path, problem: 'depth' });
-      return '[too deep]';
-    }
-    const json = (item as { toJSON?: unknown }).toJSON;
-    if (typeof json === 'function') return copy(json.call(item), path, depth);
+    if (ancestors.has(item)) return cut(path, 'cycle', '[cycle]');
+    if (depth >= EVENT_BOUNDS.depth) return cut(path, 'depth', '[too deep]');
     ancestors.add(item);
     try {
+      const json = (item as { toJSON?: unknown }).toJSON;
+      if (!converted && typeof json === 'function') {
+        const plain = json.call(item);
+        return plain === item ? copyFields(item, path, depth) : copy(plain, path, depth, true);
+      }
       if (Array.isArray(item)) {
-        const kept = item
-          .slice(0, EVENT_BOUNDS.items)
-          .map((entry, i) => copy(entry, `${path}[${i}]`, depth + 1) ?? null);
-        if (item.length > EVENT_BOUNDS.items)
-          kept.push(`… [+${item.length - EVENT_BOUNDS.items} items]`);
+        const kept: unknown[] = [];
+        for (const [i, entry] of item.slice(0, EVENT_BOUNDS.items).entries()) {
+          if (full) break;
+          kept.push(copy(entry, `${path}[${i}]`, depth + 1) ?? null);
+        }
+        if (item.length > kept.length) kept.push(`… [+${item.length - kept.length} items]`);
         return kept;
       }
       if (item instanceof Error)
         return { name: item.name, message: copy(item.message, path, depth) };
-      const out: Record<string, unknown> = {};
-      for (const [key, entry] of Object.entries(item)) {
-        const kept = copy(entry, `${path}.${key}`, depth + 1);
-        if (kept !== undefined) out[key] = kept;
-      }
-      return out;
+      return copyFields(item, path, depth);
+    } catch {
+      return cut(path, 'unreadable', '[unreadable]');
     } finally {
       ancestors.delete(item);
     }
   };
-  return copy(value, '', 0);
+  const copyFields = (item: object, path: string, depth: number): Record<string, unknown> => {
+    const out: Record<string, unknown> = {};
+    for (const key of Object.keys(item)) {
+      if (full) break;
+      let entry: unknown;
+      try {
+        entry = (item as Record<string, unknown>)[key];
+      } catch {
+        out[key] = cut(`${path}.${key}`, 'unreadable', '[unreadable]');
+        continue;
+      }
+      const kept = copy(entry, `${path}.${key}`, depth + 1);
+      if (kept !== undefined) out[key] = kept;
+    }
+    return out;
+  };
+  try {
+    return copy(value, '', 0);
+  } catch {
+    return cut('', 'unreadable', '[unreadable]');
+  }
 }
 
 /** How many distinct problem sites are warned about before the stream goes quiet. */
@@ -165,7 +205,7 @@ const MAX_WARNED_SITES = 200;
  * Unified event stream across all threads and sessions.
  *
  * The UI subscribes to this — it's the single source of truth for
- * what's happening in the system. Every layer state change, every dispatch,
+ * what's happening in the system. Every layer state change, every journal write,
  * every signal, every thread spawn shows up here in order.
  *
  * Supports both push (subscribe) and pull (recent history) access patterns.

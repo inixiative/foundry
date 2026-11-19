@@ -287,6 +287,63 @@ describe('what the stream keeps', () => {
     expect(boundedPlainCopy({ x: shared, y: shared })).toEqual({ x: { a: 1 }, y: { a: 1 } });
   });
 
+  test('a toJSON returning its own object is applied once, and its fields are copied', () => {
+    const self = {
+      id: 'n',
+      toJSON() {
+        return this;
+      },
+    };
+    expect(boundedPlainCopy({ self })).toEqual({ self: { id: 'n' } });
+    const chained = { toJSON: () => ({ toJSON: () => 'never', kept: 1 }) };
+    expect(boundedPlainCopy(chained)).toEqual({ kept: 1 });
+  });
+
+  test('a value that throws when read becomes a placeholder; push never throws', () => {
+    const problems: string[] = [];
+    const hostile = {
+      ok: 1,
+      get bad(): never {
+        throw new Error('nope');
+      },
+    };
+    const copy = boundedPlainCopy(
+      {
+        hostile,
+        json: {
+          toJSON: () => {
+            throw new Error('no');
+          },
+        },
+      },
+      (p) => problems.push(`${p.problem}${p.path}`),
+    );
+    expect(copy).toEqual({ hostile: { ok: 1, bad: '[unreadable]' }, json: '[unreadable]' });
+    expect(problems).toEqual(['unreadable.hostile.bad', 'unreadable.json']);
+    const stream = new EventStream();
+    const event = makeEvent('signal');
+    if (event.kind !== 'signal') throw new Error('expected a signal event');
+    const hostileSignal: StreamEvent = {
+      ...event,
+      signal: { ...event.signal, content: { hostile } },
+    };
+    expect(() => stream.push(hostileSignal)).not.toThrow();
+    expect(stream.recent()[0]).toMatchObject({
+      signal: { content: { hostile: { bad: '[unreadable]' } } },
+    });
+  });
+
+  test('a shared subtree referenced many times is bounded in total', () => {
+    const wide = Array.from({ length: 50 }, () => 'x'.repeat(2_000));
+    let tree: unknown = wide;
+    for (let level = 0; level < 4; level++) tree = Array.from({ length: 50 }, () => tree);
+    const problems: string[] = [];
+    const copy = boundedPlainCopy(tree, (p) => problems.push(p.problem));
+    const size = JSON.stringify(copy).length;
+    expect(size).toBeLessThan(EVENT_BOUNDS.chars + EVENT_BOUNDS.nodes * 40);
+    expect(problems).toEqual(['size']);
+  });
+
   test('recent with a condition returns the newest matches, oldest first', () => {
     const stream = new EventStream();
     for (let i = 0; i < 6; i++) stream.push(makeEvent('journal', i % 2 ? 'odd' : 'even'));
