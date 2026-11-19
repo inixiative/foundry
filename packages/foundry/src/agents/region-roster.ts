@@ -5,7 +5,11 @@
  */
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { isAbsolute, join, resolve } from 'node:path';
-import { claudemdSource, INSTRUCTION_FILE_LIMIT } from '@inixiative/foundry-core';
+import {
+  claudemdSource,
+  hierarchyFingerprint,
+  INSTRUCTION_FILE_LIMIT,
+} from '@inixiative/foundry-core';
 import {
   DEFAULT_STAGES,
   defaultSection,
@@ -157,23 +161,67 @@ const readingRegions = <T>(dir: string, read: () => T): T => {
     if (error instanceof RegionsUnreadable) throw error;
     throw new RegionsUnreadable(
       `regions at ${dir} could not be read (${(error as Error).message})`,
+      { cause: error },
     );
   }
 };
 
+/**
+ * Each regions directory's last read, with the paths it consulted and their fingerprint. Every Warden
+ * build, project view and settings check reads the regions (361 directories across 22 projects on
+ * 11-18, 200 ms or more of blocking reads each time, repeated per request), so a read is reused while
+ * no consulted path changed (`hierarchyFingerprint`): a directory's entry list changes its own stamp,
+ * a file's edit its own. A malformed region is cached too; a failure of the system (EMFILE, EIO,
+ * EACCES) is not, so the next read retries it. The pattern of `readRepositorySettings`.
+ */
+const regionsCache = new Map<
+  string,
+  { probes: readonly string[]; fingerprint: string; read: RegionSummary[] | RegionsUnreadable }
+>();
+
+/** A failure from the operating system (it carries an errno `code`), not from a region's files. */
+const systemFailure = (error: RegionsUnreadable) =>
+  typeof (error.cause as { code?: unknown } | undefined)?.code === 'string';
+
 export function readRegions(dir: string): RegionSummary[] {
-  return readingRegions(dir, () => readRegionFiles(dir));
+  const cached = regionsCache.get(dir);
+  if (cached && hierarchyFingerprint(cached.probes) === cached.fingerprint) {
+    if (cached.read instanceof RegionsUnreadable) throw new RegionsUnreadable(cached.read.message);
+    // A copy: nothing downstream can change what the next reader sees.
+    return structuredClone(cached.read);
+  }
+  regionsCache.delete(dir);
+  const probes: string[] = [];
+  const consulted = (path: string) => {
+    probes.push(path);
+    return existsSync(path);
+  };
+  const readStartedAt = Date.now();
+  const remember = (read: RegionSummary[] | RegionsUnreadable) => {
+    const fingerprint = hierarchyFingerprint(probes, { readStartedAt });
+    if (fingerprint) regionsCache.set(dir, { probes, fingerprint, read });
+  };
+  try {
+    const read = readingRegions(dir, () => readRegionFiles(dir, consulted));
+    remember(read);
+    return structuredClone(read);
+  } catch (error) {
+    if (error instanceof RegionsUnreadable && !systemFailure(error)) remember(error);
+    throw error;
+  }
 }
 
-function readRegionFiles(dir: string): RegionSummary[] {
-  if (!existsSync(dir) || !statSync(dir).isDirectory()) return [];
+/** `consulted` records a path the read depends on and answers whether it exists. */
+function readRegionFiles(dir: string, consulted: (path: string) => boolean): RegionSummary[] {
+  if (!consulted(dir) || !statSync(dir).isDirectory()) return [];
   const regions: RegionSummary[] = [];
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     if (!entry.isDirectory()) continue;
+    consulted(join(dir, entry.name));
     const path = join(dir, entry.name, 'region.json');
     const knowledgePath = join(dir, entry.name, 'knowledge.md');
-    if (!existsSync(path)) continue;
-    if (!existsSync(knowledgePath))
+    if (!consulted(path)) continue;
+    if (!consulted(knowledgePath))
       throw new RegionsUnreadable(
         `region ${entry.name} at ${dir} has a region.json but no knowledge.md`,
       );
@@ -193,6 +241,7 @@ function readRegionFiles(dir: string): RegionSummary[] {
     } catch (error) {
       throw new RegionsUnreadable(
         `region ${entry.name} at ${dir}: region.json is not JSON (${(error as Error).message})`,
+        { cause: error },
       );
     }
     const r = raw as {
@@ -235,6 +284,7 @@ function readRegionFiles(dir: string): RegionSummary[] {
     for (const file of readdirSync(join(dir, entry.name), { withFileTypes: true })) {
       if (!file.isFile() || !file.name.endsWith('.md')) continue;
       const docPath = join(dir, entry.name, file.name);
+      consulted(docPath);
       docs[file.name] = { path: docPath, bytes: statSync(docPath).size };
     }
     regions.push({

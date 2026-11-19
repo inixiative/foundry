@@ -321,21 +321,6 @@ export function roleViewChanged(view: RoleView): boolean {
   return !view.fingerprint || hierarchyFingerprint(view.probes) !== view.fingerprint;
 }
 
-/** A view's fingerprint, or none when a consulted path was modified once reading began. */
-function viewFingerprint(probes: readonly string[], startedAt: number): string {
-  const now = Date.now();
-  for (const path of probes) {
-    try {
-      const modified = statSync(path).mtimeMs;
-      // A future timestamp (clock skew) is not a write during the read.
-      if (modified >= startedAt && modified <= now + 1_000) return '';
-    } catch {
-      /* absent: part of the fingerprint */
-    }
-  }
-  return hierarchyFingerprint(probes);
-}
-
 /** A slot's files as one block. A framed slot carries Claude Code's preamble (`RoleView.framed`). */
 function renderSlot(
   files: readonly InstructionStackFile[],
@@ -461,7 +446,7 @@ export async function composeRoleView(
     framed,
     takesGeneral: !takesNoGeneral,
     probes,
-    fingerprint: viewFingerprint(probes, startedAt),
+    fingerprint: hierarchyFingerprint(probes, { readStartedAt: startedAt }),
   };
 }
 

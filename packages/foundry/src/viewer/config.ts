@@ -1491,6 +1491,8 @@ export class ConfigStore {
   private _dir: string;
   private _config: FoundryConfig;
   private _loaded = false;
+  /** The settings.json text the live config was last checked against: the same text is not checked again. */
+  private _loadedText: string | undefined;
   private _revision = 0;
   private readonly _queue = createSerializedQueue();
   private _listeners = new Set<SettingsListener>();
@@ -1519,15 +1521,19 @@ export class ConfigStore {
       const path = join(this._dir, 'settings.json');
       const file = Bun.file(path);
       if (await file.exists()) {
+        const text = await file.text();
+        // Routes load before every read; checking settings walks every project's regions.
+        if (this._loaded && text === this._loadedText) return this._config;
         // Merge saved over defaults into a candidate; validate before it becomes live.
         // An invalid persisted policy fails loudly, keeps the last working live
         // configuration, and leaves the file untouched for the operator to repair.
-        const candidate = configFromSaved(await file.json());
+        const candidate = configFromSaved(JSON.parse(text));
         try {
           validateConfig(candidate);
         } catch (err) {
           throw new Error(`settings.json at ${path} was not loaded: ${(err as Error).message}`);
         }
+        this._loadedText = text;
         if (JSON.stringify(candidate) !== JSON.stringify(this._config)) {
           const previous = this._config;
           this._revision++;
@@ -1749,7 +1755,9 @@ export class ConfigStore {
   private async _commit(candidate: FoundryConfig, author = 'user'): Promise<FoundryConfig> {
     validateConfig(candidate);
     const path = join(this._dir, 'settings.json');
-    writeFileAtomic(path, JSON.stringify(candidate, null, 2), 0o600);
+    const text = JSON.stringify(candidate, null, 2);
+    writeFileAtomic(path, text, 0o600);
+    this._loadedText = text;
     const previous = this._config;
     this._config = candidate;
     this._revision++;
