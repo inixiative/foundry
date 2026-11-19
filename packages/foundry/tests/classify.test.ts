@@ -424,6 +424,39 @@ describe('the stage loop', () => {
     expect(two.calls).toHaveLength(0);
   });
 
+  test('a later stage whose host does not serve skips the Warden: the earlier yes never reaches the thread', async () => {
+    const notHeld = async (): Promise<string> => {
+      throw Object.assign(new Error('Warden not held warm on its project host; skipped unsent'), {
+        notSentCause: 'not-held',
+      });
+    };
+    const { lib, two } = twoStage(
+      { escalate: ['yes'] },
+      {},
+      {
+        one: [
+          advice([RANKED]),
+          JSON.stringify({ findings: [{ severity: 'advisory', description: RANKED }] }),
+        ],
+        two: [notHeld, notHeld],
+      },
+    );
+    const advised = await lib.advise('Add a lock.');
+    expect(callOutcomeLabel(adviceOutcomeOf(advised))).toBe('not-sent:not-held');
+    expect(advised.snippets).toEqual([]);
+    expect(advised.classified).toMatchObject({ delivered: false });
+    expect(advised.classified?.outcome).toBeUndefined();
+    expect(advised.classified?.fallback).toBeUndefined();
+    expect(advised.classified?.stages.at(-1)?.error).toStartWith('not sent (not-held): ');
+    const guarded = await lib.guard({
+      turnId: 't',
+      observations: [{ tool: 'Write', input: { content: 'redis.set(k, 1, "NX")' } }],
+    });
+    expect(guarded.outcome).toEqual({ status: 'not-sent', cause: 'not-held' });
+    expect(guarded.findings).toEqual([]);
+    expect(two.calls).toHaveLength(2);
+  });
+
   test('a later stage that outlives its share of the deadline leaves the previous outcome, journalled', async () => {
     const { lib, two } = twoStage(
       { escalate: ['yes'], deadline: 0.5 },

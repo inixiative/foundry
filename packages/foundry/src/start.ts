@@ -867,7 +867,7 @@ const holdProjectRoster = async (projectId: string) => {
       if (!lanes.has(lane)) await lane.closeProject(projectId);
   } catch (error) {
     console.warn(
-      `[project-wardens] ${projectId}: roster not composed (${(error as Error).message}); primed Wardens serve it`,
+      `[project-wardens] ${projectId}: roster not composed (${(error as Error).message}); its Wardens are skipped`,
     );
   }
 };
@@ -1096,6 +1096,7 @@ const viewer = await startViewer({
   sessionBindings: () => sessionStore.all(),
   assistProvider: provider,
   assistModel: config.defaults.model,
+  // A thread's first name only; once named, its own agent checks the name (NAME_CHECK_NOTE).
   namingProvider: flowLlm,
   // A thread switching worker leaves its session on the old one behind (ended, never resumed).
   workerSessions: {
@@ -1113,7 +1114,8 @@ const viewer = await startViewer({
           console.warn(`[Sessions] ${threadId}: a ${worker} session was left running on archive`);
     },
   },
-  feedbackProvider: flowLlm,
+  // No feedback classifier (Aron, 2026-11-18: "Feedback is its own thing. Just make it simple"):
+  // /correction and /feedback are recorded as said, and automatic capture has nothing to run.
   tokenTracker,
   analyticsDir: `${FOUNDRY_DIR}/analytics`,
   projectRegistry,

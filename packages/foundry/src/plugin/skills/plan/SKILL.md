@@ -15,7 +15,7 @@ The Plan tab shows what this thread is doing and why. It reads only what you rec
 
 Skip it for questions, one-line fixes and chat.
 
-When a message brings new work to a thread with no plan, Foundry adds a line to it: "Foundry: this thread has no plan yet…". That is the moment to call `set_plan`. If you don't, Foundry drafts a plan from the conversation after the turn (`draftedBy: 'foundry'`, shown as a draft); your first `set_plan` replaces the draft whole.
+When a message brings new work to a thread with no plan, Foundry adds a line to it: "Foundry: this thread has no plan yet…". That is the moment to call `set_plan`. Foundry writes no plan for you: a thread whose agent records none shows none.
 
 ## What goes in
 
@@ -43,7 +43,7 @@ Each section you give replaces that section; sections you leave out keep their l
 
 ## Read, clear
 
-- `get_plan`: what Foundry shows for this thread (name and who gave it, status, plan and whether Foundry drafted it, loop). Use it after a compaction or when resuming, before changing the plan.
+- `get_plan`: what Foundry shows for this thread (name and who gave it, status, plan, loop). Use it after a compaction or when resuming, before changing the plan.
 - `clear_plan`: the work the plan described was dropped. Record the new one with `set_plan`.
 
 Work that needs several rounds of build, check and fix also gets a loop (the `loop` skill): the plan is what you want, the loop is how you get there.

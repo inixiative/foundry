@@ -99,8 +99,8 @@ export interface PrimedDecisionHostConfig {
   onEvent?: (event: PrimedEvent) => void;
   /**
    * Project Warden hosts (Claude decisions by default): every Warden of a project held in one Claude
-   * Code process this host launches on the decision login. Their advice goes there while it serves,
-   * and to the primed host otherwise.
+   * Code process this host launches on the decision login. Its Wardens' calls go there while it
+   * serves and are refused unsent otherwise (`projectHostTarget`), never run on the primed host.
    */
   projectHosts?: ProjectWardenHosts;
   /**
@@ -179,25 +179,24 @@ export function isStageSession(sessionKey: string): boolean {
 }
 
 /**
- * The project host serving this decision, when it is a Warden's call (advice, guard, review or a later
- * classify stage) and its project's host serves. Each decision host holds its own model's project
- * hosts (a stage on another model: that stage host's lane), so a stage reaching this one runs here. A
- * held-only call (user-message advice, which catches up) gets `starting` while that host is on its
- * way, so it is skipped, never started cold; any other call goes to primed then (fail-open). Held-only
- * binds a Warden's first stage only: a later stage escalates a yes already given, so it runs cold on
- * the host, or primed while the host starts, rather than lose the escalation. Advice
- * and guard compose one system, so a guard is served by the same held spares; a review carries no
- * spare and runs as a cold member of the host, still no process of its own.
+ * Where a Warden's call (advice, guard, review or a later classify stage) goes while project hosts
+ * run: its project's host (a later stage: its lane) while that host serves. Otherwise it is
+ * `not-serving`: refused unsent (`not-held`), never sent to primed (Aron, 2026-11-18: "it should not
+ * be handling warden calls at all"; "when the layers are down, they just skip"). A user message's
+ * advice then catches up on the thread's next message (`agents/warden-catch-up.ts`); any other
+ * trigger skips it; a later stage skipped leaves the Warden silent for the moment (classify
+ * `runStages`), never with an earlier stage's unconfirmed answer. Undefined: not a Warden's call, or
+ * no project hosts. Advice and guard compose one system, so a guard is served by the same held
+ * spares; a review carries no spare and runs as a cold member of the host, no process of its own.
  */
 export function projectHostTarget(
   projectHosts: ProjectWardenHosts | undefined,
   sessionKey: string | undefined,
-  opts: Pick<CompletionOpts, 'heldOnly'> = {},
-): ClaudeInSessionDecisions | 'starting' | undefined {
+): ClaudeInSessionDecisions | 'not-serving' | undefined {
   if (!projectHosts || !sessionKey || !isWardenSession(sessionKey)) return undefined;
   const thread = decisionThread(sessionKey);
   const serving = thread ? projectHosts.serving(thread) : undefined;
-  return serving === 'starting' && !heldOnlyFor(sessionKey, opts) ? undefined : serving;
+  return serving && serving !== 'starting' ? serving : 'not-serving';
 }
 
 /** Whether a call is held-only: user-message advice at a Warden's first stage, never a later one. */
@@ -614,21 +613,21 @@ export function createPrimedDecisionHost(config: PrimedDecisionHostConfig) {
           if (closed) throw Error('Decision admission closed');
           // A project host's spares hold no thread state (every thread of the project shares them):
           // they split at the stable prefix, and the thread section rides with the moment.
+          // A Warden whose project host does not serve is refused unsent, never run on primed.
           // Held-only advice (a user message's, which catches up) is served warm or skipped: a Warden
-          // with no held spare, or a host still starting, is refused unsent. A call admitted outside
-          // the shared slots for a host that has since gone is refused unsent too, never run unbounded.
-          const projectHost = projectHostTarget(config.projectHosts, sessionKey, opts);
-          heldOnly = heldOnlyFor(sessionKey, opts) && !!projectHost;
-          if (projectHost === 'starting')
-            // `starting` is only routed to held-only calls (`projectHostTarget`).
+          // with no held spare is refused unsent too. A call admitted outside the shared slots for a
+          // host that has since gone is refused unsent, never run unbounded.
+          const projectHost = projectHostTarget(config.projectHosts, sessionKey);
+          if (projectHost === 'not-serving')
             throw new DecisionError(
-              'Project Warden host starting',
+              'Project Warden host not serving',
               'not-held',
               'not-dispatched',
               true,
             );
           if (!projectHost && (opts as AdmittedDecisionOpts).admittedToProjectHost)
             throw new DecisionError('Project Warden host gone', 'not-held', 'not-dispatched', true);
+          heldOnly = heldOnlyFor(sessionKey, opts) && !!projectHost;
           if (projectHost) target = projectHost;
           const { capacity } = target.snapshot();
           if (capacity) call.hostCapacity = capacity;

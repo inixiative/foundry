@@ -70,7 +70,7 @@ export const subscriptionSettingsSchema = z
         restartBackoffMs: z.number().int().min(100).max(300_000),
         /** A project with no turn or thread activity for this long has its host closed. */
         idleMs: z.number().int().min(60_000).max(86_400_000),
-        /** Failed starts in a row before the project stays on primed Wardens until restart. */
+        /** Failed starts in a row before the host is failed: its Wardens skipped until a start succeeds. */
         maxRestarts: z.number().int().min(1).max(100),
       })
       .partial()
@@ -144,9 +144,9 @@ export interface SubscriptionPolicy {
   /** Codex decisions still running after this long are hedged on a second branch. */
   hedgeAfterMs?: number;
   /**
-   * Where a thread's Wardens advise: held in its project's host (Claude decisions by default; guard,
-   * review and later stages stay primed, and primed serves while no host does), or primed sessions
-   * (Codex decisions, or `decisionRuntime: claude`).
+   * Where a thread's Wardens run: held in its project's host (Claude decisions by default; advice,
+   * guards, reviews and later stages, each skipped while its host does not serve, except a later stage,
+   * which still runs primed then), or primed sessions (Codex decisions, or `decisionRuntime: claude`).
    */
   wardens: 'primed' | 'project';
   /** Project hosts: their composition and bounds, defaults filled. */

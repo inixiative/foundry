@@ -206,7 +206,7 @@ function intro(forkedFrom: ThreadFork | undefined, moved: WorkerSwitchRecord | u
   return `This thread's earlier native session could not be resumed, so this session started fresh. Here is the thread's conversation so far from Foundry's journal, oldest first. ${record}`;
 }
 
-/** The thread's plan as the agent wrote it (or Foundry drafted it), short lines only. */
+/** The thread's plan as the agent wrote it, short lines only. */
 function planText(plan: ThreadPlan | undefined): string | undefined {
   if (!plan) return undefined;
   const section = (title: string, lines: string[]) =>
@@ -239,9 +239,7 @@ function planText(plan: ThreadPlan | undefined): string | undefined {
   if (!lines.length) return undefined;
   const text = [
     "# The thread's plan",
-    plan.draftedBy === 'foundry'
-      ? 'Foundry drafted it; record your own with set_plan when you can.'
-      : 'Recorded with set_plan; it is still the plan unless the conversation changed it.',
+    'Recorded with set_plan; it is still the plan unless the conversation changed it.',
     ...lines,
   ].join('\n');
   return text.length > PLAN_CHARS ? `${text.slice(0, PLAN_CHARS - 1)}…` : text;

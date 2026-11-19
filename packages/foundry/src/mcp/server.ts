@@ -624,7 +624,7 @@ export function createFoundryMcp(config: FoundryMcpConfig): FoundryMcp {
     );
     server.tool(
       'get_plan',
-      'Read what Foundry shows for this thread: its name (and whether the person gave it), its status, its plan (and whether Foundry drafted it), its loop and its artifacts (id, title, kind, newest version). Use it after a compaction or when resuming, before changing the plan.',
+      'Read what Foundry shows for this thread: its name (and whether the person gave it), its status, its plan, its loop and its artifacts (id, title, kind, newest version). Use it after a compaction or when resuming, before changing the plan.',
       {},
       record('get_plan'),
     );

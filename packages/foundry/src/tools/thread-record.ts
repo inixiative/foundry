@@ -195,11 +195,8 @@ export function applyPlanPatch(
   current: ThreadPlan | undefined,
   patch: PlanPatch,
   now = Date.now(),
-  draftedBy: 'agent' | 'foundry' = 'agent',
 ): ThreadPlan {
-  // The agent's first plan replaces a Foundry draft whole: no section of the draft survives as the agent's.
-  const base = current?.draftedBy === 'foundry' && draftedBy === 'agent' ? undefined : current;
-  let outcomes = patch.outcomes ?? base?.outcomes ?? [];
+  let outcomes = patch.outcomes ?? current?.outcomes ?? [];
   for (const { outcome, status } of patch.mark ?? []) {
     const index = /^\d+$/.test(outcome)
       ? Number(outcome) - 1
@@ -210,11 +207,10 @@ export function applyPlanPatch(
   }
   return {
     outcomes,
-    pains: patch.pains ?? base?.pains ?? [],
-    strategy: patch.strategy ?? base?.strategy ?? [],
-    reasons: patch.reasons ?? base?.reasons ?? [],
-    technical: patch.technical ?? base?.technical ?? [],
-    draftedBy,
+    pains: patch.pains ?? current?.pains ?? [],
+    strategy: patch.strategy ?? current?.strategy ?? [],
+    reasons: patch.reasons ?? current?.reasons ?? [],
+    technical: patch.technical ?? current?.technical ?? [],
     updatedAt: now,
   };
 }
@@ -224,35 +220,40 @@ const finished = (plan: ThreadPlan) =>
   plan.outcomes.length > 0 && plan.outcomes.every((o) => o.status === 'done');
 
 /**
- * Whether new work on this thread is due its agent's plan: none recorded, only Foundry's draft, or
- * the last plan's outcomes all done (the next task starts). Foundry asks for one on such a turn.
+ * Whether new work on this thread is due its agent's plan: none recorded, or the last plan's
+ * outcomes all done (the next task starts). Foundry asks for one on such a turn.
  */
 export function needsPlan(meta: Pick<ThreadMeta, 'plan'>): boolean {
   const plan = meta.plan;
-  return !plan || plan.draftedBy === 'foundry' || finished(plan);
+  return !plan || finished(plan);
 }
 
-/** Whether Foundry should draft one after such a turn: its agent recorded none and no draft is there. */
-export function wantsDraft(meta: Pick<ThreadMeta, 'plan'>): boolean {
-  const plan = meta.plan;
-  return !plan || (plan.draftedBy !== 'foundry' && finished(plan));
+/** How long a thread's name stands before Foundry asks its agent to check it (Aron, 2026-11-18: "every 30 minutes"). */
+export const NAME_CHECK_AFTER_MS = 30 * 60_000;
+
+/**
+ * Whether a turn asks the agent to check the thread's name: a Foundry or agent name set at least
+ * `NAME_CHECK_AFTER_MS` ago and not asked about since (`askedAt`). A person's name is theirs; an
+ * unnamed thread is named from its first message (`ThreadNamer`).
+ */
+export function needsNameCheck(
+  meta: Pick<ThreadMeta, 'name' | 'foundryName'>,
+  askedAt: number,
+  now: number = Date.now(),
+): boolean {
+  const named = meta.foundryName;
+  if (meta.name?.text || !named) return false;
+  return now - Math.max(named.updatedAt, askedAt) >= NAME_CHECK_AFTER_MS;
 }
 
 /** Record a plan on the thread. An outcome the agent newly marks done is a milestone: the thread shows it as done. */
-export function recordPlan(
-  thread: Thread,
-  patch: PlanPatch,
-  draftedBy: 'agent' | 'foundry' = 'agent',
-): ThreadPlan {
+export function recordPlan(thread: Thread, patch: PlanPatch): ThreadPlan {
   const before = new Set(
     (thread.meta.plan?.outcomes ?? []).filter((o) => o.status === 'done').map((o) => o.text),
   );
-  const plan = applyPlanPatch(thread.meta.plan, patch, Date.now(), draftedBy);
+  const plan = applyPlanPatch(thread.meta.plan, patch, Date.now());
   thread.meta.plan = plan;
-  const reached =
-    draftedBy === 'agent'
-      ? plan.outcomes.filter((o) => o.status === 'done' && !before.has(o.text)).at(-1)
-      : undefined;
+  const reached = plan.outcomes.filter((o) => o.status === 'done' && !before.has(o.text)).at(-1);
   if (reached) thread.meta.done = { kind: 'milestone', text: reached.text, at: Date.now() };
   return plan;
 }
@@ -260,7 +261,7 @@ export function recordPlan(
 /**
  * A person ticking an outcome in the Plan tab: the same `mark` through `applyPlanPatch`, but the
  * person is the actor, so it never creates the milestone an agent's newly-done outcome does in
- * `recordPlan`, and it keeps the plan's own `draftedBy` (ticking a Foundry draft keeps it a draft).
+ * `recordPlan`.
  */
 export function markPlanOutcomeByPerson(
   thread: Thread,
@@ -272,12 +273,7 @@ export function markPlanOutcomeByPerson(
     ? Number(outcome) - 1
     : current.findIndex((o) => o.text === outcome);
   const text = index >= 0 ? current[index]?.text : outcome;
-  const plan = applyPlanPatch(
-    thread.meta.plan,
-    { mark: [{ outcome, status }] },
-    Date.now(),
-    thread.meta.plan?.draftedBy ?? 'agent',
-  );
+  const plan = applyPlanPatch(thread.meta.plan, { mark: [{ outcome, status }] }, Date.now());
   thread.meta.plan = plan;
   // Reopening the outcome a milestone stands for clears it: the thread is not done with it any more.
   if (status !== 'done' && thread.meta.done?.kind === 'milestone' && thread.meta.done.text === text)

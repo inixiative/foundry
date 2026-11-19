@@ -30,7 +30,6 @@ import {
 } from '@inixiative/foundry-core';
 import type { Hono } from 'hono';
 import { chorusRetries, chorusRows, turnChorus } from '../../agents/chorus-degraded';
-import type { PlanDrafter } from '../../agents/plan-drafter';
 import type { ProjectRegistry } from '../../agents/project';
 import {
   defaultThreadModel,
@@ -114,7 +113,6 @@ export interface RuntimeRoutesDeps {
   projectRegistry?: ProjectRegistry;
   /** Agent-maintained thread names (optional). */
   namer?: ThreadNamer;
-  planDrafter?: PlanDrafter;
   /** Re-derives a thread's branch/worktree/linked work when its worktree changes. */
   threadContext?: ThreadContextTracker;
   localStore?: LocalSessionStore | null;
@@ -238,7 +236,6 @@ export function registerRuntimeRoutes(
     configStore: deps.configStore,
     deviceIdentityPath: deps.deviceIdentityPath,
     namer,
-    planDrafter: deps.planDrafter,
     localStore,
     ...(deps.nativeRecovery ? { nativeRecovery: deps.nativeRecovery } : {}),
     ...(deps.restartGate ? { restartGate: deps.restartGate } : {}),
