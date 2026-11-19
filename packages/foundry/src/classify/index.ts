@@ -63,12 +63,16 @@ export {
 } from './protocol';
 export { parseRecognition, type Recognition } from './recognition';
 export {
+  askDebugReason,
+  boundedError,
   type Carried,
   type ClassifiedSummary,
   type ClassifyResult,
   type ClassifyRunOptions,
   carriedSection,
   classifiedSummary,
+  type DebugReasonHandle,
+  type DebugReasonReading,
   runRepairs,
   runStages,
   type StageCall,

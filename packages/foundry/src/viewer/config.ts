@@ -433,7 +433,7 @@ export interface ChorusSettings {
    * to Sonnet 5.5 low on the same knowledge.md (Oracle finding 2026-11-01-l2-nowhy); with API-token
    * decisions, one stage. The machine's list replaces the repository's whole.
    */
-  wardens?: ChorusRoleSettings;
+  wardens?: WardenSettings;
   /** How Herald topics would classify: the socket only. Heralds are not built; their topics do not run. */
   heralds?: ChorusRoleSettings;
 }
@@ -445,6 +445,17 @@ export interface ChorusRoleSettings {
    * carryWhy?, deadline? }`.
    */
   stages?: StageSettings[];
+}
+
+/** How the Wardens classify, and what each answered call is asked after its decision. */
+export interface WardenSettings extends ChorusRoleSettings {
+  /**
+   * After a region Warden's decision is journalled, ask its last answering stage "why did you answer
+   * that?" with the stage's own exchange resent inline (classify `FOLLOWUP_QUESTION`), unless that
+   * stage's own follow-up gave it: its own call at the lowest priority, never on a held spare, journalled and archived beside the
+   * one it explains, never delaying it. On unless `false` (Aron, 2026-11-18: it stays on for now).
+   */
+  debugReason?: boolean;
 }
 
 /** A stage as written in settings: any field omitted takes the default stage's (classify `DEFAULT_STAGE`). */
@@ -931,6 +942,7 @@ function validateConsumedSettings(where: string, consumed: unknown): void {
 }
 
 const CHORUS_KEYS = ['enabled', 'regions', 'layers', 'consumed', 'reception', 'wardens', 'heralds'];
+const ROLE_KEYS = { wardens: ['stages', 'debugReason'], heralds: ['stages'] } as const;
 
 export function validateChorusSettings(where: string, chorus: unknown): void {
   if (chorus === undefined) return;
@@ -950,12 +962,16 @@ export function validateChorusSettings(where: string, chorus: unknown): void {
   for (const role of ['wardens', 'heralds'] as const) {
     const value = c[role];
     if (value === undefined) continue;
+    const keys: readonly string[] = ROLE_KEYS[role];
     if (!value || typeof value !== 'object' || Array.isArray(value))
-      throw Error(`${where}.${role} must be { stages }`);
+      throw Error(`${where}.${role} must be { ${keys.map((k) => `${k}?`).join(', ')} }`);
     for (const key of Object.keys(value))
-      if (key !== 'stages') throw Error(`${where}.${role}.${key} is not a role setting (stages)`);
-    const stages = (value as { stages?: unknown }).stages;
+      if (!keys.includes(key))
+        throw Error(`${where}.${role}.${key} is not a role setting (${keys.join(', ')})`);
+    const { stages, debugReason } = value as { stages?: unknown; debugReason?: unknown };
     if (stages !== undefined) validateStages(`${where}.${role}.stages`, stages);
+    if (debugReason !== undefined && typeof debugReason !== 'boolean')
+      throw Error(`${where}.${role}.debugReason must be true or false`);
   }
   if (c.enabled !== undefined && typeof c.enabled !== 'boolean')
     throw Error(`${where}.enabled must be true or false`);

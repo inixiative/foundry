@@ -10,22 +10,31 @@
  */
 import {
   ADVICE_RESULTS,
+  DEBUG_REASON_RESULTS,
   GUARD_CHECK_RESULTS,
   recordedOutcomeLabel,
 } from '@inixiative/foundry-core';
 
 /** Phase rows that carry a middleware call's full input, reduced at the end of their turn. */
-export const RAW_MIDDLEWARE_PHASES = ['advice', 'guard-request', 'guard-outcome'] as const;
+export const RAW_MIDDLEWARE_PHASES = [
+  'advice',
+  'guard-request',
+  'guard-outcome',
+  'warden-debug',
+] as const;
+
+/** One Warden's call on a decision row: the id a reduced call carries and a debug reason wraps. */
+export const wardenCallId = (rowId: string, domain: string): string => `${rowId}:${domain}`;
 
 export const REDUCED_PHASE = 'middleware-reduced';
 
 export interface ReducedMiddleware {
-  /** Stable per call: `<source row id>` or `<source row id>:<domain>`. */
+  /** Stable per call: `<source row id>`, `<source row id>:<domain>`, or `<that call id>:debug` for a debug reason. */
   readonly callId: string;
   /** The Warden's domain. */
   readonly role: string;
   readonly trigger: string;
-  /** What it was asked about: `turn:<id>` for a message or a turn's actions, a tool call id (`guard: per-call`), `handoff:<child>` for a brief. */
+  /** What it was asked about: `turn:<id>` for a message or a turn's actions, a tool call id (`guard: per-call`), `handoff:<child>` for a brief, the call id a debug reason explains. */
   readonly wraps: string;
   /** How the call ended: a Warden call's `callOutcomeLabel` (`answered:spoke`, `not-sent:cold`). */
   readonly outcome: string;
@@ -79,7 +88,7 @@ export function reduceMiddleware(
         const snippets = Array.isArray(p.snippets) ? (p.snippets as string[]) : [];
         const knowledge = obj(p.segments)?.threadKnowledge;
         out.push({
-          callId: `${row.id}:${String(p.domain)}`,
+          callId: wardenCallId(row.id, String(p.domain)),
           role: String(p.domain),
           trigger: String(r.trigger ?? 'user-message'),
           wraps,
@@ -113,7 +122,7 @@ export function reduceMiddleware(
         const request = obj(requestRow?.record.request);
         const notes = Array.isArray(o.notes) ? o.notes : [];
         out.push({
-          callId: `${row.id}:${String(o.domain)}`,
+          callId: wardenCallId(row.id, String(o.domain)),
           role: String(o.domain),
           trigger: String(r.trigger ?? 'agent-action'),
           wraps,
@@ -136,6 +145,31 @@ export function reduceMiddleware(
           sources: requestRow ? [row.id, requestRow.id] : [row.id],
         });
       }
+    }
+    if (row.phase === 'warden-debug') {
+      // Its own call, linked to the decision it explains by that call's id (`wraps`).
+      out.push({
+        callId: `${wraps}:debug`,
+        role: String(r.domain),
+        trigger: 'debug',
+        wraps,
+        outcome: outcomeLabel(r.outcome, DEBUG_REASON_RESULTS),
+        ...(typeof r.error === 'string' ? { reason: r.error } : {}),
+        result:
+          typeof r.why === 'string' || typeof r.revised === 'string'
+            ? {
+                ...(typeof r.why === 'string' ? { why: r.why } : {}),
+                ...(typeof r.revised === 'string' ? { revised: r.revised } : {}),
+              }
+            : null,
+        state: {
+          explains: r.explains,
+          explainsOutcome: r.explainsOutcome,
+          stage: r.stage,
+        },
+        at: row.storedAt,
+        sources: [row.id],
+      });
     }
     // A guard request is reduced with its outcome; a request whose outcome never came stays raw.
   }

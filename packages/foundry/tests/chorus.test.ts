@@ -51,7 +51,7 @@ import {
   createSourceResolver,
   ThreadFactory,
 } from '../src/agents/thread-factory';
-import { ThreadRuntimeManager } from '../src/agents/thread-runtime';
+import { type PhaseRecordInput, ThreadRuntimeManager } from '../src/agents/thread-runtime';
 import { WARDEN_BRIEF_NODE } from '../src/agents/warden-brief';
 import { AuditLog } from '../src/audit/audit-log';
 import { CompositionAuditor } from '../src/audit/compositions';
@@ -59,6 +59,7 @@ import {
   CHOOSE_ONE_CAVEAT,
   chartered,
   DEFAULT_STAGES,
+  FOLLOWUP_QUESTION,
   parseWardenPointer,
   SINGLE_STAGE,
   WARDEN_CHARTER,
@@ -960,7 +961,7 @@ interface Call {
 }
 
 /** A thread whose Warden says one pointer, as a live thread composes and delivers it. */
-function setup(c: FoundryConfig, pointer: string) {
+function setup(c: FoundryConfig, pointer: string, more: { debugReason?: false } = {}) {
   const calls: Call[] = [];
   const provider = (id: string): LLMProvider => ({
     id,
@@ -971,6 +972,9 @@ function setup(c: FoundryConfig, pointer: string) {
           ? 'pre'
           : 'central';
       calls.push({ phase, messages: structuredClone(messages), opts: { ...opts } });
+      // A Warden's debug reason: the follow-up asked after its decision (live debug).
+      if (messages.at(-1)?.content === FOLLOWUP_QUESTION)
+        return { model: 'controlled', content: 'It asks for a lock.\nREVISED: KEEP' };
       return {
         model: 'controlled',
         content:
@@ -996,6 +1000,7 @@ function setup(c: FoundryConfig, pointer: string) {
     log() {},
     warn() {},
     learning: { timeoutMs: 20, hardTimeoutMs: 1000 },
+    ...more,
   });
   managers.push(manager);
   const deps = { provider: central, providers };
@@ -1005,8 +1010,12 @@ function setup(c: FoundryConfig, pointer: string) {
     runtime: manager,
     configuration: { config: c, layers: { sourceResolver }, agents: deps },
   });
-  const all = (phase: Call['phase']) => calls.filter((call) => call.phase === phase);
-  return { factory, manager, calls, all };
+  // A Warden's decisions; its debug follow-ups are `debugCalls`.
+  const isDebug = (call: Call) => call.messages.at(-1)?.content === FOLLOWUP_QUESTION;
+  const all = (phase: Call['phase']) =>
+    calls.filter((call) => call.phase === phase && !isDebug(call));
+  const debugCalls = () => calls.filter(isDebug);
+  return { factory, manager, calls, all, debugCalls };
 }
 
 test('region Wardens run under the Warden charter, and their pointer reaches the thread as "Look over here"', async () => {
@@ -1081,6 +1090,62 @@ test('region Wardens run under the Warden charter, and their pointer reaches the
   const none = loose.factory.create('no-project');
   expect(loose.manager.get(none.id)!.domainLibrarians.size).toBe(0);
   expect(none.stack.getLayer(CHORUS_RECEPTION_LAYER)).toBeUndefined();
+});
+
+test('each region Warden decision is followed by its debug reason, journalled as its own linked row', async () => {
+  const { project } = projectWithRegions();
+  const c = config(project);
+  const pointer = 'Look over here: createLock (docs/claude/CONCURRENCY.md, Distributed Lock)';
+  const f = setup(c, pointer);
+  const rows: PhaseRecordInput[] = [];
+  f.manager.setPhaseJournal((_runtime, record) => rows.push(record));
+  const thread = f.factory.create('debug-thread', { projectId: 'P' });
+  // The plan stays plain data: the executor clones it as the turn's injection evidence.
+  const injections: unknown[] = [];
+  await thread.dispatch('worker', 'Add a SET NX lock around the sync job', undefined, {
+    recordInjection: (record) => injections.push(record),
+  });
+  expect(injections.length).toBeGreaterThan(0);
+  const end = performance.now() + 2000;
+  while (rows.filter((r) => r.phase === 'warden-debug').length < 2) {
+    if (performance.now() > end) throw Error('deadline: debug rows');
+    await Bun.sleep(2);
+  }
+  // Its own call on the Warden's own session, after the decision.
+  const decisions = f.all('pre');
+  expect(decisions).toHaveLength(2);
+  for (const call of f.debugCalls())
+    expect(decisions.map((d) => d.opts.threadId)).toContain(call.opts.threadId);
+  const advice = rows.find((r) => r.phase === 'advice')!;
+  const debug = rows.filter((r) => r.phase === 'warden-debug');
+  expect(debug.map((r) => r.record.wraps).sort()).toEqual([
+    `${advice.id}:concurrency-locks`,
+    `${advice.id}:lens-model`,
+  ]);
+  for (const row of debug) {
+    expect(row.turnId).toBe(advice.turnId);
+    expect(row.record).toMatchObject({
+      explains: 'advice',
+      outcome: { status: 'answered', result: 'kept' },
+      why: 'It asks for a lock.',
+    });
+  }
+  expect(debug.find((r) => r.record.domain === 'concurrency-locks')!.record.explainsOutcome).toBe(
+    'yes',
+  );
+  // `chorus.wardens.debugReason: false` asks nothing more than the decisions.
+  c.projects.P!.chorus = { ...c.projects.P!.chorus, wardens: { debugReason: false } };
+  const off = setup(c, pointer);
+  await off.factory.create('debug-off', { projectId: 'P' }).dispatch('worker', 'Add a lock');
+  await Bun.sleep(20);
+  expect(off.debugCalls()).toHaveLength(0);
+  // A manager built with `debugReason: false` (hidden threads) asks none, whatever the settings say.
+  c.projects.P!.chorus = { ...c.projects.P!.chorus, wardens: { debugReason: true } };
+  const hidden = setup(c, pointer, { debugReason: false });
+  await hidden.factory.create('debug-hidden', { projectId: 'P' }).dispatch('worker', 'Add a lock');
+  await Bun.sleep(20);
+  expect(hidden.all('pre')).toHaveLength(2);
+  expect(hidden.debugCalls()).toHaveLength(0);
 });
 
 test('the classifier output contract is read into relevant, pointer, where and level', async () => {

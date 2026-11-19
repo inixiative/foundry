@@ -7,13 +7,16 @@ import {
   ADVICE_RESULTS,
   type AdviceOutcome,
   adviceSpoke,
+  type CallOutcome,
   type ClassifyStageTrace,
+  DEBUG_REASON_RESULTS,
+  type DebugReasonResult,
   GUARD_CHECK_RESULTS,
   type GuardCheckOutcome,
   type NativeEvidence,
   parseCallOutcome,
 } from '@inixiative/foundry-core';
-import { REDUCED_PHASE } from '../archives/reduced-middleware';
+import { REDUCED_PHASE, wardenCallId } from '../archives/reduced-middleware';
 import { parseWardenPointer, type WardenPointer } from '../classify';
 import type { StoredLearning, StoredPhase, TurnDetail } from '../persistence/local-session-store';
 
@@ -42,6 +45,8 @@ export interface ChorusLayer {
   readonly task: ClassifyStageTrace['task'];
   readonly outcome: ClassifyStageTrace['outcome'] | null;
   readonly why: string | null;
+  /** The verdict its own follow-up (`reason: followup`) revised to, when it changed its mind. */
+  readonly revised?: string;
   readonly remarks: readonly string[];
   readonly model: string | null;
   readonly effort: string | null;
@@ -61,6 +66,18 @@ export interface ChorusRegion {
   /** A Warden with configured stages: each layer it ran. A single-stage Warden has none; `outcome` is its answer. */
   readonly layers: readonly ChorusLayer[];
   readonly served: { model: string; effort?: string } | null;
+  /** Its debug reason, asked after the decision (`warden-debug`); null when none was asked or it has not landed. */
+  readonly debugReason: WardenDebugReason | null;
+}
+
+/** A `warden-debug` row's reading: the deciding layer's why, asked after its decision, and any revision. */
+export interface WardenDebugReason {
+  /** 1-based, as `ChorusLayer.layer`. */
+  readonly layer: number | null;
+  readonly why: string | null;
+  readonly revised: string | null;
+  /** How the debug call ended (core `CallOutcome`); null when the row holds none. */
+  readonly outcome: CallOutcome<DebugReasonResult> | null;
 }
 
 export interface DeliveredChime {
@@ -127,6 +144,7 @@ export type TimelineStep =
         findings: number;
         notes: string[];
         layers: ChorusLayer[];
+        debugReason: WardenDebugReason | null;
       }[];
       notes: { severity: string; description: string; location?: string }[];
       failed: string[];
@@ -175,6 +193,10 @@ function chorusLayers(classified: unknown): ChorusLayer[] {
     task: stage.task,
     outcome: stage.outcome ?? null,
     why: stage.why ?? null,
+    // A revision to the answer it already gave is a keep (as `askDebugReason` reads it).
+    ...(stage.revised && stage.revised !== 'keep' && stage.revised !== stage.outcome
+      ? { revised: stage.revised }
+      : {}),
     remarks: [...(stage.remarks ?? [])],
     model: stage.model ?? null,
     effort: stage.effort ?? null,
@@ -205,7 +227,10 @@ function pointerKey(region: string, said: readonly string[]): string | null {
   return `${region}\u0000${what.trim().toLowerCase()}`;
 }
 
-function chorusRegion(participant: Record<string, unknown>): ChorusRegion {
+function chorusRegion(
+  participant: Record<string, unknown>,
+  debugReason: WardenDebugReason | undefined,
+): ChorusRegion {
   const said = strings(participant.snippets);
   const pointer = said.length ? parseWardenPointer(said) : null;
   return {
@@ -216,6 +241,7 @@ function chorusRegion(participant: Record<string, unknown>): ChorusRegion {
     pointer: pointer?.relevant ? pointer : null,
     layers: chorusLayers(participant.classified),
     served: served(participant.request),
+    debugReason: debugReason ?? null,
   };
 }
 
@@ -256,7 +282,7 @@ function toolSteps(detail: TurnDetail): TimelineStep[] {
 }
 
 /** The guard over the turn: its outcome row, with each region's layers from its request rows' outcomes. */
-function guardStep(row: StoredPhase): TimelineStep {
+function guardStep(row: StoredPhase, debug: ReadonlyMap<string, WardenDebugReason>): TimelineStep {
   const r = row.record;
   const outcomes = Array.isArray(r.outcomes) ? r.outcomes.filter(isObject) : [];
   return {
@@ -269,6 +295,7 @@ function guardStep(row: StoredPhase): TimelineStep {
       findings: num(o.findings) ?? 0,
       notes: strings(o.notes),
       layers: chorusLayers(o.classified),
+      debugReason: debug.get(wardenCallId(row.id, str(o.domain) ?? '')) ?? null,
     })),
     notes: (Array.isArray(r.notes) ? r.notes.filter(isObject) : []).map((n) => ({
       severity: str(n.severity) ?? 'advisory',
@@ -302,6 +329,23 @@ export function turnTimeline(detail: TurnDetail, sources: TurnTimelineSources = 
       chars: user.content.length,
     });
 
+  // Each Warden call's debug reason, by the call it explains (`<row id>:<domain>`).
+  const debug = new Map<string, WardenDebugReason>(
+    phases
+      .filter((p) => p.phase === 'warden-debug' && str(p.record.wraps))
+      .map((p) => {
+        const stage = num(p.record.stage);
+        return [
+          str(p.record.wraps)!,
+          {
+            layer: stage === null ? null : stage + 1,
+            why: str(p.record.why) ?? null,
+            revised: str(p.record.revised) ?? null,
+            outcome: parseCallOutcome(p.record.outcome, DEBUG_REASON_RESULTS) ?? null,
+          },
+        ];
+      }),
+  );
   const adviceRows = phases.filter((p) => p.phase === 'advice');
   const chorus = (row: StoredPhase): TimelineStep => {
     const r = row.record;
@@ -312,8 +356,8 @@ export function turnTimeline(detail: TurnDetail, sources: TurnTimelineSources = 
       kind: 'chorus',
       at: num(r.sealedAt) ?? row.storedAt,
       trigger: str(r.trigger) ?? 'user-message',
-      regions: (Array.isArray(r.participants) ? r.participants.filter(isObject) : []).map(
-        chorusRegion,
+      regions: (Array.isArray(r.participants) ? r.participants.filter(isObject) : []).map((p) =>
+        chorusRegion(p, debug.get(wardenCallId(row.id, str(p.domain) ?? ''))),
       ),
       skipped,
       prefiltered: (Array.isArray(r.prefiltered) ? r.prefiltered.filter(isObject) : []).flatMap(
@@ -404,7 +448,7 @@ export function turnTimeline(detail: TurnDetail, sources: TurnTimelineSources = 
         agentType: str(row.record.agentType) ?? null,
       });
     else if (row.phase === 'advice' && !onMessage.includes(row)) work.push(chorus(row));
-    else if (row.phase === 'guard-outcome') work.push(guardStep(row));
+    else if (row.phase === 'guard-outcome') work.push(guardStep(row, debug));
   }
   steps.push(...work.sort((a, b) => (a.at ?? 0) - (b.at ?? 0)));
 

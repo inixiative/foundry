@@ -149,6 +149,22 @@ test('background classes leave capacity for turns', async () => {
   expect(transport.peak).toBe(4);
 });
 
+test('debug reasons hold at most a quarter of the slots, so guards keep half', async () => {
+  const transport = labelled(80);
+  const { decisions } = scheduler(transport, { maxConcurrent: 8 });
+  const debugs = Array.from({ length: 6 }, (_, i) =>
+    ask(decisions, `d${i}`, `D${i}`, DECISION_PRIORITY.debug),
+  );
+  await Bun.sleep(30);
+  expect(decisions.snapshot().running).toBe(2);
+  const guards = Array.from({ length: 6 }, (_, i) =>
+    ask(decisions, `g${i}`, `G${i}`, DECISION_PRIORITY.guard),
+  );
+  await Bun.sleep(30);
+  expect(decisions.snapshot().running).toBe(6);
+  await Promise.all([...debugs, ...guards]);
+});
+
 test('full queues shed lower-priority waits instead of refusing a turn', async () => {
   const { decisions, pressure } = scheduler(labelled(60), {
     maxConcurrent: 1,

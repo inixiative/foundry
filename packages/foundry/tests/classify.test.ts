@@ -14,6 +14,7 @@ import {
   charterFor,
   DEFAULT_STAGE,
   EVAL_STAGE_KEYS,
+  FOLLOWUP_QUESTION,
   GUARD_RESPONSE_PROTOCOL,
   isSingleDefaultStage,
   parseWardenPointer,
@@ -27,6 +28,7 @@ import {
   validateStages,
   WARDEN_CHARTER,
 } from '../src/classify';
+import { DECISION_PRIORITY } from '../src/providers/decision-priority';
 
 const RANKED = 'Look over here: createLock (CONCURRENCY.md § Distributed Lock) — exclusion.';
 const CHOOSE = [
@@ -597,4 +599,160 @@ test("a run carries every stage's repairs, each once", () => {
       ],
     } as unknown as Parameters<typeof runRepairs>[0]),
   ).toEqual(['missing-why', 'empty-snippets-dropped']);
+});
+
+describe('live debug reason', () => {
+  const single = (
+    answers: Array<string | (() => Promise<string>)>,
+    config: Partial<StageConfig> = {},
+    debugReason = true,
+  ) => {
+    const [stage] = validateStages('test', [config]);
+    const one = scripted('haiku', answers);
+    const cache = layer('knowledge', '# Locks\n- createLock (CONCURRENCY.md)');
+    const lib = new DomainLibrarian({
+      domain: 'locks',
+      cache,
+      signals: new SignalBus(0),
+      llm: one.llm,
+      stages: [{ config: stage!, cache }],
+      guardTriggers: ['Write'],
+      debugReason,
+    });
+    return { lib, one };
+  };
+
+  test('off unless configured: no debug call is offered', async () => {
+    const { lib } = single([advice([RANKED])], {}, false);
+    expect((await lib.advise('Add a lock.')).askDebugReason).toBeUndefined();
+  });
+
+  test('asked only when invoked, after the decision, as the follow-up on the same session', async () => {
+    const { lib, one } = single([advice([RANKED]), 'It asks for exclusion.\nREVISED: KEEP']);
+    const result = await lib.advise('Stop two workers running the same job.');
+    expect(one.calls).toHaveLength(1);
+    const reading = await result.askDebugReason!();
+    expect(one.calls).toHaveLength(2);
+    expect(one.calls[1]!.messages.at(-1)!.content).toBe(FOLLOWUP_QUESTION);
+    expect(reading).toMatchObject({
+      stage: 0,
+      explains: 'yes',
+      outcome: { status: 'answered', result: 'kept' },
+      why: 'It asks for exclusion.',
+    });
+  });
+
+  test('the debug call yields to every decision: lowest priority, no deadline, no held call', async () => {
+    const { lib, one } = single([advice([RANKED]), 'It asks for exclusion.\nREVISED: KEEP']);
+    const result = await lib.advise('Stop two workers.', undefined, {
+      heldOnly: true,
+      timeoutMs: 5_000,
+    });
+    await result.askDebugReason!();
+    expect(one.calls[0]!.opts).toMatchObject({ heldOnly: true });
+    expect(one.calls[0]!.opts.timeout).toBeDefined();
+    const asked = one.calls[1]!.opts;
+    expect(asked).toMatchObject({ priority: DECISION_PRIORITY.debug, takesNoHeldCall: true });
+    expect(asked.heldOnly).toBeUndefined();
+    expect(asked.timeout).toBeUndefined();
+    expect(asked.stablePrefix).toBe(one.calls[0]!.opts.stablePrefix);
+  });
+
+  test('a silence is explained too, and a changed mind is revised', async () => {
+    const { lib } = single(['NO_COMMENT', 'It touches a lock after all.\nREVISED: YES']);
+    const result = await lib.advise('Add a nightly job.');
+    expect(result.noComment).toBe(true);
+    expect(await result.askDebugReason!()).toMatchObject({
+      explains: 'no',
+      outcome: { status: 'answered', result: 'revised' },
+      revised: 'yes',
+    });
+  });
+
+  test('a stage whose own follow-up answered offers no debug call: the why is on its trace', async () => {
+    const { lib, one } = single(
+      [advice([RANKED]), 'Two workers must not overlap.\nREVISED: KEEP'],
+      { reason: 'followup' },
+    );
+    const result = await lib.advise('Stop two workers.');
+    expect(one.calls).toHaveLength(2);
+    expect(result.askDebugReason).toBeUndefined();
+  });
+
+  test('a stage whose own follow-up failed is asked again after the decision', async () => {
+    const { lib, one } = single(
+      [
+        advice([RANKED]),
+        async () => {
+          throw new Error('follow-up down');
+        },
+        'Two workers must not overlap.\nREVISED: KEEP',
+      ],
+      { reason: 'followup' },
+    );
+    const reading = await (await lib.advise('Stop two workers.')).askDebugReason!();
+    expect(one.calls).toHaveLength(3);
+    expect(reading).toMatchObject({
+      outcome: { status: 'answered', result: 'kept' },
+      why: 'Two workers must not overlap.',
+    });
+  });
+
+  test('an answer with neither a why nor a verdict is invalid; a refused call fails', async () => {
+    const empty = single([advice([RANKED]), '   ']);
+    expect(await (await empty.lib.advise('Add a lock.')).askDebugReason!()).toMatchObject({
+      outcome: { status: 'failed', cause: 'invalid-response' },
+    });
+    const thrown = single([
+      advice([RANKED]),
+      async () => {
+        throw new Error('provider down');
+      },
+    ]);
+    const reading = await (await thrown.lib.advise('Add a lock.')).askDebugReason!();
+    expect(reading?.outcome.status).toBe('failed');
+    expect(reading?.error).toContain('provider down');
+  });
+
+  test('a later stage that fails leaves the standing answer’s stage to explain', async () => {
+    const [s1, s2] = validateStages('test', [{ escalate: ['yes'] }, {}]);
+    const one = scripted('haiku', [advice([RANKED]), 'Exclusion.\nREVISED: KEEP']);
+    const two = scripted('sonnet', [
+      async () => {
+        throw new Error('stage two down');
+      },
+    ]);
+    const cache = layer('knowledge', '# Locks\n- createLock (CONCURRENCY.md)');
+    const lib = new DomainLibrarian({
+      domain: 'locks',
+      cache,
+      signals: new SignalBus(0),
+      llm: one.llm,
+      stages: [
+        { config: s1!, cache },
+        { config: s2!, llm: two.llm, cache },
+      ],
+      guardTriggers: ['Write'],
+      debugReason: true,
+    });
+    const result = await lib.advise('Add a lock.');
+    expect(result.classified).toMatchObject({ fallback: 'error', finalStage: 0 });
+    expect(await result.askDebugReason!()).toMatchObject({ stage: 0, explains: 'yes' });
+    expect(two.calls).toHaveLength(1);
+  });
+
+  test('a guard check offers its debug reason too', async () => {
+    const { lib } = single([
+      JSON.stringify({ findings: [{ severity: 'advisory', description: RANKED }] }),
+      'It writes a lock by hand.\nREVISED: KEEP',
+    ]);
+    const guarded = await lib.guard({
+      turnId: 't',
+      observations: [{ tool: 'Write', input: { content: 'redis.set(k, 1, "NX")' } }],
+    });
+    expect(await guarded.askDebugReason!()).toMatchObject({
+      outcome: { status: 'answered', result: 'kept' },
+      why: 'It writes a lock by hand.',
+    });
+  });
 });

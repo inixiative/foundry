@@ -129,6 +129,11 @@ export interface CompletionOpts {
    */
   heldOnly?: boolean;
   /**
+   * Never served by a call the provider holds started: run it on its own, so a held call stays for the
+   * decisions that wait on one. A provider that pre-starts calls sends it direct; others ignore it.
+   */
+  takesNoHeldCall?: boolean;
+  /**
    * Leading text of the final user message that stays the same across calls
    * (owned layer content). Session providers may prime it once and reuse the
    * cached prefix; others ignore it. Messages are sent unchanged either way.
