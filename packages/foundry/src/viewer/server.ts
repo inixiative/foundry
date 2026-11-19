@@ -401,13 +401,17 @@ export function createViewer(config: ViewerConfig) {
     for (const subagent of directory.archiveOrphanedSubagents()) localStore.saveThread(subagent);
     // Settle what the native records already show; records still being written (a native process
     // the restart orphaned) are read again once they go quiet, and again before any next turn.
+    const reported = new Map<string, string>();
     const settleLost = () => {
       try {
         const pass = nativeRecovery!.settleAll();
         for (const { turnId, outcome } of pass.settled)
           console.warn(`[Recovery] turn ${turnId}: ${outcome}, read from the native record`);
-        for (const { turnId, detail } of pass.undecided)
+        for (const { turnId, detail } of pass.undecided) {
+          if (reported.get(turnId) === detail) continue;
+          reported.set(turnId, detail);
           console.warn(`[Recovery] turn ${turnId} still unsettled: ${detail}`);
+        }
         return pass;
       } catch (error) {
         console.warn(`[Recovery] native outcome recovery failed: ${String(error)}`);
