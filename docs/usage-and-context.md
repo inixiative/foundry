@@ -698,8 +698,9 @@ regions never run (Heralds are not built) and the view says so.
   nothing yet. What the stages mean: [FLOW.md](FLOW.md#when-a-warden-weighs-in-the-charter-trigger-points-and-no_comment).
 - **Debug reason** (`chorus.wardens.debugReason`, default `true` for region
   Wardens). After a Warden's decision is journalled, Foundry asks the last stage
-  that answered in shape "why?" on the same session, and whether it would revise
-  its answer. A stage whose own `followup` already gave its why is not asked
+  that answered in shape "why?", and whether it would revise its answer, through
+  that stage's provider with the stage's own exchange resent inline (so it does
+  not depend on a session still holding it). A stage whose own `followup` already gave its why is not asked
   again. The decision is never held for it: the reading is its own call, at the
   lowest priority (below review), outside the decision's deadline (only the
   provider's own call timeout applies), and never served by a held

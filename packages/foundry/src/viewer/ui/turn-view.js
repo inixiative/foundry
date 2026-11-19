@@ -170,7 +170,7 @@ function DeliveryBody({ step }) {
   </div>`;
 }
 
-/** A Warden's debug reason: its why, asked after the decision on the same session (`warden-debug`). */
+/** A Warden's debug reason: its why, asked after the decision with the stage's exchange resent inline (`warden-debug`). */
 function DebugReason({ reason }) {
   if (!reason) return null;
   const said =

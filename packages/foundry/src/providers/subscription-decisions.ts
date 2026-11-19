@@ -204,14 +204,18 @@ export function buildSubscriptionDecisions(
     throw Error('Invalid subscription decision bounds');
   const maxConcurrent = config.maxConcurrent ?? 1,
     maxQueuedPerThread = config.maxQueuedPerThread ?? config.maxQueued;
-  // Background classes never take every slot, so a turn waiting to start finds capacity.
+  // Background classes never take every slot, so a turn waiting to start finds capacity; debug
+  // reasons hold at most a quarter, so they never squeeze guards below half.
+  const classShare = (priority: number) =>
+    priority >= DECISION_PRIORITY.guard
+      ? 3 / 4
+      : priority >= DECISION_PRIORITY.review
+        ? 1 / 2
+        : 1 / 4;
   const classCap = (priority: number) =>
     priority >= DECISION_PRIORITY.turn
       ? maxConcurrent
-      : Math.max(
-          1,
-          Math.floor(maxConcurrent * (priority >= DECISION_PRIORITY.guard ? 3 / 4 : 1 / 2)),
-        );
+      : Math.max(1, Math.floor(maxConcurrent * classShare(priority)));
   const queue: Pending[] = [],
     records = new Map<string, Record>(),
     outcomes = new WeakMap<object, Outcome>();

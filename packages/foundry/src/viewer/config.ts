@@ -451,8 +451,8 @@ export interface ChorusRoleSettings {
 export interface WardenSettings extends ChorusRoleSettings {
   /**
    * After a region Warden's decision is journalled, ask its last answering stage "why did you answer
-   * that?" on the same session (classify `FOLLOWUP_QUESTION`), unless that stage's own follow-up gave
-   * it: its own call at the lowest priority, never on a held spare, journalled and archived beside the
+   * that?" with the stage's own exchange resent inline (classify `FOLLOWUP_QUESTION`), unless that
+   * stage's own follow-up gave it: its own call at the lowest priority, never on a held spare, journalled and archived beside the
    * one it explains, never delaying it. On unless `false` (Aron, 2026-11-18: it stays on for now).
    */
   debugReason?: boolean;

@@ -34,7 +34,6 @@ import {
 import type { ConversationMember } from '@inixiative/signet';
 import { wardenCallId } from '../archives/reduced-middleware';
 import {
-  type DebugReasonReading,
   defaultStages,
   KNOWLEDGE_DOC,
   SINGLE_STAGE,
@@ -104,6 +103,7 @@ import {
   type BriefReport,
   briefNotes,
   consumedNotes,
+  type DebugReasonAsk,
   FlowOrchestrator,
   type FlowTimingConfig,
   givenNothing,
@@ -1612,7 +1612,7 @@ class ThreadRuntimeImpl implements ThreadRuntime {
               { id: adviceRowId, turnId: sealedTurn, dispatchId: sealedDispatch },
               adviceJournal,
               'advice',
-              plan.contributions,
+              flow.takeDebugReasons(plan),
             );
             ctx.annotations.phaseJournal = { advice: adviceJournal };
             const decided = plan.contributions
@@ -2293,7 +2293,7 @@ class ThreadRuntimeImpl implements ThreadRuntime {
           requestJournal: requestJournalStates(),
           ...degradedField(degradedGuards(report.outcomes, this._degradedContext())),
           ...(owner.retryOf ? { retryOf: owner.retryOf } : {}),
-          outcomes: report.outcomes.map(({ request, askDebugReason: _ask, ...rest }) => ({
+          outcomes: report.outcomes.map(({ request, ...rest }) => ({
             ...rest,
             requestRecord:
               requestRows.get(rest.domain)?.journal === 'durable'
@@ -2309,7 +2309,7 @@ class ThreadRuntimeImpl implements ThreadRuntime {
         { id: outcomeRowId, turnId, dispatchId, ...(node ? { node } : {}) },
         outcomeJournal,
         'guard-outcome',
-        report.outcomes,
+        flow.takeDebugReasons(report),
       );
       Object.assign(entry, {
         status: 'reported',
@@ -2575,17 +2575,14 @@ class ThreadRuntimeImpl implements ThreadRuntime {
     },
     journal: PhaseJournalOutcome,
     explains: 'advice' | 'guard-outcome',
-    calls: readonly {
-      domain: string;
-      askDebugReason?: () => Promise<DebugReasonReading>;
-    }[],
+    asks: ReadonlyMap<string, DebugReasonAsk>,
   ): void {
     if (journal !== 'durable') return;
-    for (const call of calls) {
-      if (!call.askDebugReason || this._disposed) continue;
+    for (const [domain, ask] of asks) {
+      if (this._disposed) return;
       // Asked only now, after the decision row is sealed (and, for guards, after every check answered),
       // so the debug call never competes with a decision for capacity.
-      void call.askDebugReason().then(
+      void ask().then(
         (reading) => {
           if (this._disposed) return;
           try {
@@ -2596,9 +2593,9 @@ class ThreadRuntimeImpl implements ThreadRuntime {
               dispatchId: row.dispatchId,
               phase: 'warden-debug',
               record: {
-                wraps: wardenCallId(row.id, call.domain),
+                wraps: wardenCallId(row.id, domain),
                 explains,
-                domain: call.domain,
+                domain: domain,
                 stage: reading.stage,
                 explainsOutcome: reading.explains,
                 outcome: reading.outcome,
@@ -2611,13 +2608,13 @@ class ThreadRuntimeImpl implements ThreadRuntime {
             });
           } catch (error) {
             this._warn(
-              `  [flow:${this.thread.id}] ${call.domain} debug reason journal failed: ${(error as Error)?.message ?? error}`,
+              `  [flow:${this.thread.id}] ${domain} debug reason journal failed: ${(error as Error)?.message ?? error}`,
             );
           }
         },
         (error) =>
           this._warn(
-            `  [flow:${this.thread.id}] ${call.domain} debug reason failed: ${(error as Error)?.message ?? error}`,
+            `  [flow:${this.thread.id}] ${domain} debug reason failed: ${(error as Error)?.message ?? error}`,
           ),
       );
     }
@@ -2829,7 +2826,7 @@ class ThreadRuntimeImpl implements ThreadRuntime {
       { id: adviceRowId, turnId: moment.turnId, dispatchId: null, ...(node ? { node } : {}) },
       adviceJournal,
       'advice',
-      report.contributions,
+      flow.takeDebugReasons(report),
     );
     const notes = moment.notes(report);
     const delivery = moment.deliver?.() ?? 'next-turn';

@@ -1100,7 +1100,12 @@ test('each region Warden decision is followed by its debug reason, journalled as
   const rows: PhaseRecordInput[] = [];
   f.manager.setPhaseJournal((_runtime, record) => rows.push(record));
   const thread = f.factory.create('debug-thread', { projectId: 'P' });
-  await thread.dispatch('worker', 'Add a SET NX lock around the sync job');
+  // The plan stays plain data: the executor clones it as the turn's injection evidence.
+  const injections: unknown[] = [];
+  await thread.dispatch('worker', 'Add a SET NX lock around the sync job', undefined, {
+    recordInjection: (record) => injections.push(record),
+  });
+  expect(injections.length).toBeGreaterThan(0);
   const end = performance.now() + 2000;
   while (rows.filter((r) => r.phase === 'warden-debug').length < 2) {
     if (performance.now() > end) throw Error('deadline: debug rows');

@@ -154,8 +154,25 @@ export interface DomainContribution {
   readonly catchesUp?: true;
   /** The missed user messages it was asked on with this one (`user-message` only). */
   readonly earlier?: { readonly count: number; readonly dropped: number };
-  /** Live debug: asks its answer's why, its own call; the journal invokes it once the decision row is sealed. */
-  readonly askDebugReason?: () => Promise<DebugReasonReading>;
+}
+
+/** Live debug: asks one Warden call's why, a call of its own, once its decision is journalled. */
+export type DebugReasonAsk = () => Promise<DebugReasonReading>;
+
+/** A contribution as `_assess` returns it: the ask rides beside it until the plan seals, never in it. */
+type AssessedContribution = DomainContribution & { readonly askDebugReason?: DebugReasonAsk };
+
+/** Splits the asks off the assessed contributions, so the sealed plan holds only data. */
+function contributionsWithoutAsks(assessed: readonly AssessedContribution[]): {
+  contributions: DomainContribution[];
+  asks: Map<string, DebugReasonAsk>;
+} {
+  const asks = new Map<string, DebugReasonAsk>();
+  const contributions = assessed.map(({ askDebugReason, ...contribution }) => {
+    if (askDebugReason) asks.set(contribution.domain, askDebugReason);
+    return contribution;
+  });
+  return { contributions, asks };
 }
 
 /** A cold or prefiltered Warden was given nothing: no call, so no inputs and no missed messages. */
@@ -316,8 +333,6 @@ export interface GuardOutcome {
   readonly classified?: ClassifiedSummary;
   /** The exact input of every stage past the first (the first is `request`), each with its own composition. */
   readonly stageRequests?: readonly ParticipantRequest[];
-  /** Live debug: asks the check's why, its own call; the journal invokes it once every check has answered. */
-  readonly askDebugReason?: () => Promise<DebugReasonReading>;
 }
 
 /** Caller hooks for the post-action flow. `onRequest` fires at each domain's call boundary, before its answer. */
@@ -488,6 +503,11 @@ interface PlanClock {
 type Raced<T> = { timedOut: false; value: T } | { timedOut: true; reason: string };
 
 export class FlowOrchestrator {
+  /**
+   * Each sealed plan's, brief's and guard report's debug asks by domain. Kept beside the sealed object,
+   * never on it: a plan is cloned as executor evidence, and a function cannot be.
+   */
+  private _debugReasonAsks = new WeakMap<object, ReadonlyMap<string, DebugReasonAsk>>();
   private _domains: Map<string, DomainLibrarian>;
   private _librarian: Librarian;
   private _stack: ContextStack;
@@ -687,17 +707,40 @@ export class FlowOrchestrator {
         true,
       ),
     );
-    const contributions = await assessments;
+    const { contributions, asks } = contributionsWithoutAsks(await assessments);
     this.catchUp.answered(seq, contributions);
 
     // 3. Compose in configured order and seal.
     const plan = this._compose(input, contributions, outstanding, start, fresh);
-    return prefiltered
-      ? deepFreeze({
-          ...plan,
-          prefilter: prefilterRun(prefiltered, contributions.filter((c) => c.prefilter).length),
-        })
-      : plan;
+    return this._sealedWithAsks(
+      prefiltered
+        ? deepFreeze({
+            ...plan,
+            prefilter: prefilterRun(prefiltered, contributions.filter((c) => c.prefilter).length),
+          })
+        : plan,
+      asks,
+    );
+  }
+
+  /**
+   * The debug asks of a sealed plan, brief or guard report, by domain, handed over once: whoever
+   * journals the decision takes them, and a second take gets none, so no call's why is asked twice.
+   */
+  takeDebugReasons(
+    sealed: InjectionPlan | BriefReport | GuardReport,
+  ): ReadonlyMap<string, DebugReasonAsk> {
+    const asks = this._debugReasonAsks.get(sealed) ?? new Map<string, DebugReasonAsk>();
+    this._debugReasonAsks.delete(sealed);
+    return asks;
+  }
+
+  private _sealedWithAsks<T extends object>(
+    sealed: T,
+    asks: ReadonlyMap<string, DebugReasonAsk>,
+  ): T {
+    if (asks.size) this._debugReasonAsks.set(sealed, asks);
+    return sealed;
   }
 
   /** Every Warden with what it would assess against, frozen now, before any await. */
@@ -811,19 +854,33 @@ export class FlowOrchestrator {
       threadState,
       participants.filter((p) => p.cache).map((p) => p.lib),
     );
-    const contributions = await runBounded(participants, this._maxAdviseParallel, (p) =>
-      this._assess(p, input, clock, outstanding, prefilterSkip(prefiltered, p.lib.domain), trigger),
+    const { contributions, asks } = contributionsWithoutAsks(
+      await runBounded(participants, this._maxAdviseParallel, (p) =>
+        this._assess(
+          p,
+          input,
+          clock,
+          outstanding,
+          prefilterSkip(prefiltered, p.lib.domain),
+          trigger,
+        ),
+      ),
     );
-    return deepFreeze({
-      input,
-      contributions,
-      ...(prefiltered
-        ? { prefilter: prefilterRun(prefiltered, contributions.filter((c) => c.prefilter).length) }
-        : {}),
-      outstanding,
-      elapsed: Date.now() - start,
-      sealedAt: Date.now(),
-    });
+    return this._sealedWithAsks(
+      deepFreeze({
+        input,
+        contributions,
+        ...(prefiltered
+          ? {
+              prefilter: prefilterRun(prefiltered, contributions.filter((c) => c.prefilter).length),
+            }
+          : {}),
+        outstanding,
+        elapsed: Date.now() - start,
+        sealedAt: Date.now(),
+      }),
+      asks,
+    );
   }
 
   /**
@@ -870,7 +927,7 @@ export class FlowOrchestrator {
     earlier?: EarlierMessages,
     /** A user message's own advice: served warm or skipped, and what it skips it catches up on. */
     catchingUp = false,
-  ): Promise<DomainContribution> {
+  ): Promise<AssessedContribution> {
     const startedAt = Date.now();
     // Three separately owned segments: configured instructions, configured
     // domain knowledge, and this domain's own generated understanding of the
@@ -911,7 +968,7 @@ export class FlowOrchestrator {
       outcome: AdviceOutcome,
       extra: Partial<
         Pick<
-          DomainContribution,
+          AssessedContribution,
           | 'reason'
           | 'layers'
           | 'snippets'
@@ -925,7 +982,7 @@ export class FlowOrchestrator {
           | 'askDebugReason'
         >
       > = {},
-    ): DomainContribution => ({
+    ): AssessedContribution => ({
       domain: p.lib.domain,
       outcome,
       trigger,
@@ -1380,6 +1437,7 @@ export class FlowOrchestrator {
     const findings: GuardFinding[] = [];
     const domainsChecked: string[] = [];
     const outcomes: GuardOutcome[] = [];
+    const asks = new Map<string, DebugReasonAsk>();
     for (let i = 0; i < domainsToCheck.length; i++) {
       const r = results[i];
       domainsChecked.push(domainsToCheck[i].domain);
@@ -1406,8 +1464,8 @@ export class FlowOrchestrator {
               stageRequests: r.stageRequests.map((e) => suppliedRequest(e)),
             }
           : {}),
-        ...(r.askDebugReason ? { askDebugReason: r.askDebugReason } : {}),
       });
+      if (r.askDebugReason) asks.set(domainsToCheck[i].domain, r.askDebugReason);
     }
     // Not completed: failed, or refused unsent by the queue or role budget (a cold Warden has nothing to check yet).
     const failed = outcomes
@@ -1449,18 +1507,21 @@ export class FlowOrchestrator {
       timestamp: Date.now(),
     });
 
-    return {
-      findings,
-      critical,
-      advisory,
-      domainsChecked,
-      skipped,
-      prefiltered: ruledOut,
-      ...(prefiltered ? { prefilter: prefilterRun(prefiltered, ruledOut.length) } : {}),
-      outcomes,
-      failed,
-      elapsed: Date.now() - start,
-    };
+    return this._sealedWithAsks(
+      {
+        findings,
+        critical,
+        advisory,
+        domainsChecked,
+        skipped,
+        prefiltered: ruledOut,
+        ...(prefiltered ? { prefilter: prefilterRun(prefiltered, ruledOut.length) } : {}),
+        outcomes,
+        failed,
+        elapsed: Date.now() - start,
+      },
+      asks,
+    );
   }
 
   // -----------------------------------------------------------------------
