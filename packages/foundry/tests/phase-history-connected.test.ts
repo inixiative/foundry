@@ -3,7 +3,7 @@ import { expect, test } from 'bun:test';
 import type { StreamEvent } from '@inixiative/foundry-core';
 import { selectedDetailTarget } from '../src/viewer/ui/conversation-state.js';
 import { guardOutcomes } from '../src/viewer/ui/inspector-data.js';
-import { gate, learned, m0Scenario, noComment, until } from './helpers/m0-domain-loop';
+import { gate, learned, m0Scenario, noComment, until } from './helpers/m0-warden-loop';
 
 test('selected detail refresh requires the original active thread and exact turn', () => {
   const selected = { threadId: 'a', turnId: 'original' };
@@ -120,7 +120,7 @@ for (const mode of ['sql', 'publication'] as const)
           "CREATE TRIGGER reject_connected BEFORE INSERT ON session_knowledge BEGIN SELECT RAISE(ABORT, 'CONTROLLED_CONNECTED_SQL'); END",
         );
       else
-        runtime.domainLibrarians.get('architecture')!.threadKnowledge.layer.set = () => {
+        runtime.wardens.get('architecture')!.threadKnowledge.layer.set = () => {
           throw Error('CONTROLLED_CONNECTED_PUBLICATION');
         };
       held.resolve(learned('a', 'architecture'));

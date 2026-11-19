@@ -9,9 +9,9 @@ import {
   type NativeEvidence,
   type ThreadMeta,
 } from '@inixiative/foundry-core';
-import { oneCall, renderTurnActivity } from '../src/agents/domain-librarian';
 import { buildAgents, ThreadFactory } from '../src/agents/thread-factory';
 import { ThreadRuntimeManager } from '../src/agents/thread-runtime';
+import { oneCall, renderTurnActivity } from '../src/agents/warden';
 import { reduceMiddleware } from '../src/archives/reduced-middleware';
 import { KnowledgePersistence } from '../src/persistence/knowledge-persistence';
 import { LocalSessionStore } from '../src/persistence/local-session-store';
@@ -122,7 +122,7 @@ function fixture(
     log() {},
     warn() {},
     eventStream: events,
-    domains: [
+    codeWardens: [
       {
         domain: 'architecture',
         layerId: 'architecture',
@@ -237,7 +237,7 @@ test('per-turn: the chorus is asked once, when the turn ends, over every guardab
     wraps: 'turn:turn-1',
     correlation: 'live-dispatch',
     status: 'reported',
-    domainsChecked: ['architecture'],
+    wardensChecked: ['architecture'],
     observation: { tool: 'Write, Edit, Bash', calls: 3, agentId: 'worker', turnId: 'turn-1' },
     activity: {
       turnId: 'turn-1',
@@ -298,8 +298,8 @@ test('per-call: every tool call is its own moment, wrapping its call id', async 
     'sig-tool-2',
     'sig-tool-3',
   ]);
-  expect(outcomes[0]!.record).toMatchObject({ mode: 'per-call', domainsChecked: [] });
-  expect(outcomes[1]!.record).toMatchObject({ domainsChecked: ['architecture'] });
+  expect(outcomes[0]!.record).toMatchObject({ mode: 'per-call', wardensChecked: [] });
+  expect(outcomes[1]!.record).toMatchObject({ wardensChecked: ['architecture'] });
 });
 
 test("an observed subagent's turn is guarded once when it ends, on its node", async () => {

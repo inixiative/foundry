@@ -7,14 +7,9 @@ import {
   type LLMProvider,
   SignalBus,
 } from '@inixiative/foundry-core';
-import {
-  DomainLibrarian,
-  type GuardFinding,
-  oneCall,
-  type TurnActivity,
-} from '../src/agents/domain-librarian';
 import { FlowOrchestrator, type InjectionPlan } from '../src/agents/flow-orchestrator';
 import { Librarian } from '../src/agents/librarian';
+import { type GuardFinding, oneCall, type TurnActivity, Warden } from '../src/agents/warden';
 
 // ---------------------------------------------------------------------------
 // Mock LLM — returns configurable responses per domain
@@ -67,8 +62,8 @@ function setup() {
   // Librarian (signal reconciliation)
   const librarian = new Librarian({ signals, stack });
 
-  // Domain librarians
-  const conventionLib = new DomainLibrarian({
+  // Wardens
+  const conventionLib = new Warden({
     domain: 'convention',
     cache: authConventions,
     signals,
@@ -94,7 +89,7 @@ function setup() {
     guardPrompt: 'You are the convention guard.',
   });
 
-  const securityLib = new DomainLibrarian({
+  const securityLib = new Warden({
     domain: 'security',
     cache: securityPatterns,
     signals,
@@ -124,37 +119,14 @@ function setup() {
     guardTriggers: ['file_write', 'file_create', 'bash'],
   });
 
-  const memoryLib = new DomainLibrarian({
-    domain: 'memory',
-    cache: new ContextLayer({ id: 'memory-cache' }),
-    signals,
-    llm: mockLLM({}),
-    programmaticGuard: true,
-    guardFn: (activity: TurnActivity): GuardFinding[] => {
-      const output = activity.observations.map((o) => o.output ?? '').join('\n');
-      if (output.includes('setTimeout') && output.includes('0)')) {
-        return [
-          {
-            severity: 'advisory',
-            description: 'setTimeout(0) is unreliable — known failure pattern',
-          },
-        ];
-      }
-      return [];
-    },
-  });
-  // Set memory cache content
-  memoryLib.cache.set(JSON.stringify([{ pattern: 'setTimeout.*0)', failure: 'Race condition' }]));
-
-  const domainLibrarians = new Map<string, DomainLibrarian>([
+  const wardens = new Map<string, Warden>([
     ['convention', conventionLib],
     ['security', securityLib],
-    ['memory', memoryLib],
   ]);
 
   // Wire it all together
   const orchestrator = new FlowOrchestrator({
-    domainLibrarians,
+    wardens,
     librarian,
     stack,
     signals,
@@ -174,7 +146,7 @@ describe('FlowOrchestrator', () => {
       const plan = await orchestrator.preMessage('Fix the JWT validation in auth middleware');
 
       expect(plan.layers).toContain('auth-conventions');
-      expect(plan.domainsConsulted).toEqual(['convention', 'security', 'memory']);
+      expect(plan.contributions.map((c) => c.domain)).toEqual(['convention', 'security']);
     });
 
     it('does NOT include testing layers for auth message', async () => {
@@ -260,9 +232,8 @@ describe('FlowOrchestrator', () => {
         }),
       );
 
-      expect(report.domainsChecked).toContain('convention');
-      expect(report.domainsChecked).toContain('security');
-      expect(report.domainsChecked).toContain('memory'); // programmatic, always runs
+      expect(report.wardensChecked).toContain('convention');
+      expect(report.wardensChecked).toContain('security');
     });
 
     it('skips convention guard on file_read', async () => {
@@ -274,13 +245,11 @@ describe('FlowOrchestrator', () => {
         }),
       );
 
-      // Only memory should run (programmatic, always fires)
-      expect(report.domainsChecked).toContain('memory');
-      expect(report.domainsChecked).not.toContain('convention');
-      expect(report.domainsChecked).not.toContain('security');
+      expect(report.wardensChecked).not.toContain('convention');
+      expect(report.wardensChecked).not.toContain('security');
     });
 
-    it('separates critical and advisory findings', async () => {
+    it('reports the advisory findings a Warden points at', async () => {
       const { orchestrator } = setup();
       const report = await orchestrator.postAction(
         oneCall({
@@ -291,21 +260,8 @@ describe('FlowOrchestrator', () => {
       );
 
       // The security Warden points at eval() (advisory: a Warden never gives a verdict)
-      const allFindings = [...report.critical, ...report.advisory];
-      expect(allFindings.length).toBeGreaterThan(0);
-    });
-
-    it('memory guard catches known failure patterns', async () => {
-      const { orchestrator } = setup();
-      const report = await orchestrator.postAction(
-        oneCall({
-          tool: 'file_write',
-          input: { file_path: 'src/timer.ts' },
-          output: 'setTimeout(() => resolve(), 0)',
-        }),
-      );
-
-      expect(report.findings.some((f) => f.description.includes('setTimeout'))).toBe(true);
+      expect(report.findings.length).toBeGreaterThan(0);
+      expect(report.findings.every((f) => f.severity === 'advisory')).toBe(true);
     });
 
     it('emits tool_observation signal', async () => {
@@ -367,7 +323,7 @@ describe('FlowOrchestrator', () => {
       );
 
       // Convention guard should have flagged snake_case
-      expect(report.domainsChecked).toContain('convention');
+      expect(report.wardensChecked).toContain('convention');
 
       // 4. Librarian should have updated thread state throughout
       expect(librarian.state.inContext.length).toBeGreaterThan(0);
@@ -523,7 +479,7 @@ describe('warming never holds the turn (Wardens never block)', () => {
   it('a warm that hangs or fails comes back as a recorded shortfall within the advise deadline', async () => {
     const { librarian, stack, signals } = setup();
     const orchestrator = new FlowOrchestrator({
-      domainLibrarians: new Map(),
+      wardens: new Map(),
       librarian,
       stack,
       signals,
@@ -556,7 +512,7 @@ describe('compaction before any plan', () => {
     const stack = new ContextStack();
     const librarian = new Librarian({ signals, stack });
     const flow = new FlowOrchestrator({
-      domainLibrarians: new Map(),
+      wardens: new Map(),
       librarian,
       stack,
       signals,
@@ -595,7 +551,7 @@ describe('compaction before any plan', () => {
     const stack = new ContextStack([instructions]);
     const librarian = new Librarian({ signals, stack });
     const flow = new FlowOrchestrator({
-      domainLibrarians: new Map(),
+      wardens: new Map(),
       librarian,
       stack,
       signals,
@@ -616,7 +572,7 @@ describe('catch-up: a Warden that missed messages is asked on them with the next
     const state = { fail: false };
     const layer = new ContextLayer({ id: 'arch-cache' });
     layer.set('Snapshots are column-only.');
-    const arch = new DomainLibrarian({
+    const arch = new Warden({
       domain: 'arch',
       cache: layer,
       signals,
@@ -630,7 +586,7 @@ describe('catch-up: a Warden that missed messages is asked on them with the next
       },
     });
     const orchestrator = new FlowOrchestrator({
-      domainLibrarians: new Map([['arch', arch]]),
+      wardens: new Map([['arch', arch]]),
       librarian,
       stack,
       signals,

@@ -7,10 +7,10 @@ import {
   SignalBus,
   Thread,
 } from '@inixiative/foundry-core';
-import { DomainLibrarian } from '../src/agents/domain-librarian';
 import { Librarian } from '../src/agents/librarian';
 import { buildAgents, buildLayers, ThreadFactory } from '../src/agents/thread-factory';
 import { ThreadRuntimeManager } from '../src/agents/thread-runtime';
+import { Warden } from '../src/agents/warden';
 import { starterConfig, validateConfig } from '../src/viewer/config';
 
 // Foundry construction sites of generated, thread-private layers carry the typed
@@ -41,7 +41,7 @@ function runtimeSetup() {
     llm: provider,
     log() {},
     warn() {},
-    domains: [{ domain: 'conventions', layerId: 'conventions', guardTriggers: [] }],
+    codeWardens: [{ domain: 'conventions', layerId: 'conventions', guardTriggers: [] }],
   });
   const factory = new ThreadFactory({
     stack,
@@ -55,7 +55,7 @@ test('the runtime-created thread-knowledge layer carries the segment on the actu
   const { factory, runtime } = runtimeSetup();
   try {
     const thread = factory.create('owned', { projectId: 'project' });
-    const lib = runtime.get('owned')!.domainLibrarians.get('conventions')!;
+    const lib = runtime.get('owned')!.wardens.get('conventions')!;
     expect(lib.threadKnowledge.layer.segment).toBe('thread-knowledge');
     expect(thread.stack.layers.find((l) => l.id === 'thread-knowledge:conventions')?.segment).toBe(
       'thread-knowledge',
@@ -72,10 +72,10 @@ test('the runtime-created thread-knowledge layer carries the segment on the actu
   }
 });
 
-test('a standalone DomainLibrarian default layer and a Librarian with a custom layer id are thread knowledge by segment', () => {
+test('a standalone Warden default layer and a Librarian with a custom layer id are thread knowledge by segment', () => {
   const cache = new ContextLayer({ id: 'security' });
   cache.set('DOMAIN');
-  const lib = new DomainLibrarian({
+  const lib = new Warden({
     domain: 'security',
     cache,
     signals: new SignalBus(),
@@ -131,7 +131,7 @@ test('a historical artifact keeps its recorded kinds after later assembly, and g
   const { factory, runtime } = runtimeSetup();
   try {
     const owned = factory.create('owned', { projectId: 'project' });
-    const lib = runtime.get('owned')!.domainLibrarians.get('conventions')!;
+    const lib = runtime.get('owned')!.wardens.get('conventions')!;
     lib.threadKnowledge.layer.set('PRIVATE_THREAD_FACT');
     const historical = buildInjectionArtifact({
       userMessage: 'u',

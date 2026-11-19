@@ -6,13 +6,13 @@ import {
   type Signal,
   SignalBus,
 } from '@inixiative/foundry-core';
-import { DomainLibrarian, oneCall } from '../src/agents/domain-librarian';
 import { FlowOrchestrator } from '../src/agents/flow-orchestrator';
 import { Librarian } from '../src/agents/librarian';
+import { oneCall, Warden } from '../src/agents/warden';
 import { chartered, GUARD_RESPONSE_PROTOCOL, validateGuardResponse } from '../src/classify';
 
 // Author cases for the guard-phase outcome contract (Fable, CORE-006 LI). Controlled providers only; no model.
-// The parent's protected domain-guard-evidence fixture proves failures differ from a completed all-clear;
+// The parent's protected warden-guard-evidence fixture proves failures differ from a completed all-clear;
 // these pin the statuses, bounded errors, protocol/parts layout, private-state isolation and the report.
 
 const observation = {
@@ -37,11 +37,11 @@ function fixture(
     cache.set(options.knowledge ?? `DOMAIN_KNOWLEDGE(${domain}): preserve compatibility.`);
   const requests: LLMMessage[][] = [],
     emitted: Signal[] = [];
-  for (const kind of ['security_concern', 'guard_finding'])
+  for (const kind of ['guard_finding'])
     signals.on(kind, (s) => {
       emitted.push(s);
     });
-  const lib = new DomainLibrarian({
+  const lib = new Warden({
     domain,
     cache,
     signals,
@@ -57,7 +57,7 @@ function fixture(
   });
   return { lib, requests, emitted, cache, signals };
 }
-const learn = (lib: DomainLibrarian, text: string) =>
+const learn = (lib: Warden, text: string) =>
   lib.threadKnowledge.learn(
     text,
     { kind: 'dispatch', id: `verified-${text.length}`, ok: true, timestamp: 1 },
@@ -317,7 +317,7 @@ test("orchestrator: the guard report and emitted observation carry each domain's
     stack,
     signals,
     librarian,
-    domainLibrarians: new Map([
+    wardens: new Map([
       ['architecture', arch.lib],
       ['testing', testing.lib],
       ['security', malformed.lib],
@@ -329,13 +329,11 @@ test("orchestrator: the guard report and emitted observation carry each domain's
   });
   try {
     const report = await flow.postAction(oneCall(observation));
-    expect(report.domainsChecked).toEqual(['architecture', 'testing', 'security']);
+    expect(report.wardensChecked).toEqual(['architecture', 'testing', 'security']);
     expect(report.skipped).toEqual([]);
     expect(report.findings).toEqual([
       { severity: 'advisory', description: 'Add a migration test', pointer: { relevant: false } },
     ]);
-    expect(report.critical).toEqual([]);
-    expect(report.advisory).toHaveLength(1);
     expect(report.outcomes.map(({ request, ...rest }) => rest)).toEqual([
       {
         domain: 'architecture',
@@ -376,7 +374,6 @@ test("orchestrator: the guard report and emitted observation carry each domain's
       guardsRan: ['architecture', 'testing', 'security'],
       guardsFailed: ['testing', 'security'],
       findingsCount: 1,
-      criticalCount: 0,
     });
     expect(content.guardOutcomes).toEqual(report.outcomes);
     expect(arch.requests[0]![1]!.content).toContain('ARCH_OWN');

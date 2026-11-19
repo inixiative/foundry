@@ -7,7 +7,6 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { type LLMProvider, SignalBus } from '@inixiative/foundry-core';
 import { FileMemory } from '../../core/src/adapters/file-memory';
-import { DomainLibrarian } from '../src/agents/domain-librarian';
 import {
   readRegions,
   regionDocOfSubject,
@@ -18,6 +17,7 @@ import {
 } from '../src/agents/region-roster';
 import { buildRoleLayers, buildStageKnowledge } from '../src/agents/role-layers';
 import { createSourceResolver } from '../src/agents/thread-factory';
+import { Warden } from '../src/agents/warden';
 import { AuditLog } from '../src/audit/audit-log';
 import { CompositionAuditor } from '../src/audit/compositions';
 import { charterFor, validateStages, WARDEN_CHARTER } from '../src/classify';
@@ -206,7 +206,7 @@ test('each stage composes its own doc, journals its own versions, and recomposes
     },
   };
   const stages = validateStages('s', TWO_STAGES);
-  const lib = new DomainLibrarian({
+  const lib = new Warden({
     domain: 'locks',
     role: LOCKS,
     cache: slots.domainKnowledge,

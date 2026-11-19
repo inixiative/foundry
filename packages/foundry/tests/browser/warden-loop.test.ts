@@ -12,9 +12,9 @@ import {
   learned,
   m0Scenario,
   noComment,
-} from '../helpers/m0-domain-loop';
+} from '../helpers/m0-warden-loop';
 
-// M1/M2 expert-loop inspection over the production factory/runtime/HTTP/SQLite (Astra's M0 helper,
+// M1/M2 warden-loop inspection over the production factory/runtime/HTTP/SQLite (Astra's M0 helper,
 // unedited, composed with a disposable server). Controlled reviewer/central answers only; no model or
 // native process. Opt-in: FOUNDRY_QA_PLAYWRIGHT + Chrome. Every assertion is an after-acceptance
 // assertion; the first run records the baseline gaps as failures.
@@ -25,7 +25,7 @@ const root = resolve(import.meta.dir, '../../../..');
 const out = resolve(
   root,
   '.foundry/qa',
-  `m1-expert-loop-${new Date().toISOString().replaceAll(':', '-')}`,
+  `m1-warden-loop-${new Date().toISOString().replaceAll(':', '-')}`,
 );
 if (existsSync(out)) throw new Error(`Refusing to reuse an existing output directory: ${out}`);
 mkdirSync(out, { recursive: true });
@@ -49,13 +49,13 @@ const check = (name: string, ok: boolean, detail: unknown = {}) =>
 const A = interpretation('a', 'architecture'),
   T = interpretation('a', 'testing');
 
-test('expert loop: before work, after post-hooks (pending, commit, NO_COMMENT), historical pre-hook segments, immutability, evidence navigation, 1440 and 390', async () => {
+test('Warden loop: before work, after post-hooks (pending, commit, NO_COMMENT), historical pre-hook segments, immutability, evidence navigation, 1440 and 390', async () => {
   for (const f of [
     'packages/foundry/src/viewer/ui/detail-drawer.js',
     'packages/foundry/src/viewer/ui/inspector-data.js',
     'packages/foundry/src/viewer/ui/store.js',
     'packages/foundry/src/viewer/ui/thread-tree.js',
-    'packages/foundry/tests/helpers/m0-domain-loop.ts',
+    'packages/foundry/tests/helpers/m0-warden-loop.ts',
   ])
     report.sourceHashes[f] = sha(f);
   const held = gate<void>();
@@ -111,13 +111,13 @@ test('expert loop: before work, after post-hooks (pending, commit, NO_COMMENT), 
       );
     const openLayer = async (p: any, id: string) => {
       await inspectLayer(p, id);
-      await drawer(p).locator(".expert-understanding:not([data-state='loading'])").waitFor();
+      await drawer(p).locator(".warden-understanding:not([data-state='loading'])").waitFor();
       await drawer(p)
         .locator('.detail-section-title')
         .filter({ hasText: /^Cached content/ })
         .first()
         .waitFor();
-      await drawer(p).locator('.expert-role').first().scrollIntoViewIfNeeded();
+      await drawer(p).locator('.warden-role').first().scrollIntoViewIfNeeded();
     };
     const openTrace = async (p: any, turn: string) => {
       const row = p.locator(`.chat-msg[data-turn-id="${turn}"][data-actor="agent"]`);
@@ -125,13 +125,13 @@ test('expert loop: before work, after post-hooks (pending, commit, NO_COMMENT), 
       await row.locator('.chat-trace-btn').click();
       await drawer(p).locator(".historical-detail-status[data-status='loaded']").waitFor();
       await p.getByRole('button', { name: 'Turn Context' }).click();
-      await drawer(p).locator('.expert-participant').first().waitFor();
+      await drawer(p).locator('.warden-participant').first().waitFor();
       // Screenshots must show the participants, not only the DOM: scroll the first participant into view.
-      await drawer(p).locator('.expert-participant').first().scrollIntoViewIfNeeded();
+      await drawer(p).locator('.warden-participant').first().scrollIntoViewIfNeeded();
     };
     const shotParticipants = async (p: any, prefix: string) => {
       for (const d of ['architecture', 'testing']) {
-        const node = drawer(p).locator(`.expert-participant[data-domain="${d}"]`).first();
+        const node = drawer(p).locator(`.warden-participant[data-domain="${d}"]`).first();
         if (!(await node.count())) continue;
         await node.scrollIntoViewIfNeeded();
         await shot(p, `${prefix}-${d}-segments`);
@@ -143,7 +143,7 @@ test('expert loop: before work, after post-hooks (pending, commit, NO_COMMENT), 
       }
     };
     const participant = async (p: any, domain: string) => {
-      const node = drawer(p).locator(`.expert-participant[data-domain="${domain}"]`).first();
+      const node = drawer(p).locator(`.warden-participant[data-domain="${domain}"]`).first();
       return {
         present: (await node.count()) > 0,
         outcome: await node.getAttribute('data-outcome'),
@@ -163,24 +163,24 @@ test('expert loop: before work, after post-hooks (pending, commit, NO_COMMENT), 
     const desk = await browser.newContext({ viewport: { width: 1440, height: 960 } });
     const page = await desk.newPage();
     attach(page, '1440');
-    // ---- before work: each expert's configured instructions, domain knowledge, empty owned understanding ----
+    // ---- before work: each Warden's configured instructions, domain knowledge, empty owned understanding ----
     await page.goto(`${origin}/#project=P&thread=a`);
     await page.locator('.context-bar-title').waitFor();
     const before: Record<string, any> = {};
     for (const d of ['architecture', 'testing'] as const) {
       await openLayer(page, d);
       const dt = await drawer(page).innerText();
-      const und = drawer(page).locator('.expert-understanding').first();
+      const und = drawer(page).locator('.warden-understanding').first();
       before[d] = {
         instructions: dt.includes(instructions(d)),
         domainKnowledge: dt.includes(domainKnowledge(d)),
         revision: await und.getAttribute('data-revision'),
         state: await und.getAttribute('data-state'),
         role: /advises before|reviews after/i.test(
-          await text(drawer(page).locator('.expert-role')),
+          await text(drawer(page).locator('.warden-role')),
         ),
         notExecutor: /Not\s*the central executor; not a shared thread fact/i.test(
-          await text(drawer(page).locator('.expert-role')),
+          await text(drawer(page).locator('.warden-role')),
         ),
         leaked: dt.includes(A) || dt.includes(T),
       };
@@ -244,7 +244,7 @@ test('expert loop: before work, after post-hooks (pending, commit, NO_COMMENT), 
       afterT1,
     );
     await openLayer(page, 'architecture');
-    const archLayer = drawer(page).locator('.expert-understanding').first();
+    const archLayer = drawer(page).locator('.warden-understanding').first();
     const layerAfter = {
       revision: await archLayer.getAttribute('data-revision'),
       state: await archLayer.getAttribute('data-state'),
@@ -256,7 +256,7 @@ test('expert loop: before work, after post-hooks (pending, commit, NO_COMMENT), 
     };
     await shot(page, '1440-layer-architecture-understanding-rev1');
     await openLayer(page, 'testing');
-    const testingLayer = drawer(page).locator('.expert-understanding').first();
+    const testingLayer = drawer(page).locator('.warden-understanding').first();
     const testingLayerState = {
       revision: await testingLayer.getAttribute('data-revision'),
       state: await testingLayer.getAttribute('data-state'),
@@ -264,7 +264,7 @@ test('expert loop: before work, after post-hooks (pending, commit, NO_COMMENT), 
       leak: (await testingLayer.innerText()).includes(T),
     };
     check(
-      "layer view after turn 1: architecture's owned understanding is revision 1 with its interpretation and its domain knowledge unchanged; testing's is still revision 0, shows pending, and does not carry the other expert's text",
+      "layer view after turn 1: architecture's owned understanding is revision 1 with its interpretation and its domain knowledge unchanged; testing's is still revision 0, shows pending, and does not carry the other Warden's text",
       layerAfter.revision === '1' &&
         layerAfter.state === 'committed' &&
         layerAfter.content &&
@@ -361,7 +361,7 @@ test('expert loop: before work, after post-hooks (pending, commit, NO_COMMENT), 
     });
     await shot(page, '1440-turn1-participants-immutable');
     check(
-      'turn 1 historical preparation is immutable: both experts at revision 0 with empty thread understanding; no interpretation text anywhere in the historical view',
+      'turn 1 historical preparation is immutable: both Wardens at revision 0 with empty thread understanding; no interpretation text anywhere in the historical view',
       p1a.revision === '0' &&
         p1t.revision === '0' &&
         !p1a.threadKnowledge.includes(A) &&
@@ -378,7 +378,7 @@ test('expert loop: before work, after post-hooks (pending, commit, NO_COMMENT), 
     const p3a = await participant(page, 'architecture'),
       p3t = await participant(page, 'testing');
     check(
-      "turn 3 historical preparation: both experts worked from their own revision-1 understanding, never the other's",
+      "turn 3 historical preparation: both Wardens worked from their own revision-1 understanding, never the other's",
       p3a.revision === '1' &&
         p3t.revision === '1' &&
         p3a.threadKnowledge.includes(A) &&
@@ -407,7 +407,7 @@ test('expert loop: before work, after post-hooks (pending, commit, NO_COMMENT), 
     await drawer(page).locator(".historical-detail-status[data-status='loaded']").waitFor();
     const navigated = await text(drawer(page).locator('.historical-detail'));
     check(
-      'evidence navigation: the architecture expert distinguishes the turn that produced its committed revision (t1) from its latest post-hook (t3), and the revision control opens t1 in the same panel',
+      'evidence navigation: the architecture Warden distinguishes the turn that produced its committed revision (t1) from its latest post-hook (t3), and the revision control opens t1 in the same panel',
       /t1/.test(revisionEvidence) &&
         /t3/.test(latestEvidence) &&
         /Selected turn\s*t1/.test(navigated),
@@ -453,7 +453,7 @@ test('expert loop: before work, after post-hooks (pending, commit, NO_COMMENT), 
     await drawer(page2).locator(".historical-detail-status[data-status='loaded']").waitFor();
     const resolved = await text(drawer(page2).locator('.historical-detail'));
     await page2.getByRole('button', { name: 'Turn Context' }).click();
-    await drawer(page2).locator('.expert-participant').first().waitFor();
+    await drawer(page2).locator('.warden-participant').first().waitFor();
     const resolvedParticipant = await participant(page2, 'architecture');
     await shot(page2, '1440-omitted-history-evidence-resolved');
     await fresh.close();
@@ -491,10 +491,10 @@ test('expert loop: before work, after post-hooks (pending, commit, NO_COMMENT), 
     await m.locator('.context-bar-title').waitFor();
     await inspectLayer(m, 'architecture');
     await tab(/inspect/i);
-    await drawer(m).locator('.expert-understanding').waitFor();
+    await drawer(m).locator('.warden-understanding').waitFor();
     const mLayer = {
       revision: await drawer(m)
-        .locator('.expert-understanding')
+        .locator('.warden-understanding')
         .first()
         .getAttribute('data-revision'),
       overflow: await overflow(m),
@@ -508,7 +508,7 @@ test('expert loop: before work, after post-hooks (pending, commit, NO_COMMENT), 
     await tab(/inspect/i);
     await drawer(m).locator(".historical-detail-status[data-status='loaded']").waitFor();
     await m.getByRole('button', { name: 'Turn Context' }).click();
-    await drawer(m).locator('.expert-participant').first().waitFor();
+    await drawer(m).locator('.warden-participant').first().waitFor();
     const mp = await participant(m, 'architecture');
     await shot(m, '390-turn55-participants');
     await shotParticipants(m, '390-turn55');
@@ -560,7 +560,7 @@ test('expert loop: before work, after post-hooks (pending, commit, NO_COMMENT), 
       screenshots: report.screenshots.length,
     };
     writeFileSync(join(out, 'report.json'), JSON.stringify(report, null, 2));
-    console.log(`M1 expert-loop report: ${join(out, 'report.json')}`);
+    console.log(`M1 warden-loop report: ${join(out, 'report.json')}`);
   }
   expect(report.cleanupFailures).toEqual([]);
   expect(report.summary.failed).toEqual([]);

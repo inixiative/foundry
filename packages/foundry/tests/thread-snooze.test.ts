@@ -2,7 +2,7 @@ import './helpers/isolate-archive';
 import { afterEach, expect, test } from 'bun:test';
 import { ContextStack, Thread, type WindowReading } from '@inixiative/foundry-core';
 import { expireSnoozes, quotaResetAt, resolveSnooze } from '../src/viewer/thread-snooze';
-import { m0Scenario } from './helpers/m0-domain-loop';
+import { m0Scenario } from './helpers/m0-warden-loop';
 
 const cleanup: Array<() => void | Promise<void>> = [];
 afterEach(async () => {

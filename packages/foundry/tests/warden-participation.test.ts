@@ -12,11 +12,11 @@ import {
   SignalBus,
 } from '@inixiative/foundry-core';
 import { PLAN_ASK_NOTE } from '../src/agents/chorus-reception';
-import { DomainLibrarian, oneCall, type ToolObservation } from '../src/agents/domain-librarian';
 import { FlowOrchestrator } from '../src/agents/flow-orchestrator';
 import { Librarian } from '../src/agents/librarian';
 import { buildAgents, ThreadFactory } from '../src/agents/thread-factory';
 import { ThreadRuntimeManager } from '../src/agents/thread-runtime';
+import { oneCall, type ToolObservation, Warden } from '../src/agents/warden';
 import {
   type AdviceAnswer,
   NO_COMMENT,
@@ -59,7 +59,7 @@ test('every phase protocol names NO_COMMENT as the expected answer', async () =>
   const signals = new SignalBus();
   const cache = new ContextLayer({ id: 'security' });
   cache.set('Secrets never reach logs.');
-  const lib = new DomainLibrarian({
+  const lib = new Warden({
     domain: 'security',
     cache,
     signals,
@@ -184,7 +184,7 @@ test('NO_COMMENT parses strictly and carries nothing; anything else outside the 
 
   const cache = new ContextLayer({ id: 'security' });
   cache.set('k');
-  const reviewer = new DomainLibrarian({
+  const reviewer = new Warden({
     domain: 'security',
     cache,
     signals: new SignalBus(),
@@ -228,7 +228,7 @@ function runtimeFixture(advice: string) {
     config,
     log() {},
     warn() {},
-    domains: [{ domain: 'security', layerId: 'security', guardTriggers: [] }],
+    codeWardens: [{ domain: 'security', layerId: 'security', guardTriggers: [] }],
     llm: {
       id: 'flow',
       async complete(messages) {
@@ -312,7 +312,7 @@ function roster(domains: Record<string, string>, answer = () => NO_COMMENT) {
   const libs = new Map(
     layers.map((cache) => [
       cache.id,
-      new DomainLibrarian({
+      new Warden({
         domain: cache.id,
         cache,
         signals,
@@ -333,7 +333,7 @@ function roster(domains: Record<string, string>, answer = () => NO_COMMENT) {
     stack,
     signals,
     librarian,
-    domainLibrarians: libs,
+    wardens: libs,
   });
   cleanups.push(() => {
     flow.dispose();
@@ -477,7 +477,7 @@ test('24 Wardens, every one asked on every turn: a queue sized for the roster ad
   const libs = new Map(
     layers.map((cache) => [
       cache.id,
-      new DomainLibrarian({
+      new Warden({
         domain: cache.id,
         cache,
         signals,
@@ -493,7 +493,7 @@ test('24 Wardens, every one asked on every turn: a queue sized for the roster ad
     stack,
     signals,
     librarian,
-    domainLibrarians: libs,
+    wardens: libs,
     adviseTimeoutMs: 2_000,
   });
   cleanups.push(() => {
@@ -576,7 +576,7 @@ test('a Warden the decision queue refused for capacity is excluded, not an error
   cache.set('Prisma `schema.prisma`: false polymorphism.');
   const stack = new ContextStack([cache]);
   const librarian = new Librarian({ stack, signals });
-  const lib = new DomainLibrarian({
+  const lib = new Warden({
     domain: 'schema',
     cache,
     signals,
@@ -591,7 +591,7 @@ test('a Warden the decision queue refused for capacity is excluded, not an error
     stack,
     signals,
     librarian,
-    domainLibrarians: new Map([['schema', lib]]),
+    wardens: new Map([['schema', lib]]),
   });
   cleanups.push(() => {
     flow.dispose();

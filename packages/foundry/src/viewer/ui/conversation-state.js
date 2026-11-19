@@ -223,7 +223,7 @@ export function reconcileTargets(event) {
   if (event.kind !== 'signal') return null;
   const kind = event.signal?.kind;
   if (kind === 'dispatch') return { threadId, messages: true, knowledge: false };
-  if (kind === 'domain_learning') return { threadId, messages: false, knowledge: true };
+  if (kind === 'warden_learning') return { threadId, messages: false, knowledge: true };
   return null;
 }
 
@@ -238,7 +238,7 @@ export function selectedDetailTarget(event, selected, activeThread) {
   const turnId =
     event.kind === 'journal'
       ? event.turnId
-      : event.kind === 'signal' && event.signal?.kind === 'domain_learning'
+      : event.kind === 'signal' && event.signal?.kind === 'warden_learning'
         ? event.signal.content?.evidence?.messageId
         : null;
   return turnId === selected.turnId ? { threadId: selected.threadId, turnId } : null;

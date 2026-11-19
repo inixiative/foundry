@@ -40,7 +40,7 @@ import {
   type FoundryConfig,
 } from '../viewer/config';
 import { resolveProjectView, resolveThreadView } from '../viewer/config-resolve';
-import { configuredExperts } from './configured-experts';
+import { configuredWardens } from './configured-wardens';
 import { createNativeToolProjector } from './native-tool-projection';
 import type { ThreadRuntimeManager } from './thread-runtime';
 import { toolUseLoop } from './tool-loop';
@@ -171,7 +171,7 @@ export interface BuildLayersDeps {
  * layers: nothing is composed into the session.
  */
 export function buildLayers(config: FoundryConfig, deps: BuildLayersDeps): ContextLayer[] {
-  configuredExperts(config);
+  configuredWardens(config);
   const layers: ContextLayer[] = [];
 
   for (const [id, layerCfg] of Object.entries(config.layers)) {
@@ -229,7 +229,7 @@ export function buildAgents(
   for (const [id, agentCfg] of Object.entries(config.agents)) {
     if (!agentCfg.enabled) continue;
     // The runtime owns the Wardens; they are never thread agents.
-    if (agentCfg.flowRole === 'domain-advising') continue;
+    if (agentCfg.flowRole === 'warden') continue;
     const providerId = agentCfg.provider || config.defaults.provider;
     const provider = deps.providers ? deps.providers.get(providerId) : deps.provider;
     if (!provider) throw new Error(`No provider registered for ${providerId} (agent ${id})`);

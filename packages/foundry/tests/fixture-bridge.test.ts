@@ -34,7 +34,7 @@ async function fixture(
   const thread = new Thread('fixture-owner', new ContextStack([]), { projectId: 'P' });
   const runtime = new ThreadRuntimeManager({
     config: starterConfig('fake', 'fake'),
-    domains: [],
+    codeWardens: [],
     llm: {
       id: 'fake',
       async complete() {
@@ -239,7 +239,7 @@ test('disposal during acquisition closes transport and private directories', asy
   const thread = new Thread('race', new ContextStack([]));
   const runtime = new ThreadRuntimeManager({
     config: starterConfig('fake', 'fake'),
-    domains: [],
+    codeWardens: [],
     llm: {
       id: 'fake',
       async complete() {

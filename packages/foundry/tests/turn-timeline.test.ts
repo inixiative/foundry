@@ -4,7 +4,7 @@ import type { NativeEvidence } from '@inixiative/foundry-core';
 import { type AdviceOutcome, callOutcomeLabel } from '@inixiative/foundry-core';
 import type { TurnDetail } from '../src/persistence/local-session-store';
 import { type TimelineStep, turnTimeline } from '../src/viewer/turn-timeline';
-import { m0Scenario } from './helpers/m0-domain-loop';
+import { m0Scenario } from './helpers/m0-warden-loop';
 
 const cleanup: Array<() => void | Promise<void>> = [];
 afterEach(async () => {

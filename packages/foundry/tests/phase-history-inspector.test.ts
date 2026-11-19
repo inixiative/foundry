@@ -19,7 +19,7 @@ const supplied = {
   ],
 };
 
-test('guards: per-observation status with per-expert outcomes; pending and failed checks are never an all-clear; absent record is null', () => {
+test('guards: per-observation status with per-Warden outcomes; pending and failed checks are never an all-clear; absent record is null', () => {
   const trace = {
     root: {
       annotations: {
@@ -33,10 +33,9 @@ test('guards: per-observation status with per-expert outcomes; pending and faile
               agentId: 'worker',
             },
             status: 'reported',
-            domainsChecked: ['architecture', 'testing'],
+            wardensChecked: ['architecture', 'testing'],
             failed: ['testing'],
             findings: 1,
-            critical: 0,
             outcomes: [
               {
                 domain: 'architecture',
@@ -79,7 +78,6 @@ test('guards: per-observation status with per-expert outcomes; pending and faile
     status: 'reported',
     failed: ['testing'],
     findings: 1,
-    critical: 0,
   });
   expect(guards[0]!.outcomes[0]).toEqual({
     domain: 'architecture',

@@ -197,12 +197,12 @@
   {
     "path": "agents.*.kind",
     "scope": "foundry",
-    "description": "What the agent does in a turn (an executor; a generated Warden is a domain-librarian)."
+    "description": "What the agent does in a turn: `executor`, or `warden` for a generated Warden."
   },
   {
     "path": "agents.*.flowRole",
     "scope": "foundry",
-    "description": "The agent's part in a turn: execution (an executor) or domain-advising (a generated Warden)."
+    "description": "The agent's part in a turn: `execution` (an executor) or `warden` (a generated Warden)."
   },
   {
     "path": "agents.*.domain",
@@ -212,7 +212,7 @@
   {
     "path": "agents.*.description",
     "scope": "foundry",
-    "description": "Human-readable description of this agent's role and responsibilities. File path relative to project root (e.g., \".foundry/agents/security-librarian.md\"). Explains: what this agent does, which layers it reads/writes, who it delegates to, why."
+    "description": "Human-readable description of this agent's role and responsibilities. File path relative to project root (e.g., \".foundry/agents/executor.md\"). Explains: what this agent does, which layers it reads/writes, who it delegates to, why."
   },
   {
     "path": "agents.*.prompt",
@@ -327,7 +327,7 @@
   {
     "path": "layers.*.domain",
     "scope": "foundry",
-    "description": "Domain knowledge ownership. An enabled domain-advising agent must explicitly own this layer to register a custom expert; passive layers do not spawn actors."
+    "description": "The domain this layer holds knowledge for. A Warden owns no configured layer: its knowledge comes from its region."
   },
   {
     "path": "layers.*.description",

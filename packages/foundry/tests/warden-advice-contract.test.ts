@@ -5,7 +5,7 @@ import {
   type LLMProvider,
   SignalBus,
 } from '@inixiative/foundry-core';
-import { DomainLibrarian } from '../src/agents/domain-librarian';
+import { Warden } from '../src/agents/warden';
 import { ADVICE_RESPONSE_PROTOCOL, chartered, validateAdviceResponse } from '../src/classify';
 
 // Author cases for the advice-phase response contract (Fable). Controlled provider only; no model.
@@ -14,8 +14,8 @@ import { ADVICE_RESPONSE_PROTOCOL, chartered, validateAdviceResponse } from '../
 // composition's broad instructions work unchanged, and error text never carries response content.
 
 const BROAD_INSTRUCTIONS =
-  "You are the architecture expert. Maintain your own evidence-grounded interpretation of this thread's design decisions, constraints and tradeoffs. Do not treat another expert's opinion as your memory.";
-/** `advisePrompt: null` requests the librarian's built-in default instructions. */
+  "You are the architecture Warden. Maintain your own evidence-grounded interpretation of this thread's design decisions, constraints and tradeoffs. Do not treat another Warden's opinion as your memory.";
+/** `advisePrompt: null` requests the Warden's built-in default instructions. */
 function fixture(
   respond: (messages: LLMMessage[]) => Promise<{ content: string }> | { content: string },
   advisePrompt: string | null = BROAD_INSTRUCTIONS,
@@ -30,7 +30,7 @@ function fixture(
   };
   const cache = new ContextLayer({ id: 'architecture', segment: 'domain-knowledge' });
   cache.set('Assess compatibility using observed evidence.');
-  const lib = new DomainLibrarian({
+  const lib = new Warden({
     domain: 'architecture',
     cache,
     signals: new SignalBus(),
@@ -135,7 +135,7 @@ test('a cold cache is skipped explicitly before any model call', async () => {
       return { model: 'controlled', content: '{}' };
     },
   };
-  const lib = new DomainLibrarian({
+  const lib = new Warden({
     domain: 'architecture',
     cache: new ContextLayer({ id: 'architecture', segment: 'domain-knowledge' }),
     signals: new SignalBus(),

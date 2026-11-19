@@ -731,7 +731,7 @@ regions never run (Heralds are not built) and the view says so.
   it will go.
 - **Generated Wardens.** `resolveProjectView` composes the layers
   (`agents/region-roster.ts`: `chorusLayers`, `composeChorus`) and generates one
-  standalone project agent per region: kind `domain-librarian`, domain
+  standalone project agent per region: kind `warden`, domain
   `<region id>`, `invocation: always`, `guardTriggers` the write and exec tools
   (`REGION_GUARD_TRIGGERS`), its prompt the generic region instructions
   (`REGION_WARDEN_INSTRUCTIONS`) plus the region's title and routing line.

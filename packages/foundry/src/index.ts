@@ -32,9 +32,6 @@ export {
   type BuildLayersDeps,
   buildAgents,
   buildLayers,
-  // Domain Librarian (advise + guard pattern)
-  DomainLibrarian,
-  type DomainLibrarianConfig,
   // Flow Orchestrator (wires the FLOW.md roles)
   FlowOrchestrator,
   type FlowOrchestratorConfig,
@@ -61,6 +58,9 @@ export {
   type ThreadFactoryDeps,
   type ThreadState,
   type ToolObservation,
+  // Warden (advise + guard pattern)
+  Warden,
+  type WardenConfig,
 } from './agents';
 // Git — worktree detection for thread→branch assignment
 export {

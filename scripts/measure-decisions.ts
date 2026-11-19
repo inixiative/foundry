@@ -6,7 +6,7 @@
 // Live pre-message latency on the machine's own logins, through a Foundry
 // instance on a spare VIEWER_PORT (never the daemon's 4500).
 //
-//   bun scripts/measure-decisions.ts [--foundry <checkout>] [--port 4471] [--runs 10] [--experts 6] [--gap-ms 30000]
+//   bun scripts/measure-decisions.ts [--foundry <checkout>] [--port 4471] [--runs 10] [--wardens 6] [--gap-ms 30000]
 //
 // --gap-ms spaces messages like real turns (the worker's own run separates them);
 // back-to-back messages measure a request burst the provider may throttle.
@@ -40,12 +40,12 @@ const arg = (name: string, fallback: string) => {
 const foundry = resolve(arg('foundry', join(import.meta.dir, '..')));
 const port = Number(arg('port', '4471')),
   runs = Number(arg('runs', '10')),
-  expertCount = Number(arg('experts', '6')),
+  wardenCount = Number(arg('wardens', '6')),
   gapMs = Number(arg('gap-ms', '30000'));
 if (port === 4500) throw Error('4500 belongs to the daemon; choose a spare port');
 const DOMAINS = ['api', 'db', 'ui', 'auth', 'security', 'testing', 'performance', 'docs'].slice(
   0,
-  expertCount,
+  wardenCount,
 );
 const project = mkdtempSync(join(tmpdir(), 'foundry-measure-'));
 mkdirSync(join(project, 'docs')); // the starter conventions source reads <project>/docs
@@ -217,7 +217,7 @@ const budgetCheck =
 console.log(
   JSON.stringify({
     foundry,
-    experts: DOMAINS.length,
+    wardens: DOMAINS.length,
     runs: rows.length,
     gapMs,
     messageToWorkerStartMs: {

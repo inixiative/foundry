@@ -185,7 +185,7 @@ ACP-originated threads are ordinary threads, so the viewer shows them live: flow
 | Terminal `done` with no text streamed at all | One `agent_message_chunk` with the final content. | 1 |
 | Native `thinking` events (`as/harness-session.ts:82-95`) | `agent_thought_chunk` (needs thinking rows in `LiveActivity`). | 2 |
 | Claude `TodoWrite`, Codex `update_plan` (`pf/viewer/turn-flow.ts` `TASK_SOURCES`) | `plan {entries}` | 2 |
-| Guard findings and critical post-hoc findings | `tool_call {kind: "think", title: "Foundry: guard"}`: a comment, never a block (§5.2). | 2 |
+| Guard findings | `tool_call {kind: "think", title: "Foundry: guard"}`: a comment, never a block (§5.2). | 2 |
 | Mode or config changes | `current_mode_update`, `config_option_update` | 2 |
 | `available_commands_update` | `/correction <text>` → `POST /api/threads/:id/interventions` (`runtime.ts:358`): feedback typed in an editor reaches capture. | 2 |
 
@@ -249,7 +249,7 @@ Unchanged. `flow.prepare` starts early (`thread-runtime.ts:905-915`); `preMessag
 
 **Decision (Foundry).** `SessionBackedProvider` routes the request to the thread's gate:
 1. **Structural (always, ~0 ms, no model call).** Classify the call into a capability (`Bash` → `exec:shell`; `Write`/`Edit` + path → `file:write` with `protectedPaths`; `mcp__*` → `net:api`), then core `permissionLevel` (`pf/turns/tool-gate.ts:7,92`) against the user's configured structural rules. `deny` is final and its reason reaches the model through the native deny message. Anything the native mode would ask about becomes `ActionQueue.prompt`.
-2. **Wardens are a chorus, not a gate.** A Warden finding on a tool call is a comment: it is journalled and shown in the host as a "Foundry: guard" think item. It never turns into `ask` or `deny`. Wardens on this path run with a deadline; on timeout the call proceeds without them. The memory "programmatic" guard does not run here (it is an LLM call per tool today, `thread-runtime.ts:178,820`).
+2. **Wardens are a chorus, not a gate.** A Warden finding on a tool call is a comment: it is journalled and shown in the host as a "Foundry: guard" think item. It never turns into `ask` or `deny`. Wardens on this path run with a deadline; on timeout the call proceeds without them.
 
 **As built (slice 2).**
 - agent-session 0.6.0: `HarnessSession.onToolRequest(gate)`. Claude (`toolGate: true`) launches with `--permission-prompt-tool stdio` and registers a PreToolUse callback over the control protocol: the `pre-use` stage runs before every tool call in every mode (verified on CLI 2.1.296: a deny holds under `bypassPermissions`); `can_use_tool` is the `permission` stage. Codex app-server answers `item/commandExecution|fileChange/requestApproval` (approvals routed to the user reviewer). Gate failures and unparseable callbacks deny.
@@ -330,7 +330,7 @@ ACP over stdio has no remote mode of its own.
 9. **Load after daemon restart.** History replayed before the response; same thread; the next turn resumes the stored native id; client MCP servers re-applied; nothing secret under `.foundry`.
 10. **Structural deny holds in every mode,** `bypassPermissions` included: the tool never executes, the model gets the reason, `gate-request`/`gate-outcome` rows are written, no model call, < 100 ms.
 11. **Ask reaches the host, first responder wins:** one ActionQueue prompt; `session/request_permission` with the 4 option kinds; `allow_always` installs a thread-scoped policy; a viewer answer first makes the ACP request return `cancelled`.
-12. **A Warden comments, never blocks:** a critical finding is a "Foundry: guard" item and the tool still runs; a Warden timeout does not delay the call.
+12. **A Warden comments, never blocks:** a finding is a "Foundry: guard" item and the tool still runs; a Warden timeout does not delay the call.
 13. **Wrapper stripping:** a `<t3_code_instructions>` prompt reaches the native agent verbatim and feedback capture sees only the `<user_request>` body.
 14. **Live hosts:** a Paseo daemon from a scratch copy with an `extends: "acp"` provider, and a T3 server with a "Local ACP command" instance, both pinned to recorded commits, as a nightly live job.
 

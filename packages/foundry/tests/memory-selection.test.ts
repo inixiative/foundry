@@ -114,7 +114,7 @@ async function setup(opts: { dir?: string; sourceExtras?: Record<string, unknown
   const agents = buildAgents(config, template, { provider, tools });
   const runtime = new ThreadRuntimeManager({
     config,
-    domains: [],
+    codeWardens: [],
     log: () => {},
     warn: () => {},
     llm: { id: 'mock', complete: async () => ({ model: 'mock', content: '{}' }) },

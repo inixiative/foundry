@@ -5,7 +5,7 @@ import {
   type LLMProvider,
   SignalBus,
 } from '@inixiative/foundry-core';
-import { DomainLibrarian, type ReviewInput } from '../src/agents/domain-librarian';
+import { type ReviewInput, Warden } from '../src/agents/warden';
 import { chartered } from '../src/classify';
 
 for (const custom of [false, true]) {
@@ -28,7 +28,7 @@ for (const custom of [false, true]) {
     const cache = new ContextLayer({ id: 'architecture', segment: 'domain-knowledge' });
     cache.set('DOMAIN_KNOWLEDGE: preserve existing records');
     const instructions = 'DOMAIN_INSTRUCTIONS: track architecture decisions and their evidence.';
-    const lib = new DomainLibrarian({
+    const lib = new Warden({
       domain: 'architecture',
       cache,
       signals: new SignalBus(),

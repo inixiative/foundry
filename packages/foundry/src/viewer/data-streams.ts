@@ -76,7 +76,7 @@ function reconcilable(event: StreamEvent): boolean {
   return (
     event.kind === 'journal' ||
     (event.kind === 'signal' &&
-      (event.signal.kind === 'dispatch' || event.signal.kind === 'domain_learning'))
+      (event.signal.kind === 'dispatch' || event.signal.kind === 'warden_learning'))
   );
 }
 
@@ -387,7 +387,7 @@ export function createViewerStreams(deps: {
           else if (event.turnId) dirtyTurns.add(event.turnId);
           schedule();
         } else if (event.kind === 'signal') {
-          if (event.signal.kind === 'domain_learning') learningDirty = true;
+          if (event.signal.kind === 'warden_learning') learningDirty = true;
           schedule();
         }
       });

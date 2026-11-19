@@ -41,7 +41,7 @@ async function fixture(tools = new ToolRegistry(), deviceProfile = false) {
   const device = deviceProfile ? enrollLocalDevice('Controlled native device', identityPath) : null;
   const runtime = new ThreadRuntimeManager({
     config: starterConfig('fake', 'fake'),
-    domains: [],
+    codeWardens: [],
     llm: {
       id: 'fake',
       async complete() {

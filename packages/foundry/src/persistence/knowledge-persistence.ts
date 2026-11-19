@@ -84,13 +84,13 @@ export class KnowledgePersistence {
         const bundle = store.knowledge(runtime.thread.id);
         if (bundle) runtime.restoreKnowledge(this.current(runtime, bundle));
         for (const signal of store.learningCapacity(runtime.thread.id)) {
-          const content = signal.content as import('../agents/domain-librarian').LearningRecord & {
+          const content = signal.content as import('../agents/warden').LearningRecord & {
             domain: string;
           };
           if (content.owner && content.owner.projectId !== runtime.thread.meta.projectId)
             throw Error('Stored learning capacity owner mismatch');
           // A Warden that no longer exists (a removed region, the retired roster) has nothing to close.
-          if (!runtime.domainLibrarians.has(content.domain)) continue;
+          if (!runtime.wardens.has(content.domain)) continue;
           if (
             content.capacity === 'unknown' ||
             (content.eligibility === 'closed' && content.native?.admissionId)
@@ -183,7 +183,7 @@ export class KnowledgePersistence {
       },
     );
     const detachSignals = manager.addSignalSink((signal, owner) => {
-      if (signal.kind !== 'domain_learning' || !owner.threadId || this.errors.has(owner.threadId))
+      if (signal.kind !== 'warden_learning' || !owner.threadId || this.errors.has(owner.threadId))
         return;
       const runtime = manager.get(owner.threadId);
       if (!runtime || runtime.disposed) return;
@@ -223,9 +223,7 @@ export class KnowledgePersistence {
    */
   private current(runtime: ThreadRuntime, bundle: ThreadKnowledgeBundle): ThreadKnowledgeBundle {
     const domains = Object.fromEntries(
-      Object.entries(bundle.domains ?? {}).filter(([domain]) =>
-        runtime.domainLibrarians.has(domain),
-      ),
+      Object.entries(bundle.domains ?? {}).filter(([domain]) => runtime.wardens.has(domain)),
     );
     const live = { ...bundle, domains };
     this.validate(runtime, live);
@@ -241,10 +239,10 @@ export class KnowledgePersistence {
     if (!bundle.domains || typeof bundle.domains !== 'object' || Array.isArray(bundle.domains))
       throw new Error('Invalid knowledge domain map');
     for (const [domain, snapshot] of Object.entries(bundle.domains)) {
-      const librarian = runtime.domainLibrarians.get(domain);
-      if (!librarian)
+      const warden = runtime.wardens.get(domain);
+      if (!warden)
         throw new Error(`Stored knowledge domain requires a configuration migration: ${domain}`);
-      librarian.threadKnowledge.validate(snapshot, owner);
+      warden.threadKnowledge.validate(snapshot, owner);
       if (!Number.isSafeInteger(snapshot.revision) || snapshot.evidence.length > 200)
         throw new Error(`Invalid knowledge revision or evidence bound: ${domain}`);
     }

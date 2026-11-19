@@ -43,7 +43,7 @@ test('a guard row with unheard Wardens becomes a comment even with no findings',
         phase: 'guard-outcome',
         record: {
           observation: { tool: 'Edit' },
-          domainsChecked: ['security'],
+          wardensChecked: ['security'],
           notes: [],
           degraded,
         },

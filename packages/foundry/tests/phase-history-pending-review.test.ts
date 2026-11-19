@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { domains, gate, m0Scenario, noComment, until } from './helpers/m0-domain-loop';
+import { domains, gate, m0Scenario, noComment, until } from './helpers/m0-warden-loop';
 
 test("an executing review's exact input is durable before its answer or soft deadline", async () => {
   const held = gate<string>();

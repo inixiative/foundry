@@ -29,7 +29,7 @@ import { createViewer } from '../../src/viewer/server';
 export const domains = ['architecture', 'testing'] as const;
 export type Domain = (typeof domains)[number];
 export const instructions = (d: Domain) =>
-  `INSTRUCTIONS_${d}: assess only your expert interpretation; preserve compatibility.`;
+  `INSTRUCTIONS_${d}: assess only your Warden interpretation; preserve compatibility.`;
 export const domainKnowledge = (d: Domain) =>
   d === 'architecture'
     ? 'DOMAIN_ARCH: prefer additive schema evolution and maintain old readers.'
@@ -102,7 +102,7 @@ export async function m0Scenario(options: ScenarioOptions = {}) {
   // every directory above them, and a checkout may sit under other CLAUDE.md files.
   const parent = process.env.FOUNDRY_M0_OUTPUT_DIR ?? tmpdir();
   await mkdir(parent, { recursive: true });
-  const dir = await mkdtemp(join(parent, 'm0-domain-loop-'));
+  const dir = await mkdtemp(join(parent, 'm0-warden-loop-'));
   const calls: Call[] = [],
     signals: Array<{ thread: string; signal: Signal }> = [],
     turns: unknown[] = [],
@@ -249,7 +249,7 @@ export async function m0Scenario(options: ScenarioOptions = {}) {
             : 'pre';
         const call = copyCall(phase, messages, opts, domain);
         let content: string;
-        if (!domain) throw Error('Unowned expert request');
+        if (!domain) throw Error('Unowned Warden request');
         else if (phase === 'guard') content = noComment;
         else if (phase === 'pre')
           content = JSON.stringify({
@@ -274,7 +274,7 @@ export async function m0Scenario(options: ScenarioOptions = {}) {
       log() {},
       warn() {},
       learning: { timeoutMs: 10, hardTimeoutMs: 1000, ...options.learning },
-      domains: domains.map((d) => ({
+      codeWardens: domains.map((d) => ({
         domain: d,
         layerId: d,
         // The migration tool is the turn's one guardable call: one guard over the turn, per Warden.
@@ -386,7 +386,7 @@ export async function m0Scenario(options: ScenarioOptions = {}) {
           signals.some(
             (s) =>
               s.thread === thread &&
-              s.signal.kind === 'domain_learning' &&
+              s.signal.kind === 'warden_learning' &&
               (s.signal.content as any).domain === domain &&
               (s.signal.content as any).decision === 'learned',
           ),

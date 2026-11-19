@@ -6,12 +6,7 @@ import {
   type LLMProvider,
   SignalBus,
 } from '@inixiative/foundry-core';
-import {
-  DomainLibrarian,
-  type GuardFinding,
-  oneCall,
-  type TurnActivity,
-} from '../src/agents/domain-librarian';
+import { type GuardFinding, oneCall, type TurnActivity, Warden } from '../src/agents/warden';
 
 // ---------------------------------------------------------------------------
 // Mock LLM provider
@@ -39,10 +34,10 @@ function failingLLM(): LLMProvider {
 // Helpers
 // ---------------------------------------------------------------------------
 
-function makeConventionLibrarian(llm: LLMProvider, signals: SignalBus) {
+function makeConventionWarden(llm: LLMProvider, signals: SignalBus) {
   const cache = new ContextLayer({ id: 'convention-cache' });
   cache.set('Functions use camelCase. Files use kebab-case. No default exports.');
-  return new DomainLibrarian({
+  return new Warden({
     domain: 'convention',
     cache,
     signals,
@@ -51,43 +46,11 @@ function makeConventionLibrarian(llm: LLMProvider, signals: SignalBus) {
   });
 }
 
-function makeMemoryLibrarian(signals: SignalBus) {
-  const cache = new ContextLayer({ id: 'memory-cache' });
-  cache.set(
-    JSON.stringify([
-      { pattern: 'setTimeout.*0\\)', failure: 'Race condition — setTimeout(0) is unreliable' },
-      { pattern: 'eval\\(', failure: 'eval() is banned — use Function() if needed' },
-    ]),
-  );
-  return new DomainLibrarian({
-    domain: 'memory',
-    cache,
-    signals,
-    llm: mockLLM('unused'),
-    programmaticGuard: true,
-    guardFn: (activity: TurnActivity, cacheContent: string): GuardFinding[] => {
-      const patterns = JSON.parse(cacheContent) as Array<{ pattern: string; failure: string }>;
-      const output = activity.observations.map((o) => o.output ?? '').join('\n');
-      const findings: GuardFinding[] = [];
-      for (const p of patterns) {
-        if (new RegExp(p.pattern).test(output)) {
-          findings.push({
-            severity: 'advisory',
-            description: p.failure,
-            location: activity.observations.at(-1)?.input?.file_path as string,
-          });
-        }
-      }
-      return findings;
-    },
-  });
-}
-
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
-describe('DomainLibrarian', () => {
+describe('Warden', () => {
   let signals: SignalBus;
 
   beforeEach(() => {
@@ -103,7 +66,7 @@ describe('DomainLibrarian', () => {
           confidence: 0.9,
         }),
       );
-      const lib = makeConventionLibrarian(llm, signals);
+      const lib = makeConventionWarden(llm, signals);
       const result = await lib.advise('How should I handle auth tokens?');
 
       expect(result.layers).toEqual(['auth-conventions', 'auth-api-docs']);
@@ -115,7 +78,7 @@ describe('DomainLibrarian', () => {
       const llm = mockLLM(
         '```json\n{"layers": ["test-layer"], "snippets": [], "confidence": 0.8}\n```',
       );
-      const lib = makeConventionLibrarian(llm, signals);
+      const lib = makeConventionWarden(llm, signals);
       const result = await lib.advise('test message');
 
       expect(result.layers).toEqual(['test-layer']);
@@ -123,7 +86,7 @@ describe('DomainLibrarian', () => {
     });
 
     it('returns empty on LLM failure', async () => {
-      const lib = makeConventionLibrarian(failingLLM(), signals);
+      const lib = makeConventionWarden(failingLLM(), signals);
       const result = await lib.advise('test message');
 
       expect(result.layers).toHaveLength(0);
@@ -132,7 +95,7 @@ describe('DomainLibrarian', () => {
 
     it('returns empty when cache is empty', async () => {
       const cache = new ContextLayer({ id: 'empty-cache' });
-      const lib = new DomainLibrarian({
+      const lib = new Warden({
         domain: 'empty',
         cache,
         signals,
@@ -153,7 +116,7 @@ describe('DomainLibrarian', () => {
           return { content: '{"layers":[],"snippets":[],"confidence":0.5}', model: 'mock' };
         },
       };
-      const lib = makeConventionLibrarian(llm, signals);
+      const lib = makeConventionWarden(llm, signals);
       await lib.advise('test', '{"domain":"auth"}');
 
       const userMsg = capturedMessages.find((m) => m.role === 'user')!;
@@ -175,7 +138,7 @@ describe('DomainLibrarian', () => {
           ],
         }),
       );
-      const lib = makeConventionLibrarian(llm, signals);
+      const lib = makeConventionWarden(llm, signals);
       const result = await lib.guard(
         oneCall({
           tool: 'file_write',
@@ -191,7 +154,7 @@ describe('DomainLibrarian', () => {
     });
 
     it('skips guard for non-matching tool types', async () => {
-      const lib = makeConventionLibrarian(mockLLM('unused'), signals);
+      const lib = makeConventionWarden(mockLLM('unused'), signals);
       const result = await lib.guard(
         oneCall({
           tool: 'file_read',
@@ -201,43 +164,6 @@ describe('DomainLibrarian', () => {
 
       expect(result.outcome.status).toBe('not-sent');
       expect(result.findings).toHaveLength(0);
-    });
-
-    it('emits signals for findings', async () => {
-      // An LLM Warden only points (advisory); a critical finding comes from a programmatic guard.
-      const cache = new ContextLayer({ id: 'convention-cache' });
-      const lib = new DomainLibrarian({
-        domain: 'convention',
-        cache,
-        signals,
-        llm: mockLLM('unused'),
-        guardTriggers: ['file_write'],
-        programmaticGuard: true,
-        guardFn: () => [
-          {
-            severity: 'critical',
-            description: 'SQL injection risk',
-            location: 'src/db/query.ts:10',
-          },
-        ],
-      });
-
-      const emitted: any[] = [];
-      signals.onAny((s) => {
-        emitted.push(s);
-      });
-
-      await lib.guard(
-        oneCall({
-          tool: 'file_write',
-          input: { file_path: 'src/db/query.ts' },
-          output: 'db.query(`SELECT * FROM users WHERE id = ${userId}`)',
-        }),
-      );
-
-      expect(emitted).toHaveLength(1);
-      expect(emitted[0].kind).toBe('security_concern');
-      expect(emitted[0].source).toBe('convention-librarian');
     });
 
     it('emits a guard_finding signal, not a correction, for advisory findings', async () => {
@@ -251,7 +177,7 @@ describe('DomainLibrarian', () => {
           ],
         }),
       );
-      const lib = makeConventionLibrarian(llm, signals);
+      const lib = makeConventionWarden(llm, signals);
 
       const emitted: any[] = [];
       signals.onAny((s) => {
@@ -267,58 +193,6 @@ describe('DomainLibrarian', () => {
 
       expect(emitted).toHaveLength(1);
       expect(emitted[0].kind).toBe('guard_finding');
-    });
-  });
-
-  describe('programmatic guard (Memory domain)', () => {
-    it('runs pattern matching on every tool type', () => {
-      const lib = makeMemoryLibrarian(signals);
-      expect(lib.shouldGuard('file_write')).toBe(true);
-      expect(lib.shouldGuard('file_read')).toBe(true);
-      expect(lib.shouldGuard('bash')).toBe(true);
-    });
-
-    it('detects known failure patterns', async () => {
-      const lib = makeMemoryLibrarian(signals);
-      const result = await lib.guard(
-        oneCall({
-          tool: 'file_write',
-          input: { file_path: 'src/timer.ts' },
-          output: 'setTimeout(() => resolve(), 0)',
-        }),
-      );
-
-      expect(result.outcome.status).not.toBe('not-sent');
-      expect(result.findings).toHaveLength(1);
-      expect(result.findings[0].description).toContain('Race condition');
-    });
-
-    it('returns all-clear when no patterns match', async () => {
-      const lib = makeMemoryLibrarian(signals);
-      const result = await lib.guard(
-        oneCall({
-          tool: 'file_write',
-          input: { file_path: 'src/clean.ts' },
-          output: 'const x = 42;',
-        }),
-      );
-
-      expect(result.outcome.status).not.toBe('not-sent');
-      expect(result.findings).toHaveLength(0);
-    });
-
-    it('detects multiple patterns in same output', async () => {
-      const lib = makeMemoryLibrarian(signals);
-      const result = await lib.guard(
-        oneCall({
-          tool: 'file_write',
-          input: { file_path: 'src/bad.ts' },
-          output: 'eval(input); setTimeout(() => {}, 0)',
-        }),
-      );
-
-      expect(result.outcome.status).not.toBe('not-sent');
-      expect(result.findings).toHaveLength(2);
     });
   });
 });

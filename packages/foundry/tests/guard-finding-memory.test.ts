@@ -10,7 +10,7 @@ import {
   SignalBus,
   selectMemory,
 } from '@inixiative/foundry-core';
-import { DomainLibrarian, oneCall } from '../src/agents/domain-librarian';
+import { oneCall, Warden } from '../src/agents/warden';
 
 // An advisory guard finding is evidence, not a human correction: it is retained in the
 // thread's memory log but never pinned into every later turn.
@@ -32,7 +32,7 @@ test('advisory guard findings and operator corrections are retained as audit-onl
 
   const cache = new ContextLayer({ id: 'architecture', segment: 'domain-knowledge' });
   cache.set('Preserve module boundaries.');
-  const lib = new DomainLibrarian({
+  const lib = new Warden({
     domain: 'architecture',
     cache,
     signals,
@@ -51,22 +51,6 @@ test('advisory guard findings and operator corrections are retained as audit-onl
   });
   const result = await lib.guard(oneCall({ tool: 'Write', input: { file_path: 'contacts.ts' } }));
   expect(result.outcome.status).toBe('answered');
-  // A Warden only points (advisory); a critical finding comes from a programmatic guard.
-  const programmatic = new DomainLibrarian({
-    domain: 'memory',
-    cache,
-    signals,
-    guardTriggers: ['Write'],
-    llm: { id: 'unused', complete: async () => ({ model: 'unused', content: 'NO_COMMENT' }) },
-    programmaticGuard: true,
-    guardFn: () => [
-      { severity: 'critical', description: 'CRITICAL-SENTINEL schema drops a column' },
-    ],
-  });
-  expect(
-    (await programmatic.guard(oneCall({ tool: 'Write', input: { file_path: 'contacts.ts' } })))
-      .outcome.status,
-  ).toBe('answered');
   await new InterventionLog().intervene(
     { id: owner.threadId, signals },
     'trace',
@@ -84,9 +68,6 @@ test('advisory guard findings and operator corrections are retained as audit-onl
     severity: 'advisory',
     tool: 'Write',
   });
-  expect(entries.find((e) => e.content.includes('CRITICAL-SENTINEL'))?.kind).toBe(
-    'security_concern',
-  );
 
   const { text, report } = selectMemory(
     entries,

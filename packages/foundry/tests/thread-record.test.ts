@@ -25,7 +25,7 @@ import {
   ThreadRecordTool,
   wantsDraft,
 } from '../src/tools/thread-record';
-import { m0Scenario } from './helpers/m0-domain-loop';
+import { m0Scenario } from './helpers/m0-warden-loop';
 
 const require = createRequire(new URL('../package.json', import.meta.url));
 const { Client } = await import(require.resolve('@modelcontextprotocol/sdk/client/index.js'));

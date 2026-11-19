@@ -24,8 +24,8 @@ import {
   type TurnChorus,
   turnChorus,
 } from '../agents/chorus-degraded';
-import type { ReviewJob } from '../agents/domain-librarian';
 import type { PhaseRecordInput, ThreadKnowledgeBundle } from '../agents/thread-runtime';
+import type { ReviewJob } from '../agents/warden';
 import {
   RAW_MIDDLEWARE_PHASES,
   REDUCED_PHASE,
@@ -593,7 +593,7 @@ export class LocalSessionStore {
       domain?: string;
     };
     if (
-      signal.kind !== 'domain_learning' ||
+      signal.kind !== 'warden_learning' ||
       !signal.id ||
       !content?.domain ||
       content.owner?.threadId !== thread.id ||
@@ -655,7 +655,7 @@ export class LocalSessionStore {
       )
         throw new Error('Knowledge child owner mismatch');
     }
-    if (signal.kind !== 'domain_learning' || !signal.id)
+    if (signal.kind !== 'warden_learning' || !signal.id)
       throw new Error('Expected an identified learning event');
     const record = JSON.stringify(bundle);
     if (Buffer.byteLength(record) > 2_000_000)

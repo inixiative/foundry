@@ -234,7 +234,7 @@ export async function liveWatchFixture(
     config,
     llm: provider,
     eventStream: events,
-    domains: [],
+    codeWardens: [],
     log() {},
     warn() {},
   });

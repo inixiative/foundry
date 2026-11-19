@@ -125,7 +125,7 @@ async function setup(overrides?: Partial<ThreadRuntimeDeps>) {
     config: cfg,
     llm: flowLlm,
     eventStream,
-    domains: [{ domain: 'docs', layerId: 'docs', guardTriggers: ['Write'] }],
+    codeWardens: [{ domain: 'docs', layerId: 'docs', guardTriggers: ['Write'] }],
     log: () => {},
     ...overrides,
   });
@@ -154,8 +154,8 @@ describe('ThreadRuntimeManager', () => {
     expect(rb).toBeDefined();
     expect(ra.librarian).not.toBe(rb.librarian);
     expect(ra.flowOrchestrator).not.toBe(rb.flowOrchestrator);
-    expect(ra.domainLibrarians.get('docs')).not.toBe(rb.domainLibrarians.get('docs'));
-    expect(a.stack.getLayer('docs')).toBe(ra.domainLibrarians.get('docs')!.cache);
+    expect(ra.wardens.get('docs')).not.toBe(rb.wardens.get('docs'));
+    expect(a.stack.getLayer('docs')).toBe(ra.wardens.get('docs')!.cache);
 
     expect(a.stack.getLayer('thread-state')).toBe(ra.librarian.layer);
     expect(b.stack.getLayer('thread-state')).toBe(rb.librarian.layer);

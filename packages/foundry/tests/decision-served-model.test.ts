@@ -8,9 +8,9 @@ import {
   SignalBus,
   servedModel,
 } from '@inixiative/foundry-core';
-import { DomainLibrarian, oneCall } from '../src/agents/domain-librarian';
 import { FlowOrchestrator } from '../src/agents/flow-orchestrator';
 import { Librarian } from '../src/agents/librarian';
+import { oneCall, Warden } from '../src/agents/warden';
 
 const configuration = {
   requestedModel: 'gpt-6-luna',
@@ -56,7 +56,7 @@ function harness(slowDomain?: Promise<void>) {
     complete: answer,
   });
   const advice = JSON.stringify({ layers: [], snippets: ['Keep the reader'], confidence: 1 });
-  const architecture = new DomainLibrarian({
+  const architecture = new Warden({
     domain: 'architecture',
     cache,
     signals,
@@ -67,7 +67,7 @@ function harness(slowDomain?: Promise<void>) {
       content: advice,
     })),
   });
-  const security = new DomainLibrarian({
+  const security = new Warden({
     domain: 'security',
     cache: slow,
     signals,
@@ -80,7 +80,7 @@ function harness(slowDomain?: Promise<void>) {
     stack,
     signals,
     librarian,
-    domainLibrarians: new Map([
+    wardens: new Map([
       ['architecture', architecture],
       ['security', security],
     ]),

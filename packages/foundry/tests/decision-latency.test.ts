@@ -13,12 +13,12 @@ import { DECISION_LATENCY_BUDGET } from '../src/providers/decision-budget';
 import { type AgentSettingsConfig, type FoundryConfig, starterConfig } from '../src/viewer/config';
 
 const DOMAINS = ['api', 'db', 'ui', 'auth', 'security', 'testing'];
-/** A domain-advising expert's id is a namespaced role id, as a generated region Warden's is. */
-const expertId = (domain: string) => regionRoleId(`${domain}-expert`);
-const expert = (domain: string): AgentSettingsConfig => ({
-  id: expertId(domain),
-  kind: 'domain-librarian',
-  flowRole: 'domain-advising',
+/** A Warden's id is a namespaced role id, as a generated region Warden's is. */
+const wardenId = (domain: string) => regionRoleId(`${domain}-warden`);
+const warden = (domain: string): AgentSettingsConfig => ({
+  id: wardenId(domain),
+  kind: 'warden',
+  flowRole: 'warden',
   domain,
   prompt: `Advise on ${domain}.`,
   provider: 'decisions',
@@ -28,7 +28,7 @@ const expert = (domain: string): AgentSettingsConfig => ({
   enabled: true,
 });
 
-/** Six experts on one decision provider; a central worker. */
+/** Six Wardens on one decision provider; a central worker. */
 function config(): FoundryConfig {
   const c = starterConfig('central', 'central-model');
   c.agents = {
@@ -40,7 +40,7 @@ function config(): FoundryConfig {
       model: 'central-model',
       enabled: true,
     },
-    ...Object.fromEntries(DOMAINS.map((d) => [expertId(d), expert(d)])),
+    ...Object.fromEntries(DOMAINS.map((d) => [wardenId(d), warden(d)])),
   };
   c.layers = Object.fromEntries(
     DOMAINS.map((d) => [
@@ -51,7 +51,7 @@ function config(): FoundryConfig {
         segment: 'domain-knowledge',
         prompt: `${d} context`,
         sourceIds: [`${d}-source`],
-        writers: [expertId(d)],
+        writers: [wardenId(d)],
         staleness: 0,
         enabled: true,
       },
@@ -156,7 +156,7 @@ test('the pre-message phase is one concurrent round: message to worker start cos
     const result = await harness.send({ id: 'm1', payload: 'Add a login endpoint' });
     const toWorker = p.workerStartedAt - started;
     expect(result.result.output).toBe('done');
-    // six experts, all at once
+    // six Wardens, all at once
     expect(p.calls).toBe(6);
     expect(p.peak).toBe(6);
     // One round of decisions, within the structural budget.

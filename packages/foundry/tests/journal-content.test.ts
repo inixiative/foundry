@@ -77,7 +77,7 @@ test('spilling keeps the root fields the store reads in SQL inline', () => {
   const big = (tag: string) =>
     Array.from({ length: 400 }, (_, i) => ({ tag, i, note: `short note ${i}` }));
   const record = {
-    kind: 'domain_learning',
+    kind: 'warden_learning',
     content: {
       domain: 'docs',
       capacity: 'settled',

@@ -8,7 +8,7 @@ import { ThreadContextTracker } from '../src/archives/thread-context';
 import { releaseWorktree, squashMergedInto } from '../src/git';
 import { recordPlan } from '../src/tools/thread-record';
 import { starterConfig, threadOnMerge, validateConfig } from '../src/viewer/config';
-import { m0Scenario } from './helpers/m0-domain-loop';
+import { m0Scenario } from './helpers/m0-warden-loop';
 
 const cleanup: Array<() => void | Promise<void>> = [];
 afterEach(async () => {

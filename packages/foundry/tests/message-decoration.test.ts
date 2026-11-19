@@ -12,11 +12,11 @@ import {
   type MessageDecoration,
   SignalBus,
 } from '@inixiative/foundry-core';
-import { DomainLibrarian } from '../src/agents/domain-librarian';
 import { FlowOrchestrator, type InjectionPlan } from '../src/agents/flow-orchestrator';
 import { Librarian } from '../src/agents/librarian';
 import { buildAgents, ThreadFactory } from '../src/agents/thread-factory';
 import { ThreadRuntimeManager } from '../src/agents/thread-runtime';
+import { Warden } from '../src/agents/warden';
 import { starterConfig } from '../src/viewer/config';
 
 // Parallel message decoration (CORE-002 "Message Decoration", CORE-003 G3a).
@@ -58,7 +58,7 @@ function setup(names: string[], opts: SetupOpts = {}) {
   const domains = new Map(
     names.map((name, index) => [
       name,
-      new DomainLibrarian({
+      new Warden({
         domain: name,
         cache: layers[index],
         signals,
@@ -81,7 +81,7 @@ function setup(names: string[], opts: SetupOpts = {}) {
     stack,
     signals,
     librarian,
-    domainLibrarians: domains,
+    wardens: domains,
     maxAdviseParallel: opts.limit,
     adviseTimeoutMs: opts.timeoutMs,
     planTimeoutMs: opts.planTimeoutMs,
@@ -147,7 +147,7 @@ describe('parallel message decoration', () => {
     const slow = plan.contributions.find((c) => c.domain === 'slow')!;
     expect(callOutcomeLabel(slow.outcome)).toBe('failed:timeout');
     expect(plan.snippets).toEqual(['ADVICE-fast']);
-    expect(plan.domainsConsulted).toEqual(['fast', 'slow']);
+    expect(plan.contributions.map((c) => c.domain)).toEqual(['fast', 'slow']);
     expect(Object.isFrozen(plan)).toBe(true);
     expect(Object.isFrozen(plan.contributions)).toBe(true);
 
@@ -258,7 +258,7 @@ describe('bounded settings and whole-plan deadlines', () => {
         stack,
         signals,
         librarian,
-        domainLibrarians: new Map(),
+        wardens: new Map(),
         ...extra,
       });
 
@@ -363,7 +363,7 @@ describe('production runtime delivery', () => {
       config,
       log: () => {},
       warn: () => {},
-      domains: [{ domain: 'security', layerId: 'security', guardTriggers: [] }],
+      codeWardens: [{ domain: 'security', layerId: 'security', guardTriggers: [] }],
       llm: {
         id: 'flow',
         complete: async () => ({

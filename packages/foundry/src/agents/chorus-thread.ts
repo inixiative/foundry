@@ -107,7 +107,7 @@ export async function withChorusThread<T>(
   try {
     const live = runtime.get(thread.id);
     if (!live) throw Error('the thread has no runtime');
-    if (!live.domainLibrarians.size)
+    if (!live.wardens.size)
       throw Error(`project ${opts.projectId} runs no Wardens: its chorus is off or empty`);
     return await use({ thread, live, central });
   } finally {
@@ -119,9 +119,9 @@ export async function withChorusThread<T>(
 /** Warm every Warden of a hidden thread and ask each to pre-start (what a live thread does after a turn). */
 export async function warmWardens(live: ThreadRuntime): Promise<void> {
   await Promise.all(
-    [...live.domainLibrarians.values()].map(async (lib) => {
-      await lib.warm();
-      lib.prestart();
+    [...live.wardens.values()].map(async (warden) => {
+      await warden.warm();
+      warden.prestart();
     }),
   );
 }

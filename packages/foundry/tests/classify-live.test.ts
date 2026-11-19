@@ -313,16 +313,14 @@ test('a project that writes no stages runs the default chain: Layer 1 points wit
     outcome: { status: 'answered', result: 'no-comment' },
     classified: { outcome: 'no', delivered: false },
   });
-  expect(f.manager.get(thread.id)!.domainLibrarians.get('locks')!.stageCount).toBe(
-    DEFAULT_STAGES.length,
-  );
+  expect(f.manager.get(thread.id)!.wardens.get('locks')!.stageCount).toBe(DEFAULT_STAGES.length);
 });
 
 test('a project that writes its own stages wins over the default chain', async () => {
   const f = runtime(project([{}]), () => 'NO_COMMENT', { hosts: [`${LAYER_2_MODEL}|low`] });
   const thread = f.factory.create('own-stages', { projectId: 'P' });
   await thread.dispatch('worker', 'Add a lock.');
-  expect(f.manager.get(thread.id)!.domainLibrarians.get('locks')!.stageCount).toBe(1);
+  expect(f.manager.get(thread.id)!.wardens.get('locks')!.stageCount).toBe(1);
   expect(f.calls.filter((c) => c.host === LAYER_2_MODEL)).toHaveLength(0);
 });
 
@@ -369,7 +367,7 @@ test('without stage hosts (API-token decisions) the default is the single stage,
   });
   const thread = factory.create('no-hosts', { projectId: 'P' });
   await thread.dispatch('worker', 'Add a lock.');
-  expect(manager.get(thread.id)!.domainLibrarians.get('locks')!.stageCount).toBe(1);
+  expect(manager.get(thread.id)!.wardens.get('locks')!.stageCount).toBe(1);
   expect(calls.some((id) => id.endsWith(':aux:domain:locks'))).toBe(true);
   expect(calls.some((id) => id.includes(':stage:'))).toBe(false);
 });

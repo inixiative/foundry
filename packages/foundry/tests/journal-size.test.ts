@@ -127,7 +127,7 @@ async function viewerWith(c: FoundryConfig) {
     }),
   });
   const central = provider('central');
-  const providers = new Map([central, provider('flow'), provider('expert')].map((p) => [p.id, p]));
+  const providers = new Map([central, provider('flow'), provider('warden')].map((p) => [p.id, p]));
   const sourceResolver = createSourceResolver({ memory: new FileMemory(join(dir, 'memory')) });
   const stack = new ContextStack(buildLayers(c, { sourceResolver }));
   const events = new EventStream();

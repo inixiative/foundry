@@ -500,7 +500,7 @@ function LearningLoopGraph({ flow, onInspect }) {
     ? html`<div class="graph-caption graph-caption--warn">Learning history withheld: ${flow.learningError}</div>`
     : null;
   if (!graph.lanes.length)
-    return html`${withheld}<div class="graph-empty">No domain expert assessed a turn in this window and no knowledge is committed on this thread.</div>`;
+    return html`${withheld}<div class="graph-empty">No Warden assessed a turn in this window and no knowledge is committed on this thread.</div>`;
   return html`
     ${withheld}
     <div class="graph-caption">${graph.lanes.length} domains × ${graph.turns.length} turns · assessed revision → writeback → the later turn that worked from it${graph.earlier ? ` · ${graph.earlier} earlier outcomes outside the window` : ''}</div>

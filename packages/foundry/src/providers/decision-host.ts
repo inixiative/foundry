@@ -7,7 +7,7 @@ import { chmodSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { type LimitSnapshot, type PrimedEvent, probeClaudeLimits } from '@inixiative/agent-session';
 import type { LLMProvider } from '@inixiative/foundry-core';
-import { largestRoster, largestStageCount } from '../agents/configured-experts';
+import { largestRoster, largestStageCount } from '../agents/configured-wardens';
 import type { StageConfig, StageEffort } from '../classify';
 import { type FoundryConfig, starterConfig } from '../viewer/config';
 import { type ProjectHostState, ProjectWardenHosts } from './project-warden-hosts';

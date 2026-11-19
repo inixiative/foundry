@@ -7,14 +7,14 @@ import {
   type LLMProvider,
   SignalBus,
 } from '@inixiative/foundry-core';
-import { DomainLibrarian } from '../src/agents/domain-librarian';
 import { FlowOrchestrator, type FlowTimingConfig } from '../src/agents/flow-orchestrator';
 import { Librarian } from '../src/agents/librarian';
+import { Warden } from '../src/agents/warden';
 import { chartered } from '../src/classify';
-import { expertParticipants, participantRequest } from '../src/viewer/ui/inspector-data.js';
+import { participantRequest, wardenParticipants } from '../src/viewer/ui/inspector-data.js';
 
 // Author cases for advice-phase request capture (Fable, CORE-006 LI). Controlled providers only; no model.
-// The parent's protected expert-phase-provenance fixture proves the protocol is findable in the historical
+// The parent's protected warden-phase-provenance fixture proves the protocol is findable in the historical
 // record; these cover attribution, freezing, failure paths, absence semantics and the inspector projection.
 
 const PROTOCOL_HEADING = '## Response protocol (advice phase, trigger: user-message)';
@@ -41,7 +41,7 @@ function harness(
   }
   const stack = new ContextStack([...caches.values()]);
   const librarian = new Librarian({ stack, signals });
-  const experts = new Map(
+  const wardens = new Map(
     Object.entries(domains).map(([id, d]) => {
       const llm: LLMProvider = {
         id: `controlled-${id}`,
@@ -52,7 +52,7 @@ function harness(
       };
       return [
         id,
-        new DomainLibrarian({
+        new Warden({
           domain: id,
           cache: caches.get(id)!,
           signals,
@@ -66,7 +66,7 @@ function harness(
     stack,
     signals,
     librarian,
-    domainLibrarians: experts,
+    wardens,
     ...timing,
   });
   return {
@@ -140,7 +140,7 @@ test('recorded request equals the exact provider input, is frozen with the seale
   }
 });
 
-test('concurrent experts: each recorded request is attributed to its own domain even when completions settle in reverse order', async () => {
+test('concurrent Wardens: each recorded request is attributed to its own domain even when completions settle in reverse order', async () => {
   const testingDone = gate();
   const h = harness({
     architecture: {
@@ -300,7 +300,7 @@ test('inspector: reloaded records project the exact recorded request; not-sent a
       }),
     );
     h.caches.get('architecture')!.set('DOMAIN_AFTER');
-    const record = expertParticipants(reloaded)!;
+    const record = wardenParticipants(reloaded)!;
     const [architecture, cold] = record.participants as Array<{
       id: string;
       request: any;
@@ -324,7 +324,7 @@ test('inspector: reloaded records project the exact recorded request; not-sent a
     h.dispose();
   }
   // Older record: participants without the field say not recorded; the three parts are untouched.
-  const older = expertParticipants({
+  const older = wardenParticipants({
     decoration: {
       participants: [
         {

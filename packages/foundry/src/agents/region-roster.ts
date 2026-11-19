@@ -441,7 +441,7 @@ export interface RegionWarden {
 }
 
 /**
- * The generated chorus: one domain-librarian Warden per region, its domain the region
+ * The generated chorus: one Warden per region, its domain the region
  * id, asked on every user message (`invocation: always`) and on every write or exec tool call, its
  * knowledge the region's knowledge.md through a `markdown` source (audited as `source-content`, so
  * composition versions name the exact text). Org and personal overlays reach it through the ladder's
@@ -467,8 +467,8 @@ function regionWarden(region: RegionSummary, stages: readonly StageConfig[]): Re
     region,
     agent: {
       id: regionRoleId(region.id),
-      kind: 'domain-librarian',
-      flowRole: 'domain-advising',
+      kind: 'warden',
+      flowRole: 'warden',
       domain: region.id,
       description: region.title,
       prompt: regionInstructions(region),

@@ -2,7 +2,7 @@ import { expect, test } from 'bun:test';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { join, resolve } from 'node:path';
-import { bounded, gate, m0Scenario } from '../helpers/m0-domain-loop';
+import { bounded, gate, m0Scenario } from '../helpers/m0-warden-loop';
 
 // Ordering controls for historical navigation ownership: real M0 factory/journal/viewer/store in isolated
 // Chromium; only HTTP delivery order is controlled at the disposable server. No native or model process.
@@ -153,7 +153,7 @@ test('late or superseded historical detail never publishes, re-opens or toasts; 
     await bounded(h.requested.promise, 'held a-one for dismissal', 5000);
     await store(`s => s.dismissTraceSelection()`);
     await store(`s => s.inspectLayer("architecture")`); // operator moved on to a layer (a layer chip in the chat)
-    await page.locator('.detail-drawer .expert-understanding').waitFor();
+    await page.locator('.detail-drawer .warden-understanding').waitFor();
     h.gate.resolve();
     await store(`async s => { await window.__p; }`);
     await settle();

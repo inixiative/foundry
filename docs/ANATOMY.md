@@ -92,7 +92,7 @@ One sheet naming every part of Foundry, so people and agents use the same words.
 | role budget | Characters a middleware role may compose (`DEFAULT_ROLE_BUDGET`, 120,000). Over budget the phase does not run and nothing is truncated. `DECISION_INPUT_CAP` (160,000) is the backstop. | `pf/providers/decision-budget.ts` | live |
 | context layer / stack | A managed context cache (`cold → warming → warm → stale`) and the stack that assembles layers under a token budget. | `pc/context-layer.ts`, `pc/context-stack.ts` | live |
 | thread state | A compact always-warm summary of the thread, written only by the Librarian and read by every middleware role. | Librarian layer | live (on a wrapped thread) |
-| thread knowledge | A Warden's own notes about this thread (`thread-knowledge:<domain>`), written by its post-work review and read on its next call. | `pf/agents/domain-librarian.ts` | live |
+| thread knowledge | A Warden's own notes about this thread (`thread-knowledge:<domain>`), written by its post-work review and read on its next call. | `pf/agents/warden.ts` | live |
 | shared running summary | One thread summary compacted per turn and read by every Warden, plus a ledger of pointers already delivered so repeats are suppressed. | | proposed |
 
 ## The chorus
@@ -101,7 +101,7 @@ One sheet naming every part of Foundry, so people and agents use the same words.
 |---|---|---|---|
 | chorus | A project's set of Wardens, one per region, all asked at every trigger. Per project because its docs are. Opt-in: `chorus.enabled` in the machine's settings or the repo's `.foundry/project.json`. | `projects[id].chorus`; `pf/agents/region-roster.ts` | off (per project; a repo may commit it on) |
 | chorus layer | One regions directory in a chorus (not Layer 1 / Layer 2, which are classification steps); several layers compose (a later layer's region replaces an earlier one whole), e.g. a template base then a project's delta. | `chorus.layers` | live |
-| Warden | A narrow context router for one region. It answers only "is this moment mine, and where is it written?" with `NO_COMMENT` or a pointer; it never blocks or decides. Fresh each call, never a continuing conversation. Code calls it a domain librarian. | `pf/agents/domain-librarian.ts` (`DomainLibrarian`, kind `domain-librarian`) | live |
+| Warden | A narrow context router for one region. It answers only "is this moment mine, and where is it written?" with `NO_COMMENT` or a pointer; it never blocks or decides. Fresh each call, never a continuing conversation. | `pf/agents/warden.ts` (`Warden`, kind `warden`) | live |
 | region | A concept shard of the project's docs and code, sized for one Warden to hold well. | `<project>/.foundry/regions/<region id>/` | live |
 | `region.json` | A region's id, title, routing line, concepts, sources, size and `role` (`warden` default, or `herald`). Holds no stages or charter. | | live |
 | `knowledge.md` | The region's full catalogue: what it covers, every example by name, the specifics. The default stage reads it. | `KNOWLEDGE_DOC`, `pf/classify/stages.ts` | live |
@@ -248,7 +248,6 @@ Oracle is the test harness: it replays real work against Foundry and measures wh
 
 ## Two names for one thing
 
-- **Warden** in prose; **domain librarian** in code (`DomainLibrarian`, agent kind `domain-librarian`, `domainLibrarians`). Region Wardens are generated per project; settings may not declare one.
 - **The charter's version**: `charter-<12 hex>` (`WARDEN_CHARTER_VERSION`, the prefix of foundry-core's `computeHash`, e.g. `charter-e49589e870f6`) and the sha256 of the same text, which eval reports also record. Same text, two hashes. `reception-<12 hex>` names the reception charter the same way.
 - **Pointer shapes**: settings and docs say `one` / `all` / `any`; the parsed pointer says `ranked` / `all` / `choose-one`.
 - **Guard and `agent-action`**, **brief and `subagent-spawn`**, **review and `post-turn`**: the phase and the trigger that starts it.
@@ -262,7 +261,7 @@ Oracle is the test harness: it replays real work against Foundry and measures wh
 |---|---|---|
 | The hand-named Warden roster (Docs, Convention, Security, Architecture, Memory, …) and its advise-style charter | Region Wardens, one per region, under the point charter. Settings declare only executors. | 2026-10-17 |
 | `chorus.source: "regions"` | `chorus.enabled: true` | 2026-10-17 |
-| Domain Librarians (as the name for Wardens) | Wardens (the code keeps `domain-librarian`) | before 2026-10-12 |
+| Domain Librarians (as the name for Wardens) | Wardens; the code's `DomainLibrarian`, kind `domain-librarian`, flowRole `domain-advising`, `ThreadDomainConfig`, `domain_learning` and `ConfiguredExpert` became `Warden`, kind and flowRole `warden`, `CodeWardenConfig`, `warden_learning` and `ConfiguredWarden` | prose before 2026-10-12; code 2026-11-19 |
 | Pre-filter on by default | Off; ask every region, every time | 2026-10-15 |
 | Guard per tool call | One guard per turn (`guard: per-call` remains a setting) | 2026-10-15 |
 | The starter stack (system / conventions / memory layers, classifier → router → three executors) | An unwrapped thread | 2026-10-16 |

@@ -8,8 +8,7 @@ import {
   type LLMMessage,
   type LLMProvider,
 } from '@inixiative/foundry-core';
-import { configuredExperts } from '../src/agents/configured-experts';
-import { oneCall } from '../src/agents/domain-librarian';
+import { configuredWardens } from '../src/agents/configured-wardens';
 import { regionInstructions, regionRoleId } from '../src/agents/region-roster';
 import {
   buildAgents,
@@ -18,6 +17,7 @@ import {
   ThreadFactory,
 } from '../src/agents/thread-factory';
 import { ThreadRuntimeManager } from '../src/agents/thread-runtime';
+import { oneCall } from '../src/agents/warden';
 import { chartered } from '../src/classify';
 import {
   type AgentSettingsConfig,
@@ -147,8 +147,8 @@ test("a region Warden's call: the charter over its region instructions, its know
   validateConfig(c);
   const view = resolveProjectView(c, 'P')!;
   expect(view.config.agents[WARDEN_ID]).toMatchObject({
-    kind: 'domain-librarian',
-    flowRole: 'domain-advising',
+    kind: 'warden',
+    flowRole: 'warden',
     domain: 'conventions',
     prompt: REGION_RULES,
   });
@@ -170,13 +170,13 @@ test('a thread without a project, or in a project whose chorus is off, has no Wa
   writeRegions(off, [REGION], { enabled: false });
   const c = config(off);
   validateConfig(c);
-  expect(configuredExperts(c).experts).toEqual([]);
-  expect(configuredExperts(resolveProjectView(c, 'P')!.config).experts).toEqual([]);
+  expect(configuredWardens(c).wardens).toEqual([]);
+  expect(configuredWardens(resolveProjectView(c, 'P')!.config).wardens).toEqual([]);
   const f = setup(c);
   managers.push(f.manager);
   for (const thread of [f.factory.create('main'), f.factory.create('p', { projectId: 'P' })]) {
     await thread.dispatch('worker', 'Turn');
-    expect(f.manager.get(thread.id)!.domainLibrarians.size).toBe(0);
+    expect(f.manager.get(thread.id)!.wardens.size).toBe(0);
   }
   expect(f.calls.some((call) => call.phase === 'pre')).toBe(false);
 });
@@ -184,8 +184,8 @@ test('a thread without a project, or in a project whose chorus is off, has no Wa
 test('settings declare no Wardens: one written there is a kind settings do not configure', () => {
   const warden = {
     id: 'conventions-warden',
-    kind: 'domain-librarian',
-    flowRole: 'domain-advising',
+    kind: 'warden',
+    flowRole: 'warden',
     domain: 'conventions',
     prompt: 'RULES',
     tools: false,
@@ -194,12 +194,12 @@ test('settings declare no Wardens: one written there is a kind settings do not c
   const global = config();
   global.agents['conventions-warden'] = warden;
   expect(() => validateConfig(global)).toThrow(
-    'global agent "conventions-warden": kind "domain-librarian" is not configurable (executor)',
+    'global agent "conventions-warden": kind "warden" is not configurable (executor)',
   );
   const project = config();
   project.projects.P!.agents = { 'p-warden': { ...warden, id: 'p-warden' } };
   expect(() => validateConfig(project)).toThrow(
-    'project "P" agent "p-warden": kind "domain-librarian" is not configurable',
+    'project "P" agent "p-warden": kind "warden" is not configurable',
   );
   const decider = config();
   decider.agents.old = { ...warden, id: 'old', kind: 'decider' } as unknown as AgentSettingsConfig;
@@ -234,7 +234,7 @@ test('project agents are standalone or extend a global agent; nothing in between
   expect(superseded.agents.worker).toBeUndefined();
   expect(superseded.agents['p-worker']).toMatchObject({ id: 'p-worker', kind: 'executor' });
   // The region Warden stands beside the project's agents.
-  expect(configuredExperts(superseded).experts.map((e) => e.agentId)).toEqual([WARDEN_ID]);
+  expect(configuredWardens(superseded).wardens.map((e) => e.agentId)).toEqual([WARDEN_ID]);
 });
 
 test('a settings edit reaches a running thread on its next turn, with a versioned before/after', async () => {
@@ -300,7 +300,7 @@ test('a region Warden guards a write under the pointer protocol', async () => {
   const f = setup(c);
   managers.push(f.manager);
   const thread = f.factory.create('p-thread', { projectId: 'P' });
-  const lib = f.manager.get(thread.id)!.domainLibrarians.get('conventions')!;
+  const lib = f.manager.get(thread.id)!.wardens.get('conventions')!;
   expect(lib.shouldGuard('Write')).toBe(true);
   await thread.dispatch('worker', 'Warm the Warden');
   const guard = await lib.guard(oneCall({ tool: 'Write', input: { file_path: 'a.ts' } }));

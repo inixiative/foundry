@@ -489,13 +489,13 @@ function selectedDetail(s) {
 }
 
 // ---------------------------------------------------------------------------
-// Expert loop inspection (CORE-006 M1/M2). Everything below reads recorded
+// Warden loop inspection (CORE-006 M1/M2). Everything below reads recorded
 // fields only: the pre-hook decoration frozen in the turn's injection artifact,
 // the journalled learning history, and the durable knowledge snapshot. Absent
 // data is labelled absent; nothing is inferred or recomputed.
 // ---------------------------------------------------------------------------
 
-/** The provider input one expert supplied at its phase, as recorded in the artifact. Absence is labelled;
+/** The provider input one Warden supplied at its phase, as recorded in the artifact. Absence is labelled;
  * nothing is filled from the current protocol, instructions or cache. Recorded input is not native receipt. */
 export function participantRequest(request) {
   if (!request || typeof request !== 'object') return { state: 'not-recorded' };
@@ -526,7 +526,7 @@ export function participantRequest(request) {
   return { state: 'not-recorded' };
 }
 
-/** The expert understanding the central provider actually received at this turn, from the turn's delivery record
+/** The Warden understanding the central provider actually received at this turn, from the turn's delivery record
  * (owner revision at assembly), beside the frozen assessment. Absence and legacy shapes are labelled, never inferred. */
 export function deliveredUnderstanding(trace, domain) {
   const agents = Array.isArray(trace?.detail?.messages)
@@ -576,7 +576,7 @@ export function deliveredUnderstanding(trace, domain) {
       trace?.selectedTurn?.turnId,
     ].filter((x) => x !== undefined);
     if (new Set(threads).size !== 1 || new Set(turns).size !== 1) return unverified;
-    const proof = verifyExpertDelivery(injection, delivery, domain, {
+    const proof = verifyWardenDelivery(injection, delivery, domain, {
       threadId: threads[0],
       messageId: turns[0],
       projectId:
@@ -588,8 +588,8 @@ export function deliveredUnderstanding(trace, domain) {
   }
 }
 
-/** Each expert's exact three inputs, decision, attributed guidance and recorded provider request at the historical preparation of a turn. */
-export function expertParticipants(injection, phases) {
+/** Each Warden's exact three inputs, decision, attributed guidance and recorded provider request at the historical preparation of a turn. */
+export function wardenParticipants(injection, phases) {
   let decoration = injection?.decoration;
   if ((!decoration || typeof decoration !== 'object') && Array.isArray(phases)) {
     // No delivered artifact (failed or interrupted turn): the sealed advice row journalled before the central call.
@@ -795,7 +795,6 @@ function durableGuardEntries(trace) {
       error: typeof settled?.error === 'string' ? settled.error : undefined,
       failed: Array.isArray(settled?.failed) ? settled.failed : [],
       findings: Number.isInteger(settled?.findings) ? settled.findings : null,
-      critical: Number.isInteger(settled?.critical) ? settled.critical : null,
       outcomes: [...resolved, ...pending],
       ...(duplicates.length
         ? { conflict: 'duplicate-outcome', duplicates: duplicates.map((d) => d.id) }
@@ -838,7 +837,6 @@ export function guardOutcomes(trace) {
       duplicates: Array.isArray(entry?.duplicates) ? entry.duplicates : [],
       failed: Array.isArray(entry?.failed) ? entry.failed : [],
       findings: Number.isInteger(entry?.findings) ? entry.findings : null,
-      critical: Number.isInteger(entry?.critical) ? entry.critical : null,
       outcomes,
     };
   });
@@ -877,7 +875,7 @@ export function learningEntries(history, domain) {
 
 /** The supplied review explanation, or an honest absence. */
 export function explanationLabel(entry) {
-  if (!entry) return { state: 'none', text: 'No post-hook outcome recorded for this expert yet.' };
+  if (!entry) return { state: 'none', text: 'No post-hook outcome recorded for this Warden yet.' };
   if (entry.reason) return { state: 'recorded', text: entry.reason };
   return {
     state: 'absent',
@@ -885,7 +883,7 @@ export function explanationLabel(entry) {
   };
 }
 
-/** One expert's current owned understanding of a thread. Current revision provenance comes from the
+/** One Warden's current owned understanding of a thread. Current revision provenance comes from the
  * durable snapshot's own evidence; a historical learn outcome is attached only when its revision and
  * evidence match that snapshot. Missing before-revision or rationale stays unrecorded, never 0. */
 export function domainUnderstanding(summary, history, domain) {
@@ -970,26 +968,26 @@ export function knowledgeEmptyLabel(summary) {
     };
   return {
     state: 'unreported',
-    text: 'No durable knowledge snapshot for this thread, and this server did not report live review state; whether experts are configured, idle or pending cannot be told from this response.',
+    text: 'No durable knowledge snapshot for this thread, and this server did not report live review state; whether Wardens are configured, idle or pending cannot be told from this response.',
   };
 }
 
-/** Wording for a layer with no domain entry: only a reported live state can prove it is not a configured expert. */
-export function expertAbsenceLabel(summary, layerId) {
+/** Wording for a layer with no domain entry: only a reported live state can prove it is not a Warden's. */
+export function wardenAbsenceLabel(summary, layerId) {
   if (!summary || summary.status === 'unavailable')
     return {
       state: 'unavailable',
-      text: `Expert record unavailable for ${layerId}: ${summary?.error ?? 'no inspection response'}.`,
+      text: `Warden record unavailable for ${layerId}: ${summary?.error ?? 'no inspection response'}.`,
     };
   if (summary.learningAvailable)
     return {
       state: 'not-configured',
-      text: `${layerId} is not a configured domain expert for this thread (live state reports no such domain).`,
+      text: `${layerId} is not a Warden's domain on this thread (live state reports no such domain).`,
     };
   return {
     state: 'unavailable',
-    text: `No durable snapshot names ${layerId} and this server did not report live expert state; configured, idle or empty cannot be distinguished from this response.`,
+    text: `No durable snapshot names ${layerId} and this server did not report live Warden state; configured, idle or empty cannot be distinguished from this response.`,
   };
 }
 
-import { verifyExpertDelivery } from './delivery-evidence.js';
+import { verifyWardenDelivery } from './delivery-evidence.js';

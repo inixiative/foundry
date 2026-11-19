@@ -68,7 +68,7 @@
  * `region-instructions`): `false`, `true`, `{ "text" }` or `{ "file" }` (relative to run.json), with
  * `"place": "before" | "after"` to inject beside the default; `debug` gives every call (or the cells
  * named) two more readings, the why inline and the why after its real answer, into debug.jsonl.
- * Every stage runs through the live call path (DomainLibrarian), each on its
+ * Every stage runs through the live call path (Warden), each on its
  * own host (one per model and effort; a stage without either takes --model / --effort), each region
  * reading its stage's doc as a live thread composes it; a region without that doc stops the run
  * before any call, named. `members` makes --regions a grouped chorus: each region.json there names
@@ -96,7 +96,7 @@ import {
   type WardenProbeTurn,
 } from '../../packages/core/src';
 import { FileMemory } from '../../packages/core/src/adapters/file-memory';
-import { configuredExperts } from '../../packages/foundry/src/agents/configured-experts';
+import { configuredWardens } from '../../packages/foundry/src/agents/configured-wardens';
 import {
   describeChorus,
   readRegions,
@@ -325,7 +325,7 @@ if (values.regions) {
 const viewOf = (projectId: string | undefined): FoundryConfig =>
   (projectId ? resolveProjectView(config, projectId)?.config : undefined) ?? config;
 const rosterOf = (projectId: string | undefined) => {
-  const roster = configuredExperts(viewOf(projectId)).experts.filter(
+  const roster = configuredWardens(viewOf(projectId)).wardens.filter(
     (r) => !onlyRoles || onlyRoles.includes(r.domain),
   );
   if (onlyRoles && roster.length !== onlyRoles.length)
@@ -496,7 +496,7 @@ if (runConfig)
   );
 
 /**
- * Per Warden and stage, sha256 of the full system message the run sends, as DomainLibrarian builds
+ * Per Warden and stage, sha256 of the full system message the run sends, as Warden builds
  * it (the stage's charter above the Warden's instructions, its region line set): the same hash each
  * staged call's trace carries (`systemHash`). A grouped chorus's groups send stage 1, members the rest.
  */

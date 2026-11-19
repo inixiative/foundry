@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test';
 import type { DeliveryRecord, InjectionArtifact } from '@inixiative/foundry-core';
-import type { LearningRecord } from '../src/agents/domain-librarian';
 import type { InjectionPlan } from '../src/agents/flow-orchestrator';
+import type { LearningRecord } from '../src/agents/warden';
 import {
   domainKnowledge,
   domains,
@@ -13,7 +13,7 @@ import {
   noComment,
   privateReason,
   until,
-} from './helpers/m0-domain-loop';
+} from './helpers/m0-warden-loop';
 
 type Turn = Awaited<ReturnType<Awaited<ReturnType<typeof m0Scenario>>['send']>>;
 type MessageBody = {
@@ -173,7 +173,7 @@ for (const raw of [
               (r.signal.content as any).decision === 'invalid',
           ),
       ).toBe(true);
-      await f.checkpoint('invalid domain proposal rejected; independent expert commit retained');
+      await f.checkpoint('invalid domain proposal rejected; independent Warden commit retained');
     } finally {
       await f.close();
     }
@@ -372,7 +372,7 @@ test('M4: committed knowledge survives publication failure and reconstructs with
   try {
     const completed = await f.send('a', 'publish-failed', 'Perform the migration');
     const runtime = f.current.manager.get('a')!;
-    runtime.domainLibrarians.get('architecture')!.threadKnowledge.layer.set = () => {
+    runtime.wardens.get('architecture')!.threadKnowledge.layer.set = () => {
       throw Error('M0_PUBLICATION_REJECTED');
     };
     held.resolve(learned('a', 'architecture'));
@@ -479,7 +479,7 @@ for (const supplied of [true, false])
         )!;
         const record = stored.signal.content as LearningRecord;
         const signal = runtime.thread.signals
-          .recent('domain_learning', 100)
+          .recent('warden_learning', 100)
           .find((s) => s.id === stored.signal.id)!;
         expect(record).toMatchObject({
           decision: 'learned',
@@ -517,20 +517,20 @@ for (const supplied of [true, false])
           const call = f.calls
             .filter((c) => c.thread === 'a' && c.domain === d && c.phase === phase)
             .at(-1)!;
-          for (const expert of domains)
-            expect(text(call.messages)).not.toContain(privateReason('a', expert));
+          for (const warden of domains)
+            expect(text(call.messages)).not.toContain(privateReason('a', warden));
         }
       }
       expect(text(first.trace)).toBe(frozen);
       await f.checkpoint(
-        'reconstructed audit unchanged; expert and central next input exclude private rationale',
+        'reconstructed audit unchanged; Warden and central next input exclude private rationale',
       );
     } finally {
       await f.close();
     }
   });
 
-test("M1 ownership: an expert's NO_COMMENT stays in its own audit and adds nothing to another expert's pre-message state", async () => {
+test("M1 ownership: a Warden's NO_COMMENT stays in its own audit and adds nothing to another Warden's pre-message state", async () => {
   const f = await m0Scenario({ review: () => 'NO_COMMENT' });
   try {
     await f.send('a', 'private-abstention');

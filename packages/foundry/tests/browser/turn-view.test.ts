@@ -2,7 +2,7 @@ import { expect, test } from 'bun:test';
 import { mkdirSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
-import { m0Scenario } from '../helpers/m0-domain-loop';
+import { m0Scenario } from '../helpers/m0-warden-loop';
 import { releaseAll } from '../helpers/release-all';
 
 // "full trace" opens one turn as a timeline in the centre: Foundry's steps before the agent (with

@@ -73,7 +73,7 @@ export const DEFAULT_MEMORY_SELECTION: MemorySelectionPolicy = Object.freeze({
     'session_compacted',
     'auxiliary_session_compacted',
     'info',
-    'domain_learning',
+    'warden_learning',
     'tool_observation',
     'guard_finding',
     // Captured feedback; acting on it is an explicit resolution (docs/FEEDBACK-LOOP.md).

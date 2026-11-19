@@ -5,7 +5,7 @@ import {
   type LLMProvider,
   SignalBus,
 } from '@inixiative/foundry-core';
-import { DomainLibrarian } from '../src/agents/domain-librarian';
+import { Warden } from '../src/agents/warden';
 
 function fixture(output: string) {
   const calls: LLMMessage[][] = [];
@@ -18,7 +18,7 @@ function fixture(output: string) {
   };
   const cache = new ContextLayer({ id: 'architecture', segment: 'domain-knowledge' });
   cache.set('DOMAIN_KNOWLEDGE: migrations preserve existing values.');
-  const lib = new DomainLibrarian({
+  const lib = new Warden({
     domain: 'architecture',
     cache,
     signals: new SignalBus(),
@@ -29,7 +29,7 @@ function fixture(output: string) {
 }
 
 describe('advice phase protocol independent of domain instructions', () => {
-  it('supplies the response contract while retaining all three expert parts', async () => {
+  it('supplies the response contract while retaining all three Warden parts', async () => {
     const { lib, calls } = fixture(
       '{"layers":[],"snippets":["Preserve existing names"],"confidence":0.9}',
     );

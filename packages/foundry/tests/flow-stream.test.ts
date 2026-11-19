@@ -25,7 +25,7 @@ import {
 } from '../src/viewer/ui/flow-graph.js';
 import { createWebSocketServer } from '../src/ws/handler';
 import { connectStreams } from './helpers/data-stream';
-import { instructions, interpretation, m0Scenario } from './helpers/m0-domain-loop';
+import { instructions, interpretation, m0Scenario } from './helpers/m0-warden-loop';
 
 const cleanup: Array<() => void | Promise<void>> = [];
 afterEach(async () => {
@@ -110,7 +110,7 @@ test('flow snapshot: recent turns as recorded flows, learning history and commit
       't2:testing:no-comment',
     ]),
   );
-  // Requests are reduced to their status and message count; expert segments to their lengths; knowledge text stays in the journal.
+  // Requests are reduced to their status and message count; Warden segments to their lengths; knowledge text stays in the journal.
   const text = JSON.stringify(flow);
   for (const secret of [instructions('architecture'), interpretation('a', 'architecture')])
     expect(text).not.toContain(secret);

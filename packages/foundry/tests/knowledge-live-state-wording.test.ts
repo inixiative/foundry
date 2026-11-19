@@ -9,7 +9,7 @@ const snapshot = {
 const history = [
   {
     storedAt: 1,
-    signal: { kind: 'domain_learning', content: { domain: 'conventions', decision: 'committed' } },
+    signal: { kind: 'warden_learning', content: { domain: 'conventions', decision: 'committed' } },
   },
 ];
 

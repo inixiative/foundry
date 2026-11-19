@@ -115,7 +115,7 @@ test("a project's region Wardens run on the subscription decision model: an enab
   expect(
     resolveProjectView(resolved.config, 'P')!.config.agents[regionRoleId('locks')],
   ).toMatchObject({
-    kind: 'domain-librarian',
+    kind: 'warden',
     provider: 'subscription-decisions',
     model: 'claude-haiku-5-5',
   });

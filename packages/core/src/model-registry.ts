@@ -61,8 +61,9 @@ export type MainThreadLab = (typeof MAIN_THREAD_LABS)[number];
  * - judgment        the decision provider: which archive, which middleware,
  *                   which domain.
  * - execution       the executor kind (Artificer): tools on, multi-turn.
- * - domain-advising the `domain-advising` flow role: read an owned domain layer
- *                   and advise/guard from it.
+ * - warden-advice   the `warden` flow role (a Warden): answer whether a moment
+ *                   touches its region and point at where it is written
+ *                   (advise, guard), from its region's composed knowledge.
  * - learning-review the background `learning.review` pass over finished work.
  * - tool-use        CompletionOpts.tools / toolDefinitions.
  * - reasoning       CompletionOpts.thinking (reasoning effort / think budget).
@@ -70,7 +71,7 @@ export type MainThreadLab = (typeof MAIN_THREAD_LABS)[number];
 export type ModelCapability =
   | 'judgment'
   | 'execution'
-  | 'domain-advising'
+  | 'warden-advice'
   | 'learning-review'
   | 'tool-use'
   | 'reasoning';
@@ -78,7 +79,7 @@ export type ModelCapability =
 export const MODEL_CAPABILITIES: readonly ModelCapability[] = [
   'judgment',
   'execution',
-  'domain-advising',
+  'warden-advice',
   'learning-review',
   'tool-use',
   'reasoning',
@@ -285,11 +286,11 @@ const STANDARD = [
   'judgment',
   'learning-review',
   'execution',
-  'domain-advising',
+  'warden-advice',
   'tool-use',
 ] as ModelCapability[];
 const STANDARD_REASONING = [...STANDARD, 'reasoning'] as ModelCapability[];
-const POWERFUL = ['judgment', 'execution', 'domain-advising', 'tool-use'] as ModelCapability[];
+const POWERFUL = ['judgment', 'execution', 'warden-advice', 'tool-use'] as ModelCapability[];
 const POWERFUL_REASONING = [...POWERFUL, 'reasoning'] as ModelCapability[];
 
 const CURRENT_GPT_MODELS = [

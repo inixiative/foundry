@@ -22,8 +22,8 @@ import {
 } from '@inixiative/foundry-core';
 import { classifyTool } from '../turns/tool-gate';
 import type { ConsumedSettings } from '../viewer/config';
-import type { ToolObservation } from './domain-librarian';
 import type { WorkItemMoment } from './flow-orchestrator';
+import type { ToolObservation } from './warden';
 
 /** Where tickets and specs are usually written in a repository: prose files only, never test specs. */
 export const DEFAULT_CONSUMED_PATHS: readonly string[] = Object.freeze([

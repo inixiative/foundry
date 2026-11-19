@@ -54,7 +54,7 @@ function fixture(
     log() {},
     warn() {},
     eventStream: events,
-    domains: [{ domain: 'security', layerId: 'security', guardTriggers: [] }],
+    codeWardens: [{ domain: 'security', layerId: 'security', guardTriggers: [] }],
     learning: { reviewProvider: provider, timeoutMs: 2, hardTimeoutMs },
     llm: {
       id: 'flow',
@@ -293,10 +293,10 @@ test('publication failure audit is durable before a hanging observer and survive
     },
   });
   closes.unshift(() => f.store.close());
-  f.runtime.domainLibrarians.get('security')!.threadKnowledge.layer.set = () => {
+  f.runtime.wardens.get('security')!.threadKnowledge.layer.set = () => {
     throw Error('publication broke');
   };
-  f.thread.signals.on('domain_learning', async (signal) => {
+  f.thread.signals.on('warden_learning', async (signal) => {
     if ((signal.content as any).decision === 'reconciliation-needed') await new Promise(() => {});
   });
   const result = await f.send('fact');

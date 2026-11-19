@@ -35,7 +35,7 @@ function setup() {
   const runtime = new ThreadRuntimeManager({
     config,
     eventStream: events,
-    domains: [],
+    codeWardens: [],
     log: () => {},
     warn: () => {},
     llm: {

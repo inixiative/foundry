@@ -144,7 +144,6 @@ const turn = {
         observation: { momentId: 's1', tool: 'Bash', callId: 'c1' },
         status: 'reported',
         findings: 2,
-        critical: 1,
         outcomes: [{ domain: 'security', status: 'completed', findings: 2 }],
       },
     },
@@ -292,7 +291,7 @@ test('turn flow: input → domains → sealed phases → delivered layers → ex
     target: { type: 'layer', layerId: 'architecture' },
   });
   expect(byId.get('layer:thread-knowledge:architecture').sub).toBe('delivered · rev 2→3');
-  expect(byId.get('guard:0')).toMatchObject({ status: 'error', sub: 'reported · 2 findings' });
+  expect(byId.get('guard:0')).toMatchObject({ status: 'warn', sub: 'reported · 2 findings' });
   expect(byId.get('tasks:TodoWrite')).toMatchObject({ sub: '1/2 completed', status: 'pending' });
   expect(byId.get('delivery').sub).toBe('2 layers committed · 1 drift');
   // Writeback: the latest outcome per domain from this turn's evidence, bookkeeping and other turns excluded.
@@ -309,7 +308,7 @@ test('turn flow: input → domains → sealed phases → delivered layers → ex
   const edge = (from: string, to: string) =>
     g.edges.find((e: any) => e.from === from && e.to === to);
   expect(edge('domain:security', 'plan').label).toBe('failed:timeout');
-  expect(edge('executor', 'guard:0')).toMatchObject({ label: 'Bash', status: 'error' });
+  expect(edge('executor', 'guard:0')).toMatchObject({ label: 'Bash', status: 'warn' });
   expect(edge('executor', 'delivery').label).toBe('1 drift');
   expect(edge('delivery', 'learn:architecture').label).toBe('learned');
   const targets = new Set(g.edges.map((e: any) => e.to));
@@ -330,7 +329,6 @@ test('turn flow: a sealed plan supplies timings; a running turn with no delivery
     plan: {
       elapsed: 42,
       layers: ['architecture'],
-      domainsConsulted: ['architecture'],
       outstanding: [{ kind: 'advise', participant: 'security' }],
       contributions: [
         {

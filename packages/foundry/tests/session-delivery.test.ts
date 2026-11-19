@@ -27,7 +27,7 @@ import {
   interpretation,
   learned,
   m0Scenario,
-} from './helpers/m0-domain-loop';
+} from './helpers/m0-warden-loop';
 
 /** A prewrite-capable native session that records every prompt it was sent. */
 class RecordingSession implements HarnessSession {

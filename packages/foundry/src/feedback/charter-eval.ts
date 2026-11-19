@@ -4,7 +4,7 @@
  * @partOf feature:evals
  */
 // The Warden charter eval: run a chorus over real-session probes under one classify configuration and
-// score how quiet, how right and how in-scope it is. Same code path as live (DomainLibrarian running
+// score how quiet, how right and how in-scope it is. Same code path as live (Warden running
 // classify's stages, each charter composed above the Warden's instructions), at both trigger points:
 // `user-message` advises on the user's ask, `agent-action` guards the agent's turn. No thread, no
 // writes. Scoring and the probe contract live in foundry-core (`feedback/warden-probes`), so Oracle
@@ -32,11 +32,11 @@ import {
 import {
   type AdviseResult,
   adviceOutcomeOf,
-  DomainLibrarian,
   type GuardResult,
   oneCall,
+  Warden,
   type WardenStage,
-} from '../agents/domain-librarian';
+} from '../agents/warden';
 import {
   type Carried,
   type ClassifyResult,
@@ -373,9 +373,7 @@ function rowOf(result: AdviseResult | GuardResult, classified?: ClassifyResult):
       : {
           noComment: false,
           ...staged,
-          text: result.findings
-            .map((f) => [f.description, f.suggestion].filter(Boolean).join(' '))
-            .join('\n'),
+          text: result.findings.map((f) => f.description).join('\n'),
         };
   // Advice without a snippet adds nothing a Warden would say to the thread.
   return result.noComment || !result.snippets.length
@@ -454,7 +452,7 @@ async function ask(
           sink(domain, reading);
         }
       : undefined;
-    const lib = librarian(
+    const instance = makeWarden(
       options,
       who,
       stages,
@@ -464,7 +462,7 @@ async function ask(
     );
     const fromOpts = from ? { from: { index: from.stage + 1, carried: from } } : {};
     if (trigger === 'user-message') {
-      const advice = await lib.advise(probe.ask ?? '', undefined, {
+      const advice = await instance.advise(probe.ask ?? '', undefined, {
         ...threadKnowledge(probe, who),
         ...fromOpts,
       });
@@ -474,7 +472,7 @@ async function ask(
         debugMs,
       };
     }
-    const guard = await lib.guard(
+    const guard = await instance.guard(
       oneCall({ tool: PROBE_MOMENT_TOOL, input: { turn: probe.moment } }),
       undefined,
       { ...threadKnowledge(probe, who), ...fromOpts },
@@ -606,27 +604,27 @@ export async function evalProjectRoster(
   };
   const stages = options.stages ?? SINGLE_STAGE;
   for (const warden of wardens) {
-    const lib = librarian(
+    const instance = makeWarden(
       { ...options, probes: [], wardensFor: () => [], warden: recording },
       warden,
       stages,
       (provider) => provider,
     );
-    await lib.warm();
-    lib.prestart();
+    await instance.warm();
+    instance.prestart();
   }
   return [...held.values()];
 }
 
 /** A Warden as live builds it, bound to the eval's providers: one stage per config, each its own doc. */
-function librarian(
+function makeWarden(
   options: CharterEvalOptions,
   warden: EvalWarden,
   stages: readonly StageConfig[],
   counted: (provider: LLMProvider, stage: number) => LLMProvider,
   holds?: readonly string[],
   sink?: DebugSink,
-): DomainLibrarian {
+): Warden {
   const layer = (id: string, text: string) => {
     const l = new ContextLayer({ id });
     l.set(text);
@@ -656,7 +654,7 @@ function librarian(
       ...(regionInstructions !== undefined ? { regionInstructions } : {}),
     };
   });
-  return new DomainLibrarian({
+  return new Warden({
     domain: warden.domain,
     cache: layer(`eval:${warden.domain}`, warden.domainKnowledge),
     instructions: layer(`eval:${warden.domain}:instructions`, warden.instructions),

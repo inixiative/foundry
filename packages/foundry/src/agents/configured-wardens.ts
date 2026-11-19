@@ -11,11 +11,11 @@ import { roleComposition } from '../prompts/instruction-settings';
 import { isIdName, isRoleId } from '../prompts/role-namespace';
 import type { AgentSettingsConfig, FoundryConfig } from '../viewer/config';
 import { resolveProjectView } from '../viewer/config-resolve';
-import { threadKnowledgeLayerId } from './domain-librarian';
 import { resolveLearningSettings, validateLearningSettings } from './learning-config';
-import type { LearningConfig, ThreadDomainConfig } from './thread-runtime';
+import type { CodeWardenConfig, LearningConfig } from './thread-runtime';
+import { threadKnowledgeLayerId } from './warden';
 
-export interface ConfiguredExpert {
+export interface ConfiguredWarden {
   readonly agentId: string;
   readonly domain: string;
   readonly agent: AgentSettingsConfig;
@@ -35,35 +35,35 @@ const diagnosticLabel = (value: string): string => {
  * instructions and domain knowledge come from the composition view (its `prompt` and
  * `domainKnowledge` sources, then the ladder's files for its role); it owns no configured layer.
  */
-export function configuredExperts(config: FoundryConfig): {
-  experts: ConfiguredExpert[];
+export function configuredWardens(config: FoundryConfig): {
+  wardens: ConfiguredWarden[];
   claimedDomains: Set<string>;
 } {
-  const experts: ConfiguredExpert[] = [],
+  const wardens: ConfiguredWarden[] = [],
     claimedDomains = new Set<string>();
   const domains = new Map<string, string>();
   for (const [id, agent] of Object.entries(config.agents)) {
-    if (agent.flowRole !== 'domain-advising') continue;
+    if (agent.flowRole !== 'warden') continue;
     if (!isRoleId(id) || agent.id !== id || !isIdName(agent.domain))
-      throw Error(`Invalid configured expert identity: ${id}`);
-    if (typeof agent.enabled !== 'boolean') throw Error(`Invalid expert enablement: ${id}`);
+      throw Error(`Invalid Warden identity: ${id}`);
+    if (typeof agent.enabled !== 'boolean') throw Error(`Invalid Warden enablement: ${id}`);
     claimedDomains.add(agent.domain);
     if (!agent.enabled) continue;
-    if (agent.kind !== 'domain-librarian') throw Error(`Unsupported configured expert kind: ${id}`);
+    if (agent.kind !== 'warden') throw Error(`Unsupported Warden kind: ${id}`);
     if (
       agent.domainKnowledge !== undefined &&
       (!Array.isArray(agent.domainKnowledge) ||
         agent.domainKnowledge.some((source) => typeof source !== 'string' || !source))
     )
-      throw Error(`Expert ${id} domainKnowledge must be source ids`);
+      throw Error(`Warden ${id} domainKnowledge must be source ids`);
     const unknown = (agent.domainKnowledge ?? []).filter((source) => !config.sources[source]);
     if (unknown.length)
-      throw Error(`Expert ${id} domainKnowledge names unknown sources: ${unknown.join(', ')}`);
+      throw Error(`Warden ${id} domainKnowledge names unknown sources: ${unknown.join(', ')}`);
     const disabled = (agent.domainKnowledge ?? []).filter(
       (source) => !config.sources[source]!.enabled,
     );
     if (disabled.length)
-      throw Error(`Expert ${id} domainKnowledge names disabled sources: ${disabled.join(', ')}`);
+      throw Error(`Warden ${id} domainKnowledge names disabled sources: ${disabled.join(', ')}`);
     // Instruction files never reach a region Warden (Aron, 2026-11-02); for another role they come
     // through its own picks in the composition view, never as an instructions source here.
     const composed = (agent.domainKnowledge ?? []).filter(
@@ -71,12 +71,12 @@ export function configuredExperts(config: FoundryConfig): {
     );
     if (composed.length)
       throw Error(
-        `Expert ${id} domainKnowledge names instructions sources (${composed.join(', ')}); an expert reads its role files and region, never instruction files`,
+        `Warden ${id} domainKnowledge names instructions sources (${composed.join(', ')}); a Warden reads its role files and region, never instruction files`,
       );
-    if (domains.has(agent.domain)) throw Error(`Duplicate expert domain: ${agent.domain}`);
+    if (domains.has(agent.domain)) throw Error(`Duplicate Warden domain: ${agent.domain}`);
     domains.set(agent.domain, id);
     if (typeof agent.prompt !== 'string' || !agent.prompt.trim())
-      throw Error(`Expert ${id} requires explicit instructions`);
+      throw Error(`Warden ${id} requires explicit instructions`);
     if (
       agent.guardTriggers !== undefined &&
       (!Array.isArray(agent.guardTriggers) ||
@@ -86,22 +86,22 @@ export function configuredExperts(config: FoundryConfig): {
         ) ||
         new Set(agent.guardTriggers).size !== agent.guardTriggers.length)
     )
-      throw Error(`Invalid expert guard triggers: ${id}`);
+      throw Error(`Invalid Warden guard triggers: ${id}`);
     if (
       (agent.tools !== undefined && agent.tools !== false) ||
       agent.browser !== undefined ||
       agent.permissions !== undefined
     )
-      throw Error(`Unsupported configured expert tools or permissions: ${id}`);
+      throw Error(`Unsupported Warden tools or permissions: ${id}`);
     if (agent.timeout !== undefined && (!Number.isSafeInteger(agent.timeout) || agent.timeout < 1))
-      throw Error(`Invalid expert timeout: ${id}`);
+      throw Error(`Invalid Warden timeout: ${id}`);
     if (
       agent.temperature !== undefined &&
       (!Number.isFinite(agent.temperature) || agent.temperature < 0 || agent.temperature > 2)
     )
-      throw Error(`Invalid expert temperature: ${id}`);
+      throw Error(`Invalid Warden temperature: ${id}`);
     if (agent.cacheControl !== undefined && typeof agent.cacheControl !== 'boolean')
-      throw Error(`Invalid expert cache control: ${id}`);
+      throw Error(`Invalid Warden cache control: ${id}`);
     validateLearningSettings({
       review: {
         ...(agent.provider !== undefined ? { provider: agent.provider } : {}),
@@ -109,9 +109,9 @@ export function configuredExperts(config: FoundryConfig): {
         ...(agent.thinking !== undefined ? { thinking: agent.thinking } : {}),
       },
     });
-    experts.push({ agentId: id, domain: agent.domain, agent: structuredClone(agent) });
+    wardens.push({ agentId: id, domain: agent.domain, agent: structuredClone(agent) });
   }
-  return { experts, claimedDomains };
+  return { wardens, claimedDomains };
 }
 
 /**
@@ -123,7 +123,7 @@ export function largestRoster(config: FoundryConfig): number {
   for (const [id, project] of Object.entries(config.projects ?? {})) {
     if (project.enabled === false) continue;
     const view = resolveProjectView(config, id);
-    if (view) largest = Math.max(largest, configuredExperts(view.config).experts.length);
+    if (view) largest = Math.max(largest, configuredWardens(view.config).wardens.length);
   }
   return largest;
 }
@@ -146,30 +146,31 @@ export function largestStageCount(
   return largest;
 }
 
-export interface ResolvedThreadDomain extends Omit<ThreadDomainConfig, 'layerId'> {
-  /** Programmatic domains only: the stack layer it reads. A configured Warden reads its role's view. */
+export interface ResolvedThreadWarden extends Omit<CodeWardenConfig, 'layerId'> {
+  /** Wardens registered in code only: the stack layer it reads. A configured Warden reads its role's view. */
   layerId?: string;
-  expert?: { agentId: string; source: 'configured' };
+  /** A Warden resolved from settings (a project's region Warden): its agent id. Absent for one registered in code. */
+  configuredAgentId?: string;
   adviseProvider?: LLMProvider;
   adviseOpts?: CompletionOpts;
   reviewProvider?: LLMProvider;
 }
 
-/** Existing phase providers only. Explicit expert profiles never use an unrelated flow fallback. */
-export function resolveThreadDomains(
+/** Existing phase providers only. Explicit Warden profiles never use an unrelated flow fallback. */
+export function resolveThreadWardens(
   config: FoundryConfig,
   available: ReadonlyMap<string, Pick<ContextLayer, 'definition' | 'segment'>>,
   options: {
     /** Wardens registered in code over a stack layer (tests, research runs); never from settings. */
-    programmatic: readonly ThreadDomainConfig[];
+    codeWardens: readonly CodeWardenConfig[];
     llm: LLMProvider;
     providers?: ReadonlyMap<string, LLMProvider>;
     learning?: LearningConfig;
     /** Existing runtime reporting hook; emitted once after complete validation. */
     warn?: (line: string) => void;
   },
-): ResolvedThreadDomain[] {
-  const { experts, claimedDomains } = configuredExperts(config);
+): ResolvedThreadWarden[] {
+  const { wardens, claimedDomains } = configuredWardens(config);
   const diagnostics = new Set<string>();
   const providers = new Map([
     [options.llm.id, options.llm],
@@ -182,7 +183,7 @@ export function resolveThreadDomains(
     const provider = providers.get(id);
     // An unregistered id is an adapter supplied in code (tests, Oracle); a registered one must be switched on.
     if (!provider || (vendorOfProvider(id) && !providerEnabled(config, id)))
-      throw Error(`Configured expert provider unavailable: ${id}`);
+      throw Error(`Warden provider unavailable: ${id}`);
     return provider;
   };
   const validateNative = (provider: LLMProvider, opts: CompletionOpts) => {
@@ -194,18 +195,18 @@ export function resolveThreadDomains(
     )
       return;
     if (!['claude-code', 'subscription-decisions'].includes(provider.id))
-      throw Error('Configured native expert requires an available text-only Claude provider');
+      throw Error('A native Warden requires an available text-only Claude provider');
     if (opts.thinking !== undefined)
-      throw Error('Native expert thinking/effort cannot be enforced by the current adapter');
+      throw Error('Native Warden thinking/effort cannot be enforced by the current adapter');
     if (opts.cacheControl !== undefined || opts.temperature !== 0)
       throw Error(
-        'Native expert cache/temperature setting cannot be enforced by the current adapter',
+        'Native Warden cache/temperature setting cannot be enforced by the current adapter',
       );
   };
-  const result: ResolvedThreadDomain[] = experts.map(({ agentId, domain, agent }) => {
+  const result: ResolvedThreadWarden[] = wardens.map(({ agentId, domain, agent }) => {
     const provider = providerFor(agent.provider || config.defaults.provider);
     const model = agent.model || config.defaults.model;
-    if (!model?.trim()) throw Error(`Configured expert model unavailable: ${agentId}`);
+    if (!model?.trim()) throw Error(`Warden model unavailable: ${agentId}`);
     const opts: CompletionOpts = {
       model,
       temperature: agent.temperature ?? 0,
@@ -239,12 +240,12 @@ export function resolveThreadDomains(
       ];
       if (changed.length)
         diagnostics.add(
-          `[expert-review-profile-override] domain=${diagnosticLabel(domain)} agent=${diagnosticLabel(agentId)}: explicit learning.review takes precedence for post-review; changed=${changed.join(',')}. Advise/guard profile is unchanged. Inspect learning.review and this expert's profile; these are requested settings, not native acknowledgment.`,
+          `[warden-review-profile-override] domain=${diagnosticLabel(domain)} agent=${diagnosticLabel(agentId)}: explicit learning.review takes precedence for post-review; changed=${changed.join(',')}. Advise/guard profile is unchanged. Inspect learning.review and this Warden's profile; these are requested settings, not native acknowledgment.`,
         );
     }
     return {
       domain,
-      expert: { agentId, source: 'configured' },
+      configuredAgentId: agentId,
       budget: roleComposition(config.composition, agentId).budget,
       guardTriggers: [...(agent.guardTriggers ?? [])],
       adviseProvider: provider,
@@ -258,7 +259,7 @@ export function resolveThreadDomains(
     };
   });
   // Wardens registered in code read the stack layer they name, where no configured Warden holds the domain.
-  for (const dc of options.programmatic) {
+  for (const dc of options.codeWardens) {
     const instance = available.get(dc.layerId);
     if (claimedDomains.has(dc.domain) || !instance || instance.segment === 'thread-knowledge')
       continue;
@@ -272,9 +273,9 @@ export function resolveThreadDomains(
       seenDomains.has(dc.domain) ||
       (dc.layerId !== undefined && seenLayers.has(dc.layerId))
     )
-      throw Error(`Ambiguous runtime expert ownership: ${dc.domain}`);
+      throw Error(`Ambiguous runtime Warden ownership: ${dc.domain}`);
     if (available.has(threadKnowledgeLayerId(dc.domain)))
-      throw Error(`Generated expert layer already exists: ${dc.domain}`);
+      throw Error(`Generated Warden layer already exists: ${dc.domain}`);
     seenDomains.add(dc.domain);
     if (dc.layerId !== undefined) seenLayers.add(dc.layerId);
   }

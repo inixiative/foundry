@@ -3,7 +3,7 @@ import { mkdir, mkdtemp } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import type { InitializeRequest, SessionUpdate } from '@agentclientprotocol/sdk';
 import { liveWatchFixture } from '../../foundry/tests/helpers/live-watch-fixture';
-import { m0Scenario } from '../../foundry/tests/helpers/m0-domain-loop';
+import { m0Scenario } from '../../foundry/tests/helpers/m0-warden-loop';
 import { serveDaemon, shape, spawnFoundryAcp, until } from './helpers/acp-host';
 
 const cleanup: Array<() => void | Promise<void>> = [];

@@ -56,7 +56,7 @@ function fixture(
     log: () => {},
     warn: () => {},
     learning: { timeoutMs: 5, hardTimeoutMs: 200, ...learning },
-    domains: [{ domain: 'security', layerId: 'security', guardTriggers: [], budget: 40_000 }],
+    codeWardens: [{ domain: 'security', layerId: 'security', guardTriggers: [], budget: 40_000 }],
     llm: {
       id: 'controlled',
       complete: async (messages, opts = {}) => {
@@ -101,7 +101,7 @@ function fixture(
     persistence,
     calls,
     inputs,
-    knowledge: runtime.domainLibrarians.get('security')!.threadKnowledge,
+    knowledge: runtime.wardens.get('security')!.threadKnowledge,
   };
 }
 
@@ -505,7 +505,7 @@ test('unavailable native budgets stay unenforced and over-budget knowledge is a 
     },
     reviewOpts: { thinking: 'high' },
   });
-  const cache = f.runtime.domainLibrarians.get('security')!.cache;
+  const cache = f.runtime.wardens.get('security')!.cache;
   cache.set('C'.repeat(40001));
   await f.thread.dispatch('worker', 'Work');
   await f.runtime.learningSettled();

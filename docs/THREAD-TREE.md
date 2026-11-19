@@ -302,7 +302,7 @@ Indexes: `source_version(subject, id)`; `composition_version(composedHash)` uniq
 | A domain-knowledge source whose content is fetched (URL, Archive search) | **Not audited:** see B.7 question 3 | — | — |
 | A slot composed for a call | The composer (`buildRoleLayers` → `ContextLayer`) | When it composes. A row is written only if the `composedHash` is new | — |
 | A Warden call | The flow orchestrator (`pf/agents/flow-orchestrator.ts:636`) | At the call boundary, where `segments` are recorded today | — |
-| Thread knowledge | Already the review's job (`domain-librarian.ts` review) | Each revision's text goes into the content store when it is used. No audit row: it is per call | — |
+| Thread knowledge | Already the review's job (`warden.ts` review) | Each revision's text goes into the content store when it is used. No audit row: it is per call | — |
 
 The journal stays the source of truth. Archive gets the call's version ids in reduced entries (spec A). For the ids to resolve off this machine, the audit rows must reach Archive too (B.7, question 1).
 
@@ -346,7 +346,7 @@ And on provenance, 2026-10-12, 00:44: *"Okay your feedback, and then what warden
 - **Capture.**
   - A source can report what its last load was made of: `ContextSource.segments()` and `ContextLayer.segments()` in core.
   - The role-layer chunks, the settings prompt, configured sources and the composition view all report it (`slotSegments`, which `renderSlot` now uses).
-  - A Warden call snapshots its slots and their omissions at the call boundary (`DomainLibrarian.composition`). Advice freezes it with its cache.
+  - A Warden call snapshots its slots and their omissions at the call boundary (`Warden.composition`). Advice freezes it with its cache.
   - The phase and learning journals turn the snapshot into `versions` (`CompositionAuditor.versionRecord`): `{charter, instructions, domainKnowledge, composedHash, retrieved?}`.
   - The audit never blocks a Warden: on a failure, the call is journalled without versions and the error is reported.
 - **Actors and causes as written:**
