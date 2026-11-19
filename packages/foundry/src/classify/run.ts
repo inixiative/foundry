@@ -292,7 +292,10 @@ export interface ClassifyResult {
   /** The first stage failed: no answer in time, a rejected call, or an answer out of shape. */
   readonly error?: string;
   readonly failure?: CallFailedCause;
-  /** The first stage was never sent (not held warm, or not admitted). */
+  /**
+   * Never sent at a stage that decides the run: the first (not held warm, or not admitted), or a
+   * later one not held warm (its host does not serve), which skips the Warden for the moment.
+   */
   readonly notSent?: NotSentCall;
   /** How to ask the standing answer's why: absent when no stage answered in shape, or its own follow-up gave it. */
   readonly debugReason?: DebugReasonHandle;
@@ -494,6 +497,10 @@ export async function runStages(options: ClassifyRunOptions): Promise<ClassifyRe
     }
     if ('notSent' in call) {
       traces.push(trace({ error: `not sent (${call.notSent.cause}): ${call.notSent.reason}` }));
+      // A stage whose host does not serve skips the Warden for this moment: an earlier stage's
+      // unconfirmed answer never stands in for it (Aron, 2026-11-18: "they just skip").
+      if (call.notSent.cause === 'not-held')
+        return { delivered: false, stages: traces, notSent: call.notSent };
       return stop('error', { notSent: call.notSent });
     }
     if ('error' in call) {

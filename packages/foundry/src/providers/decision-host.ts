@@ -179,8 +179,9 @@ export function liveDecisionHosts(
     source: subscription.decision,
     ...(projectHosts ? { projectHosts } : {}),
     // With project hosts every Warden call (advice, guard, review, stage) runs in its project's one
-    // process: primed keeps the other decision roles and a project's Wardens only while its host is
-    // not serving, at the fixed default (Aron, 2026-11-18: "Those are supposed to be singletons").
+    // process: primed keeps the other decision roles at the fixed default (Aron, 2026-11-18: "Those
+    // are supposed to be singletons"), and never a Warden call, which is skipped while its host or
+    // lane does not serve ("it should not be handling warden calls at all", R-2026-11-18-38/39).
     // Primed Wardens (`decisionRuntime: claude`, the evals' baseline) keep a key per classify stage
     // and a review key per Warden, sized for the largest chorus any project runs.
     ...(projectHosts

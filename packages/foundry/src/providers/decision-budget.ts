@@ -49,7 +49,7 @@ export const DECISION_LATENCY_BUDGET = {
  */
 export const DECISION_INPUT_CAP = 160_000;
 
-/** The refusal of held-only advice with no warm call held: the Warden was skipped unsent and catches up. */
+/** The refusal of a Warden call its project host cannot serve (no warm call held for held-only advice, or no host or lane serving): skipped unsent. */
 export const NOT_HELD_REFUSAL = 'Warden not held warm on its project host; skipped unsent';
 
 /** The capacity refusal while the decision login's usage is used up: skipped unsent until it resets. */

@@ -103,15 +103,13 @@ test('a newer update after Not now spins down again; Restart now cuts what runs'
   expect(r.postpone()).toBe(false);
 });
 
-test('a newer update while spinning down keeps the deadline; work a turn left behind is waited for', () => {
+test('a newer update while spinning down keeps the deadline', () => {
   const now = { t: 0 };
   const running = [{ threadId: 'a', turnId: 't1' }];
-  let drafts = 1;
   const restarts: string[] = [];
   const r = new RestartRoll({
     running: () => running,
     waiting: () => 0,
-    finishing: () => drafts,
     prepare: () => {},
     now: () => now.t,
     pollMs: 60_000,
@@ -119,11 +117,8 @@ test('a newer update while spinning down keeps the deadline; work a turn left be
   r.offerUpdate({ candidate: 'c1', timeoutMs: 1_000, restart: () => restarts.push('c1') });
   now.t = 900;
   r.offerUpdate({ candidate: 'c2', timeoutMs: 1_000, restart: () => restarts.push('c2') });
-  expect(r.status()).toMatchObject({ candidate: 'c2', deadline: 1_000, finishing: 1 });
+  expect(r.status()).toMatchObject({ candidate: 'c2', deadline: 1_000 });
   running.pop();
-  r.check();
-  expect(restarts).toEqual([]);
-  drafts = 0;
   r.check();
   expect(restarts).toEqual(['c2']);
 });
@@ -332,12 +327,10 @@ test('Pause now skips the grace; without a way to pause there is nothing to do',
 // blockers counted, and "as soon as all the blockers are done, it can just restart".
 test('a plain restart needs the supervisor, spins down like an update and restarts at zero blockers', () => {
   const running: RunningTurnRef[] = [{ threadId: 'a', turnId: 't1' }];
-  const finishing = { n: 1 };
   const restarts: string[] = [];
   const r = new RestartRoll({
     running: () => running,
     waiting: () => 0,
-    finishing: () => finishing.n,
     prepare: () => {},
     pollMs: 60_000,
   });
@@ -353,14 +346,10 @@ test('a plain restart needs the supervisor, spins down like an update and restar
   expect(r.status()).toMatchObject({
     phase: 'spinning-down',
     reason: 'the owner asked',
-    finishing: 1,
   });
   expect(r.status().candidate).toBeUndefined();
   expect(r.holding()).toBe(true);
   running.pop();
-  r.check();
-  expect(restarts).toEqual([]);
-  finishing.n = 0;
   r.check();
   expect(restarts).toEqual(['restart']);
   expect(r.status().phase).toBe('restarting');

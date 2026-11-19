@@ -12,12 +12,7 @@ import {
   threadTitle,
 } from '@inixiative/foundry-core';
 import { Hono } from 'hono';
-import {
-  hasWorkContent,
-  meaningfullyDifferent,
-  NAMING_INSTRUCTIONS,
-  ThreadNamer,
-} from '../src/agents/thread-namer';
+import { hasWorkContent, NAMING_INSTRUCTIONS, ThreadNamer } from '../src/agents/thread-namer';
 import { DECISION_PRIORITY } from '../src/providers/decision-priority';
 import { ConfigStore } from '../src/viewer/config';
 import { registerRuntimeRoutes } from '../src/viewer/routes/runtime';
@@ -32,19 +27,12 @@ const exchange = (
 });
 const settle = () => Bun.sleep(5);
 
-function namer(
-  complete: LLMProvider['complete'],
-  options: { quietMs?: number; minIntervalMs?: number; minTurns?: number } = {},
-) {
+function namer(complete: LLMProvider['complete']) {
   const thread = new Thread('t', new ContextStack(), { description: '', cwd: '/qa/project' });
   let changes = 0;
   const instance = new ThreadNamer({
     provider: { id: 'decisions', complete },
     changed: () => changes++,
-    quietMs: 0,
-    minIntervalMs: 0,
-    minTurns: 1,
-    ...options,
   });
   return { thread, namer: instance, changes: () => changes };
 }
@@ -90,74 +78,36 @@ test('the first completed turn names the thread on an isolated, text-only, revie
 test('clearing the human name shows the agent name again; a late decision never overwrites a human rename', async () => {
   let finish!: (value: { model: string; content: string }) => void;
   const f = namer(() => new Promise((resolve) => (finish = resolve)));
-  f.thread.meta.foundryName = { text: 'Old agent name', updatedAt: 1 };
   f.namer.turnCompleted(f.thread, exchange());
   await settle();
   f.thread.rename('Human renamed this');
   finish({ model: 'm', content: '{"title":"Completely different work"}' });
   await settle();
   expect(threadTitle(f.thread.meta)).toEqual({ text: 'Human renamed this', source: 'human' });
-  expect(f.thread.meta.foundryName?.text).toBe('Old agent name');
+  expect(f.thread.meta.foundryName).toBeUndefined();
+  f.thread.meta.foundryName = { text: 'Old agent name', updatedAt: 1 };
   f.thread.rename('');
   expect(threadTitle(f.thread.meta)).toEqual({ text: 'Old agent name', source: 'foundry' });
 });
 
-test('churn guard: "keep" and near-identical titles leave the name alone; a real shift renames', async () => {
-  const answers = [
-    '{"keep":true}',
-    '{"title":"Fix the flaky login tests"}',
-    '{"title":"Billing export CSV"}',
-  ];
-  const f = namer(async () => ({ model: 'm', content: answers.shift()! }));
-  f.thread.meta.foundryName = { text: 'Fix flaky login test', updatedAt: 1 };
-  for (let i = 0; i < 3; i++) {
+test('a named thread is never decided again here: its own agent checks the name (NAME_CHECK_NOTE)', async () => {
+  let calls = 0;
+  const f = namer(async () => {
+    calls++;
+    return { model: 'm', content: '{"title":"Billing export CSV"}' };
+  });
+  for (const by of [undefined, 'agent'] as const) {
+    f.thread.meta.foundryName = {
+      text: 'Fix flaky login test',
+      updatedAt: 1,
+      ...(by ? { by } : {}),
+    };
     f.namer.turnCompleted(f.thread, exchange());
+    f.namer.messageSent(f.thread, 'Now the billing export');
     await settle();
   }
-  expect(answers).toHaveLength(0);
-  expect(f.thread.meta.foundryName?.text).toBe('Billing export CSV');
-  expect(f.changes()).toBe(1);
-  expect(meaningfullyDifferent('Fix flaky login test', 'Fix the flaky login tests')).toBe(false);
-  expect(meaningfullyDifferent('Fix flaky login test', 'fix flaky login test')).toBe(false);
-  expect(meaningfullyDifferent('Fix flaky login test', 'Fix flaky login test suite')).toBe(false);
-  expect(meaningfullyDifferent(undefined, 'Anything')).toBe(true);
-});
-
-test('refresh trigger: a named thread is re-checked only after enough turns and time, once it goes quiet', async () => {
-  let calls = 0;
-  const f = namer(
-    async () => {
-      calls++;
-      return { model: 'm', content: '{"keep":true}' };
-    },
-    { quietMs: 20, minIntervalMs: 60_000, minTurns: 3 },
-  );
-  f.thread.meta.foundryName = { text: 'Fix flaky login test', updatedAt: Date.now() };
-  for (let i = 0; i < 5; i++) f.namer.turnCompleted(f.thread, exchange());
-  await Bun.sleep(40);
-  expect(calls).toBe(0); // named a moment ago: the interval holds it back
-
-  const g = namer(
-    async () => {
-      calls++;
-      return { model: 'm', content: '{"keep":true}' };
-    },
-    { quietMs: 20, minIntervalMs: 60_000, minTurns: 3 },
-  );
-  g.thread.meta.foundryName = { text: 'Fix flaky login test', updatedAt: Date.now() - 120_000 };
-  g.namer.turnCompleted(g.thread, exchange());
-  g.namer.turnCompleted(g.thread, exchange());
-  await Bun.sleep(40);
-  expect(calls).toBe(0); // two turns: not enough work since the last decision
-  g.namer.turnCompleted(g.thread, exchange());
-  g.namer.turnCompleted(g.thread, exchange()); // burst: the quiet timer restarts
-  await Bun.sleep(5);
   expect(calls).toBe(0);
-  await Bun.sleep(40);
-  expect(calls).toBe(1);
-  g.namer.turnCompleted(g.thread, exchange());
-  await Bun.sleep(40);
-  expect(calls).toBe(1); // just decided: the counters restarted
+  expect(f.thread.meta.foundryName?.text).toBe('Fix flaky login test');
 });
 
 test('a failed or unparseable decision stays retryable on the next turn', async () => {
@@ -319,7 +269,7 @@ test('Foundry names an unnamed thread from its first message as it is sent, once
   expect(inputs).toHaveLength(1);
   expect(inputs[0]![1]!.content).toContain('- Fix the flaky login test');
   expect(threadTitle(f.thread.meta)).toEqual({ text: 'Fix flaky login test', source: 'foundry' });
-  // Already named: a later message does not name it again (refreshes ride completed turns).
+  // Already named: a later message does not name it again (its agent checks it, NAME_CHECK_NOTE).
   f.namer.messageSent(f.thread, 'Now add a retry');
   await settle();
   expect(inputs).toHaveLength(1);
