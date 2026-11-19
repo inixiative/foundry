@@ -430,6 +430,16 @@ test('a reply on the thread you have open stays in it while its seen mark is sti
     await observer.locator('.chat-agent').filter({ hasText: 'OBSERVED_WORK_1' }).waitFor();
     for (let n = 0; n < 60 && held === 0; n++) await Bun.sleep(50);
     expect(held).toBeGreaterThan(0);
+    // A save on the server pushes the thread's list entry, with the server's older seenAt, before the
+    // reply: the tab must still know its person has read this completion.
+    const renamed = await fetch(`${f.origin}/api/threads/main`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'Renamed while read' }),
+    });
+    expect(renamed.status).toBe(200);
+    await observer.locator('.context-bar-title', { hasText: 'Renamed while read' }).waitFor();
+    f.report.checks.push({ case: 'list-pushed-before-reply', passed: true });
     await observer.locator('.chat-input').fill('Own submitted work');
     await observer.locator('.chat-input').press('Enter');
     await observer.locator('.chat-agent').filter({ hasText: 'OBSERVED_WORK_2' }).waitFor();
