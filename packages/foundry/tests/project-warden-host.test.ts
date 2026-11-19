@@ -465,6 +465,53 @@ test('settings: Claude decisions resolve to project Wardens with the host defaul
   );
 });
 
+test('a project host that fails to launch leaves no folder in the hosts directory', async () => {
+  const root = tempDir('primed-project-fail');
+  mkdirSync(join(root, '.claude'), { mode: 0o755 });
+  writeFileSync(join(root, '.claude', '.credentials.json'), '{}', { mode: 0o600 });
+  process.env.HOME = root;
+  delete process.env.CLAUDE_CONFIG_DIR;
+  const directory = join(root, 'receipts');
+  mkdirSync(directory, { mode: 0o700 });
+  const wardens = new ProjectWardenHosts({
+    model: 'claude-haiku-5-5',
+    effort: 'low',
+    timeoutMs: 3_000,
+    projectOf: () => 'P',
+    projectHost: { ...PROJECT_HOST_DEFAULTS, setupDeadlineMs: 2_000, maxRestarts: 0 },
+    rss: () => 100,
+  });
+  let launches = 0;
+  const primed = createPrimedDecisionHost({
+    source: defaultProfileSource('claude'),
+    directory,
+    model: 'claude-haiku-5-5',
+    effort: 'low',
+    maxConcurrent: 1,
+    callTimeoutMs: 3_000,
+    spawn: () => {
+      launches++;
+      throw Error('no CLI here');
+    },
+    statusSpawn: () => subscriptionStatusProcess(true),
+    projectHosts: wardens,
+  });
+  cleanup.push(async () => {
+    await wardens.close();
+    await primed.close();
+  });
+  const workspace = join(decisionHostsDirectory(), `primed-${primed.hostId}`);
+  wardens.openProject('P', [
+    {
+      spec: { key: 'T0:aux:domain:locks', instructions: 'LOCKS WARDEN', context: 'x' },
+      standby: '',
+    },
+  ]);
+  expect(await wardens.projectReady('P', 3_000)).toBe(false);
+  expect(launches).toBeGreaterThan(0);
+  expect(readdirSync(workspace).filter((name) => name.startsWith('project-'))).toEqual([]);
+});
+
 test('the decision host launches the project host on the decision login: its own flags, no CLAUDE.md, no session on disk; advice splits at the stable prefix', async () => {
   const root = tempDir('primed-project');
   mkdirSync(join(root, '.claude'), { mode: 0o755 });

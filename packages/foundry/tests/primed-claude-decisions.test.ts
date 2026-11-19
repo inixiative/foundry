@@ -1,5 +1,6 @@
 import { afterEach, expect, test } from 'bun:test';
 import {
+  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -10,7 +11,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { CLAUDE_DECISION_CACHE_ENV } from '@inixiative/agent-session';
 import { markedRun } from '@inixiative/archive/exemption';
 import { foundryRunKind } from '../src/archives/run-stamp';
@@ -276,6 +277,22 @@ test('Claude decisions run text-only on the shared Claude login, the role held i
   );
   expect(transport.launches.every((launch) => launch.exited)).toBe(true);
   expect(existsSync(join(run.root, '.claude', '.foundry-auth-shared'))).toBe(false);
+});
+
+test('a hosts folder that is not private refuses the host and says how to fix it', () => {
+  const own = process.env.FOUNDRY_HOSTS_DIR;
+  const hosts = join(mkdtempSync(join(tmpdir(), 'hosts-open-')), 'hosts');
+  roots.push(dirname(hosts));
+  mkdirSync(hosts, { mode: 0o755 });
+  chmodSync(hosts, 0o755);
+  process.env.FOUNDRY_HOSTS_DIR = hosts;
+  try {
+    expect(() => claudeDecisions(claudeTransport())).toThrow(
+      `Foundry's decision hosts folder ${hosts}, where Wardens run outside any git checkout, must be a directory you own with mode 0700`,
+    );
+  } finally {
+    process.env.FOUNDRY_HOSTS_DIR = own;
+  }
 });
 
 test('a login that is not a Claude subscription dispatches nothing and stays refused, with no API fallback', async () => {

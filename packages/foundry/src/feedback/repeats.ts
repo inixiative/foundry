@@ -126,7 +126,7 @@ const HOME = homedir();
 const tilde = (path: string) => (path.startsWith(HOME) ? `~${path.slice(HOME.length)}` : path);
 const ARCHIVE_SOURCE_ID = '00000000-0000-4000-8000-000000000000';
 
-/** Session files touched since `since` (Archive's collector walk): no subagent or Foundry decision sessions. */
+/** Session files touched since `since` (Archive's collector walk), subagents left out; Foundry's own decision sessions are dropped later by their stamped cwd (`cwdRunTag`). */
 export function sessionFiles(
   options: Pick<RepeatOptions, 'claudeProjects' | 'codexSessions'>,
   since: number,
@@ -138,10 +138,7 @@ export function sessionFiles(
   ] as const) {
     if (!directory || !existsSync(directory)) continue;
     for (const file of transcriptFiles(directory))
-      if (
-        !/[/\\](?:subagents[/\\]|[^/\\]*decision-receipts)/.test(file) &&
-        lstatSync(file).mtimeMs >= since
-      )
+      if (!/[/\\]subagents[/\\]/.test(file) && lstatSync(file).mtimeMs >= since)
         found.push({ harness, file });
   }
   return found;

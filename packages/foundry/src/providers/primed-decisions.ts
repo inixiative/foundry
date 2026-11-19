@@ -286,7 +286,13 @@ export function createPrimedDecisionHost(config: PrimedDecisionHostConfig) {
   mkdirSync(root, { mode: 0o700 });
   const hosts = decisionHostsDirectory();
   mkdirSync(hosts, { recursive: true, mode: 0o700 });
-  assertPrivateDirectory(hosts);
+  try {
+    assertPrivateDirectory(hosts);
+  } catch {
+    throw Error(
+      `Foundry's decision hosts folder ${hosts}, where Wardens run outside any git checkout, must be a directory you own with mode 0700 and not a symlink; fix it with \`chmod 700 ${hosts}\` (or remove it so Foundry makes it again)`,
+    );
+  }
   const workspace = join(hosts, `primed-${hostId}`);
   mkdirSync(workspace, { mode: 0o700 });
   // Its sessions run below these: Archive drops them as Foundry's own, never a person's work; the
@@ -801,55 +807,66 @@ export function createPrimedDecisionHost(config: PrimedDecisionHostConfig) {
         `project-${hash(projectId).slice(0, 12)}-${crypto.randomUUID().slice(0, 8)}`,
       );
       mkdirSync(dir, { mode: 0o700 });
+      /** Its folder, once nothing runs in it; one the CLI left something in is kept for inspection. */
+      const removeDir = () => {
+        try {
+          rmdirSync(dir);
+        } catch {
+          /* the CLI left something */
+        }
+        removeWorkspace();
+      };
       let child: DecisionProcess | undefined;
-      const session = new ClaudeCodeSession({
-        model: config.model,
-        ...(config.effort ? { effort: config.effort } : {}),
-        cwd: dir,
-        maxTurns: null,
-        persistSession: false,
-        // why: without its charter a Haiku host declined the setup message twice (2026-11-19).
-        baseContext: IN_SESSION_HOST_CHARTER,
-        // The login's profile; the Wardens are their own instructions, never the user's CLAUDE.md.
-        env: { ...profileEnvironment('claude', source.profileDirectory), ...PROJECT_HOST_ENV },
-        spawn: (argv, options) => {
-          child = claudeSpawn([...argv, ...PROJECT_HOST_ARGS], options, {
-            ...withoutCompetingCredentials(options.env),
-            ...claude.env(),
-            // why: the strip drops every CLAUDE_CODE_* key, the host's raised subagent cap included.
-            ...extension.env,
-            ...PROJECT_HOST_ENV,
-          });
-          return child;
-        },
-      });
-      session.extend(extension);
-      const ended = new Promise<string>((resolve) => {
-        session.onEvent((event) => {
-          if (event.kind === 'session_end') resolve(event.transportOutcome ?? 'ended');
-          if (event.kind === 'rate_limit' && event.limits) loginQuota.observe(event.limits);
-        });
-      });
+      let session: ClaudeCodeSession | undefined;
+      let ended!: Promise<string>;
       try {
+        session = new ClaudeCodeSession({
+          model: config.model,
+          ...(config.effort ? { effort: config.effort } : {}),
+          cwd: dir,
+          maxTurns: null,
+          persistSession: false,
+          // why: without its charter a Haiku host declined the setup message twice (2026-11-19).
+          baseContext: IN_SESSION_HOST_CHARTER,
+          // The login's profile; the Wardens are their own instructions, never the user's CLAUDE.md.
+          env: { ...profileEnvironment('claude', source.profileDirectory), ...PROJECT_HOST_ENV },
+          spawn: (argv, options) => {
+            child = claudeSpawn([...argv, ...PROJECT_HOST_ARGS], options, {
+              ...withoutCompetingCredentials(options.env),
+              ...claude.env(),
+              // why: the strip drops every CLAUDE_CODE_* key, the host's raised subagent cap included.
+              ...extension.env,
+              ...PROJECT_HOST_ENV,
+            });
+            return child;
+          },
+        });
+        session.extend(extension);
+        const started = session;
+        ended = new Promise<string>((resolve) => {
+          started.onEvent((event) => {
+            if (event.kind === 'session_end') resolve(event.transportOutcome ?? 'ended');
+            if (event.kind === 'rate_limit' && event.limits) loginQuota.observe(event.limits);
+          });
+        });
         await session.start();
       } catch (error) {
-        session.kill();
+        // A launch that failed, building or starting, leaves no folder behind.
+        session?.kill();
+        await child?.exited.catch(() => undefined);
+        removeDir();
         throw error;
       }
+      const running = session;
       // A real launch is a Bun subprocess with a pid; a test transport may have none.
       const pid = (child as { pid?: unknown } | undefined)?.pid;
       return {
         ...(typeof pid === 'number' ? { pid } : {}),
         ended,
         stop: async () => {
-          session.kill();
+          running.kill();
           await child?.exited.catch(() => undefined);
-          try {
-            rmdirSync(dir);
-          } catch {
-            /* the CLI left something: kept for inspection */
-          }
-          removeWorkspace();
+          removeDir();
         },
       };
     });
