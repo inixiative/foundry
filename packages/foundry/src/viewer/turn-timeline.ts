@@ -7,7 +7,10 @@ import {
   ADVICE_RESULTS,
   type AdviceOutcome,
   adviceSpoke,
+  type CallOutcome,
   type ClassifyStageTrace,
+  DEBUG_REASON_RESULTS,
+  type DebugReasonResult,
   GUARD_CHECK_RESULTS,
   type GuardCheckOutcome,
   type NativeEvidence,
@@ -73,8 +76,8 @@ export interface WardenDebugReason {
   readonly layer: number | null;
   readonly why: string | null;
   readonly revised: string | null;
-  /** How the debug call ended (`answered`, `failed`, `not-sent`). */
-  readonly status: string | null;
+  /** How the debug call ended (core `CallOutcome`); null when the row holds none. */
+  readonly outcome: CallOutcome<DebugReasonResult> | null;
 }
 
 export interface DeliveredChime {
@@ -190,7 +193,10 @@ function chorusLayers(classified: unknown): ChorusLayer[] {
     task: stage.task,
     outcome: stage.outcome ?? null,
     why: stage.why ?? null,
-    ...(stage.revised && stage.revised !== 'keep' ? { revised: stage.revised } : {}),
+    // A revision to the answer it already gave is a keep (as `askDebugReason` reads it).
+    ...(stage.revised && stage.revised !== 'keep' && stage.revised !== stage.outcome
+      ? { revised: stage.revised }
+      : {}),
     remarks: [...(stage.remarks ?? [])],
     model: stage.model ?? null,
     effort: stage.effort ?? null,
@@ -329,14 +335,13 @@ export function turnTimeline(detail: TurnDetail, sources: TurnTimelineSources = 
       .filter((p) => p.phase === 'warden-debug' && str(p.record.wraps))
       .map((p) => {
         const stage = num(p.record.stage);
-        const outcome = p.record.outcome;
         return [
           str(p.record.wraps)!,
           {
             layer: stage === null ? null : stage + 1,
             why: str(p.record.why) ?? null,
             revised: str(p.record.revised) ?? null,
-            status: (isObject(outcome) ? str(outcome.status) : undefined) ?? null,
+            outcome: parseCallOutcome(p.record.outcome, DEBUG_REASON_RESULTS) ?? null,
           },
         ];
       }),

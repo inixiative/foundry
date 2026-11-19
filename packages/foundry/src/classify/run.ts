@@ -137,6 +137,12 @@ export interface StageDebug {
 
 const message = (err: unknown) => (err as Error)?.message ?? String(err);
 
+const MAX_ERROR_CHARS = 200;
+/** An error message cut to what a journal row or a guard note keeps. */
+export function boundedError(message: string): string {
+  return message.length > MAX_ERROR_CHARS ? `${message.slice(0, MAX_ERROR_CHARS - 1)}…` : message;
+}
+
 /** The follow-up asked and read: its why and its verdict as given, with what it cost. */
 async function askFollowup(
   followUp: NonNullable<Extract<StageCall, { content: string }>['followUp']>,
@@ -266,7 +272,7 @@ export async function askDebugReason(
     return {
       ...base,
       outcome: unanswered(err),
-      error: message(err).slice(0, 300),
+      error: boundedError(message(err)),
       elapsedMs: Date.now() - started,
     };
   }

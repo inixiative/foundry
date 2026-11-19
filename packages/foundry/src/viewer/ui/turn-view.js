@@ -173,7 +173,9 @@ function DeliveryBody({ step }) {
 /** A Warden's debug reason: its why, asked after the decision on the same session (`warden-debug`). */
 function DebugReason({ reason }) {
   if (!reason) return null;
-  const said = reason.why ?? (reason.status && reason.status !== 'answered' ? reason.status : null);
+  const said =
+    reason.why ??
+    (reason.outcome && reason.outcome.status !== 'answered' ? outcomeLabel(reason.outcome) : null);
   return html`<div class="tv-dim">Why, asked after${reason.layer ? ` (layer ${reason.layer})` : ''}: ${said ?? '—'}${reason.revised ? ` · on reflection: ${reason.revised}` : ''}</div>`;
 }
 

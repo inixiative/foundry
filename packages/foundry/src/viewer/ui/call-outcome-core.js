@@ -7,6 +7,7 @@
 export {
   ADVICE_RESULTS,
   adviceSpoke,
+  DEBUG_REASON_RESULTS,
   GUARD_CHECK_RESULTS,
   parseCallOutcome,
   recordedOutcomeLabel,

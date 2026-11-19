@@ -8,6 +8,7 @@ import type { TurnDetail } from '../src/persistence/local-session-store';
 import { validateChorusSettings } from '../src/viewer/config';
 import { projectChorus } from '../src/viewer/config-resolve';
 import { type TimelineStep, turnTimeline } from '../src/viewer/turn-timeline';
+import { outcomeLabel } from '../src/viewer/ui/call-outcome.js';
 
 const cleanup: Array<() => void> = [];
 afterEach(() => {
@@ -100,10 +101,31 @@ test('the turn timeline shows the debug reason beside the Warden, on the layer t
     layer: 1,
     why: 'It adds a column after all.',
     revised: 'yes',
-    status: 'answered',
+    outcome: { status: 'answered', result: 'revised' },
   });
+  // The viewer labels a debug call's outcome the way it labels every other Warden call.
+  expect(outcomeLabel({ status: 'answered', result: 'revised' })).toBe('answered:revised');
+  expect(outcomeLabel({ status: 'failed', cause: 'timeout' })).toBe('failed:timeout');
   // The layer keeps only what the decision itself said.
   expect(chorus.regions[0]!.layers[0]?.revised).toBeUndefined();
+  // A layer's own follow-up shows "on reflection" only when it changed its answer.
+  const stages = (revised: string) => [{ stage: 0, task: 'point', outcome: 'yes', revised }];
+  const withStages = (revised: string) => {
+    const p = advice.record.participants[0]!;
+    const changed = {
+      ...advice,
+      record: {
+        ...advice.record,
+        participants: [{ ...p, classified: { stages: stages(revised) } }],
+      },
+    };
+    return turnTimeline({ ...detail, phases: [row(changed)] }).steps.find(
+      (s): s is Extract<TimelineStep, { kind: 'chorus' }> => s.kind === 'chorus',
+    )!.regions[0]!.layers[0]?.revised;
+  };
+  expect(withStages('yes')).toBeUndefined();
+  expect(withStages('keep')).toBeUndefined();
+  expect(withStages('no')).toBe('no');
 });
 
 test('chorus.heralds takes no debugReason: Heralds are not built', () => {

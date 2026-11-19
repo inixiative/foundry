@@ -64,6 +64,7 @@ export {
 export { parseRecognition, type Recognition } from './recognition';
 export {
   askDebugReason,
+  boundedError,
   type Carried,
   type ClassifiedSummary,
   type ClassifyResult,

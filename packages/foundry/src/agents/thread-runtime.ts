@@ -416,6 +416,8 @@ export interface ThreadRuntimeDeps {
   prefilter?: WardenPrefilter;
   /** Post-work learning deadline and knowledge size. */
   learning?: LearningConfig;
+  /** `false` asks no Warden debug reason on this manager's threads, whatever the chorus settings say. */
+  debugReason?: false;
   /**
    * The decision host for a classify stage that names its own model or effort (one host per pair):
    * `null` when that pair is the decision default (the Warden's own provider serves it), undefined
@@ -1075,7 +1077,8 @@ class ThreadRuntimeImpl implements ThreadRuntime {
       this._stageHosts,
     );
     // Wardens with a role ask their debug reason after each answer unless the chorus turns it off.
-    const chorusDebugReason = projectChorusSettings?.wardens?.debugReason !== false;
+    const chorusDebugReason =
+      deps.debugReason !== false && projectChorusSettings?.wardens?.debugReason !== false;
     if (domains.some((dc) => dc.expert))
       chorusStages.forEach((config, index) => {
         if (

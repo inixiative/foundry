@@ -961,7 +961,7 @@ interface Call {
 }
 
 /** A thread whose Warden says one pointer, as a live thread composes and delivers it. */
-function setup(c: FoundryConfig, pointer: string) {
+function setup(c: FoundryConfig, pointer: string, more: { debugReason?: false } = {}) {
   const calls: Call[] = [];
   const provider = (id: string): LLMProvider => ({
     id,
@@ -1000,6 +1000,7 @@ function setup(c: FoundryConfig, pointer: string) {
     log() {},
     warn() {},
     learning: { timeoutMs: 20, hardTimeoutMs: 1000 },
+    ...more,
   });
   managers.push(manager);
   const deps = { provider: central, providers };
@@ -1133,6 +1134,13 @@ test('each region Warden decision is followed by its debug reason, journalled as
   await off.factory.create('debug-off', { projectId: 'P' }).dispatch('worker', 'Add a lock');
   await Bun.sleep(20);
   expect(off.debugCalls()).toHaveLength(0);
+  // A manager built with `debugReason: false` (hidden threads) asks none, whatever the settings say.
+  c.projects.P!.chorus = { ...c.projects.P!.chorus, wardens: { debugReason: true } };
+  const hidden = setup(c, pointer, { debugReason: false });
+  await hidden.factory.create('debug-hidden', { projectId: 'P' }).dispatch('worker', 'Add a lock');
+  await Bun.sleep(20);
+  expect(hidden.all('pre')).toHaveLength(2);
+  expect(hidden.debugCalls()).toHaveLength(0);
 });
 
 test('the classifier output contract is read into relevant, pointer, where and level', async () => {

@@ -11,12 +11,13 @@
 import {
   ADVICE_RESULTS,
   adviceSpoke,
+  DEBUG_REASON_RESULTS,
   GUARD_CHECK_RESULTS,
   parseCallOutcome,
   recordedOutcomeLabel,
 } from './call-outcome-core.js';
 
-const RESULTS = [...ADVICE_RESULTS, ...GUARD_CHECK_RESULTS];
+const RESULTS = [...ADVICE_RESULTS, ...GUARD_CHECK_RESULTS, ...DEBUG_REASON_RESULTS];
 
 /** The journalled value as a checked outcome (core `parseCallOutcome`), or undefined when it is not one. */
 export const recordedOutcome = (value) => parseCallOutcome(value, RESULTS);
