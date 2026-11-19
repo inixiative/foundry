@@ -38,6 +38,7 @@ export const conversationGrant = (
     integrationId?: string;
   } = {},
 ): SignetGrant => ({
+  id: Bun.randomUUIDv7(),
   resourceModel: 'IntegrationResource',
   integrationResourceId: Bun.randomUUIDv7(),
   kind: 'conversation',
@@ -65,6 +66,7 @@ export const conversationScope = (
     where?: Record<string, unknown>;
   } = {},
 ): SignetGrant => ({
+  id: Bun.randomUUIDv7(),
   resourceModel: 'Integration',
   integrationId: opts.integrationId ?? Bun.randomUUIDv7(),
   kind: 'conversation',
