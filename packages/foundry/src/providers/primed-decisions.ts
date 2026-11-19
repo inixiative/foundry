@@ -3,8 +3,17 @@
  * @kind provider
  * @partOf primitive:decisions
  */
-import { appendFileSync, mkdirSync, realpathSync, rmdirSync, writeFileSync } from 'node:fs';
-import { isAbsolute, join } from 'node:path';
+import {
+  appendFileSync,
+  mkdirSync,
+  readdirSync,
+  realpathSync,
+  rmdirSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs';
+import { homedir } from 'node:os';
+import { isAbsolute, join, resolve } from 'node:path';
 import {
   CLAUDE_DECISION_CACHE_ENV,
   ClaudeCodeSession,
@@ -20,6 +29,7 @@ import {
   type PrimedSessions,
   type PrimeSpec,
 } from '@inixiative/agent-session';
+import { RUN_MARKER } from '@inixiative/archive/exemption';
 import {
   type CompletionOpts,
   type CompletionResult,
@@ -41,7 +51,7 @@ import {
   type StatusProcess,
   subscriptionStatus,
 } from './native-text-provider';
-import { assertPrivateProfile, assertProfile } from './private-profile';
+import { assertPrivateDirectory, assertPrivateProfile, assertProfile } from './private-profile';
 import type { ProjectWardenHosts } from './project-warden-hosts';
 import {
   fetchLoginQuotaResetAt,
@@ -68,6 +78,16 @@ export const PRIMED_DECISION_CONTEXT =
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const hash = sha256Hex;
+
+/**
+ * Where decision hosts run their sessions, `~/.foundry/hosts` (`FOUNDRY_HOSTS_DIR` moves it): outside
+ * every git work tree, because Claude Code runs its git context commands (status, log, rev-parse,
+ * config) at each session and subagent start; under `.foundry/decision-receipts` a project host ran
+ * them against Foundry's checkout for every Warden it started (152 git processes at once, 2026-11-19).
+ */
+export const decisionHostsDirectory = (
+  environment: Record<string, string | undefined> = process.env,
+) => resolve(environment.FOUNDRY_HOSTS_DIR ?? join(homedir(), '.foundry', 'hosts'));
 
 export interface PrimedDecisionHostConfig {
   source: NativeProfileSource;
@@ -261,12 +281,44 @@ export function createPrimedDecisionHost(config: PrimedDecisionHostConfig) {
   assertPrivateProfile(config.directory);
   assertProfile(source.profileDirectory, runtime);
   const hostId = Bun.randomUUIDv7();
+  // Receipts stay in the receipt directory; the sessions run in the host's own folder, outside any git work tree.
   const root = join(config.directory, `primed-${hostId}`);
   mkdirSync(root, { mode: 0o700 });
-  // Its sessions run below this root: Archive drops them as Foundry's own, never a person's work.
-  stampFoundryRun(root);
-  const cwd = join(root, 'fixture');
+  const hosts = decisionHostsDirectory();
+  mkdirSync(hosts, { recursive: true, mode: 0o700 });
+  try {
+    assertPrivateDirectory(hosts);
+  } catch {
+    throw Error(
+      `Foundry's decision hosts folder ${hosts}, where Wardens run outside any git checkout, must be a directory you own with mode 0700 and not a symlink; fix it with \`chmod 700 ${hosts}\` (or remove it so Foundry makes it again)`,
+    );
+  }
+  const workspace = join(hosts, `primed-${hostId}`);
+  mkdirSync(workspace, { mode: 0o700 });
+  // Its sessions run below these: Archive drops them as Foundry's own, never a person's work; the
+  // parent's marker still stamps them once this host's folder is removed on close.
+  stampFoundryRun(hosts);
+  stampFoundryRun(workspace);
+  const cwd = join(workspace, 'fixture');
   mkdirSync(cwd, { mode: 0o700 });
+  /** The host's folder, once it is closed and its sessions are gone; one the CLI left something in is kept for inspection. */
+  let workspaceClosed = false;
+  const removeWorkspace = () => {
+    if (!workspaceClosed) return;
+    try {
+      rmdirSync(cwd);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') return;
+    }
+    try {
+      // A project host still stopping keeps the folder, and its marker with it.
+      if (readdirSync(workspace).join() !== RUN_MARKER) return;
+      unlinkSync(join(workspace, RUN_MARKER));
+      rmdirSync(workspace);
+    } catch {
+      /* the CLI left something */
+    }
+  };
   const receiptsPath = join(root, 'decisions.jsonl');
   writeFileSync(
     join(root, 'host.json'),
@@ -749,60 +801,72 @@ export function createPrimedDecisionHost(config: PrimedDecisionHostConfig) {
     const loginQuota = quota;
     config.projectHosts.bindLauncher(loginQuota, async (projectId, extension) => {
       await claude.ready();
-      // Below the stamped root: Archive drops it as Foundry's own run.
+      // Below the stamped host folder, outside any git work tree: Archive drops it as Foundry's own run.
       const dir = join(
-        root,
+        workspace,
         `project-${hash(projectId).slice(0, 12)}-${crypto.randomUUID().slice(0, 8)}`,
       );
       mkdirSync(dir, { mode: 0o700 });
+      /** Its folder, once nothing runs in it; one the CLI left something in is kept for inspection. */
+      const removeDir = () => {
+        try {
+          rmdirSync(dir);
+        } catch {
+          /* the CLI left something */
+        }
+        removeWorkspace();
+      };
       let child: DecisionProcess | undefined;
-      const session = new ClaudeCodeSession({
-        model: config.model,
-        ...(config.effort ? { effort: config.effort } : {}),
-        cwd: dir,
-        maxTurns: null,
-        persistSession: false,
-        // why: without its charter a Haiku host declined the setup message twice (2026-11-19).
-        baseContext: IN_SESSION_HOST_CHARTER,
-        // The login's profile; the Wardens are their own instructions, never the user's CLAUDE.md.
-        env: { ...profileEnvironment('claude', source.profileDirectory), ...PROJECT_HOST_ENV },
-        spawn: (argv, options) => {
-          child = claudeSpawn([...argv, ...PROJECT_HOST_ARGS], options, {
-            ...withoutCompetingCredentials(options.env),
-            ...claude.env(),
-            // why: the strip drops every CLAUDE_CODE_* key, the host's raised subagent cap included.
-            ...extension.env,
-            ...PROJECT_HOST_ENV,
-          });
-          return child;
-        },
-      });
-      session.extend(extension);
-      const ended = new Promise<string>((resolve) => {
-        session.onEvent((event) => {
-          if (event.kind === 'session_end') resolve(event.transportOutcome ?? 'ended');
-          if (event.kind === 'rate_limit' && event.limits) loginQuota.observe(event.limits);
-        });
-      });
+      let session: ClaudeCodeSession | undefined;
+      let ended!: Promise<string>;
       try {
+        session = new ClaudeCodeSession({
+          model: config.model,
+          ...(config.effort ? { effort: config.effort } : {}),
+          cwd: dir,
+          maxTurns: null,
+          persistSession: false,
+          // why: without its charter a Haiku host declined the setup message twice (2026-11-19).
+          baseContext: IN_SESSION_HOST_CHARTER,
+          // The login's profile; the Wardens are their own instructions, never the user's CLAUDE.md.
+          env: { ...profileEnvironment('claude', source.profileDirectory), ...PROJECT_HOST_ENV },
+          spawn: (argv, options) => {
+            child = claudeSpawn([...argv, ...PROJECT_HOST_ARGS], options, {
+              ...withoutCompetingCredentials(options.env),
+              ...claude.env(),
+              // why: the strip drops every CLAUDE_CODE_* key, the host's raised subagent cap included.
+              ...extension.env,
+              ...PROJECT_HOST_ENV,
+            });
+            return child;
+          },
+        });
+        session.extend(extension);
+        const started = session;
+        ended = new Promise<string>((resolve) => {
+          started.onEvent((event) => {
+            if (event.kind === 'session_end') resolve(event.transportOutcome ?? 'ended');
+            if (event.kind === 'rate_limit' && event.limits) loginQuota.observe(event.limits);
+          });
+        });
         await session.start();
       } catch (error) {
-        session.kill();
+        // A launch that failed, building or starting, leaves no folder behind.
+        session?.kill();
+        await child?.exited.catch(() => undefined);
+        removeDir();
         throw error;
       }
+      const running = session;
       // A real launch is a Bun subprocess with a pid; a test transport may have none.
       const pid = (child as { pid?: unknown } | undefined)?.pid;
       return {
         ...(typeof pid === 'number' ? { pid } : {}),
         ended,
         stop: async () => {
-          session.kill();
+          running.kill();
           await child?.exited.catch(() => undefined);
-          try {
-            rmdirSync(dir);
-          } catch {
-            /* the CLI left something: kept for inspection */
-          }
+          removeDir();
         },
       };
     });
@@ -821,6 +885,8 @@ export function createPrimedDecisionHost(config: PrimedDecisionHostConfig) {
         await host.close();
       } finally {
         claude?.release();
+        workspaceClosed = true;
+        removeWorkspace();
       }
     },
   };

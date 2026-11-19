@@ -4,9 +4,9 @@
 // its Wardens are skipped, never sent to primed.
 
 import { afterEach, expect, test } from 'bun:test';
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { ClaudeCodeSession, type PrimeSpec } from '@inixiative/agent-session';
 import {
   EventStream,
@@ -19,6 +19,7 @@ import { createSourceResolver } from '../src/agents/thread-factory';
 import { defaultProfileSource } from '../src/providers/default-profiles';
 import {
   createPrimedDecisionHost,
+  decisionHostsDirectory,
   isStageSession,
   isWardenSession,
   primedRequest,
@@ -464,6 +465,58 @@ test('settings: Claude decisions resolve to project Wardens with the host defaul
   );
 });
 
+test('a project host that fails to launch leaves no folder in the hosts directory', async () => {
+  const root = tempDir('primed-project-fail');
+  mkdirSync(join(root, '.claude'), { mode: 0o755 });
+  writeFileSync(join(root, '.claude', '.credentials.json'), '{}', { mode: 0o600 });
+  process.env.HOME = root;
+  delete process.env.CLAUDE_CONFIG_DIR;
+  const directory = join(root, 'receipts');
+  mkdirSync(directory, { mode: 0o700 });
+  const wardens = new ProjectWardenHosts({
+    model: 'claude-haiku-5-5',
+    effort: 'low',
+    timeoutMs: 3_000,
+    projectOf: () => 'P',
+    projectHost: { ...PROJECT_HOST_DEFAULTS, setupDeadlineMs: 2_000, maxRestarts: 0 },
+    rss: () => 100,
+  });
+  let launches = 0;
+  // A failed launch reads the login's quota: a stub, so the real login is never probed and
+  // provider-limits' shared cache is never filled for later test files.
+  const quota = makeLoginQuotaPause({ fetchResetAt: async () => undefined });
+  cleanup.push(() => quota.close());
+  const primed = createPrimedDecisionHost({
+    source: defaultProfileSource('claude'),
+    directory,
+    model: 'claude-haiku-5-5',
+    effort: 'low',
+    maxConcurrent: 1,
+    callTimeoutMs: 3_000,
+    spawn: () => {
+      launches++;
+      throw Error('no CLI here');
+    },
+    statusSpawn: () => subscriptionStatusProcess(true),
+    quota,
+    projectHosts: wardens,
+  });
+  cleanup.push(async () => {
+    await wardens.close();
+    await primed.close();
+  });
+  const workspace = join(decisionHostsDirectory(), `primed-${primed.hostId}`);
+  wardens.openProject('P', [
+    {
+      spec: { key: 'T0:aux:domain:locks', instructions: 'LOCKS WARDEN', context: 'x' },
+      standby: '',
+    },
+  ]);
+  expect(await wardens.projectReady('P', 3_000)).toBe(false);
+  expect(launches).toBeGreaterThan(0);
+  expect(readdirSync(workspace).filter((name) => name.startsWith('project-'))).toEqual([]);
+});
+
 test('the decision host launches the project host on the decision login: its own flags, no CLAUDE.md, no session on disk; advice splits at the stable prefix', async () => {
   const root = tempDir('primed-project');
   mkdirSync(join(root, '.claude'), { mode: 0o755 });
@@ -555,6 +608,16 @@ test('the decision host launches the project host on the decision login: its own
   wardens.openProject('P', [{ spec: held, standby: '' }]);
   expect(await wardens.projectReady('P', 5_000)).toBe(true);
   const launch = tree.processes[0]!;
+  // The host works in a folder made for it, empty and outside any git work tree, never below the
+  // receipts (R-2026-11-19-07): Claude Code's git snapshot at each Warden start finds no repository.
+  const hostDirectory = launch.cwd!;
+  expect(dirname(dirname(hostDirectory))).toBe(decisionHostsDirectory());
+  expect(basename(hostDirectory)).toMatch(/^project-[0-9a-f]{12}-[0-9a-f]{8}$/);
+  expect(hostDirectory.startsWith(directory)).toBe(false);
+  expect(readdirSync(hostDirectory)).toEqual([]);
+  expect(
+    Bun.spawnSync(['git', 'rev-parse', '--is-inside-work-tree'], { cwd: hostDirectory }).exitCode,
+  ).not.toBe(0);
   expect(launch.argv).toContain('--no-session-persistence');
   expect(launch.argv).toContain('--disable-slash-commands');
   expect(launch.argv).toContain('--strict-mcp-config');

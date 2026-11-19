@@ -24,5 +24,9 @@ if (!process.env[RUN_ENV]) {
   stampRunDirectory(stamped, 'test');
   process.env.TMPDIR = stamped;
 }
+// Decision hosts work under `~/.foundry/hosts`; a test's go to its own temp folder.
+process.env.FOUNDRY_HOSTS_DIR ??= mkdtempSync(
+  join(process.env.TMPDIR ?? tmpdir(), 'foundry-hosts-'),
+);
 
 export const isolatedArchive = archive;

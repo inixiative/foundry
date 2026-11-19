@@ -1,19 +1,25 @@
 import { afterEach, expect, test } from 'bun:test';
 import {
+  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
   readFileSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { CLAUDE_DECISION_CACHE_ENV } from '@inixiative/agent-session';
+import { markedRun } from '@inixiative/archive/exemption';
 import { foundryRunKind } from '../src/archives/run-stamp';
 import { defaultProfileSource } from '../src/providers/default-profiles';
-import { createPrimedDecisionHost } from '../src/providers/primed-decisions';
+import {
+  createPrimedDecisionHost,
+  decisionHostsDirectory,
+} from '../src/providers/primed-decisions';
 import { SubscriptionAuthentication } from '../src/providers/subscription-authentication';
 import {
   buildSubscriptionDecisions,
@@ -43,6 +49,7 @@ function claudeTransport(options: { model?: string } = {}) {
   const launches: {
     argv: string[];
     env: Record<string, string | undefined>;
+    cwd: string;
     inputs: string[];
     /** The base context file's contents at spawn; agent-session removes the file when the session ends. */
     base?: string;
@@ -57,6 +64,7 @@ function claudeTransport(options: { model?: string } = {}) {
       const launch = {
         argv,
         env: config.env,
+        cwd: config.cwd,
         inputs: [] as string[],
         base:
           argv.includes('--append-system-prompt-file') && file
@@ -238,18 +246,53 @@ test('Claude decisions run text-only on the shared Claude login, the role held i
       expect(launch.argv).toContain('--no-session-persistence');
       expect(launch.argv).not.toContain('--resume');
     }
-    // The host's folder is stamped for Archive: its sessions are Foundry's own, never a person's work.
+    // Receipts stay in the receipt directory; the sessions run in the host's own empty folder under
+    // the hosts directory, outside any git work tree, stamped for Archive as Foundry's own.
     const [host] = readdirSync(join(run.root, 'receipts')).filter((name) =>
       name.startsWith('primed-'),
     );
-    expect(readFileSync(join(run.root, 'receipts', host!, '.archive-run'), 'utf8').trim()).toBe(
-      foundryRunKind(),
+    expect(readdirSync(join(run.root, 'receipts', host!)).sort()).toEqual([
+      'decisions.jsonl',
+      'host.json',
+    ]);
+    const workspace = join(decisionHostsDirectory(), host!);
+    expect(new Set(transport.launches.map((launch) => launch.cwd))).toEqual(
+      new Set([join(workspace, 'fixture')]),
     );
+    expect(readdirSync(join(workspace, 'fixture'))).toEqual([]);
+    expect(statSync(workspace).mode & 0o777).toBe(0o700);
+    for (const stamped of [workspace, decisionHostsDirectory()])
+      expect(readFileSync(join(stamped, '.archive-run'), 'utf8').trim()).toBe(foundryRunKind());
+    expect(markedRun(join(workspace, 'fixture'))).toBe(`run:${foundryRunKind()}`);
   } finally {
     await run.close();
   }
+  // Closed: its folder is gone, and the hosts directory's marker still stamps any session it left behind.
+  const [host] = readdirSync(join(run.root, 'receipts')).filter((name) =>
+    name.startsWith('primed-'),
+  );
+  expect(existsSync(join(decisionHostsDirectory(), host!))).toBe(false);
+  expect(markedRun(join(decisionHostsDirectory(), host!, 'fixture'))).toBe(
+    `run:${foundryRunKind()}`,
+  );
   expect(transport.launches.every((launch) => launch.exited)).toBe(true);
   expect(existsSync(join(run.root, '.claude', '.foundry-auth-shared'))).toBe(false);
+});
+
+test('a hosts folder that is not private refuses the host and says how to fix it', () => {
+  const own = process.env.FOUNDRY_HOSTS_DIR;
+  const hosts = join(mkdtempSync(join(tmpdir(), 'hosts-open-')), 'hosts');
+  roots.push(dirname(hosts));
+  mkdirSync(hosts, { mode: 0o755 });
+  chmodSync(hosts, 0o755);
+  process.env.FOUNDRY_HOSTS_DIR = hosts;
+  try {
+    expect(() => claudeDecisions(claudeTransport())).toThrow(
+      `Foundry's decision hosts folder ${hosts}, where Wardens run outside any git checkout, must be a directory you own with mode 0700`,
+    );
+  } finally {
+    process.env.FOUNDRY_HOSTS_DIR = own;
+  }
 });
 
 test('a login that is not a Claude subscription dispatches nothing and stays refused, with no API fallback', async () => {

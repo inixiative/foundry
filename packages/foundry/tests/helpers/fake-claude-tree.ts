@@ -7,6 +7,8 @@
 interface FakeTreeProcess {
   readonly argv: string[];
   readonly env: Record<string, string | undefined>;
+  /** The working directory it was started in, when the launcher named one. */
+  readonly cwd?: string;
   readonly pid: number;
   /** End it as a crash would. */
   crash(): void;
@@ -24,7 +26,10 @@ export function fakeClaudeTree(behavior: { noRoot?: boolean } = {}) {
   /** Agent types started, in order (root, dispatchers, members). */
   const started: string[] = [];
   let pid = 90_000;
-  const spawn = (argv: string[], options: { env: Record<string, string | undefined> }) => {
+  const spawn = (
+    argv: string[],
+    options: { cwd?: string; env: Record<string, string | undefined> },
+  ) => {
     let out!: ReadableStreamDefaultController<Uint8Array>;
     let exit!: (code: number) => void;
     let closed = false;
@@ -177,6 +182,7 @@ export function fakeClaudeTree(behavior: { noRoot?: boolean } = {}) {
     const self: FakeTreeProcess = {
       argv,
       env: options.env,
+      ...(options.cwd ? { cwd: options.cwd } : {}),
       pid: ++pid,
       crash: () => end(1),
       endDispatchers: () => {
