@@ -36,7 +36,6 @@ import {
   type ThreadFactory,
   WorkerRefusedError,
 } from '../../agents/thread-factory';
-import type { ThreadNamer } from '../../agents/thread-namer';
 import type { ArchiveCapture } from '../../archives/capture';
 import type { ThreadContextTracker } from '../../archives/thread-context';
 import { type FeedbackService, localOperator } from '../../feedback/service';
@@ -111,8 +110,6 @@ export interface RuntimeRoutesDeps {
   configStore: ConfigStore;
   deviceIdentityPath?: string;
   projectRegistry?: ProjectRegistry;
-  /** Agent-maintained thread names (optional). */
-  namer?: ThreadNamer;
   /** Re-derives a thread's branch/worktree/linked work when its worktree changes. */
   threadContext?: ThreadContextTracker;
   localStore?: LocalSessionStore | null;
@@ -221,7 +218,6 @@ export function registerRuntimeRoutes(
 } {
   const { harness, eventStream, interventions, assistProviderId, threadFactory, projectRegistry } =
     deps;
-  const namer = deps.namer;
   const threadContext = deps.threadContext;
   const localStore = deps.localStore;
   const archiveCapture = deps.archiveCapture;
@@ -235,7 +231,6 @@ export function registerRuntimeRoutes(
     threadFactory,
     configStore: deps.configStore,
     deviceIdentityPath: deps.deviceIdentityPath,
-    namer,
     localStore,
     ...(deps.nativeRecovery ? { nativeRecovery: deps.nativeRecovery } : {}),
     ...(deps.restartGate ? { restartGate: deps.restartGate } : {}),

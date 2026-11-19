@@ -1,160 +1,97 @@
 import { expect, test } from 'bun:test';
 import {
-  type CompletionOpts,
   ContextStack,
   EventStream,
   Executor,
   Harness,
   InterventionLog,
-  type LLMMessage,
-  type LLMProvider,
   Thread,
   threadTitle,
 } from '@inixiative/foundry-core';
 import { Hono } from 'hono';
-import { hasWorkContent, NAMING_INSTRUCTIONS, ThreadNamer } from '../src/agents/thread-namer';
-import { DECISION_PRIORITY } from '../src/providers/decision-priority';
+import {
+  FIRST_MESSAGE_NAME_MAX_CHARS,
+  firstMessageName,
+  hasWorkContent,
+  nameThreadFromMessage,
+} from '../src/tools/thread-record';
 import { ConfigStore } from '../src/viewer/config';
 import { registerRuntimeRoutes } from '../src/viewer/routes/runtime';
 import { withStreams } from './helpers/data-stream';
 
-const exchange = (
-  user = 'Fix the flaky login test',
-  agent = 'Fixed the race in login.spec.ts',
-) => ({
-  user,
-  agent,
-});
-const settle = () => Bun.sleep(5);
+const unnamed = () => new Thread('t', new ContextStack(), { description: '' });
 
-function namer(complete: LLMProvider['complete']) {
-  const thread = new Thread('t', new ContextStack(), { description: '', cwd: '/qa/project' });
-  let changes = 0;
-  const instance = new ThreadNamer({
-    provider: { id: 'decisions', complete },
-    changed: () => changes++,
-  });
-  return { thread, namer: instance, changes: () => changes };
-}
-
-test('a human name is a hard override: no naming decision runs and the agent name never shows', async () => {
-  let calls = 0;
-  const f = namer(async () => {
-    calls++;
-    return { model: 'm', content: '{"title":"Agent title"}' };
-  });
-  f.thread.rename('My architecture work');
-  f.namer.turnCompleted(f.thread, exchange());
-  await settle();
-  expect(calls).toBe(0);
-  expect(threadTitle(f.thread.meta)).toEqual({ text: 'My architecture work', source: 'human' });
+test("a first name is the message's words on one line, cut at a word with an ellipsis", () => {
+  expect(firstMessageName('  Fix the flaky\n\tlogin test  ')).toBe('Fix the flaky login test');
+  const long = `Please look at the billing export and ${'make it faster '.repeat(5)}`;
+  const name = firstMessageName(long);
+  expect(name.endsWith('…')).toBe(true);
+  expect(name.length).toBeLessThanOrEqual(FIRST_MESSAGE_NAME_MAX_CHARS + 1);
+  expect(long.startsWith(name.slice(0, -1))).toBe(true);
+  expect(long[name.length - 1]).toBe(' ');
+  // One unbroken word longer than the cap is cut hard.
+  expect(firstMessageName('x'.repeat(100))).toBe(`${'x'.repeat(FIRST_MESSAGE_NAME_MAX_CHARS)}…`);
 });
 
-test('the first completed turn names the thread on an isolated, text-only, review-priority decision', async () => {
-  let options: CompletionOpts | undefined;
-  let input: LLMMessage[] = [];
-  const f = namer(async (messages, opts) => {
-    input = messages;
-    options = opts;
-    return { model: 'm', content: '{"title":"Fix flaky login test"}' };
-  });
-  f.namer.turnCompleted(f.thread, exchange());
-  await settle();
-  expect(options).toMatchObject({
-    threadId: 't:aux:naming',
-    cwd: '/qa/project',
-    tools: false,
-    maxTurns: 1,
-    priority: DECISION_PRIORITY.review,
-  });
-  expect(input[0]).toEqual({ role: 'system', content: NAMING_INSTRUCTIONS });
-  expect(input[1]!.content).toContain('Current name: (none)');
-  expect(input[1]!.content).toContain('- Fix the flaky login test');
-  expect(f.thread.meta.foundryName?.text).toBe('Fix flaky login test');
-  expect(threadTitle(f.thread.meta)?.source).toBe('foundry');
-  expect(f.changes()).toBe(1);
+test('work content: greetings and filler carry none; a short request does', () => {
+  for (const text of [
+    'hi',
+    'Hello there!',
+    'thanks, ok',
+    'good morning',
+    'hey how are you doing today?',
+  ])
+    expect({ text, work: hasWorkContent(text) }).toEqual({ text, work: false });
+  for (const text of ['fix it', 'add dark mode', 'ZLT-42', 'why does login fail?'])
+    expect({ text, work: hasWorkContent(text) }).toEqual({ text, work: true });
 });
 
-test('clearing the human name shows the agent name again; a late decision never overwrites a human rename', async () => {
-  let finish!: (value: { model: string; content: string }) => void;
-  const f = namer(() => new Promise((resolve) => (finish = resolve)));
-  f.namer.turnCompleted(f.thread, exchange());
-  await settle();
-  f.thread.rename('Human renamed this');
-  finish({ model: 'm', content: '{"title":"Completely different work"}' });
-  await settle();
-  expect(threadTitle(f.thread.meta)).toEqual({ text: 'Human renamed this', source: 'human' });
-  expect(f.thread.meta.foundryName).toBeUndefined();
-  f.thread.meta.foundryName = { text: 'Old agent name', updatedAt: 1 };
-  f.thread.rename('');
-  expect(threadTitle(f.thread.meta)).toEqual({ text: 'Old agent name', source: 'foundry' });
+test("an unnamed thread takes the first message that names work, once, and never over a person's or the agent's name", () => {
+  const thread = unnamed();
+  expect(nameThreadFromMessage(thread, 'hey there')).toBe(false);
+  expect(thread.meta.foundryName).toBeUndefined();
+  expect(nameThreadFromMessage(thread, 'Fix the flaky login test')).toBe(true);
+  expect(threadTitle(thread.meta)).toEqual({ text: 'Fix the flaky login test', source: 'foundry' });
+  expect(thread.meta.foundryName?.by).toBeUndefined();
+  expect(nameThreadFromMessage(thread, 'Now add a retry')).toBe(false);
+  expect(thread.meta.foundryName?.text).toBe('Fix the flaky login test');
+
+  const person = unnamed();
+  person.rename('My name');
+  expect(nameThreadFromMessage(person, 'Fix the flaky login test')).toBe(false);
+  expect(threadTitle(person.meta)).toEqual({ text: 'My name', source: 'human' });
+
+  const gone = unnamed();
+  gone.dispose();
+  expect(nameThreadFromMessage(gone, 'Fix the flaky login test')).toBe(false);
 });
 
-test('a named thread is never decided again here: its own agent checks the name (NAME_CHECK_NOTE)', async () => {
-  let calls = 0;
-  const f = namer(async () => {
-    calls++;
-    return { model: 'm', content: '{"title":"Billing export CSV"}' };
-  });
-  for (const by of [undefined, 'agent'] as const) {
-    f.thread.meta.foundryName = {
-      text: 'Fix flaky login test',
-      updatedAt: 1,
-      ...(by ? { by } : {}),
-    };
-    f.namer.turnCompleted(f.thread, exchange());
-    f.namer.messageSent(f.thread, 'Now the billing export');
-    await settle();
-  }
-  expect(calls).toBe(0);
-  expect(f.thread.meta.foundryName?.text).toBe('Fix flaky login test');
+test('clearing the human name shows the Foundry name again', () => {
+  const thread = unnamed();
+  nameThreadFromMessage(thread, 'Fix the flaky login test');
+  thread.rename('Human renamed this');
+  expect(threadTitle(thread.meta)).toEqual({ text: 'Human renamed this', source: 'human' });
+  thread.rename('');
+  expect(threadTitle(thread.meta)).toEqual({ text: 'Fix the flaky login test', source: 'foundry' });
 });
 
-test('a failed or unparseable decision stays retryable on the next turn', async () => {
-  let calls = 0;
-  const f = namer(async () => {
-    calls++;
-    if (calls === 1) throw new Error('temporary provider failure');
-    if (calls === 2) return { model: 'm', content: 'not json' };
-    return { model: 'm', content: '{"title":"Recovered title"}' };
-  });
-  for (let i = 0; i < 3; i++) {
-    f.namer.turnCompleted(f.thread, exchange());
-    await settle();
-  }
-  expect(calls).toBe(3);
-  expect(f.thread.meta.foundryName?.text).toBe('Recovered title');
-});
-
-test('a naming decision does not mutate a disposed thread', async () => {
-  let finish!: (value: { model: string; content: string }) => void;
-  const f = namer(() => new Promise((resolve) => (finish = resolve)));
-  f.namer.turnCompleted(f.thread, exchange());
-  await settle();
-  f.thread.dispose();
-  finish({ model: 'm', content: '{"title":"Too late"}' });
-  await settle();
-  expect(f.thread.meta.foundryName).toBeUndefined();
-});
-
-test('the message route names the thread from its first message as it is sent, and a PATCH name overrides it', async () => {
+test('the message route names the thread from its first message as it is sent, with no model call, and a PATCH name overrides it', async () => {
   const stack = new ContextStack();
   const thread = new Thread('routed', stack, { description: 'Main conversation thread' });
-  thread.register(new Executor({ id: 'worker', stack, handler: async () => 'done' }));
+  let executed = 0;
+  thread.register(
+    new Executor({
+      id: 'worker',
+      stack,
+      handler: async () => {
+        executed++;
+        return 'done';
+      },
+    }),
+  );
   const harness = new Harness(thread);
   harness.setDefaultExecutor('worker');
   const app = new Hono();
-  const seen: Array<{ user: string; agent: string }> = [];
-  const routed = new ThreadNamer({
-    provider: {
-      id: 'decisions',
-      complete: async (messages) => {
-        seen.push({ user: messages[1]!.content, agent: '' });
-        return { model: 'm', content: '{"title":"Implement requested change"}' };
-      },
-    },
-    changed: () => {},
-  });
   registerRuntimeRoutes(
     app,
     withStreams({
@@ -162,7 +99,6 @@ test('the message route names the thread from its first message as it is sent, a
       eventStream: new EventStream(),
       interventions: new InterventionLog(),
       configStore: new ConfigStore('/tmp/unused-naming-config'),
-      namer: routed,
     }),
   );
   const response = await app.request('/api/messages', {
@@ -171,14 +107,10 @@ test('the message route names the thread from its first message as it is sent, a
     body: JSON.stringify({ message: 'Implement the requested change', threadId: 'routed' }),
   });
   expect(response.status).toBe(200);
-  await settle();
-  // Named as the first message is sent, from the message alone; a creation description does not block it.
-  expect(seen[0]!.user).toContain('- Implement the requested change');
-  expect(seen[0]!.user).not.toContain('latest replies');
-  // The completed turn does not decide again: the name is fresh and the work has not moved.
-  expect(seen).toHaveLength(1);
+  // Named from the message alone; a creation description does not block it. The executor is the only call.
+  expect(executed).toBe(1);
   expect(threadTitle(thread.meta)).toEqual({
-    text: 'Implement requested change',
+    text: 'Implement the requested change',
     source: 'foundry',
   });
 
@@ -197,90 +129,7 @@ test('the message route names the thread from its first message as it is sent, a
     body: JSON.stringify({ name: null }),
   });
   expect(((await cleared.json()) as { title: unknown }).title).toEqual({
-    text: 'Implement requested change',
+    text: 'Implement the requested change',
     source: 'foundry',
   });
-});
-
-test('a greeting names nothing; the name waits for a turn that asks for work and is decided from it', async () => {
-  const inputs: LLMMessage[][] = [];
-  const f = namer(async (messages) => {
-    inputs.push(messages);
-    return { model: 'm', content: '{"title":"Fix flaky login test"}' };
-  });
-  f.namer.turnCompleted(
-    f.thread,
-    exchange('hi there!', 'Foundry router invalid context slice; used the fallback executor.'),
-  );
-  await settle();
-  expect(inputs).toHaveLength(0);
-  expect(f.thread.meta.foundryName).toBeUndefined();
-
-  f.namer.turnCompleted(f.thread, exchange());
-  await settle();
-  expect(inputs).toHaveLength(1);
-  const prompt = inputs[0][1].content as string;
-  expect(prompt).not.toContain('hi there');
-  expect(prompt).not.toContain('context slice');
-  // What the person asked leads; the reply follows as context.
-  expect(prompt.indexOf('- Fix the flaky login test')).toBeGreaterThan(-1);
-  expect(prompt.indexOf('Fix the flaky login test')).toBeLessThan(prompt.indexOf('latest replies'));
-  expect(NAMING_INSTRUCTIONS).toContain("Never name a thread after Foundry's own diagnostics");
-  expect(f.thread.meta.foundryName?.text).toBe('Fix flaky login test');
-});
-
-test('the reply is context only: clipped well short of the message', async () => {
-  const inputs: LLMMessage[][] = [];
-  const f = namer(async (messages) => {
-    inputs.push(messages);
-    return { model: 'm', content: '{"title":"Fix flaky login test"}' };
-  });
-  f.namer.turnCompleted(f.thread, exchange('Fix the flaky login test', 'x'.repeat(1000)));
-  await settle();
-  const prompt = inputs[0][1].content as string;
-  expect(prompt).toContain(`- ${'x'.repeat(200)}`);
-  expect(prompt).not.toContain('x'.repeat(201));
-});
-
-test('work content: greetings and filler carry none; a short request does', () => {
-  for (const text of [
-    'hi',
-    'Hello there!',
-    'thanks, ok',
-    'good morning',
-    'hey how are you doing today?',
-  ])
-    expect({ text, work: hasWorkContent(text) }).toEqual({ text, work: false });
-  for (const text of ['fix it', 'add dark mode', 'ZLT-42', 'why does login fail?'])
-    expect({ text, work: hasWorkContent(text) }).toEqual({ text, work: true });
-});
-
-test('Foundry names an unnamed thread from its first message as it is sent, once, and never over a person', async () => {
-  const inputs: LLMMessage[][] = [];
-  const f = namer(async (messages) => {
-    inputs.push(messages);
-    return { model: 'm', content: '{"title":"Fix flaky login test"}' };
-  });
-  f.namer.messageSent(f.thread, 'hey there');
-  await settle();
-  expect(inputs).toHaveLength(0);
-  f.namer.messageSent(f.thread, 'Fix the flaky login test');
-  await settle();
-  expect(inputs).toHaveLength(1);
-  expect(inputs[0]![1]!.content).toContain('- Fix the flaky login test');
-  expect(threadTitle(f.thread.meta)).toEqual({ text: 'Fix flaky login test', source: 'foundry' });
-  // Already named: a later message does not name it again (its agent checks it, NAME_CHECK_NOTE).
-  f.namer.messageSent(f.thread, 'Now add a retry');
-  await settle();
-  expect(inputs).toHaveLength(1);
-
-  const g = namer(async (messages) => {
-    inputs.push(messages);
-    return { model: 'm', content: '{"title":"Other"}' };
-  });
-  g.thread.rename('My name');
-  g.namer.messageSent(g.thread, 'Fix the flaky login test');
-  await settle();
-  expect(inputs).toHaveLength(1);
-  expect(threadTitle(g.thread.meta)).toEqual({ text: 'My name', source: 'human' });
 });

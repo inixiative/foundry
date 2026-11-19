@@ -228,13 +228,109 @@ export function needsPlan(meta: Pick<ThreadMeta, 'plan'>): boolean {
   return !plan || finished(plan);
 }
 
+const STOP_WORDS = new Set([
+  'a',
+  'an',
+  'the',
+  'and',
+  'or',
+  'of',
+  'for',
+  'to',
+  'in',
+  'on',
+  'with',
+  'by',
+  'from',
+]);
+// Greetings and pleasantries: a message made only of these carries no work to name a thread after.
+const FILLER_WORDS = new Set([
+  'hi',
+  'hello',
+  'hey',
+  'hiya',
+  'howdy',
+  'yo',
+  'sup',
+  'there',
+  'thanks',
+  'thank',
+  'thx',
+  'you',
+  'ok',
+  'okay',
+  'cool',
+  'great',
+  'nice',
+  'good',
+  'morning',
+  'afternoon',
+  'evening',
+  'please',
+  'how',
+  'are',
+  'is',
+  'it',
+  'going',
+  'doing',
+  'today',
+  'test',
+  'testing',
+  'ping',
+  'yes',
+  'no',
+  'sure',
+]);
+
+/** Whether a person's message names any work: something beyond greetings, pleasantries and filler. */
+export function hasWorkContent(text: string): boolean {
+  return text
+    .toLowerCase()
+    .split(/[^\p{L}\p{N}]+/u)
+    .some(
+      (w) => w && !STOP_WORDS.has(w) && !FILLER_WORDS.has(w) && (w.length >= 3 || /\p{N}/u.test(w)),
+    );
+}
+
+/** The longest name Foundry makes from a first message, in characters. */
+export const FIRST_MESSAGE_NAME_MAX_CHARS = 60;
+
+/**
+ * A thread's first name, made from its first message's words with no model call (Aron, 2026-11-18:
+ * "Number 3 seems fine", keep showing the first message's words until the agent names the thread):
+ * one line, cut at a word boundary to `FIRST_MESSAGE_NAME_MAX_CHARS`, with an ellipsis when cut.
+ */
+export function firstMessageName(message: string): string {
+  const words = message
+    .replace(/\p{Cc}/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (words.length <= FIRST_MESSAGE_NAME_MAX_CHARS) return words;
+  const cut = words.slice(0, FIRST_MESSAGE_NAME_MAX_CHARS + 1);
+  const boundary = cut.lastIndexOf(' ');
+  return `${(boundary > 0 ? cut.slice(0, boundary) : cut.slice(0, FIRST_MESSAGE_NAME_MAX_CHARS)).trimEnd()}…`;
+}
+
+/**
+ * Name an unnamed thread from a person's message that names work (`hasWorkContent`; a greeting
+ * waits for the next message): the Foundry name, its first message's words. Its agent is asked to
+ * name it properly on that turn (`needsNameCheck`). Returns whether the thread was named.
+ */
+export function nameThreadFromMessage(thread: Thread, message: string): boolean {
+  if (thread.disposed || thread.meta.name?.text || thread.meta.foundryName) return false;
+  if (!hasWorkContent(message)) return false;
+  thread.meta.foundryName = { text: firstMessageName(message), updatedAt: Date.now() };
+  return true;
+}
+
 /** How long a thread's name stands before Foundry asks its agent to check it (Aron, 2026-11-18: "every 30 minutes"). */
 export const NAME_CHECK_AFTER_MS = 30 * 60_000;
 
 /**
- * Whether a turn asks the agent to check the thread's name: a Foundry or agent name set at least
- * `NAME_CHECK_AFTER_MS` ago and not asked about since (`askedAt`). A person's name is theirs; an
- * unnamed thread is named from its first message (`ThreadNamer`).
+ * Whether a turn asks the agent to name the thread: at once while it has only its first message's
+ * words (`nameThreadFromMessage`), and for a name the agent gave, once it is `NAME_CHECK_AFTER_MS`
+ * old. Either way at most once per `NAME_CHECK_AFTER_MS` (`askedAt`, when it was last asked). A
+ * person's name is theirs; an unnamed thread has nothing to check yet.
  */
 export function needsNameCheck(
   meta: Pick<ThreadMeta, 'name' | 'foundryName'>,
@@ -243,7 +339,8 @@ export function needsNameCheck(
 ): boolean {
   const named = meta.foundryName;
   if (meta.name?.text || !named) return false;
-  return now - Math.max(named.updatedAt, askedAt) >= NAME_CHECK_AFTER_MS;
+  const since = named.by === 'agent' ? Math.max(named.updatedAt, askedAt) : askedAt;
+  return now - since >= NAME_CHECK_AFTER_MS;
 }
 
 /** Record a plan on the thread. An outcome the agent newly marks done is a milestone: the thread shows it as done. */

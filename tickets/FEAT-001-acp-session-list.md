@@ -22,7 +22,7 @@ Hosts (Zed, Paseo, T3 Code) list an agent's past sessions so a user can pick one
 
 | Concern | Primitive |
 |---|---|
-| Thread list and titles | `ViewerThreadDirectory` (`packages/foundry/src/viewer/thread-directory.ts`) and `ThreadNamer` |
+| Thread list and titles | `ViewerThreadDirectory` (`packages/foundry/src/viewer/thread-directory.ts`) and `nameThreadFromMessage` / `rename_thread` (`tools/thread-record.ts`) |
 | Reopen | ACP `session/load` / `session/resume` (`agent.ts:786,811`) |
 
 ## Acceptance

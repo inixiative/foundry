@@ -44,14 +44,6 @@ test('thread names: the Foundry name shows until a person names the thread; bran
       yield { type: 'text', text: OUTPUT };
     },
   };
-  let decisions = 0;
-  const namingProvider: LLMProvider = {
-    id: 'decisions',
-    complete: async (_messages, opts) => {
-      if (opts?.threadId?.endsWith(':aux:naming')) decisions++;
-      return { model: 'mock', content: '{"title":"Ship self-maintained thread names"}' };
-    },
-  };
   const config = starterConfig('mock', 'mock');
   config.setupComplete = true;
   config.agents = {
@@ -79,7 +71,6 @@ test('thread names: the Foundry name shows until a person names the thread; bran
     configStore,
     configDir: dir,
     threadFactory: factory,
-    namingProvider,
   });
   const server = Bun.serve({
     hostname: '127.0.0.1',
@@ -107,7 +98,6 @@ test('thread names: the Foundry name shows until a person names the thread; bran
       () => !!thread.meta.foundryName && !!thread.meta.context?.references.length,
       'Foundry name and linked work',
     );
-    expect(decisions).toBe(1);
 
     const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
     page.setDefaultTimeout(15_000);
@@ -117,7 +107,7 @@ test('thread names: the Foundry name shows until a person names the thread; bran
     const header = page.locator('.thread-band');
     const treeLabel = page.locator('.tree-label').first();
     await header
-      .locator('.context-bar-title', { hasText: 'Ship self-maintained thread names' })
+      .locator('.context-bar-title', { hasText: 'Make threads name themselves' })
       .waitFor();
     expect(await header.locator('.context-bar-title').getAttribute('data-name-source')).toBe(
       'foundry',
@@ -130,7 +120,7 @@ test('thread names: the Foundry name shows until a person names the thread; bran
     await page.locator('.rename-modal').waitFor();
     await page.keyboard.press('Escape');
     await page.locator('.rename-modal').waitFor({ state: 'detached' });
-    expect(await treeLabel.innerText()).toBe('Ship self-maintained thread names');
+    expect(await treeLabel.innerText()).toBe('Make threads name themselves');
     expect(await header.locator('.context-bar-chip--branch').innerText()).toBe(
       'feat/thread-names-and-context',
     );
@@ -162,7 +152,7 @@ test('thread names: the Foundry name shows until a person names the thread; bran
     expect(await header.locator('.context-bar-name-source').count()).toBe(0);
     await page.locator('.tree-label', { hasText: 'Aron: names + context' }).waitFor();
     expect(await editor.locator('.thread-name-agent').innerText()).toBe(
-      "Foundry's name: Ship self-maintained thread names",
+      "Foundry's name: Make threads name themselves",
     );
     expect(thread.meta.name?.text).toBe('Aron: names + context');
     await page.screenshot({ path: join(out, '2-human-name.png') });
@@ -174,12 +164,11 @@ test('thread names: the Foundry name shows until a person names the thread; bran
       body: JSON.stringify({ message: 'Keep going', threadId: 'main' }),
     });
     await Bun.sleep(50);
-    expect(decisions).toBe(1);
     expect(await header.locator('.context-bar-title').innerText()).toBe('Aron: names + context');
 
     await editor.getByRole('button', { name: "Use Foundry's name" }).click();
     await header
-      .locator('.context-bar-title', { hasText: 'Ship self-maintained thread names' })
+      .locator('.context-bar-title', { hasText: 'Make threads name themselves' })
       .waitFor();
     expect(await header.locator('.context-bar-title').getAttribute('data-name-source')).toBe(
       'foundry',
