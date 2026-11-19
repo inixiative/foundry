@@ -12,8 +12,8 @@
   "recorded": {
     "service": "codex",
     "cli": "codex",
-    "recordedAt": "2026-11-19T02:01:51.403Z",
-    "agentSession": "0.18.0",
+    "recordedAt": "2026-11-19T05:08:52.094Z",
+    "agentSession": "0.20.0",
     "environment": "terminal"
   }
 }
