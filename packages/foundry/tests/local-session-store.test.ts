@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ContextStack, Thread } from '@inixiative/foundry-core';
 import { LocalSessionStore, TURN_NEVER_SENT } from '../src/persistence/local-session-store';
+import type { PersistedSpanRecord } from '../src/persistence/trace-record';
 
 const cleanup: Array<() => void> = [];
 afterEach(() => {
@@ -176,7 +177,7 @@ test('restart recovery fails queued turns as never sent and interrupts active on
       ?.meta,
   ).toMatchObject({ turnStatus: 'failed', neverSent: 1 });
   expect(reopened.threads().find((t) => t.id === a.id)?.meta.status).toBe('waiting');
-  expect(reopened.traces()).toEqual([]);
+  expect(reopened.traceSummaries()).toEqual([]);
 });
 
 test('a second viewer cannot recover turns owned by a live store', () => {
@@ -189,4 +190,31 @@ test('a second viewer cannot recover turns owned by a live store', () => {
     competing.close();
   }).toThrow();
   expect(store.turn('active-turn')?.status).toBe('queued');
+});
+
+test('trace summaries come back whole without reading the rest of the trace', () => {
+  const { path, a } = setup();
+  const store = new LocalSessionStore(path);
+  cleanup.push(() => store.close());
+  const summary = {
+    id: 'trace-big',
+    title: 's'.repeat(3000),
+    nested: { deeper: { deepest: { text: 'n'.repeat(3000), list: [1, 2, 3] } } },
+  };
+  const spans: PersistedSpanRecord[] = Array.from({ length: 20 }, (_, i) => ({
+    id: `span-${i}`,
+    name: 'work',
+    kind: 'agent',
+    status: 'ok',
+    output: 'b'.repeat(4000),
+    annotations: {},
+    startedAt: i,
+  }));
+  store.beginTurn(a, 'big', 'input');
+  store.completeTurn(a, 'big', 'out', {}, { ...trace('big'), summary, spans });
+  store.beginTurn(a, 'bare', 'input');
+  store.completeTurn(a, 'bare', 'out', {}, { ...trace('bare'), summary: undefined });
+  const [newest, older] = store.traceSummaries();
+  expect(newest).toEqual({ ...trace('bare'), summary: undefined });
+  expect(older).toEqual(summary);
 });

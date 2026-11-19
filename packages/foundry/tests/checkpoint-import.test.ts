@@ -56,12 +56,12 @@ test('checkpoint import preserves metadata and trace evidence without inventing 
     expect(store.threads()[0].meta.description).toBe('Human name');
     expect(store.trace('trace-1')!.root).toEqual(raw.traces[0].root);
     expect(store.traceForTurn('turn-1')!.root).toEqual(raw.traces[0].root);
-    expect(store.traces()).toHaveLength(1);
+    expect(store.traceSummaries()).toHaveLength(1);
     expect(store.turn('turn-1')).toBeUndefined();
     expect(store.messages('a')).toHaveLength(0);
     expect((store.trace('trace-1') as any).archive.kind).toBe('checkpoint-import');
     store.importCheckpoint(batch);
-    expect(store.traces()).toHaveLength(1);
+    expect(store.traceSummaries()).toHaveLength(1);
   } finally {
     store.close();
   }
