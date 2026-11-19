@@ -1,6 +1,7 @@
 // classify meets the chorus: a region declares its role, each stage reads a doc every region of its
 // role must hold, and each doc is its own source, version and warm key.
-import { afterEach, expect, test } from 'bun:test';
+import { afterEach, expect, spyOn, test } from 'bun:test';
+import * as fs from 'node:fs';
 import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -309,40 +310,62 @@ test('with API-token decisions, a stage on its own model is named in the view: n
   );
 });
 
+/** Reads the regions once the files have settled (a read that began before a write is never cached). */
+const settledRead = (regions: string) => {
+  Bun.sleepSync(5);
+  return readRegions(regions);
+};
+
+test('a settled regions read is reused: the next read touches no region file and gets its own copy', () => {
+  const { regions } = project();
+  const first = settledRead(regions);
+  expect(first.map((r) => r.id)).toEqual(['locks', 'queues']);
+  const listed = spyOn(fs, 'readdirSync');
+  const read = spyOn(fs, 'readFileSync');
+  try {
+    (first[0]!.concepts as string[]).push('mutated');
+    const again = readRegions(regions);
+    expect(listed).not.toHaveBeenCalled();
+    expect(read).not.toHaveBeenCalled();
+    expect(again[0]!.concepts).not.toContain('mutated');
+  } finally {
+    listed.mockRestore();
+    read.mockRestore();
+  }
+});
+
 test('a cached regions read follows every change on disk: an edited region.json, a new doc, a new region, a removed one', () => {
   const { regions } = project();
-  const first = readRegions(regions);
-  expect(first.map((r) => r.id)).toEqual(['locks', 'queues']);
-  // A copy: changing what one reader got never reaches the next.
-  (first[0]!.concepts as string[]).push('mutated');
-  expect(readRegions(regions)[0]!.concepts).not.toContain('mutated');
-
+  // Each change below follows a settled, cached read, so each assertion is the cache noticing it.
+  expect(settledRead(regions).map((r) => r.id)).toEqual(['locks', 'queues']);
   writeFileSync(
     join(regions, 'locks', 'region.json'),
     JSON.stringify({ id: 'locks', title: 'Locks, retitled', routing: 'Locks?' }),
   );
-  expect(readRegions(regions)[0]!.title).toBe('Locks, retitled');
+  expect(settledRead(regions)[0]!.title).toBe('Locks, retitled');
 
   recognise(regions, 'locks', '# Locks\n');
-  expect(Object.keys(readRegions(regions)[0]!.docs)).toContain('recognise.md');
+  expect(Object.keys(settledRead(regions)[0]!.docs)).toContain('recognise.md');
   recognise(regions, 'locks', '# Locks, with more to recognise\n');
-  expect(readRegions(regions)[0]!.docs['recognise.md']!.bytes).toBe(
+  expect(settledRead(regions)[0]!.docs['recognise.md']!.bytes).toBe(
     '# Locks, with more to recognise\n'.length,
   );
 
   mkdirSync(join(regions, 'rates'));
-  expect(readRegions(regions).map((r) => r.id)).toEqual(['locks', 'queues']);
+  expect(settledRead(regions).map((r) => r.id)).toEqual(['locks', 'queues']);
   writeFileSync(join(regions, 'rates', 'knowledge.md'), '# Rates\n');
   writeFileSync(
     join(regions, 'rates', 'region.json'),
     JSON.stringify({ id: 'rates', title: 'Rates', routing: 'Rates?' }),
   );
-  expect(readRegions(regions).map((r) => r.id)).toEqual(['locks', 'queues', 'rates']);
+  expect(settledRead(regions).map((r) => r.id)).toEqual(['locks', 'queues', 'rates']);
 
   rmSync(join(regions, 'queues', 'knowledge.md'));
+  expect(() => settledRead(regions)).toThrow('no knowledge.md');
+  // The malformed read is cached and replayed as the same error.
   expect(() => readRegions(regions)).toThrow('region queues at');
-  expect(() => readRegions(regions)).toThrow('no knowledge.md');
   writeFileSync(join(regions, 'queues', 'knowledge.md'), '# Queues\n');
+  expect(settledRead(regions).map((r) => r.id)).toEqual(['locks', 'queues', 'rates']);
   rmSync(join(regions, 'rates'), { recursive: true });
   expect(readRegions(regions).map((r) => r.id)).toEqual(['locks', 'queues']);
 });
