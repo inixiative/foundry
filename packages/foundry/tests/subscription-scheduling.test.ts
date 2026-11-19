@@ -149,7 +149,7 @@ test('background classes leave capacity for turns', async () => {
   expect(transport.peak).toBe(4);
 });
 
-test('debug reasons hold at most a quarter of the slots, so guards keep half', async () => {
+test('debug reasons alone hold at most a quarter of the slots', async () => {
   const transport = labelled(80);
   const { decisions } = scheduler(transport, { maxConcurrent: 8 });
   const debugs = Array.from({ length: 6 }, (_, i) =>
@@ -163,6 +163,26 @@ test('debug reasons hold at most a quarter of the slots, so guards keep half', a
   await Bun.sleep(30);
   expect(decisions.snapshot().running).toBe(6);
   await Promise.all([...debugs, ...guards]);
+});
+
+test('the class caps nest: reviews at their cap hold debug back, so guards still start', async () => {
+  const { decisions } = scheduler(labelled(80), { maxConcurrent: 8 });
+  const reviews = Array.from({ length: 4 }, (_, i) =>
+    ask(decisions, `r${i}`, `R${i}`, DECISION_PRIORITY.review),
+  );
+  const debugs = Array.from({ length: 4 }, (_, i) =>
+    ask(decisions, `d${i}`, `D${i}`, DECISION_PRIORITY.debug),
+  );
+  await Bun.sleep(30);
+  expect(decisions.snapshot().running).toBe(4);
+  const finished: string[] = [];
+  const guards = Array.from({ length: 2 }, (_, i) =>
+    ask(decisions, `g${i}`, `G${i}`, DECISION_PRIORITY.guard).then((r) => finished.push(r)),
+  );
+  await Bun.sleep(30);
+  expect(decisions.snapshot().running).toBe(6);
+  await Promise.all([...guards, ...debugs.map((d) => d.then((r) => finished.push(r))), ...reviews]);
+  expect(finished.slice(0, 2).sort()).toEqual(['g0', 'g1']);
 });
 
 test('full queues shed lower-priority waits instead of refusing a turn', async () => {
