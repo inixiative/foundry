@@ -45,9 +45,6 @@ function fixture(provider: LLMProvider, maxTraces = 1000) {
         model: 'mock',
         prompt: '',
         temperature: 0,
-        visibleLayers: [],
-        peers: [],
-        maxDepth: 1,
         enabled: true,
       },
     };

@@ -65,7 +65,6 @@ import {
 import { milestoneOf } from '../turns/milestones';
 import type { FoundryConfig } from '../viewer/config';
 import { projectChorus, resolveThreadView } from '../viewer/config-resolve';
-import { Cartographer, DEFAULT_ROUTE_INSTRUCTIONS } from './cartographer';
 import {
   allDegraded,
   type ChorusRetry,
@@ -84,7 +83,7 @@ import {
   PLAN_ASK_NOTE,
   STANDING_LAYERS,
 } from './chorus-reception';
-import { cartographerRoleId, resolveThreadDomains } from './configured-experts';
+import { resolveThreadDomains } from './configured-experts';
 import {
   activityTools,
   DomainLibrarian,
@@ -123,7 +122,6 @@ import {
   workItemText,
 } from './flow-orchestrator';
 import { Librarian } from './librarian';
-import { lowConfidenceRule, ReactiveMiddleware } from './reactive';
 import { regionDocSourceId } from './region-roster';
 import {
   buildRoleLayer,
@@ -145,8 +143,7 @@ import { type ConsumedMatcher, clipMomentText, consumedMatcher, workItemOf } fro
 // ---------------------------------------------------------------------------
 
 /**
- * Native session id for an auxiliary role of a thread (classifier, router,
- * cartographer, a Warden domain). The central executor keeps the bare thread
+ * Native session id for an auxiliary role of a thread (a Warden domain). The central executor keeps the bare thread
  * id; auxiliaries never share it, so their compaction and history never touch
  * the central session.
  */
@@ -155,18 +152,12 @@ export function auxiliarySessionId(threadId: string, role: string): string {
 }
 
 /**
- * Whether settings give a thread anything Foundry composes or decides: a layer on its stack, a
- * classifier or router, or a Warden. Without any the thread is unwrapped: no Cartographer call and no
- * thread-state reach its executor (viewer/config.ts, defaultAgents).
+ * Whether settings give a thread anything Foundry composes or decides: a layer on its stack or a
+ * Warden. Without either the thread is unwrapped: no thread-state reaches its executor
+ * (viewer/config.ts, defaultAgents).
  */
-function wrapsThread(config: FoundryConfig, wardens: number, stack: ContextStack): boolean {
-  return (
-    wardens > 0 ||
-    stack.layers.some((layer) => !STANDING_LAYERS.has(layer.id)) ||
-    Object.values(config.agents).some(
-      (agent) => agent.enabled && (agent.kind === 'classifier' || agent.kind === 'router'),
-    )
-  );
+function wrapsThread(wardens: number, stack: ContextStack): boolean {
+  return wardens > 0 || stack.layers.some((layer) => !STANDING_LAYERS.has(layer.id));
 }
 
 /** At most this many calls are held for one turn's guard; later calls of the turn are counted, not held. */
@@ -367,27 +358,9 @@ export interface ThreadDomainConfig {
   guardPrompt?: string;
   reviewPrompt?: string;
   reviewOpts?: CompletionOpts;
-  programmaticGuard?: boolean;
   /** Characters its instructions plus domain knowledge may take. Default: unbounded. */
   budget?: number;
 }
-
-/**
- * Built-in domain policy: the guard triggers (and programmatic guard) a configured Warden of that
- * domain uses when its settings name none. Passed as `domains`, they also register code Wardens over
- * layers of those names.
- */
-export const DEFAULT_THREAD_DOMAINS: ThreadDomainConfig[] = [
-  { domain: 'docs', layerId: 'docs', guardTriggers: ['file_write', 'Write'] },
-  { domain: 'conventions', layerId: 'conventions', guardTriggers: ['file_write', 'Write', 'Edit'] },
-  {
-    domain: 'security',
-    layerId: 'security',
-    guardTriggers: ['file_write', 'Write', 'Edit', 'Bash', 'bash'],
-  },
-  { domain: 'architecture', layerId: 'architecture', guardTriggers: ['file_write', 'Write'] },
-  { domain: 'memory', layerId: 'memory', guardTriggers: [], programmaticGuard: true },
-];
 
 /** A later classify stage's composed doc, and the source it composes from. */
 interface StageDoc {
@@ -427,20 +400,16 @@ export interface ThreadRuntimeDeps {
   config: FoundryConfig;
   /** How long a call waits for the chorus (a handoff's brief, a milestone's advice) before it runs without it (`CHORUS_AT_CALL_DEADLINE_MS`). */
   chorusAtCallDeadlineMs?: number;
-  /** Cheap, fast LLM shared by the Cartographer and Wardens. Scoped per thread and role. */
+  /** Cheap, fast LLM shared by the Wardens. Scoped per thread and role. */
   llm: LLMProvider;
   /** Unified event feed for the viewer. Optional in tests. */
   eventStream?: EventStream;
-  /** Atlas-mapped repo root. Loaded asynchronously per thread; failures are logged, never thrown. */
-  atlasRoot?: string;
   /** Wardens registered in code over stack layers. A configured Warden of the same domain wins. Default none. */
   domains?: ThreadDomainConfig[];
   /** Resolves configured source ids (a Warden's `domainKnowledge`); the factory passes its own on attach. */
   resolveSource?: ResolveSource;
   /** Already constructed phase providers, including explicit expert selections. */
   providers?: ReadonlyMap<string, LLMProvider>;
-  /** Threshold for the built-in low-confidence reaction rule. Default 0.5. */
-  lowConfidenceThreshold?: number;
   /** Pre-message deadlines, concurrency and budget. Validated by the orchestrator. */
   flow?: FlowTimingConfig;
   /** The process's Warden pre-filter (settings `prefilter`, off by default); absent asks every Warden. */
@@ -500,8 +469,6 @@ export interface LearningConfig {
   reviewProvider?: LLMProvider;
   /** Monotonic clock seam for deterministic deadline-boundary tests. */
   clock?: () => number;
-  /** Deprecated compatibility setting. Validated, but central work never waits for review. */
-  barrierMs?: number;
   /** Maximum characters a reviewer may write as thread knowledge. Default 4 000. */
   maxKnowledgeChars?: number;
 }
@@ -510,14 +477,10 @@ export interface LearningConfig {
 export interface ThreadRuntime {
   readonly thread: Thread;
   readonly librarian: Librarian;
-  readonly cartographer: Cartographer;
   readonly domainLibrarians: ReadonlyMap<string, DomainLibrarian>;
   readonly flowOrchestrator: FlowOrchestrator;
-  readonly reactive: ReactiveMiddleware;
   /** Native session ids used by this thread's auxiliaries (never the central id). */
   readonly auxiliarySessionIds: ReadonlyArray<string>;
-  /** Resolves once async setup (atlas load) has settled. Never rejects. */
-  readonly ready: Promise<void>;
   readonly disposed: boolean;
   /** Domain reviews not yet settled, including timed-out calls still running. */
   readonly learningOutstanding: number;
@@ -539,8 +502,7 @@ export interface ThreadRuntime {
   /** Exact retained job inspection only. Never admits queued/replacement work. */
   reconcileNativeReview(domain: string, jobId: string): Promise<boolean>;
   /**
-   * Apply edited settings from the next turn: Cartographer and Warden instructions and Warden guard
-   * triggers. Returns what only a new thread picks up (added, removed or remapped Wardens).
+   * Apply edited settings from the next turn: Warden instructions and Warden guard triggers. Returns what only a new thread picks up (added, removed or remapped Wardens).
    */
   reconfigure(config: FoundryConfig, domains: ReturnType<typeof resolveThreadDomains>): string[];
   /**
@@ -616,7 +578,6 @@ export interface PhaseRecordInput {
   readonly turnId: string | null;
   readonly dispatchId: string | null;
   readonly phase:
-    | 'route'
     | 'advice'
     | 'guard-request'
     | 'guard-outcome'
@@ -665,7 +626,6 @@ export interface ToolEvidenceState {
   readonly uncorrelated: ReadonlyArray<CorrelatedToolObservation>;
 }
 
-const REACTIVE_MIDDLEWARE_ID = 'reactive';
 const FLOW_MIDDLEWARE_ID = 'flow-pre-message';
 const MAX_REVIEWED_IDS = 500;
 const MAX_QUEUED_REVIEWS = 8;
@@ -715,8 +675,8 @@ function positiveMs(name: string, value: number | undefined, fallback: number): 
 // ---------------------------------------------------------------------------
 
 /**
- * Attaches the per-thread runtime (Librarian, Cartographer, Wardens,
- * FlowOrchestrator, reactive rules, event bridges, persistence sinks, native
+ * Attaches the per-thread runtime (Librarian, Wardens, FlowOrchestrator,
+ * event bridges, persistence sinks, native
  * session bindings) to threads and tears it down again. One manager per
  * process; one runtime per live thread id. Attach is idempotent for the same
  * Thread object and rejects a different object with a live id. Dispose is
@@ -834,7 +794,6 @@ export class ThreadRuntimeManager {
       config,
       new Map(thread.stack.layers.map((l) => [l.id, l])),
       {
-        policy: this._deps.domains ?? DEFAULT_THREAD_DOMAINS,
         programmatic: this._deps.domains ?? [],
         llm: this._deps.llm,
         providers: this._deps.providers,
@@ -934,7 +893,6 @@ export class ThreadRuntimeManager {
               .map((l) => [l.id, l]),
           ),
           {
-            policy: this._deps.domains ?? DEFAULT_THREAD_DOMAINS,
             programmatic: this._deps.domains ?? [],
             llm: this._deps.llm,
             providers: this._deps.providers,
@@ -980,12 +938,9 @@ class ThreadRuntimeImpl implements ThreadRuntime {
   readonly generation = newId('runtime');
   readonly thread: Thread;
   readonly librarian: Librarian;
-  readonly cartographer: Cartographer;
   readonly domainLibrarians: Map<string, DomainLibrarian>;
   readonly flowOrchestrator: FlowOrchestrator;
-  readonly reactive: ReactiveMiddleware;
   readonly auxiliarySessionIds: string[];
-  readonly ready: Promise<void>;
 
   private _unsubs: Array<() => void> = [];
   private _disposed = false;
@@ -998,8 +953,6 @@ class ThreadRuntimeImpl implements ThreadRuntime {
   /** Where Warden slots compose: the thread's scope, or (claude-project) its project's root. */
   private _wardenScope!: OwnershipScope;
   private _resolveSource: ResolveSource | undefined;
-  private _cartographerRole!: string;
-  private _cartographerInstructions!: ContextLayer;
   /** Each configured Warden's composed slots, by domain, and the doc layer of each later classify stage. */
   private _roleLayers = new Map<
     string,
@@ -1142,7 +1095,7 @@ class ThreadRuntimeImpl implements ThreadRuntime {
     this.librarian = new Librarian({
       signals: factualSignals,
       stack,
-      delivered: wrapsThread(deps.config, domains.length, stack),
+      delivered: wrapsThread(domains.length, stack),
     });
     this._unsubs.push(
       signals.onAny((signal) => {
@@ -1191,34 +1144,8 @@ class ThreadRuntimeImpl implements ThreadRuntime {
       : this._scope;
     this._wardenScope = wardenScope;
     this._resolveSource = deps.resolveSource;
-    const cartographerRole = cartographerRoleId(deps.config);
-    this._cartographerRole = cartographerRole;
-    // The Cartographer receives instructions only; its domain knowledge is the map it builds.
-    this._cartographerInstructions = buildRoleLayer(
-      deps.config,
-      cartographerRole,
-      'instructions',
-      ['instructions'],
-      { builtIn: DEFAULT_ROUTE_INSTRUCTIONS, scope: this._scope },
-    );
-    const cartographerId = auxiliarySessionId(thread.id, 'cartographer');
-    this.auxiliarySessionIds.push(cartographerId);
-    this.cartographer = new Cartographer({
-      stack,
-      signals,
-      llm: scopedProvider(deps.llm, { threadId: cartographerId, cwd }),
-      llmOpts: { maxTokens: 256, temperature: 0 },
-      instructions: this._cartographerInstructions,
-      role: cartographerRole,
-      budget: roleComposition(deps.config.composition, cartographerRole).budget,
-      atlasRoot: deps.atlasRoot,
-    });
-    this.cartographer.buildMap();
-
     this.domainLibrarians = new Map();
     this._learningTimeoutMs = positiveMs('learning.timeoutMs', deps.learning?.timeoutMs, 10_000);
-    // Retained configuration is validated for compatibility, but never adds a central wait.
-    positiveMs('learning.barrierMs', deps.learning?.barrierMs, 5_000);
     this._hardTimeoutMs = positiveMs(
       'learning.hardTimeoutMs',
       deps.learning?.hardTimeoutMs,
@@ -1319,7 +1246,6 @@ class ThreadRuntimeImpl implements ThreadRuntime {
           guardTriggers: dc.guardTriggers,
           advisePrompt: dc.advisePrompt,
           guardPrompt: dc.guardPrompt,
-          programmaticGuard: dc.programmaticGuard,
           threadKnowledgeLayer,
           maxKnowledgeChars: deps.learning?.maxKnowledgeChars,
           stages: bound,
@@ -1441,17 +1367,7 @@ class ThreadRuntimeImpl implements ThreadRuntime {
       if (floorLayer && floorLayer.content !== floor) floorLayer.set(floor, 'foundry');
     };
 
-    // Classifier/router auxiliaries are named by the factory-built agents
-    // (see thread-factory.ts); list them so their native events can be bound.
-    for (const [agentId, agentCfg] of Object.entries(deps.config.agents)) {
-      if (!agentCfg.enabled) continue;
-      if (agentCfg.kind === 'classifier' || agentCfg.kind === 'router') {
-        this.auxiliarySessionIds.push(auxiliarySessionId(thread.id, `agent:${agentId}`));
-      }
-    }
-
     this.flowOrchestrator = new FlowOrchestrator({
-      cartographer: this.cartographer,
       domainLibrarians: this.domainLibrarians,
       librarian: this.librarian,
       stack,
@@ -1460,23 +1376,16 @@ class ThreadRuntimeImpl implements ThreadRuntime {
       ...(deps.prefilter ? { prefilter: deps.prefilter, threadId: thread.id } : {}),
     });
 
-    this.reactive = new ReactiveMiddleware({ stack, signals });
-    this.reactive.addRule(lowConfidenceRule(deps.lowConfidenceThreshold ?? 0.5));
-    thread.middleware.use(REACTIVE_MIDDLEWARE_ID, this.reactive.asMiddleware());
-
     // Pre-message decoration: every domain assesses the frozen input in
     // parallel with routing; the sealed plan and composed decoration reach
     // the executor through dispatch annotations. The delivery ledger is
     // committed only after the executor demonstrably received the turn.
     const flow = this.flowOrchestrator;
     const domainLibrarians = this.domainLibrarians;
-    // One concurrent pre-message phase: the Cartographer and every domain assessment start on the
-    // message's first decision dispatch (classify/route, themselves concurrent), against the same
-    // frozen input, and the executor dispatch picks up the sealed plan. Without a decision stage the
-    // executor dispatch starts it. Composition stays deterministic (configured order, hashes).
-    // The input is frozen when the message arrives: thread state is as of the previous turn, so this
-    // message's own classification is not part of what the Cartographer and Wardens assess. Layer
-    // hydration (focus, warming) happens only in the executor dispatch that uses the plan.
+    // One concurrent pre-message phase: the executor dispatch starts every domain assessment against
+    // the same frozen input and picks up the sealed plan. Composition stays deterministic (configured
+    // order, hashes). The input is frozen when the message arrives: thread state is as of the previous
+    // turn. Layer hydration (focus, warming) happens only in the executor dispatch that uses the plan.
     const prepare = async (
       message: string,
       identity: { messageId: string; threadId: string; projectId?: string } | undefined,
@@ -1535,19 +1444,6 @@ class ThreadRuntimeImpl implements ThreadRuntime {
       }
       return { barrier, plan, failure, warmShortfalls };
     };
-    const early = new Map<
-      string,
-      { message: string; startedAt: number; preparation: ReturnType<typeof prepare> }
-    >();
-    // A preparation whose message never reaches an executor (a failed or non-executor route) is dropped after ten minutes.
-    const pruneEarly = setInterval(() => {
-      for (const [id, entry] of early) if (Date.now() - entry.startedAt > 600_000) early.delete(id);
-    }, 60_000);
-    (pruneEarly as { unref?: () => void }).unref?.();
-    this._unsubs.push(() => {
-      clearInterval(pruneEarly);
-      early.clear();
-    });
     const identityOf = (ctx: { messageId?: string; threadId?: string; projectId?: string }) =>
       ctx.messageId && ctx.threadId
         ? { messageId: ctx.messageId, threadId: ctx.threadId, projectId: ctx.projectId }
@@ -1555,14 +1451,6 @@ class ThreadRuntimeImpl implements ThreadRuntime {
     thread.middleware.use(FLOW_MIDDLEWARE_ID, async (ctx, next) => {
       const agentCfg = deps.config.agents[ctx.agentId];
       if (typeof ctx.payload !== 'string') return next();
-      if ((agentCfg?.kind === 'classifier' || agentCfg?.kind === 'router') && ctx.messageId) {
-        if (!early.has(ctx.messageId)) {
-          const preparation = prepare(ctx.payload, identityOf(ctx));
-          preparation.catch(() => undefined); // observed by the executor dispatch that consumes it
-          early.set(ctx.messageId, { message: ctx.payload, startedAt: Date.now(), preparation });
-        }
-        return next();
-      }
       if (agentCfg?.kind !== 'executor') return next();
 
       // This dispatch is live from here until it returns: only a live
@@ -1578,15 +1466,12 @@ class ThreadRuntimeImpl implements ThreadRuntime {
           overflow: 0,
         });
       try {
-        const started = ctx.messageId ? early.get(ctx.messageId) : undefined;
-        if (ctx.messageId) early.delete(ctx.messageId);
         await refreshScope();
-        // Nothing wraps an unwrapped thread (no layers, decision roles or Wardens): the message reaches
-        // the session as typed, with no Cartographer call, no plan and no thread-state; it holds only
+        // Nothing wraps an unwrapped thread (no layers or Wardens): the message reaches
+        // the session as typed, with no plan and no thread-state; it holds only
         // Foundry's standing briefing. Settings that add a layer wrap it from the next turn.
         // A conversation thread is always wrapped, so a member's note reaches the session.
         const wrapped =
-          !!started ||
           domainLibrarians.size > 0 ||
           stack.layers.some(
             (layer) => layer !== this.librarian.layer && !STANDING_LAYERS.has(layer.id),
@@ -1628,9 +1513,7 @@ class ThreadRuntimeImpl implements ThreadRuntime {
               failure: undefined,
               warmShortfalls: [],
             }
-          : await (started && started.message === ctx.payload
-              ? started.preparation
-              : prepare(ctx.payload, identityOf(ctx)));
+          : await prepare(ctx.payload, identityOf(ctx));
 
         let prepared: HydrationResult | undefined;
         if (wrapped)
@@ -1638,17 +1521,17 @@ class ThreadRuntimeImpl implements ThreadRuntime {
             if (failure || !preparedPlan) throw failure ?? Error('pre-message produced no plan');
             const plan = preparedPlan;
             prepared = await flow.hydrateDelta(plan);
-            // The plan's layers are what routing and the Wardens asked for: on-demand ones join this assembly.
+            // The plan's layers are what the Wardens asked for: on-demand ones join this assembly.
             for (const id of plan.layers) ctx.requestLayer?.(id);
             ctx.annotations.injectionPlan = plan;
             ctx.annotations.decoration = prepared.decoration;
-            // Durable at seal, before the central call: the routing request and every expert's advice request
-            // with its three parts survive a failed or interrupted central turn. Journal failure is explicit.
+            // Durable at seal, before the central call: every expert's advice request with its three
+            // parts survives a failed or interrupted central turn. Journal failure is explicit.
             const sealedTurn = ctx.messageId ?? null,
               sealedDispatch = ctx.dispatchId ?? null;
             // A refused configured journal is recorded as failed and warned, never as durable; the central turn is not blocked.
             const journalSealed = (
-              phase: 'route' | 'advice',
+              phase: 'advice',
               record: Record<string, unknown>,
               id = newId('phase'),
             ): PhaseJournalOutcome => {
@@ -1667,11 +1550,6 @@ class ThreadRuntimeImpl implements ThreadRuntime {
                 return 'failed';
               }
             };
-            const routeJournal = journalSealed('route', {
-              inputHash: plan.input.hash,
-              sealedAt: plan.sealedAt,
-              routing: plan.routing,
-            });
             // Every Warden's decision is journalled, silence and skips included, so the silence rate is
             // measurable; a skipped (cold) Warden was given nothing, so its row carries no inputs.
             const adviceRowId = newId('phase');
@@ -1733,7 +1611,7 @@ class ThreadRuntimeImpl implements ThreadRuntime {
               'advice',
               plan.contributions,
             );
-            ctx.annotations.phaseJournal = { route: routeJournal, advice: adviceJournal };
+            ctx.annotations.phaseJournal = { advice: adviceJournal };
             const decided = plan.contributions
               .map((c) => `${c.domain}:${callOutcomeLabel(c.outcome)}`)
               .join(', ');
@@ -1778,13 +1656,10 @@ class ThreadRuntimeImpl implements ThreadRuntime {
         const handedBack = landed?.messageId ?? ctx.messageId;
         if (didWork && handedBack && wrapped) void this._handBack(handedBack, result.output);
         // Historical phase record carried on the turn's own result meta (the journalled agent message):
-        // the sealed routing outcome with its request, and the guard entries recorded on this live
-        // dispatch under their observation identities. Entries still pending here stay pending in the
+        // the guard entries recorded on this live dispatch under their observation identities. Entries still pending here stay pending in the
         // record unless they report before the journal serializes; none becomes an all-clear.
         const phases = () => {
-          const sealed = ctx.annotations.injectionPlan as InjectionPlan | undefined;
           return {
-            ...(sealed ? { routing: sealed.routing } : {}),
             guards: liveId ? (this._liveDispatches.get(liveId)?.guards ?? []) : [],
             ...(ctx.annotations.phaseJournal ? { journal: ctx.annotations.phaseJournal } : {}),
           };
@@ -2246,20 +2121,6 @@ class ThreadRuntimeImpl implements ThreadRuntime {
     this._unsubs.push(thread.onDispose(() => this.dispose()));
 
     thread.start();
-
-    this.ready = deps.atlasRoot
-      ? this.cartographer
-          .loadAtlas()
-          .then((atlas) => {
-            if (atlas)
-              log(
-                `[Cartographer:${thread.id}] atlas loaded: ${atlas.concepts.length} concepts (${atlas.source}) from ${deps.atlasRoot}`,
-              );
-          })
-          .catch((err) => {
-            warn(`[Cartographer:${thread.id}] atlas load failed: ${(err as Error).message}`);
-          })
-      : Promise.resolve();
   }
 
   get disposed(): boolean {
@@ -4212,17 +4073,6 @@ class ThreadRuntimeImpl implements ThreadRuntime {
     const next = new Set<string>();
     // Every replacement is built before any is applied: an edit that cannot be built changes nothing.
     const swaps: Array<() => void> = [];
-    const cartographerRole = cartographerRoleId(config);
-    if (cartographerRole === this._cartographerRole) {
-      const fresh = roleSources(config, cartographerRole, 'instructions', ['instructions'], {
-        builtIn: DEFAULT_ROUTE_INSTRUCTIONS,
-      });
-      const budget = roleComposition(config.composition, cartographerRole).budget;
-      swaps.push(() => {
-        replaceRoleSources(this._cartographerInstructions, fresh, this._scope);
-        this.cartographer.setBudget(budget);
-      });
-    } else deferred.push('Cartographer role change applies to new threads');
     for (const dc of domains) {
       next.add(dc.domain);
       const lib = this.domainLibrarians.get(dc.domain);
@@ -4289,11 +4139,9 @@ class ThreadRuntimeImpl implements ThreadRuntime {
     for (const unsub of this._unsubs) unsub();
     this._unsubs = [];
 
-    this.thread.middleware.remove(REACTIVE_MIDDLEWARE_ID);
     this.thread.middleware.remove(FLOW_MIDDLEWARE_ID);
 
     this.flowOrchestrator.dispose();
-    this.cartographer.dispose();
     this.librarian.dispose();
     this.thread.stack.removeLayer(this.librarian.layer.id);
     for (const layer of this._knowledgeLayers) this.thread.stack.removeLayer(layer.id);

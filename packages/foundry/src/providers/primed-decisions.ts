@@ -6,6 +6,7 @@
 import { appendFileSync, mkdirSync, realpathSync, rmdirSync, writeFileSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
 import {
+  CLAUDE_DECISION_CACHE_ENV,
   ClaudeCodeSession,
   type ClaudeInSessionDecisions,
   ClaudePrimedSessions,
@@ -365,14 +366,14 @@ export function createPrimedDecisionHost(config: PrimedDecisionHostConfig) {
             effort: config.effort,
             cwd,
             baseInstructions: PRIMED_DECISION_CONTEXT,
-            // The login's profile, so transcript cleanup looks where the child wrote (empty for the default login).
             env: profileEnvironment('claude', source.profileDirectory),
             maxConcurrent: config.maxConcurrent,
             maxSessions: config.primedSessions ?? CLAUDE_PRIMED_SESSIONS,
             timeoutMs: config.callTimeoutMs,
             onEvent,
             // Synchronous launcher: the login was verified and registered before the first decision.
-            spawn: (argv, options) => claudeSpawn(argv, options, claude.env()),
+            spawn: (argv, options) =>
+              claudeSpawn(argv, options, { ...claude.env(), ...CLAUDE_DECISION_CACHE_ENV }),
           })
         : new CodexPrimedSessions({
             model: config.model,

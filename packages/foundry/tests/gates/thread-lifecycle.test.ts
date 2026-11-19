@@ -1,7 +1,6 @@
 import { expect, test } from 'bun:test';
 import {
   type BaseAgent,
-  Classifier,
   ContextLayer,
   ContextStack,
   EventStream,
@@ -20,28 +19,17 @@ function setup() {
     model: 'mock',
     temperature: 0,
     maxTokens: 256,
-    visibleLayers: [],
-    peers: [],
-    maxDepth: 1,
     enabled: true,
   };
   config.agents = {
-    classifier: { ...settings, id: 'classifier', kind: 'classifier', prompt: 'Classify' },
     worker: { ...settings, id: 'worker', kind: 'executor', prompt: '' },
   };
   const layer = new ContextLayer({ id: 'system' });
   layer.set('Project baseline');
   const stack = new ContextStack([layer]);
   const agents = new Map<string, BaseAgent>([
-    [
-      'classifier',
-      new Classifier({
-        id: 'classifier',
-        stack,
-        handler: async () => ({ value: { category: 'bug', tags: ['qa'] }, confidence: 1 }),
-      }),
-    ],
     ['worker', new Executor({ id: 'worker', stack, handler: async () => 'done' })],
+    ['reviewer', new Executor({ id: 'reviewer', stack, handler: async () => 'looked' })],
   ]);
   const events = new EventStream();
   const runtime = new ThreadRuntimeManager({
@@ -64,11 +52,13 @@ function setup() {
 
 const signal = (id: string): Signal => ({
   id,
-  kind: 'classification',
+  kind: 'info',
   source: 'qa',
-  content: { category: id },
+  content: id,
   timestamp: Date.now(),
 });
+const noted = (runtime: ThreadRuntimeManager, threadId: string, id: string) =>
+  runtime.get(threadId)!.librarian.state.recentActivity.some((entry) => entry.includes(id));
 
 test('G2: each production thread receives exactly one isolated runtime', async () => {
   const { factory, runtime, events } = setup();
@@ -81,8 +71,8 @@ test('G2: each production thread receives exactly one isolated runtime', async (
     expect(b.stack.layers.filter((layer) => layer.id === 'thread-state')).toHaveLength(1);
     expect(runtime.get('a')!.librarian).not.toBe(runtime.get('b')!.librarian);
     await a.signals.emit(signal('PRIVATE-A'));
-    expect(runtime.get('a')!.librarian.state.messageCount).toBe(1);
-    expect(runtime.get('b')!.librarian.state.messageCount).toBe(0);
+    expect(noted(runtime, 'a', 'PRIVATE-A')).toBe(true);
+    expect(noted(runtime, 'b', 'PRIVATE-A')).toBe(false);
     expect(b.stack.getLayer('thread-state')!.content).not.toContain('PRIVATE-A');
     const observed = events.recent({ kind: 'signal' });
     expect(observed).toHaveLength(1);
@@ -103,7 +93,8 @@ test('G2: archive stops knowledge and event subscribers', async () => {
     await a.signals.emit(signal('after'));
     expect(owned.disposed).toBe(true);
     expect(runtime.has('a')).toBe(false);
-    expect(owned.librarian.state.messageCount).toBe(1);
+    expect(owned.librarian.state.recentActivity.some((e) => e.includes('before'))).toBe(true);
+    expect(owned.librarian.state.recentActivity.some((e) => e.includes('after'))).toBe(false);
     expect(events.recent()).toHaveLength(before);
     expect(a.middleware.size).toBe(0);
   } finally {
@@ -140,20 +131,16 @@ test("G2: a duplicate live thread id cannot silently reuse a different object's 
   }
 });
 
-test('G2: a real classified turn updates its own thread knowledge and activity', async () => {
+test('G2: a real turn updates its own thread activity', async () => {
   const { factory, runtime } = setup();
   try {
     const a = factory.create('a');
     factory.create('b');
     const harness = new Harness(a);
-    harness.setClassifier('classifier');
     harness.setDefaultExecutor('worker');
     await harness.send({ id: 'turn-a', payload: 'Fix the bug' });
-    const state = runtime.get('a')!.librarian.state;
-    expect(state.messageCount).toBe(1);
-    expect(state.lastClassification?.category).toBe('bug');
-    expect(state.recentActivity.some((entry) => entry.includes('worker'))).toBe(true);
-    expect(runtime.get('b')!.librarian.state.messageCount).toBe(0);
+    expect(noted(runtime, 'a', 'worker')).toBe(true);
+    expect(noted(runtime, 'b', 'worker')).toBe(false);
   } finally {
     runtime.disposeAll();
   }
@@ -210,15 +197,18 @@ test('G2: harness stages do not duplicate dispatch observations', async () => {
       observed.push(event);
     });
     const harness = new Harness(a);
-    harness.setClassifier('classifier');
-    harness.setDefaultExecutor('worker');
+    harness.setFlow({
+      stages: [
+        { agentId: 'reviewer', role: 'enrich', invocation: 'always' },
+        { agentId: 'worker', role: 'execute', invocation: 'always' },
+      ],
+    });
     await harness.send({ id: 'dedup-turn', payload: 'Fix it' });
     expect(observed).toHaveLength(2);
     expect(observed.map((event) => (event.content as { agentId: string }).agentId).sort()).toEqual([
-      'classifier',
+      'reviewer',
       'worker',
     ]);
-    expect(runtime.get('a')!.librarian.state.messageCount).toBe(1);
   } finally {
     runtime.disposeAll();
   }

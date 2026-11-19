@@ -198,7 +198,7 @@ export interface FoundryConfig {
   kingdomInferenceAssignments?: Record<string, KingdomInferenceAssignment>;
   /** Explicit thread-to-source UUID assignments, applied on Foundry startup. */
   nativeAuthenticationSelections?: Record<string, string>;
-  /** Background domain review phase; does not override classifier/router or executor profiles. */
+  /** Background domain review phase; does not override decision or executor profiles. */
   learning?: LearningSettings;
   /** The feedback lifecycle: capture, tuning prompts and the role-file changes they apply (docs/FEEDBACK-LOOP.md). */
   feedback?: FeedbackSettings;
@@ -238,7 +238,7 @@ export interface FoundryConfig {
    * instructions and domain knowledge of every role; see docs/usage-and-context.md.
    */
   composition?: CompositionSettings;
-  /** Global defaults: executor provider/model + classifier provider/model. */
+  /** Global defaults: executor provider/model + decision provider/model. */
   defaults: {
     /** The provider new threads run on (e.g. `claude-code`, `codex`). */
     provider: string;
@@ -250,10 +250,10 @@ export interface FoundryConfig {
     kingdomOwnerKey?: string;
     /** Reasoning effort for Codex threads; omitted, Codex's own default. */
     codexEffort?: ReasoningEffort;
-    /** Classifier/router provider. Defaults to same as executor if omitted. */
-    classifierProvider?: string;
-    /** Classifier/router model. Defaults to same as executor if omitted. */
-    classifierModel?: string;
+    /** The decision roles' provider (Wardens, feedback routing); omitted, the decision default. */
+    decisionProvider?: string;
+    /** The decision roles' model; omitted, the decision default. */
+    decisionModel?: string;
   };
 
   /**
@@ -505,23 +505,6 @@ export type ListPatch<T> =
   | { append?: T[]; remove: T[] };
 
 /**
- * Execution environment — where an agent runs its tool calls.
- *
- * - "bash": Direct shell access (default for Claude Code provider). Full system access.
- * - "just-bash": Virtualized bash via just-bash (isolated, no real filesystem).
- *   Use for sandboxed agents that need shell semantics without system access.
- * - "typescript": TypeScript/JS execution in isolate (V8/Bun). Agents write code
- *   to filter data, call APIs, transform results — fewer tokens than bash pipelines.
- * - "browser": Browser automation via Playwright MCP or JS execution in page.
- *   Two modes: click-based (Playwright snapshot → click/fill) or code-based
- *   (agent writes JS executed in page context — more token-efficient).
- * - "hybrid": Multiple environments available. Agent chooses per-task.
- *
- * See docs/EXECUTION_ENVIRONMENTS.md for guidance on when to use each.
- */
-export type ExecutionEnv = 'bash' | 'just-bash' | 'typescript' | 'browser' | 'hybrid';
-
-/**
  * Browser-specific configuration for agents with browser access.
  */
 export interface BrowserConfig {
@@ -546,28 +529,23 @@ export interface BrowserConfigOverride
 }
 
 /**
- * Agent kinds. Classifiers, routers and executors are thread agents; the Cartographer is a runtime
- * role configured here. A Warden (`domain-librarian`, flowRole `domain-advising`) is never written in
- * settings: each is generated from a project's regions (`agents/region-roster.ts`), so it appears only
- * in a project view (`refuseHandNamedWardens`). The Librarian is programmatic and the Herald is not
+ * Agent kinds. Executors are thread agents. A Warden (`domain-librarian`, flowRole
+ * `domain-advising`) is never written in settings: each is generated from a project's regions
+ * (`agents/region-roster.ts`), so it appears only in a project view. The Librarian is programmatic and the Herald is not
  * wired, so neither takes settings.
  */
-export const AGENT_KINDS = [
-  'executor',
-  'classifier',
-  'router',
-  'cartographer',
-  'domain-librarian',
-] as const;
+export const AGENT_KINDS = ['executor', 'domain-librarian'] as const;
 export type AgentKind = (typeof AGENT_KINDS)[number];
+/** The kinds settings may declare: a Warden is generated, never written. */
+const SETTINGS_AGENT_KINDS: readonly AgentKind[] = ['executor'];
 
 export interface AgentSettingsConfig {
   /** The agent's id: its key in `agents`, and how projects extend or override it. */
   id: string;
-  /** What the agent does in a turn (executor, classifier, router…). */
+  /** What the agent does in a turn (an executor; a generated Warden is a domain-librarian). */
   kind: AgentKind;
-  /** FLOW.md role: context-routing, domain-advising, execution, correctness-checking, signal-reconciliation. */
-  flowRole?: string;
+  /** The agent's part in a turn: execution (an executor) or domain-advising (a generated Warden). */
+  flowRole?: 'execution' | 'domain-advising';
   /** Domain this agent operates in (e.g., "docs", "security", "cross-thread"). */
   domain?: string;
   /**
@@ -582,19 +560,8 @@ export interface AgentSettingsConfig {
   provider?: string;
   /** The model this agent runs on; omitted, the global default model. */
   model?: string;
-  /** Temperature, set per agent. Classifiers/routers want 0, creative agents want higher. */
+  /** Temperature, set per agent. Decisions want 0, creative agents want higher. */
   temperature?: number;
-  /**
-   * Which layers this agent can READ (empty = all).
-   * These are the layers whose content appears in this agent's assembled context.
-   */
-  visibleLayers: string[];
-  /**
-   * Which layers this agent can WRITE (empty = none). The Librarian owns thread-state. A Warden owns
-   * no configured layer: it writes only its generated thread-knowledge layer, and reads its
-   * knowledge from the composition view.
-   */
-  ownedLayers?: string[];
   /**
    * Warden: source ids its domain knowledge composes from, before the composition view's files
    * (docs/usage-and-context.md, "Composition view"). A project extension appends its own.
@@ -602,23 +569,13 @@ export interface AgentSettingsConfig {
   domainKnowledge?: string[];
   /** Tool names that trigger this configured Warden's post-action guard. [] disables guards. */
   guardTriggers?: string[];
-  /** Peer agent IDs for delegation. */
-  peers: string[];
-  /** Max call-chain depth. */
-  maxDepth: number;
-  /** Whether this agent can use tools (true) or is text-only (false). Default: true for executors, false for classifier/router. */
+  /** Whether this agent can use tools (true) or is text-only (false). Default: true. */
   tools?: boolean;
   /** Extended thinking / reasoning effort. "none" | "low" | "medium" | "high" | number (budget tokens). */
   thinking?: 'none' | 'low' | 'medium' | 'high' | number;
   /** Permission level for code execution runtimes. Default: "bypass". */
   permissions?: 'bypass' | 'restricted';
-  /**
-   * Execution environment for this agent's tool calls.
-   * Default: "bash" (via Claude Code provider).
-   * See ExecutionEnv type for options.
-   */
-  executionEnv?: ExecutionEnv;
-  /** Browser-specific config. Only relevant when executionEnv includes browser access. */
+  /** Browser-specific config. */
   browser?: BrowserConfig;
   /** Per-call timeout in ms. */
   timeout?: number;
@@ -628,13 +585,10 @@ export interface AgentSettingsConfig {
   enabled: boolean;
   /**
    * When this agent runs in the pipeline:
-   * - "always": runs on every request (default for classifier, router)
-   * - "on-demand": available but only invoked when middleware/router explicitly requests it
-   * - "conditional": runs when its condition matches the current classification/route context
+   * - "always": runs on every request
+   * - "on-demand": available but only invoked when middleware explicitly requests it
    */
-  invocation?: 'always' | 'on-demand' | 'conditional';
-  /** Condition for "conditional" invocation. Ignored for other modes. */
-  condition?: InvocationCondition;
+  invocation?: 'always' | 'on-demand';
 }
 
 /** Instructions and domain knowledge are the two composable chunks of a project Warden. */
@@ -642,33 +596,21 @@ export type AgentChunk = 'instructions' | 'domainKnowledge';
 
 /**
  * A project agent composed with a global one. Instructions (`prompt`) and domain knowledge
- * (`domainKnowledge`, sources for the parent's owned layer) are appended to the parent's under
+ * (`domainKnowledge`, its sources) are appended to the parent's under
  * a heading per chunk; a chunk named in `override` replaces the parent's instead. Identity
- * (kind, role, domain, owned layer) is the parent's; other fields override, lists patch.
+ * (kind, role, domain) is the parent's; other fields override, lists patch.
  */
 export interface AgentExtension
   extends Omit<
     Partial<AgentSettingsConfig>,
-    | 'id'
-    | 'kind'
-    | 'flowRole'
-    | 'domain'
-    | 'ownedLayers'
-    | 'visibleLayers'
-    | 'guardTriggers'
-    | 'peers'
-    | 'browser'
-    | 'condition'
+    'id' | 'kind' | 'flowRole' | 'domain' | 'guardTriggers' | 'browser'
   > {
   /** Global agent id. */
   extends: string;
   domainKnowledge?: string[];
   override?: AgentChunk[];
-  visibleLayers?: ListPatch<string>;
   guardTriggers?: ListPatch<string>;
-  peers?: ListPatch<string>;
   browser?: BrowserConfigOverride | null;
-  condition?: InvocationConditionOverride | null;
 }
 
 export type ProjectAgentSettings = AgentSettingsConfig | AgentExtension;
@@ -688,7 +630,6 @@ export const isAgentExtension = (agent: ProjectAgentSettings): agent is AgentExt
  *   "this thread's convention cache is stale" → runtime mutation, not config.
  *
  * Agents relate to layers as readers, writers, or both:
- * - Cartographer: READS doc/architecture layers to route context
  * - Domain Librarians: READ + WRITE their own domain layer (warm it, guard it)
  * - Librarian: WRITES the thread-state layer (sole writer)
  * - Executor (Claude Code): READS assembled context from all active layers
@@ -706,11 +647,6 @@ export interface LayerSettingsConfig {
    * what the warmed content looks like.
    */
   description?: string;
-  /**
-   * What shape the warmed content takes; helps humans and agents understand what's inside.
-   * E.g., "JSON array of convention objects", "Markdown documentation index", "Compact thread-state JSON".
-   */
-  contentShape?: string;
   /** Instruction prompt for this layer. */
   prompt: string;
   /**
@@ -730,42 +666,18 @@ export interface LayerSettingsConfig {
   enabled: boolean;
   /**
    * When instances of this layer are included in context assembly:
-   * - "always": included on every request (default for system, conventions)
-   * - "on-demand": only included when explicitly requested via route.contextSlice or middleware
-   * - "conditional": included when its condition matches classification/route context
+   * - "always": included on every request
+   * - "on-demand": only included when middleware explicitly requests it
    */
-  activation?: 'always' | 'on-demand' | 'conditional';
-  /** Condition for "conditional" activation. Ignored for other modes. */
-  condition?: InvocationCondition;
+  activation?: 'always' | 'on-demand';
 }
 
 export interface LayerSettingsOverride
-  extends Omit<Partial<LayerSettingsConfig>, 'sourceIds' | 'writers' | 'condition'> {
+  extends Omit<Partial<LayerSettingsConfig>, 'sourceIds' | 'writers'> {
   /** Change the layer's data sources for this project: replace the list, or append and remove ids. */
   sourceIds?: ListPatch<string>;
   /** Change which agents may write the layer in this project: replace, or append and remove ids. */
   writers?: ListPatch<string>;
-  /** Change or clear (null) when a conditional layer is included in this project. */
-  condition?: InvocationConditionOverride | null;
-}
-
-/**
- * Condition for conditional invocation/activation.
- * Matches when ANY specified field matches (OR across fields, OR within arrays).
- */
-export interface InvocationCondition {
-  /** Match if classification.category is one of these. */
-  categories?: string[];
-  /** Match if any classification tag overlaps with these. */
-  tags?: string[];
-  /** Match if route.destination is one of these. */
-  routes?: string[];
-}
-
-export interface InvocationConditionOverride {
-  categories?: ListPatch<string>;
-  tags?: ListPatch<string>;
-  routes?: ListPatch<string>;
 }
 
 export interface DataSourceConfig {
@@ -864,8 +776,8 @@ export function defaultConfig(): FoundryConfig {
     defaults: {
       provider: 'claude-code',
       model: 'fable',
-      classifierProvider: SUBSCRIPTION_DECISIONS,
-      classifierModel: DECISION_MODEL,
+      decisionProvider: SUBSCRIPTION_DECISIONS,
+      decisionModel: DECISION_MODEL,
     },
     vendors: vendorSettingsFromRegistry(),
     agents: {},
@@ -891,8 +803,8 @@ export function starterConfig(
   if (!subscriptionWorker(providerId)) {
     // Subscription mode runs the worker on Claude Code or Codex; any other worker is the API-token mode.
     config.apiTokens = true;
-    delete config.defaults.classifierProvider;
-    delete config.defaults.classifierModel;
+    delete config.defaults.decisionProvider;
+    delete config.defaults.decisionModel;
   }
   config.setupComplete = false;
   return config;
@@ -904,7 +816,7 @@ export const DEFAULT_EXECUTOR_ID = 'executor';
 /**
  * The agents a fresh install has: one executor with no instructions of its own, no provider and no
  * model, so it inherits the defaults and the user's message reaches the native session as typed. No
- * classifier, router or Warden runs, and no layer is composed into the session, until settings add one.
+ * Warden runs, and no layer is composed into the session, until settings add one.
  */
 export function defaultAgents(): Record<string, AgentSettingsConfig> {
   return {
@@ -914,10 +826,6 @@ export function defaultAgents(): Record<string, AgentSettingsConfig> {
       flowRole: 'execution',
       prompt: '',
       tools: true,
-      visibleLayers: [],
-      ownedLayers: [],
-      peers: [],
-      maxDepth: 5,
       enabled: true,
     },
   };
@@ -925,8 +833,7 @@ export function defaultAgents(): Record<string, AgentSettingsConfig> {
 
 /**
  * A saved settings.json as a full configuration: saved fields over the defaults, vendors merged
- * mode by mode. A saved `providers` key (the shape before vendors) is kept so validation refuses it
- * by name; nothing converts it.
+ * mode by mode.
  */
 export function configFromSaved(raw: unknown): FoundryConfig {
   const saved = (raw ?? {}) as Partial<FoundryConfig>;
@@ -973,6 +880,11 @@ function validateLayerDefinition(owner: string, id: string, layer: unknown): voi
     throw new Error(
       `invalid layer ${JSON.stringify(id)} in ${owner}: "role:" layers are a role's generated composition slots, never configured`,
     );
+  const activation = (layer as { activation?: unknown } | null | undefined)?.activation;
+  if (activation !== undefined && activation !== 'always' && activation !== 'on-demand')
+    throw new Error(
+      `invalid layer ${JSON.stringify(id)} in ${owner}: activation must be "always" or "on-demand"`,
+    );
   const segment = (layer as { segment?: unknown } | null | undefined)?.segment;
   if (segment !== undefined && segment !== 'domain-knowledge' && segment !== 'thread-knowledge')
     throw new Error(
@@ -980,69 +892,29 @@ function validateLayerDefinition(owner: string, id: string, layer: unknown): voi
     );
 }
 
-/** Every declared agent has a kind something runs; Wardens are domain-advising. */
-function validateAgentKinds(owner: string, agents: Record<string, Partial<AgentSettingsConfig>>) {
-  const cartographers = Object.values(agents).filter(
-    (agent) => agent.kind === 'cartographer' && agent.enabled !== false,
-  );
-  if (cartographers.length > 1) throw Error(`${owner}: at most one enabled cartographer`);
+/**
+ * Every declared agent has a kind something runs. Settings declare executors only; a project view
+ * also holds its generated region Wardens (`domain-librarian`, flowRole `domain-advising`).
+ */
+function validateAgentKinds(
+  owner: string,
+  agents: Record<string, Partial<AgentSettingsConfig>>,
+  kinds: readonly AgentKind[] = SETTINGS_AGENT_KINDS,
+) {
   for (const [id, agent] of Object.entries(agents)) {
     if (agent.kind === undefined) continue;
-    if (!(AGENT_KINDS as readonly string[]).includes(agent.kind))
+    if (!(kinds as readonly string[]).includes(agent.kind))
       throw Error(
-        `${owner} agent ${JSON.stringify(id)}: kind ${JSON.stringify(agent.kind)} is not configurable (${AGENT_KINDS.join(', ')})`,
+        `${owner} agent ${JSON.stringify(id)}: kind ${JSON.stringify(agent.kind)} is not configurable (${kinds.join(', ')})`,
       );
     if (agent.kind === 'domain-librarian' && agent.flowRole !== 'domain-advising')
       throw Error(`${owner} agent ${JSON.stringify(id)}: a Warden's flowRole is domain-advising`);
-    // An executor no longer adds instructions (Aron, 2026-11-10): a main thread's come from its thread
-    // role's composition, so a saved prompt would reach nothing.
-    if (agent.kind === 'executor' && typeof agent.prompt === 'string' && agent.prompt.trim())
-      throw Error(
-        `${owner} agent ${JSON.stringify(id)}: an executor's prompt is retired; a main thread's instructions come from its thread role. Move it to the role file .foundry/roles/<role>/instructions.md (coder, assistant, or main for every role; ~/.foundry/roles/... for yours on every project) and remove "prompt" (a starter executor from an older install goes with \`bun run setup --remove-legacy-defaults\`)`,
-      );
     // Each phase supplies its response protocol; a second shape in the instructions contradicts it.
-    if (
-      ['cartographer', 'domain-librarian'].includes(agent.kind) &&
-      /respond with json/i.test(agent.prompt ?? '')
-    )
+    if (agent.kind === 'domain-librarian' && /respond with json/i.test(agent.prompt ?? ''))
       throw Error(
         `${owner} agent ${JSON.stringify(id)}: instructions must not state a response format; the phase supplies it`,
       );
   }
-}
-
-/**
- * Settings declare no Wardens: the hand-named Warden roster was retired on 2026-10-17 (Aron: "We're
- * just doing the region wardens… The hand-named roster should go away"). Region Wardens, generated
- * from a project's `.foundry/regions` when its chorus is enabled, are the only chorus. A Warden left in
- * settings is refused by name, with the fix, never silently dropped (no alias, no migration).
- */
-function handNamedWardens(where: string, agents: Record<string, unknown> | undefined): string[] {
-  const found: string[] = [];
-  for (const [id, agent] of Object.entries(agents ?? {})) {
-    const a = (agent ?? {}) as { kind?: string; flowRole?: string };
-    if (a.flowRole === 'domain-advising' || a.kind === 'domain-librarian' || a.kind === 'decider')
-      found.push(`${where}.${id} is a hand-named Warden (${a.kind ?? a.flowRole})`);
-  }
-  return found;
-}
-
-function refuseHandNamedWardens(config: FoundryConfig) {
-  // Every offender in one error, so a settings file holding a whole roster is fixed in one pass.
-  const found = [
-    ...handNamedWardens('agents', config.agents),
-    ...Object.entries(config.projects ?? {}).flatMap(([pid, project]) =>
-      handNamedWardens(`projects.${pid}.agents`, project?.agents),
-    ),
-  ];
-  if (!found.length) return;
-  throwHandNamed(found);
-}
-
-function throwHandNamed(found: string[]): never {
-  throw Error(
-    `${found.join('; ')}: the hand-named Warden roster is retired and region Wardens are the only chorus. Remove ${found.length === 1 ? 'it' : 'them'} from settings; a project's Wardens are generated from its .foundry/regions when "chorus": { "enabled": true } is set in its .foundry/project.json or projects[id].chorus (docs/usage-and-context.md, "Chorus")`,
-  );
 }
 
 function validateConsumedSettings(where: string, consumed: unknown): void {
@@ -1077,12 +949,6 @@ export function validateChorusSettings(where: string, chorus: unknown): void {
   if (!chorus || typeof chorus !== 'object' || Array.isArray(chorus))
     throw Error(`${where} must be an object: { enabled?, regions? | layers? }`);
   const c = chorus as Record<string, unknown>;
-  // Retired 2026-10-17 with the hand-named roster: region Wardens are the only chorus. Refused by name
-  // so a settings file written for the roster says what to write instead (no alias, no migration).
-  if ('source' in c)
-    throw Error(
-      `${where}.source is gone: the hand-named Warden roster is retired and region Wardens are the only chorus. ${c.source === 'regions' ? `Write "enabled": true instead of "source": "regions"` : `Remove "source"${c.source === 'roster' ? ' ("roster" has no replacement: a project without "enabled": true has no chorus)' : ''}; set "enabled": true to run the project's regions`} (docs/usage-and-context.md, "Chorus")`,
-    );
   // Charters are fixed per task and role, owned by Foundry (Aron, 2026-10-18: "keep it somewhat fixed
   // for now"); a project never sets one.
   for (const key of ['charter', 'charters', 'sections'])
@@ -1143,10 +1009,6 @@ export function validateChorusSettings(where: string, chorus: unknown): void {
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function validateProjectCapacity(config: FoundryConfig, project: ProjectSettingsConfig) {
-  if (project.kingdomCapacity && 'projectId' in project.kingdomCapacity)
-    throw Error(
-      `Project ${project.id}: kingdomCapacity.projectId is gone; the Kingdom project is the project's own link, kingdomProject { kingdom, projectId }`,
-    );
   if (project.kingdomProject) {
     if (!uuidPattern.test(project.kingdomProject.projectId))
       throw Error(`Project ${project.id}: kingdomProject.projectId must be a Kingdom project id`);
@@ -1192,10 +1054,6 @@ function validateLoginPoolReferences(config: FoundryConfig): void {
 }
 
 export function validateConfig(config: FoundryConfig): void {
-  if ('providers' in config)
-    throw Error(
-      'settings key "providers" is now "vendors": one entry per vendor with subscription and api modes (models/vendors.ts)',
-    );
   validateVendorSettings(config.vendors);
   validateFoundryConversationSettings(config.conversations);
   validateSchedulerSettings('scheduler', config.scheduler, true);
@@ -1218,8 +1076,14 @@ export function validateConfig(config: FoundryConfig): void {
         typeof config.messageBox.separateViews !== 'boolean'))
   )
     throw Error('messageBox.separateViews must be true or false');
-  refuseHandNamedWardens(config);
   validateAgentKinds('global', config.agents ?? {});
+  for (const [pid, project] of Object.entries(config.projects ?? {}))
+    validateAgentKinds(
+      `project ${JSON.stringify(pid)}`,
+      Object.fromEntries(
+        Object.entries(project?.agents ?? {}).filter(([, agent]) => !isAgentExtension(agent)),
+      ) as Record<string, Partial<AgentSettingsConfig>>,
+    );
   assertMainThreadLabs(config);
   resolveSubscriptionPolicy(config);
   if (config.kingdomIntegrations) kingdomIntegrationsSchema.parse(config.kingdomIntegrations);
@@ -1230,10 +1094,6 @@ export function validateConfig(config: FoundryConfig): void {
       throw Error(`Project ${project.id} label must be a non-empty string`);
     validateProjectCapacity(config, project);
   }
-  if (config.tunnel && 'password' in config.tunnel)
-    throw Error(
-      'Inline tunnel passwords are not supported; use the private tunnel-token file and remove tunnel.password from settings',
-    );
   for (const source of validateKingdomAccess(config.kingdomAccess ?? [])) {
     if (
       source.projectIds.some((id) => !config.projects[id] || config.projects[id]!.enabled === false)
@@ -1280,10 +1140,6 @@ export function validateConfig(config: FoundryConfig): void {
   validateSecretsSettings('secrets', config.secrets);
   validatePrefilterSettings('prefilter', config.prefilter);
   validateLoginPoolReferences(config);
-  if ('wardens' in config)
-    throw Error(
-      'settings key "wardens" is gone: a project\'s Wardens are its chorus, projects[id].chorus (docs/usage-and-context.md, "Chorus")',
-    );
   if (config.guard !== undefined && !GUARD_MODES.includes(config.guard))
     throw Error(`guard must be one of ${GUARD_MODES.map((m) => `"${m}"`).join(', ')}`);
   for (const [where, value] of [
@@ -1310,11 +1166,6 @@ export function validateConfig(config: FoundryConfig): void {
   for (const [pid, project] of Object.entries(config.projects ?? {})) {
     validateFeedbackSettings(`projects.${pid}.feedback`, project?.feedback);
     validateSecretsSettings(`projects.${pid}.secrets`, project?.secrets);
-    for (const key of ['wardens', 'regions'] as const)
-      if (project && key in project)
-        throw Error(
-          `projects.${pid}.${key} is now projects.${pid}.chorus (${key === 'wardens' ? '{ enabled }' : '{ regions } or { layers }'}; docs/usage-and-context.md, "Chorus")`,
-        );
     validateChorusSettings(`projects.${pid}.chorus`, project?.chorus);
     validateConversationSettings(`projects.${pid}.conversations`, project?.conversations);
     validateSchedulerSettings(`projects.${pid}.scheduler`, project?.scheduler, false);
@@ -1332,10 +1183,6 @@ export function validateConfig(config: FoundryConfig): void {
       if (other) throw Error(`${where}: schedule id ${schedule.id} is already used in ${other}`);
       scheduleIds.set(schedule.id, where);
     }
-  if ('instructions' in config)
-    throw Error(
-      'settings key "instructions" is now "composition" (docs/usage-and-context.md, "Composition view")',
-    );
   // The project Warden brief's nodes are Foundry's, made per project when its chorus runs.
   for (const id of WARDEN_BRIEF_NODES)
     if (config.composition?.nodes?.[id])
@@ -1384,10 +1231,6 @@ function validateSourceDefinitions(
     if (roleNameIn(roleNamespace.region, id) !== undefined)
       throw new Error(
         `invalid source ${JSON.stringify(id)} in ${owner}: the ${roleNamespace.region}: prefix names a region's own docs, which its regions generate; rename the source`,
-      );
-    if ('audience' in (src ?? {}))
-      throw new Error(
-        `invalid source ${JSON.stringify(id)} in ${owner}: audience moved to composition.roles.<role>.audience`,
       );
     if (src?.slot !== undefined && !(COMPOSITION_SLOTS as readonly string[]).includes(src.slot))
       throw new Error(
@@ -1444,9 +1287,9 @@ const PERSONAL_PROJECT_SETTINGS: Readonly<Record<string, string>> = {
     'Sources read files and Archive projects on this machine; a cloned repository can’t point them elsewhere',
   'defaults.nativeAuthenticationId': 'Your login on this machine',
   'defaults.kingdomOwnerKey': 'Your Kingdom subscription pool',
-  'defaults.classifierProvider':
+  'defaults.decisionProvider':
     'Decision roles run on this machine’s subscription; a cloned repository can’t move them to a paid API',
-  'defaults.classifierModel':
+  'defaults.decisionModel':
     'Decision roles run on this machine’s subscription; a cloned repository can’t move them to a paid API',
 };
 
@@ -1551,8 +1394,6 @@ export function validateRepositoryProject(settings: Record<string, unknown>): vo
   }
   const agents = settings.agents as Record<string, Partial<AgentSettingsConfig>> | undefined;
   if (agents !== undefined) {
-    const found = handNamedWardens('agents', agents);
-    if (found.length) throwHandNamed(found);
     validateAgentKinds('repository', agents);
     for (const [id, agent] of Object.entries(agents)) {
       refuseNamespacedAgentId('agents', id);
@@ -1577,7 +1418,7 @@ const isRecordOfObjects = (value: unknown): boolean =>
 
 /** What thread construction checks on a project's view: its agents' kinds and that they build. */
 export function checkProjectView(projectId: string, view: FoundryConfig): void {
-  validateAgentKinds(`project ${JSON.stringify(projectId)}`, view.agents);
+  validateAgentKinds(`project ${JSON.stringify(projectId)}`, view.agents, AGENT_KINDS);
   try {
     configuredExperts(view);
   } catch (error) {
@@ -1856,9 +1697,6 @@ export class ConfigStore {
           provider: agent.llm?.provider ?? this._config.defaults.provider,
           model: agent.llm?.model ?? this._config.defaults.model,
           temperature: agent.llm?.temperature,
-          visibleLayers: agent.llm?.sources ?? [],
-          peers: agent.peers,
-          maxDepth: agent.llm?.maxDepth ?? 3,
           enabled: true,
         };
       }

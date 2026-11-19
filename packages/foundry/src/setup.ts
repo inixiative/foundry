@@ -28,7 +28,6 @@ import {
   pairKingdom,
 } from './providers/kingdom-cli';
 import { inspectReadiness } from './readiness';
-import { describeLegacyItem, findLegacyStarter, removeLegacyStarter } from './setup/legacy-starter';
 import { createTerminalPrompts } from './setup/prompts';
 import { formatPlan, scanRepoDocs } from './setup/scan-docs';
 import {
@@ -98,7 +97,6 @@ async function saveConfig(config: FoundryConfig): Promise<void> {
 // ---------------------------------------------------------------------------
 
 async function main() {
-  if (process.argv.includes('--remove-legacy-defaults')) return removeLegacyDefaults();
   console.log();
   console.log('  ┌─────────────────────────────────┐');
   console.log('  │          foundry setup           │');
@@ -181,11 +179,6 @@ async function firstTimeSetup(): Promise<FoundryConfig> {
 
 async function configureLoop(config: FoundryConfig) {
   await checkAgentClis(config);
-  const legacy = findLegacyStarter(config).length;
-  if (legacy)
-    console.log(
-      `\n  ! ${legacy} starter default${legacy === 1 ? '' : 's'} from an older install wrap every thread; choose "Legacy defaults" to remove them.`,
-    );
   const counts = () => ({
     agents: Object.keys(config.agents).length,
     layers: Object.keys(config.layers).length,
@@ -209,7 +202,6 @@ async function configureLoop(config: FoundryConfig) {
       `Projects             (${c.projects} configured)`,
       `Kingdom & archives   (${archiveSummary})`,
       'Agent CLIs           (find claude / codex / muse)',
-      `Legacy defaults      (${legacyCount(config)})`,
       'Reset to starter config',
       'Done',
     ]);
@@ -239,10 +231,7 @@ async function configureLoop(config: FoundryConfig) {
       case 7:
         await checkAgentClis(config);
         break;
-      case 8:
-        await configureLegacyDefaults(config);
-        break;
-      case 9: {
+      case 8: {
         if (await confirm('Replace config with starter defaults?', false)) {
           const providerId = config.defaults.provider as ProviderId;
           const model = config.defaults.model;
@@ -252,7 +241,7 @@ async function configureLoop(config: FoundryConfig) {
         }
         break;
       }
-      case 10:
+      case 9:
         running = false;
         break;
     }
@@ -280,54 +269,6 @@ async function checkAgentClis(config: FoundryConfig) {
     ['native-cli-missing', 'native-cli-version'].includes(issue.code),
   ))
     console.log(`  ${item.severity === 'error' ? '✗' : '!'} ${item.message}`);
-}
-
-// ---------------------------------------------------------------------------
-// Legacy starter defaults — the classifier/router/layer stack older installs were seeded with
-// ---------------------------------------------------------------------------
-
-function legacyCount(config: FoundryConfig): string {
-  const count = findLegacyStarter(config).length;
-  return count ? `${count} to remove` : 'none';
-}
-
-async function configureLegacyDefaults(config: FoundryConfig) {
-  console.log('\n  ── Legacy starter defaults ──\n');
-  const legacy = findLegacyStarter(config);
-  if (!legacy.length) {
-    console.log('  None: nothing from the old starter stack is left unedited.\n');
-    return;
-  }
-  console.log('  Seeded by an older install, unedited, and wrapping every thread:');
-  for (const item of legacy) console.log(`    - ${describeLegacyItem(item)}`);
-  console.log('  Edited items are not listed and are kept.');
-  if (!(await confirm('Remove them?', true))) return;
-  const { removed, addedExecutor } = removeLegacyStarter(config);
-  console.log(
-    `  Removed ${removed.length}${addedExecutor ? '; added the starter executor' : ''}. Threads are unwrapped unless settings add layers or decision roles.\n`,
-  );
-}
-
-/** `bun run setup --remove-legacy-defaults [dir]`: the same removal, non-interactive, through ConfigStore. */
-async function removeLegacyDefaults() {
-  const flags = process.argv.slice(2).filter((arg) => arg !== '--remove-legacy-defaults');
-  const dir = flags[0] ?? FOUNDRY_DIR;
-  const store = new ConfigStore(dir);
-  // Read as saved, not validated: a starter's prompt executors are refused at load (executor prompts
-  // are retired), and removing them is what makes the settings load again. The result is validated.
-  const path = join(dir, 'settings.json');
-  // Loaded when it can be, so the audit log records only what the removal changed.
-  await store.load().catch(() => undefined);
-  const draft = configFromSaved(existsSync(path) ? await Bun.file(path).json() : {});
-  const result = removeLegacyStarter(draft);
-  if (result.removed.length) await store.save(draft);
-  if (!result.removed.length) console.log('No legacy starter defaults found; nothing changed.');
-  else {
-    console.log(`Removed ${result.removed.length} legacy starter defaults:`);
-    for (const item of result.removed) console.log(`  - ${describeLegacyItem(item)}`);
-    if (result.addedExecutor) console.log(`Added the starter executor.`);
-  }
-  prompts.close();
 }
 
 // ---------------------------------------------------------------------------
@@ -453,101 +394,35 @@ async function configureDefaults(config: FoundryConfig) {
 
 const agentEditor: ItemEditor<AgentSettingsConfig> = {
   label: 'Agents',
-  summarize: (id, a) => {
-    const layers = (a.visibleLayers?.length || 0) + (a.ownedLayers?.length || 0);
-    const peers = a.peers?.length || 0;
-    return `${id}  (${a.kind}, ${a.model || 'default'}, ${layers} layers, ${peers} peers)${a.enabled ? '' : ' [disabled]'}`;
-  },
+  summarize: (id, a) =>
+    `${id}  (${a.kind}, ${a.model || 'default'})${a.enabled ? '' : ' [disabled]'}`,
   async create(config) {
-    console.log('\n  An agent is a named actor with a role — it reads layers, makes decisions,');
-    console.log('  and can delegate to other agents.\n');
+    console.log('\n  An agent is a named actor with a role: an executor does the real work.\n');
 
     const id = await ask('Agent ID (e.g. code-reviewer)');
     if (!id) return null;
 
-    // Kind — explain each option
-    console.log('\n  What kind of agent is this?');
-    const kindIdx = await choose('Kind', [
-      'executor — does real work (code, tools, full model)',
-      'classifier — categorizes messages (cheap model, no tools)',
-      'router — routes to the right agent (cheap model, no tools)',
-    ]);
-    // No Warden kind: a project's Wardens are generated from its regions, never written here.
-    const kind = (['executor', 'classifier', 'router'] as const)[kindIdx]!;
+    // An executor does the real work (code, tools, full model). No Warden kind: a project's Wardens
+    // are generated from its regions, never written here.
+    const kind = 'executor' as const;
 
     // Role description
     console.log('\n  What does this agent do? (saved as a description file)');
     const roleDesc = await ask('Role description');
 
     // An executor adds no instructions: a main thread's come from its thread role's role files.
-    const prompt = kind === 'executor' ? '' : await ask('System prompt', roleDesc);
+    const prompt = '';
 
-    // Model — explain cheap vs capable
-    if (kind === 'executor') {
-      console.log('\n  Executors use a capable model (Claude, GPT) for real work.');
-    } else {
-      console.log('\n  Classifiers and routers should use a cheap/fast model');
-      console.log('  (Gemini Flash, Haiku) — they make decisions, not produce artifacts.');
-    }
+    console.log('\n  Executors use a capable model (Claude, GPT) for real work.');
     const model = await ask('Model', config.defaults.model);
     const temp = await ask('Temperature', '0');
-
-    // Layers — what can this agent see and write?
-    const layerIds = Object.keys(config.layers);
-    let visibleLayers: string[] = [];
-    let ownedLayers: string[] = [];
-
-    if (layerIds.length > 0) {
-      console.log('\n  Which layers can this agent READ? (its visible context)');
-      console.log('  Available layers: ' + layerIds.join(', '));
-      const vis = await ask('Visible layers (comma-separated, empty = all)');
-      if (vis)
-        visibleLayers = vis
-          .split(',')
-          .map((s) => s.trim())
-          .filter(Boolean);
-
-      console.log('\n  Which layers can this agent WRITE? (its owned domain)');
-      const own = await ask('Owned layers (comma-separated, empty = none)');
-      if (own)
-        ownedLayers = own
-          .split(',')
-          .map((s) => s.trim())
-          .filter(Boolean);
-    }
-
-    // Peers — who can this agent delegate to?
-    const agentIds = Object.keys(config.agents).filter((a) => a !== id);
-    let peers: string[] = [];
-    if (agentIds.length > 0) {
-      console.log('\n  Which agents can this agent delegate to?');
-      console.log('  Available agents: ' + agentIds.join(', '));
-      const p = await ask('Peer agent IDs (comma-separated, empty = none)');
-      if (p)
-        peers = p
-          .split(',')
-          .map((s) => s.trim())
-          .filter(Boolean);
-    }
 
     // Write description file
     let description: string | undefined;
     if (roleDesc) {
       const descPath = `.foundry/agents/${id}.md`;
       const descContent =
-        [
-          `# ${id}`,
-          '',
-          roleDesc,
-          '',
-          `**Kind**: ${kind}`,
-          `**Model**: ${model}`,
-          visibleLayers.length > 0
-            ? `**Reads**: ${visibleLayers.join(', ')}`
-            : '**Reads**: all layers',
-          ownedLayers.length > 0 ? `**Writes**: ${ownedLayers.join(', ')}` : '**Writes**: none',
-          peers.length > 0 ? `**Delegates to**: ${peers.join(', ')}` : '',
-        ]
+        [`# ${id}`, '', roleDesc, '', `**Kind**: ${kind}`, `**Model**: ${model}`]
           .filter(Boolean)
           .join('\n') + '\n';
 
@@ -567,11 +442,7 @@ const agentEditor: ItemEditor<AgentSettingsConfig> = {
         provider: config.defaults.provider,
         model,
         temperature: parseFloat(temp) || 0,
-        visibleLayers,
-        ownedLayers: ownedLayers.length > 0 ? ownedLayers : undefined,
-        peers,
-        maxDepth: kind === 'executor' ? 5 : 1,
-        tools: kind === 'executor',
+        tools: true,
         enabled: true,
       },
     ];
@@ -579,12 +450,8 @@ const agentEditor: ItemEditor<AgentSettingsConfig> = {
   async edit(id, item, config) {
     console.log(`\n  Editing agent: ${id}\n`);
     if (item.description) console.log(`    Description: ${item.description}`);
-    if (item.visibleLayers?.length) console.log(`    Reads: ${item.visibleLayers.join(', ')}`);
-    if (item.ownedLayers?.length) console.log(`    Writes: ${item.ownedLayers.join(', ')}`);
-    if (item.peers?.length) console.log(`    Delegates to: ${item.peers.join(', ')}`);
     console.log();
 
-    if (item.kind !== 'executor') item.prompt = await ask('System prompt', item.prompt);
     item.model = await ask('Model', item.model || config.defaults.model);
     item.temperature = parseFloat(await ask('Temperature', String(item.temperature))) || 0;
     const enabled = await confirm('Enabled?', item.enabled);
@@ -600,9 +467,8 @@ const agentEditor: ItemEditor<AgentSettingsConfig> = {
 const layerEditor: ItemEditor<LayerSettingsConfig> = {
   label: 'Layers',
   summarize: (id, l) => {
-    const shape = l.contentShape ? ` [${l.contentShape}]` : '';
     const writers = l.writers?.length ? ` writers: ${l.writers.join(',')}` : '';
-    return `${id}${shape}${writers}${l.enabled ? '' : ' [disabled]'}`;
+    return `${id}${writers}${l.enabled ? '' : ' [disabled]'}`;
   },
   async create(config) {
     console.log('\n  A layer is a knowledge shelf — a token-budgeted window into a domain.');
@@ -617,7 +483,6 @@ const layerEditor: ItemEditor<LayerSettingsConfig> = {
     const jobDesc = await ask("Purpose (e.g. 'OWASP rules and auth patterns')");
 
     const prompt = await ask("Instruction prompt (how to use this layer's content)", jobDesc);
-    const contentShape = await ask("Content shape (e.g. 'JSON array', 'Markdown index')", '');
 
     // Staleness — explain in context
     console.log('\n  Staleness: How long (ms) before this layer needs re-warming?');
@@ -628,10 +493,9 @@ const layerEditor: ItemEditor<LayerSettingsConfig> = {
     console.log('\n  When should this layer be included in context?');
     const actIdx = await choose('Activation', [
       'always — included on every request (system, conventions)',
-      'conditional — included when classification tags match',
       'on-demand — only when explicitly requested',
     ]);
-    const activation = (['always', 'conditional', 'on-demand'] as const)[actIdx];
+    const activation = (['always', 'on-demand'] as const)[actIdx];
 
     // Writers — which agents can write to this layer?
     const writerIds: string[] = [];
@@ -676,7 +540,6 @@ const layerEditor: ItemEditor<LayerSettingsConfig> = {
           '',
           `**Activation**: ${activation}`,
           writerIds.length > 0 ? `**Writers**: ${writerIds.join(', ')}` : '**Writers**: any agent',
-          contentShape ? `**Content shape**: ${contentShape}` : '',
         ]
           .filter(Boolean)
           .join('\n') + '\n';
@@ -692,7 +555,6 @@ const layerEditor: ItemEditor<LayerSettingsConfig> = {
       {
         id,
         description,
-        contentShape: contentShape || undefined,
         prompt,
         sourceIds,
         staleness: parseInt(staleness) || 0,
@@ -705,11 +567,9 @@ const layerEditor: ItemEditor<LayerSettingsConfig> = {
   async edit(id, item, config) {
     console.log(`\n  Editing layer: ${id}\n`);
     if (item.description) console.log(`    Description: ${item.description}`);
-    if (item.contentShape) console.log(`    Content shape: ${item.contentShape}`);
     console.log();
 
     item.prompt = await ask('Prompt', item.prompt);
-    item.contentShape = (await ask('Content shape', item.contentShape || '')) || undefined;
     item.staleness = parseInt(await ask('Staleness ms', String(item.staleness))) || 0;
     const enabled = await confirm('Enabled?', item.enabled);
     item.enabled = enabled;

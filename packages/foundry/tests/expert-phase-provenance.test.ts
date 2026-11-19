@@ -1,6 +1,5 @@
 import { expect, test } from 'bun:test';
 import { ContextLayer, ContextStack, type LLMMessage, SignalBus } from '@inixiative/foundry-core';
-import { Cartographer } from '../src/agents/cartographer';
 import { DomainLibrarian } from '../src/agents/domain-librarian';
 import { FlowOrchestrator } from '../src/agents/flow-orchestrator';
 import { Librarian } from '../src/agents/librarian';
@@ -18,19 +17,6 @@ test('historical expert evidence retains the actual phase protocol, separately f
   const stack = new ContextStack([cache]),
     signals = new SignalBus();
   const librarian = new Librarian({ stack, signals });
-  const cartographer = new Cartographer({
-    stack,
-    signals,
-    llm: {
-      id: 'controlled-phase-route',
-      async complete() {
-        return {
-          model: 'controlled',
-          content: '{"layers":[],"domains":["architecture"],"confidence":1}',
-        };
-      },
-    },
-  });
   const calls: LLMMessage[][] = [];
   const expert = new DomainLibrarian({
     domain: 'architecture',
@@ -52,7 +38,6 @@ test('historical expert evidence retains the actual phase protocol, separately f
     stack,
     signals,
     librarian,
-    cartographer,
     domainLibrarians: new Map([['architecture', expert]]),
   });
   try {
@@ -79,7 +64,6 @@ test('historical expert evidence retains the actual phase protocol, separately f
     expect(strings(historical).some((value) => value.includes(actualProtocol))).toBe(true);
   } finally {
     flow.dispose();
-    cartographer.dispose();
     librarian.dispose();
   }
 });

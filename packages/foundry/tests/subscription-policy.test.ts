@@ -24,7 +24,7 @@ import {
 } from '../src/providers/subscription-policy';
 import { defaultConfig, starterConfig, validateConfig } from '../src/viewer/config';
 import { resolveProjectView } from '../src/viewer/config-resolve';
-import { routedAgents } from './helpers/routed-agents';
+import { artificerAgents } from './helpers/artificer-agents';
 import { subscriptionStatusProcess } from './helpers/subscription-transport';
 import { recordedClaudeTransport, recordedCodexStatus, settleRecordings } from './helpers/vcr';
 
@@ -60,8 +60,8 @@ function fixture() {
     provider: 'claude-code',
     model: 'worker-model',
     nativeAuthenticationId: worker.id,
-    classifierProvider: 'subscription-decisions',
-    classifierModel: 'decision-model',
+    decisionProvider: 'subscription-decisions',
+    decisionModel: 'decision-model',
   };
   c.subscriptionOnly = {
     decisionSourceId: decision.id,
@@ -72,10 +72,7 @@ function fixture() {
     maxQueued: 8,
     callTimeoutMs: 2000,
   };
-  c.agents = routedAgents('claude-code', {
-    provider: 'subscription-decisions',
-    model: 'decision-model',
-  });
+  c.agents = artificerAgents('claude-code');
   c.projects = { project: { id: 'project', path: root, tags: [] } };
   return { c, root, worker, decision };
 }
@@ -166,7 +163,6 @@ for (const change of [
   'review-api',
   'review-model',
   'gateway',
-  'expert-tools',
   'codex-observed-model',
 ] as const)
   test(`subscription startup refuses ${change} before provider construction`, () => {
@@ -191,9 +187,6 @@ for (const change of [
           credential: { type: 'environment', variable: 'SYNTHETIC_KEY' },
         };
         break;
-      case 'expert-tools':
-        f.c.agents.router.tools = true;
-        break;
       case 'codex-observed-model':
         f.c.nativeAuthentication![1].runtime = 'codex';
         break;
@@ -201,34 +194,18 @@ for (const change of [
     expect(() => validateConfig(f.c)).toThrow();
   });
 
-// Decision roles saved on another provider or model run on the subscription decision profile.
-for (const change of ['classifier-api', 'project-api', 'agent-model', 'project-model'] as const)
-  test(`subscription mode routes ${change} to subscription decisions`, () => {
-    const f = fixture();
-    switch (change) {
-      case 'classifier-api':
-        f.c.agents.classifier.provider = 'openai';
-        break;
-      case 'project-api':
-        f.c.projects.project.agents = { router: { extends: 'router', provider: 'openai' } };
-        break;
-      case 'agent-model':
-        f.c.agents.router.model = 'gpt-5.6-luna';
-        break;
-      case 'project-model':
-        f.c.projects.project.defaults = { classifierModel: 'gpt-5.6-luna' };
-        break;
-    }
-    expect(() => validateConfig(f.c)).not.toThrow();
-    const resolved = resolveSubscriptionPolicy(f.c)!;
-    const view = resolveProjectView(resolved.config, 'project')!.config;
-    for (const agent of [view.agents.classifier, view.agents.router])
-      expect(agent).toMatchObject({ provider: 'subscription-decisions', model: 'decision-model' });
-    expect(view.defaults).toMatchObject({
-      classifierProvider: 'subscription-decisions',
-      classifierModel: 'decision-model',
-    });
+// A project's decision defaults saved on another model run on the subscription decision profile.
+test('subscription mode runs a project decision model on subscription decisions', () => {
+  const f = fixture();
+  f.c.projects.project.defaults = { decisionModel: 'gpt-5.6-luna' };
+  expect(() => validateConfig(f.c)).not.toThrow();
+  const resolved = resolveSubscriptionPolicy(f.c)!;
+  const view = resolveProjectView(resolved.config, 'project')!.config;
+  expect(view.defaults).toMatchObject({
+    decisionProvider: 'subscription-decisions',
+    decisionModel: 'decision-model',
   });
+});
 
 test('an explicit Codex decision profile runs Codex decisions beside the Claude worker', () => {
   const f = fixture();
@@ -245,7 +222,7 @@ test('Claude decisions share the worker login, default to Haiku 5.5 and run conc
   const f = fixture();
   f.decision.profileDirectory = f.worker.profileDirectory;
   delete f.c.subscriptionOnly!.model;
-  delete f.c.defaults.classifierModel;
+  delete f.c.defaults.decisionModel;
   f.c.agents = {};
   f.c.subscriptionOnly!.maxConcurrent = 4;
   expect(resolveSubscriptionPolicy(f.c)!.policy).toMatchObject({
@@ -460,10 +437,7 @@ function codexMain() {
   delete f.c.subscriptionOnly!.expectedObservedModel;
   f.c.defaults.provider = 'codex';
   f.c.defaults.model = 'gpt-6-astra';
-  f.c.agents = routedAgents('codex', {
-    provider: 'subscription-decisions',
-    model: 'decision-model',
-  });
+  f.c.agents = artificerAgents('codex');
   return f;
 }
 
@@ -513,7 +487,7 @@ test("a fresh Codex main thread defaults to the user's own ~/.codex login; decis
     expect(() => resolveSubscriptionPolicy(c, { cwd: root })).toThrow(
       'claude-haiku-5-5 is a claude model',
     );
-    c.defaults.classifierModel = 'gpt-5.6-luna';
+    c.defaults.decisionModel = 'gpt-5.6-luna';
     expect(resolveSubscriptionPolicy(c, { cwd: root })!.decision.profileDirectory).toBe(
       join(root, '.codex'),
     );
@@ -522,7 +496,7 @@ test("a fresh Codex main thread defaults to the user's own ~/.codex login; decis
   }
 });
 
-test('Claude decisions hold Wardens in project hosts by default; claude keeps them primed; claude-in-session is refused by name', () => {
+test('Claude decisions hold Wardens in project hosts by default; claude keeps them primed; claude-in-session is unknown', () => {
   const root = mkdtempSync(join(tmpdir(), 'project-wardens-'));
   roots.push(root);
   mkdirSync(join(root, '.claude'), { mode: 0o755 });
@@ -546,15 +520,13 @@ test('Claude decisions hold Wardens in project hosts by default; claude keeps th
     expect(configuredProjectWardens(c)).toBe(false);
     // Codex decisions have no project host.
     c.subscriptionOnly = { decisionRuntime: 'codex' };
-    c.defaults.classifierModel = 'gpt-5.6-luna';
+    c.defaults.decisionModel = 'gpt-5.6-luna';
     expect(resolveSubscriptionPolicy(c, { cwd: root })!.policy.wardens).toBe('primed');
     expect(configuredProjectWardens(c)).toBe(false);
-    c.defaults.classifierModel = 'claude-haiku-5-5';
-    // The per-thread runtime is gone: refused with the fix, no alias.
+    c.defaults.decisionModel = 'claude-haiku-5-5';
+    // The per-thread runtime is gone: an unknown runtime.
     c.subscriptionOnly = { decisionRuntime: 'claude-in-session' } as never;
-    expect(() => resolveSubscriptionPolicy(c, { cwd: root })).toThrow(
-      'subscriptionOnly.decisionRuntime "claude-in-session" is gone',
-    );
+    expect(() => resolveSubscriptionPolicy(c, { cwd: root })).toThrow('decisionRuntime');
   } finally {
     process.env.HOME = home;
   }
@@ -604,8 +576,8 @@ test('main threads run on the five labs: Anthropic, OpenAI, Google, Meta and xAI
     c.defaults.model = MODEL_REGISTRY[provider]!.models[0]!.id;
     if (apiTokens) {
       c.apiTokens = true;
-      delete c.defaults.classifierProvider;
-      delete c.defaults.classifierModel;
+      delete c.defaults.decisionProvider;
+      delete c.defaults.decisionModel;
     }
     return () => validateConfig(c);
   };
@@ -629,8 +601,8 @@ test('main threads run on the five labs: Anthropic, OpenAI, Google, Meta and xAI
   // Unregistered ids are adapters supplied in code (tests, Oracle); the registry cannot classify them.
   const custom = defaultConfig();
   custom.apiTokens = true;
-  delete custom.defaults.classifierProvider;
-  delete custom.defaults.classifierModel;
+  delete custom.defaults.decisionProvider;
+  delete custom.defaults.decisionModel;
   custom.defaults.provider = 'controlled';
   expect(() => validateConfig(custom)).not.toThrow();
   custom.apiTokens = undefined;
@@ -638,7 +610,7 @@ test('main threads run on the five labs: Anthropic, OpenAI, Google, Meta and xAI
   // An executor agent is a main thread too.
   const executor = defaultConfig();
   executor.apiTokens = true;
-  executor.agents = routedAgents('anthropic', { provider: 'openai', model: 'gpt-6-luna' });
+  executor.agents = artificerAgents('anthropic');
   executor.agents.artificer!.provider = 'deepseek';
   expect(() => validateConfig(executor)).toThrow('deepseek cannot run a main thread');
 });

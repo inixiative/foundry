@@ -48,9 +48,6 @@ for (const operation of ['create', 'fork'] as const) {
           prompt: '',
           provider: 'controlled',
           model: 'controlled',
-          visibleLayers: [],
-          peers: [],
-          maxDepth: 1,
           enabled: true,
         },
       };

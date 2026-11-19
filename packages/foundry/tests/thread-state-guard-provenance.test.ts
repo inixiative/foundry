@@ -1,6 +1,5 @@
 import { expect, test } from 'bun:test';
 import { ContextLayer, ContextStack, SignalBus } from '@inixiative/foundry-core';
-import { Cartographer } from '../src/agents/cartographer';
 import { DomainLibrarian, oneCall } from '../src/agents/domain-librarian';
 import { FlowOrchestrator } from '../src/agents/flow-orchestrator';
 import { Librarian } from '../src/agents/librarian';
@@ -24,21 +23,10 @@ async function observedState(failed: boolean) {
       },
     },
   });
-  const cartographer = new Cartographer({
-    stack,
-    signals,
-    llm: {
-      id: 'unused-route',
-      async complete() {
-        throw Error('No route call expected');
-      },
-    },
-  });
   const flow = new FlowOrchestrator({
     stack,
     signals,
     librarian,
-    cartographer,
     domainLibrarians: new Map([['architecture', domain]]),
   });
   const observation = {
@@ -60,7 +48,6 @@ async function observedState(failed: boolean) {
     return { originalActivity, activity: structuredClone(librarian.state.recentActivity) };
   } finally {
     flow.dispose();
-    cartographer.dispose();
     librarian.dispose();
   }
 }

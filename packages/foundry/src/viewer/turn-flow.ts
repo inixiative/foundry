@@ -178,7 +178,7 @@ type Span = {
   durationMs?: number;
 };
 /** Harness stages the turn flow draws; other spans (middleware, fan-out) stay in the trace. */
-const FLOW_SPAN_KINDS = new Set(['classify', 'route', 'execute']);
+const FLOW_SPAN_KINDS = new Set(['execute']);
 
 export function slimTurn(record: TurnFlowRecord) {
   const user = record.messages.find((message) => message.actor === 'user');
@@ -210,11 +210,9 @@ export function slimTurn(record: TurnFlowRecord) {
               'elapsed',
               'sealedAt',
               'fresh',
-              'confidence',
               'domainsConsulted',
               'layers',
               'input',
-              'routing',
               'contributions',
               'omissions',
               'conflicts',

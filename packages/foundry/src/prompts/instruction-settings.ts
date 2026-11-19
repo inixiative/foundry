@@ -9,7 +9,6 @@ import type {
   HierarchySource,
   HierarchySpan,
 } from '@inixiative/foundry-core';
-import { CORPUS_TIERS, type CorpusTier } from '../agents/corpus-compiler';
 import { roleIdIn, roleIdProblem, roleNameIn, roleNamespace } from './role-namespace';
 
 /** The two composed slots every role has. Thread knowledge is computed per call, not composed. */
@@ -31,13 +30,17 @@ export const MAIN_ROLE = roleIdIn(roleNamespace.thread, 'main');
  */
 export const DEFAULT_ROLE_BUDGET = 120_000;
 
-/** How narrow an audience is: one sees every tier its rank or above. */
-const AUDIENCE_RANK: Readonly<Record<CorpusTier, number>> = {
-  personal_private: 0,
-  personal_public: 1,
-  team: 2,
-  org: 3,
-};
+/** Who a composed file is for, narrowest first. An untiered file is personal_private. */
+export const CORPUS_TIERS = ['personal_private', 'personal_public', 'team', 'org'] as const;
+export type CorpusTier = (typeof CORPUS_TIERS)[number];
+
+/** Where a tier sits in that order: 0 is the narrowest. */
+export const corpusTierRank = (tier: CorpusTier): number => CORPUS_TIERS.indexOf(tier);
+
+/** Whether content at `tier` may reach `audience`: an audience sees its own tier and every wider one. */
+export function visibleTo(tier: CorpusTier, audience: CorpusTier): boolean {
+  return corpusTierRank(tier) >= corpusTierRank(audience);
+}
 
 export interface CompositionDedupe {
   content?: boolean;
@@ -665,10 +668,10 @@ export function roleComposition(
   // widest audience any of them composes for.
   const widest = threadRoles(settings)
     .map((other) => settings?.roles?.[other.id]?.audience ?? main)
-    .reduce((a, b) => (AUDIENCE_RANK[b] > AUDIENCE_RANK[a] ? b : a), main);
+    .reduce((a, b) => (corpusTierRank(b) > corpusTierRank(a) ? b : a), main);
   return {
     ...picks,
-    audience: thread || AUDIENCE_RANK[own] >= AUDIENCE_RANK[widest] ? own : widest,
+    audience: thread || corpusTierRank(own) >= corpusTierRank(widest) ? own : widest,
     budget: picks.budget ?? (thread ? Number.POSITIVE_INFINITY : DEFAULT_ROLE_BUDGET),
   };
 }

@@ -13,6 +13,13 @@ describe('buildInjectionArtifact', () => {
           text: 'Use existing primitives before adding wrappers.',
         },
         { role: 'content', id: '__thread-state', text: 'User approved the session graph.' },
+        {
+          role: 'content',
+          id: 'decoration:decisions',
+          source: 'foundry',
+          segment: 'warden-decisions',
+          text: 'Domain decisions: locks: omitted (budget).',
+        },
       ],
       text: '',
     };
@@ -20,7 +27,6 @@ describe('buildInjectionArtifact', () => {
     const artifact = buildInjectionArtifact({
       userMessage: 'Build the harness loop.',
       assembled,
-      routing: 'category=feature tags=foundry,harness',
       guardFindings: 'No prior blockers.',
       layerFreshness: {
         conventions: { state: 'warm', lastWarmed: 123 },
@@ -29,18 +35,18 @@ describe('buildInjectionArtifact', () => {
     });
 
     expect(artifact.text).toContain('# User Message\n\nBuild the harness loop.');
-    expect(artifact.text).toContain('## Tags / Routing');
+    expect(artifact.text).toContain('## Warden Decisions');
     expect(artifact.text).toContain('## Instructions');
     expect(artifact.text).toContain('## Domain Knowledge');
     expect(artifact.text).toContain('## Thread State');
     expect(artifact.text).toContain('## Prior Guard Findings');
 
     expect(artifact.blocks.map((block) => block.kind)).toEqual([
-      'routing',
       'instructions',
       'instructions',
       'domain-knowledge',
       'thread-knowledge',
+      'warden-decisions',
       'guard-findings',
     ]);
     expect(artifact.blocks.every((block) => block.hash.length > 0 && block.tokens > 0)).toBe(true);

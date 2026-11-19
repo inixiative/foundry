@@ -145,7 +145,7 @@ export type DecisionEvents = Pick<SubscriptionDecisionConfig, 'onPressure' | 'on
 
 /**
  * The daemon's subscription decision hosts, as a live Foundry runs them: the decision host (the
- * Cartographer, the decision roles and every Warden stage on the decision model and effort), and one
+ * decision roles and every Warden stage on the decision model and effort), and one
  * host per other model and effort a classify stage names (`chorus.wardens.stages`), started on first
  * use on the same login and bounds. `stageHost` answers `null` for the decision pair (the Warden's own
  * provider serves it). Every primed pool is sized for the largest chorus any project runs.

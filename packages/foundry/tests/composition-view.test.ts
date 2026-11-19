@@ -81,8 +81,6 @@ const roleFile = (dir: string, role: string, slot: string, local = false) =>
 const WARDEN = 'conventions';
 /** The generated Warden's role id. */
 const WARDEN_ROLE = regionRoleId(WARDEN);
-/** The Cartographer's composition role: an agent written in settings is `agent:<key>`. */
-const CARTOGRAPHER_ROLE = roleIdOfAgent('cartographer');
 const REGION = { id: WARDEN, title: 'Conventions', routing: 'Is this about how this repo works?' };
 const REGION_RULES = regionInstructions(REGION);
 
@@ -215,11 +213,11 @@ test('a personal node never reaches a team audience, in either slot, even when o
 });
 
 // ---------------------------------------------------------------------------
-// Runtime: Wardens, the Cartographer and the main thread take their slots from the view.
+// Runtime: Wardens and the main thread take their slots from the view.
 // ---------------------------------------------------------------------------
 
 interface Call {
-  phase: 'central' | 'advise' | 'guard' | 'review' | 'route';
+  phase: 'central' | 'advise' | 'guard' | 'review';
   messages: LLMMessage[];
   opts: CompletionOpts;
 }
@@ -240,9 +238,6 @@ function config(picks: RoleComposition = {}): FoundryConfig {
       prompt: '',
       provider: 'central',
       model: 'central-model',
-      visibleLayers: [],
-      peers: [],
-      maxDepth: 1,
       enabled: true,
     },
   };
@@ -265,8 +260,7 @@ function config(picks: RoleComposition = {}): FoundryConfig {
 
 function setup(
   c: FoundryConfig,
-  advice: { snippets: string[] } = { snippets: [] },
-  routeLayers: string[] = [],
+  advice: { snippets: string[]; layers?: string[] } = { snippets: [] },
 ) {
   writeRegions(repo, [{ ...REGION, knowledge: 'REGION_KNOWLEDGE' }]);
   const calls: Call[] = [];
@@ -274,26 +268,26 @@ function setup(
     id,
     async complete(messages, opts = {}) {
       const user = messages.find((m) => m.role === 'user')?.content ?? '';
-      const phase: Call['phase'] = opts.threadId?.endsWith(':cartographer')
-        ? 'route'
-        : user.includes('## Completed work')
-          ? 'review'
-          : user.includes('## Tool observation')
-            ? 'guard'
-            : opts.threadId?.includes(':aux:')
-              ? 'advise'
-              : 'central';
+      const phase: Call['phase'] = user.includes('## Completed work')
+        ? 'review'
+        : user.includes('## Tool observation')
+          ? 'guard'
+          : opts.threadId?.includes(':aux:')
+            ? 'advise'
+            : 'central';
       calls.push({ phase, messages: structuredClone(messages), opts: { ...opts } });
       const content =
-        phase === 'route'
-          ? JSON.stringify({ layers: routeLayers, domains: ['conventions'], confidence: 1 })
-          : phase === 'advise'
-            ? advice.snippets.length
-              ? JSON.stringify({ layers: [], snippets: advice.snippets, confidence: 1 })
-              : 'NO_COMMENT'
-            : phase === 'guard' || phase === 'review'
-              ? 'NO_COMMENT'
-              : 'done';
+        phase === 'advise'
+          ? advice.snippets.length || advice.layers?.length
+            ? JSON.stringify({
+                layers: advice.layers ?? [],
+                snippets: advice.snippets,
+                confidence: 1,
+              })
+            : 'NO_COMMENT'
+          : phase === 'guard' || phase === 'review'
+            ? 'NO_COMMENT'
+            : 'done';
       return { model: 'controlled', content };
     },
   });
@@ -383,55 +377,9 @@ test('a composition over the role budget is a clear reported error in every phas
     const reviewed = f.lib.threadKnowledge.history.at(-1)!;
     expect(reviewed.decision).toBe('error');
     expect(reviewed.reason).toContain('exceed its budget');
-    expect(f.calls.filter((call) => call.phase !== 'central' && call.phase !== 'route')).toEqual(
-      [],
-    );
+    expect(f.calls.filter((call) => call.phase !== 'central')).toEqual([]);
   } finally {
     await f.close();
-  }
-});
-
-test('the Cartographer composes too, and over its budget routing reports an error', async () => {
-  ladderFiles();
-  const c = config();
-  c.composition = { roles: { ...c.composition!.roles, [CARTOGRAPHER_ROLE]: { budget: 50 } } };
-  const f = setup(c);
-  try {
-    const turn = await f.thread.dispatch('worker', 'Route me', undefined, { messageId: 'm1' });
-    expect(f.calls.filter((call) => call.phase === 'route')).toHaveLength(0);
-    const plan = turn.meta?.injection as {
-      plan?: { routing: { status: string; reason?: string } };
-    };
-    expect(plan.plan!.routing.status).toBe('error');
-    expect(plan.plan!.routing.reason).toContain(`composition.roles.${CARTOGRAPHER_ROLE}.budget`);
-  } finally {
-    await f.close();
-  }
-  // By default the Cartographer reads its prompt and its role files, not the CLAUDE.md stack: it
-  // routes, and the coding rules are the main thread's (the inixiative org CLAUDE.md alone put a
-  // routing call ~25,000 characters over budget).
-  write(roleFile(repo, CARTOGRAPHER_ROLE, 'instructions'), 'ROUTING_HINTS');
-  const g = setup(config());
-  try {
-    await g.thread.dispatch('worker', 'Route me', undefined, { messageId: 'm1' });
-    const routed = g.last('route').messages[0]!.content;
-    expect(routed).toContain('ROUTING_HINTS');
-    for (const general of ['ORG_RULES', 'PROJECT_RULES', 'PERSONAL_GLOBAL'])
-      expect(routed).not.toContain(general);
-  } finally {
-    await g.close();
-  }
-  // Settings may still hand it the stack, the same way any role picks.
-  const all = config();
-  all.composition = {
-    roles: { ...all.composition!.roles, [CARTOGRAPHER_ROLE]: { instructions: { general: 'all' } } },
-  };
-  const h = setup(all);
-  try {
-    await h.thread.dispatch('worker', 'Route me', undefined, { messageId: 'm1' });
-    expect(h.last('route').messages[0]!.content).toContain('ORG_RULES');
-  } finally {
-    await h.close();
   }
 });
 
@@ -757,7 +705,7 @@ test("invalidateComposition() also refreshes the main thread's instructions slot
   }
 });
 
-test('an on-demand layer the Cartographer routes to reaches the executor; one it does not, never does', async () => {
+test('an on-demand layer a Warden asks for reaches the executor; one nothing asks for, never does', async () => {
   ladderFiles();
   const c = config();
   c.layers.playbook = {
@@ -789,7 +737,7 @@ test('an on-demand layer the Cartographer routes to reaches the executor; one it
   } finally {
     await quiet.close();
   }
-  const routed = setup(c, { snippets: [] }, ['playbook']);
+  const routed = setup(c, { snippets: [], layers: ['playbook'] });
   try {
     expect(await send(routed)).toContain('ON_DEMAND_PLAYBOOK');
   } finally {

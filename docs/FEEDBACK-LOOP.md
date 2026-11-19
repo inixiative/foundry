@@ -15,13 +15,13 @@ Feedback is **explicit**. What is built today:
 
 ## Lifecycle
 
-When detection is on, an accepted turn runs foundry-core's correction detector. A hit is classified, routed to the Warden roles it concerns (falling back to `main`), and offered back to the user in a tuning prompt ("what happened / what we did / what we intend"). An applied answer writes a line into the routed role's instructions or domain knowledge, with provenance; undo reverts it. `pf:` means `packages/foundry/src/`.
+When detection is on, an accepted turn runs foundry-core's correction detector. A hit is classified, routed to the thread's own role, and offered back to the user in a tuning prompt ("what happened / what we did / what we intend"). An applied answer writes a line into the routed role's instructions or domain knowledge, with provenance; undo reverts it. `pf:` means `packages/foundry/src/`.
 
 ### What is built
 
 - Capture through foundry-core's detector and classify contract, with one item per rule.
 - Matching and recurrence.
-- Cartographer routing to Warden roles, falling back to the thread's role (`thread:coder`, `thread:assistant`, …).
+- Routing to the thread's own role (`thread:coder`, `thread:assistant`, …); to put a rule on a Warden, the person edits it with `roles`.
 - The tuning prompt: `ask` by default, `block`, or `blockOn`. A blocking hold runs while the turn is still queued. A stop withdraws it, and `blockTimeoutMs` bounds it.
 - Answers validated through `POST /api/feedback/:id/answer`. An edit replaces the rule's lines.
 - `POST /api/feedback/:id/tune` raises a prompt again. `undo` reverts a change.
@@ -57,7 +57,6 @@ interface FeedbackRouteRecord {        // phase: feedback-route
   roles: string[];                     // Warden/agent ids, or 'main'
   slot: 'instructions' | 'domainKnowledge';
   level: 'computer' | 'org' | 'org-personal' | 'project' | 'project-personal';
-  route: { domains: string[]; source: 'model' | 'keyword-fallback' | 'empty-map'; confidence: number };
 }
 interface FeedbackTuneRecord {         // phase: feedback-tune
   itemId: string; promptId: string;

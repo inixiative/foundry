@@ -158,7 +158,7 @@ export class AIAssist {
       'Respond in JSON format:',
       '{ "provider": "...", "model": "...", "temperature": 0.0, "reasoning": "..." }',
       '',
-      'Consider: classifiers/routers need fast cheap models. Executors need powerful ones. Temperature 0 for deterministic, 0.3-0.7 for creative.',
+      'Consider: decision roles need fast cheap models. Executors need powerful ones. Temperature 0 for deterministic, 0.3-0.7 for creative.',
     ].join('\n');
 
     const completion = await this._provider.complete(

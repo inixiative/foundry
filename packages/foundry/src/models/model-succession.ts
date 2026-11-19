@@ -258,13 +258,13 @@ export class ModelSuccession {
 
 const isModelKey = (key: string) => key === 'model' || /[a-z]Model$/.test(key);
 
-/** The provider key paired with a model key: `classifierModel` → `classifierProvider`. */
+/** The provider key paired with a model key: `decisionModel` → `decisionProvider`. */
 const pairedProviderKey = (key: string) =>
   key === 'model' ? undefined : `${key.slice(0, -'Model'.length)}Provider`;
 
 /**
  * The settings naming a retired model, walked over the whole config: each string under a model key
- * is read against its paired provider key (`classifierModel` against `classifierProvider`), else
+ * is read against its paired provider key (`decisionModel` against `decisionProvider`), else
  * its object's `provider` (or `worker`), else the nearest one above, else `defaults.provider`. A
  * model that provider does not list is read against the one provider that lists it; listed by
  * several or none, it is left as it is. With `apply`, each one with a successor is replaced in

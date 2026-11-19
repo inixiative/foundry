@@ -32,7 +32,7 @@ flowchart TB
 
 ## A.1 Spec
 
-A Foundry thread is the root of a tree. Each **node** is one conversation: the main thread, or a subagent at any depth (native Claude `Agent`/`Task`, a Codex sub-agent, or a Foundry child thread from [SUBAGENTS.md](reference/SUBAGENTS.md) §3). Each node archives as **its own Archive session**, linked to its parent. A **middleware call** (a Warden's advice, guard or review, the Cartographer's route) is not a node. It is a **reduced entry inside the node it wrapped**: its state and its result, never the message it was sent.
+A Foundry thread is the root of a tree. Each **node** is one conversation: the main thread, or a subagent at any depth (native Claude `Agent`/`Task`, a Codex sub-agent, or a Foundry child thread from [SUBAGENTS.md](reference/SUBAGENTS.md) §3). Each node archives as **its own Archive session**, linked to its parent. A **middleware call** (a Warden's advice, guard or review) is not a node. It is a **reduced entry inside the node it wrapped**: its state and its result, never the message it was sent.
 
 **Foundry writes the links.** The native stream carries the whole tree, so Archive never has to guess: a subagent's `task_started` frame carries `task_id`, `tool_use_id`, `spawn_depth` and `subagent_type`, and the assistant frame that issued the spawn carries the spawner's `parent_tool_use_id` (verified live, §C.2). Today agent-session's main-session path drops those frames, so carrying them through is a prerequisite (A.2). During a turn, the journal keeps the full phase rows the viewer and the replay need. When the turn ends, Foundry **compacts**: it appends one new, immutable `middleware-reduced` row per middleware call of that turn. Raw rows are never rewritten. On start, it compacts any earlier turn left without reduced rows. Archive capture sends the reduced rows, never the raw ones, and the raw rows age out under a local retention setting.
 
@@ -84,7 +84,7 @@ lineage: {
   timestamp,                                 // when it settled
   model, effort,                             // what served it
   text: JSON.stringify({
-    role: 'warden:conventions',              // or 'cartographer'
+    role: 'warden:conventions',
     trigger: 'user-message' | 'agent-action' | 'subagent-spawn' | …,  // TriggerPoint (pf/agents/warden-triggers.ts); new charter triggers join it
     wraps: 'turn:<id> for a message or a turn\'s actions, a tool call id (guard: per-call), handoff:<child> for a brief',
     outcome: AdviceOutcome,                  // foundry-core call-outcome.ts: { status: 'not-sent', cause } | { status: 'failed', cause } | { status: 'answered', result }
@@ -117,7 +117,7 @@ The entry is about 0.5–1 KB whatever the size of the Warden's context. The mes
 | A native spawn is seen (`task_started`) | Foundry | Starts an observed child node in the journal: SUBAGENTS.md §4.1 `ThreadMeta` with `parentThreadId`, `parentTurnId`, `spawn.{via, toolCallId, nativeTaskId}`, `depth`, plus the `handoff` row (§4.2). Parent attribution: the spawn's `tool_use` sits in an assistant frame whose `parent_tool_use_id` is the spawner's own spawn (null = the main thread). |
 | The turn ends (`completed`, `failed`) | Foundry, in the same journal transaction that seals the turn | **Compaction.** It appends one `middleware-reduced` phase row per middleware call of the turn, holding the A.3 shape. Existing rows are immutable and their checksums still verify (`pf/persistence/local-session-store.ts:1054`). The thread-knowledge text a reduced row names stays in the content store. |
 | Foundry starts | Foundry | Writes reduced rows for any turn that has none, `interrupted` turns included. The raw rows stay, because an interrupted outcome still has to be checked. This is the "or at the start of each request" half. |
-| Raw rows older than `journal.rawMiddlewareDays` (default 30) | Foundry retention | Deletes raw `advice` / `guard-*` / `route` rows that already have a reduced row, and releases the content they alone referenced. Deleting is retention; it is not a rewrite. |
+| Raw rows older than `journal.rawMiddlewareDays` (default 30) | Foundry retention | Deletes raw `advice` / `guard-*` rows that already have a reduced row, and releases the content they alone referenced. Deleting is retention; it is not a rewrite. |
 | After compaction | `ArchiveCapture` (`pf/archives/capture.ts`) | One snapshot per node: its messages, tools and native evidence as today, plus reduced entries in place of raw middleware rows, plus `lineage`. The root's snapshot carries `rootSessionId = sessionId`. A child changing never re-captures its parent. |
 | Claim | Foundry → Archive | Foundry claims each session in its tree as a **lease**, not a permanent lock: `{sessionIds (native ids), claimant: foundry sourceId, expiresAt}`. Foundry renews the lease while the thread is live (lease 10 min, renewed every 2 min). When Foundry has written the stitched snapshot covering a native session, it marks that session's claim `fulfilled` (it names the Foundry archive key). |
 | Collector | Archive | Skips a claimed native transcript only while its lease is live, or once the claim is `fulfilled`. If a lease lapses without being fulfilled (Foundry crashed mid-thread), the collector captures the raw session as a fallback: "Archive keeps every session" is a standing rule. If Foundry later fulfils that claim, the fallback archive is tagged `superseded-by:<foundry key>` and kept; retention may prune it. Without a claim, every in-session Warden (spec C) would also be archived as a full `subagents/agent-*.jsonl` session, input included. |
@@ -173,7 +173,7 @@ Also: *"I think the Foundry needs to tie those things together somehow. If it's 
 - Observed children appear in the viewer, under their parent. They are never dispatched to, and carry no runtime and no Wardens.
 
 **Compaction and retention:**
-- `completeTurn` and `failTurn` append one `middleware-reduced` row per middleware call of the turn: route, each advice participant, each guard outcome with its request's versions, and each `warden-debug` reading. Each row has the A.3 shape.
+- `completeTurn` and `failTurn` append one `middleware-reduced` row per middleware call of the turn: each advice participant, each guard outcome with its request's versions, and each `warden-debug` reading. Each row has the A.3 shape.
 - Raw rows are immutable, and their checksums still verify.
 - On start, `compactClosedTurns` reduces every closed turn that has middleware rows newer than its reduced rows, `interrupted` turns included. That covers a late guard outcome too.
 - `journal.rawMiddlewareDays` (default 30, a setting) controls `pruneRawMiddleware`. It deletes raw rows of closed, reduced turns once they are older than the window, then sweeps journal content nothing references. It runs on start and every 6 hours.
@@ -376,7 +376,7 @@ And on provenance, 2026-10-12, 00:44: *"Okay your feedback, and then what warden
 
 # C. Thread start-up
 
-> **SUPERSEDED (Aron, 2026-11-03): "the Claude project is the only thing that actually makes sense. Maybe we clean that up."** The per-thread runtime this spec built (`decisionRuntime: 'claude-in-session'`, `providers/in-session-wardens.ts`, the setup turn, `ThreadMeta.setup`, the queued turn while a thread set up) is removed. Wardens are held in one Foundry-owned process per project instead, the default for Claude decisions ([subscription-decisions.md](subscription-decisions.md), "Project Warden host"; Oracle `docs/foundry/PROJECT-WARDEN-HOST.md`), which reuses this spec's held, fresh-per-call members (agent-session `ClaudeInSessionDecisions`). A saved `claude-in-session` setting is refused by name. A subagent's turns are guarded from the main thread's Wardens in every runtime. Everything below is the design and its measurements as they stood.
+> **SUPERSEDED (Aron, 2026-11-03): "the Claude project is the only thing that actually makes sense. Maybe we clean that up."** The per-thread runtime this spec built (`decisionRuntime: 'claude-in-session'`, `providers/in-session-wardens.ts`, the setup turn, `ThreadMeta.setup`, the queued turn while a thread set up) is removed. Wardens are held in one Foundry-owned process per project instead, the default for Claude decisions ([subscription-decisions.md](subscription-decisions.md), "Project Warden host"; Oracle `docs/foundry/PROJECT-WARDEN-HOST.md`), which reuses this spec's held, fresh-per-call members (agent-session `ClaudeInSessionDecisions`). A subagent's turns are guarded from the main thread's Wardens in every runtime. Everything below is the design and its measurements as they stood.
 
 ## C.1 Spec
 

@@ -216,8 +216,8 @@ export interface LayerDefinition {
   maxTokens?: number;
   /** Instruction explaining how this layer's content should be used. */
   prompt?: string;
-  /** When this layer is activated: always, on-demand, or conditionally. */
-  activation?: 'always' | 'on-demand' | 'conditional';
+  /** When this layer is activated: always, or on-demand when middleware requests it. */
+  activation?: 'always' | 'on-demand';
   /** Who can write to instances of this layer. Undefined = anyone. */
   writers?: string[];
 }

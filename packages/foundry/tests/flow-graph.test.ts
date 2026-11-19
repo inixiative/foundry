@@ -117,21 +117,6 @@ const turn = {
   snippets: null,
   phases: [
     {
-      id: 'p1',
-      turnId: 't1',
-      phase: 'route',
-      record: {
-        routing: {
-          status: 'fallback',
-          reason: 'model timeout',
-          domains: ['architecture'],
-          layers: ['architecture'],
-          confidence: 0.4,
-          elapsedMs: 900,
-        },
-      },
-    },
-    {
       id: 'p2',
       turnId: 't1',
       phase: 'advice',
@@ -165,7 +150,6 @@ const turn = {
     },
   ],
   spans: [
-    { kind: 'classify', name: 'classify:c', agentId: 'c', status: 'ok', durationMs: 12 },
     { kind: 'execute', name: 'execute:worker', agentId: 'worker', status: 'ok', durationMs: 380 },
   ],
   delivery: {
@@ -261,13 +245,11 @@ const learning = [
   },
 ];
 
-test('turn flow: input → harness stages → routing ∥ domains → sealed phases → delivered layers → executor → guards, tasks → delivery → writeback', () => {
+test('turn flow: input → domains → sealed phases → delivered layers → executor → guards, tasks → delivery → writeback', () => {
   const g = turnFlowGraph(turn, { learning });
   const byId = new Map(g.nodes.map((n: any) => [n.id, n]));
   expect(g.nodes.map((n: any) => n.id)).toEqual([
     'input',
-    'span:classify',
-    'routing',
     'domain:architecture',
     'domain:security',
     'plan',
@@ -283,9 +265,8 @@ test('turn flow: input → harness stages → routing ∥ domains → sealed pha
   // Columns strictly advance along the loop.
   const col = (id: string) => byId.get(id).col;
   expect(
-    col('input') < col('span:classify') &&
-      col('span:classify') < col('routing') &&
-      col('routing') === col('domain:security'),
+    col('input') < col('domain:architecture') &&
+      col('domain:architecture') === col('domain:security'),
   ).toBe(true);
   expect(
     col('plan') < col('layer:architecture') &&
@@ -299,7 +280,6 @@ test('turn flow: input → harness stages → routing ∥ domains → sealed pha
   expect(col('tasks:TodoWrite')).toBe(col('delivery'));
   expect(byId.get('delivery').y).toBeLessThan(byId.get('guard:0').y);
   // Recorded decisions drive status; nothing absent is filled in.
-  expect(byId.get('routing')).toMatchObject({ status: 'warn', sub: 'fallback · 900 ms' });
   expect(byId.get('domain:architecture')).toMatchObject({
     status: 'ok',
     sub: 'answered:spoke · rev 2',
@@ -328,7 +308,6 @@ test('turn flow: input → harness stages → routing ∥ domains → sealed pha
   // Decisions ride the edges; every node but input has an incoming edge.
   const edge = (from: string, to: string) =>
     g.edges.find((e: any) => e.from === from && e.to === to);
-  expect(edge('routing', 'plan').label).toBe('1 domain · conf 0.4');
   expect(edge('domain:security', 'plan').label).toBe('failed:timeout');
   expect(edge('executor', 'guard:0')).toMatchObject({ label: 'Bash', status: 'error' });
   expect(edge('executor', 'delivery').label).toBe('1 drift');
@@ -353,13 +332,6 @@ test('turn flow: a sealed plan supplies timings; a running turn with no delivery
       layers: ['architecture'],
       domainsConsulted: ['architecture'],
       outstanding: [{ kind: 'advise', participant: 'security' }],
-      routing: {
-        status: 'routed',
-        domains: ['architecture'],
-        layers: [],
-        confidence: 1,
-        elapsedMs: 30,
-      },
       contributions: [
         {
           domain: 'architecture',
@@ -374,7 +346,6 @@ test('turn flow: a sealed plan supplies timings; a running turn with no delivery
   const byId = new Map(g.nodes.map((n: any) => [n.id, n]));
   expect(g.nodes.map((n: any) => n.id)).toEqual([
     'input',
-    'routing',
     'domain:architecture',
     'plan',
     'executor',
@@ -384,7 +355,6 @@ test('turn flow: a sealed plan supplies timings; a running turn with no delivery
     status: 'skip',
     sub: 'answered:no-comment · rev 0 · 17 ms',
   });
-  expect(byId.get('routing').sub).toBe('routed · 30 ms');
   expect(byId.get('executor').status).toBe('pending');
   expect(turnFlowGraph(null)).toEqual({ nodes: [], edges: [], width: 0, height: 0 });
 });
@@ -603,13 +573,13 @@ test("turn flow: guards recorded only on the turn's result meta still show; an u
       {
         id: 'r',
         turnId: 't1',
-        phase: 'route',
+        phase: 'advice',
         record: {
-          routing: {
-            status: 'routed',
-            domains: Array.from({ length: 12 }, (_, i) => `d${i}`),
-            confidence: 0.123456789,
-          },
+          participants: Array.from({ length: 12 }, (_, i) => ({
+            domain: `d${i}`,
+            decision: 'contribute',
+            snippets: ['a', 'b'],
+          })),
         },
       },
     ],

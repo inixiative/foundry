@@ -1283,23 +1283,6 @@ body {
   flex-wrap: wrap;
 }
 
-.chat-badge {
-  font-size: 9px;
-  padding: 1px 6px;
-  border-radius: 3px;
-  font-family: var(--font);
-}
-
-.chat-badge.classify {
-  background: rgba(108, 158, 255, 0.15);
-  color: var(--accent);
-}
-
-.chat-badge.route {
-  background: var(--ok-dim);
-  color: var(--ok);
-}
-
 .chat-trace-btn {
   font-family: var(--font);
   font-size: 9px;
@@ -2389,46 +2372,6 @@ body {
 .scope-btn:hover {
   color: var(--text);
   border-color: var(--text-dim);
-}
-
-.detail-peer-chip {
-  display: inline-block;
-  padding: 1px 6px;
-  border: 1px solid var(--line);
-  border-radius: 3px;
-  font-size: 10px;
-  color: var(--text-dim);
-  margin: 2px;
-}
-
-/* ---- Override form ---- */
-
-.override-form {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.override-input,
-.override-reason {
-  font-family: var(--font);
-  font-size: 11px;
-  background: var(--bg);
-  color: var(--text);
-  border: 1px solid var(--line);
-  border-radius: 3px;
-  padding: 6px 8px;
-  outline: none;
-  resize: vertical;
-}
-
-.override-input:focus,
-.override-reason:focus {
-  border-color: var(--accent);
-}
-
-.override-submit {
-  align-self: flex-end;
 }
 
 /* ---- Action bar / buttons ---- */

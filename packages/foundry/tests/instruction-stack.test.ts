@@ -12,9 +12,9 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import type { ClaudeCodeSessionConfig } from '@inixiative/agent-session';
 import { ContextStack, FileMemory } from '@inixiative/foundry-core';
-import type { CorpusTier } from '../src/agents/corpus-compiler';
 import { regionRoleId } from '../src/agents/region-roster';
 import { buildLayers, createSourceResolver } from '../src/agents/thread-factory';
+import type { CorpusTier } from '../src/prompts/instruction-settings';
 import {
   ASSISTANT_ROLE,
   CODER_ROLE,
@@ -469,9 +469,6 @@ test('instruction settings are validated: tiers, parents, cycles, sources', () =
     ],
   ] as const)
     expect(() => validateConfig(config(instructions))).toThrow(message);
-  expect(() =>
-    validateConfig({ ...starterConfig(), instructions: {} } as unknown as FoundryConfig),
-  ).toThrow('is now "composition"');
 });
 
 test('thread roles: coder for Claude Code and Codex, assistant for Muse; settings add roles and move defaults', () => {
@@ -695,9 +692,6 @@ test('an identified dispatch is not refused because the instructions layer repor
     model: 'mock',
     temperature: 0,
     maxTokens: 256,
-    visibleLayers: [],
-    peers: [],
-    maxDepth: 1,
     enabled: true,
   };
   const config = {

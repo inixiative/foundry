@@ -678,29 +678,10 @@ function dispatchAnnotation(trace, key) {
   return execute?.annotations?.[key] ?? trace?.root?.annotations?.[key];
 }
 
-/** The Cartographer's routing at a turn's preparation, from the sealed plan retained on the trace. */
+/** A turn's journalled rows of one phase, from the retained trace. */
 function phaseRows(trace, phase) {
   const rows = Array.isArray(trace?.detail?.phases) ? trace.detail.phases : [];
   return rows.filter((row) => row?.phase === phase && row.record && typeof row.record === 'object');
-}
-
-export function routingRequest(trace) {
-  const durable = phaseRows(trace, 'route').at(-1);
-  const routing =
-    durable?.record?.routing ??
-    dispatchAnnotation(trace, 'routing') ??
-    dispatchAnnotation(trace, 'injectionPlan')?.routing;
-  if (!routing || typeof routing !== 'object') return { state: 'not-recorded' };
-  return {
-    state: 'recorded',
-    status: typeof routing.status === 'string' ? routing.status : 'unrecorded',
-    reason: typeof routing.reason === 'string' && routing.reason.length ? routing.reason : null,
-    domains: Array.isArray(routing.domains) ? routing.domains : [],
-    layers: Array.isArray(routing.layers) ? routing.layers : [],
-    confidence: Number.isFinite(routing.confidence) ? routing.confidence : null,
-    elapsedMs: Number.isFinite(routing.elapsedMs) ? routing.elapsedMs : null,
-    request: participantRequest(routing.request),
-  };
 }
 
 /** Guard outcomes recorded on a turn's trace under each tool observation's identity. Null when the turn

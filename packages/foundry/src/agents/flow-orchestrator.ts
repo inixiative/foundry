@@ -4,18 +4,17 @@
  * @partOf feature:flow
  */
 // ---------------------------------------------------------------------------
-// Flow Orchestrator — wires the five FLOW.md roles into a coherent pipeline
+// Flow Orchestrator — wires the FLOW.md roles into a coherent pipeline
 //
 // Pre-message flow (parallel message decoration, CORE-002):
 //   1. Freeze    — capture the user message, thread state and every domain's
 //                  knowledge revision before any asynchronous work
 //   2. Assess    — every enabled domain assesses that frozen input, in a
-//                  bounded pool, concurrently with Cartographer routing;
-//                  routing and each assessment have their own deadline and
+//                  bounded pool; each assessment has its own deadline and
 //                  the whole plan may have one too
 //   3. Compose   — merge in configured order into a sealed, immutable plan
-//                  with explicit decisions, provenance, omissions, conflicts,
-//                  routing outcome and still-outstanding calls
+//                  with explicit decisions, provenance, omissions, conflicts
+//                  and still-outstanding calls
 //   4. Prepare   — hydrateDelta warms and composes the decoration; it does
 //                  NOT commit the delivery ledger, and it reports assessed
 //                  versus delivered revisions separately
@@ -29,7 +28,7 @@
 //   that; a started session resets it, compaction clears it. Stateless providers still receive
 //   every warm layer on every turn, so for them `skipped` stays informational.
 //
-// Timeouts are not cancellations. A timed-out route or assessment is still
+// Timeouts are not cancellations. A timed-out assessment is still
 // running against its provider; the plan records it as outstanding and the
 // orchestrator counts it until it settles. Native cancellation is G5.
 //
@@ -71,7 +70,6 @@ import {
   prefilterSkip,
   type WardenPrefilter,
 } from '../providers/warden-prefilter';
-import type { Cartographer, RouteRequestEvidence, RouteResult } from './cartographer';
 import {
   type AdviceRequestEvidence,
   activityTools,
@@ -174,28 +172,9 @@ export interface PlanInput {
   readonly capturedAt: number;
 }
 
-/**
- * How routing ended.
- * - routed: the router's model answered.
- * - fallback: the router's model failed and a keyword fallback was used.
- * - timeout: no answer by the routing deadline (call still outstanding).
- * - error: the routing call rejected.
- */
-export type RoutingStatus = 'routed' | 'fallback' | 'timeout' | 'error';
-
-export interface RoutingOutcome extends RouteResult {
-  readonly status: RoutingStatus;
-  readonly reason?: string;
-  /** The exact routing request supplied to the Cartographer's provider, or why none was made. */
-  readonly request: ParticipantRequest;
-  readonly startedAt: number;
-  readonly finishedAt: number;
-  readonly elapsedMs: number;
-}
-
 /** A provider call that had not settled when the plan was sealed. */
 export interface OutstandingCall {
-  readonly kind: 'route' | 'advise';
+  readonly kind: 'advise';
   readonly participant: string;
   readonly startedAt: number;
 }
@@ -206,18 +185,14 @@ export interface InjectionPlan {
   layers: string[];
   /** Inline snippets from contributing domains, in configured domain order. */
   snippets: string[];
-  /** Every domain that assessed the input, plus any the router named. */
+  /** Every domain that assessed the input. */
   domainsConsulted: string[];
-  /** Overall routing confidence (0 when routing did not complete normally). */
-  confidence: number;
   /** Time taken for the full pre-message flow (ms). */
   elapsed: number;
   /** Whether this plan was generated fresh or is a reuse of a previous plan. */
   fresh: boolean;
   /** The frozen input all participants saw. */
   readonly input: PlanInput;
-  /** The Cartographer's own outcome, kept separate from domain advice. */
-  readonly routing: RoutingOutcome;
   /** Every enabled domain, in configured order, with its decision. */
   readonly contributions: DomainContribution[];
   /** Domains excluded by policy (budget), never silently. */
@@ -458,8 +433,6 @@ export interface FlowTimingConfig {
   maxAdviseParallel?: number;
   /** Deadline per domain assessment. A late answer is recorded as a timeout. Default: `DECISION_DEADLINE_MS`. */
   adviseTimeoutMs?: number;
-  /** Deadline for routing. A late route is recorded as a timeout. Default: `DECISION_DEADLINE_MS`. */
-  routingTimeoutMs?: number;
   /**
    * Deadline for the whole pre-message flow. Started participants past it are
    * timeouts; queued ones are excluded. Default: none (per-call deadlines only).
@@ -471,8 +444,6 @@ export interface FlowTimingConfig {
 
 /** Configuration for the flow orchestrator. */
 export interface FlowOrchestratorConfig extends FlowTimingConfig {
-  /** The context routing agent. */
-  cartographer: Cartographer;
   /** Domain librarians, keyed by domain name. Map order is the configured order. */
   domainLibrarians: Map<string, DomainLibrarian>;
   /** The signal reconciliation coordinator. */
@@ -517,14 +488,12 @@ interface PlanClock {
 type Raced<T> = { timedOut: false; value: T } | { timedOut: true; reason: string };
 
 export class FlowOrchestrator {
-  private _cartographer: Cartographer;
   private _domains: Map<string, DomainLibrarian>;
   private _librarian: Librarian;
   private _stack: ContextStack;
   private _signals: SignalBus;
   private _maxAdviseParallel: number;
   private _adviseTimeoutMs: number;
-  private _routingTimeoutMs: number;
   private _planTimeoutMs: number | undefined;
   private _contributionBudget: number;
   private _prefilter: WardenPrefilter | undefined;
@@ -555,7 +524,6 @@ export class FlowOrchestrator {
   readonly catchUp = new WardenCatchUp();
 
   constructor(config: FlowOrchestratorConfig) {
-    this._cartographer = config.cartographer;
     this._domains = config.domainLibrarians;
     this._librarian = config.librarian;
     this._stack = config.stack;
@@ -568,11 +536,6 @@ export class FlowOrchestrator {
     this._adviseTimeoutMs = positiveFiniteMs(
       'adviseTimeoutMs',
       config.adviseTimeoutMs,
-      DECISION_DEADLINE_MS,
-    )!;
-    this._routingTimeoutMs = positiveFiniteMs(
-      'routingTimeoutMs',
-      config.routingTimeoutMs,
       DECISION_DEADLINE_MS,
     )!;
     this._planTimeoutMs = positiveFiniteMs('planTimeoutMs', config.planTimeoutMs, undefined);
@@ -591,7 +554,6 @@ export class FlowOrchestrator {
     return {
       maxAdviseParallel: this._maxAdviseParallel,
       adviseTimeoutMs: this._adviseTimeoutMs,
-      routingTimeoutMs: this._routingTimeoutMs,
       planTimeoutMs: this._planTimeoutMs,
       contributionBudget: this._contributionBudget,
     };
@@ -636,11 +598,10 @@ export class FlowOrchestrator {
 
   /**
    * Run the pre-message flow: freeze the input, let every enabled domain
-   * assess it concurrently with routing, and compose a sealed plan.
+   * assess it concurrently, and compose a sealed plan.
    *
-   * The full message is passed to routing and advising — no compression,
-   * no digestion. Layers are decorators and routers around the message,
-   * not summaries of it.
+   * The full message is passed to advising — no compression, no digestion.
+   * Layers are decorators around the message, not summaries of it.
    */
   async preMessage(
     message: string,
@@ -686,7 +647,7 @@ export class FlowOrchestrator {
     const start = Date.now();
 
     // 1. Freeze: everything a participant may read is captured now, before
-    //    any await, so every domain and the router see the same revision.
+    //    any await, so every domain sees the same revision.
     const threadState = this._librarian.layer.content;
     const input: PlanInput = {
       message,
@@ -707,8 +668,7 @@ export class FlowOrchestrator {
         : this.catchUp.current;
 
     // 2. Assess: the user-message trigger point asks every Warden the pre-filter does not rule out;
-    //    each decides under the charter (bounded pool). Routing starts alongside the pre-filter.
-    const routing = this._route(message, threadState, clock, outstanding);
+    //    each decides under the charter (bounded pool).
     const prefiltered = await this.prefilter(
       'user-message',
       message,
@@ -727,11 +687,11 @@ export class FlowOrchestrator {
         true,
       ),
     );
-    const [route, contributions] = await Promise.all([routing, assessments]);
+    const contributions = await assessments;
     this.catchUp.answered(seq, contributions);
 
     // 3. Compose in configured order and seal.
-    const plan = this._compose(input, route, contributions, outstanding, start, fresh);
+    const plan = this._compose(input, contributions, outstanding, start, fresh);
     return prefiltered
       ? deepFreeze({
           ...plan,
@@ -898,81 +858,6 @@ export class FlowOrchestrator {
       wardens.map((lib) => ({ domain: lib.domain, instructions: lib.advisePrompt })),
       this._threadId,
     );
-  }
-
-  /** Route with a deadline. Timeouts, errors and fallbacks are labelled, never hidden. */
-  private async _route(
-    message: string,
-    threadState: string,
-    clock: PlanClock,
-    outstanding: OutstandingCall[],
-  ): Promise<RoutingOutcome> {
-    const startedAt = Date.now();
-    // Invocation-scoped: the exact routing input, observed at the Cartographer's call boundary. A
-    // timed-out or failed route keeps its request; an empty map or a never-started route records why.
-    let observed: RouteRequestEvidence | null = null;
-    let served: ServedModel | null = null;
-    const finish = (
-      partial: Omit<RoutingOutcome, 'startedAt' | 'finishedAt' | 'elapsedMs' | 'request'>,
-    ): RoutingOutcome => {
-      const finishedAt = Date.now();
-      const request: ParticipantRequest = observed
-        ? {
-            status: 'supplied',
-            phase: observed.phase,
-            providerId: observed.providerId,
-            messages: observed.messages,
-            capturedAt: observed.capturedAt,
-            ...(served ? { served } : {}),
-          }
-        : {
-            status: 'not-sent',
-            phase: 'route',
-            reason: partial.reason ?? `${partial.status} before any provider call`,
-          };
-      return { ...partial, request, startedAt, finishedAt, elapsedMs: finishedAt - startedAt };
-    };
-    const empty = { layers: [] as string[], domains: [] as string[], confidence: 0 };
-
-    const task = this._cartographer
-      .route(message, threadState, {
-        observeRequest: (evidence) => {
-          observed = evidence;
-        },
-        observeServed: (value) => {
-          served = value;
-        },
-        timeoutMs: Math.min(this._routingTimeoutMs, clock.remaining() ?? Number.POSITIVE_INFINITY),
-      })
-      .then(
-        (result) => ({ kind: 'result' as const, result }),
-        (err: unknown) => ({
-          kind: 'error' as const,
-          error: (err as Error)?.message ?? String(err),
-        }),
-      );
-    const raced = await this._raceDeadline(task, this._routingTimeoutMs, 'route', clock);
-
-    if (raced.timedOut) {
-      this._trackOutstanding(task);
-      outstanding.push({ kind: 'route', participant: 'cartographer', startedAt });
-      return finish({ ...empty, status: 'timeout', reason: raced.reason });
-    }
-    const outcome = raced.value;
-    if (outcome.kind === 'error')
-      return finish({ ...empty, status: 'error', reason: outcome.error });
-
-    const { result } = outcome;
-    const status: RoutingStatus = result.source === 'keyword-fallback' ? 'fallback' : 'routed';
-    return finish({
-      layers: [...result.layers],
-      domains: [...result.domains],
-      ...(result.concepts ? { concepts: [...result.concepts] } : {}),
-      confidence: result.confidence,
-      ...(result.source ? { source: result.source } : {}),
-      status,
-      ...(result.reason ? { reason: result.reason } : {}),
-    });
   }
 
   private async _assess(
@@ -1145,7 +1030,7 @@ export class FlowOrchestrator {
   private async _raceDeadline<T>(
     task: Promise<T>,
     perCallMs: number,
-    kind: 'route' | 'advise',
+    kind: 'advise',
     clock: PlanClock,
   ): Promise<Raced<T>> {
     const remaining = clock.remaining();
@@ -1153,7 +1038,7 @@ export class FlowOrchestrator {
     const waitMs = planBound ? remaining : perCallMs;
     const reason = planBound
       ? `plan deadline ${clock.planTimeoutMs}ms reached before ${kind} answered`
-      : `no ${kind === 'route' ? 'route' : 'answer'} within ${perCallMs}ms`;
+      : `no answer within ${perCallMs}ms`;
 
     let timer: ReturnType<typeof setTimeout> | undefined;
     const deadline = new Promise<'timeout'>((resolve) => {
@@ -1177,20 +1062,18 @@ export class FlowOrchestrator {
   }
 
   /**
-   * Merge routing + contributions into a sealed plan. Order is the configured
-   * domain order regardless of completion order. Budget exclusions become
-   * omissions; domains contributing against the router's selection become
-   * conflicts. The user message is carried verbatim, never rewritten.
+   * Merge contributions into a sealed plan. Order is the configured domain
+   * order regardless of completion order. Budget exclusions become omissions.
+   * The user message is carried verbatim, never rewritten.
    */
   private _compose(
     input: PlanInput,
-    route: RoutingOutcome,
     assessed: DomainContribution[],
     outstanding: OutstandingCall[],
     startTime: number,
     fresh: boolean,
   ): InjectionPlan {
-    const layerSet = new Set<string>(route.layers);
+    const layerSet = new Set<string>();
     const snippets: string[] = [];
     const omissions: Array<{ domain: string; reason: string }> = [];
     const conflicts: Array<{ kind: string; domain: string; detail: string }> = [];
@@ -1210,22 +1093,11 @@ export class FlowOrchestrator {
       budgetUsed += size;
       for (const layer of c.layers) layerSet.add(layer);
       snippets.push(...c.snippets);
-      if (
-        route.status === 'routed' &&
-        route.domains.length > 0 &&
-        !route.domains.includes(c.domain)
-      ) {
-        conflicts.push({
-          kind: 'routing-excluded',
-          domain: c.domain,
-          detail: `router selected [${route.domains.join(', ')}]; ${c.domain} contributed ${c.snippets.length} snippet(s) and ${c.layers.length} layer(s) anyway`,
-        });
-      }
       return c;
     });
 
     const domainsConsulted: string[] = [];
-    for (const domain of [...contributions.map((c) => c.domain), ...route.domains]) {
+    for (const domain of contributions.map((c) => c.domain)) {
       if (!domainsConsulted.includes(domain)) domainsConsulted.push(domain);
     }
 
@@ -1233,11 +1105,9 @@ export class FlowOrchestrator {
       layers: [...layerSet],
       snippets,
       domainsConsulted,
-      confidence: route.confidence,
       elapsed: Date.now() - startTime,
       fresh,
       input,
-      routing: route,
       contributions,
       omissions,
       conflicts,
@@ -1723,25 +1593,21 @@ function composeDecoration(
   const decisions = plan.contributions
     .filter((c) => c.outcome.status === 'answered' && c.outcome.result === 'omitted-budget')
     .map((c) => `${c.domain}: omitted${c.reason ? ` (${c.reason})` : ''}`);
-  const routingLine =
-    plan.routing.status === 'routed'
-      ? `Router selected domains: ${plan.routing.domains.length ? plan.routing.domains.join(', ') : 'none'} (confidence ${plan.routing.confidence}).`
-      : `Routing ${plan.routing.status}${plan.routing.reason ? ` (${plan.routing.reason})` : ''}; no router selection was applied.`;
-  blocks.push({
-    role: 'content',
-    id: 'decoration:routing',
-    source: 'cartographer',
-    segment: 'routing',
-    text: [
-      routingLine,
-      ...(decisions.length ? [`Domain decisions: ${decisions.join('; ')}.`] : []),
-      ...(plan.conflicts.length
-        ? [
-            `Unresolved conflicts: ${plan.conflicts.map((c) => `${c.domain} ${c.kind}`).join('; ')}.`,
-          ]
-        : []),
-    ].join('\n'),
-  });
+  if (decisions.length || plan.conflicts.length)
+    blocks.push({
+      role: 'content',
+      id: 'decoration:decisions',
+      source: 'foundry',
+      segment: 'warden-decisions',
+      text: [
+        ...(decisions.length ? [`Domain decisions: ${decisions.join('; ')}.`] : []),
+        ...(plan.conflicts.length
+          ? [
+              `Unresolved conflicts: ${plan.conflicts.map((c) => `${c.domain} ${c.kind}`).join('; ')}.`,
+            ]
+          : []),
+      ].join('\n'),
+    });
 
   // Wardens are fresh each call and never hold the conversation: each one that contributed is
   // appended to the end of the user's message as its own note.

@@ -118,9 +118,6 @@ test('long history after-run: index pagination to the oldest record, lazy detail
         model: 'controlled',
         prompt: '',
         temperature: 0,
-        visibleLayers: ['conventions'],
-        peers: [],
-        maxDepth: 1,
         enabled: true,
       },
     } as any;

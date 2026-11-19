@@ -6,8 +6,8 @@
 // ---------------------------------------------------------------------------
 // MemoryToolAdapter — wraps any Foundry memory backend into a MemoryTool
 //
-// All Foundry memory adapters (FileMemory, SqliteMemory, RedisMemory,
-// PostgresMemory, SupermemoryAdapter, MuninnMemory) share the same shape:
+// All Foundry memory adapters (FileMemory, SqliteMemory, PostgresMemory,
+// MuninnMemory) share the same shape:
 //   write/get/search/delete + asSource + signalWriter
 //
 // Ownership: a thread reaches the tool through ToolRegistry.dispatch with its
@@ -73,7 +73,7 @@ export interface RichMemoryBackend extends MemoryBackend {
 export interface MemoryToolAdapterConfig {
   /** Tool ID. Default: "memory-{system}". */
   id?: string;
-  /** System name (e.g., "file", "sqlite", "redis", "postgres", "supermemory"). */
+  /** System name (e.g., "file", "sqlite", "postgres", "muninn"). */
   system: string;
   /** The memory backend to wrap. */
   backend: MemoryBackend;
@@ -274,19 +274,9 @@ export class MemoryToolAdapter implements MemoryTool {
     return new MemoryToolAdapter({ system: 'sqlite', backend: memory, id });
   }
 
-  /** Wrap a RedisMemory instance. */
-  static fromRedisMemory(memory: MemoryBackend, id?: string): MemoryToolAdapter {
-    return new MemoryToolAdapter({ system: 'redis', backend: memory, id });
-  }
-
   /** Wrap a PostgresMemory instance. */
   static fromPostgresMemory(memory: MemoryBackend, id?: string): MemoryToolAdapter {
     return new MemoryToolAdapter({ system: 'postgres', backend: memory, id });
-  }
-
-  /** Wrap a SupermemoryAdapter instance. */
-  static fromSupermemory(memory: RichMemoryBackend, id?: string): MemoryToolAdapter {
-    return new MemoryToolAdapter({ system: 'supermemory', backend: memory, id });
   }
 
   /** Wrap a MuninnMemory instance. */

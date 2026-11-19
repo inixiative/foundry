@@ -1,11 +1,8 @@
 import { describe, expect, test } from 'bun:test';
-import { type Classification, Classifier } from '../src/classifier';
 import { ContextLayer, type ContextSource } from '../src/context-layer';
 import { ContextStack } from '../src/context-stack';
-import { Decider, type Decision } from '../src/decider';
 import { Executor } from '../src/executor';
 import type { InjectionArtifact } from '../src/messages';
-import { type Route, Router } from '../src/router';
 
 function source(id: string, content: string): ContextSource {
   return { id, load: async () => content };
@@ -95,83 +92,6 @@ describe('Executor', () => {
   });
 });
 
-describe('Decider', () => {
-  test('returns decision without leaking context', async () => {
-    const stack = makeStack(['taxonomy', 'Big secret taxonomy']);
-    const decider = new Decider({
-      id: 'priority',
-      stack,
-      handler: async (context, payload: string) => ({
-        value: payload.includes('urgent') ? 'high' : 'low',
-        confidence: 0.9,
-        reasoning: 'pattern match',
-      }),
-    });
-
-    const result = await decider.run('urgent request');
-    expect(result.output.value).toBe('high');
-    expect(result.output.confidence).toBe(0.9);
-    expect(result.output.reasoning).toBe('pattern match');
-    // The context is used but not returned
-    expect(JSON.stringify(result)).not.toContain('Big secret taxonomy');
-  });
-
-  test('decision can be any type', async () => {
-    const stack = makeStack(['docs', 'docs']);
-    const decider = new Decider<string, { score: number; label: string }>({
-      id: 'scorer',
-      stack,
-      handler: async (_ctx, _payload) => ({
-        value: { score: 42, label: 'good' },
-      }),
-    });
-
-    const result = await decider.run('test');
-    expect(result.output.value.score).toBe(42);
-    expect(result.output.value.label).toBe('good');
-  });
-});
-
-describe('Classifier', () => {
-  test('returns classification', async () => {
-    const stack = makeStack(['taxonomy', 'Categories: bug, feature, question']);
-    const classifier = new Classifier({
-      id: 'classifier',
-      stack,
-      handler: async (context, payload: string) => ({
-        value: {
-          category: 'bug',
-          subcategory: 'regression',
-          tags: ['p0', 'auth'],
-        },
-        confidence: 0.95,
-      }),
-    });
-
-    const result = await classifier.run('auth login broken');
-    expect(result.output.value.category).toBe('bug');
-    expect(result.output.value.subcategory).toBe('regression');
-    expect(result.output.value.tags).toEqual(['p0', 'auth']);
-    expect(result.output.confidence).toBe(0.95);
-  });
-
-  test('classification with minimal fields', async () => {
-    const stack = makeStack(['docs', 'docs']);
-    const classifier = new Classifier({
-      id: 'simple',
-      stack,
-      handler: async () => ({
-        value: { category: 'general' },
-      }),
-    });
-
-    const result = await classifier.run('hello');
-    expect(result.output.value.category).toBe('general');
-    expect(result.output.value.subcategory).toBeUndefined();
-    expect(result.output.value.tags).toBeUndefined();
-  });
-});
-
 describe('Agent prompt-layer pairing', () => {
   test('assembleContext includes agent prompt and layer prompts', () => {
     const stack = new ContextStack(
@@ -243,42 +163,5 @@ describe('Agent prompt-layer pairing', () => {
     const assembled = executor.assembleContext();
     expect(assembled.blocks[0].role).toBe('layer');
     expect(assembled.blocks.length).toBe(2);
-  });
-});
-
-describe('Router', () => {
-  test('returns route decision', async () => {
-    const stack = makeStack(['topology', 'Agents: fix, build, answer']);
-    const router = new Router({
-      id: 'router',
-      stack,
-      handler: async (context, payload: { category: string }) => ({
-        value: {
-          destination: `executor-${payload.category}`,
-          priority: 10,
-          contextSlice: ['docs', 'conventions'],
-        },
-        confidence: 0.9,
-      }),
-    });
-
-    const result = await router.run({ category: 'fix' });
-    expect(result.output.value.destination).toBe('executor-fix');
-    expect(result.output.value.priority).toBe(10);
-    expect(result.output.value.contextSlice).toEqual(['docs', 'conventions']);
-  });
-
-  test('route with minimal fields', async () => {
-    const stack = makeStack(['docs', 'docs']);
-    const router = new Router({
-      id: 'simple-router',
-      stack,
-      handler: async () => ({
-        value: { destination: 'default' },
-      }),
-    });
-
-    const result = await router.run('test');
-    expect(result.output.value.destination).toBe('default');
   });
 });

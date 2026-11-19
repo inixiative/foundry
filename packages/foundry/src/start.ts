@@ -88,7 +88,7 @@ import {
 import { composeProjectRoster } from './agents/chorus-thread';
 import { resolveLearningSettings } from './agents/learning-config';
 import { describeChorus } from './agents/region-roster';
-import { atlasRootOf, configureHarness, createMainThread } from './agents/thread-factory';
+import { configureHarness, createMainThread } from './agents/thread-factory';
 import { acpLaunchPath, removeAcpLaunch, writeAcpLaunch } from './client/launch';
 import type { ConversationService } from './conversations/service';
 import { lateConversationWrapper } from './conversations/types';
@@ -228,8 +228,6 @@ if (subscription) {
         ', ',
       )}, decisions ${subscription.decision.runtime} ${subscription.policy.model} (${subscription.decision.profileDirectory}); no API providers`,
   );
-  if (subscription.rerouted.length)
-    console.log(`Decision roles use subscription decisions: ${subscription.rerouted.join(', ')}`);
 }
 // Each project's chorus: said at startup, so a regions directory that did not resolve is never a
 // silent loss of the project's Wardens.
@@ -731,7 +729,7 @@ const providers = new Map<string, LLMProvider>([
 ]);
 
 // ---------------------------------------------------------------------------
-// Per-thread runtime — Librarian, Cartographer, Wardens, orchestrator, bridges
+// Per-thread runtime — Librarian, Wardens, orchestrator, bridges
 // ---------------------------------------------------------------------------
 
 const eventStream = new EventStream();
@@ -760,12 +758,9 @@ if (prefilterServer?.status === 'not-installed') {
   eventStream.pushActivity(activity);
 } else void prefilter?.waitReady(prefilterServer?.status === 'started' ? 120_000 : 0);
 
-// atlasRoot: first atlas-mapped project (has .atlas/ or MAP.md), else the cwd.
-const atlasRoot = atlasRootOf(config);
-
 // Every factory-created thread (main included) gets its own Librarian,
-// Cartographer, Wardens, FlowOrchestrator, reactive rules, event bridges and
-// persistence sinks; archiving the thread disposes them.
+// Wardens, FlowOrchestrator, event bridges and persistence sinks; archiving
+// the thread disposes them.
 const runtimeManager = new ThreadRuntimeManager({
   config,
   // A turn marks its project active (opening its Warden host if none is open); it never waits for it.
@@ -779,7 +774,6 @@ const runtimeManager = new ThreadRuntimeManager({
   learning: resolveLearningSettings(config.learning, providers, flowLlm, decisionModel),
   eventStream,
   ...(prefilter ? { prefilter } : {}),
-  atlasRoot,
   // Wardens come from settings only; their domain knowledge sources resolve like layer sources.
   resolveSource: sourceResolver,
   ...(stageHost ? { stageHost } : {}),
@@ -794,7 +788,7 @@ const runtimeManager = new ThreadRuntimeManager({
         : undefined,
   ],
   // Native session lifecycle (compaction) binds per thread, on its worker's adapter: central
-  // session to the thread bus, auxiliaries (classifier/router/cartographer/wardens) to a side bus
+  // session to the thread bus, auxiliaries (wardens) to a side bus
   // that never invalidates the central ledger.
   sessionAdapters,
   // Conversation threads are always wrapped and carry their members' notes; bound once the viewer exists.
@@ -858,7 +852,6 @@ const holdProjectRoster = async (projectId: string) => {
       decisions: decisions.provider,
       ...(stageHost ? { stageHost } : {}),
       resolveSource: sourceResolver,
-      atlasRoot,
       warn: (line) => console.warn(line),
     });
     // Each stage in the project host of its model: the decision host's, or a later stage's lane.
@@ -932,8 +925,8 @@ const thread = createMainThread(factory, {
   ...(mainWorker ? { worker: mainWorker } : {}),
 });
 
-// Main's own stack. Everything below (reactive rules, Librarian, Cartographer,
-// Wardens, FlowOrchestrator) binds to this instance, not to the template, so
+// Main's own stack. Everything below (Librarian, Wardens, FlowOrchestrator)
+// binds to this instance, not to the template, so
 // main's thread-state and cache writes stay private to main.
 const stack = thread.stack;
 
@@ -958,13 +951,13 @@ if (sessionAdapters.size)
   );
 
 // ---------------------------------------------------------------------------
-// Flow — main's Cartographer, Wardens, Librarian and FlowOrchestrator are
+// Flow — main's Wardens, Librarian and FlowOrchestrator are
 // owned by its ThreadRuntime (see agents/thread-runtime.ts). Every other
 // factory-created thread gets the same wiring automatically.
 // ---------------------------------------------------------------------------
 
 console.log(
-  `Flow: Cartographer + ${mainRuntime.domainLibrarians.size} domain librarians + Librarian (${flowLlm.id}) per thread`,
+  `Flow: ${mainRuntime.domainLibrarians.size} domain librarians + Librarian (${flowLlm.id}) per thread`,
 );
 
 // ---------------------------------------------------------------------------
@@ -973,7 +966,7 @@ console.log(
 
 const harness = new Harness(thread);
 
-// Classifier/router/executor from config agent kinds, and invocation/activation modes.
+// The default executor from config agent kinds, and invocation/activation modes.
 configureHarness(harness, config);
 
 // ---------------------------------------------------------------------------

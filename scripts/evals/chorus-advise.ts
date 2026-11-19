@@ -32,7 +32,7 @@
  * Besides chorus.json, `<out>/requests.jsonl` holds every Warden call's exact input (one row per
  * Warden and stage); chorus.json carries their hashes and each composed part's subject and sha256.
  *
- * Usage: every decision call's tokens (role `warden` or `cartographer`) and a window reading before
+ * Usage: every decision call's tokens (role `warden`) and a window reading before
  * and after, through foundry-core's TokenTracker, land in chorus.json's `usage`.
  *
  * --decision-runtime claude-project runs the Wardens as the daemon does under that runtime: the
@@ -62,10 +62,7 @@ import {
 import { FileMemory } from '../../packages/core/src/adapters/file-memory';
 import { CHORUS_RECEPTION_VERSION } from '../../packages/foundry/src/agents/chorus-reception';
 import { composeProjectRoster } from '../../packages/foundry/src/agents/chorus-thread';
-import {
-  atlasRootOf,
-  createSourceResolver,
-} from '../../packages/foundry/src/agents/thread-factory';
+import { createSourceResolver } from '../../packages/foundry/src/agents/thread-factory';
 import type { StageEffort } from '../../packages/foundry/src/classify';
 import {
   charterFor,
@@ -207,7 +204,7 @@ const roleOf = (threadId: string | undefined): Record<string, string> => {
       domain: domain[1]!,
       stage: String(domain[2] ? Number(domain[2]) : 0),
     };
-  return { role: aux === 'cartographer' ? 'cartographer' : aux || 'decision' };
+  return { role: aux || 'decision' };
 };
 const recordWindows = async (phase: 'before' | 'after') => {
   const snapshot = await claudeLimits(state);
@@ -315,7 +312,6 @@ const quota = async () => {
 const memory = new FileMemory(join(foundryDir, 'memory'));
 await memory.load();
 const resolveSource = createSourceResolver({ memory });
-const atlasRoot = atlasRootOf(config);
 /** claude-project: the project's host, set up before the first message as the daemon sets it up. */
 const projectHosts = live.projectHosts;
 const hostReport: Record<string, unknown> = {
@@ -549,7 +545,6 @@ const writeChorus = (
       systemPromptSha256: sha256(advice.liveSystemPrompt),
       standing: advice.standing,
     },
-    routing: advice.routing,
     omissions: advice.omissions,
     requestsFile: 'requests.jsonl',
     wardens: advice.decisions.map(({ request, stageRequests, ...decision }) => ({
@@ -603,7 +598,6 @@ try {
       decisions,
       stageHost,
       resolveSource,
-      atlasRoot,
       warn: (line) => console.error(line),
     });
     const composeMs = Date.now() - t0;
@@ -658,7 +652,6 @@ try {
       decisions,
       stageHost,
       resolveSource,
-      atlasRoot,
       ...(values.session ? { threadId: values.session } : {}),
       ...(prime ? { prime: true } : {}),
       onPrimed: async () => {

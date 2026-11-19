@@ -6,7 +6,7 @@ import { afterAll, afterEach, expect, test } from 'bun:test';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { CodexPrimedSessions } from '@inixiative/agent-session';
+import { CLAUDE_DECISION_CACHE_ENV, CodexPrimedSessions } from '@inixiative/agent-session';
 import {
   ActionQueue,
   ContextLayer,
@@ -96,6 +96,30 @@ function source(runtime: 'claude' | 'codex', directory: string) {
     profileDirectory,
   };
 }
+
+/**
+ * A recorded Claude transport whose launches also keep their appended system prompt, read at spawn
+ * while its private file exists: a Claude decision's stable text rides there, not in a message.
+ */
+function withSystemPrompts<T extends { spawn: (argv: string[], options: never) => unknown }>(
+  transport: T,
+) {
+  const systemPrompts: string[] = [];
+  const recorded = transport.spawn;
+  const spawn = ((argv: string[], options: never) => {
+    const at = argv.indexOf('--append-system-prompt-file');
+    systemPrompts.push(at >= 0 ? readFileSync(argv[at + 1]!, 'utf8') : '');
+    return recorded(argv, options);
+  }) as T['spawn'];
+  // Assigned onto the transport itself: a spread would freeze its getters (`statusChecks`, `writes`).
+  return Object.assign(transport, { spawn, systemPrompts });
+}
+
+/** Every decision launch caches its system prompt for an hour and its messages for five minutes. */
+const cachesStableTextOnly = (launches: { env: Record<string, string | undefined> }[]) =>
+  launches.every((launch) =>
+    Object.entries(CLAUDE_DECISION_CACHE_ENV).every(([key, value]) => launch.env[key] === value),
+  );
 
 /** Runs a scenario, checks it against live's recorded conclusion, and on a live run replays it immediately. */
 async function scenario<T>(vcr: VCR, name: string, run: () => Promise<T>): Promise<T> {
@@ -327,15 +351,17 @@ test(
 );
 
 test(
-  'claude primed decisions: Haiku 5.5 on the subscription login; a role primed once, then forked per cycle',
+  'claude primed decisions: Haiku 5.5 on the subscription login; a role held in the system prompt, a fresh session per cycle',
   async () => {
     const vcr = claudeVcr();
     const out = await scenario(vcr, 'primed', async () => {
-      // Primer, first fork, and the spare that serves the second decision. The spare started after it
-      // races shutdown and has no cassette; its start fails and nothing is lost.
-      const transport = recordedClaudeTransport(
-        { status: ['subscribed'], decision: ['primed-primer', 'primed-fork', 'primed-spare-1'] },
-        vcr,
+      // The first decision and the spare that serves the second. The spare started after it races
+      // shutdown and has no cassette; its start fails and nothing is lost.
+      const transport = withSystemPrompts(
+        recordedClaudeTransport(
+          { status: ['subscribed'], decision: ['primed-1', 'primed-2'] },
+          vcr,
+        ),
       );
       const directory = root(),
         receipts = join(directory, 'receipts');
@@ -384,15 +410,18 @@ test(
           observedModel: second.native?.configuration?.observedModel,
           launches: used.length,
           statusChecks: transport.statusChecks,
-          primerCarriedContext: inputs[0]![0]!.startsWith(cache),
-          forks: used.filter((launch) => launch.argv.includes('--fork-session')).length,
+          systemPromptCarriedContext: transport.systemPrompts
+            .slice(0, used.length)
+            .every((prompt) => prompt.includes(cache)),
+          persisted: used.filter((launch) => !launch.argv.includes('--no-session-persistence'))
+            .length,
+          cachesStableTextOnly: cachesStableTextOnly(used),
           textOnly: used.every(
             (launch) =>
               launch.argv.includes('--strict-mcp-config') &&
               launch.argv.slice(-2).join('|') === '--setting-sources|',
           ),
           cyclesSentOnlyTheMessage: inputs
-            .slice(1)
             .flat()
             .every((t) => !t.includes('Domain cache') && t.includes('## Message')),
           receipts: readFileSync(primed.receiptsPath, 'utf8')
@@ -402,6 +431,10 @@ test(
               const r = JSON.parse(line);
               return { valid: r.valid, settled: r.settled, prime: r.prime };
             }),
+          // The second decision reads the stable text the first wrote and writes only its input,
+          // at the five-minute rate.
+          secondReadTheStableText: (second.tokens?.cacheRead ?? 0) > 0,
+          secondWroteNothingForAnHour: (second.tokens?.cacheWrite1h ?? 0) === 0,
         };
       } finally {
         await decisions.shutdown();
@@ -411,23 +444,26 @@ test(
     expect(out).toEqual({
       contents: [true, true],
       observedModel: LIVE.claudeObservedModel,
-      launches: 3,
+      launches: 2,
       statusChecks: 1,
-      primerCarriedContext: true,
-      forks: 2,
+      systemPromptCarriedContext: true,
+      persisted: 0,
+      cachesStableTextOnly: true,
       textOnly: true,
       cyclesSentOnlyTheMessage: true,
       receipts: [
         { valid: true, settled: true, prime: 'cold' },
         { valid: true, settled: true, prime: 'warm' },
       ],
+      secondReadTheStableText: true,
+      secondWroteNothingForAnHour: true,
     });
   },
   LIVE_TIMEOUT,
 );
 
 test(
-  'claude composed Warden: the composition view is the primed prefix, forked per call, re-primed when it changes',
+  'claude composed Warden: the composition view is the system prompt, a fresh session per call, replaced when it changes',
   async () => {
     const vcr = claudeVcr();
     const out = await scenario(vcr, 'composed', async () => {
@@ -458,14 +494,17 @@ test(
           role: 'settings-warden',
           picks: { domainKnowledge: { general: ['org'] } },
         });
-      const transport = recordedClaudeTransport(
-        {
-          status: ['subscribed'],
-          // Primer, fork, spare (the second decision), a spare dropped by the re-prime, the second
-          // primer and its fork. The spare started after that races shutdown and has no cassette.
-          decision: Array.from({ length: 6 }, (_, i) => `composed-${i + 1}`),
-        },
-        vcr,
+      const transport = withSystemPrompts(
+        recordedClaudeTransport(
+          {
+            status: ['subscribed'],
+            // The first decision, its spare (the second decision), a spare dropped when the
+            // composition changes, and the third decision. The spare started after that races
+            // shutdown and has no cassette.
+            decision: Array.from({ length: 4 }, (_, i) => `composed-${i + 1}`),
+          },
+          vcr,
+        ),
       );
       const directory = root(),
         receipts = join(directory, 'receipts');
@@ -517,7 +556,7 @@ test(
         const second = await warden.advise('Is a disabled toggle a bug?');
         // Its warm spare starts before the composition changes, live and in replay alike, so every
         // launch takes the same cassette in both.
-        for (let waited = 0; transport.launches.length < 4 && waited < 10_000; waited += 10)
+        for (let waited = 0; transport.launches.length < 3 && waited < 10_000; waited += 10)
           await Bun.sleep(10);
         put(roleFile, '- Settings UI lives under src/settings; toggles persist per project.');
         await load();
@@ -540,19 +579,18 @@ test(
             )
             .join('\n'),
         );
-        const primers = inputs.filter((input) => input.startsWith('## Domain cache (settings)'));
+        const prompts = [...new Set(transport.systemPrompts.slice(0, transport.launches.length))];
         return {
           advised: [first, second, third].map((advice) => advice.error === undefined),
-          primers: primers.length,
-          primersCarriedComposition: primers.every(
-            (input) => input.includes('toggles are features') && input.includes('src/settings'),
+          systemPrompts: prompts.length,
+          systemPromptsCarriedComposition: prompts.every(
+            (prompt) => prompt.includes('toggles are features') && prompt.includes('src/settings'),
           ),
-          secondPrimerChanged: primers[1]?.includes('persist per project') ?? false,
-          cyclesSentOnlyTheTurn: inputs
-            .filter((input) => !input.startsWith('## Domain cache'))
-            .every(
-              (input) => !input.includes('toggles are features') && input.includes('## Message'),
-            ),
+          secondSystemPromptChanged: prompts[1]?.includes('persist per project') ?? false,
+          cachesStableTextOnly: cachesStableTextOnly(used),
+          cyclesSentOnlyTheTurn: inputs.every(
+            (input) => !input.includes('toggles are features') && input.includes('## Message'),
+          ),
           receipts: readFileSync(primed.receiptsPath, 'utf8')
             .trim()
             .split('\n')
@@ -569,9 +607,10 @@ test(
     });
     expect(out).toEqual({
       advised: [true, true, true],
-      primers: 2,
-      primersCarriedComposition: true,
-      secondPrimerChanged: true,
+      systemPrompts: 2,
+      systemPromptsCarriedComposition: true,
+      secondSystemPromptChanged: true,
+      cachesStableTextOnly: true,
       cyclesSentOnlyTheTurn: true,
       receipts: [
         { valid: true, settled: true, prime: 'cold' },
@@ -592,19 +631,20 @@ test(
       const hosts = [
         {
           model: LIVE.claudeObservedModel,
-          transport: recordedClaudeTransport(
-            {
-              status: ['subscribed'],
-              decision: ['two-stage-recognise-1', 'two-stage-recognise-2'],
-            },
-            claudeVcr(),
+          transport: withSystemPrompts(
+            recordedClaudeTransport(
+              { status: ['subscribed'], decision: ['two-stage-recognise-1'] },
+              claudeVcr(),
+            ),
           ),
         },
         {
           model: 'claude-sonnet-5-5',
-          transport: recordedClaudeTransport(
-            { status: ['subscribed'], decision: ['two-stage-point-1', 'two-stage-point-2'] },
-            claudeVcr(),
+          transport: withSystemPrompts(
+            recordedClaudeTransport(
+              { status: ['subscribed'], decision: ['two-stage-point-1'] },
+              claudeVcr(),
+            ),
           ),
         },
       ].map(({ model, transport }) => {
@@ -685,26 +725,27 @@ test(
         const advice = await warden.advise(
           'Make sure the nightly sync job never runs on two instances at the same time.',
         );
+        // What a stage read: its system prompt (the stable text) and the messages sent to it.
+        const messagesOf = (stdin: string) =>
+          stdin
+            .split('\n')
+            .filter(Boolean)
+            .flatMap((line) => {
+              const message = (
+                JSON.parse(line) as { message?: { content: string | { text?: string }[] } }
+              ).message;
+              return !message
+                ? []
+                : [
+                    typeof message.content === 'string'
+                      ? message.content
+                      : message.content.map((b) => b.text ?? '').join(''),
+                  ];
+            });
         const inputOf = (transport: (typeof hosts)[number]['transport']) =>
           transport.launches
-            .filter((launch) => launch.stdin)
-            .map((launch) =>
-              launch.stdin
-                .split('\n')
-                .filter(Boolean)
-                .flatMap((line) => {
-                  const message = (
-                    JSON.parse(line) as { message?: { content: string | { text?: string }[] } }
-                  ).message;
-                  return !message
-                    ? []
-                    : [
-                        typeof message.content === 'string'
-                          ? message.content
-                          : message.content.map((b) => b.text ?? '').join(''),
-                      ];
-                })
-                .join('\n'),
+            .flatMap((launch, i) =>
+              launch.stdin ? [transport.systemPrompts[i] ?? '', ...messagesOf(launch.stdin)] : [],
             )
             .join('\n');
         const stage = advice.classified?.stages ?? [];

@@ -124,19 +124,6 @@ export {
   permissionLevel,
   RESTRICTED_POLICY,
 } from './capability';
-export {
-  type ClarificationResult,
-  Clarifier,
-  type ClarifierConfig,
-  type ClarifyHandler,
-  type ClarifyPayload,
-} from './clarifier';
-export {
-  type Classification,
-  Classifier,
-  type ClassifierConfig,
-  type ClassifyHandler,
-} from './classifier';
 // Context primitives
 export {
   type CompositionSnapshot,
@@ -175,7 +162,6 @@ export {
   type PromptBlock,
 } from './context-stack';
 export type { CredentialReference, CredentialResolver, CredentialScope } from './credentials';
-export { type DecideHandler, Decider, type DeciderConfig, type Decision } from './decider';
 export type {
   DeliveryOwner,
   ExpertDeliveryProof,
@@ -327,15 +313,12 @@ export {
   Harness,
   type HarnessResult,
   type Message,
-  matchesCondition,
   type PipelineStep,
   type RequestContext,
 } from './harness';
-export {
-  type ContextRef,
-  type HydrationAdapter,
-  HydrationRegistry,
-  RefSource,
+export type {
+  ContextRef,
+  HydrationAdapter,
 } from './hydrator';
 // IDs (UUID v7 — carries its own creation timestamp)
 export { idAtTime, newId, timeFromId } from './id';
@@ -420,9 +403,6 @@ export {
   WRITE_TOOLS,
   workItemId,
 } from './native-tools';
-// Retry middleware
-export { type RetryConfig, retryMiddleware } from './retry';
-export { type Route, type RouteHandler, Router, type RouterConfig } from './router';
 // Ownership scope — which thread/project owns a source read or tool call
 export { normalizeScope, type OwnershipScope } from './scope';
 export { createSerializedQueue, type SerializedQueue } from './serialized-queue';
@@ -532,11 +512,8 @@ export type {
   AgentModeConfig,
   CompletionOpts,
   CompletionResult,
-  EmbeddingProvider,
-  EmbeddingResult,
   ImageInput,
   ImageMediaType,
-  InvocationCondition,
   LayerModeConfig,
   LLMMessage,
   LLMProvider,

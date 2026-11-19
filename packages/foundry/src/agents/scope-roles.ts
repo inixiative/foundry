@@ -30,7 +30,7 @@ export function forgeMasterBrief(config: FoundryConfig, nativeClis?: ReadinessNa
     '',
     '## This install',
     `- Default executor: ${config.defaults.provider}/${config.defaults.model}`,
-    `- Classifier: ${config.defaults.classifierProvider ?? config.defaults.provider}/${config.defaults.classifierModel ?? config.defaults.model}`,
+    `- Decision model: ${config.defaults.decisionProvider ?? config.defaults.provider}/${config.defaults.decisionModel ?? config.defaults.model}`,
     `- Agents (${list(names(config.agents))})`,
     `- Layers (${list(names(config.layers))})`,
     `- Projects (${list(names(config.projects))})`,

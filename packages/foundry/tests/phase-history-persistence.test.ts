@@ -41,9 +41,6 @@ function fixture(path: string) {
       model: 'controlled',
       prompt: '',
       temperature: 0,
-      visibleLayers: [],
-      peers: [],
-      maxDepth: 1,
       enabled: true,
     },
   };
@@ -114,7 +111,7 @@ function fixture(path: string) {
   return { manager, thread, runtime, store, persistence, layer, requests, events };
 }
 
-test('one real turn: routing, advice, guard and review requests are journalled under their identities and recovered after SQLite close/reopen while live source moved on', async () => {
+test('one real turn: advice, guard and review requests are journalled under their identities and recovered after SQLite close/reopen while live source moved on', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'phase-history-'));
   const path = join(dir, 'sessions.sqlite');
   const f = fixture(path);
@@ -165,7 +162,7 @@ test('one real turn: routing, advice, guard and review requests are journalled u
   const turnId = 'turn-1';
   await turn(turnId, 'Add preferred names');
   expect(toolEmitted).toBe(2);
-  // The manager's one controlled auxiliary provider serves routing, advice and guard; each recorded request must equal the matching actual call of turn 2.
+  // The manager's one controlled auxiliary provider serves advice and guard; each recorded request must equal the matching actual call of turn 2.
   const auxiliaryCall = (marker: string, unless?: string) => {
     const hits = f.requests.route.filter(
       (ms) =>
@@ -175,8 +172,8 @@ test('one real turn: routing, advice, guard and review requests are journalled u
     expect(hits).toHaveLength(2);
     return hits[1]!;
   };
-  // Two turns of routing, advice and guard, plus each working turn's hand-back advice.
-  expect(f.requests.route).toHaveLength(8);
+  // Two turns of advice and guard, plus each working turn's hand-back advice.
+  expect(f.requests.route).toHaveLength(6);
   expect(f.requests.review).toHaveLength(2);
 
   // Live source moves on: cache, instructions and understanding all change before the journal is read back.
@@ -190,7 +187,6 @@ test('one real turn: routing, advice, guard and review requests are journalled u
   const reopened = new LocalSessionStore(path);
   closes.push(() => reopened.close());
 
-  // Routing: the exact request the Cartographer's provider was given, retained on the sealed plan in the trace.
   const detail = reopened.turnDetail(f.thread.id, turnId)!;
   // The phase record rides on the journalled agent message's meta (the executor result meta), beside delivery.
   const agentMeta = detail.messages.find((m) => m.actor === 'agent')!.meta as Record<string, any>;
@@ -198,13 +194,6 @@ test('one real turn: routing, advice, guard and review requests are journalled u
     guards: agentMeta.phases?.guards,
     decoration: (agentMeta.injection as any)?.decoration,
   };
-  const routing = agentMeta.phases?.routing;
-  expect(routing).toMatchObject({
-    status: 'routed',
-    request: { status: 'supplied', phase: 'route', providerId: 'controlled-route' },
-  });
-  expect(routing.request.messages).toEqual(auxiliaryCall('## Message to route'));
-  expect(routing.request.messages[1].content).toContain('## Message to route\nAdd preferred names');
 
   // Advice: the participant's request beside its three parts, frozen at DOMAIN_BEFORE / OWN_V0.
   const participant =

@@ -146,10 +146,10 @@ test('the journal keeps one order across a thread messages and its conversation 
     });
     store.beginTurn(thread, 'turn_b', 'second');
     store.appendPhase(thread, {
-      id: 'phase_route',
+      id: 'phase_advice',
       turnId: 'turn_b',
       dispatchId: null,
-      phase: 'route',
+      phase: 'advice',
       record: {},
     });
     const order = (s: LocalSessionStore) =>

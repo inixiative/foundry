@@ -95,9 +95,7 @@ test('an unwrapped thread sends the message as typed with only the session brief
   try {
     const result = await h.send({ id: 'm1', payload: 'Add a login endpoint' });
     expect(result.result.output).toBe('done');
-    // The trace is the turn arriving and the executor running: no classify or route stage.
-    expect(result.classification ?? null).toBeNull();
-    expect(result.route ?? null).toBeNull();
+    // The trace is the turn arriving and the executor running, nothing else.
     expect(result.trace.summary().stages.map((stage) => stage.kind)).toEqual([
       'ingress',
       'execute',
@@ -209,7 +207,7 @@ test('an unwrapped thread still carries the secret reminder after the message, o
   }
 });
 
-test('a configured layer wraps the thread: the Cartographer routes and thread-state is assembled', async () => {
+test('a configured layer wraps the thread: thread-state is assembled', async () => {
   const config = fresh();
   config.layers.rules = {
     id: 'rules',
@@ -229,7 +227,7 @@ test('a configured layer wraps the thread: the Cartographer routes and thread-st
   try {
     for (const layer of thread.stack.layers) await layer.warm?.();
     await h.send({ id: 'm1', payload: 'Add a login endpoint' });
-    expect(decisions.some((id) => id.endsWith(':cartographer'))).toBe(true);
+    expect(decisions).toEqual([]);
     expect(thread.stack.layers.map((layer) => layer.id)).toEqual([
       'thread-state',
       'rules',

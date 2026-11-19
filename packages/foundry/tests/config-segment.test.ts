@@ -151,6 +151,28 @@ for (const [label, value] of [
     }
   });
 
+test('a layer activation other than always or on-demand is refused, conditional included', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'g6-config-activation-'));
+  try {
+    const store = new ConfigStore(dir),
+      config = starterConfig('controlled', 'controlled');
+    config.layers = { custom: layer() };
+    await store.save(config);
+    const before = await readFile(join(dir, 'settings.json'), 'utf8');
+    await expect(
+      store.patch('layers', { custom: { ...layer(), activation: 'conditional' } as never }),
+    ).rejects.toThrow('global layers: activation must be "always" or "on-demand"');
+    await expect(
+      store.patch('projects', { p: project({ custom: { activation: 'conditional' } }) }),
+    ).rejects.toThrow('project "p" layers: activation must be');
+    expect(await readFile(join(dir, 'settings.json'), 'utf8')).toBe(before);
+    await store.patch('layers', { custom: { ...layer(), activation: 'on-demand' } });
+    expect(store.config.layers.custom.activation).toBe('on-demand');
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test('valid and absent project segments are accepted, persisted and resolved', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'g6-config-segment-ok-'));
   try {

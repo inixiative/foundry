@@ -25,16 +25,6 @@ export {
   MuninnMemory,
 } from './adapters/muninn-memory';
 export { PostgresMemory } from './adapters/postgres-memory';
-// Heavy-infra adapters
-export {
-  type RedisClient,
-  type RedisEntry,
-  RedisMemory,
-} from './adapters/redis-memory';
-export {
-  SupermemoryAdapter,
-  type SupermemoryConfig,
-} from './adapters/supermemory';
 // Foundry agents (re-exports core + adds foundry-specific agents)
 export {
   type AdviseResult,
@@ -42,84 +32,38 @@ export {
   type BuildLayersDeps,
   buildAgents,
   buildLayers,
-  // Cartographer (context routing)
-  Cartographer,
-  type CartographerConfig,
-  type CompiledCorpus,
-  ContradictionDetector,
-  ConvergenceDetector,
-  // Corpus Compiler
-  CorpusCompiler,
-  type CorpusCompilerConfig,
-  type CorpusTier,
-  CrossPollinationDetector,
-  classificationOverrideRule,
-  type DocState,
   // Domain Librarian (advise + guard pattern)
   DomainLibrarian,
   type DomainLibrarianConfig,
-  DuplicationDetector,
-  emitOnPatternRule,
-  // Flow Orchestrator (wires the five FLOW.md roles)
+  // Flow Orchestrator (wires the FLOW.md roles)
   FlowOrchestrator,
   type FlowOrchestratorConfig,
-  type FluidEntry,
-  type FormalDoc,
   fromSettingsConfig,
   type GuardFinding,
   type GuardReport,
   type GuardResult,
-  // Herald
-  Herald,
-  type HeraldConfig,
-  type HeraldPattern,
-  type HeraldRecommendation,
   type InjectionPlan,
   type InvalidationEvent,
   invalidateComposition,
-  keywordClassify,
-  keywordRoute,
-  type LayerInheritance,
-  type LayerVisibility,
   // Librarian (signal reconciliation)
   Librarian,
   type LibrarianConfig,
-  lowConfidenceRule,
-  type MapEntry,
-  type PatternDetector,
   // Project
   Project,
   type ProjectConfig,
   ProjectRegistry,
   type ProjectStatus,
   type ProjectSummary,
-  parseJSON,
-  // Built-in hooks
-  type ReactionContext,
-  type ReactionRule,
-  // Reactive Middleware
-  ReactiveMiddleware,
-  type ReactiveMiddlewareConfig,
-  ResourceImbalanceDetector,
-  type RouteResult,
   resolveAgentOpts,
-  rewarmOnAgentRule,
-  // Sessions
-  SessionManager,
   type SourceResolver,
-  type ThreadBlueprint,
   // Thread Factory
   ThreadFactory,
   type ThreadFactoryDeps,
-  type ThreadSnapshot,
   type ThreadState,
   type ToolObservation,
-  type TopologyMap,
-  type VisibilityTier,
 } from './agents';
 // Git — worktree detection for thread→branch assignment
 export {
-  diffStat,
   findByBranch,
   findByPath,
   type GitWorktree,
@@ -134,13 +78,11 @@ export {
 export {
   type AnthropicConfig,
   AnthropicProvider,
-  VoyageEmbeddingProvider,
 } from './providers/anthropic';
 // LLM Providers
 export type { ClaudeContextBudget } from './providers/claude-context-budget';
 export {
   type GeminiConfig,
-  GeminiEmbeddingProvider,
   GeminiProvider,
 } from './providers/gemini';
 export {
@@ -159,10 +101,7 @@ export {
   type NativeAuthenticationSource,
 } from './providers/native-authentication';
 export {
-  createCursorProvider,
-  createOllamaProvider,
   type OpenAIConfig,
-  OpenAIEmbeddingProvider,
   OpenAIProvider,
 } from './providers/openai';
 
@@ -247,9 +186,7 @@ export {
   DEFAULT_EXECUTOR_ID,
   defaultAgents,
   defaultConfig,
-  type ExecutionEnv,
   type FoundryConfig,
-  type InvocationConditionOverride,
   isAgentExtension,
   type LayerSettingsConfig,
   type LayerSettingsOverride,

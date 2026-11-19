@@ -22,11 +22,11 @@ import {
   Thread,
   ToolRegistry,
 } from '@inixiative/foundry-core';
-import { SessionManager } from '../src/agents/session';
 import { readLaunchFile, runProxy } from '../src/mcp/proxy';
 import { createFoundryMcp } from '../src/mcp/server';
 import { createLiveBridge, type LiveBridge } from '../src/mcp/transport';
 import { type MemoryBackend, MemoryToolAdapter } from '../src/tools/memory-adapter';
+import { liveThreads } from './helpers/live-threads';
 
 // T2 focused tests, written RED first. Actual loopback HTTP through the SDK
 // streamable client, and a REAL owned Bun stdio proxy subprocess talking to that
@@ -157,13 +157,13 @@ async function fixture(opts: { projectId?: string; slowRead?: () => Promise<void
   const foreign = new Thread('foreign', new ContextStack([new ContextLayer({ id: 'x' })]));
   foreign.meta.projectId = 'project-B';
   foreign.meta.description = 'PRIVATE_PROJECT_B_DESCRIPTION';
-  const manager = new SessionManager();
+  const manager = liveThreads();
   for (const t of [owner, sibling, foreign]) manager.add(t);
   cleanups.push(() => {
     for (const t of [owner, sibling, foreign]) t.dispose();
   });
   const bridge = await createLiveBridge({
-    createMcp: () => createFoundryMcp({ thread: owner, sessionManager: manager, tools }),
+    createMcp: () => createFoundryMcp({ thread: owner, liveThreads: manager, tools }),
     launchRoot: dir,
   });
   cleanups.push(() => bridge.close());
@@ -523,7 +523,7 @@ test('launch file validation: symlink, loose mode, malformed shape, remote endpo
   writeFileSync(blocked, 'file-not-dir');
   await expect(
     createLiveBridge({
-      createMcp: () => createFoundryMcp({ thread: f.owner, sessionManager: f.manager }),
+      createMcp: () => createFoundryMcp({ thread: f.owner, liveThreads: f.manager }),
       launchRoot: blocked,
     }),
   ).rejects.toThrow();
@@ -780,7 +780,7 @@ async function lateFixture(observer?: (record: unknown) => void) {
         createMcp: () =>
           createFoundryMcp({
             thread: f.owner,
-            sessionManager: f.manager,
+            liveThreads: f.manager,
             tools: f.tools,
             onInvocation: observer,
           }),
@@ -977,7 +977,7 @@ test('a primary held read while another initialization delays close is still ref
     createMcp: () => {
       const mcp = createFoundryMcp({
         thread: base.owner,
-        sessionManager: base.manager,
+        liveThreads: base.manager,
         tools: base.tools,
       });
       created++;
@@ -1057,7 +1057,7 @@ test("a factory that returns a foreign thread's server is refused, closed and ac
     createMcp: () => {
       created++;
       if (created === 2) return createFoundryMcp({ thread: foreign });
-      return createFoundryMcp({ thread: f.owner, sessionManager: f.manager, tools: f.tools });
+      return createFoundryMcp({ thread: f.owner, liveThreads: f.manager, tools: f.tools });
     },
   });
   cleanups.push(() => bridge.close());
@@ -1150,7 +1150,7 @@ function observedThread(id: string, projectId: string, fact: string) {
 
 test('SDK session churn leaves no disposal hooks, while detached authorities still refuse disposal, replacement and project changes on late reads', async () => {
   const owner = observedThread('churn-owner', 'project-A', 'CHURN_FACT');
-  const manager = new SessionManager();
+  const manager = liveThreads();
   manager.add(owner.thread);
   let release!: () => void;
   let entered!: () => void;
@@ -1192,7 +1192,7 @@ test('SDK session churn leaves no disposal hooks, while detached authorities sti
   );
   const bridge = await createLiveBridge({
     launchRoot: mkdtempSync(join(tmpdir(), 'foundry-t2-churn-launch-')),
-    createMcp: () => createFoundryMcp({ thread: owner.thread, sessionManager: manager, tools }),
+    createMcp: () => createFoundryMcp({ thread: owner.thread, liveThreads: manager, tools }),
   });
   cleanups.push(() => {
     release();
@@ -1257,7 +1257,7 @@ test('cleanup accounting: a held or rejected server close is never reported comp
       const current = ++created;
       const mcp = createFoundryMcp({
         thread: current === 2 || current === 3 ? foreign : f.owner,
-        sessionManager: manager(f),
+        liveThreads: manager(f),
         tools: f.tools,
       });
       const original = mcp.server.close.bind(mcp.server);

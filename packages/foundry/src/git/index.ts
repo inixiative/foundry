@@ -4,7 +4,6 @@ export {
   type CheckoutPlace,
   checkoutPlace,
   containingPath,
-  diffStat,
   findByBranch,
   findByPath,
   type GitWorktree,

@@ -20,7 +20,7 @@ The MCP server (`mcp/server.ts`) works standalone via `mcp/cli.ts` — Claude Co
 The `McpSettingsConfig` and API routes (`/api/mcp/*`) are built. The missing wiring:
 
 1. **SSE transport in viewer**: When `transport: "sse"`, `startViewer()` should start the MCP server embedded in the Hono app, exposing `/mcp` SSE endpoints. The MCP server gets the harness's live thread, not a standalone one.
-2. **Shared state**: Embedded MCP server uses the same `thread`, `signals`, and `sessionManager` as the harness — queries return live state, signals feed directly into the Librarian.
+2. **Shared state**: Embedded MCP server uses the same `thread`, `signals`, and `liveThreads` as the harness — queries return live state, signals feed directly into the Librarian.
 3. **Viewer startup wiring**: `start.ts` or `startViewer()` should check `config.mcp?.enabled && config.mcp?.transport === "sse"` and wire the embedded MCP server.
 
 ## Architecture

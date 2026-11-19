@@ -32,15 +32,10 @@ export function modelSelection(config: FoundryConfig) {
     } catch (error) {
       issue = (error as Error).message;
     }
-  // Decision roles: every enabled agent that is not an executor. A fresh install has none.
-  const decisionRoles = Object.values(config.agents)
-    .filter((agent) => agent.enabled !== false && agent.kind !== 'executor')
-    .map((agent) => agent.id);
   return {
     apiTokens,
     default: { provider: config.defaults.provider, model: config.defaults.model },
     decision,
-    decisionRoles,
     ...(issue ? { issue } : {}),
   };
 }
@@ -98,15 +93,15 @@ export function registerModelRoutes(app: Hono, configStore: ConfigStore) {
         ...(decisionRuntime ? { decisionRuntime } : {}),
         model,
       };
-      draft.defaults.classifierProvider = SUBSCRIPTION_DECISIONS;
-      draft.defaults.classifierModel = model;
+      draft.defaults.decisionProvider = SUBSCRIPTION_DECISIONS;
+      draft.defaults.decisionModel = model;
       return;
     }
     if (draft.apiTokens !== true)
       throw Error(
         `${provider} runs decisions through its API: turn on API keys (apiTokens) first, or choose a subscription model`,
       );
-    draft.defaults.classifierProvider = provider;
-    draft.defaults.classifierModel = model;
+    draft.defaults.decisionProvider = provider;
+    draft.defaults.decisionModel = model;
   });
 }

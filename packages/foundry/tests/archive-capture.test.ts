@@ -73,6 +73,83 @@ test('journal capture writes every page to the local Archive, retains partial tu
   expect(latest(archive)?.coverage.reasoning).toBe('unavailable');
 });
 
+test('an unchanged thread is written again to an Archive that no longer holds it', async () => {
+  const { archive, journal } = fixture();
+  const client = archive.client();
+  const first = new ArchiveCapture(journal, () => client, new EventStream());
+  await first.flush();
+  first.close();
+  archive.wipe();
+  const capture = new ArchiveCapture(journal, () => client, new EventStream());
+  cleanup.push(() => capture.close());
+  await capture.flush();
+  expect(archive.listings()[0]?.revision).toBe(1);
+  expect(capture.errors.size).toBe(0);
+});
+
+test('a thread the Archive already holds is not rebuilt, across a restart, and a running turn is captured at most every 30 seconds', async () => {
+  const { archive, journal, t } = fixture();
+  const client = archive.client();
+  const first = new ArchiveCapture(journal, () => client, new EventStream());
+  await first.flush();
+  first.close();
+  expect(archive.listings()[0]?.revision).toBe(1);
+  // A restarted Foundry knows what the Archive holds and skips the unchanged thread.
+  const skipped: string[] = [];
+  const built: ArchiveSnapshot[] = [];
+  const events = new EventStream();
+  const capture = new ArchiveCapture(
+    journal,
+    () => client,
+    events,
+    (snapshot) => built.push(snapshot),
+    (threadId) => skipped.push(threadId),
+  );
+  cleanup.push(() => capture.close());
+  await capture.flush();
+  expect(skipped).toEqual([t.id]);
+  expect(built).toHaveLength(0);
+  expect(capture.stored.get(t.id)?.archiveId).toBe(archive.listings()[0]!.id);
+  expect(archive.listings()[0]?.revision).toBe(1);
+  // A turn starts: its first event is captured soon; later ones wait for the bound.
+  journal.beginTurn(t, 'turn-1', 'Question');
+  events.push({ kind: 'journal', threadId: t.id, turnId: 'turn-1', timestamp: Date.now() });
+  await Bun.sleep(400);
+  expect(archive.listings()[0]?.revision).toBe(2);
+  journal.appendPhase(t, {
+    id: 'p-1',
+    turnId: 'turn-1',
+    dispatchId: 'd',
+    phase: 'handoff',
+    record: { at: 1 },
+  });
+  events.push({ kind: 'journal', threadId: t.id, turnId: 'turn-1', timestamp: Date.now() });
+  await Bun.sleep(400);
+  expect(archive.listings()[0]?.revision).toBe(2);
+  // The turn closes: its closing capture runs at once.
+  journal.completeTurn(
+    t,
+    'turn-1',
+    'Answer',
+    {},
+    {
+      id: 'trace-1',
+      messageId: 'turn-1',
+      startedAt: 1,
+      root: {},
+      summary: {},
+      spans: [],
+    },
+  );
+  events.push({ kind: 'journal', threadId: t.id, turnId: 'turn-1', timestamp: Date.now() });
+  await Bun.sleep(400);
+  expect(archive.listings()[0]?.revision).toBe(3);
+  expect(conversational(latest(archive)).map((entry) => entry.text)).toEqual([
+    'Question',
+    'Answer',
+  ]);
+});
+
 test('a missing or failing local Archive records the thread, still reports its snapshot, and the retry captures it', async () => {
   const { archive, journal, t } = fixture();
   journal.beginTurn(t, 'turn-a', 'Remember this');
@@ -299,14 +376,14 @@ test('capture stamps what Foundry ran: the executor per turn, decision roles per
     observedAt: 2,
   });
   journal.appendNative(t, { ...executor, toolName: 'Read', toolOutput: 'x', callId: 'c1' });
-  const route = {
+  const warden = {
     schema: 1 as const,
-    admissionId: 'route',
+    admissionId: 'warden',
     nativeOutcome: 'unknown' as const,
-    owner: owner(`${t.id}:aux:cartographer`),
+    owner: owner(`${t.id}:aux:domain:architecture`),
   };
-  journal.registerNative(t, route);
-  journal.appendNative(t, { ...route, text: 'routing', observedAt: 3 });
+  journal.registerNative(t, warden);
+  journal.appendNative(t, { ...warden, text: 'warden answer', observedAt: 3 });
   const supplied = (served?: object) => ({
     status: 'supplied',
     phase: 'advice',
@@ -320,10 +397,9 @@ test('capture stamps what Foundry ran: the executor per turn, decision roles per
       id,
       turnId: 'turn-a',
       dispatchId: 'd',
-      phase: id as 'route' | 'advice',
+      phase: id as 'advice',
       record,
     });
-  phase('route', { routing: { request: supplied({ model: 'gpt-6-luna', effort: 'low' }) } });
   phase('advice', {
     participants: [
       { domain: 'architecture', request: supplied({ model: 'gpt-6-luna', effort: 'low' }) },
@@ -366,16 +442,11 @@ test('capture stamps what Foundry ran: the executor per turn, decision roles per
     expect(call).toMatchObject({ model: 'claude-opus-5-5', effort: 'high' });
     expect(snapshot.entries.find((e) => e.kind === 'tool-result')).not.toHaveProperty('model');
     // A decision role's native text never inherits the executor's model.
-    const routing = snapshot.entries.find(
-      (e) => e.kind === 'assistant' && e.text.includes('routing'),
+    const decision = snapshot.entries.find(
+      (e) => e.kind === 'assistant' && e.text.includes('warden answer'),
     );
-    expect(routing).not.toHaveProperty('model');
+    expect(decision).not.toHaveProperty('model');
     // Middleware calls reach Archive reduced, one entry per call, each with the model that served it.
-    expect(entry('middleware:route')).toEqual({
-      model: 'gpt-6-luna',
-      effort: 'low',
-      kind: 'event',
-    });
     expect(entry('middleware:advice:architecture')).toEqual({
       model: 'gpt-6-luna',
       effort: 'low',
@@ -388,8 +459,8 @@ test('capture stamps what Foundry ran: the executor per turn, decision roles per
     expect((await archive.client().list())[0]?.models).toEqual(
       expect.arrayContaining([
         { model: 'claude-opus-5-5', effort: 'high', entries: 2 },
-        // The Cartographer and one Warden on gpt-6-luna; the other Warden on Opus.
-        { model: 'gpt-6-luna', effort: 'low', entries: 2 },
+        // One Warden on gpt-6-luna; the other Warden on Opus.
+        { model: 'gpt-6-luna', effort: 'low', entries: 1 },
         { model: 'claude-opus-5-5', entries: 1 },
       ]),
     );

@@ -43,9 +43,6 @@ async function fixture(name: string, withNative = false) {
         model: 'controlled',
         prompt: '',
         temperature: 0,
-        visibleLayers: [],
-        peers: [],
-        maxDepth: 1,
         enabled: true,
       },
     };

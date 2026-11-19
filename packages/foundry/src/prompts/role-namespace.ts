@@ -23,7 +23,7 @@ export const roleNamespace = Object.freeze({
    * spaces, agents and sources, that never meet). `<name>` is the region id.
    */
   region: 'region',
-  /** An agent written in settings (the Cartographer and the like): `<name>` is its key in `agents`. */
+  /** An agent written in settings (an executor): `<name>` is its key in `agents`. */
   agent: 'agent',
 } as const);
 export type RoleNamespace = (typeof roleNamespace)[keyof typeof roleNamespace];

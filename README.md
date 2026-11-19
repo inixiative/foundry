@@ -79,15 +79,13 @@ packages/
 
 Core is usable standalone. It includes context layers, agents, middleware, signals, thread, harness, tracing, hooks, and lightweight adapters (file, sqlite, http, markdown).
 
-Foundry adds opinions: native Claude Code and Codex sessions via `@inixiative/agent-session`, API providers behind `apiTokens` (Anthropic, OpenAI, Gemini), the viewer, heavy-infra adapters (Postgres, Redis), and the middleware roles (Wardens, routing, thread state).
+Foundry adds opinions: native Claude Code and Codex sessions via `@inixiative/agent-session`, API providers behind `apiTokens` (Anthropic, OpenAI, Gemini), the viewer, heavy-infra adapters (Postgres, MuninnDB), and the middleware roles (Wardens, thread state).
 
 ## Setup
 
 Requires [Bun](https://bun.sh) 1.4.4 (the version in `packageManager`).
 
-Setup (`bun run setup`) is interactive: it picks your worker and model and creates `.foundry/settings.json` with one executor and nothing else. A fresh install's thread is **unwrapped**: your message goes to the native session (Claude Code or Codex) as typed, with no Foundry layers, classifier, router or thread state composed into it. Layers, sources and decision roles are opt-in settings; Wardens come from a project's regions (`.foundry/regions`) once they are turned on for it (`"chorus": { "enabled": true }` in its `.foundry/project.json`, or the project's Wardens switch in settings). The default worker is the Claude Code subscription, which needs no key; only an API-key provider (with `apiTokens`) writes its key to `.env.local`.
-
-An install set up before this default carries the old starter stack (system / conventions / memory layers, classifier → router → three prompt-only executors). `bun run doctor` flags it (`legacy-starter-defaults`), and `bun run setup --remove-legacy-defaults` (or the **Legacy defaults** item in `bun run setup`) removes whatever is still exactly as seeded; edited items are kept.
+Setup (`bun run setup`) is interactive: it picks your worker and model and creates `.foundry/settings.json` with one executor and nothing else. A fresh install's thread is **unwrapped**: your message goes to the native session (Claude Code or Codex) as typed, with no Foundry layers or thread state composed into it. Layers and sources are opt-in settings; Wardens come from a project's regions (`.foundry/regions`) once they are turned on for it (`"chorus": { "enabled": true }` in its `.foundry/project.json`, or the project's Wardens switch in settings). The default worker is the Claude Code subscription, which needs no key; only an API-key provider (with `apiTokens`) writes its key to `.env.local`.
 
 Provider choices come from the shared registry. The default worker is Claude Code through the subscription; Codex and API-key providers are settings, and each thread can run on any worker you have a login for.
 
@@ -183,24 +181,21 @@ await gate.require("file:write", {
 
 ### Harness (foundry-core)
 
-Core's `Harness` dispatches a message through the agents you register. The classifier/router/executor setters are its simplest form; Foundry's own threads are unwrapped by default and add Wardens and layers by setting.
+Core's `Harness` sends a message through the agents you register on a thread: the default executor runs it, after any stages an explicit flow adds. Foundry's own threads are unwrapped by default and add Wardens and layers by setting.
 
 ```typescript
-import { Harness, Thread } from "@inixiative/foundry-core";
+import { ContextStack, Executor, Harness, Thread } from "@inixiative/foundry-core";
 
-const thread = new Thread({ id: "main" });
-thread.agents.set("classifier", myClassifier);
-thread.agents.set("router", myRouter);
-thread.agents.set("executor", myExecutor);
+const stack = new ContextStack();
+const thread = new Thread("main", stack);
+thread.register(new Executor({ id: "executor", stack, handler: async (context, message) => myAgent(context, message) }));
 
 const harness = new Harness(thread);
-harness.setClassifier("classifier");
-harness.setRouter("router");
 harness.setDefaultExecutor("executor");
 
-const result = await harness.dispatch("Fix the login bug");
+const result = await harness.send({ id: "m1", payload: "Fix the login bug" });
 // result.trace — full execution trace with timing
-// result.output — agent response
+// result.result.output — agent response
 ```
 
 ## Viewer

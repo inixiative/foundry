@@ -132,7 +132,7 @@ test('a repository file that breaks a rule is reported and none of it applies', 
   for (const bad of [
     { toolRules: {} },
     { sources: { notes: { id: 'notes', type: 'markdown', uri: '/Users/me/notes' } } },
-    { defaults: { classifierProvider: 'anthropic' } },
+    { defaults: { decisionProvider: 'anthropic' } },
     { defaults: { model: 'gpt-6-astra' } },
     { defaults: { provider: 'codex', codexEffort: 'bogus' } },
     { agents: [1, 2] },
@@ -181,18 +181,7 @@ test('a setting path never reaches an object’s prototype', () => {
   expect(({} as Record<string, unknown>).polluted).toBeUndefined();
 });
 
-test('a repository’s agents are executors on a model their worker runs; decision roles stay this machine’s', () => {
-  const withClassifier = (repository: unknown) => {
-    const config = projectWith(repository);
-    config.agents.classifier = { ...config.agents.executor!, id: 'classifier', kind: 'classifier' };
-    return config;
-  };
-  // An extension carries no kind of its own: it is judged by the agent it extends.
-  const extended = withClassifier({
-    agents: { mine: { extends: 'classifier', model: 'claude-opus-5-5' } },
-  });
-  expect(effectiveProject(extended, 'p')!.agents).toBeUndefined();
-  expect(repositorySettingsProblem(extended.projects.p!.path)?.message).toContain('decision roles');
+test('a repository’s agents run on a model their worker runs', () => {
   // An executor's model must be one the worker in effect runs.
   const offWorker = projectWith({
     agents: { coder: { extends: 'executor', model: 'gpt-6-astra' } },

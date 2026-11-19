@@ -68,7 +68,6 @@ test('flow snapshot: recent turns as recorded flows, learning history and commit
   // One guard over the turn: a request per Warden asked, one outcome wrapping the turn; then the
   // hand-back advice over the message the working turn handed back.
   expect(t1.phases.map((p: any) => p.phase)).toEqual([
-    'route',
     'advice',
     'guard-request',
     'guard-request',
@@ -152,10 +151,8 @@ test('flow stream appends each journalled change of a live turn and its learning
   );
   const turns = appends(client.data('flow:a'), 'turn');
   expect(turns.every((p) => p.turn.turnId === 't1')).toBe(true);
-  // The route/advice phases are journalled before the executor is called; the turn is sent as each change lands.
-  expect(turns[0].turn.phases.map((p: any) => p.phase)).toEqual(
-    expect.arrayContaining(['route', 'advice']),
-  );
+  // The advice phase is journalled before the executor is called; the turn is sent as each change lands.
+  expect(turns[0].turn.phases.map((p: any) => p.phase)).toEqual(expect.arrayContaining(['advice']));
   const learned = appends(client.data('flow:a'), 'learning')
     .flatMap((p) => p.entries)
     .map((e: any) => `${e.signal.content.domain}:${e.signal.content.decision}`);
@@ -191,7 +188,6 @@ test('the recorded flow drives the graph builders end to end: turn loop, feedbac
   expect(ids).toEqual(
     expect.arrayContaining([
       'input',
-      'routing',
       'domain:architecture',
       'domain:testing',
       'plan',

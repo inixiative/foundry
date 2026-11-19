@@ -102,9 +102,6 @@ function fixture(
       model: 'mock',
       prompt: '',
       temperature: 0,
-      visibleLayers: [],
-      peers: [],
-      maxDepth: 1,
       enabled: true,
     },
   };

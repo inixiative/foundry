@@ -18,7 +18,7 @@ import type { CallFailedCause, CallNotSentCause, NotSentCall } from '@inixiative
  */
 
 /**
- * Safety-net deadline for every pre-message decision (classify, route, Cartographer, advice).
+ * Safety-net deadline for every pre-message decision (a Warden's advice).
  * Aron, 2026-11-01: "really extend the timeout limit, and then we can figure out how to make
  * things faster". At 10 s a 70-Warden chorus on 16 concurrent calls timed out on 11 of 70
  * (template replay, 2026-11-01), so the deadline was cutting answers, not catching hangs.

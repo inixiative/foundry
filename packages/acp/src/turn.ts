@@ -120,7 +120,7 @@ export class TurnProjection {
           type: 'content',
           content: {
             type: 'text',
-            text: summary?.text ?? 'No routing or advice was recorded for this turn.',
+            text: summary?.text ?? 'No advice was recorded for this turn.',
           },
         },
       ],
@@ -128,7 +128,6 @@ export class TurnProjection {
         foundry: {
           threadId: this.threadId,
           turnId: this.turnId,
-          routing: summary?.routing ?? null,
           participants: summary?.participants ?? [],
           degraded: summary?.degraded ?? [],
         },
@@ -331,7 +330,6 @@ export class TurnProjection {
     if (!this.settle()) return;
     this.summary = {
       text: `Not accepted by Foundry: ${error.message}`,
-      routing: null,
       participants: [],
       degraded: [],
     };

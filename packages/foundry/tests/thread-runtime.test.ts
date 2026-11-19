@@ -8,6 +8,7 @@ import {
   Executor,
   type LLMMessage,
   type LLMProvider,
+  layerPart,
   newId,
   type Signal,
   type SignalBus,
@@ -43,9 +44,6 @@ function config(): FoundryConfig {
         provider: 'mock',
         model: 'mock-model',
         temperature: 0,
-        visibleLayers: [],
-        peers: [],
-        maxDepth: 1,
         enabled: true,
       },
     },
@@ -156,7 +154,6 @@ describe('ThreadRuntimeManager', () => {
     expect(rb).toBeDefined();
     expect(ra.librarian).not.toBe(rb.librarian);
     expect(ra.flowOrchestrator).not.toBe(rb.flowOrchestrator);
-    expect(ra.cartographer).not.toBe(rb.cartographer);
     expect(ra.domainLibrarians.get('docs')).not.toBe(rb.domainLibrarians.get('docs'));
     expect(a.stack.getLayer('docs')).toBe(ra.domainLibrarians.get('docs')!.cache);
 
@@ -271,7 +268,7 @@ describe('ThreadRuntimeManager', () => {
     expect(runtime.disposed).toBe(true);
     expect(manager.get('a')).toBeUndefined();
     expect(a.stack.getLayer('thread-state')).toBeUndefined();
-    expect(a.middleware.size).toBe(middlewareBefore - 2);
+    expect(a.middleware.size).toBe(middlewareBefore - 1);
 
     const eventsBefore = eventStream.recent({ limit: 1000 }).length;
     await a.signals.emit(signal('correction', 'after dispose'));
@@ -347,12 +344,6 @@ describe('ThreadRuntimeManager', () => {
     expect(seen.some(([, c]) => c === 'after-unsub')).toBe(false);
   });
 
-  test('readiness resolves even when the atlas root cannot be loaded', async () => {
-    const { factory, manager } = await setup({ atlasRoot: '/nonexistent/foundry-atlas-root' });
-    factory.create('a');
-    await expect(manager.get('a')!.ready).resolves.toBeUndefined();
-  });
-
   test('live stacks map tracks attach and dispose', async () => {
     const { factory, manager } = await setup();
     const a = factory.create('a');
@@ -402,13 +393,12 @@ describe('ThreadRuntimeManager', () => {
 
     expect(bound.get('a')).toBe(a.signals);
     expect(bound.get('b')).toBe(b.signals);
-    expect(bound.get(auxiliarySessionId('a', 'cartographer'))).toBeDefined();
     expect(bound.get(auxiliarySessionId('a', 'domain:docs'))).toBeDefined();
-    expect(bound.get(auxiliarySessionId('a', 'cartographer'))).not.toBe(a.signals);
+    expect(bound.get(auxiliarySessionId('a', 'domain:docs'))).not.toBe(a.signals);
 
     manager.dispose('a');
     expect(released).toContain('a');
-    expect(released).toContain(auxiliarySessionId('a', 'cartographer'));
+    expect(released).toContain(auxiliarySessionId('a', 'domain:docs'));
     expect(bound.has('a')).toBe(false);
     expect(bound.get('b')).toBe(b.signals);
   });
@@ -437,16 +427,17 @@ describe('ThreadRuntimeManager', () => {
     });
     const a = factory.create('a', { cwd: tmpdir(), worker: 'claude-code' });
     const runtime = manager.get('a')!;
-    const plan = await runtime.flowOrchestrator.preMessage('warm the plan');
-    const prepared = await runtime.flowOrchestrator.hydrateDelta(plan);
-    await runtime.flowOrchestrator.commitDelivery({ layers: prepared.pending });
+    await runtime.flowOrchestrator.preMessage('warm the plan');
+    await runtime.flowOrchestrator.commitDelivery({
+      layers: [{ id: 'docs', hash: layerPart(a.stack.getLayer('docs')!).hash }],
+    });
     expect(runtime.librarian.state.injectedLayers.map((r) => r.id)).toEqual(['docs']);
 
-    const auxBus = bound.get(auxiliarySessionId('a', 'cartographer'))!;
+    const auxBus = bound.get(auxiliarySessionId('a', 'domain:docs'))!;
     await auxBus.emit(
       signal(
         'session_compacted',
-        { source: 'fake', threadId: auxiliarySessionId('a', 'cartographer') },
+        { source: 'fake', threadId: auxiliarySessionId('a', 'domain:docs') },
         'session-adapter:fake',
       ),
     );
@@ -471,9 +462,7 @@ describe('ThreadRuntimeManager', () => {
     await b.dispatch('executor-answer', 'route me too');
 
     const ids = flowLlm.optsLog.map((o) => `${o.threadId}@${o.cwd}`);
-    expect(ids).toContain(`${auxiliarySessionId('a', 'cartographer')}@/work/a`);
     expect(ids).toContain(`${auxiliarySessionId('a', 'domain:docs')}@/work/a`);
-    expect(ids).toContain(`${auxiliarySessionId('b', 'cartographer')}@/work/b`);
     expect(ids).toContain(`${auxiliarySessionId('b', 'domain:docs')}@/work/b`);
     expect(
       flowLlm.optsLog.every((o) => o.threadId && o.threadId !== 'a' && o.threadId !== 'b'),

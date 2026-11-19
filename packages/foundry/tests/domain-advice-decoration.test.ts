@@ -1,6 +1,5 @@
 import { expect, test } from 'bun:test';
 import { ContextLayer, ContextStack, callOutcomeLabel, SignalBus } from '@inixiative/foundry-core';
-import { Cartographer } from '../src/agents/cartographer';
 import { DomainLibrarian } from '../src/agents/domain-librarian';
 import { FlowOrchestrator } from '../src/agents/flow-orchestrator';
 import { Librarian } from '../src/agents/librarian';
@@ -14,23 +13,6 @@ test('malformed advice remains an inspectable error beside a valid contribution'
   });
   const stack = new ContextStack(layers);
   const librarian = new Librarian({ stack, signals });
-  const cartographer = new Cartographer({
-    stack,
-    signals,
-    llm: {
-      id: 'parent-route',
-      async complete() {
-        return {
-          model: 'controlled',
-          content: JSON.stringify({
-            layers: [],
-            domains: ['architecture', 'testing'],
-            confidence: 1,
-          }),
-        };
-      },
-    },
-  });
   const domains = new Map(
     layers.map((cache) => [
       cache.id,
@@ -66,7 +48,6 @@ test('malformed advice remains an inspectable error beside a valid contribution'
     stack,
     signals,
     librarian,
-    cartographer,
     domainLibrarians: domains,
   });
   try {
@@ -95,7 +76,6 @@ test('malformed advice remains an inspectable error beside a valid contribution'
     expect(Object.isFrozen(plan)).toBe(true);
   } finally {
     flow.dispose();
-    cartographer.dispose();
     librarian.dispose();
   }
 });

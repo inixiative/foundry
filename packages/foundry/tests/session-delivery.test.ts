@@ -578,7 +578,7 @@ test('a thread keeps its thread state out of the system prompt and commits each 
     // Each part is recorded once, never twice for a started session.
     expect(new Set(meta.delivery.committed).size).toBe(meta.delivery.committed.length);
     const session = adapter.sessions.find((s) => s.sent.length > 0)!;
-    expect(session.sent[0]).toContain('"messageCount"');
+    expect(session.sent[0]).toContain('"recentActivity"');
     expect(session.sent[0]).not.toContain('injectedLayers');
   } finally {
     await f.close();
