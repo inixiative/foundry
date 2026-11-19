@@ -518,9 +518,13 @@ export function instructionStackReport(
   };
 }
 
-/** A role's two slots warm together: one composition serves both. */
-const SHARED_VIEW_MS = 250;
-const sharedViews = new Map<string, { at: number; view: Promise<RoleView>; settled?: RoleView }>();
+/**
+ * A role's two slots, and every later load at the same place, share one composition while nothing it
+ * read has changed (`roleViewChanged`): the minute's roster refresh re-composed every Warden's view
+ * from disk, a 3-4 s stall on a large project. Oldest dropped past the cap.
+ */
+const SHARED_VIEW_CAP = 2048;
+const sharedViews = new Map<string, { view: Promise<RoleView>; settled?: RoleView }>();
 /** Advances whenever a caller says the files changed (`invalidateComposition`). */
 let generation = 0;
 /** Drop shared compositions and mark every composed slot changed, so the next load reads the files again. */
@@ -531,14 +535,17 @@ export function forgetSharedRoleViews(): void {
 
 function sharedRoleView(options: Parameters<typeof composeRoleView>[0]): Promise<RoleView> {
   const key = JSON.stringify(options);
-  const now = Date.now();
-  for (const [k, entry] of sharedViews) if (now - entry.at > SHARED_VIEW_MS) sharedViews.delete(k);
   const hit = sharedViews.get(key);
   // A shared view is reused only while nothing it read has changed.
   if (hit && !(hit.settled && roleViewChanged(hit.settled))) return hit.view;
   const view = composeRoleView(options);
-  const entry: { at: number; view: Promise<RoleView>; settled?: RoleView } = { at: now, view };
+  const entry: { view: Promise<RoleView>; settled?: RoleView } = { view };
+  sharedViews.delete(key);
   sharedViews.set(key, entry);
+  if (sharedViews.size > SHARED_VIEW_CAP) {
+    const oldest = sharedViews.keys().next().value;
+    if (oldest !== undefined) sharedViews.delete(oldest);
+  }
   view.then(
     (settled) => {
       entry.settled = settled;

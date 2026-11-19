@@ -446,16 +446,25 @@ export function withinPath(path: string, root: string): boolean {
   return rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel);
 }
 
-/** A boundary test for `roots`, as written and with symlinks resolved, so a real path compares too. */
-export function withinAny(roots: readonly string[]): (path: string) => boolean {
-  const all = roots.flatMap((root) => {
-    try {
-      return [root, realpathSync(root)];
-    } catch {
-      return [root];
-    }
-  });
+/**
+ * A boundary test for `roots`, as written and with symlinks resolved, so a real path compares too.
+ * `realOf` resolves a root (a caller testing many boundaries passes one that remembers).
+ */
+export function withinAny(
+  roots: readonly string[],
+  realOf: (path: string) => string = realPathOrSelf,
+): (path: string) => boolean {
+  const all = [...new Set(roots.flatMap((root) => [root, realOf(root)]))];
   return (path) => all.some((root) => withinPath(path, root));
+}
+
+/** Where `path`'s symlinks lead, or `path` itself when it can't be resolved. */
+function realPathOrSelf(path: string): string {
+  try {
+    return realpathSync(path);
+  } catch {
+    return path;
+  }
 }
 
 /**

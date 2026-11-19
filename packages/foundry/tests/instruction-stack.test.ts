@@ -945,3 +945,20 @@ test('a composed slot re-reads when its thread moves to another cwd', async () =
   expect(source.changed?.()).toBe(true);
   expect(await source.load()).toContain('OTHER_RULES');
 });
+
+test('a later load at the same place reuses the composition until a file it read changes', async () => {
+  write(join(repo, 'CLAUDE.md'), 'FIRST_RULES');
+  await Bun.sleep(5);
+  const fresh = () =>
+    instructionStackSource(
+      'instructions',
+      { harness: 'claude', home, claudeConfigDir: claudeDir, codexHome },
+      { threadId: 't', cwd: repo },
+    );
+  expect(await fresh().load()).toContain('FIRST_RULES');
+  // Well past the two slots' shared warm: the view is still reused while nothing changed.
+  await Bun.sleep(300);
+  expect(await fresh().load()).toContain('FIRST_RULES');
+  write(join(repo, 'CLAUDE.md'), 'SECOND_RULES');
+  expect(await fresh().load()).toContain('SECOND_RULES');
+});
