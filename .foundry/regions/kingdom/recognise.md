@@ -4,7 +4,7 @@
 
 ## What this region is
 
-How a Foundry becomes a Kingdom Installation, holds the Signets Kingdom grants its integrations, and acts on Kingdom only by presenting them: pairing and the live per-Kingdom connection, read access to Kingdom-granted resources for agents, and the Signet protocol client with its cancellation and settlement rules.
+How a Foundry becomes a Kingdom Installation, holds the Signets Kingdom grants its integrations, and acts on Kingdom only by presenting them: pairing and the live per-Kingdom connection, read access to Kingdom-granted resources for agents, and the Signet protocol client with its cancellation and task completion rules.
 
 ## What it exists for
 
@@ -42,10 +42,10 @@ A moment that says any of these, or something close, is this region's. Both voic
 - add a resource grant for this project
 - where do I put the Signet file path
 - cancel the Signet call if it takes too long
-- settle the task with Kingdom
+- complete the task with Kingdom
 - present the Signet
 - should I retry the Kingdom call
-- the settle timed out, now what
+- the completeTask call timed out, now what
 - import the Kingdom connection from another repo
 - edit a project's Kingdom grants in the dashboard
 - store a runtime key for Kingdom
@@ -102,7 +102,7 @@ A moment that says any of these, or something close, is this region's. Both voic
 - record the pairing in settings
 - pick which paired Kingdom they meant
 - hand the sign-in result to the owner's Kingdom
-- renew the token before settling
+- renew the token before completing
 - give every paired Kingdom the tunnel token
 - present our Signet to Kingdom
 - cancel the Kingdom call when the user stops
@@ -112,7 +112,7 @@ A moment that says any of these, or something close, is this region's. Both voic
 - test the package the way an installer would
 - authorise the socket like an HTTP request
 - cancel a pairing that's still waiting for approval
-- publish the result after the settle times out
+- publish the result after the completion times out
 - which path should Oracle import from
 - show which grants this project can use
 - keep the hosted Archive token in Foundry
@@ -169,11 +169,11 @@ A moment that says any of these, or something close, is this region's. Both voic
 - replace the entry for the same Kingdom and owner
 - choose the Kingdom by id or url, or the only one
 - upload a native login as this installation
-- the settlement token expired, retry it
+- the completion token expired, retry it
 - let Kingdom reach my viewer handoff
 - sign each Kingdom call with the device key
 - abort a Signet request after a deadline
-- post the settlement with a proof
+- post the completion with a proof
 - validate a paired Kingdom record
 - check cookie or bearer on tunnel requests
 - does the authority check reserve quota

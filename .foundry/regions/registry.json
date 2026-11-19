@@ -142,7 +142,7 @@
     {
       "tag": "signets",
       "atlas": "integration:kingdom",
-      "description": "The Signet protocol and SignetClient (@inixiative/signet): DPoP presentation, renewal, cancellation, task settlement",
+      "description": "The Signet protocol and SignetClient (@inixiative/signet): DPoP presentation, renewal, cancellation, task completion",
       "region": "kingdom"
     },
     {

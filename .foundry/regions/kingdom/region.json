@@ -1,7 +1,7 @@
 {
   "id": "kingdom",
   "title": "Kingdom pairing, access and Signets",
-  "routing": "Is this about Foundry and Kingdom: pairing this Foundry as an Installation (`bun run kingdom pair|status|disconnect`, pairKingdom, pairKingdomIntegration, the kingdomIntegrations setting), the per-Kingdom Installation socket and held Signet files (KingdomInstallationConnection(s), heldSignetFile, listedSignets, kingdomStatus), the `@inixiative/foundry/runtime` seam, reading Kingdom-granted resources (kingdomAccess setting, foundry_access, kingdom_request, KingdomAccessClient), presenting a Signet (SignetClient, DPoP, renew, verifyAuthority, settleTask), KingdomClient run actions, or the viewer tunnel handoff Kingdom uses (mintHandoffCode, tunnelAuth, POST /api/handoff)? Plain jobs: 'pair this machine with Kingdom', 'let the agent read our Linear issues through Kingdom', 'call Kingdom with the Signet', 'which owner holds this Foundry'.",
+  "routing": "Is this about Foundry and Kingdom: pairing this Foundry as an Installation (`bun run kingdom pair|status|disconnect`, pairKingdom, pairKingdomIntegration, the kingdomIntegrations setting), the per-Kingdom Installation socket and held Signet files (KingdomInstallationConnection(s), heldSignetFile, listedSignets, kingdomStatus), the `@inixiative/foundry/runtime` seam, reading Kingdom-granted resources (kingdomAccess setting, foundry_access, kingdom_request, KingdomAccessClient), presenting a Signet (SignetClient, DPoP, renew, verifyAuthority, completeTask), KingdomClient run actions, or the viewer tunnel handoff Kingdom uses (mintHandoffCode, tunnelAuth, POST /api/handoff)? Plain jobs: 'pair this machine with Kingdom', 'let the agent read our Linear issues through Kingdom', 'call Kingdom with the Signet', 'which owner holds this Foundry'.",
   "concepts": ["kingdom-pairing", "kingdom-access", "signets"],
   "tokens": 19519,
   "tokenMethod": "chars/4",
@@ -25,7 +25,7 @@
       "docs/runtime-seam.md",
       "docs/session-archives.md",
       "docs/signet-cancellation.md",
-      "docs/task-settlement.md"
+      "docs/task-completion.md"
     ],
     "docUnits": [
       "doc:docs/runtime-seam.md#preface",
@@ -40,7 +40,7 @@
       "doc:docs/kingdom-access.md#verification",
       "doc:docs/kingdom-access.md#integration-identity-contract",
       "doc:docs/signet-cancellation.md#preface",
-      "doc:docs/task-settlement.md#preface",
+      "doc:docs/task-completion.md#preface",
       "doc:@inixiative/signet/README.md#preface"
     ],
     "catalogClusters": ["integration-kingdom", "primitive-tools"],
