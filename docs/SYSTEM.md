@@ -174,7 +174,7 @@ Per-provider, per-model, per-agent cost accounting with budget enforcement.
 - **CacheLifecycle** — rule-based lifecycle management with event queuing
 - **MiddlewareChain** — composable pre/post dispatch hooks
 - **InterventionLog** — manual operator overrides with correction signals
-- **EventStream** — unified event bus (5K event history, push/pull)
+- **EventStream** — unified event bus (5K event history, push/pull); stores bounded JSON-safe copies (`boundedPlainCopy`), so every event serializes
 
 ---
 
