@@ -757,11 +757,28 @@ function settleSend(turnId) {
   loadTokenUsage();
 }
 
+/**
+ * Completions this tab has shown its person on the open thread (threadId → completedAt), until the
+ * server's seen mark catches up. A list push carries the server's `seenAt`, older while the mark is
+ * on its way, so each entry that arrives keeps this tab's knowledge: the thread being read is never
+ * a new arrival to the person reading it.
+ */
+const seenHere = new Map();
+function withSeenHere(thread) {
+  const completedAt = seenHere.get(thread?.threadId);
+  if (completedAt === undefined) return thread;
+  if ((thread.meta?.seenAt ?? 0) >= completedAt) {
+    seenHere.delete(thread.threadId);
+    return thread;
+  }
+  return { ...thread, meta: { ...thread.meta, seenAt: completedAt } };
+}
+
 function applyThreadsFrame(frame) {
   if (frame.stream !== threadsStream) return;
   const payload = frame.payload;
   if (frame.action === 'snapshot') {
-    adoptThreadList(payload.threads);
+    adoptThreadList(payload.threads.map(withSeenHere));
     return;
   }
   if (payload.removed) {
@@ -770,13 +787,12 @@ function applyThreadsFrame(frame) {
       selectThreadQuietly(allThreads.value[0]?.threadId ?? null);
     return;
   }
+  const listed = withSeenHere(payload.thread);
   const list = allThreads.value;
-  const i = list.findIndex((thread) => thread.threadId === payload.thread.threadId);
+  const i = list.findIndex((thread) => thread.threadId === listed.threadId);
   allThreads.value =
-    i < 0
-      ? [...list, payload.thread]
-      : list.map((thread, j) => (j === i ? payload.thread : thread));
-  if (payload.thread.threadId === activeThreadId.value) threadData.value = payload.thread;
+    i < 0 ? [...list, listed] : list.map((thread, j) => (j === i ? listed : thread));
+  if (listed.threadId === activeThreadId.value) threadData.value = listed;
 }
 
 // First load only: an empty global scope opens the first project that has threads.
@@ -2651,7 +2667,14 @@ export function init() {
     const key = `${id}:${completedAt}`;
     if (seenMarked === key || document.visibilityState === 'hidden') return;
     seenMarked = key;
+    // Seen here at once, and kept through every list push until the server's mark comes back
+    // (`seenHere`): otherwise a reply to the thread he is reading reads as answering Attention.
+    seenHere.set(id, completedAt);
+    const seen = withSeenHere(thread);
+    allThreads.value = allThreads.peek().map((t) => (t.threadId === id ? seen : t));
+    if (threadData.peek()?.threadId === id) threadData.value = seen;
     authFetch(`/api/threads/${encodeURIComponent(id)}/seen`, { method: 'POST' }).catch(() => {
+      seenHere.delete(id);
       seenMarked = null;
     });
   };

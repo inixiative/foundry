@@ -27,7 +27,6 @@ import {
 import type { ConversationMember } from '@inixiative/signet';
 import { memberPostReception } from '../agents/chorus-reception';
 import { configureHarness, type ThreadFactory } from '../agents/thread-factory';
-import type { ThreadNamer } from '../agents/thread-namer';
 import type { PauseAnswer } from '../daemon/restart-roll';
 import type { FeedbackService } from '../feedback/service';
 import type { ModelSuccession } from '../models/model-succession';
@@ -39,6 +38,7 @@ import {
 } from '../persistence/local-session-store';
 import { serializeTrace } from '../persistence/trace-record';
 import type { SecretScratch } from '../secrets/scratch';
+import { nameThreadFromMessage } from '../tools/thread-record';
 import { type ConfigStore, steerOnSend } from '../viewer/config';
 import type { TurnTerminal, ViewerStreams } from '../viewer/data-streams';
 import type { StreamBuffer } from '../viewer/stream-buffer';
@@ -62,7 +62,6 @@ export interface TurnServiceDeps {
   threadFactory?: ThreadFactory;
   configStore: ConfigStore;
   deviceIdentityPath?: string;
-  namer?: ThreadNamer;
   /** The feedback lifecycle: reads each accepted turn; a blocking tuning prompt holds the turn. */
   feedback?: FeedbackService | null;
   localStore?: LocalSessionStore | null;
@@ -1271,7 +1270,7 @@ export class TurnService {
     /** The verbatim prompt for the executor, when host instructions were split off `payload`. */
     executorPayload?: string | null,
     images: readonly ImageInput[] = [],
-    /** The owner typed it: only then does the thread namer read the exchange. */
+    /** The owner typed it: only then may it name the thread or answer its done state. */
     ownerTyped = true,
   ): Promise<TurnOutcome> {
     const thread = harness.thread;
@@ -1281,8 +1280,16 @@ export class TurnService {
       if (state.cancelRequested) throw Error(CANCELLED_BEFORE_START);
       if (state.refusal) throw Error(state.refusal);
       state.phase = 'running';
-      // Foundry names an unnamed thread from the first message that names work, as it is sent.
-      if (ownerTyped) this.deps.namer?.messageSent(thread, payload);
+      // An unnamed thread takes its first message's words as its name, as it is sent. Not saving it
+      // never fails the turn: the name is shown again from memory, and the next save writes it.
+      if (ownerTyped && nameThreadFromMessage(thread, payload)) {
+        try {
+          this.deps.localStore?.saveThread(thread);
+          this.deps.streams.threadsChanged(threadId);
+        } catch (error) {
+          console.warn(`[Turns] ${threadId}: first name not saved: ${(error as Error).message}`);
+        }
+      }
       // The next task starts: the last one's done state (a merge, a milestone) is over.
       // The agent's word on where it stood (needs-you, blocked) is answered by the owner's message too.
       if (ownerTyped && (thread.meta.done || thread.meta.agentStatus)) {
@@ -1315,10 +1322,6 @@ export class TurnService {
       const completed = this.completeResult(thread, turnId, result);
       this.publishTerminal(threadId, clientId, turnId, 'done', { threadId, ...completed });
       buffer.complete(completed);
-      if (completed.meta.persistence !== 'failed') {
-        if (ownerTyped)
-          this.deps.namer?.turnCompleted(thread, { user: payload, agent: completed.content });
-      }
       return { kind: 'completed', completed, result };
     } catch (err) {
       const raw = err instanceof Error ? err.message : String(err);

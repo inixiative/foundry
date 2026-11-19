@@ -112,7 +112,7 @@ export default defineConfig({
     },
     { include: `${FOUNDRY}/agents/configured-wardens.ts`, partOf: 'feature:wardens' },
     {
-      include: `${FOUNDRY}/agents/{thread-runtime,thread-factory,session,thread-namer,project}.ts`,
+      include: `${FOUNDRY}/agents/{thread-runtime,thread-factory,session,project}.ts`,
       partOf: 'feature:threads',
     },
     {

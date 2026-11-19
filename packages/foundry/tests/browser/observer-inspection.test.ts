@@ -332,7 +332,30 @@ test('an open observer sees externally admitted work without reload, without dup
     // Own submission then another external one: exactly one row per turn, one provider call per submission.
     await observer.locator('.chat-input').fill('Own submitted work');
     await observer.locator('.chat-input').press('Enter');
-    await observer.locator('.chat-agent').filter({ hasText: 'OBSERVED_WORK_2' }).waitFor();
+    await observer
+      .locator('.chat-agent')
+      .filter({ hasText: 'OBSERVED_WORK_2' })
+      .waitFor()
+      .catch(async (error: Error) => {
+        // On a miss, say what the tab shows and what the server ran, so a CI failure is readable.
+        const store = f.viewer.localStore!;
+        const turns = store
+          .recentTurnIds('main', 10)
+          .map((id) => store.turn(id))
+          .map((t) => `${t?.id}:${t?.status}${t?.error ? `(${t.error})` : ''}`);
+        const shown = await observer.locator('.chat-user, .chat-agent').allInnerTexts();
+        const page = await observer.evaluate(async () => {
+          const store = await import(`${location.origin}/ui/store.js`);
+          return {
+            hash: location.hash,
+            active: store.activeThreadId?.value,
+            body: document.body.innerText.replace(/\s+/g, ' ').slice(0, 900),
+          };
+        });
+        throw Error(
+          `${error.message}\nprovider calls: ${f.inputs.length}\nturns: ${turns.join(', ')}\nshown: ${JSON.stringify(shown).slice(0, 1500)}\npage: ${JSON.stringify(page)}\npage errors: ${f.report.errors.join(' | ')}`,
+        );
+      });
     await observer.waitForFunction(
       async () => (await import(`${location.origin}/ui/store.js`)).inflight.value === 0,
     );
@@ -390,6 +413,49 @@ test('an open observer sees externally admitted work without reload, without dup
     await f.close();
   }
 }, 90_000);
+
+test('a reply on the thread you have open stays in it while its seen mark is still on the way', async () => {
+  const f = await fixture('observer-seen-race');
+  try {
+    const observer = await f.page();
+    // Hold the seen mark: the tab's own copy of the list still calls the open thread a new arrival.
+    let held = 0;
+    await observer.route('**/api/threads/main/seen', () => {
+      held++;
+    });
+    await observer.goto(`${f.origin}/#thread=main`);
+    await observer.locator('.header .status-dot.on').waitFor();
+    await observer.locator('.chat-input').waitFor();
+    await f.send('main', 'external-one');
+    await observer.locator('.chat-agent').filter({ hasText: 'OBSERVED_WORK_1' }).waitFor();
+    for (let n = 0; n < 60 && held === 0; n++) await Bun.sleep(50);
+    expect(held).toBeGreaterThan(0);
+    // A save on the server pushes the thread's list entry, with the server's older seenAt, before the
+    // reply: the tab must still know its person has read this completion.
+    const renamed = await fetch(`${f.origin}/api/threads/main`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'Renamed while read' }),
+    });
+    expect(renamed.status).toBe(200);
+    await observer.locator('.context-bar-title', { hasText: 'Renamed while read' }).waitFor();
+    f.report.checks.push({ case: 'list-pushed-before-reply', passed: true });
+    await observer.locator('.chat-input').fill('Own submitted work');
+    await observer.locator('.chat-input').press('Enter');
+    await observer.locator('.chat-agent').filter({ hasText: 'OBSERVED_WORK_2' }).waitFor();
+    await observer.waitForFunction(
+      async () => (await import(`${location.origin}/ui/store.js`)).inflight.value === 0,
+    );
+    await observer.waitForTimeout(300);
+    // Still the conversation, not the project page a dealt-with Attention thread leaves to.
+    expect(await observer.locator('.chat-agent:not(.chat-thinking)').count()).toBe(2);
+    expect(await observer.locator('.chat-user').count()).toBe(2);
+    expect(f.report.errors).toEqual([]);
+    f.report.passed = true;
+  } finally {
+    await f.close();
+  }
+}, 60_000);
 
 test('Turn Context shows historical pending learning that stays fixed after commit, and the thread view inspects current knowledge', async () => {
   const f = await fixture('observer-inspection');
