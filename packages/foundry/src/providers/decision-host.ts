@@ -148,7 +148,8 @@ export type DecisionEvents = Pick<SubscriptionDecisionConfig, 'onPressure' | 'on
  * decision roles and every Warden stage on the decision model and effort), and one
  * host per other model and effort a classify stage names (`chorus.wardens.stages`), started on first
  * use on the same login and bounds. `stageHost` answers `null` for the decision pair (the Warden's own
- * provider serves it). Every primed pool is sized for the largest chorus any project runs.
+ * provider serves it). With project hosts none of them builds a primed pool; without them each pool
+ * is sized for the largest chorus any project runs.
  */
 export function liveDecisionHosts(
   config: FoundryConfig,
@@ -179,11 +180,10 @@ export function liveDecisionHosts(
     source: subscription.decision,
     ...(projectHosts ? { projectHosts } : {}),
     // With project hosts every Warden call (advice, guard, review, stage) runs in its project's one
-    // process: primed keeps the other decision roles at the fixed default (Aron, 2026-11-18: "Those
-    // are supposed to be singletons"), and never a Warden call, which is skipped while its host or
-    // lane does not serve ("it should not be handling warden calls at all", R-2026-11-18-38/39).
-    // Primed Wardens (`decisionRuntime: claude`, the evals' baseline) keep a key per classify stage
-    // and a review key per Warden, sized for the largest chorus any project runs.
+    // process and no primed pool is built: a Warden call is skipped while its host or lane does not
+    // serve ("it should not be handling warden calls at all", R-2026-11-18-38/39). Primed Wardens
+    // (`decisionRuntime: claude`, the evals' baseline) keep a key per classify stage and a review
+    // key per Warden, sized for the largest chorus any project runs.
     ...(projectHosts
       ? {}
       : {

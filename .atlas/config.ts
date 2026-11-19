@@ -47,7 +47,7 @@ export default defineConfig({
       kind: 'agent',
     },
     {
-      include: `${FOUNDRY}/providers/{anthropic,openai,openai-compatible,gemini,native-text-provider,primed-decisions,subscription-decisions}.ts`,
+      include: `${FOUNDRY}/providers/{anthropic,openai,openai-compatible,gemini,native-text-provider,primed-decisions,decision-login-host,subscription-decisions}.ts`,
       kind: 'provider',
     },
     { include: `${FOUNDRY}/classify/charters/*.ts`, kind: 'definition' },
@@ -161,7 +161,7 @@ export default defineConfig({
       partOf: 'primitive:providers',
     },
     {
-      include: `${FOUNDRY}/providers/{subscription-decisions,decision-host,decision-budget,decision-priority,decision-provider,primed-decisions,subscription-policy}.ts`,
+      include: `${FOUNDRY}/providers/{subscription-decisions,decision-host,decision-budget,decision-priority,decision-provider,primed-decisions,decision-login-host,subscription-policy}.ts`,
       partOf: 'primitive:decisions',
     },
     {

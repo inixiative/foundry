@@ -22,10 +22,11 @@ import {
   CODEX_HARNESS_INSTRUCTIONS_OFF,
   composeRoleView,
 } from '../src/prompts/instruction-stack';
+import { createDecisionLoginHost } from '../src/providers/decision-login-host';
 import { defaultProfileSource } from '../src/providers/default-profiles';
 import { boundLaunchEnvironment } from '../src/providers/native-text-environment';
 import { buildNativeTextProvider, subscriptionStatus } from '../src/providers/native-text-provider';
-import { createPrimedDecisionHost, primedRequest } from '../src/providers/primed-decisions';
+import { primedRequest } from '../src/providers/primed-decisions';
 import {
   ClaudeCodeSessionAdapter,
   CodexSessionAdapter,
@@ -65,7 +66,7 @@ import {
   settleRecordings,
 } from './helpers/vcr';
 
-const codexHost = (host: ReturnType<typeof createPrimedDecisionHost>['host']) => {
+const codexHost = (host: ReturnType<typeof createDecisionLoginHost>['pool']) => {
   if (!(host instanceof CodexPrimedSessions)) throw Error('Expected the Codex primed host');
   return host;
 };
@@ -274,7 +275,7 @@ test(
         receipts = join(directory, 'receipts');
       mkdirSync(receipts, { mode: 0o700 });
       const decisionSource = source('codex', directory);
-      const primed = createPrimedDecisionHost({
+      const primed = createDecisionLoginHost({
         source: decisionSource,
         directory: receipts,
         model: LIVE.codexModel,
@@ -298,7 +299,7 @@ test(
       const opts = { threadId: 'T:aux:domain:settings', stablePrefix: cache };
       try {
         // Prime explicitly so the recording's stdin order is fixed (no background priming racing a decision).
-        await codexHost(primed.host).prime(primedRequest(primedMessages, opts, opts.threadId).spec);
+        await codexHost(primed.pool).prime(primedRequest(primedMessages, opts, opts.threadId).spec);
         const first = await decisions.provider.complete(primedMessages, opts);
         const second = await decisions.provider.complete(primedMessages, opts);
         const stdin = transport.launches[0]!.stdin.split('\n')
@@ -364,7 +365,7 @@ test(
         receipts = join(directory, 'receipts');
       mkdirSync(receipts, { mode: 0o700 });
       const decisionSource = source('claude', directory);
-      const primed = createPrimedDecisionHost({
+      const primed = createDecisionLoginHost({
         source: decisionSource,
         directory: receipts,
         model: LIVE.claudeObservedModel,
@@ -507,7 +508,7 @@ test(
         receipts = join(directory, 'receipts');
       mkdirSync(receipts, { mode: 0o700 });
       const decisionSource = source('claude', directory);
-      const primed = createPrimedDecisionHost({
+      const primed = createDecisionLoginHost({
         source: decisionSource,
         directory: receipts,
         model: LIVE.claudeObservedModel,
@@ -649,7 +650,7 @@ test(
           receipts = join(directory, 'receipts');
         mkdirSync(receipts, { mode: 0o700 });
         const decisionSource = source('claude', directory);
-        const primed = createPrimedDecisionHost({
+        const primed = createDecisionLoginHost({
           source: decisionSource,
           directory: receipts,
           model,

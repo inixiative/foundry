@@ -4,7 +4,15 @@
 // its Wardens are skipped, never sent to primed.
 
 import { afterEach, expect, test } from 'bun:test';
-import { mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { ClaudeCodeSession, type PrimeSpec } from '@inixiative/agent-session';
@@ -16,10 +24,13 @@ import {
 } from '@inixiative/foundry-core';
 import { composeProjectRoster, warmWardens, withChorusThread } from '../src/agents/chorus-thread';
 import { createSourceResolver } from '../src/agents/thread-factory';
+import { liveDecisionHosts } from '../src/providers/decision-host';
+import {
+  createDecisionLoginHost,
+  decisionHostsDirectory,
+} from '../src/providers/decision-login-host';
 import { defaultProfileSource } from '../src/providers/default-profiles';
 import {
-  createPrimedDecisionHost,
-  decisionHostsDirectory,
   isStageSession,
   isWardenSession,
   primedRequest,
@@ -486,7 +497,7 @@ test('a project host that fails to launch leaves no folder in the hosts director
   // provider-limits' shared cache is never filled for later test files.
   const quota = makeLoginQuotaPause({ fetchResetAt: async () => undefined });
   cleanup.push(() => quota.close());
-  const primed = createPrimedDecisionHost({
+  const primed = createDecisionLoginHost({
     source: defaultProfileSource('claude'),
     directory,
     model: 'claude-haiku-5-5',
@@ -534,7 +545,7 @@ test('the decision host launches the project host on the decision login: its own
     projectHost: { ...PROJECT_HOST_DEFAULTS, setupDeadlineMs: 5_000 },
     rss: () => 100,
   });
-  const primed = createPrimedDecisionHost({
+  const primed = createDecisionLoginHost({
     source: defaultProfileSource('claude'),
     directory,
     model: 'claude-haiku-5-5',
@@ -685,6 +696,161 @@ test('the decision host launches the project host on the decision login: its own
     valid: false,
   });
   expect(tree.memberPrompts.some((p) => p.includes('NAMING WARDEN'))).toBe(false);
+});
+
+// -- No primed pool with project hosts ------------------------------------------------------------
+
+/** Every folder below the hosts directory named `fixture`: where a primed pool's sessions run. */
+const poolFolders = (hosts: string): string[] =>
+  readdirSync(hosts, { recursive: true, encoding: 'utf8' }).filter(
+    (path) => basename(path) === 'fixture',
+  );
+
+/** A temporary HOME with a Claude login, and a private hosts directory of its own. */
+function decisionLoginHome(name: string) {
+  const root = tempDir(name);
+  mkdirSync(join(root, '.claude'), { mode: 0o755 });
+  writeFileSync(join(root, '.claude', '.credentials.json'), '{}', { mode: 0o600 });
+  process.env.HOME = root;
+  delete process.env.CLAUDE_CONFIG_DIR;
+  const hostsDir = process.env.FOUNDRY_HOSTS_DIR;
+  const hosts = join(root, 'hosts');
+  mkdirSync(hosts, { mode: 0o700 });
+  process.env.FOUNDRY_HOSTS_DIR = hosts;
+  cleanup.push(() => {
+    if (hostsDir === undefined) delete process.env.FOUNDRY_HOSTS_DIR;
+    else process.env.FOUNDRY_HOSTS_DIR = hostsDir;
+  });
+  const directory = join(root, 'receipts');
+  mkdirSync(directory, { mode: 0o700 });
+  return { root, hosts, directory };
+}
+
+test('the daemon\'s decision hosts build no primed pool with project hosts, for the decision host and a stage host; with decisionRuntime "claude" both build one', async () => {
+  const { root, hosts, directory } = decisionLoginHome('no-pool-live');
+  const config = starterConfig('claude-code', 'sonnet');
+  const start = (decisionRuntime: 'claude' | 'claude-project' | undefined) => {
+    config.subscriptionOnly = { ...(decisionRuntime ? { decisionRuntime } : {}), directory };
+    const resolved = resolveSubscriptionPolicy(config, { startup: true, cwd: root })!;
+    return liveDecisionHosts(config, resolved, {
+      ...(resolved.policy.wardens === 'project' ? { project: { projectOf: () => 'P' } } : {}),
+    });
+  };
+  // Project hosts, by default and named: no pool, no pool folder, no pool in the snapshot.
+  for (const runtime of [undefined, 'claude-project'] as const) {
+    const live = start(runtime);
+    try {
+      expect(live.projectHosts).toBeDefined();
+      live.stageProjectHosts!('claude-sonnet-5-5', 'low');
+      expect(poolFolders(hosts)).toEqual([]);
+      expect(live.decisions.snapshot()).not.toHaveProperty('primed');
+    } finally {
+      await live.shutdown();
+    }
+  }
+  // Primed Wardens (the evals' baseline): the decision host and the stage host each build their pool.
+  const live = start('claude');
+  try {
+    expect(live.projectHosts).toBeUndefined();
+    expect(live.stageHost('claude-sonnet-5-5', 'low')).not.toBeNull();
+    expect(poolFolders(hosts)).toHaveLength(2);
+    expect(live.decisions.snapshot()).toHaveProperty('primed');
+  } finally {
+    await live.shutdown();
+  }
+  expect(poolFolders(hosts)).toEqual([]);
+});
+
+test('with project hosts the decision host builds no primed pool: a Warden call is served by its project host, any other call is refused unsent and starts nothing', async () => {
+  const { hosts, directory } = decisionLoginHome('no-pool-host');
+  const tree = fakeClaudeTree();
+  let statusChecks = 0;
+  const wardens = new ProjectWardenHosts({
+    model: 'claude-haiku-5-5',
+    effort: 'low',
+    timeoutMs: 3_000,
+    projectOf: () => 'P',
+    projectHost: { ...PROJECT_HOST_DEFAULTS, setupDeadlineMs: 5_000 },
+    rss: () => 100,
+  });
+  const host = createDecisionLoginHost({
+    source: defaultProfileSource('claude'),
+    directory,
+    model: 'claude-haiku-5-5',
+    effort: 'low',
+    maxConcurrent: 1,
+    callTimeoutMs: 3_000,
+    spawn: tree.spawn,
+    statusSpawn: () => {
+      statusChecks++;
+      return subscriptionStatusProcess(true);
+    },
+    projectHosts: wardens,
+  });
+  cleanup.push(async () => {
+    await wardens.close();
+    await host.close();
+  });
+  expect(host.pool).toBeUndefined();
+  expect(host.quota).toBeDefined();
+  expect(poolFolders(hosts)).toEqual([]);
+  const cache = '## Domain cache (locks)\nuse createLock\n';
+  const messages: LLMMessage[] = [
+    { role: 'system', content: 'LOCKS WARDEN' },
+    { role: 'user', content: `${cache}\n## Message\nadd a lock` },
+  ];
+  const { spec: held } = primedRequest(messages, { stablePrefix: cache }, 'T0:aux:domain:locks');
+  const newRun = () =>
+    host.createRun({
+      source: defaultProfileSource('claude'),
+      directory,
+      runId: crypto.randomUUID(),
+      model: 'claude-haiku-5-5',
+      maxCalls: 1,
+    });
+  // A call that is not a Warden's has nowhere to go: refused before the login is even checked, and
+  // nothing starts.
+  const other = newRun();
+  await expect(
+    other.provider.complete(messages, { threadId: 'decision:self-test' }),
+  ).rejects.toThrow();
+  expect(other.snapshot().calls[0]).toMatchObject({ failure: 'not-admitted', valid: false });
+  expect(other.snapshot().calls[0]).not.toHaveProperty('reason');
+  expect(statusChecks).toBe(0);
+  expect(tree.processes).toHaveLength(0);
+  wardens.openProject('P', [{ spec: held, standby: '' }]);
+  expect(await wardens.projectReady('P', 5_000)).toBe(true);
+  const warden = newRun();
+  expect(
+    (
+      await warden.provider.complete(messages, {
+        threadId: 'T1:aux:domain:locks',
+        stablePrefix: cache,
+        heldOnly: true,
+      })
+    ).content,
+  ).toBe('ANS:\n## Message\nadd a lock');
+  expect(warden.snapshot().calls[0]).toMatchObject({ valid: true, prime: 'warm' });
+  // Every process started is the project host's own launch, in its folder: none is a pool's.
+  expect(tree.processes).toHaveLength(1);
+  expect(tree.processes[0]!.argv).toContain('--disable-slash-commands');
+  expect(basename(tree.processes[0]!.cwd!)).toMatch(/^project-/);
+  expect(poolFolders(hosts)).toEqual([]);
+  // Without project hosts the same host builds the pool, in its folder's fixture/.
+  const pooled = createDecisionLoginHost({
+    source: defaultProfileSource('claude'),
+    directory,
+    model: 'claude-haiku-5-5',
+    maxConcurrent: 1,
+    callTimeoutMs: 3_000,
+    spawn: tree.spawn,
+    statusSpawn: () => subscriptionStatusProcess(true),
+  });
+  cleanup.push(() => pooled.close());
+  expect(pooled.pool?.runtime).toBe('claude');
+  expect(existsSync(join(hosts, `primed-${pooled.hostId}`, 'fixture'))).toBe(true);
+  await pooled.close();
+  expect(existsSync(join(hosts, `primed-${pooled.hostId}`))).toBe(false);
 });
 
 // -- Composition: what a thread of the project sends is what the project host holds -------------

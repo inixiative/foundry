@@ -15,11 +15,11 @@ import { dirname, join } from 'node:path';
 import { CLAUDE_DECISION_CACHE_ENV } from '@inixiative/agent-session';
 import { markedRun } from '@inixiative/archive/exemption';
 import { foundryRunKind } from '../src/archives/run-stamp';
-import { defaultProfileSource } from '../src/providers/default-profiles';
 import {
-  createPrimedDecisionHost,
+  createDecisionLoginHost,
   decisionHostsDirectory,
-} from '../src/providers/primed-decisions';
+} from '../src/providers/decision-login-host';
+import { defaultProfileSource } from '../src/providers/default-profiles';
 import { SubscriptionAuthentication } from '../src/providers/subscription-authentication';
 import {
   buildSubscriptionDecisions,
@@ -163,7 +163,7 @@ function claudeDecisions(
     ...options.bounds,
   };
   let statusChecks = 0;
-  const primed = createPrimedDecisionHost({
+  const primed = createDecisionLoginHost({
     source: config.source,
     directory,
     model: config.model,

@@ -23,9 +23,10 @@ import {
   type RefusedUnsentCause,
   refusedUnsent,
 } from './decision-budget';
+import { createDecisionLoginHost } from './decision-login-host';
 import { DECISION_PRIORITY } from './decision-priority';
 import type { NativeTextCall, NativeTextConfig } from './native-text-provider';
-import { createPrimedDecisionHost, projectHostTarget } from './primed-decisions';
+import { projectHostTarget } from './primed-decisions';
 import type { ProjectWardenHosts } from './project-warden-hosts';
 import type { LoginQuotaPause } from './provider-limits';
 
@@ -35,9 +36,9 @@ export interface SubscriptionDecisionConfig extends Omit<NativeTextConfig, 'runI
   callTimeoutMs: number;
   /** Decisions running at once across all threads, each its own native process. Default 1. */
   maxConcurrent?: number;
-  /** Claude primed keys kept warm (see createPrimedDecisionHost). */
+  /** Claude primed keys kept warm (the primed pool, `createPrimedPool`; none is built with project hosts). */
   primedSessions?: number;
-  /** Claude: a bounded pool of subagent side processes instead of a primed process per key (offline evals). */
+  /** Claude primed pool: a bounded pool of subagent side processes instead of a primed process per key (offline evals). */
   subagents?: { processes: number; membersPerProcess: number };
   /** Waiting decisions per logical thread. Default: maxQueued. */
   maxQueuedPerThread?: number;
@@ -96,13 +97,14 @@ type Pending = {
 };
 
 /**
- * Decisions run on the decision profile's own runtime, with a primed session per middleware role
- * (agent-session ClaudePrimedSessions or CodexPrimedSessions); the scheduler below keeps priority
- * and fairness, and its concurrency bounds the decisions running at once.
+ * Decisions run on the decision profile's own login (`createDecisionLoginHost`): with project hosts,
+ * every Warden call in its project's host and no primed pool; without them, a primed session per
+ * middleware role (agent-session ClaudePrimedSessions or CodexPrimedSessions). The scheduler below
+ * keeps priority and fairness, and its concurrency bounds the decisions running at once.
  */
 export function createSubscriptionDecisions(config: SubscriptionDecisionConfig) {
   const { onPrimedEvent, ...options } = config;
-  const primed = createPrimedDecisionHost({
+  const host = createDecisionLoginHost({
     source: config.source,
     directory: config.directory,
     model: config.model,
@@ -124,7 +126,7 @@ export function createSubscriptionDecisions(config: SubscriptionDecisionConfig) 
   const decisions = buildSubscriptionDecisions(
     {
       ...bounds,
-      ...(primed.quota ? { quota: primed.quota } : {}),
+      ...(host.quota ? { quota: host.quota } : {}),
       // A shared pause is announced by the host that owns it: the strip hears it once.
       ...(onPressure
         ? {
@@ -150,24 +152,25 @@ export function createSubscriptionDecisions(config: SubscriptionDecisionConfig) 
           }
         : {}),
     },
-    primed.createRun,
+    host.createRun,
   );
   return {
     ...decisions,
     /** This login's used-up pause, for a stage host on the same login to share. */
-    quota: primed.quota,
+    quota: host.quota,
     close: () => {
       decisions.close();
-      void primed.close();
+      void host.close();
     },
     /** Shutdown also stops the decision processes and deletes their primed sessions. */
     shutdown: async (timeoutMs?: number) => {
       await decisions.shutdown(timeoutMs);
-      await primed.close();
+      await host.close();
     },
     snapshot: () => ({
       ...decisions.snapshot(),
-      primed: primed.host.snapshot(),
+      // The primed pool's state, while there is one (no project hosts).
+      ...(host.pool ? { primed: host.pool.snapshot() } : {}),
       ...(projectHosts ? { projectHosts: projectHosts.snapshot() } : {}),
     }),
   };
