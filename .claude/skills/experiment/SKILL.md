@@ -13,6 +13,8 @@ Two mistakes this exists to stop (`~/code/inixiative/FEEDBACK-LOG.md`):
 - **Row 40, untested optimisations justified by estimates.** Routing was built on a 0.8%/trigger cost estimate; measured 0.11%, 7× wrong, and routing lost more than half the hits.
 - **Recording hypotheses as decisions.** Results of one run were written into CLAUDE.md, doc standards and builder defaults as if Aron had decided them. He decides; experiments report.
 
+A measurement too small for this pipeline (a timing check, a "does it work" run, a size curve) is a **probe**: use the [`probe`](../probe/SKILL.md) skill, which records it in one standard shape with the machine's load, and never changes a default.
+
 Templates beside this file: [design.md](design.md) (pre-registration), [review.md](review.md) (adversarial checklist), [finding.json](finding.json) (schema: `~/.foundry/evals/findings/README.md`, mirrored in `oracle/docs/findings/README.md`). Worked example of steps 1–2: `~/.foundry/evals/experiments/2026-10-15-recogniser-granularity.md` and its `.review.md` (verdict REVISE: gate 1 would have passed an arm losing half the baseline's hits).
 
 ## Rules over every step
