@@ -43,13 +43,12 @@ export function configuredWardens(config: FoundryConfig): {
     claimedDomains = new Set<string>();
   const domains = new Map<string, string>();
   for (const [id, agent] of Object.entries(config.agents)) {
-    if (agent.flowRole !== 'warden') continue;
+    if (agent.kind !== 'warden') continue;
     if (!isRoleId(id) || agent.id !== id || !isIdName(agent.domain))
       throw Error(`Invalid Warden identity: ${id}`);
     if (typeof agent.enabled !== 'boolean') throw Error(`Invalid Warden enablement: ${id}`);
     claimedDomains.add(agent.domain);
     if (!agent.enabled) continue;
-    if (agent.kind !== 'warden') throw Error(`Unsupported Warden kind: ${id}`);
     if (
       agent.domainKnowledge !== undefined &&
       (!Array.isArray(agent.domainKnowledge) ||

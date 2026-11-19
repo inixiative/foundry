@@ -27,7 +27,6 @@ import { withoutCompetingCredentials } from './providers/native-authentication';
 import { nativeTextEnvironment } from './providers/native-text-environment';
 import { museSubscriptionStatus } from './providers/native-text-provider';
 import { providerApiKey } from './providers/openai-compatible';
-import { prefilterInstalled } from './providers/prefilter-model';
 import { assertProfile } from './providers/private-profile';
 import {
   defaultWorkers,
@@ -35,7 +34,6 @@ import {
   SUBSCRIPTION_DECISIONS,
   type SubscriptionResolution,
 } from './providers/subscription-policy';
-import { resolvePrefilterSettings, WardenPrefilter } from './providers/warden-prefilter';
 import { type FoundryConfig, validateConfig } from './viewer/config';
 import {
   type ResolvedChorus,
@@ -64,11 +62,6 @@ export interface ReadinessKingdom {
   integrationId: string;
   signetId: string;
   status: 'connected' | 'unavailable' | 'unverified';
-}
-/** The Warden pre-filter's model: `off` in settings, missing, installed (offline), or checked. */
-export interface ReadinessPrefilter {
-  status: 'off' | 'not-installed' | 'installed' | 'ready' | 'unavailable';
-  url: string;
 }
 /** A project's chorus as the doctor shows it: what runs, from which layers, each region's size and key. */
 export interface ReadinessChorus {
@@ -151,8 +144,6 @@ export interface ReadinessReport {
   kingdoms?: ReadinessKingdom[];
   /** This machine's local Archive; present when inspected. */
   archive?: ReadinessArchive;
-  /** The Warden pre-filter's model. */
-  prefilter?: ReadinessPrefilter;
   /** Each project's chorus, read-only; present when the configuration validated. */
   chorus?: ReadinessChorus[];
   /** Each native runtime CLI the configuration launches; present when the configuration validated. */
@@ -308,12 +299,10 @@ export async function inspectReadiness(
     archive?: () => ArchiveClient | undefined;
     /** Where the Kingdom Installation keys and Signets live (default `.foundry`). */
     configDir?: string;
-    /** Enables one Signet listing per paired Kingdom, one local Archive request, one pre-filter health check and the native login checks. */
+    /** Enables one Signet listing per paired Kingdom, one local Archive request and the native login checks. */
     transport?: typeof fetch;
     /** Test seam for the native login checks (default `nativeLoginStatus`). */
     loginStatus?: (cli: string, binary: string) => Promise<boolean | undefined>;
-    /** Where the pre-filter's model is installed (default ~/.foundry/models). */
-    modelsDir?: string;
   } = {},
 ): Promise<ReadinessReport> {
   const saved = config;
@@ -328,7 +317,6 @@ export async function inspectReadiness(
   ) => issues.push({ severity, scope, code, message });
   let kingdoms: ReadinessKingdom[] | undefined,
     archive: ReadinessArchive | undefined,
-    prefilter: ReadinessPrefilter | undefined,
     chorus: ReadinessChorus[] | undefined,
     nativeClis: ReadinessNativeCli[] | undefined;
   const result = (): ReadinessReport => ({
@@ -338,7 +326,6 @@ export async function inspectReadiness(
     issues,
     ...(kingdoms ? { kingdoms } : {}),
     ...(archive ? { archive } : {}),
-    ...(prefilter ? { prefilter } : {}),
     ...(chorus ? { chorus } : {}),
     ...(nativeClis ? { nativeClis } : {}),
   });
@@ -478,7 +465,7 @@ export async function inspectReadiness(
       profiles.push({
         scope,
         agentId: id,
-        role: agent.flowRole ?? agent.kind,
+        role: agent.kind,
         provider,
         model,
         ...(warden ? { domain: warden.domain } : {}),
@@ -637,7 +624,6 @@ export async function inspectReadiness(
     integrations.map((integration) => inspectKingdom(integration, configDir, issue, listed)),
   );
   if (options.archive) archive = await inspectArchive(options.archive(), issue, options.transport);
-  prefilter = await inspectPrefilter(config, issue, options.transport, options.modelsDir);
   const native = await inspectNativeClis(saved, {
     which: options.which,
     requested,
@@ -764,37 +750,6 @@ function readinessRole(
       };
     }),
   };
-}
-
-/** A missing or silent model is a warning, never an error: every Warden is then asked. */
-async function inspectPrefilter(
-  config: FoundryConfig,
-  issue: Issue,
-  transport?: typeof fetch,
-  modelsDir?: string,
-): Promise<ReadinessPrefilter> {
-  const settings = resolvePrefilterSettings(config.prefilter);
-  const url = settings.baseUrl;
-  if (!settings.enabled) return { status: 'off', url };
-  if (!prefilterInstalled(modelsDir)) {
-    issue(
-      'warning',
-      'prefilter',
-      'prefilter-not-installed',
-      'The Warden pre-filter model is not installed, so every Warden is asked on every trigger. Run foundry-acp setup.',
-    );
-    return { status: 'not-installed', url };
-  }
-  if (!transport) return { status: 'installed', url };
-  const health = await new WardenPrefilter(config.prefilter, { fetch: transport }).check();
-  if (health.ok) return { status: 'ready', url };
-  issue(
-    'warning',
-    'prefilter',
-    'prefilter-unavailable',
-    `The Warden pre-filter model at ${url} did not answer, so every Warden is asked. The daemon starts it; restart the daemon.`,
-  );
-  return { status: 'unavailable', url };
 }
 
 type Issue = (

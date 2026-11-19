@@ -112,9 +112,7 @@ import {
   type SessionAdapter,
   SessionBackedProvider,
 } from './providers';
-import { startPrefilterServer } from './providers/prefilter-model';
 import { ThreadLaunchSettings } from './providers/thread-launch';
-import { resolvePrefilterSettings, WardenPrefilter } from './providers/warden-prefilter';
 import { Keychain, providerKeyEnvironment } from './secrets/keychain';
 import { runStartupSelfTest, startupSelfTestEnabled } from './startup-self-test';
 import { BashShell } from './tools/bash-shell';
@@ -144,7 +142,6 @@ import { effectiveProject, resolveProjectView } from './viewer/config-resolve';
 import { startViewer } from './viewer/server';
 import {
   decisionPressureActivity,
-  prefilterActivity,
   primedEventActivity,
   projectHostActivity,
 } from './viewer/system-activity';
@@ -734,30 +731,6 @@ const providers = new Map<string, LLMProvider>([
 
 const eventStream = new EventStream();
 
-// The Warden pre-filter (settings `prefilter`, off by default): when turned on, a local decision model
-// skips a Warden on a confident "not my domain". Off, no model server starts and every Warden is
-// asked. On with its model missing or down, every Warden is asked and the viewer and log say so.
-const prefilterSettings = resolvePrefilterSettings(config.prefilter);
-const prefilterServer = prefilterSettings.enabled
-  ? await startPrefilterServer(prefilterSettings)
-  : undefined;
-const prefilter = prefilterSettings.enabled
-  ? new WardenPrefilter(config.prefilter, {
-      onHealth: (health) => {
-        const activity = prefilterActivity(health);
-        if (health.ok) console.log(activity.detail);
-        else console.warn(`[warden-prefilter] ${activity.detail}`);
-        eventStream.pushActivity(activity);
-      },
-    })
-  : undefined;
-if (prefilterServer?.status === 'not-installed') {
-  // Every Warden is asked; say so in the log and the viewer without probing the network.
-  const activity = prefilterActivity('not-installed');
-  console.warn(`[warden-prefilter] ${activity.detail}`);
-  eventStream.pushActivity(activity);
-} else void prefilter?.waitReady(prefilterServer?.status === 'started' ? 120_000 : 0);
-
 // Every factory-created thread (main included) gets its own Librarian,
 // Wardens, FlowOrchestrator, event bridges and persistence sinks; archiving
 // the thread disposes them.
@@ -773,7 +746,6 @@ const runtimeManager = new ThreadRuntimeManager({
   // No provider is constructed and no live binding/settings are changed by this resolver.
   learning: resolveLearningSettings(config.learning, providers, flowLlm, decisionModel),
   eventStream,
-  ...(prefilter ? { prefilter } : {}),
   // Wardens come from settings only; their domain knowledge sources resolve like layer sources.
   resolveSource: sourceResolver,
   ...(stageHost ? { stageHost } : {}),
@@ -1207,7 +1179,6 @@ const shutdown = async () => {
     Bun.sleep(5_000),
   ]);
   runtimeManager.disposeAll();
-  prefilterServer?.stop();
   viewer.server.stop();
   viewer.localStore?.close();
   await viewer.analyticsStore?.flush();

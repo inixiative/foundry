@@ -229,7 +229,7 @@ export function buildAgents(
   for (const [id, agentCfg] of Object.entries(config.agents)) {
     if (!agentCfg.enabled) continue;
     // The runtime owns the Wardens; they are never thread agents.
-    if (agentCfg.flowRole === 'warden') continue;
+    if (agentCfg.kind === 'warden') continue;
     const providerId = agentCfg.provider || config.defaults.provider;
     const provider = deps.providers ? deps.providers.get(providerId) : deps.provider;
     if (!provider) throw new Error(`No provider registered for ${providerId} (agent ${id})`);

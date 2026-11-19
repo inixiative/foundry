@@ -89,7 +89,7 @@ export interface RegionSummary {
   /** `region.json` `role`; `warden` when it names none. */
   readonly role: RegionRole;
   readonly title: string;
-  /** The one-line routing question ("Is this about …?"), also the pre-filter's question for this Warden. */
+  /** The one-line routing question ("Is this about …?"). */
   readonly routing: string;
   readonly concepts: readonly string[];
   /** The builder's size estimate, when it recorded one. */
@@ -468,7 +468,6 @@ function regionWarden(region: RegionSummary, stages: readonly StageConfig[]): Re
     agent: {
       id: regionRoleId(region.id),
       kind: 'warden',
-      flowRole: 'warden',
       domain: region.id,
       description: region.title,
       prompt: regionInstructions(region),

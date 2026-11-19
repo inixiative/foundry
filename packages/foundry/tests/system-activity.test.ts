@@ -2,7 +2,6 @@ import { describe, expect, test } from 'bun:test';
 import type { ProjectHostState } from '../src/providers/project-warden-hosts';
 import {
   decisionPressureActivity,
-  prefilterActivity,
   primedEventActivity,
   projectHostActivity,
   resetTime,
@@ -90,15 +89,6 @@ test('a decision process recycling is logged, never shown; other primed events a
     primedEventActivity({ type: 'process-recycled', generation: 2, reason: 'tokens' })?.state,
   ).toBe('idle');
   expect(primedEventActivity({ type: 'process-started', generation: 1, ms: 10 })).toBeUndefined();
-});
-
-test('the pre-filter: down or missing is degraded under one key, back is ready', () => {
-  expect(prefilterActivity({ ok: false, reason: 'refused' }).state).toBe('degraded');
-  expect(prefilterActivity('not-installed').summary).toContain('not installed');
-  expect(prefilterActivity({ ok: true })).toMatchObject({
-    key: 'warden-prefilter',
-    state: 'ready',
-  });
 });
 
 describe('the strip', () => {

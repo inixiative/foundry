@@ -70,7 +70,6 @@ test('readiness refuses a hand-named Warden in settings and catches unavailable 
     warden: {
       id: 'warden',
       kind: 'warden',
-      flowRole: 'warden',
       domain: 'docs',
       prompt: 'PRIVATE_WARDEN',
       enabled: true,
@@ -223,18 +222,18 @@ test('readiness refuses wrong-runtime sources and missing or non-executable help
   }
 });
 
-test('keyless providers read as ready: a local Ollama has no credential to be missing', async () => {
+test('API-key providers with their keys set read as ready', async () => {
   const config = defaultConfig();
-  // A local API provider is the apiTokens path. Main threads run on the five labs, so Ollama decides.
+  // The apiTokens path. Main threads run on the five labs, so DeepSeek decides.
   config.apiTokens = true;
   config.defaults = {
     provider: 'meta',
     model: 'muse-spark-1.3',
-    decisionProvider: 'ollama',
-    decisionModel: 'llama3.2:3b',
+    decisionProvider: 'deepseek',
+    decisionModel: 'deepseek-flash',
   };
   const report = await inspectReadiness(config, {
-    environment: { MODEL_API_KEY: 'synthetic' },
+    environment: { MODEL_API_KEY: 'synthetic', DEEPSEEK_API_KEY: 'synthetic' },
     which: () => null,
   });
   expect(report.issues.some((item) => item.code === 'provider-credential-missing')).toBe(false);

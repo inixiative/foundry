@@ -11,7 +11,7 @@
  *
  *   bun scripts/evals/warden-charter-report.ts --run <run dir> --probes <probes.jsonl> \
  *     [--labels <labels.json>] [--recognise <stage-1 run dir>] [--baseline <run dir>] \
- *     [--judge-pointers] [--routing <scores.jsonl>] [--window <before,after>] \
+ *     [--judge-pointers] [--window <before,after>] \
  *     [--trigger-rates 17,60] [--finding <file> --experiment <name> --layer <layer> --change <text>] \
  *     [--out <report.json>]
  *
@@ -28,7 +28,7 @@
  * (miss rate, false-positive rate), accumulated error (moments with a miss or a wrong chime, the
  * compounding line) and provenance. Every rate carries n, d and a Wilson 95% interval.
  *
- * Truth is multi-region: `--labels` (warden-prefilter.ts label-regions) names, per probe, the regions
+ * Truth is multi-region: `--labels` (a labels file from an earlier labelling run) names, per probe, the regions
  * that hold or are expected for its target; a yes from one of them is right. Without labels, a
  * positive probe with a target needs every region that was asked (the size test's single-Warden
  * cells). A correction with no labelled target is left out of scoring; negatives count every yes as
@@ -37,9 +37,8 @@
  * --judge-pointers grades every remark on a targeted positive on the pointer ladder (Opus), cached
  * in the run's pointer-ladder.jsonl. --baseline names the run the deltas are against. --window gives
  * the shared five-hour window before and after when quota.jsonl did not record it. --finding writes
- * a finding record (findings/README.md schema) generated from the report. --routing keeps the
- * routed-at-k view. Reads the run; writes only the pointer cache, report.json, REPORT.md and the
- * finding record.
+ * a finding record (findings/README.md schema) generated from the report. Reads the run; writes only
+ * the pointer cache, report.json, REPORT.md and the finding record.
  */
 import { createHash } from 'node:crypto';
 import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
@@ -80,7 +79,6 @@ const { values } = parseArgs({
     recognise: { type: 'string' },
     baseline: { type: 'string' },
     'judge-pointers': { type: 'boolean' },
-    routing: { type: 'string' },
     window: { type: 'string' },
     'trigger-rates': { type: 'string' },
     repeat: { type: 'string' },
@@ -1334,61 +1332,6 @@ if (values.baseline) {
   };
 }
 
-if (values.routing) {
-  // Ranked regions per probe: those the router scored above zero, best first.
-  const scores = new Map<string, { region: string; score: number }[]>();
-  for (const row of readJsonl<{ fixtureId: string; wardenId: string; score: number }>(
-    resolve(values.routing),
-  )) {
-    if (!(row.score > 0)) continue;
-    scores.set(row.fixtureId, [
-      ...(scores.get(row.fixtureId) ?? []),
-      { region: row.wardenId, score: row.score },
-    ]);
-  }
-  const ranked = (probeId: string) =>
-    (scores.get(probeId) ?? [])
-      .sort((a, b) => b.score - a.score || a.region.localeCompare(b.region))
-      .map((r) => r.region);
-  const routedIds = new Set(
-    readJsonl<{ fixtureId: string }>(resolve(values.routing)).map((r) => r.fixtureId),
-  );
-  const probes = main.probes.filter((p) => routedIds.has(p.id));
-  const positives = probes.filter((p) => p.kind === 'positive');
-  const matched = (a: WardenProbeAnswer) => yes(a) && !!a.judged?.matches;
-  const fullFanOut = new Set(main.answers.filter(matched).map((a) => a.probeId));
-  report.routed = {
-    scores: resolve(values.routing),
-    probesWithRouting: probes.length,
-    positivesWithRouting: positives.length,
-    fullFanOutOnThese: asRate(
-      positives.filter((p) => fullFanOut.has(p.id)).length,
-      positives.length,
-    ),
-    atK: Object.fromEntries(
-      [2, 4, 8].map((k) => {
-        const routedFor = (probeId: string) => new Set(ranked(probeId).slice(0, k));
-        const said = new Set(
-          main.answers
-            .filter((a) => matched(a) && routedFor(a.probeId).has(a.domain))
-            .map((a) => a.probeId),
-        );
-        const turns = main.turns.filter((t) => routedIds.has(t.probeId));
-        return [
-          k,
-          {
-            anticipated: asRate(positives.filter((p) => said.has(p.id)).length, positives.length),
-            askedPerMoment: rate(
-              turns.reduce((n, t) => n + Math.min(k, ranked(t.probeId).length), 0),
-              turns.length,
-            ),
-          },
-        ];
-      }),
-    ),
-  };
-}
-
 // ---------------------------------------------------------------------------
 // Render REPORT.md
 // ---------------------------------------------------------------------------
@@ -1627,20 +1570,6 @@ function renderReport(): string {
     out.push('');
   } else out.push('Run-to-run noise: no repeat of this arm given.', '');
   out.push('Impact: not measured (intervention test). Recurrence: not measured (Oracle).', '');
-  const routed = report.routed as
-    | { atK: Record<string, { anticipated: Rate; askedPerMoment: number | null }> }
-    | undefined;
-  if (routed) {
-    out.push(
-      '## Routed at k (offline, same answers)',
-      '',
-      '| k | anticipated | asked per moment |',
-      '|---|---|---|',
-    );
-    for (const [kk, v] of Object.entries(routed.atK))
-      out.push(`| ${kk} | ${r(v.anticipated)} | ${f(v.askedPerMoment)} |`);
-    out.push('');
-  }
   out.push(
     '---',
     '',

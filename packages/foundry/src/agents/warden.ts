@@ -236,7 +236,6 @@ export interface KnowledgeEvidence {
  * - timeout: retained historical outcome from the older discard-on-timeout policy.
  * - discarded: the answer arrived after disposal.
  * - restored: state was restored from a snapshot.
- * - prefiltered: the pre-filter was confident the work is outside this domain; no review call.
  */
 export type LearningDecision =
   | 'learned'
@@ -259,8 +258,7 @@ export type LearningDecision =
   | 'native-admission'
   | 'native-evidence'
   | 'native-cleanup'
-  | 'requested'
-  | 'prefiltered';
+  | 'requested';
 
 export interface LearningRecord {
   readonly native?: import('@inixiative/foundry-core').NativeEvidence;

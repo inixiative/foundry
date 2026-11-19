@@ -304,7 +304,6 @@ test('actual factory advice, guard and learning use the subscription lifecycle a
     [WARDEN]: {
       id: WARDEN,
       kind: 'warden',
-      flowRole: 'warden',
       domain: 'docs',
       provider: f.provider.id,
       model: 'test-model',

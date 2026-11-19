@@ -275,7 +275,6 @@ test("a project's chorus is one generated Warden per region of .foundry/regions,
   expect(locks).toMatchObject({
     id: LOCKS,
     kind: 'warden',
-    flowRole: 'warden',
     domain: 'concurrency-locks',
     description: 'Concurrency, locks and lanes',
     invocation: 'always',
@@ -825,7 +824,6 @@ test('settings declare no Wardens: one written there is refused, and a malformed
   const handNamed = {
     id: 'librarian-reuse',
     kind: 'warden' as const,
-    flowRole: 'warden' as const,
     domain: 'reuse',
     prompt: 'REUSE_RULES',
     enabled: true,
@@ -836,9 +834,6 @@ test('settings declare no Wardens: one written there is refused, and a malformed
   );
   c.agents['librarian-reuse'] = { ...handNamed, kind: 'decider' as never };
   expect(() => validateConfig(c)).toThrow('kind "decider" is not configurable');
-  // The flow role alone does not make a Warden: a Warden's id is a region's role id.
-  c.agents['librarian-reuse'] = { ...handNamed, kind: 'executor' };
-  expect(() => validateConfig(c)).toThrow('Invalid Warden identity: librarian-reuse');
   delete c.agents['librarian-reuse'];
   c.projects.P!.agents = { tooling: { ...handNamed, id: 'tooling', domain: 'tooling' } };
   expect(() => validateConfig(c)).toThrow(

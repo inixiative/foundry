@@ -84,7 +84,6 @@ type PrimedEvent = Parameters<NonNullable<DecisionEvents['onPrimedEvent']>>[0];
 import { isDefaultProfile } from '../../packages/foundry/src/providers/default-profiles';
 import { processTreeRssMb } from '../../packages/foundry/src/providers/process-table';
 import { resolveSubscriptionPolicy } from '../../packages/foundry/src/providers/subscription-policy';
-import { resolvePrefilterSettings } from '../../packages/foundry/src/providers/warden-prefilter';
 import { ConfigStore } from '../../packages/foundry/src/viewer/config';
 import { resolveProjectView } from '../../packages/foundry/src/viewer/config-resolve';
 
@@ -165,9 +164,6 @@ const entry = Object.entries(saved.projects ?? {}).find(
 if (!entry) throw Error(`--project ${values.project} is not registered in ${foundryDir}`);
 const [projectId, project] = entry;
 if (!project.path) throw Error(`project ${projectId} has no path`);
-// The pre-filter (off by default) is a local model server the daemon starts; a headless run has none.
-if (resolvePrefilterSettings(saved.prefilter).enabled)
-  throw Error('the Warden pre-filter is on in these settings; chorus-advise runs without it');
 // In memory only: the decision runtime asked for, over the daemon's.
 if (runtime)
   saved.subscriptionOnly = {
@@ -367,7 +363,6 @@ const writeChorus = (
     reception: view.chorus.reception,
     consumed: view.chorus.consumed,
     stages: { from: view.chorus.roles.warden.from, resolved: stages },
-    prefilter: false,
     guard: config.guard ?? 'per-turn',
     flow: advice.timing,
     decisionHost: {

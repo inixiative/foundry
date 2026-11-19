@@ -30,12 +30,12 @@ describe('base URL resolution', () => {
   test('a bare origin gains exactly one version segment', () => {
     expect(openAiApiRoot('https://api.openai.com')).toBe('https://api.openai.com/v1');
     expect(openAiApiRoot('https://api.openai.com/')).toBe('https://api.openai.com/v1');
-    expect(openAiApiRoot('http://localhost:11434')).toBe('http://localhost:11434/v1');
+    expect(openAiApiRoot('http://localhost:8080')).toBe('http://localhost:8080/v1');
   });
 
   test('an already versioned base is left alone rather than doubled', () => {
     expect(openAiApiRoot('https://api.x.ai/v1')).toBe('https://api.x.ai/v1');
-    expect(openAiApiRoot('http://localhost:11434/v1/')).toBe('http://localhost:11434/v1');
+    expect(openAiApiRoot('http://localhost:8080/v1/')).toBe('http://localhost:8080/v1');
     expect(openAiApiRoot('https://api.z.ai/api/paas/v4')).toBe('https://api.z.ai/api/paas/v4');
     expect(openAiApiRoot('https://dashscope-intl.aliyuncs.com/compatible-mode/v1')).toBe(
       'https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
@@ -46,12 +46,12 @@ describe('base URL resolution', () => {
     const { calls, restore } = captureRequest();
     try {
       await new OpenAIProvider({ apiKey: 'k' }).complete([{ role: 'user', content: 'hi' }]);
-      await new OpenAIProvider({ apiKey: 'k', baseUrl: 'http://localhost:11434/v1' }).complete([
+      await new OpenAIProvider({ apiKey: 'k', baseUrl: 'http://localhost:8080/v1' }).complete([
         { role: 'user', content: 'hi' },
       ]);
       expect(calls.map((call) => call.url)).toEqual([
         'https://api.openai.com/v1/chat/completions',
-        'http://localhost:11434/v1/chat/completions',
+        'http://localhost:8080/v1/chat/completions',
       ]);
     } finally {
       restore();
@@ -64,27 +64,27 @@ describe('base URL resolution', () => {
     expect(providerApiRoot('glm', 'https://open.bigmodel.cn/api/paas/v4')).toBe(
       'https://open.bigmodel.cn/api/paas/v4',
     );
-    expect(providerApiRoot('ollama', 'http://10.0.0.2:11434')).toBe('http://10.0.0.2:11434/v1');
+    expect(providerApiRoot('groq', 'http://10.0.0.2:8080')).toBe('http://10.0.0.2:8080/v1');
     expect(() => providerApiRoot('gemini')).toThrow('no OpenAI-compatible endpoint');
     expect(() => providerApiRoot('nope')).toThrow('Unregistered provider');
   });
 });
 
 describe('registered OpenAI-compatible providers', () => {
-  test('one adapter serves the compatible family, keyed and keyless alike', async () => {
+  test('one adapter serves the compatible family, each on its own key', async () => {
     const { calls, restore } = captureRequest();
     try {
       const deepseek = createRegisteredProvider('deepseek', { apiKey: 'PRIVATE_DS' });
-      const ollama = createRegisteredProvider('ollama');
+      const groq = createRegisteredProvider('groq', { apiKey: 'PRIVATE_GROQ' });
       expect(deepseek).toBeInstanceOf(OpenAIProvider);
-      expect(ollama).toBeInstanceOf(OpenAIProvider);
+      expect(groq).toBeInstanceOf(OpenAIProvider);
       await deepseek.complete([{ role: 'user', content: 'hi' }]);
-      await ollama.complete([{ role: 'user', content: 'hi' }]);
+      await groq.complete([{ role: 'user', content: 'hi' }]);
       expect(calls[0].url).toBe('https://api.deepseek.com/chat/completions');
       expect(calls[0].body.model).toBe('deepseek-flash');
-      expect(calls[1].url).toBe('http://localhost:11434/v1/chat/completions');
-      expect(calls[1].body.model).toBe('llama3.2:3b');
-      expect(calls[1].headers.authorization).toBe('Bearer local');
+      expect(calls[1].url).toBe('https://api.groq.com/openai/v1/chat/completions');
+      expect(calls[1].body.model).toBe(MODEL_REGISTRY.groq.models[0]!.id);
+      expect(calls[1].headers.authorization).toBe('Bearer PRIVATE_GROQ');
       expect(deepseek.id).toBe('deepseek');
     } finally {
       restore();
@@ -188,7 +188,6 @@ describe('registered OpenAI-compatible providers', () => {
   test('credentials are read from the registered environment variable only', () => {
     expect(providerApiKey('deepseek', { DEEPSEEK_API_KEY: 'PRIVATE_DS' })).toBe('PRIVATE_DS');
     expect(providerApiKey('deepseek', { DEEPSEEK_API_KEY: '  ' })).toBeUndefined();
-    expect(providerApiKey('ollama', { DEEPSEEK_API_KEY: 'PRIVATE_DS' })).toBeUndefined();
-    expect(MODEL_REGISTRY.ollama.envKey).toBeUndefined();
+    expect(providerApiKey('groq', { DEEPSEEK_API_KEY: 'PRIVATE_DS' })).toBeUndefined();
   });
 });
