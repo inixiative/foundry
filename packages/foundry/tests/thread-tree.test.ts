@@ -1,12 +1,22 @@
 // Spec A (docs/THREAD-TREE.md): a thread is a tree, stitched into Archive by Foundry.
 import './helpers/isolate-archive';
 import { afterEach, expect, test } from 'bun:test';
-import { EventStream, type NativeEvidence, type ThreadMeta } from '@inixiative/foundry-core';
+import {
+  ContextStack,
+  EventStream,
+  type NativeEvidence,
+  Thread,
+  type ThreadMeta,
+} from '@inixiative/foundry-core';
 import { ArchiveCapture, captureThread } from '../src/archives/capture';
 import { REDUCED_PHASE } from '../src/archives/reduced-middleware';
 import { LocalSessionStore } from '../src/persistence/local-session-store';
 import { CODER_ROLE, FORGE_MASTER_ROLE } from '../src/prompts/instruction-settings';
-import { SubagentRecorder, type SubagentToolCall } from '../src/turns/subagents';
+import {
+  SubagentRecorder,
+  type SubagentSpawn,
+  type SubagentToolCall,
+} from '../src/turns/subagents';
 import { startFakeArchive } from './helpers/fake-archive';
 
 const cleanup: (() => void)[] = [];
@@ -245,6 +255,37 @@ const childEvent = (parentToolUseId: string, extra: Partial<NativeEvidence>): Na
   nativeOutcome: 'unknown',
   parentToolUseId,
   ...extra,
+});
+
+test('a top-level subagent spawn names its live parent thread as a plain record, so its events serialize', async () => {
+  const store = journal();
+  const record = main();
+  store.saveThread(record);
+  store.beginTurn(record, 'turn-1', 'Explore');
+  store.startTurn(record, 'turn-1');
+  const live = new Thread(record.id, new ContextStack(), record.meta);
+  const events = new EventStream();
+  live.signals.onAny((signal) => events.push({ kind: 'signal', threadId: live.id, signal }));
+  const spawned: SubagentSpawn[] = [];
+  const r = new SubagentRecorder({
+    store,
+    thread: (id) => (id === live.id ? live : undefined),
+    onSpawn: (_root, spawn) => spawned.push(spawn),
+  });
+  r.observe(
+    live.id,
+    life({ phase: 'started', taskId: 'task-a', toolUseId: 'call-a', prompt: 'Look around' }),
+  );
+  expect(spawned).toHaveLength(1);
+  await live.signals.emit({
+    id: 'sig-spawn',
+    kind: 'subagent_spawn',
+    source: 'subagent:test',
+    content: { threadId: live.id, parent: spawned[0]!.parent },
+    timestamp: 1,
+  });
+  expect(() => JSON.stringify(events.recent())).not.toThrow();
+  expect(spawned[0]!.parent).toEqual({ id: live.id, meta: live.meta });
 });
 
 test('subagents to any depth become child threads tied to their real parent, stitched with lineage', () => {

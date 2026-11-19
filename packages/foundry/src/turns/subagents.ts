@@ -104,8 +104,10 @@ export class SubagentRecorder {
 
   /** One event from the executor's session running under `threadId` (the root of its tree). */
   observe(threadId: string, evidence: NativeEvidence): void {
-    const root = this.deps.thread(threadId);
-    if (!root) return;
+    const live = this.deps.thread(threadId);
+    if (!live) return;
+    // why: a live Thread's signal history holds the spawn signal naming it as parent, a cycle.
+    const root: ThreadRecord = { id: live.id, meta: live.meta };
     if (evidence.kind === 'subagent' && evidence.subagent) {
       this.lifecycle(root, evidence);
       return;
