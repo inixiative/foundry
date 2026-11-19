@@ -153,8 +153,9 @@ function ChorusBody({ step }) {
         ${r.served ? html` <span class="tv-dim">${r.served.model}${r.served.effort ? ` · ${r.served.effort}` : ''}</span>` : null}
         ${r.layers.map(
           (layer) =>
-            html`<div key=${layer.layer} class="tv-layer">Layer ${layer.layer} · ${layer.layer === 1 ? 'detection' : 'confirm and pick'}: ${layer.outcome ?? (layer.timedOut ? 'timed out' : layer.error ? 'error' : '—')}${layer.why ? ` · ${layer.why}` : ''}</div>`,
+            html`<div key=${layer.layer} class="tv-layer">Layer ${layer.layer} · ${layer.layer === 1 ? 'detection' : 'confirm and pick'}: ${layer.outcome ?? (layer.timedOut ? 'timed out' : layer.error ? 'error' : '—')}${layer.why ? ` · ${layer.why}` : ''}${layer.revised ? ` · on reflection: ${layer.revised}` : ''}</div>`,
         )}
+        <${DebugReason} reason=${r.debugReason} />
         ${r.pointer?.pointer ? html`<div class="tv-pointer">† ${r.pointer.shape === 'choose-one' ? 'Choose one: ' : ''}${r.pointer.pointer}${r.pointer.where ? ` · ${r.pointer.where}` : ''}${r.pointer.why ? ` · ${r.pointer.why}` : ''}</div>` : null}
         ${r.said.map((line, i) => html`<div key=${i} class="tv-said">${line}</div>`)}
         ${!r.layers.length && r.reason ? html`<div class="tv-dim">${r.reason}</div>` : null}
@@ -178,13 +179,21 @@ function DeliveryBody({ step }) {
   </div>`;
 }
 
+/** A Warden's debug reason: its why, asked after the decision on the same session (`warden-debug`). */
+function DebugReason({ reason }) {
+  if (!reason) return null;
+  const said = reason.why ?? (reason.status && reason.status !== 'answered' ? reason.status : null);
+  return html`<div class="tv-dim">Why, asked after${reason.layer ? ` (layer ${reason.layer})` : ''}: ${said ?? '—'}${reason.revised ? ` · on reflection: ${reason.revised}` : ''}</div>`;
+}
+
 function GuardBody({ step }) {
   return html`<div class="tv-typed">
     <ul class="tv-regions">${step.regions.map(
       (
         r,
       ) => html`<li key=${r.region}><b>${r.region}</b> <span class="tv-decision">${r.status}</span>${r.findings ? ` · ${r.findings} findings` : ''}
-        ${r.notes.map((n, i) => html`<div key=${i} class="tv-said">${n}</div>`)}</li>`,
+        ${r.notes.map((n, i) => html`<div key=${i} class="tv-said">${n}</div>`)}
+        <${DebugReason} reason=${r.debugReason} /></li>`,
     )}</ul>
     ${step.notes.map((n, i) => html`<div key=${i} class="tv-said">${n.severity}: ${n.description}${n.location ? ` (${n.location})` : ''}</div>`)}
     ${step.failed.length ? html`<div class="tv-dim">Failed: ${step.failed.join(', ')}</div>` : null}

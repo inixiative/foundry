@@ -162,7 +162,7 @@ test('project-level charter settings are refused by name; stage settings are che
     validateChorusSettings('chorus', { wardens: { stages: [{ charter: 'x' }] } }),
   ).toThrow(/chorus.wardens.stages\[0\].charter is not a setting/);
   expect(() => validateChorusSettings('chorus', { wardens: { model: 'x' } })).toThrow(
-    'chorus.wardens.model is not a role setting (stages)',
+    'chorus.wardens.model is not a role setting (stages, debugReason)',
   );
   expect(() =>
     validateChorusSettings('chorus', { heralds: { stages: [{ escalate: ['yes'] }] } }),

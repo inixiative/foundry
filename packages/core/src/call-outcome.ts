@@ -37,8 +37,12 @@ export type AdviceResult = 'spoke' | 'no-comment' | 'omitted-budget';
 /** A guard check's answer: findings, or an empty all-clear. */
 export type GuardCheckResult = 'findings' | 'all-clear';
 
+/** A debug follow-up's answer ("why did you answer that?"): the decision stands, or it would answer otherwise. */
+export type DebugReasonResult = 'kept' | 'revised';
+
 export type AdviceOutcome = CallOutcome<AdviceResult>;
 export type GuardCheckOutcome = CallOutcome<GuardCheckResult>;
+export type DebugReasonOutcome = CallOutcome<DebugReasonResult>;
 
 /** A call that was never sent, and the bounded reason recorded with its cause. */
 export interface NotSentCall {
@@ -95,6 +99,8 @@ export function recordedOutcomeLabel(
 export const ADVICE_RESULTS: readonly AdviceResult[] = ['spoke', 'no-comment', 'omitted-budget'];
 /** Every guard check result, for `parseCallOutcome`. */
 export const GUARD_CHECK_RESULTS: readonly GuardCheckResult[] = ['findings', 'all-clear'];
+/** Every debug follow-up result, for `parseCallOutcome`. */
+export const DEBUG_REASON_RESULTS: readonly DebugReasonResult[] = ['kept', 'revised'];
 
 /** An advice call that reached the thread. */
 export function adviceSpoke(outcome: AdviceOutcome): boolean {

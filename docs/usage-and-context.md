@@ -703,6 +703,22 @@ regions never run (Heralds are not built) and the view says so.
   decision host (one per pair, on the decision login); with API-token decisions
   such a stage is refused. `chorus.heralds` takes the same shape and runs
   nothing yet. What the stages mean: [FLOW.md](FLOW.md#when-a-warden-weighs-in-the-charter-trigger-points-and-no_comment).
+- **Debug reason** (`chorus.wardens.debugReason`, default `true` for region
+  Wardens). After a Warden's decision is journalled, Foundry asks the last stage
+  that answered in shape "why?" on the same session, and whether it would revise
+  its answer. A stage whose own `followup` already gave its why is not asked
+  again. The decision is never held for it: the reading is its own call, at the
+  lowest priority (below review), outside the decision's deadline (only the
+  provider's own call timeout applies), and never served by a held
+  spare (on the project host it runs direct, so the next decision keeps its
+  spare). It counts against the same budget, is journalled as a `warden-debug`
+  row linked to the decision row (`wraps: <row id>:<domain>`) and is sent to
+  Archive as its own reduced entry (`mw:<call id>:debug`), so Oracle reads why a
+  Warden spoke or kept quiet. The viewer shows it under the layers as "Why,
+  asked after (layer N)", with "on reflection" when it would revise. `false`
+  turns it off; the machine's value wins over the repository's. Code-registered
+  Wardens, hidden threads and evals never ask it; `chorus.heralds` refuses the
+  key.
 - **Layers.** A chorus may be built from layers, in order:
 
   ```json

@@ -38,11 +38,23 @@ const doc = (node: ts.Node, source: ts.SourceFile) =>
 export function buildSettingsCatalog(text = readFileSync(CONFIG_FILE, 'utf8')): CatalogEntry[] {
   const source = ts.createSourceFile('config.ts', text, ts.ScriptTarget.Latest, true);
   const declared = new Map<string, ts.TypeElement[]>();
+  const interfaces = new Map<string, ts.InterfaceDeclaration>();
   source.forEachChild((node) => {
-    if (ts.isInterfaceDeclaration(node)) declared.set(node.name.text, [...node.members]);
+    if (ts.isInterfaceDeclaration(node)) interfaces.set(node.name.text, node);
     if (ts.isTypeAliasDeclaration(node) && ts.isTypeLiteralNode(node.type))
       declared.set(node.name.text, [...node.type.members]);
   });
+  // An interface's settings include those it extends, the base's first.
+  const interfaceMembers = (node: ts.InterfaceDeclaration): ts.TypeElement[] => [
+    ...(node.heritageClauses ?? []).flatMap((clause) =>
+      clause.types.flatMap((base) => {
+        const extended = interfaces.get(base.expression.getText(source));
+        return extended ? interfaceMembers(extended) : [];
+      }),
+    ),
+    ...node.members,
+  ];
+  for (const [name, node] of interfaces) declared.set(name, interfaceMembers(node));
 
   const entries: CatalogEntry[] = [];
   const walk = (

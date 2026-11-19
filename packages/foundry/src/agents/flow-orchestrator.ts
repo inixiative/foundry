@@ -58,7 +58,12 @@ import {
   type Signal,
   type SignalBus,
 } from '@inixiative/foundry-core';
-import { type ClassifiedSummary, classifiedSummary, type WardenPointer } from '../classify';
+import {
+  type ClassifiedSummary,
+  classifiedSummary,
+  type DebugReasonReading,
+  type WardenPointer,
+} from '../classify';
 import { DECISION_DEADLINE_MS, QUOTA_PAUSED_REFUSAL } from '../providers/decision-budget';
 import {
   type PrefilterOutcome,
@@ -151,6 +156,8 @@ export interface DomainContribution {
   readonly catchesUp?: true;
   /** The missed user messages it was asked on with this one (`user-message` only). */
   readonly earlier?: { readonly count: number; readonly dropped: number };
+  /** Live debug: asks its answer's why, its own call; the journal invokes it once the decision row is sealed. */
+  readonly askDebugReason?: () => Promise<DebugReasonReading>;
 }
 
 /** A cold or prefiltered Warden was given nothing: no call, so no inputs and no missed messages. */
@@ -334,6 +341,8 @@ export interface GuardOutcome {
   readonly classified?: ClassifiedSummary;
   /** The exact input of every stage past the first (the first is `request`), each with its own composition. */
   readonly stageRequests?: readonly ParticipantRequest[];
+  /** Live debug: asks the check's why, its own call; the journal invokes it once every check has answered. */
+  readonly askDebugReason?: () => Promise<DebugReasonReading>;
 }
 
 /** Caller hooks for the post-action flow. `onRequest` fires at each domain's call boundary, before its answer. */
@@ -1028,6 +1037,7 @@ export class FlowOrchestrator {
           | 'classified'
           | 'stageRequests'
           | 'catchesUp'
+          | 'askDebugReason'
         >
       > = {},
     ): DomainContribution => ({
@@ -1113,7 +1123,10 @@ export class FlowOrchestrator {
           : {}),
         ...staged,
       });
-    const repaired = result.repairs?.length ? { repairs: result.repairs } : {};
+    const repaired = {
+      ...(result.repairs?.length ? { repairs: result.repairs } : {}),
+      ...(result.askDebugReason ? { askDebugReason: result.askDebugReason } : {}),
+    };
     if (outcome.result === 'no-comment') return decided(outcome, { ...repaired, ...staged });
     return decided(outcome, {
       layers: [...result.layers],
@@ -1523,6 +1536,7 @@ export class FlowOrchestrator {
               stageRequests: r.stageRequests.map((e) => suppliedRequest(e)),
             }
           : {}),
+        ...(r.askDebugReason ? { askDebugReason: r.askDebugReason } : {}),
       });
     }
     // Not completed: failed, or refused unsent by the queue or role budget (a cold Warden has nothing to check yet).

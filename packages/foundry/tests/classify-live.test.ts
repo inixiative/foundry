@@ -22,6 +22,7 @@ import { ThreadRuntimeManager } from '../src/agents/thread-runtime';
 import {
   charterFor,
   DEFAULT_STAGES,
+  FOLLOWUP_QUESTION,
   LAYER_2_MODEL,
   RECOGNISE_CHARTER,
   type StageEffort,
@@ -106,6 +107,9 @@ function runtime(
   const provider = (id: string): LLMProvider => ({
     id,
     async complete(messages, opts = {}) {
+      // A Warden's debug reason, asked after its decision: not one of the stages these tests count.
+      if (messages.at(-1)?.content === FOLLOWUP_QUESTION)
+        return { model: id, content: 'It is about a lock.\nREVISED: KEEP' };
       const call = { host: id, messages: structuredClone(messages), opts: { ...opts } };
       calls.push(call);
       const route = opts.threadId?.endsWith(':cartographer');

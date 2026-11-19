@@ -765,6 +765,11 @@
     "description": "Its stages, each `{ model?, effort?, doc?, outcomes?, reason?, task?, pointer?, escalate?, carryWhy?, deadline? }`."
   },
   {
+    "path": "chorus.wardens.debugReason",
+    "scope": "project",
+    "description": "After a region Warden's decision is journalled, ask its last answering stage \"why did you answer that?\" on the same session (classify `FOLLOWUP_QUESTION`), unless that stage's own follow-up gave it: its own call at the lowest priority, never on a held spare, journalled and archived beside the one it explains, never delaying it. On unless `false` (Aron, 2026-11-18: it stays on for now)."
+  },
+  {
     "path": "chorus.heralds",
     "scope": "project",
     "description": "How Herald topics would classify: the socket only. Heralds are not built; their topics do not run."

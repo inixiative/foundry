@@ -631,7 +631,7 @@ export function createPrimedDecisionHost(config: PrimedDecisionHostConfig) {
           const { capacity } = target.snapshot();
           if (capacity) call.hostCapacity = capacity;
           result = await target.decide(spec, {
-            ...(projectHost && spec.context ? { standby: '' } : {}),
+            ...(projectHost && spec.context && !opts.takesNoHeldCall ? { standby: '' } : {}),
             ...(heldOnly ? { heldOnly: true } : {}),
             input,
             timeoutMs: Math.min(opts.timeout ?? timeout, timeout),

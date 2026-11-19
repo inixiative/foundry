@@ -14,6 +14,7 @@ import type {
   CallOutcome,
   ClassifyOutcome,
   ClassifyStageTrace,
+  DebugReasonOutcome,
   NotSentCall,
   ServedModel,
   TokenCounts,
@@ -60,8 +61,15 @@ export type StageCall =
       readonly docHash?: string;
       /** sha256 of the full system message sent (charter above instructions). */
       readonly systemHash?: string;
-      /** The same exchange with the answer quoted back and `question` asked (`reason: followup`). */
-      readonly followUp?: (question: string) => Promise<{ content: string; tokens?: Tokens }>;
+      /**
+       * The same exchange with the answer quoted back and `question` asked (`reason: followup`).
+       * `afterDecision`: asked once the decision has returned (live debug), so it yields to every
+       * decision: lowest priority, no deadline, never held warm for it.
+       */
+      readonly followUp?: (
+        question: string,
+        asked?: { readonly afterDecision?: true },
+      ) => Promise<{ content: string; tokens?: Tokens }>;
       /** The same prompt with only its response protocol replaced (debug's inline reading). */
       readonly reask?: (protocol: string) => Promise<{ content: string; tokens?: Tokens }>;
     }
@@ -129,6 +137,20 @@ export interface StageDebug {
 
 const message = (err: unknown) => (err as Error)?.message ?? String(err);
 
+/** The follow-up asked and read: its why and its verdict as given, with what it cost. */
+async function askFollowup(
+  followUp: NonNullable<Extract<StageCall, { content: string }>['followUp']>,
+  asked?: { readonly afterDecision?: true },
+): Promise<{ why?: string; revised?: 'keep' | ClassifyOutcome; tokens?: Tokens }> {
+  const answer = await followUp(FOLLOWUP_QUESTION, asked);
+  const parsed = parseFollowup(answer.content);
+  return {
+    ...(parsed.why ? { why: parsed.why } : {}),
+    ...(parsed.revised ? { revised: parsed.revised } : {}),
+    ...(answer.tokens ? { tokens: answer.tokens } : {}),
+  };
+}
+
 /** The two debug readings of one answered stage; failures are recorded, never retried into a guess. */
 async function debugReadings(
   base: Omit<StageRun, 'carried' | 'timeoutMs'>,
@@ -174,13 +196,7 @@ async function debugReadings(
   else if (!call.followUp) after = { error: 'the provider cannot ask a follow-up' };
   else {
     try {
-      const answer = await call.followUp(FOLLOWUP_QUESTION);
-      const parsed = parseFollowup(answer.content);
-      after = {
-        ...(parsed.why ? { why: parsed.why } : {}),
-        ...(parsed.revised ? { revised: parsed.revised } : {}),
-        ...(answer.tokens ? { tokens: answer.tokens } : {}),
-      };
+      after = await askFollowup(call.followUp);
     } catch (err) {
       after = { error: message(err) };
     }
@@ -191,6 +207,69 @@ async function debugReadings(
     inline,
     after,
   };
+}
+
+/**
+ * The decision's why, asked live once the decision has returned: the follow-up of the stage whose
+ * answer stands, on the same session and prefix. Nothing runs until `ask` is called. Absent when that
+ * stage asked its follow-up itself (`reason: followup`) and got an answer: the why is already on its trace.
+ */
+export interface DebugReasonHandle {
+  readonly stage: number;
+  /** The answer the follow-up explains. */
+  readonly outcome: ClassifyOutcome;
+  readonly ask: () => ReturnType<typeof askFollowup>;
+}
+
+/** The standing answer's why as the follow-up gave it, with how that call ended. */
+export interface DebugReasonReading {
+  readonly stage: number;
+  /** The answer it explains. */
+  readonly explains: ClassifyOutcome;
+  readonly outcome: DebugReasonOutcome;
+  readonly why?: string;
+  /** The answer it would give instead (`revised` only). */
+  readonly revised?: ClassifyOutcome;
+  readonly error?: string;
+  readonly tokens?: Tokens;
+  readonly elapsedMs: number;
+}
+
+/**
+ * Ask the standing answer's why and read it. `unanswered` says how a thrown call ended (not admitted,
+ * timed out, rejected); an answer with neither a why nor a verdict is `invalid-response`.
+ */
+export async function askDebugReason(
+  handle: DebugReasonHandle,
+  unanswered: (err: unknown) => Exclude<DebugReasonOutcome, { readonly status: 'answered' }>,
+): Promise<DebugReasonReading> {
+  const base = { stage: handle.stage, explains: handle.outcome };
+  const started = Date.now();
+  try {
+    const answer = await handle.ask();
+    const revised =
+      answer.revised && answer.revised !== 'keep' && answer.revised !== handle.outcome
+        ? answer.revised
+        : undefined;
+    return {
+      ...base,
+      outcome:
+        answer.why || answer.revised
+          ? { status: 'answered', result: revised ? 'revised' : 'kept' }
+          : { status: 'failed', cause: 'invalid-response' },
+      ...(answer.why ? { why: answer.why } : {}),
+      ...(revised ? { revised } : {}),
+      ...(answer.tokens ? { tokens: answer.tokens } : {}),
+      elapsedMs: Date.now() - started,
+    };
+  } catch (err) {
+    return {
+      ...base,
+      outcome: unanswered(err),
+      error: message(err).slice(0, 300),
+      elapsedMs: Date.now() - started,
+    };
+  }
 }
 
 export interface ClassifyResult {
@@ -209,6 +288,8 @@ export interface ClassifyResult {
   readonly failure?: CallFailedCause;
   /** The first stage was never sent (not held warm, or not admitted). */
   readonly notSent?: NotSentCall;
+  /** How to ask the standing answer's why: absent when no stage answered in shape, or its own follow-up gave it. */
+  readonly debugReason?: DebugReasonHandle;
 }
 
 /** A run, or a result built from one, that ended unanswered: not sent, or sent and failed. */
@@ -325,6 +406,8 @@ export async function runStages(options: ClassifyRunOptions): Promise<ClassifyRe
           delivered: false,
         }
       : undefined;
+  // The last stage that answered in shape: its answer is the one a fallback keeps.
+  let explainable: DebugReasonHandle | undefined;
   for (let index = options.from?.index ?? 0; index < runs.length; index++) {
     const base = runs[index]!;
     // A stage gets its share of the trigger's deadline, never more than the run has left; the last
@@ -371,6 +454,7 @@ export async function runStages(options: ClassifyRunOptions): Promise<ClassifyRe
         delivered: previous.delivered,
         fallback: 'timeout',
         stages: traces,
+        ...(explainable ? { debugReason: explainable } : {}),
       };
     }
     const pending = options.ask(run);
@@ -393,6 +477,7 @@ export async function runStages(options: ClassifyRunOptions): Promise<ClassifyRe
           delivered: previous.delivered,
           fallback,
           stages: traces,
+          ...(explainable ? { debugReason: explainable } : {}),
         };
       return { delivered: false, stages: traces, ...failure };
     };
@@ -454,22 +539,32 @@ export async function runStages(options: ClassifyRunOptions): Promise<ClassifyRe
     if (base.stage.reason === 'followup' && reading.outcome !== 'no' && call.followUp) {
       try {
         // The follow-up stays inside the run's deadline: past it, the answer stands without its why.
-        const asked = call.followUp(FOLLOWUP_QUESTION);
+        const asked = askFollowup(call.followUp);
         const answer = end === undefined ? await asked : await within(asked, end - Date.now());
         if (answer === TIMED_OUT) {
           void asked.catch(() => undefined);
           throw Error('the follow-up had no time left in the deadline');
         }
-        const parsed = parseFollowup(answer.content);
         followup = {
-          ...(parsed.why ? { why: parsed.why } : {}),
-          ...(parsed.revised ? { revised: parsed.revised } : {}),
+          ...(answer.why ? { why: answer.why } : {}),
+          ...(answer.revised ? { revised: answer.revised } : {}),
         };
       } catch (err) {
         followup = { followupError: (err as Error)?.message ?? String(err) };
       }
     }
     await debug(base, call, reading, followup);
+    // The standing answer's why, asked live after the decision; a follow-up of its own that answered
+    // already holds it, and one that failed (a deadline, a rejection) is asked again.
+    const followUp = call.followUp;
+    explainable =
+      followUp && !followup.why && !followup.revised
+        ? {
+            stage: index,
+            outcome: reading.outcome,
+            ask: () => askFollowup(followUp, { afterDecision: true }),
+          }
+        : undefined;
     // The why carried on: given inline, else asked after the answer, else the recogniser's or pointer's line.
     const why =
       reading.why ??
@@ -500,6 +595,7 @@ export async function runStages(options: ClassifyRunOptions): Promise<ClassifyRe
         finalStage: index,
         delivered,
         stages: traces,
+        ...(explainable ? { debugReason: explainable } : {}),
       };
     previous = { reading, index, delivered };
     carried = {

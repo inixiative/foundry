@@ -578,6 +578,14 @@ test('the decision host launches the project host on the decision login: its own
     // The host's capacity as the call went out: nothing queued for a slot, no orphans.
     hostCapacity: { awaitingSlot: 0, orphans: 0, orphanedOut: false },
   });
+  // A call that takes no held call (a debug reason asked after the decision) runs on its own:
+  // it never claims the spare the next decision needs.
+  await run.provider.complete(messages('T7'), {
+    threadId: 'T7:aux:domain:locks',
+    stablePrefix: cache,
+    takesNoHeldCall: true,
+  });
+  expect(run.snapshot().calls[1]).toMatchObject({ valid: true, prime: 'cold' });
   // The held text is the composed Warden and its knowledge; no thread's state.
   const holding = tree.memberPrompts[0]!;
   expect(holding).toContain('LOCKS WARDEN');

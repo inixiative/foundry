@@ -61,7 +61,23 @@ export async function withChorusThread<T>(
   opts: ChorusThreadOptions,
   use: (hidden: ChorusThread) => Promise<T>,
 ): Promise<T> {
-  const { config } = opts;
+  // A hidden thread asks no debug reason: it is disposed before one could land, and nobody reads it.
+  const project = opts.config.projects?.[opts.projectId];
+  const config: FoundryConfig = project
+    ? {
+        ...opts.config,
+        projects: {
+          ...opts.config.projects,
+          [opts.projectId]: {
+            ...project,
+            chorus: {
+              ...project.chorus,
+              wardens: { ...project.chorus?.wardens, debugReason: false },
+            },
+          },
+        },
+      }
+    : opts.config;
   const threadId = opts.threadId ?? newId('chorus-thread');
   // Every agent provider but the decision host is the caller's; the decision roles stay on the decision host.
   const providers = new Map<string, LLMProvider>([[opts.decisions.id, opts.decisions]]);

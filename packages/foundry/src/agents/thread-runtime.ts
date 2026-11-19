@@ -32,7 +32,9 @@ import {
   type ToolCallObservation,
 } from '@inixiative/foundry-core';
 import type { ConversationMember } from '@inixiative/signet';
+import { wardenCallId } from '../archives/reduced-middleware';
 import {
+  type DebugReasonReading,
   defaultStages,
   KNOWLEDGE_DOC,
   SINGLE_STAGE,
@@ -618,6 +620,8 @@ export interface PhaseRecordInput {
     | 'advice'
     | 'guard-request'
     | 'guard-outcome'
+    /** A Warden's debug reason for one call it answered (`record.wraps`: the advice or guard row and domain). */
+    | 'warden-debug'
     | 'gate-request'
     | 'gate-outcome'
     | 'middleware-reduced'
@@ -1095,11 +1099,11 @@ class ThreadRuntimeImpl implements ThreadRuntime {
     this._scopeConfig = deps.config;
     this._guardMode = deps.config.guard ?? 'per-turn';
     this._atCallDeadlineMs = deps.chorusAtCallDeadlineMs ?? CHORUS_AT_CALL_DEADLINE_MS;
-    this._consumed = consumedMatcher(
-      thread.meta.projectId && deps.config.projects?.[thread.meta.projectId as string]
-        ? projectChorus(deps.config.projects[thread.meta.projectId as string]!).chorus.consumed
-        : undefined,
-    );
+    const chorusProject = thread.meta.projectId
+      ? deps.config.projects?.[thread.meta.projectId as string]
+      : undefined;
+    const projectChorusSettings = chorusProject ? projectChorus(chorusProject).chorus : undefined;
+    this._consumed = consumedMatcher(projectChorusSettings?.consumed);
     const { stack, signals } = thread;
     const cwd = () => thread.meta.cwd;
     this.thread = thread;
@@ -1117,6 +1121,8 @@ class ThreadRuntimeImpl implements ThreadRuntime {
       thread.meta.projectId as string | undefined,
       this._stageHosts,
     );
+    // Wardens with a role ask their debug reason after each answer unless the chorus turns it off.
+    const chorusDebugReason = projectChorusSettings?.wardens?.debugReason !== false;
     if (domains.some((dc) => dc.expert))
       chorusStages.forEach((config, index) => {
         if (
@@ -1317,6 +1323,7 @@ class ThreadRuntimeImpl implements ThreadRuntime {
           threadKnowledgeLayer,
           maxKnowledgeChars: deps.learning?.maxKnowledgeChars,
           stages: bound,
+          debugReason: role ? chorusDebugReason : false,
         }),
       );
     }
@@ -1324,10 +1331,6 @@ class ThreadRuntimeImpl implements ThreadRuntime {
     // A thread with a chorus holds the reception charter once, as a standing layer: how the main
     // thread reads a pointer (`chorus.reception: false` leaves it out). Fixed text, so its inline
     // source re-warms it unchanged. Set at construction: a chorus turned on later reaches new threads.
-    const chorusProject = thread.meta.projectId
-      ? deps.config.projects?.[thread.meta.projectId as string]
-      : undefined;
-    const projectChorusSettings = chorusProject ? projectChorus(chorusProject).chorus : undefined;
     if (
       this.domainLibrarians.size &&
       projectChorusSettings?.reception !== false &&
@@ -1647,10 +1650,11 @@ class ThreadRuntimeImpl implements ThreadRuntime {
             const journalSealed = (
               phase: 'route' | 'advice',
               record: Record<string, unknown>,
+              id = newId('phase'),
             ): PhaseJournalOutcome => {
               try {
                 return this._journalPhase({
-                  id: newId('phase'),
+                  id,
                   turnId: sealedTurn,
                   dispatchId: sealedDispatch,
                   phase,
@@ -1670,54 +1674,65 @@ class ThreadRuntimeImpl implements ThreadRuntime {
             });
             // Every Warden's decision is journalled, silence and skips included, so the silence rate is
             // measurable; a skipped (cold) Warden was given nothing, so its row carries no inputs.
-            const adviceJournal = journalSealed('advice', {
-              trigger: 'user-message' satisfies TriggerPoint,
-              charter: WARDEN_CHARTER_VERSION,
-              inputHash: plan.input.hash,
-              sealedAt: plan.sealedAt,
-              participants: plan.contributions
-                .filter((c) => !givenNothing(c.outcome))
-                .map((c) => ({
-                  domain: c.domain,
-                  outcome: c.outcome,
-                  ...(c.reason ? { reason: c.reason } : {}),
-                  // What it chimed in with (empty for NO_COMMENT).
-                  snippets: c.snippets,
-                  segments: c.segments,
-                  request: c.request,
-                  threadKnowledgeRevision: c.provenance.threadKnowledgeRevision,
-                  cacheHash: c.provenance.cacheHash,
-                  ...(c.repairs?.length ? { repairs: c.repairs } : {}),
-                  ...(c.classified ? { classified: c.classified } : {}),
-                  ...(c.stageRequests ? { stageRequests: c.stageRequests } : {}),
-                  ...(c.catchesUp ? { catchesUp: true } : {}),
-                  ...(c.earlier ? { earlier: c.earlier } : {}),
-                })),
-              // A Warden the pre-filter ruled out is one row with its score: auditable later.
-              ...(plan.prefilter ? { prefilter: plan.prefilter } : {}),
-              prefiltered: plan.contributions
-                .filter((c) => c.prefilter)
-                .map((c) => ({ domain: c.domain, ...c.prefilter })),
-              skipped: Object.fromEntries(
-                Object.entries(
-                  Object.groupBy(
-                    plan.contributions.filter((c) => givenNothing(c.outcome)),
-                    (c) => callOutcomeLabel(c.outcome),
-                  ),
-                ).map(([reason, list]) => [reason, (list ?? []).map((c) => c.domain)]),
-              ),
-              ...(warmShortfalls.length || prepared.warmShortfalls.length
-                ? { warm: { wardens: warmShortfalls, layers: prepared.warmShortfalls } }
-                : {}),
-              // The message the Wardens were asked on, so a degraded one can be asked again (FEAT-008).
-              moment: plan.input.message,
-              ...degradedField(
-                degradedWardens(
-                  plan.contributions,
-                  this._degradedContext(warmShortfalls.map((s) => s.id)),
+            const adviceRowId = newId('phase');
+            const adviceJournal = journalSealed(
+              'advice',
+              {
+                trigger: 'user-message' satisfies TriggerPoint,
+                charter: WARDEN_CHARTER_VERSION,
+                inputHash: plan.input.hash,
+                sealedAt: plan.sealedAt,
+                participants: plan.contributions
+                  .filter((c) => !givenNothing(c.outcome))
+                  .map((c) => ({
+                    domain: c.domain,
+                    outcome: c.outcome,
+                    ...(c.reason ? { reason: c.reason } : {}),
+                    // What it chimed in with (empty for NO_COMMENT).
+                    snippets: c.snippets,
+                    segments: c.segments,
+                    request: c.request,
+                    threadKnowledgeRevision: c.provenance.threadKnowledgeRevision,
+                    cacheHash: c.provenance.cacheHash,
+                    ...(c.repairs?.length ? { repairs: c.repairs } : {}),
+                    ...(c.classified ? { classified: c.classified } : {}),
+                    ...(c.stageRequests ? { stageRequests: c.stageRequests } : {}),
+                    ...(c.catchesUp ? { catchesUp: true } : {}),
+                    ...(c.earlier ? { earlier: c.earlier } : {}),
+                  })),
+                // A Warden the pre-filter ruled out is one row with its score: auditable later.
+                ...(plan.prefilter ? { prefilter: plan.prefilter } : {}),
+                prefiltered: plan.contributions
+                  .filter((c) => c.prefilter)
+                  .map((c) => ({ domain: c.domain, ...c.prefilter })),
+                skipped: Object.fromEntries(
+                  Object.entries(
+                    Object.groupBy(
+                      plan.contributions.filter((c) => givenNothing(c.outcome)),
+                      (c) => callOutcomeLabel(c.outcome),
+                    ),
+                  ).map(([reason, list]) => [reason, (list ?? []).map((c) => c.domain)]),
                 ),
-              ),
-            });
+                ...(warmShortfalls.length || prepared.warmShortfalls.length
+                  ? { warm: { wardens: warmShortfalls, layers: prepared.warmShortfalls } }
+                  : {}),
+                // The message the Wardens were asked on, so a degraded one can be asked again (FEAT-008).
+                moment: plan.input.message,
+                ...degradedField(
+                  degradedWardens(
+                    plan.contributions,
+                    this._degradedContext(warmShortfalls.map((s) => s.id)),
+                  ),
+                ),
+              },
+              adviceRowId,
+            );
+            this._journalDebugReasons(
+              { id: adviceRowId, turnId: sealedTurn, dispatchId: sealedDispatch },
+              adviceJournal,
+              'advice',
+              plan.contributions,
+            );
             ctx.annotations.phaseJournal = { route: routeJournal, advice: adviceJournal };
             const decided = plan.contributions
               .map((c) => `${c.domain}:${callOutcomeLabel(c.outcome)}`)
@@ -2327,11 +2342,14 @@ class ThreadRuntimeImpl implements ThreadRuntime {
       );
     const requestJournalStates = () =>
       Object.fromEntries([...requestRows].map(([domain, row]) => [domain, row.journal]));
-    const journalOutcome = (record: Record<string, unknown>): PhaseJournalOutcome => {
+    const journalOutcome = (
+      record: Record<string, unknown>,
+      id = newId('phase'),
+    ): PhaseJournalOutcome => {
       try {
         return this._journalPhase({
           ...(node ? { node } : {}),
-          id: newId('phase'),
+          id,
           turnId,
           dispatchId,
           phase: 'guard-outcome',
@@ -2379,46 +2397,56 @@ class ThreadRuntimeImpl implements ThreadRuntime {
           }
         },
       });
-      const outcomeJournal = journalOutcome({
-        trigger: 'agent-action' satisfies TriggerPoint,
-        mode: this._guardMode,
-        charter: WARDEN_CHARTER_VERSION,
-        observation,
-        wraps,
-        // The turn's activity the Wardens were given, as identity: tool, call id and outcome per call.
-        activity: { turnId, calls, ...(overflow ? { overflow } : {}) },
-        correlation,
-        status: 'reported',
-        finishedAt: Date.now(),
-        domainsChecked: report.domainsChecked,
-        skipped: report.skipped,
-        prefiltered: report.prefiltered,
-        ...(report.prefilter ? { prefilter: report.prefilter } : {}),
-        failed: report.failed,
-        findings: report.findings.length,
-        critical: report.critical.length,
-        // What the Wardens said: a comment on the turn's actions (shown to hosts), never a block.
-        notes: report.findings.slice(0, 16).map((finding) => ({
-          severity: finding.severity,
-          description: finding.description.slice(0, 500),
-          ...(finding.location ? { location: finding.location.slice(0, 200) } : {}),
-          ...(finding.suggestion ? { suggestion: finding.suggestion.slice(0, 500) } : {}),
-        })),
-        elapsed: report.elapsed,
-        requests: requestsJournal(),
-        requestJournal: requestJournalStates(),
-        ...degradedField(degradedGuards(report.outcomes, this._degradedContext())),
-        ...(owner.retryOf ? { retryOf: owner.retryOf } : {}),
-        outcomes: report.outcomes.map(({ request, ...rest }) => ({
-          ...rest,
-          requestRecord:
-            requestRows.get(rest.domain)?.journal === 'durable'
-              ? requestRows.get(rest.domain)!.id
-              : null,
-          requestState: request?.status ?? 'not-recorded',
-          ...(request?.status === 'supplied' && request.served ? { served: request.served } : {}),
-        })),
-      });
+      const outcomeRowId = newId('phase');
+      const outcomeJournal = journalOutcome(
+        {
+          trigger: 'agent-action' satisfies TriggerPoint,
+          mode: this._guardMode,
+          charter: WARDEN_CHARTER_VERSION,
+          observation,
+          wraps,
+          // The turn's activity the Wardens were given, as identity: tool, call id and outcome per call.
+          activity: { turnId, calls, ...(overflow ? { overflow } : {}) },
+          correlation,
+          status: 'reported',
+          finishedAt: Date.now(),
+          domainsChecked: report.domainsChecked,
+          skipped: report.skipped,
+          prefiltered: report.prefiltered,
+          ...(report.prefilter ? { prefilter: report.prefilter } : {}),
+          failed: report.failed,
+          findings: report.findings.length,
+          critical: report.critical.length,
+          // What the Wardens said: a comment on the turn's actions (shown to hosts), never a block.
+          notes: report.findings.slice(0, 16).map((finding) => ({
+            severity: finding.severity,
+            description: finding.description.slice(0, 500),
+            ...(finding.location ? { location: finding.location.slice(0, 200) } : {}),
+            ...(finding.suggestion ? { suggestion: finding.suggestion.slice(0, 500) } : {}),
+          })),
+          elapsed: report.elapsed,
+          requests: requestsJournal(),
+          requestJournal: requestJournalStates(),
+          ...degradedField(degradedGuards(report.outcomes, this._degradedContext())),
+          ...(owner.retryOf ? { retryOf: owner.retryOf } : {}),
+          outcomes: report.outcomes.map(({ request, askDebugReason: _ask, ...rest }) => ({
+            ...rest,
+            requestRecord:
+              requestRows.get(rest.domain)?.journal === 'durable'
+                ? requestRows.get(rest.domain)!.id
+                : null,
+            requestState: request?.status ?? 'not-recorded',
+            ...(request?.status === 'supplied' && request.served ? { served: request.served } : {}),
+          })),
+        },
+        outcomeRowId,
+      );
+      this._journalDebugReasons(
+        { id: outcomeRowId, turnId, dispatchId, ...(node ? { node } : {}) },
+        outcomeJournal,
+        'guard-outcome',
+        report.outcomes,
+      );
       Object.assign(entry, {
         status: 'reported',
         finishedAt: Date.now(),
@@ -2668,6 +2696,69 @@ class ThreadRuntimeImpl implements ThreadRuntime {
     this._subagents.set(key, node ?? this._subagents.get(key));
   }
 
+  /**
+   * Each Warden's debug reason, asked after its decision, journalled as its own `warden-debug` row
+   * that names the decision row and domain it explains (`wraps`). The decision row is sealed and
+   * never rewritten; the reason lands when its call returns, late rows included. Nothing is asked
+   * when the decision row is not durable: a reason would explain a row nobody can read.
+   */
+  private _journalDebugReasons(
+    row: {
+      id: string;
+      turnId: string | null;
+      dispatchId: string | null;
+      node?: { id: string; meta: ThreadMeta };
+    },
+    journal: PhaseJournalOutcome,
+    explains: 'advice' | 'guard-outcome',
+    calls: readonly {
+      domain: string;
+      askDebugReason?: () => Promise<DebugReasonReading>;
+    }[],
+  ): void {
+    if (journal !== 'durable') return;
+    for (const call of calls) {
+      if (!call.askDebugReason || this._disposed) continue;
+      // Asked only now, after the decision row is sealed (and, for guards, after every check answered),
+      // so the debug call never competes with a decision for capacity.
+      void call.askDebugReason().then(
+        (reading) => {
+          if (this._disposed) return;
+          try {
+            this._journalPhase({
+              ...(row.node ? { node: row.node } : {}),
+              id: newId('phase'),
+              turnId: row.turnId,
+              dispatchId: row.dispatchId,
+              phase: 'warden-debug',
+              record: {
+                wraps: wardenCallId(row.id, call.domain),
+                explains,
+                domain: call.domain,
+                stage: reading.stage,
+                explainsOutcome: reading.explains,
+                outcome: reading.outcome,
+                ...(reading.why ? { why: reading.why } : {}),
+                ...(reading.revised ? { revised: reading.revised } : {}),
+                ...(reading.error ? { error: reading.error } : {}),
+                ...(reading.tokens ? { tokens: reading.tokens } : {}),
+                elapsedMs: reading.elapsedMs,
+              },
+            });
+          } catch (error) {
+            this._warn(
+              `  [flow:${this.thread.id}] ${call.domain} debug reason journal failed: ${(error as Error)?.message ?? error}`,
+            );
+          }
+        },
+        (error) =>
+          this._warn(
+            `  [flow:${this.thread.id}] ${call.domain} debug reason failed: ${(error as Error)?.message ?? error}`,
+          ),
+      );
+    }
+  }
+
   /** What a degraded record needs from the live chorus: each Warden's layer count, who was not warm. */
   private _degradedContext(notWarm: readonly string[] = []): DegradedContext {
     return {
@@ -2811,10 +2902,12 @@ class ThreadRuntimeImpl implements ThreadRuntime {
       return undefined;
     }
     if (this._disposed) return undefined;
+    const adviceRowId = newId('phase');
+    let adviceJournal: PhaseJournalOutcome = 'failed';
     try {
-      this._journalPhase({
+      adviceJournal = this._journalPhase({
         ...(node ? { node } : {}),
-        id: newId('phase'),
+        id: adviceRowId,
         turnId: moment.turnId,
         dispatchId: null,
         phase: 'advice',
@@ -2868,6 +2961,12 @@ class ThreadRuntimeImpl implements ThreadRuntime {
         `  [flow:${this.thread.id}] ${moment.label} journal failed: ${(error as Error)?.message ?? error}`,
       );
     }
+    this._journalDebugReasons(
+      { id: adviceRowId, turnId: moment.turnId, dispatchId: null, ...(node ? { node } : {}) },
+      adviceJournal,
+      'advice',
+      report.contributions,
+    );
     const notes = moment.notes(report);
     const delivery = moment.deliver?.() ?? 'next-turn';
     if (notes.length) {

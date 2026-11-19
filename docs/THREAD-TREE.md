@@ -105,6 +105,8 @@ lineage: {
 
 The entry is about 0.5–1 KB whatever the size of the Warden's context. The message it received is **not** in it. That message is the node's own entry named by `wraps`, plus the composed context, which spec B can recompose from the version ids.
 
+**A debug reading** (`chorus.wardens.debugReason`) is its own reduced entry beside the call it explains: `callId` is the explained call's id plus `:debug`, `trigger: 'debug'`, `wraps` the explained call's id, `outcome` a `DebugReasonOutcome` (answered with `kept` or `revised`, or not-sent / failed), `result: { why?, revised? }`, and `state: { explains: 'advice' | 'guard-outcome', explainsOutcome, stage }`. Its raw row is a `warden-debug` phase row, written after the decision row it explains, often after the turn has sealed; `appendPhase` reduces a late row at once, like a late guard outcome. No reading is asked when the stage's own follow-up already answered: that why is on the stage trace.
+
 **A tool-gate decision** (structural allow/deny) gets the same reduced shape, with `role: 'gate'`. Its `result` is the outcome, and its `state` is the rule id and the rule's settings revision.
 
 ## A.4 Who writes what, and when
@@ -171,7 +173,7 @@ Also: *"I think the Foundry needs to tie those things together somehow. If it's 
 - Observed children appear in the viewer, under their parent. They are never dispatched to, and carry no runtime and no Wardens.
 
 **Compaction and retention:**
-- `completeTurn` and `failTurn` append one `middleware-reduced` row per middleware call of the turn: route, each advice participant, and each guard outcome with its request's versions. Each row has the A.3 shape.
+- `completeTurn` and `failTurn` append one `middleware-reduced` row per middleware call of the turn: route, each advice participant, each guard outcome with its request's versions, and each `warden-debug` reading. Each row has the A.3 shape.
 - Raw rows are immutable, and their checksums still verify.
 - On start, `compactClosedTurns` reduces every closed turn that has middleware rows newer than its reduced rows, `interrupted` turns included. That covers a late guard outcome too.
 - `journal.rawMiddlewareDays` (default 30, a setting) controls `pruneRawMiddleware`. It deletes raw rows of closed, reduced turns once they are older than the window, then sweeps journal content nothing references. It runs on start and every 6 hours.

@@ -8,6 +8,7 @@ import {
   ThreadFactory,
 } from '../src/agents/thread-factory';
 import { ThreadRuntimeManager } from '../src/agents/thread-runtime';
+import { FOLLOWUP_QUESTION } from '../src/classify';
 import { DECISION_LATENCY_BUDGET } from '../src/providers/decision-budget';
 import { type AgentSettingsConfig, type FoundryConfig, starterConfig } from '../src/viewer/config';
 
@@ -110,6 +111,9 @@ function providers(delayMs: number) {
     async complete(messages, opts = {}) {
       const id = opts.threadId ?? '';
       // Post-turn learning review runs after the worker; only pre-message decisions are measured.
+      // A Warden's debug reason is asked after its decision is journalled, off the measured path.
+      if (messages.at(-1)?.content === FOLLOWUP_QUESTION)
+        return { content: 'It is outside the domain.\nREVISED: KEEP', model: 'luna' };
       if (id.includes(':aux:review:'))
         return {
           content: 'NO_COMMENT',
@@ -131,7 +135,6 @@ function providers(delayMs: number) {
                 confidence: 1,
               })
             : 'NO_COMMENT';
-      void messages;
       return { content, model: 'luna' };
     },
   };

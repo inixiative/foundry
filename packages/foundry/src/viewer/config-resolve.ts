@@ -1067,13 +1067,21 @@ export function projectChorus(project: Pick<ProjectSettingsConfig, 'path' | 'cho
   // A role's stages are one unit: the machine's list replaces the repository's whole.
   const wardens = mine.wardens?.stages ?? theirs.wardens?.stages;
   const heralds = mine.heralds?.stages ?? theirs.heralds?.stages;
+  const debugReason = mine.wardens?.debugReason ?? theirs.wardens?.debugReason;
   return {
     chorus: {
       ...(enabled !== undefined ? { enabled } : {}),
       ...directories,
       ...(consumed ? { consumed } : {}),
       ...(reception !== undefined ? { reception } : {}),
-      ...(wardens ? { wardens: { stages: wardens } } : {}),
+      ...(wardens || debugReason !== undefined
+        ? {
+            wardens: {
+              ...(wardens ? { stages: wardens } : {}),
+              ...(debugReason !== undefined ? { debugReason } : {}),
+            },
+          }
+        : {}),
       ...(heralds ? { heralds: { stages: heralds } } : {}),
     },
     stagesFrom: {
