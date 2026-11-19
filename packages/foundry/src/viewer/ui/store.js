@@ -2651,6 +2651,11 @@ export function init() {
     const key = `${id}:${completedAt}`;
     if (seenMarked === key || document.visibilityState === 'hidden') return;
     seenMarked = key;
+    // Seen here at once: until the server's mark comes back, this tab would still call the thread he
+    // is reading a new arrival, and a reply to it would read as dealing with Attention and leave it.
+    const seen = { ...thread, meta: { ...thread.meta, seenAt: completedAt } };
+    allThreads.value = allThreads.peek().map((t) => (t.threadId === id ? seen : t));
+    if (threadData.peek()?.threadId === id) threadData.value = seen;
     authFetch(`/api/threads/${encodeURIComponent(id)}/seen`, { method: 'POST' }).catch(() => {
       seenMarked = null;
     });
