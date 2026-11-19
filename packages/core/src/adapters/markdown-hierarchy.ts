@@ -377,20 +377,36 @@ const isDirectory = (path: string) => {
 };
 
 /**
- * The state of `probes` (each path's identity, size and modification time, or its absence). Equal
+ * The state of `probes` (each path's identity, size, modification and change times, or its absence). Equal
  * fingerprints mean no consulted file or directory changed since. Cheap: one stat per path.
+ *
+ * Taken after a read, pass `readStartedAt` (`Date.now()` when the read began): the fingerprint is
+ * then none (`''`) when a probe was modified once reading began, since a write inside the read's own
+ * timestamp tick would fingerprint the same as the state the read saw.
  */
-export function hierarchyFingerprint(probes: readonly string[]): string {
-  return probes
-    .map((path) => {
-      try {
-        const info = statSync(path);
-        return `${path}\0${info.ino}:${info.size}:${info.mtimeMs}`;
-      } catch {
-        return `${path}\0-`;
-      }
-    })
-    .join('\n');
+export function hierarchyFingerprint(
+  probes: readonly string[],
+  options: { readStartedAt?: number } = {},
+): string {
+  const { readStartedAt } = options;
+  const now = Date.now();
+  const stamps: string[] = [];
+  for (const path of probes) {
+    let info: ReturnType<typeof statSync>;
+    try {
+      info = statSync(path);
+    } catch {
+      stamps.push(`${path}\0-`);
+      continue;
+    }
+    // ctime too: a chmod that makes a path readable again changes nothing else.
+    const changed = Math.max(info.mtimeMs, info.ctimeMs);
+    // A future timestamp (clock skew) is not a write during the read.
+    if (readStartedAt !== undefined && changed >= readStartedAt && changed <= now + 1_000)
+      return '';
+    stamps.push(`${path}\0${info.ino}:${info.size}:${info.mtimeMs}:${info.ctimeMs}`);
+  }
+  return stamps.join('\n');
 }
 
 const FRONTMATTER = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/;

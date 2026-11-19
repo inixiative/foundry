@@ -320,6 +320,23 @@ describe('ConfigStore persistence', () => {
     expect(store.config.defaults.model).toBe('external');
     expect(store.revision).toBe(revision + 1);
   });
+
+  test('a hand edit back to the text the store replaced is loaded, and an invalid one is still refused', async () => {
+    await store.load();
+    const original = readFileSync(join(dir, 'settings.json'), 'utf8');
+    const model = store.config.defaults.model;
+    await store.patch('defaults', { model: 'patched' });
+    writeFileSync(join(dir, 'settings.json'), original);
+    await store.load();
+    expect(store.config.defaults.model).toBe(model);
+    writeFileSync(
+      join(dir, 'settings.json'),
+      JSON.stringify({ ...store.config, installationName: '' }),
+    );
+    await expect(store.load()).rejects.toThrow('installationName must be 1 to 120 characters');
+    await expect(store.load()).rejects.toThrow('installationName must be 1 to 120 characters');
+    expect(store.config.defaults.model).toBe(model);
+  });
 });
 
 test('the configuration directory is FOUNDRY_CONFIG_DIR, else .foundry under the working directory, always absolute', () => {

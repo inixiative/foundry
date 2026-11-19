@@ -3,9 +3,13 @@
  * @kind config
  * @partOf feature:viewer, primitive:settings
  */
-import { existsSync, mkdirSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { registryModel, SUBSCRIPTION_WORKER_MODELS } from '@inixiative/foundry-core';
+import {
+  hierarchyFingerprint,
+  registryModel,
+  SUBSCRIPTION_WORKER_MODELS,
+} from '@inixiative/foundry-core';
 import {
   type ChorusLayerRegions,
   type ChorusRegion,
@@ -726,14 +730,11 @@ type RepositorySettingsRead =
  */
 export function readRepositorySettings(projectPath: string): RepositorySettingsRead {
   const file = join(projectPath, REPOSITORY_SETTINGS_FILE);
-  let stamp: string;
-  try {
-    const stat = statSync(file);
-    stamp = `${stat.mtimeMs}:${stat.size}:${stat.ino}`;
-  } catch {
+  if (!existsSync(file)) {
     repositoryCache.delete(file);
     return undefined;
   }
+  const stamp = hierarchyFingerprint([file]);
   const cached = repositoryCache.get(file);
   // A copy: nothing downstream can change what the next reader sees.
   if (cached?.stamp === stamp) return structuredClone(cached.read);
