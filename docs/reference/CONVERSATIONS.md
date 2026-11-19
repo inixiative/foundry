@@ -106,7 +106,7 @@ flowchart LR
     IS["Installation socket client"]
   end
   subgraph K["Kingdom (boundary)"]
-    EX["access/execute<br/>presence → reserve → dispatch<br/>(socket-delivered, no Credential)"] --> RL["thread.request relay"]
+    EX["access/execute<br/>presence → reserve → dispatch<br/>(socket-delivered, no Credential)"] --> RL["operation.request relay"]
     G["owner/grant (invite) or<br/>signetRequest on conversation + externalId"] --> SIG["Signet on the conversation resource<br/>externalId = the thread<br/>operations = calls + permissions"]
   end
   VA["Vendor's agent"] -- "DPoP: thread.prompt / thread.read" --> EX
@@ -139,7 +139,7 @@ flowchart LR
 
 ### 4.2 The post-in point: the relay handler
 
-Every remote call reaches Foundry as one `thread.request` frame on the Installation socket (§5.6). The relay handler is the **only** place a member post enters.
+Every remote call, `thread.subscribe` included, reaches Foundry as one `operation.request` frame on the Installation socket (§5.6; signet's relayed-operation contract, `relayedOperationSchema`), answered with `operation.response`; the handlers register under the socket's `operations`. The relay handler is the **only** place a member post enters.
 
 **Admission trusts the frame.** The frame comes over the socket Kingdom authenticated. It carries the `signetId`, the conversation's `threadId` (its resource's `externalId`; no call's input names the thread) and the conversation permissions the Signet holds there now (`permissions`). Foundry does not re-check membership against its snapshot, because Kingdom's admission is that check and guards belong once, in the primitive.
 
@@ -386,7 +386,7 @@ The outbound rule of §4.5 stands, and is reaffirmed.
 | Members panel, and an "Invite to this conversation" action that deep-links to Kingdom's grant (§5.5) | Viewer thread view | `pf/viewer/ui/` |
 | Adopt the `@inixiative/signet` release | Dependency bump | `package.json` |
 
-**F1 as built (2026-10-19).** Code: `pf/conversations/` (the wrapper: `service.ts` is the `ThreadHost`, the post-in point, the read-off point, the floor and held items; `view.ts` the member's view; `settings.ts` the cascade), `pf/tools/{conversation,kingdom-post}.ts`, `pf/viewer/routes/conversations.ts`, `pf/viewer/ui/conversation-members.js`. Tests: `tests/conversation-{host,runtime,tools,settings}.test.ts` (the host one drives the real Installation socket from a scripted Kingdom with signet 0.5.1 frames) and `tests/browser/conversation-panel.test.ts`. Where the build settles what this spec left open, or departs from it:
+**F1 as built (2026-10-19).** Code: `pf/conversations/` (the wrapper: `service.ts` is the host (`host()`: the socket's `operations` and `onThreadSubscriptionEnded`), the post-in point, the read-off point, the floor and held items; `view.ts` the member's view; `settings.ts` the cascade), `pf/tools/{conversation,kingdom-post}.ts`, `pf/viewer/routes/conversations.ts`, `pf/viewer/ui/conversation-members.js`. Tests: `tests/conversation-{host,runtime,tools,settings}.test.ts` (the host one drives the real Installation socket from a scripted Kingdom with signet 0.5.1 frames) and `tests/browser/conversation-panel.test.ts`. Where the build settles what this spec left open, or departs from it:
 - **One journal order.** A member reads by `journalSeq`, but a thread's messages and its conversation rows live in two tables with two sequences. The local store (v6) keeps one order across them, `session_journal`: every message, plus the `member-post`, `outbound-held` and `outbound-resolution` rows. It is an index over the journal, not a second store; a v5 store is ordered as its messages were written when it opens. Depth ("since the owner last spoke"), unread posts and `afterSeq` all read this order.
 - **Notes are read from the journal and marked delivered, not rebuilt.** When a turn is prepared (any turn of the agent since 2026-11-01, §4.10; before, only an owner's), every `delivery: 'note'` post written before its message and not yet delivered or withdrawn rides it, and each gets a `member-post-delivered` row naming that turn. Unread is "not yet delivered", so a note whose owner turn never ran (stopped while queued, dropped by a restart) rides the next one instead of reading as consumed. Nothing is held in memory. The Wardens' own chimes on a note stay in memory, as every between-turns chime does today. The `member_post` signal that starts their pass carries ids only: the thread bus reaches the Librarian's thread-state, which must never hold member text, so the runtime reads the labelled post through the wrapper.
 - **Depth.** A post that would go past `maxAgentTurns` is refused: a `turn` post costs two (the post and the agent's answer), so with one turn left a `turn` post is refused alone and a note may still take that turn. Reaching the bound pauses the conversation. A depth pause lifts on the owner's next message or a resume; an owner's pause only on a resume.
@@ -562,4 +562,4 @@ Aron: "eventually I'll get to that point… That's the inevitable trajectory." T
 - Grant-form pre-fill by query string.
 - The signet package's train lane.
 - Fit of the Communications system for K2.
-- The defaults (15 s relay wait, 6 agent turns, 300 s conch) are proposals.
+- The defaults (15 s relay wait, signet's `relayedOperationTimeoutMs` per operation, 6 agent turns, 300 s conch) are proposals.
