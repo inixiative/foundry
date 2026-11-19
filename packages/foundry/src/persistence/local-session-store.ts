@@ -2869,7 +2869,7 @@ export class LocalSessionStore {
     })();
   }
 
-  /** Threads holding an admission whose native outcome was never observed (cheap pre-filter; `unsettledAdmissions` decides). */
+  /** Threads holding an admission whose native outcome was never observed (a cheap first pass; `unsettledAdmissions` decides). */
   threadsWithUnknownAdmissions(): string[] {
     return (
       this.query(

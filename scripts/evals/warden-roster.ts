@@ -4,13 +4,12 @@
  * @partOf feature:evals
  */
 /**
- * History: the hand-named roster was retired 2026-10-17. This reads an archived settings file (the
- * pre-filter eval's `--settings`) to replay its measurements; live settings declare no Wardens.
+ * History: the hand-named roster was retired 2026-10-17. This reads an archived settings file to
+ * replay its measurements; live settings declare no Wardens.
  *
- * The Warden roster an offline eval runs: every enabled Warden agent in a settings file,
- * composed from the role files of a probe's ladder (`<knowledge>/<node>/<agent id>/{instructions,
- * domainKnowledge}.md`, nodes `personal`, `org-<org>`, `project-<project>`). Shared by the charter
- * eval and the pre-filter eval so both see the same Wardens.
+ * The Warden roster an offline eval runs: every enabled Warden agent (`kind: "warden"`) in a
+ * settings file, composed from the role files of a probe's ladder (`<knowledge>/<node>/<agent
+ * id>/{instructions, domainKnowledge}.md`, nodes `personal`, `org-<org>`, `project-<project>`).
  */
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -26,9 +25,9 @@ export function loadRoster(settingsPath: string, knowledge: string) {
   const agents = Object.entries(
     settings.agents as Record<
       string,
-      { flowRole?: string; enabled?: boolean; domain?: string; prompt?: string }
+      { kind?: string; enabled?: boolean; domain?: string; prompt?: string }
     >,
-  ).filter(([, a]) => a.flowRole === 'warden' && a.enabled && a.domain && a.prompt);
+  ).filter(([, a]) => a.kind === 'warden' && a.enabled && a.domain && a.prompt);
   const read = (path: string) => (existsSync(path) ? readFileSync(path, 'utf8') : '');
   const ladder = (ctx: string, project?: string) =>
     ctx === 'userevidence'

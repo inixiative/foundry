@@ -63,8 +63,6 @@ function modeStatus(mode, served, account, apiTokens) {
     return account.ready
       ? { tone: 'ok', text: 'Available', detail: `Your login: ${account.detail}` }
       : { tone: 'warn', text: 'Needs attention', detail: account.issue ?? '' };
-  if (account.source === 'local')
-    return { tone: 'ok', text: 'Local server', detail: account.detail };
   if (!apiTokens)
     return {
       tone: 'warn',

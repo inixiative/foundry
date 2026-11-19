@@ -152,7 +152,7 @@ function ChorusBody({ step }) {
         ${!r.layers.length && r.reason ? html`<div class="tv-dim">${r.reason}</div>` : null}
       </li>`,
     )}</ul>
-    ${quiet.length || step.prefiltered.length ? html`<div class="tv-dim">Not asked: ${[...quiet, ...step.prefiltered.map((id) => `${id} (pre-filter)`)].join(', ')}</div>` : null}
+    ${quiet.length ? html`<div class="tv-dim">Not asked: ${quiet.join(', ')}</div>` : null}
   </div>`;
 }
 

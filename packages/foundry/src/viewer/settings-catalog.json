@@ -80,11 +80,6 @@
     "description": "Days a middleware call's raw rows (its full input) stay in the journal after its turn is reduced; Archive only ever gets the reduced entries. Default 30."
   },
   {
-    "path": "prefilter",
-    "scope": "foundry",
-    "description": "The Warden pre-filter: a local decision model skips a Warden on a confident \"not my domain\". Off by default (every Warden is asked); `{ \"enabled\": true }` opts in. See docs/subscription-decisions.md."
-  },
-  {
     "path": "guard",
     "scope": "foundry",
     "description": "How often the Wardens' guard fires: `per-turn` (default), once over a turn's whole tool activity when the turn's tool activity ends; or `per-call`, on each tool call (Aron, 2026-10-15)."
@@ -198,11 +193,6 @@
     "path": "agents.*.kind",
     "scope": "foundry",
     "description": "What the agent does in a turn: `executor`, or `warden` for a generated Warden."
-  },
-  {
-    "path": "agents.*.flowRole",
-    "scope": "foundry",
-    "description": "The agent's part in a turn: `execution` (an executor) or `warden` (a generated Warden)."
   },
   {
     "path": "agents.*.domain",

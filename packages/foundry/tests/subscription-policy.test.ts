@@ -333,8 +333,6 @@ test('full subscription startup reaches viewer with no API provider requests or 
         ...env,
         VIEWER_PORT: '0',
         FOUNDRY_STARTUP_SELF_TEST: '0',
-        // No pre-filter model, whatever this machine has installed: its server is probed only when present.
-        FOUNDRY_MODELS: join(f.root, 'models'),
         ARCHIVE_URL: process.env.ARCHIVE_URL,
         ARCHIVE_TOKEN: process.env.ARCHIVE_TOKEN,
         OPENAI_API_KEY: 'synthetic-never-send',
@@ -595,8 +593,8 @@ test('main threads run on the five labs: Anthropic, OpenAI, Google, Meta and xAI
     expect(main(provider, false)).toThrow(`set apiTokens: true and ${needs}`);
     expect(main(provider, true)).not.toThrow();
   }
-  // Other labs, gateways and local hosts do not run main threads, even with API tokens.
-  for (const provider of ['deepseek', 'qwen', 'mistral', 'openrouter', 'ollama'])
+  // Other labs and gateways do not run main threads, even with API tokens.
+  for (const provider of ['deepseek', 'qwen', 'mistral', 'openrouter', 'groq'])
     expect(main(provider, true)).toThrow('cannot run a main thread');
   // Unregistered ids are adapters supplied in code (tests, Oracle); the registry cannot classify them.
   const custom = defaultConfig();

@@ -27,7 +27,7 @@ export interface VendorSubscriptionSettings {
 }
 export interface VendorApiSettings {
   enabled: boolean;
-  /** API root override for a proxy, a mainland endpoint or a local port; absent: the registry's. */
+  /** API root override for a proxy or a mainland endpoint; absent: the registry's. */
   baseUrl?: string;
 }
 export interface VendorSettings {

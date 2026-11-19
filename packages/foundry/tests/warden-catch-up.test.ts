@@ -78,12 +78,12 @@ test('catching up is capped by count and size, the rest counted; the current mes
   });
 });
 
-test('a pre-filter skip counts as answered; any other skip does not; cursors never move back', () => {
+test('a NO_COMMENT counts as answered; a skip does not; cursors never move back', () => {
   const c = new WardenCatchUp();
   c.answered(c.message('one'), said());
   const m2 = c.message('two');
   c.answered(m2, [
-    { domain: 'a', outcome: { status: 'not-sent', cause: 'prefiltered' } },
+    { domain: 'a', outcome: { status: 'answered', result: 'no-comment' } },
     { domain: 'b', outcome: { status: 'not-sent', cause: 'cold' } },
   ]);
   const m3 = c.message('three');
@@ -140,7 +140,6 @@ test('restore rebuilds messages and cursors from the journalled advice rows', ()
       trigger: 'user-message',
       moment: 'three',
       participants: [{ domain: 'b', outcome: { status: 'failed', cause: 'provider-error' } }],
-      prefiltered: [{ domain: 'c' }],
     }),
   ];
   const c = new WardenCatchUp();
@@ -149,7 +148,6 @@ test('restore rebuilds messages and cursors from the journalled advice rows', ()
   const now = c.message('four');
   expect(c.missedBy('a', now)).toEqual({ messages: ['two', 'three'], dropped: 0 });
   expect(c.missedBy('b', now)).toEqual({ messages: ['three'], dropped: 0 });
-  expect(c.missedBy('c', now)).toBeUndefined();
 });
 
 // ---------------------------------------------------------------------------

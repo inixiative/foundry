@@ -51,7 +51,7 @@ test('a model that is not tagged for judgment is refused', () => {
   );
 });
 
-test('any provider with a judgment model can run decisions, including a keyless local one', async () => {
+test('any hosted provider with a judgment model can run decisions on its key', async () => {
   const original = globalThis.fetch;
   const calls: Array<{ url: string; model: string }> = [];
   globalThis.fetch = (async (url: unknown, init: RequestInit) => {
@@ -60,15 +60,15 @@ test('any provider with a judgment model can run decisions, including a keyless 
     return Response.json({ choices: [{ message: { content: 'ok' } }], model: body.model });
   }) as typeof fetch;
   try {
-    const local = createDecisionProvider(
-      apiConfig({ decisionProvider: 'ollama', decisionModel: 'llama3.2:3b' }),
-      {},
+    const hosted = createDecisionProvider(
+      apiConfig({ decisionProvider: 'deepseek', decisionModel: 'deepseek-flash' }),
+      { DEEPSEEK_API_KEY: 'k' },
     );
-    expect(local.id).toBe('ollama-decisions');
-    await local.complete([{ role: 'user', content: 'decide' }], { maxTokens: 16 });
+    expect(hosted.id).toBe('deepseek-decisions');
+    await hosted.complete([{ role: 'user', content: 'decide' }], { maxTokens: 16 });
     expect(calls[0]).toEqual({
-      url: 'http://localhost:11434/v1/chat/completions',
-      model: 'llama3.2:3b',
+      url: 'https://api.deepseek.com/chat/completions',
+      model: 'deepseek-flash',
     });
   } finally {
     globalThis.fetch = original;

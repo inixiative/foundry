@@ -6,7 +6,6 @@ export function artificerAgents(workerProvider: string): Record<string, AgentSet
     artificer: {
       id: 'artificer',
       kind: 'executor',
-      flowRole: 'execution',
       prompt: '',
       provider: workerProvider,
       temperature: 0,

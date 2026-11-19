@@ -57,7 +57,7 @@ export interface DegradedContext {
 
 /**
  * Whether one Warden's answer was degraded, and how. Undefined when it was a real answer or a skip
- * (prefiltered, trigger-gated, cold with nothing to know yet). The failing stage is the last trace:
+ * (trigger-gated, cold with nothing to know yet). The failing stage is the last trace:
  * `runStages` stops at the first stage that fails. A budget omission is not degraded: the Warden spoke
  * and the composition policy chose (it is in `omissions`), and asking again hits the same budget.
  */

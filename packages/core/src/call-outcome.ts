@@ -7,8 +7,6 @@
 
 /** Why a Warden call was never sent: no provider saw it. */
 export type CallNotSentCause =
-  /** The pre-filter scored the message below the Warden's threshold. */
-  | 'prefiltered'
   /** It was asked with `heldOnly` and no warm session was held for it. */
   | 'not-held'
   /** The Warden has no knowledge to answer from yet. */
@@ -56,7 +54,6 @@ export function callOutcomeLabel(outcome: CallOutcome<string>): string {
 }
 
 const NOT_SENT_CAUSES: readonly string[] = [
-  'prefiltered',
   'not-held',
   'cold',
   'over-budget',

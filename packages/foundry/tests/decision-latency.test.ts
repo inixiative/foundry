@@ -18,7 +18,6 @@ const wardenId = (domain: string) => regionRoleId(`${domain}-warden`);
 const warden = (domain: string): AgentSettingsConfig => ({
   id: wardenId(domain),
   kind: 'warden',
-  flowRole: 'warden',
   domain,
   prompt: `Advise on ${domain}.`,
   provider: 'decisions',
