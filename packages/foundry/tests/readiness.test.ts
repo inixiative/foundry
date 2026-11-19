@@ -11,7 +11,7 @@ import { writeRegions } from './helpers/regions';
 
 function team() {
   const config = defaultConfig();
-  config.apiTokens = true; // OpenAI experts on the OpenAI decision provider
+  config.apiTokens = true; // OpenAI Wardens on the OpenAI decision provider
   config.defaults = {
     ...config.defaults,
     decisionProvider: 'openai',
@@ -30,7 +30,7 @@ function team() {
   return config;
 }
 const local = { environment: { OPENAI_API_KEY: 'PRIVATE_KEY' }, which: () => '/controlled/cli' };
-test('readiness resolves effective experts without dispatch, loading corpus or exposing secrets', async () => {
+test('readiness resolves effective Wardens without dispatch, loading corpus or exposing secrets', async () => {
   const config = team(),
     before = JSON.stringify(config);
   const fetch = spyOn(globalThis, 'fetch').mockImplementation(
@@ -67,12 +67,12 @@ test('readiness resolves effective experts without dispatch, loading corpus or e
 test('readiness refuses a hand-named Warden in settings and catches unavailable providers', async () => {
   const config = team();
   config.projects.P!.agents = {
-    expert: {
-      id: 'expert',
+    warden: {
+      id: 'warden',
       kind: 'warden',
       flowRole: 'warden',
       domain: 'docs',
-      prompt: 'PRIVATE_EXPERT',
+      prompt: 'PRIVATE_WARDEN',
       enabled: true,
     },
   };

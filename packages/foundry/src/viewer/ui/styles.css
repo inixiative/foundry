@@ -4869,20 +4869,20 @@ body {
   }
 }
 
-/* Expert loop inspection (CORE-006 M1/M2) */
-.expert-participant {
+/* Warden loop inspection (CORE-006 M1/M2) */
+.warden-participant {
   border: 1px solid var(--line);
   border-radius: 4px;
   padding: 6px 8px;
   margin: 6px 0;
 }
-.expert-participant .participant-snippets {
+.warden-participant .participant-snippets {
   margin: 0;
   padding-left: 16px;
 }
-.expert-participant .participant-snippets li,
+.warden-participant .participant-snippets li,
 .participant-rationale span,
-.expert-role {
+.warden-role {
   overflow-wrap: anywhere;
 }
 .participant-segment .detail-json {

@@ -14,8 +14,8 @@ import { ADVICE_RESPONSE_PROTOCOL, chartered, validateAdviceResponse } from '../
 // composition's broad instructions work unchanged, and error text never carries response content.
 
 const BROAD_INSTRUCTIONS =
-  "You are the architecture expert. Maintain your own evidence-grounded interpretation of this thread's design decisions, constraints and tradeoffs. Do not treat another expert's opinion as your memory.";
-/** `advisePrompt: null` requests the librarian's built-in default instructions. */
+  "You are the architecture Warden. Maintain your own evidence-grounded interpretation of this thread's design decisions, constraints and tradeoffs. Do not treat another Warden's opinion as your memory.";
+/** `advisePrompt: null` requests the Warden's built-in default instructions. */
 function fixture(
   respond: (messages: LLMMessage[]) => Promise<{ content: string }> | { content: string },
   advisePrompt: string | null = BROAD_INSTRUCTIONS,

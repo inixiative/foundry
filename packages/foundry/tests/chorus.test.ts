@@ -836,7 +836,7 @@ test('settings declare no Wardens: one written there is refused, and a malformed
   );
   c.agents['librarian-reuse'] = { ...handNamed, kind: 'decider' as never };
   expect(() => validateConfig(c)).toThrow('kind "decider" is not configurable');
-  // The flow role alone does not make a Warden: an expert's id is a region's role id.
+  // The flow role alone does not make a Warden: a Warden's id is a region's role id.
   c.agents['librarian-reuse'] = { ...handNamed, kind: 'executor' };
   expect(() => validateConfig(c)).toThrow('Invalid Warden identity: librarian-reuse');
   delete c.agents['librarian-reuse'];

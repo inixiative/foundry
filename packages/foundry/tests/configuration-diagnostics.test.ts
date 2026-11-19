@@ -21,7 +21,7 @@ afterEach(() => {
  * threads), present but not enabled, or no project at all.
  */
 function configuration(chorus: 'enabled' | 'off' | 'absent' = 'enabled') {
-  const c = starterConfig('controlled', 'expert-model');
+  const c = starterConfig('controlled', 'warden-model');
   c.agents = {};
   c.layers = Object.fromEntries(
     ['docs', 'conventions'].map((id) => [
@@ -147,7 +147,7 @@ test('explicit review override is reported while requested phase settings and pr
       new Map(buildLayers(view, { sourceResolver: () => null }).map((l) => [l.id, l])),
       { codeWardens: [], llm: f.llm, providers: f.providers },
     ).find((d) => d.domain === 'docs')!;
-    expect(resolved.adviseOpts).toMatchObject({ model: 'expert-model', tools: false, maxTurns: 1 });
+    expect(resolved.adviseOpts).toMatchObject({ model: 'warden-model', tools: false, maxTurns: 1 });
     expect(resolved.adviseOpts!.thinking).toBeUndefined();
     expect(f.warnings).toHaveLength(1);
     expect(f.warnings[0]).toContain('warden-review-profile-override');
@@ -166,9 +166,9 @@ test('explicit review override is reported while requested phase settings and pr
   }
 });
 
-test('an explicit review profile equal to the expert profile does not claim an override', () => {
+test('an explicit review profile equal to the Warden profile does not claim an override', () => {
   const c = configuration();
-  c.learning = { review: { provider: 'controlled', model: 'expert-model', maxTokens: 1600 } };
+  c.learning = { review: { provider: 'controlled', model: 'warden-model', maxTokens: 1600 } };
   const f = setup(c);
   try {
     f.factory.create('same-profile', inProject(c));

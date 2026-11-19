@@ -29,7 +29,7 @@ import { createViewer } from '../../src/viewer/server';
 export const domains = ['architecture', 'testing'] as const;
 export type Domain = (typeof domains)[number];
 export const instructions = (d: Domain) =>
-  `INSTRUCTIONS_${d}: assess only your expert interpretation; preserve compatibility.`;
+  `INSTRUCTIONS_${d}: assess only your Warden interpretation; preserve compatibility.`;
 export const domainKnowledge = (d: Domain) =>
   d === 'architecture'
     ? 'DOMAIN_ARCH: prefer additive schema evolution and maintain old readers.'
@@ -249,7 +249,7 @@ export async function m0Scenario(options: ScenarioOptions = {}) {
             : 'pre';
         const call = copyCall(phase, messages, opts, domain);
         let content: string;
-        if (!domain) throw Error('Unowned expert request');
+        if (!domain) throw Error('Unowned Warden request');
         else if (phase === 'guard') content = noComment;
         else if (phase === 'pre')
           content = JSON.stringify({

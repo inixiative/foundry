@@ -173,7 +173,7 @@ for (const raw of [
               (r.signal.content as any).decision === 'invalid',
           ),
       ).toBe(true);
-      await f.checkpoint('invalid domain proposal rejected; independent expert commit retained');
+      await f.checkpoint('invalid domain proposal rejected; independent Warden commit retained');
     } finally {
       await f.close();
     }
@@ -517,20 +517,20 @@ for (const supplied of [true, false])
           const call = f.calls
             .filter((c) => c.thread === 'a' && c.domain === d && c.phase === phase)
             .at(-1)!;
-          for (const expert of domains)
-            expect(text(call.messages)).not.toContain(privateReason('a', expert));
+          for (const warden of domains)
+            expect(text(call.messages)).not.toContain(privateReason('a', warden));
         }
       }
       expect(text(first.trace)).toBe(frozen);
       await f.checkpoint(
-        'reconstructed audit unchanged; expert and central next input exclude private rationale',
+        'reconstructed audit unchanged; Warden and central next input exclude private rationale',
       );
     } finally {
       await f.close();
     }
   });
 
-test("M1 ownership: an expert's NO_COMMENT stays in its own audit and adds nothing to another expert's pre-message state", async () => {
+test("M1 ownership: a Warden's NO_COMMENT stays in its own audit and adds nothing to another Warden's pre-message state", async () => {
   const f = await m0Scenario({ review: () => 'NO_COMMENT' });
   try {
     await f.send('a', 'private-abstention');

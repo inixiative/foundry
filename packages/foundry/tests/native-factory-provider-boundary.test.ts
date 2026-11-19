@@ -15,7 +15,7 @@ import { SessionBackedProvider } from '../src/providers/session-backed';
 import { starterConfig } from '../src/viewer/config';
 
 // The real SessionBackedProvider (which stamps providerSessionKey onto the admitted owner) over a
-// controlled prewrite-v1 adapter, through the ordinary factory, runtime and both expert post hooks.
+// controlled prewrite-v1 adapter, through the ordinary factory, runtime and both Warden post hooks.
 // No runner-only projector, model, CLI, browser or transport process. Owned handles are released.
 
 const domains = ['architecture', 'testing'];
@@ -105,7 +105,7 @@ function controlledAdapter(state: { sends: number; released: number }) {
   return adapter;
 }
 
-test('real SessionBackedProvider → factory → runtime: both expert reviews receive the owned native tool result and the next input carries their knowledge', async () => {
+test('real SessionBackedProvider → factory → runtime: both Warden reviews receive the owned native tool result and the next input carries their knowledge', async () => {
   const state = { sends: 0, released: 0 };
   const central = new SessionBackedProvider({
     id: 'controlled-native',
@@ -137,8 +137,8 @@ test('real SessionBackedProvider → factory → runtime: both expert reviews re
   );
   const reviews: Array<{ domain: string; text: string }> = [];
   const centralInputs: LLMMessage[][] = [];
-  const expert: LLMProvider = {
-    id: 'controlled-expert',
+  const warden: LLMProvider = {
+    id: 'controlled-warden',
     async complete(messages, opts = {}) {
       const domain = domains.find((d) => opts.threadId?.endsWith(`:domain:${d}`));
       if (opts.threadId?.includes(':review:')) {
@@ -165,7 +165,7 @@ test('real SessionBackedProvider → factory → runtime: both expert reviews re
   const events = new EventStream();
   const manager = new ThreadRuntimeManager({
     config,
-    llm: expert,
+    llm: warden,
     eventStream: events,
     log() {},
     warn() {},

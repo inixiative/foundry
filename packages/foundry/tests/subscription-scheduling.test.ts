@@ -296,7 +296,7 @@ test('shared decision holders and an exclusive worker lock exclude each other on
   owned.release();
 });
 
-/** 10 threads, each a turn (classifier, router, cartographer, 4 experts) then 3 tool calls
+/** 10 threads, each a turn (classifier, router, cartographer, 4 Wardens) then 3 tool calls
  * (3 guards each) and 2 background reviews, arriving together. */
 async function load(bounds: Partial<SubscriptionDecisionConfig>) {
   const { decisions } = scheduler(appServerTransport({ delayMs: 25 }), bounds);

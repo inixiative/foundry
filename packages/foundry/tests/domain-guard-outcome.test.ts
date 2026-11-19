@@ -37,7 +37,7 @@ function fixture(
     cache.set(options.knowledge ?? `DOMAIN_KNOWLEDGE(${domain}): preserve compatibility.`);
   const requests: LLMMessage[][] = [],
     emitted: Signal[] = [];
-  for (const kind of ['security_concern', 'guard_finding'])
+  for (const kind of ['guard_finding'])
     signals.on(kind, (s) => {
       emitted.push(s);
     });
@@ -334,8 +334,6 @@ test("orchestrator: the guard report and emitted observation carry each domain's
     expect(report.findings).toEqual([
       { severity: 'advisory', description: 'Add a migration test', pointer: { relevant: false } },
     ]);
-    expect(report.critical).toEqual([]);
-    expect(report.advisory).toHaveLength(1);
     expect(report.outcomes.map(({ request, ...rest }) => rest)).toEqual([
       {
         domain: 'architecture',
@@ -376,7 +374,6 @@ test("orchestrator: the guard report and emitted observation carry each domain's
       guardsRan: ['architecture', 'testing', 'security'],
       guardsFailed: ['testing', 'security'],
       findingsCount: 1,
-      criticalCount: 0,
     });
     expect(content.guardOutcomes).toEqual(report.outcomes);
     expect(arch.requests[0]![1]!.content).toContain('ARCH_OWN');

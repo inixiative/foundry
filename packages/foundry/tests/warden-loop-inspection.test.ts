@@ -2,10 +2,10 @@ import { expect, test } from 'bun:test';
 import {
   deliverySummary,
   domainUnderstanding,
-  expertParticipants,
   explanationLabel,
   knowledgeInspectionSummary,
   learningEntries,
+  wardenParticipants,
 } from '../src/viewer/ui/inspector-data.js';
 
 // CORE-006 M1/M2: the inspector reads recorded fields only and labels absence as absence.
@@ -41,7 +41,7 @@ const participantsFixture = {
 };
 
 test('participants: exact recorded segments, revision, decision and guidance; empty thread understanding is empty, not absent', () => {
-  const record = expertParticipants(participantsFixture)!;
+  const record = wardenParticipants(participantsFixture)!;
   expect(record.participants.map((p: any) => p.id)).toEqual(['architecture', 'testing']);
   const [a, t] = record.participants;
   expect(a!).toMatchObject({
@@ -67,9 +67,9 @@ test('participants: exact recorded segments, revision, decision and guidance; em
 });
 
 test('participants: no decoration means not recorded (null), never an empty participant list', () => {
-  expect(expertParticipants({ userMessage: 'old record', blocks: [] })).toBeNull();
-  expect(expertParticipants(undefined)).toBeNull();
-  const partial = expertParticipants({
+  expect(wardenParticipants({ userMessage: 'old record', blocks: [] })).toBeNull();
+  expect(wardenParticipants(undefined)).toBeNull();
+  const partial = wardenParticipants({
     decoration: {
       participants: [
         { id: 'x', outcome: { status: 'answered', result: 'spoke' }, segments: {}, provenance: {} },
@@ -221,7 +221,7 @@ test('historical delivery is read from the owned detail row when the index row c
 });
 
 // --- Snapshot evidence independent of the bounded history window; strict matching of learn outcomes ---
-import { expertAbsenceLabel, knowledgeEmptyLabel } from '../src/viewer/ui/inspector-data.js';
+import { knowledgeEmptyLabel, wardenAbsenceLabel } from '../src/viewer/ui/inspector-data.js';
 
 const snapshotEvidence = [
   {
@@ -369,7 +369,7 @@ test('a matching learn outcome without a base revision reports the before-revisi
 test('legacy servers: unreported live state is not read as empty or not-configured', () => {
   const legacy = knowledgeInspectionSummary({ status: 'empty', snapshot: null, history: [] });
   expect(knowledgeEmptyLabel(legacy)).toMatchObject({ state: 'unreported' });
-  expect(expertAbsenceLabel(legacy, 'architecture')).toMatchObject({ state: 'unavailable' });
+  expect(wardenAbsenceLabel(legacy, 'architecture')).toMatchObject({ state: 'unavailable' });
   const live = knowledgeInspectionSummary({
     status: 'empty',
     snapshot: null,
@@ -377,8 +377,8 @@ test('legacy servers: unreported live state is not read as empty or not-configur
     learning: { domains: {} },
   });
   expect(knowledgeEmptyLabel(live)).toMatchObject({ state: 'empty' });
-  expect(expertAbsenceLabel(live, 'architecture')).toMatchObject({ state: 'not-configured' });
-  expect(expertAbsenceLabel(knowledgeInspectionSummary(null), 'x')).toMatchObject({
+  expect(wardenAbsenceLabel(live, 'architecture')).toMatchObject({ state: 'not-configured' });
+  expect(wardenAbsenceLabel(knowledgeInspectionSummary(null), 'x')).toMatchObject({
     state: 'unavailable',
   });
 });

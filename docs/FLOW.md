@@ -4,7 +4,7 @@
 > Every design decision traces back to two constraints: **token budget** and **latency**.
 > Every architectural choice answers one question: **how does the system get smarter after each interaction?**
 >
-> **How it is built today (2026-10-12).** This document mixes the design with what exists; [What exists vs what needs building](#what-exists-vs-what-needs-building) is the ledger. In short: the Artificer is a native Claude Code or Codex session run through agent-session. Standing context reaches it through the system prompt (`--append-system-prompt-file`, `packages/foundry/src/providers/native-launch.ts:144`) plus per-turn deltas (`providers/session-delivery.ts`; see [Delivery](#delivery-what-a-native-session-receives-each-turn)). Foundry observes tool calls on the native event stream, not through Claude Code hooks, and its structural tool gate (`packages/foundry/src/turns/tool-gate.ts`) answers the CLI's permission requests. Wardens are a chorus: their advice is appended to the user's message ("The <domain> Warden chimed in:"), advice runs under a deadline (`adviseTimeoutMs`) and a Warden that times out is skipped, and only structural rules deny. (Exception being fixed: the expert-cache warm before a turn has no deadline yet.) There is no `.foundry-context.md`, no PostToolUse hook, and no MCP push. The Herald is not wired: the Herald class moved to the private chorus repo, packages/heralds/reference/ (2026-11-18, R-2026-11-18-27); the `chorus.heralds` settings, `ask_herald` and the heralds skill stay as placeholders.
+> **How it is built today (2026-10-12).** This document mixes the design with what exists; [What exists vs what needs building](#what-exists-vs-what-needs-building) is the ledger. In short: the Artificer is a native Claude Code or Codex session run through agent-session. Standing context reaches it through the system prompt (`--append-system-prompt-file`, `packages/foundry/src/providers/native-launch.ts:144`) plus per-turn deltas (`providers/session-delivery.ts`; see [Delivery](#delivery-what-a-native-session-receives-each-turn)). Foundry observes tool calls on the native event stream, not through Claude Code hooks, and its structural tool gate (`packages/foundry/src/turns/tool-gate.ts`) answers the CLI's permission requests. Wardens are a chorus: their advice is appended to the user's message ("The <domain> Warden chimed in:"), advice runs under a deadline (`adviseTimeoutMs`) and a Warden that times out is skipped, and only structural rules deny. (Exception being fixed: the Warden cache warm before a turn has no deadline yet.) There is no `.foundry-context.md`, no PostToolUse hook, and no MCP push. The Herald is not wired: the Herald class moved to the private chorus repo, packages/heralds/reference/ (2026-11-18, R-2026-11-18-27); the `chorus.heralds` settings, `ask_herald` and the heralds skill stay as placeholders.
 
 ---
 
@@ -534,7 +534,6 @@ flowchart TB
     end
 
     FINDINGS{"Any findings?"}
-    PUSH_MCP["Push via MCP:\nNOT BUILT\n(arrives next turn at best)"]
     SIGNAL["Emit signal:\ndeferred for writeback"]
     NOTHING["No action needed"]
 
@@ -544,12 +543,10 @@ flowchart TB
     GATE -->|"yes"| GUARDS
     GATE -->|"reads only"| NOTHING
     GUARDS --> FINDINGS
-    FINDINGS -->|"critical\n(security, breaking)"| PUSH_MCP
-    FINDINGS -->|"advisory\n(style, suggestion)"| SIGNAL
+    FINDINGS -->|"advisory\n(a pointer)"| SIGNAL
     FINDINGS -->|"all clear"| NOTHING
 
     style GUARDS fill:#2e1a1a,stroke:#8a4a4a,color:#fff
-    style PUSH_MCP fill:#4a1a1a,stroke:#e94560,color:#fff
     style SIGNAL fill:#1a2e1a,stroke:#4a8a4a,color:#fff
 ```
 
@@ -571,7 +568,7 @@ Guard mode fires once per turn and is trigger-gated: a turn of reads and searche
 
 When a Warden in guard mode finds something:
 
-- **Critical findings** (security, breaking changes) → designed to push immediately into the session. **Not built:** there is no push path; a critical finding is a signal like any other.
+- **Every finding is advisory**: a Warden points and never gives a verdict, so the classify protocol refuses a `critical` severity or a suggested fix.
 - **All findings today** → emitted as signals to the Librarian. The session doesn't see them immediately; they feed into writeback and inform later advise-mode decisions.
 - A guard never blocks a tool call. Only the structural tool rules deny (CLAUDE.md, "Wardens are a chorus").
 
@@ -756,7 +753,6 @@ Every branching point in the system, who decides, and how. Every Warden is a pro
 
 ### Not built
 - **Herald wiring** — the Herald class moved to the private chorus repo, packages/heralds/reference/ (2026-11-18, R-2026-11-18-27); the `chorus.heralds` settings, `ask_herald` and the heralds skill stay as placeholders.
-- **Push of critical findings** into a running session.
 - **`Thread.fromSession`** store replay.
 - **Writeback pipeline** — post-execution signal processing into the corpus pipeline (Oracle `docs/VISION.md` §7): map rebuilds, memory entries, convention proposals queued for review.
 - **Feedback lifecycle, beyond its first slice** — Oracle recurrence and committed rungs (design in Oracle `docs/foundry/FEEDBACK-LOOP.md`; what is built: [FEEDBACK-LOOP.md](FEEDBACK-LOOP.md)). The first slice (capture, tuning, routing, role-file changes, the Feedback view) is built in `packages/foundry/src/feedback/`.

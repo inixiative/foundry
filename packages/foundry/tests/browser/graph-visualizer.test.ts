@@ -5,7 +5,7 @@ import { join, resolve } from 'node:path';
 import { m0Scenario } from '../helpers/m0-domain-loop';
 import { releaseAll } from '../helpers/release-all';
 
-// Graph panel over the production factory/runtime/HTTP/SQLite (the M0 domain loop: two experts,
+// Graph panel over the production factory/runtime/HTTP/SQLite (the M0 domain loop: two Wardens,
 // controlled reviewer and central answers; no model or native process). Opt-in: FOUNDRY_QA_PLAYWRIGHT
 // + Chrome. Proves the thread graph (subagent nesting), the live turn flow (a turn sent while the
 // view is open appears without a reload), the learning loop's feedback edges, click-to-inspect in the
@@ -209,7 +209,7 @@ test('graph panel: thread graph, live turn flow, learning loop, inspect, pan/zoo
     await shot('1440-learning-loop');
     await page.locator(".graph-node[data-node-id='write:t1:architecture']").click();
     await page
-      .locator(".detail-drawer .expert-understanding:not([data-state='loading'])")
+      .locator(".detail-drawer .warden-understanding:not([data-state='loading'])")
       .waitFor();
     await shot('1440-learning-loop-inspect-layer');
 

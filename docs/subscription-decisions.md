@@ -196,7 +196,7 @@ The process launches with `approval_policy="never"`, web search disabled and too
 
 One process-wide scheduler serves every thread's decisions, with up to `maxConcurrent` processes at once:
 
-- **Priority.** Calls carry `CompletionOpts.priority`: pre-message decisions (Warden and expert advice) run before post-action guards, which run before learning review and thread naming. Guards may hold at most three quarters of the slots and reviews at most half, so a turn waiting to start always finds capacity.
+- **Priority.** Calls carry `CompletionOpts.priority`: pre-message decisions (Warden advice) run before post-action guards, which run before learning review and thread naming. Guards may hold at most three quarters of the slots and reviews at most half, so a turn waiting to start always finds capacity.
 - **Fairness.** Within a priority, the thread served longest ago goes next, so one busy thread cannot starve another.
 - **Shedding.** A full queue (per thread, then global) sheds its oldest lowest-priority wait to admit a more urgent call; only a call that cannot displace anything is refused. Shed guards report as unchecked, never as all-clear.
 - **Rate limits.** A usage or rate limit fails that decision without retry, pauses new starts with exponential backoff (5 s to 60 s) and is logged and pushed to the viewer's event stream. It does not close admission. While the account reports usage blocked, the warm host refuses decisions before sending anything and re-reads limits at most once a minute.
@@ -220,7 +220,7 @@ Every decision has a 60 s deadline (`DECISION_DEADLINE_MS`; a Warden's advice de
 
 Claude Haiku 5.5 at low effort, measured live on 2026-10-11 through the primed host (eight roles at once on one Claude login): a warm decision takes 1.1–4.3 s (median about 1.7 s); a cold role (status check, priming and a first fork) takes 5–7 s. One warm decision alone takes about 1.1 s.
 
-The earlier Codex budget (`providers/decision-budget.ts`), measured live with `bun scripts/measure-decisions.ts` (six experts, gpt-6-luna at low effort, a spare `VIEWER_PORT`):
+The earlier Codex budget (`providers/decision-budget.ts`), measured live with `bun scripts/measure-decisions.ts` (six Wardens, gpt-6-luna at low effort, a spare `VIEWER_PORT`):
 
 | | Before (per-call `codex exec`, classify → route → advise) | After |
 |---|---|---|

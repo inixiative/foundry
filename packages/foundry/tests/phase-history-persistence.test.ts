@@ -20,7 +20,7 @@ import { LocalSessionStore } from '../src/persistence/local-session-store';
 import { serializeTrace } from '../src/persistence/trace-record';
 import { starterConfig } from '../src/viewer/config';
 
-// Integration (Fable, CORE-006 LI): the real runtime, factory, orchestrator, experts and SQLite journal.
+// Integration (Fable, CORE-006 LI): the real runtime, factory, orchestrator, Wardens and SQLite journal.
 // One dispatched turn records the routing request, the advice requests, a guard outcome under its tool
 // observation identity and the post-work review request; the store is closed and reopened and the
 // historical inputs are read back after live cache, instructions and protocol have all moved on.
@@ -155,7 +155,7 @@ test('one real turn: advice, guard and review requests are journalled under thei
     );
     return sent.result;
   };
-  // Turn 1 commits the expert's own understanding durably (revision 1); turn 2 is the turn under inspection.
+  // Turn 1 commits the Warden's own understanding durably (revision 1); turn 2 is the turn under inspection.
   await turn('turn-0', 'Migrate contacts');
   expect(domainLib.threadKnowledge.revision).toBe(1);
   expect(domainLib.threadKnowledge.content).toContain('OWN_V1');

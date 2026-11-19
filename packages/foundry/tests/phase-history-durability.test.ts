@@ -22,12 +22,12 @@ import { LocalSessionStore, type StoredPhase } from '../src/persistence/local-se
 import { serializeTrace } from '../src/persistence/trace-record';
 import { starterConfig } from '../src/viewer/config';
 import {
-  expertParticipants,
   guardOutcomes,
   participantRequest,
+  wardenParticipants,
 } from '../src/viewer/ui/inspector-data.js';
 
-// Pending and late phase durability (Fable, CORE-006 LI). Real runtime, factory, Harness, orchestrator, experts,
+// Pending and late phase durability (Fable, CORE-006 LI). Real runtime, factory, Harness, orchestrator, Wardens,
 // knowledge persistence and a file-backed SQLite journal; controlled providers only. No model, browser or subprocess.
 
 const closes: Array<() => void> = [];
@@ -324,7 +324,7 @@ test('successful, failed and thrown guard controls: findings are recorded, a pro
     'outcome 1',
   );
   const one = guardOutcomes({ detail: f.store.turnDetail(f.thread.id, 'turn-1') })!;
-  expect(one[0]).toMatchObject({ status: 'reported', failed: [], findings: 1, critical: 0 });
+  expect(one[0]).toMatchObject({ status: 'reported', failed: [], findings: 1 });
   expect(one[0]!.outcomes[0]).toMatchObject({
     domain: 'architecture',
     outcome: { status: 'answered', result: 'findings' },
@@ -402,7 +402,7 @@ test('a failed central turn retains the sealed advice requests with their three 
     request: { status: 'supplied', phase: 'advice' },
   });
   f.layer.set('DOMAIN_AFTER');
-  const participants = expertParticipants(detail.injection, detail.phases)!;
+  const participants = wardenParticipants(detail.injection, detail.phases)!;
   expect(participants.participants[0]).toMatchObject({
     id: 'architecture',
     outcome: { status: 'answered', result: 'spoke' },
@@ -506,7 +506,7 @@ test('review records say whether their requested record reached the journal; wit
   closes.push(() => g.store.close());
   expect((await g.turn('turn-1', 'Add preferred names')).ok).toBe(true);
   await g.runtime.learningSettled();
-  // The requested record is journal-only: the expert's in-memory history holds outcomes only, and each outcome says the journal was unavailable.
+  // The requested record is journal-only: the Warden's in-memory history holds outcomes only, and each outcome says the journal was unavailable.
   const memory = g.runtime.wardens
     .get('architecture')!
     .threadKnowledge.history.filter((r: any) => r.evidence?.messageId === 'turn-1');

@@ -34,7 +34,7 @@ function failingLLM(): LLMProvider {
 // Helpers
 // ---------------------------------------------------------------------------
 
-function makeConventionLibrarian(llm: LLMProvider, signals: SignalBus) {
+function makeConventionWarden(llm: LLMProvider, signals: SignalBus) {
   const cache = new ContextLayer({ id: 'convention-cache' });
   cache.set('Functions use camelCase. Files use kebab-case. No default exports.');
   return new Warden({
@@ -66,7 +66,7 @@ describe('Warden', () => {
           confidence: 0.9,
         }),
       );
-      const lib = makeConventionLibrarian(llm, signals);
+      const lib = makeConventionWarden(llm, signals);
       const result = await lib.advise('How should I handle auth tokens?');
 
       expect(result.layers).toEqual(['auth-conventions', 'auth-api-docs']);
@@ -78,7 +78,7 @@ describe('Warden', () => {
       const llm = mockLLM(
         '```json\n{"layers": ["test-layer"], "snippets": [], "confidence": 0.8}\n```',
       );
-      const lib = makeConventionLibrarian(llm, signals);
+      const lib = makeConventionWarden(llm, signals);
       const result = await lib.advise('test message');
 
       expect(result.layers).toEqual(['test-layer']);
@@ -86,7 +86,7 @@ describe('Warden', () => {
     });
 
     it('returns empty on LLM failure', async () => {
-      const lib = makeConventionLibrarian(failingLLM(), signals);
+      const lib = makeConventionWarden(failingLLM(), signals);
       const result = await lib.advise('test message');
 
       expect(result.layers).toHaveLength(0);
@@ -116,7 +116,7 @@ describe('Warden', () => {
           return { content: '{"layers":[],"snippets":[],"confidence":0.5}', model: 'mock' };
         },
       };
-      const lib = makeConventionLibrarian(llm, signals);
+      const lib = makeConventionWarden(llm, signals);
       await lib.advise('test', '{"domain":"auth"}');
 
       const userMsg = capturedMessages.find((m) => m.role === 'user')!;
@@ -138,7 +138,7 @@ describe('Warden', () => {
           ],
         }),
       );
-      const lib = makeConventionLibrarian(llm, signals);
+      const lib = makeConventionWarden(llm, signals);
       const result = await lib.guard(
         oneCall({
           tool: 'file_write',
@@ -154,7 +154,7 @@ describe('Warden', () => {
     });
 
     it('skips guard for non-matching tool types', async () => {
-      const lib = makeConventionLibrarian(mockLLM('unused'), signals);
+      const lib = makeConventionWarden(mockLLM('unused'), signals);
       const result = await lib.guard(
         oneCall({
           tool: 'file_read',
@@ -177,7 +177,7 @@ describe('Warden', () => {
           ],
         }),
       );
-      const lib = makeConventionLibrarian(llm, signals);
+      const lib = makeConventionWarden(llm, signals);
 
       const emitted: any[] = [];
       signals.onAny((s) => {

@@ -104,10 +104,10 @@ function setup(
   });
   const central = provider('central'),
     flow = provider('flow'),
-    experts = provider('expert'),
+    wardens = provider('warden'),
     phase = provider('phase');
   const providers = new Map(
-    [central, flow, experts, phase, ...(extra ? [extra] : [])].map((p) => [p.id, p]),
+    [central, flow, wardens, phase, ...(extra ? [extra] : [])].map((p) => [p.id, p]),
   );
   // A region's knowledge is its knowledge.md; inline sources are their text.
   const sourceResolver: SourceResolver = (id, cfg) => {
@@ -150,7 +150,7 @@ function setup(
 }
 
 test('region Wardens learn through production factory/journal, remain separate and survive a fresh configuration/factory reload', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'e1-saved-experts-'));
+  const dir = await mkdtemp(join(tmpdir(), 'e1-saved-wardens-'));
   let f: ReturnType<typeof setup> | undefined;
   let journal: LocalSessionStore | undefined;
   try {
@@ -342,7 +342,7 @@ test('configured review pending does not block Continue or create another same-d
     const next = await Promise.race([
       t.dispatch('worker', 'Continue'),
       Bun.sleep(200).then(() => {
-        throw Error('Central waited for expert review');
+        throw Error('Central waited for Warden review');
       }),
     ]);
     expect((next.meta?.delivery as { learningBarrier?: unknown })?.learningBarrier).toMatchObject({
@@ -472,7 +472,7 @@ test('a region Warden is asked on every write or exec tool call, under its gener
   }
 });
 
-test('metadata-only/generated layers and a conflicting generated ID never silently become legacy expert state', async () => {
+test('metadata-only/generated layers and a conflicting generated ID never silently become legacy Warden state', async () => {
   for (const generated of [false, true]) {
     const c = config();
     const layer = new ContextLayer({

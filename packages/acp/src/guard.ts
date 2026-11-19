@@ -33,7 +33,7 @@ export function guardComments(turn: unknown): GuardComment[] {
     const lines = notes.map((note) => {
       const where = typeof note.location === 'string' ? ` (${note.location})` : '';
       const fix = typeof note.suggestion === 'string' ? ` Suggestion: ${note.suggestion}` : '';
-      return `- ${note.severity === 'critical' ? 'Critical' : 'Note'}: ${String(note.description)}${where}.${fix}`;
+      return `- Note: ${String(note.description)}${where}.${fix}`;
     });
     const domains = Array.isArray(record.domainsChecked) ? record.domainsChecked.join(', ') : '';
     return [
@@ -46,7 +46,6 @@ export function guardComments(turn: unknown): GuardComment[] {
         ].join('\n'),
         meta: {
           tool: typeof tool === 'string' ? tool : null,
-          critical: typeof record.critical === 'number' ? record.critical : 0,
           findings: typeof record.findings === 'number' ? record.findings : notes.length,
           ...(degraded.length ? { degraded } : {}),
         },

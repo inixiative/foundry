@@ -16,7 +16,7 @@ import type {
  * Bounded projection of the owned journal for the viewer's graph panel (`flow:<threadId>`).
  * Recorded fields only, in the shapes the inspector already reads (phase rows, the sealed plan,
  * the delivery record, learning signals), minus the heavy payloads: provider request messages and
- * expert segments become counts, long text is clipped. The full record stays one click away on the
+ * Warden segments become counts, long text is clipped. The full record stays one click away on the
  * turn-detail route.
  */
 

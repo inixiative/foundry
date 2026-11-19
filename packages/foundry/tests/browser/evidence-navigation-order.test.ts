@@ -153,7 +153,7 @@ test('late or superseded historical detail never publishes, re-opens or toasts; 
     await bounded(h.requested.promise, 'held a-one for dismissal', 5000);
     await store(`s => s.dismissTraceSelection()`);
     await store(`s => s.inspectLayer("architecture")`); // operator moved on to a layer (a layer chip in the chat)
-    await page.locator('.detail-drawer .expert-understanding').waitFor();
+    await page.locator('.detail-drawer .warden-understanding').waitFor();
     h.gate.resolve();
     await store(`async s => { await window.__p; }`);
     await settle();

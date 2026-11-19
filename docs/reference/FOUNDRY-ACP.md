@@ -185,7 +185,7 @@ ACP-originated threads are ordinary threads, so the viewer shows them live: flow
 | Terminal `done` with no text streamed at all | One `agent_message_chunk` with the final content. | 1 |
 | Native `thinking` events (`as/harness-session.ts:82-95`) | `agent_thought_chunk` (needs thinking rows in `LiveActivity`). | 2 |
 | Claude `TodoWrite`, Codex `update_plan` (`pf/viewer/turn-flow.ts` `TASK_SOURCES`) | `plan {entries}` | 2 |
-| Guard findings and critical post-hoc findings | `tool_call {kind: "think", title: "Foundry: guard"}`: a comment, never a block (§5.2). | 2 |
+| Guard findings | `tool_call {kind: "think", title: "Foundry: guard"}`: a comment, never a block (§5.2). | 2 |
 | Mode or config changes | `current_mode_update`, `config_option_update` | 2 |
 | `available_commands_update` | `/correction <text>` → `POST /api/threads/:id/interventions` (`runtime.ts:358`): feedback typed in an editor reaches capture. | 2 |
 
@@ -330,7 +330,7 @@ ACP over stdio has no remote mode of its own.
 9. **Load after daemon restart.** History replayed before the response; same thread; the next turn resumes the stored native id; client MCP servers re-applied; nothing secret under `.foundry`.
 10. **Structural deny holds in every mode,** `bypassPermissions` included: the tool never executes, the model gets the reason, `gate-request`/`gate-outcome` rows are written, no model call, < 100 ms.
 11. **Ask reaches the host, first responder wins:** one ActionQueue prompt; `session/request_permission` with the 4 option kinds; `allow_always` installs a thread-scoped policy; a viewer answer first makes the ACP request return `cancelled`.
-12. **A Warden comments, never blocks:** a critical finding is a "Foundry: guard" item and the tool still runs; a Warden timeout does not delay the call.
+12. **A Warden comments, never blocks:** a finding is a "Foundry: guard" item and the tool still runs; a Warden timeout does not delay the call.
 13. **Wrapper stripping:** a `<t3_code_instructions>` prompt reaches the native agent verbatim and feedback capture sees only the `<user_request>` body.
 14. **Live hosts:** a Paseo daemon from a scratch copy with an `extends: "acp"` provider, and a T3 server with a "Local ACP command" instance, both pinned to recorded commits, as a nightly live job.
 

@@ -350,10 +350,6 @@ export interface GuardPhaseHooks {
 export interface GuardReport {
   /** All findings across all domains. */
   findings: GuardFinding[];
-  /** Critical findings that should be pushed to the session immediately. */
-  critical: GuardFinding[];
-  /** Advisory findings that feed into writeback. */
-  advisory: GuardFinding[];
   /** Which domain guards were triggered (completed or not). */
   domainsChecked: string[];
   /** Domains whose guard triggers name none of the activity's tools: not asked. */
@@ -1479,9 +1475,6 @@ export class FlowOrchestrator {
       )
       .map((o) => o.domain);
 
-    const critical = findings.filter((f) => f.severity === 'critical');
-    const advisory = findings.filter((f) => f.severity === 'advisory');
-
     // Emit tool observation signal for the Librarian's thread-state
     await this._signals.emit({
       id: newId('flow-obs'),
@@ -1502,7 +1495,6 @@ export class FlowOrchestrator {
         guardOutcomes: outcomes,
         guardsFailed: failed,
         findingsCount: findings.length,
-        criticalCount: critical.length,
       },
       timestamp: Date.now(),
     });
@@ -1510,8 +1502,6 @@ export class FlowOrchestrator {
     return this._sealedWithAsks(
       {
         findings,
-        critical,
-        advisory,
         domainsChecked,
         skipped,
         prefiltered: ruledOut,

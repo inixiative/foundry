@@ -18,9 +18,9 @@
 import { outcomeLabel, outcomeTone } from './call-outcome.js';
 import {
   deliverySummary,
-  expertParticipants,
   guardOutcomes,
   learningEntries,
+  wardenParticipants,
 } from './inspector-data.js';
 import { CLOSED_STATUSES } from './thread-status.js';
 
@@ -467,7 +467,7 @@ export function turnFlowGraph(turn, { learning = [] } = {}) {
         stages: stageLine(c.classified),
         fallback: c.classified?.fallback ?? null,
       }))
-    : (expertParticipants(null, turn.phases)?.participants ?? []).map((p) => ({
+    : (wardenParticipants(null, turn.phases)?.participants ?? []).map((p) => ({
         id: p.id,
         outcome: p.outcome,
         reason: p.reason,
@@ -686,11 +686,9 @@ export function turnFlowGraph(turn, { learning = [] } = {}) {
           ? 'pending'
           : g.status === 'failed'
             ? 'error'
-            : (g.critical ?? 0) > 0
-              ? 'error'
-              : (g.findings ?? 0) > 0
-                ? 'warn'
-                : 'ok';
+            : (g.findings ?? 0) > 0
+              ? 'warn'
+              : 'ok';
       const id = add({
         id: `guard:${n}`,
         kind: 'guard',
@@ -705,7 +703,6 @@ export function turnFlowGraph(turn, { learning = [] } = {}) {
           call: g.callId,
           status: g.status,
           findings: g.findings,
-          critical: g.critical,
           correlation: g.correlation,
           domains:
             g.outcomes
@@ -798,7 +795,7 @@ export function learningLoop(flow, { maxTurns = 16 } = {}) {
           outcome: c.outcome ?? null,
           revision: c.provenance?.threadKnowledgeRevision ?? null,
         }))
-      : (expertParticipants(null, turn.phases)?.participants ?? []).map((p) => ({
+      : (wardenParticipants(null, turn.phases)?.participants ?? []).map((p) => ({
           id: p.id,
           outcome: p.outcome,
           revision: p.revision,

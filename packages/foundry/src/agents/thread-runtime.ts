@@ -408,7 +408,7 @@ export interface ThreadRuntimeDeps {
   codeWardens?: CodeWardenConfig[];
   /** Resolves configured source ids (a Warden's `domainKnowledge`); the factory passes its own on attach. */
   resolveSource?: ResolveSource;
-  /** Already constructed phase providers, including explicit expert selections. */
+  /** Already constructed phase providers, including explicit Warden selections. */
   providers?: ReadonlyMap<string, LLMProvider>;
   /** Pre-message deadlines, concurrency and budget. Validated by the orchestrator. */
   flow?: FlowTimingConfig;
@@ -1079,7 +1079,7 @@ class ThreadRuntimeImpl implements ThreadRuntime {
     // Wardens with a role ask their debug reason after each answer unless the chorus turns it off.
     const chorusDebugReason =
       deps.debugReason !== false && projectChorusSettings?.wardens?.debugReason !== false;
-    if (domains.some((dc) => dc.expert))
+    if (domains.some((dc) => dc.configuredAgentId))
       chorusStages.forEach((config, index) => {
         if (
           (config.model !== undefined || config.effort !== undefined) &&
@@ -1090,7 +1090,7 @@ class ThreadRuntimeImpl implements ThreadRuntime {
           );
       });
 
-    // The shared factual thread record is not an expert's private interpretation.
+    // The shared factual thread record is not a Warden's private interpretation.
     // Keep full learning signals on the original owned bus/journal for inspection;
     // only outcome metadata enters the shared state every domain reads. Project
     // at the typed signal boundary, never by filtering rendered activity text.
@@ -1155,7 +1155,7 @@ class ThreadRuntimeImpl implements ThreadRuntime {
       60_000,
     );
     for (const dc of domains) {
-      const role = dc.expert?.agentId;
+      const role = dc.configuredAgentId;
       const slots = role
         ? buildRoleLayers(deps.config, role, {
             resolveSource: deps.resolveSource,
@@ -1242,7 +1242,7 @@ class ThreadRuntimeImpl implements ThreadRuntime {
             dc.reviewProvider ?? deps.learning?.reviewProvider ?? deps.llm,
             { threadId: reviewId, cwd },
           ),
-          reviewOpts: dc.expert
+          reviewOpts: dc.configuredAgentId
             ? dc.reviewOpts
             : { ...deps.learning?.reviewOpts, ...dc.reviewOpts },
           reviewPrompt: dc.reviewPrompt,
@@ -1396,14 +1396,14 @@ class ThreadRuntimeImpl implements ThreadRuntime {
       // Snapshot pending reviews without waiting. A later turn uses the latest
       // committed revision; this turn's historical preparation stays immutable.
       const barrier = await this._awaitPendingLearning();
-      // Newly resolved project experts read their actual owned sources on the first pre-hook, not
+      // Newly resolved project Wardens read their actual owned sources on the first pre-hook, not
       // only the global template. Wardens never block: a warm that is late or fails is recorded and
       // the turn goes on (that Warden advises from what it holds, or is skipped with a cold cache).
-      const experts = domains.filter((d) => d.expert);
+      const configured = domains.filter((d) => d.configuredAgentId);
       const projectId = thread.meta.projectId as string | undefined;
-      if (experts.length && projectId) deps.activateWardenHost?.(projectId);
+      if (configured.length && projectId) deps.activateWardenHost?.(projectId);
       const warmShortfalls = await flow.warmWithin(
-        experts.map((d) => ({
+        configured.map((d) => ({
           id: d.domain,
           warm: () => wardens.get(d.domain)!.warm(),
         })),
@@ -1528,7 +1528,7 @@ class ThreadRuntimeImpl implements ThreadRuntime {
             for (const id of plan.layers) ctx.requestLayer?.(id);
             ctx.annotations.injectionPlan = plan;
             ctx.annotations.decoration = prepared.decoration;
-            // Durable at seal, before the central call: every expert's advice request with its three
+            // Durable at seal, before the central call: every Warden's advice request with its three
             // parts survives a failed or interrupted central turn. Journal failure is explicit.
             const sealedTurn = ctx.messageId ?? null,
               sealedDispatch = ctx.dispatchId ?? null;
@@ -2280,7 +2280,6 @@ class ThreadRuntimeImpl implements ThreadRuntime {
           ...(report.prefilter ? { prefilter: report.prefilter } : {}),
           failed: report.failed,
           findings: report.findings.length,
-          critical: report.critical.length,
           // What the Wardens said: a comment on the turn's actions (shown to hosts), never a block.
           notes: report.findings.slice(0, 16).map((finding) => ({
             severity: finding.severity,
@@ -2318,18 +2317,10 @@ class ThreadRuntimeImpl implements ThreadRuntime {
         outcomes: report.outcomes,
         failed: report.failed,
         findings: report.findings.length,
-        critical: report.critical.length,
         elapsed: report.elapsed,
         journal: { requests: requestJournalStates(), outcome: outcomeJournal },
       });
-      if (report.critical.length > 0) {
-        this._warn(
-          `  [flow:${this.thread.id}] CRITICAL findings (${report.domainsChecked.join(', ')}):`,
-        );
-        for (const f of report.critical) {
-          this._warn(`    ⚠ ${f.description}${f.location ? ` at ${f.location}` : ''}`);
-        }
-      } else if (report.findings.length > 0) {
+      if (report.findings.length > 0) {
         this._log(
           `  [flow:${this.thread.id}] guard: ${report.findings.length} advisory findings from ${report.domainsChecked.join(', ')} over ${activity.observations.length} call(s) (${report.elapsed}ms)`,
         );
@@ -3696,7 +3687,7 @@ class ThreadRuntimeImpl implements ThreadRuntime {
               reviewRequest = evidence;
               // Durable before the answer or any deadline: the exact request under the job's own identity. This
               // record carries no capacity or native claim, so restoration never reads it as closure evidence.
-              // Journal-only: it is not a learning outcome, so it never enters the expert's in-memory history, and a
+              // Journal-only: it is not a learning outcome, so it never enters the Warden's in-memory history, and a
               // failing journal makes the request status explicit instead of breaking the review.
               const requested: LearningRecord = {
                 decision: 'requested',
@@ -4073,8 +4064,8 @@ class ThreadRuntimeImpl implements ThreadRuntime {
       next.add(dc.domain);
       const lib = this.wardens.get(dc.domain);
       const held = this._roleLayers.get(dc.domain);
-      const same = dc.expert
-        ? held?.role === dc.expert.agentId
+      const same = dc.configuredAgentId
+        ? held?.role === dc.configuredAgentId
         : !!dc.layerId && lib?.cache === this.thread.stack.getLayer(dc.layerId);
       if (!lib || !same) {
         deferred.push(`Warden ${dc.domain} applies to new threads`);

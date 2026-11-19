@@ -149,7 +149,8 @@ export function largestStageCount(
 export interface ResolvedCodeWarden extends Omit<CodeWardenConfig, 'layerId'> {
   /** Wardens registered in code only: the stack layer it reads. A configured Warden reads its role's view. */
   layerId?: string;
-  expert?: { agentId: string; source: 'configured' };
+  /** A Warden resolved from settings (a project's region Warden): its agent id. Absent for one registered in code. */
+  configuredAgentId?: string;
   adviseProvider?: LLMProvider;
   adviseOpts?: CompletionOpts;
   reviewProvider?: LLMProvider;
@@ -244,7 +245,7 @@ export function resolveThreadWardens(
     }
     return {
       domain,
-      expert: { agentId, source: 'configured' },
+      configuredAgentId: agentId,
       budget: roleComposition(config.composition, agentId).budget,
       guardTriggers: [...(agent.guardTriggers ?? [])],
       adviseProvider: provider,

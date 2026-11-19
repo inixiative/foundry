@@ -29,7 +29,7 @@ function fixture(output: string) {
 }
 
 describe('advice phase protocol independent of domain instructions', () => {
-  it('supplies the response contract while retaining all three expert parts', async () => {
+  it('supplies the response contract while retaining all three Warden parts', async () => {
     const { lib, calls } = fixture(
       '{"layers":[],"snippets":["Preserve existing names"],"confidence":0.9}',
     );

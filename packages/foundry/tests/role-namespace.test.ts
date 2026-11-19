@@ -135,12 +135,12 @@ test('a region may carry the name of any built-in role: its Warden is its own ro
   validateConfig(c);
   const view = resolveProjectView(c, 'P')!;
   expect(view.chorus.on).toBe(true);
-  const experts = configuredWardens(view.config).wardens;
-  expect(experts.map((e) => e.domain).sort()).toEqual([...names].sort());
-  for (const expert of experts) {
-    expect(expert.agentId).toBe(regionRoleId(expert.domain));
-    expect(names).not.toContain(expert.agentId);
-    expect(builtIns).not.toContain(expert.agentId);
+  const wardens = configuredWardens(view.config).wardens;
+  expect(wardens.map((e) => e.domain).sort()).toEqual([...names].sort());
+  for (const warden of wardens) {
+    expect(warden.agentId).toBe(regionRoleId(warden.domain));
+    expect(names).not.toContain(warden.agentId);
+    expect(builtIns).not.toContain(warden.agentId);
   }
 });
 

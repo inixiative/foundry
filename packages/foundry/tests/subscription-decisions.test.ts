@@ -46,8 +46,8 @@ afterEach(async () => {
 });
 afterAll(settleRecordings);
 const LIVE_TIMEOUT = 90_000;
-/** The hand-injected warden expert's id: a namespaced role id, as a region Warden's is. */
-const EXPERT = regionRoleId('expert');
+/** The hand-injected Warden's id: a namespaced role id, as a region Warden's is. */
+const WARDEN = regionRoleId('warden');
 type Transport = Parameters<typeof buildNativeTextProvider>[1] & {
   launches: { argv: string[]; cwd: string; exited: boolean }[];
   writes: number;
@@ -301,8 +301,8 @@ test('actual factory advice, guard and learning use the subscription lifecycle a
       prompt: '',
       enabled: true,
     },
-    [EXPERT]: {
-      id: EXPERT,
+    [WARDEN]: {
+      id: WARDEN,
       kind: 'warden',
       flowRole: 'warden',
       domain: 'docs',
@@ -321,7 +321,7 @@ test('actual factory advice, guard and learning use the subscription lifecycle a
       domain: 'docs',
       prompt: 'Domain rules',
       segment: 'domain-knowledge',
-      writers: [EXPERT],
+      writers: [WARDEN],
       sourceIds: ['docs-source'],
       enabled: true,
       staleness: 0,

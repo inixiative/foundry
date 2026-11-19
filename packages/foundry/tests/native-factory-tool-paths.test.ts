@@ -17,7 +17,7 @@ import { KnowledgePersistence } from '../src/persistence/knowledge-persistence';
 import { LocalSessionStore } from '../src/persistence/local-session-store';
 import { starterConfig } from '../src/viewer/config';
 
-// Shared factory boundary: owned public native tool events reach both expert post hooks on the
+// Shared factory boundary: owned public native tool events reach both Warden post hooks on the
 // streaming and tool-loop paths; a tool seen by both the local loop and native events is one
 // observation; foreign-dispatch native events never become this dispatch's evidence.
 // Controlled providers only (labelled controlled); no model, network or native process.
@@ -51,8 +51,8 @@ function fixture(central: LLMProvider, tools?: ToolRegistry) {
     }),
   );
   const reviews: Array<{ domain: string; text: string }> = [];
-  const expert: LLMProvider = {
-    id: 'controlled-expert',
+  const warden: LLMProvider = {
+    id: 'controlled-warden',
     async complete(messages, opts = {}) {
       const domain = domains.find((d) => opts.threadId?.endsWith(`:domain:${d}`));
       if (opts.threadId?.includes(':review:')) {
@@ -76,7 +76,7 @@ function fixture(central: LLMProvider, tools?: ToolRegistry) {
   const events = new EventStream();
   const manager = new ThreadRuntimeManager({
     config,
-    llm: expert,
+    llm: warden,
     eventStream: events,
     log() {},
     warn() {},

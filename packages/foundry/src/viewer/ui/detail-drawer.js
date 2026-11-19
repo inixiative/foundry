@@ -20,8 +20,6 @@ import {
   deliveredUnderstanding,
   deliverySummary,
   domainUnderstanding,
-  expertAbsenceLabel,
-  expertParticipants,
   explanationLabel,
   failurePresentation,
   guardOutcomes,
@@ -32,6 +30,8 @@ import {
   selectionSummary,
   traceInjection,
   traceSpans,
+  wardenAbsenceLabel,
+  wardenParticipants,
 } from './inspector-data.js';
 import { LayerBand } from './layer-band.js';
 import { html, useEffect, useState } from './lib.js';
@@ -582,7 +582,7 @@ function PhaseHistory({ trace }) {
             <div class="detail-meta"><label>Tool</label><span>${g.tool}${g.callId ? html` <code>${g.callId}</code>` : ''}</span></div>
             <div class="detail-meta"><label>Guards</label><span class="detail-status ${g.failed.length ? 'stale' : tone(g.status)}">${g.status}${g.failed.length ? ` (${g.failed.length} not completed)` : ''}</span></div>
             <div class="detail-meta"><label>Record</label><span>${g.source === 'journal' ? 'journal' : 'turn meta'}${g.correlation && g.correlation !== 'live-dispatch' ? ` · ${g.correlation}` : ''}</span></div>
-            ${g.findings !== null ? html`<div class="detail-meta"><label>Findings</label><span>${g.findings}${g.critical ? ` (${g.critical} critical)` : ''}</span></div>` : null}
+            ${g.findings !== null ? html`<div class="detail-meta"><label>Findings</label><span>${g.findings}</span></div>` : null}
             ${g.failed.length ? html`<div class="detail-meta"><label>Not completed</label><span>${g.failed.join(', ')}</span></div>` : null}
           </div>
           ${g.error ? html`<div class="detail-meta"><label>Error</label><span>${g.error}</span></div>` : null}
@@ -592,7 +592,7 @@ function PhaseHistory({ trace }) {
             (o) => html`
             <div class="guard-outcome" key=${o.domain} data-domain=${o.domain} data-outcome=${guardCheckLabel(o)}>
               <div class="detail-meta-row">
-                <div class="detail-meta"><label>Expert</label><span>${o.domain}</span></div>
+                <div class="detail-meta"><label>Warden</label><span>${o.domain}</span></div>
                 <div class="detail-meta"><label>Check</label><span class="detail-status ${guardCheckTone(o)}">${guardCheckLabel(o)}</span></div>
                 <div class="detail-meta"><label>Findings</label><span>${o.outcome?.status === 'answered' ? o.findings : 'none (not answered)'}</span></div>
                 ${o.revision !== null ? html`<div class="detail-meta"><label>Understanding revision</label><span>${o.revision}</span></div>` : null}
@@ -611,24 +611,24 @@ function PhaseHistory({ trace }) {
 
 /** Who advised at this turn's preparation, from what exact inputs. Historical and immutable:
  * the segments are the recorded ones, never the current cache. */
-function ExpertParticipants({ injection, phases, trace }) {
-  const record = expertParticipants(injection, phases);
+function WardenParticipants({ injection, phases, trace }) {
+  const record = wardenParticipants(injection, phases);
   if (!record)
-    return html`<${Section} title="Expert participants (historical preparation)" open=${true}>
-    <div class="detail-null expert-participants-absent">Expert participation was not recorded for this turn (older record or no Wardens on this thread). Nothing is inferred from the current cache.</div>
+    return html`<${Section} title="Wardens (historical preparation)" open=${true}>
+    <div class="detail-null warden-participants-absent">Warden participation was not recorded for this turn (older record or no Wardens on this thread). Nothing is inferred from the current cache.</div>
   </${Section}>`;
   const segmentTitle = {
     instructions: 'Instructions (configured)',
     domainKnowledge: 'Domain knowledge (shared expertise)',
-    threadKnowledge: "This expert's understanding of the thread (at that time)",
+    threadKnowledge: "This Warden's understanding of the thread (at that time)",
   };
-  return html`<${Section} title=${`Expert participants (historical preparation, ${record.participants.length})`} open=${true}>
-    <div class="detail-null">Each domain expert advised from three recorded inputs before the central executor ran. Shown as prepared then; later learning does not change this record.</div>
+  return html`<${Section} title=${`Wardens (historical preparation, ${record.participants.length})`} open=${true}>
+    <div class="detail-null">Each Warden advised from three recorded inputs before the central executor ran. Shown as prepared then; later learning does not change this record.</div>
     ${record.participants.map(
       (p) => html`
-      <div class="expert-participant" key=${p.id} data-domain=${p.id} data-outcome=${outcomeLabel(p.outcome)} data-revision=${p.revision === null ? 'unrecorded' : String(p.revision)}>
+      <div class="warden-participant" key=${p.id} data-domain=${p.id} data-outcome=${outcomeLabel(p.outcome)} data-revision=${p.revision === null ? 'unrecorded' : String(p.revision)}>
         <div class="detail-meta-row">
-          <div class="detail-meta"><label>Expert</label><span>${p.id}</span></div>
+          <div class="detail-meta"><label>Warden</label><span>${p.id}</span></div>
           <div class="detail-meta"><label>Outcome</label><span class="detail-status ${drawerTone(p.outcome)}">${outcomeLabel(p.outcome)}</span></div>
           <div class="detail-meta"><label>Understanding revision then</label><span>${p.revision === null ? 'not recorded' : p.revision}${p.revisionDrift ? ' (drifted before delivery)' : ''}</span></div>
           ${(() => {
@@ -660,7 +660,7 @@ function ExpertParticipants({ injection, phases, trace }) {
                 p.segments[key] === null
                   ? html`<span class="detail-null">Segment not recorded.</span>`
                   : p.segments[key] === ''
-                    ? html`<span class="detail-null">${key === 'threadKnowledge' ? 'Empty: this expert had no interpretation of the thread yet (revision 0).' : 'Empty at preparation.'}</span>`
+                    ? html`<span class="detail-null">${key === 'threadKnowledge' ? 'Empty: this Warden had no interpretation of the thread yet (revision 0).' : 'Empty at preparation.'}</span>`
                     : html`<${JsonBlock} data=${p.segments[key]} maxHeight=${220} />`
               }
             </div>
@@ -690,8 +690,8 @@ function ExpertParticipants({ injection, phases, trace }) {
   </${Section}>`;
 }
 
-/** The layer as a domain expert: role, and its own current understanding of the active thread. */
-function ExpertUnderstanding({ layerId }) {
+/** The layer as a Warden: role, and its own current understanding of the active thread. */
+function WardenUnderstanding({ layerId }) {
   const threadId = activeThreadId.value;
   const state = knowledgeInspection.value;
   useEffect(() => {
@@ -700,19 +700,19 @@ function ExpertUnderstanding({ layerId }) {
   const loaded = state && state.threadId === threadId && state.payload !== null;
   const summary = loaded ? knowledgeInspectionSummary(state.payload) : null;
   const und = summary ? domainUnderstanding(summary, summary.history, layerId) : null;
-  return html`<${Section} title="Expert: this thread's understanding (owned)" open=${true}>
-    <div class="detail-meta-row expert-role">
-      <div class="detail-meta"><label>Role</label><span>domain expert layer</span></div>
+  return html`<${Section} title="Warden: this thread's understanding (owned)" open=${true}>
+    <div class="detail-meta-row warden-role">
+      <div class="detail-meta"><label>Role</label><span>Warden layer</span></div>
       <div class="detail-meta"><label>Advises before</label><span>each message, from its three parts</span></div>
       <div class="detail-meta"><label>Reviews after</label><span>completion; revises only its own understanding</span></div>
       <div class="detail-meta"><label>Not</label><span>the central executor; not a shared thread fact</span></div>
     </div>
     ${
       !loaded
-        ? html`<div class="detail-null expert-understanding" data-state="loading" data-revision="unknown">Loading this expert's current understanding…</div>`
+        ? html`<div class="detail-null warden-understanding" data-state="loading" data-revision="unknown">Loading this Warden's current understanding…</div>`
         : !und.present
-          ? html`<div class="detail-null expert-understanding" data-state=${expertAbsenceLabel(summary, layerId).state} data-revision="unknown">${expertAbsenceLabel(summary, layerId).text}</div>`
-          : html`<div class="expert-understanding" data-state=${und.state} data-revision=${String(und.revision)} data-status=${und.status}>
+          ? html`<div class="detail-null warden-understanding" data-state=${wardenAbsenceLabel(summary, layerId).state} data-revision="unknown">${wardenAbsenceLabel(summary, layerId).text}</div>`
+          : html`<div class="warden-understanding" data-state=${und.state} data-revision=${String(und.revision)} data-status=${und.status}>
         <div class="detail-meta-row">
           <div class="detail-meta"><label>Revision</label><span>${und.revision}${und.state === 'none' ? ' (nothing committed yet)' : ''}</span></div>
           <div class="detail-meta"><label>Review status</label><span class="detail-status ${und.status === 'learned' ? 'ok' : ['pending', 'delayed'].includes(und.status) ? 'running' : 'cold'}">${und.statusLabel}</span></div>
@@ -720,7 +720,7 @@ function ExpertUnderstanding({ layerId }) {
         </div>
         ${['pending', 'delayed'].includes(und.status) ? html`<div class="detail-null">A review is pending; the last committed understanding below stays current until it commits. No turn waits for it.</div>` : null}
         <div class="detail-meta"><label>Current understanding</label></div>
-        ${und.content ? html`<${JsonBlock} data=${und.content} maxHeight=${260} />` : html`<div class="detail-null">Empty: this expert has not committed an interpretation of this thread.</div>`}
+        ${und.content ? html`<${JsonBlock} data=${und.content} maxHeight=${260} />` : html`<div class="detail-null">Empty: this Warden has not committed an interpretation of this thread.</div>`}
         <div class="detail-meta knowledge-revision-evidence" data-source=${und.revision > 0 ? (und.revisionEvidenceMessageId ? 'snapshot' : 'unrecorded') : 'none'}><label>Committed revision evidence</label><span>${und.revision > 0 ? html`turn ${und.revisionEvidenceMessageId ?? 'unrecorded in snapshot'} ${und.revisionEvidenceMessageId ? html`<button class="back-btn knowledge-open-turn" onClick=${() => openEvidenceTurn(und.revisionEvidenceMessageId)}>open turn</button>` : null}` : 'none'}</span></div>
         <div class="detail-meta knowledge-explanation knowledge-revision-explanation" data-state=${und.revisionExplanation.state}><label>Committed revision explanation</label><span>${und.revisionExplanation.text}</span></div>
         <div class="detail-meta"><label>Latest post-hook</label><span>${und.latest ? `${und.latest.decision}${und.latest.revision !== null ? ` → revision ${und.latest.revision}` : ''}${und.latest.evidenceMessageId ? `, evidence turn ${und.latest.evidenceMessageId}` : ''}` : 'none in the recent history window'}</span></div>
@@ -733,14 +733,14 @@ function ExpertUnderstanding({ layerId }) {
 
 function InjectionDetail({ injection, phases, trace }) {
   if (!injection)
-    return html`<${ExpertParticipants} injection=${null} phases=${phases} /><div class="detail-empty">Input unavailable: context snapshot not recorded for this turn.</div>`;
+    return html`<${WardenParticipants} injection=${null} phases=${phases} /><div class="detail-empty">Input unavailable: context snapshot not recorded for this turn.</div>`;
   return html`
     <div class="detail-meta-row">
       <div class="detail-meta"><label>Snapshot</label><span>${injection.capturedAt ? new Date(injection.capturedAt).toLocaleString() : 'Time not recorded'}</span></div>
       <div class="detail-meta"><label>Scope</label><span>Prepared at executor dispatch; delivery acknowledgment unavailable</span></div>
     </div>
     <${Section} title="User message"><${JsonBlock} data=${injection.userMessage} /></${Section}>
-    <${ExpertParticipants} injection=${injection} phases=${phases} trace=${trace} />
+    <${WardenParticipants} injection=${injection} phases=${phases} trace=${trace} />
     <${Section} title="Prepared initial provider messages" open=${false}>
       <${JsonBlock} data=${injection.providerMessages || 'Not recorded for this turn'} maxHeight=${500} />
     </${Section}>
@@ -910,7 +910,7 @@ export function LayerDetail({ layerId }) {
           <span class="detail-status ${layer.state}">${layer.state}</span>
         </div>
         <${ScopeBar} section="layers" itemId=${layer.id} />
-        <${ExpertUnderstanding} key=${`${threadId}:${layer.id}`} layerId=${layer.id} />
+        <${WardenUnderstanding} key=${`${threadId}:${layer.id}`} layerId=${layer.id} />
         <div class="detail-meta-row"><div class="detail-meta"><label>Scope</label><span>${snapshot?.sharedWith?.length ? `Shared cache (${snapshot.sharedWith.length + 1} threads)` : 'Current cache'}</span></div></div>
         ${snapshot?.sharedWith?.length ? html`<${Section} title="Shared with" open=${false}><${JsonBlock} data=${snapshot.sharedWith} /></${Section}>` : null}
         ${
@@ -953,7 +953,7 @@ export function LayerDetail({ layerId }) {
         <span class="detail-status ${instantiated ? snapshot.state : 'cold'}">${instantiated ? snapshot.state : error ? 'instance state unavailable' : 'not instantiated'}</span>
       </div>
       <${ScopeBar} section="layers" itemId=${layerDef.id} />
-      <${ExpertUnderstanding} key=${`${threadId}:${layerDef.id}`} layerId=${layerDef.id} />
+      <${WardenUnderstanding} key=${`${threadId}:${layerDef.id}`} layerId=${layerDef.id} />
       ${instantiated ? html`<${LayerSnapshot} layer=${snapshot} />` : error ? html`<div class="detail-null">${error}</div>` : null}
       <div class="detail-def-fields">
         ${layerDef.prompt ? html`<div class="def-field"><label>Prompt</label><pre class="detail-json">${layerDef.prompt}</pre></div>` : null}

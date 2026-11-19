@@ -142,8 +142,8 @@ for (const operation of ['create', 'fork'] as const) {
       const owned = runtime.get(thread.id)!;
       expect({
         projectId: capturedOwner(thread.id).projectId,
-        experts: [...owned.wardens.keys()],
-      }).toEqual({ projectId: project.id, experts: ['compatibility'] });
+        wardens: [...owned.wardens.keys()],
+      }).toEqual({ projectId: project.id, wardens: ['compatibility'] });
       expect(thread.stack.getLayer('reference')).toBeUndefined();
       expect(calls).toBe(0);
     } finally {

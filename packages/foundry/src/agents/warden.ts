@@ -378,7 +378,7 @@ const DEFAULT_MAX_HISTORY = 200;
 const DEFAULT_MAX_EVIDENCE = 200;
 const EVIDENCE_KINDS = new Set(['dispatch', 'tool_observation', 'signal', 'restore']);
 
-/** Generated, thread-private expert layer ids. The prefix is reserved: settings never define one. */
+/** Generated, thread-private Warden layer ids. The prefix is reserved: settings never define one. */
 export const threadKnowledgeLayerId = (domain: string): string => `thread-knowledge:${domain}`;
 export const isThreadKnowledgeLayerId = (id: string): boolean => id.startsWith('thread-knowledge:');
 
@@ -647,8 +647,8 @@ export class ThreadKnowledge {
 
 /** What a Warden finds during guard check. */
 export interface GuardFinding {
-  /** Severity: critical findings push to session immediately, advisory are deferred. */
-  severity: 'critical' | 'advisory';
+  /** Always advisory: a Warden points, it never gives a verdict (the classify protocol refuses any other severity). */
+  severity: 'advisory';
   /** Human-readable description of the finding. */
   description: string;
   /** Which file/line/tool the finding relates to. */
@@ -1861,11 +1861,10 @@ export class Warden {
   private async _emitFindings(findings: GuardFinding[], activity: TurnActivity): Promise<void> {
     const tools = activityTools(activity);
     for (const finding of findings) {
-      // A guard's advisory finding is audit evidence, not a human correction: it must never be pinned.
-      const kind = finding.severity === 'critical' ? 'security_concern' : 'guard_finding';
+      // A guard's finding is audit evidence, not a human correction: it must never be pinned.
       await this._signals.emit({
         id: newId(`${this.domain}-guard`),
-        kind,
+        kind: 'guard_finding',
         source: `${this.domain}-warden`,
         content: {
           domain: this.domain,

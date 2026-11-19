@@ -473,7 +473,6 @@ test('thinking, the plan tool and Warden notes project as thought chunks, a plan
         status: 'reported',
         domainsChecked: ['security'],
         findings: 1,
-        critical: 0,
         notes: [{ severity: 'advisory', description: 'Secrets file touched', location: '.env' }],
       },
     });

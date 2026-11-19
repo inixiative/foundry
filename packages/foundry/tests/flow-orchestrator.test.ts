@@ -249,7 +249,7 @@ describe('FlowOrchestrator', () => {
       expect(report.domainsChecked).not.toContain('security');
     });
 
-    it('separates critical and advisory findings', async () => {
+    it('reports the advisory findings a Warden points at', async () => {
       const { orchestrator } = setup();
       const report = await orchestrator.postAction(
         oneCall({
@@ -260,8 +260,8 @@ describe('FlowOrchestrator', () => {
       );
 
       // The security Warden points at eval() (advisory: a Warden never gives a verdict)
-      const allFindings = [...report.critical, ...report.advisory];
-      expect(allFindings.length).toBeGreaterThan(0);
+      expect(report.findings.length).toBeGreaterThan(0);
+      expect(report.findings.every((f) => f.severity === 'advisory')).toBe(true);
     });
 
     it('emits tool_observation signal', async () => {
