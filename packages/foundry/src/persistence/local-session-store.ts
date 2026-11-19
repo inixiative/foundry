@@ -2501,6 +2501,47 @@ export class LocalSessionStore {
     const agent = messages.find((message) => message.actor === 'agent');
     const root = trace?.root as { annotations?: { injection?: unknown } } | undefined;
     const injection = agent?.meta?.injection ?? root?.annotations?.injection ?? null;
+    const toolUses = this.toolUsesOf(threadId, turnId, toolNames, agent);
+    return {
+      threadId,
+      turnId,
+      turn,
+      messages,
+      trace,
+      injection,
+      phases: this.phaseHistory(threadId, { turnId }),
+      toolUses,
+    };
+  }
+
+  /** The native `tool_use` records of the named tools on one turn (journalled rows, then those recorded
+   * inline on the completion), without the turn's trace, phases or other messages. */
+  turnToolUses(threadId: string, turnId: string, toolNames: readonly string[]): NativeEvidence[] {
+    // Only the completion's inline history is read, not the whole message (they run to tens of kB).
+    const row = this.query(
+      `SELECT json_extract(record, '$.meta.nativeHistory') AS history, json_type(record, '$.meta."$json"') AS metaRef
+      FROM session_messages WHERE thread_id=? AND turn_id=? AND actor='agent'`,
+    ).get(threadId, turnId) as { history: string | null; metaRef: string | null } | null;
+    const agent = row?.metaRef
+      ? this.decode<StoredMessage>(
+          (
+            this.query(
+              "SELECT record FROM session_messages WHERE thread_id=? AND turn_id=? AND actor='agent'",
+            ).get(threadId, turnId) as { record: string }
+          ).record,
+        )
+      : row?.history
+        ? ({ meta: { nativeHistory: this.decode(row.history) } } as unknown as StoredMessage)
+        : undefined;
+    return this.toolUsesOf(threadId, turnId, toolNames, agent);
+  }
+
+  private toolUsesOf(
+    threadId: string,
+    turnId: string,
+    toolNames: readonly string[],
+    agent: StoredMessage | undefined,
+  ): NativeEvidence[] {
     const marks = toolNames.map(() => '?').join(',');
     const journalled = toolNames.length
       ? (
@@ -2521,17 +2562,7 @@ export class LocalSessionStore {
         )
       : [];
     const seen = new Set(journalled.map((e) => JSON.stringify(e)));
-    const toolUses = [...journalled, ...inline.filter((e) => !seen.has(JSON.stringify(e)))];
-    return {
-      threadId,
-      turnId,
-      turn,
-      messages,
-      trace,
-      injection,
-      phases: this.phaseHistory(threadId, { turnId }),
-      toolUses,
-    };
+    return [...journalled, ...inline.filter((e) => !seen.has(JSON.stringify(e)))];
   }
 
   /** Full owned detail for one turn, fetched lazily. The injection is the recorded artifact. */

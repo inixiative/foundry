@@ -20,6 +20,7 @@ import { turnFiles } from './turn-flow';
 const readGraph = (root: string): Promise<Graph | null> => fetchAtlasGraph(root).catch(() => null);
 
 const TURNS = 40;
+const PATH_TOOLS = [...WRITE_TOOLS, ...READ_TOOLS];
 const CACHE_MS = 60_000;
 const graphs = new Map<string, { at: number; graph: Graph | null }>();
 
@@ -35,18 +36,36 @@ async function graphOf(root: string): Promise<Graph | null> {
 export const atlasMapped = (root: string) =>
   existsSync(join(root, '.atlas')) || existsSync(join(root, 'MAP.md'));
 
-/** The two store reads this needs. */
-type TurnReads = Pick<LocalSessionStore, 'recentTurnIds' | 'turnFlowRecord'>;
+/** The store reads this needs. */
+type TurnReads = Pick<LocalSessionStore, 'recentTurnIds' | 'turnToolUses' | 'archiveRecordsMark'>;
+type Paths = { read: Set<string>; written: Set<string> };
+
+const MAX_CACHED_THREADS = 2_000;
+/** Each thread's paths, kept while its journal mark is unchanged (a sibling scan reads every thread). */
+const pathCaches = new WeakMap<TurnReads, Map<string, { mark: string; paths: Paths }>>();
 
 /** Repo-relative paths a thread read and wrote on its recent turns. */
-export function threadPaths(store: TurnReads, threadId: string, root: string) {
+export function threadPaths(store: TurnReads, threadId: string, root: string): Paths {
+  const cache = pathCaches.get(store) ?? new Map();
+  pathCaches.set(store, cache);
+  const key = `${root}\0${threadId}`;
+  const mark = store.archiveRecordsMark(threadId);
+  const hit = cache.get(key);
+  if (hit?.mark === mark) return hit.paths;
+  const paths = readThreadPaths(store, threadId, root);
+  cache.delete(key);
+  cache.set(key, { mark, paths });
+  if (cache.size > MAX_CACHED_THREADS) cache.delete(cache.keys().next().value!);
+  return paths;
+}
+
+function readThreadPaths(store: TurnReads, threadId: string, root: string): Paths {
   const read = new Set<string>();
   const written = new Set<string>();
   const relative = (path: string) =>
     path.startsWith(`${root}/`) ? path.slice(root.length + 1) : path;
   for (const turnId of store.recentTurnIds(threadId, TURNS)) {
-    const record = store.turnFlowRecord(threadId, turnId, [...WRITE_TOOLS, ...READ_TOOLS]);
-    const uses = record?.toolUses ?? [];
+    const uses = store.turnToolUses(threadId, turnId, PATH_TOOLS);
     for (const file of turnFiles(uses)) written.add(relative(file.path));
     for (const use of uses) {
       if (use.kind !== 'tool_use' || !use.toolName || !READ_TOOLS.has(use.toolName)) continue;
@@ -149,6 +168,8 @@ export async function threadAtlas(
   if (!graph) return { mapped: false as const, error: 'atlas graph could not be read' };
   const concepts = conceptsTouched(graph, threadPaths(store, threadId, root));
   const mine = new Set(concepts.map((c) => c.concept));
+  // Shared concepts are a subset of this thread's, so a thread that touched none shares none.
+  if (!mine.size) return { mapped: true as const, concepts, shared: [] };
   const shared = siblings
     .filter((s) => s.id !== threadId)
     .map((s) => ({
