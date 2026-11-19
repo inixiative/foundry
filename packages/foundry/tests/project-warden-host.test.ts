@@ -482,6 +482,10 @@ test('a project host that fails to launch leaves no folder in the hosts director
     rss: () => 100,
   });
   let launches = 0;
+  // A failed launch reads the login's quota: a stub, so the real login is never probed and
+  // provider-limits' shared cache is never filled for later test files.
+  const quota = makeLoginQuotaPause({ fetchResetAt: async () => undefined });
+  cleanup.push(() => quota.close());
   const primed = createPrimedDecisionHost({
     source: defaultProfileSource('claude'),
     directory,
@@ -494,6 +498,7 @@ test('a project host that fails to launch leaves no folder in the hosts director
       throw Error('no CLI here');
     },
     statusSpawn: () => subscriptionStatusProcess(true),
+    quota,
     projectHosts: wardens,
   });
   cleanup.push(async () => {
