@@ -47,6 +47,26 @@ export interface ProjectWardenHostsConfig {
 
 export type Roster = ReadonlyArray<{ spec: PrimeSpec; standby: string }>;
 
+/** No host runs more dispatchers than this, however large its roster. */
+export const MAX_DISPATCHERS = 24;
+
+/**
+ * How many dispatchers hold a roster of `size` Wardens (Aron, 2026-11-19): one while the whole
+ * roster fits a single dispatcher's slice; past that the square root of the roster, rounded up,
+ * so dispatchers and Wardens per dispatcher grow together, but never more than
+ * `wardensPerDispatcher` Wardens each, and never more than `MAX_DISPATCHERS`. Why: reloads run in
+ * parallel and measured about the same from one to eight Wardens per dispatcher (2026-11-19, 8 to
+ * 64 Wardens), small rosters reloaded a little faster on several dispatchers, and setup slowed as
+ * dispatchers passed about 48.
+ */
+export function dispatcherCount(size: number, wardensPerDispatcher: number): number {
+  if (size <= wardensPerDispatcher) return 1;
+  return Math.min(
+    MAX_DISPATCHERS,
+    Math.max(Math.ceil(Math.sqrt(size)), Math.ceil(size / wardensPerDispatcher)),
+  );
+}
+
 /** A project host's process, started by the decision host (`createPrimedDecisionHost`). */
 export interface ProjectHostProcess {
   readonly pid?: number;
@@ -64,7 +84,7 @@ export type ProjectHostLauncher = (
 
 /** One project host, as the daemon reports it. */
 export interface ProjectHostState {
-  /** `failed`: it could not be started `maxRestarts` times in a row; the project runs primed Wardens. */
+  /** `failed`: not started `maxRestarts` times in a row; its Wardens are skipped until a start succeeds. */
   readonly status: 'starting' | 'serving' | 'failed' | 'closed';
   readonly reason?: string;
   readonly expected: number;
@@ -143,8 +163,8 @@ const rosterKey = (roster: Roster) =>
  * One Foundry-owned Warden host per project, opened with the project's roster when its chorus is
  * built and supervised here (restarted with backoff, replaced blue/green past its bounds). The
  * decision host routes a thread's Warden calls (advice, guards, reviews) to its project's host while
- * it serves, and to primed sessions otherwise (fail-open); a later stage on another model has its own
- * host per project (`lane`).
+ * it serves, and refuses them unsent otherwise, never on primed (`projectHostTarget`); a later stage
+ * on another model has its own host per project (`lane`).
  */
 export class ProjectWardenHosts {
   private readonly _projects = new Map<string, ProjectEntry>();
@@ -196,7 +216,7 @@ export class ProjectWardenHosts {
    * while the project's host is on its way (opening, starting, retrying or waiting out a used-up
    * login), so its Wardens are
    * skipped and catch up later rather than starting cold; undefined otherwise (no host for the
-   * project, or it failed: primed serves).
+   * project, or it failed: its Wardens are skipped too).
    */
   serving(threadId: string): ClaudeInSessionDecisions | 'starting' | undefined {
     const projectId = this.config.projectOf(threadId);
@@ -407,6 +427,7 @@ export class ProjectWardenHosts {
     this._report(projectId, reason);
     let proc: ProjectHostProcess | undefined;
     let orphanedOut = false;
+    const dispatchers = dispatcherCount(size, bounds.wardensPerDispatcher);
     const host = new ClaudeInSessionDecisions({
       model: this.config.model,
       ...(this.config.effort ? { effort: this.config.effort } : {}),
@@ -414,14 +435,11 @@ export class ProjectWardenHosts {
       timeoutMs: this.config.timeoutMs,
       sparesPerRole: spares,
       // Slices refilled at once, each by its own dispatcher (agent-session 0.12.0).
-      dispatchers: Math.max(1, Math.ceil(size / bounds.wardensPerDispatcher)),
+      dispatchers,
       // A used spare's replacement starts while it still answers: every Warden can hold its spares
       // and a replacement per thread advising or guarding at once, plus a cold member per thread
       // reviewing (a review carries no spare: it runs `_direct`), plus the root and its dispatchers.
-      maxSubagents:
-        size * (spares + 2) * bounds.concurrentTurns +
-        2 +
-        2 * Math.max(1, Math.ceil(size / bounds.wardensPerDispatcher)),
+      maxSubagents: size * (spares + 2) * bounds.concurrentTurns + 2 + 2 * dispatchers,
       // One dispatcher's members: past it the host stops serving and is replaced.
       maxOrphans: size * (spares + 1),
       setupDeadlineMs,
@@ -468,7 +486,7 @@ export class ProjectWardenHosts {
       }
       entry.failures++;
       if (entry.failures >= bounds.maxRestarts) {
-        entry.failed = `${entry.failures} starts failed in a row (last: ${message}); primed Wardens serve this project`;
+        entry.failed = `${entry.failures} starts failed in a row (last: ${message}); this project's Wardens are skipped until a start succeeds`;
         this._report(projectId, entry.failed);
         return;
       }
@@ -554,8 +572,8 @@ export class ProjectWardenHosts {
         const now = Date.now();
         entry.recycles = entry.recycles.filter((at) => now - at < HOUR_MS);
         if (rss !== undefined && rss > bounds.hardRssMb) {
-          // Past the ceiling it can grow ~400 MB/s: routing leaves it now (primed serves the
-          // project), and it stops once its calls in flight settle.
+          // Past the ceiling it can grow ~400 MB/s: routing leaves it now (the project's Wardens
+          // are skipped until its replacement serves), and it stops once its calls in flight settle.
           entry.live = undefined;
           void this._retire(live);
           this._replace(projectId, 'memory ceiling');

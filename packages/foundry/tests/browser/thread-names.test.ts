@@ -47,7 +47,6 @@ test('thread names: the Foundry name shows until a person names the thread; bran
   let decisions = 0;
   const namingProvider: LLMProvider = {
     id: 'decisions',
-    // The same provider drafts plans (PlanDrafter); only naming decisions are counted here.
     complete: async (_messages, opts) => {
       if (opts?.threadId?.endsWith(':aux:naming')) decisions++;
       return { model: 'mock', content: '{"title":"Ship self-maintained thread names"}' };

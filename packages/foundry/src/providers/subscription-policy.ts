@@ -70,7 +70,7 @@ export const subscriptionSettingsSchema = z
         restartBackoffMs: z.number().int().min(100).max(300_000),
         /** A project with no turn or thread activity for this long has its host closed. */
         idleMs: z.number().int().min(60_000).max(86_400_000),
-        /** Failed starts in a row before the project stays on primed Wardens until restart. */
+        /** Failed starts in a row before the host is failed: its Wardens skipped until a start succeeds. */
         maxRestarts: z.number().int().min(1).max(100),
       })
       .partial()
@@ -144,9 +144,9 @@ export interface SubscriptionPolicy {
   /** Codex decisions still running after this long are hedged on a second branch. */
   hedgeAfterMs?: number;
   /**
-   * Where a thread's Wardens advise: held in its project's host (Claude decisions by default; guard,
-   * review and later stages stay primed, and primed serves while no host does), or primed sessions
-   * (Codex decisions, or `decisionRuntime: claude`).
+   * Where a thread's Wardens run: held in its project's host (Claude decisions by default; advice,
+   * guards, reviews and later stages, each skipped while its host or lane does not serve), or primed
+   * sessions (Codex decisions, or `decisionRuntime: claude`).
    */
   wardens: 'primed' | 'project';
   /** Project hosts: their composition and bounds, defaults filled. */
@@ -170,7 +170,8 @@ export type ProjectHostPolicy = Required<
  */
 export const PROJECT_HOST_DEFAULTS = {
   sparesPerWarden: 1,
-  // why: one dispatcher refilled 75 held Wardens in ~20 s (2026-11-02).
+  // why: the most Wardens one dispatcher holds; a dispatcher types its starts in a row, and one
+  // refilling 75 took ~20 s (2026-11-02). The count of dispatchers is `dispatcherCount`.
   wardensPerDispatcher: 8,
   concurrentTurns: 2,
   maxRssMb: 1_536,
@@ -180,7 +181,8 @@ export const PROJECT_HOST_DEFAULTS = {
   restartBackoffMs: 5_000,
   maxRestarts: 5,
   /** As primed roles are evicted after 30 minutes idle. */
-  idleMs: 1_800_000,
+  // why: a chorus stays up three hours after the project was last touched (Aron, 2026-11-19).
+  idleMs: 10_800_000,
 } as const satisfies Omit<ProjectHostPolicy, 'setupDeadlineMs'>;
 /**
  * Sized for a full chorus: every Warden is asked on every user message, and every

@@ -54,7 +54,6 @@ test('grouped outcomes render under heads and a person tick persists', async () 
       strategy: [],
       reasons: [],
       technical: [],
-      draftedBy: 'agent',
       updatedAt: Date.now(),
     };
     shop.addThread(thread);

@@ -8,14 +8,15 @@ import {
   type ThreadPlan,
   ToolRegistry,
 } from '@inixiative/foundry-core';
-import { PLAN_ASK_NOTE } from '../src/agents/chorus-reception';
-import { PlanDrafter, parseDraft } from '../src/agents/plan-drafter';
+import { NAME_CHECK_NOTE, PLAN_ASK_NOTE } from '../src/agents/chorus-reception';
 import { ThreadNamer } from '../src/agents/thread-namer';
 import { createFoundryMcp } from '../src/mcp/server';
 import {
   type ArtifactVersionRecord,
   applyPlanPatch,
   markPlanOutcomeByPerson,
+  NAME_CHECK_AFTER_MS,
+  needsNameCheck,
   needsPlan,
   planPatchSchema,
   recordArtifact,
@@ -23,7 +24,6 @@ import {
   THREAD_RECORD_TOOL_DESCRIPTION,
   type ThreadRecords,
   ThreadRecordTool,
-  wantsDraft,
 } from '../src/tools/thread-record';
 import { m0Scenario } from './helpers/m0-warden-loop';
 
@@ -122,7 +122,6 @@ test("set_plan records the thread's plan; a call replaces only the sections it g
     pains: [],
     strategy: [{ text: 'Stamp the device on thread meta', detail: 'From device.json' }],
     technical: [technical],
-    draftedBy: 'agent',
   } satisfies Partial<ThreadPlan>);
   // The outcome the agent newly marked done is the thread's milestone.
   expect(thread.meta.done).toMatchObject({
@@ -149,30 +148,6 @@ test("set_plan records the thread's plan; a call replaces only the sections it g
   expect(read.status).toMatchObject({ state: 'done' });
   expect(await call('clear_plan')).toEqual({ isError: false, text: 'Plan cleared.' });
   expect(thread.meta.plan).toBeUndefined();
-});
-
-test("the agent's first set_plan replaces a Foundry draft whole, and a draft never marks a milestone", () => {
-  const thread = new Thread('d', new ContextStack(), { description: '' });
-  recordPlan(
-    thread,
-    {
-      outcomes: [{ text: 'Login works', status: 'doing' }],
-      strategy: [{ text: 'Guessed step' }],
-    },
-    'foundry',
-  );
-  expect(thread.meta.plan?.draftedBy).toBe('foundry');
-  expect(thread.meta.done).toBeUndefined();
-  recordPlan(thread, { outcomes: [{ text: 'Login endpoint returns a token', status: 'todo' }] });
-  expect(thread.meta.plan).toMatchObject({
-    outcomes: [{ text: 'Login endpoint returns a token', status: 'todo' }],
-    strategy: [],
-    draftedBy: 'agent',
-  });
-  // Later agent patches keep the agent's own sections.
-  expect(applyPlanPatch(thread.meta.plan, { pains: [{ text: 'No login' }] }).outcomes).toHaveLength(
-    1,
-  );
 });
 
 test('grouped outcomes keep their group through mark; a person ticking creates no milestone', () => {
@@ -210,10 +185,9 @@ test('grouped outcomes keep their group through mark; a person ticking creates n
   // All outcomes done still means done (Aron's call): the next work is due a new plan.
   markPlanOutcomeByPerson(thread, 'Gamma outcome', 'done');
   expect(needsPlan(thread.meta)).toBe(true);
-  expect(wantsDraft(thread.meta)).toBe(true);
 });
 
-test('a person reopening an outcome the agent finished clears its milestone; a tick keeps a draft a draft', () => {
+test('a person reopening an outcome the agent finished clears its milestone', () => {
   const thread = new Thread('r', new ContextStack(), { description: '' });
   recordPlan(thread, { outcomes: [{ text: 'Alpha outcome', status: 'todo' }] });
   recordPlan(thread, { mark: [{ outcome: 'Alpha outcome', status: 'done' }] });
@@ -221,15 +195,6 @@ test('a person reopening an outcome the agent finished clears its milestone; a t
   markPlanOutcomeByPerson(thread, 'Alpha outcome', 'todo');
   expect(thread.meta.plan?.outcomes[0]?.status).toBe('todo');
   expect(thread.meta.done).toBeUndefined();
-
-  const drafted = new Thread('dr', new ContextStack(), { description: '' });
-  recordPlan(drafted, { outcomes: [{ text: 'Beta outcome', status: 'todo' }] }, 'foundry');
-  markPlanOutcomeByPerson(drafted, 'Beta outcome', 'done');
-  expect(drafted.meta.plan).toMatchObject({
-    draftedBy: 'foundry',
-    outcomes: [{ text: 'Beta outcome', status: 'done' }],
-  });
-  expect(drafted.meta.done).toBeUndefined();
 });
 
 test('the loop: set_loop starts it, loop_round records rounds, the limit says stop, stop_loop ends it', async () => {
@@ -299,9 +264,6 @@ test("rename_thread sets the Foundry name as the agent's; a person's name stays 
   const namer = new ThreadNamer({
     provider,
     changed() {},
-    quietMs: 0,
-    minIntervalMs: 0,
-    minTurns: 1,
   });
   namer.turnCompleted(thread, { user: 'Now look at the signup page layout', agent: 'ok' });
   await Bun.sleep(10);
@@ -341,93 +303,39 @@ test('ask_herald says Heralds are coming soon and what to use today', async () =
   expect(writes()).toBe(0);
 });
 
-test('a plan is due on new work: none, only a draft, or every outcome done; a draft is wanted only when the agent left none', () => {
-  const plan = (status: 'done' | 'doing', draftedBy?: 'foundry') => ({
+test('a plan is due on new work: none, or every outcome done', () => {
+  const plan = (status: 'done' | 'doing') => ({
     plan: {
       outcomes: [{ text: 'x', status }],
       pains: [],
       strategy: [],
       reasons: [],
       technical: [],
-      ...(draftedBy ? { draftedBy } : {}),
       updatedAt: 0,
     },
   });
   expect(needsPlan({})).toBe(true);
   expect(needsPlan(plan('doing'))).toBe(false);
   expect(needsPlan(plan('done'))).toBe(true);
-  expect(needsPlan(plan('doing', 'foundry'))).toBe(true);
-  expect(wantsDraft({})).toBe(true);
-  expect(wantsDraft(plan('done'))).toBe(true);
-  expect(wantsDraft(plan('doing', 'foundry'))).toBe(false);
   expect(PLAN_ASK_NOTE).toContain('set_plan');
 });
 
-test('the drafter writes a marked draft after a work turn with no plan, skips chat, and never overwrites the agent', async () => {
-  const answers: string[] = [];
-  const provider: LLMProvider = {
-    id: 'decisions',
-    async complete() {
-      return { content: answers.shift() ?? '{"skip":true}', model: 'haiku' };
-    },
-  };
-  let changed = 0;
-  const drafter = new PlanDrafter({ provider, changed: () => changed++ });
-  const thread = new Thread('p', new ContextStack(), { description: '' });
-
-  // Chat: no decision runs at all.
-  drafter.turnCompleted(thread, { user: 'hi there', agent: 'hello' }, thread.meta.plan);
-  await Bun.sleep(5);
-  expect(thread.meta.plan).toBeUndefined();
-
-  // The decision says skip (a question).
-  answers.push('{"skip":true}');
-  drafter.turnCompleted(
-    thread,
-    { user: 'What does the login route return?', agent: 'A token.' },
-    thread.meta.plan,
-  );
-  await Bun.sleep(5);
-  expect(thread.meta.plan).toBeUndefined();
-
-  // Work: a draft, marked as Foundry's.
-  answers.push(
-    '{"outcomes":[{"text":"Login endpoint returns a token","status":"doing"}],"strategy":[{"text":"Add the route"}]}',
-  );
-  drafter.turnCompleted(
-    thread,
-    { user: 'Add a login endpoint', agent: 'Added it.' },
-    thread.meta.plan,
-  );
-  await Bun.sleep(5);
-  expect(thread.meta.plan).toMatchObject({
-    draftedBy: 'foundry',
-    outcomes: [{ text: 'Login endpoint returns a token', status: 'doing' }],
+test("a name is checked once it is 30 minutes old, at most once a window; a person's name and an unnamed thread never", () => {
+  const now = 10 * NAME_CHECK_AFTER_MS;
+  const named = (updatedAt: number, by?: 'agent') => ({
+    foundryName: { text: 'Fix login', updatedAt, ...(by ? { by } : {}) },
   });
-  expect(thread.meta.done).toBeUndefined();
-  expect(changed).toBe(1);
-
-  // A draft exists: no second draft.
-  answers.push('{"outcomes":[{"text":"Other","status":"todo"}]}');
-  drafter.turnCompleted(thread, { user: 'Also add logout', agent: 'Done.' }, thread.meta.plan);
-  await Bun.sleep(5);
-  expect(thread.meta.plan?.outcomes[0]?.text).toBe('Login endpoint returns a token');
-
-  // The agent recorded and finished its own plan during the turn: it stands, no draft.
-  const own = new Thread('own', new ContextStack(), { description: '' });
-  const atStart = own.meta.plan;
-  recordPlan(own, { outcomes: [{ text: 'Stats command works', status: 'done' }] });
-  answers.push('{"outcomes":[{"text":"Overwrite","status":"todo"}]}');
-  drafter.turnCompleted(own, { user: 'Add a stats command', agent: 'Added it.' }, atStart);
-  await Bun.sleep(5);
-  expect(own.meta.plan).toMatchObject({
-    draftedBy: 'agent',
-    outcomes: [{ text: 'Stats command works' }],
-  });
-
-  // A draft that claims done, or is malformed, is dropped.
-  expect(parseDraft('{"outcomes":[{"text":"x","status":"done"}]}')).toBeUndefined();
-  expect(parseDraft('not json')).toBeUndefined();
+  expect(needsNameCheck({}, 0, now)).toBe(false);
+  expect(needsNameCheck(named(now - NAME_CHECK_AFTER_MS + 1), 0, now)).toBe(false);
+  expect(needsNameCheck(named(now - NAME_CHECK_AFTER_MS), 0, now)).toBe(true);
+  // A name the agent gave is checked too; its rename resets the window.
+  expect(needsNameCheck(named(now - NAME_CHECK_AFTER_MS, 'agent'), 0, now)).toBe(true);
+  // Asked on an earlier turn of this window: not again until the window passes.
+  expect(needsNameCheck(named(0), now - 1_000, now)).toBe(false);
+  expect(needsNameCheck(named(0), now - NAME_CHECK_AFTER_MS, now)).toBe(true);
+  // A person's name is theirs.
+  expect(needsNameCheck({ ...named(0), name: { text: 'Mine', updatedAt: 0 } }, 0, now)).toBe(false);
+  expect(NAME_CHECK_NOTE).toContain('rename_thread');
 });
 
 test("the viewer's records service writes on the thread's journalled meta", async () => {

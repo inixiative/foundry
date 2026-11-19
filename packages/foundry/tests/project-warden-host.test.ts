@@ -1,6 +1,7 @@
 // The per-project Warden host (the default for Claude decisions, `claude-project`): one Foundry-owned
 // Claude Code process per project holds every Warden warm; every thread of the project asks it for
-// advice; it is supervised (restart with backoff, blue/green past its bounds) and fails open to primed.
+// advice; it is supervised (restart with backoff, blue/green past its bounds); while it does not serve,
+// its Wardens are skipped, never sent to primed.
 
 import { afterEach, expect, test } from 'bun:test';
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
@@ -17,7 +18,6 @@ import { composeProjectRoster, warmWardens, withChorusThread } from '../src/agen
 import { createSourceResolver } from '../src/agents/thread-factory';
 import { defaultProfileSource } from '../src/providers/default-profiles';
 import {
-  type AdmittedDecisionOpts,
   createPrimedDecisionHost,
   isStageSession,
   isWardenSession,
@@ -25,7 +25,9 @@ import {
   projectHostTarget,
 } from '../src/providers/primed-decisions';
 import {
+  dispatcherCount,
   followProjectActivity,
+  MAX_DISPATCHERS,
   type ProjectHostState,
   ProjectWardenHosts,
   type Roster,
@@ -135,7 +137,7 @@ function projectHosts(
   return { tree, rss, states, wardens };
 }
 
-test('a project host holds the roster before any thread; every thread of the project gets a held spare; another project goes primed', async () => {
+test('a project host holds the roster before any thread; every thread of the project gets a held spare; another project has none', async () => {
   const { tree, wardens } = projectHosts();
   wardens.openProject('P', roster('locks', 'lens'));
   expect(await wardens.projectReady('P', 5_000)).toBe(true);
@@ -175,6 +177,15 @@ test('a project host holds the roster before any thread; every thread of the pro
   expect(await wardens.projectReady('P', 5_000)).toBe(true);
   expect(wardens.projectState('P')).toMatchObject({ expected: 3, held: 3 });
   expect(await until(() => tree.processes[0]!.exited)).toBe(true);
+});
+
+test('dispatchers: one while the roster fits a slice, else the square root, never over 8 Wardens each or 24 dispatchers', () => {
+  expect([1, 8, 9, 16, 32, 64, 75, 106, 400].map((size) => dispatcherCount(size, 8))).toEqual([
+    1, 1, 3, 4, 6, 8, 10, 14, 24,
+  ]);
+  // A smaller slice setting makes more dispatchers, still capped.
+  expect(dispatcherCount(5, 2)).toBe(3);
+  expect(dispatcherCount(100, 1)).toBe(MAX_DISPATCHERS);
 });
 
 test('the roster is cut into slices of wardensPerDispatcher, each refilled by its own dispatcher', async () => {
@@ -227,7 +238,7 @@ test('only while someone works in the project: activity opens its host, idleness
     events.push({ kind: 'journal', threadId: 'A1', projectId: 'P', turnId: `t${i}`, timestamp: 3 });
   }
   expect(wardens.openProjects()).toEqual(['P']);
-  // No activity for the bound: the host closes, and routing falls back to primed.
+  // No activity for the bound: the host closes, and nothing serves its Wardens.
   expect(await until(() => wardens.openProjects().length === 0, 2_000)).toBe(true);
   expect(wardens.serving('A1')).toBeUndefined();
   expect(await until(() => tree.processes[0]!.exited)).toBe(true);
@@ -245,7 +256,7 @@ test('only while someone works in the project: activity opens its host, idleness
   expect(opened).toEqual(['P', 'P', 'P']);
 });
 
-test('a host process that dies: routing falls back at once, and a new host is started and serves', async () => {
+test('a host process that dies: routing leaves it at once, and a new host is started and serves', async () => {
   const { tree, wardens } = projectHosts();
   wardens.openProject('P', roster('locks'));
   expect(await wardens.projectReady('P', 5_000)).toBe(true);
@@ -321,7 +332,7 @@ test('memory: a fan-out peak over the bound is tolerated; sustained growth start
   expect(await until(() => second.exited)).toBe(true);
 });
 
-test('a host that never sets up is retried with backoff, then the project stays on primed Wardens', async () => {
+test('a host that never sets up is retried with backoff, then fails: nothing serves its Wardens', async () => {
   const { tree, states, wardens } = projectHosts({ noRoot: true, maxRestarts: 2 });
   // The setup deadline is the setting's; no root ever starts, so the setup turn ends degraded.
   wardens.openProject('P', roster('locks'));
@@ -363,7 +374,7 @@ test('a start on a used-up login waits for the reset, counts no failure and keep
 
 test('serving: a starting host skips its Wardens (they catch up later); a failed, closed or replaced one does not', async () => {
   const { tree, rss, wardens } = projectHosts();
-  // No host open, nothing opening: primed serves.
+  // No host open, nothing opening: nothing serves.
   expect(wardens.serving('A1')).toBeUndefined();
   // The roster is being composed to open the host: starting.
   wardens.markOpening('P', true);
@@ -392,14 +403,16 @@ test('routing: a project host takes every Warden call (advice, guards, reviews, 
   expect(projectHostTarget(project, 'A1:aux:review:g1:domain:locks')).toBe(host as never);
   expect(projectHostTarget(project, 'A1:aux:domain:locks:stage:1')).toBe(host as never);
   expect(projectHostTarget(project, 'A1:aux:agent:worker')).toBeUndefined();
-  // A host still starting holds only held-only advice (refused unsent); any other call goes primed.
-  const starting = { serving: () => 'starting' } as unknown as ProjectWardenHosts;
-  expect(projectHostTarget(starting, 'A1:aux:domain:locks')).toBeUndefined();
-  expect(projectHostTarget(starting, 'A1:aux:domain:locks', { heldOnly: true })).toBe('starting');
-  // Held-only binds the first stage: a later stage's escalation goes primed while the host starts.
-  expect(
-    projectHostTarget(starting, 'A1:aux:domain:locks:stage:1', { heldOnly: true }),
-  ).toBeUndefined();
+  expect(projectHostTarget(project, 'A1:aux:naming')).toBeUndefined();
+  // A host starting, failed or closed serves no Warden call: advice, guard, review and a later stage
+  // are refused unsent, never sent to primed (Aron, 2026-11-18: "when the layers are down, they just skip").
+  for (const serving of ['starting', undefined]) {
+    const none = { serving: () => serving } as unknown as ProjectWardenHosts;
+    expect(projectHostTarget(none, 'A1:aux:domain:locks')).toBe('not-serving');
+    expect(projectHostTarget(none, 'A1:aux:review:g1:domain:locks')).toBe('not-serving');
+    expect(projectHostTarget(none, 'A1:aux:domain:locks:stage:1')).toBe('not-serving');
+    expect(projectHostTarget(none, 'A1:aux:naming')).toBeUndefined();
+  }
 });
 
 test('lanes: a later stage on another model gets its own hosts, opened, touched and closed with the decision ones', async () => {
@@ -524,20 +537,20 @@ test('the decision host launches the project host on the decision login: its own
   });
   expect(tree.processes.length).toBe(0);
   wardens.markOpening('P', false);
-  // Admitted to the host by the queue, but the host is gone by the time it runs: refused unsent too,
-  // never run cold on primed outside the queue's slots.
-  const orphan = newRun(1);
-  const admitted: AdmittedDecisionOpts = {
-    threadId: 'T7:aux:domain:locks',
-    stablePrefix: cache,
-    admittedToProjectHost: true,
-  };
-  await expect(orphan.provider.complete(messages('T7'), admitted)).rejects.toThrow();
-  expect(orphan.snapshot().calls[0]).toMatchObject({
-    failure: 'not-held',
-    reason: 'not-held',
-    valid: false,
-  });
+  // No host serving: a Warden call that is not held-only (a guard, a brief, a Retry) and a review are
+  // refused unsent as well, never run on primed (Aron, 2026-11-18: "it should not be handling warden
+  // calls at all").
+  for (const threadId of ['T7:aux:domain:locks', 'T7:aux:review:g1:domain:locks']) {
+    const unserved = newRun(1);
+    await expect(
+      unserved.provider.complete(messages('T7'), { threadId, stablePrefix: cache }),
+    ).rejects.toThrow();
+    expect(unserved.snapshot().calls[0]).toMatchObject({
+      failure: 'not-held',
+      reason: 'not-held',
+      valid: false,
+    });
+  }
   expect(tree.processes.length).toBe(0);
   wardens.openProject('P', [{ spec: held, standby: '' }]);
   expect(await wardens.projectReady('P', 5_000)).toBe(true);
@@ -754,7 +767,7 @@ test('claude-project: a handoff brief (flow.brief) asks every Warden through the
       const key = opts.threadId ?? '';
       if (isWardenSession(key) && !isStageSession(key))
         calls.push({
-          routed: projectHostTarget(hosts, key, opts) === host,
+          routed: projectHostTarget(hosts, key) === host,
           held: held.has(primedRequest(messages, opts, key).spec.hash),
         });
       return { model: 'none', content: 'NO_COMMENT' };

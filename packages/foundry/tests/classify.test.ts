@@ -29,6 +29,7 @@ import {
   WARDEN_CHARTER,
 } from '../src/classify';
 import { DECISION_PRIORITY } from '../src/providers/decision-priority';
+import { buildSubscriptionDecisions } from '../src/providers/subscription-decisions';
 
 const RANKED = 'Look over here: createLock (CONCURRENCY.md § Distributed Lock) — exclusion.';
 const CHOOSE = [
@@ -422,6 +423,97 @@ describe('the stage loop', () => {
     expect(guarded.outcome).toEqual({ status: 'answered', result: 'findings' });
     expect(guarded.classified).toMatchObject({ fallback: 'error', finalStage: 0 });
     expect(two.calls).toHaveLength(0);
+  });
+
+  test('a later stage whose host does not serve skips the Warden: the earlier yes never reaches the thread', async () => {
+    const notHeld = async (): Promise<string> => {
+      throw Object.assign(new Error('Warden not held warm on its project host; skipped unsent'), {
+        notSentCause: 'not-held',
+      });
+    };
+    const { lib, two } = twoStage(
+      { escalate: ['yes'] },
+      {},
+      {
+        one: [
+          advice([RANKED]),
+          JSON.stringify({ findings: [{ severity: 'advisory', description: RANKED }] }),
+        ],
+        two: [notHeld, notHeld],
+      },
+    );
+    const advised = await lib.advise('Add a lock.');
+    expect(callOutcomeLabel(adviceOutcomeOf(advised))).toBe('not-sent:not-held');
+    expect(advised.snippets).toEqual([]);
+    expect(advised.classified).toMatchObject({ delivered: false });
+    expect(advised.classified?.outcome).toBeUndefined();
+    expect(advised.classified?.fallback).toBeUndefined();
+    expect(advised.classified?.stages.at(-1)?.error).toStartWith('not sent (not-held): ');
+    const guarded = await lib.guard({
+      turnId: 't',
+      observations: [{ tool: 'Write', input: { content: 'redis.set(k, 1, "NX")' } }],
+    });
+    expect(guarded.outcome).toEqual({ status: 'not-sent', cause: 'not-held' });
+    expect(guarded.findings).toEqual([]);
+    expect(two.calls).toHaveLength(2);
+  });
+
+  test('a guard whose Layer 2 lane is down: the decision queue refuses the later stage before queueing it, and nothing is delivered', async () => {
+    const [s1, s2] = validateStages('test', [{ escalate: ['yes'] }, {}]);
+    const one = scripted('haiku', [
+      JSON.stringify({ findings: [{ severity: 'advisory', description: RANKED }] }),
+    ]);
+    const asked: CompletionOpts[] = [];
+    // The real queue, its lane down for every key; its one slot never matters, the call is refused unqueued.
+    const queue = buildSubscriptionDecisions(
+      {
+        source: {
+          id: 's',
+          runtime: 'claude',
+          mode: 'native-profile',
+          profileDirectory: '/x',
+        } as never,
+        directory: '/tmp',
+        model: 'm',
+        maxCalls: 10,
+        maxQueued: 10,
+        callTimeoutMs: 20_000,
+        maxConcurrent: 1,
+        unserved: () => true,
+      },
+      (() => {
+        throw Error('never run: a refused call makes no run');
+      }) as never,
+    );
+    const lane: LLMProvider = {
+      id: 'sonnet',
+      complete: (messages, opts = {}) => {
+        asked.push(opts);
+        return queue.provider.complete(messages, { ...opts, model: 'm' });
+      },
+    };
+    const cache = layer('knowledge', '# Locks\n- createLock (CONCURRENCY.md)');
+    const lib = new Warden({
+      domain: 'locks',
+      cache,
+      signals: new SignalBus(0),
+      llm: one.llm,
+      stages: [
+        { config: s1!, cache },
+        { config: s2!, llm: lane, cache },
+      ],
+      guardTriggers: ['Write'],
+    });
+    const guarded = await lib.guard({
+      turnId: 't',
+      observations: [{ tool: 'Write', input: { content: 'redis.set(k, 1, "NX")' } }],
+    });
+    expect(asked[0]?.priority).toBe(DECISION_PRIORITY.guard);
+    expect(guarded.outcome).toEqual({ status: 'not-sent', cause: 'not-held' });
+    expect(guarded.findings).toEqual([]);
+    expect(guarded.classified).toMatchObject({ delivered: false });
+    expect(guarded.classified?.outcome).toBeUndefined();
+    queue.close();
   });
 
   test('a later stage that outlives its share of the deadline leaves the previous outcome, journalled', async () => {

@@ -114,13 +114,34 @@ export function fakeClaudeTree(behavior: { noRoot?: boolean } = {}) {
       });
       void run(taskId, type, prompt);
     };
+    /** A member's tool call as the CLI makes it: the PreToolUse hook first, then the input it returned
+     * (a member's prompt holds no token; the host fills it in from who is calling). */
+    const memberTool = async (taskId: string, name: string, args: Record<string, unknown>) => {
+      const r = await control({
+        subtype: 'hook_callback',
+        callback_id: hookId,
+        input: {
+          hook_event_name: 'PreToolUse',
+          tool_name: `mcp__foundry-wardens__${name}`,
+          tool_input: args,
+          tool_use_id: `toolu_${++seq}`,
+          agent_id: taskId,
+        },
+      });
+      const output = r.hookSpecificOutput as
+        | { permissionDecision?: string; updatedInput?: Record<string, unknown> }
+        | undefined;
+      // Refused (the host does not know this caller): the member ends, as a real one would.
+      if (output?.permissionDecision === 'deny') return undefined;
+      return tool(taskId, name, output?.updatedInput ?? args);
+    };
     const run = async (taskId: string, type: string, prompt: string) => {
       const token = /token "([^"]+)"/.exec(prompt)?.[1] ?? '';
       if (type === 'foundry-warden') {
         memberPrompts.push(prompt);
         let input: string;
         if (prompt.includes('Call mcp__foundry-wardens__moment')) {
-          const moment = await tool(taskId, 'moment', { token });
+          const moment = await memberTool(taskId, 'moment', {});
           if (!tasks.has(taskId)) return;
           if (!moment || moment.startsWith('This standby is retired'))
             return finish(taskId, 'completed');
@@ -138,7 +159,7 @@ export function fakeClaudeTree(behavior: { noRoot?: boolean } = {}) {
             usage: { input_tokens: 2, output_tokens: 3, cache_read_input_tokens: 100 },
           },
         });
-        await tool(taskId, 'answer', { token, text: `ANS:${input}` });
+        await memberTool(taskId, 'answer', { text: `ANS:${input}` });
         return finish(taskId, 'completed');
       }
       for (;;) {

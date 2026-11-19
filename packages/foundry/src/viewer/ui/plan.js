@@ -178,7 +178,7 @@ export function Plan() {
   // The plan's what and why, once the agent records it on the thread (see PlanSection).
   const recorded = meta.plan ?? {};
 
-  return html`<article class="plan" data-drafted-by=${meta.plan?.draftedBy ?? null}>
+  return html`<article class="plan">
     <section class="plan-about" aria-label="About">
       <header class="plan-section-head"><h3>About</h3><small>what this thread is, where it came from, where it stands</small></header>
       <${ComingSoon} inline=${true}
@@ -215,7 +215,7 @@ export function Plan() {
       </div>
     </section>
 
-    <p class="plan-intro">The plan is what you want and why${meta.plan?.updatedAt ? html`<span class="rp-dim"> · ${meta.plan.draftedBy === 'foundry' ? 'drafted by Foundry (the agent recorded none; its next plan replaces this)' : 'recorded by the agent'} ${new Date(meta.plan.updatedAt).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })}</span>` : null}.
+    <p class="plan-intro">The plan is what you want and why${meta.plan?.updatedAt ? html`<span class="rp-dim"> · recorded by the agent ${new Date(meta.plan.updatedAt).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })}</span>` : null}.
       <button type="button" class="rp-link" onClick=${() => {
         rightTab.value = 'loop';
       }}>The Loop is how it’s being done →</button></p>
