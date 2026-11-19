@@ -58,7 +58,7 @@ Decisions (Wardens and the other decision roles) stay on the decision login (`su
 
 ## Main threads
 
-Main threads (the default worker and every enabled executor) run on models from five labs: Anthropic, OpenAI, Google, Meta and xAI (`MAIN_THREAD_LABS` in the core model registry). Other labs, gateways and local hosts are refused as main threads in every mode. How each lab runs:
+Main threads (the default worker and every enabled executor) run on models from five labs: Anthropic, OpenAI, Google, Meta and xAI (`MAIN_THREAD_LABS` in the core model registry). Other labs and gateways are refused as main threads in every mode. How each lab runs:
 
 | Lab | Subscription (default) | With `apiTokens: true` |
 |---|---|---|

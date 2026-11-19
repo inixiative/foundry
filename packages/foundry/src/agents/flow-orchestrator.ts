@@ -75,7 +75,6 @@ import {
   type GuardFinding,
   type GuardResult,
   type PhaseRequestEvidence,
-  renderTurnActivity,
   type TurnActivity,
   type Warden,
 } from './warden';
