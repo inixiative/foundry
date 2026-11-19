@@ -550,21 +550,20 @@ export function mockKingdom(
       for (const thumbprint of thumbprintsOf(signet)) push(installations.get(thumbprint)!);
     },
     /**
-     * Send a conversation frame (`thread.request`, `thread.subscribe`, `thread.unsubscribe`,
-     * `thread.lease`) down every authenticated Installation socket, as Kingdom's relay does.
+     * Send a conversation frame (`operation.request`, `thread.unsubscribe`, `thread.lease`) down every authenticated Installation socket, as Kingdom's relay does.
      */
     threadFrame(frame: Record<string, unknown>) {
       for (const [ws, thumbprint] of sockets) if (thumbprint) ws.send(JSON.stringify(frame));
     },
     /** The host's answer to a request or subscribe, once it arrives. */
-    async threadResponse(requestId: string, ms = 3_000): Promise<Record<string, any>> {
+    async operationResponse(requestId: string, ms = 3_000): Promise<Record<string, any>> {
       const end = performance.now() + ms;
       for (;;) {
         const found = frames.find(
-          (frame) => frame.action === 'thread.response' && frame.requestId === requestId,
+          (frame) => frame.action === 'operation.response' && frame.requestId === requestId,
         );
         if (found) return found;
-        if (performance.now() > end) throw Error(`no thread.response for ${requestId}`);
+        if (performance.now() > end) throw Error(`no operation.response for ${requestId}`);
         await Bun.sleep(5);
       }
     },

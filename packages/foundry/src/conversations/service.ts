@@ -18,16 +18,15 @@ import {
   type ConversationPermission,
   conversationActLevel,
   type HostedSignet,
+  type InstallationSocketOptions,
+  type OperationRequestFrame,
+  type RelayedOperationOutcome,
+  relayedOperationRefusal,
+  relayedOperationResult,
   type ThreadEntry,
-  type ThreadHost,
   type ThreadOperation,
-  type ThreadOutcome,
   type ThreadRefusal,
-  type ThreadRequestOf,
-  type ThreadSubscribeFrame,
   type ThreadSubscription,
-  threadRefused,
-  threadResult,
   threadTextLimit,
 } from '@inixiative/signet';
 import { memberPostReception } from '../agents/chorus-reception';
@@ -186,7 +185,7 @@ export interface ConversationMemberView {
  * The conversation wrapper of a main thread (docs/reference/CONVERSATIONS.md §4): the one post-in
  * point (`thread.prompt`), the one read-off point (`thread.read`, `thread.subscribe`), the floor,
  * held sends, and the notes and turns a post becomes on the thread's existing paths. It is also the
- * `ThreadHost` Kingdom's relayed frames reach over the Installation socket. Admission trusts the
+ * host Kingdom's relayed `operation.request` frames reach over the Installation socket. Admission trusts the
  * frame: Kingdom's admission is the membership check.
  */
 export class ConversationService implements ConversationWrapper {
@@ -239,15 +238,17 @@ export class ConversationService implements ConversationWrapper {
   // The host: Kingdom's relayed frames
   // -----------------------------------------------------------------------
 
-  /** The handlers the Installation socket calls, one per operation (signet 0.5 `ThreadHost`). */
-  host(): ThreadHost {
+  /** The handlers the Installation socket calls, one per relayed operation (signet 0.23 `operations`). */
+  host(): Pick<InstallationSocketOptions, 'operations' | 'onThreadSubscriptionEnded'> {
     return {
-      'thread.prompt': (frame) => this.admit(frame),
-      'thread.read': (frame) => this.read(frame),
-      'thread.floor': (frame) => this.floor(frame),
-      'prompt.resolve': (frame) => this.resolvePrompt(frame),
-      'thread.subscribe': (frame) => this.subscribe(frame),
-      ended: (subscription, reason) => this.ended(subscription, reason),
+      operations: {
+        'thread.prompt': (frame) => this.admit(frame),
+        'thread.read': (frame) => this.read(frame),
+        'thread.floor': (frame) => this.floor(frame),
+        'prompt.resolve': (frame) => this.resolvePrompt(frame),
+        'thread.subscribe': (frame) => this.subscribe(frame),
+      },
+      onThreadSubscriptionEnded: (subscription, reason) => this.ended(subscription, reason),
     };
   }
 
@@ -257,11 +258,11 @@ export class ConversationService implements ConversationWrapper {
    * then the post is recorded and, for `turn`, accepted on the thread's turn path in the same
    * transaction. Floor and depth are judged here, at admission, never later.
    */
-  admit(frame: ThreadRequestOf<'thread.prompt'>): ThreadOutcome<'thread.prompt'> {
+  admit(frame: OperationRequestFrame<'thread.prompt'>): RelayedOperationOutcome<'thread.prompt'> {
     const { input, signetId, permissions } = frame;
     const thread = this.deps.thread(frame.threadId);
     const closed = this.closedReason(thread);
-    if (closed || !thread) return threadRefused(closed ?? 'unknown_thread');
+    if (closed || !thread) return relayedOperationRefusal(closed ?? 'unknown_thread');
     this.noteRevision(signetId, frame.acceptedRevision, thread.id, permissions);
     // A person's aside (M6): out of the log, to every person and no agent; not admitted as a post.
     if (input.aside) {
@@ -271,7 +272,7 @@ export class ConversationService implements ConversationWrapper {
         input.text,
         input.postId,
       );
-      return threadResult({ accepted: true as const, ...recorded });
+      return relayedOperationResult({ accepted: true as const, ...recorded });
     }
     return this.admitPost(thread, {
       member: { kind: 'signet', id: signetId },
@@ -302,7 +303,7 @@ export class ConversationService implements ConversationWrapper {
       executionId?: string;
       acceptedRevision?: number;
     },
-  ): ThreadOutcome<'thread.prompt'> {
+  ): RelayedOperationOutcome<'thread.prompt'> {
     const me = post.member;
     const key = memberKey(me);
     const outside = me.kind === 'signet' && !this.isOwnerSignet(me.id);
@@ -313,7 +314,7 @@ export class ConversationService implements ConversationWrapper {
       conversationActLevel(post.permissions) !== 'full' &&
       this.deps.gatesEachCall?.(thread) === false
     )
-      return threadRefused(
+      return relayedOperationRefusal(
         'failed',
         `This thread runs on ${thread.meta.worker ?? 'a worker'}, which cannot ask before each tool call, so it takes posts only from members who may have its agent act freely.`,
       );
@@ -420,15 +421,19 @@ export class ConversationService implements ConversationWrapper {
         return { kind: 'admitted' as const, seq, post: row };
       });
     } catch (error) {
-      if (error instanceof Refusal) return threadRefused(error.refusal, error.message);
+      if (error instanceof Refusal) return relayedOperationRefusal(error.refusal, error.message);
       throw error;
     }
     if (outcome.kind === 'refused') {
       this.deps.changed?.(thread.id);
-      return threadRefused(outcome.refusal, outcome.message);
+      return relayedOperationRefusal(outcome.refusal, outcome.message);
     }
     if (outcome.kind === 'duplicate')
-      return threadResult({ accepted: true as const, journalSeq: outcome.seq, duplicate: true });
+      return relayedOperationResult({
+        accepted: true as const,
+        journalSeq: outcome.seq,
+        duplicate: true,
+      });
     // An archived thread is revived by an admitted post (a `turn` post was reopened by the turn
     // path already); from here on its live object is the one the runtime runs.
     if (thread.disposed) this.deps.reopen?.(thread.id);
@@ -454,13 +459,17 @@ export class ConversationService implements ConversationWrapper {
             `[Conversations] Warden pass on a member note not started: ${(error as Error).message}`,
           ),
         );
-    return threadResult({ accepted: true as const, journalSeq: outcome.seq, duplicate: false });
+    return relayedOperationResult({
+      accepted: true as const,
+      journalSeq: outcome.seq,
+      duplicate: false,
+    });
   }
 
   /** `thread.read`: the member's view after `afterSeq`, oldest first, cut at the read cap (§4.7). */
-  read(frame: ThreadRequestOf<'thread.read'>): ThreadOutcome<'thread.read'> {
+  read(frame: OperationRequestFrame<'thread.read'>): RelayedOperationOutcome<'thread.read'> {
     const thread = this.deps.thread(frame.threadId);
-    if (!thread) return threadRefused('unknown_thread');
+    if (!thread) return relayedOperationRefusal('unknown_thread');
     this.noteRevision(frame.signetId, frame.acceptedRevision, thread.id, frame.permissions);
     this.seen.set(seenKey(signetMember(frame.signetId), thread.id), Date.now());
     const owner = this.isOwnerSignet(frame.signetId);
@@ -469,7 +478,7 @@ export class ConversationService implements ConversationWrapper {
     const reader = { member: signetMember(frame.signetId), permissions: frame.permissions };
     const entries = raw.flatMap((row) => this.readable(row, reader, owner));
     const more = raw.length === RAW_READ;
-    return threadResult(
+    return relayedOperationResult(
       capView(
         entries,
         more ? raw.at(-1)!.seq : this.deps.store.journalSeq(thread.id),
@@ -483,9 +492,11 @@ export class ConversationService implements ConversationWrapper {
    * `thread.subscribe`: the member's live view, atomically. The socket registered the subscription
    * before this runs and holds what is pushed meanwhile; the view's `journalSeq` is where both start.
    */
-  subscribe(frame: ThreadSubscribeFrame): ThreadOutcome<'thread.subscribe'> {
+  subscribe(
+    frame: OperationRequestFrame<'thread.subscribe'>,
+  ): RelayedOperationOutcome<'thread.subscribe'> {
     const thread = this.deps.thread(frame.threadId);
-    if (!thread) return threadRefused('unknown_thread');
+    if (!thread) return relayedOperationRefusal('unknown_thread');
     this.noteRevision(frame.signetId, frame.acceptedRevision, thread.id, frame.permissions);
     const journalSeq = this.deps.store.journalSeq(thread.id);
     const owner = this.isOwnerSignet(frame.signetId);
@@ -498,7 +509,7 @@ export class ConversationService implements ConversationWrapper {
     this.cursors.set(frame.requestId, journalSeq);
     this.seen.set(seenKey(signetMember(frame.signetId), thread.id), Date.now());
     this.deps.changed?.(thread.id);
-    return threadResult(capView(entries, journalSeq, 'newest', raw.length === RAW_READ));
+    return relayedOperationResult(capView(entries, journalSeq, 'newest', raw.length === RAW_READ));
   }
 
   /**
@@ -567,10 +578,10 @@ export class ConversationService implements ConversationWrapper {
   }
 
   /** `thread.floor`: ask for the conch, pass it, or release it, decided in one transaction (§4.3). */
-  floor(frame: ThreadRequestOf<'thread.floor'>): ThreadOutcome<'thread.floor'> {
+  floor(frame: OperationRequestFrame<'thread.floor'>): RelayedOperationOutcome<'thread.floor'> {
     const thread = this.deps.thread(frame.threadId);
     const closed = this.closedReason(thread);
-    if (closed || !thread) return threadRefused(closed ?? 'unknown_thread');
+    if (closed || !thread) return relayedOperationRefusal(closed ?? 'unknown_thread');
     this.noteRevision(frame.signetId, frame.acceptedRevision, thread.id, frame.permissions);
     const me: ConversationMember = { kind: 'signet', id: frame.signetId };
     const action = frame.input.floor;
@@ -625,62 +636,67 @@ export class ConversationService implements ConversationWrapper {
         return null;
       });
     } catch (error) {
-      if (error instanceof Refusal) return threadRefused(error.refusal, error.message);
+      if (error instanceof Refusal) return relayedOperationRefusal(error.refusal, error.message);
       throw error;
     }
     if (!outcome && action.action === 'request' && this.floorState(thread).mode === 'conch')
       this.raiseHand(thread, { member: me, displayName: frame.member.displayName });
     this.settleHands(thread.id);
     this.deps.changed?.(thread.id);
-    if (outcome) return threadRefused(outcome);
-    return threadResult(this.floorState(thread));
+    if (outcome) return relayedOperationRefusal(outcome);
+    return relayedOperationResult(this.floorState(thread));
   }
 
   /**
    * `prompt.resolve`: the owner's remote client answers a held prompt of this thread: a tool-gate
    * ask, or a held send, which is validated the way the viewer's answer is.
    */
-  resolvePrompt(frame: ThreadRequestOf<'prompt.resolve'>): ThreadOutcome<'prompt.resolve'> {
+  resolvePrompt(
+    frame: OperationRequestFrame<'prompt.resolve'>,
+  ): RelayedOperationOutcome<'prompt.resolve'> {
     const { threadId } = frame;
     const { promptId, answer } = frame.input;
-    if (!this.deps.thread(threadId)) return threadRefused('unknown_thread');
+    if (!this.deps.thread(threadId)) return relayedOperationRefusal('unknown_thread');
     this.noteRevision(frame.signetId, frame.acceptedRevision, threadId, frame.permissions);
     const queue = this.deps.queue;
     const prompt = queue?.get(promptId);
     if (!queue || !prompt || prompt.status !== 'pending' || prompt.threadId !== threadId)
-      return threadRefused('invalid_request', 'No pending prompt with that id on this thread');
+      return relayedOperationRefusal(
+        'invalid_request',
+        'No pending prompt with that id on this thread',
+      );
     const held = (prompt.meta?.conversationHeld as { heldId?: string } | undefined)?.heldId;
     try {
       if (held) this.submitHeld(held, answer.action, answer.input, 'remote');
       else if (prompt.meta?.conversationFloorRequest) {
         if (!FLOOR_REQUEST_OPTIONS.some((option) => option.id === answer.action))
-          return threadRefused(
+          return relayedOperationRefusal(
             'invalid_request',
             `${answer.action} is not an answer this prompt offers`,
           );
         if (!queue.resolve(promptId, answer.action, { by: 'human' }))
-          return threadRefused('invalid_request', 'The prompt was already answered');
+          return relayedOperationRefusal('invalid_request', 'The prompt was already answered');
       } else if (typeof prompt.meta?.toolName === 'string') {
         const allowed =
           prompt.kind === 'approval'
             ? ['approved', 'rejected']
             : (prompt.options ?? []).map((option) => option.id);
         if (!allowed.includes(answer.action))
-          return threadRefused(
+          return relayedOperationRefusal(
             'invalid_request',
             `${answer.action} is not an answer this prompt offers`,
           );
         if (!queue.resolve(promptId, answer.action, { by: 'human', input: answer.input }))
-          return threadRefused('invalid_request', 'The prompt was already answered');
+          return relayedOperationRefusal('invalid_request', 'The prompt was already answered');
       } else
-        return threadRefused(
+        return relayedOperationRefusal(
           'invalid_request',
           'Only a tool-call ask, a held send or a raised hand can be answered remotely',
         );
     } catch (error) {
-      return threadRefused('invalid_request', (error as Error).message);
+      return relayedOperationRefusal('invalid_request', (error as Error).message);
     }
-    return threadResult({ resolved: true as const });
+    return relayedOperationResult({ resolved: true as const });
   }
 
   // -----------------------------------------------------------------------

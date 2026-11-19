@@ -21,7 +21,6 @@ import {
   setInstallationCredential,
   signetCredentialFile,
   type ThreadEntry,
-  type ThreadHost,
   type ThreadSubscription,
 } from '@inixiative/signet';
 import { z } from 'zod';
@@ -189,7 +188,7 @@ export interface KingdomInstallationOptions {
    * Conversations this Foundry hosts (docs/reference/CONVERSATIONS.md §4): the handlers Kingdom's
    * relayed frames reach, bound before the sockets start (`serveThreads`).
    */
-  threads?: ThreadHost;
+  host?: Pick<InstallationSocketOptions, 'operations' | 'onThreadSubscriptionEnded'>;
   /**
    * A snapshot from one Kingdom arrived: the Signets issued on this Foundry's integrations may have
    * changed. Read them across every paired Kingdom (`KingdomInstallationConnections.hostedSignets`),
@@ -301,7 +300,7 @@ export class KingdomInstallationConnection {
         viewerUrl: this.viewerUrl,
         sessionCount: this.options.sessionCount,
         ...this.options.socket,
-        ...(this.options.threads ? { threads: this.options.threads } : {}),
+        ...this.options.host,
         onSnapshot: (snapshot) => this.receive(snapshot),
         onRevoked: () => {
           this.revoked = true;
@@ -478,10 +477,10 @@ export class KingdomInstallationConnections {
    * a socket already open takes them on its next connect).
    */
   serveThreads(
-    threads: ThreadHost,
+    host: Pick<InstallationSocketOptions, 'operations' | 'onThreadSubscriptionEnded'>,
     onHosted: (hosted: readonly HostedSignet[], dropped: ReadonlySet<string>) => void,
   ) {
-    this.options.threads = threads;
+    this.options.host = host;
     // Every Kingdom's snapshot is read together: the union of what they list and couldn't read.
     this.options.onHostedChanged = () =>
       onHosted(

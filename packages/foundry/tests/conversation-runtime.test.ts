@@ -16,7 +16,7 @@ import {
   conversationActLevel,
   conversationPermissionSchema,
   type HostedSignet,
-  type ThreadRequestOf,
+  type OperationRequestFrame,
 } from '@inixiative/signet';
 import { ProjectRegistry } from '../src/agents/project';
 import { buildAgents, ThreadFactory } from '../src/agents/thread-factory';
@@ -199,7 +199,7 @@ function fixture(opts: {
   ) => {
     const now = signet ?? hosted.find((s) => s.signetId === member.signetId) ?? member;
     return service!.admit({
-      type: 'thread.request',
+      type: 'operation.request',
       requestId: Bun.randomUUIDv7(),
       signetId: now.signetId,
       acceptedRevision: now.revision,
@@ -208,13 +208,13 @@ function fixture(opts: {
       permissions: permissions ?? permissionsOf(now, thread.id),
       operation: 'thread.prompt',
       input: { postId: Bun.randomUUIDv7(), text },
-    } satisfies ThreadRequestOf<'thread.prompt'>);
+    } satisfies OperationRequestFrame<'thread.prompt'>);
   };
   /** Kingdom relays a read from the member now: the host learns what it holds from the frame. */
   const seen = () => {
     const now = hosted.find((s) => s.signetId === member.signetId) ?? member;
     return service!.read({
-      type: 'thread.request',
+      type: 'operation.request',
       requestId: Bun.randomUUIDv7(),
       signetId: now.signetId,
       acceptedRevision: now.revision,
@@ -442,7 +442,7 @@ test('an archived thread comes back on a post: rebuilt with its id, journal and 
   const member = f.hostedNow()[0]!;
   service.setFloor(f.thread.id, 'talk');
   const outcome = service.admit({
-    type: 'thread.request',
+    type: 'operation.request',
     requestId: Bun.randomUUIDv7(),
     signetId: member.signetId,
     acceptedRevision: 1,
@@ -451,7 +451,7 @@ test('an archived thread comes back on a post: rebuilt with its id, journal and 
     permissions: permissionsOf(member, f.thread.id),
     operation: 'thread.prompt',
     input: { postId: Bun.randomUUIDv7(), text: 'the role opened' },
-  } satisfies ThreadRequestOf<'thread.prompt'>);
+  } satisfies OperationRequestFrame<'thread.prompt'>);
   expect(outcome.ok).toBe(true);
   expect(reopened).toEqual([f.thread.id]);
   const live = directory.get(f.thread.id)!;
@@ -488,7 +488,7 @@ test('an archived thread that cannot be rebuilt stays closed to posts, and recor
   const member = f.hostedNow()[0]!;
   service.setFloor(f.thread.id, 'talk');
   const outcome = service.admit({
-    type: 'thread.request',
+    type: 'operation.request',
     requestId: Bun.randomUUIDv7(),
     signetId: member.signetId,
     acceptedRevision: 1,
@@ -497,7 +497,7 @@ test('an archived thread that cannot be rebuilt stays closed to posts, and recor
     permissions: permissionsOf(member, f.thread.id),
     operation: 'thread.prompt',
     input: { postId: Bun.randomUUIDv7(), text: 'hello?' },
-  } satisfies ThreadRequestOf<'thread.prompt'>);
+  } satisfies OperationRequestFrame<'thread.prompt'>);
   expect(outcome).toMatchObject({ ok: false, refusal: 'thread_closed' });
   expect(f.store.journalSeq(f.thread.id)).toBe(before);
 });
@@ -724,7 +724,7 @@ test('each permission maps to the fact it replaced: log the whole view, wake a t
   await f.turn('turn_1', 'owner speaks');
   const read = (permissions: ConversationPermission[]) =>
     f.service.read({
-      type: 'thread.request',
+      type: 'operation.request',
       requestId: Bun.randomUUIDv7(),
       signetId: f.member.signetId,
       acceptedRevision: 1,
@@ -853,7 +853,7 @@ test('a member whose row grants every permission holds nothing before a frame; e
   expect(f.service.members(f.thread.id)[0]?.listed).toBe(true);
   // A new frame under the new revision carrying agent.read restores it.
   f.service.read({
-    type: 'thread.request',
+    type: 'operation.request',
     requestId: Bun.randomUUIDv7(),
     signetId: revised.signetId,
     acceptedRevision: 2,

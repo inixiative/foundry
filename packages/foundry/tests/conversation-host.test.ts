@@ -197,7 +197,7 @@ async function host(
   /** Kingdom relays one admitted call and waits for the host's answer. */
   const request = async (frame: Record<string, unknown>) => {
     kingdom.threadFrame(frame);
-    return (await kingdom.threadResponse(frame.requestId as string)).outcome;
+    return (await kingdom.operationResponse(frame.requestId as string)).outcome;
   };
   const post = (
     signet: HostedSignet,
@@ -205,7 +205,7 @@ async function host(
     extra: { postId?: string; inReplyTo?: string; threadId?: string; aside?: true } = {},
   ) =>
     request({
-      type: 'thread.request',
+      type: 'operation.request',
       ...relayed(signet, extra.threadId),
       operation: 'thread.prompt',
       input: {
@@ -217,22 +217,27 @@ async function host(
     });
   const read = (signet: HostedSignet, afterSeq?: number) =>
     request({
-      type: 'thread.request',
+      type: 'operation.request',
       ...relayed(signet),
       operation: 'thread.read',
       input: { ...(afterSeq !== undefined ? { afterSeq } : {}) },
     });
   const floor = (signet: HostedSignet, action: Record<string, unknown>) =>
     request({
-      type: 'thread.request',
+      type: 'operation.request',
       ...relayed(signet),
       operation: 'thread.floor',
       input: { floor: action },
     });
   const subscribe = async (signet: HostedSignet) => {
-    const frame = { type: 'thread.subscribe', ...relayed(signet) };
+    const frame = {
+      type: 'operation.request',
+      ...relayed(signet),
+      operation: 'thread.subscribe',
+      input: {},
+    };
     kingdom.threadFrame(frame);
-    const response = await kingdom.threadResponse(frame.requestId);
+    const response = await kingdom.operationResponse(frame.requestId);
     return { subscriptionId: frame.requestId, outcome: response.outcome };
   };
   /** The owner types a message on the thread (the viewer's synchronous send); its turn id. */
@@ -513,7 +518,7 @@ test('outbound is the host setting: the audience default, the owner changes it, 
   expect(
     (
       await h.request({
-        type: 'thread.request',
+        type: 'operation.request',
         ...h.relayed(outside),
         acceptedRevision: 2,
         operation: 'thread.read',
@@ -599,7 +604,7 @@ test('reading without member.log: an own view never shows other members, owner o
   const next = await h.read(a, first.result.journalSeq);
   expect(next.result.entries.map((e: any) => e.text)).toEqual(['later from a']);
   const frame = {
-    type: 'thread.request',
+    type: 'operation.request',
     ...h.relayed(a),
     permissions: ['member.forever'],
     operation: 'thread.read',
@@ -616,7 +621,7 @@ test('prompt.resolve: the owner remote client releases a held send; a member flo
   const prompt = await h.heldPrompt();
   const resolve = (promptId: string, action: string) =>
     h.request({
-      type: 'thread.request',
+      type: 'operation.request',
       ...h.relayed(remote),
       operation: 'prompt.resolve',
       input: { promptId, answer: { action } },
@@ -747,7 +752,7 @@ test('prompt.resolve: the owner remote client answers a tool-gate ask within its
   const [mine, theirs] = h.queue.pending();
   const resolve = (promptId: string, action: string) =>
     h.request({
-      type: 'thread.request',
+      type: 'operation.request',
       ...h.relayed(remote),
       operation: 'prompt.resolve',
       input: { promptId, answer: { action } },

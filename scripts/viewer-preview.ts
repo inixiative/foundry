@@ -171,7 +171,7 @@ export async function createViewerPreview(port = 0) {
   });
   const signetId = Bun.randomUUIDv7();
   viewer.conversations?.admit({
-    type: 'thread.request',
+    type: 'operation.request',
     requestId: Bun.randomUUIDv7(),
     signetId,
     acceptedRevision: 1,

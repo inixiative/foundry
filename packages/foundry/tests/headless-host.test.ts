@@ -166,7 +166,7 @@ test('the headless host pairs, admits a member note the Warden weighs in on, and
     body: { mode: 'talk' },
   });
   kingdom.threadFrame({
-    type: 'thread.request',
+    type: 'operation.request',
     requestId,
     signetId: member.signetId,
     acceptedRevision: 1,
@@ -176,7 +176,7 @@ test('the headless host pairs, admits a member note the Warden weighs in on, and
     operation: 'thread.prompt',
     input: { postId: Bun.randomUUIDv7(), text: 'A role opened.' },
   });
-  expect((await kingdom.threadResponse(requestId)).outcome).toMatchObject({
+  expect((await kingdom.operationResponse(requestId)).outcome).toMatchObject({
     ok: true,
     result: { accepted: true },
   });

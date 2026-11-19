@@ -12,7 +12,7 @@ import {
   InterventionLog,
   Thread,
 } from '@inixiative/foundry-core';
-import type { ThreadRequestOf } from '@inixiative/signet';
+import type { OperationRequestFrame } from '@inixiative/signet';
 import { ConfigStore, starterConfig } from '../../src/viewer/config';
 import { createViewer } from '../../src/viewer/server';
 
@@ -47,7 +47,7 @@ test('asides: post from /aside, unread count, promote once and say why the secon
   const conversations = viewer.conversations!;
   const signetId = Bun.randomUUIDv7();
   const admitted = conversations.admit({
-    type: 'thread.request',
+    type: 'operation.request',
     requestId: Bun.randomUUIDv7(),
     signetId,
     acceptedRevision: 1,
@@ -56,7 +56,7 @@ test('asides: post from /aside, unread count, promote once and say why the secon
     permissions: [],
     operation: 'thread.prompt',
     input: { postId: Bun.randomUUIDv7(), text: 'The role you wanted opened.' },
-  } satisfies ThreadRequestOf<'thread.prompt'>);
+  } satisfies OperationRequestFrame<'thread.prompt'>);
   expect(admitted.ok).toBe(true);
   const server = Bun.serve({
     hostname: '127.0.0.1',
