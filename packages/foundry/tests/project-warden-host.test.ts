@@ -4,9 +4,9 @@
 // its Wardens are skipped, never sent to primed.
 
 import { afterEach, expect, test } from 'bun:test';
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { ClaudeCodeSession, type PrimeSpec } from '@inixiative/agent-session';
 import {
   EventStream,
@@ -19,6 +19,7 @@ import { createSourceResolver } from '../src/agents/thread-factory';
 import { defaultProfileSource } from '../src/providers/default-profiles';
 import {
   createPrimedDecisionHost,
+  decisionHostsDirectory,
   isStageSession,
   isWardenSession,
   primedRequest,
@@ -555,6 +556,16 @@ test('the decision host launches the project host on the decision login: its own
   wardens.openProject('P', [{ spec: held, standby: '' }]);
   expect(await wardens.projectReady('P', 5_000)).toBe(true);
   const launch = tree.processes[0]!;
+  // The host works in a folder made for it, empty and outside any git work tree, never below the
+  // receipts (R-2026-11-19-07): Claude Code's git snapshot at each Warden start finds no repository.
+  const hostDirectory = launch.cwd!;
+  expect(dirname(dirname(hostDirectory))).toBe(decisionHostsDirectory());
+  expect(basename(hostDirectory)).toMatch(/^project-[0-9a-f]{12}-[0-9a-f]{8}$/);
+  expect(hostDirectory.startsWith(directory)).toBe(false);
+  expect(readdirSync(hostDirectory)).toEqual([]);
+  expect(
+    Bun.spawnSync(['git', 'rev-parse', '--is-inside-work-tree'], { cwd: hostDirectory }).exitCode,
+  ).not.toBe(0);
   expect(launch.argv).toContain('--no-session-persistence');
   expect(launch.argv).toContain('--disable-slash-commands');
   expect(launch.argv).toContain('--strict-mcp-config');
