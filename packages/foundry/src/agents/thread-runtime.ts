@@ -1419,9 +1419,12 @@ class ThreadRuntimeImpl implements ThreadRuntime {
             text: PLAN_ASK_NOTE,
           },
         ]);
-      // A name that is only the first message's words, or the agent's own 30 minutes on: ask the agent
-      // to name the thread on this turn, never a turn of its own.
-      if (needsNameCheck(thread.meta, nameCheckedAt)) {
+      // A name the agent did not give, or the agent's own 30 minutes on: ask it to name the thread on
+      // this turn, never a turn of its own; only a worker holding Foundry's tools has rename_thread.
+      if (
+        workerHostsFoundryTools(thread.meta.worker) &&
+        needsNameCheck(thread.meta, nameCheckedAt)
+      ) {
         nameCheckedAt = Date.now();
         flow.queueNotes([
           {

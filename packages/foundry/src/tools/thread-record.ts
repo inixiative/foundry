@@ -15,7 +15,7 @@ import type {
   ThreadPlan,
   ToolResult,
 } from '@inixiative/foundry-core';
-import { threadTitle } from '@inixiative/foundry-core';
+import { SECRET_REFERENCE_PATTERN, scrubSecrets, threadTitle } from '@inixiative/foundry-core';
 import { z } from 'zod';
 import {
   listSchedulesForAgent,
@@ -295,31 +295,49 @@ export function hasWorkContent(text: string): boolean {
 /** The longest name Foundry makes from a first message, in characters. */
 export const FIRST_MESSAGE_NAME_MAX_CHARS = 60;
 
+/** A scrubbed credential's marker (`[REDACTED:api-key]`, from `scrubSecrets`): never work to name a thread after. */
+const REDACTED_MARKER = /\[REDACTED:[a-z-]+\]/g;
+
 /**
  * A thread's first name, made from its first message's words with no model call (Aron, 2026-11-18:
- * "Number 3 seems fine", keep showing the first message's words until the agent names the thread):
- * one line, cut at a word boundary to `FIRST_MESSAGE_NAME_MAX_CHARS`, with an ellipsis when cut.
+ * "Number 3 seems fine"; this session read that as showing the first message's words until the agent
+ * names the thread). The name reaches places the message does not (sibling listings, Kingdom's
+ * review link, local members' wake text), so credentials are scrubbed (`scrubSecrets`), lifted
+ * secret references and code-fence markers dropped, and control and format characters (bidi
+ * overrides, zero-width marks) removed. One line, cut at a word boundary to
+ * `FIRST_MESSAGE_NAME_MAX_CHARS` code points, with an ellipsis when cut. Empty when nothing is left.
  */
 export function firstMessageName(message: string): string {
-  const words = message
-    .replace(/\p{Cc}/gu, ' ')
-    .replace(/\s+/g, ' ')
+  const words = scrubSecrets(
+    message
+      .replace(SECRET_REFERENCE_PATTERN, ' ')
+      .replace(/(?:```|~~~)[\w+-]*/g, ' ')
+      .replace(/[\p{Cc}\p{Cf}]/gu, ' '),
+  )
+    .text.replace(/\s+/g, ' ')
     .trim();
-  if (words.length <= FIRST_MESSAGE_NAME_MAX_CHARS) return words;
-  const cut = words.slice(0, FIRST_MESSAGE_NAME_MAX_CHARS + 1);
+  const points = Array.from(words);
+  if (points.length <= FIRST_MESSAGE_NAME_MAX_CHARS) return words;
+  const cut = points.slice(0, FIRST_MESSAGE_NAME_MAX_CHARS + 1);
   const boundary = cut.lastIndexOf(' ');
-  return `${(boundary > 0 ? cut.slice(0, boundary) : cut.slice(0, FIRST_MESSAGE_NAME_MAX_CHARS)).trimEnd()}…`;
+  return `${cut
+    .slice(0, boundary > 0 ? boundary : FIRST_MESSAGE_NAME_MAX_CHARS)
+    .join('')
+    .trimEnd()}…`;
 }
 
 /**
- * Name an unnamed thread from a person's message that names work (`hasWorkContent`; a greeting
- * waits for the next message): the Foundry name, its first message's words. Its agent is asked to
- * name it properly on that turn (`needsNameCheck`). Returns whether the thread was named.
+ * Name an unnamed thread from a person's message that names work (`hasWorkContent`, judged on what
+ * would be the name; a greeting, or a message that is only a secret or a code fence, waits for the
+ * next): the Foundry name, its first message's words. On a wrapped thread whose worker holds
+ * Foundry's tools, its agent is asked to name it properly on that turn (`needsNameCheck`); an
+ * unwrapped one keeps these words until its agent or person renames it. Returns whether it was named.
  */
 export function nameThreadFromMessage(thread: Thread, message: string): boolean {
   if (thread.disposed || thread.meta.name?.text || thread.meta.foundryName) return false;
-  if (!hasWorkContent(message)) return false;
-  thread.meta.foundryName = { text: firstMessageName(message), updatedAt: Date.now() };
+  const name = firstMessageName(message);
+  if (!hasWorkContent(name.replace(REDACTED_MARKER, ' '))) return false;
+  thread.meta.foundryName = { text: name, updatedAt: Date.now() };
   return true;
 }
 

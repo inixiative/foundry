@@ -1280,17 +1280,21 @@ export class TurnService {
       if (state.cancelRequested) throw Error(CANCELLED_BEFORE_START);
       if (state.refusal) throw Error(state.refusal);
       state.phase = 'running';
-      // An unnamed thread takes its first message's words as its name, as it is sent; its agent is
-      // asked on this turn to name it (`needsNameCheck`).
-      const named = ownerTyped && nameThreadFromMessage(thread, payload);
+      // An unnamed thread takes its first message's words as its name, as it is sent. Not saving it
+      // never fails the turn: the name is shown again from memory, and the next save writes it.
+      if (ownerTyped && nameThreadFromMessage(thread, payload)) {
+        try {
+          this.deps.localStore?.saveThread(thread);
+          this.deps.streams.threadsChanged(threadId);
+        } catch (error) {
+          console.warn(`[Turns] ${threadId}: first name not saved: ${(error as Error).message}`);
+        }
+      }
       // The next task starts: the last one's done state (a merge, a milestone) is over.
       // The agent's word on where it stood (needs-you, blocked) is answered by the owner's message too.
-      const answered = ownerTyped && !!(thread.meta.done || thread.meta.agentStatus);
-      if (answered) {
+      if (ownerTyped && (thread.meta.done || thread.meta.agentStatus)) {
         delete thread.meta.done;
         delete thread.meta.agentStatus;
-      }
-      if (named || answered) {
         this.deps.localStore?.saveThread(thread);
         this.deps.streams.threadsChanged(threadId);
       }

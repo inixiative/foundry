@@ -33,6 +33,48 @@ test("a first name is the message's words on one line, cut at a word with an ell
   expect(firstMessageName('x'.repeat(100))).toBe(`${'x'.repeat(FIRST_MESSAGE_NAME_MAX_CHARS)}…`);
 });
 
+test('a first name never carries a credential: shaped keys and ones known only by context are scrubbed', () => {
+  for (const [message, secret] of [
+    ['Deploy with PASSWORD=hunter2hunter2 on staging', 'hunter2hunter2'],
+    ['Fetch https://aron:s3cretpass@example.com/data please', 's3cretpass'],
+    ['Call the API with Bearer abcdefghijklmnop1234567890', 'abcdefghijklmnop1234567890'],
+    ['Rotate sk-ant-abcdefghijklmnopqrstuvwxyz0123 today', 'sk-ant-abcdefghijklmnopqrstuvwxyz0123'],
+  ] as const) {
+    const name = firstMessageName(message);
+    expect({ message, leaked: name.includes(secret) }).toEqual({ message, leaked: false });
+    expect(name).toContain('[REDACTED:');
+  }
+});
+
+test('a first name drops bidi and zero-width characters, lifted secret references and code fences', () => {
+  expect(firstMessageName('Fix \u202Eemag\u202C the \u200Blogin\u2066 test\uFEFF')).toBe(
+    'Fix emag the login test',
+  );
+  expect(firstMessageName('Use †t1.m.1 for the deploy key')).toBe('Use for the deploy key');
+  expect(firstMessageName('```ts\nconst x = 1;\n```')).toBe('const x = 1;');
+  // Only a secret reference, a fence or a credential: nothing to name the thread after.
+  for (const message of [
+    '†t1.m.1',
+    '```',
+    '```bash\n```',
+    'sk-ant-abcdefghijklmnopqrstuvwxyz0123',
+  ]) {
+    const thread = unnamed();
+    expect({ message, named: nameThreadFromMessage(thread, message) }).toEqual({
+      message,
+      named: false,
+    });
+    expect(thread.meta.foundryName).toBeUndefined();
+  }
+});
+
+test('a first name is cut by code point, never through a surrogate pair', () => {
+  const emoji = '😀';
+  expect(firstMessageName(emoji.repeat(100))).toBe(
+    `${emoji.repeat(FIRST_MESSAGE_NAME_MAX_CHARS)}…`,
+  );
+});
+
 test('work content: greetings and filler carry none; a short request does', () => {
   for (const text of [
     'hi',
@@ -132,4 +174,38 @@ test('the message route names the thread from its first message as it is sent, w
     text: 'Implement the requested change',
     source: 'foundry',
   });
+});
+
+test('a first name that cannot be saved never fails the turn', async () => {
+  const stack = new ContextStack();
+  const thread = new Thread('unsaved', stack, { description: '' });
+  thread.register(new Executor({ id: 'worker', stack, handler: async () => 'done' }));
+  const harness = new Harness(thread);
+  harness.setDefaultExecutor('worker');
+  const app = new Hono();
+  const deps = withStreams({
+    harness,
+    eventStream: new EventStream(),
+    interventions: new InterventionLog(),
+    configStore: new ConfigStore('/tmp/unused-naming-config'),
+  });
+  const publish = deps.streams.threadsChanged.bind(deps.streams);
+  let refused = 0;
+  deps.streams.threadsChanged = (threadId?: string) => {
+    // The first publish after the name is set is the naming's own.
+    if (threadId === 'unsaved' && thread.meta.foundryName && !refused) {
+      refused++;
+      throw Error('disk full');
+    }
+    publish(threadId);
+  };
+  registerRuntimeRoutes(app, deps);
+  const response = await app.request('/api/messages', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ message: 'Fix the flaky login test', threadId: 'unsaved' }),
+  });
+  expect(response.status).toBe(200);
+  expect(refused).toBe(1);
+  expect(thread.meta.foundryName?.text).toBe('Fix the flaky login test');
 });

@@ -1141,6 +1141,47 @@ test("a thread named only by its first message's words asks its agent to name it
   expect(lastUser()).not.toContain(NAME_ASK_NOTE);
 });
 
+test('a Muse thread, which holds no rename_thread, is never asked to name itself', async () => {
+  const { project } = projectWithRegions();
+  const c = config(project);
+  validateConfig(c);
+  const f = setup(c, 'NO_COMMENT');
+  const thread = f.factory.create('muse-thread', { projectId: 'P' });
+  // The worker the prepare step reads; this fixture's executor stands in for Muse's session.
+  thread.meta.worker = 'muse';
+  thread.meta.foundryName = {
+    text: 'Add a SET NX lock',
+    updatedAt: Date.now() - 31 * 60_000,
+  };
+  await thread.dispatch('worker', 'Add a SET NX lock around the sync job');
+  const user = f
+    .all('central')
+    .at(-1)!
+    .messages.filter((m) => m.role === 'user')
+    .at(-1)!.content;
+  expect(user).not.toContain(NAME_ASK_NOTE);
+  expect(user).not.toContain(NAME_CHECK_NOTE);
+});
+
+test("an unwrapped thread is never asked to name itself: it keeps its first message's words", async () => {
+  const { project } = projectWithRegions();
+  const c = config(project);
+  validateConfig(c);
+  const f = setup(c, 'NO_COMMENT');
+  // No project: no Wardens, and this config has no layers, so nothing prepares its turns.
+  const thread = f.factory.create('unwrapped-thread');
+  expect(f.manager.get(thread.id)!.wardens.size).toBe(0);
+  thread.meta.foundryName = { text: 'Add a SET NX lock around the sync job', updatedAt: 1 };
+  await thread.dispatch('worker', 'Add a SET NX lock around the sync job');
+  const user = f
+    .all('central')
+    .at(-1)!
+    .messages.filter((m) => m.role === 'user')
+    .at(-1)!.content;
+  expect(user).toBe('Add a SET NX lock around the sync job');
+  expect(thread.meta.foundryName?.text).toBe('Add a SET NX lock around the sync job');
+});
+
 test('each region Warden decision is followed by its debug reason, journalled as its own linked row', async () => {
   const { project } = projectWithRegions();
   const c = config(project);

@@ -84,9 +84,9 @@ export const PLAN_ASK_NOTE =
 export const NAME_CHECK_NOTE =
   "Foundry: this thread's name was set over 30 minutes ago. Make sure it still says what the thread is working on (3 to 7 plain words): call rename_thread with the right name, the same one if it still fits.";
 
-/** The line Foundry adds to a turn of a thread named only by its first message's words (`needsNameCheck`). */
+/** The line Foundry adds to a turn of a thread whose name neither its agent nor its person gave (`needsNameCheck`). */
 export const NAME_ASK_NOTE =
-  "Foundry: this thread is named only by the first message's words. Name it with rename_thread: 3 to 7 plain words saying what it is working on.";
+  'Foundry: you have not named this thread yet; it shows a name Foundry gave it. Name it with rename_thread: 3 to 7 plain words saying what it is working on.';
 
 export const FOUNDRY_TOOLS_NOTE_VERSION = `foundry-tools-${computeHash(FOUNDRY_TOOLS_NOTE).slice(0, 12)}`;
 

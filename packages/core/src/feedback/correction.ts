@@ -284,6 +284,12 @@ export const SHAPED_SECRET_PATTERNS: readonly RegExp[] = SHAPED_SECRETS.map(([pa
   return new RegExp(`(?<![A-Za-z0-9_-])${digit}(?:${pattern.source})`, pattern.flags);
 });
 
+/**
+ * A lifted secret's reference in text (`†m.1`, `†t1.m.1`): what agent-session's scratch pad leaves
+ * where a secret was. Global; reset `lastIndex` or use it with `replace` / `matchAll`.
+ */
+export const SECRET_REFERENCE_PATTERN = /†[A-Za-z0-9_.:/-]+\.\d+/g;
+
 /** How many credentials known only by context (`PASSWORD=…`, `Bearer …`, a URL password) the text holds. */
 export function contextSecretHits(text: string): number {
   let hits = 0;
