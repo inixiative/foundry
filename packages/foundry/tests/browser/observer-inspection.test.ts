@@ -344,8 +344,16 @@ test('an open observer sees externally admitted work without reload, without dup
           .map((id) => store.turn(id))
           .map((t) => `${t?.id}:${t?.status}${t?.error ? `(${t.error})` : ''}`);
         const shown = await observer.locator('.chat-user, .chat-agent').allInnerTexts();
+        const page = await observer.evaluate(async () => {
+          const store = await import(`${location.origin}/ui/store.js`);
+          return {
+            hash: location.hash,
+            active: store.activeThreadId?.value,
+            body: document.body.innerText.replace(/\s+/g, ' ').slice(0, 900),
+          };
+        });
         throw Error(
-          `${error.message}\nprovider calls: ${f.inputs.length}\nturns: ${turns.join(', ')}\nshown: ${JSON.stringify(shown).slice(0, 1500)}\npage errors: ${f.report.errors.join(' | ')}`,
+          `${error.message}\nprovider calls: ${f.inputs.length}\nturns: ${turns.join(', ')}\nshown: ${JSON.stringify(shown).slice(0, 1500)}\npage: ${JSON.stringify(page)}\npage errors: ${f.report.errors.join(' | ')}`,
         );
       });
     await observer.waitForFunction(
