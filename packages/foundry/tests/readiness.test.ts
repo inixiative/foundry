@@ -49,7 +49,7 @@ test('readiness resolves effective experts without dispatch, loading corpus or e
       expect.objectContaining({
         scope: 'P',
         agentId: regionRoleId('docs'),
-        role: 'domain-advising',
+        role: 'warden',
         domain: 'docs',
       }),
     );
@@ -69,8 +69,8 @@ test('readiness refuses a hand-named Warden in settings and catches unavailable 
   config.projects.P!.agents = {
     expert: {
       id: 'expert',
-      kind: 'domain-librarian',
-      flowRole: 'domain-advising',
+      kind: 'warden',
+      flowRole: 'warden',
       domain: 'docs',
       prompt: 'PRIVATE_EXPERT',
       enabled: true,

@@ -106,7 +106,7 @@ function fixture(opts: { consumed?: ConsumedSettings; answer?: string; domains?:
     log() {},
     warn() {},
     eventStream: events,
-    domains:
+    codeWardens:
       opts.domains === false
         ? []
         : [{ domain: 'concurrency', layerId: 'concurrency', guardTriggers: [] }],

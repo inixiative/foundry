@@ -9,9 +9,9 @@ import {
   type NativeEvidence,
   type ThreadMeta,
 } from '@inixiative/foundry-core';
-import { oneCall, renderTurnActivity } from '../src/agents/domain-librarian';
 import { buildAgents, ThreadFactory } from '../src/agents/thread-factory';
 import { ThreadRuntimeManager } from '../src/agents/thread-runtime';
+import { oneCall, renderTurnActivity } from '../src/agents/warden';
 import { reduceMiddleware } from '../src/archives/reduced-middleware';
 import { KnowledgePersistence } from '../src/persistence/knowledge-persistence';
 import { LocalSessionStore } from '../src/persistence/local-session-store';
@@ -122,7 +122,7 @@ function fixture(
     log() {},
     warn() {},
     eventStream: events,
-    domains: [
+    codeWardens: [
       {
         domain: 'architecture',
         layerId: 'architecture',

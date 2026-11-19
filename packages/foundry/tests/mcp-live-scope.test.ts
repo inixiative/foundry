@@ -591,7 +591,7 @@ function runtimeFixture() {
     config,
     log() {},
     warn() {},
-    domains: [
+    codeWardens: [
       {
         domain: 'conventions',
         layerId: 'conventions',
@@ -635,7 +635,7 @@ test('a live runtime authority distinguishes instructions, configured domain kno
   expect(before).toContain('REVIEW_INSTRUCTIONS_TEXT');
   expect(before).toContain('CONFIGURED_DOMAIN_KNOWLEDGE');
   expect(before).toMatch(/thread knowledge[^\n]*revision 0/i);
-  runtime.domainLibrarians
+  runtime.wardens
     .get('conventions')!
     .threadKnowledge.learn(
       'FRESH_COMMITTED_THREAD_FACT',
@@ -666,7 +666,7 @@ test('replacing the live runtime for the same thread id revokes the old authorit
   const replacement = factory.create('live', { projectId: 'project-A' });
   manager
     .get('live')!
-    .domainLibrarians.get('conventions')!
+    .wardens.get('conventions')!
     .threadKnowledge.learn(
       'REPLACEMENT_PRIVATE_FACT',
       { kind: 'dispatch', id: 'e2', timestamp: 2 },

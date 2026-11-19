@@ -615,7 +615,7 @@ function ExpertParticipants({ injection, phases, trace }) {
   const record = expertParticipants(injection, phases);
   if (!record)
     return html`<${Section} title="Expert participants (historical preparation)" open=${true}>
-    <div class="detail-null expert-participants-absent">Expert participation was not recorded for this turn (older record or no domain experts configured). Nothing is inferred from the current cache.</div>
+    <div class="detail-null expert-participants-absent">Expert participation was not recorded for this turn (older record or no Wardens on this thread). Nothing is inferred from the current cache.</div>
   </${Section}>`;
   const segmentTitle = {
     instructions: 'Instructions (configured)',

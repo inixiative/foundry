@@ -17,8 +17,8 @@
 
 import type { OwnershipScope, Thread } from '@inixiative/foundry-core';
 import { normalizeScope, threadTitle } from '@inixiative/foundry-core';
-import type { DomainLibrarian } from '../agents/domain-librarian';
 import type { ThreadRuntime, ThreadRuntimeManager } from '../agents/thread-runtime';
+import type { Warden } from '../agents/warden';
 
 /** Why an authority no longer holds. Names only the owner's own condition. */
 export type AuthorityRefusal =
@@ -56,7 +56,7 @@ export interface LiveAuthority {
   /** Same-project live siblings only. Empty for an unprojected owner. */
   siblings(): AuthorizedThreadSummary[];
   /** Live domain reviewers when a runtime is pinned; undefined otherwise. */
-  domains(): ReadonlyMap<string, DomainLibrarian> | undefined;
+  domains(): ReadonlyMap<string, Warden> | undefined;
   revoke(reason: AuthorityRefusal): void;
   /**
    * Release this authority's owned observer on the thread (its disposal hook)
@@ -157,7 +157,7 @@ export function bindLiveAuthority(options: BindAuthorityOptions): LiveAuthority 
           tags: [...(t.meta.tags ?? [])],
         }));
     },
-    domains: () => (pinnedRuntime && !check() ? pinnedRuntime.domainLibrarians : undefined),
+    domains: () => (pinnedRuntime && !check() ? pinnedRuntime.wardens : undefined),
     revoke: (reason) => {
       revoked ??= reason;
       unsubscribe();

@@ -13,12 +13,12 @@ import { DECISION_LATENCY_BUDGET } from '../src/providers/decision-budget';
 import { type AgentSettingsConfig, type FoundryConfig, starterConfig } from '../src/viewer/config';
 
 const DOMAINS = ['api', 'db', 'ui', 'auth', 'security', 'testing'];
-/** A domain-advising expert's id is a namespaced role id, as a generated region Warden's is. */
+/** A warden expert's id is a namespaced role id, as a generated region Warden's is. */
 const expertId = (domain: string) => regionRoleId(`${domain}-expert`);
 const expert = (domain: string): AgentSettingsConfig => ({
   id: expertId(domain),
-  kind: 'domain-librarian',
-  flowRole: 'domain-advising',
+  kind: 'warden',
+  flowRole: 'warden',
   domain,
   prompt: `Advise on ${domain}.`,
   provider: 'decisions',

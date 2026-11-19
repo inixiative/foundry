@@ -14,7 +14,6 @@ import {
   roleDirectory,
 } from '@inixiative/foundry-core';
 import { PLAN_ASK_NOTE } from '../src/agents/chorus-reception';
-import { oneCall } from '../src/agents/domain-librarian';
 import { regionInstructions, regionRoleId } from '../src/agents/region-roster';
 import { invalidateComposition } from '../src/agents/role-layers';
 import {
@@ -24,6 +23,7 @@ import {
   ThreadFactory,
 } from '../src/agents/thread-factory';
 import { ThreadRuntimeManager } from '../src/agents/thread-runtime';
+import { oneCall } from '../src/agents/warden';
 import { chartered } from '../src/classify';
 import {
   ASSISTANT_ROLE,
@@ -320,7 +320,7 @@ function setup(
     runtime,
     calls,
     last,
-    lib: runtime.domainLibrarians.get('conventions')!,
+    lib: runtime.wardens.get('conventions')!,
     async close() {
       await runtime.learningSettled();
       manager.disposeAll();

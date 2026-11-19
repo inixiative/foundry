@@ -1,7 +1,7 @@
 import { afterEach, expect, test } from 'bun:test';
 import { ContextLayer, ContextStack, type Signal, Thread } from '@inixiative/foundry-core';
-import { ThreadKnowledge } from '../src/agents/domain-librarian';
 import type { ThreadKnowledgeBundle } from '../src/agents/thread-runtime';
+import { ThreadKnowledge } from '../src/agents/warden';
 import { LocalSessionStore } from '../src/persistence/local-session-store';
 
 const cleanup: Array<() => void> = [];
@@ -33,7 +33,7 @@ function setup() {
   });
   const signal = (domain: string, id = `signal-${domain}`, revision = 1): Signal => ({
     id,
-    kind: 'domain_learning',
+    kind: 'warden_learning',
     source: 'reviewer',
     timestamp: 1,
     content: {

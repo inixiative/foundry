@@ -111,7 +111,7 @@ function fixture(opts: {
     log() {},
     warn() {},
     eventStream: events,
-    domains: opts.wardens
+    codeWardens: opts.wardens
       ? [{ domain: 'concurrency', layerId: 'concurrency', guardTriggers: [] }]
       : [],
     learning: { enabled: false },

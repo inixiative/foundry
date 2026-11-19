@@ -16,8 +16,8 @@ import {
   standingPart,
   Thread,
 } from '@inixiative/foundry-core';
-import { DomainLibrarian } from '../src/agents/domain-librarian';
 import { NAMING_INSTRUCTIONS, ThreadNamer } from '../src/agents/thread-namer';
+import { Warden } from '../src/agents/warden';
 import { validateStages } from '../src/classify';
 import { classifyCorrection, lintStatement } from '../src/feedback/sharpen';
 import {
@@ -541,7 +541,7 @@ test(
         );
         knowledge.set(view.slots.domainKnowledge.text);
       };
-      const warden = new DomainLibrarian({
+      const warden = new Warden({
         domain: 'settings',
         cache: knowledge,
         instructions,
@@ -698,7 +698,7 @@ test(
         { task: 'recognise', escalate: ['yes'] },
         { model: 'claude-sonnet-5-5', effort: 'low' },
       ]);
-      const warden = new DomainLibrarian({
+      const warden = new Warden({
         domain: 'locks',
         cache: recognise,
         instructions,

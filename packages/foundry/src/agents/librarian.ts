@@ -214,7 +214,7 @@ export class Librarian {
         this._pushActivity(`Architecture: ${describeContent(content)}`);
         break;
 
-      case 'domain_learning': {
+      case 'warden_learning': {
         const data = content as
           | { domain?: string; decision?: string; revision?: number; reason?: string }
           | undefined;

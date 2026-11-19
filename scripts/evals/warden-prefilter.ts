@@ -408,7 +408,7 @@ function roster(): WardenRosterEntry[] {
     >;
   };
   return Object.entries(settings.agents).flatMap(([id, a]) =>
-    a.flowRole === 'domain-advising' && a.domain && a.prompt
+    a.flowRole === 'warden' && a.domain && a.prompt
       ? [{ id, domain: a.domain, prompt: a.prompt, enabled: a.enabled !== false }]
       : [],
   );

@@ -114,7 +114,7 @@ function fixture(
     config,
     log() {},
     warn() {},
-    domains: [{ domain: 'security', layerId: 'security', guardTriggers: [] }],
+    codeWardens: [{ domain: 'security', layerId: 'security', guardTriggers: [] }],
     learning: { timeoutMs: 2, hardTimeoutMs, clock, reviewProvider: provider },
     llm: {
       id: 'flow',
@@ -143,7 +143,7 @@ function fixture(
     persistence = new KnowledgePersistence(manager, store, events, []);
   const thread = factory.create('learning-native', { projectId: 'P' }),
     runtime = manager.get(thread.id)!;
-  const knowledge = runtime.domainLibrarians.get('security')!.threadKnowledge;
+  const knowledge = runtime.wardens.get('security')!.threadKnowledge;
   closes.push(() => {
     manager.disposeAll();
     store.close();

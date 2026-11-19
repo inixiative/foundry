@@ -124,7 +124,7 @@ async function setup(opts?: {
 
   const runtime = new ThreadRuntimeManager({
     config,
-    domains: [],
+    codeWardens: [],
     log: () => {},
     warn: () => {},
     llm: { id: 'mock', complete: async () => ({ model: 'mock', content: '{}' }) },

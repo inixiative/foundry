@@ -956,9 +956,7 @@ if (sessionAdapters.size)
 // factory-created thread gets the same wiring automatically.
 // ---------------------------------------------------------------------------
 
-console.log(
-  `Flow: ${mainRuntime.domainLibrarians.size} domain librarians + Librarian (${flowLlm.id}) per thread`,
-);
+console.log(`Flow: ${mainRuntime.wardens.size} Wardens + Librarian (${flowLlm.id}) per thread`);
 
 // ---------------------------------------------------------------------------
 // Build harness

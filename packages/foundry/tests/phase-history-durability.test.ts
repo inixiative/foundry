@@ -11,11 +11,11 @@ import {
   type LLMProvider,
   SignalBus,
 } from '@inixiative/foundry-core';
-import { DomainLibrarian, oneCall } from '../src/agents/domain-librarian';
 import { FlowOrchestrator } from '../src/agents/flow-orchestrator';
 import { Librarian } from '../src/agents/librarian';
 import { buildAgents, ThreadFactory } from '../src/agents/thread-factory';
 import { ThreadRuntimeManager } from '../src/agents/thread-runtime';
+import { oneCall, Warden } from '../src/agents/warden';
 import { chartered, GUARD_RESPONSE_PROTOCOL } from '../src/classify';
 import { KnowledgePersistence } from '../src/persistence/knowledge-persistence';
 import { LocalSessionStore, type StoredPhase } from '../src/persistence/local-session-store';
@@ -102,7 +102,7 @@ function fixture(
     log() {},
     warn() {},
     eventStream: events,
-    domains: [
+    codeWardens: [
       {
         domain: 'architecture',
         layerId: 'architecture',
@@ -350,7 +350,7 @@ test('successful, failed and thrown guard controls: findings are recorded, a pro
     request: { state: 'recorded' },
   });
   // A guard that throws before its call boundary: the request is unobserved, never "not sent".
-  const lib = f.runtime.domainLibrarians.get('architecture')!;
+  const lib = f.runtime.wardens.get('architecture')!;
   Object.defineProperty(lib, 'guard', {
     value: async () => {
       throw Error('thrown before the boundary');
@@ -395,7 +395,7 @@ test('a failed central turn retains the sealed advice requests with their three 
     domain: 'architecture',
     outcome: { status: 'answered', result: 'spoke' },
     segments: {
-      instructions: f.runtime.domainLibrarians.get('architecture')!.advisePrompt,
+      instructions: f.runtime.wardens.get('architecture')!.advisePrompt,
       domainKnowledge: 'DOMAIN_BEFORE: existing readers keep working.',
       threadKnowledge: '',
     },
@@ -507,13 +507,13 @@ test('review records say whether their requested record reached the journal; wit
   expect((await g.turn('turn-1', 'Add preferred names')).ok).toBe(true);
   await g.runtime.learningSettled();
   // The requested record is journal-only: the expert's in-memory history holds outcomes only, and each outcome says the journal was unavailable.
-  const memory = g.runtime.domainLibrarians
+  const memory = g.runtime.wardens
     .get('architecture')!
     .threadKnowledge.history.filter((r: any) => r.evidence?.messageId === 'turn-1');
   expect(memory.map((r: any) => r.decision)).toEqual(['no-comment']);
   expect((memory[0] as any).requestJournal).toBe('absent');
   expect((memory[0] as any).request.status).toBe('supplied');
-  const inMemoryWithJournal = f.runtime.domainLibrarians
+  const inMemoryWithJournal = f.runtime.wardens
     .get('architecture')!
     .threadKnowledge.history.filter((r: any) => r.evidence?.messageId === 'turn-1');
   expect(inMemoryWithJournal.map((r: any) => r.decision)).toEqual(['no-comment']); // never "requested" in memory

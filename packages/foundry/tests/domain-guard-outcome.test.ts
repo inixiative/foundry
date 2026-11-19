@@ -6,9 +6,9 @@ import {
   type Signal,
   SignalBus,
 } from '@inixiative/foundry-core';
-import { DomainLibrarian, oneCall } from '../src/agents/domain-librarian';
 import { FlowOrchestrator } from '../src/agents/flow-orchestrator';
 import { Librarian } from '../src/agents/librarian';
+import { oneCall, Warden } from '../src/agents/warden';
 import { chartered, GUARD_RESPONSE_PROTOCOL, validateGuardResponse } from '../src/classify';
 
 // Author cases for the guard-phase outcome contract (Fable, CORE-006 LI). Controlled providers only; no model.
@@ -41,7 +41,7 @@ function fixture(
     signals.on(kind, (s) => {
       emitted.push(s);
     });
-  const lib = new DomainLibrarian({
+  const lib = new Warden({
     domain,
     cache,
     signals,
@@ -57,7 +57,7 @@ function fixture(
   });
   return { lib, requests, emitted, cache, signals };
 }
-const learn = (lib: DomainLibrarian, text: string) =>
+const learn = (lib: Warden, text: string) =>
   lib.threadKnowledge.learn(
     text,
     { kind: 'dispatch', id: `verified-${text.length}`, ok: true, timestamp: 1 },
@@ -317,7 +317,7 @@ test("orchestrator: the guard report and emitted observation carry each domain's
     stack,
     signals,
     librarian,
-    domainLibrarians: new Map([
+    wardens: new Map([
       ['architecture', arch.lib],
       ['testing', testing.lib],
       ['security', malformed.lib],

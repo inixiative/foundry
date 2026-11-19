@@ -43,10 +43,7 @@ export default defineConfig({
       kind: 'entrypoint',
     },
     {
-      include: [
-        `${CORE}/{base-agent,executor}.ts`,
-        `${FOUNDRY}/agents/{librarian,domain-librarian}.ts`,
-      ],
+      include: [`${CORE}/{base-agent,executor}.ts`, `${FOUNDRY}/agents/{librarian,warden}.ts`],
       kind: 'agent',
     },
     {
@@ -110,14 +107,14 @@ export default defineConfig({
 
     // foundry: agents
     {
-      include: `${FOUNDRY}/agents/{flow-orchestrator,librarian,learning-config,configured-experts}.ts`,
+      include: `${FOUNDRY}/agents/{flow-orchestrator,librarian,learning-config,configured-wardens}.ts`,
       partOf: 'feature:flow',
     },
     {
-      include: `${FOUNDRY}/agents/{domain-librarian,region-roster,warden-triggers,chorus-reception,work-items}.ts`,
+      include: `${FOUNDRY}/agents/{warden,region-roster,warden-triggers,chorus-reception,work-items}.ts`,
       partOf: 'feature:wardens',
     },
-    { include: `${FOUNDRY}/agents/configured-experts.ts`, partOf: 'feature:wardens' },
+    { include: `${FOUNDRY}/agents/configured-wardens.ts`, partOf: 'feature:wardens' },
     {
       include: `${FOUNDRY}/agents/{thread-runtime,thread-factory,session,thread-namer,project}.ts`,
       partOf: 'feature:threads',

@@ -11,7 +11,7 @@ import type {
 } from '@inixiative/foundry-core';
 import type { ClassifiedSummary } from '../classify';
 import { QUOTA_PAUSED_REFUSAL } from '../providers/decision-budget';
-import type { ToolObservation } from './domain-librarian';
+import type { ToolObservation } from './warden';
 import type { AdviceTrigger } from './warden-triggers';
 
 /**

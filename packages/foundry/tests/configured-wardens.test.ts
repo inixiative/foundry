@@ -164,7 +164,7 @@ test('region Wardens learn through production factory/journal, remain separate a
     f = setup(loaded, journal);
     const a = f.factory.create('A', { projectId: 'P' }),
       runtime = f.manager.get('A')!;
-    expect([...runtime.domainLibrarians.keys()]).toEqual(['compatibility', 'testing']);
+    expect([...runtime.wardens.keys()]).toEqual(['compatibility', 'testing']);
     // A Warden's composed slots are private: never on the thread's stack, never sent centrally.
     expect(a.stack.layers.some((layer) => layer.id.startsWith('role:'))).toBe(false);
     const first = await a.dispatch('worker', 'Implement the migration', undefined, {
@@ -173,7 +173,7 @@ test('region Wardens learn through production factory/journal, remain separate a
     const frozen = JSON.stringify(first.meta?.injection);
     await runtime.learningSettled();
     for (const domain of ['compatibility', 'testing']) {
-      const lib = runtime.domainLibrarians.get(domain)!;
+      const lib = runtime.wardens.get(domain)!;
       expect(lib.threadKnowledge.revision).toBe(1);
       expect(lib.threadKnowledge.content).toContain(`PRIVATE_${domain}`);
       expect(journal.knowledge('A')!.domains[domain].content).toBe(lib.threadKnowledge.content);
@@ -213,7 +213,7 @@ test('region Wardens learn through production factory/journal, remain separate a
     expect(JSON.stringify(advice.messages)).toContain('PRIVATE_compatibility');
     expect(JSON.stringify(advice.messages)).not.toContain('PRIVATE_testing');
     const b = f.factory.create('B', { projectId: 'Q' });
-    for (const lib of f.manager.get(b.id)!.domainLibrarians.values())
+    for (const lib of f.manager.get(b.id)!.wardens.values())
       expect(lib.threadKnowledge.content).toBe('');
     await b.dispatch('worker', 'Unrelated work');
     await f.manager.get(b.id)!.learningSettled();
@@ -263,9 +263,9 @@ test("each project's chorus is its own regions; learning.review applies to them;
     const pThread = f.factory.create('P-thread', { projectId: 'P' }),
       qThread = f.factory.create('Q-thread', { projectId: 'Q' }),
       g = f.factory.create('global-thread');
-    expect([...f.manager.get(pThread.id)!.domainLibrarians.keys()]).toEqual(['compatibility']);
-    expect([...f.manager.get(qThread.id)!.domainLibrarians.keys()]).toEqual(['testing']);
-    expect(f.manager.get(g.id)!.domainLibrarians.size).toBe(0);
+    expect([...f.manager.get(pThread.id)!.wardens.keys()]).toEqual(['compatibility']);
+    expect([...f.manager.get(qThread.id)!.wardens.keys()]).toEqual(['testing']);
+    expect(f.manager.get(g.id)!.wardens.size).toBe(0);
     for (const thread of [pThread, qThread, g]) {
       await thread.dispatch('worker', 'Work');
       await f.manager.get(thread.id)!.learningSettled();
@@ -386,7 +386,7 @@ for (const state of ['chorus-off', 'layer-named-like-a-domain'] as const)
     const f = setup(c);
     try {
       const t = f.factory.create(state, { projectId: 'P' });
-      expect(f.manager.get(t.id)!.domainLibrarians.size).toBe(0);
+      expect(f.manager.get(t.id)!.wardens.size).toBe(0);
       expect(f.calls).toHaveLength(0);
     } finally {
       await f.close();
@@ -439,13 +439,15 @@ test('a code-registered Warden reads the stack layer it names, with its own prom
         throw Error('No inspection model call');
       },
     },
-    domains: [{ domain: 'docs', layerId: 'docs', advisePrompt: CODE_PROMPT, guardTriggers: [] }],
+    codeWardens: [
+      { domain: 'docs', layerId: 'docs', advisePrompt: CODE_PROMPT, guardTriggers: [] },
+    ],
     log() {},
     warn() {},
   });
   const thread = new Thread('code', new ContextStack([layer]));
   try {
-    const lib = manager.attach(thread).domainLibrarians.get('docs')!;
+    const lib = manager.attach(thread).wardens.get('docs')!;
     expect(lib.advisePrompt).toBe(CODE_PROMPT);
     expect(lib.cache).toBe(layer);
   } finally {
@@ -458,7 +460,7 @@ test('a region Warden is asked on every write or exec tool call, under its gener
   const f = setup(config({ P: await regionProject([{ id: 'security' }]) }));
   try {
     const thread = f.factory.create('security-guard', { projectId: 'P' }),
-      lib = f.manager.get(thread.id)!.domainLibrarians.get('security')!;
+      lib = f.manager.get(thread.id)!.wardens.get('security')!;
     for (const tool of REGION_GUARD_TRIGGERS) expect(lib.shouldGuard(tool)).toBe(true);
     expect(lib.shouldGuard('Read')).toBe(false);
     expect(lib.advisePrompt).toContain('You are a region Warden.');
@@ -492,7 +494,7 @@ test('metadata-only/generated layers and a conflicting generated ID never silent
     });
     const t = new Thread('passive', new ContextStack([layer]));
     try {
-      expect(manager.attach(t).domainLibrarians.size).toBe(0);
+      expect(manager.attach(t).wardens.size).toBe(0);
     } finally {
       t.dispose();
       manager.disposeAll();
@@ -514,7 +516,7 @@ test('metadata-only/generated layers and a conflicting generated ID never silent
     },
   });
   try {
-    expect(() => manager.attach(t)).toThrow('Generated expert layer already exists');
+    expect(() => manager.attach(t)).toThrow('Generated Warden layer already exists');
     expect(manager.runtimes.size).toBe(0);
     expect(stack.layers).toHaveLength(2);
   } finally {

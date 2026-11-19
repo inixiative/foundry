@@ -10,7 +10,7 @@ import { MUSE_SDK_VERSION } from '@inixiative/agent-session';
 import type { ArchiveClient } from '@inixiative/archive/remote';
 import { computeHash, MODEL_REGISTRY, resolveDecisionModel } from '@inixiative/foundry-core';
 import { readPrivateJson, signetCredentialFile, signetCredentialSchema } from '@inixiative/signet';
-import { configuredExperts } from './agents/configured-experts';
+import { configuredWardens } from './agents/configured-wardens';
 import { REPOSITORY_SETTINGS_FILE, regionKey } from './agents/region-roster';
 import { archiveStatus, localArchiveUrl } from './archives/local';
 import { charterFor, deadlineShares, responseProtocol, type StageConfig } from './classify';
@@ -457,50 +457,50 @@ export async function inspectReadiness(
     }
   }
   for (const [scope, effective] of scopes) {
-    let experts: ReturnType<typeof configuredExperts>['experts'];
+    let wardens: ReturnType<typeof configuredWardens>['wardens'];
     try {
-      experts = configuredExperts(effective).experts;
+      wardens = configuredWardens(effective).wardens;
     } catch {
       issue(
         'error',
         scope,
-        'invalid-expert-ownership',
-        "Check each enabled expert's domain, domain knowledge sources, instructions and context policy.",
+        'invalid-warden-ownership',
+        "Check each enabled Warden's domain, domain knowledge sources, instructions and context policy.",
       );
       continue;
     }
-    const expertById = new Map(experts.map((expert) => [expert.agentId, expert]));
+    const wardenById = new Map(wardens.map((warden) => [warden.agentId, warden]));
     for (const [id, agent] of Object.entries(effective.agents)) {
       if (!agent.enabled) continue;
       const provider = agent.provider ?? effective.defaults.provider,
         model = agent.model ?? effective.defaults.model;
-      const expert = expertById.get(id);
+      const warden = wardenById.get(id);
       profiles.push({
         scope,
         agentId: id,
         role: agent.flowRole ?? agent.kind,
         provider,
         model,
-        ...(expert ? { domain: expert.domain } : {}),
+        ...(warden ? { domain: warden.domain } : {}),
       });
       checkProvider(provider, scope);
-      if (agent.kind === 'domain-librarian' && ['claude-code', 'codex'].includes(provider))
+      if (agent.kind === 'warden' && ['claude-code', 'codex'].includes(provider))
         issue(
           'warning',
           scope,
           'native-decision-capacity',
           'A decision role uses native runtime capacity. Check its assigned resources and allowance; no cheaper profile was substituted.',
         );
-      if (expert && effective.learning?.review?.provider)
+      if (warden && effective.learning?.review?.provider)
         checkProvider(effective.learning.review.provider, scope);
     }
-    // An unwrapped project (no layers) has no experts by design; layers without experts is the gap.
-    if (scope !== 'global' && !experts.length && Object.keys(effective.layers ?? {}).length)
+    // An unwrapped project (no layers) has no Wardens by design; layers without Wardens is the gap.
+    if (scope !== 'global' && !wardens.length && Object.keys(effective.layers ?? {}).length)
       issue(
         'warning',
         scope,
-        'no-domain-experts',
-        'This project has no enabled explicit domain experts; layer labels alone do not create experts.',
+        'no-wardens',
+        'This project has no enabled Wardens; layer labels alone do not create Wardens.',
       );
     if (
       scope !== 'global' &&
@@ -531,7 +531,7 @@ export async function inspectReadiness(
       'warning',
       'global',
       'no-projects',
-      'Add a project and configure its executor and domain experts.',
+      'Add a project and configure its executor and Wardens.',
     );
   const selectedOwners = new Set(
     [

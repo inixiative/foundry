@@ -10,11 +10,11 @@ import {
   type LLMMessage,
   SignalBus,
 } from '@inixiative/foundry-core';
-import { DomainLibrarian, oneCall } from '../src/agents/domain-librarian';
 import { FlowOrchestrator } from '../src/agents/flow-orchestrator';
 import { Librarian } from '../src/agents/librarian';
 import { buildAgents, ThreadFactory } from '../src/agents/thread-factory';
 import { ThreadRuntimeManager } from '../src/agents/thread-runtime';
+import { oneCall, Warden } from '../src/agents/warden';
 import { NO_COMMENT } from '../src/classify';
 import { enabledPrefilter } from '../src/daemon';
 import {
@@ -74,7 +74,7 @@ function roster(domains: string[], prefilter?: WardenPrefilter) {
   const libs = new Map(
     layers.map((cache) => [
       cache.id,
-      new DomainLibrarian({
+      new Warden({
         domain: cache.id,
         cache,
         signals,
@@ -95,7 +95,7 @@ function roster(domains: string[], prefilter?: WardenPrefilter) {
     stack,
     signals,
     librarian,
-    domainLibrarians: libs,
+    wardens: libs,
     ...(prefilter ? { prefilter, threadId: 't1' } : {}),
   });
   cleanups.push(() => {
@@ -239,7 +239,7 @@ test('a thread skips a ruled-out Warden at advice and at review, each journalled
     config,
     log() {},
     warn() {},
-    domains: [{ domain: 'security', layerId: 'security', guardTriggers: [] }],
+    codeWardens: [{ domain: 'security', layerId: 'security', guardTriggers: [] }],
     prefilter: new WardenPrefilter(undefined, {
       fetch: async (url, init) => {
         if (url.endsWith('/health')) return Response.json({ status: 'ok' });
@@ -297,7 +297,7 @@ test('a thread skips a ruled-out Warden at advice and at review, each journalled
   ]);
   const runtime = manager.get('t')!;
   await runtime.learningSettled();
-  const last = runtime.domainLibrarians.get('security')!.threadKnowledge.history.at(-1)!;
+  const last = runtime.wardens.get('security')!.threadKnowledge.history.at(-1)!;
   expect(last.decision).toBe('prefiltered');
   expect(last.reason).toContain('0.020');
   expect(phases).not.toContain('advice');

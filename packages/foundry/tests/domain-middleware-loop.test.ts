@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test';
 import type { DeliveryRecord, InjectionArtifact } from '@inixiative/foundry-core';
-import type { LearningRecord } from '../src/agents/domain-librarian';
 import type { InjectionPlan } from '../src/agents/flow-orchestrator';
+import type { LearningRecord } from '../src/agents/warden';
 import {
   domainKnowledge,
   domains,
@@ -372,7 +372,7 @@ test('M4: committed knowledge survives publication failure and reconstructs with
   try {
     const completed = await f.send('a', 'publish-failed', 'Perform the migration');
     const runtime = f.current.manager.get('a')!;
-    runtime.domainLibrarians.get('architecture')!.threadKnowledge.layer.set = () => {
+    runtime.wardens.get('architecture')!.threadKnowledge.layer.set = () => {
       throw Error('M0_PUBLICATION_REJECTED');
     };
     held.resolve(learned('a', 'architecture'));
@@ -479,7 +479,7 @@ for (const supplied of [true, false])
         )!;
         const record = stored.signal.content as LearningRecord;
         const signal = runtime.thread.signals
-          .recent('domain_learning', 100)
+          .recent('warden_learning', 100)
           .find((s) => s.id === stored.signal.id)!;
         expect(record).toMatchObject({
           decision: 'learned',

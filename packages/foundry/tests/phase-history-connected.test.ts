@@ -120,7 +120,7 @@ for (const mode of ['sql', 'publication'] as const)
           "CREATE TRIGGER reject_connected BEFORE INSERT ON session_knowledge BEGIN SELECT RAISE(ABORT, 'CONTROLLED_CONNECTED_SQL'); END",
         );
       else
-        runtime.domainLibrarians.get('architecture')!.threadKnowledge.layer.set = () => {
+        runtime.wardens.get('architecture')!.threadKnowledge.layer.set = () => {
           throw Error('CONTROLLED_CONNECTED_PUBLICATION');
         };
       held.resolve(learned('a', 'architecture'));

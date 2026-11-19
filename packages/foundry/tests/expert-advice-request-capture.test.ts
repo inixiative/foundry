@@ -7,9 +7,9 @@ import {
   type LLMProvider,
   SignalBus,
 } from '@inixiative/foundry-core';
-import { DomainLibrarian } from '../src/agents/domain-librarian';
 import { FlowOrchestrator, type FlowTimingConfig } from '../src/agents/flow-orchestrator';
 import { Librarian } from '../src/agents/librarian';
+import { Warden } from '../src/agents/warden';
 import { chartered } from '../src/classify';
 import { expertParticipants, participantRequest } from '../src/viewer/ui/inspector-data.js';
 
@@ -52,7 +52,7 @@ function harness(
       };
       return [
         id,
-        new DomainLibrarian({
+        new Warden({
           domain: id,
           cache: caches.get(id)!,
           signals,
@@ -66,7 +66,7 @@ function harness(
     stack,
     signals,
     librarian,
-    domainLibrarians: experts,
+    wardens: experts,
     ...timing,
   });
   return {

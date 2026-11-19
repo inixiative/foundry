@@ -22,7 +22,7 @@ function setup() {
     config: starterConfig('mock', 'mock'),
     eventStream: events,
     llm: { id: 'mock', complete: async () => ({ model: 'mock', content: '{}' }) },
-    domains: [],
+    codeWardens: [],
     log: () => {},
     warn: () => {},
   });

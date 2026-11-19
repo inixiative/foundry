@@ -98,7 +98,7 @@ for (const operation of ['create', 'fork'] as const) {
       });
       const main = factory.create('main');
       // Outside a project there is no chorus.
-      expect(runtime.get(main.id)!.domainLibrarians.size).toBe(0);
+      expect(runtime.get(main.id)!.wardens.size).toBe(0);
       const registry = new ProjectRegistry();
       const project = registry.register({
         id: 'P',
@@ -110,7 +110,7 @@ for (const operation of ['create', 'fork'] as const) {
       const source = factory.create('source', { projectId: project.id, cwd: dir });
       project.addThread(source);
       expect(capturedOwner(source.id).projectId).toBe(project.id);
-      expect([...runtime.get(source.id)!.domainLibrarians.keys()]).toEqual(['compatibility']);
+      expect([...runtime.get(source.id)!.wardens.keys()]).toEqual(['compatibility']);
       const app = new Hono();
       registerRuntimeRoutes(
         app,
@@ -142,7 +142,7 @@ for (const operation of ['create', 'fork'] as const) {
       const owned = runtime.get(thread.id)!;
       expect({
         projectId: capturedOwner(thread.id).projectId,
-        experts: [...owned.domainLibrarians.keys()],
+        experts: [...owned.wardens.keys()],
       }).toEqual({ projectId: project.id, experts: ['compatibility'] });
       expect(thread.stack.getLayer('reference')).toBeUndefined();
       expect(calls).toBe(0);

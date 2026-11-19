@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test';
 import { ContextLayer, type LLMProvider, SignalBus } from '@inixiative/foundry-core';
-import { DomainLibrarian, oneCall } from '../src/agents/domain-librarian';
+import { oneCall, Warden } from '../src/agents/warden';
 import {
   adviceResponseProtocol,
   CHOOSE_ONE_CAVEAT,
@@ -171,7 +171,7 @@ test('a Warden reads its pointer over all its remarks, in advice and in guard', 
   };
   const cache = new ContextLayer({ id: 'k' });
   cache.set('KNOWLEDGE');
-  const warden = new DomainLibrarian({
+  const warden = new Warden({
     domain: 'concurrency-locks',
     cache,
     signals: new SignalBus(0),

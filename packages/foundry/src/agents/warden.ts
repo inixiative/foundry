@@ -4,19 +4,17 @@
  * @partOf feature:wardens
  */
 // ---------------------------------------------------------------------------
-// Domain Librarian — the shared pattern for all domain sub-agents (FLOW.md)
+// Warden — the shared implementation of every region Warden (FLOW.md)
 //
-// Each domain librarian:
+// Each Warden:
 // 1. Maintains a warm cache for its domain (a ContextLayer)
 // 2. Advises on incoming messages ("what context from my domain?")
 // 3. Guards after tool calls ("did this violate anything in my domain?")
 // 4. Emits signals to the Librarian for reconciliation
 //
-// The Librarian coordinates domain librarians — trigger-gating which guards
-// fire and reconciling all their signals into the thread-state layer.
+// The Librarian reconciles every Warden's signals into the thread-state layer.
 //
-// This is the base class. Concrete domains (docs, convention, security,
-// architecture, memory) subclass or instantiate with domain-specific config.
+// One class: each region's Warden is an instance with its region's config.
 // ---------------------------------------------------------------------------
 
 import { createHash } from 'node:crypto';
@@ -78,7 +76,7 @@ import type { AdviceTrigger } from './warden-triggers';
 // Types
 // ---------------------------------------------------------------------------
 
-/** What the domain librarian advises: context slices to inject. */
+/** What a Warden advises: context slices to inject. */
 export interface AdviseResult {
   /** Layer IDs to hydrate and inject. */
   layers: string[];
@@ -129,7 +127,7 @@ export interface AdviseOpts {
   cache?: string;
   /** Frozen revision of this domain's own understanding of the thread. */
   threadKnowledge?: string;
-  /** What `cache` was composed of and left out, frozen with it (`DomainLibrarian.cacheComposition()`). */
+  /** What `cache` was composed of and left out, frozen with it (`Warden.cacheComposition()`). */
   cacheComposition?: CacheComposition;
   /**
    * Observes the exact messages supplied to the provider for this call, once, synchronously,
@@ -647,7 +645,7 @@ export class ThreadKnowledge {
   }
 }
 
-/** What the domain librarian finds during guard check. */
+/** What a Warden finds during guard check. */
 export interface GuardFinding {
   /** Severity: critical findings push to session immediately, advisory are deferred. */
   severity: 'critical' | 'advisory';
@@ -798,71 +796,8 @@ export interface GuardOpts {
   from?: { readonly index: number; readonly carried: Carried };
 }
 
-/**
- * How a compiled rule was produced and when to recompile it.
- *
- * Every "programmatic" and "cached" strategy has a compiler behind it —
- * an LLM action that generates the deterministic artifact. The convention
- * regex, the tag alias map, the doc summary — all LLM outputs that then
- * run without LLM calls at request time.
- *
- * The compiler metadata lets the system know:
- *   - When to recompile (signal-driven, not time-driven)
- *   - What prompt produced the current rules (reproducibility)
- *   - How stale the compiled output is
- */
-export interface RuleCompiler {
-  /** Signal kinds that trigger recompilation (e.g., "correction", "convention"). */
-  recompileOn: string[];
-  /** Prompt template used to generate the rule. The warm cache is injected as context. */
-  compilePrompt: string;
-  /** When the current rule was last compiled. */
-  lastCompiled: number;
-  /**
-   * How many triggering signals accumulate before recompilation fires.
-   * Default: 1 (recompile on every trigger). Higher values batch.
-   * Example: convention guard recompiles after 3 corrections, not every one.
-   */
-  threshold?: number;
-  /** Counter of accumulated triggers since last compile. */
-  pendingTriggers?: number;
-}
-
-/**
- * Processing strategy — how a domain librarian resolves its advise/guard calls.
- *
- * Two dimensions:
- *   1. EXECUTION — how it runs at request time (programmatic / cached / live)
- *   2. COMPILATION — how the rules get written (LLM action, expressed by RuleCompiler)
- *
- * The lifecycle:
- *   live → system accumulates signals → LLM compiles rules → cached/programmatic
- *   → more signals → LLM recompiles → updated rules
- *
- * "Programmatic" doesn't mean "no LLM" — it means the LLM ran at compile time,
- * not at request time. The compile step IS the LLM action.
- */
-export type ProcessingStrategy =
-  | {
-      kind: 'programmatic';
-      fn: (input: string, cache: string) => string;
-      /** How the function was compiled. Null = hand-written, never recompiled. */
-      compiler: RuleCompiler | null;
-    }
-  | {
-      kind: 'cached';
-      ttl: number;
-      invalidateOn: string[];
-      /** How the cache content was compiled. */
-      compiler: RuleCompiler | null;
-    }
-  | {
-      kind: 'live';
-      budget: number;
-    };
-
-/** Configuration for a domain librarian instance. */
-export interface DomainLibrarianConfig {
+/** Configuration for a Warden instance. */
+export interface WardenConfig {
   /** Domain identifier (e.g., "docs", "convention", "security"). */
   domain: string;
   /** Its domain knowledge: a configured Warden's composed `domainKnowledge` slot (a private layer). */
@@ -894,17 +829,6 @@ export interface DomainLibrarianConfig {
   advisePrompt?: string;
   /** System prompt for guard mode. */
   guardPrompt?: string;
-  /** Processing strategy for advise calls. Default: live (LLM every time). */
-  adviseStrategy?: ProcessingStrategy;
-  /** Processing strategy for guard calls. Default: live (LLM every time). */
-  guardStrategy?: ProcessingStrategy;
-  /** If true, guard uses programmatic matching instead of LLM (like Memory domain). */
-  programmaticGuard?: boolean;
-  /**
-   * Programmatic guard function. Called instead of LLM when programmaticGuard=true, over the turn's
-   * activity. Return findings directly — no LLM call needed.
-   */
-  guardFn?: (activity: TurnActivity, cache: string) => GuardFinding[];
   /**
    * Owned layer holding this domain's understanding of the thread. Supplied by
    * the thread runtime so it sits on that thread's stack; created privately
@@ -968,10 +892,10 @@ function countedAnswer(result: { content: string; tokens?: TokenCounts }): {
 }
 
 // ---------------------------------------------------------------------------
-// Domain Librarian
+// Warden
 // ---------------------------------------------------------------------------
 
-export class DomainLibrarian {
+export class Warden {
   readonly domain: string;
   private _cache: ContextLayer;
   private _instructions: ContextLayer | undefined;
@@ -987,10 +911,6 @@ export class DomainLibrarian {
   /** Whether the phase prompts came from the agent's settings (not the built-in fallback). */
   private _promptFromSettings = false;
   private _guardPrompt!: string;
-  private _programmaticGuard: boolean;
-  private _guardFn?: (activity: TurnActivity, cache: string) => GuardFinding[];
-  private _adviseStrategy: ProcessingStrategy;
-  private _guardStrategy: ProcessingStrategy;
   private _reviewPrompt!: string;
   private _threadKnowledge: ThreadKnowledge;
   private _stages: readonly BoundStage[];
@@ -1000,7 +920,7 @@ export class DomainLibrarian {
   /** The point charter its review is chartered with: today's Warden charter. */
   private _reviewCharter: string;
 
-  constructor(config: DomainLibrarianConfig) {
+  constructor(config: WardenConfig) {
     this.domain = config.domain;
     this._cache = config.cache;
     this._instructions = config.instructions;
@@ -1018,8 +938,6 @@ export class DomainLibrarian {
       maxTurns: 1,
       timeout: 0,
     };
-    this._programmaticGuard = config.programmaticGuard ?? false;
-    this._guardFn = config.guardFn;
     const stages = config.stages?.length ? config.stages : [{ config: DEFAULT_STAGE }];
     this._stages = stages.map((stage, index) => {
       if (index && (!stage.llm || !stage.cache))
@@ -1052,21 +970,13 @@ export class DomainLibrarian {
       { maxChars: config.maxKnowledgeChars },
     );
 
-    // Default strategies: live LLM unless programmatic guard is set
-    this._adviseStrategy = config.adviseStrategy ?? { kind: 'live', budget: 512 };
-    this._guardStrategy =
-      config.guardStrategy ??
-      (config.programmaticGuard
-        ? { kind: 'programmatic', fn: () => '', compiler: null }
-        : { kind: 'live', budget: 512 });
-
     this.reconfigure(config);
   }
 
   /** Instructions, guard triggers and budget from settings. Applies from the next advise, guard or review. */
   reconfigure(
     config: Pick<
-      DomainLibrarianConfig,
+      WardenConfig,
       'advisePrompt' | 'guardPrompt' | 'reviewPrompt' | 'guardTriggers' | 'budget'
     >,
   ): void {
@@ -1133,24 +1043,12 @@ export class DomainLibrarian {
     return `${this.domain} Warden (role ${this._role}): instructions ${instructions.length} + domain knowledge ${domainKnowledge.length} = ${total} chars exceed its budget of ${this._budget} (composition.roles.${this._role}.budget)${largest.length ? `; largest: ${largest.join('; ')}` : ''}. Nothing was sent or truncated.`;
   }
 
-  /** Processing strategy for advise calls. */
-  get adviseStrategy(): ProcessingStrategy {
-    return this._adviseStrategy;
-  }
-
-  /** Processing strategy for guard calls. */
-  get guardStrategy(): ProcessingStrategy {
-    return this._guardStrategy;
-  }
-
   /** Whether this domain's guard should fire for a given tool type. */
   shouldGuard(toolType: string): boolean {
-    // Programmatic guards run on everything (free)
-    if (this._programmaticGuard) return true;
     return this._guardTriggers.has(toolType);
   }
 
-  /** The tools this domain's guard triggers name (a programmatic guard names none and runs on any activity). */
+  /** The tools this domain's guard triggers name. */
   get guardTriggers(): ReadonlySet<string> {
     return this._guardTriggers;
   }
@@ -1830,18 +1728,6 @@ export class DomainLibrarian {
       };
     }
 
-    // Programmatic guard — no LLM call
-    if (this._programmaticGuard && this._guardFn) {
-      const findings = this._guardFn(activity, this._cache.content);
-      await this._emitFindings(findings, activity);
-      return {
-        findings,
-        outcome: { status: 'answered', result: findings.length ? 'findings' : 'all-clear' },
-        request: { status: 'not-sent', phase: 'guard', reason: 'programmatic' },
-      };
-    }
-
-    // LLM-based guard
     const head = this._stages[0]!.cache;
     const cacheContent = head.content;
     if (!cacheContent) {
@@ -1980,7 +1866,7 @@ export class DomainLibrarian {
       await this._signals.emit({
         id: newId(`${this.domain}-guard`),
         kind,
-        source: `${this.domain}-librarian`,
+        source: `${this.domain}-warden`,
         content: {
           domain: this.domain,
           severity: finding.severity,

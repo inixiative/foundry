@@ -3,7 +3,7 @@ import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ContextLayer, ContextStack, type LLMProvider, Thread } from '@inixiative/foundry-core';
-import { resolveThreadDomains } from '../src/agents/configured-experts';
+import { resolveThreadWardens } from '../src/agents/configured-wardens';
 import { regionRoleId } from '../src/agents/region-roster';
 import { buildAgents, buildLayers, ThreadFactory } from '../src/agents/thread-factory';
 import { ThreadRuntimeManager } from '../src/agents/thread-runtime';
@@ -112,7 +112,7 @@ for (const mode of ['enabled', 'off', 'absent'] as const) {
     try {
       const t = f.factory.create(mode, inProject(c)),
         runtime = f.manager.get(t.id)!;
-      expect(runtime.domainLibrarians.has('docs')).toBe(mode === 'enabled');
+      expect(runtime.wardens.has('docs')).toBe(mode === 'enabled');
       expect(f.warnings).toHaveLength(0);
       expect(f.calls).toBe(0);
       expect(f.loads).toBe(0);
@@ -131,7 +131,7 @@ test('explicit review override is reported while requested phase settings and pr
     f = setup(c);
   try {
     const t = f.factory.create('override', inProject(c)),
-      lib = f.manager.get(t.id)!.domainLibrarians.get('docs')!;
+      lib = f.manager.get(t.id)!.wardens.get('docs')!;
     expect(lib.reviewProviderId).toBe('phase');
     expect(lib.reviewOptions).toMatchObject({
       model: 'review-model',
@@ -142,15 +142,15 @@ test('explicit review override is reported while requested phase settings and pr
       timeout: 0,
     });
     const view = resolveProjectView(c, 'P')!.config;
-    const resolved = resolveThreadDomains(
+    const resolved = resolveThreadWardens(
       view,
       new Map(buildLayers(view, { sourceResolver: () => null }).map((l) => [l.id, l])),
-      { programmatic: [], llm: f.llm, providers: f.providers },
+      { codeWardens: [], llm: f.llm, providers: f.providers },
     ).find((d) => d.domain === 'docs')!;
     expect(resolved.adviseOpts).toMatchObject({ model: 'expert-model', tools: false, maxTurns: 1 });
     expect(resolved.adviseOpts!.thinking).toBeUndefined();
     expect(f.warnings).toHaveLength(1);
-    expect(f.warnings[0]).toContain('expert-review-profile-override');
+    expect(f.warnings[0]).toContain('warden-review-profile-override');
     expect(f.warnings[0]).toContain(`domain="docs" agent="${regionRoleId('docs')}"`);
     expect(f.warnings[0]).toContain('learning.review');
     expect(f.warnings[0]).toContain('changed=provider,model,thinking,maxTokens');
@@ -185,7 +185,7 @@ test('a later generated-layer conflict does not publish a successful resolution 
   const manager = new ThreadRuntimeManager({
     config: c,
     llm: f.llm,
-    domains: [{ domain: 'conventions', layerId: 'conventions', guardTriggers: [] }],
+    codeWardens: [{ domain: 'conventions', layerId: 'conventions', guardTriggers: [] }],
     warn: (message) => f.warnings.push(message),
   });
   const t = new Thread(
@@ -197,7 +197,7 @@ test('a later generated-layer conflict does not publish a successful resolution 
     ]),
   );
   try {
-    expect(() => manager.attach(t)).toThrow('Generated expert layer already exists');
+    expect(() => manager.attach(t)).toThrow('Generated Warden layer already exists');
     expect(f.warnings).toHaveLength(0);
     expect(manager.runtimes.size).toBe(0);
     expect(f.calls).toBe(0);

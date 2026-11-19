@@ -109,7 +109,7 @@ test('reconcile targets name the owning thread for completed work and learning, 
     reconcileTargets({
       kind: 'signal',
       threadId: 'main',
-      signal: { kind: 'domain_learning', content: { decision: 'delayed' } },
+      signal: { kind: 'warden_learning', content: { decision: 'delayed' } },
     }),
   ).toEqual({ threadId: 'main', messages: false, knowledge: true });
   expect(

@@ -102,33 +102,11 @@ export {
   type UsageEntry,
   type UsageSummary,
 } from '@inixiative/foundry-core';
-
-// Domain Librarian — shared advise + guard pattern
-export {
-  type AdviseOpts,
-  type AdviseResult,
-  DomainLibrarian,
-  type DomainLibrarianConfig,
-  type GuardFinding,
-  type GuardResult,
-  type KnowledgeEvidence,
-  type KnowledgeOwner,
-  type LearningDecision,
-  type LearningRecord,
-  type ProcessingStrategy,
-  type ReviewInput,
-  type ReviewResult,
-  type RuleCompiler,
-  ThreadKnowledge,
-  type ThreadKnowledgeSnapshot,
-  type ToolObservation,
-} from './domain-librarian';
 // Flow Orchestrator — wires the five FLOW.md roles together
 export {
   type ContributionProvenance,
   type ContributionSegments,
   type DeliveryEvidence,
-  type DomainContribution,
   FlowOrchestrator,
   type FlowOrchestratorConfig,
   type FlowTimingConfig,
@@ -139,6 +117,7 @@ export {
   type LayerRevision,
   type OutstandingCall,
   type PlanInput,
+  type WardenContribution,
 } from './flow-orchestrator';
 // Librarian — sole writer to thread-state layer
 export {
@@ -180,12 +159,12 @@ export {
 // Thread Runtime — per-thread Librarian, Wardens, orchestrator, bridges
 export {
   auxiliarySessionId,
+  type CodeWardenConfig,
   type CorrelatedToolObservation,
   type LearningConfig,
   type ScopedProviderIdentity,
   type SignalSink,
   scopedProvider,
-  type ThreadDomainConfig,
   type ThreadKnowledgeBundle,
   type ThreadRuntime,
   type ThreadRuntimeDeps,
@@ -194,3 +173,21 @@ export {
 } from './thread-runtime';
 // Tool-use loop
 export { type ToolLoopOpts, toolUseLoop } from './tool-loop';
+// Warden — shared advise + guard pattern
+export {
+  type AdviseOpts,
+  type AdviseResult,
+  type GuardFinding,
+  type GuardResult,
+  type KnowledgeEvidence,
+  type KnowledgeOwner,
+  type LearningDecision,
+  type LearningRecord,
+  type ReviewInput,
+  type ReviewResult,
+  ThreadKnowledge,
+  type ThreadKnowledgeSnapshot,
+  type ToolObservation,
+  Warden,
+  type WardenConfig,
+} from './warden';

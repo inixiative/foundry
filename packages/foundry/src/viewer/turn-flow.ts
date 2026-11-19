@@ -210,7 +210,7 @@ export function slimTurn(record: TurnFlowRecord) {
               'elapsed',
               'sealedAt',
               'fresh',
-              'domainsConsulted',
+              'wardensConsulted',
               'layers',
               'input',
               'contributions',

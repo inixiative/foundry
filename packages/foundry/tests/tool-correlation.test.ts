@@ -130,7 +130,7 @@ function setup(scripts: Record<string, Step[]>) {
     config,
     log: () => {},
     warn: () => {},
-    domains: [{ domain: 'security', layerId: 'security', guardTriggers: [] }],
+    codeWardens: [{ domain: 'security', layerId: 'security', guardTriggers: [] }],
     llm: flowLlm,
   });
   cleanups.push(() => runtime.disposeAll());

@@ -8,7 +8,7 @@ import { mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { roleDirectory } from '@inixiative/foundry-core';
-import { configuredExperts } from '../src/agents/configured-experts';
+import { configuredWardens } from '../src/agents/configured-wardens';
 import { regionOfSubject, regionRoleId, regionSourceId } from '../src/agents/region-roster';
 import { roleFilePath } from '../src/feedback/apply';
 import {
@@ -135,7 +135,7 @@ test('a region may carry the name of any built-in role: its Warden is its own ro
   validateConfig(c);
   const view = resolveProjectView(c, 'P')!;
   expect(view.chorus.on).toBe(true);
-  const experts = configuredExperts(view.config).experts;
+  const experts = configuredWardens(view.config).wardens;
   expect(experts.map((e) => e.domain).sort()).toEqual([...names].sort());
   for (const expert of experts) {
     expect(expert.agentId).toBe(regionRoleId(expert.domain));
@@ -201,8 +201,8 @@ test("Foundry's own regions build a chorus: every committed region resolves to a
   expect(view.chorus.reason).toBeUndefined();
   expect(view.chorus).toMatchObject({ on: true, enabledBy: 'repository' });
   expect(
-    configuredExperts(view.config)
-      .experts.map((e) => e.domain)
+    configuredWardens(view.config)
+      .wardens.map((e) => e.domain)
       .sort(),
   ).toEqual(committed);
 });

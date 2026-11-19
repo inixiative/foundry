@@ -28,8 +28,8 @@ import type {
 import { freezeEvidence, type NativeToolRecord, newId } from '@inixiative/foundry-core';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
-import { isThreadKnowledgeLayerId, threadKnowledgeLayerId } from '../agents/domain-librarian';
 import type { ThreadRuntimeManager } from '../agents/thread-runtime';
+import { isThreadKnowledgeLayerId, threadKnowledgeLayerId } from '../agents/warden';
 import { localInventory } from '../devices/local-inventory';
 import { FEEDBACK_ROLE } from '../prompts/instruction-settings';
 import { readOperationSchema } from '../providers/kingdom-access-client';

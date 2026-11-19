@@ -3,7 +3,7 @@
 Foundry runs subscription-only by default. A fresh install, with no settings at all, runs the Claude Code worker and Foundry's decisions from the logins already on the machine:
 
 - **Worker:** Claude Code, using the default Claude login (`~/.claude`, selected by leaving `CLAUDE_CONFIG_DIR` unset). Set `defaults.provider` to `codex` (for example with `defaults.model: "gpt-6.2-astra"`) to run main threads on Codex by default instead, on the Codex CLI's ChatGPT login (`~/.codex`). A project may set its own default (`projects[id].defaults.provider`), and any thread may start on another worker (below).
-- **Decisions:** Claude Haiku 5.5 (`claude-haiku-5-5`) through the same Claude login (`~/.claude`), on primed Claude Code sessions. The Librarian, Wardens (advise, guard and review), configured experts and thread naming all use this decision profile. The runtime is a setting: `subscriptionOnly.decisionRuntime: "codex"` runs decisions on the Codex CLI's ChatGPT login (`~/.codex`) with GPT-6 Luna instead.
+- **Decisions:** Claude Haiku 5.5 (`claude-haiku-5-5`) through the same Claude login (`~/.claude`), on primed Claude Code sessions. The Librarian, Wardens (advise, guard and review) and thread naming all use this decision profile. The runtime is a setting: `subscriptionOnly.decisionRuntime: "codex"` runs decisions on the Codex CLI's ChatGPT login (`~/.codex`) with GPT-6 Luna instead.
 
 No API provider is constructed in this mode. There is no paid fallback, no automatic retry and no model substitution. API-key providers need an explicit opt-in.
 

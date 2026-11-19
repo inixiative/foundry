@@ -4,7 +4,7 @@
  * @partOf feature:evals
  */
 // The Warden charter eval: run a chorus over real-session probes under one classify configuration and
-// score how quiet, how right and how in-scope it is. Same code path as live (DomainLibrarian running
+// score how quiet, how right and how in-scope it is. Same code path as live (Warden running
 // classify's stages, each charter composed above the Warden's instructions), at both trigger points:
 // `user-message` advises on the user's ask, `agent-action` guards the agent's turn. No thread, no
 // writes. Scoring and the probe contract live in foundry-core (`feedback/warden-probes`), so Oracle
@@ -32,11 +32,11 @@ import {
 import {
   type AdviseResult,
   adviceOutcomeOf,
-  DomainLibrarian,
   type GuardResult,
   oneCall,
+  Warden,
   type WardenStage,
-} from '../agents/domain-librarian';
+} from '../agents/warden';
 import {
   type Carried,
   type ClassifyResult,
@@ -626,7 +626,7 @@ function librarian(
   counted: (provider: LLMProvider, stage: number) => LLMProvider,
   holds?: readonly string[],
   sink?: DebugSink,
-): DomainLibrarian {
+): Warden {
   const layer = (id: string, text: string) => {
     const l = new ContextLayer({ id });
     l.set(text);
@@ -656,7 +656,7 @@ function librarian(
       ...(regionInstructions !== undefined ? { regionInstructions } : {}),
     };
   });
-  return new DomainLibrarian({
+  return new Warden({
     domain: warden.domain,
     cache: layer(`eval:${warden.domain}`, warden.domainKnowledge),
     instructions: layer(`eval:${warden.domain}:instructions`, warden.instructions),

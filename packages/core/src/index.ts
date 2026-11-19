@@ -164,14 +164,14 @@ export {
 export type { CredentialReference, CredentialResolver, CredentialScope } from './credentials';
 export type {
   DeliveryOwner,
-  ExpertDeliveryProof,
   ProviderBoundaryReceipt,
+  WardenDeliveryProof,
 } from './delivery-evidence';
 export {
   assemblyDigest,
   boundaryReceipt,
   evidenceDigest,
-  verifyExpertDelivery,
+  verifyWardenDelivery,
 } from './delivery-evidence';
 // Observability
 export {
@@ -240,13 +240,13 @@ export {
   styleOf,
 } from './feedback/review-findings';
 export {
-  type DomainAgreement,
   fixtureProbe,
   labelAgreement,
   type ParsedWardenLabels,
   parseWardenLabels,
   type UnlabelledFixture,
   WARDEN_LABEL_PROMPT,
+  type WardenAgreement,
   type WardenFixture,
   type WardenLabel,
   type WardenRosterEntry,

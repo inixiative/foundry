@@ -110,7 +110,7 @@ function setup(opts: SetupOpts = {}) {
     config,
     log: () => {},
     warn: () => {},
-    domains: domains.map((d) => ({ domain: d, layerId: d, guardTriggers: [] })),
+    codeWardens: domains.map((d) => ({ domain: d, layerId: d, guardTriggers: [] })),
     llm: flowLlm,
     learning: opts.learning,
   });
@@ -141,9 +141,7 @@ describe('per-domain thread knowledge and causal learning', () => {
     );
     expect(JSON.stringify(providerInputs)).toContain('ADVICE-security');
     expect(reviewCalls).toHaveLength(0);
-    expect(runtime.get('fixed')!.domainLibrarians.get('security')!.threadKnowledge.revision).toBe(
-      0,
-    );
+    expect(runtime.get('fixed')!.wardens.get('security')!.threadKnowledge.revision).toBe(0);
     expect(JSON.stringify(providerInputs)).not.toContain('FORBIDDEN-LEARNING');
   });
   test('a fact learned from completed work reaches the next provider input without the user repeating it', async () => {
@@ -162,7 +160,7 @@ describe('per-domain thread knowledge and causal learning', () => {
     expect(JSON.stringify(providerInputs[0])).not.toContain('LEARNED-SENTINEL');
 
     await owned.learningSettled();
-    const security = owned.domainLibrarians.get('security')!;
+    const security = owned.wardens.get('security')!;
     expect(security.threadKnowledge.revision).toBe(1);
     expect(security.threadKnowledge.content).toContain('LEARNED-SENTINEL');
     expect(security.threadKnowledge.history.at(-1)).toMatchObject({
@@ -195,8 +193,8 @@ describe('per-domain thread knowledge and causal learning', () => {
     await thread.dispatch('worker', 'Do work');
     await owned.learningSettled();
 
-    const security = owned.domainLibrarians.get('security')!;
-    const docs = owned.domainLibrarians.get('docs')!;
+    const security = owned.wardens.get('security')!;
+    const docs = owned.wardens.get('docs')!;
     expect(security.threadKnowledge.content).toContain('SECURITY-LEARNED');
     expect(docs.threadKnowledge.content).toBe('');
     expect(docs.threadKnowledge.revision).toBe(0);
@@ -230,7 +228,7 @@ describe('per-domain thread knowledge and causal learning', () => {
     const c = factory.create('c', { projectId: 'Q' });
     await a.dispatch('worker', 'learn something');
     await runtime.get('a')!.learningSettled();
-    expect(runtime.get('a')!.domainLibrarians.get('security')!.threadKnowledge.revision).toBe(1);
+    expect(runtime.get('a')!.wardens.get('security')!.threadKnowledge.revision).toBe(1);
 
     await b.dispatch('worker', 'b turn');
     await c.dispatch('worker', 'c turn');
@@ -238,8 +236,8 @@ describe('per-domain thread knowledge and causal learning', () => {
     await runtime.get('c')!.learningSettled();
     expect(JSON.stringify(providerInputs[1])).not.toContain('PRIVATE-A-LEARNING');
     expect(JSON.stringify(providerInputs[2])).not.toContain('PRIVATE-A-LEARNING');
-    expect(runtime.get('b')!.domainLibrarians.get('security')!.threadKnowledge.content).toBe('');
-    expect(runtime.get('c')!.domainLibrarians.get('security')!.threadKnowledge.content).toBe('');
+    expect(runtime.get('b')!.wardens.get('security')!.threadKnowledge.content).toBe('');
+    expect(runtime.get('c')!.wardens.get('security')!.threadKnowledge.content).toBe('');
     expect(template.getLayer('thread-knowledge:security')).toBeUndefined();
     expect(template.getLayer('security')!.content).toBe('CONFIGURED-security-KNOWLEDGE');
 
@@ -265,9 +263,9 @@ describe('per-domain thread knowledge and causal learning', () => {
     await thread.signals.emit(seen[0]);
     await owned.learningSettled();
     expect(reviewCalls.filter((r) => r.domain === 'security')).toHaveLength(1);
-    expect(owned.domainLibrarians.get('security')!.threadKnowledge.revision).toBe(1);
+    expect(owned.wardens.get('security')!.threadKnowledge.revision).toBe(1);
     expect(
-      owned.domainLibrarians
+      owned.wardens
         .get('security')!
         .threadKnowledge.history.filter((h) => h.decision === 'learned'),
     ).toHaveLength(1);
@@ -291,7 +289,7 @@ describe('per-domain thread knowledge and causal learning', () => {
     await expect(thread.dispatch('worker', 'break')).rejects.toThrow('build failed');
     await owned.learningSettled();
 
-    const knowledge = owned.domainLibrarians.get('security')!.threadKnowledge;
+    const knowledge = owned.wardens.get('security')!.threadKnowledge;
     expect(reviewCalls).toHaveLength(0);
     expect(knowledge.revision).toBe(0);
     expect(knowledge.history.at(-1)!.decision).toBe('rejected');
@@ -316,7 +314,7 @@ describe('per-domain thread knowledge and causal learning', () => {
     await thread.dispatch('worker', 'two');
     await owned.learningSettled();
 
-    const knowledge = owned.domainLibrarians.get('security')!.threadKnowledge;
+    const knowledge = owned.wardens.get('security')!.threadKnowledge;
     expect(knowledge.revision).toBe(0);
     expect(knowledge.content).toBe('');
     const decisions = knowledge.history.map((h) => h.decision);
@@ -344,7 +342,7 @@ describe('per-domain thread knowledge and causal learning', () => {
     await thread.dispatch('worker', 'slow review');
     await owned.learningSettled();
 
-    const knowledge = owned.domainLibrarians.get('security')!.threadKnowledge;
+    const knowledge = owned.wardens.get('security')!.threadKnowledge;
     expect(knowledge.history.at(-1)).toMatchObject({ decision: 'expired' });
     expect(knowledge.revision).toBe(0);
     expect(owned.learningOutstanding).toBe(1);
@@ -373,7 +371,7 @@ describe('per-domain thread knowledge and causal learning', () => {
     });
     const thread = factory.create('a', { projectId: 'P' });
     const owned = runtime.get('a')!;
-    const security = owned.domainLibrarians.get('security')!;
+    const security = owned.wardens.get('security')!;
     await thread.dispatch('worker', 'work then dispose');
     expect(owned.learningOutstanding).toBe(1);
 
@@ -394,7 +392,7 @@ describe('per-domain thread knowledge and causal learning', () => {
     const { runtime, factory } = setup({ reviewers: { security: () => LEARN('SIGNALLED') } });
     const thread = factory.create('a', { projectId: 'P' });
     const seen: Signal[] = [];
-    thread.signals.on('domain_learning', (s) => {
+    thread.signals.on('warden_learning', (s) => {
       seen.push(s);
     });
     await thread.dispatch('worker', 'work');
@@ -437,7 +435,7 @@ describe('per-domain thread knowledge and causal learning', () => {
     const restored = factory2.create('a', { projectId: 'P' });
     const owned2 = runtime2.get('a')!;
     owned2.restoreKnowledge(snapshot);
-    const security = owned2.domainLibrarians.get('security')!;
+    const security = owned2.wardens.get('security')!;
     expect(security.threadKnowledge.revision).toBe(1);
     expect(security.threadKnowledge.content).toContain('PERSIST-ME');
     expect(restored.stack.getLayer('thread-knowledge:security')!.content).toContain('PERSIST-ME');
@@ -529,7 +527,7 @@ describe('per-domain thread knowledge and causal learning', () => {
     release();
     await runtime.get('a')!.learningSettled();
     // Both completed turns were reviewed once each, in order, once released.
-    const knowledge = runtime.get('a')!.domainLibrarians.get('security')!.threadKnowledge;
+    const knowledge = runtime.get('a')!.wardens.get('security')!.threadKnowledge;
     expect(knowledge.revision).toBe(2);
     expect(
       knowledge.history.filter((h) => h.decision === 'learned').map((h) => h.revision),
@@ -602,14 +600,12 @@ describe('per-domain thread knowledge and causal learning', () => {
 
     releaseSecurity();
     await runtime.get('a')!.learningSettled();
-    const security = runtime.get('a')!.domainLibrarians.get('security')!.threadKnowledge;
+    const security = runtime.get('a')!.wardens.get('security')!.threadKnowledge;
     expect(security.history.filter((h) => h.decision === 'learned').map((h) => h.revision)).toEqual(
       [1, 2],
     );
     expect(security.content).toBe('SEC:turn-2');
-    expect(runtime.get('a')!.domainLibrarians.get('docs')!.threadKnowledge.content).toBe(
-      'DOCS:turn-2',
-    );
+    expect(runtime.get('a')!.wardens.get('docs')!.threadKnowledge.content).toBe('DOCS:turn-2');
   });
 
   test('bundle ownership and shape are validated atomically before any mutation', async () => {
@@ -654,11 +650,11 @@ describe('per-domain thread knowledge and causal learning', () => {
     expect(() => ok.restoreKnowledge(badRevision)).toThrow(/revision/);
 
     // One invalid child means nothing is applied, not even the valid sibling.
-    expect(ok.domainLibrarians.get('security')!.threadKnowledge.revision).toBe(0);
-    expect(ok.domainLibrarians.get('docs')!.threadKnowledge.revision).toBe(0);
+    expect(ok.wardens.get('security')!.threadKnowledge.revision).toBe(0);
+    expect(ok.wardens.get('docs')!.threadKnowledge.revision).toBe(0);
     ok.restoreKnowledge(bundle);
-    expect(ok.domainLibrarians.get('security')!.threadKnowledge.content).toBe('OWNED-BY-P');
-    expect(ok.domainLibrarians.get('docs')!.threadKnowledge.content).toBe('DOCS-P');
+    expect(ok.wardens.get('security')!.threadKnowledge.content).toBe('OWNED-BY-P');
+    expect(ok.wardens.get('docs')!.threadKnowledge.content).toBe('DOCS-P');
   });
 
   test('snapshots deep-copy evidence so callers cannot mutate live knowledge', async () => {
@@ -667,7 +663,7 @@ describe('per-domain thread knowledge and causal learning', () => {
     await thread.dispatch('worker', 'work');
     const owned = runtime.get('a')!;
     await owned.learningSettled();
-    const knowledge = owned.domainLibrarians.get('security')!.threadKnowledge;
+    const knowledge = owned.wardens.get('security')!.threadKnowledge;
     const bundle = owned.knowledgeSnapshot();
     (bundle.domains.security.evidence[0] as { id: string }).id = 'MUTATED';
     (bundle.domains.security as { content: string }).content = 'MUTATED';

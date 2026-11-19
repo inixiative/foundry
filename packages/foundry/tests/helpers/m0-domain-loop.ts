@@ -274,7 +274,7 @@ export async function m0Scenario(options: ScenarioOptions = {}) {
       log() {},
       warn() {},
       learning: { timeoutMs: 10, hardTimeoutMs: 1000, ...options.learning },
-      domains: domains.map((d) => ({
+      codeWardens: domains.map((d) => ({
         domain: d,
         layerId: d,
         // The migration tool is the turn's one guardable call: one guard over the turn, per Warden.
@@ -386,7 +386,7 @@ export async function m0Scenario(options: ScenarioOptions = {}) {
           signals.some(
             (s) =>
               s.thread === thread &&
-              s.signal.kind === 'domain_learning' &&
+              s.signal.kind === 'warden_learning' &&
               (s.signal.content as any).domain === domain &&
               (s.signal.content as any).decision === 'learned',
           ),

@@ -64,7 +64,9 @@ function setup(knowledge = 'DURABLE-PRIVATE-SENTINEL') {
       log: () => {},
       warn: () => {},
       eventStream: events,
-      domains: withWarden ? [{ domain: 'security', layerId: 'security', guardTriggers: [] }] : [],
+      codeWardens: withWarden
+        ? [{ domain: 'security', layerId: 'security', guardTriggers: [] }]
+        : [],
       llm: {
         id: 'flow',
         complete: async (messages) =>

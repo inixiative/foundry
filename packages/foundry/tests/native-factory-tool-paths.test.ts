@@ -81,7 +81,7 @@ function fixture(central: LLMProvider, tools?: ToolRegistry) {
     log() {},
     warn() {},
     learning: { timeoutMs: 20, hardTimeoutMs: 1000 },
-    domains: domains.map((d) => ({ domain: d, layerId: d, guardTriggers: [] })),
+    codeWardens: domains.map((d) => ({ domain: d, layerId: d, guardTriggers: [] })),
   } as any);
   const factory = new ThreadFactory({
     stack,

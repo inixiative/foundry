@@ -72,7 +72,7 @@ async function fixture(name: string, withNative = false) {
       warn() {},
       eventStream: events,
       learning: { timeoutMs: 5, hardTimeoutMs: 120_000 },
-      domains: [{ domain: 'conventions', layerId: 'conventions', guardTriggers: [] }],
+      codeWardens: [{ domain: 'conventions', layerId: 'conventions', guardTriggers: [] }],
       llm: {
         id: 'controlled-review',
         async complete(messages) {

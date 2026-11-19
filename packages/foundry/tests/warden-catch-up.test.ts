@@ -8,9 +8,9 @@ import {
   SignalBus,
 } from '@inixiative/foundry-core';
 import { degradedAnswer } from '../src/agents/chorus-degraded';
-import { DomainLibrarian } from '../src/agents/domain-librarian';
 import { FlowOrchestrator } from '../src/agents/flow-orchestrator';
 import { Librarian } from '../src/agents/librarian';
+import { Warden } from '../src/agents/warden';
 import {
   CATCH_UP_MAX_CHARS,
   CATCH_UP_MAX_MESSAGES,
@@ -163,7 +163,7 @@ function chorus(answer: (message: string, opts: CompletionOpts | undefined) => s
   const stack = new ContextStack([cache]);
   const librarian = new Librarian({ stack, signals });
   const asked: Array<{ message: string; heldOnly?: boolean }> = [];
-  const lib = new DomainLibrarian({
+  const lib = new Warden({
     domain: 'schema',
     cache,
     signals,
@@ -180,7 +180,7 @@ function chorus(answer: (message: string, opts: CompletionOpts | undefined) => s
     stack,
     signals,
     librarian,
-    domainLibrarians: new Map([['schema', lib]]),
+    wardens: new Map([['schema', lib]]),
   });
   cleanups.push(() => {
     flow.dispose();

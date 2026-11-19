@@ -89,7 +89,7 @@ const history = [
     storedAt: 10,
     signal: {
       id: 's1',
-      kind: 'domain_learning',
+      kind: 'warden_learning',
       content: {
         domain: 'architecture',
         decision: 'learned',
@@ -104,7 +104,7 @@ const history = [
     storedAt: 11,
     signal: {
       id: 's2',
-      kind: 'domain_learning',
+      kind: 'warden_learning',
       content: {
         domain: 'testing',
         decision: 'delayed',
@@ -117,7 +117,7 @@ const history = [
     storedAt: 12,
     signal: {
       id: 's3',
-      kind: 'domain_learning',
+      kind: 'warden_learning',
       content: {
         domain: 'architecture',
         decision: 'no-comment',
@@ -240,7 +240,7 @@ const snapshotOnly = {
       storedAt: 20,
       signal: {
         id: 's9',
-        kind: 'domain_learning',
+        kind: 'warden_learning',
         content: {
           domain: 'architecture',
           decision: 'no-comment',
@@ -289,7 +289,7 @@ test('an older or mismatched learned event is not attached to a newer durable sn
         storedAt: 5,
         signal: {
           id: 's0',
-          kind: 'domain_learning',
+          kind: 'warden_learning',
           content: {
             domain: 'architecture',
             decision: 'learned',
@@ -317,7 +317,7 @@ test('an older or mismatched learned event is not attached to a newer durable sn
         storedAt: 5,
         signal: {
           id: 's0',
-          kind: 'domain_learning',
+          kind: 'warden_learning',
           content: {
             domain: 'architecture',
             decision: 'learned',
@@ -345,7 +345,7 @@ test('a matching learn outcome without a base revision reports the before-revisi
         storedAt: 5,
         signal: {
           id: 's1',
-          kind: 'domain_learning',
+          kind: 'warden_learning',
           content: {
             domain: 'architecture',
             decision: 'learned',

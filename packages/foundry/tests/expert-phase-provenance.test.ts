@@ -1,8 +1,8 @@
 import { expect, test } from 'bun:test';
 import { ContextLayer, ContextStack, type LLMMessage, SignalBus } from '@inixiative/foundry-core';
-import { DomainLibrarian } from '../src/agents/domain-librarian';
 import { FlowOrchestrator } from '../src/agents/flow-orchestrator';
 import { Librarian } from '../src/agents/librarian';
+import { Warden } from '../src/agents/warden';
 
 function strings(value: unknown): string[] {
   if (typeof value === 'string') return [value];
@@ -18,7 +18,7 @@ test('historical expert evidence retains the actual phase protocol, separately f
     signals = new SignalBus();
   const librarian = new Librarian({ stack, signals });
   const calls: LLMMessage[][] = [];
-  const expert = new DomainLibrarian({
+  const expert = new Warden({
     domain: 'architecture',
     cache,
     signals,
@@ -38,7 +38,7 @@ test('historical expert evidence retains the actual phase protocol, separately f
     stack,
     signals,
     librarian,
-    domainLibrarians: new Map([['architecture', expert]]),
+    wardens: new Map([['architecture', expert]]),
   });
   try {
     const plan = await flow.preMessage('Add preferred names');

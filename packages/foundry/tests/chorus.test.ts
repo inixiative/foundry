@@ -29,8 +29,7 @@ import {
   CHORUS_RECEPTION_LAYER,
   PLAN_ASK_NOTE,
 } from '../src/agents/chorus-reception';
-import { configuredExperts, largestRoster } from '../src/agents/configured-experts';
-import { DomainLibrarian, oneCall } from '../src/agents/domain-librarian';
+import { configuredWardens, largestRoster } from '../src/agents/configured-wardens';
 import {
   chorusLayers,
   composeChorus,
@@ -52,6 +51,7 @@ import {
   ThreadFactory,
 } from '../src/agents/thread-factory';
 import { type PhaseRecordInput, ThreadRuntimeManager } from '../src/agents/thread-runtime';
+import { oneCall, Warden } from '../src/agents/warden';
 import { WARDEN_BRIEF_NODE } from '../src/agents/warden-brief';
 import { AuditLog } from '../src/audit/audit-log';
 import { CompositionAuditor } from '../src/audit/compositions';
@@ -264,8 +264,8 @@ test("a project's chorus is one generated Warden per region of .foundry/regions,
   delete c.projects.P!.chorus;
 
   // The Wardens are exactly the regions; settings declare none.
-  expect(configuredExperts(c).experts).toEqual([]);
-  expect(configuredExperts(view.config).experts.map((e) => e.domain)).toEqual([
+  expect(configuredWardens(c).wardens).toEqual([]);
+  expect(configuredWardens(view.config).wardens.map((e) => e.domain)).toEqual([
     'concurrency-locks',
     'lens-model',
   ]);
@@ -274,8 +274,8 @@ test("a project's chorus is one generated Warden per region of .foundry/regions,
   const locks = view.config.agents[LOCKS]!;
   expect(locks).toMatchObject({
     id: LOCKS,
-    kind: 'domain-librarian',
-    flowRole: 'domain-advising',
+    kind: 'warden',
+    flowRole: 'warden',
     domain: 'concurrency-locks',
     description: 'Concurrency, locks and lanes',
     invocation: 'always',
@@ -447,7 +447,7 @@ test('enabled without regions, the project has no chorus and the view says why; 
   expect(q.config.projects.Q!.chorus).toEqual({ enabled: false });
   // The view's project entry is a valid setting that resolves to the same chorus.
   expect(resolveProjectView(q.config, 'Q')!.chorus.on).toBe(false);
-  expect(configuredExperts(q.config).experts).toEqual([]);
+  expect(configuredWardens(q.config).wardens).toEqual([]);
   expect(q.agents.map((a) => a.scope)).not.toContain('project-generated');
   expect(describeChorus('Q', q.chorus)).toContain('enabled its chorus but no topics at');
 
@@ -466,7 +466,7 @@ test('enabled without regions, the project has no chorus and the view says why; 
     regions: [],
   });
   expect(off.chorus.reason).toContain(`Wardens are off: 2 topics at ${regions}`);
-  expect(configuredExperts(off.config).experts).toEqual([]);
+  expect(configuredWardens(off.config).wardens).toEqual([]);
   expect(off.config.projects.P!.chorus).toEqual({ enabled: false });
   delete c.projects.P!.chorus;
 
@@ -533,7 +533,7 @@ test("the chorus is opt-in: regions present but not enabled are off; the reposit
   expect(off.chorus.reason).toContain(`Wardens are off: 2 topics at ${regions}`);
   expect(off.chorus.reason).toContain(`"chorus": { "enabled": true } in ${repositoryFile}`);
   expect(off.config.projects.P!.chorus).toEqual({ enabled: false });
-  expect(configuredExperts(off.config).experts).toEqual([]);
+  expect(configuredWardens(off.config).wardens).toEqual([]);
   expect(off.agents.map((a) => a.scope)).not.toContain('project-generated');
   expect(describeChorus('P', off.chorus)).toBe(`Chorus: project P: ${off.chorus.reason}`);
   expect(await describeReadinessChorus('P', off.chorus)).toMatchObject({
@@ -691,7 +691,7 @@ test('a chorus composes from layers in order: a later region replaces an earlier
   expect(view.config.agents[LENS]!.prompt).toContain('Your region: The lens model (here)');
   expect(view.config.sources['region:lens-model']!.uri).toBe(lens.knowledgePath);
   expect(view.agents.find((a) => a.id === LENS)!.generatedFrom).toBe(lens.path);
-  expect(configuredExperts(view.config).experts.map((e) => e.domain)).toEqual([
+  expect(configuredWardens(view.config).wardens.map((e) => e.domain)).toEqual([
     'concurrency-locks',
     'kingdom-signets',
     'lens-model',
@@ -824,25 +824,25 @@ test('settings declare no Wardens: one written there is refused, and a malformed
   const c = config(project);
   const handNamed = {
     id: 'librarian-reuse',
-    kind: 'domain-librarian' as const,
-    flowRole: 'domain-advising' as const,
+    kind: 'warden' as const,
+    flowRole: 'warden' as const,
     domain: 'reuse',
     prompt: 'REUSE_RULES',
     enabled: true,
   };
   c.agents['librarian-reuse'] = handNamed;
   expect(() => validateConfig(c)).toThrow(
-    'global agent "librarian-reuse": kind "domain-librarian" is not configurable (executor)',
+    'global agent "librarian-reuse": kind "warden" is not configurable (executor)',
   );
   c.agents['librarian-reuse'] = { ...handNamed, kind: 'decider' as never };
   expect(() => validateConfig(c)).toThrow('kind "decider" is not configurable');
   // The flow role alone does not make a Warden: an expert's id is a region's role id.
   c.agents['librarian-reuse'] = { ...handNamed, kind: 'executor' };
-  expect(() => validateConfig(c)).toThrow('Invalid configured expert identity: librarian-reuse');
+  expect(() => validateConfig(c)).toThrow('Invalid Warden identity: librarian-reuse');
   delete c.agents['librarian-reuse'];
   c.projects.P!.agents = { tooling: { ...handNamed, id: 'tooling', domain: 'tooling' } };
   expect(() => validateConfig(c)).toThrow(
-    'project "P" agent "tooling": kind "domain-librarian" is not configurable',
+    'project "P" agent "tooling": kind "warden" is not configurable',
   );
   delete c.projects.P!.agents;
   validateConfig(c);
@@ -866,7 +866,7 @@ test('settings declare no Wardens: one written there is refused, and a malformed
   const notBuilt = () => {
     const chorus = resolveProjectView(c, 'P')!.chorus;
     expect(chorus.on).toBe(false);
-    expect(configuredExperts(resolveProjectView(c, 'P')!.config).experts).toEqual([]);
+    expect(configuredWardens(resolveProjectView(c, 'P')!.config).wardens).toEqual([]);
     return chorus.reason;
   };
   expect(notBuilt()).toContain('the Wardens are not built: ');
@@ -1040,7 +1040,7 @@ test('region Wardens run under the Warden charter, and their pointer reaches the
   const f = setup(c, pointer);
   const thread = f.factory.create('p-thread', { projectId: 'P' });
   const runtime = f.manager.get(thread.id)!;
-  expect([...runtime.domainLibrarians.keys()].sort()).toEqual(['concurrency-locks', 'lens-model']);
+  expect([...runtime.wardens.keys()].sort()).toEqual(['concurrency-locks', 'lens-model']);
   await thread.dispatch('worker', 'Add a SET NX lock around the sync job');
   const pre = f.all('pre');
   expect(pre.length).toBe(2);
@@ -1083,12 +1083,12 @@ test('region Wardens run under the Warden charter, and their pointer reaches the
   expect(off.stack.getLayer(CHORUS_RECEPTION_LAYER)).toBeUndefined();
   const q = setup(c, pointer);
   const plain = q.factory.create('q-thread', { projectId: 'Q' });
-  expect(q.manager.get(plain.id)!.domainLibrarians.size).toBe(0);
+  expect(q.manager.get(plain.id)!.wardens.size).toBe(0);
   expect(plain.stack.getLayer(CHORUS_RECEPTION_LAYER)).toBeUndefined();
   // Nor does a thread without a project: settings declare no Wardens.
   const loose = setup(c, pointer);
   const none = loose.factory.create('no-project');
-  expect(loose.manager.get(none.id)!.domainLibrarians.size).toBe(0);
+  expect(loose.manager.get(none.id)!.wardens.size).toBe(0);
   expect(none.stack.getLayer(CHORUS_RECEPTION_LAYER)).toBeUndefined();
 });
 
@@ -1189,7 +1189,7 @@ test('the classifier output contract is read into relevant, pointer, where and l
   });
   expect(parseWardenPointer('Use createLock instead of SET NX.')).toEqual({ relevant: false });
 
-  // A DomainLibrarian attaches the parsed pointer to advice and findings.
+  // A Warden attaches the parsed pointer to advice and findings.
   const answers = { advice: '', guard: '' };
   const llm: LLMProvider = {
     id: 'w',
@@ -1201,7 +1201,7 @@ test('the classifier output contract is read into relevant, pointer, where and l
   const make = (charter?: string) => {
     const cache = new ContextLayer({ id: 'k' });
     cache.set('KNOWLEDGE');
-    return new DomainLibrarian({
+    return new Warden({
       domain: 'concurrency-locks',
       cache,
       signals: new SignalBus(0),
@@ -1255,7 +1255,7 @@ test('budgets admit a region at the 40k-token hard cap and refuse above it, with
 
   const cache = new ContextLayer({ id: 'k' });
   cache.set(hardCapKnowledge);
-  const lib = new DomainLibrarian({
+  const lib = new Warden({
     domain: 'concurrency-locks',
     role: LOCKS,
     cache,
@@ -1276,7 +1276,7 @@ test('the primed pool is sized for the largest chorus any project runs', () => {
   const c = config(project);
   validateConfig(c);
   // Settings: no Wardens. Project P's chorus: two.
-  expect(configuredExperts(c).experts.length).toBe(0);
+  expect(configuredWardens(c).wardens.length).toBe(0);
   expect(largestRoster(c)).toBe(2);
   c.projects.P!.enabled = false;
   expect(largestRoster(c)).toBe(0);

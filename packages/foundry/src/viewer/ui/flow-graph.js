@@ -534,7 +534,7 @@ export function turnFlowGraph(turn, { learning = [] } = {}) {
             elapsed: fmtMs(plan.elapsed),
             layers: plan.layers?.join(', ') || 'none',
             snippets: turn.snippets,
-            consulted: plan.domainsConsulted?.join(', ') || 'none',
+            consulted: plan.wardensConsulted?.join(', ') || 'none',
             outstanding: outstanding || null,
             omitted: plan.omissions?.map((o) => `${o.domain}: ${o.reason}`).join('; ') || null,
             fresh: plan.fresh,

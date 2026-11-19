@@ -4,7 +4,7 @@
  * @partOf feature:wardens
  */
 import { ADVICE_RESULTS, type AdviceOutcome, parseCallOutcome } from '@inixiative/foundry-core';
-import type { EarlierMessages } from './domain-librarian';
+import type { EarlierMessages } from './warden';
 
 /** A Warden catching up is asked on at most this many user messages at once, the current one included. */
 export const CATCH_UP_MAX_MESSAGES = 5;

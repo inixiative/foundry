@@ -115,7 +115,7 @@ export function boundaryReceipt(i: any, owner: DeliveryOwner): ProviderBoundaryR
     systemMessageIndex: matches.length === 1 ? matches[0] : -1,
   };
 }
-export interface ExpertDeliveryProof {
+export interface WardenDeliveryProof {
   domain: string;
   layerId: string;
   assessedRevision: number;
@@ -125,14 +125,14 @@ export interface ExpertDeliveryProof {
   content: string;
 }
 /** One validation contract used by inspection, the runner and the copy-only audit. */
-export function verifyExpertDelivery(
+export function verifyWardenDelivery(
   i: any,
   delivery: any,
   domain: string,
   expected: DeliveryOwner,
-): ExpertDeliveryProof {
+): WardenDeliveryProof {
   const fail = () => {
-    throw Error('Recorded expert delivery invalid');
+    throw Error('Recorded Warden delivery invalid');
   };
   const one = (rows: any, predicate: (row: any) => boolean): any => {
     if (!Array.isArray(rows)) return fail();

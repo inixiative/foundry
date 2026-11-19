@@ -20,11 +20,11 @@ import {
   type VersionLog,
   validateMemorySelection,
 } from '@inixiative/foundry-core';
-import { configuredExperts } from '../agents/configured-experts';
-import { isThreadKnowledgeLayerId } from '../agents/domain-librarian';
+import { configuredWardens } from '../agents/configured-wardens';
 import { type LearningSettings, validateLearningSettings } from '../agents/learning-config';
 import { THREAD_STATE_LAYER_ID } from '../agents/librarian';
 import { isRoleLayerId } from '../agents/role-layers';
+import { isThreadKnowledgeLayerId } from '../agents/warden';
 import { WARDEN_BRIEF_NODES } from '../agents/warden-brief';
 import type { GuardMode } from '../agents/warden-triggers';
 import { AuditLog, type SourceVersion, settingsRow } from '../audit/audit-log';
@@ -529,12 +529,12 @@ export interface BrowserConfigOverride
 }
 
 /**
- * Agent kinds. Executors are thread agents. A Warden (`domain-librarian`, flowRole
- * `domain-advising`) is never written in settings: each is generated from a project's regions
+ * Agent kinds. Executors are thread agents. A Warden (`warden`, flowRole
+ * `warden`) is never written in settings: each is generated from a project's regions
  * (`agents/region-roster.ts`), so it appears only in a project view. The Librarian is programmatic and the Herald is not
  * wired, so neither takes settings.
  */
-export const AGENT_KINDS = ['executor', 'domain-librarian'] as const;
+export const AGENT_KINDS = ['executor', 'warden'] as const;
 export type AgentKind = (typeof AGENT_KINDS)[number];
 /** The kinds settings may declare: a Warden is generated, never written. */
 const SETTINGS_AGENT_KINDS: readonly AgentKind[] = ['executor'];
@@ -542,15 +542,15 @@ const SETTINGS_AGENT_KINDS: readonly AgentKind[] = ['executor'];
 export interface AgentSettingsConfig {
   /** The agent's id: its key in `agents`, and how projects extend or override it. */
   id: string;
-  /** What the agent does in a turn (an executor; a generated Warden is a domain-librarian). */
+  /** What the agent does in a turn: `executor`, or `warden` for a generated Warden. */
   kind: AgentKind;
-  /** The agent's part in a turn: execution (an executor) or domain-advising (a generated Warden). */
-  flowRole?: 'execution' | 'domain-advising';
+  /** The agent's part in a turn: `execution` (an executor) or `warden` (a generated Warden). */
+  flowRole?: 'execution' | 'warden';
   /** Domain this agent operates in (e.g., "docs", "security", "cross-thread"). */
   domain?: string;
   /**
    * Human-readable description of this agent's role and responsibilities.
-   * File path relative to project root (e.g., ".foundry/agents/security-librarian.md").
+   * File path relative to project root (e.g., ".foundry/agents/executor.md").
    * Explains: what this agent does, which layers it reads/writes, who it delegates to, why.
    */
   description?: string;
@@ -630,15 +630,15 @@ export const isAgentExtension = (agent: ProjectAgentSettings): agent is AgentExt
  *   "this thread's convention cache is stale" → runtime mutation, not config.
  *
  * Agents relate to layers as readers, writers, or both:
- * - Domain Librarians: READ + WRITE their own domain layer (warm it, guard it)
+ * - Wardens: own no configured layer (their knowledge is private, composed from their region)
  * - Librarian: WRITES the thread-state layer (sole writer)
  * - Executor (Claude Code): READS assembled context from all active layers
  */
 export interface LayerSettingsConfig {
   /** The layer's id: its key in `layers`, and how projects and agents refer to it. */
   id: string;
-  /** Domain knowledge ownership. An enabled domain-advising agent must explicitly
-   * own this layer to register a custom expert; passive layers do not spawn actors. */
+  /** The domain this layer holds knowledge for. A Warden owns no configured layer: its knowledge
+   * comes from its region. */
   domain?: string;
   /**
    * Human-readable description of this layer's job in the system.
@@ -894,7 +894,7 @@ function validateLayerDefinition(owner: string, id: string, layer: unknown): voi
 
 /**
  * Every declared agent has a kind something runs. Settings declare executors only; a project view
- * also holds its generated region Wardens (`domain-librarian`, flowRole `domain-advising`).
+ * also holds its generated region Wardens (`warden`, flowRole `warden`).
  */
 function validateAgentKinds(
   owner: string,
@@ -907,10 +907,10 @@ function validateAgentKinds(
       throw Error(
         `${owner} agent ${JSON.stringify(id)}: kind ${JSON.stringify(agent.kind)} is not configurable (${kinds.join(', ')})`,
       );
-    if (agent.kind === 'domain-librarian' && agent.flowRole !== 'domain-advising')
-      throw Error(`${owner} agent ${JSON.stringify(id)}: a Warden's flowRole is domain-advising`);
+    if (agent.kind === 'warden' && agent.flowRole !== 'warden')
+      throw Error(`${owner} agent ${JSON.stringify(id)}: a Warden's flowRole is warden`);
     // Each phase supplies its response protocol; a second shape in the instructions contradicts it.
-    if (agent.kind === 'domain-librarian' && /respond with json/i.test(agent.prompt ?? ''))
+    if (agent.kind === 'warden' && /respond with json/i.test(agent.prompt ?? ''))
       throw Error(
         `${owner} agent ${JSON.stringify(id)}: instructions must not state a response format; the phase supplies it`,
       );
@@ -1207,7 +1207,7 @@ export function validateConfig(config: FoundryConfig): void {
       (project as { layers?: Record<string, unknown> } | null | undefined)?.layers ?? {},
     ))
       validateLayerDefinition(`project ${JSON.stringify(pid)} layers`, id, layer);
-  configuredExperts(config);
+  configuredWardens(config);
   for (const projectId of Object.keys(config.projects ?? {})) {
     checkProjectView(
       projectId,
@@ -1420,7 +1420,7 @@ const isRecordOfObjects = (value: unknown): boolean =>
 export function checkProjectView(projectId: string, view: FoundryConfig): void {
   validateAgentKinds(`project ${JSON.stringify(projectId)}`, view.agents, AGENT_KINDS);
   try {
-    configuredExperts(view);
+    configuredWardens(view);
   } catch (error) {
     throw Error(`project ${JSON.stringify(projectId)}: ${(error as Error).message}`);
   }

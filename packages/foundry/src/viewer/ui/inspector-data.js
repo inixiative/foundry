@@ -576,7 +576,7 @@ export function deliveredUnderstanding(trace, domain) {
       trace?.selectedTurn?.turnId,
     ].filter((x) => x !== undefined);
     if (new Set(threads).size !== 1 || new Set(turns).size !== 1) return unverified;
-    const proof = verifyExpertDelivery(injection, delivery, domain, {
+    const proof = verifyWardenDelivery(injection, delivery, domain, {
       threadId: threads[0],
       messageId: turns[0],
       projectId:
@@ -974,7 +974,7 @@ export function knowledgeEmptyLabel(summary) {
   };
 }
 
-/** Wording for a layer with no domain entry: only a reported live state can prove it is not a configured expert. */
+/** Wording for a layer with no domain entry: only a reported live state can prove it is not a Warden's. */
 export function expertAbsenceLabel(summary, layerId) {
   if (!summary || summary.status === 'unavailable')
     return {
@@ -984,7 +984,7 @@ export function expertAbsenceLabel(summary, layerId) {
   if (summary.learningAvailable)
     return {
       state: 'not-configured',
-      text: `${layerId} is not a configured domain expert for this thread (live state reports no such domain).`,
+      text: `${layerId} is not a Warden's domain on this thread (live state reports no such domain).`,
     };
   return {
     state: 'unavailable',
@@ -992,4 +992,4 @@ export function expertAbsenceLabel(summary, layerId) {
   };
 }
 
-import { verifyExpertDelivery } from './delivery-evidence.js';
+import { verifyWardenDelivery } from './delivery-evidence.js';

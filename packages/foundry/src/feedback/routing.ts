@@ -3,7 +3,7 @@
  * @kind service
  * @partOf feature:feedback
  */
-import { configuredExperts } from '../agents/configured-experts';
+import { configuredWardens } from '../agents/configured-wardens';
 import { MAIN_ROLE, threadRoles } from '../prompts/instruction-settings';
 import type { FoundryConfig } from '../viewer/config';
 import { resolveProjectView } from '../viewer/config-resolve';
@@ -45,5 +45,5 @@ export function wardenRoles(
 ): Map<string, string> {
   const view = projectId ? resolveProjectView(config, projectId)?.config : undefined;
   if (!view) return new Map();
-  return new Map(configuredExperts(view).experts.map((e) => [e.domain, e.agentId]));
+  return new Map(configuredWardens(view).wardens.map((e) => [e.domain, e.agentId]));
 }

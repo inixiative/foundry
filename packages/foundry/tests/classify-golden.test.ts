@@ -12,8 +12,8 @@ import {
   type LLMProvider,
   SignalBus,
 } from '@inixiative/foundry-core';
-import { DomainLibrarian, type TurnActivity } from '../src/agents/domain-librarian';
 import { regionInstructions } from '../src/agents/region-roster';
+import { type TurnActivity, Warden } from '../src/agents/warden';
 
 const GOLDEN = join(import.meta.dir, 'fixtures', 'classify', 'golden.json');
 const RECORD = process.env.CLASSIFY_GOLDEN === 'record';
@@ -48,7 +48,7 @@ function warden(answer: string) {
       routing: 'Is this about mutual exclusion or ordering?',
     }),
   );
-  const lib = new DomainLibrarian({
+  const lib = new Warden({
     domain: 'locks',
     cache,
     instructions,

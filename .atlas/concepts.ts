@@ -21,7 +21,7 @@ export const CONCEPTS: ConceptRegistry = {
   'feature:acp': { docs: ['reference/FOUNDRY-ACP.md'] }, // foundry-acp: hosts (Paseo, T3 Code, Zed) drive Foundry threads over ACP
   'feature:mcpBridge': { docs: ['FLOW.md'] }, // the `foundry` MCP server: the mid-session bridge (Loop 2)
   'feature:daemon': {}, // LaunchAgent install, supervisor, two-copy auto-update, last-good settings, local client launch
-  'feature:setup': {}, // setup, doctor, legacy starter, docs scan, startup self-test
+  'feature:setup': {}, // setup, doctor, docs scan, startup self-test
   'feature:nativeAuth': { docs: ['native-authentication.md'] }, // which login a native session runs on: profiles, accounts, Kingdom-held logins
   'feature:devices': { docs: ['DEVICE-PROJECT-IDENTITY.md'] }, // local device inventory and linked project checkouts
   'feature:secrets': { docs: ['../tickets/FEAT-005-secret-placeholders.md'] }, // $$ secrets on the scratch pad, the keychain, private paths no agent reads
@@ -41,7 +41,7 @@ export const CONCEPTS: ConceptRegistry = {
   'primitive:providers': {}, // LLM provider interface and the API-key providers (Anthropic, OpenAI, Gemini, OpenAI-compatible)
   'primitive:modelRegistry': {}, // capability vocabulary, provider/model table, vendor settings
   'primitive:tools': { docs: ['EXECUTION_ENVIRONMENTS.md'] }, // agent tool interfaces, native tool classes, capability gating, tool adapters
-  'primitive:memory': { docs: ['api/ADAPTERS.md'] }, // memory/knowledge adapters (file, sqlite, http, markdown, postgres, redis, Muninn, Supermemory)
+  'primitive:memory': { docs: ['api/ADAPTERS.md'] }, // memory/knowledge adapters (file, sqlite, http, markdown, postgres, Muninn)
   'primitive:journal': { docs: ['THREAD-TREE.md'] }, // the local journal: content-addressed records, session store, attachments
   'primitive:settings': {}, // the settings model, resolution, ConfigStore, settings routes
   'primitive:websockets': {}, // data streams over WebSocket: registry, delivery, client

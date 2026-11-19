@@ -33,7 +33,7 @@
 // orchestrator counts it until it settles. Native cancellation is G5.
 //
 // Post-action flow:
-//   6. Correctness checking — domain librarians guard tool observations
+//   6. Correctness checking — Wardens guard tool observations
 //   7. Signal reconciliation — Librarian already handles via signal bus
 // ---------------------------------------------------------------------------
 
@@ -70,12 +70,12 @@ import {
   prefilterSkip,
   type WardenPrefilter,
 } from '../providers/warden-prefilter';
+import type { Librarian } from './librarian';
 import {
   type AdviceRequestEvidence,
   activityTools,
   adviceOutcomeOf,
   type CacheComposition,
-  type DomainLibrarian,
   type EarlierMessages,
   type GuardCallEvidence,
   type GuardFinding,
@@ -83,8 +83,8 @@ import {
   type PhaseRequestEvidence,
   renderTurnActivity,
   type TurnActivity,
-} from './domain-librarian';
-import type { Librarian } from './librarian';
+  type Warden,
+} from './warden';
 import { WardenCatchUp } from './warden-catch-up';
 import type { AdviceTrigger, TriggerPoint } from './warden-triggers';
 import { clipMomentText } from './work-items';
@@ -120,7 +120,7 @@ export interface ContributionProvenance {
 }
 
 /** One domain's recorded participation in a turn. */
-export interface DomainContribution {
+export interface WardenContribution {
   readonly domain: string;
   /**
    * How its advice call ended: not sent (cold, prefiltered, not held, not admitted), failed (timeout,
@@ -160,11 +160,11 @@ export interface DomainContribution {
 export type DebugReasonAsk = () => Promise<DebugReasonReading>;
 
 /** A contribution as `_assess` returns it: the ask rides beside it until the plan seals, never in it. */
-type AssessedContribution = DomainContribution & { readonly askDebugReason?: DebugReasonAsk };
+type AssessedContribution = WardenContribution & { readonly askDebugReason?: DebugReasonAsk };
 
 /** Splits the asks off the assessed contributions, so the sealed plan holds only data. */
 function contributionsWithoutAsks(assessed: readonly AssessedContribution[]): {
-  contributions: DomainContribution[];
+  contributions: WardenContribution[];
   asks: Map<string, DebugReasonAsk>;
 } {
   const asks = new Map<string, DebugReasonAsk>();
@@ -203,7 +203,7 @@ export interface InjectionPlan {
   /** Inline snippets from contributing domains, in configured domain order. */
   snippets: string[];
   /** Every domain that assessed the input. */
-  domainsConsulted: string[];
+  wardensConsulted: string[];
   /** Time taken for the full pre-message flow (ms). */
   elapsed: number;
   /** Whether this plan was generated fresh or is a reuse of a previous plan. */
@@ -211,7 +211,7 @@ export interface InjectionPlan {
   /** The frozen input all participants saw. */
   readonly input: PlanInput;
   /** Every enabled domain, in configured order, with its decision. */
-  readonly contributions: DomainContribution[];
+  readonly contributions: WardenContribution[];
   /** Domains excluded by policy (budget), never silently. */
   readonly omissions: Array<{ readonly domain: string; readonly reason: string }>;
   /** Disagreements the composer noticed but did not resolve. */
@@ -429,7 +429,7 @@ export interface BriefReport {
   /** The moment the Wardens were given, frozen: the handoff or work item as text. */
   readonly input: PlanInput;
   /** Per Warden, in configured order: its call outcome (spoke with the brief, no comment, not sent or failed). */
-  readonly contributions: DomainContribution[];
+  readonly contributions: WardenContribution[];
   /** The pre-filter's call for this handoff, when it is on. */
   readonly prefilter?: PrefilterRun;
   /** Calls that timed out and are still running. */
@@ -459,8 +459,8 @@ export interface FlowTimingConfig {
 
 /** Configuration for the flow orchestrator. */
 export interface FlowOrchestratorConfig extends FlowTimingConfig {
-  /** Domain librarians, keyed by domain name. Map order is the configured order. */
-  domainLibrarians: Map<string, DomainLibrarian>;
+  /** Wardens, keyed by domain name. Map order is the configured order. */
+  wardens: Map<string, Warden>;
   /** The signal reconciliation coordinator. */
   librarian: Librarian;
   /** The thread's context stack. */
@@ -478,7 +478,7 @@ export interface FlowOrchestratorConfig extends FlowTimingConfig {
 // ---------------------------------------------------------------------------
 
 interface Participant {
-  lib: DomainLibrarian;
+  lib: Warden;
   cache: string;
   /** What `cache` is composed of and left out, frozen with it. */
   cacheComposition: CacheComposition;
@@ -508,7 +508,7 @@ export class FlowOrchestrator {
    * never on it: a plan is cloned as executor evidence, and a function cannot be.
    */
   private _debugReasonAsks = new WeakMap<object, ReadonlyMap<string, DebugReasonAsk>>();
-  private _domains: Map<string, DomainLibrarian>;
+  private _domains: Map<string, Warden>;
   private _librarian: Librarian;
   private _stack: ContextStack;
   private _signals: SignalBus;
@@ -544,7 +544,7 @@ export class FlowOrchestrator {
   readonly catchUp = new WardenCatchUp();
 
   constructor(config: FlowOrchestratorConfig) {
-    this._domains = config.domainLibrarians;
+    this._domains = config.wardens;
     this._librarian = config.librarian;
     this._stack = config.stack;
     this._signals = config.signals;
@@ -905,7 +905,7 @@ export class FlowOrchestrator {
     trigger: TriggerPoint | 'post-turn',
     text: string,
     context: string | undefined,
-    wardens: readonly DomainLibrarian[],
+    wardens: readonly Warden[],
   ): Promise<PrefilterOutcome | undefined> {
     if (!this._prefilter || !wardens.length) return undefined;
     return this._prefilter.score(
@@ -1125,7 +1125,7 @@ export class FlowOrchestrator {
    */
   private _compose(
     input: PlanInput,
-    assessed: DomainContribution[],
+    assessed: WardenContribution[],
     outstanding: OutstandingCall[],
     startTime: number,
     fresh: boolean,
@@ -1153,15 +1153,15 @@ export class FlowOrchestrator {
       return c;
     });
 
-    const domainsConsulted: string[] = [];
+    const wardensConsulted: string[] = [];
     for (const domain of contributions.map((c) => c.domain)) {
-      if (!domainsConsulted.includes(domain)) domainsConsulted.push(domain);
+      if (!wardensConsulted.includes(domain)) wardensConsulted.push(domain);
     }
 
     const plan: InjectionPlan = {
       layers: [...layerSet],
       snippets,
-      domainsConsulted,
+      wardensConsulted,
       elapsed: Date.now() - startTime,
       fresh,
       input,
@@ -1354,14 +1354,14 @@ export class FlowOrchestrator {
 
   /**
    * Run the post-action flow over a turn's activity (one call in `per-call` mode): trigger-gate it
-   * to the right domain librarians, ask each once, and collect findings.
+   * to the right Wardens, ask each once, and collect findings.
    */
   async postAction(activity: TurnActivity, hooks?: GuardPhaseHooks): Promise<GuardReport> {
     const start = Date.now();
     const threadState = this._librarian.layer.content;
 
     // The agent-action trigger point asks every domain whose guard triggers name a call of the activity.
-    const triggered: DomainLibrarian[] = [];
+    const triggered: Warden[] = [];
     const skipped: string[] = [];
     for (const [, domainLib] of this._domains) {
       if (hooks?.only && !hooks.only.has(domainLib.domain)) continue;

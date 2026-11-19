@@ -1,12 +1,12 @@
 import { expect, test } from 'bun:test';
 import { ContextLayer, type LLMMessage, SignalBus } from '@inixiative/foundry-core';
-import { DomainLibrarian, oneCall } from '../src/agents/domain-librarian';
+import { oneCall, Warden } from '../src/agents/warden';
 
 function fixture(respond: () => string) {
   const cache = new ContextLayer({ id: 'architecture', segment: 'domain-knowledge' });
   cache.set('DOMAIN_KNOWLEDGE: preserve compatibility.');
   const requests: LLMMessage[][] = [];
-  const lib = new DomainLibrarian({
+  const lib = new Warden({
     domain: 'architecture',
     cache,
     signals: new SignalBus(),

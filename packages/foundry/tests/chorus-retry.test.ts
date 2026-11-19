@@ -106,7 +106,7 @@ function fixture(opts: { guard?: FoundryConfig['guard']; brief?: string } = {}) 
     log() {},
     warn() {},
     eventStream: events,
-    domains: [
+    codeWardens: [
       {
         domain: 'architecture',
         layerId: 'architecture',

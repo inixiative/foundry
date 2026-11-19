@@ -4,7 +4,6 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { NativeEvidence, NativeOwner } from '@inixiative/foundry-core';
 import { ContextStack, EventStream, type LLMProvider } from '@inixiative/foundry-core';
-import { oneCall } from '../src/agents/domain-librarian';
 import { regionRoleId } from '../src/agents/region-roster';
 import {
   buildAgents,
@@ -13,6 +12,7 @@ import {
   ThreadFactory,
 } from '../src/agents/thread-factory';
 import { scopedProvider, ThreadRuntimeManager } from '../src/agents/thread-runtime';
+import { oneCall } from '../src/agents/warden';
 import { KnowledgePersistence } from '../src/persistence/knowledge-persistence';
 import { LocalSessionStore } from '../src/persistence/local-session-store';
 import {
@@ -46,7 +46,7 @@ afterEach(async () => {
 });
 afterAll(settleRecordings);
 const LIVE_TIMEOUT = 90_000;
-/** The hand-injected domain-advising expert's id: a namespaced role id, as a region Warden's is. */
+/** The hand-injected warden expert's id: a namespaced role id, as a region Warden's is. */
 const EXPERT = regionRoleId('expert');
 type Transport = Parameters<typeof buildNativeTextProvider>[1] & {
   launches: { argv: string[]; cwd: string; exited: boolean }[];
@@ -303,8 +303,8 @@ test('actual factory advice, guard and learning use the subscription lifecycle a
     },
     [EXPERT]: {
       id: EXPERT,
-      kind: 'domain-librarian',
-      flowRole: 'domain-advising',
+      kind: 'warden',
+      flowRole: 'warden',
       domain: 'docs',
       provider: f.provider.id,
       model: 'test-model',
@@ -379,7 +379,7 @@ test('actual factory advice, guard and learning use the subscription lifecycle a
       runtime = manager.get('A')!;
     await thread.dispatch('worker', 'Update documentation', undefined, { messageId: 'A1' });
     await runtime.learningSettled();
-    const lib = runtime.domainLibrarians.get('docs')!;
+    const lib = runtime.wardens.get('docs')!;
     expect(lib.threadKnowledge.content).toBe('Accepted private thread knowledge');
     expect(journal.knowledge('A')!.domains.docs.content).toBe(lib.threadKnowledge.content);
     expect(runtime.learningState.domains.docs.capacity).toBe('settled');
@@ -388,7 +388,7 @@ test('actual factory advice, guard and learning use the subscription lifecycle a
         .outcome.status,
     ).toBe('answered');
     factory.create('B', { projectId: 'Q' });
-    expect(manager.get('B')!.domainLibrarians.get('docs')!.threadKnowledge.content).toBe('');
+    expect(manager.get('B')!.wardens.get('docs')!.threadKnowledge.content).toBe('');
     expect(f.transport.launches.length).toBeGreaterThanOrEqual(3);
     expect(
       f.transport.launches.every((p) => p.exited && p.argv.includes('--strict-mcp-config')),

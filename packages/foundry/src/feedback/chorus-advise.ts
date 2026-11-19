@@ -24,10 +24,10 @@ import {
 } from '@inixiative/foundry-core';
 import { CHORUS_RECEPTION_LAYER } from '../agents/chorus-reception';
 import { withChorusThread } from '../agents/chorus-thread';
-import { adviceOutcomeOf, threadKnowledgeLayerId } from '../agents/domain-librarian';
-import type { DomainContribution, InjectionPlan } from '../agents/flow-orchestrator';
+import type { InjectionPlan, WardenContribution } from '../agents/flow-orchestrator';
 import { configureHarness, type SourceResolver } from '../agents/thread-factory';
 import type { PhaseRecordInput, ThreadRuntimeDeps } from '../agents/thread-runtime';
+import { adviceOutcomeOf, threadKnowledgeLayerId } from '../agents/warden';
 import { formatMessagesForNativeSession } from '../providers/session-backed';
 import { baseContextOf, sessionTurn } from '../providers/session-delivery';
 import type { FoundryConfig } from '../viewer/config';
@@ -69,19 +69,19 @@ export interface ChorusAdviseOptions {
 /** One Warden's decision on the message, as the sealed plan recorded it. */
 export interface ChorusWardenDecision {
   readonly domain: string;
-  readonly outcome: DomainContribution['outcome'];
+  readonly outcome: WardenContribution['outcome'];
   readonly reason?: string;
   readonly snippets: readonly string[];
-  readonly pointer?: DomainContribution['pointer'];
-  readonly repairs?: DomainContribution['repairs'];
+  readonly pointer?: WardenContribution['pointer'];
+  readonly repairs?: WardenContribution['repairs'];
   readonly elapsedMs?: number;
-  readonly classified?: DomainContribution['classified'];
+  readonly classified?: WardenContribution['classified'];
   /** The model that answered, when the provider reported it. */
   readonly served?: unknown;
   /** The exact input it was given (`not-sent` with the reason when no call was made). */
-  readonly request: DomainContribution['request'];
+  readonly request: WardenContribution['request'];
   /** The exact input of every stage past the first. */
-  readonly stageRequests?: DomainContribution['stageRequests'];
+  readonly stageRequests?: WardenContribution['stageRequests'];
 }
 
 /** One Warden's priming decision (`prime`): what it answered and how long it took. */
@@ -205,7 +205,7 @@ export async function adviseOnce(opts: ChorusAdviseOptions): Promise<ChorusAdvic
     async ({ thread, live }) => {
       const primed = opts.prime
         ? await Promise.all(
-            [...live.domainLibrarians.values()].map(async (lib): Promise<ChorusPrime> => {
+            [...live.wardens.values()].map(async (lib): Promise<ChorusPrime> => {
               const started = Date.now();
               try {
                 await lib.warm();
@@ -252,7 +252,7 @@ export async function adviseOnce(opts: ChorusAdviseOptions): Promise<ChorusAdvic
         throw Error('the executor sent another message than the decoration composes');
       const delivery = captured.delivery;
       if (!delivery) throw Error('the executor gave no session delivery');
-      const domains = [...live.domainLibrarians.keys()];
+      const domains = [...live.wardens.keys()];
       const standing: StandingPart[] = [...delivery.standing];
       const fresh = freshSessionTurn(delivery, captured.messages);
       return {

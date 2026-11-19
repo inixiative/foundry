@@ -155,7 +155,7 @@ export function parseWardenLabels(
   });
 }
 
-export interface DomainAgreement {
+export interface WardenAgreement {
   readonly wardenId: string;
   /** Fixtures both sides labelled. */
   readonly n: number;
@@ -173,8 +173,8 @@ export function labelAgreement(
   b: ReadonlyMap<string, Readonly<Record<string, WardenLabel>>>,
   wardenIds: readonly string[],
 ): {
-  perWarden: DomainAgreement[];
-  pooled: DomainAgreement;
+  perWarden: WardenAgreement[];
+  pooled: WardenAgreement;
   exactFixtures: number;
   fixtures: number;
 } {

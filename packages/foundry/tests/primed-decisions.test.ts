@@ -7,7 +7,7 @@ import {
   type LLMProvider,
   SignalBus,
 } from '@inixiative/foundry-core';
-import { DomainLibrarian, oneCall } from '../src/agents/domain-librarian';
+import { oneCall, Warden } from '../src/agents/warden';
 import { primedRequest } from '../src/providers/primed-decisions';
 
 /** Records every call; answers with the given JSON. */
@@ -68,7 +68,7 @@ test('advice and guard declare their domain cache as the stable prefix of the me
   const { llm, calls } = recording('{"layers":[],"snippets":[],"confidence":0.5}');
   const cache = new ContextLayer({ id: 'api', segment: 'domain-knowledge' });
   cache.set('Routes live under src/api.');
-  const lib = new DomainLibrarian({
+  const lib = new Warden({
     domain: 'api',
     cache,
     signals: new SignalBus(),

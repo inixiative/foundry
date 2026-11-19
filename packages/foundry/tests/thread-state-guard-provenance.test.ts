@@ -1,8 +1,8 @@
 import { expect, test } from 'bun:test';
 import { ContextLayer, ContextStack, SignalBus } from '@inixiative/foundry-core';
-import { DomainLibrarian, oneCall } from '../src/agents/domain-librarian';
 import { FlowOrchestrator } from '../src/agents/flow-orchestrator';
 import { Librarian } from '../src/agents/librarian';
+import { oneCall, Warden } from '../src/agents/warden';
 
 async function observedState(failed: boolean) {
   const signals = new SignalBus();
@@ -10,7 +10,7 @@ async function observedState(failed: boolean) {
   cache.set('Preserve existing storage values.');
   const stack = new ContextStack([cache]);
   const librarian = new Librarian({ stack, signals });
-  const domain = new DomainLibrarian({
+  const domain = new Warden({
     domain: 'architecture',
     cache,
     signals,
@@ -27,7 +27,7 @@ async function observedState(failed: boolean) {
     stack,
     signals,
     librarian,
-    domainLibrarians: new Map([['architecture', domain]]),
+    wardens: new Map([['architecture', domain]]),
   });
   const observation = {
     tool: 'Write',

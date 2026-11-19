@@ -1,8 +1,8 @@
 import { expect, test } from 'bun:test';
 import { ContextLayer, ContextStack, callOutcomeLabel, SignalBus } from '@inixiative/foundry-core';
-import { DomainLibrarian } from '../src/agents/domain-librarian';
 import { FlowOrchestrator } from '../src/agents/flow-orchestrator';
 import { Librarian } from '../src/agents/librarian';
+import { Warden } from '../src/agents/warden';
 
 test('malformed advice remains an inspectable error beside a valid contribution', async () => {
   const signals = new SignalBus();
@@ -16,7 +16,7 @@ test('malformed advice remains an inspectable error beside a valid contribution'
   const domains = new Map(
     layers.map((cache) => [
       cache.id,
-      new DomainLibrarian({
+      new Warden({
         domain: cache.id,
         cache,
         signals,
@@ -48,7 +48,7 @@ test('malformed advice remains an inspectable error beside a valid contribution'
     stack,
     signals,
     librarian,
-    domainLibrarians: domains,
+    wardens: domains,
   });
   try {
     const plan = await flow.preMessage('Add preferred names without losing existing data');

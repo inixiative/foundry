@@ -11,9 +11,9 @@ import {
   type LLMMessage,
   type LLMProvider,
 } from '@inixiative/foundry-core';
-import { reviewResponseProtocol } from '../src/agents/domain-librarian';
 import { buildAgents, ThreadFactory } from '../src/agents/thread-factory';
 import { ThreadRuntimeManager } from '../src/agents/thread-runtime';
+import { reviewResponseProtocol } from '../src/agents/warden';
 import { chartered, GUARD_RESPONSE_PROTOCOL } from '../src/classify';
 import { KnowledgePersistence } from '../src/persistence/knowledge-persistence';
 import { LocalSessionStore } from '../src/persistence/local-session-store';
@@ -77,7 +77,7 @@ function fixture(path: string) {
     log() {},
     warn() {},
     eventStream: events,
-    domains: [
+    codeWardens: [
       {
         domain: 'architecture',
         layerId: 'architecture',
@@ -116,7 +116,7 @@ test('one real turn: advice, guard and review requests are journalled under thei
   const path = join(dir, 'sessions.sqlite');
   const f = fixture(path);
   closes.push(() => f.store.close());
-  const domainLib = f.runtime.domainLibrarians.get('architecture')!;
+  const domainLib = f.runtime.wardens.get('architecture')!;
   let toolEmitted = 0;
   f.thread.middleware.use('test-tool-observation', async (ctx, next) => {
     // A real tool observation on the live dispatch, with the dispatch's own id: emitted while the dispatch is live.
@@ -302,7 +302,7 @@ test('older journal rows without captures read back as not recorded; nothing is 
   const thread = { id: 'legacy', meta: { projectId: 'P' } } as any;
   store.appendLearning(thread, {
     id: 'sig-legacy-1',
-    kind: 'domain_learning',
+    kind: 'warden_learning',
     source: 'architecture-reviewer',
     timestamp: 5,
     content: {

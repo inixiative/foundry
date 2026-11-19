@@ -5,7 +5,7 @@ import {
   type LLMProvider,
   SignalBus,
 } from '@inixiative/foundry-core';
-import { DomainLibrarian } from '../src/agents/domain-librarian';
+import { Warden } from '../src/agents/warden';
 import { ADVICE_RESPONSE_PROTOCOL, chartered, validateAdviceResponse } from '../src/classify';
 
 // Author cases for the advice-phase response contract (Fable). Controlled provider only; no model.
@@ -30,7 +30,7 @@ function fixture(
   };
   const cache = new ContextLayer({ id: 'architecture', segment: 'domain-knowledge' });
   cache.set('Assess compatibility using observed evidence.');
-  const lib = new DomainLibrarian({
+  const lib = new Warden({
     domain: 'architecture',
     cache,
     signals: new SignalBus(),
@@ -135,7 +135,7 @@ test('a cold cache is skipped explicitly before any model call', async () => {
       return { model: 'controlled', content: '{}' };
     },
   };
-  const lib = new DomainLibrarian({
+  const lib = new Warden({
     domain: 'architecture',
     cache: new ContextLayer({ id: 'architecture', segment: 'domain-knowledge' }),
     signals: new SignalBus(),

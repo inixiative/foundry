@@ -7,7 +7,7 @@ import {
   type LLMProvider,
   SignalBus,
 } from '@inixiative/foundry-core';
-import { adviceOutcomeOf, DomainLibrarian, type WardenStage } from '../src/agents/domain-librarian';
+import { adviceOutcomeOf, Warden, type WardenStage } from '../src/agents/warden';
 import {
   ADVICE_RESPONSE_PROTOCOL,
   adviceResponseProtocol,
@@ -307,7 +307,7 @@ function twoStage(
       cache: layer('knowledge', '# Locks\n- createLock (CONCURRENCY.md)'),
     },
   ];
-  const lib = new DomainLibrarian({
+  const lib = new Warden({
     domain: 'locks',
     cache: stages[0]!.cache!,
     signals: new SignalBus(0),
@@ -402,7 +402,7 @@ describe('the stage loop', () => {
         cache: layer('knowledge', `# Locks\n${'- createLock\n'.repeat(400)}`),
       },
     ];
-    const lib = new DomainLibrarian({
+    const lib = new Warden({
       domain: 'locks',
       cache: stages[0]!.cache!,
       signals: new SignalBus(0),
@@ -503,7 +503,7 @@ describe('the stage loop', () => {
       advice([RANKED]),
       'It asks for mutual exclusion.\ncreateLock does that job.\nREVISED: KEEP',
     ]);
-    const lib = new DomainLibrarian({
+    const lib = new Warden({
       domain: 'locks',
       cache: layer('k', '# Locks'),
       signals: new SignalBus(0),
@@ -529,7 +529,7 @@ describe('the stage loop', () => {
 
   test('reason followup does not ask after a no: nothing is delivered or carried', async () => {
     const { llm, calls } = scripted('haiku', ['NO_COMMENT']);
-    const lib = new DomainLibrarian({
+    const lib = new Warden({
       domain: 'locks',
       cache: layer('k', '# Locks'),
       signals: new SignalBus(0),
@@ -610,7 +610,7 @@ describe('live debug reason', () => {
     const [stage] = validateStages('test', [config]);
     const one = scripted('haiku', answers);
     const cache = layer('knowledge', '# Locks\n- createLock (CONCURRENCY.md)');
-    const lib = new DomainLibrarian({
+    const lib = new Warden({
       domain: 'locks',
       cache,
       signals: new SignalBus(0),
@@ -723,7 +723,7 @@ describe('live debug reason', () => {
       },
     ]);
     const cache = layer('knowledge', '# Locks\n- createLock (CONCURRENCY.md)');
-    const lib = new DomainLibrarian({
+    const lib = new Warden({
       domain: 'locks',
       cache,
       signals: new SignalBus(0),

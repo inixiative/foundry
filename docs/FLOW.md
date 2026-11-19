@@ -111,7 +111,7 @@ Each Warden maintains knowledge, advises when asked, and guards when triggered. 
 | **Architecture** | Module boundaries, deps | "Cross-module work?" | "Does this respect boundaries?" |
 | **Memory** | Past decisions, failures | "Have we seen this before?" | "This pattern failed last time" |
 
-Memory is meant to be special in guard mode: **programmatic pattern matching** against known failure modes (grep + structured memory, not LLM reasoning), so it could run on every tool call for free. **Not built:** no Warden is given a programmatic guard or a `guardFn`; every guard is an LLM call today.
+Memory is meant to be special in guard mode: **programmatic pattern matching** against known failure modes (grep + structured memory, not LLM reasoning), so it could run on every tool call for free. **Not built:** every guard is an LLM call; the unused programmatic-guard hook and the rule-compile strategies were removed on 2026-11-19.
 
 ### When a Warden weighs in: the charter, trigger points and NO_COMMENT
 
@@ -750,7 +750,7 @@ Every branching point in the system, who decides, and how. Every Warden is a pro
 - **ACP agent** — `packages/acp` (foundry-acp) lets ACP hosts drive Foundry threads ([FOUNDRY-ACP.md](reference/FOUNDRY-ACP.md)).
 - **Librarian** — sole writer to the thread-state layer. `packages/foundry/src/agents/librarian.ts`
 - **Thread-state layer** — compact materialized view, updated by the Librarian.
-- **Warden framework** — shared advise + guard pattern (`agents/domain-librarian.ts`, `DomainLibrarian`), one instance generated per concept region of a project (`agents/region-roster.ts`), never written in settings; instructions and domain knowledge composed by the composition view ([usage-and-context.md](usage-and-context.md)). Decisions run Claude Haiku 5.5 on agent-session primed sessions (`providers/primed-decisions.ts`).
+- **Warden framework** — shared advise + guard pattern (`agents/warden.ts`, `Warden`), one instance generated per concept region of a project (`agents/region-roster.ts`), never written in settings; instructions and domain knowledge composed by the composition view ([usage-and-context.md](usage-and-context.md)). Decisions run Claude Haiku 5.5 on agent-session primed sessions (`providers/primed-decisions.ts`).
 - **Guard trigger-gating** — a turn's tool observations are held on its dispatch and reach `FlowOrchestrator.postAction` once when the turn's tool activity ends; it fires each Warden whose triggers name a call of the turn (`guard: per-turn`; `per-call` restores a guard per call).
 - **Handoff brief** — a Claude handoff (`Agent`/`Task`/`SendMessage`) is briefed at its call, before it runs, and the chimes ride into the subagent's text (`turns/handoff-brief.ts`); a Codex or Muse subagent is briefed at `task_started` and the brief rides the parent's next turn.
 
@@ -758,7 +758,7 @@ Every branching point in the system, who decides, and how. Every Warden is a pro
 - **Herald wiring** — the Herald class moved to the private chorus repo, packages/heralds/reference/ (2026-11-18, R-2026-11-18-27); the `chorus.heralds` settings, `ask_herald` and the heralds skill stay as placeholders.
 - **Push of critical findings** into a running session.
 - **`Thread.fromSession`** store replay.
-- **Writeback pipeline** — post-execution signal processing into the corpus pipeline (Oracle `docs/VISION.md` §7): map rebuilds, memory entries, convention proposals queued for review. `recompileOn` (`agents/domain-librarian.ts`) exists with no caller.
+- **Writeback pipeline** — post-execution signal processing into the corpus pipeline (Oracle `docs/VISION.md` §7): map rebuilds, memory entries, convention proposals queued for review.
 - **Feedback lifecycle, beyond its first slice** — Oracle recurrence and committed rungs (design in Oracle `docs/foundry/FEEDBACK-LOOP.md`; what is built: [FEEDBACK-LOOP.md](FEEDBACK-LOOP.md)). The first slice (capture, tuning, routing, role-file changes, the Feedback view) is built in `packages/foundry/src/feedback/`.
 
 ---

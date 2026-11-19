@@ -14,7 +14,7 @@ await mkdir(base, { recursive: true });
 const own = [
   'packages/foundry/src/agents/thread-runtime.ts',
   'packages/foundry/src/agents/flow-orchestrator.ts',
-  'packages/foundry/src/agents/domain-librarian.ts',
+  'packages/foundry/src/agents/warden.ts',
   'packages/foundry/tests/domain-middleware-loop.test.ts',
   'packages/foundry/tests/helpers/m0-domain-loop.ts',
   'packages/foundry/tests/helpers/m0-check.ts',

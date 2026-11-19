@@ -170,7 +170,7 @@ test('real SessionBackedProvider → factory → runtime: both expert reviews re
     log() {},
     warn() {},
     learning: { timeoutMs: 20, hardTimeoutMs: 1000 },
-    domains: domains.map((d) => ({ domain: d, layerId: d, guardTriggers: [] })),
+    codeWardens: domains.map((d) => ({ domain: d, layerId: d, guardTriggers: [] })),
   } as any);
   const recording: LLMProvider = {
     ...central,

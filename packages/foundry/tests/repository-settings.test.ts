@@ -141,7 +141,7 @@ test('a repository file that breaks a rule is reported and none of it applies', 
     { label: 'team name' },
     { defaults: { nativeAuthenticationId: 'mine' } },
     { defaults: { provider: 'codex', model: 'fable' } },
-    { agents: { w: { kind: 'domain-librarian' } } },
+    { agents: { w: { kind: 'warden' } } },
     { threadOnMerge: 'never' },
   ]) {
     const config = projectWith({ ...bad, steer: false });

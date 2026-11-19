@@ -384,7 +384,7 @@ test('the native launch bridge transports integration reads and persists their o
   const thread = new Thread(scope.threadId, new ContextStack(), { projectId });
   const runtime = new ThreadRuntimeManager({
     config: defaultConfig(),
-    domains: [],
+    codeWardens: [],
     llm: {
       id: 'controlled',
       async complete() {
