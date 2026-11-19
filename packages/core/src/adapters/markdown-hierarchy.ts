@@ -487,12 +487,19 @@ export async function discoverHierarchy(
   const secret = (path: string) => secretInstructionPath(path, trusted);
   const refused: HierarchyRefusal[] = [];
 
+  // One discovery resolves each path once: the owner and boundary tests ask again for every file.
+  const reals = new Map<string, string>();
   const realOf = (path: string) => {
-    try {
-      return realpathSync(path);
-    } catch {
-      return path;
+    let real = reals.get(path);
+    if (real === undefined) {
+      try {
+        real = realpathSync(path);
+      } catch {
+        real = path;
+      }
+      reals.set(path, real);
     }
+    return real;
   };
   const varsFor = (entry: SelectedHierarchyNode, dir?: string) => ({
     ...locationVars(location),
@@ -610,10 +617,11 @@ export async function discoverHierarchy(
   // An import keeps the narrower of its importer's tier and the tier of any node that owns its path.
   const owners = selected.map((entry) => {
     const vars = varsFor(entry);
+    const within = expandAll(entry.node.owns?.within, vars);
     return {
       node: entry.node,
       names: entry.node.owns?.names,
-      within: expandAll(entry.node.owns?.within, vars),
+      within: within?.length ? withinAny(within, realOf) : undefined,
       dirs: expandAll(entry.node.owns?.dirs, vars),
     };
   });
@@ -625,7 +633,7 @@ export async function discoverHierarchy(
       const hit = paths.some(
         (path) =>
           own.names?.includes(basename(path)) ||
-          (own.within?.length && withinAny(own.within)(path)) ||
+          own.within?.(path) ||
           own.dirs?.includes(dirname(path)),
       );
       if (hit && (!narrowest || options.tierRank(own.node.tier) < options.tierRank(narrowest.tier)))
@@ -710,6 +718,7 @@ export async function discoverHierarchy(
                 ),
               )
               .filter((root): root is string => !!root),
+            realOf,
           );
     // A shared node's file is held to its import boundary on where it resolves, like an import: a
     // committed CLAUDE.md symlinked out of the repository never loads as the repository's. A
