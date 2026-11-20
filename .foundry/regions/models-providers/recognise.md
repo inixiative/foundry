@@ -83,6 +83,7 @@ A moment that says any of these, or something close, is this region's. Both voic
 - keep the old provider around in case
 - normalize the base URL to one v1
 - call a custom OpenAI-compatible host
+- point a provider at Cursor's API
 - stream tokens as they arrive
 - read this provider's API key from env
 - the user's custom API URL for this provider

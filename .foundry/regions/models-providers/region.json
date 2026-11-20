@@ -3,18 +3,18 @@
   "title": "Models, providers and usage",
   "routing": "Is this about which models and providers exist and what they can do (MODEL_REGISTRY, MODEL_VENDORS, capabilities, tiers, main-thread labs, subscription workers, decision model constants, vendor settings with subscription and API modes), the API-key LLM providers (LLMProvider, AnthropicProvider, OpenAIProvider, GeminiProvider, createRegisteredProvider, splitSystemMessage, scopedProvider, streaming, zero-SDK raw fetch), or token and cache usage (TokenTracker, UsageEntry, recordWindows, usageRecord, windowDelta, totalTokenCount, sumTokenCounts, estimateTokens, BudgetExceededError, AnalyticsStore, Claude Code native compaction via contextBudget)? Plain jobs: 'which model can do judgment', 'add a new model to the list', 'call OpenRouter / xAI', 'I'll import the openai SDK', 'count the tokens including cache', 'stop when we hit the budget', 'change when Claude compacts'.",
   "concepts": ["model-registry", "api-providers", "usage-telemetry"],
-  "tokens": 16832,
+  "tokens": 16880,
   "tokenMethod": "chars/4",
   "files": {
     "recognise": {
       "path": "recognise.md",
-      "tokens": 2659,
+      "tokens": 2668,
       "experimental": true,
       "note": "recognise/pick split under test (model round); not the standard"
     },
     "knowledge": {
       "path": "knowledge.md",
-      "tokens": 16832
+      "tokens": 16880
     }
   },
   "runsAgreed": 0,

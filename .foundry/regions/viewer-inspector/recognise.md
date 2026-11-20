@@ -65,6 +65,8 @@ A moment that says any of these, or something close, is this region's. Both voic
 - try the Gloss viewer on a sample project
 - track open connections and their streams
 - run these async tasks one at a time
+- don't let two cleanups overlap
+- periodic cleanup that shouldn't overlap
 - build the viewer's streams over its threads
 - a plain reconnecting socket in the browser
 - a script needs the thread's live stream

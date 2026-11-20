@@ -22,6 +22,8 @@ A moment that says any of these, or something close, is this region's. Both voic
 - start all the Wardens when the thread opens
 - let me type while it sets up
 - tell me when the Wardens are ready
+- show the Warden host's state and held/expected count in the viewer
+- the Warden host failed, why
 - the dispatcher's context is getting big
 - a dispatcher died, clean up its Wardens
 - shut the Wardens down when the host closes

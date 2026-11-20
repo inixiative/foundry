@@ -4,7 +4,7 @@
 
 ## What this region is
 
-The thread as Foundry's unit of work and the one path every turn takes through it: how a thread is built, found, given a live runtime, named and stored, how every host's turn is accepted, queued, dispatched and settled, and the time-ordered ids every record uses.
+The thread as Foundry's unit of work and the one path every turn takes through it: how a thread is built, found, given a live runtime and named, how every host's turn is accepted, queued, dispatched and settled, and the time-ordered ids every record uses.
 
 ## What it exists for
 
@@ -12,7 +12,6 @@ The thread as Foundry's unit of work and the one path every turn takes through i
 - Viewer store actions on a thread
 - The name a thread shows
 - Time-ordered ids and time from ids
-- Where a thread's conversation and metadata are stored
 - Send a payload to agents
 
 ## How people say these problems
@@ -32,9 +31,6 @@ A moment that says any of these, or something close, is this region's. Both voic
 - give this row an id
 - find everything older than a week
 - when was this created
-- save the conversation rows
-- persist the thread's tags and status
-- where do turns get written
 - ask several agents at once
 - bring an archived thread back
 - don't let one failure kill the rest
@@ -45,7 +41,6 @@ A moment that says any of these, or something close, is this region's. Both voic
 - find everything older than a week by id
 - is this turn still in flight
 - scroll up to load earlier messages
-- the Postgres rows for a conversation
 - give this row a sortable id
 - keep core as the bare engine
 - compare two ownership scopes reliably
@@ -105,7 +100,6 @@ A moment that says any of these, or something close, is this region's. Both voic
 - build a thread from the project template
 - the agent should keep the thread title updated
 - attach the runtime when a thread goes live
-- save the thread metadata row
 - which title should the thread display
 - read the timestamp out of the id
 - stop a running turn
@@ -113,7 +107,6 @@ A moment that says any of these, or something close, is this region's. Both voic
 - talk to the local server the way the viewer does
 - I'll add a createdAt column to filter by age
 - fetch the previous page of messages
-- query a thread's messages from Prisma
 - mint a prefixed time-ordered id
 - I'll wait for the reply in the response
 - cancel a queued turn before it runs
@@ -127,13 +120,11 @@ A moment that says any of these, or something close, is this region's. Both voic
 - the agent should rename the thread when its work changes
 - hit stop on what it's doing
 - register agents and dispatch through middleware
-- a child thread inherits its parent's layer configs
 - fan this out in parallel
 - rebuild caches from the session log
 - clone the warm layers for a fresh thread
 - name the thread after the turn finishes
 - tear down the thread's flow when it closes
-- where the thread's parent and archive time live
 - I'll add a created_at column for this
 - track queued status per thread
 - every host should go through one turn path
@@ -148,6 +139,7 @@ A moment that says any of these, or something close, is this region's. Both voic
 These mention this region's words but belong elsewhere; the answer is no, and the region named answers instead.
 
 - journal this turn's phase rows and store the big payload by hash → journal-thread-tree
+- where do a thread's turns and messages get written → journal-thread-tree
 - record the subagents the session spawned as child threads → journal-thread-tree
 - send the native session only the context that changed this turn → native-sessions
 - map Zed's session/prompt and stream session/update back to the editor → acp

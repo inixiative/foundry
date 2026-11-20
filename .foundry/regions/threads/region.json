@@ -1,20 +1,20 @@
 {
   "id": "threads",
   "title": "Threads and the turn path",
-  "routing": "Is this about a Foundry thread's life: the one turn path (TurnService accept / per-thread queue / dispatch / settle, POST /api/messages/send, the interrupt route, isOpenTurn, stopTurn), building, finding and wiring threads (core Thread, Thread.dispatch, thread.fan(), ThreadFactory, ViewerThreadDirectory, ThreadRuntimeManager, Project / ProjectRegistry), the daemon client (FoundryClient), thread names (nameThreadFromMessage, firstMessageName, rename_thread, NAME_ASK_NOTE / NAME_CHECK_NOTE, renameThread, threadTitle), the Postgres Message / ThreadState models, or time-ordered ids (newId, idAtTime, timeFromId)? Plain jobs: 'send a turn to this thread', 'make a new thread for this', 'hook the Wardens onto the thread', 'call the daemon from the CLI', 'stop the running turn', 'name the thread', 'mint an id'.",
+  "routing": "Is this about a Foundry thread's life: the one turn path (TurnService accept / per-thread queue / dispatch / settle, POST /api/messages/send, the interrupt route, isOpenTurn, stopTurn), building, finding and wiring threads (core Thread, Thread.dispatch, thread.fan(), ThreadFactory, ViewerThreadDirectory, ThreadRuntimeManager, Project / ProjectRegistry), the daemon client (FoundryClient), thread names (nameThreadFromMessage, firstMessageName, rename_thread, NAME_ASK_NOTE / NAME_CHECK_NOTE, renameThread, threadTitle), where a thread's turns are recorded (the local journal, LocalSessionStore, in journal-thread-tree; the Postgres Message / ThreadState mirror was removed), or time-ordered ids (newId, idAtTime, timeFromId)? Plain jobs: 'send a turn to this thread', 'make a new thread for this', 'hook the Wardens onto the thread', 'call the daemon from the CLI', 'stop the running turn', 'name the thread', 'mint an id'.",
   "concepts": ["threads", "core-thread"],
-  "tokens": 9318,
+  "tokens": 8845,
   "tokenMethod": "chars/4",
   "files": {
     "recognise": {
       "path": "recognise.md",
-      "tokens": 1681,
+      "tokens": 1606,
       "experimental": true,
       "note": "recognise/pick split under test (model round); not the standard"
     },
     "knowledge": {
       "path": "knowledge.md",
-      "tokens": 9318
+      "tokens": 8845
     }
   },
   "runsAgreed": 0,

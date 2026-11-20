@@ -20,6 +20,8 @@ How Foundry keeps a thread's record: the local journal that commits each turn as
 A moment that says any of these, or something close, is this region's. Both voices: the user asking or correcting, and the agent describing what it is about to build.
 
 - store this big payload in the journal
+- where do a thread's turns and messages get written
+- save the conversation rows
 - read the record back with its content
 - don't refuse a huge record
 - which content does this row point at

@@ -382,7 +382,7 @@ Claude Code's native auto-compaction policy; no separate summarizer or compressi
 The `subscriptionOnly.decisionRuntime` value, and the default for Claude decisions, that holds a project's Wardens in one Foundry-owned Claude Code process; it replaced the per-thread `claude-in-session` runtime (removed, #323). *Region:* [Wardens inside one Claude Code process (the project host)](in-session-wardens/knowledge.md)
 
 **CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS**  
-Subagent cap the host's launch raises, on top of the user's own cap, by `roster × (spares + 2) × concurrentTurns + 4`. *Region:* [Wardens inside one Claude Code process (the project host)](in-session-wardens/knowledge.md)
+Subagent cap the host's launch raises, on top of the user's own cap, by `roster × (spares + 2) × concurrentTurns + 2 + 2 × dispatchers`. *Region:* [Wardens inside one Claude Code process (the project host)](in-session-wardens/knowledge.md)
 
 **CLAUDE_CONFIG_DIR**  
 Selects Claude's profile and its keychain credential; set via profileEnvironment, never by hand. *Region:* [Logins, profiles and secrets](logins-secrets/knowledge.md)
@@ -535,7 +535,7 @@ Anything that decides how to use the primitives, or needs HTTP, processes or ser
 Class tag: foundry-core agent primitives (BaseAgent, Executor, Harness, the tool-use loop). *Region:* [Core agents, middleware, signals, traces](core-agents/knowledge.md)
 
 **core-thread**  
-Class: core Thread, ownership scope, ids, and the persisted thread and message models. *Region:* [Threads and the turn path](threads/knowledge.md)
+Class: core Thread, ownership scope and ids. *Region:* [Threads and the turn path](threads/knowledge.md)
 
 **/correction**  
 ACP available command posting typed feedback as an intervention. *Region:* [Headless Foundry over ACP](acp/knowledge.md)
@@ -1304,11 +1304,11 @@ Wraps any memory adapter (fromFileMemory, fromSqliteMemory, fromPostgresMemory, 
 **MemoryView**  
 A FileMemory limited to one scope, private by default; what a thread is handed. *Region:* [Context layers and memory adapters](context-memory/knowledge.md)
 
-**Message**  
-Prisma model: Postgres conversation rows grouped by turnId; not the local session store. *Region:* [Threads and the turn path](threads/knowledge.md)
-
 **Mid-session MCP pull**  
 The running session pulls missing context through the foundry MCP server's tools. *Region:* [Harness data flow and loops](flow-architecture/knowledge.md)
+
+**Middleware tiers**  
+MiddlewareChain's two tiers (`MiddlewareTier`, core `middleware.ts`): `use` registers always-on middleware, `useWhen` conditional middleware that runs only when its predicate matches the DispatchContext. *Region:* [Harness data flow and loops](flow-architecture/knowledge.md)
 
 **MIDDLEWARE-ADAPTER**  
 The rejected plan to bind middleware to Claude/Codex hooks; replaced by headless Foundry over ACP. *Region:* [Headless Foundry over ACP](acp/knowledge.md)
@@ -1397,7 +1397,7 @@ The expected answer when nothing in the region applies: exactly NO_COMMENT, jour
 Copies an ownership scope dropping undefined fields, for stable equality. *Region:* [Threads and the turn path](threads/knowledge.md)
 
 **not-held**  
-A Warden call refused unsent because its project's host does not serve, or holds no warm spare for it; never sent to primed sessions; a user message's advice catches up on the next message. *Region:* [Wardens inside one Claude Code process (the project host)](in-session-wardens/knowledge.md)
+A Warden call refused unsent: any first-stage call while its project's host does not serve, and on a serving host a user message's advice to a Warden it holds no warm spare for (the only held-only call); never sent to primed sessions; that advice catches up on the next message. On a serving host a guard or review with no spare starts a cold member instead. *Region:* [Wardens inside one Claude Code process (the project host)](in-session-wardens/knowledge.md)
 
 **not-sent:not-admitted**  
 A Warden the queue never admitted in time, advice and guard alike (#418, one outcome list per call). *Region:* [When Wardens are asked](warden-triggers/knowledge.md)
@@ -1524,7 +1524,7 @@ Tool calls observed on the native event stream; the structural tool gate answers
 After the work, every Warden reviews it under the same charter and writes its thread knowledge. *Region:* [When Wardens are asked](warden-triggers/knowledge.md)
 
 **PostgresMemory**  
-Durable Postgres memory for entries, traces, signals and messages with pgvector search. *Region:* [Context layers and memory adapters](context-memory/knowledge.md)
+Durable Postgres memory for entries (the `Entry` model only) with pgvector search. *Region:* [Context layers and memory adapters](context-memory/knowledge.md)
 
 **Pre-message channel**  
 System prompt at session start plus changed layers and Warden notes with each user message. *Region:* [Harness data flow and loops](flow-architecture/knowledge.md)
@@ -1615,6 +1615,9 @@ Inject predicted context; let the session pull the rest via MCP. *Region:* [Repo
 
 ## Q
 
+**queued**  
+Turn status: accepted and not yet handed to the executor's runtime (a turn ahead of it on a busy thread, a held prompt); a queued turn found at restart was never sent and is failed (`TurnStatus`, `persistence/local-session-store.ts`). *Region:* [Threads and the turn path](threads/knowledge.md)
+
 **queueNotes**  
 Queues Warden notes to ride the parent's next user message. *Region:* [When Wardens are asked](warden-triggers/knowledge.md)
 
@@ -1660,7 +1663,7 @@ Store a reading of a login's usage windows; compute growth between two readings,
 A capture matched to an existing item by matchExisting; carries that item's id. *Region:* [Feedback and corrections](feedback/knowledge.md)
 
 **recycle**  
-Past 100k tokens of dispatcher context a new generation starts and the old one ends into the root, no main turn. *Region:* [Wardens inside one Claude Code process (the project host)](in-session-wardens/knowledge.md)
+Past `projectHost.recycleTokens` (140k by default) of dispatcher context a new generation starts and the old one ends into the root, no main turn. *Region:* [Wardens inside one Claude Code process (the project host)](in-session-wardens/knowledge.md)
 
 **Reduced middleware entry (mw:<callId>)**  
 The Archive entry shape of one middleware call: role, trigger, wraps, decision, result, state, timing, usage. *Region:* [Journal and thread tree](journal-thread-tree/knowledge.md)
@@ -2119,9 +2122,6 @@ Attaches and disposes a live thread's runtime: Librarian, Wardens, flow, sinks, 
 **threads**  
 Class: the thread runtime and the one turn path (TurnService, queued turns, projects, ThreadFactory, ThreadRuntimeManager, FoundryClient). *Region:* [Threads and the turn path](threads/knowledge.md)
 
-**ThreadState**  
-Prisma model: thread metadata only (description, tags, status, parent, archive time). *Region:* [Threads and the turn path](threads/knowledge.md)
-
 **threadTitle**  
 Picks the title a thread shows: a person's name over the agent's. *Region:* [Threads and the turn path](threads/knowledge.md)
 
@@ -2402,7 +2402,7 @@ Decides whether a thread is wrapped; an unwrapped thread gets the user's message
 Whether a thread gets any Foundry context; fresh installs are unwrapped and send the message as typed. *Region:* [Session context delivery](session-delivery/knowledge.md)
 
 **Writeback**  
-Loop 4: post-execution map rebuilds, memory entries and convention proposals feeding the corpus pipeline. *Region:* [The FLOW.md roles as agents](flow-roles/knowledge.md)
+Loop 4: post-execution map rebuilds, memory entries and convention proposals feeding the corpus pipeline (designed, not built: FLOW.md § What Exists, Not built). *Region:* [The FLOW.md roles as agents](flow-roles/knowledge.md)
 
 **Writeback pipeline**  
 Loop 4: map rebuilds, memory entries, convention proposals, persistence; not built as a whole. *Region:* [Harness data flow and loops](flow-architecture/knowledge.md)

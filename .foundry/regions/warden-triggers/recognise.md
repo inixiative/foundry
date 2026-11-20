@@ -104,3 +104,4 @@ These mention this region's words but belong elsewhere; the answer is no, and th
 - the guard answered with a suggestion and the validator refused it → classify
 - block the agent from running rm -rf → tool-gate-mcp
 - the subagent's run shows up as a child thread with handoff rows → threads-journal
+- skip Wardens before asking them → warden-prefilter-evals

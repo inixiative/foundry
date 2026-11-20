@@ -1,9 +1,9 @@
 {
   "id": "flow-roles",
   "title": "The FLOW.md roles as agents",
-  "routing": "Is this about which named agent fills a FLOW.md role: the Wardens advising on what context a message touches, the Librarian as sole writer of thread state, the Herald (not wired; its class is in the chorus repo, ask_herald a placeholder), the FlowOrchestrator wiring them into pre-message and post-action, the Artificer as the executor, the decision roles on the cheap model, the notes a brief or consumed work item becomes, the writeback corpus pipeline, or learning settings; or about merging roles, writing thread state, or driving the roles by hand?",
+  "routing": "Is this about which named agent fills a FLOW.md role: the Wardens advising on what context a message touches, the Librarian as sole writer of thread state, the Herald (not wired; its class is in the chorus repo, ask_herald a placeholder), the FlowOrchestrator wiring them into pre-message and post-action, the Artificer as the executor, the decision roles on the cheap model, the notes a brief or consumed work item becomes, the writeback corpus pipeline (designed, not built), or learning settings; or about merging roles, writing thread state, or driving the roles by hand?",
   "concepts": ["flow-roles"],
-  "tokens": 7384,
+  "tokens": 7404,
   "tokenMethod": "chars/4",
   "files": {
     "recognise": {
@@ -14,7 +14,7 @@
     },
     "knowledge": {
       "path": "knowledge.md",
-      "tokens": 7384
+      "tokens": 7404
     }
   },
   "runsAgreed": 0,

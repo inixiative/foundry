@@ -22,7 +22,7 @@ A moment that says any of these, or something close, is this region's. Both voic
 - show the old history in the host
 - start a new Foundry thread from the editor
 - how does the ACP agent find the daemon
-- where is the daemon's port and secret
+- where is the daemon's port
 - point tests at a second Foundry
 - start every session in plan mode
 - the host's mode setting isn't reaching the agent
@@ -58,7 +58,7 @@ A moment that says any of these, or something close, is this region's. Both voic
 - two editors on the same thread queue their turns
 - can the ACP package import foundry internals
 - turn the editor's content blocks into one prompt
-- read the daemon's port and secret from the client
+- read the daemon's port from the client
 - send the thread's old messages to the editor
 - the host policy needs the call's paths
 - the code that runs the setup subcommand
@@ -112,7 +112,7 @@ A moment that says any of these, or something close, is this region's. Both voic
 - nothing on the editor path is special
 - why replayed tool ids differ from live ones
 - I'll translate thread stream rows to updates by hand
-- write the port, secret and pid file at startup
+- write the port and pid file at startup
 - the default mode when the host sets none
 - let the host choose which executor agent
 - I'll hard-code the launch file path

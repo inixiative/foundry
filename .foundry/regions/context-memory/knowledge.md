@@ -83,7 +83,7 @@ A FileMemory limited to one scope, private by default; what a thread is handed.
 Self-hosted MuninnDB memory with decay, Hebbian strengthening and associations.
 
 **PostgresMemory**  
-Durable Postgres memory for entries, traces, signals and messages with pgvector search.
+Durable Postgres memory for entries (the `Entry` model only) with pgvector search.
 
 **Prompt-layer pairing**  
 Each layer's prompt goes in as its own block so the model knows why that context exists.
@@ -751,7 +751,7 @@ From the catalog (extracted from the code through the repo's Atlas map, describe
 - **MarkdownDocs** `packages/core/src/adapters/markdown-docs.ts#MarkdownDocs` [primitive] read a directory of .md files as context Use: new MarkdownDocs(dir)
 - **MemoryView** `packages/core/src/adapters/file-memory.ts#MemoryView` [primitive] read and write a FileMemory limited to one scope, private by default Use: const view = fileMemory.view(scope); view.write(...)
 - **MuninnMemory** `packages/foundry/src/adapters/muninn-memory.ts#MuninnMemory` [primitive] use a self-hosted MuninnDB as memory, with decay, Hebbian strengthening and associations Use: new MuninnMemory({ baseUrl })
-- **PostgresMemory** `packages/foundry/src/adapters/postgres-memory.ts#PostgresMemory` [primitive] store entries, traces, signals, interventions and messages in Postgres, with pgvector semantic search Use: new PostgresMemory(prisma) // needs prisma + @prisma/client; embeddings enable semantic search
+- **PostgresMemory** `packages/foundry/src/adapters/postgres-memory.ts#PostgresMemory` [primitive] store memory entries in Postgres (the `Entry` model only), with pgvector semantic search Use: new PostgresMemory(prisma) // needs prisma + @prisma/client; embeddings enable semantic search
 - **readInstructionFile** `packages/core/src/adapters/markdown-docs.ts#readInstructionFile` [primitive] load an instruction file and its imports the way Claude Code loads CLAUDE.md Use: await readInstructionFile(path, options)
 - **secretInstructionPath** `packages/core/src/adapters/markdown-docs.ts#secretInstructionPath` [primitive] refuse to load dotfiles, key material and credential-directory paths as instructions Use: secretInstructionPath(path, trustedRoots)
 - **selectMemory** `packages/core/src/adapters/file-memory.ts#selectMemory` [primitive] choose which visible memory records to inject within a budget, reporting selected and omitted Use: selectMemory(visible, policy, focus)

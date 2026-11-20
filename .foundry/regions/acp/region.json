@@ -3,18 +3,18 @@
   "title": "Headless Foundry over ACP",
   "routing": "Is this about foundry-acp (packages/acp) letting an ACP host such as Paseo, T3 Code or Zed drive Foundry threads: the ACP method map (initialize, session/new, load, resume, prompt, cancel, close, set_mode, request_permission), session/update projection (TurnProjection, the Foundry: context and Foundry: guard items), ACP modes and --permission-mode, configOptions, client MCP servers, the ACP launch file and direct loopback, @inixiative/foundry/client, foundry-acp setup and bun run acp, or host instruction wrappers; or about hooking a vendor CLI instead?",
   "concepts": ["acp"],
-  "tokens": 18861,
+  "tokens": 18854,
   "tokenMethod": "chars/4",
   "files": {
     "recognise": {
       "path": "recognise.md",
-      "tokens": 1579,
+      "tokens": 1571,
       "experimental": true,
       "note": "recognise/pick split under test (model round); not the standard"
     },
     "knowledge": {
       "path": "knowledge.md",
-      "tokens": 18861
+      "tokens": 18854
     }
   },
   "runsAgreed": 3,

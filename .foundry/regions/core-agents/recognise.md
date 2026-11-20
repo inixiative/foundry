@@ -12,6 +12,7 @@ The agent primitives of foundry-core and the machinery around a dispatch: the ag
 - Run code around or after every agent dispatch
 - Carry information beside the main dispatch flow
 - Record, save and read back a message's journey
+- Post a correction on a running thread
 
 ## How people say these problems
 
@@ -33,6 +34,8 @@ A moment that says any of these, or something close, is this region's. Both voic
 - the operator says this span was wrong
 - wait for the human to answer before continuing
 - store the operator's correction on that span
+- the viewer posts a correction
+- send the operator's correction to the thread
 - record each stage this message went through
 - save the span tree with the turn
 - show the full detail of one run in the viewer

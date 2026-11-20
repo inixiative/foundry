@@ -127,7 +127,7 @@ Find the problem in plain words, then point at the exact thing. Each class opens
 
 **Job: find and reach the daemon from foundry-acp** (ACP launch file vs Launch file vs acpLaunchPath vs readAcpLaunch vs writeAcpLaunch) — docs/reference/FOUNDRY-ACP.md § 2.2; catalog packages/foundry/src/client/launch.ts
 
-*Said as:* "how does the ACP agent find the daemon", "where is the daemon's port and secret", "point tests at a second Foundry"
+*Said as:* "how does the ACP agent find the daemon", "where is the daemon's port", "point tests at a second Foundry"
 
 | Member | Use when | Not when (use instead) |
 |---|---|---|
@@ -174,11 +174,11 @@ Find the problem in plain words, then point at the exact thing. Each class opens
 |---|---|---|---|
 | where does the ACP launch file live; let tests redirect the launch file location; I'll hard-code the launch file path | **acpLaunchPath** · primitive `packages/foundry/src/client/launch.ts#acpLaunchPath` — Use instead of defaultAcpLaunchPath so tests and a second Foundry can redirect it. | — | calling defaultAcpLaunchPath or hard-coding ~/.foundry/acp-launch.json, ignoring FOUNDRY_ACP_LAUNCH (catalog: packages/foundry/src/client/launch.ts) |
 | build the ACP agent the host talks to; wire each editor prompt into a Foundry turn | **createFoundryAgent** · primitive `packages/acp/src/agent.ts#createFoundryAgent` — build the ACP v1 agent that runs each prompt as a turn on the local daemon's one turn path | — | — |
-| read the daemon's port and secret from the client; validate the launch file before connecting; I'll just parse the launch json myself | **readAcpLaunch** · primitive `packages/foundry/src/client/launch.ts#readAcpLaunch` — read and validate the private ACP launch file naming the loopback origin | — | — |
+| read the daemon's port from the client; validate the launch file before connecting; I'll just parse the launch json myself | **readAcpLaunch** · primitive `packages/foundry/src/client/launch.ts#readAcpLaunch` — read and validate the private ACP launch file naming the loopback origin | — | — |
 | send the thread's old messages to the editor; replay past turns into the host on reopen; rebuild the host's transcript from history | **replayHistory** · primitive `packages/acp/src/session-state.ts#replayHistory` — replay a thread's history to an ACP host as session/update messages | — | — |
 | the code that runs the setup subcommand; parse setup's write and reinstall flags; where the host config printing is implemented | **runSetup** · primitive `packages/acp/src/setup.ts#runSetup` — install foundry-acp globally and point ACP hosts at it, from command-line args | — | — |
 | stream a turn's output back to the editor; I'll translate thread stream rows to updates by hand | **TurnProjection** · primitive `packages/acp/src/turn.ts#TurnProjection` — project one prompt's daemon thread and flow streams onto ACP session/updates until a stop reason | — | — |
-| the daemon publishes where hosts can reach it; write the port, secret and pid file at startup; advertise the daemon endpoint for the ACP agent | **writeAcpLaunch** · primitive `packages/foundry/src/client/launch.ts#writeAcpLaunch` — publish the ACP launch file with port and pid for hosts to find | — | — |
+| the daemon publishes where hosts can reach it; write the port and pid file at startup; advertise the daemon endpoint for the ACP agent | **writeAcpLaunch** · primitive `packages/foundry/src/client/launch.ts#writeAcpLaunch` — publish the ACP launch file with port and pid for hosts to find | — | — |
 | run the editor agent from this checkout; start the stdio agent locally for testing; the command a host spawns per connection | **bun run acp** · script `package.json` — run the foundry-acp CLI so ACP hosts can drive Foundry threads | — | — |
 | map the editor's modes onto Claude's permission modes; keep the same modes across Claude, Codex and hosts | **ACP modes map to host permission modes** · pattern docs/reference/FOUNDRY-ACP.md §4.5 — Never add a Foundry-only or stricter mode. | part 4 | — |
 | the ACP process holds no thread or middleware; I'll load the project config inside the ACP agent | **foundry-acp is a thin transport adapter** · pattern packages/acp; pf/mcp/proxy.ts:4-11 — Same stance as the MCP proxy. | part 4 | constructing a Thread, loading project config or running middleware inside packages/acp instead of calling the daemon API (docs/reference/FOUNDRY-ACP.md § 2.3 foundry-acp) |

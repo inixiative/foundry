@@ -131,3 +131,4 @@ These mention this region's words but belong elsewhere; the answer is no, and th
 - Warden calls are timing out waiting for a decision slot on the login → decision-hosts
 - the Warden tree inside the project host's Claude Code process → in-session-wardens
 - score whether the new region knowledge anticipates more corrections → warden-prefilter-evals
+- skip Wardens before asking them → warden-prefilter-evals

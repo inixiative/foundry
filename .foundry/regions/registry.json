@@ -166,7 +166,7 @@
     {
       "tag": "core-thread",
       "atlas": "primitive:thread",
-      "description": "Core Thread, ownership scope, ids, persisted thread and message models",
+      "description": "Core Thread, ownership scope, ids",
       "region": "threads"
     },
     {
@@ -366,20 +366,20 @@
     {
       "id": "chorus",
       "tokens": 19326,
-      "recogniseTokens": 1651,
+      "recogniseTokens": 1666,
       "concepts": ["chorus"],
       "runsAgreed": 0
     },
     {
       "id": "warden-triggers",
-      "tokens": 11998,
-      "recogniseTokens": 1305,
+      "tokens": 12022,
+      "recogniseTokens": 1320,
       "concepts": ["warden-triggers"],
       "runsAgreed": 0
     },
     {
       "id": "classify",
-      "tokens": 12923,
+      "tokens": 12947,
       "recogniseTokens": 1547,
       "concepts": ["classify"],
       "runsAgreed": 0
@@ -407,15 +407,15 @@
     },
     {
       "id": "subscription-policy",
-      "tokens": 8834,
+      "tokens": 8914,
       "recogniseTokens": 773,
       "concepts": ["subscription-policy"],
       "runsAgreed": 0
     },
     {
       "id": "in-session-wardens",
-      "tokens": 18151,
-      "recogniseTokens": 1527,
+      "tokens": 18575,
+      "recogniseTokens": 1552,
       "concepts": ["in-session-wardens"],
       "runsAgreed": 0
     },
@@ -435,8 +435,8 @@
     },
     {
       "id": "models-providers",
-      "tokens": 16832,
-      "recogniseTokens": 2659,
+      "tokens": 16880,
+      "recogniseTokens": 2668,
       "concepts": ["model-registry", "api-providers", "usage-telemetry"],
       "runsAgreed": 0
     },
@@ -470,21 +470,21 @@
     },
     {
       "id": "threads",
-      "tokens": 9318,
-      "recogniseTokens": 1681,
+      "tokens": 8845,
+      "recogniseTokens": 1606,
       "concepts": ["threads", "core-thread"],
       "runsAgreed": 0
     },
     {
       "id": "journal-thread-tree",
-      "tokens": 13350,
-      "recogniseTokens": 1625,
+      "tokens": 13325,
+      "recogniseTokens": 1646,
       "concepts": ["journal", "thread-tree"],
       "runsAgreed": 0
     },
     {
       "id": "composition",
-      "tokens": 25221,
+      "tokens": 25301,
       "recogniseTokens": 2429,
       "concepts": ["instruction-ladder", "composition-view"],
       "runsAgreed": 1
@@ -498,28 +498,28 @@
     },
     {
       "id": "flow-architecture",
-      "tokens": 13710,
+      "tokens": 13782,
       "recogniseTokens": 702,
       "concepts": ["flow-loops"],
       "runsAgreed": 0
     },
     {
       "id": "flow-roles",
-      "tokens": 7384,
+      "tokens": 7404,
       "recogniseTokens": 1099,
       "concepts": ["flow-roles"],
       "runsAgreed": 0
     },
     {
       "id": "core-agents",
-      "tokens": 11090,
-      "recogniseTokens": 1779,
+      "tokens": 11124,
+      "recogniseTokens": 1808,
       "concepts": ["core-agents", "middleware-chain", "signals", "traces"],
       "runsAgreed": 1
     },
     {
       "id": "context-memory",
-      "tokens": 13530,
+      "tokens": 13526,
       "recogniseTokens": 1950,
       "concepts": ["context-layers", "memory-adapters"],
       "runsAgreed": 1
@@ -540,8 +540,8 @@
     },
     {
       "id": "acp",
-      "tokens": 18861,
-      "recogniseTokens": 1579,
+      "tokens": 18854,
+      "recogniseTokens": 1571,
       "concepts": ["acp"],
       "runsAgreed": 3
     },
@@ -554,8 +554,8 @@
     },
     {
       "id": "viewer-inspector",
-      "tokens": 14529,
-      "recogniseTokens": 2456,
+      "tokens": 14537,
+      "recogniseTokens": 2474,
       "concepts": ["turn-inspector", "data-streams", "gloss"],
       "runsAgreed": 0
     },
