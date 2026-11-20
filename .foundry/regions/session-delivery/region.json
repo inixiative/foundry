@@ -1,9 +1,9 @@
 {
   "id": "session-delivery",
   "title": "Session context delivery",
-  "routing": "Is this about what a native Claude Code or Codex session receives at start and on each turn, and the evidence of it: baseContextOf and the system prompt (--append-system-prompt; Codex's first message), sessionTurn and per-turn deltas, standing parts labelled `## Context: <id>`, the Librarian's delivery ledger (SessionDelivery.held, commitDelivery), compaction re-send (session_compacted), resume and relaunch, wrapsThread, DeliveryRecord.session, or native output and delivery evidence (projectNative, servedModel, verifyExpertDelivery, evidenceDigest)? Plain jobs: 'send the context again every turn', 'only send the layers that changed', 'the session compacted, do we resend everything', 'which model actually answered', 'check the expert got what we said it got'.",
+  "routing": "Is this about what a native Claude Code or Codex session receives at start and on each turn, and the evidence of it: baseContextOf and the system prompt (--append-system-prompt; Codex's first message), sessionTurn and per-turn deltas, standing parts labelled `## Context: <id>`, the Librarian's delivery ledger (SessionDelivery.held, commitDelivery), compaction re-send (session_compacted), resume and relaunch, wrapsThread, DeliveryRecord.session, or native output and delivery evidence (projectNative, servedModel, verifyWardenDelivery, evidenceDigest)? Plain jobs: 'send the context again every turn', 'only send the layers that changed', 'the session compacted, do we resend everything', 'which model actually answered', 'check the expert got what we said it got'.",
   "concepts": ["session-delivery"],
-  "tokens": 7692,
+  "tokens": 7612,
   "tokenMethod": "chars/4",
   "files": {
     "recognise": {
@@ -14,7 +14,7 @@
     },
     "knowledge": {
       "path": "knowledge.md",
-      "tokens": 7692
+      "tokens": 7612
     }
   },
   "runsAgreed": null,

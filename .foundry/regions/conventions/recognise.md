@@ -60,7 +60,7 @@ A moment that says any of these, or something close, is this region's. Both voic
 
 These mention this region's words but belong elsewhere; the answer is no, and the region named answers instead.
 
-- which model should this Warden or classifier run on → decision-hosts
+- which model should this Warden or decision role run on → decision-hosts
 - I'll write a summarizer to compress the session when it gets long → chorus
 - run the full check before I merge → testing-vcr
 - add a new OpenAI-compatible provider for this model → models-providers

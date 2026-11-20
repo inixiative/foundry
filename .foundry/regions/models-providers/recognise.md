@@ -4,7 +4,7 @@
 
 ## What this region is
 
-The one table of providers, models, labs and capabilities and the vendor settings built on it; the API-key LLM and embedding providers that implement LLMProvider over raw fetch; how token usage, cache telemetry, usage windows and Claude Code's native compaction budget are recorded and counted.
+The one table of providers, models, labs and capabilities and the vendor settings built on it; the API-key LLM providers that implement LLMProvider over raw fetch; how token usage, cache telemetry, usage windows and Claude Code's native compaction budget are recorded and counted.
 
 ## What it exists for
 
@@ -13,7 +13,6 @@ The one table of providers, models, labs and capabilities and the vendor setting
 - Which model a decision or main thread may run on
 - Build, change or check vendor settings
 - Call a model with an API key
-- Turn text into embeddings
 - Small helpers around a provider call
 - Score agent output against a golden diff
 - Get a token number
@@ -36,14 +35,9 @@ A moment that says any of these, or something close, is this region's. Both voic
 - which lab is this provider
 - apply the settings patch for this vendor
 - default vendor settings from the registry
-- convert the old provider settings
 - call xAI with my API key
 - I'll import the openai SDK for this
-- point it at local Ollama
 - add a provider for this vendor
-- embed these chunks
-- I need vectors for search
-- which embedding provider do we use
 - which URL will this provider post to
 - read the provider's key from env
 - pull the system message out
@@ -67,16 +61,12 @@ A moment that says any of these, or something close, is this region's. Both voic
 - run the tests against the real provider APIs
 - count cache tokens in the total
 - env vars that set Claude's compaction window
-- point a provider at Cursor's API
-- preset providers for Cursor and Ollama
 - my custom spawner builds its own env
 - default model for decisions on API tokens
 - which provider runs API-token decisions
 - add every usage event to the turn total
-- which embedding provider do we have
 - which providers are turned on
 - are we close to the subscription limit by cost
-- embed text with Gemini
 - call Gemini with an API key
 - concurrent calls overwrite the analytics log
 - the interface every API provider implements
@@ -85,7 +75,6 @@ A moment that says any of these, or something close, is this region's. Both voic
 - the labs allowed to run main threads
 - which lab does this provider belong to
 - layer saved vendor settings over the defaults
-- convert the old provider settings to vendors
 - the table of every provider and model
 - list vendors with subscription and API modes
 - what can this model do
@@ -93,7 +82,6 @@ A moment that says any of these, or something close, is this region's. Both voic
 - fetch the model list once in the viewer
 - keep the old provider around in case
 - normalize the base URL to one v1
-- embed text with OpenAI
 - call a custom OpenAI-compatible host
 - stream tokens as they arrive
 - read this provider's API key from env
@@ -122,7 +110,6 @@ A moment that says any of these, or something close, is this region's. Both voic
 - which provider serves this vendor's API mode
 - which vendor does this provider belong to
 - turn the OpenAI vendor on
-- embed text with Voyage
 - how much of the window did this run use
 - store the call log for the analytics page
 - use the Anthropic API directly
@@ -132,19 +119,14 @@ A moment that says any of these, or something close, is this region's. Both voic
 - live API tests with the keys in env
 - totals are input, output and cache, nothing more
 - I'll set the autocompact env var on the spawn
-- use Cursor as the model backend
-- I'll set the OpenAI base URL to Ollama
-- run against a model on this machine
 - build a client for any registered vendor
 - pass the supplied env so compaction applies
 - I'll hard-code Haiku for the decision call
 - decisions on the API go to Anthropic
 - the turn total is the result event only
-- produce embeddings for these chunks
 - list every enabled provider in vendor order
 - dollar estimates don't measure quota
 - estimate tokens without a tokenizer
-- use Google's embedding endpoint
 - use Google's generate content endpoint
 - append to the call log one at a time
 - add a new model provider
@@ -154,7 +136,6 @@ A moment that says any of these, or something close, is this region's. Both voic
 - map a provider to its main-thread lab
 - what's missing before this provider can be the worker
 - combine saved settings with the registry defaults
-- migrate legacy per-provider settings
 - does this mode have a transport
 - add a new model to the list
 - every vendor and how it can run
@@ -166,7 +147,6 @@ A moment that says any of these, or something close, is this region's. Both voic
 - let Claude compact itself
 - delete providers nothing constructs
 - I'll append v1 to the host URL
-- use an OpenAI-compatible embeddings endpoint
 - chat completions against our own server
 - merge the user's edit into vendor settings
 - show the answer token by token
@@ -202,7 +182,6 @@ A moment that says any of these, or something close, is this region's. Both voic
 - provider id to vendor and mode
 - enable subscription mode but not API mode
 - build the initial vendors map
-- Anthropic's recommended embeddings
 - growth between two usage readings
 - add the Anthropic SDK as a dependency
 - serve usage analytics to the dashboard
@@ -212,15 +191,11 @@ A moment that says any of these, or something close, is this region's. Both voic
 - catch the budget halt
 - set the compaction threshold in settings
 - apply the context budget to the child
-- a Cursor provider preset
 - don't hand-set the base URL for these
-- an Ollama provider with the default URL
 - I'll write a new provider class for this vendor
 - the paid-API decision model
-- vectors from Voyage, OpenAI or Gemini
 - all providers the user switched on
 - I'll divide the length by four
-- Gemini vectors for search
 - a Gemini chat provider over fetch
 - still save the call that crossed the budget
 - what does a provider need to implement
@@ -228,7 +203,6 @@ A moment that says any of these, or something close, is this region's. Both voic
 - is this provider one of the five labs
 - I'll check by hand which models a worker can run
 - fill in vendor defaults the user didn't set
-- which old providers got dropped
 - is the API mode coming soon or real
 - I'll keep my own list of model ids
 - the vendor list for the settings page
@@ -237,7 +211,6 @@ A moment that says any of these, or something close, is this region's. Both voic
 - sweep across the cheap tier
 - no extra model calls to shrink context
 - strip the doubled version segment
-- OpenAI vectors for search
 - use the OpenAI chat API directly
 - update one vendor mode from the form
 - progressive output from the provider
@@ -266,7 +239,6 @@ A moment that says any of these, or something close, is this region's. Both voic
 - is this the vendor's API or subscription mode
 - I'll read the old providers key
 - which modes start enabled
-- Voyage vectors for retrieval
 - the window reset mid-run, what now
 - providers call the API with plain fetch
 - the paid Messages API provider
@@ -280,5 +252,5 @@ These mention this region's words but belong elsewhere; the answer is no, and th
 - running a Warden or classifier call on the user's subscription login → decision-hosts
 - starting a persistent Claude Code session for a thread or sending it the context deltas → native-sessions
 - asking Jev a typed question or adding a TypeSafe decision to the catalog → typesafe
-- scoring a Warden eval run or computing label agreement → warden-prefilter-evals
+- scoring a Warden eval run → warden-prefilter-evals
 - which Claude login or Kingdom pool a session's usage is charged to → logins-secrets

@@ -1,20 +1,20 @@
 {
   "id": "flow-architecture",
   "title": "Harness data flow and loops",
-  "routing": "Is this about how data moves through the Foundry harness: the four channels (pre-message system prompt and per-turn delta, mid-session MCP pull, post-action native event stream, feedback on a later turn), progressive depth and middleware tiers, the thread-state layer vs the session store, the delivery ledger (standing parts, deltas, compaction, no retraction, wrapsThread), the writeback loop, thread bootstrap and staleness, failure modes, or what is built vs designed; or about adding a Claude Code hook, MCP push or .foundry-context.md?",
+  "routing": "Is this about how data moves through the Foundry harness: the four channels (pre-message system prompt and per-turn delta, mid-session MCP pull, post-action native event stream, feedback on a later turn), progressive depth and guard tiers (one guard per turn), the thread-state layer vs the session store, the delivery ledger (standing parts, deltas, compaction, no retraction, wrapsThread), the writeback loop, thread bootstrap and staleness, failure modes, or what is built vs designed; or about adding a Claude Code hook, MCP push or .foundry-context.md?",
   "concepts": ["flow-loops"],
-  "tokens": 14724,
+  "tokens": 13710,
   "tokenMethod": "chars/4",
   "files": {
     "recognise": {
       "path": "recognise.md",
-      "tokens": 704,
+      "tokens": 702,
       "experimental": true,
       "note": "recognise/pick split under test (model round); not the standard"
     },
     "knowledge": {
       "path": "knowledge.md",
-      "tokens": 14724
+      "tokens": 13710
     }
   },
   "runsAgreed": 0,

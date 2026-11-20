@@ -208,7 +208,7 @@ A moment that says any of these, or something close, is this region's. Both voic
 
 These mention this region's words but belong elsewhere; the answer is no, and the region named answers instead.
 
-- queueing or prioritising Warden and classifier calls on the subscription → decision-hosts
+- queueing or prioritising Warden calls on the subscription → decision-hosts
 - pairing this Foundry with a Kingdom, holding a Signet, or presenting it to Kingdom → kingdom
 - the tunnel and handoff codes for reaching the viewer remotely → kingdom
 - adding the foundry bridge MCP server to the Claude launch argv → native-sessions

@@ -1,9 +1,9 @@
 {
   "id": "viewer-inspector",
   "title": "Viewer inspector, streams and Gloss",
-  "routing": "Is this about what the viewer shows of a turn and how it gets there: the graph panel (GraphPanel, threadGraph, turnFlowGraph, learningLoop, applyFlowFrame, flowSnapshot, readTurn, readLearning, taskLists / TASK_SOURCES from TodoWrite and update_plan), inspector data (deliveredUnderstanding vs domainUnderstanding, expertParticipants, deliverySummary, selectionSummary, verifyExpertDelivery), live turn state (applyTurnFrame, mergeLiveSnapshot, liveExecutionStatus, liveThreadStatus, workLog); the WebSocket data-stream machinery (createDataStreams, createWebSocketServer, createRegistry, sendToStreamLocal, drainConnections, closeAllConnections, createSerializedQueue, StreamBufferRegistry, holdStream, resyncStreams, createDataStreamSocket, DataStreamClient); or Gloss margin notes in the viewer (GlossService, GlossReview, Gloss settings and maintenance actions, projectPath / sourcePath)?",
+  "routing": "Is this about what the viewer shows of a turn and how it gets there: the graph panel (GraphPanel, threadGraph, turnFlowGraph, learningLoop, applyFlowFrame, flowSnapshot, readTurn, readLearning, taskLists / TASK_SOURCES from TodoWrite and update_plan), inspector data (deliveredUnderstanding vs domainUnderstanding, wardenParticipants, deliverySummary, selectionSummary, verifyWardenDelivery), live turn state (applyTurnFrame, mergeLiveSnapshot, liveExecutionStatus, liveThreadStatus, workLog); the WebSocket data-stream machinery (createDataStreams, createWebSocketServer, createRegistry, sendToStreamLocal, drainConnections, closeAllConnections, createSerializedQueue, StreamBufferRegistry, holdStream, resyncStreams, createDataStreamSocket, DataStreamClient); or Gloss margin notes in the viewer (GlossService, GlossReview, Gloss settings and maintenance actions, projectPath / sourcePath)?",
   "concepts": ["turn-inspector", "data-streams", "gloss"],
-  "tokens": 14511,
+  "tokens": 14529,
   "tokenMethod": "chars/4",
   "files": {
     "recognise": {
@@ -14,7 +14,7 @@
     },
     "knowledge": {
       "path": "knowledge.md",
-      "tokens": 14511
+      "tokens": 14529
     }
   },
   "runsAgreed": 0,

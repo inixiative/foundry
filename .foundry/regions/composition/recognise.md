@@ -13,7 +13,6 @@ How Foundry composes standing instructions itself, for any harness: a registered
 - Notice instruction files changed
 - Stop the harness loading instruction files itself
 - Build a middleware role's composed layers
-- Compose instruction text from parts
 - Read the composition settings
 - Change what one role reads
 
@@ -33,10 +32,7 @@ A moment that says any of these, or something close, is this region's. Both voic
 - the CLAUDE.md is injected twice
 - turn off Claude Code's own memory loading
 - give this Warden its instructions and knowledge
-- the Cartographer only needs instructions
 - knowledge for the later classify stage
-- write the CLAUDE.md for each runtime
-- I edited the generated file, push it back
 - compose the role's prompt for this thread
 - what ladder applies here
 - what does this role opt out of
@@ -45,7 +41,6 @@ A moment that says any of these, or something close, is this region's. Both voic
 - this Warden shouldn't read the org CLAUDE.md
 - read instructions from another folder
 - feed old sessions into a context layer
-- which role id is the Cartographer
 - layer one chorus over another
 - run this thread without the reception text
 - discover instructions exactly like Claude Code
@@ -53,7 +48,6 @@ A moment that says any of these, or something close, is this region's. Both voic
 - stop Codex reading the project AGENTS.md
 - does Codex already read the user's AGENTS.md
 - a CLAUDE.md symlinked outside the repo was refused
-- write the CLAUDE.md for one runtime
 - when does the Warden pick up my edit
 - report the budget overflow in every phase
 - which instruction files each role composes
@@ -100,12 +94,10 @@ A moment that says any of these, or something close, is this region's. Both voic
 - keep thread state out of the system prompt
 - edit a Warden and have running threads pick it up
 - don't pull CLAUDE.md into knowledge via an instructions source
-- regenerate the instruction files for every runtime
 - past session history as evidence, not instructions
 - build one slot of a role as a layer
 - build the Warden's private layers for the thread
 - compose the doc a second stage reads
-- the enabled router's id for composition
 - a later layer replaces the region
 - leave out how-to-read-chimes for a baseline run
 - the default managed, global, project, local, memory order
@@ -113,10 +105,8 @@ A moment that says any of these, or something close, is this region's. Both voic
 - I'll set project doc max bytes to zero
 - is the Codex worker on the user's own home
 - why didn't my symlinked instructions load
-- merge common and override prompt files
 - the slot is stale but still has old text
 - compose both slots for one role, deduped
-- the Cartographer must report going over too
 - the one ladder for every slot
 - switch between load and suppress
 - register another instruction level in settings
@@ -124,7 +114,6 @@ A moment that says any of these, or something close, is this region's. Both voic
 - this role's output reaches the team audience
 - pick general files as domain knowledge
 - a config-driven instructions source for main
-- write changed sections back to their sources
 - filter by tier before dropping duplicates
 - drop repeated sections, keep the more specific copy
 - dedupe across the role's instructions and knowledge
@@ -170,7 +159,6 @@ A moment that says any of these, or something close, is this region's. Both voic
 - reject a node id that isn't on the ladder
 - I'll write each Warden's prompt into the launch agents
 - use general instead of an instructions source
-- write CLAUDE.md and AGENTS.md from the sources
 - a role that receives a single slot
 - I'll concatenate the Warden's prompt and docs myself
 - the pick stage needs its own knowledge
@@ -178,13 +166,11 @@ A moment that says any of these, or something close, is this region's. Both voic
 - what gets loaded with nothing configured
 - turn off Claude's own memory loading
 - turn off Codex's own instruction loading
-- build the runtime-specific instruction file
 - re-read after a minute or a settings change
 - everything this Warden reads, filtered for its audience
 - read instructions from a folder outside the repo
 - limit which general files a role reads
 - wire the composition into a layer from config
-- sync a hand-edited composed file into the parts
 - I'll dedupe the files by hashing them
 - a file shouldn't appear in both slots
 - the unmodified default instruction order
@@ -210,7 +196,6 @@ A moment that says any of these, or something close, is this region's. Both voic
 - what each role reads from each level
 - has this Warden's composed view gone stale
 - validate the role picks against the ladder
-- rebuild all composed outputs
 - follow the at-imports in the instruction files
 - add a domain advisor agent for this project
 

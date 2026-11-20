@@ -13,7 +13,7 @@ The thread as Foundry's unit of work and the one path every turn takes through i
 - The name a thread shows
 - Time-ordered ids and time from ids
 - Where a thread's conversation and metadata are stored
-- Send a payload to agents or threads
+- Send a payload to agents
 
 ## How people say these problems
 
@@ -36,7 +36,7 @@ A moment that says any of these, or something close, is this region's. Both voic
 - persist the thread's tags and status
 - where do turns get written
 - ask several agents at once
-- send this to the feature thread
+- bring an archived thread back
 - don't let one failure kill the rest
 - accept the turn durably before running it
 - editor turns must get our context and guards
@@ -56,9 +56,9 @@ A moment that says any of these, or something close, is this region's. Both voic
 - find the project for this path
 - let me rename this thread myself
 - rewind the conversation to this message
-- create the thread if it doesn't exist yet
-- spawn a thread for any feature name on demand
-- give the child thread the parent's context
+- look up a thread by id
+- name the thread from its first message
+- ask the agent to check the thread's name every 30 minutes
 - strip the host's wrapper text from the prompt
 - one unit of work with its own agents and stack
 - what happens when a thread is created
@@ -91,9 +91,9 @@ A moment that says any of these, or something close, is this region's. Both voic
 - undo back to an earlier point in the thread
 - open this thread and show its messages
 - I'll keep a map of threads by id
-- register how unknown destinations get created
-- who is this thread's parent
-- the new thread should start with the parent's layers
+- list this project's threads
+- the thread needs a name before the agent answers
+- the agent names the thread on its first turn
 - separate what the user typed from the editor's preamble
 - interrupt the queued message
 - the object that owns middleware and signals for the work
@@ -122,9 +122,9 @@ A moment that says any of these, or something close, is this region's. Both voic
 - set a person's title on the thread
 - drop everything after this message
 - make that conversation the active one
-- look up a thread, spawning it lazily
-- child threads should inherit some parent layers
-- list the child threads of main
+- look up a thread
+- reopen the archived thread
+- the agent should rename the thread when its work changes
 - hit stop on what it's doing
 - register agents and dispatch through middleware
 - a child thread inherits its parent's layer configs
@@ -151,4 +151,4 @@ These mention this region's words but belong elsewhere; the answer is no, and th
 - record the subagents the session spawned as child threads → journal-thread-tree
 - send the native session only the context that changed this turn → native-sessions
 - map Zed's session/prompt and stream session/update back to the editor → acp
-- the first turn waits while the thread's in-process Wardens set up → in-session-wardens
+- hold every Warden warm in one Claude Code process → in-session-wardens

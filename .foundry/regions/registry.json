@@ -16,7 +16,7 @@
     {
       "tag": "chorus",
       "atlas": "feature:wardens",
-      "description": "A project's region Wardens: generated one per region from .foundry/regions, the chorus setting (projects[id].chorus over .foundry/project.json), layers, warm keys, DomainLibrarian, the reception charter",
+      "description": "A project's region Wardens: generated one per region from .foundry/regions, the chorus setting (projects[id].chorus over .foundry/project.json), layers, warm keys, the Warden class, the reception charter",
       "region": "chorus"
     },
     {
@@ -34,7 +34,7 @@
     {
       "tag": "warden-prefilter",
       "atlas": "feature:wardens",
-      "description": "The local-model pre-filter that may skip a Warden on a confident no: off by default, fails open, its model install and server, readiness",
+      "description": "There is no Warden pre-filter: every Warden is asked at every trigger point (the local-model pre-filter and every local model were removed, R-2026-11-19-04)",
       "region": "warden-prefilter-evals"
     },
     {
@@ -58,7 +58,7 @@
     {
       "tag": "decision-hosts",
       "atlas": "primitive:decisions",
-      "description": "How decision roles run on subscription logins: decision provider and host, primed Claude/Codex decision sessions, budgets, priority, thread naming",
+      "description": "How decision roles run on subscription logins: decision provider and login host, primed Claude/Codex decision sessions, budgets, priority",
       "region": "decision-hosts"
     },
     {
@@ -70,7 +70,7 @@
     {
       "tag": "in-session-wardens",
       "atlas": "primitive:decisions",
-      "description": "decisionRuntime claude-in-session: a thread's Wardens held as subagents inside its own Claude Code process, setup turn, queued turns while it sets up",
+      "description": "The project Warden host: a project's Wardens held as subagents inside one Claude Code process, the tree, not-held skips while it sets up",
       "region": "in-session-wardens"
     },
     {
@@ -100,7 +100,7 @@
     {
       "tag": "api-providers",
       "atlas": "primitive:providers",
-      "description": "The LLMProvider interface and the API-key providers (Anthropic, OpenAI, Gemini, OpenAI-compatible family, embeddings)",
+      "description": "The LLMProvider interface and the API-key providers (Anthropic, OpenAI, Gemini, OpenAI-compatible family)",
       "region": "models-providers"
     },
     {
@@ -166,7 +166,7 @@
     {
       "tag": "core-thread",
       "atlas": "primitive:thread",
-      "description": "Core Thread, SessionManager blueprints, ownership scope, ids, persisted thread and message models",
+      "description": "Core Thread, ownership scope, ids, persisted thread and message models",
       "region": "threads"
     },
     {
@@ -190,7 +190,7 @@
     {
       "tag": "composition-view",
       "atlas": "feature:composition",
-      "description": "Roles x slots x ladder nodes: what each role composes, role layers and files, budgets, the prompt composer",
+      "description": "Roles x slots x ladder nodes: what each role composes, role layers and files, budgets",
       "region": "composition"
     },
     {
@@ -208,19 +208,19 @@
     {
       "tag": "flow-roles",
       "atlas": "feature:flow",
-      "description": "The FLOW.md roles as agents: Cartographer, Librarian (sole thread-state writer), Herald (not wired), FlowOrchestrator, routed agents",
+      "description": "The FLOW.md roles as agents: Wardens, Librarian (sole thread-state writer), Herald (not wired), FlowOrchestrator",
       "region": "flow-roles"
     },
     {
       "tag": "core-agents",
       "atlas": "primitive:agents",
-      "description": "foundry-core agent primitives: BaseAgent, Executor, Decider, Classifier, Router, Clarifier, Harness, Planner, the tool-use loop",
+      "description": "foundry-core agent primitives: BaseAgent, Executor, Harness, the tool-use loop",
       "region": "core-agents"
     },
     {
       "tag": "middleware-chain",
       "atlas": "primitive:middleware",
-      "description": "MiddlewareChain, hooks, retry, built-in hooks, reactive middleware rules",
+      "description": "MiddlewareChain and DispatchContext",
       "region": "core-agents"
     },
     {
@@ -238,13 +238,13 @@
     {
       "tag": "context-layers",
       "atlas": "primitive:contextLayers",
-      "description": "ContextLayer, ContextStack, cache lifecycle, hydration registry and refs; layers are independent token caches",
+      "description": "ContextLayer, ContextStack, cache lifecycle, hydration adapters and refs; layers are independent token caches",
       "region": "context-memory"
     },
     {
       "tag": "memory-adapters",
       "atlas": "primitive:memory",
-      "description": "Memory and knowledge adapters (file, sqlite, http, markdown, postgres, redis, Muninn, Supermemory) as context sources and the MemoryTool",
+      "description": "Memory and knowledge adapters (file, sqlite, http, markdown, postgres, Muninn) as context sources and the MemoryTool",
       "region": "context-memory"
     },
     {
@@ -304,7 +304,7 @@
     {
       "tag": "setup",
       "atlas": "feature:setup",
-      "description": "Setup, doctor, readiness, legacy starter removal, docs scan, startup self-test, the foundry CLI",
+      "description": "Setup, doctor, readiness, docs scan, startup self-test, the foundry CLI",
       "region": "install-daemon"
     },
     {
@@ -326,21 +326,9 @@
       "region": "settings-runtime"
     },
     {
-      "tag": "jobs",
-      "atlas": "primitive:jobs",
-      "description": "BullMQ queue on Redis, makeJob / makeSingletonJob, worker, handlers",
-      "region": "settings-runtime"
-    },
-    {
-      "tag": "logger",
-      "atlas": "primitive:logger",
-      "description": "Pluggable logger (consola, pino) with async scopes",
-      "region": "settings-runtime"
-    },
-    {
       "tag": "database",
       "atlas": "infrastructure:prisma",
-      "description": "Postgres via Prisma (schema, db scripts, JSON helpers) and Redis",
+      "description": "Postgres via Prisma (schema, db scripts, JSON helpers)",
       "region": "settings-runtime"
     },
     {
@@ -377,92 +365,92 @@
   "regions": [
     {
       "id": "chorus",
-      "tokens": 17551,
-      "recogniseTokens": 1708,
+      "tokens": 19326,
+      "recogniseTokens": 1651,
       "concepts": ["chorus"],
       "runsAgreed": 0
     },
     {
       "id": "warden-triggers",
-      "tokens": 11714,
-      "recogniseTokens": 1325,
+      "tokens": 11998,
+      "recogniseTokens": 1305,
       "concepts": ["warden-triggers"],
       "runsAgreed": 0
     },
     {
       "id": "classify",
-      "tokens": 12491,
-      "recogniseTokens": 1569,
+      "tokens": 12923,
+      "recogniseTokens": 1547,
       "concepts": ["classify"],
       "runsAgreed": 0
     },
     {
       "id": "warden-prefilter-evals",
-      "tokens": 12943,
-      "recogniseTokens": 2270,
+      "tokens": 7296,
+      "recogniseTokens": 1518,
       "concepts": ["warden-prefilter", "warden-evals"],
       "runsAgreed": 0
     },
     {
       "id": "feedback",
-      "tokens": 16724,
-      "recogniseTokens": 3042,
+      "tokens": 16778,
+      "recogniseTokens": 3048,
       "concepts": ["feedback", "corrections"],
       "runsAgreed": 3
     },
     {
       "id": "decision-hosts",
-      "tokens": 16691,
-      "recogniseTokens": 1927,
+      "tokens": 18426,
+      "recogniseTokens": 1924,
       "concepts": ["decision-hosts"],
       "runsAgreed": 0
     },
     {
       "id": "subscription-policy",
-      "tokens": 7521,
-      "recogniseTokens": 810,
+      "tokens": 8834,
+      "recogniseTokens": 773,
       "concepts": ["subscription-policy"],
       "runsAgreed": 0
     },
     {
       "id": "in-session-wardens",
-      "tokens": 13515,
-      "recogniseTokens": 1649,
+      "tokens": 18151,
+      "recogniseTokens": 1527,
       "concepts": ["in-session-wardens"],
       "runsAgreed": 0
     },
     {
       "id": "native-sessions",
-      "tokens": 15648,
+      "tokens": 15659,
       "recogniseTokens": 1699,
       "concepts": ["native-sessions", "agent-session"],
       "runsAgreed": 2
     },
     {
       "id": "session-delivery",
-      "tokens": 7692,
+      "tokens": 7612,
       "recogniseTokens": 1104,
       "concepts": ["session-delivery"],
       "runsAgreed": null
     },
     {
       "id": "models-providers",
-      "tokens": 18277,
-      "recogniseTokens": 2907,
+      "tokens": 16832,
+      "recogniseTokens": 2659,
       "concepts": ["model-registry", "api-providers", "usage-telemetry"],
       "runsAgreed": 0
     },
     {
       "id": "typesafe",
       "tokens": 8426,
-      "recogniseTokens": 1174,
+      "recogniseTokens": 1168,
       "concepts": ["typesafe"],
       "runsAgreed": 0
     },
     {
       "id": "logins-secrets",
-      "tokens": 16043,
-      "recogniseTokens": 2455,
+      "tokens": 16078,
+      "recogniseTokens": 2451,
       "concepts": ["native-auth", "secrets"],
       "runsAgreed": 2
     },
@@ -482,107 +470,107 @@
     },
     {
       "id": "threads",
-      "tokens": 9481,
-      "recogniseTokens": 1696,
+      "tokens": 9318,
+      "recogniseTokens": 1681,
       "concepts": ["threads", "core-thread"],
       "runsAgreed": 0
     },
     {
       "id": "journal-thread-tree",
-      "tokens": 13357,
+      "tokens": 13350,
       "recogniseTokens": 1625,
       "concepts": ["journal", "thread-tree"],
       "runsAgreed": 0
     },
     {
       "id": "composition",
-      "tokens": 17823,
-      "recogniseTokens": 2590,
+      "tokens": 25221,
+      "recogniseTokens": 2429,
       "concepts": ["instruction-ladder", "composition-view"],
       "runsAgreed": 1
     },
     {
       "id": "audit-log",
-      "tokens": 9077,
+      "tokens": 9070,
       "recogniseTokens": 950,
       "concepts": ["audit-log"],
       "runsAgreed": 0
     },
     {
       "id": "flow-architecture",
-      "tokens": 14724,
-      "recogniseTokens": 704,
+      "tokens": 13710,
+      "recogniseTokens": 702,
       "concepts": ["flow-loops"],
       "runsAgreed": 0
     },
     {
       "id": "flow-roles",
-      "tokens": 8773,
-      "recogniseTokens": 1255,
+      "tokens": 7384,
+      "recogniseTokens": 1099,
       "concepts": ["flow-roles"],
       "runsAgreed": 0
     },
     {
       "id": "core-agents",
-      "tokens": 16225,
-      "recogniseTokens": 2216,
+      "tokens": 11090,
+      "recogniseTokens": 1779,
       "concepts": ["core-agents", "middleware-chain", "signals", "traces"],
       "runsAgreed": 1
     },
     {
       "id": "context-memory",
-      "tokens": 14675,
-      "recogniseTokens": 2032,
+      "tokens": 13530,
+      "recogniseTokens": 1950,
       "concepts": ["context-layers", "memory-adapters"],
       "runsAgreed": 1
     },
     {
       "id": "tools",
-      "tokens": 15958,
+      "tokens": 15374,
       "recogniseTokens": 1591,
       "concepts": ["tools"],
       "runsAgreed": 3
     },
     {
       "id": "tool-gate-mcp",
-      "tokens": 11605,
+      "tokens": 11355,
       "recogniseTokens": 2194,
       "concepts": ["tool-gate", "mcp-bridge"],
       "runsAgreed": 0
     },
     {
       "id": "acp",
-      "tokens": 18857,
+      "tokens": 18861,
       "recogniseTokens": 1579,
       "concepts": ["acp"],
       "runsAgreed": 3
     },
     {
       "id": "viewer",
-      "tokens": 16335,
-      "recogniseTokens": 2739,
+      "tokens": 15789,
+      "recogniseTokens": 2738,
       "concepts": ["viewer-shell"],
       "runsAgreed": 0
     },
     {
       "id": "viewer-inspector",
-      "tokens": 14511,
+      "tokens": 14529,
       "recogniseTokens": 2456,
       "concepts": ["turn-inspector", "data-streams", "gloss"],
       "runsAgreed": 0
     },
     {
       "id": "install-daemon",
-      "tokens": 16986,
-      "recogniseTokens": 2748,
+      "tokens": 16841,
+      "recogniseTokens": 2559,
       "concepts": ["daemon", "setup", "devices", "git-worktrees"],
       "runsAgreed": 1
     },
     {
       "id": "settings-runtime",
-      "tokens": 12532,
-      "recogniseTokens": 1895,
-      "concepts": ["settings", "jobs", "logger", "database"],
+      "tokens": 9775,
+      "recogniseTokens": 1403,
+      "concepts": ["settings", "database"],
       "runsAgreed": 0
     },
     {
@@ -594,8 +582,8 @@
     },
     {
       "id": "conventions",
-      "tokens": 6790,
-      "recogniseTokens": 772,
+      "tokens": 6909,
+      "recogniseTokens": 773,
       "concepts": ["repo-structure", "atlas", "design-rules"],
       "runsAgreed": 1
     }

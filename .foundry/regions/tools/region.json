@@ -1,9 +1,9 @@
 {
   "id": "tools",
   "title": "Agent tools and execution environments",
-  "routing": "Is this about the tools Foundry's own agents use and where their code runs: ToolRegistry (register, summary, byKind, allByKind), CapabilityGate with BROWSER_POLICY or RESTRICTED_POLICY and capabilities like exec:shell or browser:execute, the tool adapters (BashShell, JustBashShell, BunScript, HttpApi, PlaywrightBrowser, MemoryToolAdapter), an agent's executionEnv (bash, just-bash, typescript, browser, hybrid) and browser mode (playwright-mcp, js-execute, hybrid), output filters (rtk, compose, OutputFilter), or native tool-name helpers (toolCapability, toolGlobMatcher, LINEAR_ISSUE_TOOLS, DEFAULT_CONSUMED_TOOLS, workItemId, createNativeToolProjector)? Plain jobs: give an agent a shell, a sandbox, a browser or an HTTP client, run agent-written code safely, ask a human before a risky action, cut noisy command output, let an agent search memory mid-task, tell which capability a tool call uses.",
+  "routing": "Is this about the tools Foundry's own agents use and where their code runs: ToolRegistry (register, summary, byKind, allByKind), CapabilityGate with BROWSER_POLICY or RESTRICTED_POLICY and capabilities like exec:shell or browser:execute, the tool adapters (BashShell, JustBashShell, BunScript, HttpApi, PlaywrightBrowser, MemoryToolAdapter), the execution environments (bash, just-bash, typescript, browser) and browser mode (agents.<id>.browser: playwright-mcp, js-execute, hybrid), output filters (rtk, compose, OutputFilter), or native tool-name helpers (toolCapability, toolGlobMatcher, LINEAR_ISSUE_TOOLS, DEFAULT_CONSUMED_TOOLS, workItemId, createNativeToolProjector)? Plain jobs: give an agent a shell, a sandbox, a browser or an HTTP client, run agent-written code safely, ask a human before a risky action, cut noisy command output, let an agent search memory mid-task, tell which capability a tool call uses.",
   "concepts": ["tools"],
-  "tokens": 15958,
+  "tokens": 15374,
   "tokenMethod": "chars/4",
   "files": {
     "recognise": {
@@ -14,7 +14,7 @@
     },
     "knowledge": {
       "path": "knowledge.md",
-      "tokens": 15958
+      "tokens": 15374
     }
   },
   "runsAgreed": 3,

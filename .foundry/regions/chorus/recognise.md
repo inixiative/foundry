@@ -4,7 +4,7 @@
 
 ## What this region is
 
-A project's chorus: the set of region Wardens its threads run, one generated per concept region under.foundry/regions when the project's chorus is enabled, and everything that turns those regions into running, primed DomainLibrarian instances whose advice chimes into the thread.
+A project's chorus: the set of region Wardens its threads run, one generated per concept region under.foundry/regions when the project's chorus is enabled, and everything that turns those regions into running, warm Warden instances whose advice chimes into the thread.
 
 ## What it exists for
 
@@ -34,13 +34,11 @@ A moment that says any of these, or something close, is this region's. Both voic
 - the standing layer with the reception charter
 - herald regions in the chorus, not built yet
 - leave the reception text out of this thread
-- the old source regions key is rejected
 - tell the main agent how to read a Warden's note
 - get this project's ordered list of regions folders
 - stack the template's regions under the project's own
-- what experts do the settings declare, nothing attached
+- what Wardens does this config declare, nothing attached
 - how many regions are sitting in that folder
-- the built-in guard triggers and layers per domain
 - log one line saying which Wardens run
 - doctor report with every region's cache key
 - the one class every Warden runs as
@@ -48,7 +46,7 @@ A moment that says any of these, or something close, is this region's. Both voic
 - don't hand-write a security Warden
 - my local setting should win over the repo's chorus
 - load all the regions in this folder
-- settings rejects my domain-librarian agent
+- settings rejects my Warden agent
 - add a Warden for naming conventions to this repo
 - the old named roster is gone for good
 - why is this project's chorus off
@@ -61,7 +59,7 @@ A moment that says any of these, or something close, is this region's. Both voic
 - summarize the turn's tool calls for the guard
 - which Wardens does this project actually run
 - generate a standalone project agent per region
-- which domain layers does this thread use
+- which Wardens does this thread use
 - the one layer a Warden writes
 - the Warden's own notes about this thread
 - instructions, domain knowledge and thread knowledge
@@ -77,21 +75,19 @@ A moment that says any of these, or something close, is this region's. Both voic
 - the thread carries the how-to-read-chimes text
 - a region that should run as a herald
 - turn off how-to-read-chimes for a baseline
-- replace source regions with enabled true
 - the agent should verify a pointer, not obey it
 - which regions directories does this project stack
 - a project region should replace the template one
 - list the declared roles without starting anything
 - report regions present while the chorus is off
-- default domain policy handed to the thread runtime
 - print why this project has no Wardens at startup
 - show each region's size and key in readiness
-- advise, guard and review over a primed session
+- advise, guard and review in the project's Warden host
 - check every region has recognise.md before building
 - I'll add a Warden entry in settings for docs
 - the effective chorus after merging machine and repo
 - fail loudly on a broken region folder
-- why was my decider agent refused
+- why was my agent kind refused
 - set up a Warden from a regions folder
 - no fallback to the retired Warden roster
 - the view says enabled by whom and the reason
@@ -133,5 +129,5 @@ These mention this region's words but belong elsewhere; the answer is no, and th
 - the guard should run over each edit as it happens, not at turn end → warden-triggers
 - the Warden answered in a shape the parser counted as malformed → classify
 - Warden calls are timing out waiting for a decision slot on the login → decision-hosts
-- run the Wardens inside the thread's own Claude process instead of side sessions → in-session-wardens
+- the Warden tree inside the project host's Claude Code process → in-session-wardens
 - score whether the new region knowledge anticipates more corrections → warden-prefilter-evals

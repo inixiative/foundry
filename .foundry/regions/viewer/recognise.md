@@ -94,7 +94,7 @@ A moment that says any of these, or something close, is this region's. Both voic
 - refetch once after a burst of events
 - which page am I on, reactively
 - what project is the operator looking at
-- the docked helper chat pane
+- start a thread in the Feedback scope
 - send the typed message to the thread
 - turn developer mode on
 - link to this project's settings section
@@ -162,7 +162,7 @@ A moment that says any of these, or something close, is this region's. Both voic
 - a scrollable block for raw payloads
 - the owned learning shown for this thread
 - only the latest learning request should win
-- fetch the self chat from the server
+- pick Where a new thread lives
 - keep old rows that have no id
 - merge with what other tabs saved
 - close the dialog when the backdrop is clicked
@@ -181,7 +181,7 @@ A moment that says any of these, or something close, is this region's. Both voic
 - debounce the thread refresh
 - re-render when the route changes
 - none when on Global or Forge Master
-- show the self chat focused or docked
+- open the Forge Master thread
 - post the user's text with images
 - make the dev mode choice stick
 - build the settings URL for a section

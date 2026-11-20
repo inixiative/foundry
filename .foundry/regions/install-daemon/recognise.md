@@ -13,7 +13,6 @@ Getting Foundry installed and kept running on one machine: the macOS LaunchAgent
 - Auto-update the daemon onto a new release
 - Keep the daemon booting on good settings
 - Check the install is healthy
-- Get rid of the old starter stack
 - First-run configuration
 - Know which machine and checkout this is
 - Relate checkouts of one project across machines
@@ -39,8 +38,6 @@ A moment that says any of these, or something close, is this region's. Both voic
 - is Foundry set up right
 - why won't it start
 - is the claude CLI installed
-- remove the old default layers
-- clean up the seeded classifier and router
 - set Foundry up for the first time
 - show the setup dialog
 - wire my repo's docs in
@@ -56,7 +53,6 @@ A moment that says any of these, or something close, is this region's. Both voic
 - list the repo's worktrees
 - what branch is this on
 - which repo and remote am I in
-- what changed against main
 - point this thread at another worktree
 - the devices API in the viewer
 - generate the launchd plist for the daemon
@@ -80,11 +76,9 @@ A moment that says any of these, or something close, is this region's. Both voic
 - use the hostname as the machine id
 - the device is online so it can run work
 - show devices in the dashboard
-- how much changed between two branches
 - register this computer as a device
 - the running process can't find claude
-- start Postgres and Redis before the daemon boots
-- which old default layers are still here
+- start Postgres and MuninnDB before the daemon boots
 - install the ACP agent and daemon on this Mac
 - what branch am I on
 - which repo and remote is this
@@ -101,15 +95,12 @@ A moment that says any of these, or something close, is this region's. Both voic
 - add an endpoint for devices
 - which port should this service use
 - create a thread from the editor's folder
-- warn when the pre-filter model is down
 - these two repos share a remote, merge them
-- where the local model gets installed and started
 - read this machine's enrolled identity
 - the new release booted, make it stable
 - save these settings as the last ones that worked
 - the update failed to boot, drop it
 - bad settings shouldn't keep the daemon down
-- delete the old starter classifier and router
 - swap the running service for a new plist
 - the daemon found a broken claude and no node
 - my settings change broke the daemon, put the old ones back
@@ -148,13 +139,11 @@ A moment that says any of these, or something close, is this region's. Both voic
 - I'll key devices by hardware serial
 - release the reservation when the heartbeat drops
 - list Kingdom devices when paired
-- show the diff summary against main
 - give this machine a name and id
 - add the claude and codex folders to PATH at runtime
 - bring up the docker compose services the config needs
 - which worktree has feature x checked out
 - match my current folder to a worktree
-- preview what the legacy cleanup would remove
 - print the Paseo and T3 settings for me
 - read the current branch name
 - get remote, branch and repo root together
@@ -172,15 +161,12 @@ A moment that says any of these, or something close, is this region's. Both voic
 - where the device HTTP routes live
 - pick a local port for Postgres
 - find the project from the working directory
-- don't hide a missing pre-filter server
 - link the projects across machines
-- the pinned model under the foundry models folder
 - is this device enrolled yet
 - promote the trial build and keep the old one as previous
 - remember the good settings after startup
 - mark this build failed so we never try it again
 - where did my rejected settings go
-- clean out the seeded default layers
 - boot out the daemon and bootstrap the new one
 - what PATH should the LaunchAgent get
 - set aside settings that fail to boot
@@ -210,13 +196,11 @@ A moment that says any of these, or something close, is this region's. Both voic
 - a checkout is not the project
 - I'll git pull in the daemon's folder and restart
 - the devices panel in settings
-- I'll shell out to git diff --stat
 - I'll generate a device id file
 - I'll prepend the local bin directory to PATH
 - I'll run docker compose up before starting
 - look up a worktree by branch name
 - I'll loop over worktrees checking startsWith
-- list the seeded items nobody edited
 - one command to point a host at Foundry
 - is HEAD detached
 - I'll run git rev-parse a few times
@@ -229,11 +213,9 @@ A moment that says any of these, or something close, is this region's. Both voic
 - the local device inventory
 - I'll just use port 3000
 - rewrite the project id to match
-- needs uv and git to install
 - mark the update as good after startup
 - fall back to stable after a bad update
 - I'll back up settings before each change
-- I'll strip those layers out of settings by hand
 - I'll call launchctl bootout then bootstrap
 - launchd doesn't have my shell's PATH
 - recover the last settings that worked
@@ -251,7 +233,6 @@ A moment that says any of these, or something close, is this region's. Both voic
 - auto-update without breaking the running daemon
 - fix the environment so spawned CLIs resolve
 - replace the installed daemon with this config
-- keep anything the user edited
 - I'll hard-code a PATH into the plist
 
 ## When this is not your domain

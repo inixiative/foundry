@@ -129,5 +129,4 @@ These mention this region's words but belong elsewhere; the answer is no, and th
 - fire the Wardens once per turn after the tool activity ends instead of per call → warden-triggers
 - tell the main thread how to treat a chime it receives → chorus
 - score a new charter wording against probes from real sessions → warden-prefilter-evals
-- skip Wardens that are clearly irrelevant before asking them → warden-prefilter-evals
 - which model and warm session a Warden's call runs on, and its queue → decision-hosts

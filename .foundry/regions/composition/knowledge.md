@@ -11,7 +11,7 @@
 - [2. The domain](#2-the-domain)
 - [3. Everything that exists here, by class](#3-everything-that-exists-here-by-class)
   - [Class `instruction-ladder`](#class-instruction-ladder-standing-instructions-the-registered-hierarchy-computer-org-project-personal-discovery-like-claude-code-imports-tiers-and-dedupe)
-  - [Class `composition-view`](#class-composition-view-roles-x-slots-x-ladder-nodes-what-each-role-composes-role-layers-and-files-budgets-the-prompt-composer)
+  - [Class `composition-view`](#class-composition-view-roles-x-slots-x-ladder-nodes-what-each-role-composes-role-layers-and-files-budgets)
 - [4. The specifics, in full](#4-the-specifics-in-full)
   - [4a. Doc sections](#4a-doc-sections)
     - `docs/usage-and-context.md`: Standing instructions; Standing instructions › The default ladder; Standing instructions › Registering levels; Standing instructions › Tiers and dedupe; Composition view
@@ -38,7 +38,7 @@ Env that makes a Claude worker skip CLAUDE.md, rules, AGENTS.md and auto memory.
 Composes every slot of one role from the ladder, filtered by audience and deduped across slots.
 
 **composition-view**  
-Class: roles x slots x ladder nodes; what each role composes, role layers and files, budgets, the prompt composer.
+Class: roles x slots x ladder nodes; what each role composes, role layers and files, budgets.
 
 **composition.harnessLoading**  
 Whether the harness also loads instruction files (load) or is suppressed (suppress); the one injection path.
@@ -77,10 +77,10 @@ The directory that keys a repository's auto memory, mapping worktrees to their m
 The ladder or tree of nodes, each a level, shared or personal, with its files and corpus tier.
 
 **role**  
-A composing party: main, each Warden by its region id, the Cartographer; the Librarian composes nothing.
+A composing party, its id namespaced: a main thread's thread role (thread:coder, thread:assistant, scope:forge, scope:feedback, your own, over the base thread:main), each Warden (region:<region id>); the Librarian composes nothing.
 
 **role file**  
-.foundry/roles/<role>/<slot>.md at a rung (.local.md for personal), overlaying one role's slot.
+.foundry/roles/<role>/<slot>.md at a rung (.local.md for personal), overlaying one role's slot; <role> nests by namespace (roles/region/<id>/, roles/thread/<name>/).
 
 **role:<role>:instructions / role:<role>:domainKnowledge**  
 A middleware role's private layers, off the thread stack so the executor never receives them.
@@ -108,9 +108,9 @@ How Foundry composes standing instructions itself, for any harness: a registered
 
 The instruction-ladder class is the ladder and its walk. An `instructions` source (on the default `instructions` layer) composes a session's files on each warm from a registered hierarchy: the `claude-code` preset (DEFAULT_INSTRUCTION_LADDER: managed, global, org, project, local, memory) merged with `composition.nodes`. Core's discoverHierarchy / dedupeHierarchy are the generic composer; Foundry's discoverInstructionStack is the CLAUDE.md-style stack, composeRoleView composes a whole role (all slots, audience-filtered and deduped across slots), and instructionStackSource / compositionSource expose one slot as a layer source. Each file keeps the narrowest tier of its node and any owning node, dedupe runs after the audience filter, imports stay inside the repository for project, org and local files, and dotfiles, keys and credential directories are never read. Because Foundry composes the files, the harness's own loading is switched off once (composition.harnessLoading; CLAUDE_HARNESS_INSTRUCTIONS_OFF for Claude, CODEX_HARNESS_INSTRUCTIONS_OFF for Codex), and a `markdown` source naming CLAUDE.md beside an `instructions` source injects it twice.
 
-The composition-view class is roles x slots x ladder nodes. Roles are `main`, each Warden (a region Warden's id is its region id) and the Cartographer; the Librarian composes nothing. Slots are `instructions` (system prompt) and `domainKnowledge` (priming context); thread knowledge is not a slot. Role files per rung (`~/.foundry/roles/<role>/<slot>.md`, `.foundry/roles/<role>/<slot>.md`, `.local.md` for personal) overlay a role without registering a node, and `composition.roles.<role>` opts out per slot (exclude, general, audience, dedupe, budget). buildRoleLayers builds a Warden's private role layers, buildRoleLayer a single slot, buildStageKnowledge a later classify stage's knowledge, and a region's knowledge.md arrives whole as domainKnowledge. A role over its budget (DEFAULT_ROLE_BUDGET 120,000 characters for middleware) skips its phase with a named error and is never truncated. Composed slots re-read on file change (hierarchyFingerprint, roleViewChanged), after 60 seconds, on a settings edit, or when invalidateComposition is called after Foundry writes a file itself. compose / writeComposed / decomposeBack are the separate composer that writes runtime instruction files into a project.
+The composition-view class is roles x slots x ladder nodes. Role ids carry a namespace (`prompts/role-namespace.ts`): a main thread composes as its thread role (`thread:coder`, `thread:assistant`, the scope roles `scope:forge` and `scope:feedback`, or the user's own, over the shared base `thread:main`), each Warden is `region:<region id>`; the Librarian composes nothing. Slots are `instructions` (system prompt) and `domainKnowledge` (priming context); thread knowledge is not a slot. Role files per rung (`~/.foundry/roles/<role>/<slot>.md`, `.foundry/roles/<role>/<slot>.md`, `.local.md` for personal, `<role>` nested by namespace) overlay a role without registering a node, and `composition.roles.<role>` opts out per slot (exclude, general, audience, dedupe, budget). buildRoleLayers builds a Warden's private role layers, buildRoleLayer one slot (buildRoleLayers builds both with it), buildStageKnowledge a later classify stage's knowledge, and a region's knowledge.md arrives whole as domainKnowledge. A role over its budget (DEFAULT_ROLE_BUDGET 120,000 characters for middleware) is not sent (`not-sent:over-budget`) and is never truncated. Composed slots re-read on file change (hierarchyFingerprint, roleViewChanged), after 60 seconds, on a settings edit, or when invalidateComposition is called after Foundry writes a file itself.
 
-Not here: the version ids, source versions and recompose of what was composed belong to the `audit-log` region; region Wardens, their chorus setting and DomainLibrarian are `chorus`; classify stages and charters are `classify`; ContextLayer, ContextStack and source types in general are `context-memory`; native launch environments and per-turn delivery are `native-sessions`; the settings file model (ConfigStore, patches, revisions) is `settings-runtime`; the Selection panel UI is `viewer`.
+Not here: the version ids, source versions and recompose of what was composed belong to the `audit-log` region; region Wardens, their chorus setting and the Warden class are `chorus`; classify stages and charters are `classify`; ContextLayer, ContextStack and source types in general are `context-memory`; native launch environments and per-turn delivery are `native-sessions`; the settings file model (ConfigStore, patches, revisions) is `settings-runtime`; the Selection panel UI is `viewer`.
 
 ## 3. Everything that exists here, by class
 
@@ -197,28 +197,17 @@ Find the problem in plain words, then point at the exact thing. Each class opens
 
 - *Also here, by name:* INSTRUCTION_LEVEL_TIER (`packages/foundry/src/prompts/instruction-stack.ts`); claudeProjectDirName (`packages/foundry/src/prompts/instruction-stack.ts`); defaultNodeTier (`packages/foundry/src/prompts/instruction-stack.ts`); expandHierarchyPath (`packages/core/src/adapters/markdown-hierarchy.ts`); forgetSharedRoleViews (`packages/foundry/src/prompts/instruction-stack.ts`); instructionNodeLabel (`packages/foundry/src/prompts/instruction-stack.ts`); markdownSections (`packages/core/src/adapters/markdown-hierarchy.ts`); selectHierarchyNodes (`packages/core/src/adapters/markdown-hierarchy.ts`)
 
-### Class `composition-view`: Roles x slots x ladder nodes: what each role composes, role layers and files, budgets, the prompt composer
+### Class `composition-view`: Roles x slots x ladder nodes: what each role composes, role layers and files, budgets
 
 **Job: build a middleware role's composed layers** (buildRoleLayers vs buildRoleLayer vs buildStageKnowledge) — catalog choose lines (packages/foundry/src/agents/role-layers.ts)
 
-*Said as:* "give this Warden its instructions and knowledge", "the Cartographer only needs instructions", "knowledge for the later classify stage"
+*Said as:* "give this Warden its instructions and knowledge", "build one slot of a role", "knowledge for the later classify stage"
 
 | Member | Use when | Not when (use instead) |
 |---|---|---|
 | **buildRoleLayers** | all slots of a role (a Warden) | one delivered slot (buildRoleLayer) |
-| **buildRoleLayer** | a single slot (Cartographer: instructions only) | a Warden's full set (buildRoleLayers) |
+| **buildRoleLayer** | a single slot of a role | a Warden's full set (buildRoleLayers) |
 | **buildStageKnowledge** | a later classify stage's doc source | the role's own slots (buildRoleLayers) |
-
-**Job: compose instruction text from parts** (compose vs writeComposed vs decomposeBack vs composeRoleView) — catalog choose lines (packages/foundry/src/prompts/composer.ts)
-
-*Said as:* "write the CLAUDE.md for each runtime", "I edited the generated file, push it back", "compose the role's prompt for this thread"
-
-| Member | Use when | Not when (use instead) |
-|---|---|---|
-| **compose** | one runtime file from common and override prompts | role slots in a thread (composeRoleView) |
-| **writeComposed** | regenerate outputs for all runtimes | reverse direction (decomposeBack) |
-| **decomposeBack** | after hand-editing a composed file | regenerating outputs (writeComposed) |
-| **composeRoleView (composition)** | a role's slots from the ladder | project files per runtime (compose) |
 
 **Job: read the composition settings** (DEFAULT_INSTRUCTION_LADDER vs resolveInstructionLadder vs roleComposition vs validateCompositionSettings) — catalog choose lines (packages/foundry/src/prompts/instruction-settings.ts)
 
@@ -243,46 +232,41 @@ Find the problem in plain words, then point at the exact thing. Each class opens
 
 | Problem | Use | Read | Signs you're bypassing it |
 |---|---|---|---|
-| the Cartographer only needs instructions; build one slot of a role as a layer; a role that receives a single slot | **buildRoleLayer** · primitive `packages/foundry/src/agents/role-layers.ts#buildRoleLayer` — single slot (Cartographer, instructions only): this. A Warden's full slot set: buildRoleLayers. | — | — |
+| build one slot of a role as a layer; a role that receives a single slot | **buildRoleLayer** · primitive `packages/foundry/src/agents/role-layers.ts#buildRoleLayer` — one slot of a role: this (buildRoleLayers builds both slots with it). A Warden's full slot set: buildRoleLayers. | — | — |
 | give this Warden its instructions and knowledge; build the Warden's private layers for the thread; I'll concatenate the Warden's prompt and docs myself | **buildRoleLayers** · primitive `packages/foundry/src/agents/role-layers.ts#buildRoleLayers` — all slots of a role: this. One delivered slot: buildRoleLayer. Later classify stage knowledge: buildStageKnowledge. | docs/THREAD-TREE.md § B.5 Who writes what, and when | concatenating a Warden's prompt and doc files into a system prompt by hand (catalog job line; docs/THREAD-TREE.md § B.5) |
 | knowledge for the later classify stage; compose the doc a second stage reads; the pick stage needs its own knowledge | **buildStageKnowledge** · primitive `packages/foundry/src/agents/role-layers.ts#buildStageKnowledge` — later classify stage: this. The role's own slots: buildRoleLayers. | docs/usage-and-context.md § Composition view › Chorus (`projects[id].chorus`) | — |
-| which role id is the Cartographer; the enabled router's id for composition | **cartographerRoleId** · primitive `packages/foundry/src/agents/configured-experts.ts#cartographerRoleId` — get the role id of the enabled cartographer agent for the composition view | — | — |
-| write the CLAUDE.md for one runtime; merge common and override prompt files; build the runtime-specific instruction file | **compose** · primitive `packages/foundry/src/prompts/composer.ts#compose` — writing project files per runtime: this family. Role slots in a thread: composeRoleView. | docs/usage-and-context.md § Composition view; @inixiative/archive/README.md § Local setup | — |
-| I edited the generated file, push it back; write changed sections back to their sources; sync a hand-edited composed file into the parts | **decomposeBack** · primitive `packages/foundry/src/prompts/composer.ts#decomposeBack` — after hand-editing a composed file: this. Regenerating outputs from sources: writeComposed. | — | — |
 | the ladder with nothing configured; Claude Code's discovery as the default ladder; the unmodified default instruction order | **DEFAULT_INSTRUCTION_LADDER** · primitive `packages/foundry/src/prompts/instruction-settings.ts#DEFAULT_INSTRUCTION_LADDER` — default ladder: this. Settings-resolved ladder: resolveInstructionLadder. | — | — |
 | I just wrote the role file, refresh it; make the next turn re-read the instructions; mark every role slot stale after my write | **invalidateComposition** · primitive `packages/foundry/src/agents/role-layers.ts#invalidateComposition` — after writing a role or instruction file yourself: this. Outside edits are caught by the pre-turn file check. | docs/FEEDBACK-LOOP.md § Lifecycle; docs/THREAD-TREE.md § B.2 The template pattern, and how it maps | waiting for the 60-second re-read or restarting after Foundry writes a role or instruction file itself (catalog choose line; docs/THREAD-TREE.md § B.2) |
 | what ladder applies with these settings; the configured ladder, else the default; merge the registered nodes over the preset | **resolveInstructionLadder** · primitive `packages/foundry/src/prompts/instruction-settings.ts#resolveInstructionLadder` — settings-aware ladder: this. Unmodified default: DEFAULT_INSTRUCTION_LADDER. | — | — |
 | what does this role opt out of; a role's audience and budget with defaults; read this Warden's composition picks | **roleComposition** · primitive `packages/foundry/src/prompts/instruction-settings.ts#roleComposition` — get a role's composition picks with defaults for audience and budget | — | — |
 | check the composition settings are valid; reject a node id that isn't on the ladder; validate the role picks against the ladder | **validateCompositionSettings** · primitive `packages/foundry/src/prompts/instruction-settings.ts#validateCompositionSettings` — validate composition settings against the ladder they resolve to | — | — |
-| regenerate the instruction files for every runtime; write CLAUDE.md and AGENTS.md from the sources; rebuild all composed outputs | **writeComposed** · primitive `packages/foundry/src/prompts/composer.ts#writeComposed` — regenerate outputs from sources: this. Reverse direction: decomposeBack. | — | — |
 | when does the Warden pick up my edit; the slot is stale but still has old text; re-read after a minute or a settings change | **Composed slot re-read triggers** · pattern docs/usage-and-context.md, Where the slots live — A stale slot keeps its last content until it re-reads and never drops out; main thread gets a delta, a Warden re-primes. | part 4 | — |
 | computer, org, project and personal levels; an org-wide instruction level plus personal ones; personal rungs never reach the team | **Instruction ladder rungs** · pattern docs/usage-and-context.md, An example setup — Personal nodes never reach a team audience. | part 4 | — |
-| reuse the global agent with an extra prompt; override just the instructions for this project; I'll copy the global agent's prompt into the project; add a domain advisor agent for this project | **Project agent extends / override** · pattern projects[id].agents — override replaces that chunk; no entry means the global agent applies. Never use for Wardens. | part 4 | copying the global agent's prompt into a project agent, or defining a domain-advising / domain-librarian / decider agent in `projects[id].agents` (refused by name) (CLAUDE.md § Config) |
+| reuse the global agent with an extra prompt; override just the instructions for this project; I'll copy the global agent's prompt into the project; add a domain advisor agent for this project | **Project agent extends / override** · pattern projects[id].agents — override replaces that chunk; no entry means the global agent applies. Never use for Wardens. | part 4 | copying the global agent's prompt into a project agent, or defining a Warden in `projects[id].agents` (settings declare executors only; a Warden's kind is refused) (CLAUDE.md § Config) |
 | the region's knowledge doc is the Warden's knowledge; I'll load the knowledge file into the prompt myself; version the region doc in the audit log | **Region knowledge as domainKnowledge** · pattern markdown source `region:<id>`; buildStageKnowledge — Other stage docs use region:<id>:<doc>; versions journal as source-content:region:<id>@project:<project>. | part 4 | — |
-| give the naming Warden its own instructions; drop a file to add a role's instructions; the org's Warden instructions as a plain file | **Role files per rung** · pattern ~/.foundry/roles/<role>/<slot>.md; .foundry/roles/<role>/<slot>.md — Use instead of a registered node unless reading from elsewhere; role files under ~/.foundry are personal wherever symlinked. | part 4 | a composition.nodes entry registered just to give one role extra instructions that a role file would carry (docs/usage-and-context.md § Composition view (role file per rung)) |
-| one ladder composes every role; everything is on, opt out per role; what each role reads from each level | **Roles × slots × ladder nodes** · pattern docs/usage-and-context.md § Composition view — Roles: main, each Warden (region id), the Cartographer; the Librarian composes nothing. | code `Cartographer`, `Librarian`, `Classifier`, `Thread` | — |
+| give the naming Warden its own instructions; drop a file to add a role's instructions; the org's Warden instructions as a plain file | **Role files per rung** · pattern ~/.foundry/roles/<role>/<slot>.md; .foundry/roles/<role>/<slot>.md (`<role>` nested by namespace: roles/region/<id>/, roles/thread/<name>/) — Use instead of a registered node unless reading from elsewhere; role files under ~/.foundry are personal wherever symlinked. | part 4 | a composition.nodes entry registered just to give one role extra instructions that a role file would carry (docs/usage-and-context.md § Composition view (role file per rung)) |
+| one ladder composes every role; everything is on, opt out per role; what each role reads from each level | **Roles × slots × ladder nodes** · pattern docs/usage-and-context.md § Composition view — Roles: a main thread's thread role over thread:main, each Warden (region:<region id>); the Librarian composes nothing. | code `Librarian`, `Thread` | — |
 | feed old sessions into a context layer; past session history as evidence, not instructions | **Archive context source** · primitive source config type 'archive' — Layer prompt must frame it as historical evidence, not instructions. | part 4 | — |
-| layer one chorus over another; a later layer replaces the region | **chorus.layers** · primitive settings chorus.layers — Org and personal .foundry/roles/<region id>/ files overlay a region instead. | part 4 | — |
+| layer one chorus over another; a later layer replaces the region | **chorus.layers** · primitive settings chorus.layers — Org and personal .foundry/roles/region/<region id>/ files overlay a region instead. | part 4 | — |
 | run this thread without the reception text; leave out how-to-read-chimes for a baseline run; the Oracle baseline shouldn't get the reception layer | **chorus.reception setting** · primitive project settings — A thread with no Wardens never gets the layer anyway. | part 4 | — |
 | which instruction files each role composes; the one ladder for every slot | **composition view** · primitive settings `composition`; docs/usage-and-context.md — Instructions plus domain knowledge are composed here; thread knowledge comes from post-work review. | part 4 | — |
 | should the harness also load the files; switch between load and suppress | **composition.harnessLoading** · primitive settings `composition.harnessLoading` — control whether the harness's own instruction loading is suppressed | part 4 | — |
-| this Warden shouldn't read the org CLAUDE.md; exclude a level from one role; limit which general files a role reads | **composition.roles.<role> selection** · primitive settings composition.roles — exclude drops a node whole; general names nodes whose unslotted files compose (default all for instructions, none for domainKnowledge). | part 4 | — |
-| use the project CLAUDE.md as this Warden's knowledge; pick general files as domain knowledge | **composition.roles.<role>.domainKnowledge** · primitive settings `composition.roles` — A region Warden's instructions read no general files (general: []). | part 4 | — |
+| exclude a level from one role; limit which general files a role reads | **composition.roles.<role> selection** · primitive settings composition.roles — exclude drops a node whole; general names nodes whose unslotted files compose (default all for instructions, none for domainKnowledge); a region Warden takes no general files and a `general` pick for one is not applied. | part 4 | — |
+| pick general files as a role's domain knowledge | **composition.roles.<role>.domainKnowledge** · primitive settings `composition.roles` — A region Warden takes no general files in either slot (general: []); a `general` pick for one is not applied (view.chorus.ignoredComposition). | part 4 | — |
 | the role's prompt is too big; raise this Warden's character budget; how much a middleware role may read | **DEFAULT_ROLE_BUDGET / role budget** · primitive composition.roles.<role>.budget; DEFAULT_ROLE_BUDGET — Stays under DECISION_INPUT_CAP (160,000 serialized characters) so an overflow reports this budget's named error. | part 4 | — |
 | instructions versus domain knowledge; the system prompt and the priming context; which slot does an unslotted file go in | **Role slots** · primitive composition roles — A source naming no slot composes `instructions`; one naming no role serves every role. Thread knowledge is not a slot. | part 4 | — |
 | the Warden's layers stay off the thread stack; the executor must never see the Warden's prompt; private layers for a middleware role | **role:<role>:instructions / role:<role>:domainKnowledge** · primitive docs/usage-and-context.md, Where the slots live — Not on the thread's stack, so the executor never receives them; the main thread's instructions layer is separate. | part 4 | — |
-| report the budget overflow in every phase; the Cartographer must report going over too | **Composition budget overflow reporting** · rule docs/usage-and-context.md, Test cases — Applies to composition budgeting. | part 4 | — |
-| keep composition order deterministic despite parallel advisors; seal and journal the plan before the worker starts | **Deterministic composition before worker start** · rule docs/subscription-decisions.md § Latency — always, despite concurrent advisors | code `Cartographer`, `DECISION_DEADLINE_MS`, `Message` | — |
+| keep composition order deterministic despite parallel advisors; seal and journal the plan before the worker starts | **Deterministic composition before worker start** · rule docs/subscription-decisions.md § Latency — always, despite concurrent advisors | code `DECISION_DEADLINE_MS`, `Message` | — |
 | write the rule where this thread's project lives; which repo gets the rule when in a worktree; I'll write it under the current directory | **Instruction rungs follow the thread** · rule docs/FEEDBACK-LOOP.md, What is built — Deciding where a feedback line is written. | part 4 | writing the feedback line under process.cwd() or a fixed project path instead of resolving rungs with feedbackRoots (docs/FEEDBACK-LOOP.md § Lifecycle › What is built (rungs follow the thread)) |
-| I'll cut the prompt to fit the limit; skip the phase if the role is over budget; never truncate a Warden's knowledge | **Over budget refuses, never truncates** · rule docs/usage-and-context.md § composition-view (Budgets, per role) — Advice and routing report error, guard reports not-admitted, review records error and stays open. | part 4 | slicing a role's composed text to fit a length limit, or letting the decision input cap fail instead of the role budget (docs/usage-and-context.md § Composition view (Budgets, per role)) |
-| a file moved to knowledge leaves the instructions; dedupe instructions first, then knowledge | **Per-role dedupe in slot order** · rule docs/usage-and-context.md § composition-view (Dedupe, per role) — The Cartographer gets instructions only; main gets the slots its instructions sources name. | part 4 | — |
+| I'll cut the prompt to fit the limit; skip the phase if the role is over budget; never truncate a Warden's knowledge | **Over budget refuses, never truncates** · rule docs/usage-and-context.md § composition-view (Budgets, per role) — Advice and guard report not-sent:over-budget, review records error and stays open. | part 4 | slicing a role's composed text to fit a length limit, or letting the decision input cap fail instead of the role budget (docs/usage-and-context.md § Composition view (Budgets, per role)) |
+| a file moved to knowledge leaves the instructions; dedupe instructions first, then knowledge | **Per-role dedupe in slot order** · rule docs/usage-and-context.md § composition-view (Dedupe, per role) — A slot a role does not receive is not composed; main gets the slots its instructions sources name. | part 4 | — |
 | personal files must not reach a team audience; keep the personal rung out of shared roles | **Personal node isolation** · rule docs/usage-and-context.md, Test cases — Applies to org personal and project personal rungs. | part 4 | — |
-| a Warden can't read more than main; if main is team, roles are team too | **Role audience never wider than main** · rule docs/usage-and-context.md § composition-view (Tiers, per role) — If main is team, every role is at least team. | part 4 | — |
+| a Warden can't read more than main; if main is team, roles are team too | **Role audience never wider than main** · rule docs/usage-and-context.md § composition-view (Tiers, per role) — If main or any thread role is team, every middleware role is at least team. | part 4 | — |
 | keep thread state out of the system prompt; send thread state with each turn's text | **Thread-state never in the base** · rule docs/FLOW.md, Delivery table — Applies to the thread-state layer; stable and slowly changing layers go in the base. | part 4 | putting the thread-state layer into the system prompt or base context, breaking its byte stability (docs/FLOW.md § Loop 1 › Delivery (perTurn)) |
-| edit a Warden and have running threads pick it up; I'll write each Warden's prompt into the launch agents | **Warden definitions are composed, not fixed** · rule docs/THREAD-TREE.md C.3 Fixed definitions (DECIDED 2026-10-14) — in-session Wardens, where the main session is never relaunched. Text comes from projects[id].agents (standalone, extends, override). | part 4 | writing one `--agents` definition per Warden with its prompt at launch, so edits never reach the never-relaunched main session (docs/THREAD-TREE.md C.3 Fixed definitions (DECIDED 2026-10-14)) |
-| don't pull CLAUDE.md into knowledge via an instructions source; use general instead of an instructions source | **Warden domainKnowledge sources may not be instructions sources** · rule docs/usage-and-context.md § composition-view (Tiers, per role) — Instruction files reach a Warden only through its own role; its domainKnowledge sources must be enabled and not instructions sources. | part 4 | an instructions source listed in a Warden's domainKnowledge to pull in CLAUDE.md, instead of `general` (docs/usage-and-context.md § Composition view (Tiers, per role)) |
+| edit a Warden and have running threads pick it up; I'll write each Warden's prompt into the launch agents | **Warden definitions are composed, not fixed** · rule docs/THREAD-TREE.md C.3 Fixed definitions (DECIDED 2026-10-14) — held Wardens (now in the per-project Warden host), each spawn's prompt pinned to its freshly composed text. | part 4 | writing one `--agents` definition per Warden with its prompt at launch, so edits never reach the never-relaunched main session (docs/THREAD-TREE.md C.3 Fixed definitions (DECIDED 2026-10-14)) |
+| don't pull CLAUDE.md into a Warden's knowledge via an instructions source | **Warden domainKnowledge sources may not be instructions sources** · rule docs/usage-and-context.md § composition-view (Tiers, per role) — A Warden never gets the CLAUDE.md / AGENTS.md ladder; its domainKnowledge sources must be enabled and not instructions sources. | part 4 | an instructions source listed in a Warden's domainKnowledge to pull in CLAUDE.md (docs/usage-and-context.md § Composition view (Tiers, per role)) |
 
-- *Also here, by name:* COMPOSITION_SLOTS (`packages/foundry/src/prompts/instruction-settings.ts`); DEFAULT_ROLE_BUDGET (`packages/foundry/src/prompts/instruction-settings.ts`); HARNESS_GLOBAL_SOURCE (`packages/foundry/src/prompts/instruction-settings.ts`); MAIN_ROLE (`packages/foundry/src/prompts/instruction-settings.ts`); RUNTIME_OUTPUT_FILES (`packages/foundry/src/prompts/composer.ts`); chunkSource (`packages/foundry/src/agents/role-layers.ts`); composeChunks (`packages/foundry/src/viewer/config-resolve.ts`); decompose (`packages/foundry/src/prompts/composer.ts`); isRoleLayerId (`packages/foundry/src/agents/role-layers.ts`); readFileRef (`packages/foundry/src/prompts/composer.ts`); replaceRoleSources (`packages/foundry/src/agents/role-layers.ts`); roleLayerId (`packages/foundry/src/agents/role-layers.ts`); roleSources (`packages/foundry/src/agents/role-layers.ts`); writeFileRef (`packages/foundry/src/prompts/composer.ts`)
+- *Also here, by name:* COMPOSITION_SLOTS (`packages/foundry/src/prompts/instruction-settings.ts`); DEFAULT_ROLE_BUDGET (`packages/foundry/src/prompts/instruction-settings.ts`); HARNESS_GLOBAL_SOURCE (`packages/foundry/src/prompts/instruction-settings.ts`); MAIN_ROLE (`packages/foundry/src/prompts/instruction-settings.ts`); chunkSource (`packages/foundry/src/agents/role-layers.ts`); composeChunks (`packages/foundry/src/viewer/config-resolve.ts`); isRoleLayerId (`packages/foundry/src/agents/role-layers.ts`); replaceRoleSources (`packages/foundry/src/agents/role-layers.ts`); roleLayerId (`packages/foundry/src/agents/role-layers.ts`); roleSources (`packages/foundry/src/agents/role-layers.ts`)
 
 ## 4. The specifics, in full
 
@@ -424,8 +408,9 @@ node's file (`CLAUDE.local.md` pointing at private notes) may point anywhere: it
 reaches no shared audience. Refused files are listed in the Selection panel.
 A repository inside a credential directory (`~/.config/nvim`) has its
 instruction files refused too. The role's
-`composition.roles.<role>.audience` (default `personal_private`) filters by tier through the corpus
-`VISIBLE_TO` rules, so personal files never reach a `team` or `org` audience.
+`composition.roles.<role>.audience` (default `personal_private`) filters by tier through the one
+tier order (`CORPUS_TIERS`, narrowest first: an audience sees its own tier and every wider one), so
+personal files never reach a `team` or `org` audience.
 
 Then repeats are removed, keeping the most specific copy (the later one in the
 order). Dedupe runs after the audience filter, so a personal copy never hides
@@ -475,8 +460,8 @@ restart.
 
 - Claude Code: `CLAUDE_CODE_DISABLE_CLAUDE_MDS=1` on the worker. It drops every
   CLAUDE.md, rule, AGENTS.md and auto memory file, at launch and on demand.
-  `--setting-sources ''` (the subscription worker's isolation) already drops the
-  CLAUDE.md files but not auto memory, so `load` on that worker keeps only memory.
+  With `harnessSettings` on (below), `load` gives a main thread the
+  CLAUDE.md files as Claude Code finds them; off, it keeps only auto memory.
 - Codex app-server: thread config `project_doc_max_bytes: 0` drops project
   AGENTS.md files. `$CODEX_HOME/AGENTS.md` is not a thread setting. Subscription
   and native-profile workers run on a Foundry-private CODEX_HOME without one, so
@@ -508,11 +493,22 @@ formalized because that's how the whole system is working."
 computer, org, org personal, project, project personal) composes every slot of
 every role.
 
-- **Roles.** `main` is the thread's executor. Every model-backed middleware
-  role is its agent id: each Warden (a region Warden's id is its region id) and the
-  Cartographer (its agent id, or `cartographer`). The Librarian makes no model
-  call and has nothing to compose. Classifier and router agents still use their
-  settings prompt and visible layers.
+- **Role ids carry a namespace** (Aron, 2026-11-16: "we should really be using
+  prefixes… such that we can't have this on pure names", after a region named
+  `feedback` took the Feedback scope role's bare id and no Foundry with that
+  project could boot). Every role id is `<namespace>:<name>`, the namespaces
+  written once (`prompts/role-namespace.ts`): `thread:` for main-thread roles,
+  `scope:` for the roles that hold a scope, `region:` for region Wardens and
+  `agent:` for agents written in settings. None is bare: a bare
+  `composition.roles` key or `when.roles` entry is refused with the fix. A
+  role's files nest by namespace: `.foundry/roles/<namespace>/<name>/`.
+- **Roles.** A main thread composes as its **thread role** (below):
+  `thread:coder`, `thread:assistant`, or one of the user's own. `thread:main` is
+  the shared base under every thread role: its role files compose for every main
+  thread, and it picks nothing itself. Every model-backed middleware role is its
+  agent's: each Warden's (`region:<region id>`, `regionRoleId`; its role files in
+  `.foundry/roles/region/<region id>/`). The Librarian makes no model
+  call and has nothing to compose.
 - **Slots.** `instructions` is the system prompt. `domainKnowledge` is the
   context the role primes with. Thread knowledge is not a slot: each Warden
   computes it per call, from its own review history.
@@ -530,8 +526,9 @@ every role.
 | project | `.foundry/roles/<role>/<slot>.md` in the repository, root to cwd | team |
 | org or project personal | `.foundry/roles/<role>/<slot>.local.md` in any of those directories | personal_private |
 
-  So "the org's Warden instructions for this project" is a file, for example
-  `~/code/inixiative/.foundry/roles/naming/instructions.md`.
+  `<role>` is the role's directory: its id with each `:` a folder. So "the org's
+  Warden instructions for this project" is a file, for example
+  `~/code/inixiative/.foundry/roles/region/naming/instructions.md`.
   A registered node with `"when": {"roles": [...], "slots": [...]}` can
   read from anywhere else.
 
@@ -544,8 +541,80 @@ part:
 | domainKnowledge | each source in the agent's `domainKnowledge` (source ids, any type; a project extension appends, or `override`s), under the source's label | the role's slotted files, plus the general files of any node the role names in `general` |
 
 The main thread's `instructions` source (type `instructions`; `slot` picks the
-slot, default `instructions`) is the `main` role's ladder part. Its own agent
-prompt stays the executor's `agent` part.
+slot, default `instructions`) is its thread role's ladder part, and the only
+path a main thread's instructions take. An executor has no settings part: its
+instructions come from its thread role (`.foundry/roles/thread/<name>/instructions.md`). Why: every main thread used to get the
+coding executor's prompt ("Active agent: artificer…"), so a Muse thread meant as
+a day-to-day assistant acted as a coder (Aron, 2026-11-10).
+
+**Thread roles** (Aron, 2026-11-10: "Muse should be an assistant, and Claude
+Codex should be coders… We have role types for threads, and they should probably
+have their own instruction set… maybe you can configure your own roles and
+default roles"). A thread role is a composition role a main thread runs as, so
+it needs no machinery beyond the ladder:
+
+- **Built in.** `thread:coder`, the default for `claude-code` and `codex`, takes every
+  general file (CLAUDE.md, AGENTS.md, rules, auto memory), as Claude Code itself
+  reads them. `thread:assistant`, the default for `muse`, takes general files only from
+  the computer-level nodes (`managed`, `global`), so a repository's coding rules
+  never reach it. A worker no role names composes as `thread:coder`. Foundry ships no
+  role instructions: they are role files the user writes.
+- **Scope roles.** `scope:forge` and `scope:feedback` are thread roles that hold a
+  scope (Aron, 2026-11-14: "Forge Master and Feedback should just be threads…
+  with their own sort of system prompts or scopes"). A thread lives in a project,
+  in Global, or in one of these scopes: chosen by the New thread picker's
+  **Where**, never by the role picker. A scope thread has no project, runs in the
+  daemon's directory, reads general files from the computer-level nodes only (as
+  `thread:assistant`), and holds its scope's brief as a standing layer (`scope-brief`,
+  `agents/scope-roles.ts`): the Forge Master's carries this install's
+  configuration and is re-read each turn; the Feedback brief explains the inbox
+  tools (`feedback_inbox`, `feedback_item`, `feedback_status`) that only a
+  Feedback thread's MCP bridge registers. Neither is a worker's default, a
+  project thread cannot take one, and a thread cannot move into or out of a
+  scope by changing its role. The `threads` stream (Global) leaves scope threads
+  out; `threads:@forge` and `threads:@feedback` list them.
+- **Role files.** For thread role X, each rung reads `thread:main`'s role file, then
+  X's (core `HierarchyLocation.baseRoles`). So `~/.foundry/roles/thread/main/instructions.md`
+  reaches every main thread and `~/.foundry/roles/thread/assistant/instructions.md` only
+  assistants.
+- **Harness.** The personal global file follows the thread's worker: a Claude
+  Code thread reads `~/.claude/CLAUDE.md`, a Codex thread `$CODEX_HOME/AGENTS.md`,
+  a Muse thread neither (it is neither harness).
+- **Per thread.** `ThreadMeta.role` is set when the thread is created: the role
+  chosen (New thread picker, `POST /api/threads` `role`), else its worker's
+  default. It changes any time (`PATCH /api/threads/:id` `role`, the header's
+  Runs on picker) and applies from the next turn: the role and worker reach the
+  instructions source through the thread's bound scope, so a change re-composes.
+  A record with no role (from before thread roles), or with a role that is no
+  longer a thread role, resolves to its worker's default when read; nothing
+  rewrites it (records from before 2026-11-16 were moved to namespaced ids once,
+  by a throwaway script, as settings keys and role folders were). A worker switch moves a thread on its
+  old worker's default role to the new worker's (a Claude Code coder switched
+  to Muse becomes an assistant); a role chosen otherwise stays.
+- **Your own.** A `thread:<name>` entry with `thread` is a thread role; `thread`
+  on any other namespace is refused. `defaultFor` moves
+  workers to it from the built-ins (a worker has one default; two settings roles
+  naming the same worker are refused). A built-in's entry merges over its built-in
+  picks slot by slot, and its `thread` field by field (a new label keeps its
+  default workers). No agent or region can take a thread role's id: each kind has
+  its own namespace.
+
+```jsonc
+"composition": {
+  "roles": {
+    "thread:assistant": { "instructions": { "general": ["managed", "global", "project"] } },
+    "thread:writer": {
+      "thread": { "label": "Writer", "defaultFor": ["muse"] },
+      "instructions": { "general": ["global"] }
+    },
+    "thread:main": { "audience": "personal_private" }   // main takes only audience
+  }
+}
+```
+
+`/feedback` and `/correction` on a main thread write to that thread's role when
+no Warden owns the rule; the feedback edit form lists the thread roles, `thread:main`
+and the project's Wardens.
 
 **Selection.** Everything that applies is on. `composition.roles.<role>` opts
 out, per slot:
@@ -568,20 +637,21 @@ out, per slot:
 `general` names the nodes whose general files (unslotted: CLAUDE.md, AGENTS.md,
 rules, auto memory) compose into the slot. The default is `"all"` for
 instructions and none for domain knowledge, and role files compose either way.
-So a narrow Warden sets `"instructions": {"general": ["global"]}`: it keeps its
+So a narrow role sets `"instructions": {"general": ["global"]}`: it keeps its
 role files at every rung and reads only the personal global CLAUDE.md, not the
-whole org and project stack. The naming Warden sets `"domainKnowledge":
-{"general": ["org", "project"]}`, so the org and project CLAUDE.md are its
-domain knowledge.
+whole org and project stack. A region Warden takes no general files at all, in
+either slot, and a `general` pick for one is not applied (Aron, 2026-11-02; see
+Chorus, "Generated Wardens").
 
 **Tiers, per role.** A file reaches a role only if its tier is visible to the
 role's `audience`, in both slots, whether it was found, imported or opted in.
-So a personal node never reaches a `team` or `org` audience. A middleware
-role's output reaches the main thread (a Warden chiming in), so a role's
-audience is never wider in what it reads than `main`'s. If main is `team`,
-every role is at least `team`. Instruction files reach a Warden only through
-its own role: a Warden's `domainKnowledge` sources may not be `instructions`
-sources (use `general`). They must also be enabled. Role files under
+So a personal node never reaches a `team` or `org` audience. A thread role's
+audience is its own, else `main`'s. A middleware role's output reaches the main
+thread (a Warden chiming in), and it serves every main thread of its project,
+so its audience is never wider in what it reads than the widest of `main`'s and
+the thread roles'. If any of them is `team`, every middleware role is at least
+`team`. A Warden's `domainKnowledge` sources may not
+be `instructions` sources. They must also be enabled. Role files under
 `~/.foundry` belong to the personal computer node wherever a symlink places
 them.
 
@@ -592,12 +662,10 @@ instructions: a role never reads the same text twice. Every removal is
 reported, with `duplicateOf` naming the slot that kept it. A slot the role does
 not receive is not composed, so dedupe never moves text into it:
 
-- the Cartographer receives instructions only, since its domain knowledge is
-  the map it builds;
 - the main thread receives the slots its enabled `instructions` sources name.
 
 **Budgets, per role.** `budget` bounds instructions plus domain knowledge, in
-characters. The default is none for `main` and 120,000 for middleware roles
+characters. The default is none for thread roles and 120,000 for middleware roles
 (`DEFAULT_ROLE_BUDGET`): a region Warden at the healthy-size test's hard cap,
 40k tokens of knowledge (about 100,000 characters; H itself is 20k), is
 admitted with its instructions. A decision call refuses more than 160,000
@@ -607,16 +675,410 @@ reported as this budget's named error, not the cap's. (The retired hand-named
 Wardens composed to 30,000–56,000 characters per role.) Over budget, the phase does not
 run and nothing is truncated:
 
-- advice reports `error`;
-- guard reports `not-admitted`;
-- review records `error` instead of being admitted, and the review lane stays open;
-- routing reports `error`.
+- advice and guard report the outcome `not-sent:over-budget`; a later stage over budget is not sent either, and the stage before it stands, as on any later-stage failure (fallback `error`);
+- review records `error` instead of being admitted, and the review lane stays open.
 
 The message names the role, the sizes, the setting and the three largest
 files, and marks those a role opted in. For example: "naming Warden (role
-naming): instructions 4010 + domain knowledge 86182 = 90192 chars exceed its
-budget of 120000 (composition.roles.naming.budget); largest:
-.../CLAUDE.md (domainKnowledge, 50000 chars, opted in)".
+region:naming): instructions 4010 + domain knowledge 86182 = 90192 chars exceed its
+budget of 120000 (composition.roles.region:naming.budget); largest:
+.../.foundry/roles/region/naming/domainKnowledge.md (domainKnowledge, 50000 chars)".
+
+##### Chorus (`projects[id].chorus`)
+
+Aron, 2026-10-15: "Each project needs its own chorus, which is what we should
+call the set of wardens... you need it per project because all those docs are
+per project. The default should be per-project chorus."
+
+A project's **chorus** is the set of Wardens its threads run, and region
+Wardens are the only Wardens there are. When enabled it is built from the
+project's concept regions, the shards the template's region builder writes
+(plan: "Wardens built from docs"), one Warden per region. **It is opt-in**
+(Aron, 2026-10-16: regions on a repository's main stay off until the
+repository's own Foundry config turns them on); regions present but not
+enabled are reported as off, and the project has no Wardens.
+
+**The hand-named roster is retired (2026-10-17).** Aron: "We're just doing
+the region wardens… The hand-named roster should go away. We should just
+retire it." Why: region Wardens anticipated 23% of the corrections to the
+roster's 3% (finding `2026-10-15-region-wardens-vs-roster`), and two charters
+with opposite rules (the roster's advise-style "name the rule, then say what to
+do instead" against the region charter's point-only) invited confusion.
+Settings declare no Wardens: settings agents are executors only, so a Warden
+kind in `agents` or `projects[id].agents` is refused by the kind check, and
+`chorus.source` is not a chorus setting (`"enabled": true` turns the chorus on).
+There is no alias, migration or fallback.
+
+```
+<project>/.foundry/project.json   the repository's own Foundry settings, committed: any project
+                                  setting the team shares (REPOSITORY_SETTING_KEYS): threadOnMerge,
+                                  steer, gloss, defaults, feedback, agents, layers, chorus,
+                                  conversations, and an ignored $comment
+```
+
+Every project setting is set for me or for everyone (Aron 2026-10-16): this
+machine's `projects[id]` over the repository's file over Foundry's over the
+default, read and written at a dotted path through `GET`/`PUT
+/api/projects/:id/setting` (`effectiveProject`, `config-resolve.ts`). Records
+(`agents`, `layers`) merge by id, the machine's entry replacing the repository's
+whole; objects (`gloss`, `feedback`) merge field by field; a worker and its model
+are one unit (FEAT-007): the worker comes from the layer that names it, and your
+model wins whenever that worker runs it. Settings that belong to this machine or
+this person have no "for everyone" form, and the file may not carry them
+(`personalOnlySetting`), each for a reason:
+- registration (`id`, `path`, `label`, `tags`, `description`, `enabled`, `status`);
+- your subscriptions and Kingdom (`capacity`, `kingdomCapacity`, `kingdomProject`,
+  `defaults.nativeAuthenticationId`, `defaults.kingdomOwnerKey`);
+- `toolRules`, which gate what agents may run here, so a cloned repository can't
+  loosen them;
+- `sources`, which read files and Archive projects on this machine, so a cloned
+  repository can't point them outside itself;
+- decision routing (`defaults.decisionProvider`, `defaults.decisionModel`, and
+  an agent's `provider`, `tools` or sampling), so a cloned repository can't move
+  work onto a paid API. An agent the repository adds must be an executor (an
+  extension judged by the agent it extends) on a model its worker runs: decision
+  roles run on this machine's subscription decision profile.
+
+A model needs its worker (`defaults.model` without `defaults.provider` is
+refused). The file is checked by the same rules as the machine's settings
+(`validateRepositoryProject`); a file that breaks one is reported and none of it
+applies. A valid file whose agents or layers this machine can't build (an agent
+extending a global agent it doesn't have, or two project agents extending the same
+one) is reported too, and its merged settings (`threadOnMerge`, `gloss`,
+`defaults`, `feedback`, `agents`, `layers`) don't apply here; `chorus`,
+`conversations` and `steer`, checked on their own, still do. Either way the project
+runs, why shows in the settings rows (`repositoryError`) and the doctor
+(`repository-settings-unreadable`), and a checkout never stops the daemon. settings.json is validated without the
+repository's layer (`resolveProjectView(…, { repository: false })`), so a worker a
+teammate commits that this machine has no login for is refused when a thread
+starts, with why, not when settings load. The machine's
+`projects[id].chorus` wins key by key: its `enabled` over the repository's, and
+its directories (`regions` or `layers`, one unit) over the repository's. It is
+not named `.foundry/settings.json` because that is a Foundry install's own
+settings, and Foundry's checkout is itself a registered project. The view
+names which layer won per key (`chorus.enabledBy` for `enabled`,
+`chorus.directoriesFrom` for the directories: `settings`, `repository` or
+`default`), so a surface can show a personal value overriding the shared one.
+
+Direction (Aron, 2026-10-16): a project's shared Foundry settings live in the
+repo's `.foundry/` and personal settings cascade over them; each setting in the
+settings view offers "set this for me" and "set this for everyone" and shows
+an override. Today the repository file carries `chorus` only; widening it to
+the other project keys (and the settings-view controls) is the next step.
+
+The regions:
+
+```
+<project>/.foundry/regions/
+  registry.json, GLOSSARY.md, ERRORS.md, ECOSYSTEM.md   corpus-level; composed into no Warden
+  <region id>/region.json      id, title, routing line, concepts, sources, tokens,
+                               role ("warden", the default, or "herald")
+  <region id>/knowledge.md     the region's knowledge, in full (covers, domain,
+                               every example by name, the specifics)
+  <region id>/<doc>.md         any other doc a stage reads (e.g. recognise.md, a
+                               short description for a recognising stage)
+```
+
+`region.json` carries no classification settings: `stages` or `charter` there
+are refused by name (Aron, 2026-10-18: per-region overrides, "let's try and
+start without that"). A region's `role` says whose stages it runs; Herald
+regions never run (Heralds are not built) and the view says so.
+
+- **Setting.** `projects[id].chorus` is `{ enabled?, regions? | layers? }`.
+  `enabled: true` turns it on; absent or `false`, the project has no Wardens
+  (`regions` or `layers` may stay written, unread). `regions` points the one
+  layer at another directory (absolute, or relative to the project; default
+  `.foundry/regions`). With neither the settings nor the repository enabling
+  it, regions present are counted (`view.chorus.available`) and the view, the
+  startup log and the doctor say the chorus is off and how to turn it on.
+  Enabled but no regions found: no Warden runs, and they say why
+  (`view.chorus.reason`). `view.chorus.enabledBy` is `settings`, `repository`
+  or `default`. To turn a repository's chorus on for yourself without
+  committing, set `projects[id].chorus = { "enabled": true }` in settings, or
+  edit its `.foundry/project.json` locally. A thread without a project has no
+  Wardens. There is no global setting: a chorus is per project because its
+  docs are.
+- **Stages** (`chorus.wardens.stages`, `@inixiative/foundry/classify`). How the
+  region Wardens classify, as at most three stages; omitted, the two-layer
+  chain (Haiku 5.5 low pointing with its why inline, each yes escalated without
+  it to Sonnet 5.5 low on the same `knowledge.md`; with API-token decisions,
+  the single stage). Each stage is `{ model?, effort?, doc?, outcomes?, reason?, task?,
+  pointer?, escalate?, carryWhy?, deadline? }`, every field defaulting to the default
+  stage's (`knowledge.md`, `binary`, `none`, `point`, `pointer: { any: true }`;
+  model and effort the decision model's):
+
+  ```json
+  "chorus": { "enabled": true, "wardens": { "stages": [
+    { "task": "recognise", "doc": "recognise.md", "outcomes": "ternary",
+      "escalate": ["yes", "unsure"], "deadline": 0.4 },
+    { "model": "claude-sonnet-5-5", "effort": "low", "deadline": 0.6 }
+  ] } }
+  ```
+
+  The machine's list replaces the repository's whole; `view.chorus.roles`
+  shows each role's resolved stages and the layer they came from, and the
+  Chorus page and `GET /api/projects/:id/chorus` add each stage's model, effort,
+  deadline share and its charter and protocol versions. Every region of the
+  role must hold every stage's doc: one that lacks it keeps the chorus from
+  being built, and `view.chorus.missingDocs` and its `reason` name the region,
+  the doc and the stage (checked on the composed chorus, so a later layer's
+  region brings its own docs). Charters stay Foundry's, per task and role:
+  `charter` or `sections` in a stage, or `charter` in `chorus`, is refused by
+  name (an eval run config may set a stage's sections). A stage naming a model or effort runs on its own
+  decision host (one per pair, on the decision login); with API-token decisions
+  such a stage is refused. `chorus.heralds` takes the same shape and runs
+  nothing yet. What the stages mean: [FLOW.md](FLOW.md#when-a-warden-weighs-in-the-charter-trigger-points-and-no_comment).
+- **Debug reason** (`chorus.wardens.debugReason`, default `true` for region
+  Wardens). After a Warden's decision is journalled, Foundry asks the last stage
+  that answered in shape "why?", and whether it would revise its answer, through
+  that stage's provider with the stage's own exchange resent inline (so it does
+  not depend on a session still holding it). A stage whose own `followup` already gave its why is not asked
+  again. The decision is never held for it: the reading is its own call, at the
+  lowest priority (below review), outside the decision's deadline (only the
+  provider's own call timeout applies), and never served by a held
+  spare (on the project host it runs direct, so the next decision keeps its
+  spare). It counts against the same budget, is journalled as a `warden-debug`
+  row linked to the decision row (`wraps: <row id>:<domain>`) and is sent to
+  Archive as its own reduced entry (`mw:<call id>:debug`), so Oracle reads why a
+  Warden spoke or kept quiet. The viewer shows it under the layers as "Why,
+  asked after (layer N)", with "on reflection" when it would revise. `false`
+  turns it off; the machine's value wins over the repository's. Code-registered
+  Wardens, hidden threads and evals never ask it; `chorus.heralds` refuses the
+  key.
+- **Layers.** A chorus may be built from layers, in order:
+
+  ```json
+  "chorus": { "layers": [
+    { "regions": "../template/.foundry/regions", "label": "template" },
+    { "regions": ".foundry/regions", "label": "kingdom" }
+  ] }
+  ```
+
+  Each layer is a regions directory. A region id present in a later layer
+  replaces the earlier one **whole** (its knowledge is not merged); ids present
+  once union. Labels default to `layer-<n>` and must be unique. A layer whose
+  directory is missing or empty contributes nothing and is still listed, so
+  what each layer gave is visible. How a project's delta composes *into* a base
+  region (rather than replacing it) is not built yet; the layer shape is where
+  it will go.
+- **Generated Wardens.** `resolveProjectView` composes the layers
+  (`agents/region-roster.ts`: `chorusLayers`, `composeChorus`) and generates one
+  standalone project agent per region: kind `warden`, domain
+  `<region id>`, `invocation: always`, `guardTriggers` the write and exec tools
+  (`REGION_GUARD_TRIGGERS`), its prompt the generic region instructions
+  (`REGION_WARDEN_INSTRUCTIONS`) plus the region's title and routing line.
+- **What a Warden composes from (Aron, 2026-11-02).** In order: Foundry's
+  charter (what a Warden is; fixed, never settings), its instructions (the
+  generated prompt, then the project's **Warden brief**, then its role files),
+  its region's knowledge (plus its `domainKnowledge` role files), and the
+  thread context of the call. Never the CLAUDE.md / AGENTS.md ladder: that is
+  written for the agent doing the work. `resolveProjectView` gives every region
+  role `general: []` in both slots (`agents/warden-brief.ts`,
+  `wardenComposition`); a `composition.roles.region:<region id>` entry keeps its other
+  picks (`exclude`, `budget`, `audience`); one naming nodes in `general` is not
+  applied and is reported (`view.chorus.ignoredComposition`, the Knowledge
+  page), never thrown, so a teammate's committed region never stops settings
+  loading. A role with no general file in either slot (a Warden) takes none by any other route either: an `@` import of
+  CLAUDE.md from its role files or the brief, or a slotted settings source
+  naming one, is dropped (`isGeneralFile`). A region's Warden is `region:<id>`, so it
+  can never take a thread role's or an agent's id. There is no switch that brings the
+  ladder back. With no general files a
+  Warden's instructions carry no Claude Code preamble ("these instructions
+  OVERRIDE…"), which only frames CLAUDE.md-style files (`RoleView.framed`).
+- **The Warden brief.** A short, high-level explanation of the project for its
+  Wardens: what it is, its shape, its words. Committed at
+  `.foundry/warden-brief.md`, with a personal `.foundry/warden-brief.local.md`
+  beside it. It composes through the ladder like any md file (imports, tiers,
+  dedupe, `file:<path>` versions): the view adds two nodes,
+  `warden-brief` and `warden-brief-local` (reserved ids), for exactly the
+  project's region roles, instructions slot only, anchored at `{project}` (the
+  repository root of the thread's working directory, so a worktree reads its
+  branch's brief). They order with the project's level: after the region's
+  role file there, the shared brief before the personal one. The Knowledge
+  page shows the brief as the registered checkout has it. The Knowledge page shows it and the layer list;
+  `scripts/evals/warden-composition.ts` prints a project's composed Warden
+  prompts layer by layer with no model call.
+  A region id that collides with a settings agent or source is an error;
+  overlays go through role files. The view reports the result (`view.chorus`:
+  `on` (Wardens run), what was asked (`enabled`, `enabledBy`), each layer as
+  read, the composed regions with the layer each came from, or the `reason`
+  none run), and the view's project entry carries the effective chorus
+  normalized (`chorus.enabled`, absolute `layers`). `GET /api/projects/:id/resolved/agents` shows each generated
+  agent with `scope: "project-generated"` and `generatedFrom`;
+  `GET /api/projects/:id/chorus` and the doctor's `chorus` report list the
+  layers and regions with sizes and keys; the viewer's project settings have a
+  read-only **Chorus** page; the daemon logs each project's chorus at startup.
+  A malformed region is an error that names it.
+- **Knowledge.** The region's `knowledge.md` is the Warden's `domainKnowledge`
+  slot, whole, through a generated `markdown` source (`region:<id>`), so the
+  audit log versions it as `source-content:region:<id>@project:<project>` and
+  every call records the exact text; the post-work review reads it. A stage
+  reading another doc (`region:<id>:<doc>`, a first-stage `recognise.md`
+  included) composes it the same way, overlays included (`buildStageKnowledge`,
+  layer `role:<id>:domainKnowledge:<doc>`), and a later stage journals its own
+  versions with its request (`stageRequests`). The ladder then applies as for any role:
+  `.foundry/roles/region/<region id>/{instructions,domainKnowledge}.md` at the org,
+  project and personal rungs overlay the region, with their own `file:` versions.
+- **Warm-cache key.** Each region has a key, the content hash of its composed
+  knowledge (`regionKey`: `knowledge.md` as its source loads it, comments
+  stripped). It does not depend on the project, the layer or the directory (a
+  `knowledge.md` that resolves an `@path` import would compose that path too;
+  the builder writes none), so two projects whose template-base region is
+  identical have the same key, and a primed prefix could be shared between
+  them. A `knowledge.md` that is not a regular file, or is over the 4 MiB an
+  instruction file loads, is an error that names the region, never a Warden
+  running with no knowledge; one that cannot be read shows `keyError` in the
+  doctor and the Chorus page. Every Warden call journals it with its versions
+  (`versions.chorus: { region, key }`, THREAD-TREE spec B; `doc` too when a
+  stage reads another doc, each doc keyed on its own text). The sharing itself
+  is not built; the key is what it will be looked up by.
+- **Charter.** Every pointing stage runs under the Warden charter,
+  `WARDEN_CHARTER` (the classifier wording; the roster's advise-style charter
+  was retired 2026-10-17), and a recognising stage under the recognise charter:
+  `NO_COMMENT`, or a pointer, ranked `Look over here: <name> (<where it is
+  written>) — <why>` then `Less likely: …`, an `All of these:` set, a `Choose
+  one:` sibling set (off with `pointer: { any: false }`, which also removes it
+  from the charter), or a class, at most three names. Wardens point; the main thread
+  decides. The advice and guard protocols are pointer-only (a guard finding is
+  advisory, with no suggestion). The pointer is parsed into
+  `{ relevant, shape, pointer, where, level, candidates }` on the advice
+  result, each guard finding and the advice journal, and reaches the thread as
+  "The <region> Warden chimed in:\n- Look over here: …". The charter version is
+  journalled with every call; a staged Warden's contribution also journals its
+  run (`classified`: outcome, whether it was delivered, any fallback, every
+  stage's trace), which the turn's flow graph shows on the Warden's node.
+- **Pool.** With project Warden hosts (the default) no primed pool is built:
+  each project's host holds its Wardens, and a later stage on another model or
+  effort goes to its own per-project lane. With `decisionRuntime: "claude"` or
+  `"codex"` the primed decision pool is sized for the largest chorus any
+  project runs (`largestRoster`) and the stages each host serves
+  (`largestStageCount`): the decision host keeps a key per stage on the decision
+  model plus a review key per Warden, so a 53-region one-stage project primes
+  2 × 53 + 8 keys, and a stage host a key per stage it serves. A later stage's session is
+  `<thread>:aux:domain:<region>:stage:<n>`.
+- **Eval.** `scripts/evals/warden-charter.ts --regions <dir> --projects <p>`
+  scores a one-layer chorus from that directory, composed exactly as live
+  (project view, role layers, charter), without touching the daemon's settings;
+  `--classify <run.json>` runs it under a stage configuration (the same stages,
+  `members` for a grouped recogniser, and two eval-only parameters below).
+- **Sections (eval only).** The prompt language a stage sends is named sections,
+  each a committed file: the point charter (`classify/charters/point/`:
+  `opening`, `build-is-reason`, `job`, `pointing`, `all-of`, `choose-one`,
+  `class`, `sourcing-bar`, `no-comment-default`, `moment`,
+  `data-not-instructions`), the recognise charter (`recognise/`: `opening`,
+  `build-is-reason`, `job`, `near-is-not-in`, `no-comment-default`, `moment`,
+  `data-not-instructions`) and the region Warden's instruction line
+  (`region/region-instructions.md`). A run's stage sets any of them:
+  `"sections": { "<name>": false | true | { "text": … } | { "file": … } }`,
+  with `"place": "before" | "after"` to inject beside the default instead of
+  replacing it; files resolve against run.json, and an unknown name is refused.
+  Choose-one is switched off only by `pointer: { any: false }`, so the parser
+  refuses what the charter no longer offers; switching `all-of` off leaves the
+  parser still reading it. Why: Aron (2026-10-18) wants every flag of a run to
+  carry a place for raw language, defaulting to the file; settings stay fixed.
+  score.json records each stage's charter version, every section's source
+  (default, off, text or file, with sha256) and, per region and stage, the
+  sha256 of the full system message (`systemPrompts`, also `systemHash` on each
+  staged call's trace).
+- **Debug (eval only).** `"debug": true` (or `{ "cells": "<file>" }` in the
+  `--cells` shape, `{ "<probe id>": ["<domain>", …] }`, for those cells only:
+  unlike `--cells`, a probe the file leaves out gets no debug readings) gives every stage of every call two
+  more readings on the same session and prefix: `inline`, the same prompt with
+  its protocol asking for the decision and its why in one answer, and `after`,
+  the real answer quoted back with "why did you answer that?". Rows go to
+  `debug.jsonl`; answers.jsonl is unchanged. A stage that already gives that
+  reading (`reason: inline` / `followup`) reuses it.
+
+**Where the slots live.** A middleware role's slots are private layers,
+`role:<role>:instructions` and `role:<role>:domainKnowledge`. They are bound to
+the thread's cwd and project and are never on the thread's stack, so the
+executor never receives them. Each records its selection report. Advice,
+guard and review record the exact composed text as the participant's
+`segments`, which grows each turn's journal by roughly one composed role per
+Warden. Every composed slot, the main thread's `instructions` layer included,
+re-reads:
+
+- before the next turn whenever a file it consulted changed: an edited
+  `CLAUDE.md`, rule, role file or `MEMORY.md`, a new file where discovery looked
+  (a new `CLAUDE.local.md`, a new rule in any rules subdirectory), a re-pointed
+  symlink, or the thread moving to another cwd or project. The check is one stat
+  per consulted path (about 0.5 to 0.8 ms for 50 paths); a re-read takes 15 to
+  40 ms warm, about 200 ms cold. The main
+  thread receives the change as a delta (FLOW.md, "Delivery"); a Warden whose
+  slot changed re-primes;
+- after 60 seconds;
+- at once after a settings edit, including a `composition` edit;
+- on `invalidateComposition()`, for a writer that wants the next turn to re-read
+  without relying on file times. A stale slot keeps its last content until it
+  re-reads; it never drops out. A Warden owns no
+configured layer. Its only written layer is its generated
+`thread-knowledge:<domain>`, owned by the thread, its project and the domain,
+and written by its post-work review. The Librarian alone writes thread-state.
+
+**Priming.** Wardens are fresh each call, never a continuing conversation. A
+Warden's stable part is its composed instructions (system) plus its composed
+domain knowledge (the leading `## Domain cache` part of the message,
+`stablePrefix`). Advice and guard share it. Review leads with the same composed
+parts under its own header, on its own session key. On the project Warden host
+(the default) a held spare holds that stable part and serves one call, and its
+replacement starts from the same bytes; a review runs as a cold member inside
+the host. With `decisionRuntime: "claude"` each call is a fresh primed session
+with the stable part in its system prompt (agent-session `ClaudePrimedSessions`).
+The per-call input is the Warden's own thread knowledge, the thread state and
+the turn. A changed composition is a new hash: the host holds the changed
+roster in place, and a primed role re-primes.
+
+**Chiming in.** A Warden's advice is appended to the end of the user's message:
+`The <domain> Warden chimed in:` followed by its points. It is placed after the
+message (`PromptBlock.placement: "after-message"`), not in the context. A
+contribution of layers only adds context.
+Most turns a Warden has nothing to add: it answers `NO_COMMENT`, which adds
+nothing to the message. Every Warden runs under the fixed Warden charter
+([FLOW.md](FLOW.md#when-a-warden-weighs-in-the-charter-trigger-points-and-no_comment)).
+
+**An example setup.** A coder main thread plus one region Warden, `naming` (the repository's
+`.foundry/regions/naming/`, its chorus enabled in `.foundry/project.json`; no
+Warden is written in settings), across computer, org, org personal, project and
+project personal. (Until 2026-10-17 this example was a hand-named Convention
+Warden in settings; until 2026-11-02 it read the org and project CLAUDE.md as
+domain knowledge, which a Warden no longer can.)
+
+| Rung | coder main thread: instructions (`thread:main` then `thread:coder` role files) | naming Warden: instructions | naming Warden: domain knowledge |
+|---|---|---|---|
+| (Foundry) | | the Warden charter, then the region's generated prompt | the region's `knowledge.md` |
+| computer | `~/.claude/CLAUDE.md` (+ rules, `RTK.md`), `~/.foundry/roles/thread/main/instructions.md` | `~/.foundry/roles/region/naming/instructions.md` | `~/.foundry/roles/region/naming/domainKnowledge.md` |
+| org | `~/code/inixiative/CLAUDE.md`, `.foundry/roles/thread/main/instructions.md` there | its own role file there | `.foundry/roles/region/naming/domainKnowledge.md` there |
+| org personal | `~/code/inixiative/CLAUDE.local.md` | `.foundry/roles/region/naming/instructions.local.md` there | `.foundry/roles/region/naming/domainKnowledge.local.md` there |
+| project | `<repo>/CLAUDE.md`, `AGENTS.md`, `.claude/rules` | its role file, then `<repo>/.foundry/warden-brief.md` | its role file |
+| project personal | `<repo>/CLAUDE.local.md`, auto memory | `.foundry/roles/region/naming/instructions.local.md`, then `<repo>/.foundry/warden-brief.local.md` | `.foundry/roles/region/naming/domainKnowledge.local.md` |
+
+**Test cases** (`tests/composition-view.test.ts`, core
+`markdown-hierarchy.test.ts`):
+
+- per-role selection, with defaults on and opt-outs;
+- role and slot templating;
+- dedupe across one role's slots;
+- a personal node never reaching a team audience;
+- a budget overflow reported in every phase;
+- re-priming only on a composition change;
+- the chimed-in append;
+- the naming Warden's knowledge unchanged under the default config.
+
+
+
+**Work items and reception** (Aron, 2026-10-17). Two more chorus keys, merged key by key like the rest (the machine's settings over the repository's):
+
+```
+"chorus": {
+  "consumed": { "enabled": true, "tools": [...], "paths": [...], "maxChars": 12000 },
+  "reception": false
+}
+```
+
+- `consumed`: the `consumed` trigger ([FLOW.md](FLOW.md#when-a-warden-weighs-in-the-charter-trigger-points-and-no_comment)). Off unless `enabled`. `tools` default to Linear issues and documents and Notion fetches (`mcp__*linear*__get_issue`, `mcp__*linear*__get_document`, `mcp__*notion*__*fetch*`, case-insensitive); `paths` to `**/tickets/**/*.{md,txt}`, `**/specs/**/*.{md,txt}`, `**/*.spec.md`, `**/SPEC*.md`, `**/docs/design/**/*.md`. Within `consumed`, each key the machine gives wins over the repository's.
+- `reception`: whether a thread of a running chorus holds the reception charter (`chorus-reception` standing layer). On with the chorus; `false` leaves it out. A thread with no Wardens never has it.
+
+The chorus card in the viewer shows both, with the layer that set them (yours or the repository's). Editing them there, "set this for me / for everyone", is not built yet; the files are the way in.
 
 ### 4b. Code entries
 
@@ -642,15 +1104,11 @@ From the catalog (extracted from the code through the repo's Atlas map, describe
 - **slotSegments** `packages/foundry/src/prompts/instruction-stack.ts#slotSegments` [primitive] render a composition slot as segments attributed to each source file, rung and tier Use: slotSegments(slot, files, labels)
 
 #### Class `composition-view`
-- **buildRoleLayer** `packages/foundry/src/agents/role-layers.ts#buildRoleLayer` [primitive] build one composition slot of a role as a ContextLayer, for roles that receive only that slot Use: buildRoleLayer(config, role, slot, options)
+- **buildRoleLayer** `packages/foundry/src/agents/role-layers.ts#buildRoleLayer` [primitive] build one composition slot of a role as a ContextLayer (buildRoleLayers builds both slots with it) Use: buildRoleLayer(config, role, slot, options)
 - **buildRoleLayers** `packages/foundry/src/agents/role-layers.ts#buildRoleLayers` [primitive] build a Warden's instructions and domain-knowledge layers from the composition view, bound to the thread scope Use: buildRoleLayers(config, role, { scope })
 - **buildStageKnowledge** `packages/foundry/src/agents/role-layers.ts#buildStageKnowledge` [primitive] compose the domain knowledge a later classify stage reads, from that stage's doc source Use: buildStageKnowledge(config, role, doc, options)
-- **cartographerRoleId** `packages/foundry/src/agents/configured-experts.ts#cartographerRoleId` [primitive] get the role id of the enabled cartographer agent for the composition view Use: cartographerRoleId(config) // enabled cartographer's id, else 'cartographer'
-- **compose** `packages/foundry/src/prompts/composer.ts#compose` [primitive] compose a runtime-specific instruction file from common and override prompt files Use: await compose(projectPath, prompts, 'claude')
-- **decomposeBack** `packages/foundry/src/prompts/composer.ts#decomposeBack` [primitive] read a composed output file and write changed sections back to their source files Use: await decomposeBack(projectPath, prompts, 'claude')
 - **DEFAULT_INSTRUCTION_LADDER** `packages/foundry/src/prompts/instruction-settings.ts#DEFAULT_INSTRUCTION_LADDER` [primitive] supply the default instruction ladder matching Claude Code's file discovery for any harness Use: DEFAULT_INSTRUCTION_LADDER
 - **invalidateComposition** `packages/foundry/src/agents/role-layers.ts#invalidateComposition` [primitive] mark every live role slot stale so the next turn re-reads the composition view Use: invalidateComposition()
 - **resolveInstructionLadder** `packages/foundry/src/prompts/instruction-settings.ts#resolveInstructionLadder` [primitive] resolve the instruction ladder from settings, falling back to the default ladder Use: resolveInstructionLadder(config.composition)
 - **roleComposition** `packages/foundry/src/prompts/instruction-settings.ts#roleComposition` [primitive] get a role's composition picks with defaults for audience and budget Use: roleComposition(config.composition, role)
 - **validateCompositionSettings** `packages/foundry/src/prompts/instruction-settings.ts#validateCompositionSettings` [primitive] validate composition settings against the ladder they resolve to Use: validateCompositionSettings(settings, ladder)
-- **writeComposed** `packages/foundry/src/prompts/composer.ts#writeComposed` [primitive] compose and write the instruction output files for all configured runtimes Use: await writeComposed(projectPath, prompts, ['claude','codex'])

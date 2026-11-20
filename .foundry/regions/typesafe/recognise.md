@@ -84,7 +84,7 @@ A moment that says any of these, or something close, is this region's. Both voic
 
 These mention this region's words but belong elsewhere; the answer is no, and the region named answers instead.
 
-- run this classifier, router or Warden call on the user's Claude login → decision-hosts
+- run this Warden call on the user's Claude login → decision-hosts
 - add a model to the registry or write an API-key chat provider → models-providers
 - add a retry hook or a new built-in hook to the MiddlewareChain → core-agents
 - store a service token in a private 0600 file or scrub it from a launch environment → logins-secrets
