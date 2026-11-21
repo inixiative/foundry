@@ -1,6 +1,6 @@
 import './helpers/isolate-archive';
 import { afterEach, expect, test } from 'bun:test';
-import { mkdtempSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -350,6 +350,26 @@ test('a kept-up tunnel is started again after a failed start and after its proce
   await Bun.sleep(100);
   expect(seen).toHaveLength(3);
   expect(tunnel.info).toBeNull();
+});
+
+test('a start that a later start replaced ends its own process, never the new one', async () => {
+  const dir = directory();
+  const tunnel = new FoundryTunnel({
+    port: 1,
+    provider: 'cloudflared',
+    cloudflaredBin: scriptedTunnel(dir, [
+      'exec sleep 600',
+      'sleep 0.2; echo https://second.trycloudflare.com >&2; exec sleep 600',
+    ]),
+    configDir: dir,
+  });
+  const first = tunnel.start().catch((error: Error) => error.message);
+  await until(() => existsSync(join(dir, 'scripted-tunnel.runs')));
+  await tunnel.stop();
+  expect(await tunnel.start()).toBe('https://second.trycloudflare.com');
+  expect(await first).toContain('Tunnel process ended before giving a URL');
+  expect(tunnel.url).toBe('https://second.trycloudflare.com');
+  await tunnel.stop();
 });
 
 test('starting the tunnel takes the saved provider, whatever provider the held tunnel last tried', async () => {

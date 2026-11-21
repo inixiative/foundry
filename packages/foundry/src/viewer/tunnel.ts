@@ -231,6 +231,8 @@ function resolveToken(config: TunnelConfig): string {
 // ---------------------------------------------------------------------------
 
 const MAX_RETRY_MS = 300_000;
+/** A tunnel up this long before it exits starts its backoff over. */
+const STEADY_MS = 60_000;
 
 export class FoundryTunnel {
   private _config: TunnelConfig;
@@ -309,16 +311,27 @@ export class FoundryTunnel {
       return;
     }
     if (this._keptUp !== changed) return;
-    this._failures = 0;
-    changed();
+    const upAt = Date.now();
+    this._tell(changed);
     const proc = this._proc;
     void proc?.exited.then(() => {
       if (this._proc !== proc || this._keptUp !== changed) return;
       this._halt();
-      console.warn('[Tunnel] the tunnel process exited; starting it again');
-      changed();
-      this._retryIn(this._retryMs(), changed);
+      // why: a tunnel that comes up and drops at once backs off like one that never came up
+      this._failures = Date.now() - upAt < STEADY_MS ? this._failures + 1 : 1;
+      const backoff = Math.min(MAX_RETRY_MS, this._retryMs() * 2 ** (this._failures - 1));
+      console.warn(`[Tunnel] the tunnel process exited; starting it again in ${backoff / 1000}s`);
+      this._tell(changed);
+      this._retryIn(backoff, changed);
     });
+  }
+
+  private _tell(changed: () => void): void {
+    try {
+      changed();
+    } catch (error) {
+      console.warn(`[Tunnel] ${(error as Error).message}`);
+    }
   }
 
   private _retryMs(): number {
@@ -413,14 +426,27 @@ export class FoundryTunnel {
   // -------------------------------------------------------------------------
 
   private async _readUrlFromStdout(proc: Subprocess, pattern: RegExp): Promise<string> {
-    return this._readUrlFromStream(new Response(proc.stdout as ReadableStream).body!, pattern);
+    return this._readUrlFromStream(
+      proc,
+      new Response(proc.stdout as ReadableStream).body!,
+      pattern,
+    );
   }
 
   private async _readUrlFromStderr(proc: Subprocess, pattern: RegExp): Promise<string> {
-    return this._readUrlFromStream(new Response(proc.stderr as ReadableStream).body!, pattern);
+    return this._readUrlFromStream(
+      proc,
+      new Response(proc.stderr as ReadableStream).body!,
+      pattern,
+    );
   }
 
-  private async _readUrlFromStream(stream: ReadableStream, pattern: RegExp): Promise<string> {
+  /** The address `proc` prints; a start that fails, or that a later start replaced, ends its own process only. */
+  private async _readUrlFromStream(
+    proc: Subprocess,
+    stream: ReadableStream,
+    pattern: RegExp,
+  ): Promise<string> {
     const reader = stream.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
@@ -431,14 +457,16 @@ export class FoundryTunnel {
       timer = setTimeout(() => resolve(undefined), timeout);
     });
 
+    let ended = false;
     try {
       for (;;) {
         const chunk = await Promise.race([reader.read(), timedOut]);
+        if (chunk?.done) ended = true;
         if (!chunk || chunk.done) break;
 
         buffer += decoder.decode(chunk.value, { stream: true });
         const match = buffer.match(pattern);
-        if (match) {
+        if (match && this._proc === proc) {
           // why: an unread pipe fills, and the tunnel process then blocks on its own log lines
           void (async () => {
             while (!(await reader.read()).done);
@@ -447,13 +475,18 @@ export class FoundryTunnel {
         }
       }
     } catch {
-      // Stream ended or errored
+      ended = true;
     } finally {
       clearTimeout(timer);
     }
 
     void reader.cancel().catch(() => {});
-    this._halt();
-    throw new Error(`Tunnel did not produce a URL within ${timeout / 1000}s`);
+    if (this._proc === proc) this._halt();
+    else proc.kill();
+    throw new Error(
+      ended
+        ? `Tunnel process ended before giving a URL${buffer.trim() ? `: ${buffer.trim().split('\n').at(-1)?.slice(0, 200)}` : ''}`
+        : `Tunnel did not produce a URL within ${timeout / 1000}s`,
+    );
   }
 }
