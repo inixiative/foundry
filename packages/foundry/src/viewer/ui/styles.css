@@ -4785,7 +4785,7 @@ body {
     gap: 6px;
     padding-inline: 8px;
   }
-  .header-right > :nth-child(n + 3) {
+  .header-right > :not(.header-item--keep) {
     display: none;
   }
   .panel-navigation {
@@ -5572,7 +5572,7 @@ a.thread-ref:hover {
     gap: 0;
   }
   /* Kingdom stays reachable from Settings. */
-  .header-right > :nth-child(n + 2) {
+  .header-right > :not(.header-item--keep-sm) {
     display: none;
   }
 }

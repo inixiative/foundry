@@ -21,8 +21,9 @@ import {
 import { createDataStreamSocket } from './data-stream-socket.js';
 import { batch, computed, effect, signal } from './lib.js';
 import { applyTurnFrame, mergeLiveSnapshot } from './live-state.js';
-import { route } from './route.js';
+import { route, withSafeUi } from './route.js';
 import { categoryOf, threadState } from './thread-status.js';
+import { extensionsReady, getLeftTabs, getMainViews, getRightTabs } from './ui-registry.js';
 import { uuidv7 } from './uuidv7.js';
 
 // ---------------------------------------------------------------------------
@@ -186,10 +187,13 @@ export const RAIL_VIEWS = RAIL_ROWS.flat();
 export const railView = signal('attention');
 /** Attention and Open list threads across every project; Projects lists one scope's. */
 export const railSpansProjects = (view) => view !== 'projects';
-/** Step the rail one view left (-1) or right (1), wrapping. */
+/** Step the rail one view left (-1) or right (1), wrapping across reconciled rail tabs. */
 export function stepRailView(d) {
-  const at = RAIL_VIEWS.indexOf(railView.value);
-  railView.value = RAIL_VIEWS[(at + d + RAIL_VIEWS.length) % RAIL_VIEWS.length];
+  const registered = getLeftTabs().map((t) => t.id);
+  const views = registered.length ? registered : RAIL_VIEWS;
+  const at = views.indexOf(railView.value);
+  const base = at === -1 ? 0 : at;
+  railView.value = views[(base + d + views.length) % views.length];
 }
 /**
  * The thread Attention keeps listed after it stops needing you: the one you opened, until you
@@ -207,6 +211,8 @@ export const actionPaletteOpen = signal(false);
 export const composerFill = signal(null);
 /** The Watchtower fills the centre (key h); the board and it are never both open. */
 export const watchtowerOpen = signal(false);
+/** Active extension workspace view id (`scope: 'workspace'`), or null when Threads/Board/Watchtower is active. */
+export const activeCustomView = signal(null);
 /** A page fills the centre: the selected project's home (or Global's), or a machine's page. */
 export const projectHomeOpen = signal(false);
 /** Which page is open: a project's home, its Knowledge and chorus page, or a machine's page ('device'). */
@@ -223,6 +229,7 @@ export function openDevicePage(deviceId) {
   batch(() => {
     boardOpen.value = false;
     watchtowerOpen.value = false;
+    activeCustomView.value = null;
     incomingOpenId.value = null;
     devicePageId.value = deviceId;
     projectPage.value = 'device';
@@ -236,6 +243,7 @@ export function openMachineBoard(machineName) {
     boardFilter.value = { device: new Set([machineName]) };
     projectHomeOpen.value = false;
     watchtowerOpen.value = false;
+    activeCustomView.value = null;
     boardOpen.value = true;
   });
 }
@@ -246,6 +254,7 @@ export function openMachineWatchtower(machineName) {
     watchtowerFilter.value = { device: new Set([machineName]) };
     projectHomeOpen.value = false;
     boardOpen.value = false;
+    activeCustomView.value = null;
     watchtowerOpen.value = true;
   });
 }
@@ -256,6 +265,7 @@ export function openProjectBoard(projectId) {
     boardFilter.value = { project: new Set([projectId]) };
     projectHomeOpen.value = false;
     watchtowerOpen.value = false;
+    activeCustomView.value = null;
     boardOpen.value = true;
   });
 }
@@ -272,6 +282,7 @@ export function openProjectHome(projectId) {
     selectScope(projectId);
     boardOpen.value = false;
     watchtowerOpen.value = false;
+    activeCustomView.value = null;
     incomingOpenId.value = null;
     projectPage.value = 'home';
     projectHomeOpen.value = true;
@@ -321,7 +332,8 @@ export function openRightTab(tab, { toggle = false } = {}) {
     !turnViewTarget.peek() &&
     !inspectTarget.peek() &&
     !boardOpen.peek() &&
-    !watchtowerOpen.peek();
+    !watchtowerOpen.peek() &&
+    !activeCustomView.peek();
   batch(() => {
     if (toggle && showing) {
       detailDrawerOpen.value = false;
@@ -333,6 +345,7 @@ export function openRightTab(tab, { toggle = false } = {}) {
     inspectTarget.value = null;
     boardOpen.value = false;
     watchtowerOpen.value = false;
+    activeCustomView.value = null;
     rightTab.value = tab;
     detailDrawerOpen.value = true;
     compactPanel.value = 'detail';
@@ -347,16 +360,38 @@ export function showThreadView() {
   });
 }
 
+/** Return to the Threads workspace view (closing Board, Watchtower, or any custom workspace view). */
+export function showThreadsWorkspace() {
+  batch(() => {
+    boardOpen.value = false;
+    watchtowerOpen.value = false;
+    activeCustomView.value = null;
+  });
+}
+
+/** Open a custom extension workspace view (`scope: 'workspace'`). */
+export function openCustomView(viewId) {
+  if (route.peek().page !== 'workspace') return;
+  batch(() => {
+    boardOpen.value = false;
+    watchtowerOpen.value = false;
+    incomingOpenId.value = null;
+    activeCustomView.value = viewId;
+  });
+}
+
 /** The board is a workspace view: it toggles only there. */
 export function toggleBoard() {
   if (route.peek().page !== 'workspace') return;
   watchtowerOpen.value = false;
+  activeCustomView.value = null;
   boardOpen.value = !boardOpen.value;
 }
 
 export function toggleWatchtower() {
   if (route.peek().page !== 'workspace') return;
   boardOpen.value = false;
+  activeCustomView.value = null;
   watchtowerOpen.value = !watchtowerOpen.value;
 }
 
@@ -2027,6 +2062,7 @@ export function selectThread(threadId) {
   compactPanel.value = 'conversation';
   closeTurnView();
   watchtowerOpen.value = false;
+  activeCustomView.value = null;
   aboutTarget.value = null;
   incomingOpenId.value = null;
   projectHomeOpen.value = false;
@@ -2543,6 +2579,23 @@ function readHash() {
   return Object.fromEntries(VIEW_KEYS.map((k) => [k, params.get(k)]));
 }
 
+/** Pending hash targets for extension tabs/views before async extensions finish loading. */
+const pendingHashRestore = {
+  rtab: null,
+  rail: null,
+  view: null,
+  panel: null,
+};
+
+function hasPendingHash() {
+  return Boolean(
+    pendingHashRestore.rtab ||
+      pendingHashRestore.rail ||
+      pendingHashRestore.view ||
+      pendingHashRestore.panel,
+  );
+}
+
 function writeHash() {
   // Settings and analytics pages own their URL; the workspace's view state returns with it.
   if (route.peek().page !== 'workspace') return;
@@ -2551,24 +2604,29 @@ function writeHash() {
   if (feedbackInboxOpen.value) params.set('feedback', '1');
   if (activeProjectId.value) params.set('project', activeProjectId.value);
   if (activeThreadId.value) params.set('thread', activeThreadId.value);
-  if (activePanel.value !== 'conversation') params.set('panel', activePanel.value);
+  const panelVal = pendingHashRestore.panel ?? activePanel.value;
+  if (panelVal !== 'conversation') params.set('panel', panelVal);
   if (!projectSidebarOpen.value) params.set('sidebar', '0');
   if (!detailDrawerOpen.value) params.set('detail', '0');
   if (!['normal', 'strip'].includes(leftSize.value)) params.set('lsize', leftSize.value);
   if (!['normal', 'icons'].includes(rightSize.value)) params.set('rsize', rightSize.value);
-  if (rightTab.value !== 'context') params.set('rtab', rightTab.value);
+  const rtabVal = pendingHashRestore.rtab ?? rightTab.value;
+  if (rtabVal !== 'context') params.set('rtab', rtabVal);
+  const railVal = pendingHashRestore.rail ?? railView.value;
   // A project in the hash opens the Projects rail unless the rail is named.
-  if (railView.value !== 'attention' || activeProjectId.value) params.set('rail', railView.value);
+  if (railVal !== 'attention' || activeProjectId.value) params.set('rail', railVal);
   if (boardOpen.value) params.set('view', 'board');
   else if (watchtowerOpen.value) params.set('view', 'watch');
+  else if (activeCustomView.value) params.set('view', activeCustomView.value);
+  else if (pendingHashRestore.view) params.set('view', pendingHashRestore.view);
   if (projectHomeOpen.value && !boardOpen.value) {
     params.set('home', projectPage.value === 'home' ? '1' : projectPage.value);
     if (projectPage.value === 'device' && devicePageId.value)
       params.set('device', devicePageId.value);
   }
   const hash = params.toString();
-  // Replace silently — no history entry per state change
-  history.replaceState(null, '', hash ? `#${hash}` : location.pathname);
+  // Replace silently — no history entry per state change; preserve ?safe-ui=1 when active.
+  history.replaceState(null, '', withSafeUi(`${location.pathname}${hash ? `#${hash}` : ''}`));
   // Remembered across reloads and bare visits, so the workspace comes back as it was left.
   try {
     localStorage.setItem(WORKSPACE_MEMORY_KEY, hash);
@@ -2592,29 +2650,75 @@ function adoptRememberedWorkspace() {
     detailDrawerOpen.value = false;
     return;
   }
-  if (remembered) history.replaceState(null, '', `#${remembered}`);
+  if (remembered) history.replaceState(null, '', withSafeUi(`${location.pathname}#${remembered}`));
+}
+
+function knownRightTabs() {
+  const reg = getRightTabs().map((t) => t.id);
+  return reg.length ? reg : RIGHT_TABS;
+}
+
+function knownLeftTabs() {
+  const reg = getLeftTabs().map((t) => t.id);
+  return reg.length ? reg : RAIL_VIEWS;
+}
+
+function knownThreadViews() {
+  const reg = getMainViews('thread').map((v) => v.id);
+  return reg.length ? reg : CENTER_PANELS;
+}
+
+function knownCustomWorkspaceViews() {
+  return getMainViews('workspace')
+    .filter((v) => v.extId)
+    .map((v) => v.id);
 }
 
 function restoreFromHash() {
   const h = readHash();
+  pendingHashRestore.rtab = null;
+  pendingHashRestore.rail = null;
+  pendingHashRestore.view = null;
+  pendingHashRestore.panel = null;
   forgeMasterOpen.value = h.forge === '1';
   feedbackInboxOpen.value = h.feedback === '1' && h.forge !== '1';
   if (h.project) activeProjectId.value = h.project;
   if (h.thread) selectThread(h.thread);
-  if (h.panel && CENTER_PANELS.includes(h.panel)) activePanel.value = h.panel;
+  if (h.panel) {
+    if (knownThreadViews().includes(h.panel)) activePanel.value = h.panel;
+    else if (!extensionsReady.peek()) pendingHashRestore.panel = h.panel;
+  }
   if (h.sidebar === '0') projectSidebarOpen.value = false;
   if (h.detail === '0') detailDrawerOpen.value = false;
   if (['hidden', 'wide'].includes(h.lsize)) leftSize.value = h.lsize;
   if (['hidden', 'wide'].includes(h.rsize)) rightSize.value = h.rsize;
-  if (RIGHT_TABS.includes(h.rtab)) rightTab.value = h.rtab;
+  if (h.rtab) {
+    if (knownRightTabs().includes(h.rtab)) rightTab.value = h.rtab;
+    else if (!extensionsReady.peek()) pendingHashRestore.rtab = h.rtab;
+  }
   boardOpen.value = h.view === 'board';
   watchtowerOpen.value = h.view === 'watch';
+  if (h.view && h.view !== 'board' && h.view !== 'watch') {
+    if (knownCustomWorkspaceViews().includes(h.view)) activeCustomView.value = h.view;
+    else if (!extensionsReady.peek()) pendingHashRestore.view = h.view;
+    else activeCustomView.value = null;
+  } else {
+    activeCustomView.value = null;
+  }
   const device = h.home === 'device' && h.device;
   projectHomeOpen.value = h.home === '1' || h.home === 'knowledge' || !!device;
   projectPage.value = h.home === 'knowledge' ? 'knowledge' : device ? 'device' : 'home';
   devicePageId.value = device || null;
   // A link to a project (and no rail named) opens the Projects rail on it.
-  railView.value = RAIL_VIEWS.includes(h.rail) ? h.rail : h.project ? 'projects' : 'attention';
+  if (h.rail) {
+    if (knownLeftTabs().includes(h.rail)) railView.value = h.rail;
+    else if (!extensionsReady.peek()) {
+      pendingHashRestore.rail = h.rail;
+      railView.value = h.project ? 'projects' : 'attention';
+    } else railView.value = h.project ? 'projects' : 'attention';
+  } else {
+    railView.value = h.project ? 'projects' : 'attention';
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -2693,6 +2797,7 @@ export function init() {
       projectHomeOpen.value ||
       boardOpen.value ||
       watchtowerOpen.value ||
+      Boolean(activeCustomView.value) ||
       route.value.page !== 'workspace';
     const switched = rail !== railSeen;
     railSeen = rail;
@@ -2704,7 +2809,52 @@ export function init() {
     if (route.value.page !== 'workspace') {
       boardOpen.value = false;
       watchtowerOpen.value = false;
+      activeCustomView.value = null;
     }
+  });
+
+  // Apply deferred hash restore once async UI extensions register their tabs/views.
+  effect(() => {
+    const lefts = getLeftTabs();
+    const rights = getRightTabs();
+    const workspaceViews = getMainViews('workspace');
+    const threadViews = getMainViews('thread');
+    const ready = extensionsReady.value;
+    if (!hasPendingHash()) return;
+    let changed = false;
+    batch(() => {
+      if (pendingHashRestore.rtab && rights.some((t) => t.id === pendingHashRestore.rtab)) {
+        rightTab.value = pendingHashRestore.rtab;
+        pendingHashRestore.rtab = null;
+        changed = true;
+      }
+      if (pendingHashRestore.rail && lefts.some((t) => t.id === pendingHashRestore.rail)) {
+        railView.value = pendingHashRestore.rail;
+        pendingHashRestore.rail = null;
+        changed = true;
+      }
+      if (
+        pendingHashRestore.view &&
+        workspaceViews.some((v) => v.extId && v.id === pendingHashRestore.view)
+      ) {
+        activeCustomView.value = pendingHashRestore.view;
+        pendingHashRestore.view = null;
+        changed = true;
+      }
+      if (pendingHashRestore.panel && threadViews.some((v) => v.id === pendingHashRestore.panel)) {
+        activePanel.value = pendingHashRestore.panel;
+        pendingHashRestore.panel = null;
+        changed = true;
+      }
+      if (ready && hasPendingHash()) {
+        pendingHashRestore.rtab = null;
+        pendingHashRestore.rail = null;
+        pendingHashRestore.view = null;
+        pendingHashRestore.panel = null;
+        changed = true;
+      }
+    });
+    if (changed) writeHash();
   });
 
   // Sync view state → URL hash on any change
@@ -2724,6 +2874,8 @@ export function init() {
     rightTab.value;
     railView.value;
     boardOpen.value;
+    watchtowerOpen.value;
+    activeCustomView.value;
     projectHomeOpen.value;
     projectPage.value;
     devicePageId.value;

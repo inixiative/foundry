@@ -27,6 +27,8 @@
  * views keep the rail's full height (Aron, 2026-11-14).
  */
 import { effectiveCategory, needsOwner, openListRoots, openRoots } from './attention.js';
+import { ExtensionBoundary, safeCall } from './error-boundary.js';
+import { disableExtension } from './extension-loader.js';
 import { IncomingRows } from './incoming.js';
 import { html } from './lib.js';
 import { MachineStatus } from './machine-status.js';
@@ -35,49 +37,56 @@ import { ProjectSidebar } from './project-sidebar.js';
 import { Pane } from './rail-pane.js';
 import { openNewThread } from './run-picker.js';
 import { draftCount, ScheduleList } from './schedules.js';
+import { SectionList } from './slot.js';
 import {
   activeThreadId,
   allThreads,
   attentionHold,
   leftSize,
   projectSidebarOpen,
-  RAIL_ROWS,
   railView,
   selectThread,
 } from './store.js';
 import { isClosedThread, isScheduledRun } from './thread-status.js';
 import { ThreadNode, threadTree } from './thread-tree.js';
+import {
+  getLeftTabRows,
+  getLeftTabs,
+  registerBuiltinLeftTab,
+  resolveActiveId,
+} from './ui-registry.js';
 
 const OPEN = (t) => !isClosedThread(t);
 /** Shared: another party (a Signet member) is in the thread. */
 const isShared = (node) => (node.conversation?.members ?? 0) > 0;
 
-const RAIL_LABELS = {
-  attention: 'Attention',
-  open: 'Open',
-  projects: 'Projects',
-  scheduled: 'Scheduled',
-  status: 'Status',
-};
-/** The tabs in their two rows: where you work, then what runs without you and the machine. */
 /** Red before orange in the Attention rail. */
 const URGENCY = { problem: 0, attention: 1 };
 
-function RailToggle() {
-  const view = railView.value;
+function renderTabBadge(tab, ctx) {
+  if (typeof tab.badge !== 'function') return null;
+  const val = tab.extId
+    ? safeCall(tab.extId, () => tab.badge(ctx), null, 'leftTab.badge')
+    : tab.badge(ctx);
+  if (val === null || val === undefined || val === false || val === 0 || val === '') return null;
+  if (typeof val === 'number' || typeof val === 'string') {
+    return html`<span class="rail-toggle-badge">${val}</span>`;
+  }
+  return val;
+}
+
+function RailToggle({ activeId, ctx }) {
+  const rows = getLeftTabRows();
   return html`<div class="rail-toggle" role="tablist" aria-label="Left rail">
-    ${RAIL_ROWS.map(
+    ${rows.map(
       (row, i) =>
         html`<div key=${i} class="rail-toggle-row">${row.map(
-          (id) => html`<button key=${id} role="tab" aria-selected=${view === id}
-          class="rail-toggle-btn ${view === id ? 'is-active' : ''}" title=${`${RAIL_LABELS[id]} (⌥⇧← ⌥⇧→)`}
+          (tab) => html`<button key=${tab.id} role="tab" aria-selected=${activeId === tab.id}
+          class="rail-toggle-btn ${activeId === tab.id ? 'is-active' : ''}" data-rail-id=${tab.id}
+          title=${`${tab.label} (⌥⇧← ⌥⇧→)`}
           onClick=${() => {
-            railView.value = id;
-          }}>${RAIL_LABELS[id]}${
-            id === 'scheduled' && draftCount()
-              ? html`<span class="rail-toggle-badge" title="Schedules an agent proposed, waiting for you">${draftCount()}</span>`
-              : null
-          }</button>`,
+            railView.value = tab.id;
+          }}>${tab.label}${renderTabBadge(tab, ctx)}</button>`,
         )}</div>`,
     )}
   </div>`;
@@ -139,21 +148,70 @@ function ScheduledRail() {
   </div>`;
 }
 
-const RAILS = {
-  attention: AttentionRail,
-  open: OpenRail,
-  projects: ProjectSidebar,
-  scheduled: ScheduledRail,
-  status: MachineStatus,
-};
+registerBuiltinLeftTab({
+  id: 'attention',
+  label: 'Attention',
+  row: 0,
+  wideShare: false,
+  render: () => html`<${AttentionRail} />`,
+});
+registerBuiltinLeftTab({
+  id: 'open',
+  label: 'Open',
+  row: 0,
+  wideShare: false,
+  render: () => html`<${OpenRail} />`,
+});
+registerBuiltinLeftTab({
+  id: 'projects',
+  label: 'Projects',
+  row: 0,
+  wideShare: true,
+  render: () => html`<${ProjectSidebar} />`,
+});
+registerBuiltinLeftTab({
+  id: 'scheduled',
+  label: 'Scheduled',
+  row: 1,
+  wideShare: false,
+  badge: () => {
+    const count = draftCount();
+    return count
+      ? html`<span class="rail-toggle-badge" title="Schedules an agent proposed, waiting for you">${count}</span>`
+      : null;
+  },
+  render: () => html`<${ScheduledRail} />`,
+});
+registerBuiltinLeftTab({
+  id: 'status',
+  label: 'Status',
+  row: 1,
+  wideShare: false,
+  render: () => html`<${MachineStatus} />`,
+});
+
+const LEFT_RAIL_CONTROLS = [
+  { id: 'size-controls', render: () => html`<${SizeControls} side="left" />` },
+];
 
 export function NavRail() {
   if (leftSize.value === 'hidden') return html`<div class="panel-hidden" aria-hidden="true"></div>`;
   // Folded, the rail is today's thin strip of project dots.
   if (!projectSidebarOpen.value || panelFit.value.leftFolded)
     return html`<${ProjectSidebar} folded=${true} />`;
+  const tabs = getLeftTabs();
+  const activeId = resolveActiveId(tabs, railView.value, 'attention');
+  const activeTab = tabs.find((t) => t.id === activeId) ?? tabs[0];
+  const ctx = { railView: activeId, activeThreadId: activeThreadId.value };
   return html`<div class="nav-rail">
-    <div class="rail-head-row"><${RailToggle} /><${SizeControls} side="left" /></div>
-    ${html`<${RAILS[railView.value] ?? AttentionRail} />`}
+    <div class="rail-head-row">
+      <${RailToggle} activeId=${activeId} ctx=${ctx} />
+      <${SectionList} slot="leftRail.controls" items=${LEFT_RAIL_CONTROLS} context=${ctx} />
+    </div>
+    ${
+      activeTab?.extId
+        ? html`<${ExtensionBoundary} key=${activeTab.id} extId=${activeTab.extId} slot="leftRail.tabs" onDisable=${disableExtension} render=${activeTab.render} ctx=${ctx} />`
+        : activeTab?.render(ctx)
+    }
   </div>`;
 }

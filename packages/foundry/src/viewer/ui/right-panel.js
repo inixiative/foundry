@@ -20,6 +20,8 @@ import { ComingSoon } from './coming-soon.js';
 import { ContextStats, TokenBar } from './conversation.js';
 import { ParticipantsPanel } from './conversation-members.js';
 import { Inspector, inspection, ThreadDetail } from './detail-drawer.js';
+import { ExtensionBoundary, safeCall } from './error-boundary.js';
+import { disableExtension } from './extension-loader.js';
 import { feedbackIn, ThreadFeedback } from './feedback.js';
 import { useFlowStream } from './graph-view.js';
 import { html, useEffect, useState } from './lib.js';
@@ -27,7 +29,9 @@ import { LoopView, loopSummary, PointerLedger, pointerRows } from './loop-view.j
 import { SizeControls } from './panel-sizes.js';
 import { Plan } from './plan.js';
 import { Running } from './running.js';
+import { SectionList } from './slot.js';
 import {
+  activeCustomView,
   activeThreadId,
   authFetch,
   boardOpen,
@@ -40,7 +44,6 @@ import {
   projects,
   RIGHT_TAB_KEYS,
   RIGHT_TAB_LABELS,
-  RIGHT_TABS,
   rightSize,
   rightTab,
   selectedEvent,
@@ -56,11 +59,16 @@ import { TabIcon } from './tab-icons.js';
 import { AgentsFact } from './thread-agents.js';
 import { harnessName, projectLabel, ReferenceChips, threadPlace } from './thread-labels.js';
 import { TurnView } from './turn-view.js';
+import {
+  getRightTabs,
+  registerBuiltinRightTab,
+  resolveActiveId,
+  useComponentFlags,
+} from './ui-registry.js';
 import { Work } from './work.js';
 
-/** A tab's tooltip: its label, and its number key when it has one. */
-const tabTitle = (tab) =>
-  RIGHT_TAB_KEYS[tab] ? `${RIGHT_TAB_LABELS[tab]} (${RIGHT_TAB_KEYS[tab]})` : RIGHT_TAB_LABELS[tab];
+/** A tab's tooltip: its label, and its key when it has one. */
+const tabTitle = (t) => (t.key ? `${t.label} (${t.key})` : t.label);
 
 const openFeedback = (threadId) =>
   feedbackIn({ threadId }).filter((item) => item.inbox === 'open').length;
@@ -181,11 +189,9 @@ function useRepository(projectId) {
   return repo;
 }
 
-/**
- * Context leads with where the work lives (design review 11-02): the GitHub repository and branch,
- * the ticket, and the Slack conversation that started it. Then what it runs on.
- */
-function ContextLinks() {
+function ContextTab({ flags }) {
+  const launch = threadLaunch.value;
+  const threadId = activeThreadId.value;
   const meta = threadData.value?.meta ?? {};
   const repo = useRepository(meta.projectId ?? null);
   const refs = meta.context?.references ?? [];
@@ -196,40 +202,50 @@ function ContextLinks() {
     html`<div class="rp-refs"><${ReferenceChips} meta=${{ context: { references } }} /></div>`;
   const branch = threadPlace(meta).branch;
   const github = repo?.integration === 'github' ? repo.ref : null;
-  return html`
-    <section class="rp-section" aria-label="GitHub">
-      <h3 class="rp-section-title">GitHub</h3>
-      ${
-        github
-          ? html`<a class="rp-link-chip" href=${`https://github.com/${github}${branch ? `/tree/${encodeURIComponent(branch)}` : ''}`} target="_blank" rel="noopener noreferrer">${github}${branch ? ` · ${branch}` : ''} ↗</a>`
-          : html`<div class="rp-dim">${repo === undefined ? 'Reading the project…' : 'No GitHub repository recorded for this project.'}</div>`
-      }
-      ${pulls.length ? chips(pulls) : null}
-    </section>
-    <section class="rp-section" aria-label="Ticket">
-      <h3 class="rp-section-title">Ticket</h3>
-      ${tickets.length ? chips(tickets) : html`<div class="rp-dim">No ticket yet.</div>`}
-      <${ComingSoon} inline=${true} what="New ticket: open one in Linear from this thread." ticket="BOARD-003" />
-    </section>
-    <section class="rp-section" aria-label="Slack">
-      <h3 class="rp-section-title">Slack</h3>
-      <${ComingSoon} what="The Slack conversation behind this thread, a short excerpt, and Go to Slack to talk to these people or read it there." ticket="BOARD-003" />
-    </section>
-    ${
-      other.length
-        ? html`<section class="rp-section" aria-label="Other links">
-            <h3 class="rp-section-title">Other links</h3>${chips(other)}
-          </section>`
-        : null
-    }`;
-}
+  const ctx = { threadId, thread: threadData.value, launch, flags };
 
-function ContextTab() {
-  const launch = threadLaunch.value;
-  const threadId = activeThreadId.value;
-  return html`<div class="rp-stack">
-    <${ContextLinks} />
-    <section class="rp-section">
+  const sections = [
+    {
+      id: 'github',
+      render: () => html`<section class="rp-section" aria-label="GitHub">
+        <h3 class="rp-section-title">GitHub</h3>
+        ${
+          github
+            ? html`<a class="rp-link-chip" href=${`https://github.com/${github}${branch ? `/tree/${encodeURIComponent(branch)}` : ''}`} target="_blank" rel="noopener noreferrer">${github}${branch ? ` · ${branch}` : ''} ↗</a>`
+            : html`<div class="rp-dim">${repo === undefined ? 'Reading the project…' : 'No GitHub repository recorded for this project.'}</div>`
+        }
+        ${pulls.length ? chips(pulls) : null}
+      </section>`,
+    },
+    {
+      id: 'ticket',
+      render: () => html`<section class="rp-section" aria-label="Ticket">
+        <h3 class="rp-section-title">Ticket</h3>
+        ${tickets.length ? chips(tickets) : html`<div class="rp-dim">No ticket yet.</div>`}
+        ${flags.showComingSoon ? html`<${ComingSoon} inline=${true} what="New ticket: open one in Linear from this thread." ticket="BOARD-003" />` : null}
+      </section>`,
+    },
+  ];
+  if (flags.showComingSoon) {
+    sections.push({
+      id: 'slack',
+      render: () => html`<section class="rp-section" aria-label="Slack">
+        <h3 class="rp-section-title">Slack</h3>
+        <${ComingSoon} what="The Slack conversation behind this thread, a short excerpt, and Go to Slack to talk to these people or read it there." ticket="BOARD-003" />
+      </section>`,
+    });
+  }
+  if (other.length) {
+    sections.push({
+      id: 'other-links',
+      render: () => html`<section class="rp-section" aria-label="Other links">
+        <h3 class="rp-section-title">Other links</h3>${chips(other)}
+      </section>`,
+    });
+  }
+  sections.push({
+    id: 'runs-on',
+    render: () => html`<section class="rp-section">
       <h3 class="rp-section-title">Runs on</h3>
       ${
         launch
@@ -262,52 +278,99 @@ function ContextTab() {
           <p class="rp-dim">Set for you${threadData.value?.meta?.projectId ? ' on this project' : ''}. ⌘↵ always queues; a queued message can always be steered in.</p>`
           : html`<div class="rp-dim">Reading the thread’s launch settings…</div>`
       }
-    </section>
-    <${AtlasTouches} threadId=${threadData.value?.threadId} project=${projectLabel(threadData.value?.meta?.projectId)} />
-    <section class="rp-section">
-      <h3 class="rp-section-title">Loaded when it arrived</h3>
-      <${ComingSoon}
-        what="For a Slack, Linear or GitHub item that opened this thread: what the agent read before you opened it (the message, the ticket, the files, the sender)."
-        ticket="BOARD-003" />
-    </section>
-    <${TokenBar} />
-    <${ContextStats} />
-    <${ThreadDetail} />
+    </section>`,
+  });
+  sections.push({
+    id: 'atlas-touches',
+    render: () =>
+      html`<${AtlasTouches} threadId=${threadData.value?.threadId} project=${projectLabel(threadData.value?.meta?.projectId)} />`,
+  });
+  if (flags.showComingSoon) {
+    sections.push({
+      id: 'loaded-on-arrival',
+      render: () => html`<section class="rp-section">
+        <h3 class="rp-section-title">Loaded when it arrived</h3>
+        <${ComingSoon}
+          what="For a Slack, Linear or GitHub item that opened this thread: what the agent read before you opened it (the message, the ticket, the files, the sender)."
+          ticket="BOARD-003" />
+      </section>`,
+    });
+  }
+  if (flags.showUsageBar) {
+    sections.push({
+      id: 'token-bar',
+      render: () => html`<${TokenBar} />`,
+    });
+  }
+  sections.push(
+    { id: 'context-stats', render: () => html`<${ContextStats} />` },
+    { id: 'thread-detail', render: () => html`<${ThreadDetail} />` },
+  );
+
+  return html`<div class="rp-stack">
+    <${SectionList} slot="rightPanel.context.sections" items=${sections} context=${ctx} />
   </div>`;
 }
 
-function PermissionsTab() {
+function PermissionsTab({ flags }) {
   const launch = threadLaunch.value;
   const projectId = threadData.value?.meta?.projectId ?? null;
+  const ctx = {
+    threadId: activeThreadId.value,
+    thread: threadData.value,
+    launch,
+    projectId,
+    flags,
+  };
+  const sections = [
+    {
+      id: 'access-mode',
+      render: () => html`<section class="rp-section">
+        <h3 class="rp-section-title">Beyond its normal set</h3>
+        <dl class="rp-facts">
+          <dt>Access mode</dt>
+          <dd>${launch?.permissionMode ?? html`<span class="rp-dim">follows the host (Claude Code, Codex)</span>`}</dd>
+        </dl>
+        <p class="rp-dim">
+          Members’ Signets and what each may read are on the Participants tab. Signets are issued,
+          revised and revoked in Kingdom.
+        </p>
+      </section>`,
+    },
+    {
+      id: 'kingdom-grants',
+      render: () => html`<section class="rp-section">
+        <h3 class="rp-section-title">Baseline: this project’s Kingdom grants</h3>
+        <${AccessSettings} projectId=${projectId} />
+      </section>`,
+    },
+  ];
   return html`<div class="rp-stack">
-    <section class="rp-section">
-      <h3 class="rp-section-title">Beyond its normal set</h3>
-      <dl class="rp-facts">
-        <dt>Access mode</dt>
-        <dd>${launch?.permissionMode ?? html`<span class="rp-dim">follows the host (Claude Code, Codex)</span>`}</dd>
-      </dl>
-      <p class="rp-dim">
-        Members’ Signets and what each may read are on the Participants tab. Signets are issued,
-        revised and revoked in Kingdom.
-      </p>
-    </section>
-    <section class="rp-section">
-      <h3 class="rp-section-title">Baseline: this project’s Kingdom grants</h3>
-      <${AccessSettings} projectId=${projectId} />
-    </section>
+    <${SectionList} slot="rightPanel.permissions.sections" items=${sections} context=${ctx} />
   </div>`;
 }
 
-function HeraldsTab() {
-  return html`<div class="rp-stack">
-    <${ComingSoon}
-      what="How this thread looks to the Heralds: teammates’ threads touching the same files, related threads, past work it repeats, and who else is watching."
-      ticket="AGENT-001" />
-    <section class="rp-section">
+function HeraldsTab({ flags }) {
+  const ctx = { threadId: activeThreadId.value, thread: threadData.value, flags };
+  const sections = [];
+  if (flags.showComingSoon) {
+    sections.push({
+      id: 'coming-soon',
+      render: () => html`<${ComingSoon}
+        what="How this thread looks to the Heralds: teammates’ threads touching the same files, related threads, past work it repeats, and who else is watching."
+        ticket="AGENT-001" />`,
+    });
+  }
+  sections.push({
+    id: 'shared-concepts',
+    render: () => html`<section class="rp-section">
       <h3 class="rp-section-title">Shared Atlas concepts</h3>
       <p class="rp-dim">Other threads in this project touching the same concepts (this machine’s threads, until Heralds bring teammates’).</p>
       <${SharedConcepts} threadId=${threadData.value?.threadId} project=${projectLabel(threadData.value?.meta?.projectId)} />
-    </section>
+    </section>`,
+  });
+  return html`<div class="rp-stack">
+    <${SectionList} slot="rightPanel.heralds.sections" items=${sections} context=${ctx} />
   </div>`;
 }
 
@@ -317,18 +380,33 @@ function PointersTab({ threadId }) {
   return html`<div class="rp-stack"><${PointerLedger} rows=${pointerRows(flow)} /></div>`;
 }
 
-function TabBody({ tab, threadId }) {
-  if (tab === 'plan') return html`<${Plan} />`;
-  if (tab === 'loop') return html`<${LoopView} />`;
-  if (tab === 'artifacts') return html`<${Artifacts} />`;
-  if (tab === 'work') return html`<${Work} />`;
-  if (tab === 'context') return html`<${ContextTab} />`;
-  if (tab === 'participants') return html`<${ParticipantsPanel} />`;
-  if (tab === 'permissions') return html`<${PermissionsTab} />`;
-  if (tab === 'heralds') return html`<${HeraldsTab} />`;
-  if (tab === 'pointers') return html`<${PointersTab} threadId=${threadId} />`;
-  return html`<${ThreadFeedback} threadId=${threadId} />`;
+const BUILTIN_RIGHT_TAB_RENDERERS = {
+  plan: () => html`<${Plan} />`,
+  loop: () => html`<${LoopView} />`,
+  artifacts: () => html`<${Artifacts} />`,
+  work: () => html`<${Work} />`,
+  context: ({ flags }) => html`<${ContextTab} flags=${flags} />`,
+  participants: () => html`<${ParticipantsPanel} />`,
+  permissions: ({ flags }) => html`<${PermissionsTab} flags=${flags} />`,
+  heralds: ({ flags }) => html`<${HeraldsTab} flags=${flags} />`,
+  pointers: ({ threadId }) => html`<${PointersTab} threadId=${threadId} />`,
+  feedback: ({ threadId }) => html`<${ThreadFeedback} threadId=${threadId} />`,
+};
+
+for (const id of Object.keys(BUILTIN_RIGHT_TAB_RENDERERS)) {
+  registerBuiltinRightTab({
+    id,
+    label: RIGHT_TAB_LABELS[id],
+    key: RIGHT_TAB_KEYS[id],
+    info: ({ threadId }) => tabFacts(id, threadId).info,
+    badge: ({ threadId }) => tabFacts(id, threadId).count ?? null,
+    render: BUILTIN_RIGHT_TAB_RENDERERS[id],
+  });
 }
+
+const RIGHT_PANEL_CONTROLS = [
+  { id: 'size-controls', render: () => html`<${SizeControls} side="right" />` },
+];
 
 /** Leave the inspector: back to the panel's tabs. */
 function closeInspector() {
@@ -338,26 +416,53 @@ function closeInspector() {
   inspectTarget.value = null;
 }
 
+function readTabBadge(tabDef, ctx) {
+  if (typeof tabDef.badge !== 'function') return null;
+  return tabDef.extId
+    ? safeCall(tabDef.extId, () => tabDef.badge(ctx), null, 'rightTab.badge')
+    : tabDef.badge(ctx);
+}
+
+function readTabInfo(tabDef, ctx) {
+  if (typeof tabDef.info === 'function') {
+    return tabDef.extId
+      ? safeCall(tabDef.extId, () => tabDef.info(ctx), '', 'rightTab.info')
+      : tabDef.info(ctx);
+  }
+  return typeof tabDef.info === 'string' ? tabDef.info : '';
+}
+
 export function RightPanel({ onSpanSelect }) {
   const threadId = activeThreadId.value;
-  const tab = rightTab.value;
-  // The board and the Watchtower take the width: the panel folds while either is open.
-  const open = detailDrawerOpen.value && !boardOpen.value && !watchtowerOpen.value;
+  const tabs = getRightTabs();
+  const activeId = resolveActiveId(tabs, rightTab.value, 'context');
+  const activeTab = tabs.find((t) => t.id === activeId) ?? tabs[0];
+  const flags = useComponentFlags('rightPanel', {
+    showComingSoon: true,
+    showUsageBar: true,
+    showRunningFooter: true,
+  });
+  const fullWorkspace = boardOpen.value || watchtowerOpen.value || Boolean(activeCustomView.value);
+  // The board, Watchtower and full-width custom views take the width: the panel folds while any is open.
+  const open = detailDrawerOpen.value && !fullWorkspace;
   const target = inspection(inspectTarget.value?.kind === 'layer' ? inspectTarget.value.id : null);
+  const rpCtx = { threadId, thread: threadData.value, launch: threadLaunch.value, flags };
 
   // The turn view opens here, at the panel's widest step; the thread stays in the centre.
-  if (turnViewTarget.value && !boardOpen.value && !watchtowerOpen.value)
+  if (turnViewTarget.value && !fullWorkspace)
     return html`<div class="right-panel detail-drawer right-panel--turn"><${TurnView} key=${turnViewTarget.value.turnId} /></div>`;
 
   if (!open)
-    return rightSize.value === 'hidden' && !boardOpen.value && !watchtowerOpen.value
+    return rightSize.value === 'hidden' && !fullWorkspace
       ? html`<div class="panel-hidden" aria-hidden="true"></div>`
       : html`<div class="right-panel detail-drawer detail-drawer--collapsed right-panel--collapsed">
-      <div class="rp-strip-controls"><${SizeControls} side="right" /></div>
-      ${RIGHT_TABS.map((t) => {
-        return html`<button key=${t} class="rp-strip-tab" title=${tabTitle(t)} aria-label=${`Open ${RIGHT_TAB_LABELS[t]}`}
-          aria-current=${t === tab ? 'true' : undefined} onClick=${() => openRightTab(t)}>
-          <${TabIcon} tab=${t} /><span class="rp-strip-label">${RIGHT_TAB_LABELS[t]}</span>
+      <div class="rp-strip-controls">
+        <${SectionList} slot="rightPanel.controls" items=${RIGHT_PANEL_CONTROLS} context=${rpCtx} />
+      </div>
+      ${tabs.map((t) => {
+        return html`<button key=${t.id} class="rp-strip-tab" data-rtab-id=${t.id} title=${tabTitle(t)} aria-label=${`Open ${t.label}`}
+          aria-current=${t.id === activeId ? 'true' : undefined} onClick=${() => openRightTab(t.id)}>
+          <${TabIcon} tab=${t.id} icon=${t.icon} /><span class="rp-strip-label">${t.label}</span>
         </button>`;
       })}
     </div>`;
@@ -366,10 +471,10 @@ export function RightPanel({ onSpanSelect }) {
     return html`<div class="right-panel detail-drawer">
       <header class="rp-band">
         <div class="rp-band-row">
-          <button class="rp-back" onClick=${closeInspector}>← ${RIGHT_TAB_LABELS[tab]}</button>
+          <button class="rp-back" onClick=${closeInspector}>← ${activeTab?.label ?? 'Back'}</button>
           <span class="rp-eyebrow">Inspector</span>
           ${target.kind === 'trace' || target.kind === 'span' ? html`<button class="rp-back back-btn" onClick=${() => dismissTraceSelection()}>Clear</button>` : null}
-          <${SizeControls} side="right" />
+          <${SectionList} slot="rightPanel.controls" items=${RIGHT_PANEL_CONTROLS} context=${rpCtx} />
         </div>
         <h2 class="rp-title">${target.title}</h2>
       </header>
@@ -382,34 +487,39 @@ export function RightPanel({ onSpanSelect }) {
       <div class="rp-frame"><div class="rp-empty">Open a thread to see its plan, loop, artifacts, work and context.</div></div>
     </div>`;
 
-  const facts = tabFacts(tab, threadId);
+  const info = activeTab ? readTabInfo(activeTab, rpCtx) : '';
   return html`<div class="right-panel detail-drawer">
     <header class="rp-band">
       <div class="rp-band-row rp-head-row">
         <nav class="rp-tabs" role="tablist" aria-label="Thread reference">
-        ${RIGHT_TABS.map((t) => {
-          return html`<button key=${t} role="tab" aria-selected=${t === tab}
-            aria-label=${RIGHT_TAB_LABELS[t]} class="rp-tab ${t === tab ? 'is-active' : ''}" title=${tabTitle(t)}
+        ${tabs.map((t) => {
+          const badge = readTabBadge(t, rpCtx);
+          return html`<button key=${t.id} role="tab" aria-selected=${t.id === activeId}
+            data-rtab-id=${t.id} aria-label=${t.label}
+            class="rp-tab ${t.id === activeId ? 'is-active' : ''}" title=${tabTitle(t)}
             onClick=${() => {
-              rightTab.value = t;
-            }}><${TabIcon} tab=${t} /><span class="rp-tab-label">${RIGHT_TAB_LABELS[t]}</span>${(() => {
-              const n = tabFacts(t, threadId).count;
-              return n
-                ? html`<span class="rp-tab-count ${t === 'feedback' ? 'is-attention' : ''}">${n}</span>`
-                : null;
-            })()}</button>`;
+              rightTab.value = t.id;
+            }}><${TabIcon} tab=${t.id} icon=${t.icon} /><span class="rp-tab-label">${t.label}</span>${
+              badge
+                ? html`<span class="rp-tab-count ${t.id === 'feedback' ? 'is-attention' : ''}">${badge}</span>`
+                : null
+            }</button>`;
         })}
       </nav>
-      <${SizeControls} side="right" />
+      <${SectionList} slot="rightPanel.controls" items=${RIGHT_PANEL_CONTROLS} context=${rpCtx} />
       </div>
     </header>
-    <div class="rp-frame" role="tabpanel" aria-label=${RIGHT_TAB_LABELS[tab]}>
+    <div class="rp-frame" role="tabpanel" aria-label=${activeTab?.label ?? ''}>
       <header class="rp-tab-head">
-        <h2 class="rp-title">${RIGHT_TAB_LABELS[tab]}</h2>
-        ${facts.info ? html`<div class="rp-info">${facts.info}</div>` : null}
+        <h2 class="rp-title">${activeTab?.label ?? ''}</h2>
+        ${info ? html`<div class="rp-info">${info}</div>` : null}
       </header>
-      <${TabBody} tab=${tab} threadId=${threadId} />
+      ${
+        activeTab?.extId
+          ? html`<${ExtensionBoundary} key=${activeTab.id} extId=${activeTab.extId} slot="rightPanel.tabs" onDisable=${disableExtension} render=${activeTab.render} ctx=${rpCtx} />`
+          : activeTab?.render(rpCtx)
+      }
     </div>
-    <${Running} threadId=${threadId} />
+    ${flags.showRunningFooter ? html`<${Running} threadId=${threadId} />` : null}
   </div>`;
 }

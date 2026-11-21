@@ -1,0 +1,562 @@
+/**
+ * @atlas
+ * @kind utils
+ * @partOf feature:viewer
+ */
+/**
+ * Reactive UI registry for Foundry's composable viewer surfaces:
+ * - Left rail tabs (`leftRail.tabs`)
+ * - Right panel tabs (`rightPanel.tabs`)
+ * - Main views (`scope: 'workspace' | 'thread' | 'project'`)
+ * - Named section slots (`extendSection`)
+ * - Component display/behavior flags (`setFlags`, `useComponentFlags`)
+ * - Command palette commands (`registerCommand`)
+ *
+ * Pure `reconcileItems()` handles deterministic topological `before`/`after` chains + cycle breaking,
+ * `replace` wrapper chaining (last-wins in `ui.extensions[]` order), `hide`, and additive user slot
+ * overrides (`pinned` → `order` → unlisted new built-ins → minus `hidden`).
+ */
+
+import { signal } from './lib.js';
+
+const LOCAL_ID_PATTERN = /^[a-z0-9][a-z0-9_.:-]{0,63}$/i;
+
+/** Reactive mirror of `settingsConfig.value?.ui ?? {}` (empty in `?safe-ui=1` mode). */
+export const uiConfigSignal = signal({});
+
+/** Becomes true once the initial enabled UI extensions batch has settled (or immediately in safe mode). */
+export const extensionsReady = signal(false);
+
+/** Ordered extension ids from `ui.extensions[]` so precedence is deterministic regardless of import order. */
+const extensionOrderSignal = signal([]);
+
+// Internal storage signals (mutated immutably via `.value = ...` so Preact components re-render).
+const builtinLeftTabs = signal([]);
+const extLeftTabs = signal([]);
+
+const builtinRightTabs = signal([]);
+const extRightTabs = signal([]);
+
+const builtinMainViews = signal([]);
+const extMainViews = signal([]);
+
+const sectionExtensions = signal([]);
+const extensionCommands = signal([]);
+const extensionFlags = signal([]); // Array<{ id, extId, componentId, flags, seq }>
+
+const disposersByExt = new Map();
+let seqCounter = 0;
+
+function trackDisposer(extId, dispose) {
+  let set = disposersByExt.get(extId);
+  if (!set) {
+    set = new Set();
+    disposersByExt.set(extId, set);
+  }
+  let done = false;
+  const wrapped = () => {
+    if (done) return;
+    done = true;
+    set.delete(wrapped);
+    if (set.size === 0) disposersByExt.delete(extId);
+    dispose();
+  };
+  set.add(wrapped);
+  return wrapped;
+}
+
+/** Namespace an extension item id to `<extId>:<localId>`, preventing built-in collisions. */
+export function namespaceId(extId, localId) {
+  if (!extId || typeof extId !== 'string') throw new Error('extId is required');
+  if (!localId || typeof localId !== 'string' || !LOCAL_ID_PATTERN.test(localId)) {
+    throw new Error(`Invalid UI item id "${localId}" for extension "${extId}"`);
+  }
+  if (localId.startsWith(`${extId}:`)) return localId;
+  return `${extId}:${localId}`;
+}
+
+function extPriority(extId, orderList) {
+  if (!extId) return -1;
+  const idx = orderList.indexOf(extId);
+  return idx === -1 ? orderList.length : idx;
+}
+
+function compareExtEntries(a, b, orderList) {
+  const pa = extPriority(a.extId, orderList);
+  const pb = extPriority(b.extId, orderList);
+  if (pa !== pb) return pa - pb;
+  return (a._seq ?? 0) - (b._seq ?? 0);
+}
+
+/**
+ * @typedef {{ id: string, extId?: string | null, _replacements?: Array<{ extId: string, [key: string]: unknown }>, [key: string]: unknown }} ReconciledItem
+ */
+
+/**
+ * Pure slot reconciliation:
+ * 1. Apply `replace` wrappers onto matching items (in `extOrder` order; last wins, with `Default` wrapper chaining).
+ * 2. Place `add` extension items via topological `before`/`after` chains (with cycle breaking & missing-target append).
+ * 3. Apply extension `hide` entries and user `slotOverride` (`pinned` → `order` → remaining built-ins/extensions → minus `hidden`).
+ * 4. If `options.requireNonEmpty` is true and hiding removes every item, fall back to the first built-in/item.
+ *
+ * @param {Array<{ id: string, [key: string]: unknown }>} builtIns
+ * @param {Array<Record<string, unknown>>} [extensions]
+ * @param {{ order?: string[], hidden?: string[], pinned?: string[] } | null} [slotOverride]
+ * @param {{ extensionOrder?: string[], requireNonEmpty?: boolean }} [options]
+ * @returns {ReconciledItem[]}
+ */
+export function reconcileItems(builtIns, extensions = [], slotOverride = null, options = {}) {
+  const orderList = options.extensionOrder ?? extensionOrderSignal.value;
+  const sortedExts = [...extensions].sort((a, b) => compareExtEntries(a, b, orderList));
+
+  const replacementsByTarget = new Map();
+  const hiddenByExt = new Set();
+  const additions = [];
+
+  for (const ext of sortedExts) {
+    if (ext.mode === 'hide' || ext.hide) {
+      const target = typeof ext.hide === 'string' ? ext.hide : ext.target;
+      if (target) hiddenByExt.add(target);
+      continue;
+    }
+    if (ext.mode === 'replace' || ext.replace) {
+      const target = typeof ext.replace === 'string' ? ext.replace : ext.target;
+      if (!target) continue;
+      let list = replacementsByTarget.get(target);
+      if (!list) {
+        list = [];
+        replacementsByTarget.set(target, list);
+      } else {
+        console.warn(
+          `[foundry-ui] multiple extensions replaced "${target}" (${list[list.length - 1].extId} then ${ext.extId}); last wins with Default chaining`,
+        );
+      }
+      list.push(ext);
+      continue;
+    }
+    additions.push(ext);
+  }
+
+  const seenIds = new Set();
+  const ordered = [];
+  for (const item of builtIns) {
+    if (!item?.id || seenIds.has(item.id)) continue;
+    seenIds.add(item.id);
+    const reps = replacementsByTarget.get(item.id);
+    ordered.push(reps ? { ...item, _replacements: reps } : item);
+  }
+
+  // Filter duplicate addition ids and split unanchored vs anchored additions.
+  const validAdditions = [];
+  for (const ext of additions) {
+    if (!ext?.id) continue;
+    if (seenIds.has(ext.id)) {
+      console.warn(`[foundry-ui] duplicate item id "${ext.id}" ignored`);
+      continue;
+    }
+    seenIds.add(ext.id);
+    const reps = replacementsByTarget.get(ext.id);
+    validAdditions.push(reps ? { ...ext, _replacements: reps } : ext);
+  }
+
+  // Place unanchored additions at the end first so anchored items targeting them resolve cleanly.
+  const anchored = [];
+  for (const ext of validAdditions) {
+    if (ext.before || ext.after) anchored.push(ext);
+    else ordered.push(ext);
+  }
+
+  // Track trailing span of items inserted immediately `after` each anchor so multiple `after: X` preserve order.
+  const afterTail = new Map();
+  const placeItem = (item) => {
+    if (item.before) {
+      const idx = ordered.findIndex((x) => x.id === item.before);
+      if (idx === -1) return false;
+      ordered.splice(idx, 0, item);
+      return true;
+    }
+    if (item.after) {
+      const tailId = afterTail.get(item.after) ?? item.after;
+      const idx = ordered.findIndex((x) => x.id === tailId);
+      if (idx === -1) return false;
+      ordered.splice(idx + 1, 0, item);
+      afterTail.set(item.after, item.id);
+      return true;
+    }
+    ordered.push(item);
+    return true;
+  };
+
+  let remaining = anchored;
+  while (remaining.length > 0) {
+    const nextRemaining = [];
+    let progressed = false;
+    for (const item of remaining) {
+      if (placeItem(item)) progressed = true;
+      else nextRemaining.push(item);
+    }
+    if (!progressed) {
+      // Break cycle or append missing-target anchor deterministically.
+      const fallback = nextRemaining.shift();
+      const target = fallback.before ?? fallback.after;
+      if (nextRemaining.some((x) => x.id === target)) {
+        console.warn(
+          `[foundry-ui] cyclic before/after placement involving "${fallback.id}" -> "${target}"; breaking deterministically`,
+        );
+      }
+      ordered.push(fallback);
+    }
+    remaining = nextRemaining;
+  }
+
+  // Apply user slot override: pinned -> order -> remaining unlisted (additive upgrade).
+  const pinnedIds = Array.isArray(slotOverride?.pinned) ? slotOverride.pinned : [];
+  const orderIds = Array.isArray(slotOverride?.order) ? slotOverride.order : [];
+  const userHidden = new Set(Array.isArray(slotOverride?.hidden) ? slotOverride.hidden : []);
+
+  let arranged = ordered;
+  if (pinnedIds.length > 0 || orderIds.length > 0) {
+    const byId = new Map(ordered.map((item) => [item.id, item]));
+    const picked = new Set();
+    arranged = [];
+    for (const id of pinnedIds) {
+      const item = byId.get(id);
+      if (item && !picked.has(id)) {
+        picked.add(id);
+        arranged.push(item);
+      }
+    }
+    for (const id of orderIds) {
+      const item = byId.get(id);
+      if (item && !picked.has(id)) {
+        picked.add(id);
+        arranged.push(item);
+      }
+    }
+    for (const item of ordered) {
+      if (!picked.has(item.id)) arranged.push(item);
+    }
+  }
+
+  const visible = arranged.filter((item) => !hiddenByExt.has(item.id) && !userHidden.has(item.id));
+  if (visible.length === 0 && options.requireNonEmpty && arranged.length > 0) {
+    const firstBuiltin = arranged.find((item) => !item.extId);
+    return [firstBuiltin ?? arranged[0]];
+  }
+  return visible;
+}
+
+/**
+ * Resolve an active tab/view id against the current reconciled items with a safe fallback.
+ * @param {Array<{ id: string }>} items
+ * @param {string | null | undefined} currentId
+ * @param {string | null} [fallbackId]
+ */
+export function resolveActiveId(items, currentId, fallbackId = null) {
+  if (items.some((item) => item.id === currentId)) return currentId;
+  if (fallbackId && items.some((item) => item.id === fallbackId)) return fallbackId;
+  return items[0]?.id ?? null;
+}
+
+// ---------------------------------------------------------------------------
+// Extension order & cleanup
+// ---------------------------------------------------------------------------
+
+export function setExtensionOrder(extIds) {
+  extensionOrderSignal.value = Array.isArray(extIds) ? [...extIds] : [];
+}
+
+export function unregisterExtension(extId) {
+  const set = disposersByExt.get(extId);
+  if (set) {
+    for (const fn of [...set]) {
+      try {
+        fn();
+      } catch (err) {
+        console.warn(`[foundry-ui] disposer for "${extId}" threw:`, err);
+      }
+    }
+    disposersByExt.delete(extId);
+  }
+  // Defensive sweep so partial state never lingers.
+  extLeftTabs.value = extLeftTabs.peek().filter((x) => x.extId !== extId);
+  extRightTabs.value = extRightTabs.peek().filter((x) => x.extId !== extId);
+  extMainViews.value = extMainViews.peek().filter((x) => x.extId !== extId);
+  sectionExtensions.value = sectionExtensions.peek().filter((x) => x.extId !== extId);
+  extensionCommands.value = extensionCommands.peek().filter((x) => x.extId !== extId);
+  extensionFlags.value = extensionFlags.peek().filter((x) => x.extId !== extId);
+}
+
+/** Register an arbitrary cleanup callback owned by `extId` (used by extension-loader effects/hotkeys). */
+export function registerExtensionDisposer(extId, dispose) {
+  return trackDisposer(extId, dispose);
+}
+
+// ---------------------------------------------------------------------------
+// Built-in registration (bare IDs)
+// ---------------------------------------------------------------------------
+
+function upsertBuiltin(listSignal, def) {
+  const prev = listSignal.peek();
+  const idx = prev.findIndex((x) => x.id === def.id);
+  if (idx === -1) listSignal.value = [...prev, def];
+  else {
+    const next = [...prev];
+    next[idx] = def;
+    listSignal.value = next;
+  }
+}
+
+export function registerBuiltinLeftTab(def) {
+  upsertBuiltin(builtinLeftTabs, { row: 0, wideShare: false, ...def, extId: null });
+}
+
+export function registerBuiltinRightTab(def) {
+  upsertBuiltin(builtinRightTabs, { ...def, extId: null });
+}
+
+export function registerBuiltinMainView(def) {
+  upsertBuiltin(builtinMainViews, { scope: 'workspace', ...def, extId: null });
+}
+
+// ---------------------------------------------------------------------------
+// Extension registration (auto-namespaced `<extId>:<id>`)
+// ---------------------------------------------------------------------------
+
+export function registerLeftTab(extId, def) {
+  const id = namespaceId(extId, def.id);
+  const entry = {
+    row: 1,
+    wideShare: false,
+    ...def,
+    id,
+    extId,
+    _seq: ++seqCounter,
+  };
+  extLeftTabs.value = [...extLeftTabs.peek().filter((x) => x.id !== id), entry];
+  return trackDisposer(extId, () => {
+    extLeftTabs.value = extLeftTabs.peek().filter((x) => x !== entry);
+  });
+}
+
+export function registerRightTab(extId, def) {
+  const id = namespaceId(extId, def.id);
+  const entry = {
+    ...def,
+    id,
+    extId,
+    _seq: ++seqCounter,
+  };
+  extRightTabs.value = [...extRightTabs.peek().filter((x) => x.id !== id), entry];
+  return trackDisposer(extId, () => {
+    extRightTabs.value = extRightTabs.peek().filter((x) => x !== entry);
+  });
+}
+
+export function registerMainView(extId, def) {
+  const scope = def.scope ?? 'workspace';
+  if (!['workspace', 'thread', 'project'].includes(scope)) {
+    throw new Error(`Invalid main view scope "${scope}" (expected workspace | thread | project)`);
+  }
+  const id = namespaceId(extId, def.id);
+  const entry = {
+    fullWidth: scope === 'workspace',
+    ...def,
+    scope,
+    id,
+    extId,
+    _seq: ++seqCounter,
+  };
+  extMainViews.value = [...extMainViews.peek().filter((x) => x.id !== id), entry];
+  return trackDisposer(extId, () => {
+    extMainViews.value = extMainViews.peek().filter((x) => x !== entry);
+  });
+}
+
+export function extendSection(extId, slotId, def) {
+  if (!slotId || typeof slotId !== 'string') throw new Error('slotId is required');
+  let mode = 'add';
+  let id = null;
+  let target = null;
+  if (def.hide) {
+    mode = 'hide';
+    target = typeof def.hide === 'string' ? def.hide : '__slot__';
+  } else if (def.replace) {
+    mode = 'replace';
+    target = typeof def.replace === 'string' ? def.replace : '__slot__';
+  } else {
+    id = namespaceId(extId, def.id ?? `item-${seqCounter + 1}`);
+  }
+  const entry = {
+    ...def,
+    slotId,
+    mode,
+    id,
+    target,
+    extId,
+    _seq: ++seqCounter,
+  };
+  sectionExtensions.value = [...sectionExtensions.peek(), entry];
+  return trackDisposer(extId, () => {
+    sectionExtensions.value = sectionExtensions.peek().filter((x) => x !== entry);
+  });
+}
+
+export function setFlags(extId, componentId, flags) {
+  if (!componentId || typeof componentId !== 'string') throw new Error('componentId is required');
+  if (!flags || typeof flags !== 'object' || Array.isArray(flags)) {
+    throw new Error('flags must be a plain object');
+  }
+  const entry = { extId, componentId, flags: { ...flags }, _seq: ++seqCounter };
+  extensionFlags.value = [...extensionFlags.peek(), entry];
+  return trackDisposer(extId, () => {
+    extensionFlags.value = extensionFlags.peek().filter((x) => x !== entry);
+  });
+}
+
+export function registerCommand(extId, def) {
+  const id = namespaceId(extId, def.id);
+  const entry = {
+    icon: '◆',
+    ...def,
+    id,
+    extId,
+    _seq: ++seqCounter,
+  };
+  extensionCommands.value = [...extensionCommands.peek().filter((x) => x.id !== id), entry];
+  return trackDisposer(extId, () => {
+    extensionCommands.value = extensionCommands.peek().filter((x) => x !== entry);
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Reactive queries
+// ---------------------------------------------------------------------------
+
+/** Resolve component flags with precedence: user `ui.flags` > extension `setFlags` > built-in defaults. */
+export function useComponentFlags(componentId, defaults = {}) {
+  const orderList = extensionOrderSignal.value;
+  const contributed = extensionFlags.value
+    .filter((entry) => entry.componentId === componentId)
+    .sort((a, b) => compareExtEntries(a, b, orderList));
+  const merged = { ...defaults };
+  for (const entry of contributed) Object.assign(merged, entry.flags);
+  const userFlags = uiConfigSignal.value?.flags?.[componentId];
+  if (userFlags && typeof userFlags === 'object') Object.assign(merged, userFlags);
+  return merged;
+}
+
+export function getLeftTabs() {
+  return reconcileItems(
+    builtinLeftTabs.value,
+    extLeftTabs.value,
+    uiConfigSignal.value?.slots?.['leftRail.tabs'],
+    { requireNonEmpty: true },
+  );
+}
+
+export function getLeftTabById(id) {
+  return (
+    builtinLeftTabs.value.find((t) => t.id === id) ??
+    extLeftTabs.value.find((t) => t.id === id) ??
+    null
+  );
+}
+
+/** Group reconciled left-rail tabs into visual rows (row 0, then row 1+). */
+export function getLeftTabRows() {
+  const tabs = getLeftTabs();
+  const row0 = tabs.filter((t) => (t.row ?? 1) === 0);
+  const row1 = tabs.filter((t) => (t.row ?? 1) !== 0);
+  const rows = [];
+  if (row0.length) rows.push(row0);
+  if (row1.length) rows.push(row1);
+  return rows;
+}
+
+export function getRightTabs() {
+  return reconcileItems(
+    builtinRightTabs.value,
+    extRightTabs.value,
+    uiConfigSignal.value?.slots?.['rightPanel.tabs'],
+    { requireNonEmpty: true },
+  );
+}
+
+export function getMainViews(scope = 'workspace') {
+  const builtins = builtinMainViews.value.filter((v) => v.scope === scope);
+  const exts = extMainViews.value.filter((v) => v.scope === scope);
+  const slotKey =
+    scope === 'workspace'
+      ? 'workspace.views'
+      : scope === 'thread'
+        ? 'center.tabs'
+        : 'project.views';
+  return reconcileItems(builtins, exts, uiConfigSignal.value?.slots?.[slotKey], {
+    requireNonEmpty: scope !== 'project',
+  });
+}
+
+export function getSectionItems(slotId, builtInItems) {
+  const exts = sectionExtensions.value.filter((e) => e.slotId === slotId);
+  return reconcileItems(builtInItems, exts, uiConfigSignal.value?.slots?.[slotId]);
+}
+
+export function getSectionSlotExtensions(slotName) {
+  const orderList = extensionOrderSignal.value;
+  const exts = sectionExtensions.value
+    .filter((e) => e.slotId === slotName)
+    .sort((a, b) => compareExtEntries(a, b, orderList));
+  const slotOverride = uiConfigSignal.value?.slots?.[slotName];
+  const hiddenByUser =
+    Array.isArray(slotOverride?.hidden) && slotOverride.hidden.includes('__slot__');
+  let hidden = hiddenByUser;
+  const before = [];
+  const after = [];
+  const replace = [];
+  for (const ext of exts) {
+    if (ext.mode === 'hide') {
+      hidden = true;
+    } else if (ext.mode === 'replace') {
+      replace.push(ext);
+    } else if (ext.before === true) {
+      before.push(ext);
+    } else {
+      after.push(ext);
+    }
+  }
+  return { before, replace, after, hidden };
+}
+
+export function getExtensionCommands() {
+  const orderList = extensionOrderSignal.value;
+  return [...extensionCommands.value].sort((a, b) => compareExtEntries(a, b, orderList));
+}
+
+export function getAllBuiltinSlotsMetadata() {
+  return {
+    leftTabs: builtinLeftTabs.value.map((t) => ({ id: t.id, label: t.label })),
+    rightTabs: builtinRightTabs.value.map((t) => ({ id: t.id, label: t.label })),
+    workspaceViews: builtinMainViews.value
+      .filter((v) => v.scope === 'workspace')
+      .map((v) => ({ id: v.id, label: v.label })),
+  };
+}
+
+/** Test helper: reset all registry state. */
+export function _resetRegistryForTests() {
+  for (const extId of [...disposersByExt.keys()]) unregisterExtension(extId);
+  builtinLeftTabs.value = [];
+  extLeftTabs.value = [];
+  builtinRightTabs.value = [];
+  extRightTabs.value = [];
+  builtinMainViews.value = [];
+  extMainViews.value = [];
+  sectionExtensions.value = [];
+  extensionCommands.value = [];
+  extensionFlags.value = [];
+  extensionOrderSignal.value = [];
+  uiConfigSignal.value = {};
+  extensionsReady.value = false;
+  seqCounter = 0;
+}

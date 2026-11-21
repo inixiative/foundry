@@ -12,6 +12,28 @@
 
 import { signal } from './lib.js';
 
+/** Captured once at boot: `?safe-ui=1` disables custom CSS and local UI extensions across navigation. */
+export const SAFE_UI =
+  typeof location !== 'undefined' && new URLSearchParams(location.search).get('safe-ui') === '1';
+
+if (SAFE_UI && typeof document !== 'undefined') {
+  const link = document.getElementById('foundry-custom-theme');
+  if (link) link.disabled = true;
+}
+
+/** Preserve `?safe-ui=1` on any path/hash URL when safe UI mode is active. */
+export function withSafeUi(url) {
+  if (!SAFE_UI) return url;
+  const hashIdx = url.indexOf('#');
+  const base = hashIdx === -1 ? url : url.slice(0, hashIdx);
+  const hash = hashIdx === -1 ? '' : url.slice(hashIdx);
+  const qIdx = base.indexOf('?');
+  if (qIdx === -1) return `${base}?safe-ui=1${hash}`;
+  const params = new URLSearchParams(base.slice(qIdx + 1));
+  if (params.get('safe-ui') !== '1') params.set('safe-ui', '1');
+  return `${base.slice(0, qIdx)}?${params.toString()}${hash}`;
+}
+
 /**
  * Settings sections in nav order: [id, label, group?, comingSoon?, keys?]. A group heads the sections
  * under it in the nav; a coming-soon section says so instead of showing controls. `keys` are the
@@ -19,6 +41,7 @@ import { signal } from './lib.js';
  */
 export const FOUNDRY_SETTINGS = [
   ['profile', 'Profile', null, false, ['installationName', 'installationIcon']],
+  ['appearance', 'Appearance', null, false, ['ui']],
   ['messagebox', 'Message box', null, false, ['messageBox']],
   [
     'providers',
@@ -112,7 +135,8 @@ function routePath(next) {
 }
 
 export const route = signal(parseRoute(location.pathname));
-if (route.value.page !== 'workspace') history.replaceState(null, '', routePath(route.value));
+if (route.value.page !== 'workspace')
+  history.replaceState(null, '', withSafeUi(routePath(route.value)));
 
 /** Leaving the workspace keeps its hash so returning restores the same view. */
 let workspaceHash = route.value.page === 'workspace' ? location.hash : '';
@@ -120,8 +144,8 @@ let workspaceHash = route.value.page === 'workspace' ? location.hash : '';
 export function navigate(path) {
   if (route.value.page === 'workspace') workspaceHash = location.hash;
   const next = parseRoute(new URL(path, location.origin).pathname);
-  const url = next.page === 'workspace' ? `/${workspaceHash}` : routePath(next);
-  if (url !== location.pathname + location.hash) history.pushState(null, '', url);
+  const url = withSafeUi(next.page === 'workspace' ? `/${workspaceHash}` : routePath(next));
+  if (url !== location.pathname + location.search + location.hash) history.pushState(null, '', url);
   route.value = next;
 }
 

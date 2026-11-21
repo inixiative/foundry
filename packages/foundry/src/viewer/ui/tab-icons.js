@@ -33,8 +33,19 @@ const PATHS = {
   feedback: html`<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /><path d="M13 8H7M17 12H7" />`,
 };
 
-export function TabIcon({ tab }) {
-  const path = PATHS[tab];
-  if (!path) return null;
+const FALLBACK_PATH = html`<rect x="3" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="3" width="7" height="7" rx="1.5" /><rect x="3" y="14" width="7" height="7" rx="1.5" /><rect x="14" y="14" width="7" height="7" rx="1.5" />`;
+
+export function TabIcon({ tab, icon }) {
+  if (icon) {
+    if (typeof icon === 'string') {
+      if (PATHS[icon]) {
+        return html`<svg class="tab-icon" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${PATHS[icon]}</svg>`;
+      }
+      return html`<span class="tab-icon tab-icon--glyph" aria-hidden="true">${icon}</span>`;
+    }
+    if (typeof icon === 'function') return icon();
+    return icon;
+  }
+  const path = PATHS[tab] ?? FALLBACK_PATH;
   return html`<svg class="tab-icon" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${path}</svg>`;
 }

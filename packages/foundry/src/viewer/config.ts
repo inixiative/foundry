@@ -127,6 +127,7 @@ import {
   readRepositorySettings,
   resolveProjectView,
 } from './config-resolve';
+import { CUSTOM_UI_SLUG } from './theme-files';
 
 // ---------------------------------------------------------------------------
 // Settings config model — serializable representation of system configuration
@@ -270,6 +271,8 @@ export interface FoundryConfig {
     /** Show a message box per open view (Thread, /btw, /aside) instead of one box with a destination label. */
     separateViews?: boolean;
   };
+  /** Personal viewer customization: custom theme, opt-in local extensions, per-slot layout, and component display flags. Local only. */
+  ui?: UiSettingsConfig;
 
   /**
    * Global agent templates (keyed by agent ID).
@@ -740,6 +743,28 @@ export interface TunnelSettingsConfig {
   subdomain?: string;
 }
 
+/** Per-slot layout overrides for a viewer surface: pinned items, custom order, and hidden item ids. */
+export interface UiSlotOverride {
+  /** Item ids in preferred order; unlisted new built-ins still appear after these. */
+  order?: string[];
+  /** Item ids hidden from this slot. */
+  hidden?: string[];
+  /** Item ids pinned at the start of this slot. */
+  pinned?: string[];
+}
+
+/** Personal viewer customization: custom theme, opt-in local extensions, slot layout, and component flags. */
+export interface UiSettingsConfig {
+  /** Named custom theme slug under `<configDir>/ui/themes/<slug>.css`, or null to use default `theme.css`. */
+  theme?: string | null;
+  /** Explicit opt-in list of local extension ids under `<configDir>/ui/extensions/` to load in the viewer. */
+  extensions?: string[];
+  /** Per-slot layout overrides (`order`, `hidden`, `pinned`) keyed by slot id. */
+  slots?: Record<string, UiSlotOverride>;
+  /** Per-component display and behavior toggles, keyed by component id then flag name. */
+  flags?: Record<string, Record<string, boolean | string | number>>;
+}
+
 // ---------------------------------------------------------------------------
 // Project creation helper — just give it a path
 // ---------------------------------------------------------------------------
@@ -1124,6 +1149,7 @@ export function validateConfig(config: FoundryConfig): void {
   }
   validateLearningSettings(config.learning);
   validateJournalSettings(config.journal);
+  validateUiSettings(config.ui);
   validateFeedbackSettings('feedback', config.feedback);
   validateSecretsSettings('secrets', config.secrets);
   validateLoginPoolReferences(config);
@@ -1278,6 +1304,7 @@ const PERSONAL_PROJECT_SETTINGS: Readonly<Record<string, string>> = {
     'Decision roles run on this machine’s subscription; a cloned repository can’t move them to a paid API',
   'defaults.decisionModel':
     'Decision roles run on this machine’s subscription; a cloned repository can’t move them to a paid API',
+  ui: 'Viewer themes, extensions, slot layout, and display flags are personal to this machine; a repository cannot set them',
 };
 
 /** What a repository's agent may not set: where it runs and how it samples stay this machine's. */
@@ -1656,6 +1683,10 @@ export class ConfigStore {
         // Explicit opt-in to API-key providers; absent or false is subscription-only.
         if (patch.enabled === true) next.apiTokens = true;
         else delete next.apiTokens;
+      } else if (section === 'ui') {
+        const merged = patchUiSettings(next.ui, patch);
+        if (merged && Object.keys(merged).length > 0) next.ui = merged;
+        else delete next.ui;
       }
     }, expectedRevision);
   }
@@ -1837,6 +1868,187 @@ function validateJournalSettings(journal: JournalSettings | undefined): void {
   const days = journal.rawMiddlewareDays;
   if (days !== undefined && (!Number.isFinite(days) || days < 0))
     throw Error('journal.rawMiddlewareDays must be a number of days, 0 or more');
+}
+
+const UI_SETTING_KEYS = new Set(['theme', 'extensions', 'slots', 'flags']);
+const UI_SLOT_KEYS = new Set(['order', 'hidden', 'pinned']);
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function assertSafeUiKey(where: string, key: string): void {
+  if (
+    !key ||
+    key.length > 128 ||
+    UNSAFE_SETTING_SEGMENTS.has(key) ||
+    key.split('.').some((segment) => UNSAFE_SETTING_SEGMENTS.has(segment))
+  ) {
+    throw Error(`${where}: unsafe or invalid key ${JSON.stringify(key)}`);
+  }
+}
+
+function validateUiSettings(ui: UiSettingsConfig | undefined): void {
+  if (ui === undefined) return;
+  if (!isPlainRecord(ui)) throw Error('ui must be an object');
+  for (const key of Object.keys(ui)) {
+    assertSafeUiKey('ui', key);
+    if (!UI_SETTING_KEYS.has(key)) throw Error(`ui.${key} is not a ui setting`);
+  }
+  if (ui.theme !== undefined && ui.theme !== null) {
+    if (typeof ui.theme !== 'string' || !CUSTOM_UI_SLUG.test(ui.theme))
+      throw Error('ui.theme must match /^[a-z0-9][a-z0-9_-]{0,63}$/ or be null');
+  }
+  if (ui.extensions !== undefined) {
+    if (!Array.isArray(ui.extensions))
+      throw Error('ui.extensions must be an array of extension ids');
+    for (const id of ui.extensions) {
+      if (typeof id !== 'string' || !CUSTOM_UI_SLUG.test(id))
+        throw Error(
+          `ui.extensions entry ${JSON.stringify(id)} must match /^[a-z0-9][a-z0-9_-]{0,63}$/`,
+        );
+    }
+  }
+  if (ui.slots !== undefined) {
+    if (!isPlainRecord(ui.slots)) throw Error('ui.slots must be an object keyed by slot id');
+    for (const [slotId, override] of Object.entries(ui.slots)) {
+      assertSafeUiKey('ui.slots', slotId);
+      if (!isPlainRecord(override))
+        throw Error(`ui.slots.${slotId} must be { order?, hidden?, pinned? }`);
+      for (const [field, value] of Object.entries(override)) {
+        assertSafeUiKey(`ui.slots.${slotId}`, field);
+        if (!UI_SLOT_KEYS.has(field))
+          throw Error(`ui.slots.${slotId}.${field} is not a slot override key`);
+        if (value !== undefined) {
+          if (
+            !Array.isArray(value) ||
+            !value.every(
+              (item) =>
+                typeof item === 'string' &&
+                item.length > 0 &&
+                item.length <= 128 &&
+                !UNSAFE_SETTING_SEGMENTS.has(item),
+            )
+          ) {
+            throw Error(`ui.slots.${slotId}.${field} must be an array of non-empty item ids`);
+          }
+        }
+      }
+    }
+  }
+  if (ui.flags !== undefined) {
+    if (!isPlainRecord(ui.flags)) throw Error('ui.flags must be an object keyed by component id');
+    for (const [componentId, flagMap] of Object.entries(ui.flags)) {
+      assertSafeUiKey('ui.flags', componentId);
+      if (!isPlainRecord(flagMap))
+        throw Error(`ui.flags.${componentId} must be an object of flag values`);
+      for (const [flagKey, value] of Object.entries(flagMap)) {
+        assertSafeUiKey(`ui.flags.${componentId}`, flagKey);
+        const validPrimitive =
+          typeof value === 'boolean' ||
+          typeof value === 'string' ||
+          (typeof value === 'number' && Number.isFinite(value));
+        if (!validPrimitive)
+          throw Error(
+            `ui.flags.${componentId}.${flagKey} must be a boolean, string, or finite number`,
+          );
+      }
+    }
+  }
+}
+
+function patchUiSettings(
+  existing: UiSettingsConfig | undefined,
+  patch: Record<string, unknown>,
+): UiSettingsConfig {
+  const next: Record<string, unknown> = existing
+    ? { ...(structuredClone(existing) as Record<string, unknown>) }
+    : {};
+  for (const [key, value] of Object.entries(patch)) {
+    assertSafeUiKey('ui', key);
+    if (key === 'theme') {
+      if (value === null) delete next.theme;
+      else next.theme = value;
+      continue;
+    }
+    if (key === 'extensions') {
+      if (value === null) delete next.extensions;
+      else next.extensions = value;
+      continue;
+    }
+    if (key === 'slots') {
+      if (value === null) {
+        delete next.slots;
+        continue;
+      }
+      if (!isPlainRecord(value)) {
+        next.slots = value;
+        continue;
+      }
+      const slots: Record<string, unknown> = isPlainRecord(next.slots) ? { ...next.slots } : {};
+      for (const [slotId, slotPatch] of Object.entries(value)) {
+        assertSafeUiKey('ui.slots', slotId);
+        if (slotPatch === null) {
+          delete slots[slotId];
+          continue;
+        }
+        if (!isPlainRecord(slotPatch)) {
+          slots[slotId] = slotPatch;
+          continue;
+        }
+        const mergedSlot: Record<string, unknown> = isPlainRecord(slots[slotId])
+          ? { ...(slots[slotId] as Record<string, unknown>) }
+          : {};
+        for (const [field, fieldVal] of Object.entries(slotPatch)) {
+          assertSafeUiKey(`ui.slots.${slotId}`, field);
+          if (fieldVal === null) delete mergedSlot[field];
+          else mergedSlot[field] = fieldVal;
+        }
+        if (Object.keys(mergedSlot).length === 0) delete slots[slotId];
+        else slots[slotId] = mergedSlot;
+      }
+      if (Object.keys(slots).length === 0) delete next.slots;
+      else next.slots = slots;
+      continue;
+    }
+    if (key === 'flags') {
+      if (value === null) {
+        delete next.flags;
+        continue;
+      }
+      if (!isPlainRecord(value)) {
+        next.flags = value;
+        continue;
+      }
+      const flags: Record<string, unknown> = isPlainRecord(next.flags) ? { ...next.flags } : {};
+      for (const [compId, compPatch] of Object.entries(value)) {
+        assertSafeUiKey('ui.flags', compId);
+        if (compPatch === null) {
+          delete flags[compId];
+          continue;
+        }
+        if (!isPlainRecord(compPatch)) {
+          flags[compId] = compPatch;
+          continue;
+        }
+        const mergedComp: Record<string, unknown> = isPlainRecord(flags[compId])
+          ? { ...(flags[compId] as Record<string, unknown>) }
+          : {};
+        for (const [flagKey, flagVal] of Object.entries(compPatch)) {
+          assertSafeUiKey(`ui.flags.${compId}`, flagKey);
+          if (flagVal === null) delete mergedComp[flagKey];
+          else mergedComp[flagKey] = flagVal;
+        }
+        if (Object.keys(mergedComp).length === 0) delete flags[compId];
+        else flags[compId] = mergedComp;
+      }
+      if (Object.keys(flags).length === 0) delete next.flags;
+      else next.flags = flags;
+      continue;
+    }
+    next[key] = value;
+  }
+  return next as UiSettingsConfig;
 }
 
 /** The Kingdom project a Kingdom-capacity login bills: the project's link, when it is on the same Kingdom. */

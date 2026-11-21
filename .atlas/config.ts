@@ -53,11 +53,14 @@ export default defineConfig({
     { include: `${FOUNDRY}/classify/charters/*.ts`, kind: 'definition' },
     { include: `${UI}/store.js`, kind: 'store' },
     { include: `${UI}/app.js`, kind: 'entrypoint' },
-    { include: `${UI}/{lib,route,hotkeys,dev-mode}.js`, kind: 'utils' },
+    {
+      include: `${UI}/{lib,route,hotkeys,dev-mode,error-boundary,ui-registry,slot,extension-loader}.js`,
+      kind: 'utils',
+    },
     { include: `${UI}/{ws-client,data-stream-socket}.js`, kind: 'client' },
     {
       include: `${UI}/*.js`,
-      exclude: `${UI}/{store,app,lib,route,hotkeys,dev-mode,ws-client,data-stream-socket}.js`,
+      exclude: `${UI}/{store,app,lib,route,hotkeys,dev-mode,error-boundary,ui-registry,slot,extension-loader,ws-client,data-stream-socket}.js`,
       kind: 'component',
     },
 
@@ -305,7 +308,10 @@ export default defineConfig({
     { include: `${UI}/{feedback}.js`, partOf: 'feature:feedback' },
     { include: `${UI}/devices.js`, partOf: 'feature:devices' },
     { include: `${UI}/analytics.js`, partOf: 'feature:usage' },
-    { include: `${UI}/{settings,provider-settings,wizard}.js`, partOf: 'primitive:settings' },
+    {
+      include: `${UI}/{settings,provider-settings,appearance-settings,wizard}.js`,
+      partOf: 'primitive:settings',
+    },
     {
       include: `${UI}/{ws-client,data-stream-socket,live-state}.js`,
       partOf: 'primitive:websockets',

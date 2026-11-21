@@ -1,0 +1,189 @@
+/* Composable UI: extension crash fallback, Appearance settings, header dividers & compact mode. */
+
+.ext-error-fallback {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border: 1px solid var(--err, #ef4444);
+  border-radius: 6px;
+  background: var(--surface2);
+  color: var(--text);
+  font-size: 12px;
+  max-width: 100%;
+}
+.ext-error-label {
+  font-weight: 600;
+  color: var(--err, #ef4444);
+}
+.ext-error-msg {
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 240px;
+}
+.ext-error-actions {
+  display: inline-flex;
+  gap: 4px;
+  margin-left: auto;
+}
+.ext-error-btn {
+  padding: 2px 8px;
+  border: 1px solid var(--line2);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.ext-error-btn:hover {
+  border-color: var(--accent);
+}
+.ext-error-btn--disable {
+  color: var(--err, #ef4444);
+}
+
+/* CSS dividers in .header-right — no orphan divider nodes when items are hidden or reordered. */
+.header-right > * + .header-div-before {
+  position: relative;
+  margin-left: 8px;
+}
+.header-right > * + .header-div-before::before {
+  content: "";
+  position: absolute;
+  left: -8px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 1px;
+  height: 20px;
+  background: var(--line2);
+  pointer-events: none;
+}
+
+/* Fallback glyph icon sizing for custom right-panel tabs. */
+.tab-icon--glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  font-size: 12px;
+  line-height: 1;
+}
+
+/* Compact message spacing when conversation.compactMessages flag is enabled. */
+.conversation--compact .chat-msg {
+  padding-top: 6px;
+  padding-bottom: 6px;
+  margin-bottom: 4px;
+}
+
+/* Appearance settings page */
+.appearance-section {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.appearance-banner {
+  padding: 10px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--warn, #f59e0b);
+  background: var(--surface2);
+  color: var(--text);
+  font-size: 12.5px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.appearance-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+.appearance-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface2);
+}
+.appearance-row-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.appearance-row-title {
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.appearance-row-meta {
+  font-size: 11.5px;
+  color: var(--text-dim);
+}
+.appearance-row-error {
+  font-size: 11.5px;
+  color: var(--err, #ef4444);
+}
+.appearance-badge {
+  font-size: 10.5px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--line2);
+  color: var(--text-dim);
+}
+.appearance-badge--active {
+  color: var(--ok, #22c55e);
+  border-color: var(--ok, #22c55e);
+}
+.appearance-badge--error {
+  color: var(--err, #ef4444);
+  border-color: var(--err, #ef4444);
+}
+.appearance-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+.appearance-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface2);
+  font-size: 12px;
+  cursor: pointer;
+}
+.appearance-slot-group {
+  margin-top: 10px;
+}
+.appearance-slot-group h4 {
+  margin: 0 0 4px;
+  font-size: 12px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.appearance-actions-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}

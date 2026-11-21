@@ -73,7 +73,7 @@ export function UpdateNotice() {
     ? ` · ${turns(state.waiting)} waiting to start after the restart`
     : '';
   const title = state.reason ? `Restart${waiting}` : `Update ${short(state.candidate)}${waiting}`;
-  return html`<span class="update-notice" title=${title}>
+  return html`<span class="update-notice header-item--keep" title=${title}>
     <span class="update-notice-text" role="status">${line}</span>
     ${
       state.phase === 'spinning-down'

@@ -8,6 +8,7 @@
  * Fuzzy-matches against available commands and recent actions.
  */
 
+import { safeCall } from './error-boundary.js';
 import { html, useEffect, useRef, useState } from './lib.js';
 import { analyticsPath, navigate, settingsPath } from './route.js';
 import { MODES, ModeIcon, StatusLegend } from './status-icons.js';
@@ -23,6 +24,7 @@ import {
   toggleBoard,
   toggleGraphPanel,
 } from './store.js';
+import { getExtensionCommands } from './ui-registry.js';
 
 const COMMANDS = [
   { id: 'pause', label: 'Pause thread', icon: '⏸', action: () => executeAction('thread:pause') },
@@ -118,7 +120,13 @@ export function CommandPalette() {
 
   if (!isOpen) return null;
 
-  const commands = [...COMMANDS, ...workerCommands];
+  const extCommands = getExtensionCommands().map((cmd) => ({
+    id: cmd.id,
+    label: cmd.label ?? cmd.id,
+    icon: cmd.icon ?? '◆',
+    action: () => safeCall(cmd.extId, () => cmd.action?.(), undefined, 'command'),
+  }));
+  const commands = [...COMMANDS, ...workerCommands, ...extCommands];
   const filtered = query.trim()
     ? commands.filter(
         (c) =>

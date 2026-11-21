@@ -13,6 +13,7 @@
 
 import { AboutSection } from './about-settings.js';
 import { AccessSettings } from './access-settings.js';
+import { AppearanceSection } from './appearance-settings.js';
 import { ArchiveSettings, ProjectArchive } from './archive-settings.js';
 import { ComingSoon } from './coming-soon.js';
 import { ProjectConversations } from './conversation-members.js';
@@ -611,6 +612,8 @@ function FoundrySection({ section, config }) {
     label: p.label || id,
   }));
   if (section === 'profile') return html`<${ProfileSection} onSaved=${saved} />`;
+  if (section === 'appearance')
+    return html`<${AppearanceSection} config=${config} onSaved=${saved} />`;
   if (section === 'messagebox')
     return html`<${MessageBoxSection} config=${settingsConfig.value} onSave=${async (patch) => {
       const res = await authFetch('/api/settings/messageBox', {

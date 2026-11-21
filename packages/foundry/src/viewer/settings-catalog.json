@@ -180,6 +180,46 @@
     "description": "Show a message box per open view (Thread, /btw, /aside) instead of one box with a destination label."
   },
   {
+    "path": "ui",
+    "scope": "foundry",
+    "description": "Personal viewer customization: custom theme, opt-in local extensions, per-slot layout, and component display flags. Local only."
+  },
+  {
+    "path": "ui.theme",
+    "scope": "foundry",
+    "description": "Named custom theme slug under `<configDir>/ui/themes/<slug>.css`, or null to use default `theme.css`."
+  },
+  {
+    "path": "ui.extensions",
+    "scope": "foundry",
+    "description": "Explicit opt-in list of local extension ids under `<configDir>/ui/extensions/` to load in the viewer."
+  },
+  {
+    "path": "ui.slots",
+    "scope": "foundry",
+    "description": "Per-slot layout overrides (`order`, `hidden`, `pinned`) keyed by slot id."
+  },
+  {
+    "path": "ui.slots.*.order",
+    "scope": "foundry",
+    "description": "Item ids in preferred order; unlisted new built-ins still appear after these."
+  },
+  {
+    "path": "ui.slots.*.hidden",
+    "scope": "foundry",
+    "description": "Item ids hidden from this slot."
+  },
+  {
+    "path": "ui.slots.*.pinned",
+    "scope": "foundry",
+    "description": "Item ids pinned at the start of this slot."
+  },
+  {
+    "path": "ui.flags",
+    "scope": "foundry",
+    "description": "Per-component display and behavior toggles, keyed by component id then flag name."
+  },
+  {
     "path": "agents",
     "scope": "foundry",
     "description": "Global agent templates (keyed by agent ID). Projects inherit these by id; a project override of the same id wins. A fresh install is seeded from defaultAgents(): one executor."

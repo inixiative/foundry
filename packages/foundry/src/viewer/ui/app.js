@@ -16,6 +16,8 @@ import { CommandPalette, HelpOverlay } from './command-palette.js';
 import { initComposerFocus } from './composer-focus.js';
 import { Conversation } from './conversation.js';
 import { DevicePage } from './device-page.js';
+import { ExtensionBoundary, safeCall } from './error-boundary.js';
+import { disableExtension, initUiExtensions } from './extension-loader.js';
 import { FeedbackInbox } from './feedback.js';
 import { GlossReview } from './gloss.js';
 import { initHotkeys, registerDefaults } from './hotkeys.js';
@@ -39,7 +41,9 @@ import {
 import { RunPickers } from './run-picker.js';
 import { SearchPage } from './search.js';
 import { loadSettings, SettingsPage, settingsConfig } from './settings.js';
+import { SectionList } from './slot.js';
 import {
+  activeCustomView,
   activePanel,
   activeProjectId,
   activeThreadId,
@@ -62,6 +66,7 @@ import {
   inspectLayer,
   inspectTarget,
   loadTraces,
+  openCustomView,
   openRightTab,
   projectHomeOpen,
   projectPage,
@@ -76,6 +81,7 @@ import {
   scopeProjectId,
   selectedEvent,
   selectedSpanId,
+  showThreadsWorkspace,
   showThreadView,
   toggleBoard,
   toggleGraphPanel,
@@ -85,6 +91,7 @@ import {
 } from './store.js';
 import { ThreadAgentsModals } from './thread-agents.js';
 import { SystemToast } from './toast.js';
+import { getMainViews, registerBuiltinMainView } from './ui-registry.js';
 import { UpdateNotice } from './update-notice.js';
 import { Watchtower } from './watchtower.js';
 import { checkSetupNeeded, Wizard, wizardOpen } from './wizard.js';
@@ -113,23 +120,44 @@ function SearchButton() {
 }
 
 /** The selected scope, centered in the header: a project's name, else Global / Forge Master / Feedback (or Foundry off the workspace). */
+registerBuiltinMainView({ id: 'threads', label: 'Threads', key: 't', scope: 'workspace' });
+registerBuiltinMainView({ id: 'board', label: 'Board', key: 'b', scope: 'workspace' });
+registerBuiltinMainView({ id: 'watchtower', label: 'Watchtower', key: 'h', scope: 'workspace' });
+
 /**
- * Threads · Board · Watchtower: one segmented switch with its keys (concept-v4). The Board carries
- * the orange and red counts (attention.js), top-level threads only.
+ * Threads · Board · Watchtower (plus any extension workspace views): one segmented switch with its keys.
+ * The Board carries the orange and red counts (attention.js), top-level threads only.
  */
 function WorkspaceSwitch() {
   const board = boardOpen.value;
   const tower = watchtowerOpen.value;
+  const customView = activeCustomView.value;
+  const views = getMainViews('workspace');
+  const ctx = { activeThreadId: activeThreadId.value, activeProjectId: activeProjectId.value };
   return html`<span class="ws-seg" role="group" aria-label="Workspace view">
-    <button type="button" class=${!board && !tower ? 'is-active' : ''} title="Threads (t)"
-      onClick=${() => {
-        boardOpen.value = false;
-        watchtowerOpen.value = false;
-      }}>Threads<kbd>T</kbd></button>
-    <button type="button" class="board-button ${board ? 'is-active' : ''}" title="The attention board (b)"
-      onClick=${toggleBoard}>Board<${Attention} nodes=${openRoots()} /><kbd>B</kbd></button>
-    <button type="button" class="watchtower-button ${tower ? 'is-active' : ''}" title="Watchtower: work by stage (h)"
-      onClick=${toggleWatchtower}>Watchtower<kbd>H</kbd></button>
+    ${views.map((view) => {
+      if (view.id === 'threads') {
+        const active = !board && !tower && !customView;
+        return html`<button key="threads" type="button" class=${active ? 'is-active' : ''} title="Threads (t)"
+          onClick=${showThreadsWorkspace}>${view.label}<kbd>T</kbd></button>`;
+      }
+      if (view.id === 'board') {
+        return html`<button key="board" type="button" class="board-button ${board ? 'is-active' : ''}" title="The attention board (b)"
+          onClick=${toggleBoard}>${view.label}<${Attention} nodes=${openRoots()} /><kbd>B</kbd></button>`;
+      }
+      if (view.id === 'watchtower') {
+        return html`<button key="watchtower" type="button" class="watchtower-button ${tower ? 'is-active' : ''}" title="Watchtower: work by stage (h)"
+          onClick=${toggleWatchtower}>${view.label}<kbd>H</kbd></button>`;
+      }
+      const badge =
+        typeof view.badge === 'function'
+          ? safeCall(view.extId, () => view.badge(ctx), null, 'mainView.badge')
+          : null;
+      return html`<button key=${view.id} type="button" class="ws-custom-button ${customView === view.id ? 'is-active' : ''}"
+        data-view-id=${view.id}
+        title=${view.key ? `${view.label} (${view.key})` : view.label}
+        onClick=${() => openCustomView(view.id)}>${view.label}${badge ? html` <span class="ws-custom-badge">${badge}</span>` : null}${view.key ? html`<kbd>${view.key.toUpperCase()}</kbd>` : null}</button>`;
+    })}
   </span>`;
 }
 
@@ -139,11 +167,10 @@ function WorkspaceSwitch() {
  */
 function OpenPill() {
   const roots = openListRoots();
-  return html`<button type="button" class="top-pill open-pill" title="Your open threads"
+  return html`<button type="button" class="top-pill open-pill header-item--keep header-item--keep-sm" title="Your open threads"
     onClick=${() => {
       railView.value = 'open';
-      boardOpen.value = false;
-      watchtowerOpen.value = false;
+      showThreadsWorkspace();
     }}><span class="top-pill-dot"></span>Open<span class="top-pill-count">${roots.length}</span><${Attention} nodes=${openRoots()} /></button>`;
 }
 
@@ -160,8 +187,8 @@ function KingdomPill() {
   const kingdoms = settingsConfig.value?.kingdomIntegrations ?? [];
   const url = kingdoms.find((k) => k?.url)?.url;
   if (!kingdoms.length || !url)
-    return html`<a class="top-pill" href=${settingsPath(null, 'kingdom')} onClick=${onLink}>${KINGDOM_ICON}Connect to Kingdom</a>`;
-  return html`<a class="top-pill" href=${`${new URL(url).origin}/dashboard`} target="_blank" rel="noopener" title="Open Kingdom in a new window">${KINGDOM_ICON}Kingdom</a>`;
+    return html`<a class="top-pill header-div-before" href=${settingsPath(null, 'kingdom')} onClick=${onLink}>${KINGDOM_ICON}Connect to Kingdom</a>`;
+  return html`<a class="top-pill header-div-before" href=${`${new URL(url).origin}/dashboard`} target="_blank" rel="noopener" title="Open Kingdom in a new window">${KINGDOM_ICON}Kingdom</a>`;
 }
 
 function IncomingIndicator() {
@@ -187,7 +214,7 @@ function IncomingIndicator() {
   const count = requests.length;
   // Esc is handled on the anchor too: focus is on its button after the click, so the first key
   // works even before the document listener above is attached.
-  return html`<div class="incoming-anchor" ref=${ref} onKeyDown=${(e) => {
+  return html`<div class="incoming-anchor header-div-before" ref=${ref} onKeyDown=${(e) => {
     if (e.key === 'Escape') setOpen(false);
   }}>
     <button class="incoming-indicator top-pill" aria-expanded=${open} aria-haspopup="dialog"
@@ -206,28 +233,56 @@ function IncomingIndicator() {
 function Header() {
   const isConnected = connected.value;
   const count = eventCount.value;
+  const headerCtx = { page: route.value.page, connected: isConnected, eventCount: count };
+
+  const leftItems = [
+    {
+      id: 'brand',
+      render: () =>
+        html`<span class="header-brand">Foundry<span class="header-brand-dot">.</span></span>`,
+    },
+    { id: 'page-nav', render: () => html`<${PageNav} />` },
+    { id: 'search', render: () => html`<${SearchButton} />` },
+  ];
+
+  const centerItems = [
+    {
+      id: 'workspace-switch',
+      render: () => (route.value.page === 'workspace' ? html`<${WorkspaceSwitch} />` : null),
+    },
+  ];
+
+  const rightItems = [
+    { id: 'update-notice', render: () => html`<${UpdateNotice} />` },
+    { id: 'open-pill', render: () => html`<${OpenPill} />` },
+    { id: 'incoming', render: () => html`<${IncomingIndicator} />` },
+    { id: 'kingdom', render: () => html`<${KingdomPill} />` },
+    {
+      id: 'connection',
+      render: () => html`
+        <span class="status-dot ${isConnected ? 'on' : 'off'}" title=${`${isConnected ? 'Connected to this Foundry' : 'Reconnecting'} · ${count} events · ⌘K commands`} aria-label=${isConnected ? 'Connected' : 'Reconnecting'}></span>
+        ${isConnected ? null : html`<span class="status-text">reconnecting…</span>`}
+      `,
+    },
+    {
+      id: 'help',
+      render: () =>
+        html`<button class="help-btn" aria-label="Help" title="Help (?)" onClick=${() => {
+          helpOpen.value = !helpOpen.value;
+        }}>?</button>`,
+    },
+  ];
 
   return html`
     <div class="header">
       <div class="header-left">
-        <span class="header-brand">Foundry<span class="header-brand-dot">.</span></span>
-        <${PageNav} /><${SearchButton} />
+        <${SectionList} slot="header.left" items=${leftItems} context=${headerCtx} />
       </div>
       <div class="header-center">
-        ${route.value.page === 'workspace' ? html`<${WorkspaceSwitch} />` : null}
+        <${SectionList} slot="header.center" items=${centerItems} context=${headerCtx} />
       </div>
       <div class="header-right">
-        <${UpdateNotice} />
-        <${OpenPill} />
-        <span class="header-divider"></span>
-        <${IncomingIndicator} />
-        <span class="header-divider"></span>
-        <${KingdomPill} />
-        <span class="status-dot ${isConnected ? 'on' : 'off'}" title=${`${isConnected ? 'Connected to this Foundry' : 'Reconnecting'} · ${count} events · ⌘K commands`} aria-label=${isConnected ? 'Connected' : 'Reconnecting'}></span>
-        ${isConnected ? null : html`<span class="status-text">reconnecting…</span>`}
-        <button class="help-btn" aria-label="Help" title="Help (?)" onClick=${() => {
-          helpOpen.value = !helpOpen.value;
-        }}>?</button>
+        <${SectionList} slot="header.right" items=${rightItems} context=${headerCtx} />
       </div>
     </div>
   `;
@@ -372,8 +427,16 @@ function App() {
   const detailOpen = detailDrawerOpen.value;
   const inbox = feedbackInboxOpen.value;
   const page = route.value.page;
+  const customViewId = activeCustomView.value;
+  const customViewDef = customViewId
+    ? getMainViews('workspace').find((v) => v.extId && v.id === customViewId)
+    : null;
+  const fullWidthView =
+    boardOpen.value ||
+    watchtowerOpen.value ||
+    Boolean(customViewDef && customViewDef.fullWidth !== false);
 
-  const panelClass = `panels panels--proj-${projOpen ? 'open' : 'closed'} panels--detail-${detailOpen ? 'open' : 'closed'}${boardOpen.value || watchtowerOpen.value ? ' panels--board' : ''}${panelFit.value.leftFolded ? ' panels--left-folded' : ''}`;
+  const panelClass = `panels panels--proj-${projOpen ? 'open' : 'closed'} panels--detail-${detailOpen ? 'open' : 'closed'}${fullWidthView ? ' panels--board' : ''}${panelFit.value.leftFolded ? ' panels--left-folded' : ''}`;
 
   if (page !== 'workspace')
     return html`
@@ -393,7 +456,7 @@ function App() {
       <${PanelNavigation} />
 
       <div class=${panelClass} data-compact-panel=${compactPanel.value}
-        style=${boardOpen.value || watchtowerOpen.value ? '' : `grid-template-columns: ${panelColumns()}`}>
+        style=${fullWidthView ? '' : `grid-template-columns: ${panelColumns()}`}>
         <${RestoreTab} side="left" />
         <${RestoreTab} side="right" />
         <!-- Left: navigation — pinned scopes, projects, the selected scope's threads (collapsible) -->
@@ -404,25 +467,34 @@ function App() {
         <!-- Center: Conversation / trace timeline, or the graph panel -->
         <div class="panel-center" id="workspace-conversation" tabIndex="0">
           ${
-            // A board, the Watchtower or an open request is chosen on purpose, so it shows over the
+            // A board, the Watchtower, a custom workspace view or an open request is chosen on purpose, so it shows over the
             // Feedback scope: on the Attention rail an open Feedback thread puts the workspace there.
             incomingOpenId.value && incoming.value.some((r) => r.id === incomingOpenId.value)
               ? html`<${RequestView} />`
-              : watchtowerOpen.value
-                ? html`<${Watchtower} />`
-                : boardOpen.value
-                  ? html`<${Board} />`
-                  : inbox
-                    ? html`<${FeedbackScope} onSpanSelect=${handleSpanSelect} onLayerClick=${inspectLayer} />`
-                    : projectHomeOpen.value
-                      ? projectPage.value === 'device' && devicePageId.value
-                        ? html`<${DevicePage} key=${devicePageId.value} deviceId=${devicePageId.value} />`
-                        : projectPage.value === 'knowledge' && activeProjectId.value
-                          ? html`<${KnowledgePage} key=${activeProjectId.value} />`
-                          : html`<${ProjectHome} key=${activeProjectId.value ?? 'global'} />`
-                      : activePanel.value === 'feedback'
-                        ? html`<${FeedbackInbox} key=${scopeProjectId() ?? 'global'} projectId=${scopeProjectId()} />`
-                        : html`<${Conversation} onSpanSelect=${handleSpanSelect} onLayerClick=${inspectLayer} />`
+              : customViewDef
+                ? html`<${ExtensionBoundary}
+                    key=${customViewDef.id}
+                    extId=${customViewDef.extId}
+                    slot="workspace.views"
+                    onDisable=${disableExtension}
+                    render=${customViewDef.render}
+                    ctx=${{ activeThreadId: activeThreadId.value, activeProjectId: activeProjectId.value }}
+                  />`
+                : watchtowerOpen.value
+                  ? html`<${Watchtower} />`
+                  : boardOpen.value
+                    ? html`<${Board} />`
+                    : inbox
+                      ? html`<${FeedbackScope} onSpanSelect=${handleSpanSelect} onLayerClick=${inspectLayer} />`
+                      : projectHomeOpen.value
+                        ? projectPage.value === 'device' && devicePageId.value
+                          ? html`<${DevicePage} key=${devicePageId.value} deviceId=${devicePageId.value} />`
+                          : projectPage.value === 'knowledge' && activeProjectId.value
+                            ? html`<${KnowledgePage} key=${activeProjectId.value} />`
+                            : html`<${ProjectHome} key=${activeProjectId.value ?? 'global'} />`
+                        : activePanel.value === 'feedback'
+                          ? html`<${FeedbackInbox} key=${scopeProjectId() ?? 'global'} projectId=${scopeProjectId()} />`
+                          : html`<${Conversation} onSpanSelect=${handleSpanSelect} onLayerClick=${inspectLayer} />`
           }
         </div>
 
@@ -449,5 +521,6 @@ function App() {
 // ---------------------------------------------------------------------------
 
 init();
+initUiExtensions(settingsConfig);
 loadSettings();
 render(html`<${App} />`, document.getElementById('root'));

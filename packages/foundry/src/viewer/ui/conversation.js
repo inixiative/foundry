@@ -18,6 +18,8 @@ import { chorusNotice, lastDegraded } from './chorus-health.js';
 import { returnFocus } from './composer-focus.js';
 import { HeldPromptCard, holds, useConversationView } from './conversation-members.js';
 import { isUnsavedCompletion } from './conversation-state.js';
+import { ExtensionBoundary } from './error-boundary.js';
+import { disableExtension } from './extension-loader.js';
 import { FeedbackPrompt, GiveFeedback, TurnFeedback } from './feedback.js';
 import { ForkLink } from './fork-link.js';
 import { GraphPanel } from './graph-view.js';
@@ -46,6 +48,7 @@ import { Modal, RenameModal } from './modal.js';
 import { openThreadRun, runParts } from './run-picker.js';
 import { ScheduledLink } from './schedules.js';
 import { settingsConfig } from './settings.js';
+import { SectionList, SectionSlot } from './slot.js';
 import { isDangerous, MODES, ModeIcon, STATES, StatusIcon } from './status-icons.js';
 import { QueuedRows, SendHint, turnRunning } from './steering.js';
 import {
@@ -121,6 +124,12 @@ import {
   ThreadViewSegments,
 } from './thread-views.js';
 import { ThreadToast } from './toast.js';
+import {
+  getMainViews,
+  registerBuiltinMainView,
+  resolveActiveId,
+  useComponentFlags,
+} from './ui-registry.js';
 import { restartBlockers } from './update-line.js';
 import { uuidv7 } from './uuidv7.js';
 import {
@@ -292,7 +301,7 @@ const signetLine = (m) =>
  * What the thread is doing right now sits above the composer, not here. References, layers and
  * token detail live on the right panel's Context tab.
  */
-function ContextBar() {
+function ContextBar({ showContextFill = true } = {}) {
   const data = threadData.value;
   const usage = tokenUsage.value;
   const [view] = useConversationView(data?.threadId, data?.conversation ?? null);
@@ -410,7 +419,7 @@ function ContextBar() {
           <button type="button" class="band-pill band-add-agent" data-agents="add-band" aria-haspopup="dialog"
             aria-label="Add an agent" title="Add an agent to this thread" onClick=${openThreadAgents}>+</button>
           ${
-            fill !== null
+            showContextFill && fill !== null
               ? html`<span class="band-pill band-meter" title=${`Estimated context fill: ${fmtNum(threadContextTokens.value)} of ${fmtNum(contextWindow)} tokens`}>
                   <span class="band-meter-bar"><span style=${`width:${fill.toFixed(0)}%`}></span></span>${fill.toFixed(0)}%
                 </span>`
@@ -595,7 +604,7 @@ const keepDraft = (threadId, value) => {
   }
 };
 
-function ChatInput() {
+function ChatInput({ showVoiceControls = true } = {}) {
   const [text, setTextState] = useState(() => drafts.get(activeThreadId.peek()) ?? '');
   // The one writer of the draft: kept at once, so a view that replaces the box (Search, the board)
   // before the next render keeps every keystroke. An effect would run after paint, stale.
@@ -873,31 +882,63 @@ function ChatInput() {
           e.target.value = '';
         }} />
       <div class="chat-input-actions">
-        <button tabindex="-1" class="chat-voice-btn chat-attach-btn" onClick=${() => fileRef.current?.click()}
-          title="Attach images" aria-label="Attach images">📎</button>
-        ${
-          dictationSupported
-            ? html`<button tabindex="-1" class="chat-voice-btn ${listening ? 'chat-voice-on' : ''}" onClick=${toggleDictation}
-          title=${listening ? 'Stop dictation' : 'Dictate'} aria-pressed=${listening}>${listening ? '■' : '🎙'}</button>`
-            : null
-        }
-        ${
-          speechSupported
-            ? html`<button tabindex="-1" class="chat-voice-btn ${speakReplies.value ? 'chat-voice-on' : ''}" onClick=${toggleSpeakReplies}
-          title=${speakReplies.value ? 'Stop reading replies aloud' : 'Read replies aloud'} aria-pressed=${speakReplies.value}>${speakReplies.value ? '🔊' : '🔈'}</button>`
-            : null
-        }
-        <button tabindex="-1" type="button" class="composer-actions-btn" title="Actions and routing (⌥/ · or type / in an empty message)"
-          onClick=${() => {
-            actionPaletteOpen.value = !actionPaletteOpen.value;
-          }}>Actions <kbd class="cmd">⌥/</kbd></button>
-        <button
-          tabindex="-1"
-          class="chat-send-btn"
-          onClick=${handleSubmit}
-          disabled=${!sendable}
-          title=${uploading ? 'Waiting for images to upload' : 'Send'}
-        >Send</button>
+        <${SectionList}
+          slot="conversation.composer.actions"
+          items=${[
+            {
+              id: 'attach',
+              render: () =>
+                html`<button tabindex="-1" class="chat-voice-btn chat-attach-btn" onClick=${() => fileRef.current?.click()}
+                  title="Attach images" aria-label="Attach images">📎</button>`,
+            },
+            ...(showVoiceControls && dictationSupported
+              ? [
+                  {
+                    id: 'dictate',
+                    render: () =>
+                      html`<button tabindex="-1" class="chat-voice-btn ${listening ? 'chat-voice-on' : ''}" onClick=${toggleDictation}
+                        title=${listening ? 'Stop dictation' : 'Dictate'} aria-pressed=${listening}>${listening ? '■' : '🎙'}</button>`,
+                  },
+                ]
+              : []),
+            ...(showVoiceControls && speechSupported
+              ? [
+                  {
+                    id: 'speak',
+                    render: () =>
+                      html`<button tabindex="-1" class="chat-voice-btn ${speakReplies.value ? 'chat-voice-on' : ''}" onClick=${toggleSpeakReplies}
+                        title=${speakReplies.value ? 'Stop reading replies aloud' : 'Read replies aloud'} aria-pressed=${speakReplies.value}>${speakReplies.value ? '🔊' : '🔈'}</button>`,
+                  },
+                ]
+              : []),
+            {
+              id: 'actions',
+              render: () =>
+                html`<button tabindex="-1" type="button" class="composer-actions-btn" title="Actions and routing (⌥/ · or type / in an empty message)"
+                  onClick=${() => {
+                    actionPaletteOpen.value = !actionPaletteOpen.value;
+                  }}>Actions <kbd class="cmd">⌥/</kbd></button>`,
+            },
+            {
+              id: 'send',
+              render: () => html`<button
+                tabindex="-1"
+                class="chat-send-btn"
+                onClick=${handleSubmit}
+                disabled=${!sendable}
+                title=${uploading ? 'Waiting for images to upload' : 'Send'}
+              >Send</button>`,
+            },
+          ]}
+          context=${{
+            threadId: activeThreadId.value,
+            text,
+            setText,
+            destination,
+            sendable,
+            submit: handleSubmit,
+          }}
+        />
       </div>
     </div>
   `;
@@ -1629,30 +1670,57 @@ function HistoryPager({ threadId, count, onLoadOlder }) {
   `;
 }
 
-/** The centre's tabs, on the band's lower edge. Ids are the store's `activePanel` values. */
-const CENTER_TABS = [
-  ['conversation', 'Thread', '1'],
-  ['graph', 'Graph', 'g'],
-];
+/** Register the built-in centre thread tabs (`scope: 'thread'`). */
+registerBuiltinMainView({
+  id: 'conversation',
+  label: 'Thread',
+  key: '1',
+  scope: 'thread',
+});
+registerBuiltinMainView({
+  id: 'graph',
+  label: 'Graph',
+  key: 'g',
+  scope: 'thread',
+});
 
-function CenterTabs() {
-  const current = activePanel.value;
+function CenterTabs({ current, ctx }) {
+  const tabs = getMainViews('thread');
+  const controls = [
+    {
+      id: 'thread-view-segments',
+      render: () =>
+        current === 'conversation'
+          ? html`<${ThreadViewSegments} conversation=${threadData.value?.conversation} />`
+          : null,
+    },
+  ];
   return html`<div class="center-tab-row"><nav class="center-views band-tabs" role="tablist" aria-label="Center view">
-    ${CENTER_TABS.map(
-      ([id, label, key]) => html`<button key=${id} role="tab"
-        class="center-view ${current === id ? 'center-view--active' : ''}" aria-selected=${current === id}
-        title=${key ? `${label} (${key})` : label}
+    ${tabs.map(
+      (tab) => html`<button key=${tab.id} role="tab"
+        class="center-view ${current === tab.id ? 'center-view--active' : ''}" aria-selected=${current === tab.id}
+        data-center-tab=${tab.id}
+        title=${tab.key ? `${tab.label} (${tab.key})` : tab.label}
         onClick=${() => {
-          activePanel.value = id;
-        }}>${label}</button>`,
+          activePanel.value = tab.id;
+        }}>${tab.label}</button>`,
     )}
   </nav>
-  ${current === 'conversation' ? html`<${ThreadViewSegments} conversation=${threadData.value?.conversation} />` : null}
+  <${SectionList} slot="center.tabs.controls" items=${controls} context=${ctx} />
   </div>`;
 }
 
 export function Conversation({ onTraceSelect, onLayerClick }) {
-  const view = activePanel.value;
+  const threadViews = getMainViews('thread');
+  const view = resolveActiveId(threadViews, activePanel.value, 'conversation');
+  const activeViewDef = threadViews.find((v) => v.id === view);
+  const flags = useComponentFlags('conversation', {
+    showHeaderBand: true,
+    showCenterTabs: true,
+    showContextFill: true,
+    showVoiceControls: true,
+    compactMessages: false,
+  });
   const msgList = messages.value;
   const scrollRef = useRef(null);
   const threadId = activeThreadId.value;
@@ -1700,17 +1768,28 @@ export function Conversation({ onTraceSelect, onLayerClick }) {
     if (onTraceSelect) onTraceSelect(traceId);
   };
 
+  const convCtx = { threadId, thread: threadData.value, view, flags };
+  const aboveComposerItems = [
+    { id: 'system-strip', render: () => html`<${SystemStrip} threadId=${threadId} />` },
+    { id: 'thread-now-strip', render: () => html`<${ThreadNowStrip} />` },
+    { id: 'prompt-list', render: () => html`<${PromptList} threadId=${threadId} />` },
+  ];
+
   return html`
-    <div class="conversation">
+    <div class="conversation ${flags.compactMessages ? 'conversation--compact' : ''}">
       <header class="center-band">
-        <${ContextBar} />
-        <${CenterTabs} />
+        <${SectionSlot} name="conversation.header" context=${convCtx}>
+          ${flags.showHeaderBand ? html`<${ContextBar} showContextFill=${flags.showContextFill} />` : null}
+        </${SectionSlot}>
+        ${flags.showCenterTabs ? html`<${CenterTabs} current=${view} ctx=${convCtx} />` : null}
       </header>
       <${ThreadToast} threadId=${threadId} />
       ${
         view === 'graph'
           ? html`<div class="center-frame center-frame--graph"><${GraphPanel} onLayerClick=${onLayerClick} /></div>`
-          : null
+          : activeViewDef?.extId
+            ? html`<div class="center-frame center-frame--custom"><${ExtensionBoundary} key=${activeViewDef.id} extId=${activeViewDef.extId} slot="center.tabs" onDisable=${disableExtension} render=${activeViewDef.render} ctx=${convCtx} /></div>`
+            : null
       }
       ${
         view === 'conversation'
@@ -1748,13 +1827,11 @@ export function Conversation({ onTraceSelect, onLayerClick }) {
       ${shownViews().includes('btw') ? html`<${BtwView} entries=${threadData.value?.conversation?.btw} />` : null}
       ${shownViews().includes('asides') ? html`<${AsidesView} entries=${threadData.value?.conversation?.asides} onPromote=${(aside) => promoteAside(activeThreadId.value, aside.id)} />` : null}
       </div>
-      <${SystemStrip} threadId=${threadId} />
-      <${ThreadNowStrip} />
-      <${PromptList} threadId=${threadId} />
+      <${SectionList} slot="conversation.aboveComposer" items=${aboveComposerItems} context=${convCtx} />
       ${
         threadData.value?.meta?.spawn?.observed
           ? html`<${SubagentRecordNotice} meta=${threadData.value.meta} />`
-          : html`<${ChatInput} />`
+          : html`<${ChatInput} showVoiceControls=${flags.showVoiceControls} />`
       }
     </div>
   `;

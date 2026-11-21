@@ -103,7 +103,15 @@ import { registerModelRoutes } from './routes/models';
 import { registerProfileRoutes } from './routes/profile';
 import { registerRuntimeRoutes, type WorkerSessions } from './routes/runtime';
 import { registerScheduleRoutes } from './routes/schedules';
-import { THEME_PATH_PREFIX, themeDirectory, themeFile } from './theme-files';
+import {
+  CUSTOM_UI_PATH_PREFIX,
+  customThemeCss,
+  customUiFile,
+  discoverCustomUi,
+  THEME_PATH_PREFIX,
+  themeDirectory,
+  themeFile,
+} from './theme-files';
 import { ViewerThreadDirectory } from './thread-directory';
 import { expireSnoozes } from './thread-snooze';
 import { FoundryTunnel, type TunnelConfig, type TunnelHolder, tunnelAuth } from './tunnel';
@@ -189,7 +197,7 @@ export interface ViewerConfig {
 export function createViewer(config: ViewerConfig) {
   const { harness, eventStream, interventions, port = 4500 } = config;
   const app = new Hono();
-  const configDir = config.configDir ?? '.foundry';
+  const configDir = resolve(config.configDir ?? config.configStore?.directory ?? '.foundry');
   const kingdom = new KingdomInstallationConnections(config.kingdomIntegrations ?? [], {
     configDir,
     sessionCount: () => directory.all().length,
@@ -292,7 +300,7 @@ export function createViewer(config: ViewerConfig) {
       c.req.path !== '/api/daemon/status' &&
       c.req.path !== '/kingdom' &&
       !c.req.path.startsWith('/api/kingdom/') &&
-      !c.req.path.startsWith('/ui/')
+      (!c.req.path.startsWith('/ui/') || c.req.path.startsWith(CUSTOM_UI_PATH_PREFIX))
     ) {
       try {
         await kingdom.check();
@@ -1138,6 +1146,16 @@ export function createViewer(config: ViewerConfig) {
     `${THEME_PATH_PREFIX}*`,
     async (c) => (themeDir ? await themeFile(themeDir, c.req.path) : undefined) ?? c.notFound(),
   );
+  // Personal custom themes and local extensions under `<configDir>/ui/` (strictly contained).
+  app.get('/api/ui/custom', async (c) => c.json(await discoverCustomUi(configDir)));
+  app.get(`${CUSTOM_UI_PATH_PREFIX}theme.css`, async () => {
+    const saved = await configStore.load();
+    return customThemeCss(configDir, saved.ui?.theme);
+  });
+  app.get(`${CUSTOM_UI_PATH_PREFIX}*`, async (c) => {
+    const res = await customUiFile(configDir, c.req.path, c.req.raw.url);
+    return res ?? c.notFound();
+  });
   app.get('/ui/*', serveStatic({ root: fileURLToPath(new URL('./', import.meta.url)) }));
   app.get(
     '/kingdom',

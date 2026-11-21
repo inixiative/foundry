@@ -16,6 +16,7 @@ import {
   commandPaletteOpen,
   createThread,
   helpOpen,
+  showThreadsWorkspace,
   stepRailView,
   watchtowerOpen,
 } from './store.js';
@@ -25,6 +26,7 @@ import {
 // ---------------------------------------------------------------------------
 
 const bindings = new Map();
+const extensionKeys = new Set();
 let enabled = true;
 
 /**
@@ -33,7 +35,9 @@ let enabled = true;
  * @param {object} opts — { description, action, category }
  */
 export function bind(key, opts) {
-  bindings.set(normalizeKey(key), {
+  const norm = normalizeKey(key);
+  extensionKeys.delete(norm);
+  bindings.set(norm, {
     key,
     description: opts.description || key,
     category: opts.category || 'general',
@@ -43,7 +47,38 @@ export function bind(key, opts) {
 
 /** Remove a binding. */
 export function unbind(key) {
-  bindings.delete(normalizeKey(key));
+  const norm = normalizeKey(key);
+  extensionKeys.delete(norm);
+  bindings.delete(norm);
+}
+
+/**
+ * Bind a hotkey on behalf of a local UI extension without clobbering built-in bindings.
+ * Returns a disposer function that unbinds the key only if this registration still owns it.
+ */
+export function bindExtensionKey(key, opts) {
+  if (!key || typeof key !== 'string') return () => {};
+  const norm = normalizeKey(key);
+  if (bindings.has(norm) && !extensionKeys.has(norm)) {
+    console.warn(
+      `[foundry-ui] hotkey "${key}" is reserved by a built-in binding; ignoring extension key`,
+    );
+    return () => {};
+  }
+  const entry = {
+    key,
+    description: opts.description || key,
+    category: opts.category || 'extensions',
+    action: opts.action,
+  };
+  bindings.set(norm, entry);
+  extensionKeys.add(norm);
+  return () => {
+    if (bindings.get(norm) === entry) {
+      bindings.delete(norm);
+      extensionKeys.delete(norm);
+    }
+  };
 }
 
 /** Get all bindings grouped by category. */
@@ -425,10 +460,7 @@ export function registerDefaults(actions) {
   bind('t', {
     description: 'Threads',
     category: 'panels',
-    action: () => {
-      boardOpen.value = false;
-      watchtowerOpen.value = false;
-    },
+    action: showThreadsWorkspace,
   });
   bind('[', {
     description: 'Left list smaller',

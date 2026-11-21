@@ -12,6 +12,7 @@ import { feedbackIn } from './feedback.js';
 import { html, useEffect, useState } from './lib.js';
 import { navigate } from './route.js';
 import { openNewThread } from './run-picker.js';
+import { SectionList } from './slot.js';
 import { STATES, StatusIcon } from './status-icons.js';
 import {
   activeProjectId,
@@ -25,6 +26,7 @@ import {
 } from './store.js';
 import { kingdomOwnerName, threadName } from './thread-labels.js';
 import { isClosedThread, isScheduledRun } from './thread-status.js';
+import { getSectionItems, useComponentFlags } from './ui-registry.js';
 
 const INACTIVE = new Set(['paused', 'idle']);
 
@@ -118,64 +120,108 @@ export function ProjectHome() {
   const openFeedback = feedback.filter((item) => item.inbox === 'open').length;
   const archive = useJson('/api/archives/status');
   const title = isGlobal ? 'Global' : (project?.label ?? projectId);
+  const flags = useComponentFlags('projectHome', {
+    showComingSoon: true,
+    showArchiveBox: true,
+  });
+  const ctx = { projectId, isGlobal, project, title, open, inactive, closed };
+
+  const headerActions = isGlobal
+    ? []
+    : [
+        {
+          id: 'board',
+          render: () =>
+            html`<button type="button" class="proj-btn" onClick=${() => openProjectBoard(projectId)}>Board for this project</button>`,
+        },
+        {
+          id: 'knowledge',
+          render: () =>
+            html`<button type="button" class="proj-btn is-go" onClick=${() => openProjectKnowledge(projectId)}>Knowledge and Wardens</button>`,
+        },
+      ];
+  const hasHeaderActions = getSectionItems('projectHome.header.actions', headerActions).length > 0;
+
+  const sections = [];
+  if (!isGlobal) {
+    sections.push({
+      id: 'about',
+      render: () =>
+        html`<section class="ph-box ph-about"><h4>About</h4><${About} projectId=${projectId} project=${project} /></section>`,
+    });
+  } else {
+    sections.push({
+      id: 'threads',
+      render: () => html`<section class="ph-box ph-threads">
+        <h4>Threads · ${open.length} open</h4>
+        ${open.length ? open.map((t) => html`<${ThreadRow} key=${t.threadId} thread=${t} />`) : html`<div class="ph-meta">Nothing open.</div>`}
+        ${inactive.length ? html`<div class="ph-sub">Inactive · ${inactive.length}</div>${inactive.map((t) => html`<${ThreadRow} key=${t.threadId} thread=${t} />`)}` : null}
+        ${closed.length ? html`<div class="ph-meta">${closed.length} closed</div>` : null}
+      </section>`,
+    });
+  }
+  if (!isGlobal) {
+    sections.push({
+      id: 'wardens',
+      render:
+        () => html`<section class="ph-box"><h4>Wardens</h4><${Chorus} projectId=${projectId} />
+        <button type="button" class="proj-btn ph-link" onClick=${() => openProjectKnowledge(projectId)}>Setup, topics and Wardens →</button>
+        <button type="button" class="proj-btn ph-link" onClick=${() => navigate(`/projects/${encodeURIComponent(projectId)}/settings/chorus`)}>Settings › Wardens →</button></section>`,
+    });
+  }
+  sections.push({
+    id: 'feedback',
+    render: () => html`<section class="ph-box">
+      <h4>Feedback</h4>
+      <div class="ph-line"><b>${openFeedback}</b> open · ${feedback.length} in all</div>
+      <button type="button" class="proj-btn ph-link" onClick=${() => selectScope('@feedback')}>Open the feedback →</button>
+    </section>`,
+  });
+  if (isGlobal && flags.showArchiveBox) {
+    sections.push({
+      id: 'archive',
+      render: () => html`<section class="ph-box">
+        <h4>Archive</h4>
+        <div class="ph-line ${archive && !archive.reachable ? 'is-warn' : ''}"><i></i>${archive === undefined ? 'Checking…' : archive?.reachable ? 'Local Archive running' : 'Local Archive not running'}</div>
+        <div class="ph-meta">Sessions here are captured to it; closed threads stay readable there.</div>
+        ${archive?.url ? html`<a class="proj-btn ph-link" href=${archive.url} target="_blank" rel="noopener">Open in Archive ↗</a>` : null}
+      </section>`,
+    });
+  }
+  if (!isGlobal) {
+    sections.push({
+      id: 'links',
+      render: () => html`<section class="ph-box"><h4>Links</h4>
+        ${project?.path ? html`<div class="ph-line mono">${project.path}</div>` : null}
+        <div class="ph-meta">GitHub, Linear and Slack links show here once the project records them.</div></section>`,
+    });
+    sections.push({
+      id: 'organisation',
+      render: () =>
+        html`<section class="ph-box"><h4>Organisation</h4><div class="ph-meta">${project?.tags?.length ? project.tags.join(' · ') : 'No organisation tags'} · GitHub and Kingdom orgs attached to this project will show here</div></section>`,
+    });
+    if (flags.showComingSoon) {
+      sections.push({
+        id: 'code',
+        render: () =>
+          html`<section class="ph-box coming-soon-card"><h4>Code <span class="coming-soon">Coming soon</span></h4><div class="ph-meta">Browse the project’s code by Atlas concept, with each concept’s gloss and the threads working in it.</div></section>`,
+      });
+    }
+  }
 
   return html`<section class="project-home" aria-label=${`${title} home`}>
     <header class="ph-head">
       <h2>${title}</h2>
       <span class="ph-meta">${isGlobal ? 'Threads outside any project' : 'Project'}${project?.path ? html` · <span class="mono">${project.path}</span>` : null}</span>
       ${
-        isGlobal
-          ? null
-          : html`<span class="ph-head-actions">
-              <button type="button" class="proj-btn" onClick=${() => openProjectBoard(projectId)}>Board for this project</button>
-              <button type="button" class="proj-btn is-go" onClick=${() => openProjectKnowledge(projectId)}>Knowledge and Wardens</button>
-            </span>`
+        hasHeaderActions
+          ? html`<span class="ph-head-actions"><${SectionList} slot="projectHome.header.actions" items=${headerActions} context=${ctx} /></span>`
+          : null
       }
     </header>
     <button type="button" class="proj-btn is-go ph-new-thread" onClick=${() => openNewThread()}>+ New thread</button>
     <div class="ph-grid">
-      ${isGlobal ? null : html`<section class="ph-box ph-about"><h4>About</h4><${About} projectId=${projectId} project=${project} /></section>`}
-      ${
-        isGlobal
-          ? html`<section class="ph-box ph-threads">
-        <h4>Threads · ${open.length} open</h4>
-        ${open.length ? open.map((t) => html`<${ThreadRow} key=${t.threadId} thread=${t} />`) : html`<div class="ph-meta">Nothing open.</div>`}
-        ${inactive.length ? html`<div class="ph-sub">Inactive · ${inactive.length}</div>${inactive.map((t) => html`<${ThreadRow} key=${t.threadId} thread=${t} />`)}` : null}
-        ${closed.length ? html`<div class="ph-meta">${closed.length} closed</div>` : null}
-      </section>`
-          : null
-      }
-      ${
-        isGlobal
-          ? null
-          : html`<section class="ph-box"><h4>Wardens</h4><${Chorus} projectId=${projectId} />
-          <button type="button" class="proj-btn ph-link" onClick=${() => openProjectKnowledge(projectId)}>Setup, topics and Wardens →</button>
-          <button type="button" class="proj-btn ph-link" onClick=${() => navigate(`/projects/${encodeURIComponent(projectId)}/settings/chorus`)}>Settings › Wardens →</button></section>`
-      }
-      <section class="ph-box">
-        <h4>Feedback</h4>
-        <div class="ph-line"><b>${openFeedback}</b> open · ${feedback.length} in all</div>
-        <button type="button" class="proj-btn ph-link" onClick=${() => selectScope('@feedback')}>Open the feedback →</button>
-      </section>
-      ${
-        isGlobal
-          ? html`<section class="ph-box">
-        <h4>Archive</h4>
-        <div class="ph-line ${archive && !archive.reachable ? 'is-warn' : ''}"><i></i>${archive === undefined ? 'Checking…' : archive?.reachable ? 'Local Archive running' : 'Local Archive not running'}</div>
-        <div class="ph-meta">Sessions here are captured to it; closed threads stay readable there.</div>
-        ${archive?.url ? html`<a class="proj-btn ph-link" href=${archive.url} target="_blank" rel="noopener">Open in Archive ↗</a>` : null}
-      </section>`
-          : null
-      }
-      ${
-        isGlobal
-          ? null
-          : html`<section class="ph-box"><h4>Links</h4>
-          ${project?.path ? html`<div class="ph-line mono">${project.path}</div>` : null}
-          <div class="ph-meta">GitHub, Linear and Slack links show here once the project records them.</div></section>
-          <section class="ph-box"><h4>Organisation</h4><div class="ph-meta">${project?.tags?.length ? project.tags.join(' · ') : 'No organisation tags'} · GitHub and Kingdom orgs attached to this project will show here</div></section>
-          <section class="ph-box coming-soon-card"><h4>Code <span class="coming-soon">Coming soon</span></h4><div class="ph-meta">Browse the project’s code by Atlas concept, with each concept’s gloss and the threads working in it.</div></section>`
-      }
+      <${SectionList} slot="projectHome.sections" items=${sections} context=${ctx} />
     </div>
   </section>`;
 }
