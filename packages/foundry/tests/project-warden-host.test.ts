@@ -94,6 +94,7 @@ const servingHost = (wardens: ProjectWardenHosts, threadId: string) => {
 function projectHosts(
   options: {
     noRoot?: boolean;
+    diesOnArrival?: string;
     maxRestarts?: number;
     idleMs?: number;
     wardensPerDispatcher?: number;
@@ -102,7 +103,11 @@ function projectHosts(
     quotaResetAt?: () => number | undefined;
   } = {},
 ) {
-  const tree = fakeClaudeTree({ noRoot: options.noRoot });
+  const behavior: Parameters<typeof fakeClaudeTree>[0] = {
+    noRoot: options.noRoot,
+    ...(options.diesOnArrival ? { diesOnArrival: options.diesOnArrival } : {}),
+  };
+  const tree = fakeClaudeTree(behavior);
   const rss = new Map<number, number>();
   const states: Array<ProjectHostState & { projectId: string }> = [];
   const wardens = new ProjectWardenHosts({
@@ -145,8 +150,39 @@ function projectHosts(
     return { pid: tree.processes.at(-1)!.pid, ended, stop: async () => session.kill() };
   });
   cleanup.push(() => wardens.close());
-  return { tree, rss, states, wardens };
+  return { tree, rss, states, wardens, behavior };
 }
+
+test('a Warden that keeps dying on arrival is reported down while the rest of its project serve', async () => {
+  const { states, wardens } = projectHosts({ diesOnArrival: 'be the locks warden' });
+  wardens.openProject('P', roster('locks', 'lens'));
+  expect(await until(() => !!wardens.projectState('P')?.wardensDown)).toBe(true);
+  expect(wardens.projectState('P')).toMatchObject({
+    status: 'serving',
+    expected: 2,
+    held: 1,
+    wardensDown: ['locks'],
+  });
+  expect(await until(() => states.some((state) => state.wardensDown?.includes('locks')))).toBe(
+    true,
+  );
+});
+
+test('a serving Warden that starts dying is reported down, and reported back once it holds again', async () => {
+  const { states, wardens, behavior } = projectHosts();
+  wardens.openProject('P', roster('locks', 'lens'));
+  expect(await wardens.projectReady('P', 5_000)).toBe(true);
+  states.length = 0;
+  behavior.diesOnArrival = 'be the locks warden';
+  await servingHost(wardens, 'A1')!.decide(spec('locks'), { input: 'M', standby: '' });
+  expect(await until(() => states.some((state) => state.wardensDown?.includes('locks')))).toBe(
+    true,
+  );
+  delete behavior.diesOnArrival;
+  expect(
+    await until(() => states.at(-1)?.wardensDown === undefined && states.at(-1)?.held === 2),
+  ).toBe(true);
+}, 15_000);
 
 test('a project host holds the roster before any thread; every thread of the project gets a held spare; another project has none', async () => {
   const { tree, wardens } = projectHosts();

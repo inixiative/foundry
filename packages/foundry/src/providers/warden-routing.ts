@@ -73,6 +73,11 @@ export function isWardenSession(sessionKey: string): boolean {
   return role.startsWith('domain:') || /^review:[^:]+:domain:/.test(role);
 }
 
+/** The Warden a decision key belongs to (`<thread>:aux:domain:<d>#<hash>`): `<d>`; undefined for any other key. */
+export function wardenOfDecisionKey(key: string): string | undefined {
+  return /:aux:domain:(.+?)(?::stage:\d+)?(?:#[^#]*)?$/.exec(key)?.[1];
+}
+
 /** A later classify stage of a Warden (`domain:<d>:stage:<n>`). */
 export function isStageSession(sessionKey: string): boolean {
   const at = sessionKey.indexOf(AUXILIARY);

@@ -11,7 +11,7 @@
 import { ContextStack, type LLMMessage, type LLMProvider, newId } from '@inixiative/foundry-core';
 import type { StageEffort } from '../classify';
 import type { Roster } from '../providers/project-warden-hosts';
-import { isWardenSession, primedRequest } from '../providers/warden-routing';
+import { isWardenSession, primedRequest, wardenOfDecisionKey } from '../providers/warden-routing';
 import type { FoundryConfig } from '../viewer/config';
 import { buildAgents, buildLayers, type SourceResolver, ThreadFactory } from './thread-factory';
 import {
@@ -168,7 +168,7 @@ export async function composeProjectRoster(
     prestart: (messages: LLMMessage[], callOpts) => {
       const key = callOpts.threadId;
       if (!key || !isWardenSession(key)) return;
-      const domain = /:aux:domain:(.+?)(?::stage:\d+)?$/.exec(key)?.[1];
+      const domain = wardenOfDecisionKey(key);
       if (!domain) return;
       const { spec } = primedRequest(messages, callOpts, key);
       const lane = stage ? `${stage.model ?? ''}|${stage.effort ?? ''}` : '';

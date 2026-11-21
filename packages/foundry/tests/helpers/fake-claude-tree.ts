@@ -24,7 +24,13 @@ interface FakeTreeProcess {
  * moment holds this text never answers (until the host stops it).
  */
 export function fakeClaudeTree(
-  behavior: { noRoot?: boolean; model?: string; hangOn?: string } = {},
+  behavior: {
+    noRoot?: boolean;
+    model?: string;
+    hangOn?: string;
+    /** A member whose prompt holds this ends before it holds its `moment` call. */
+    diesOnArrival?: string;
+  } = {},
 ) {
   const processes: FakeTreeProcess[] = [];
   const moments: string[] = [];
@@ -150,6 +156,8 @@ export function fakeClaudeTree(
       const token = /token "([^"]+)"/.exec(prompt)?.[1] ?? '';
       if (type === 'foundry-warden') {
         memberPrompts.push(prompt);
+        if (behavior.diesOnArrival && prompt.includes(behavior.diesOnArrival))
+          return finish(taskId, 'failed');
         let input: string;
         if (prompt.includes('Call mcp__foundry-wardens__moment')) {
           const moment = await memberTool(taskId, 'moment', {});
