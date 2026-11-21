@@ -194,6 +194,23 @@ export const RAIL_VIEWS = RAIL_ROWS.flat();
 export const railView = signal('attention');
 /** Attention and Open list threads across every project; Projects lists one scope's. */
 export const railSpansProjects = (view) => view !== 'projects';
+const CROSS_PROJECT_TABS = new Set(['attention', 'open', 'scheduled']);
+
+/** Whether a registered side-panel tab is currently open and active on its effective side. */
+export function isTabActive(id, { peek = false } = {}) {
+  const side = effectiveTabSide(id);
+  if (side === 'left') {
+    const open = peek ? projectSidebarOpen.peek() : projectSidebarOpen.value;
+    const view = peek ? railView.peek() : railView.value;
+    return open && view === id;
+  }
+  if (side === 'right') {
+    const open = peek ? detailDrawerOpen.peek() : detailDrawerOpen.value;
+    const tab = peek ? rightTab.peek() : rightTab.value;
+    return open && tab === id;
+  }
+  return false;
+}
 /** Step the rail one view left (-1) or right (1), wrapping across reconciled rail tabs. */
 export function stepRailView(d) {
   const registered = leftTabs().map((t) => t.id);
@@ -330,11 +347,17 @@ export function commentOn(target) {
 /**
  * Focus any registered side-panel tab on its effective side (Left Rail or Right Panel).
  * Full-workspace overlays (Board, Watchtower, custom workspace views) give way. With `toggle`,
- * repeating the key for the tab already showing folds that side panel.
+ * repeating the key for the tab already showing folds that side panel (except on narrow screens
+ * where that panel is hidden behind another compact tab, in which case it switches to it).
  */
 export function focusTab(tab, { toggle = false } = {}) {
-  if (effectiveTabSide(tab) === 'left') {
+  const side = effectiveTabSide(tab);
+  if (!side) return;
+  const isNarrow = typeof window !== 'undefined' && window.innerWidth < 1100;
+  if (side === 'left') {
+    const narrowHidden = isNarrow && compactPanel.peek() !== 'projects';
     const showingLeft =
+      !narrowHidden &&
       projectSidebarOpen.peek() &&
       railView.peek() === tab &&
       !boardOpen.peek() &&
@@ -354,7 +377,9 @@ export function focusTab(tab, { toggle = false } = {}) {
     });
     return;
   }
+  const narrowHidden = isNarrow && compactPanel.peek() !== 'detail';
   const showing =
+    !narrowHidden &&
     detailDrawerOpen.peek() &&
     rightTab.peek() === tab &&
     !turnViewTarget.peek() &&
@@ -888,7 +913,7 @@ function settleInitialScope() {
 
 /** On the Active rail the scope follows the open thread: its project, Global, or its Foundry scope. */
 function followActiveProject() {
-  if (!railSpansProjects(railView.peek())) return;
+  if (isTabActive('projects', { peek: true }) || !railSpansProjects(railView.peek())) return;
   const listed = allThreads.peek().find((t) => t.threadId === activeThreadId.peek());
   if (!listed) return;
   const scope = scopeOfThread(listed);
@@ -1022,8 +1047,12 @@ function connectStreams() {
   socket.open('prompts');
   effect(() => {
     const projectId = activeProjectId.value;
+    const projectsActive = isTabActive('projects');
+    const rightCrossProject = detailDrawerOpen.value && CROSS_PROJECT_TABS.has(rightTab.value);
+    const leftCrossProject =
+      railSpansProjects(railView.value) && (!projectsActive || projectSidebarOpen.value);
     const next =
-      railSpansProjects(railView.value) || boardOpen.value
+      boardOpen.value || rightCrossProject || leftCrossProject
         ? 'threads:all'
         : forgeMasterOpen.value
           ? 'threads:@forge'
@@ -2270,12 +2299,12 @@ export async function sendMessage(text, images = [], { delivery } = {}) {
   // A thread's first message, sent from the Projects rail, starts it: the rail goes back to Attention
   // unless `afterProjectStart` says stay. The thread stays open in the centre. Started means a turn in
   // the journal (`lastTurn`, there before its history loads) or a message of yours already shown.
-  if (railView.peek() === 'projects' && afterProjectStart.peek() === 'attention') {
+  if (isTabActive('projects', { peek: true }) && afterProjectStart.peek() === 'attention') {
     const started =
       allThreads.peek().find((t) => t.id === tid)?.lastTurn ||
       (_threadMessages[tid] ?? []).some((m) => m.actor === 'user');
     if (!started) {
-      railView.value = 'attention';
+      focusTab('attention');
       attentionHold.value = tid;
     }
   }
@@ -2317,7 +2346,7 @@ const answeringSends = new Set();
  * action did not answer: another prompt, or a held reply waiting for your release.
  */
 async function leaveFinishedAttention(threadId, resolvedPromptId = null) {
-  if (railView.peek() !== 'attention' || attentionHold.peek() !== threadId) return;
+  if (!isTabActive('attention', { peek: true }) || attentionHold.peek() !== threadId) return;
   if (activeThreadId.peek() !== threadId) return;
   if (prompts.peek().some((p) => p.threadId === threadId && p.id !== resolvedPromptId)) return;
   const listed = allThreads.peek().find((t) => t.threadId === threadId);
@@ -2835,18 +2864,24 @@ export function init() {
   );
 
   // Navigating releases Attention's hold on the thread you had open: a page, the board, the
-  // Watchtower, Settings or another rail tab (opening a thread holds that one instead).
-  let railSeen = railView.peek();
+  // Watchtower, Settings or another tab on Attention's side (opening a thread holds that one instead).
+  const activeTabOn = (side) => (side === 'right' ? rightTab.value : railView.value);
+  const activeTabOnPeek = (side) => (side === 'right' ? rightTab.peek() : railView.peek());
+  let attentionSideSeen = effectiveTabSide('attention') ?? 'left';
+  let attentionTabSeen = activeTabOnPeek(attentionSideSeen);
   effect(() => {
-    const rail = railView.value;
+    const side = effectiveTabSide('attention') ?? 'left';
+    const current = activeTabOn(side);
     const away =
       projectHomeOpen.value ||
       boardOpen.value ||
       watchtowerOpen.value ||
       Boolean(activeCustomView.value) ||
       route.value.page !== 'workspace';
-    const switched = rail !== railSeen;
-    railSeen = rail;
+    const switched =
+      side !== attentionSideSeen ? current !== 'attention' : current !== attentionTabSeen;
+    attentionSideSeen = side;
+    attentionTabSeen = current;
     if (away || switched) attentionHold.value = null;
   });
 

@@ -11,6 +11,7 @@
 import {
   customUiManifest,
   extensionStatuses,
+  moveSideTab,
   refreshCustomTheme,
   refreshCustomUiManifest,
   SAFE_UI,
@@ -83,6 +84,7 @@ const DISPLAY_FLAGS = [
 
 export function AppearanceSection({ config, onSaved }) {
   const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
   const manifest = customUiManifest.value;
   const statuses = extensionStatuses.value;
   const ui = config?.ui ?? {};
@@ -92,20 +94,25 @@ export function AppearanceSection({ config, onSaved }) {
     refreshCustomUiManifest();
   }, []);
 
-  const patchUi = async (patch, toastMsg) => {
+  const runSave = async (work) => {
+    if (savingRef.current) return false;
+    savingRef.current = true;
     setSaving(true);
     try {
-      return await saveUiPatch(patch, toastMsg, { onSaved });
+      return await work();
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   };
+
+  const patchUi = (patch, toastMsg) => runSave(() => saveUiPatch(patch, toastMsg, { onSaved }));
 
   const colorSchemeRefs = useRef({});
   const activeColorScheme = ui.colorScheme ?? 'dark';
 
   const handleColorSchemeChange = async (value) => {
-    if (saving || value === activeColorScheme) return;
+    if (savingRef.current || saving || value === activeColorScheme) return;
     await patchUi({ colorScheme: value }, `Color scheme set to ${value}`);
   };
 
@@ -154,18 +161,7 @@ export function AppearanceSection({ config, onSaved }) {
     });
   };
 
-  const moveTab = async (item, targetSide) => {
-    const nextSide = targetSide === item.defaultSide ? null : targetSide;
-    const targetSlotId = targetSide === 'left' ? 'leftRail.tabs' : 'rightPanel.tabs';
-    const curTargetHidden = ui.slots?.[targetSlotId]?.hidden ?? [];
-    const patch = { panelPlacement: { [item.id]: nextSide } };
-    if (curTargetHidden.includes(item.id)) {
-      const nextHidden = curTargetHidden.filter((x) => x !== item.id);
-      patch.slots = { [targetSlotId]: { hidden: nextHidden.length ? nextHidden : null } };
-    }
-    const destLabel = targetSide === 'left' ? 'Left Rail' : 'Right Panel';
-    await patchUi(patch, `Moved ${item.label} to ${destLabel}`);
-  };
+  const moveTab = (item, targetSide) => runSave(() => moveSideTab(item, targetSide, { onSaved }));
 
   const toggleFlag = async (component, flag, checked, defaultVal) => {
     await patchUi({
@@ -196,7 +192,7 @@ export function AppearanceSection({ config, onSaved }) {
     ${
       SAFE_UI
         ? html`<div class="appearance-banner" role="status">
-            <span><strong>Safe UI mode is active</strong> (<code>?safe-ui=1</code>). Custom CSS and local extensions are bypassed.</span>
+            <span><strong>Safe UI mode is active</strong> (<code>?safe-ui=1</code>). Custom CSS, local extensions, and custom layout/tab placement are bypassed.</span>
             <a class="proj-btn" href="/settings/appearance">Exit safe mode</a>
           </div>`
         : html`<p class="settings-desc">
@@ -331,59 +327,59 @@ export function AppearanceSection({ config, onSaved }) {
           </div>
         </div>`;
       })()}
-      ${sideGroups.map((group) => {
-        const hidden = new Set(ui.slots?.[group.slotId]?.hidden ?? []);
-        const visibleCount = group.items.filter((item) => !hidden.has(item.id)).length;
-        const targetSide = group.side === 'left' ? 'right' : 'left';
-        const moveLabel = group.side === 'left' ? 'Move to Right' : 'Move to Left';
-        return html`<div key=${group.slotId} class="appearance-slot-group" data-slot-group=${group.slotId}>
-          <h4>${group.title}</h4>
-          <div class="appearance-tab-list">
-            ${group.items.map((item) => {
-              const isHidden = hidden.has(item.id);
-              const isLastVisible = group.items.length <= 1 || (!isHidden && visibleCount <= 1);
-              return html`<div key=${item.id} class="appearance-tab-row" data-tab-row=${item.id} data-tab-side=${group.side}>
-                <label class="appearance-tab-toggle">
-                  <input
-                    type="checkbox"
-                    checked=${!isHidden}
-                    disabled=${saving}
-                    onChange=${(e) => toggleSlotItem(group.slotId, item.id, e.target.checked)}
-                  />
-                  <span>${item.label}</span>
-                  ${
-                    item.moved
-                      ? html`<span class="appearance-badge">from ${item.defaultSide === 'left' ? 'Left' : 'Right'}</span>`
-                      : null
-                  }
-                </label>
-                <div class="appearance-tab-actions">
-                  ${
-                    item.moved
-                      ? html`<button
-                          type="button"
-                          class="appearance-tab-btn"
-                          data-reset-tab=${item.id}
-                          disabled=${saving || isLastVisible}
-                          title=${isLastVisible ? 'At least one visible tab must stay on this side' : `Return ${item.label} to ${item.defaultSide === 'left' ? 'Left Rail' : 'Right Panel'}`}
-                          onClick=${() => moveTab(item, item.defaultSide)}
-                        >Reset</button>`
-                      : null
-                  }
-                  <button
-                    type="button"
-                    class="appearance-tab-btn"
-                    data-move-tab=${item.id}
-                    disabled=${saving || isLastVisible}
-                    title=${isLastVisible ? 'At least one visible tab must stay on this side' : `Move ${item.label} to ${targetSide === 'left' ? 'Left Rail' : 'Right Panel'}`}
-                    onClick=${() => moveTab(item, targetSide)}
-                  >${moveLabel}</button>
-                </div>
-              </div>`;
-            })}
-          </div>
-        </div>`;
-      })}
+      <div data-setting="ui.panelPlacement">
+        ${sideGroups.map((group) => {
+          const hidden = new Set(ui.slots?.[group.slotId]?.hidden ?? []);
+          const visibleCount = group.items.filter((item) => !hidden.has(item.id)).length;
+          const targetSide = group.side === 'left' ? 'right' : 'left';
+          const targetName = targetSide === 'left' ? 'Left' : 'Right';
+          return html`<div key=${group.slotId} class="appearance-slot-group" data-slot-group=${group.slotId}>
+            <h4>${group.title}</h4>
+            <div class="appearance-tab-list">
+              ${group.items.map((item) => {
+                const isHidden = hidden.has(item.id);
+                const isLastVisible = !isHidden && visibleCount <= 1;
+                const moveDisabled = saving || group.items.length <= 1 || isLastVisible;
+                const actionLabel = item.moved
+                  ? `Return to ${targetName}`
+                  : `Move to ${targetName}`;
+                return html`<div key=${item.id} class="appearance-tab-row" data-tab-row=${item.id} data-tab-side=${group.side}>
+                  <label class="appearance-tab-toggle">
+                    <input
+                      type="checkbox"
+                      checked=${!isHidden}
+                      disabled=${saving || isLastVisible}
+                      title=${isLastVisible ? 'At least one visible tab must stay on this side' : undefined}
+                      onChange=${(e) => toggleSlotItem(group.slotId, item.id, e.target.checked)}
+                    />
+                    <span>${item.label}</span>
+                    ${
+                      item.moved
+                        ? html`<span class="appearance-badge">from ${item.defaultSide === 'left' ? 'Left' : 'Right'}</span>`
+                        : null
+                    }
+                  </label>
+                  <div class="appearance-tab-actions">
+                    <button
+                      type="button"
+                      class="appearance-tab-btn"
+                      data-move-tab=${item.id}
+                      data-reset-tab=${item.moved ? item.id : undefined}
+                      disabled=${moveDisabled}
+                      title=${
+                        moveDisabled && !saving
+                          ? 'At least one visible tab must stay on this side'
+                          : `${item.moved ? 'Return' : 'Move'} ${item.label} to ${targetSide === 'left' ? 'Left Rail' : 'Right Panel'}`
+                      }
+                      onClick=${() => moveTab(item, targetSide)}
+                    >${actionLabel}</button>
+                  </div>
+                </div>`;
+              })}
+            </div>
+          </div>`;
+        })}
+      </div>
       ${
         hasLayoutOverrides
           ? html`<div class="appearance-actions-row">

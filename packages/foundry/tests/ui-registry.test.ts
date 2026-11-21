@@ -8,6 +8,7 @@ import {
   leftTabs,
   mainViews,
   namespaceId,
+  readTabInfo,
   reconcileItems,
   registerBuiltinLeftTab,
   registerBuiltinMainView,
@@ -263,4 +264,29 @@ test('panelPlacement guarantees non-empty fallback without duplicating tabs when
   expect(rightTabs().map((t) => t.id)).toEqual(['plan']);
   expect(effectiveTabSide('plan')).toBe('right');
   expect(effectiveTabSide('context')).toBe('left');
+});
+
+test('side tabs default requiresThread by side, readTabInfo isolates extension throws, and desiredSide ignores inherited keys', () => {
+  registerBuiltinLeftTab({ id: 'attention', label: 'Attention', row: 0, render: () => null });
+  registerBuiltinRightTab({ id: 'plan', label: 'Plan', render: () => null });
+  registerLeftTab('ext', { id: 'l', label: 'L', render: () => null });
+  registerRightTab('ext', {
+    id: 'r',
+    label: 'R',
+    info: () => {
+      throw new Error('info boom');
+    },
+    render: () => null,
+  });
+
+  expect(leftTabs().every((t) => t.requiresThread === false)).toBe(true);
+  expect(rightTabs().every((t) => t.requiresThread === true)).toBe(true);
+
+  const extRight = rightTabs().find((t) => t.id === 'ext:r');
+  expect(readTabInfo(extRight, {})).toBe('');
+
+  // Inherited property on a prototype must not act as an own panelPlacement override.
+  const inherited = Object.create({ plan: 'left' });
+  uiConfigSignal.value = { panelPlacement: inherited };
+  expect(effectiveTabSide('plan')).toBe('right');
 });

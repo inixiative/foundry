@@ -211,6 +211,24 @@ export async function saveUiPatch(patch, toastMsg, { onSaved, errorPrefix } = {}
   }
 }
 
+/**
+ * Move a registered side-panel tab to `'left'` or `'right'`, unhiding it from the destination slot
+ * if it was previously hidden there, and persisting via `PATCH /api/settings/ui`.
+ */
+export async function moveSideTab(tab, targetSide, { onSaved } = {}) {
+  if (!tab?.id || (targetSide !== 'left' && targetSide !== 'right')) return false;
+  const nextSide = targetSide === tab.defaultSide ? null : targetSide;
+  const targetSlotId = targetSide === 'left' ? 'leftRail.tabs' : 'rightPanel.tabs';
+  const curTargetHidden = settingsRef?.peek()?.ui?.slots?.[targetSlotId]?.hidden ?? [];
+  const patch = { panelPlacement: { [tab.id]: nextSide } };
+  if (curTargetHidden.includes(tab.id)) {
+    const nextHidden = curTargetHidden.filter((x) => x !== tab.id);
+    patch.slots = { [targetSlotId]: { hidden: nextHidden.length ? nextHidden : null } };
+  }
+  const destLabel = targetSide === 'left' ? 'Left Rail' : 'Right Panel';
+  return saveUiPatch(patch, `Moved ${tab.label ?? tab.id} to ${destLabel}`, { onSaved });
+}
+
 /** Disable an extension by patching `ui.extensions` via `PATCH /api/settings/ui`. */
 export async function disableExtension(extId) {
   if (!extId || !settingsRef) return false;

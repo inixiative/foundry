@@ -55,6 +55,8 @@ import { ThreadNode, threadTree } from './thread-tree.js';
 import {
   leftTabRows,
   leftTabs,
+  RIGHT_PANEL_FLAG_DEFAULTS,
+  readTabInfo,
   registerBuiltinLeftTab,
   resolveActiveId,
   useComponentFlags,
@@ -67,16 +69,9 @@ const isShared = (node) => (node.conversation?.members ?? 0) > 0;
 /** Red before orange in the Attention rail. */
 const URGENCY = { problem: 0, attention: 1 };
 
-function readTabInfo(tab, ctx) {
-  if (typeof tab.info === 'function') {
-    return tab.extId ? safeCall(tab.extId, () => tab.info(ctx), '', 'leftTab.info') : tab.info(ctx);
-  }
-  return typeof tab.info === 'string' ? tab.info : '';
-}
-
 function renderTabBadge(tab, ctx) {
   if (typeof tab.badge !== 'function') return null;
-  if (tab.defaultSide === 'right' && tab.requiresThread !== false && !ctx.threadId) return null;
+  if (tab.requiresThread && !ctx.threadId) return null;
   const val = tab.extId
     ? safeCall(tab.extId, () => tab.badge(ctx), null, 'leftTab.badge')
     : tab.badge(ctx);
@@ -164,7 +159,6 @@ registerBuiltinLeftTab({
   id: 'attention',
   label: 'Attention',
   info: 'Open threads that need your decision or answer',
-  requiresThread: false,
   row: 0,
   wideShare: false,
   render: () => html`<${AttentionRail} />`,
@@ -173,7 +167,6 @@ registerBuiltinLeftTab({
   id: 'open',
   label: 'Open',
   info: 'Every open thread across your projects',
-  requiresThread: false,
   row: 0,
   wideShare: false,
   render: () => html`<${OpenRail} />`,
@@ -182,7 +175,6 @@ registerBuiltinLeftTab({
   id: 'projects',
   label: 'Projects',
   info: 'Projects, pinned scopes, and their threads',
-  requiresThread: false,
   row: 0,
   wideShare: true,
   render: () => html`<${ProjectSidebar} />`,
@@ -191,7 +183,6 @@ registerBuiltinLeftTab({
   id: 'scheduled',
   label: 'Scheduled',
   info: 'Schedules, active runs, and running loops',
-  requiresThread: false,
   row: 1,
   wideShare: false,
   badge: ({ side } = {}) => {
@@ -206,7 +197,6 @@ registerBuiltinLeftTab({
   id: 'status',
   label: 'Status',
   info: 'This machine, daemon health, and resources',
-  requiresThread: false,
   row: 1,
   wideShare: false,
   render: () => html`<${MachineStatus} />`,
@@ -226,11 +216,7 @@ export function NavRail({ onSpanSelect } = {}) {
   const activeTab = tabs.find((t) => t.id === activeId) ?? tabs[0];
   const threadId = activeThreadId.value;
   const projectId = activeProjectId.value;
-  const flags = useComponentFlags('rightPanel', {
-    showComingSoon: true,
-    showUsageBar: true,
-    showRunningFooter: true,
-  });
+  const flags = useComponentFlags('rightPanel', RIGHT_PANEL_FLAG_DEFAULTS);
   const ctx = {
     railView: activeId,
     activeThreadId: threadId,
@@ -243,7 +229,7 @@ export function NavRail({ onSpanSelect } = {}) {
     onSpanSelect,
   };
   const movedFromRight = activeTab?.defaultSide === 'right';
-  const needsThread = movedFromRight && activeTab?.requiresThread !== false;
+  const needsThread = Boolean(activeTab?.requiresThread);
   const hasThread = Boolean(threadId && threadData.value);
 
   let body = null;
@@ -257,7 +243,7 @@ export function NavRail({ onSpanSelect } = {}) {
           <div class="rail-empty">Select a thread to view ${activeTab.label}</div>
         </div>`;
       } else {
-        const info = readTabInfo(activeTab, ctx);
+        const info = readTabInfo(activeTab, ctx, 'leftTab.info');
         body = html`<div class="rail-moved-frame rp-frame" role="tabpanel" aria-label=${activeTab.label}>
           <header class="rp-tab-head">
             <h2 class="rp-title">${activeTab.label}</h2>

@@ -17,10 +17,27 @@
  * overrides (`pinned` → `order` → unlisted new built-ins → minus `hidden`).
  */
 
+import { safeCall } from './error-boundary.js';
 import { signal } from './lib.js';
 
 const LOCAL_ID_PATTERN = /^[a-z0-9][a-z0-9_.:-]{0,63}$/i;
 const VALID_PANEL_SIDES = new Set(['left', 'right']);
+
+/** Default display flags shared by RightPanel and NavRail when rendering moved right-panel tabs. */
+export const RIGHT_PANEL_FLAG_DEFAULTS = Object.freeze({
+  showComingSoon: true,
+  showUsageBar: true,
+  showRunningFooter: true,
+});
+
+/** Read a tab's one-line info string, isolating extension `info(ctx)` callbacks. */
+export function readTabInfo(tab, ctx, label = 'tab.info') {
+  if (!tab) return '';
+  if (typeof tab.info === 'function') {
+    return tab.extId ? safeCall(tab.extId, () => tab.info(ctx), '', label) : tab.info(ctx);
+  }
+  return typeof tab.info === 'string' ? tab.info : '';
+}
 
 /** Reactive mirror of `settingsConfig.value?.ui ?? {}` (empty in `?safe-ui=1` mode). */
 export const uiConfigSignal = signal({});
@@ -317,6 +334,7 @@ export function registerBuiltinLeftTab(def) {
   upsertBuiltin(builtinLeftTabs, {
     row: 0,
     wideShare: false,
+    requiresThread: false,
     ...def,
     defaultSide: 'left',
     extId: null,
@@ -324,7 +342,12 @@ export function registerBuiltinLeftTab(def) {
 }
 
 export function registerBuiltinRightTab(def) {
-  upsertBuiltin(builtinRightTabs, { ...def, defaultSide: 'right', extId: null });
+  upsertBuiltin(builtinRightTabs, {
+    requiresThread: true,
+    ...def,
+    defaultSide: 'right',
+    extId: null,
+  });
 }
 
 export function registerBuiltinMainView(def) {
@@ -340,6 +363,7 @@ export function registerLeftTab(extId, def) {
   const entry = {
     row: 1,
     wideShare: false,
+    requiresThread: false,
     ...def,
     id,
     defaultSide: 'left',
@@ -355,6 +379,7 @@ export function registerLeftTab(extId, def) {
 export function registerRightTab(extId, def) {
   const id = namespaceId(extId, def.id);
   const entry = {
+    requiresThread: true,
     ...def,
     id,
     defaultSide: 'right',
@@ -470,7 +495,7 @@ function resolvedPlacementMap(explicitPlacement) {
 }
 
 function desiredSide(tab, placement) {
-  const override = placement?.[tab.id];
+  const override = placement && Object.hasOwn(placement, tab.id) ? placement[tab.id] : undefined;
   return VALID_PANEL_SIDES.has(override) ? override : tab.defaultSide;
 }
 
@@ -688,16 +713,6 @@ export function sectionSlotExtensions(slotName) {
 export function extensionCommands() {
   const orderList = extensionOrderSignal.value;
   return [...extensionCommandsSignal.value].sort((a, b) => compareExtEntries(a, b, orderList));
-}
-
-export function builtinSlotsMetadata() {
-  return {
-    leftTabs: builtinLeftTabs.value.map((t) => ({ id: t.id, label: t.label })),
-    rightTabs: builtinRightTabs.value.map((t) => ({ id: t.id, label: t.label })),
-    workspaceViews: builtinMainViews.value
-      .filter((v) => v.scope === 'workspace')
-      .map((v) => ({ id: v.id, label: v.label })),
-  };
 }
 
 /**

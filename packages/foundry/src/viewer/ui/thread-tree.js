@@ -375,7 +375,15 @@ export function ThreadList() {
         ? 'No threads in this project'
         : 'No threads';
 
-  const threadNodes = threadTree(allThreads.value);
+  // Filter to the selected scope so ThreadList stays scope-accurate even while `threads:all` streams
+  // for a cross-project tab open on the opposite pane.
+  const scopedThreads = allThreads.value.filter((t) => {
+    if (forge) return t.scope === 'forge';
+    if (inbox) return t.scope === 'feedback';
+    if (activeProject) return (t.meta?.projectId ?? null) === activeProject && !t.scope;
+    return !t.meta?.projectId && !t.scope;
+  });
+  const threadNodes = threadTree(scopedThreads);
 
   return html`
     <section class="thread-list" aria-label="Threads">

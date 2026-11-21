@@ -62,6 +62,8 @@ import { AgentsFact } from './thread-agents.js';
 import { harnessName, projectLabel, ReferenceChips, threadPlace } from './thread-labels.js';
 import { TurnView } from './turn-view.js';
 import {
+  RIGHT_PANEL_FLAG_DEFAULTS,
+  readTabInfo,
   registerBuiltinRightTab,
   resolveActiveId,
   rightTabs,
@@ -426,15 +428,6 @@ function readTabBadge(tabDef, ctx) {
     : tabDef.badge(ctx);
 }
 
-function readTabInfo(tabDef, ctx) {
-  if (typeof tabDef.info === 'function') {
-    return tabDef.extId
-      ? safeCall(tabDef.extId, () => tabDef.info(ctx), '', 'rightTab.info')
-      : tabDef.info(ctx);
-  }
-  return typeof tabDef.info === 'string' ? tabDef.info : '';
-}
-
 function renderRightTabBadge(tabDef, ctx) {
   const val = readTabBadge(tabDef, ctx);
   if (val === null || val === undefined || val === false || val === 0 || val === '') return null;
@@ -444,7 +437,7 @@ function renderRightTabBadge(tabDef, ctx) {
   return val;
 }
 
-const tabNeedsThread = (tab) => tab?.defaultSide !== 'left' && tab?.requiresThread !== false;
+const tabNeedsThread = (tab) => Boolean(tab?.requiresThread);
 
 export function RightPanel({ onSpanSelect }) {
   const threadId = activeThreadId.value;
@@ -452,11 +445,7 @@ export function RightPanel({ onSpanSelect }) {
   const tabs = rightTabs();
   const activeId = resolveActiveId(tabs, rightTab.value, 'context');
   const activeTab = tabs.find((t) => t.id === activeId) ?? tabs[0];
-  const flags = useComponentFlags('rightPanel', {
-    showComingSoon: true,
-    showUsageBar: true,
-    showRunningFooter: true,
-  });
+  const flags = useComponentFlags('rightPanel', RIGHT_PANEL_FLAG_DEFAULTS);
   const fullWorkspace = boardOpen.value || watchtowerOpen.value || isFullWidthCustomView();
   // The board, Watchtower and full-width custom views take the width: the panel folds while any is open.
   const open = detailDrawerOpen.value && !fullWorkspace;
@@ -515,7 +504,7 @@ export function RightPanel({ onSpanSelect }) {
     </div>`;
 
   const missingThread = !hasThread && tabNeedsThread(activeTab);
-  const info = activeTab && !missingThread ? readTabInfo(activeTab, rpCtx) : '';
+  const info = activeTab && !missingThread ? readTabInfo(activeTab, rpCtx, 'rightTab.info') : '';
   const renderedBody = missingThread
     ? html`<div class="rp-empty">Open a thread to view ${activeTab?.label ?? 'this tab'}.</div>`
     : activeTab?.extId

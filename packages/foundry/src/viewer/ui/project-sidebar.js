@@ -23,7 +23,6 @@ import {
   feedbackInboxOpen,
   forgeMasterOpen,
   openProjectHome,
-  projectSidebarOpen,
   projects,
   selectScope,
   showToast,
@@ -289,9 +288,8 @@ function CollapsedStrip() {
 // ProjectSidebar (exported)
 // ---------------------------------------------------------------------------
 
-/** `folded`: the narrow-screen rule folded the rail to its strip, whatever size was chosen. */
+/** `folded`: renders the collapsed strip when the Left Rail folds; stays expanded inside Right Panel. */
 export function ProjectSidebar({ folded = false } = {}) {
-  const isOpen = projectSidebarOpen.value && !folded;
   const all = projects.value;
   const active = activeProjectId.value;
   const [adding, setAdding] = useState(false);
@@ -302,7 +300,7 @@ export function ProjectSidebar({ folded = false } = {}) {
   // Archived projects are hidden until asked for; the active one stays visible.
   const items = showArchived ? all : all.filter((p) => p.status !== 'archived' || p.id === active);
 
-  if (!isOpen) {
+  if (folded) {
     return html`<${CollapsedStrip} />`;
   }
 

@@ -9,7 +9,7 @@
  */
 
 import { safeCall } from './error-boundary.js';
-import { SAFE_UI, saveUiPatch } from './extension-loader.js';
+import { moveSideTab, SAFE_UI } from './extension-loader.js';
 import { html, useEffect, useRef, useState } from './lib.js';
 import { analyticsPath, navigate, settingsPath } from './route.js';
 import { MODES, ModeIcon, StatusLegend } from './status-icons.js';
@@ -133,11 +133,7 @@ export function CommandPalette() {
         label: `Move active right tab (${activeRight.label}) to Left Rail`,
         icon: '←',
         action: async () => {
-          const nextSide = activeRight.defaultSide === 'left' ? null : 'left';
-          const ok = await saveUiPatch(
-            { panelPlacement: { [activeRight.id]: nextSide } },
-            `Moved ${activeRight.label} to Left Rail`,
-          );
+          const ok = await moveSideTab(activeRight, 'left');
           if (ok) focusTab(activeRight.id);
         },
       });
@@ -150,11 +146,7 @@ export function CommandPalette() {
         label: `Move active left tab (${activeLeft.label}) to Right Panel`,
         icon: '→',
         action: async () => {
-          const nextSide = activeLeft.defaultSide === 'right' ? null : 'right';
-          const ok = await saveUiPatch(
-            { panelPlacement: { [activeLeft.id]: nextSide } },
-            `Moved ${activeLeft.label} to Right Panel`,
-          );
+          const ok = await moveSideTab(activeLeft, 'right');
           if (ok) focusTab(activeLeft.id);
         },
       });

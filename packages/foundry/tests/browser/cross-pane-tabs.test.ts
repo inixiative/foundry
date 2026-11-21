@@ -93,18 +93,20 @@ test('cross-pane tab placement moves tabs between Left Rail and Right Panel with
     await page
       .locator('[data-slot-group="rightPanel.tabs"] [data-tab-row="plan"] [data-move-tab="plan"]')
       .click();
-    await page
-      .locator('[data-slot-group="leftRail.tabs"] [data-tab-row="plan"] [data-reset-tab="plan"]')
-      .waitFor();
+    const movedPlanBtn = page.locator(
+      '[data-slot-group="leftRail.tabs"] [data-tab-row="plan"] [data-reset-tab="plan"]',
+    );
+    await movedPlanBtn.waitFor();
+    expect(await movedPlanBtn.innerText()).toBe('Return to Right');
 
     await page
       .locator('[data-slot-group="leftRail.tabs"] [data-tab-row="status"] [data-move-tab="status"]')
       .click();
-    await page
-      .locator(
-        '[data-slot-group="rightPanel.tabs"] [data-tab-row="status"] [data-reset-tab="status"]',
-      )
-      .waitFor();
+    const movedStatusBtn = page.locator(
+      '[data-slot-group="rightPanel.tabs"] [data-tab-row="status"] [data-reset-tab="status"]',
+    );
+    await movedStatusBtn.waitFor();
+    expect(await movedStatusBtn.innerText()).toBe('Return to Left');
 
     // 2. Open workspace with active thread: Plan is in Left Rail (absent from Right Panel),
     // Status is in Right Panel (absent from Left Rail).
@@ -229,6 +231,117 @@ test('cross-pane tab placement moves tabs between Left Rail and Right Panel with
     await page.locator('.rail-toggle-btn[data-rail-id="status"]').waitFor();
     expect(await page.locator('.rail-toggle-btn[data-rail-id="plan"]').count()).toBe(0);
     expect(await page.locator('.rp-tab[data-rtab-id="status"]').count()).toBe(0);
+
+    expect(errors).toEqual([]);
+  } finally {
+    expect(await releaseAll(cleanup)).toEqual([]);
+  }
+}, 120_000);
+
+test('Projects moved to Right Panel filters threads per selected scope while threads:all streams and stays expanded when Left Rail folds', async () => {
+  const cleanup: ReleaseStep[] = [];
+  const dir = mkdtempSync(join(tmpdir(), 'foundry-cross-pane-projects-'));
+  cleanup.push(['dir', () => rmSync(dir, { recursive: true, force: true })]);
+  try {
+    const projects = new ProjectRegistry();
+    const shop = projects.register({
+      id: 'shop',
+      label: 'acme-shop',
+      path: join(dir, 'shop'),
+      tags: [],
+      runtime: 'claude-code',
+    });
+    shop.addThread(
+      new Thread('shop-1', new ContextStack(), {
+        description: 'Checkout redesign',
+        projectId: 'shop',
+      }),
+    );
+    const billing = projects.register({
+      id: 'billing',
+      label: 'acme-billing',
+      path: join(dir, 'billing'),
+      tags: [],
+      runtime: 'claude-code',
+    });
+    billing.addThread(
+      new Thread('bill-1', new ContextStack(), {
+        description: 'Invoice webhooks',
+        projectId: 'billing',
+      }),
+    );
+
+    const configStore = new ConfigStore(dir);
+    const config = starterConfig('controlled', 'controlled');
+    config.agents = defaultAgents();
+    config.setupComplete = true;
+    config.projects.shop = { id: 'shop', path: join(dir, 'shop'), label: 'acme-shop' };
+    config.projects.billing = { id: 'billing', path: join(dir, 'billing'), label: 'acme-billing' };
+    config.ui = { panelPlacement: { projects: 'right' } };
+    await configStore.save(config);
+
+    const viewer = createViewer({
+      harness: new Harness(
+        new Thread('main', new ContextStack(), { description: 'Global scratch' }),
+      ),
+      eventStream: new EventStream(),
+      interventions: new InterventionLog(),
+      tokenTracker: new TokenTracker(),
+      configStore,
+      configDir: dir,
+      projectRegistry: projects,
+      localStore: null,
+    });
+    const server = Bun.serve({
+      hostname: '127.0.0.1',
+      port: 0,
+      fetch: viewer.fetch,
+      websocket: viewer.websocket,
+    });
+    cleanup.unshift(['server', () => server.stop(true)]);
+    const origin = `http://127.0.0.1:${server.port}`;
+
+    const browser = await chromium.launch({ headless: true });
+    cleanup.unshift(['browser', () => browser.close()]);
+    const page = await (
+      await browser.newContext({ viewport: { width: 1500, height: 900 } })
+    ).newPage();
+    page.setDefaultTimeout(15_000);
+    const errors: string[] = [];
+    page.on('pageerror', (e: Error) => errors.push(e.message));
+
+    // Open with Left Rail on Attention (cross-project) and Right Panel on moved Projects tab.
+    await page.goto(`${origin}/#thread=shop-1&detail=1&rtab=projects`);
+    await page.locator('.right-panel .proj-sidebar').waitFor();
+    await page.locator('.right-panel .nav-projects').waitFor();
+    const rightThreads = page.locator('.right-panel .thread-list .tree-node');
+
+    // Selecting acme-shop filters Right Panel ThreadList to only shop's threads.
+    await page.locator('.right-panel .nav-projects').getByText('acme-shop').click();
+    await rightThreads.filter({ hasText: 'Checkout redesign' }).waitFor();
+    expect(await rightThreads.filter({ hasText: 'Invoice webhooks' }).count()).toBe(0);
+    expect(await rightThreads.filter({ hasText: 'Global scratch' }).count()).toBe(0);
+
+    // Selecting acme-billing filters Right Panel ThreadList to only billing's threads (not overwritten by shop-1).
+    await page.locator('.right-panel .nav-projects').getByText('acme-billing').click();
+    await rightThreads.filter({ hasText: 'Invoice webhooks' }).waitFor();
+    expect(await rightThreads.filter({ hasText: 'Checkout redesign' }).count()).toBe(0);
+    expect(await rightThreads.filter({ hasText: 'Global scratch' }).count()).toBe(0);
+
+    // Selecting Global filters Right Panel ThreadList to only global threads.
+    await page.locator('.right-panel .nav-projects').getByText('Global').click();
+    await rightThreads.filter({ hasText: 'Global scratch' }).waitFor();
+    expect(await rightThreads.filter({ hasText: 'Checkout redesign' }).count()).toBe(0);
+    expect(await rightThreads.filter({ hasText: 'Invoice webhooks' }).count()).toBe(0);
+
+    // Folding Left Rail must NOT collapse Projects rendered inside the open Right Panel!
+    await page.locator('body').click({ position: { x: 800, y: 300 } });
+    await page.keyboard.press('Alt+BracketLeft');
+    await page.locator('.panels--proj-closed').waitFor();
+    await page.locator('.right-panel .proj-sidebar').waitFor({ state: 'visible' });
+    await page.locator('.right-panel .nav-projects').waitFor({ state: 'visible' });
+    await page.locator('.right-panel .thread-list').waitFor({ state: 'visible' });
+    expect(await page.locator('.right-panel .collapsed-strip').count()).toBe(0);
 
     expect(errors).toEqual([]);
   } finally {
