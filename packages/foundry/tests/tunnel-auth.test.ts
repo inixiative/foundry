@@ -1,6 +1,6 @@
 import './helpers/isolate-archive';
 import { afterEach, expect, test } from 'bun:test';
-import { mkdtempSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -306,4 +306,103 @@ test('a tunnel process that prints nothing fails the start at its deadline and i
   expect(Date.now() - started).toBeLessThan(5_000);
   expect(tunnel.info).toBeNull();
   rmSync(dir, { recursive: true, force: true });
+});
+
+const scriptedTunnel = (dir: string, runs: string[]) => {
+  const bin = join(dir, 'scripted-tunnel');
+  const body = runs
+    .map((run, index) => `${index + 1 === runs.length ? '*' : index + 1}) ${run};;`)
+    .join('\n');
+  writeFileSync(
+    bin,
+    `#!/bin/sh\nn=$(($(cat "$0.runs" 2>/dev/null || echo 0) + 1))\necho $n > "$0.runs"\ncase $n in\n${body}\nesac\n`,
+    { mode: 0o755 },
+  );
+  return bin;
+};
+const until = async (met: () => boolean) => {
+  for (let waited = 0; !met() && waited < 5_000; waited += 20) await Bun.sleep(20);
+  expect(met()).toBe(true);
+};
+
+test('a kept-up tunnel is started again after a failed start and after its process exits', async () => {
+  const dir = directory();
+  const tunnel = new FoundryTunnel({
+    port: 1,
+    provider: 'cloudflared',
+    cloudflaredBin: scriptedTunnel(dir, [
+      'echo "failed: https://api.trycloudflare.com/tunnel" >&2; exit 1',
+      'echo https://first.trycloudflare.com >&2; sleep 0.3',
+      'echo https://second.trycloudflare.com >&2; exec sleep 600',
+    ]),
+    retryMs: 20,
+    configDir: dir,
+  });
+  const seen: (string | null)[] = [];
+  tunnel.keepUp(() => seen.push(tunnel.url));
+  await until(() => seen.length === 3);
+  expect(seen).toEqual([
+    'https://first.trycloudflare.com',
+    null,
+    'https://second.trycloudflare.com',
+  ]);
+  await tunnel.stop();
+  await Bun.sleep(100);
+  expect(seen).toHaveLength(3);
+  expect(tunnel.info).toBeNull();
+});
+
+test('a start that a later start replaced ends its own process, never the new one', async () => {
+  const dir = directory();
+  const tunnel = new FoundryTunnel({
+    port: 1,
+    provider: 'cloudflared',
+    cloudflaredBin: scriptedTunnel(dir, [
+      'exec sleep 600',
+      'sleep 0.2; echo https://second.trycloudflare.com >&2; exec sleep 600',
+    ]),
+    configDir: dir,
+  });
+  const first = tunnel.start().catch((error: Error) => error.message);
+  await until(() => existsSync(join(dir, 'scripted-tunnel.runs')));
+  await tunnel.stop();
+  expect(await tunnel.start()).toBe('https://second.trycloudflare.com');
+  expect(await first).toContain('Tunnel process ended before giving a URL');
+  expect(tunnel.url).toBe('https://second.trycloudflare.com');
+  await tunnel.stop();
+});
+
+test('starting the tunnel takes the saved provider, whatever provider the held tunnel last tried', async () => {
+  const dir = directory(),
+    thread = new Thread('tunnel-provider-test', new ContextStack());
+  const viewer = createViewer({
+    harness: new Harness(thread),
+    eventStream: new EventStream(),
+    interventions: new InterventionLog(),
+    configDir: dir,
+    localStore: null,
+    tunnel: {
+      port: 4500,
+      token,
+      configDir: dir,
+      provider: 'localtunnel',
+      cloudflaredBin: scriptedTunnel(dir, [
+        'echo https://switched.trycloudflare.com >&2; exec sleep 600',
+      ]),
+    },
+  });
+  const call = (method: string, path: string, body?: unknown) =>
+    viewer.app.request(`http://localhost:4500${path}`, {
+      method,
+      headers: { 'content-type': 'application/json' },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+  await call('PATCH', '/api/tunnel', { provider: 'cloudflared' });
+  const started = await call('POST', '/api/tunnel/start');
+  expect(await started.json()).toEqual({
+    active: true,
+    url: 'https://switched.trycloudflare.com',
+  });
+  await viewer.tunnelHolder.tunnel?.stop();
+  await viewer.analyticsReady;
 });

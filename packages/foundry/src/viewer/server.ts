@@ -1519,16 +1519,8 @@ export async function startViewer(config: ViewerConfig) {
       configDir: config.configDir,
     });
 
-  if (tunnelHolder.tunnel) {
-    try {
-      await tunnelHolder.tunnel.start();
-      const info = tunnelHolder.tunnel.info;
-      if (info) console.info(`[Tunnel] ${info.provider} active: ${info.url}`);
-      tunnelHolder.changed?.();
-    } catch (err) {
-      console.warn(`[Tunnel] failed to start: ${(err as Error).message}`);
-    }
-  }
+  // why: boot never waits on the tunnel's provider
+  tunnelHolder.tunnel?.keepUp(() => tunnelHolder.changed?.());
 
   return {
     toolGate: viewer.toolGate,

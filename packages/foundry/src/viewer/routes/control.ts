@@ -949,6 +949,8 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps): void 
           subdomain: tunnelCfg.subdomain,
         });
       tunnelHolder.tunnel = tunnel;
+      await tunnel.stop();
+      tunnel.use(tunnelCfg.provider, tunnelCfg.subdomain);
       c.header('Cache-Control', 'no-store');
       const secure = new URL(c.req.url).protocol === 'https:' ? '; Secure' : '';
       c.header(
@@ -957,7 +959,7 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps): void 
       );
       try {
         await tunnel.start();
-        tunnelHolder.changed?.();
+        tunnel.keepUp(() => tunnelHolder.changed?.());
         await configStore.update((draft) => {
           draft.tunnel = { ...(draft.tunnel ?? tunnelCfg), enabled: true };
         });
