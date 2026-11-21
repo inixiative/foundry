@@ -9,6 +9,7 @@
  */
 
 import { safeCall } from './error-boundary.js';
+import { moveSideTab, SAFE_UI } from './extension-loader.js';
 import { html, useEffect, useRef, useState } from './lib.js';
 import { analyticsPath, navigate, settingsPath } from './route.js';
 import { MODES, ModeIcon, StatusLegend } from './status-icons.js';
@@ -18,13 +19,15 @@ import {
   commandPaletteOpen,
   createThread,
   executeAction,
+  focusTab,
   helpOpen,
+  railView,
+  rightTab,
   scopeProjectId,
-  showToast,
   toggleBoard,
   toggleGraphPanel,
 } from './store.js';
-import { extensionCommands } from './ui-registry.js';
+import { extensionCommands, leftTabs, rightTabs } from './ui-registry.js';
 
 const COMMANDS = [
   { id: 'pause', label: 'Pause thread', icon: '⏸', action: () => executeAction('thread:pause') },
@@ -120,13 +123,43 @@ export function CommandPalette() {
 
   if (!isOpen) return null;
 
+  const placementCommands = [];
+  if (!SAFE_UI) {
+    const rights = rightTabs();
+    const activeRight = rights.find((t) => t.id === rightTab.value) ?? rights[0];
+    if (activeRight && rights.length > 1) {
+      placementCommands.push({
+        id: 'move-right-tab-to-left',
+        label: `Move active right tab (${activeRight.label}) to Left Rail`,
+        icon: '←',
+        action: async () => {
+          const ok = await moveSideTab(activeRight, 'left');
+          if (ok) focusTab(activeRight.id);
+        },
+      });
+    }
+    const lefts = leftTabs();
+    const activeLeft = lefts.find((t) => t.id === railView.value) ?? lefts[0];
+    if (activeLeft && lefts.length > 1) {
+      placementCommands.push({
+        id: 'move-left-tab-to-right',
+        label: `Move active left tab (${activeLeft.label}) to Right Panel`,
+        icon: '→',
+        action: async () => {
+          const ok = await moveSideTab(activeLeft, 'right');
+          if (ok) focusTab(activeLeft.id);
+        },
+      });
+    }
+  }
+
   const extCommands = extensionCommands().map((cmd) => ({
     id: cmd.id,
     label: cmd.label ?? cmd.id,
     icon: cmd.icon ?? '◆',
     action: () => safeCall(cmd.extId, () => cmd.action?.(), undefined, 'command'),
   }));
-  const commands = [...COMMANDS, ...workerCommands, ...extCommands];
+  const commands = [...COMMANDS, ...placementCommands, ...workerCommands, ...extCommands];
   const filtered = query.trim()
     ? commands.filter(
         (c) =>

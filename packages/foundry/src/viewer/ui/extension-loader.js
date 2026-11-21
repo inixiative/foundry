@@ -40,6 +40,7 @@ import {
   boardOpen,
   connected,
   executeAction,
+  focusTab,
   openCustomView,
   openRightTab,
   projects,
@@ -62,6 +63,7 @@ import {
   registerLeftTab,
   registerMainView,
   registerRightTab,
+  safeUiSignal,
   setExtensionOrder,
   setFlags,
   uiConfigSignal,
@@ -189,26 +191,52 @@ export function refreshCustomTheme() {
   link.href = `/ui/custom/theme.css?v=${++themeNonce}`;
 }
 
+/** Patch `settings.ui` via `PATCH /api/settings/ui` and sync `settingsConfig`. */
+export async function saveUiPatch(patch, toastMsg, { onSaved, errorPrefix } = {}) {
+  try {
+    const res = await authFetch('/api/settings/ui', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(patch),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(body.error || res.statusText);
+    if (settingsRef) settingsRef.value = body;
+    onSaved?.(body);
+    if (toastMsg) showToast(toastMsg, 'ok');
+    return true;
+  } catch (err) {
+    showToast(`${errorPrefix ?? 'Could not save appearance setting'}: ${err.message}`, 'error');
+    return false;
+  }
+}
+
+/**
+ * Move a registered side-panel tab to `'left'` or `'right'`, unhiding it from the destination slot
+ * if it was previously hidden there, and persisting via `PATCH /api/settings/ui`.
+ */
+export async function moveSideTab(tab, targetSide, { onSaved } = {}) {
+  if (!tab?.id || (targetSide !== 'left' && targetSide !== 'right')) return false;
+  const nextSide = targetSide === tab.defaultSide ? null : targetSide;
+  const targetSlotId = targetSide === 'left' ? 'leftRail.tabs' : 'rightPanel.tabs';
+  const curTargetHidden = settingsRef?.peek()?.ui?.slots?.[targetSlotId]?.hidden ?? [];
+  const patch = { panelPlacement: { [tab.id]: nextSide } };
+  if (curTargetHidden.includes(tab.id)) {
+    const nextHidden = curTargetHidden.filter((x) => x !== tab.id);
+    patch.slots = { [targetSlotId]: { hidden: nextHidden.length ? nextHidden : null } };
+  }
+  const destLabel = targetSide === 'left' ? 'Left Rail' : 'Right Panel';
+  return saveUiPatch(patch, `Moved ${tab.label ?? tab.id} to ${destLabel}`, { onSaved });
+}
+
 /** Disable an extension by patching `ui.extensions` via `PATCH /api/settings/ui`. */
 export async function disableExtension(extId) {
   if (!extId || !settingsRef) return false;
   const current = settingsRef.peek()?.ui?.extensions ?? [];
   const next = current.filter((id) => id !== extId);
-  try {
-    const res = await authFetch('/api/settings/ui', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ extensions: next }),
-    });
-    const body = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(body.error || res.statusText);
-    settingsRef.value = body;
-    showToast(`Disabled extension "${extId}"`, 'ok');
-    return true;
-  } catch (err) {
-    showToast(`Could not disable "${extId}": ${err.message}`, 'error');
-    return false;
-  }
+  return saveUiPatch({ extensions: next }, `Disabled extension "${extId}"`, {
+    errorPrefix: `Could not disable "${extId}"`,
+  });
 }
 
 function buildExtensionSdk(extId) {
@@ -245,6 +273,7 @@ function buildExtensionSdk(extId) {
     actions: {
       selectThread,
       selectScope,
+      focusTab,
       openRightTab,
       showThreadView,
       openCustomView,
@@ -271,9 +300,7 @@ function buildExtensionSdk(extId) {
           bindExtensionKey(def.key, {
             description: `Left rail: ${def.label ?? fullId}`,
             category: 'extensions',
-            action: () => {
-              railView.value = fullId;
-            },
+            action: () => focusTab(fullId),
           }),
         );
       }
@@ -462,6 +489,7 @@ export function initUiExtensions(settingsConfigSignal) {
 
   if (SAFE_UI) {
     refreshCustomTheme();
+    safeUiSignal.value = true;
     uiConfigSignal.value = {};
     extensionsReady.value = true;
     return;

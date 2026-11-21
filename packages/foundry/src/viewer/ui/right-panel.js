@@ -31,6 +31,7 @@ import { Plan } from './plan.js';
 import { Running } from './running.js';
 import { SectionList } from './slot.js';
 import {
+  activeProjectId,
   activeThreadId,
   authFetch,
   boardOpen,
@@ -44,6 +45,7 @@ import {
   projects,
   RIGHT_TAB_KEYS,
   RIGHT_TAB_LABELS,
+  railView,
   rightSize,
   rightTab,
   selectedEvent,
@@ -60,6 +62,8 @@ import { AgentsFact } from './thread-agents.js';
 import { harnessName, projectLabel, ReferenceChips, threadPlace } from './thread-labels.js';
 import { TurnView } from './turn-view.js';
 import {
+  RIGHT_PANEL_FLAG_DEFAULTS,
+  readTabInfo,
   registerBuiltinRightTab,
   resolveActiveId,
   rightTabs,
@@ -75,9 +79,10 @@ const openFeedback = (threadId) =>
 
 /** Each tab's one line of facts under its title, and its count for the collapsed strip. */
 function tabFacts(tab, threadId) {
-  const launch = threadLaunch.value;
-  const members = threadData.value?.conversation?.members ?? 0;
-  const meta = threadData.value?.meta ?? {};
+  const active = threadId && threadData.value?.threadId === threadId ? threadData.value : null;
+  const launch = active ? threadLaunch.value : null;
+  const members = active?.conversation?.members ?? 0;
+  const meta = active?.meta ?? {};
   switch (tab) {
     case 'plan':
       return { info: 'What the thread is for and why' };
@@ -423,30 +428,41 @@ function readTabBadge(tabDef, ctx) {
     : tabDef.badge(ctx);
 }
 
-function readTabInfo(tabDef, ctx) {
-  if (typeof tabDef.info === 'function') {
-    return tabDef.extId
-      ? safeCall(tabDef.extId, () => tabDef.info(ctx), '', 'rightTab.info')
-      : tabDef.info(ctx);
+function renderRightTabBadge(tabDef, ctx) {
+  const val = readTabBadge(tabDef, ctx);
+  if (val === null || val === undefined || val === false || val === 0 || val === '') return null;
+  if (typeof val === 'number' || typeof val === 'string') {
+    return html`<span class="rp-tab-count ${tabDef.id === 'feedback' ? 'is-attention' : ''}">${val}</span>`;
   }
-  return typeof tabDef.info === 'string' ? tabDef.info : '';
+  return val;
 }
+
+const tabNeedsThread = (tab) => Boolean(tab?.requiresThread);
 
 export function RightPanel({ onSpanSelect }) {
   const threadId = activeThreadId.value;
+  const projectId = activeProjectId.value;
   const tabs = rightTabs();
   const activeId = resolveActiveId(tabs, rightTab.value, 'context');
   const activeTab = tabs.find((t) => t.id === activeId) ?? tabs[0];
-  const flags = useComponentFlags('rightPanel', {
-    showComingSoon: true,
-    showUsageBar: true,
-    showRunningFooter: true,
-  });
+  const flags = useComponentFlags('rightPanel', RIGHT_PANEL_FLAG_DEFAULTS);
   const fullWorkspace = boardOpen.value || watchtowerOpen.value || isFullWidthCustomView();
   // The board, Watchtower and full-width custom views take the width: the panel folds while any is open.
   const open = detailDrawerOpen.value && !fullWorkspace;
   const target = inspection(inspectTarget.value?.kind === 'layer' ? inspectTarget.value.id : null);
-  const rpCtx = { threadId, thread: threadData.value, launch: threadLaunch.value, flags };
+  const rpCtx = {
+    railView: railView.value,
+    activeThreadId: threadId,
+    threadId,
+    projectId,
+    thread: threadData.value,
+    launch: threadLaunch.value,
+    flags,
+    side: 'right',
+    onSpanSelect,
+  };
+  const hasThread = Boolean(threadId && threadData.value);
+  const hasStandaloneTab = tabs.some((t) => !tabNeedsThread(t));
 
   // The turn view opens here, at the panel's widest step; the thread stays in the centre.
   if (turnViewTarget.value && !fullWorkspace)
@@ -481,29 +497,32 @@ export function RightPanel({ onSpanSelect }) {
       <div class="rp-frame"><${Inspector} target=${target} onSpanSelect=${onSpanSelect} /></div>
     </div>`;
 
-  if (!threadId || !threadData.value)
+  if (!hasThread && !hasStandaloneTab)
     return html`<div class="right-panel detail-drawer">
       <header class="rp-band"><h2 class="rp-title">No thread open</h2></header>
       <div class="rp-frame"><div class="rp-empty">Open a thread to see its plan, loop, artifacts, work and context.</div></div>
     </div>`;
 
-  const info = activeTab ? readTabInfo(activeTab, rpCtx) : '';
+  const missingThread = !hasThread && tabNeedsThread(activeTab);
+  const info = activeTab && !missingThread ? readTabInfo(activeTab, rpCtx, 'rightTab.info') : '';
+  const renderedBody = missingThread
+    ? html`<div class="rp-empty">Open a thread to view ${activeTab?.label ?? 'this tab'}.</div>`
+    : activeTab?.extId
+      ? html`<${ExtensionBoundary} key=${activeTab.id} extId=${activeTab.extId} slot="rightPanel.tabs" onDisable=${disableExtension} render=${activeTab.render} ctx=${rpCtx} />`
+      : activeTab?.render(rpCtx);
+
   return html`<div class="right-panel detail-drawer">
     <header class="rp-band">
       <div class="rp-band-row rp-head-row">
         <nav class="rp-tabs" role="tablist" aria-label="Thread reference">
         ${tabs.map((t) => {
-          const badge = readTabBadge(t, rpCtx);
+          const badge = !hasThread && tabNeedsThread(t) ? null : renderRightTabBadge(t, rpCtx);
           return html`<button key=${t.id} role="tab" aria-selected=${t.id === activeId}
             data-rtab-id=${t.id} aria-label=${t.label}
             class="rp-tab ${t.id === activeId ? 'is-active' : ''}" title=${tabTitle(t)}
             onClick=${() => {
               rightTab.value = t.id;
-            }}><${TabIcon} tab=${t.id} icon=${t.icon} extId=${t.extId} /><span class="rp-tab-label">${t.label}</span>${
-              badge
-                ? html`<span class="rp-tab-count ${t.id === 'feedback' ? 'is-attention' : ''}">${badge}</span>`
-                : null
-            }</button>`;
+            }}><${TabIcon} tab=${t.id} icon=${t.icon} extId=${t.extId} /><span class="rp-tab-label">${t.label}</span>${badge}</button>`;
         })}
       </nav>
       <${SectionList} slot="rightPanel.controls" items=${RIGHT_PANEL_CONTROLS} context=${rpCtx} />
@@ -515,11 +534,11 @@ export function RightPanel({ onSpanSelect }) {
         ${info ? html`<div class="rp-info">${info}</div>` : null}
       </header>
       ${
-        activeTab?.extId
-          ? html`<${ExtensionBoundary} key=${activeTab.id} extId=${activeTab.extId} slot="rightPanel.tabs" onDisable=${disableExtension} render=${activeTab.render} ctx=${rpCtx} />`
-          : activeTab?.render(rpCtx)
+        !missingThread && activeTab?.defaultSide === 'left'
+          ? html`<div class="rp-moved-rail">${renderedBody}</div>`
+          : renderedBody
       }
     </div>
-    ${flags.showRunningFooter ? html`<${Running} threadId=${threadId} />` : null}
+    ${hasThread && flags.showRunningFooter ? html`<${Running} threadId=${threadId} />` : null}
   </div>`;
 }

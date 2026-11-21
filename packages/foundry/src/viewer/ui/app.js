@@ -59,6 +59,7 @@ import {
   eventCount,
   executeAction,
   feedbackInboxOpen,
+  focusTab,
   helpOpen,
   incoming,
   incomingOpenId,
@@ -76,7 +77,6 @@ import {
   RIGHT_TAB_KEYS,
   RIGHT_TAB_LABELS,
   RIGHT_TABS,
-  railView,
   resyncStreams,
   scopeOfThread,
   scopeProjectId,
@@ -170,7 +170,7 @@ function OpenPill() {
   const roots = openListRoots();
   return html`<button type="button" class="top-pill open-pill header-item--keep header-item--keep-sm" title="Your open threads"
     onClick=${() => {
-      railView.value = 'open';
+      focusTab('open');
       showThreadsWorkspace();
     }}><span class="top-pill-dot"></span>Open<span class="top-pill-count">${roots.length}</span><${Attention} nodes=${openRoots()} /></button>`;
 }
@@ -459,7 +459,7 @@ function App() {
         <${RestoreTab} side="right" />
         <!-- Left: navigation — pinned scopes, projects, the selected scope's threads (collapsible) -->
         <div class="panel-projects" id="workspace-projects" tabIndex="0">
-          <${NavRail} />
+          <${NavRail} onSpanSelect=${handleSpanSelect} />
         </div>
 
         <!-- Center: Conversation / trace timeline, or the graph panel -->

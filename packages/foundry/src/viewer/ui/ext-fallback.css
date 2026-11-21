@@ -229,3 +229,74 @@
   font-size: 12px;
   color: var(--text-dim);
 }
+
+/* Cross-pane tab placement controls in Settings -> Appearance */
+.appearance-tab-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+.appearance-tab-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 5px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface2);
+  font-size: 12.5px;
+}
+.appearance-tab-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  cursor: pointer;
+}
+.appearance-tab-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.appearance-tab-btn {
+  padding: 2px 8px;
+  border: 1px solid var(--line2);
+  border-radius: 5px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.appearance-tab-btn:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+.appearance-tab-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.appearance-tab-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* Cross-pane tab containers */
+.nav-rail .rail-moved-frame.rp-frame {
+  margin: 0;
+  min-width: 0;
+}
+.rp-frame .rp-moved-rail {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  gap: 8px;
+}
+.rp-frame .rp-moved-rail .active-rail {
+  grid-template-rows: auto auto;
+}
+.rp-frame .rp-moved-rail .proj-sidebar {
+  min-height: 240px;
+}

@@ -311,3 +311,68 @@ test('ConfigStore.patch("ui", { colorScheme }) accepts dark/light/system, resets
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('ConfigStore.patch("ui", { panelPlacement }) validates sides, resets on null, deletes empty map, and blocks prototype keys', async () => {
+  const dir = makeTempDir('foundry-ui-panel-placement-');
+  try {
+    const store = new ConfigStore(dir);
+    await store.load();
+    expect(store.config.ui).toBeUndefined();
+
+    // Valid placement overrides merge cleanly across patches.
+    await store.patch('ui', { panelPlacement: { plan: 'left', 'demo:metrics': 'left' } });
+    expect(store.config.ui).toEqual({
+      panelPlacement: { plan: 'left', 'demo:metrics': 'left' },
+    });
+
+    await store.patch('ui', { panelPlacement: { status: 'right' } });
+    expect(store.config.ui).toEqual({
+      panelPlacement: { plan: 'left', 'demo:metrics': 'left', status: 'right' },
+    });
+
+    // Setting an entry to null deletes only that entry; deleting the last entry removes panelPlacement and ui.
+    await store.patch('ui', { panelPlacement: { plan: null, 'demo:metrics': null } });
+    expect(store.config.ui).toEqual({ panelPlacement: { status: 'right' } });
+
+    await store.patch('ui', { panelPlacement: { status: null } });
+    expect(store.config.ui).toBeUndefined();
+
+    // Whole-map null reset deletes panelPlacement while preserving sibling ui fields.
+    await store.patch('ui', { theme: 'ocean', panelPlacement: { plan: 'left' } });
+    await store.patch('ui', { panelPlacement: null });
+    expect(store.config.ui).toEqual({ theme: 'ocean' });
+
+    // Empty object patch does not persist an empty panelPlacement map.
+    await store.patch('ui', { panelPlacement: {} });
+    expect(store.config.ui).toEqual({ theme: 'ocean' });
+
+    // Invalid side values and non-object panelPlacement rejected.
+    await expect(store.patch('ui', { panelPlacement: { plan: 'center' } })).rejects.toThrow(
+      /panelPlacement/i,
+    );
+    await expect(store.patch('ui', { panelPlacement: { plan: 'LEFT' } })).rejects.toThrow(
+      /panelPlacement/i,
+    );
+    await expect(store.patch('ui', { panelPlacement: { plan: 42 } })).rejects.toThrow(
+      /panelPlacement/i,
+    );
+    await expect(store.patch('ui', { panelPlacement: ['left'] })).rejects.toThrow(
+      /panelPlacement/i,
+    );
+
+    // Unsafe prototype-pollution keys rejected.
+    const protoTab = JSON.parse('{"panelPlacement":{"__proto__":"left"}}');
+    await expect(store.patch('ui', protoTab)).rejects.toThrow(/unsafe/i);
+    const ctorTab = JSON.parse('{"panelPlacement":{"constructor":"right"}}');
+    await expect(store.patch('ui', ctorTab)).rejects.toThrow(/unsafe/i);
+    const dottedProto = JSON.parse('{"panelPlacement":{"a.prototype":"left"}}');
+    await expect(store.patch('ui', dottedProto)).rejects.toThrow(/unsafe/i);
+
+    // Repository `.foundry/project.json` rejects `ui.panelPlacement`.
+    expect(() => validateRepositoryProject({ ui: { panelPlacement: { plan: 'left' } } })).toThrow(
+      /not a repository setting/i,
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

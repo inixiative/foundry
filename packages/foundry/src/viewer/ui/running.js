@@ -11,7 +11,7 @@
  */
 
 import { html, useEffect, useState } from './lib.js';
-import { allThreads, authFetch, railExpanded, railView, selectThread, showToast } from './store.js';
+import { allThreads, authFetch, focusTab, railExpanded, selectThread, showToast } from './store.js';
 import { threadName } from './thread-labels.js';
 
 const since = (at) => {
@@ -76,7 +76,7 @@ export function Running({ threadId }) {
     (t) => t.meta?.parentThreadId === threadId && t.meta?.status === 'active',
   );
   const reveal = () => {
-    railView.value = 'open';
+    focusTab('open');
     railExpanded.value = new Set([...railExpanded.value, threadId]);
   };
   // Running folds to one line, sized to its content (design review 11-02); it opens by itself while

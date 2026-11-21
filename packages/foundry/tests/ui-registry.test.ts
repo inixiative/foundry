@@ -2,10 +2,13 @@ import { beforeEach, expect, test } from 'bun:test';
 import { safeCall } from '../src/viewer/ui/error-boundary.js';
 import {
   _resetRegistryForTests,
+  effectiveTabSide,
   extendSection,
+  leftTabRows,
   leftTabs,
   mainViews,
   namespaceId,
+  readTabInfo,
   reconcileItems,
   registerBuiltinLeftTab,
   registerBuiltinMainView,
@@ -16,9 +19,12 @@ import {
   registerRightTab,
   resolveActiveId,
   rightTabs,
+  safeUiSignal,
   sectionItems,
   setExtensionOrder,
   setFlags,
+  sideTabsMetadata,
+  tabPlacement,
   uiConfigSignal,
   unregisterExtension,
   useComponentFlags,
@@ -189,4 +195,98 @@ test('safeCall catches both sync throws and async Promise rejections', async () 
     'fallback-async',
   );
   expect(asyncResult).toBe('fallback-async');
+});
+
+test('panelPlacement partitions built-in and extension tabs across sides, assigns moved right tabs to row 1, and exposes helpers', () => {
+  registerBuiltinLeftTab({ id: 'attention', label: 'Attention', row: 0, render: () => null });
+  registerBuiltinLeftTab({ id: 'status', label: 'Status', row: 1, render: () => null });
+  registerBuiltinRightTab({ id: 'plan', label: 'Plan', render: () => null });
+  registerBuiltinRightTab({ id: 'context', label: 'Context', render: () => null });
+  registerRightTab('demo', { id: 'metrics', label: 'Metrics', render: () => null });
+
+  expect(effectiveTabSide('plan')).toBe('right');
+  expect(effectiveTabSide('status')).toBe('left');
+  expect(effectiveTabSide('unknown')).toBeNull();
+  expect(tabPlacement('plan')).toEqual({ defaultSide: 'right', side: 'right', moved: false });
+
+  uiConfigSignal.value = {
+    panelPlacement: {
+      plan: 'left',
+      status: 'right',
+      'demo:metrics': 'left',
+    },
+  };
+
+  expect(leftTabs().map((t) => t.id)).toEqual(['attention', 'plan', 'demo:metrics']);
+  expect(rightTabs().map((t) => t.id)).toEqual(['context', 'status']);
+  // Native row-0 left tabs stay in row 0; moved right tabs sit cleanly in row 1.
+  expect(leftTabRows().map((row) => row.map((t) => t.id))).toEqual([
+    ['attention'],
+    ['plan', 'demo:metrics'],
+  ]);
+  expect(effectiveTabSide('plan')).toBe('left');
+  expect(effectiveTabSide('status')).toBe('right');
+  expect(tabPlacement('plan')).toEqual({ defaultSide: 'right', side: 'left', moved: true });
+  expect(tabPlacement('status')).toEqual({ defaultSide: 'left', side: 'right', moved: true });
+
+  // SAFE_UI ignores panelPlacement and restores default sides.
+  safeUiSignal.value = true;
+  expect(leftTabs().map((t) => t.id)).toEqual(['attention', 'status']);
+  expect(rightTabs().map((t) => t.id)).toEqual(['plan', 'context', 'demo:metrics']);
+  expect(effectiveTabSide('plan')).toBe('right');
+  expect(tabPlacement('plan')).toEqual({ defaultSide: 'right', side: 'right', moved: false });
+  // Explicit placement override passed to sideTabsMetadata reflects saved config even in safe mode.
+  const meta = sideTabsMetadata({ plan: 'left', status: 'right' });
+  expect(meta.leftTabs.map((t) => t.id)).toEqual(['attention', 'plan']);
+  expect(meta.rightTabs.map((t) => t.id)).toEqual(['context', 'status', 'demo:metrics']);
+});
+
+test('panelPlacement guarantees non-empty fallback without duplicating tabs when every tab of a side is moved away', () => {
+  registerBuiltinLeftTab({ id: 'attention', label: 'Attention', row: 0, render: () => null });
+  registerBuiltinLeftTab({ id: 'open', label: 'Open', row: 0, render: () => null });
+  registerBuiltinRightTab({ id: 'plan', label: 'Plan', render: () => null });
+  registerBuiltinRightTab({ id: 'context', label: 'Context', render: () => null });
+
+  // Move every left tab to the right: first native left tab stays on left, no duplicate on right.
+  uiConfigSignal.value = {
+    panelPlacement: { attention: 'right', open: 'right' },
+  };
+  expect(leftTabs().map((t) => t.id)).toEqual(['attention']);
+  expect(rightTabs().map((t) => t.id)).toEqual(['plan', 'context', 'open']);
+  expect(effectiveTabSide('attention')).toBe('left');
+  expect(effectiveTabSide('open')).toBe('right');
+
+  // Move every right tab to the left: first native right tab stays on right, no duplicate on left.
+  uiConfigSignal.value = {
+    panelPlacement: { plan: 'left', context: 'left' },
+  };
+  expect(leftTabs().map((t) => t.id)).toEqual(['attention', 'open', 'context']);
+  expect(rightTabs().map((t) => t.id)).toEqual(['plan']);
+  expect(effectiveTabSide('plan')).toBe('right');
+  expect(effectiveTabSide('context')).toBe('left');
+});
+
+test('side tabs default requiresThread by side, readTabInfo isolates extension throws, and desiredSide ignores inherited keys', () => {
+  registerBuiltinLeftTab({ id: 'attention', label: 'Attention', row: 0, render: () => null });
+  registerBuiltinRightTab({ id: 'plan', label: 'Plan', render: () => null });
+  registerLeftTab('ext', { id: 'l', label: 'L', render: () => null });
+  registerRightTab('ext', {
+    id: 'r',
+    label: 'R',
+    info: () => {
+      throw new Error('info boom');
+    },
+    render: () => null,
+  });
+
+  expect(leftTabs().every((t) => t.requiresThread === false)).toBe(true);
+  expect(rightTabs().every((t) => t.requiresThread === true)).toBe(true);
+
+  const extRight = rightTabs().find((t) => t.id === 'ext:r');
+  expect(readTabInfo(extRight, {})).toBe('');
+
+  // Inherited property on a prototype must not act as an own panelPlacement override.
+  const inherited = Object.create({ plan: 'left' });
+  uiConfigSignal.value = { panelPlacement: inherited };
+  expect(effectiveTabSide('plan')).toBe('right');
 });

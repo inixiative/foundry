@@ -61,7 +61,7 @@ import {
   composerFill,
   composerNote,
   contextWindowOf,
-  detailDrawerOpen,
+  focusTab,
   focusTurnId,
   giveFeedback,
   historyPaging,
@@ -82,7 +82,6 @@ import {
   resolveLostTurn,
   resolvePrompt,
   restartHolding,
-  rightTab,
   selectedSpanId,
   selectThread,
   sendMessage,
@@ -325,8 +324,7 @@ function ContextBar({ showContextFill = true } = {}) {
   const agents = threadAgents(view, data.threadId);
   const agentCount = agentCountOf(agents);
   const openParticipants = () => {
-    rightTab.value = 'participants';
-    detailDrawerOpen.value = true;
+    focusTab('participants');
   };
   const state = threadStatusOf(data.threadId, liveThreadStatus(messages.value));
   const contextWindow =

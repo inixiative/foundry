@@ -17,12 +17,35 @@
  * overrides (`pinned` → `order` → unlisted new built-ins → minus `hidden`).
  */
 
+import { safeCall } from './error-boundary.js';
 import { signal } from './lib.js';
 
 const LOCAL_ID_PATTERN = /^[a-z0-9][a-z0-9_.:-]{0,63}$/i;
+const VALID_PANEL_SIDES = new Set(['left', 'right']);
+
+/** Default display flags shared by RightPanel and NavRail when rendering moved right-panel tabs. */
+export const RIGHT_PANEL_FLAG_DEFAULTS = Object.freeze({
+  showComingSoon: true,
+  showUsageBar: true,
+  showRunningFooter: true,
+});
+
+/** Read a tab's one-line info string, isolating extension `info(ctx)` callbacks. */
+export function readTabInfo(tab, ctx, label = 'tab.info') {
+  if (!tab) return '';
+  if (typeof tab.info === 'function') {
+    return tab.extId ? safeCall(tab.extId, () => tab.info(ctx), '', label) : tab.info(ctx);
+  }
+  return typeof tab.info === 'string' ? tab.info : '';
+}
 
 /** Reactive mirror of `settingsConfig.value?.ui ?? {}` (empty in `?safe-ui=1` mode). */
 export const uiConfigSignal = signal({});
+
+/** Whether `?safe-ui=1` is active (ignores `panelPlacement`, restoring default sides). */
+export const safeUiSignal = signal(
+  typeof location !== 'undefined' && new URLSearchParams(location.search).get('safe-ui') === '1',
+);
 
 /** Becomes true once the initial enabled UI extensions batch has settled (or immediately in safe mode). */
 export const extensionsReady = signal(false);
@@ -308,11 +331,23 @@ function upsertBuiltin(listSignal, def) {
 }
 
 export function registerBuiltinLeftTab(def) {
-  upsertBuiltin(builtinLeftTabs, { row: 0, wideShare: false, ...def, extId: null });
+  upsertBuiltin(builtinLeftTabs, {
+    row: 0,
+    wideShare: false,
+    requiresThread: false,
+    ...def,
+    defaultSide: 'left',
+    extId: null,
+  });
 }
 
 export function registerBuiltinRightTab(def) {
-  upsertBuiltin(builtinRightTabs, { ...def, extId: null });
+  upsertBuiltin(builtinRightTabs, {
+    requiresThread: true,
+    ...def,
+    defaultSide: 'right',
+    extId: null,
+  });
 }
 
 export function registerBuiltinMainView(def) {
@@ -328,8 +363,10 @@ export function registerLeftTab(extId, def) {
   const entry = {
     row: 1,
     wideShare: false,
+    requiresThread: false,
     ...def,
     id,
+    defaultSide: 'left',
     extId,
     _seq: ++seqCounter,
   };
@@ -342,8 +379,10 @@ export function registerLeftTab(extId, def) {
 export function registerRightTab(extId, def) {
   const id = namespaceId(extId, def.id);
   const entry = {
+    requiresThread: true,
     ...def,
     id,
+    defaultSide: 'right',
     extId,
     _seq: ++seqCounter,
   };
@@ -449,17 +488,158 @@ export function useComponentFlags(componentId, defaults = {}) {
   return merged;
 }
 
-export function leftTabs() {
-  return reconcileItems(
-    builtinLeftTabs.value,
-    extLeftTabs.value,
-    uiConfigSignal.value?.slots?.['leftRail.tabs'],
-    { requireNonEmpty: true },
+function resolvedPlacementMap(explicitPlacement) {
+  if (explicitPlacement !== undefined) return explicitPlacement ?? null;
+  if (safeUiSignal.value) return null;
+  return uiConfigSignal.value?.panelPlacement ?? null;
+}
+
+function desiredSide(tab, placement) {
+  const override = placement && Object.hasOwn(placement, tab.id) ? placement[tab.id] : undefined;
+  return VALID_PANEL_SIDES.has(override) ? override : tab.defaultSide;
+}
+
+function projectToSide(tab, side) {
+  if (side === 'left') {
+    return {
+      ...tab,
+      row: tab.defaultSide === 'left' ? (tab.row ?? 0) : 1,
+      side: 'left',
+    };
+  }
+  return { ...tab, side: 'right' };
+}
+
+function partitionSideTabs(explicitPlacement) {
+  const placement = resolvedPlacementMap(explicitPlacement);
+  const bLeft = builtinLeftTabs.value;
+  const eLeft = extLeftTabs.value;
+  const bRight = builtinRightTabs.value;
+  const eRight = extRightTabs.value;
+
+  const leftBuiltIns = [];
+  const leftExts = [];
+  const rightBuiltIns = [];
+  const rightExts = [];
+
+  for (const tab of bLeft) {
+    if (desiredSide(tab, placement) === 'right') rightBuiltIns.push(tab);
+    else leftBuiltIns.push(tab);
+  }
+  for (const tab of bRight) {
+    if (desiredSide(tab, placement) === 'left') leftBuiltIns.push(tab);
+    else rightBuiltIns.push(tab);
+  }
+  for (const tab of eLeft) {
+    if (desiredSide(tab, placement) === 'right') rightExts.push(tab);
+    else leftExts.push(tab);
+  }
+  for (const tab of eRight) {
+    if (desiredSide(tab, placement) === 'left') leftExts.push(tab);
+    else rightExts.push(tab);
+  }
+
+  const orderedLeftBuiltIns = [
+    ...leftBuiltIns.filter((t) => t.defaultSide === 'left'),
+    ...leftBuiltIns.filter((t) => t.defaultSide !== 'left'),
+  ];
+  const orderedRightBuiltIns = [
+    ...rightBuiltIns.filter((t) => t.defaultSide === 'right'),
+    ...rightBuiltIns.filter((t) => t.defaultSide !== 'right'),
+  ];
+
+  // Guarantee neither side is emptied completely when it has registered native tabs.
+  if (orderedLeftBuiltIns.length === 0 && leftExts.length === 0) {
+    const rescue = bLeft[0] ?? eLeft[0];
+    if (rescue) {
+      if (rescue.extId) {
+        const idx = rightExts.indexOf(rescue);
+        if (idx !== -1) rightExts.splice(idx, 1);
+        leftExts.push(rescue);
+      } else {
+        const idx = orderedRightBuiltIns.indexOf(rescue);
+        if (idx !== -1) orderedRightBuiltIns.splice(idx, 1);
+        orderedLeftBuiltIns.push(rescue);
+      }
+    }
+  }
+  if (orderedRightBuiltIns.length === 0 && rightExts.length === 0) {
+    const rescue = bRight[0] ?? eRight[0];
+    if (rescue) {
+      if (rescue.extId) {
+        const idx = leftExts.indexOf(rescue);
+        if (idx !== -1) leftExts.splice(idx, 1);
+        rightExts.push(rescue);
+      } else {
+        const idx = orderedLeftBuiltIns.indexOf(rescue);
+        if (idx !== -1) orderedLeftBuiltIns.splice(idx, 1);
+        orderedRightBuiltIns.push(rescue);
+      }
+    }
+  }
+
+  return {
+    leftBuiltIns: orderedLeftBuiltIns.map((t) => projectToSide(t, 'left')),
+    leftExts: leftExts.map((t) => projectToSide(t, 'left')),
+    rightBuiltIns: orderedRightBuiltIns.map((t) => projectToSide(t, 'right')),
+    rightExts: rightExts.map((t) => projectToSide(t, 'right')),
+  };
+}
+
+/** Find any registered side-panel tab definition across both left rail and right panel registries. */
+export function sideTabById(id) {
+  if (!id) return null;
+  return (
+    builtinLeftTabs.value.find((t) => t.id === id) ??
+    extLeftTabs.value.find((t) => t.id === id) ??
+    builtinRightTabs.value.find((t) => t.id === id) ??
+    extRightTabs.value.find((t) => t.id === id) ??
+    null
   );
+}
+
+/**
+ * Effective side (`'left' | 'right'`) for a registered side-panel tab id,
+ * respecting `?safe-ui=1` and non-empty side fallbacks, or `null` if unregistered.
+ * @param {string} id
+ * @param {Record<string, 'left' | 'right'> | null} [placementOverride]
+ * @returns {'left' | 'right' | null}
+ */
+export function effectiveTabSide(id, placementOverride) {
+  if (!id) return null;
+  const { leftBuiltIns, leftExts, rightBuiltIns, rightExts } = partitionSideTabs(placementOverride);
+  if (leftBuiltIns.some((t) => t.id === id) || leftExts.some((t) => t.id === id)) return 'left';
+  if (rightBuiltIns.some((t) => t.id === id) || rightExts.some((t) => t.id === id)) return 'right';
+  return null;
+}
+
+/**
+ * Placement summary for a registered side-panel tab, or `null` if unregistered.
+ * @param {string} id
+ * @param {Record<string, 'left' | 'right'> | null} [placementOverride]
+ * @returns {{ defaultSide: 'left' | 'right', side: 'left' | 'right', moved: boolean } | null}
+ */
+export function tabPlacement(id, placementOverride) {
+  const tab = sideTabById(id);
+  if (!tab) return null;
+  const side = effectiveTabSide(id, placementOverride) ?? tab.defaultSide;
+  return {
+    defaultSide: tab.defaultSide,
+    side,
+    moved: side !== tab.defaultSide,
+  };
+}
+
+export function leftTabs() {
+  const { leftBuiltIns, leftExts } = partitionSideTabs();
+  return reconcileItems(leftBuiltIns, leftExts, uiConfigSignal.value?.slots?.['leftRail.tabs'], {
+    requireNonEmpty: true,
+  });
 }
 
 export function leftTabById(id) {
   return (
+    leftTabs().find((t) => t.id === id) ??
     builtinLeftTabs.value.find((t) => t.id === id) ??
     extLeftTabs.value.find((t) => t.id === id) ??
     null
@@ -478,9 +658,10 @@ export function leftTabRows() {
 }
 
 export function rightTabs() {
+  const { rightBuiltIns, rightExts } = partitionSideTabs();
   return reconcileItems(
-    builtinRightTabs.value,
-    extRightTabs.value,
+    rightBuiltIns,
+    rightExts,
     uiConfigSignal.value?.slots?.['rightPanel.tabs'],
     { requireNonEmpty: true },
   );
@@ -534,13 +715,24 @@ export function extensionCommands() {
   return [...extensionCommandsSignal.value].sort((a, b) => compareExtEntries(a, b, orderList));
 }
 
-export function builtinSlotsMetadata() {
+/**
+ * Side-panel tabs grouped by their effective side for Settings -> Appearance.
+ * Pass `config.ui?.panelPlacement` explicitly to reflect saved overrides even in safe mode.
+ * @param {Record<string, 'left' | 'right'> | null} [placementOverride]
+ */
+export function sideTabsMetadata(placementOverride) {
+  const { leftBuiltIns, leftExts, rightBuiltIns, rightExts } = partitionSideTabs(placementOverride);
+  const toMeta = (tab) => ({
+    id: tab.id,
+    label: tab.label ?? tab.id,
+    defaultSide: tab.defaultSide,
+    side: tab.side,
+    moved: tab.side !== tab.defaultSide,
+    extId: tab.extId ?? null,
+  });
   return {
-    leftTabs: builtinLeftTabs.value.map((t) => ({ id: t.id, label: t.label })),
-    rightTabs: builtinRightTabs.value.map((t) => ({ id: t.id, label: t.label })),
-    workspaceViews: builtinMainViews.value
-      .filter((v) => v.scope === 'workspace')
-      .map((v) => ({ id: v.id, label: v.label })),
+    leftTabs: [...leftBuiltIns, ...leftExts].map(toMeta),
+    rightTabs: [...rightBuiltIns, ...rightExts].map(toMeta),
   };
 }
 
@@ -558,6 +750,7 @@ export function _resetRegistryForTests() {
   extensionFlags.value = [];
   extensionOrderSignal.value = [];
   uiConfigSignal.value = {};
+  safeUiSignal.value = false;
   extensionsReady.value = false;
   seqCounter = 0;
 }

@@ -15,7 +15,7 @@
 import { holds } from './conversation-members.js';
 import { useFlowStream } from './graph-view.js';
 import { html, useEffect, useState } from './lib.js';
-import { activeThreadId, detailDrawerOpen, openTurnDetail, rightTab, threadData } from './store.js';
+import { activeThreadId, focusTab, openTurnDetail, threadData } from './store.js';
 
 const githubRef = (ref) => /^#?\d+$/.test(ref) || /^[\w.-]+\/[\w.-]+#\d+$/.test(ref);
 
@@ -203,8 +203,7 @@ export function Work() {
           : html`<div class="rp-dim">No Signet is in use on this thread.</div>`
       }
       <button class="rp-link" onClick=${() => {
-        rightTab.value = 'permissions';
-        detailDrawerOpen.value = true;
+        focusTab('permissions');
       }}>This project’s Kingdom grants are on Permissions ›</button>
     </${Section}>
   </div>`;
