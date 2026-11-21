@@ -7,7 +7,7 @@
  * Reactive UI registry for Foundry's composable viewer surfaces:
  * - Left rail tabs (`leftRail.tabs`)
  * - Right panel tabs (`rightPanel.tabs`)
- * - Main views (`scope: 'workspace' | 'thread' | 'project'`)
+ * - Main views (`scope: 'workspace' | 'thread'`)
  * - Named section slots (`extendSection`)
  * - Component display/behavior flags (`setFlags`, `useComponentFlags`)
  * - Command palette commands (`registerCommand`)

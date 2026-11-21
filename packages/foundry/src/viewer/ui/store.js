@@ -2896,6 +2896,7 @@ export function init() {
         if (
           threadViews.length > 0 &&
           !pendingHashRestore.panel &&
+          activePanel.peek() !== 'feedback' &&
           !threadViews.some((v) => v.id === activePanel.peek())
         ) {
           activePanel.value =
