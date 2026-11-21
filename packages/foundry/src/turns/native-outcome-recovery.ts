@@ -348,6 +348,7 @@ export class NativeOutcomeRecovery {
     const bound =
       admission.main && !named.length ? (this.options.boundSessions?.(threadId) ?? []) : [];
     const ids = [...named, ...bound].filter((id, index, all) => all.indexOf(id) === index);
+    let unreadable = false;
     for (const id of ids) {
       const record = locateNativeRecord(id, homes);
       if (!record) continue;
@@ -357,6 +358,7 @@ export class NativeOutcomeRecovery {
         text = readFileSync(record.path, 'utf8');
         modified = lastWrite(record.path);
       } catch {
+        unreadable = true;
         continue;
       }
       const quietFor = (this.options.now?.() ?? Date.now()) - modified;
@@ -372,7 +374,7 @@ export class NativeOutcomeRecovery {
       detail: ids.length
         ? "the native session's record was not found on this machine"
         : 'no native session was recorded for the turn',
-      recordMissing: true,
+      ...(unreadable ? {} : { recordMissing: true as const }),
     };
   }
 }
