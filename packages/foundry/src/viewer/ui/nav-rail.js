@@ -49,12 +49,7 @@ import {
 } from './store.js';
 import { isClosedThread, isScheduledRun } from './thread-status.js';
 import { ThreadNode, threadTree } from './thread-tree.js';
-import {
-  getLeftTabRows,
-  getLeftTabs,
-  registerBuiltinLeftTab,
-  resolveActiveId,
-} from './ui-registry.js';
+import { leftTabRows, leftTabs, registerBuiltinLeftTab, resolveActiveId } from './ui-registry.js';
 
 const OPEN = (t) => !isClosedThread(t);
 /** Shared: another party (a Signet member) is in the thread. */
@@ -76,7 +71,7 @@ function renderTabBadge(tab, ctx) {
 }
 
 function RailToggle({ activeId, ctx }) {
-  const rows = getLeftTabRows();
+  const rows = leftTabRows();
   return html`<div class="rail-toggle" role="tablist" aria-label="Left rail">
     ${rows.map(
       (row, i) =>
@@ -199,7 +194,7 @@ export function NavRail() {
   // Folded, the rail is today's thin strip of project dots.
   if (!projectSidebarOpen.value || panelFit.value.leftFolded)
     return html`<${ProjectSidebar} folded=${true} />`;
-  const tabs = getLeftTabs();
+  const tabs = leftTabs();
   const activeId = resolveActiveId(tabs, railView.value, 'attention');
   const activeTab = tabs.find((t) => t.id === activeId) ?? tabs[0];
   const ctx = { railView: activeId, activeThreadId: activeThreadId.value };

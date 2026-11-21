@@ -15,7 +15,7 @@
 
 import { computed, effect, html, signal } from './lib.js';
 import { detailDrawerOpen, leftSize, projectSidebarOpen, railView, rightSize } from './store.js';
-import { getLeftTabById } from './ui-registry.js';
+import { leftTabById } from './ui-registry.js';
 
 export const LEFT_LEVELS = ['hidden', 'strip', 'normal', 'wide'];
 export const RIGHT_LEVELS = ['hidden', 'icons', 'normal', 'wide'];
@@ -39,7 +39,7 @@ const share = ([part, min, max], width) => Math.round(Math.min(max, Math.max(min
 const leftWidth = (size, width, view) => {
   if (size === 'hidden') return 0;
   if (size === 'strip') return STRIP;
-  const tab = getLeftTabById(view);
+  const tab = leftTabById(view);
   const shares = tab?.wideShare || view === 'projects' ? PROJECTS_SHARE : LEFT_SHARE;
   return share(shares[size] ?? shares.normal, width);
 };

@@ -8,6 +8,7 @@
  * in the icons strip. Work is a briefcase (it holds the thread's file changes, commits and pull requests).
  */
 
+import { safeCall } from './error-boundary.js';
 import { html } from './lib.js';
 
 const PATHS = {
@@ -35,7 +36,7 @@ const PATHS = {
 
 const FALLBACK_PATH = html`<rect x="3" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="3" width="7" height="7" rx="1.5" /><rect x="3" y="14" width="7" height="7" rx="1.5" /><rect x="14" y="14" width="7" height="7" rx="1.5" />`;
 
-export function TabIcon({ tab, icon }) {
+export function TabIcon({ tab, icon, extId }) {
   if (icon) {
     if (typeof icon === 'string') {
       if (PATHS[icon]) {
@@ -43,8 +44,12 @@ export function TabIcon({ tab, icon }) {
       }
       return html`<span class="tab-icon tab-icon--glyph" aria-hidden="true">${icon}</span>`;
     }
-    if (typeof icon === 'function') return icon();
-    return icon;
+    if (typeof icon === 'function') {
+      const rendered = extId ? safeCall(extId, () => icon(), null, 'rightTab.icon') : icon();
+      if (rendered !== null && rendered !== undefined && rendered !== false) return rendered;
+    } else {
+      return icon;
+    }
   }
   const path = PATHS[tab] ?? FALLBACK_PATH;
   return html`<svg class="tab-icon" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${path}</svg>`;

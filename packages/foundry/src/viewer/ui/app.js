@@ -65,6 +65,7 @@ import {
   init,
   inspectLayer,
   inspectTarget,
+  isFullWidthCustomView,
   loadTraces,
   openCustomView,
   openRightTab,
@@ -91,7 +92,7 @@ import {
 } from './store.js';
 import { ThreadAgentsModals } from './thread-agents.js';
 import { SystemToast } from './toast.js';
-import { getMainViews, registerBuiltinMainView } from './ui-registry.js';
+import { mainViews, registerBuiltinMainView } from './ui-registry.js';
 import { UpdateNotice } from './update-notice.js';
 import { Watchtower } from './watchtower.js';
 import { checkSetupNeeded, Wizard, wizardOpen } from './wizard.js';
@@ -132,7 +133,7 @@ function WorkspaceSwitch() {
   const board = boardOpen.value;
   const tower = watchtowerOpen.value;
   const customView = activeCustomView.value;
-  const views = getMainViews('workspace');
+  const views = mainViews('workspace');
   const ctx = { activeThreadId: activeThreadId.value, activeProjectId: activeProjectId.value };
   return html`<span class="ws-seg" role="group" aria-label="Workspace view">
     ${views.map((view) => {
@@ -429,12 +430,9 @@ function App() {
   const page = route.value.page;
   const customViewId = activeCustomView.value;
   const customViewDef = customViewId
-    ? getMainViews('workspace').find((v) => v.extId && v.id === customViewId)
+    ? mainViews('workspace').find((v) => v.extId && v.id === customViewId)
     : null;
-  const fullWidthView =
-    boardOpen.value ||
-    watchtowerOpen.value ||
-    Boolean(customViewDef && customViewDef.fullWidth !== false);
+  const fullWidthView = boardOpen.value || watchtowerOpen.value || isFullWidthCustomView();
 
   const panelClass = `panels panels--proj-${projOpen ? 'open' : 'closed'} panels--detail-${detailOpen ? 'open' : 'closed'}${fullWidthView ? ' panels--board' : ''}${panelFit.value.leftFolded ? ' panels--left-folded' : ''}`;
 

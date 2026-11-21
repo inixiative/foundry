@@ -1,11 +1,10 @@
 import { beforeEach, expect, test } from 'bun:test';
+import { safeCall } from '../src/viewer/ui/error-boundary.js';
 import {
   _resetRegistryForTests,
   extendSection,
-  getLeftTabs,
-  getMainViews,
-  getRightTabs,
-  getSectionItems,
+  leftTabs,
+  mainViews,
   namespaceId,
   reconcileItems,
   registerBuiltinLeftTab,
@@ -16,6 +15,8 @@ import {
   registerMainView,
   registerRightTab,
   resolveActiveId,
+  rightTabs,
+  sectionItems,
   setExtensionOrder,
   setFlags,
   uiConfigSignal,
@@ -140,22 +141,52 @@ test('registry namespaces extension ids, resolves flags precedence, and cleans u
     showUsageBar: true,
   });
 
-  expect(getLeftTabs().map((t) => t.id)).toEqual(['attention', 'ext-a:notes']);
-  expect(getRightTabs().map((t) => t.id)).toEqual(['context', 'ext-a:metrics']);
-  expect(getMainViews('workspace').map((v) => v.id)).toEqual(['threads', 'ext-a:dash']);
+  expect(leftTabs().map((t) => t.id)).toEqual(['attention', 'ext-a:notes']);
+  expect(rightTabs().map((t) => t.id)).toEqual(['context', 'ext-a:metrics']);
+  expect(mainViews('workspace').map((v) => v.id)).toEqual(['threads', 'ext-a:dash']);
   expect(
-    getSectionItems('rightPanel.context.sections', [{ id: 'github' }, { id: 'runs-on' }]).map(
+    sectionItems('rightPanel.context.sections', [{ id: 'github' }, { id: 'runs-on' }]).map(
       (s) => s.id,
     ),
   ).toEqual(['github', 'ext-a:extra', 'runs-on']);
 
+  // Unwired v1 scopes are rejected loudly.
+  expect(() =>
+    registerMainView('ext-a', {
+      id: 'proj-view',
+      label: 'Proj',
+      scope: 'project',
+      render: () => null,
+    }),
+  ).toThrow(/expected workspace \| thread/);
+
   unregisterExtension('ext-a');
-  expect(getLeftTabs().map((t) => t.id)).toEqual(['attention']);
-  expect(getRightTabs().map((t) => t.id)).toEqual(['context']);
-  expect(getMainViews('workspace').map((v) => v.id)).toEqual(['threads']);
+  expect(leftTabs().map((t) => t.id)).toEqual(['attention']);
+  expect(rightTabs().map((t) => t.id)).toEqual(['context']);
+  expect(mainViews('workspace').map((v) => v.id)).toEqual(['threads']);
   expect(
-    getSectionItems('rightPanel.context.sections', [{ id: 'github' }, { id: 'runs-on' }]).map(
+    sectionItems('rightPanel.context.sections', [{ id: 'github' }, { id: 'runs-on' }]).map(
       (s) => s.id,
     ),
   ).toEqual(['github', 'runs-on']);
+});
+
+test('safeCall catches both sync throws and async Promise rejections', async () => {
+  expect(
+    safeCall(
+      'broken',
+      () => {
+        throw new Error('sync boom');
+      },
+      'fallback-sync',
+    ),
+  ).toBe('fallback-sync');
+  const asyncResult = await safeCall(
+    'broken',
+    async () => {
+      throw new Error('async boom');
+    },
+    'fallback-async',
+  );
+  expect(asyncResult).toBe('fallback-async');
 });

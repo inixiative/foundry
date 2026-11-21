@@ -24,7 +24,7 @@ import {
   toggleBoard,
   toggleGraphPanel,
 } from './store.js';
-import { getExtensionCommands } from './ui-registry.js';
+import { extensionCommands } from './ui-registry.js';
 
 const COMMANDS = [
   { id: 'pause', label: 'Pause thread', icon: '⏸', action: () => executeAction('thread:pause') },
@@ -120,7 +120,7 @@ export function CommandPalette() {
 
   if (!isOpen) return null;
 
-  const extCommands = getExtensionCommands().map((cmd) => ({
+  const extCommands = extensionCommands().map((cmd) => ({
     id: cmd.id,
     label: cmd.label ?? cmd.id,
     icon: cmd.icon ?? '◆',

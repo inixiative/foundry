@@ -1961,6 +1961,7 @@ function patchUiSettings(
   existing: UiSettingsConfig | undefined,
   patch: Record<string, unknown>,
 ): UiSettingsConfig {
+  if (!isPlainRecord(patch)) throw Error('ui patch must be an object');
   const next: Record<string, unknown> = existing
     ? { ...(structuredClone(existing) as Record<string, unknown>) }
     : {};

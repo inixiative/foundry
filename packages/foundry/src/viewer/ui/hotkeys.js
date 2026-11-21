@@ -12,13 +12,11 @@ import { stepSize } from './panel-sizes.js';
 import { openSearch } from './route.js';
 import {
   actionPaletteOpen,
-  boardOpen,
   commandPaletteOpen,
   createThread,
   helpOpen,
   showThreadsWorkspace,
   stepRailView,
-  watchtowerOpen,
 } from './store.js';
 
 // ---------------------------------------------------------------------------

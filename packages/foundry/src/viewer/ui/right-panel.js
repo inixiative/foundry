@@ -31,13 +31,13 @@ import { Plan } from './plan.js';
 import { Running } from './running.js';
 import { SectionList } from './slot.js';
 import {
-  activeCustomView,
   activeThreadId,
   authFetch,
   boardOpen,
   detailDrawerOpen,
   dismissTraceSelection,
   inspectTarget,
+  isFullWidthCustomView,
   launchLabels,
   loadLaunch,
   openRightTab,
@@ -60,9 +60,9 @@ import { AgentsFact } from './thread-agents.js';
 import { harnessName, projectLabel, ReferenceChips, threadPlace } from './thread-labels.js';
 import { TurnView } from './turn-view.js';
 import {
-  getRightTabs,
   registerBuiltinRightTab,
   resolveActiveId,
+  rightTabs,
   useComponentFlags,
 } from './ui-registry.js';
 import { Work } from './work.js';
@@ -434,7 +434,7 @@ function readTabInfo(tabDef, ctx) {
 
 export function RightPanel({ onSpanSelect }) {
   const threadId = activeThreadId.value;
-  const tabs = getRightTabs();
+  const tabs = rightTabs();
   const activeId = resolveActiveId(tabs, rightTab.value, 'context');
   const activeTab = tabs.find((t) => t.id === activeId) ?? tabs[0];
   const flags = useComponentFlags('rightPanel', {
@@ -442,7 +442,7 @@ export function RightPanel({ onSpanSelect }) {
     showUsageBar: true,
     showRunningFooter: true,
   });
-  const fullWorkspace = boardOpen.value || watchtowerOpen.value || Boolean(activeCustomView.value);
+  const fullWorkspace = boardOpen.value || watchtowerOpen.value || isFullWidthCustomView();
   // The board, Watchtower and full-width custom views take the width: the panel folds while any is open.
   const open = detailDrawerOpen.value && !fullWorkspace;
   const target = inspection(inspectTarget.value?.kind === 'layer' ? inspectTarget.value.id : null);
@@ -462,7 +462,7 @@ export function RightPanel({ onSpanSelect }) {
       ${tabs.map((t) => {
         return html`<button key=${t.id} class="rp-strip-tab" data-rtab-id=${t.id} title=${tabTitle(t)} aria-label=${`Open ${t.label}`}
           aria-current=${t.id === activeId ? 'true' : undefined} onClick=${() => openRightTab(t.id)}>
-          <${TabIcon} tab=${t.id} icon=${t.icon} /><span class="rp-strip-label">${t.label}</span>
+          <${TabIcon} tab=${t.id} icon=${t.icon} extId=${t.extId} /><span class="rp-strip-label">${t.label}</span>
         </button>`;
       })}
     </div>`;
@@ -499,7 +499,7 @@ export function RightPanel({ onSpanSelect }) {
             class="rp-tab ${t.id === activeId ? 'is-active' : ''}" title=${tabTitle(t)}
             onClick=${() => {
               rightTab.value = t.id;
-            }}><${TabIcon} tab=${t.id} icon=${t.icon} /><span class="rp-tab-label">${t.label}</span>${
+            }}><${TabIcon} tab=${t.id} icon=${t.icon} extId=${t.extId} /><span class="rp-tab-label">${t.label}</span>${
               badge
                 ? html`<span class="rp-tab-count ${t.id === 'feedback' ? 'is-attention' : ''}">${badge}</span>`
                 : null

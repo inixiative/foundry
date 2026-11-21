@@ -125,7 +125,7 @@ import {
 } from './thread-views.js';
 import { ThreadToast } from './toast.js';
 import {
-  getMainViews,
+  mainViews,
   registerBuiltinMainView,
   resolveActiveId,
   useComponentFlags,
@@ -1685,7 +1685,7 @@ registerBuiltinMainView({
 });
 
 function CenterTabs({ current, ctx }) {
-  const tabs = getMainViews('thread');
+  const tabs = mainViews('thread');
   const controls = [
     {
       id: 'thread-view-segments',
@@ -1711,7 +1711,7 @@ function CenterTabs({ current, ctx }) {
 }
 
 export function Conversation({ onTraceSelect, onLayerClick }) {
-  const threadViews = getMainViews('thread');
+  const threadViews = mainViews('thread');
   const view = resolveActiveId(threadViews, activePanel.value, 'conversation');
   const activeViewDef = threadViews.find((v) => v.id === view);
   const flags = useComponentFlags('conversation', {

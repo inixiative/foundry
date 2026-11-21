@@ -41,7 +41,7 @@ const builtinMainViews = signal([]);
 const extMainViews = signal([]);
 
 const sectionExtensions = signal([]);
-const extensionCommands = signal([]);
+const extensionCommandsSignal = signal([]);
 const extensionFlags = signal([]); // Array<{ id, extId, componentId, flags, seq }>
 
 const disposersByExt = new Map();
@@ -283,7 +283,7 @@ export function unregisterExtension(extId) {
   extRightTabs.value = extRightTabs.peek().filter((x) => x.extId !== extId);
   extMainViews.value = extMainViews.peek().filter((x) => x.extId !== extId);
   sectionExtensions.value = sectionExtensions.peek().filter((x) => x.extId !== extId);
-  extensionCommands.value = extensionCommands.peek().filter((x) => x.extId !== extId);
+  extensionCommandsSignal.value = extensionCommandsSignal.peek().filter((x) => x.extId !== extId);
   extensionFlags.value = extensionFlags.peek().filter((x) => x.extId !== extId);
 }
 
@@ -355,8 +355,8 @@ export function registerRightTab(extId, def) {
 
 export function registerMainView(extId, def) {
   const scope = def.scope ?? 'workspace';
-  if (!['workspace', 'thread', 'project'].includes(scope)) {
-    throw new Error(`Invalid main view scope "${scope}" (expected workspace | thread | project)`);
+  if (scope !== 'workspace' && scope !== 'thread') {
+    throw new Error(`Invalid main view scope "${scope}" (expected workspace | thread)`);
   }
   const id = namespaceId(extId, def.id);
   const entry = {
@@ -423,9 +423,12 @@ export function registerCommand(extId, def) {
     extId,
     _seq: ++seqCounter,
   };
-  extensionCommands.value = [...extensionCommands.peek().filter((x) => x.id !== id), entry];
+  extensionCommandsSignal.value = [
+    ...extensionCommandsSignal.peek().filter((x) => x.id !== id),
+    entry,
+  ];
   return trackDisposer(extId, () => {
-    extensionCommands.value = extensionCommands.peek().filter((x) => x !== entry);
+    extensionCommandsSignal.value = extensionCommandsSignal.peek().filter((x) => x !== entry);
   });
 }
 
@@ -446,7 +449,7 @@ export function useComponentFlags(componentId, defaults = {}) {
   return merged;
 }
 
-export function getLeftTabs() {
+export function leftTabs() {
   return reconcileItems(
     builtinLeftTabs.value,
     extLeftTabs.value,
@@ -455,7 +458,7 @@ export function getLeftTabs() {
   );
 }
 
-export function getLeftTabById(id) {
+export function leftTabById(id) {
   return (
     builtinLeftTabs.value.find((t) => t.id === id) ??
     extLeftTabs.value.find((t) => t.id === id) ??
@@ -464,8 +467,8 @@ export function getLeftTabById(id) {
 }
 
 /** Group reconciled left-rail tabs into visual rows (row 0, then row 1+). */
-export function getLeftTabRows() {
-  const tabs = getLeftTabs();
+export function leftTabRows() {
+  const tabs = leftTabs();
   const row0 = tabs.filter((t) => (t.row ?? 1) === 0);
   const row1 = tabs.filter((t) => (t.row ?? 1) !== 0);
   const rows = [];
@@ -474,7 +477,7 @@ export function getLeftTabRows() {
   return rows;
 }
 
-export function getRightTabs() {
+export function rightTabs() {
   return reconcileItems(
     builtinRightTabs.value,
     extRightTabs.value,
@@ -483,26 +486,24 @@ export function getRightTabs() {
   );
 }
 
-export function getMainViews(scope = 'workspace') {
+export function mainViews(scope = 'workspace') {
+  if (scope !== 'workspace' && scope !== 'thread') {
+    throw new Error(`Invalid main view scope "${scope}" (expected workspace | thread)`);
+  }
   const builtins = builtinMainViews.value.filter((v) => v.scope === scope);
   const exts = extMainViews.value.filter((v) => v.scope === scope);
-  const slotKey =
-    scope === 'workspace'
-      ? 'workspace.views'
-      : scope === 'thread'
-        ? 'center.tabs'
-        : 'project.views';
+  const slotKey = scope === 'workspace' ? 'workspace.views' : 'center.tabs';
   return reconcileItems(builtins, exts, uiConfigSignal.value?.slots?.[slotKey], {
-    requireNonEmpty: scope !== 'project',
+    requireNonEmpty: true,
   });
 }
 
-export function getSectionItems(slotId, builtInItems) {
+export function sectionItems(slotId, builtInItems) {
   const exts = sectionExtensions.value.filter((e) => e.slotId === slotId);
   return reconcileItems(builtInItems, exts, uiConfigSignal.value?.slots?.[slotId]);
 }
 
-export function getSectionSlotExtensions(slotName) {
+export function sectionSlotExtensions(slotName) {
   const orderList = extensionOrderSignal.value;
   const exts = sectionExtensions.value
     .filter((e) => e.slotId === slotName)
@@ -528,12 +529,12 @@ export function getSectionSlotExtensions(slotName) {
   return { before, replace, after, hidden };
 }
 
-export function getExtensionCommands() {
+export function extensionCommands() {
   const orderList = extensionOrderSignal.value;
-  return [...extensionCommands.value].sort((a, b) => compareExtEntries(a, b, orderList));
+  return [...extensionCommandsSignal.value].sort((a, b) => compareExtEntries(a, b, orderList));
 }
 
-export function getAllBuiltinSlotsMetadata() {
+export function builtinSlotsMetadata() {
   return {
     leftTabs: builtinLeftTabs.value.map((t) => ({ id: t.id, label: t.label })),
     rightTabs: builtinRightTabs.value.map((t) => ({ id: t.id, label: t.label })),
@@ -553,7 +554,7 @@ export function _resetRegistryForTests() {
   builtinMainViews.value = [];
   extMainViews.value = [];
   sectionExtensions.value = [];
-  extensionCommands.value = [];
+  extensionCommandsSignal.value = [];
   extensionFlags.value = [];
   extensionOrderSignal.value = [];
   uiConfigSignal.value = {};

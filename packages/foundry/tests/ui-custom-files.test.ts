@@ -251,10 +251,13 @@ test('ConfigStore.patch("ui", ...) validates slugs, rejects prototype keys, merg
     });
     expect(store.config.ui).toBeUndefined();
 
-    // Invalid theme slug & extension slug rejected.
+    // Invalid theme slug, extension slug, and non-object patch rejected.
     await expect(store.patch('ui', { theme: '../evil' })).rejects.toThrow();
     await expect(store.patch('ui', { theme: 'BadUpper' })).rejects.toThrow();
     await expect(store.patch('ui', { extensions: ['ok', '../bad'] })).rejects.toThrow();
+    await expect(
+      store.patch('ui', ['not-an-object'] as unknown as Record<string, unknown>),
+    ).rejects.toThrow(/must be an object/i);
 
     // Unsafe prototype keys rejected in slots and flags.
     const protoSlot = JSON.parse('{"slots":{"__proto__":{"hidden":["a"]}}}');

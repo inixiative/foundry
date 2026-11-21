@@ -42,6 +42,10 @@
 .ext-error-btn:hover {
   border-color: var(--accent);
 }
+.ext-error-btn:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 1px;
+}
 .ext-error-btn--disable {
   color: var(--err, #ef4444);
 }

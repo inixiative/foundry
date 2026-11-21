@@ -18,7 +18,7 @@ import {
 import { html, useEffect, useState } from './lib.js';
 import { authFetch, showToast } from './store.js';
 import { Switch } from './switch.js';
-import { getAllBuiltinSlotsMetadata } from './ui-registry.js';
+import { builtinSlotsMetadata } from './ui-registry.js';
 
 const HEADER_RIGHT_ITEMS = [
   { id: 'update-notice', label: 'Update notice' },
@@ -107,8 +107,7 @@ export function AppearanceSection({ config, onSaved }) {
   };
 
   const handleThemeChange = async (value) => {
-    const ok = await patchUi({ theme: value || null }, 'Theme updated');
-    if (ok) refreshCustomTheme();
+    await patchUi({ theme: value || null }, 'Theme updated');
   };
 
   const toggleExtension = async (id, checked) => {
@@ -143,7 +142,7 @@ export function AppearanceSection({ config, onSaved }) {
   };
 
   const discoveredIds = [...new Set([...manifest.extensions, ...enabledExtensions])].sort();
-  const builtins = getAllBuiltinSlotsMetadata();
+  const builtins = builtinSlotsMetadata();
   const slotGroups = [
     { slotId: 'header.right', title: 'Top bar (right)', items: HEADER_RIGHT_ITEMS },
     { slotId: 'leftRail.tabs', title: 'Left rail tabs', items: builtins.leftTabs },
@@ -178,6 +177,7 @@ export function AppearanceSection({ config, onSaved }) {
           onChange=${(e) => handleThemeChange(e.target.value)}
         >
           <option value="">${manifest.hasDefaultTheme ? 'Default (theme.css)' : 'Built-in (no theme.css)'}</option>
+          ${ui.theme && !manifest.themes.includes(ui.theme) ? html`<option value=${ui.theme}>${ui.theme} (missing)</option>` : null}
           ${manifest.themes.map((slug) => html`<option key=${slug} value=${slug}>${slug}</option>`)}
         </select>
         <button type="button" class="proj-btn" onClick=${() => {

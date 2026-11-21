@@ -11,7 +11,7 @@
 
 import { ExtensionBoundary } from './error-boundary.js';
 import { Fragment, html } from './lib.js';
-import { getSectionItems, getSectionSlotExtensions } from './ui-registry.js';
+import { sectionItems, sectionSlotExtensions } from './ui-registry.js';
 
 let disableHandler = null;
 
@@ -47,7 +47,7 @@ function renderWithReplacements(slot, itemId, baseRender, replacements, context,
  */
 export function SectionList({ slot, items, context = {}, onDisable }) {
   const disable = onDisable ?? disableHandler;
-  const resolved = getSectionItems(slot, items);
+  const resolved = sectionItems(slot, items);
   return html`<${Fragment}>${resolved.map((item) => {
     if (item._replacements?.length) {
       return html`<${Fragment} key=${item.id}>${renderWithReplacements(
@@ -79,7 +79,7 @@ export function SectionList({ slot, items, context = {}, onDisable }) {
  */
 export function SectionSlot({ name, context = {}, children, onDisable }) {
   const disable = onDisable ?? disableHandler;
-  const { before, replace, after, hidden } = getSectionSlotExtensions(name);
+  const { before, replace, after, hidden } = sectionSlotExtensions(name);
   if (hidden) return null;
   const body =
     replace.length > 0

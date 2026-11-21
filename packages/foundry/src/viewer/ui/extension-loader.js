@@ -71,6 +71,9 @@ import {
 
 export { extensionsReady, SAFE_UI };
 
+const CUSTOM_UI_SLUG = /^[a-z0-9][a-z0-9_-]{0,63}$/;
+const CUSTOM_EXT_ENTRY = /^\/ui\/custom\/extensions\/[a-z0-9][a-z0-9_-]{0,63}(?:\/index)?\.js$/;
+
 /** Live status per extension id: `{ status: 'loading' | 'active' | 'error', error?, entry? }`. */
 export const extensionStatuses = signal({});
 
@@ -209,14 +212,16 @@ function buildExtensionSdk(extId) {
       let disposeKey = null;
       if (def?.key) {
         const fullId = namespaceId(extId, def.id);
-        disposeKey = bindExtensionKey(def.key, {
-          description: `Left rail: ${def.label ?? fullId}`,
-          category: 'extensions',
-          action: () => {
-            railView.value = fullId;
-          },
-        });
-        registerExtensionDisposer(extId, disposeKey);
+        disposeKey = registerExtensionDisposer(
+          extId,
+          bindExtensionKey(def.key, {
+            description: `Left rail: ${def.label ?? fullId}`,
+            category: 'extensions',
+            action: () => {
+              railView.value = fullId;
+            },
+          }),
+        );
       }
       return () => {
         disposeKey?.();
@@ -228,12 +233,14 @@ function buildExtensionSdk(extId) {
       let disposeKey = null;
       if (def?.key) {
         const fullId = namespaceId(extId, def.id);
-        disposeKey = bindExtensionKey(def.key, {
-          description: `Right panel: ${def.label ?? fullId}`,
-          category: 'extensions',
-          action: () => openRightTab(fullId, { toggle: true }),
-        });
-        registerExtensionDisposer(extId, disposeKey);
+        disposeKey = registerExtensionDisposer(
+          extId,
+          bindExtensionKey(def.key, {
+            description: `Right panel: ${def.label ?? fullId}`,
+            category: 'extensions',
+            action: () => openRightTab(fullId, { toggle: true }),
+          }),
+        );
       }
       return () => {
         disposeKey?.();
@@ -246,15 +253,17 @@ function buildExtensionSdk(extId) {
       if (def?.key) {
         const fullId = namespaceId(extId, def.id);
         const scope = def.scope ?? 'workspace';
-        disposeKey = bindExtensionKey(def.key, {
-          description: `View: ${def.label ?? fullId}`,
-          category: 'extensions',
-          action: () => {
-            if (scope === 'workspace') openCustomView(fullId);
-            else if (scope === 'thread') activePanel.value = fullId;
-          },
-        });
-        registerExtensionDisposer(extId, disposeKey);
+        disposeKey = registerExtensionDisposer(
+          extId,
+          bindExtensionKey(def.key, {
+            description: `View: ${def.label ?? fullId}`,
+            category: 'extensions',
+            action: () => {
+              if (scope === 'workspace') openCustomView(fullId);
+              else if (scope === 'thread') activePanel.value = fullId;
+            },
+          }),
+        );
       }
       return () => {
         disposeKey?.();
@@ -267,19 +276,21 @@ function buildExtensionSdk(extId) {
     setFlags(componentId, flags) {
       return setFlags(extId, componentId, flags);
     },
-    getFlags(componentId, defaults) {
+    componentFlags(componentId, defaults) {
       return useComponentFlags(componentId, defaults);
     },
     registerCommand(def) {
       const disposeCmd = registerCommand(extId, def);
       let disposeKey = null;
       if (def?.key) {
-        disposeKey = bindExtensionKey(def.key, {
-          description: def.label ?? def.id,
-          category: 'extensions',
-          action: () => safeCall(extId, () => def.action?.(), undefined, 'command'),
-        });
-        registerExtensionDisposer(extId, disposeKey);
+        disposeKey = registerExtensionDisposer(
+          extId,
+          bindExtensionKey(def.key, {
+            description: def.label ?? def.id,
+            category: 'extensions',
+            action: () => safeCall(extId, () => def.action?.(), undefined, 'command'),
+          }),
+        );
       }
       return () => {
         disposeKey?.();
@@ -290,6 +301,13 @@ function buildExtensionSdk(extId) {
 }
 
 async function loadOneExtension(extId, entry) {
+  if (!CUSTOM_UI_SLUG.test(extId) || typeof entry !== 'string' || !CUSTOM_EXT_ENTRY.test(entry)) {
+    const message = 'Invalid extension id or entry path';
+    console.warn(`[foundry-ui] refusing to load extension "${extId}" from "${entry}"`);
+    loadedExtensions.set(extId, { entry });
+    setStatus(extId, { status: 'error', error: message, entry });
+    return;
+  }
   setStatus(extId, { status: 'loading', entry });
   loadedExtensions.set(extId, { entry });
   try {
@@ -332,8 +350,8 @@ async function reconcileEnabledExtensions(enabledIds) {
       manifest = await refreshCustomUiManifest();
     }
     for (const id of missing) {
-      // Re-check in case settings changed while awaiting previous extension.
-      if (!enabledSet.has(id) || loadedExtensions.has(id)) continue;
+      const liveEnabled = settingsRef?.peek()?.ui?.extensions ?? [];
+      if (!liveEnabled.includes(id) || loadedExtensions.has(id)) continue;
       const entry =
         manifest.extensionEntries[id] ?? `/ui/custom/extensions/${encodeURIComponent(id)}.js`;
       await loadOneExtension(id, entry);

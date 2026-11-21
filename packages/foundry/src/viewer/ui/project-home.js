@@ -26,7 +26,7 @@ import {
 } from './store.js';
 import { kingdomOwnerName, threadName } from './thread-labels.js';
 import { isClosedThread, isScheduledRun } from './thread-status.js';
-import { getSectionItems, useComponentFlags } from './ui-registry.js';
+import { sectionItems, useComponentFlags } from './ui-registry.js';
 
 const INACTIVE = new Set(['paused', 'idle']);
 
@@ -140,7 +140,7 @@ export function ProjectHome() {
             html`<button type="button" class="proj-btn is-go" onClick=${() => openProjectKnowledge(projectId)}>Knowledge and Wardens</button>`,
         },
       ];
-  const hasHeaderActions = getSectionItems('projectHome.header.actions', headerActions).length > 0;
+  const hasHeaderActions = sectionItems('projectHome.header.actions', headerActions).length > 0;
 
   const sections = [];
   if (!isGlobal) {

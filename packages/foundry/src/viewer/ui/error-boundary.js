@@ -12,11 +12,27 @@
 
 import { Component, Fragment, html } from './lib.js';
 
-/** Safely invoke an extension callback without letting exceptions escape into the viewer shell. */
-export function safeCall(extId, fn, fallback = undefined, label = 'callback') {
+/**
+ * Safely invoke an extension callback without letting sync throws or async rejections escape.
+ * @template T
+ * @template [F=undefined]
+ * @param {string} extId
+ * @param {(() => T) | null | undefined} fn
+ * @param {F} [fallback]
+ * @param {string} [label]
+ * @returns {T | F}
+ */
+export function safeCall(extId, fn, fallback = /** @type {F} */ (undefined), label = 'callback') {
   if (typeof fn !== 'function') return fallback;
   try {
-    return fn();
+    const result = fn();
+    if (result && typeof result.then === 'function') {
+      return result.catch((error) => {
+        console.warn(`[foundry-ui] extension "${extId}" ${label} rejected:`, error);
+        return fallback;
+      });
+    }
+    return result;
   } catch (error) {
     console.warn(`[foundry-ui] extension "${extId}" ${label} threw:`, error);
     return fallback;

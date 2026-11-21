@@ -23,7 +23,7 @@ import { batch, computed, effect, signal } from './lib.js';
 import { applyTurnFrame, mergeLiveSnapshot } from './live-state.js';
 import { route, withSafeUi } from './route.js';
 import { categoryOf, threadState } from './thread-status.js';
-import { extensionsReady, getLeftTabs, getMainViews, getRightTabs } from './ui-registry.js';
+import { extensionsReady, leftTabs, mainViews, resolveActiveId, rightTabs } from './ui-registry.js';
 import { uuidv7 } from './uuidv7.js';
 
 // ---------------------------------------------------------------------------
@@ -189,7 +189,7 @@ export const railView = signal('attention');
 export const railSpansProjects = (view) => view !== 'projects';
 /** Step the rail one view left (-1) or right (1), wrapping across reconciled rail tabs. */
 export function stepRailView(d) {
-  const registered = getLeftTabs().map((t) => t.id);
+  const registered = leftTabs().map((t) => t.id);
   const views = registered.length ? registered : RAIL_VIEWS;
   const at = views.indexOf(railView.value);
   const base = at === -1 ? 0 : at;
@@ -378,6 +378,14 @@ export function openCustomView(viewId) {
     incomingOpenId.value = null;
     activeCustomView.value = viewId;
   });
+}
+
+/** Whether an active custom workspace view is registered and fills the full workspace width. */
+export function isFullWidthCustomView() {
+  const id = activeCustomView.value;
+  if (!id) return false;
+  const def = mainViews('workspace').find((v) => v.extId && v.id === id);
+  return Boolean(def && def.fullWidth !== false);
 }
 
 /** The board is a workspace view: it toggles only there. */
@@ -2049,13 +2057,15 @@ export async function loadLaunch(threadId) {
   }
 }
 
-/** A thread the list chose (not the user): an open project home or Watchtower stays open. */
+/** A thread the list chose (not the user): an open project home, Watchtower or custom workspace view stays open. */
 function selectThreadQuietly(threadId) {
   const home = projectHomeOpen.peek();
   const watch = watchtowerOpen.peek();
+  const customView = activeCustomView.peek();
   selectThread(threadId);
   projectHomeOpen.value = home;
   watchtowerOpen.value = watch;
+  activeCustomView.value = customView;
 }
 
 export function selectThread(threadId) {
@@ -2654,22 +2664,22 @@ function adoptRememberedWorkspace() {
 }
 
 function knownRightTabs() {
-  const reg = getRightTabs().map((t) => t.id);
+  const reg = rightTabs().map((t) => t.id);
   return reg.length ? reg : RIGHT_TABS;
 }
 
 function knownLeftTabs() {
-  const reg = getLeftTabs().map((t) => t.id);
+  const reg = leftTabs().map((t) => t.id);
   return reg.length ? reg : RAIL_VIEWS;
 }
 
 function knownThreadViews() {
-  const reg = getMainViews('thread').map((v) => v.id);
+  const reg = mainViews('thread').map((v) => v.id);
   return reg.length ? reg : CENTER_PANELS;
 }
 
 function knownCustomWorkspaceViews() {
-  return getMainViews('workspace')
+  return mainViews('workspace')
     .filter((v) => v.extId)
     .map((v) => v.id);
 }
@@ -2813,45 +2823,85 @@ export function init() {
     }
   });
 
-  // Apply deferred hash restore once async UI extensions register their tabs/views.
+  // Apply deferred hash restore and clear dead extension ids once extensions are ready or disabled.
   effect(() => {
-    const lefts = getLeftTabs();
-    const rights = getRightTabs();
-    const workspaceViews = getMainViews('workspace');
-    const threadViews = getMainViews('thread');
+    const lefts = leftTabs();
+    const rights = rightTabs();
+    const workspaceViews = mainViews('workspace');
+    const threadViews = mainViews('thread');
     const ready = extensionsReady.value;
-    if (!hasPendingHash()) return;
     let changed = false;
     batch(() => {
-      if (pendingHashRestore.rtab && rights.some((t) => t.id === pendingHashRestore.rtab)) {
-        rightTab.value = pendingHashRestore.rtab;
-        pendingHashRestore.rtab = null;
-        changed = true;
+      if (hasPendingHash()) {
+        if (pendingHashRestore.rtab && rights.some((t) => t.id === pendingHashRestore.rtab)) {
+          rightTab.value = pendingHashRestore.rtab;
+          pendingHashRestore.rtab = null;
+          changed = true;
+        }
+        if (pendingHashRestore.rail && lefts.some((t) => t.id === pendingHashRestore.rail)) {
+          railView.value = pendingHashRestore.rail;
+          pendingHashRestore.rail = null;
+          changed = true;
+        }
+        if (
+          pendingHashRestore.view &&
+          workspaceViews.some((v) => v.extId && v.id === pendingHashRestore.view)
+        ) {
+          activeCustomView.value = pendingHashRestore.view;
+          pendingHashRestore.view = null;
+          changed = true;
+        }
+        if (
+          pendingHashRestore.panel &&
+          threadViews.some((v) => v.id === pendingHashRestore.panel)
+        ) {
+          activePanel.value = pendingHashRestore.panel;
+          pendingHashRestore.panel = null;
+          changed = true;
+        }
+        if (ready && hasPendingHash()) {
+          pendingHashRestore.rtab = null;
+          pendingHashRestore.rail = null;
+          pendingHashRestore.view = null;
+          pendingHashRestore.panel = null;
+          changed = true;
+        }
       }
-      if (pendingHashRestore.rail && lefts.some((t) => t.id === pendingHashRestore.rail)) {
-        railView.value = pendingHashRestore.rail;
-        pendingHashRestore.rail = null;
-        changed = true;
-      }
-      if (
-        pendingHashRestore.view &&
-        workspaceViews.some((v) => v.extId && v.id === pendingHashRestore.view)
-      ) {
-        activeCustomView.value = pendingHashRestore.view;
-        pendingHashRestore.view = null;
-        changed = true;
-      }
-      if (pendingHashRestore.panel && threadViews.some((v) => v.id === pendingHashRestore.panel)) {
-        activePanel.value = pendingHashRestore.panel;
-        pendingHashRestore.panel = null;
-        changed = true;
-      }
-      if (ready && hasPendingHash()) {
-        pendingHashRestore.rtab = null;
-        pendingHashRestore.rail = null;
-        pendingHashRestore.view = null;
-        pendingHashRestore.panel = null;
-        changed = true;
+      // Once extensions have settled, clear any active custom view/tab whose extension was unloaded/disabled.
+      if (ready) {
+        if (
+          activeCustomView.peek() &&
+          !pendingHashRestore.view &&
+          !workspaceViews.some((v) => v.extId && v.id === activeCustomView.peek())
+        ) {
+          activeCustomView.value = null;
+          changed = true;
+        }
+        if (
+          rights.length > 0 &&
+          !pendingHashRestore.rtab &&
+          !rights.some((t) => t.id === rightTab.peek())
+        ) {
+          rightTab.value = resolveActiveId(rights, rightTab.peek(), 'context') ?? 'context';
+          changed = true;
+        }
+        if (
+          lefts.length > 0 &&
+          !pendingHashRestore.rail &&
+          !lefts.some((t) => t.id === railView.peek())
+        ) {
+          railView.value = resolveActiveId(lefts, railView.peek(), 'attention') ?? 'attention';
+          changed = true;
+        }
+        if (
+          threadViews.length > 0 &&
+          !pendingHashRestore.panel &&
+          !threadViews.some((v) => v.id === activePanel.peek())
+        ) {
+          activePanel.value =
+            resolveActiveId(threadViews, activePanel.peek(), 'conversation') ?? 'conversation';
+          changed = true;
+        }
       }
     });
     if (changed) writeHash();

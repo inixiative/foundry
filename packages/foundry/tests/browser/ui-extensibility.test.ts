@@ -100,6 +100,9 @@ export default function setup(foundry) {
   foundry.registerRightTab({
     id: 'crashy',
     label: 'Crashy',
+    icon: () => {
+      throw new Error('icon exploded intentionally');
+    },
     badge: () => {
       throw new Error('badge exploded intentionally');
     },
@@ -119,6 +122,15 @@ export default function setup(foundry) {
         throw new Error('section render exploded intentionally');
       }
       return html\`<section class="rp-section crashy-section-recovered">Section recovered</section>\`;
+    },
+  });
+
+  foundry.registerMainView({
+    id: 'crashy-view',
+    label: 'Crashy View',
+    scope: 'workspace',
+    render: () => {
+      throw new Error('workspace view exploded intentionally');
     },
   });
 }
@@ -231,9 +243,11 @@ test('custom themes, safe-ui mode, composable extension slots/tabs/views, and cr
     await page.reload();
     await page.locator('.demo-rtab-body', { hasText: 'Metrics for shop-1' }).waitFor();
 
-    // 4. Broken Right Panel tab: badge() threw safely without crashing tab bar, render() shows isolated fallback,
-    // and Retry recovers once the failure condition clears.
-    await page.locator('.rp-tab[data-rtab-id="broken-render:crashy"]').click();
+    // 4. Broken Right Panel tab: icon() and badge() threw safely without crashing tab bar (fallback SVG icon renders),
+    // render() shows isolated fallback, and Retry recovers once the failure condition clears.
+    const crashyTabBtn = page.locator('.rp-tab[data-rtab-id="broken-render:crashy"]');
+    await crashyTabBtn.locator('svg.tab-icon').waitFor();
+    await crashyTabBtn.click();
     const tabFallback = page.locator(
       '.right-panel .ext-error-fallback[data-ext-id="broken-render"]',
     );
@@ -270,7 +284,7 @@ test('custom themes, safe-ui mode, composable extension slots/tabs/views, and cr
     expect(phHeadings.indexOf('before feedback')).toBe(phHeadings.indexOf('feedback') - 1);
     expect(phHeadings.indexOf('after feedback')).toBe(phHeadings.indexOf('feedback') + 1);
 
-    // 8. Settings -> Appearance shows discovered themes, active/error statuses for extensions.
+    // 8. Settings -> Appearance shows discovered themes and active/error statuses for extensions.
     await page.goto(`${origin}/settings/appearance`);
     await page.locator('h1.settings-title', { hasText: 'Appearance' }).waitFor();
     await page.locator('[data-ext-row="demo"] .appearance-badge--active').waitFor();
@@ -279,7 +293,7 @@ test('custom themes, safe-ui mode, composable extension slots/tabs/views, and cr
       'setup exploded intentionally',
     );
 
-    // 9. ?safe-ui=1 bypasses custom CSS + JS extensions and survives route navigation.
+    // 9. ?safe-ui=1 bypasses custom CSS + enabled JS extensions and survives route navigation.
     await page.goto(`${origin}/?safe-ui=1#thread=shop-1&detail=1`);
     await page.locator('textarea.chat-input').waitFor();
     const safeVar = await page.evaluate(() =>
@@ -305,6 +319,22 @@ test('custom themes, safe-ui mode, composable extension slots/tabs/views, and cr
     await page.locator('textarea.chat-input').waitFor();
     expect(new URL(page.url()).searchParams.get('safe-ui')).toBe('1');
     expect(await page.locator('.demo-header-pill').count()).toBe(0);
+
+    // 10. Disabling an active custom workspace view live via the boundary's Disable button clears
+    // activeCustomView + URL hash and restores RightPanel (not stuck folded).
+    await page.goto(`${origin}/#thread=shop-1&detail=1&view=broken-render%3Acrashy-view`);
+    const viewFallback = page.locator(
+      '.panel-center .ext-error-fallback[data-ext-id="broken-render"]',
+    );
+    await viewFallback.waitFor();
+    expect(await viewFallback.innerText()).toContain('workspace view exploded intentionally');
+    await viewFallback.getByRole('button', { name: 'Disable' }).click();
+    await page.locator('textarea.chat-input').waitFor({ state: 'visible' });
+    await page.waitForFunction(() => !location.hash.includes('view=broken-render'));
+    await page.locator('.right-panel:not(.right-panel--collapsed)').waitFor({ state: 'visible' });
+    expect(
+      await page.locator('.ws-custom-button[data-view-id="broken-render:crashy-view"]').count(),
+    ).toBe(0);
 
     expect(errors).toEqual([]);
   } finally {
