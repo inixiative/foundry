@@ -53,6 +53,8 @@ export interface TunnelConfig {
   configDir?: string;
   /** Cloudflared binary path. Default: "cloudflared". */
   cloudflaredBin?: string;
+  /** How long to wait for the tunnel process to print its URL. Default: 30 s. */
+  urlTimeoutMs?: number;
 }
 
 /** The viewer's tunnel, started and stopped at runtime; `changed`, when set, runs after each start or stop. */
@@ -354,15 +356,19 @@ export class FoundryTunnel {
     const reader = stream.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
-    const timeout = 30_000;
-    const start = Date.now();
+    const timeout = this._config.urlTimeoutMs ?? 30_000;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    // why: a tunnel process that prints nothing never resolves a read, and the daemon's boot waits on this
+    const timedOut = new Promise<undefined>((resolve) => {
+      timer = setTimeout(() => resolve(undefined), timeout);
+    });
 
     try {
-      while (Date.now() - start < timeout) {
-        const { done, value } = await reader.read();
-        if (done) break;
+      for (;;) {
+        const chunk = await Promise.race([reader.read(), timedOut]);
+        if (!chunk || chunk.done) break;
 
-        buffer += decoder.decode(value, { stream: true });
+        buffer += decoder.decode(chunk.value, { stream: true });
         const match = buffer.match(pattern);
         if (match) {
           reader.releaseLock();
@@ -371,9 +377,12 @@ export class FoundryTunnel {
       }
     } catch {
       // Stream ended or errored
+    } finally {
+      clearTimeout(timer);
     }
 
-    reader.releaseLock();
+    void reader.cancel().catch(() => {});
+    await this.stop();
     throw new Error(`Tunnel did not produce a URL within ${timeout / 1000}s`);
   }
 }
