@@ -27,6 +27,7 @@ import {
 import { wardenBriefNodes, wardenComposition } from '../agents/warden-brief';
 import { defaultStages, type StageConfig, validateStages } from '../classify';
 import { writeFileAtomic } from '../client/private-file';
+import { SUBSCRIPTION_WORKERS } from '../models/registry';
 import { effectiveThreadRole } from '../prompts/instruction-settings';
 import {
   type AgentExtension,
@@ -1345,7 +1346,9 @@ export function resolveThreadView(
   if (!worker || worker === view.defaults.provider) return { config: view, setAside: [] };
   const model = SUBSCRIPTION_WORKER_MODELS[worker as keyof typeof SUBSCRIPTION_WORKER_MODELS];
   if (!model)
-    throw Error(`${worker} is not a subscription worker; a thread runs on claude-code or codex`);
+    throw Error(
+      `${worker} is not a subscription worker; a thread runs on ${Object.keys(SUBSCRIPTION_WORKERS).join(', ')}`,
+    );
   const prior = view.defaults.provider;
   const setAside: SetAsideModel[] = [];
   const agents = Object.fromEntries(

@@ -4,7 +4,7 @@
  * @partOf feature:nativeAuth
  */
 import { lstatSync, mkdirSync, readlinkSync, renameSync, symlinkSync, unlinkSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { writePrivateFile } from '../client/private-file';
 import { isDefaultProfile } from './default-profiles';
 import type { NativeRuntime } from './native-authentication';
@@ -72,11 +72,17 @@ export function assertProfile(directory: string, runtime: NativeRuntime): void {
   if (isDefaultProfile(directory, runtime)) {
     if (runtime === 'agy') {
       // Antigravity stores OAuth credentials in the OS keychain and may not create
-      // `~/.gemini/antigravity-cli` until its first CLI run; validate it when present.
+      // `~/.gemini/antigravity-cli` until its first CLI run; validate it when present, and when
+      // absent validate its parent (`~/.gemini`) so a symlinked parent is still refused.
       try {
         assertUserProfile(directory);
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+        try {
+          assertUserProfile(dirname(directory));
+        } catch (parentError) {
+          if ((parentError as NodeJS.ErrnoException).code !== 'ENOENT') throw parentError;
+        }
       }
       return;
     }

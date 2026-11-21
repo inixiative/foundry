@@ -387,6 +387,138 @@ function adoptChild(auth: NativeAuthenticationLaunch | undefined, child: unknown
     }
 }
 
+/** Validate that a native bridge lease belongs to this non-auxiliary, tool-enabled thread. */
+function assertNativeBridgeGrant(opts: CreateSessionOpts): void {
+  if (!opts.nativeBridge) return;
+  if (
+    opts.tools === false ||
+    opts.threadId.includes(':aux:') ||
+    opts.nativeBridge.owner.threadId !== opts.threadId
+  )
+    throw Error('Native bridge cannot be granted to this session');
+  opts.nativeBridge.check();
+}
+
+/** Native authentication requires the prewrite-v1 admission protocol so revocation holds before send. */
+function assertPrewriteAdmission(
+  session: HarnessSession,
+  auth: NativeAuthenticationLaunch | undefined,
+): void {
+  if (
+    auth &&
+    (session as HarnessSession & { admissionProtocol?: string }).admissionProtocol !== 'prewrite-v1'
+  )
+    throw Error('Native authentication requires the prewrite-capable agent-session package');
+}
+
+/** Build the frozen construction binding record and attach rate-limit observation to `session`. */
+function freezeConstructionBinding(
+  session: HarnessSession,
+  params: {
+    bindingId: string;
+    existing: string | null;
+    auth?: NativeAuthenticationLaunch;
+    transportMode?: 'controlled-fixture';
+    requestedEffort?: string;
+  },
+): ConstructionBinding {
+  const { bindingId, existing, auth, transportMode, requestedEffort } = params;
+  if (auth?.observeLimits)
+    session.onEvent((event) => {
+      if (event.kind === 'rate_limit' && event.limits) auth.observeLimits?.(event.limits);
+    });
+  return Object.freeze({
+    bindingId,
+    resumedBinding: existing,
+    ...(transportMode ? { transportMode } : {}),
+    ...(auth
+      ? {
+          authentication: {
+            sourceId: auth.sourceId,
+            integrationId: auth.integrationId,
+            mode: auth.mode,
+            model: auth.model,
+            effort: auth.effort,
+            capacityId: auth.capacityId,
+          },
+        }
+      : {}),
+    ...(requestedEffort ? { requestedEffort } : {}),
+  });
+}
+
+/** Recheck owned authentication before every send and on the prewrite admission boundary. */
+function wrapSendWithAuthentication(
+  session: HarnessSession,
+  auth: NativeAuthenticationLaunch | undefined,
+): void {
+  const originalSend = session.send.bind(session);
+  session.send = (message, options) => {
+    auth?.check();
+    return originalSend(
+      message,
+      auth
+        ? {
+            ...options,
+            onAdmission: async (attempt) => {
+              auth.check();
+              await options?.onAdmission?.(attempt);
+              auth.check();
+              auth.admitted?.();
+            },
+          }
+        : options,
+    );
+  };
+}
+
+/** Bridge runtime `session_compact` events into the thread's SignalBus as `session_compacted`. */
+function bridgeCompactionSignals(
+  session: HarnessSession,
+  signals: ThreadSignalBindings,
+  runtime: string,
+  threadId: string,
+): void {
+  session.onEvent((event) => {
+    const bus = signals.get(threadId);
+    if (bus && event.kind === 'session_compact')
+      void bus.emit({
+        id: newId('sig-compact'),
+        kind: 'session_compacted',
+        source: `session-adapter:${runtime}`,
+        content: {
+          source: event.compactionSource ?? runtime,
+          externalSessionId: event.externalSessionId,
+          threadId,
+        },
+        timestamp: event.timestamp,
+      });
+  });
+}
+
+/** Kill an owned session, wait for its child exit, and verify any owned MCP bridge closed cleanly. */
+async function releaseOwnedSession(
+  session: HarnessSession,
+  ownedExits: WeakMap<HarnessSession, () => Promise<number> | undefined>,
+  ownedBridges: WeakMap<HarnessSession, NativeBridgeLease>,
+): Promise<'released' | 'unknown'> {
+  const exited = ownedExits.get(session)?.();
+  if (!exited) return 'unknown';
+  session.kill();
+  try {
+    await exited;
+    const bridge = ownedBridges.get(session);
+    if (bridge) {
+      await bridge.close();
+      const state = bridge.status?.();
+      if (!state || state.pendingCleanups || state.cleanupFailures) return 'unknown';
+    }
+    return 'released';
+  } catch {
+    return 'unknown';
+  }
+}
+
 function configurationFact(raw: unknown): ConfigurationEvidence | undefined {
   if (!raw || typeof raw !== 'object') return undefined;
   const r = raw as Record<string, unknown>;
@@ -617,15 +749,7 @@ export class ClaudeCodeSessionAdapter implements SessionAdapter {
   }
 
   async createSession(opts: CreateSessionOpts): Promise<HarnessSession> {
-    if (opts.nativeBridge) {
-      if (
-        opts.tools === false ||
-        opts.threadId.includes(':aux:') ||
-        opts.nativeBridge.owner.threadId !== opts.threadId
-      )
-        throw Error('Native bridge cannot be granted to this session');
-      opts.nativeBridge.check();
-    }
+    assertNativeBridgeGrant(opts);
     const fixture = opts.nativeBridge?.toolPolicy;
     if (fixture && (!this._controlledFixtureSpawn || !opts.nativeBridge?.fixtureCwd))
       throw Error(
@@ -747,17 +871,8 @@ export class ClaudeCodeSessionAdapter implements SessionAdapter {
     });
     // Record the binding actually consumed: the auxiliary profile key may hold nothing
     // while the thread key still preserves legacy coding history that is NOT resumed.
-    if (
-      auth &&
-      (session as HarnessSession & { admissionProtocol?: string }).admissionProtocol !==
-        'prewrite-v1'
-    )
-      throw Error('Native authentication requires the prewrite-capable agent-session package');
+    assertPrewriteAdmission(session, auth);
     if (auth) this._authLaunches.set(session, auth);
-    if (auth?.observeLimits)
-      session.onEvent((event) => {
-        if (event.kind === 'rate_limit' && event.limits) auth.observeLimits?.(event.limits);
-      });
     if (opts.toolGate && opts.tools !== false && !fixture) {
       if (!session.onToolRequest)
         throw Error('Installed agent-session lacks onToolRequest; no process started');
@@ -765,74 +880,27 @@ export class ClaudeCodeSessionAdapter implements SessionAdapter {
     }
     this._constructions.set(
       session,
-      Object.freeze({
+      freezeConstructionBinding(session, {
         bindingId,
-        resumedBinding: existing ?? null,
+        existing: existing ?? null,
+        auth,
         ...(fixture ? { transportMode: 'controlled-fixture' as const } : {}),
-        ...(auth
-          ? {
-              authentication: {
-                sourceId: auth.sourceId,
-                integrationId: auth.integrationId,
-                mode: auth.mode,
-                model: auth.model,
-                effort: auth.effort,
-                capacityId: auth.capacityId,
-              },
-            }
-          : {}),
       }),
     );
     this._ownedExits.set(session, () => ownedExit);
     if (opts.nativeBridge) this._ownedBridges.set(session, opts.nativeBridge);
 
-    const runtime = this.runtime;
-    const threadId = opts.threadId;
     attachSessionIdPersistence({
       session,
       store: this._store,
-      runtime,
+      runtime: this.runtime,
       threadId: bindingId,
       existing: existing ?? undefined,
       logPrefix: 'ClaudeCodeSessionAdapter',
     });
-    const originalSend = session.send.bind(session);
-    session.send = (message, options) => {
-      auth?.check();
-      return originalSend(
-        message,
-        auth
-          ? {
-              ...options,
-              onAdmission: async (attempt) => {
-                auth.check();
-                await options?.onAdmission?.(attempt);
-                auth.check();
-                auth.admitted?.();
-              },
-            }
-          : options,
-      );
-    };
+    wrapSendWithAuthentication(session, auth);
     this._configurations.set(session, attachEvidenceOwnership(session));
-    session.onEvent((event) => {
-      // Bridge: compaction events → signal bus so FlowOrchestrator can
-      // invalidate the Librarian's injection ledger and re-hydrate next turn.
-      const signals = this._signals.get(threadId);
-      if (signals && event.kind === 'session_compact') {
-        void signals.emit({
-          id: newId('sig-compact'),
-          kind: 'session_compacted',
-          source: `session-adapter:${runtime}`,
-          content: {
-            source: event.compactionSource ?? runtime,
-            externalSessionId: event.externalSessionId,
-            threadId,
-          },
-          timestamp: event.timestamp,
-        });
-      }
-    });
+    bridgeCompactionSignals(session, this._signals, this.runtime, opts.threadId);
 
     return session;
   }
@@ -872,21 +940,7 @@ export class ClaudeCodeSessionAdapter implements SessionAdapter {
   }
 
   async releaseIdleSession(session: HarnessSession): Promise<'released' | 'unknown'> {
-    const exited = this._ownedExits.get(session)?.();
-    if (!exited) return 'unknown';
-    session.kill();
-    try {
-      await exited;
-      const bridge = this._ownedBridges.get(session);
-      if (bridge) {
-        await bridge.close();
-        const state = bridge.status?.();
-        if (!state || state.pendingCleanups || state.cleanupFailures) return 'unknown';
-      }
-      return 'released';
-    } catch {
-      return 'unknown';
-    }
+    return releaseOwnedSession(session, this._ownedExits, this._ownedBridges);
   }
 
   async clearSession(threadId: string): Promise<void> {
@@ -966,15 +1020,7 @@ export class CodexSessionAdapter implements SessionAdapter {
 
   async createSession(opts: CreateSessionOpts): Promise<HarnessSession> {
     if (opts.nativeBridge?.toolPolicy) throw Error('Codex isolated fixture policy is unsupported');
-    if (opts.nativeBridge) {
-      if (
-        opts.tools === false ||
-        opts.threadId.includes(':aux:') ||
-        opts.nativeBridge.owner.threadId !== opts.threadId
-      )
-        throw Error('Native bridge cannot be granted to this session');
-      opts.nativeBridge.check();
-    }
+    assertNativeBridgeGrant(opts);
     if (opts.tools === false) {
       throw new Error(
         'Codex adapter cannot enforce text-only sessions; use an explicitly configured decision provider until native policy support is implemented',
@@ -1079,79 +1125,23 @@ export class CodexSessionAdapter implements SessionAdapter {
       throw Error(
         'Installed native package lacks owned app-server integration; no process started',
       );
-    if (
-      auth &&
-      (session as HarnessSession & { admissionProtocol?: string }).admissionProtocol !==
-        'prewrite-v1'
-    )
-      throw Error('Native authentication requires the prewrite-capable agent-session package');
+    assertPrewriteAdmission(session, auth);
     if (auth) this._authLaunches.set(session, auth);
-    if (auth?.observeLimits)
-      session.onEvent((event) => {
-        if (event.kind === 'rate_limit' && event.limits) auth.observeLimits?.(event.limits);
-      });
     this._constructions.set(
       session,
-      Object.freeze({
+      freezeConstructionBinding(session, {
         bindingId,
-        resumedBinding: existing ?? null,
-        ...(auth
-          ? {
-              authentication: {
-                sourceId: auth.sourceId,
-                integrationId: auth.integrationId,
-                mode: auth.mode,
-                model: auth.model,
-                effort: auth.effort,
-                capacityId: auth.capacityId,
-              },
-            }
-          : {}),
-        ...((auth?.effort ?? this._defaults?.effort)
-          ? { requestedEffort: auth?.effort ?? this._defaults?.effort }
-          : {}),
+        existing: existing ?? null,
+        auth,
+        requestedEffort: auth?.effort ?? this._defaults?.effort,
       }),
     );
     this._ownedExits.set(session, () => ownedExit);
     if (opts.nativeBridge) this._ownedBridges.set(session, opts.nativeBridge);
 
-    const runtime = this.runtime;
-    const threadId = opts.threadId;
-    const originalSend = session.send.bind(session);
-    session.send = (message, options) => {
-      auth?.check();
-      return originalSend(
-        message,
-        auth
-          ? {
-              ...options,
-              onAdmission: async (attempt) => {
-                auth.check();
-                await options?.onAdmission?.(attempt);
-                auth.check();
-                auth.admitted?.();
-              },
-            }
-          : options,
-      );
-    };
+    wrapSendWithAuthentication(session, auth);
     this._configurations.set(session, attachEvidenceOwnership(session));
-    session.onEvent((event) => {
-      const signals = this._signals.get(threadId);
-      if (signals && event.kind === 'session_compact') {
-        void signals.emit({
-          id: newId('sig-compact'),
-          kind: 'session_compacted',
-          source: `session-adapter:${runtime}`,
-          content: {
-            source: event.compactionSource ?? runtime,
-            externalSessionId: event.externalSessionId,
-            threadId,
-          },
-          timestamp: event.timestamp,
-        });
-      }
-    });
+    bridgeCompactionSignals(session, this._signals, this.runtime, opts.threadId);
 
     return session;
   }
@@ -1190,21 +1180,7 @@ export class CodexSessionAdapter implements SessionAdapter {
   }
 
   async releaseIdleSession(session: HarnessSession): Promise<'released' | 'unknown'> {
-    const exited = this._ownedExits.get(session)?.();
-    if (!exited) return 'unknown';
-    session.kill();
-    try {
-      await exited;
-      const bridge = this._ownedBridges.get(session);
-      if (bridge) {
-        await bridge.close();
-        const state = bridge.status?.();
-        if (!state || state.pendingCleanups || state.cleanupFailures) return 'unknown';
-      }
-      return 'released';
-    } catch {
-      return 'unknown';
-    }
+    return releaseOwnedSession(session, this._ownedExits, this._ownedBridges);
   }
 }
 
@@ -1354,10 +1330,6 @@ export class MuseSessionAdapter implements SessionAdapter {
     const questions = this._questions?.(opts.threadId);
     if (questions) session.onUserInput(questions);
     if (auth) this._authLaunches.set(session, auth);
-    if (auth?.observeLimits)
-      session.onEvent((event) => {
-        if (event.kind === 'rate_limit' && event.limits) auth.observeLimits?.(event.limits);
-      });
     // The login is released once, when the session ends or fails to start.
     let released = false;
     let ended!: () => void;
@@ -1413,59 +1385,15 @@ export class MuseSessionAdapter implements SessionAdapter {
     };
     this._constructions.set(
       session,
-      Object.freeze({
+      freezeConstructionBinding(session, {
         bindingId,
-        resumedBinding: existing ?? null,
-        ...(auth
-          ? {
-              authentication: {
-                sourceId: auth.sourceId,
-                integrationId: auth.integrationId,
-                mode: auth.mode,
-                model: auth.model,
-                effort: auth.effort,
-                capacityId: auth.capacityId,
-              },
-            }
-          : {}),
-        ...(effort ? { requestedEffort: effort } : {}),
+        existing: existing ?? null,
+        auth,
+        requestedEffort: effort,
       }),
     );
-    const originalSend = session.send.bind(session);
-    session.send = (message, options) => {
-      auth?.check();
-      return originalSend(
-        message,
-        auth
-          ? {
-              ...options,
-              onAdmission: async (attempt) => {
-                auth.check();
-                await options?.onAdmission?.(attempt);
-                auth.check();
-                auth.admitted?.();
-              },
-            }
-          : options,
-      );
-    };
-    const runtime = this.runtime;
-    const threadId = opts.threadId;
-    session.onEvent((event) => {
-      const signals = this._signals.get(threadId);
-      if (signals && event.kind === 'session_compact')
-        void signals.emit({
-          id: newId('sig-compact'),
-          kind: 'session_compacted',
-          source: `session-adapter:${runtime}`,
-          content: {
-            source: event.compactionSource ?? runtime,
-            externalSessionId: event.externalSessionId,
-            threadId,
-          },
-          timestamp: event.timestamp,
-        });
-    });
+    wrapSendWithAuthentication(session, auth);
+    bridgeCompactionSignals(session, this._signals, this.runtime, opts.threadId);
     return session;
   }
 
@@ -1591,15 +1519,7 @@ export class AcpSessionAdapter implements SessionAdapter {
 
   async createSession(opts: CreateSessionOpts): Promise<HarnessSession> {
     if (opts.nativeBridge?.toolPolicy) throw Error('ACP isolated fixture policy is unsupported');
-    if (opts.nativeBridge) {
-      if (
-        opts.tools === false ||
-        opts.threadId.includes(':aux:') ||
-        opts.nativeBridge.owner.threadId !== opts.threadId
-      )
-        throw Error('Native bridge cannot be granted to this session');
-      opts.nativeBridge.check();
-    }
+    assertNativeBridgeGrant(opts);
     if (opts.tools === false)
       throw Error(
         'ACP workers run main threads only; they cannot enforce a text-only session, so decisions never run on them',
@@ -1611,181 +1531,138 @@ export class AcpSessionAdapter implements SessionAdapter {
 
     const mcpServers = acpMcpServers(opts.nativeBridge, opts.mcpServers);
     const auth = await this._authentication?.prepare(opts.threadId, this._kind);
-    const bindingId = auth?.bindingId ?? opts.threadId;
-    const existing = await this._store.load(bindingId, this.runtime);
-    const permissionMode = opts.permissionMode ?? 'bypassPermissions';
-    const model = auth?.model ?? opts.model ?? this._defaults.model;
-    const effort = auth?.effort ?? opts.effort ?? this._defaults.effort;
-
-    const defaultSpawn: AcpSpawn =
-      this._spawn ??
-      ((cmd, options) =>
-        Bun.spawn([...cmd], {
-          cwd: options.cwd,
-          env: options.env,
-          stdin: 'pipe',
-          stdout: 'pipe',
-          stderr: 'pipe',
-        }) as unknown as ReturnType<AcpSpawn>);
-
-    let spawned = false;
     let released = false;
-    let ownedExit: Promise<number> | undefined;
     const releaseAuth = () => {
       if (released) return;
       released = true;
       auth?.release();
     };
 
-    const commonLaunch = {
-      billing: 'subscription' as const,
-      ...(this._defaults.bin ? { bin: this._defaults.bin } : {}),
-      ...(this._defaults.timeout !== undefined ? { timeout: this._defaults.timeout } : {}),
-      ...(this._defaults.startupTimeout !== undefined
-        ? { startupTimeout: this._defaults.startupTimeout }
-        : {}),
-      ...(this._defaults.sandbox !== undefined ? { sandbox: this._defaults.sandbox } : {}),
-      ...(this._defaults.addDirs ? { addDirs: this._defaults.addDirs } : {}),
-      ...(model ? { model } : {}),
-      ...(effort ? { effort } : {}),
-      cwd: opts.cwd,
-      ...(opts.baseContext ? { baseContext: opts.baseContext } : {}),
-      ...(existing ? { externalSessionId: existing } : {}),
-      permissionMode,
-      ...(mcpServers.length ? { mcpServers } : {}),
-      onSessionReady: async (id: string) => {
-        await this._store.save(bindingId, this.runtime, id);
-      },
-      spawn: (
-        cmd: readonly string[],
-        options: { cwd: string; env: Record<string, string | undefined> },
-      ) => {
-        if (spawned)
-          throw Error('New native process requires new owned adapter construction and preflight');
-        opts.nativeBridge?.check();
-        const launched = auth ? auth.launch([...cmd], options.env) : undefined;
-        const boundEnv = this._environment
-          ? this._environment(launched?.env ?? options.env)
-          : (launched?.env ?? options.env);
-        let child: ReturnType<AcpSpawn>;
-        try {
-          child = defaultSpawn(launched?.argv ?? cmd, {
+    try {
+      const bindingId = auth?.bindingId ?? opts.threadId;
+      const existing = await this._store.load(bindingId, this.runtime);
+      const permissionMode = opts.permissionMode ?? 'bypassPermissions';
+      const model = auth?.model ?? opts.model ?? this._defaults.model;
+      const effort = auth?.effort ?? opts.effort ?? this._defaults.effort;
+
+      const defaultSpawn: AcpSpawn =
+        this._spawn ??
+        ((cmd, options) =>
+          Bun.spawn([...cmd], {
             cwd: options.cwd,
-            env: boundEnv,
+            env: options.env,
+            stdin: 'pipe',
+            stdout: 'pipe',
+            stderr: 'pipe',
+          }) as unknown as ReturnType<AcpSpawn>);
+
+      let spawned = false;
+      let ownedExit: Promise<number> | undefined;
+
+      const commonLaunch = {
+        billing: 'subscription' as const,
+        ...(this._defaults.bin ? { bin: this._defaults.bin } : {}),
+        ...(this._defaults.timeout !== undefined ? { timeout: this._defaults.timeout } : {}),
+        ...(this._defaults.startupTimeout !== undefined
+          ? { startupTimeout: this._defaults.startupTimeout }
+          : {}),
+        ...(this._defaults.sandbox !== undefined ? { sandbox: this._defaults.sandbox } : {}),
+        ...(this._defaults.addDirs ? { addDirs: this._defaults.addDirs } : {}),
+        ...(model ? { model } : {}),
+        ...(effort ? { effort } : {}),
+        cwd: opts.cwd,
+        ...(opts.baseContext ? { baseContext: opts.baseContext } : {}),
+        ...(existing ? { externalSessionId: existing } : {}),
+        permissionMode,
+        ...(mcpServers.length ? { mcpServers } : {}),
+        onSessionReady: async (id: string) => {
+          await this._store.save(bindingId, this.runtime, id);
+        },
+        spawn: (
+          cmd: readonly string[],
+          options: { cwd: string; env: Record<string, string | undefined> },
+        ) => {
+          if (spawned)
+            throw Error('New native process requires new owned adapter construction and preflight');
+          opts.nativeBridge?.check();
+          const launched = auth ? auth.launch([...cmd], options.env) : undefined;
+          const boundEnv = this._environment
+            ? this._environment(launched?.env ?? options.env)
+            : (launched?.env ?? options.env);
+          let child: ReturnType<AcpSpawn>;
+          try {
+            child = defaultSpawn(launched?.argv ?? cmd, {
+              cwd: options.cwd,
+              env: boundEnv,
+            });
+          } catch (error) {
+            releaseAuth();
+            throw error;
+          }
+          adoptChild(auth, child);
+          spawned = true;
+          ownedExit = child.exited.finally(() => {
+            releaseAuth();
+            this._live.delete(session);
           });
+          this._live.add(session);
+          void ownedExit.catch(() => {});
+          if (opts.nativeBridge)
+            void child.exited.finally(() => opts.nativeBridge!.close()).catch(() => {});
+          return child;
+        },
+      };
+
+      const launchConfig: AcpSessionConfig =
+        this._kind === 'agy'
+          ? agyAcpLaunch(commonLaunch)
+          : geminiCliAcpLaunch({
+              ...commonLaunch,
+              ...(this._defaults.skipTrust !== undefined
+                ? { skipTrust: this._defaults.skipTrust }
+                : {}),
+            });
+
+      const session = new AcpSession(launchConfig);
+      assertPrewriteAdmission(session, auth);
+      if (opts.toolGate && permissionMode !== 'bypassPermissions')
+        session.onToolRequest(opts.toolGate);
+      if (auth) this._authLaunches.set(session, auth);
+
+      const originalStart = session.start.bind(session);
+      session.start = async () => {
+        auth?.check();
+        try {
+          await originalStart();
         } catch (error) {
-          releaseAuth();
+          if (!spawned) {
+            releaseAuth();
+            if (opts.nativeBridge) await opts.nativeBridge.close().catch(() => {});
+          }
           throw error;
         }
-        adoptChild(auth, child);
-        spawned = true;
-        ownedExit = child.exited.then((code) => {
-          releaseAuth();
-          this._live.delete(session);
-          return code;
-        });
-        this._live.add(session);
-        void ownedExit.catch(() => {});
-        if (opts.nativeBridge)
-          void child.exited.then(() => opts.nativeBridge!.close()).catch(() => {});
-        return child;
-      },
-    };
+      };
 
-    const launchConfig: AcpSessionConfig =
-      this._kind === 'agy'
-        ? agyAcpLaunch(commonLaunch)
-        : geminiCliAcpLaunch({
-            ...commonLaunch,
-            ...(this._defaults.skipTrust !== undefined
-              ? { skipTrust: this._defaults.skipTrust }
-              : {}),
-          });
-
-    const session = new AcpSession(launchConfig);
-    if (opts.toolGate && permissionMode !== 'bypassPermissions')
-      session.onToolRequest(opts.toolGate);
-    if (auth) this._authLaunches.set(session, auth);
-    if (auth?.observeLimits)
-      session.onEvent((event) => {
-        if (event.kind === 'rate_limit' && event.limits) auth.observeLimits?.(event.limits);
-      });
-
-    const originalStart = session.start.bind(session);
-    session.start = async () => {
-      auth?.check();
-      try {
-        await originalStart();
-      } catch (error) {
-        if (!spawned) {
-          releaseAuth();
-          if (opts.nativeBridge) await opts.nativeBridge.close().catch(() => {});
-        }
-        throw error;
-      }
-    };
-
-    this._constructions.set(
-      session,
-      Object.freeze({
-        bindingId,
-        resumedBinding: existing ?? null,
-        ...(auth
-          ? {
-              authentication: {
-                sourceId: auth.sourceId,
-                integrationId: auth.integrationId,
-                mode: auth.mode,
-                model: auth.model,
-                effort: auth.effort,
-                capacityId: auth.capacityId,
-              },
-            }
-          : {}),
-        ...(effort ? { requestedEffort: effort } : {}),
-      }),
-    );
-    this._ownedExits.set(session, () => ownedExit);
-    if (opts.nativeBridge) this._ownedBridges.set(session, opts.nativeBridge);
-
-    const originalSend = session.send.bind(session);
-    session.send = (message, options) => {
-      auth?.check();
-      return originalSend(
-        message,
-        auth
-          ? {
-              ...options,
-              onAdmission: async (attempt) => {
-                auth.check();
-                await options?.onAdmission?.(attempt);
-                auth.check();
-                auth.admitted?.();
-              },
-            }
-          : options,
+      this._constructions.set(
+        session,
+        freezeConstructionBinding(session, {
+          bindingId,
+          existing: existing ?? null,
+          auth,
+          requestedEffort: effort,
+        }),
       );
-    };
+      this._ownedExits.set(session, () => ownedExit);
+      if (opts.nativeBridge) this._ownedBridges.set(session, opts.nativeBridge);
 
-    const runtime = this.runtime;
-    const threadId = opts.threadId;
-    session.onEvent((event) => {
-      const signals = this._signals.get(threadId);
-      if (signals && event.kind === 'session_compact')
-        void signals.emit({
-          id: newId('sig-compact'),
-          kind: 'session_compacted',
-          source: `session-adapter:${runtime}`,
-          content: {
-            source: event.compactionSource ?? runtime,
-            externalSessionId: event.externalSessionId,
-            threadId,
-          },
-          timestamp: event.timestamp,
-        });
-    });
+      wrapSendWithAuthentication(session, auth);
+      bridgeCompactionSignals(session, this._signals, this.runtime, opts.threadId);
 
-    return session;
+      return session;
+    } catch (error) {
+      releaseAuth();
+      throw error;
+    }
   }
 
   async getExternalSessionId(threadId: string): Promise<string | null> {
@@ -1806,10 +1683,11 @@ export class AcpSessionAdapter implements SessionAdapter {
   }
 
   async clearSession(threadId: string): Promise<void> {
-    return this._store.clear(
-      this._authentication?.bindingId(threadId, this._kind) ?? threadId,
-      this.runtime,
-    );
+    const bindingId =
+      (await this._authentication?.resolveBindingId?.(threadId, this._kind)) ??
+      this._authentication?.bindingId(threadId, this._kind) ??
+      threadId;
+    return this._store.clear(bindingId, this.runtime);
   }
 
   async releaseAll(): Promise<void> {
@@ -1817,21 +1695,7 @@ export class AcpSessionAdapter implements SessionAdapter {
   }
 
   async releaseIdleSession(session: HarnessSession): Promise<'released' | 'unknown'> {
-    const exited = this._ownedExits.get(session)?.();
-    if (!exited) return 'unknown';
-    session.kill();
-    try {
-      await exited;
-      const bridge = this._ownedBridges.get(session);
-      if (bridge) {
-        await bridge.close();
-        const state = bridge.status?.();
-        if (!state || state.pendingCleanups || state.cleanupFailures) return 'unknown';
-      }
-      return 'released';
-    } catch {
-      return 'unknown';
-    }
+    return releaseOwnedSession(session, this._ownedExits, this._ownedBridges);
   }
 }
 

@@ -36,7 +36,7 @@ import {
   validateFoundryConversationSettings,
 } from '../conversations/types';
 import { type FeedbackSettings, validateFeedbackSettings } from '../feedback/types';
-import { subscriptionWorker } from '../models/registry';
+import { SUBSCRIPTION_WORKERS, subscriptionWorker, workerName } from '../models/registry';
 import {
   mergeVendorSettings,
   patchVendorSettings,
@@ -63,6 +63,7 @@ import {
   type KingdomInferenceAssignment,
   type KingdomInferenceSource,
 } from '../providers/kingdom-authentication';
+import { subscriptionRuntimeSchema } from '../providers/kingdom-client';
 import {
   type KingdomIntegration,
   kingdomIntegrationsSchema,
@@ -1037,8 +1038,12 @@ function validateProjectCapacity(config: FoundryConfig, project: ProjectSettings
       `Project ${project.id} uses Kingdom capacity: set kingdomCapacity { kingdom, signetId }`,
     );
   selectKingdomIntegration(config.kingdomIntegrations, capacity.kingdom);
-  // Kingdom pools hold subscription logins: Claude Code, Codex and Muse Code.
-  if (!subscriptionWorker(project.defaults?.provider ?? config.defaults.provider))
+  // Kingdom pools hold subscription logins: Claude Code, Codex and Muse Code only.
+  const worker = project.defaults?.provider ?? config.defaults.provider;
+  if (
+    !subscriptionWorker(worker) ||
+    !subscriptionRuntimeSchema.safeParse(SUBSCRIPTION_WORKERS[worker]).success
+  )
     throw Error('Kingdom capacity requires a Claude Code, Codex or Muse Code default worker');
 }
 
@@ -1098,6 +1103,20 @@ export function validateConfig(config: FoundryConfig): void {
       ) as Record<string, Partial<AgentSettingsConfig>>,
     );
   assertMainThreadLabs(config);
+  for (const decisionProvider of [
+    config.defaults.decisionProvider,
+    ...Object.values(config.projects ?? {}).map((project) => project.defaults?.decisionProvider),
+  ]) {
+    if (
+      decisionProvider &&
+      subscriptionWorker(decisionProvider) &&
+      decisionProvider !== 'claude-code' &&
+      decisionProvider !== 'codex'
+    )
+      throw Error(
+        `${decisionProvider === 'muse' ? 'Muse Code' : workerName(decisionProvider)} runs main threads only; decisions run on Claude, Codex, or an API provider`,
+      );
+  }
   resolveSubscriptionPolicy(config);
   if (config.kingdomIntegrations) kingdomIntegrationsSchema.parse(config.kingdomIntegrations);
   for (const project of Object.values(config.projects ?? {})) {
