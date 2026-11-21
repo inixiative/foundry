@@ -482,7 +482,8 @@ export function Wizard() {
 
       // A subscription worker with Claude decisions stays subscription-only; any other choice opts in to API tokens.
       const subscription =
-        isSubscriptionWorker(defaultProvider, registry.providers) && decisionProvider === 'claude-code';
+        isSubscriptionWorker(defaultProvider, registry.providers) &&
+        decisionProvider === 'claude-code';
       await patchSettings('apiTokens', { enabled: !subscription });
       if (subscription) await patchSettings('subscriptionOnly', { model: decisionModel });
 
