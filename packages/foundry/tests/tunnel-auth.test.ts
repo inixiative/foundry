@@ -289,3 +289,21 @@ test("the viewer's login page links to the paired Kingdom's devices page", async
     kingdom.stop();
   }
 });
+
+test('a tunnel process that prints nothing fails the start at its deadline and is stopped', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'foundry-tunnel-silent-'));
+  const bin = join(dir, 'silent-tunnel');
+  writeFileSync(bin, '#!/bin/sh\nexec sleep 600\n', { mode: 0o755 });
+  const tunnel = new FoundryTunnel({
+    port: 1,
+    provider: 'cloudflared',
+    cloudflaredBin: bin,
+    urlTimeoutMs: 300,
+    configDir: dir,
+  });
+  const started = Date.now();
+  await expect(tunnel.start()).rejects.toThrow('Tunnel did not produce a URL within 0.3s');
+  expect(Date.now() - started).toBeLessThan(5_000);
+  expect(tunnel.info).toBeNull();
+  rmSync(dir, { recursive: true, force: true });
+});
