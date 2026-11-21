@@ -36,7 +36,7 @@ const CLAUDE_DONE = new Set(['end_turn', 'stop_sequence', 'refusal']);
 
 export type NativeRecordReading =
   | { outcome: 'completed' | 'interrupted'; detail: string; neverReached?: boolean }
-  | { outcome: 'undecided'; detail: string };
+  | { outcome: 'undecided'; detail: string; recordMissing?: true };
 
 const lines = (text: string): Array<Record<string, unknown>> =>
   text.split('\n').flatMap((line) => {
@@ -267,7 +267,8 @@ export interface NativeOutcomeRecoveryOptions {
 
 export interface RecoveryPass {
   settled: Array<{ turnId: string; outcome: AdmissionSettlement['outcome'] }>;
-  undecided: Array<{ turnId: string; detail: string }>;
+  /** `recordMissing`: no record of the turn's session is on this machine, so reading again settles nothing and the owner decides. */
+  undecided: Array<{ turnId: string; detail: string; recordMissing: boolean }>;
 }
 
 export class NativeOutcomeRecovery {
@@ -299,7 +300,11 @@ export class NativeOutcomeRecovery {
       const reading = this.read(threadId, admission, homes);
       if (reading.outcome === 'undecided') {
         if (admission.main)
-          pass.undecided.push({ turnId: admission.turnId, detail: reading.detail });
+          pass.undecided.push({
+            turnId: admission.turnId,
+            detail: reading.detail,
+            recordMissing: reading.recordMissing === true,
+          });
         continue;
       }
       store.settleAdmission(threadId, admission.admissionId, {
@@ -367,6 +372,7 @@ export class NativeOutcomeRecovery {
       detail: ids.length
         ? "the native session's record was not found on this machine"
         : 'no native session was recorded for the turn',
+      recordMissing: true,
     };
   }
 }
