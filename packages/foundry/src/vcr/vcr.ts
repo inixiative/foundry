@@ -10,6 +10,7 @@ import { basename, join } from 'node:path';
 import {
   createVcrRecorder,
   createVcrSession,
+  DEFAULT_MAX_LIVE_CALLS,
   type DriftFinding,
   isVcrError,
   type StoreCassetteInput,
@@ -78,6 +79,7 @@ const resolveMaxLiveCalls = (fallback: number): number => {
 };
 
 const baseSession = createVcrSession();
+let baselineMaxLiveCalls = DEFAULT_MAX_LIVE_CALLS;
 
 /** Shared Foundry VCR session delegating budget, version cache, written paths, and drift tracking to @inixiative/vcr. */
 export const foundryVcrSession: VcrSession = {
@@ -92,14 +94,20 @@ export const foundryVcrSession: VcrSession = {
     baseSession.liveCalls = value;
   },
   get maxLiveCalls() {
-    return resolveMaxLiveCalls(baseSession.maxLiveCalls);
+    return resolveMaxLiveCalls(baselineMaxLiveCalls);
   },
   set maxLiveCalls(value: number) {
+    baselineMaxLiveCalls = value;
     baseSession.maxLiveCalls = value;
   },
   spendLiveCall(label: string) {
-    baseSession.maxLiveCalls = resolveMaxLiveCalls(baseSession.maxLiveCalls);
-    baseSession.spendLiveCall(label);
+    const previous = baseSession.maxLiveCalls;
+    baseSession.maxLiveCalls = resolveMaxLiveCalls(baselineMaxLiveCalls);
+    try {
+      baseSession.spendLiveCall(label);
+    } finally {
+      baseSession.maxLiveCalls = previous;
+    }
   },
   seedVersion(service: string, version: string) {
     baseSession.seedVersion(service, version);
@@ -108,28 +116,9 @@ export const foundryVcrSession: VcrSession = {
     baseSession.clearVersionCache();
   },
   reset() {
+    baselineMaxLiveCalls = DEFAULT_MAX_LIVE_CALLS;
     baseSession.reset();
   },
-};
-
-const redactKeyPath = (node: unknown, parts: readonly string[]): void => {
-  if (!node || typeof node !== 'object') return;
-  if (Array.isArray(node)) {
-    for (const item of node) redactKeyPath(item, parts);
-    return;
-  }
-  const record = node as Record<string, unknown>;
-  const [head, ...rest] = parts;
-  if (head === undefined) return;
-  if (rest.length === 0) {
-    if (head in record) {
-      const value = record[head];
-      record[head] =
-        value === null || value === undefined || typeof value === 'object' ? value : 'REDACTED';
-    }
-    return;
-  }
-  redactKeyPath(record[head], rest);
 };
 
 const adaptSanitizers = (
@@ -138,20 +127,9 @@ const adaptSanitizers = (
   if (!sanitizers) return undefined;
   const out: Record<string, VcrMethodSanitizer> = {};
   for (const [method, rule] of Object.entries(sanitizers)) {
-    const keys = rule.keys;
-    const fn = rule.fn;
     out[method] = {
-      ...(fn || keys?.length
-        ? {
-            transform(data: unknown) {
-              const transformed = fn ? fn(data) : data;
-              if (!keys?.length) return transformed;
-              const clone = structuredClone(transformed);
-              for (const key of keys) redactKeyPath(clone, key.split('.'));
-              return clone;
-            },
-          }
-        : {}),
+      ...(rule.fn ? { transform: rule.fn } : {}),
+      ...(rule.keys ? { keys: rule.keys } : {}),
       ...(rule.isArray !== undefined ? { isArray: rule.isArray } : {}),
       ...(rule.binaryExtension ? { binaryExtension: rule.binaryExtension } : {}),
     };
@@ -221,10 +199,9 @@ export class VCR {
     this.cli = opts.cli;
     this.model = opts.model;
     const outputDir = process.env.FOUNDRY_VCR_OUT || undefined;
-    this.recorder = createVcrRecorder(fixturesDir, {
+    const recorder = createVcrRecorder(fixturesDir, {
       service: opts.service,
       version: opts.version,
-      modeEnvVar: 'FOUNDRY_VCR',
       environment: process.env.FOUNDRY_VCR_ENVIRONMENT ?? 'terminal',
       ...(outputDir
         ? { outputDir, outputSubdir: relativeFixtureSubdir(fixturesDir, opts.service) }
@@ -244,6 +221,14 @@ export class VCR {
         );
       },
     });
+    // Single-source Foundry's strict two-mode policy (`record` | `replay`) on the underlying
+    // recorder so `FOUNDRY_VCR=auto` or other values can never silently trigger live calls.
+    Object.defineProperty(recorder, 'mode', {
+      get: () => vcrMode(),
+      enumerable: true,
+      configurable: true,
+    });
+    this.recorder = recorder;
   }
 
   get mode(): VcrMode {

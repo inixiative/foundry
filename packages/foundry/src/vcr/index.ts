@@ -7,6 +7,7 @@ export {
   diffVolatileCassetteNotices,
   discardPendingCassettes,
   type Finding,
+  fetchCassettePaths,
   fetchPendingCassettes,
   installedVersions,
   PENDING_CASSETTE_SUFFIX,

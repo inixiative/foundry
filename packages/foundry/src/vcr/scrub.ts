@@ -4,15 +4,18 @@
  * @partOf primitive:vcr
  */
 // Foundry-specific scrubbing policy over @inixiative/vcr/scrub: preserves Foundry's cassette
-// placeholders, allows Codex login method enums, and drops claude.ai account MCP connectors.
+// placeholders, scrubs JSON-quoted secret assignments inside plain text, allows Codex login
+// method enums, and drops claude.ai account MCP connectors.
 import {
   accountHomeDirectory,
   createScrubber,
+  DEFAULT_SECRET_KEY_PATTERN,
   defaultPlaceholderFor,
   type LeakFinding,
   type Scrubber,
   type ScrubContext,
   type ScrubPlaceholderKind,
+  type ScrubRule,
 } from '@inixiative/vcr/scrub';
 
 export type { ScrubContext };
@@ -39,6 +42,22 @@ const foundryPlaceholderFor = (kind: ScrubPlaceholderKind, match: string): strin
   return FOUNDRY_PLACEHOLDERS[kind] ?? defaultPlaceholderFor(kind, match);
 };
 
+// Reuse @inixiative/vcr's secret-key table with non-capturing groups so embedded JSON-quoted
+// secrets in plain text (e.g. `Update available {"api_key":"..."}`) are scrubbed before leak checks.
+const secretKeyCore = DEFAULT_SECRET_KEY_PATTERN.source
+  .replace(/^\^|\$$/g, '')
+  .replace(/\((?!\?)/g, '(?:');
+
+const QUOTED_SECRET_VALUE_RULE: ScrubRule = {
+  id: 'quoted_secret_assignment',
+  pattern: new RegExp(
+    `((\\\\?["'])${secretKeyCore}\\2\\s*:\\s*(\\\\?["']))(?!<REDACTED:|REDACTED\\b|Bearer\\s+REDACTED\\b)(?:[^"'\\\\\\n\\r]|\\\\(?!["']))+\\3`,
+    'gi',
+  ),
+  placeholder: (_match, prefix, _keyQuote, valQuote) => `${prefix}REDACTED${valQuote}`,
+  checkLeak: false,
+};
+
 /**
  * A login method is a closed enum, not identity: the Codex app-server's `account.type` is exactly
  * what `codex login status` recordings keep ("Logged in using ChatGPT"), and Foundry refuses
@@ -58,6 +77,7 @@ const isAccountConnector = (item: unknown): boolean =>
 
 export const foundryScrubber: Scrubber = createScrubber({
   placeholderFor: foundryPlaceholderFor,
+  rules: [QUOTED_SECRET_VALUE_RULE],
   allowValue: allowLoginMethod,
   filterArrayItem: (key, item) => !(key === 'mcp_servers' && isAccountConnector(item)),
 });

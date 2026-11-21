@@ -22,6 +22,7 @@ import {
   checkFreshness,
   discardPendingCassettes,
   type Fixture,
+  fetchCassettePaths,
   installedVersions,
 } from '../../packages/foundry/src/vcr';
 import {
@@ -68,8 +69,7 @@ const recorded = await bunTest(['--timeout', '120000', ...LIVE_FILES, ...passthr
 // A failed live run proves nothing about its recordings: hold every one it changed back for review.
 if (recorded) {
   let held = 0;
-  for (const path of cassettes(fixturesDir)) {
-    if (path.endsWith('.pending.json')) continue;
+  for (const path of fetchCassettePaths(fixturesDir, { includePending: false })) {
     const previous = before.get(path),
       current = readFileSync(path, 'utf8');
     if (previous === current) continue;

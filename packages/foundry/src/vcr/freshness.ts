@@ -33,6 +33,7 @@ export {
   diffCassetteDrift,
   diffVolatileCassetteNotices,
   discardPendingCassettes,
+  fetchCassettePaths,
   fetchPendingCassettes,
   PENDING_CASSETTE_SUFFIX,
 };
@@ -75,6 +76,8 @@ export function checkFreshness(
 
   for (const finding of rawFindings) {
     if (finding.code === 'unscrubbed_secret') {
+      // Only runs on the leak error path (0 extra reads on clean runs) to preserve Foundry's
+      // deduplicated `contains <leak>` labels since FreshnessFinding omits LeakFinding.kind.
       if (leakReported.has(finding.cassette)) continue;
       leakReported.add(finding.cassette);
       const raw = readFileSync(join(fixturesDir, finding.cassette), 'utf8');
@@ -91,7 +94,8 @@ export function checkFreshness(
   }
 
   // Existing committed cassettes stamped top-level `recorded.agentSession` before adopting
-  // `recorded.metadata['@inixiative/agent-session']`. Check them with the same version policy.
+  // `recorded.metadata['@inixiative/agent-session']`. Check them with the same validation and
+  // version policy without double-reporting cassettes that carry metadata.
   const blessedSession = policy.blessed[AGENT_SESSION_PKG];
   for (const path of fetchCassettePaths(fixturesDir, { includePending: false })) {
     let fixture: Fixture;
@@ -102,7 +106,10 @@ export function checkFreshness(
     }
     const recorded = fixture.recorded;
     if (
-      !recorded?.cli ||
+      typeof fixture.status !== 'number' ||
+      !Number.isFinite(fixture.status) ||
+      !recorded?.recordedAt ||
+      !recorded.cli ||
       !recorded.agentSession ||
       recorded.metadata?.[AGENT_SESSION_PKG] !== undefined
     ) {

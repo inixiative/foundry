@@ -3,10 +3,12 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir, userInfo } from 'node:os';
 import { join } from 'node:path';
 import {
+  agentSessionVersion,
   checkFreshness,
   compareSignatures,
   type Fixture,
   findLeaks,
+  foundryVcrSession,
   httpCassettes,
   ProcessCassettes,
   type ProcessTranscript,
@@ -15,6 +17,7 @@ import {
   scrubValue,
   signatureOf,
   VCR,
+  vcrMode,
   volatileDifferences,
   webSocketCassettes,
 } from '../src/vcr';
@@ -48,16 +51,32 @@ describe('VCR (ported)', () => {
       cli: 'svc',
       model: 'm',
       version: () => '1.0.0',
-      sanitizers: { fetch: { keys: ['secret'] } },
+      sanitizers: { fetch: { keys: ['secret', 'customField'] } },
     }).queue('fetch', 'default');
-    const result = await vcr.capture('fetch', async () => ({ secret: 'shh', visible: 'hi' }));
-    expect(result).toEqual({ secret: 'REDACTED', visible: 'hi' });
+    const result = await vcr.capture('fetch', async () => ({
+      secret: 'shh',
+      customField: 'private-note',
+      visible: 'hi',
+    }));
+    expect(result).toEqual({
+      secret: '<REDACTED:SECRET>',
+      customField: '<REDACTED:SECRET>',
+      visible: 'hi',
+    });
     const saved = read('fetch.default.json');
     expect(saved).toMatchObject({
       version: '1.0.0',
       status: 200,
-      body: { secret: 'REDACTED', visible: 'hi' },
-      recorded: { service: 'svc', cli: 'svc', model: 'm', environment: 'terminal' },
+      body: { secret: '<REDACTED:SECRET>', customField: '<REDACTED:SECRET>', visible: 'hi' },
+      recorded: {
+        service: 'svc',
+        cli: 'svc',
+        model: 'm',
+        environment: 'terminal',
+        ...(agentSessionVersion
+          ? { metadata: { '@inixiative/agent-session': agentSessionVersion } }
+          : {}),
+      },
     });
     expect(Date.parse(saved.recorded!.recordedAt)).toBeGreaterThan(Date.now() - 60_000);
   });
@@ -171,13 +190,49 @@ describe('VCR (ported)', () => {
     }));
     expect(response).toEqual({
       status: 201,
-      body: { secret: 'REDACTED', visible: 'kept', transformed: true },
+      body: { secret: '<REDACTED:SECRET>', visible: 'kept', transformed: true },
     });
     const list: unknown = await vcr.capture('list', async () => [{ id: 1 }, { id: 2 }]);
     expect(list).toEqual([
       { id: 1, seen: true },
       { id: 2, seen: true },
     ]);
+  });
+
+  it('keeps FOUNDRY_VCR=auto and non-record values strictly in replay mode without calling live', async () => {
+    const realFn = mock(async () => 'should-not-run');
+    for (const rawMode of ['auto', '0', 'false']) {
+      process.env.FOUNDRY_VCR = rawMode;
+      const vcr = new VCR(dir, { service: 'svc', version: () => '1' }).queue('fetch', 'absent');
+      expect(vcrMode()).toBe('replay');
+      expect(vcr.mode).toBe('replay');
+      expect(vcr.recorder.mode).toBe('replay');
+      await expect(vcr.capture('fetch', realFn)).rejects.toThrow('bun run test:live');
+    }
+    expect(realFn).not.toHaveBeenCalled();
+  });
+
+  it('restores the default live call limit when FOUNDRY_VCR_MAX_LIVE is cleared', () => {
+    const prevEnv = process.env.FOUNDRY_VCR_MAX_LIVE;
+    const prevLiveCalls = VCR.liveCalls;
+    try {
+      VCR.liveCalls = 0;
+      process.env.FOUNDRY_VCR_MAX_LIVE = '1';
+      expect(foundryVcrSession.maxLiveCalls).toBe(1);
+      VCR.spendLive('first');
+      expect(() => VCR.spendLive('second')).toThrow('live call budget of 1 spent');
+
+      delete process.env.FOUNDRY_VCR_MAX_LIVE;
+      expect(foundryVcrSession.maxLiveCalls).toBe(80);
+      VCR.liveCalls = 0;
+      VCR.spendLive('after-clear-1');
+      VCR.spendLive('after-clear-2');
+      expect(VCR.liveCalls).toBe(2);
+    } finally {
+      if (prevEnv === undefined) delete process.env.FOUNDRY_VCR_MAX_LIVE;
+      else process.env.FOUNDRY_VCR_MAX_LIVE = prevEnv;
+      VCR.liveCalls = prevLiveCalls;
+    }
   });
 });
 
@@ -679,13 +734,25 @@ describe('http and websocket cassettes', () => {
 });
 
 describe('scrubbing and freshness', () => {
-  it("cassettes also drop every shape core's secret table knows, keeping their own placeholders", () => {
+  it('drops built-in secret shapes and embedded JSON-quoted secrets while keeping Foundry placeholders', () => {
     const text = scrubText(
       'aws AKIAABCDEFGHIJKLMNOP hook https://hooks.slack.com/services/T0/B0/x key sk-ant-REDACTED',
     );
     expect(text).not.toContain('AKIAABCDEFGHIJKLMNOP');
     expect(text).not.toContain('hooks.slack.com/services');
     expect(text).toContain('sk-ant-REDACTED');
+
+    const embeddedApiKey = scrubText('Update available {"api_key":"abcd1234efgh"}');
+    expect(embeddedApiKey).toBe('Update available {"api_key":"REDACTED"}');
+    expect(findLeaks(embeddedApiKey)).toEqual([]);
+
+    const embeddedToken = scrubText('Update available {"access_token":"supersecret12345"}');
+    expect(embeddedToken).toBe('Update available {"access_token":"REDACTED"}');
+    expect(findLeaks(embeddedToken)).toEqual([]);
+
+    const escaped = scrubText('log \\"api_key\\":\\"abcd1234efgh\\"');
+    expect(escaped).toBe('log \\"api_key\\":\\"REDACTED\\"');
+    expect(findLeaks(escaped)).toEqual([]);
   });
 
   it('scrubs secrets, identity keys, emails and the account home, keeping JSON valid', () => {
@@ -821,6 +888,72 @@ describe('scrubbing and freshness', () => {
         .filter((c, i, all) => all.indexOf(c) === i)
         .sort(),
     ).toEqual(['leak.json', 'old.json', 'under-blessed.json', 'x.pending.json']);
+  });
+
+  it('enforces @inixiative/agent-session freshness on recorded.metadata without double-reporting or crashing on invalid cassettes', async () => {
+    const now = Date.parse('2026-09-24T00:00:00Z');
+    writeFileSync(
+      join(dir, 'policy.json'),
+      JSON.stringify({
+        maxAgeDays: 14,
+        blessed: { claude: '2.1.281', '@inixiative/agent-session': '0.5.0' },
+      }),
+    );
+
+    // Newly recorded CLI cassette stamps metadata['@inixiative/agent-session']; non-CLI omits it.
+    await new VCR(dir, { service: 'kingdom', version: () => 'abc123' })
+      .queue('http', 'ok')
+      .capture('http', async () => ({ ok: true }));
+    expect(read('http.ok.json').recorded?.metadata).toBeUndefined();
+
+    // Metadata-stamped cassettes are checked against blessed and installed without duplicate findings.
+    writeFileSync(
+      join(dir, 'meta-old.json'),
+      JSON.stringify({
+        version: '2.1.281',
+        status: 0,
+        body: {},
+        recorded: {
+          service: 'claude',
+          cli: 'claude',
+          recordedAt: '2026-09-20T00:00:00Z',
+          environment: 'terminal',
+          agentSession: '0.4.0',
+          metadata: { '@inixiative/agent-session': '0.4.0' },
+        },
+      }),
+    );
+    writeFileSync(
+      join(dir, 'invalid-missing-status.json'),
+      JSON.stringify({
+        version: '2.1.281',
+        body: {},
+        recorded: {
+          service: 'claude',
+          cli: 'claude',
+          recordedAt: '2026-09-20T00:00:00Z',
+          environment: 'terminal',
+          agentSession: '0.1.0',
+        },
+      }),
+    );
+
+    const findings = checkFreshness(dir, {
+      now,
+      installed: { claude: '2.1.281' },
+      agentSession: '0.6.0',
+    });
+    const metaProblems = findings
+      .filter((f) => f.cassette === 'meta-old.json')
+      .map((f) => f.problem);
+    expect(metaProblems).toEqual([
+      'recorded through agent-session 0.4.0; blessed is 0.5.0',
+      'recorded through agent-session 0.4.0; installed is 0.6.0',
+    ]);
+    const invalidProblems = findings
+      .filter((f) => f.cassette === 'invalid-missing-status.json')
+      .map((f) => f.problem);
+    expect(invalidProblems).toEqual(['missing or non-numeric "status" field']);
   });
 });
 
