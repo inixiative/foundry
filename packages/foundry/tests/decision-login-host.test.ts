@@ -63,18 +63,28 @@ const MESSAGES: LLMMessage[] = [
 
 /** A decision login host on the fake CLI with its project host, and the scheduler over it. */
 function claudeDecisions(
-  options: { subscribed?: boolean; model?: string; openHostsFolder?: boolean } = {},
+  options: {
+    subscribed?: boolean;
+    model?: string;
+    openHostsFolder?: boolean;
+    hangOn?: string;
+    callTimeoutMs?: number;
+  } = {},
 ) {
+  const callTimeoutMs = options.callTimeoutMs ?? 3_000;
   const root = userHome();
   if (options.openHostsFolder) chmodSync(process.env.FOUNDRY_HOSTS_DIR!, 0o755);
   const directory = join(root, 'receipts');
   mkdirSync(directory, { mode: 0o700 });
-  const tree = fakeClaudeTree(options.model ? { model: options.model } : {});
+  const tree = fakeClaudeTree({
+    ...(options.model ? { model: options.model } : {}),
+    ...(options.hangOn ? { hangOn: options.hangOn } : {}),
+  });
   let statusChecks = 0;
   const wardens = new ProjectWardenHosts({
     model: 'claude-haiku-5-5',
     effort: 'low',
-    timeoutMs: 3_000,
+    timeoutMs: callTimeoutMs,
     projectOf: () => 'P',
     projectHost: { ...PROJECT_HOST_DEFAULTS, setupDeadlineMs: 5_000, maxRestarts: 0 },
     rss: () => 100,
@@ -85,7 +95,7 @@ function claudeDecisions(
     model: 'claude-haiku-5-5',
     effort: 'low',
     maxConcurrent: 1,
-    callTimeoutMs: 3_000,
+    callTimeoutMs,
     spawn: tree.spawn,
     statusSpawn: () => {
       statusChecks++;
@@ -101,7 +111,7 @@ function claudeDecisions(
       maxCalls: 20,
       maxQueued: 8,
       maxConcurrent: 1,
-      callTimeoutMs: 3_000,
+      callTimeoutMs,
     },
     host.createRun,
   );
@@ -120,8 +130,17 @@ function claudeDecisions(
     wardens.openProject('P', [{ spec, standby: '' }]);
     return wardens.projectReady('P', 5_000);
   };
-  const advise = () =>
-    decisions.provider.complete(MESSAGES, { threadId: 'T1:aux:domain:api', stablePrefix: CACHE });
+  const advise = (message = 'add a route') =>
+    decisions.provider.complete(
+      [MESSAGES[0]!, { role: 'user', content: `${CACHE}\n## Message\n${message}` }],
+      { threadId: 'T1:aux:domain:api', stablePrefix: CACHE },
+    );
+  /** Every receipt the host wrote, in order. */
+  const receipts = () =>
+    readFileSync(join(directory, `host-${host.hostId}`, 'decisions.jsonl'), 'utf8')
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line) as { valid: boolean; failure?: string; settled?: boolean });
   return {
     root,
     tree,
@@ -129,6 +148,7 @@ function claudeDecisions(
     decisions,
     serve,
     advise,
+    receipts,
     close,
     get statusChecks() {
       return statusChecks;
@@ -202,6 +222,36 @@ test('a substituted Claude model is refused even though the turn completed', asy
   expect(await run.serve()).toBe(true);
   await expect(run.advise()).rejects.toThrow('no fallback or retry');
   expect(run.decisions.snapshot().closed).toBe(true);
+});
+
+test('a member that hangs past the decision deadline fails as a deadline, settled; admission stays open', async () => {
+  const run = claudeDecisions({ hangOn: 'HANG', callTimeoutMs: 1_000 });
+  expect(await run.serve()).toBe(true);
+  await expect(run.advise('HANG here')).rejects.toThrow('no fallback or retry');
+  expect(run.receipts().at(-1)).toMatchObject({ valid: false, failure: 'deadline', settled: true });
+  expect(run.decisions.snapshot().closed).toBe(false);
+  // The host holds the Warden again, and the next call is answered.
+  expect(await run.serve()).toBe(true);
+  expect((await run.advise()).content).toBe('ANS:\n## Message\nadd a route');
+});
+
+test('the host process exiting mid-decision fails the call as settled; admission stays open', async () => {
+  const run = claudeDecisions({ hangOn: 'HANG' });
+  expect(await run.serve()).toBe(true);
+  const pending = run.advise('HANG here').then(
+    () => undefined,
+    (error: Error) => error.message,
+  );
+  for (let n = 0; !run.tree.moments.some((m) => m.includes('HANG')) && n < 500; n++)
+    await Bun.sleep(5);
+  run.tree.processes[0]!.crash();
+  expect(await pending).toContain('no fallback or retry');
+  expect(run.receipts().at(-1)).toMatchObject({
+    valid: false,
+    failure: 'process-lost',
+    settled: true,
+  });
+  expect(run.decisions.snapshot().closed).toBe(false);
 });
 
 test('the Claude worker and Claude decisions hold the one login together', async () => {

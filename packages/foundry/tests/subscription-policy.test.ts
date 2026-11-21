@@ -15,11 +15,12 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { MAIN_THREAD_LABS, MODEL_REGISTRY, mainThreadLab } from '@inixiative/foundry-core';
+import { bootErrorLine } from '../src/daemon/boot-record';
 import { registryForViewer } from '../src/models/registry';
 import { NativeAuthentication } from '../src/providers/native-authentication';
 import { SubscriptionAuthentication } from '../src/providers/subscription-authentication';
 import { resolveSubscriptionPolicy } from '../src/providers/subscription-policy';
-import { defaultConfig, starterConfig, validateConfig } from '../src/viewer/config';
+import { ConfigStore, defaultConfig, starterConfig, validateConfig } from '../src/viewer/config';
 import { resolveProjectView } from '../src/viewer/config-resolve';
 import { artificerAgents } from './helpers/artificer-agents';
 import { subscriptionStatusProcess } from './helpers/subscription-transport';
@@ -495,6 +496,24 @@ test('subscription decisions hold Wardens in project hosts; a decision runtime i
   } finally {
     process.env.HOME = home;
   }
+});
+
+test('a settings file with a removed key is refused in one line that names it, which the boot record keeps', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'removed-key-'));
+  roots.push(dir);
+  // What the setup wizard wrote before 2026-11-21.
+  writeFileSync(
+    join(dir, 'settings.json'),
+    JSON.stringify({ subscriptionOnly: { decisionRuntime: 'claude-project' } }),
+  );
+  const refused = await new ConfigStore(dir).load().then(
+    () => undefined,
+    (error: Error) => error.message,
+  );
+  expect(refused).toBe(
+    `settings.json at ${join(dir, 'settings.json')} was not loaded: subscriptionOnly: Unrecognized key: "decisionRuntime"`,
+  );
+  expect(bootErrorLine(Error(refused))).toContain('decisionRuntime');
 });
 
 test('the default model is only the default: executors, projects and threads choose any worker model', () => {

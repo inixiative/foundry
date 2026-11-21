@@ -1114,7 +1114,15 @@ export function validateConfig(config: FoundryConfig): void {
     );
   assertMainThreadLabs(config);
   resolveSubscriptionPolicy(config);
-  if (config.kingdomIntegrations) kingdomIntegrationsSchema.parse(config.kingdomIntegrations);
+  if (config.kingdomIntegrations) {
+    const parsed = kingdomIntegrationsSchema.safeParse(config.kingdomIntegrations);
+    if (!parsed.success)
+      throw Error(
+        parsed.error.issues
+          .map((issue) => `${['kingdomIntegrations', ...issue.path].join('.')}: ${issue.message}`)
+          .join('; '),
+      );
+  }
   for (const project of Object.values(config.projects ?? {})) {
     if (project.status !== undefined && project.status !== 'archived')
       throw Error(`Project ${project.id} status must be archived or absent`);

@@ -195,6 +195,8 @@ function DecisionModelStep({
   onBack,
   saving,
   error,
+  claudeLoginMissing,
+  onCheckClaudeLogin,
 }) {
   const prov = providers.find((p) => p.id === provider);
   if (!prov) return null;
@@ -253,11 +255,24 @@ function DecisionModelStep({
         Each agent can be individually configured with its own provider, model, and settings later.
       </p>
 
+      ${
+        claudeLoginMissing
+          ? html`<p class="wizard-error" role="alert">
+              Wardens' decisions run on your Claude login, and Foundry found none on this machine
+              (${claudeLoginMissing}). Log in with <code>claude</code> in a terminal, then check again.
+            </p>`
+          : null
+      }
       ${error ? html`<p class="wizard-error" role="alert">Setup failed: ${error}</p>` : null}
 
       <div class="wizard-actions">
         <button class="wizard-btn" onClick=${onBack} disabled=${saving}>Back</button>
-        <button class="wizard-btn primary" onClick=${onNext} disabled=${!selected || saving}>
+        ${
+          claudeLoginMissing
+            ? html`<button class="wizard-btn" onClick=${onCheckClaudeLogin} disabled=${saving}>Check again</button>`
+            : null
+        }
+        <button class="wizard-btn primary" onClick=${onNext} disabled=${!selected || saving || !!claudeLoginMissing}>
           ${saving ? 'Saving...' : 'Finish Setup'}
         </button>
       </div>
@@ -333,6 +348,19 @@ export function Wizard() {
   const [decisionModel, setDecisionModel] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  // The Claude login's local state (`/api/providers/accounts`): subscription decisions need it.
+  const [claudeLogin, setClaudeLogin] = useState(null);
+
+  const checkClaudeLogin = async () => {
+    try {
+      const response = await fetch('/api/providers/accounts?all=1');
+      if (!response.ok) return;
+      const claude = (await response.json()).find((a) => a.provider === 'claude-code');
+      if (claude) setClaudeLogin({ ready: claude.ready, issue: claude.issue });
+    } catch {
+      /* unknown: the daemon still checks the login when it starts */
+    }
+  };
 
   const startSetup = async () => {
     setSaving(true);
@@ -343,6 +371,7 @@ export function Wizard() {
       const registry = await response.json();
       if (!registry.providers?.length) throw new Error('No model providers are available.');
       setProviders(registry.providers);
+      await checkClaudeLogin();
       setStep(1);
     } catch (err) {
       setError(err.message);
@@ -530,6 +559,15 @@ export function Wizard() {
             onBack=${() => setStep(3)}
             saving=${saving}
             error=${error}
+            claudeLoginMissing=${
+              SUBSCRIPTION_WORKERS.includes(defaultProvider) &&
+              decisionProvider === 'claude-code' &&
+              claudeLogin &&
+              !claudeLogin.ready
+                ? claudeLogin.issue || 'not logged in'
+                : undefined
+            }
+            onCheckClaudeLogin=${checkClaudeLogin}
           />
         `
             : null

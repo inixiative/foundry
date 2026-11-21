@@ -19,8 +19,13 @@ interface FakeTreeProcess {
   readonly exited: boolean;
 }
 
-/** `model`: the model a member reports answering on (default Haiku 5.5). */
-export function fakeClaudeTree(behavior: { noRoot?: boolean; model?: string } = {}) {
+/**
+ * `model`: the model a member reports answering on (default Haiku 5.5). `hangOn`: a member whose
+ * moment holds this text never answers (until the host stops it).
+ */
+export function fakeClaudeTree(
+  behavior: { noRoot?: boolean; model?: string; hangOn?: string } = {},
+) {
   const processes: FakeTreeProcess[] = [];
   const moments: string[] = [];
   const memberPrompts: string[] = [];
@@ -154,6 +159,7 @@ export function fakeClaudeTree(behavior: { noRoot?: boolean; model?: string } = 
           input = moment;
           moments.push(moment);
         } else input = prompt.split('\n\n---\n')[0] ?? '';
+        if (behavior.hangOn && input.includes(behavior.hangOn)) return;
         emit({
           type: 'assistant',
           parent_tool_use_id: tasks.get(taskId)!.toolUseId,

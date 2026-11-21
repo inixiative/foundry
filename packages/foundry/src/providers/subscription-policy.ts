@@ -382,7 +382,14 @@ export function resolveSubscriptionPolicy(
       throw Error('apiTokens and subscriptionOnly are exclusive; remove one of them');
     return undefined;
   }
-  const settings = subscriptionSettingsSchema.parse(config.subscriptionOnly ?? {});
+  const parsed = subscriptionSettingsSchema.safeParse(config.subscriptionOnly ?? {});
+  if (!parsed.success)
+    throw Error(
+      parsed.error.issues
+        .map((issue) => `${['subscriptionOnly', ...issue.path].join('.')}: ${issue.message}`)
+        .join('; '),
+    );
+  const settings = parsed.data;
   if (
     config.kingdomInference?.length ||
     config.defaults.kingdomOwnerKey ||

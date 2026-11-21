@@ -20,8 +20,9 @@ Templates beside this file: [design.md](design.md) (pre-registration), [review.m
 
 ## Rules over every step
 
-- **Quota.** The five-hour window counts every agent on the account; agents are the main spend (ten concurrent Opus/Fable agents cost more than the evals: 0.11% → 0.4–0.58% per eval moment while they ran). At most **3 agents** at a time, serialized. **Measure first:** record the window % at the start and end of every eval run and every long agent. The charter eval writes `<out>/quota.jsonl` itself; elsewhere, from the Foundry checkout:
-  `bun -e "import {claudeUsageWindows} from './packages/foundry/src/providers/decision-host'; console.log(await claudeUsageWindows(process.cwd()))"`
+- **Quota.** The five-hour window counts every agent on the account; agents are the main spend (ten concurrent Opus/Fable agents cost more than the evals: 0.11% → 0.4–0.58% per eval moment while they ran). At most **3 agents** at a time, serialized. **Measure first:** record the window % at the start and end of every eval run and every long agent. From the Foundry checkout (a read of the login's usage, no model call; a window the CLI does not report is left out):
+  `bun -e "import {claudeLimits} from './packages/foundry/src/providers/decision-host'; const s = await claudeLimits(process.cwd()); console.log(s && Object.fromEntries(s.windows.map((w) => [w.id, w.usedPercent])))"`
+  (The charter eval that wrote `<out>/quota.jsonl` itself is parked in Oracle `migration/foundry-pool-evals/` and does not run.)
 - **Cost is measured, never estimated into a decision.** An estimate sizes a ceiling; only the run's measured cost may justify a change.
 - **Checks take the lock.** One full check at a time on the machine, inside a time limit and a memory ceiling: `bunx @inixiative/config@latest bounded -- bun run check` (it takes `~/.foundry/check.lock`, the same lock as the older `lockf -k -t 14400 ~/.foundry/check.lock bun run check`; never wrap one in the other). Never `--no-verify`.
 - **Private data stays private.** Fixtures, answers and runs live under `~/.foundry/evals/` (never in a repo); finding records carry numbers, set names and run ids only.
@@ -56,7 +57,7 @@ On `revise`: change the design, then review again. Editing the design after a `g
 
 Arms run **serially**, within the cost ceiling, with `--pause-at <n>` on the five-hour window, `--session <key>` per arm, and the window % recorded per arm. Halt at ≥ 90% of the seven-day window.
 
-The eval scripts refuse a wide run (more than three moments, or a `--classify` run of more than one stage; `warden-size.ts run` always) unless `--experiment <design.md>` names a design whose sections are filled and whose review says `verdict: go` with a matching `design-sha256` (foundry-core `feedback/experiment-gate.ts`, which Oracle's replay runner calls too). When `<design>.decisions.md` exists, the gate also refuses while it still holds a `TBD` value outside its `## Log`. The design's path and hash, and the companion's when there is one (`decisions`, `decisionsSha256`), land in `<out>/experiment.json`. Do not work around the gate: a refusal means step 1 or 2 isn't done.
+The eval scripts refuse a wide run (more than three moments, or a `--classify` run of more than one stage; the size test's `warden-size.ts run` always did, and is parked in Oracle `migration/foundry-pool-evals/`, not runnable) unless `--experiment <design.md>` names a design whose sections are filled and whose review says `verdict: go` with a matching `design-sha256` (foundry-core `feedback/experiment-gate.ts`, which Oracle's replay runner calls too). When `<design>.decisions.md` exists, the gate also refuses while it still holds a `TBD` value outside its `## Log`. The design's path and hash, and the companion's when there is one (`decisions`, `decisionsSha256`), land in `<out>/experiment.json`. Do not work around the gate: a refusal means step 1 or 2 isn't done.
 
 ## 5. REPORT — the reporting standard
 
@@ -71,7 +72,7 @@ Read results against "mostly right" (per moment, coverage and majority-correct b
 
 ## 6. FINDING RECORD
 
-Generate one record per arm from `report.json` (`warden-charter-report.ts --finding <file> --experiment <name> --layer <layer> --change <text>` once report v2 lands; until then fill [finding.json](finding.json) from the report by hand). Write it to `~/.foundry/evals/findings/<date>-<name>.json`, then copy it to `oracle/docs/findings/` (numbers only; check no session text) and add a paragraph to `oracle/docs/WARDEN-EXPERIMENTS.md`.
+Generate one record per arm from `report.json` (fill [finding.json](finding.json) from the report by hand; the report tool's `--finding` is parked with it in Oracle `migration/foundry-pool-evals/`, not runnable). Write it to `~/.foundry/evals/findings/<date>-<name>.json`, then copy it to `oracle/docs/findings/` (numbers only; check no session text) and add a paragraph to `oracle/docs/WARDEN-EXPERIMENTS.md`.
 
 ## 7. WHAT DOES NOT CHANGE
 
