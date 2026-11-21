@@ -461,9 +461,9 @@ export function resolveSubscriptionPolicy(
   // Decisions run in the project Warden hosts, on a Claude login; other native harnesses run main threads only.
   if (!isDecisionSource(source))
     throw Error(
-      source.runtime === 'muse'
-        ? 'subscriptionOnly.decisionSourceId must be a Claude login; Muse Code runs main threads only'
-        : `subscriptionOnly.decisionSourceId must be a Claude login; ${source.runtime === 'codex' ? 'Codex' : source.runtime} runs main threads only`,
+      source.runtime === 'codex' || source.runtime === 'muse'
+        ? 'subscriptionOnly.decisionSourceId must be a Claude login; Codex and Muse Code run main threads only'
+        : `subscriptionOnly.decisionSourceId must be a Claude login; ${source.runtime} runs main threads only`,
     );
   const decision = source;
   const policy: SubscriptionPolicy = {
