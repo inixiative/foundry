@@ -91,6 +91,15 @@ function normalizeColorScheme(value) {
   return typeof value === 'string' && VALID_COLOR_SCHEMES.has(value) ? value : 'dark';
 }
 
+function storedColorScheme() {
+  if (typeof localStorage === 'undefined') return 'dark';
+  try {
+    return normalizeColorScheme(localStorage.getItem(COLOR_SCHEME_STORAGE_KEY));
+  } catch {
+    return 'dark';
+  }
+}
+
 /**
  * Apply `'dark' | 'light' | 'system'` to `<html>.classList` and `<meta name="color-scheme">`,
  * optionally persisting to `localStorage` for zero-flash pre-paint boot.
@@ -112,7 +121,9 @@ export function applyColorScheme(rawScheme, { persist = true } = {}) {
 
   if (persist && typeof localStorage !== 'undefined') {
     try {
-      localStorage.setItem(COLOR_SCHEME_STORAGE_KEY, scheme);
+      if (localStorage.getItem(COLOR_SCHEME_STORAGE_KEY) !== scheme) {
+        localStorage.setItem(COLOR_SCHEME_STORAGE_KEY, scheme);
+      }
     } catch {
       // Ignore storage failures (e.g. private browsing / blocked site data); DOM state is already applied.
     }
@@ -411,7 +422,7 @@ export function initUiExtensions(settingsConfigSignal) {
   settingsRef = settingsConfigSignal;
   setDisableExtensionHandler(disableExtension);
 
-  let activeColorScheme = 'dark';
+  let activeColorScheme = storedColorScheme();
   const handleMediaChange = (event) => {
     systemPrefersDark.value = Boolean(event.matches);
     if (activeColorScheme === 'system') {
@@ -428,8 +439,16 @@ export function initUiExtensions(settingsConfigSignal) {
   if (typeof window !== 'undefined') {
     window.addEventListener('storage', (event) => {
       if (event.key !== COLOR_SCHEME_STORAGE_KEY) return;
-      activeColorScheme = normalizeColorScheme(event.newValue);
-      applyColorScheme(activeColorScheme, { persist: false });
+      const nextScheme = normalizeColorScheme(event.newValue);
+      activeColorScheme = nextScheme;
+      applyColorScheme(nextScheme, { persist: false });
+      const cfg = settingsConfigSignal.peek();
+      if (cfg && normalizeColorScheme(cfg.ui?.colorScheme) !== nextScheme) {
+        settingsConfigSignal.value = {
+          ...cfg,
+          ui: { ...(cfg.ui ?? {}), colorScheme: nextScheme },
+        };
+      }
     });
   }
 

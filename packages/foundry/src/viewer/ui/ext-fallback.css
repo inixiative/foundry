@@ -209,19 +209,19 @@
   border-radius: 6px;
   cursor: pointer;
 }
-.color-scheme-option:not(.is-active):hover:not(:disabled) {
+.color-scheme-option:not(.is-active):hover:not([aria-disabled="true"]) {
   color: var(--text);
 }
 .color-scheme-option:focus-visible {
   outline: 2px solid var(--accent);
-  outline-offset: 1px;
+  outline-offset: 2px;
 }
 .color-scheme-option.is-active {
   background: var(--accent);
   color: var(--accent-ink);
   font-weight: 600;
 }
-.color-scheme-option:disabled {
+.color-scheme-option[aria-disabled="true"] {
   opacity: 0.6;
   cursor: default;
 }

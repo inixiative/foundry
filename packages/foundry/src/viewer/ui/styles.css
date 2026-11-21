@@ -51,9 +51,9 @@
   --tone-info-ch: 208 76% 40%;
   --tone-info-fill-ch: 208 76% 42%;
   --tone-warn: hsl(30 92% 33%);
-  --tone-warn-ch: 32 90% 38%;
+  --tone-warn-ch: var(--warning);
   --tone-error: hsl(6 76% 41%);
-  --tone-error-ch: 6 72% 48%;
+  --tone-error-ch: var(--error);
   --tone-queued: hsl(38 92% 28%);
   --tone-queued-ch: 42 86% 36%;
 
@@ -120,9 +120,7 @@
   --tone-info-ch: 205 70% 60%;
   --tone-info-fill-ch: 205 70% 70%;
   --tone-warn: hsl(38 87% 69%);
-  --tone-warn-ch: 38 87% 69%;
   --tone-error: hsl(7 100% 74%);
-  --tone-error-ch: 7 100% 74%;
   --tone-queued: hsl(50 80% 72%);
   --tone-queued-ch: 50 80% 70%;
 
@@ -9069,7 +9067,7 @@ a.thread-ref:hover {
 }
 .incoming-row-what,
 .incoming-row-route {
-  color: hsl(var(--muted-foreground, 0 0% 65%));
+  color: hsl(var(--muted-foreground));
 }
 .incoming-glyph {
   color: var(--tone-warn);
@@ -9102,7 +9100,7 @@ a.thread-ref:hover {
   color: var(--tone-warn);
 }
 .request-box {
-  border: 1px solid hsl(var(--border, 0 0% 20%));
+  border: 1px solid hsl(var(--border));
   border-radius: 12px;
   padding: 14px 16px;
 }
@@ -9111,7 +9109,7 @@ a.thread-ref:hover {
   font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.1em;
-  color: hsl(var(--muted-foreground, 0 0% 65%));
+  color: hsl(var(--muted-foreground));
 }
 .request-terms {
   display: flex;
@@ -9120,7 +9118,7 @@ a.thread-ref:hover {
   font-size: 13px;
 }
 .request-terms i {
-  color: hsl(var(--muted-foreground, 0 0% 65%));
+  color: hsl(var(--muted-foreground));
   font-style: normal;
   margin-right: 4px;
 }
@@ -9147,11 +9145,11 @@ a.thread-ref:hover {
 .request-route small {
   display: block;
   margin-top: 4px;
-  color: hsl(var(--muted-foreground, 0 0% 65%));
+  color: hsl(var(--muted-foreground));
 }
 .request-safe {
   font-size: 12px;
-  color: hsl(var(--muted-foreground, 0 0% 65%));
+  color: hsl(var(--muted-foreground));
   margin: 0;
 }
 .request-actions {
@@ -9172,7 +9170,7 @@ a.thread-ref:hover {
   min-height: 56px;
 }
 .request-route {
-  border-color: hsl(var(--border, 0 0% 20%));
+  border-color: hsl(var(--border));
 }
 .request-route select {
   display: block;
@@ -9195,7 +9193,7 @@ a.thread-ref:hover {
 }
 .request-compose .composer-note-hint {
   padding: 0;
-  color: hsl(var(--muted-foreground, 0 0% 65%));
+  color: hsl(var(--muted-foreground));
 }
 .project-home {
   height: 100%;

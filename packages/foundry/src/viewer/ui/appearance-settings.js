@@ -16,7 +16,7 @@ import {
   SAFE_UI,
   systemPrefersDark,
 } from './extension-loader.js';
-import { html, useEffect, useState } from './lib.js';
+import { html, useEffect, useRef, useState } from './lib.js';
 import { authFetch, showToast } from './store.js';
 import { Switch } from './switch.js';
 import { builtinSlotsMetadata } from './ui-registry.js';
@@ -113,11 +113,32 @@ export function AppearanceSection({ config, onSaved }) {
     }
   };
 
+  const colorSchemeRefs = useRef({});
   const activeColorScheme = ui.colorScheme ?? 'dark';
 
   const handleColorSchemeChange = async (value) => {
-    if (value === activeColorScheme) return;
+    if (saving || value === activeColorScheme) return;
     await patchUi({ colorScheme: value }, `Color scheme set to ${value}`);
+  };
+
+  const handleColorSchemeKeyDown = (e, index) => {
+    const count = COLOR_SCHEME_OPTIONS.length;
+    let nextIndex = null;
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+      nextIndex = (index + 1) % count;
+    } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+      nextIndex = (index - 1 + count) % count;
+    } else if (e.key === 'Home') {
+      nextIndex = 0;
+    } else if (e.key === 'End') {
+      nextIndex = count - 1;
+    }
+    if (nextIndex === null) return;
+    e.preventDefault();
+    if (saving) return;
+    const nextOpt = COLOR_SCHEME_OPTIONS[nextIndex];
+    colorSchemeRefs.current[nextOpt.id]?.focus();
+    handleColorSchemeChange(nextOpt.id);
   };
 
   const handleThemeChange = async (value) => {
@@ -184,15 +205,20 @@ export function AppearanceSection({ config, onSaved }) {
       <div class="appearance-actions-row">
         <div class="color-scheme-segmented" role="radiogroup" aria-label="Color scheme">
           ${COLOR_SCHEME_OPTIONS.map(
-            (opt) => html`<button
+            (opt, index) => html`<button
               key=${opt.id}
+              ref=${(el) => {
+                colorSchemeRefs.current[opt.id] = el;
+              }}
               type="button"
               role="radio"
+              tabIndex=${activeColorScheme === opt.id ? 0 : -1}
               class=${`color-scheme-option${activeColorScheme === opt.id ? ' is-active' : ''}`}
               aria-checked=${String(activeColorScheme === opt.id)}
+              aria-disabled=${saving ? 'true' : undefined}
               data-color-scheme=${opt.id}
-              disabled=${saving}
               onClick=${() => handleColorSchemeChange(opt.id)}
+              onKeyDown=${(e) => handleColorSchemeKeyDown(e, index)}
             >${opt.label}</button>`,
           )}
         </div>

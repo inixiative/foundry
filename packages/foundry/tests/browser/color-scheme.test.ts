@@ -109,7 +109,7 @@ test('Dark / Light / System color scheme toggles tokens, persists without reload
     const lightRadio = colorSchemeCard.locator('button[data-color-scheme="light"]');
     const systemRadio = colorSchemeCard.locator('button[data-color-scheme="system"]');
 
-    await expect(await darkRadio.getAttribute('aria-checked')).toBe('true');
+    expect(await darkRadio.getAttribute('aria-checked')).toBe('true');
     const darkSnap = await readThemeSnapshot();
     expect(darkSnap.hasDark).toBe(true);
     expect(darkSnap.colorScheme).toBe('dark');
@@ -294,11 +294,18 @@ test('Dark / Light / System color scheme toggles tokens, persists without reload
     }
 
     // 7. Standalone /kingdom and /status pages also respect stored colorScheme without flash.
-    await page.goto(`${origin}/kingdom`);
-    await page.waitForLoadState('domcontentloaded');
-    expect(await page.evaluate(() => document.documentElement.classList.contains('dark'))).toBe(
-      false,
-    );
+    for (const standalonePath of ['/kingdom', '/status']) {
+      await page.goto(`${origin}${standalonePath}`);
+      await page.waitForLoadState('domcontentloaded');
+      const standaloneSnap = await page.evaluate(() => ({
+        hasDark: document.documentElement.classList.contains('dark'),
+        colorScheme: getComputedStyle(document.documentElement).colorScheme,
+      }));
+      expect(standaloneSnap.hasDark, `${standalonePath} should not have .dark`).toBe(false);
+      expect(standaloneSnap.colorScheme, `${standalonePath} colorScheme should be light`).toBe(
+        'light',
+      );
+    }
 
     // 8. Switch System -> Dark while OS is still light -> stays dark regardless of OS preference.
     await page.goto(`${origin}/settings/appearance`);
@@ -308,7 +315,96 @@ test('Dark / Light / System color scheme toggles tokens, persists without reload
     expect(configStore.config.ui?.colorScheme).toBe('dark');
     expect((await readThemeSnapshot()).colorScheme).toBe('dark');
 
-    // 9. Safe UI mode (?safe-ui=1) still respects saved colorScheme without breaking.
+    // 9. WAI-ARIA radiogroup keyboard navigation: roving tabIndex, ArrowRight/ArrowLeft/Home/End + focus preserved through PATCH.
+    expect(await darkRadio.getAttribute('tabindex')).toBe('0');
+    expect(await lightRadio.getAttribute('tabindex')).toBe('-1');
+    expect(await systemRadio.getAttribute('tabindex')).toBe('-1');
+
+    await darkRadio.focus();
+    await page.keyboard.press('ArrowRight');
+    await page.waitForFunction(() => !document.documentElement.classList.contains('dark'));
+    expect(await lightRadio.getAttribute('aria-checked')).toBe('true');
+    expect(await lightRadio.getAttribute('tabindex')).toBe('0');
+    expect(await darkRadio.getAttribute('tabindex')).toBe('-1');
+    expect(
+      await page.evaluate(() => document.activeElement?.getAttribute('data-color-scheme')),
+    ).toBe('light');
+
+    // ArrowRight moves light -> system; End/Home jump directly; ArrowLeft wraps dark -> system.
+    await page.keyboard.press('ArrowRight');
+    await page.waitForFunction(
+      () =>
+        document
+          .querySelector('[data-setting="ui.colorScheme"] button[data-color-scheme="system"]')
+          ?.getAttribute('aria-checked') === 'true',
+    );
+    expect(
+      await page.evaluate(() => document.activeElement?.getAttribute('data-color-scheme')),
+    ).toBe('system');
+
+    await page.keyboard.press('Home');
+    await page.waitForFunction(() => document.documentElement.classList.contains('dark'));
+    expect(await darkRadio.getAttribute('aria-checked')).toBe('true');
+    expect(
+      await page.evaluate(() => document.activeElement?.getAttribute('data-color-scheme')),
+    ).toBe('dark');
+
+    await page.keyboard.press('ArrowLeft');
+    await page.waitForFunction(
+      () =>
+        document
+          .querySelector('[data-setting="ui.colorScheme"] button[data-color-scheme="system"]')
+          ?.getAttribute('aria-checked') === 'true',
+    );
+    expect(
+      await page.evaluate(() => document.activeElement?.getAttribute('data-color-scheme')),
+    ).toBe('system');
+
+    await page.keyboard.press('Home');
+    await page.waitForFunction(() => document.documentElement.classList.contains('dark'));
+    await page.keyboard.press('End');
+    await page.waitForFunction(
+      () =>
+        document
+          .querySelector('[data-setting="ui.colorScheme"] button[data-color-scheme="system"]')
+          ?.getAttribute('aria-checked') === 'true',
+    );
+
+    // 10. Cross-tab storage sync updates both DOM and AppearanceSection state (active button + System hint).
+    await darkRadio.click();
+    await page.waitForFunction(() => document.documentElement.classList.contains('dark'));
+    expect(await colorSchemeCard.locator('.color-scheme-hint').count()).toBe(0);
+
+    await page.evaluate(() => {
+      localStorage.setItem('foundry.ui.colorScheme', 'system');
+      window.dispatchEvent(
+        new StorageEvent('storage', {
+          key: 'foundry.ui.colorScheme',
+          oldValue: 'dark',
+          newValue: 'system',
+        }),
+      );
+    });
+    await page.waitForFunction(() => !document.documentElement.classList.contains('dark'));
+    expect(await systemRadio.getAttribute('aria-checked')).toBe('true');
+    expect(await colorSchemeCard.locator('.color-scheme-hint').innerText()).toContain('Light');
+
+    // 11. Stale localStorage='light' reconciles back to 'dark' when ui.colorScheme is unset in settings.json.
+    await configStore.patch('ui', { colorScheme: null });
+    expect(configStore.config.ui?.colorScheme).toBeUndefined();
+    await page.evaluate(() => {
+      localStorage.setItem('foundry.ui.colorScheme', 'light');
+    });
+    await page.reload();
+    await colorSchemeCard.waitFor();
+    await page.waitForFunction(() => document.documentElement.classList.contains('dark'));
+    const reconciledSnap = await readThemeSnapshot();
+    expect(reconciledSnap.hasDark).toBe(true);
+    expect(reconciledSnap.colorScheme).toBe('dark');
+    expect(reconciledSnap.stored).toBe('dark');
+    expect(await darkRadio.getAttribute('aria-checked')).toBe('true');
+
+    // 12. Safe UI mode (?safe-ui=1) still respects saved colorScheme without breaking.
     await page.goto(`${origin}/settings/appearance?safe-ui=1`);
     await colorSchemeCard.waitFor();
     await lightRadio.click();
