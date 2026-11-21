@@ -94,7 +94,7 @@ export function projectHostActivity(
       summary: `Restarting ${projectLabel}'s Wardens; the current ones keep answering.`,
       detail,
     };
-  if (state.wardensDown)
+  if (state.wardensDown && state.status === 'serving')
     return {
       ...base,
       state: 'degraded',

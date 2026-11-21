@@ -96,7 +96,7 @@ export interface ProjectHostState {
   readonly peakRssMb?: number;
   /** Starts that failed in a row. */
   readonly failures: number;
-  /** Wardens of the serving host whose members keep ending before they hold: skipped until one holds. */
+  /** Wardens of the serving host whose members keep ending before they hold: no held answer from them until one holds. */
   readonly wardensDown?: readonly string[];
   /** The decision login's usage is used up until this time: its Wardens are paused, a start waits for it. */
   readonly quotaResetsAt?: number;
@@ -364,7 +364,11 @@ export class ProjectWardenHosts {
       ...(live?.peakRssMb !== undefined ? { peakRssMb: live.peakRssMb } : {}),
       failures: entry.failures,
       ...(down?.length
-        ? { wardensDown: down.map((role) => wardenOfDecisionKey(role.key) ?? role.key) }
+        ? {
+            wardensDown: [
+              ...new Set(down.map((role) => wardenOfDecisionKey(role.key) ?? role.key)),
+            ],
+          }
         : {}),
       ...(quotaResetsAt !== undefined ? { quotaResetsAt } : {}),
       resets: { ...entry.resets },
