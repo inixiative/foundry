@@ -32,6 +32,17 @@ const PATHS = {
   pointers: html`<path d="M12 2v20" /><path d="M7 7h10" />`,
   // lucide message-square-text
   feedback: html`<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /><path d="M13 8H7M17 12H7" />`,
+  // Left-rail built-ins (used when moved to the right panel / collapsed 44px strip)
+  // lucide bell: Attention (threads needing your decision or answer)
+  attention: html`<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" /><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />`,
+  // lucide inbox: Open threads across projects
+  open: html`<polyline points="22 12 16 12 14 15 10 15 8 12 2 12" /><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z" />`,
+  // lucide folder: Projects and their threads
+  projects: html`<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" />`,
+  // lucide clock: Scheduled runs, schedules, and loops
+  scheduled: html`<circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" />`,
+  // lucide activity: Machine status and resources
+  status: html`<path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2" />`,
 };
 
 const FALLBACK_PATH = html`<rect x="3" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="3" width="7" height="7" rx="1.5" /><rect x="3" y="14" width="7" height="7" rx="1.5" /><rect x="14" y="14" width="7" height="7" rx="1.5" />`;

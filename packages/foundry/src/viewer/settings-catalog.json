@@ -182,7 +182,7 @@
   {
     "path": "ui",
     "scope": "foundry",
-    "description": "Personal viewer customization: color scheme, custom theme, opt-in local extensions, per-slot layout, and component display flags. Local only."
+    "description": "Personal viewer customization: color scheme, custom theme, opt-in local extensions, per-slot layout, cross-pane tab placement, and component display flags. Local only."
   },
   {
     "path": "ui.colorScheme",
@@ -218,6 +218,11 @@
     "path": "ui.slots.*.pinned",
     "scope": "foundry",
     "description": "Item ids pinned at the start of this slot."
+  },
+  {
+    "path": "ui.panelPlacement",
+    "scope": "foundry",
+    "description": "Cross-pane tab placement overrides keyed by registered side-panel tab id (`'left'` or `'right'`). Moving a registered side-panel tab ID to `'left'` or `'right'` keeps it receiving upstream component updates on whichever side it sits on."
   },
   {
     "path": "ui.flags",

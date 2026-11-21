@@ -13,7 +13,7 @@
 import { html, useEffect, useState } from './lib.js';
 import { Pane } from './rail-pane.js';
 import { WherePicker } from './run-picker.js';
-import { authFetch, openScheduleId, projects, railView, schedules, selectThread } from './store.js';
+import { authFetch, focusTab, openScheduleId, projects, schedules, selectThread } from './store.js';
 import { projectLabel } from './thread-labels.js';
 
 const SCOPE_LABELS = { forge: 'Forge Master', feedback: 'Feedback' };
@@ -310,7 +310,7 @@ export function ScheduledLink({ scheduledBy }) {
   const view = schedules.value.find((v) => v.schedule.id === scheduledBy.scheduleId);
   const name = view?.schedule.name ?? scheduledBy.scheduleId;
   const open = () => {
-    railView.value = 'scheduled';
+    focusTab('scheduled');
     openScheduleId.value = scheduledBy.scheduleId;
   };
   return html`<button type="button" class="band-pill fork-link" title=${`Started by the schedule "${name}", due ${when(scheduledBy.dueAt)}${view ? ': open it' : ' (since removed)'}`}

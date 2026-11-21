@@ -23,7 +23,14 @@ import { batch, computed, effect, signal } from './lib.js';
 import { applyTurnFrame, mergeLiveSnapshot } from './live-state.js';
 import { route, withSafeUi } from './route.js';
 import { categoryOf, threadState } from './thread-status.js';
-import { extensionsReady, leftTabs, mainViews, resolveActiveId, rightTabs } from './ui-registry.js';
+import {
+  effectiveTabSide,
+  extensionsReady,
+  leftTabs,
+  mainViews,
+  resolveActiveId,
+  rightTabs,
+} from './ui-registry.js';
 import { uuidv7 } from './uuidv7.js';
 
 // ---------------------------------------------------------------------------
@@ -321,11 +328,32 @@ export function commentOn(target) {
 }
 
 /**
- * Open the right panel on a tab: a collapsed panel's tab icon and the number keys (4–0). It always
- * shows the tab itself, the tab already selected included: the turn view, the inspector, the Board
- * and the Watchtower give way. With `toggle`, a key for the tab already showing folds the panel.
+ * Focus any registered side-panel tab on its effective side (Left Rail or Right Panel).
+ * Full-workspace overlays (Board, Watchtower, custom workspace views) give way. With `toggle`,
+ * repeating the key for the tab already showing folds that side panel.
  */
-export function openRightTab(tab, { toggle = false } = {}) {
+export function focusTab(tab, { toggle = false } = {}) {
+  if (effectiveTabSide(tab) === 'left') {
+    const showingLeft =
+      projectSidebarOpen.peek() &&
+      railView.peek() === tab &&
+      !boardOpen.peek() &&
+      !watchtowerOpen.peek() &&
+      !activeCustomView.peek();
+    batch(() => {
+      if (toggle && showingLeft) {
+        projectSidebarOpen.value = false;
+        return;
+      }
+      boardOpen.value = false;
+      watchtowerOpen.value = false;
+      activeCustomView.value = null;
+      railView.value = tab;
+      projectSidebarOpen.value = true;
+      compactPanel.value = 'projects';
+    });
+    return;
+  }
   const showing =
     detailDrawerOpen.peek() &&
     rightTab.peek() === tab &&
@@ -350,6 +378,14 @@ export function openRightTab(tab, { toggle = false } = {}) {
     detailDrawerOpen.value = true;
     compactPanel.value = 'detail';
   });
+}
+
+/**
+ * Open a tab on its effective side (Right Panel by default, or Left Rail if moved via `ui.panelPlacement`).
+ * Kept as a convenience alias over `focusTab` for existing callers and extensions.
+ */
+export function openRightTab(tab, opts) {
+  focusTab(tab, opts);
 }
 
 /** Show the thread in the centre, and on a narrow screen switch to it from the right panel. */

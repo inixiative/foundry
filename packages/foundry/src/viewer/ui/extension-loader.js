@@ -40,6 +40,7 @@ import {
   boardOpen,
   connected,
   executeAction,
+  focusTab,
   openCustomView,
   openRightTab,
   projects,
@@ -62,6 +63,7 @@ import {
   registerLeftTab,
   registerMainView,
   registerRightTab,
+  safeUiSignal,
   setExtensionOrder,
   setFlags,
   uiConfigSignal,
@@ -189,26 +191,34 @@ export function refreshCustomTheme() {
   link.href = `/ui/custom/theme.css?v=${++themeNonce}`;
 }
 
+/** Patch `settings.ui` via `PATCH /api/settings/ui` and sync `settingsConfig`. */
+export async function saveUiPatch(patch, toastMsg, { onSaved, errorPrefix } = {}) {
+  try {
+    const res = await authFetch('/api/settings/ui', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(patch),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(body.error || res.statusText);
+    if (settingsRef) settingsRef.value = body;
+    onSaved?.(body);
+    if (toastMsg) showToast(toastMsg, 'ok');
+    return true;
+  } catch (err) {
+    showToast(`${errorPrefix ?? 'Could not save appearance setting'}: ${err.message}`, 'error');
+    return false;
+  }
+}
+
 /** Disable an extension by patching `ui.extensions` via `PATCH /api/settings/ui`. */
 export async function disableExtension(extId) {
   if (!extId || !settingsRef) return false;
   const current = settingsRef.peek()?.ui?.extensions ?? [];
   const next = current.filter((id) => id !== extId);
-  try {
-    const res = await authFetch('/api/settings/ui', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ extensions: next }),
-    });
-    const body = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(body.error || res.statusText);
-    settingsRef.value = body;
-    showToast(`Disabled extension "${extId}"`, 'ok');
-    return true;
-  } catch (err) {
-    showToast(`Could not disable "${extId}": ${err.message}`, 'error');
-    return false;
-  }
+  return saveUiPatch({ extensions: next }, `Disabled extension "${extId}"`, {
+    errorPrefix: `Could not disable "${extId}"`,
+  });
 }
 
 function buildExtensionSdk(extId) {
@@ -245,6 +255,7 @@ function buildExtensionSdk(extId) {
     actions: {
       selectThread,
       selectScope,
+      focusTab,
       openRightTab,
       showThreadView,
       openCustomView,
@@ -271,9 +282,7 @@ function buildExtensionSdk(extId) {
           bindExtensionKey(def.key, {
             description: `Left rail: ${def.label ?? fullId}`,
             category: 'extensions',
-            action: () => {
-              railView.value = fullId;
-            },
+            action: () => focusTab(fullId),
           }),
         );
       }
@@ -462,6 +471,7 @@ export function initUiExtensions(settingsConfigSignal) {
 
   if (SAFE_UI) {
     refreshCustomTheme();
+    safeUiSignal.value = true;
     uiConfigSignal.value = {};
     extensionsReady.value = true;
     return;

@@ -271,7 +271,7 @@ export interface FoundryConfig {
     /** Show a message box per open view (Thread, /btw, /aside) instead of one box with a destination label. */
     separateViews?: boolean;
   };
-  /** Personal viewer customization: color scheme, custom theme, opt-in local extensions, per-slot layout, and component display flags. Local only. */
+  /** Personal viewer customization: color scheme, custom theme, opt-in local extensions, per-slot layout, cross-pane tab placement, and component display flags. Local only. */
   ui?: UiSettingsConfig;
 
   /**
@@ -757,7 +757,11 @@ export interface UiSlotOverride {
 export type UiColorScheme = 'dark' | 'light' | 'system';
 export const UI_COLOR_SCHEMES: readonly UiColorScheme[] = ['dark', 'light', 'system'];
 
-/** Personal viewer customization: color scheme, custom theme, opt-in local extensions, slot layout, and component flags. */
+/** Side of the workspace a side-panel tab is placed on. */
+export type UiPanelSide = 'left' | 'right';
+export const UI_PANEL_SIDES: readonly UiPanelSide[] = ['left', 'right'];
+
+/** Personal viewer customization: color scheme, custom theme, opt-in local extensions, slot layout, cross-pane tab placement, and component flags. */
 export interface UiSettingsConfig {
   /** Viewer color scheme: `dark` (default), `light`, or `system` (follow OS preference). */
   colorScheme?: UiColorScheme;
@@ -767,6 +771,11 @@ export interface UiSettingsConfig {
   extensions?: string[];
   /** Per-slot layout overrides (`order`, `hidden`, `pinned`) keyed by slot id. */
   slots?: Record<string, UiSlotOverride>;
+  /**
+   * Cross-pane tab placement overrides keyed by registered side-panel tab id (`'left'` or `'right'`).
+   * Moving a registered side-panel tab ID to `'left'` or `'right'` keeps it receiving upstream component updates on whichever side it sits on.
+   */
+  panelPlacement?: Record<string, UiPanelSide>;
   /** Per-component display and behavior toggles, keyed by component id then flag name. */
   flags?: Record<string, Record<string, boolean | string | number>>;
 }
@@ -1876,7 +1885,14 @@ function validateJournalSettings(journal: JournalSettings | undefined): void {
     throw Error('journal.rawMiddlewareDays must be a number of days, 0 or more');
 }
 
-const UI_SETTING_KEYS = new Set(['colorScheme', 'theme', 'extensions', 'slots', 'flags']);
+const UI_SETTING_KEYS = new Set([
+  'colorScheme',
+  'theme',
+  'extensions',
+  'slots',
+  'panelPlacement',
+  'flags',
+]);
 const UI_SLOT_KEYS = new Set(['order', 'hidden', 'pinned']);
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
@@ -1947,6 +1963,16 @@ function validateUiSettings(ui: UiSettingsConfig | undefined): void {
             throw Error(`ui.slots.${slotId}.${field} must be an array of non-empty item ids`);
           }
         }
+      }
+    }
+  }
+  if (ui.panelPlacement !== undefined) {
+    if (!isPlainRecord(ui.panelPlacement))
+      throw Error('ui.panelPlacement must be an object keyed by tab id');
+    for (const [tabId, side] of Object.entries(ui.panelPlacement)) {
+      assertSafeUiKey('ui.panelPlacement', tabId);
+      if (typeof side !== 'string' || !UI_PANEL_SIDES.includes(side as UiPanelSide)) {
+        throw Error(`ui.panelPlacement.${tabId} must be one of: ${UI_PANEL_SIDES.join(', ')}`);
       }
     }
   }
@@ -2029,6 +2055,27 @@ function patchUiSettings(
       }
       if (Object.keys(slots).length === 0) delete next.slots;
       else next.slots = slots;
+      continue;
+    }
+    if (key === 'panelPlacement') {
+      if (value === null) {
+        delete next.panelPlacement;
+        continue;
+      }
+      if (!isPlainRecord(value)) {
+        next.panelPlacement = value;
+        continue;
+      }
+      const placement: Record<string, unknown> = isPlainRecord(next.panelPlacement)
+        ? { ...next.panelPlacement }
+        : {};
+      for (const [tabId, side] of Object.entries(value)) {
+        assertSafeUiKey('ui.panelPlacement', tabId);
+        if (side === null) delete placement[tabId];
+        else placement[tabId] = side;
+      }
+      if (Object.keys(placement).length === 0) delete next.panelPlacement;
+      else next.panelPlacement = placement;
       continue;
     }
     if (key === 'flags') {

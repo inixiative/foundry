@@ -28,9 +28,9 @@ import {
   commentOn,
   createThread,
   executeAction,
+  focusTab,
   focusTurnId,
   messages,
-  rightTab,
   selectThread,
   showThreadView,
   showToast,
@@ -217,12 +217,12 @@ export function Plan() {
 
     <p class="plan-intro">The plan is what you want and why${meta.plan?.updatedAt ? html`<span class="rp-dim"> · recorded by the agent ${new Date(meta.plan.updatedAt).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })}</span>` : null}.
       <button type="button" class="rp-link" onClick=${() => {
-        rightTab.value = 'loop';
+        focusTab('loop');
       }}>The Loop is how it’s being done →</button></p>
 
     <section class="plan-lifecycle" aria-label="Where the work stands">
       <${LifecycleStrip} turns=${turns} meta=${meta} showNow=${true} onOpen=${() => {
-        rightTab.value = 'loop';
+        focusTab('loop');
       }} />
     </section>
 

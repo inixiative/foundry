@@ -39,6 +39,7 @@ import { openNewThread } from './run-picker.js';
 import { draftCount, ScheduleList } from './schedules.js';
 import { SectionList } from './slot.js';
 import {
+  activeProjectId,
   activeThreadId,
   allThreads,
   attentionHold,
@@ -46,10 +47,18 @@ import {
   projectSidebarOpen,
   railView,
   selectThread,
+  threadData,
+  threadLaunch,
 } from './store.js';
 import { isClosedThread, isScheduledRun } from './thread-status.js';
 import { ThreadNode, threadTree } from './thread-tree.js';
-import { leftTabRows, leftTabs, registerBuiltinLeftTab, resolveActiveId } from './ui-registry.js';
+import {
+  leftTabRows,
+  leftTabs,
+  registerBuiltinLeftTab,
+  resolveActiveId,
+  useComponentFlags,
+} from './ui-registry.js';
 
 const OPEN = (t) => !isClosedThread(t);
 /** Shared: another party (a Signet member) is in the thread. */
@@ -58,8 +67,16 @@ const isShared = (node) => (node.conversation?.members ?? 0) > 0;
 /** Red before orange in the Attention rail. */
 const URGENCY = { problem: 0, attention: 1 };
 
+function readTabInfo(tab, ctx) {
+  if (typeof tab.info === 'function') {
+    return tab.extId ? safeCall(tab.extId, () => tab.info(ctx), '', 'leftTab.info') : tab.info(ctx);
+  }
+  return typeof tab.info === 'string' ? tab.info : '';
+}
+
 function renderTabBadge(tab, ctx) {
   if (typeof tab.badge !== 'function') return null;
+  if (tab.defaultSide === 'right' && tab.requiresThread !== false && !ctx.threadId) return null;
   const val = tab.extId
     ? safeCall(tab.extId, () => tab.badge(ctx), null, 'leftTab.badge')
     : tab.badge(ctx);
@@ -78,7 +95,7 @@ function RailToggle({ activeId, ctx }) {
         html`<div key=${i} class="rail-toggle-row">${row.map(
           (tab) => html`<button key=${tab.id} role="tab" aria-selected=${activeId === tab.id}
           class="rail-toggle-btn ${activeId === tab.id ? 'is-active' : ''}" data-rail-id=${tab.id}
-          title=${`${tab.label} (⌥⇧← ⌥⇧→)`}
+          title=${tab.key ? `${tab.label} (⌥${tab.key} · ⌥⇧← ⌥⇧→)` : `${tab.label} (⌥⇧← ⌥⇧→)`}
           onClick=${() => {
             railView.value = tab.id;
           }}>${tab.label}${renderTabBadge(tab, ctx)}</button>`,
@@ -146,6 +163,8 @@ function ScheduledRail() {
 registerBuiltinLeftTab({
   id: 'attention',
   label: 'Attention',
+  info: 'Open threads that need your decision or answer',
+  requiresThread: false,
   row: 0,
   wideShare: false,
   render: () => html`<${AttentionRail} />`,
@@ -153,6 +172,8 @@ registerBuiltinLeftTab({
 registerBuiltinLeftTab({
   id: 'open',
   label: 'Open',
+  info: 'Every open thread across your projects',
+  requiresThread: false,
   row: 0,
   wideShare: false,
   render: () => html`<${OpenRail} />`,
@@ -160,6 +181,8 @@ registerBuiltinLeftTab({
 registerBuiltinLeftTab({
   id: 'projects',
   label: 'Projects',
+  info: 'Projects, pinned scopes, and their threads',
+  requiresThread: false,
   row: 0,
   wideShare: true,
   render: () => html`<${ProjectSidebar} />`,
@@ -167,19 +190,23 @@ registerBuiltinLeftTab({
 registerBuiltinLeftTab({
   id: 'scheduled',
   label: 'Scheduled',
+  info: 'Schedules, active runs, and running loops',
+  requiresThread: false,
   row: 1,
   wideShare: false,
-  badge: () => {
+  badge: ({ side } = {}) => {
     const count = draftCount();
-    return count
-      ? html`<span class="rail-toggle-badge" title="Schedules an agent proposed, waiting for you">${count}</span>`
-      : null;
+    if (!count) return null;
+    if (side === 'right') return count;
+    return html`<span class="rail-toggle-badge" title="Schedules an agent proposed, waiting for you">${count}</span>`;
   },
   render: () => html`<${ScheduledRail} />`,
 });
 registerBuiltinLeftTab({
   id: 'status',
   label: 'Status',
+  info: 'This machine, daemon health, and resources',
+  requiresThread: false,
   row: 1,
   wideShare: false,
   render: () => html`<${MachineStatus} />`,
@@ -189,7 +216,7 @@ const LEFT_RAIL_CONTROLS = [
   { id: 'size-controls', render: () => html`<${SizeControls} side="left" />` },
 ];
 
-export function NavRail() {
+export function NavRail({ onSpanSelect } = {}) {
   if (leftSize.value === 'hidden') return html`<div class="panel-hidden" aria-hidden="true"></div>`;
   // Folded, the rail is today's thin strip of project dots.
   if (!projectSidebarOpen.value || panelFit.value.leftFolded)
@@ -197,16 +224,64 @@ export function NavRail() {
   const tabs = leftTabs();
   const activeId = resolveActiveId(tabs, railView.value, 'attention');
   const activeTab = tabs.find((t) => t.id === activeId) ?? tabs[0];
-  const ctx = { railView: activeId, activeThreadId: activeThreadId.value };
+  const threadId = activeThreadId.value;
+  const projectId = activeProjectId.value;
+  const flags = useComponentFlags('rightPanel', {
+    showComingSoon: true,
+    showUsageBar: true,
+    showRunningFooter: true,
+  });
+  const ctx = {
+    railView: activeId,
+    activeThreadId: threadId,
+    threadId,
+    projectId,
+    thread: threadData.value,
+    launch: threadLaunch.value,
+    flags,
+    side: 'left',
+    onSpanSelect,
+  };
+  const movedFromRight = activeTab?.defaultSide === 'right';
+  const needsThread = movedFromRight && activeTab?.requiresThread !== false;
+  const hasThread = Boolean(threadId && threadData.value);
+
+  let body = null;
+  if (activeTab) {
+    if (movedFromRight) {
+      if (needsThread && !hasThread) {
+        body = html`<div class="rail-moved-frame rp-frame" role="tabpanel" aria-label=${activeTab.label}>
+          <header class="rp-tab-head">
+            <h2 class="rp-title">${activeTab.label}</h2>
+          </header>
+          <div class="rail-empty">Select a thread to view ${activeTab.label}</div>
+        </div>`;
+      } else {
+        const info = readTabInfo(activeTab, ctx);
+        body = html`<div class="rail-moved-frame rp-frame" role="tabpanel" aria-label=${activeTab.label}>
+          <header class="rp-tab-head">
+            <h2 class="rp-title">${activeTab.label}</h2>
+            ${info ? html`<div class="rp-info">${info}</div>` : null}
+          </header>
+          ${
+            activeTab.extId
+              ? html`<${ExtensionBoundary} key=${activeTab.id} extId=${activeTab.extId} slot="leftRail.tabs" onDisable=${disableExtension} render=${activeTab.render} ctx=${ctx} />`
+              : activeTab.render(ctx)
+          }
+        </div>`;
+      }
+    } else {
+      body = activeTab.extId
+        ? html`<${ExtensionBoundary} key=${activeTab.id} extId=${activeTab.extId} slot="leftRail.tabs" onDisable=${disableExtension} render=${activeTab.render} ctx=${ctx} />`
+        : activeTab.render(ctx);
+    }
+  }
+
   return html`<div class="nav-rail">
     <div class="rail-head-row">
       <${RailToggle} activeId=${activeId} ctx=${ctx} />
       <${SectionList} slot="leftRail.controls" items=${LEFT_RAIL_CONTROLS} context=${ctx} />
     </div>
-    ${
-      activeTab?.extId
-        ? html`<${ExtensionBoundary} key=${activeTab.id} extId=${activeTab.extId} slot="leftRail.tabs" onDisable=${disableExtension} render=${activeTab.render} ctx=${ctx} />`
-        : activeTab?.render(ctx)
-    }
+    ${body}
   </div>`;
 }

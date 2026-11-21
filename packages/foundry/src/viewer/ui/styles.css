@@ -7325,6 +7325,7 @@ a.thread-ref:hover {
 /* Each row's tabs share the rail's width by their labels, so "Attention" never overruns its slot. */
 .rail-toggle-row {
   display: flex;
+  flex-wrap: wrap;
   gap: 2px;
 }
 .rail-toggle-btn {
