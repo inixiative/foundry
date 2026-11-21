@@ -77,13 +77,13 @@ button.plan-box {
   font-family: inherit;
 }
 .plan-box.s-done {
-  background: hsl(205 70% 70% / 0.25);
+  background: hsl(var(--tone-info-fill-ch) / 0.25);
 }
 .plan-box.s-doing {
   background: hsl(var(--app-primary) / 0.25);
 }
 .plan-box.s-you {
-  background: hsl(38 87% 69% / 0.3);
+  background: hsl(var(--tone-warn-ch) / 0.3);
 }
 .plan-dot {
   width: 6px;
@@ -120,12 +120,12 @@ button.plan-box {
   border-color: hsl(var(--app-primary) / 0.5);
 }
 .plan-decision.d-extend {
-  color: hsl(205 70% 75%);
-  border-color: hsl(205 70% 60% / 0.5);
+  color: var(--tone-info);
+  border-color: hsl(var(--tone-info-ch) / 0.5);
 }
 .plan-decision.d-new {
-  color: hsl(38 87% 69%);
-  border-color: hsl(38 87% 69% / 0.5);
+  color: var(--tone-warn);
+  border-color: hsl(var(--tone-warn-ch) / 0.5);
 }
 .plan-tech-system small {
   display: block;

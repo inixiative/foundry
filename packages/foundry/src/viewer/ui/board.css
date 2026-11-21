@@ -44,7 +44,7 @@
   border: 1px solid var(--line-strong);
   border-radius: 12px;
   background: var(--surface);
-  box-shadow: 0 12px 30px hsl(0 0% 0% / 0.5);
+  box-shadow: 0 12px 30px var(--shadow-color-md);
 }
 .board-card-details {
   border: 0;
@@ -72,7 +72,7 @@
   border: 1px solid var(--line-strong);
   border-radius: 12px;
   background: var(--surface);
-  box-shadow: -18px 0 36px hsl(0 0% 0% / 0.45);
+  box-shadow: -18px 0 36px var(--shadow-color-sm);
 }
 .board-details header {
   display: flex;

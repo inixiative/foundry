@@ -11,12 +11,12 @@
   cursor: pointer;
 }
 .composer-destination[data-destination="btw"] {
-  color: hsl(205 70% 78%);
-  border-color: hsl(205 70% 60% / 0.5);
+  color: var(--tone-info-bright);
+  border-color: hsl(var(--tone-info-ch) / 0.5);
 }
 .composer-destination[data-destination="aside"] {
-  color: hsl(38 87% 69%);
-  border-color: hsl(38 87% 69% / 0.5);
+  color: var(--tone-warn);
+  border-color: hsl(var(--tone-warn-ch) / 0.5);
 }
 .view-box {
   margin-top: 10px;

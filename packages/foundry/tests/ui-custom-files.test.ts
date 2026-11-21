@@ -271,6 +271,42 @@ test('ConfigStore.patch("ui", ...) validates slugs, rejects prototype keys, merg
     expect(() => validateRepositoryProject({ ui: { theme: 'dark' } })).toThrow(
       /not a repository setting/i,
     );
+    expect(() => validateRepositoryProject({ ui: { colorScheme: 'light' } })).toThrow(
+      /not a repository setting/i,
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('ConfigStore.patch("ui", { colorScheme }) accepts dark/light/system, resets on null, and rejects invalid values', async () => {
+  const dir = makeTempDir('foundry-ui-color-scheme-');
+  try {
+    const store = new ConfigStore(dir);
+    await store.load();
+    expect(store.config.ui).toBeUndefined();
+
+    for (const scheme of ['dark', 'light', 'system'] as const) {
+      await store.patch('ui', { colorScheme: scheme });
+      expect(store.config.ui?.colorScheme).toBe(scheme);
+    }
+
+    // Null deletes colorScheme and clears `ui` when no other keys remain.
+    await store.patch('ui', { colorScheme: null });
+    expect(store.config.ui).toBeUndefined();
+
+    // Preserves sibling `ui` fields when resetting colorScheme to null.
+    await store.patch('ui', { colorScheme: 'light', theme: 'ocean' });
+    await store.patch('ui', { colorScheme: null });
+    expect(store.config.ui).toEqual({ theme: 'ocean' });
+
+    // Invalid values rejected.
+    await expect(store.patch('ui', { colorScheme: 'sepia' })).rejects.toThrow(/colorScheme/i);
+    await expect(store.patch('ui', { colorScheme: '' })).rejects.toThrow(/colorScheme/i);
+    await expect(store.patch('ui', { colorScheme: 'LIGHT' })).rejects.toThrow(/colorScheme/i);
+    await expect(store.patch('ui', { colorScheme: 123 })).rejects.toThrow(/colorScheme/i);
+    await expect(store.patch('ui', { colorScheme: true })).rejects.toThrow(/colorScheme/i);
+    await expect(store.patch('ui', { colorScheme: ['light'] })).rejects.toThrow(/colorScheme/i);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

@@ -113,5 +113,5 @@
   border: 1px solid hsl(var(--border));
   border-radius: 10px;
   background: hsl(var(--card));
-  box-shadow: 0 12px 30px hsl(0 0% 0% / 0.5);
+  box-shadow: 0 12px 30px var(--shadow-color-md);
 }

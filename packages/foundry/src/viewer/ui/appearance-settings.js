@@ -14,11 +14,18 @@ import {
   refreshCustomTheme,
   refreshCustomUiManifest,
   SAFE_UI,
+  systemPrefersDark,
 } from './extension-loader.js';
 import { html, useEffect, useState } from './lib.js';
 import { authFetch, showToast } from './store.js';
 import { Switch } from './switch.js';
 import { builtinSlotsMetadata } from './ui-registry.js';
+
+const COLOR_SCHEME_OPTIONS = [
+  { id: 'dark', label: 'Dark' },
+  { id: 'light', label: 'Light' },
+  { id: 'system', label: 'System' },
+];
 
 const HEADER_RIGHT_ITEMS = [
   { id: 'update-notice', label: 'Update notice' },
@@ -106,6 +113,13 @@ export function AppearanceSection({ config, onSaved }) {
     }
   };
 
+  const activeColorScheme = ui.colorScheme ?? 'dark';
+
+  const handleColorSchemeChange = async (value) => {
+    if (value === activeColorScheme) return;
+    await patchUi({ colorScheme: value }, `Color scheme set to ${value}`);
+  };
+
   const handleThemeChange = async (value) => {
     await patchUi({ theme: value || null }, 'Theme updated');
   };
@@ -161,6 +175,34 @@ export function AppearanceSection({ config, onSaved }) {
             causes trouble, open <a href="/?safe-ui=1"><code>/?safe-ui=1</code></a> to boot without custom CSS or JS.
           </p>`
     }
+
+    <section class="settings-card" data-setting="ui.colorScheme">
+      <h3>Color scheme</h3>
+      <p class="settings-desc">
+        Choose Foundry’s light or dark appearance, or follow your operating system’s setting.
+      </p>
+      <div class="appearance-actions-row">
+        <div class="color-scheme-segmented" role="radiogroup" aria-label="Color scheme">
+          ${COLOR_SCHEME_OPTIONS.map(
+            (opt) => html`<button
+              key=${opt.id}
+              type="button"
+              role="radio"
+              class=${`color-scheme-option${activeColorScheme === opt.id ? ' is-active' : ''}`}
+              aria-checked=${String(activeColorScheme === opt.id)}
+              data-color-scheme=${opt.id}
+              disabled=${saving}
+              onClick=${() => handleColorSchemeChange(opt.id)}
+            >${opt.label}</button>`,
+          )}
+        </div>
+        ${
+          activeColorScheme === 'system'
+            ? html`<span class="color-scheme-hint">System is currently ${systemPrefersDark.value ? 'Dark' : 'Light'}</span>`
+            : null
+        }
+      </div>
+    </section>
 
     <section class="settings-card" data-setting="ui.theme">
       <h3>Custom theme</h3>

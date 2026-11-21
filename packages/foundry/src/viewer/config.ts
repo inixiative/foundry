@@ -271,7 +271,7 @@ export interface FoundryConfig {
     /** Show a message box per open view (Thread, /btw, /aside) instead of one box with a destination label. */
     separateViews?: boolean;
   };
-  /** Personal viewer customization: custom theme, opt-in local extensions, per-slot layout, and component display flags. Local only. */
+  /** Personal viewer customization: color scheme, custom theme, opt-in local extensions, per-slot layout, and component display flags. Local only. */
   ui?: UiSettingsConfig;
 
   /**
@@ -753,8 +753,14 @@ export interface UiSlotOverride {
   pinned?: string[];
 }
 
-/** Personal viewer customization: custom theme, opt-in local extensions, slot layout, and component flags. */
+/** Viewer color scheme preference: `dark` (default), `light`, or `system` (follow OS preference). */
+export type UiColorScheme = 'dark' | 'light' | 'system';
+export const UI_COLOR_SCHEMES: readonly UiColorScheme[] = ['dark', 'light', 'system'];
+
+/** Personal viewer customization: color scheme, custom theme, opt-in local extensions, slot layout, and component flags. */
 export interface UiSettingsConfig {
+  /** Viewer color scheme: `dark` (default), `light`, or `system` (follow OS preference). */
+  colorScheme?: UiColorScheme;
   /** Named custom theme slug under `<configDir>/ui/themes/<slug>.css`, or null to use default `theme.css`. */
   theme?: string | null;
   /** Explicit opt-in list of local extension ids under `<configDir>/ui/extensions/` to load in the viewer. */
@@ -1870,7 +1876,7 @@ function validateJournalSettings(journal: JournalSettings | undefined): void {
     throw Error('journal.rawMiddlewareDays must be a number of days, 0 or more');
 }
 
-const UI_SETTING_KEYS = new Set(['theme', 'extensions', 'slots', 'flags']);
+const UI_SETTING_KEYS = new Set(['colorScheme', 'theme', 'extensions', 'slots', 'flags']);
 const UI_SLOT_KEYS = new Set(['order', 'hidden', 'pinned']);
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
@@ -1894,6 +1900,14 @@ function validateUiSettings(ui: UiSettingsConfig | undefined): void {
   for (const key of Object.keys(ui)) {
     assertSafeUiKey('ui', key);
     if (!UI_SETTING_KEYS.has(key)) throw Error(`ui.${key} is not a ui setting`);
+  }
+  if (ui.colorScheme !== undefined) {
+    if (
+      typeof ui.colorScheme !== 'string' ||
+      !UI_COLOR_SCHEMES.includes(ui.colorScheme as UiColorScheme)
+    ) {
+      throw Error(`ui.colorScheme must be one of: ${UI_COLOR_SCHEMES.join(', ')}`);
+    }
   }
   if (ui.theme !== undefined && ui.theme !== null) {
     if (typeof ui.theme !== 'string' || !CUSTOM_UI_SLUG.test(ui.theme))
@@ -1967,6 +1981,11 @@ function patchUiSettings(
     : {};
   for (const [key, value] of Object.entries(patch)) {
     assertSafeUiKey('ui', key);
+    if (key === 'colorScheme') {
+      if (value === null) delete next.colorScheme;
+      else next.colorScheme = value;
+      continue;
+    }
     if (key === 'theme') {
       if (value === null) delete next.theme;
       else next.theme = value;

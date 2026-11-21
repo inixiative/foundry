@@ -73,9 +73,52 @@ export { extensionsReady, SAFE_UI };
 
 const CUSTOM_UI_SLUG = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 const CUSTOM_EXT_ENTRY = /^\/ui\/custom\/extensions\/[a-z0-9][a-z0-9_-]{0,63}(?:\/index)?\.js$/;
+export const COLOR_SCHEME_STORAGE_KEY = 'foundry.ui.colorScheme';
+const VALID_COLOR_SCHEMES = new Set(['dark', 'light', 'system']);
+
+const darkSchemeQuery =
+  typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+    ? window.matchMedia('(prefers-color-scheme: dark)')
+    : null;
+
+/** Live OS dark-mode preference (`true` when `prefers-color-scheme: dark` matches). */
+export const systemPrefersDark = signal(Boolean(darkSchemeQuery?.matches));
 
 /** Live status per extension id: `{ status: 'loading' | 'active' | 'error', error?, entry? }`. */
 export const extensionStatuses = signal({});
+
+function normalizeColorScheme(value) {
+  return typeof value === 'string' && VALID_COLOR_SCHEMES.has(value) ? value : 'dark';
+}
+
+/**
+ * Apply `'dark' | 'light' | 'system'` to `<html>.classList` and `<meta name="color-scheme">`,
+ * optionally persisting to `localStorage` for zero-flash pre-paint boot.
+ */
+export function applyColorScheme(rawScheme, { persist = true } = {}) {
+  const scheme = normalizeColorScheme(rawScheme);
+  const isDark =
+    scheme === 'light'
+      ? false
+      : scheme === 'system'
+        ? Boolean(darkSchemeQuery ? darkSchemeQuery.matches : systemPrefersDark.peek())
+        : true;
+
+  if (typeof document !== 'undefined') {
+    document.documentElement.classList.toggle('dark', isDark);
+    const meta = document.querySelector('meta[name="color-scheme"]');
+    if (meta) meta.setAttribute('content', isDark ? 'dark' : 'light');
+  }
+
+  if (persist && typeof localStorage !== 'undefined') {
+    try {
+      localStorage.setItem(COLOR_SCHEME_STORAGE_KEY, scheme);
+    } catch {
+      // Ignore storage failures (e.g. private browsing / blocked site data); DOM state is already applied.
+    }
+  }
+  return isDark;
+}
 
 /** Discovered themes and extensions from `GET /api/ui/custom`. */
 export const customUiManifest = signal({
@@ -361,12 +404,42 @@ async function reconcileEnabledExtensions(enabledIds) {
   extensionsReady.value = true;
 }
 
-/** Boot custom theme + local extension loading, synced reactively to `settingsConfig`. */
+/** Boot color scheme, custom theme, and local extension loading, synced reactively to `settingsConfig`. */
 export function initUiExtensions(settingsConfigSignal) {
   if (initialized) return;
   initialized = true;
   settingsRef = settingsConfigSignal;
   setDisableExtensionHandler(disableExtension);
+
+  let activeColorScheme = 'dark';
+  const handleMediaChange = (event) => {
+    systemPrefersDark.value = Boolean(event.matches);
+    if (activeColorScheme === 'system') {
+      applyColorScheme('system', { persist: false });
+    }
+  };
+  if (darkSchemeQuery) {
+    if (typeof darkSchemeQuery.addEventListener === 'function') {
+      darkSchemeQuery.addEventListener('change', handleMediaChange);
+    } else if (typeof darkSchemeQuery.addListener === 'function') {
+      darkSchemeQuery.addListener(handleMediaChange);
+    }
+  }
+  if (typeof window !== 'undefined') {
+    window.addEventListener('storage', (event) => {
+      if (event.key !== COLOR_SCHEME_STORAGE_KEY) return;
+      activeColorScheme = normalizeColorScheme(event.newValue);
+      applyColorScheme(activeColorScheme, { persist: false });
+    });
+  }
+
+  effect(() => {
+    const cfg = settingsConfigSignal.value;
+    if (!cfg) return;
+    const nextScheme = normalizeColorScheme(cfg.ui?.colorScheme);
+    activeColorScheme = nextScheme;
+    applyColorScheme(nextScheme, { persist: true });
+  });
 
   if (SAFE_UI) {
     refreshCustomTheme();

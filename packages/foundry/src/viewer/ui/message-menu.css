@@ -8,7 +8,7 @@
   border-radius: 10px;
   background: hsl(var(--card));
   border: 1px solid hsl(var(--border));
-  box-shadow: 0 12px 36px rgb(0 0 0 / 0.45);
+  box-shadow: 0 12px 36px var(--shadow-color-sm);
 }
 .msg-menu button {
   display: flex;

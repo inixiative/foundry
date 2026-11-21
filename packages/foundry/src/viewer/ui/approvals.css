@@ -1,7 +1,7 @@
 /* Approval cards: the risk line, the scope picker and "make a rule" (conversation.js). */
 .prompt-risk {
   font-size: 12px;
-  color: hsl(38 87% 69%);
+  color: var(--tone-warn);
   margin: 2px 0 6px;
 }
 .prompt-scope {

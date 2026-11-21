@@ -14,7 +14,7 @@
   color: hsl(var(--muted-foreground));
 }
 .worktree-pill.is-released {
-  background: hsl(200 8% 22%);
+  background: var(--pill-released-bg);
   color: hsl(var(--muted-foreground));
 }
 .worktree-recreate {

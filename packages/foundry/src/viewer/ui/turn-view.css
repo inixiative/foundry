@@ -136,12 +136,12 @@
   flex: none;
 }
 .tv-step[data-status="warn"] .tv-dot {
-  background: hsl(38 87% 69%);
+  background: var(--tone-warn);
 }
 .tv-step[data-status="error"] .tv-dot,
 .tv-step[data-status="fail"] .tv-dot,
 .tv-step[data-status="deny"] .tv-dot {
-  background: hsl(7 100% 74%);
+  background: var(--tone-error);
 }
 .tv-step[data-status="idle"] .tv-dot,
 .tv-step[data-status="skip"] .tv-dot {
@@ -202,7 +202,7 @@
   overflow: auto;
 }
 .tv-del {
-  color: hsl(7 100% 74%);
+  color: var(--tone-error);
 }
 .tv-add {
   color: hsl(var(--app-primary));
@@ -214,8 +214,8 @@
 .tv-error {
   padding: 10px 12px;
   border-radius: 8px;
-  border: 1px solid hsl(7 100% 74% / 0.5);
-  color: hsl(7 100% 74%);
+  border: 1px solid hsl(var(--tone-error-ch) / 0.5);
+  color: var(--tone-error);
   margin-bottom: 10px;
 }
 .tv-regions,
@@ -241,7 +241,7 @@
   background: hsl(var(--app-primary) / 0.3);
 }
 .tv-regions li[data-outcome^="failed:"] .tv-decision {
-  background: hsl(7 100% 74% / 0.3);
+  background: hsl(var(--tone-error-ch) / 0.3);
 }
 .tv-layer,
 .tv-said,

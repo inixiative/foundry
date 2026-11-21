@@ -11,7 +11,7 @@
   background: hsl(var(--card));
   border: 1px solid hsl(var(--border));
   border-radius: 12px;
-  box-shadow: 0 16px 40px rgb(0 0 0 / 0.5);
+  box-shadow: 0 16px 40px var(--shadow-color-md);
 }
 .action-palette-input {
   border: 0;

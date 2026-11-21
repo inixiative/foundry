@@ -47,7 +47,7 @@
   border: 1px solid var(--line-strong);
   border-radius: 12px;
   background: var(--surface);
-  box-shadow: 0 12px 30px hsl(0 0% 0% / 0.5);
+  box-shadow: 0 12px 30px var(--shadow-color-md);
 }
 .wt-filter-label {
   align-self: center;
@@ -132,7 +132,7 @@
   background: var(--bg);
 }
 .wt-th.is-blocked {
-  color: hsl(7 100% 74%);
+  color: var(--tone-error);
 }
 .wt-lane {
   font-size: 12.5px;
@@ -175,7 +175,7 @@
   box-shadow: inset 3px 0 0 hsl(var(--app-primary));
 }
 .wt-card.is-blocked {
-  border-color: hsl(7 100% 74% / 0.6);
+  border-color: hsl(var(--tone-error-ch) / 0.6);
 }
 .wt-sources,
 .wt-who {
@@ -195,8 +195,8 @@
   border: 1px solid hsl(var(--border));
 }
 .wt-who span.wt-you {
-  border-color: hsl(205 70% 70% / 0.6);
-  color: hsl(205 70% 75%);
+  border-color: hsl(var(--tone-info-fill-ch) / 0.6);
+  color: var(--tone-info);
 }
 .wt-who span.wt-you.is-here {
   border-color: hsl(var(--app-primary) / 0.6);

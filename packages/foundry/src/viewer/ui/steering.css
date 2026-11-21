@@ -11,15 +11,15 @@
   align-items: center;
   padding: 4px 8px;
   border-radius: 8px;
-  border: 1px dashed hsl(50 80% 70% / 0.5);
-  background: hsl(50 80% 70% / 0.06);
+  border: 1px dashed hsl(var(--tone-queued-ch) / 0.5);
+  background: hsl(var(--tone-queued-ch) / 0.06);
   font-size: 12.5px;
 }
 .queued-label {
   font: 600 10.5px var(--font-mono, monospace);
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  color: hsl(50 80% 72%);
+  color: var(--tone-queued);
 }
 .queued-text {
   overflow: hidden;

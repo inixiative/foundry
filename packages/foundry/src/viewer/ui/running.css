@@ -47,14 +47,14 @@
   background: hsl(var(--app-primary) / 0.25);
 }
 .running-row.s-passed .running-kind {
-  background: hsl(205 70% 70% / 0.3);
+  background: hsl(var(--tone-info-fill-ch) / 0.3);
 }
 .running-row.s-stopped .running-kind,
 .running-row.s-killed .running-kind {
   background: hsl(var(--muted));
 }
 .running-row.s-failed .running-kind {
-  background: hsl(7 100% 74% / 0.3);
+  background: hsl(var(--tone-error-ch) / 0.3);
 }
 .running-label {
   display: grid;

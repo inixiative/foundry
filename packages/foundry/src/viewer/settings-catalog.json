@@ -182,7 +182,12 @@
   {
     "path": "ui",
     "scope": "foundry",
-    "description": "Personal viewer customization: custom theme, opt-in local extensions, per-slot layout, and component display flags. Local only."
+    "description": "Personal viewer customization: color scheme, custom theme, opt-in local extensions, per-slot layout, and component display flags. Local only."
+  },
+  {
+    "path": "ui.colorScheme",
+    "scope": "foundry",
+    "description": "Viewer color scheme: `dark` (default), `light`, or `system` (follow OS preference)."
   },
   {
     "path": "ui.theme",
