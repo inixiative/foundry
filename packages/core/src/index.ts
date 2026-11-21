@@ -188,7 +188,7 @@ export {
   type ExecutorConfig,
   withAfterMessageNotes,
 } from './executor';
-// Feedback: correction detection (the Prospector's), shared by Oracle, live capture and `foundry repeats`
+// Feedback: correction detection (the Prospector's), shared by Oracle and live capture
 export {
   AGAIN_CORRECTION,
   CORRECTION_CATEGORIES,
@@ -353,7 +353,6 @@ export {
   registryModel,
   resolveDecisionModel,
   resolveModelAliasToModelId,
-  SUBSCRIPTION_DECISION_MODELS,
   SUBSCRIPTION_WORKER_MODELS,
   vendorModeProvider,
   vendorOfProvider,

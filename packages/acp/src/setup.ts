@@ -25,22 +25,19 @@ import {
   installedDaemon,
   readHold,
 } from '@inixiative/foundry/daemon';
-import { runRepeats } from '@inixiative/foundry/repeats';
 import { $ } from 'bun';
 import packageJson from '../package.json' with { type: 'json' };
 
-export const SETUP_USAGE = `foundry-acp setup [--write] [--yes] [--reinstall] [--no-repeats]
+export const SETUP_USAGE = `foundry-acp setup [--write] [--yes] [--reinstall]
 
 Installs Foundry on this Mac and points your ACP hosts at it:
   1. installs @inixiative/foundry-acp globally (bun), so hosts and launchd have a stable path;
   2. installs and starts the Foundry daemon (a launchd agent; macOS only);
-  3. shows the Paseo and T3 Code provider settings, and writes Paseo's with --write or your yes;
-  4. runs \`foundry repeats\`: the corrections you keep giving your agents.
+  3. shows the Paseo and T3 Code provider settings, and writes Paseo's with --write or your yes.
 
   --write        write ~/.paseo/config.json without asking
   --yes          answer yes to every question (installs, writes)
-  --reinstall    replace an installed daemon that runs from somewhere else
-  --no-repeats   skip the repeat report`;
+  --reinstall    replace an installed daemon that runs from somewhere else`;
 
 const PORT = 4500;
 const ok = (message: string) => console.log(`✓ ${message}`);
@@ -161,7 +158,6 @@ export async function runSetup(args: string[]): Promise<number> {
       write: { type: 'boolean' },
       yes: { type: 'boolean' },
       reinstall: { type: 'boolean' },
-      'no-repeats': { type: 'boolean' },
       help: { type: 'boolean' },
     },
   });
@@ -280,16 +276,5 @@ export async function runSetup(args: string[]): Promise<number> {
       'Either host: add `--permission-mode <default|acceptEdits|plan|bypassPermissions>` after the path for a default mode.',
     ].join('\n'),
   );
-
-  // 4. The aha.
-  if (!values['no-repeats']) {
-    console.log('\nThe corrections you keep giving your agents (foundry repeats):\n');
-    try {
-      await runRepeats([]);
-    } catch (error) {
-      warn(`the repeat report could not run: ${(error as Error).message}`);
-      info('run it later with `foundry repeats`');
-    }
-  }
   return 0;
 }

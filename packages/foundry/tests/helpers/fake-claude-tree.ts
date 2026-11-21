@@ -19,7 +19,8 @@ interface FakeTreeProcess {
   readonly exited: boolean;
 }
 
-export function fakeClaudeTree(behavior: { noRoot?: boolean } = {}) {
+/** `model`: the model a member reports answering on (default Haiku 5.5). */
+export function fakeClaudeTree(behavior: { noRoot?: boolean; model?: string } = {}) {
   const processes: FakeTreeProcess[] = [];
   const moments: string[] = [];
   const memberPrompts: string[] = [];
@@ -159,7 +160,7 @@ export function fakeClaudeTree(behavior: { noRoot?: boolean } = {}) {
           session_id: 'main',
           message: {
             role: 'assistant',
-            model: 'claude-haiku-5-5',
+            model: behavior.model ?? 'claude-haiku-5-5',
             content: [{ type: 'text', text: '' }],
             usage: { input_tokens: 2, output_tokens: 3, cache_read_input_tokens: 100 },
           },

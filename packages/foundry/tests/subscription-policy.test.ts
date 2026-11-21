@@ -18,10 +18,7 @@ import { MAIN_THREAD_LABS, MODEL_REGISTRY, mainThreadLab } from '@inixiative/fou
 import { registryForViewer } from '../src/models/registry';
 import { NativeAuthentication } from '../src/providers/native-authentication';
 import { SubscriptionAuthentication } from '../src/providers/subscription-authentication';
-import {
-  configuredProjectWardens,
-  resolveSubscriptionPolicy,
-} from '../src/providers/subscription-policy';
+import { resolveSubscriptionPolicy } from '../src/providers/subscription-policy';
 import { defaultConfig, starterConfig, validateConfig } from '../src/viewer/config';
 import { resolveProjectView } from '../src/viewer/config-resolve';
 import { artificerAgents } from './helpers/artificer-agents';
@@ -207,15 +204,12 @@ test('subscription mode runs a project decision model on subscription decisions'
   });
 });
 
-test('an explicit Codex decision profile runs Codex decisions beside the Claude worker', () => {
+test('an explicit Codex decision profile is refused: decisions run on a Claude login', () => {
   const f = fixture();
   f.c.nativeAuthentication![1].runtime = 'codex';
-  delete f.c.subscriptionOnly!.expectedObservedModel;
-  expect(resolveSubscriptionPolicy(f.c)).toMatchObject({
-    workers: { 'claude-code': { runtime: 'claude' } },
-    decision: { id: f.decision.id, runtime: 'codex' },
-    policy: { model: 'decision-model' },
-  });
+  expect(() => resolveSubscriptionPolicy(f.c)).toThrow(
+    'subscriptionOnly.decisionSourceId must be a Claude login',
+  );
 });
 
 test('Claude decisions share the worker login, default to Haiku 5.5 and run concurrently', () => {
@@ -427,12 +421,10 @@ test('concurrent worker launches share one subscription status check and reuse t
   for (const launch of [first, second, third]) launch.release();
 }, 30_000);
 
-/** The fixture with Codex as the main thread: GPT-6 Astra on the Codex worker profile. */
+/** The fixture with Codex as the main thread: GPT-6 Astra on the Codex worker profile, decisions on Claude. */
 function codexMain() {
   const f = fixture();
   f.worker.runtime = 'codex';
-  f.decision.runtime = 'codex';
-  delete f.c.subscriptionOnly!.expectedObservedModel;
   f.c.defaults.provider = 'codex';
   f.c.defaults.model = 'gpt-6-astra';
   f.c.agents = artificerAgents('codex');
@@ -445,15 +437,12 @@ test('Codex is a subscription main thread: GPT-6 Astra on the Codex login, no AP
   expect(() => validateConfig(f.c)).not.toThrow();
   expect(resolveSubscriptionPolicy(f.c)).toMatchObject({
     workers: { codex: { id: f.worker.id, runtime: 'codex' } },
-    decision: { id: f.decision.id, runtime: 'codex' },
+    // A Codex worker's Wardens stay on the Claude decision login.
+    decision: { id: f.decision.id, runtime: 'claude' },
     config: { defaults: { provider: 'codex', model: 'gpt-6-astra' } },
   });
-  // A shared Codex login: the worker and decisions may use the same profile.
-  f.decision.profileDirectory = f.worker.profileDirectory;
-  expect(() => resolveSubscriptionPolicy(f.c)).not.toThrow();
-  // A worker runs only on a login of its own runtime: the named Claude source is the Claude
-  // worker's. The only Codex source is the decision login, so the Codex worker takes its default
-  // profile, never the Claude one.
+  // A worker runs only on a login of its own runtime: with no Codex source named, the Codex worker
+  // takes its default profile, never a Claude one.
   f.worker.runtime = 'claude';
   const resolved = resolveSubscriptionPolicy(f.c)!;
   expect(resolved.workers['claude-code']).toMatchObject({ id: f.worker.id, runtime: 'claude' });
@@ -462,7 +451,7 @@ test('Codex is a subscription main thread: GPT-6 Astra on the Codex login, no AP
   expect(resolved.workers.codex!.id).not.toBe(f.worker.id);
 });
 
-test("a fresh Codex main thread defaults to the user's own ~/.codex login; decisions stay on Claude unless set", () => {
+test("a fresh Codex main thread defaults to the user's own ~/.codex login; decisions stay on Claude", () => {
   const root = mkdtempSync(join(tmpdir(), 'codex-main-'));
   roots.push(root);
   mkdirSync(join(root, '.codex'), { mode: 0o755 });
@@ -480,50 +469,28 @@ test("a fresh Codex main thread defaults to the user's own ~/.codex login; decis
       profileDirectory: join(root, '.codex'),
     });
     expect(resolved.decision.profileDirectory).toBe(join(root, '.claude'));
-    c.subscriptionOnly = { decisionRuntime: 'codex' };
-    // The recorded Claude decision model does not silently follow the runtime switch.
-    expect(() => resolveSubscriptionPolicy(c, { cwd: root })).toThrow(
-      'claude-haiku-5-5 is a claude model',
-    );
+    // A Codex model is never a decision model.
     c.defaults.decisionModel = 'gpt-5.6-luna';
-    expect(resolveSubscriptionPolicy(c, { cwd: root })!.decision.profileDirectory).toBe(
-      join(root, '.codex'),
+    expect(() => resolveSubscriptionPolicy(c, { cwd: root })).toThrow(
+      'gpt-5.6-luna is a codex model; decisions run on Claude',
     );
   } finally {
     process.env.HOME = home;
   }
 });
 
-test('Claude decisions hold Wardens in project hosts by default; claude keeps them primed; claude-in-session is unknown', () => {
+test('subscription decisions hold Wardens in project hosts; a decision runtime is not a setting', () => {
   const root = mkdtempSync(join(tmpdir(), 'project-wardens-'));
   roots.push(root);
   mkdirSync(join(root, '.claude'), { mode: 0o755 });
-  mkdirSync(join(root, '.codex'), { mode: 0o755 });
-  writeFileSync(join(root, '.codex', 'auth.json'), '{}', { mode: 0o600 });
   const home = process.env.HOME;
   process.env.HOME = root;
   try {
     const c = defaultConfig();
-    // The default: Claude decisions, every project's Wardens in its host.
     const resolved = resolveSubscriptionPolicy(c, { cwd: root })!;
-    expect(resolved.policy.wardens).toBe('project');
     expect(resolved.policy.projectHost).toBeDefined();
     expect(resolved.decision.runtime).toBe('claude');
-    expect(configuredProjectWardens(c)).toBe(true);
-    c.subscriptionOnly = { decisionRuntime: 'claude-project' };
-    expect(resolveSubscriptionPolicy(c, { cwd: root })!.policy.wardens).toBe('project');
-    // `claude` names the primed path, the evals' baseline.
-    c.subscriptionOnly = { decisionRuntime: 'claude' };
-    expect(resolveSubscriptionPolicy(c, { cwd: root })!.policy.wardens).toBe('primed');
-    expect(configuredProjectWardens(c)).toBe(false);
-    // Codex decisions have no project host.
-    c.subscriptionOnly = { decisionRuntime: 'codex' };
-    c.defaults.decisionModel = 'gpt-5.6-luna';
-    expect(resolveSubscriptionPolicy(c, { cwd: root })!.policy.wardens).toBe('primed');
-    expect(configuredProjectWardens(c)).toBe(false);
-    c.defaults.decisionModel = 'claude-haiku-5-5';
-    // The per-thread runtime is gone: an unknown runtime.
-    c.subscriptionOnly = { decisionRuntime: 'claude-in-session' } as never;
+    c.subscriptionOnly = { decisionRuntime: 'claude' } as never;
     expect(() => resolveSubscriptionPolicy(c, { cwd: root })).toThrow('decisionRuntime');
   } finally {
     process.env.HOME = home;

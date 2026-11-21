@@ -60,7 +60,7 @@ The eval scripts refuse a wide run (more than three moments, or a `--classify` r
 
 ## 5. REPORT — the reporting standard
 
-Every run emits `report.json` + `REPORT.md` (`scripts/evals/warden-charter-report.ts`; schema in Oracle `docs/foundry/EVAL-REPORTING.md`). Per stage (recognise → confirm/pick → deliver → chorus roll-up):
+Every run emits `report.json` + `REPORT.md` (the report tool `warden-charter-report.ts` is parked, with the charter eval, in Oracle `migration/foundry-pool-evals/` until the eval runner is rebuilt on the project host; schema in Oracle `docs/foundry/EVAL-REPORTING.md`). Per stage (recognise → confirm/pick → deliver → chorus roll-up):
 - effectiveness, cost (exact tokens primary; window points as a shared upper bound), time (warm and cold, p50/p95);
 - per-Warden miss and false-positive rates, each with n and a CI;
 - accumulated (chorus) error with the compounding line;

@@ -6,7 +6,7 @@
 import { createHash } from 'node:crypto';
 
 // The Prospector's correction detection (moved from Oracle's session miner), shared by Oracle's
-// `oracle mine`, Foundry's live feedback capture and `foundry repeats`. Data and pure functions only:
+// `oracle mine` and Foundry's live feedback capture. Data and pure functions only:
 // callers bring the transcript turns and the model call.
 
 /** Why a message became a candidate, strongest first. */

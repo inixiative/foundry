@@ -166,13 +166,6 @@ export function recordedCodexStatus(names: string[], vcr = codexVcr()) {
   };
 }
 
-/** Primed Codex decisions: one warm `codex app-server` (JSON-RPC) serves every role's session. */
-export function recordedAppServerTransport(names: string[], vcr = codexVcr()) {
-  queueAll(vcr, 'primed', names);
-  const server = new ProcessCassettes(vcr, 'primed', { model: LIVE.codexModel });
-  return { vcr, launches: server.launches, spawn: server.spawn };
-}
-
 /** Replay proves it matches live: record stores the live conclusion, replay compares against it. */
 export async function sameAsLive<T>(
   vcr: VCR,

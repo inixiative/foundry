@@ -7,8 +7,8 @@ import type { ArchiveSnapshot } from '@inixiative/archive';
 import { typedPrompt } from '@inixiative/archive/import';
 import type { TranscriptTurn } from './correction';
 
-// An Archive session as transcript turns, the input `extractCorrections` reads. Shared by Foundry's
-// `foundry repeats` and Oracle's session miner; its own export, so the core root never loads Archive.
+// An Archive session as transcript turns, the input `extractCorrections` reads, for Oracle's session
+// miner; its own export, so the core root never loads Archive.
 
 const INTERRUPTED = /^\s*\[Request interrupted by user/;
 const COMMIT_BRACKET = /\[([^[\]\n]+?)\s([0-9a-f]{7,40})\]/g;

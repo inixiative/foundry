@@ -8,7 +8,7 @@ import type { CallFailedCause, CallNotSentCause, NotSentCall } from '@inixiative
 /**
  * Latency budget for Foundry's pre-message decisions. Advisors must be fast: the
  * budget holds by structure (one concurrent round of decisions per message, each on
- * a warm primed session, slow ones hedged) and is checked live by
+ * a warm spare in its project's host) and is checked live by
  * `scripts/measure-decisions.ts`. The deadline is a safety net, not the normal path.
  *
  * Numbers are live measurements on subscription Codex decisions (gpt-6-luna, low

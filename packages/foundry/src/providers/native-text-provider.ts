@@ -60,8 +60,8 @@ export interface NativeTextCall {
   /** Numeric counters only; the raw provider usage object is not retained here. */
   usage?: Omit<TokenCounts, 'providerUsage'>;
   /** not-admitted: refused before any native write, so nothing remains owned.
-   * native-failed: the runtime settled the turn as failed (primed decisions).
-   * process-lost: the shared decision process was lost or recycled and its exit observed (primed decisions).
+   * native-failed: the runtime settled the turn as failed (project host decisions).
+   * process-lost: the shared decision process was lost or recycled and its exit observed (project host decisions).
    * not-held: a project-host Warden had no warm member (or its host was starting); refused unsent, skipped. */
   failure?:
     | 'not-held'
@@ -71,13 +71,13 @@ export interface NativeTextCall {
     | 'rate-limited'
     | 'native-failed'
     | 'process-lost';
-  /** The runtime's own refusal or failure code, as it gave it (primed decisions). */
+  /** The runtime's own refusal or failure code, as it gave it (project host decisions). */
   reason?: DecisionFailure;
   /** A project host's capacity as the call went out (agent-session `InSessionCapacity`). */
   hostCapacity?: InSessionCapacity;
-  /** "primed": no per-call process; the warm host proves settlement (turn terminal or process exit). */
+  /** "primed": served by a warm project host, no per-call process; the host proves settlement (turn terminal or process exit). */
   transport?: 'primed';
-  /** Primed calls: the native turn reached a terminal or its process exit was observed. */
+  /** Calls on a warm host: the native turn reached a terminal or its process exit was observed. */
   settled?: boolean;
   prime?: 'warm' | 'cold';
 }

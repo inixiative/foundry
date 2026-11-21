@@ -8,7 +8,7 @@
 // One fixed meta-instruction set, part of Foundry and never settings: it is not edited per project,
 // org or Warden. It heads the system message of every Warden call, above that Warden's own composed
 // instructions; the phase's response protocol follows the input. Iterate on its wording against
-// real sessions (`scripts/evals/warden-charter.ts`), never by hand-tuning one Warden.
+// real sessions (an eval over probes), never by hand-tuning one Warden.
 //
 // One wording ships: the classifier charter region Wardens run under (one Warden per concept region
 // of a project). The hand-named roster and its advise-style charter ("Name the rule, then say what to

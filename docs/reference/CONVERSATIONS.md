@@ -79,7 +79,7 @@ This is the **first time Foundry hosts a resource**. In every earlier case the h
 |---|---|---|---|
 | The owner, in the viewer or a local ACP host | This machine | None: local is local (FOUNDRY-ACP §7.1) | No |
 | The thread's own subagents, e.g. Codex doing computer use | Inside the thread's tree (THREAD-TREE spec A) | None: they are nodes, not members | No |
-| Wardens | Their project's host on this machine (subscription-decisions.md, "Project Warden host"), else primed | None: they are the chorus | No |
+| Wardens | Their project's host on this machine (subscription-decisions.md, "Project Warden host") | None: they are the chorus | No |
 | Local Heralds (**not built**) | This Foundry | None: `chorus.heralds` (§4.6) | No |
 | The owner from another machine | Elsewhere | A Signet whose recipient Kingdom marks `owner` (`hostedSignet.recipient.audience`); it answers held prompts with `prompt.resolve`, a call any grant may pick | **Yes** |
 | Outside agents | Elsewhere | Their own Signet with their own permissions | **Yes** |

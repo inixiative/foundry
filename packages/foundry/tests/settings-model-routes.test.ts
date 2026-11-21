@@ -53,17 +53,20 @@ test('the default and decision models are single validated choices', async () =>
     decision: { provider: 'claude-code', model: 'claude-haiku-5-5' },
   });
 
-  // A subscription model runs decisions on its runtime's login.
+  // Subscription decisions run on the Claude login: a Claude model is recorded, a Codex one refused.
+  const sonnet = await call('POST', '/api/models/decision', {
+    provider: 'claude-code',
+    model: 'claude-sonnet-5-5',
+  });
+  expect(sonnet.status).toBe(200);
+  expect(sonnet.body.decision).toEqual({ provider: 'claude-code', model: 'claude-sonnet-5-5' });
+  expect(configStore.config.subscriptionOnly).toMatchObject({ model: 'claude-sonnet-5-5' });
   const codex = await call('POST', '/api/models/decision', {
     provider: 'codex',
     model: 'gpt-5.6-luna',
   });
-  expect(codex.status).toBe(200);
-  expect(codex.body.decision).toEqual({ provider: 'codex', model: 'gpt-5.6-luna' });
-  expect(configStore.config.subscriptionOnly).toMatchObject({
-    decisionRuntime: 'codex',
-    model: 'gpt-5.6-luna',
-  });
+  expect(codex.status).toBe(400);
+  expect(codex.body.error).toContain('Codex runs main threads only');
 
   // An API model runs decisions only with API keys on; refused, nothing changes.
   const api = await call('POST', '/api/models/decision', {
@@ -72,7 +75,7 @@ test('the default and decision models are single validated choices', async () =>
   });
   expect(api.status).toBe(400);
   expect(api.body.error).toContain('turn on API keys');
-  expect(configStore.config.subscriptionOnly?.model).toBe('gpt-5.6-luna');
+  expect(configStore.config.subscriptionOnly?.model).toBe('claude-sonnet-5-5');
 
   // Subscription mode keeps every main thread on its subscription worker.
   const refused = await call('POST', '/api/models/default', {

@@ -1,14 +1,14 @@
 import { afterEach, expect, test } from 'bun:test';
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import {
   type AdviceOutcome,
+  type CompletionOpts,
   ContextLayer,
   ContextStack,
   callOutcomeLabel,
   type LLMMessage,
   type LLMProvider,
+  type NativeEvidence,
   SignalBus,
 } from '@inixiative/foundry-core';
 import { PLAN_ASK_NOTE } from '../src/agents/chorus-reception';
@@ -24,11 +24,10 @@ import {
   validateGuardResponse,
   WARDEN_CHARTER,
 } from '../src/classify';
-import { createDecisionLoginHost } from '../src/providers/decision-login-host';
 import { defaultProfileSource } from '../src/providers/default-profiles';
+import type { NativeTextCall, NativeTextConfig } from '../src/providers/native-text-provider';
 import { buildSubscriptionDecisions } from '../src/providers/subscription-decisions';
 import { starterConfig } from '../src/viewer/config';
-import { appServerTransport } from './helpers/subscription-transport';
 
 const cleanups: Array<() => unknown> = [];
 afterEach(async () => {
@@ -424,39 +423,67 @@ const ROSTER_24: Record<string, string> = {
 };
 
 test('24 Wardens, every one asked on every turn: a queue sized for the roster admits them all', async () => {
-  const root = mkdtempSync(join(tmpdir(), 'warden-participation-'));
-  const home = process.env.HOME;
-  mkdirSync(join(root, '.codex'), { mode: 0o700 });
-  process.env.HOME = root;
-  const directory = join(root, 'receipts');
-  mkdirSync(directory, { mode: 0o700 });
-  const transport = appServerTransport({ delayMs: 60, response: () => NO_COMMENT });
-  const source = defaultProfileSource('codex');
-  const config = {
-    directory,
-    source,
-    model: 'gpt-5.6-luna',
-    maxCalls: 10_000,
-    maxQueued: 256,
-    maxQueuedPerThread: 32,
-    maxConcurrent: 16,
-    callTimeoutMs: 20_000,
+  // A decision run that answers NO_COMMENT after 60 ms, settled as a project host settles a call.
+  const createRun = (_config: NativeTextConfig) => {
+    const calls: NativeTextCall[] = [];
+    let closed = false;
+    return {
+      provider: {
+        id: 'held',
+        async complete(_messages: LLMMessage[], opts: CompletionOpts = {}) {
+          const observation = opts.nativeObservation!;
+          const admission: NativeEvidence = {
+            schema: 1,
+            owner: observation.owner,
+            admissionId: Bun.randomUUIDv7(),
+            nativeOutcome: 'unknown',
+            localOutcome: 'pending',
+            dispatch: 'not-dispatched',
+          };
+          await observation.register(admission);
+          await Bun.sleep(60);
+          const native: NativeEvidence = {
+            ...admission,
+            nativeOutcome: 'completed',
+            localOutcome: 'resolved',
+            dispatch: 'attempted',
+          };
+          calls.push({
+            id: admission.admissionId!,
+            owner: observation.owner!,
+            inputHash: '',
+            startedAt: Date.now(),
+            transport: 'primed',
+            settled: true,
+            valid: true,
+            release: 'released',
+            processExit: 'not-started',
+            statusProcessExit: 'not-started',
+            deadline: false,
+          });
+          return { content: NO_COMMENT, model: 'claude-haiku-5-5', native };
+        },
+      },
+      snapshot: () => ({ closed, calls }),
+      close: () => {
+        closed = true;
+      },
+    };
   };
-  const primed = createDecisionLoginHost({
-    source,
-    directory,
-    model: config.model,
-    maxConcurrent: config.maxConcurrent,
-    callTimeoutMs: config.callTimeoutMs,
-    spawn: transport.spawn,
-  });
-  const decisions = buildSubscriptionDecisions(config, primed.createRun);
-  cleanups.push(async () => {
-    await decisions.shutdown();
-    await primed.close();
-    process.env.HOME = home;
-    rmSync(root, { recursive: true, force: true });
-  });
+  const decisions = buildSubscriptionDecisions(
+    {
+      directory: tmpdir(),
+      source: defaultProfileSource('claude'),
+      model: 'claude-haiku-5-5',
+      maxCalls: 10_000,
+      maxQueued: 256,
+      maxQueuedPerThread: 32,
+      maxConcurrent: 16,
+      callTimeoutMs: 20_000,
+    },
+    createRun,
+  );
+  cleanups.push(() => decisions.shutdown());
 
   const calls: string[] = [];
   const signals = new SignalBus();
@@ -605,188 +632,5 @@ test('a Warden the decision queue refused for capacity is excluded, not an error
   const broken = await flow.preMessage('Add an index');
   expect(broken.contributions.map((c) => callOutcomeLabel(c.outcome))).toEqual([
     'failed:provider-error',
-  ]);
-});
-
-test('the charter eval asks every Warden per probe as one turn, under the candidate charter, and judges every remark', async () => {
-  const { runCharterEval } = await import('../src/feedback/charter-eval');
-  const systems: string[] = [];
-  const answers = await runCharterEval({
-    probes: [
-      {
-        id: 'p1',
-        kind: 'positive',
-        ctx: 'x',
-        moment: 'Added makeApiError',
-        hidden: 'use makeError',
-        gold: { domains: ['reuse'], statements: [] },
-      },
-      { id: 'n1', kind: 'negative', ctx: 'x', moment: 'Ran the full check; green.' },
-    ],
-    wardensFor: () => [
-      {
-        domain: 'reuse',
-        instructions: 'Reuse Warden',
-        domainKnowledge: '`makeError` raises caller errors.',
-      },
-      { domain: 'prose', instructions: 'Prose Warden', domainKnowledge: 'Gloss jargon.' },
-    ],
-    charters: ['CANDIDATE CHARTER'],
-    warden: {
-      id: 'w',
-      async complete(messages) {
-        systems.push(String(messages[0]!.content));
-        const remark =
-          text(messages).includes('Reuse Warden') && text(messages).includes('makeApiError');
-        return {
-          model: 'x',
-          content: remark
-            ? JSON.stringify({
-                findings: [
-                  { severity: 'advisory', description: 'Extend makeError, not makeApiError.' },
-                ],
-              })
-            : NO_COMMENT,
-        };
-      },
-    },
-    judge: {
-      id: 'j',
-      complete: async () => ({ model: 'x', content: '{"matches":true,"inDomain":true}' }),
-    },
-    concurrency: 4,
-  });
-  expect(systems.length).toBe(4);
-  expect(systems.every((s) => s.startsWith('CANDIDATE CHARTER'))).toBe(true);
-  expect(answers.turns.map((t) => [t.probeId, t.calls])).toEqual([
-    ['p1', 2],
-    ['n1', 2],
-  ]);
-  expect(answers.answers.filter((a) => !a.noComment)).toEqual([
-    expect.objectContaining({
-      probeId: 'p1',
-      domain: 'reuse',
-      judged: { matches: true, inDomain: true },
-    }),
-  ]);
-});
-
-test('the charter eval advises on the user ask at the user-message trigger and guards the turn at agent-action', async () => {
-  const { runCharterEval } = await import('../src/feedback/charter-eval');
-  const judged: string[] = [];
-  const { answers, turns } = await runCharterEval({
-    probes: [
-      { id: 'h1', kind: 'positive', ctx: 'x', moment: '', ask: 'Add makeApiError', hidden: 'no' },
-      { id: 's1', kind: 'positive', ctx: 'x', moment: 'Added it.', ask: 'Add it', hidden: 'no' },
-    ],
-    wardensFor: () => [
-      { domain: 'reuse', instructions: 'Reuse Warden', domainKnowledge: '`makeError` exists.' },
-      { domain: 'prose', instructions: 'Prose Warden', domainKnowledge: '' },
-    ],
-    triggers: ['user-message', 'agent-action'],
-    warden: {
-      id: 'w',
-      async complete(messages) {
-        const advice = text(messages).includes('advice phase');
-        return {
-          model: 'x',
-          content:
-            advice && text(messages).includes('makeApiError')
-              ? JSON.stringify({ snippets: ['Use makeError.'], layers: [], confidence: 0.9 })
-              : NO_COMMENT,
-        };
-      },
-    },
-    judge: {
-      id: 'j',
-      async complete(messages) {
-        judged.push(text(messages));
-        return { model: 'x', content: '{"matches":true,"inDomain":true}' };
-      },
-    },
-  });
-  // h1 recorded only the ask; s1 recorded both, so it is asked twice.
-  expect(turns.map((t) => [t.probeId, t.trigger])).toEqual([
-    ['h1', 'user-message'],
-    ['s1', 'user-message'],
-    ['s1', 'agent-action'],
-  ]);
-  expect(answers.filter((a) => !a.noComment && !a.error)).toEqual([
-    expect.objectContaining({
-      probeId: 'h1',
-      domain: 'reuse',
-      trigger: 'user-message',
-      text: 'Use makeError.',
-    }),
-  ]);
-  // A Warden with no domain knowledge is cold: reported, never counted as silence.
-  expect(answers.filter((a) => a.error).map((a) => a.error)).toEqual([
-    'cold-cache',
-    'cold-cache',
-    'cold-cache',
-  ]);
-  expect(judged[0]).toContain("## The user's message");
-});
-
-test('the charter eval asks a Warden again when the transport lost the call, never for its answer', async () => {
-  const { runCharterEval } = await import('../src/feedback/charter-eval');
-  let calls = 0;
-  const { answers } = await runCharterEval({
-    probes: [{ id: 'p', kind: 'negative', ctx: 'x', moment: 'Ran the check.' }],
-    wardensFor: () => [{ domain: 'ship', instructions: 'Ship Warden', domainKnowledge: 'k' }],
-    retryDelayMs: 1,
-    warden: {
-      id: 'w',
-      async complete() {
-        if (++calls < 3) throw Error('Subscription decision failed; no fallback or retry');
-        return { model: 'x', content: NO_COMMENT };
-      },
-    },
-    judge: { id: 'j', complete: async () => ({ model: 'x', content: '{}' }) },
-  });
-  expect(calls).toBe(3);
-  expect(answers).toEqual([expect.objectContaining({ domain: 'ship', noComment: true })]);
-});
-
-test('the charter eval runs a Warden under its session, with the probe thread knowledge, and keeps usage and lost attempts', async () => {
-  const { runCharterEval } = await import('../src/feedback/charter-eval');
-  const seen: { threadId?: string; body: string }[] = [];
-  let calls = 0;
-  const { answers } = await runCharterEval({
-    probes: [
-      {
-        id: 'p',
-        kind: 'positive',
-        ctx: 'x',
-        moment: 'Wrote a SET NX lock.',
-        threadKnowledge: 'Bot ownership across instances is the open question.',
-      },
-    ],
-    wardensFor: () => [
-      { domain: 'region', instructions: 'Region Warden', domainKnowledge: 'k', session: 's1' },
-    ],
-    retryDelayMs: 1,
-    warden: {
-      id: 'w',
-      async complete(messages, opts) {
-        seen.push({ ...(opts?.threadId ? { threadId: opts.threadId } : {}), body: text(messages) });
-        if (++calls < 2) throw Error('Subscription decision timed out');
-        return {
-          model: 'x',
-          content: NO_COMMENT,
-          tokens: { input: 2, output: 3, cacheRead: 900, providerUsage: { raw: true } },
-        };
-      },
-    },
-  });
-  expect(seen.map((s) => s.threadId)).toEqual(['s1', 's1']);
-  expect(seen[1]!.body).toContain('Bot ownership across instances is the open question.');
-  // No judge: the remark (here a silence) is left unjudged; usage drops the provider's raw payload.
-  expect(answers).toEqual([
-    expect.objectContaining({
-      noComment: true,
-      tokens: { input: 2, output: 3, cacheRead: 900 },
-      retried: ['Subscription decision timed out'],
-    }),
   ]);
 });

@@ -6,12 +6,12 @@
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import {
+  DECISION_MODEL,
   MODEL_REGISTRY,
   modelEfforts,
   REASONING_EFFORTS,
   type ReasoningEffort,
   registryModel,
-  SUBSCRIPTION_DECISION_MODELS,
   SUBSCRIPTION_WORKER_MODELS,
 } from '@inixiative/foundry-core';
 import { z } from 'zod';
@@ -40,14 +40,10 @@ const model = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,199}$/);
 export const subscriptionSettingsSchema = z
   .object({
     /**
-     * Decision runtime when no explicit source is named: Claude (`~/.claude`) by default, or Codex.
-     * With Claude decisions, Wardens' advice is held in each project's host (`claude-project`, the
-     * default: every Warden of a project warm in one Foundry-owned Claude Code process, which every
-     * thread of the project asks; docs/subscription-decisions.md, "Project Warden host"). `claude`
-     * keeps every Warden on its own primed session (the evals' baseline).
+     * The project Warden host's composition and bounds (PROJECT_HOST_DEFAULTS): every Warden of a
+     * project warm in one Foundry-owned Claude Code process on the Claude decision login, which every
+     * thread of the project asks (docs/subscription-decisions.md, "Project Warden host").
      */
-    decisionRuntime: z.enum(['claude', 'codex', 'claude-project']).optional(),
-    /** Project hosts only: the host's composition and bounds (PROJECT_HOST_DEFAULTS). */
     projectHost: z
       .object({
         /** Held spares per Warden. */
@@ -86,7 +82,6 @@ export const subscriptionSettingsSchema = z
     maxConcurrent: z.number().int().min(1).max(32).optional(),
     callTimeoutMs: z.number().int().min(100).max(DECISION_CALL_TIMEOUT_MAX_MS).optional(),
     effort: z.enum(REASONING_EFFORTS).optional(),
-    hedgeAfterMs: z.number().int().min(500).max(30_000).optional(),
   })
   .strict();
 export type SubscriptionSettings = z.infer<typeof subscriptionSettingsSchema>;
@@ -141,16 +136,12 @@ export interface SubscriptionPolicy {
   callTimeoutMs: number;
   /** Decision reasoning effort. */
   effort?: ReasoningEffort;
-  /** Codex decisions still running after this long are hedged on a second branch. */
-  hedgeAfterMs?: number;
   /**
-   * Where a thread's Wardens run: held in its project's host (Claude decisions by default; advice,
-   * guards, reviews and later stages, each skipped while its host or lane does not serve), or primed
-   * sessions (Codex decisions, or `decisionRuntime: claude`).
+   * The project Warden hosts' composition and bounds, defaults filled: a thread's Wardens (advice,
+   * guards, reviews and later stages) are held in its project's host, each skipped while its host or
+   * lane does not serve.
    */
-  wardens: 'primed' | 'project';
-  /** Project hosts: their composition and bounds, defaults filled. */
-  projectHost?: ProjectHostPolicy;
+  projectHost: ProjectHostPolicy;
 }
 
 export type ProjectHostPolicy = Required<
@@ -180,7 +171,6 @@ export const PROJECT_HOST_DEFAULTS = {
   recycleTokens: 140_000,
   restartBackoffMs: 5_000,
   maxRestarts: 5,
-  /** As primed roles are evicted after 30 minutes idle. */
   // why: a chorus stays up three hours after the project was last touched (Aron, 2026-11-19).
   idleMs: 10_800_000,
 } as const satisfies Omit<ProjectHostPolicy, 'setupDeadlineMs'>;
@@ -196,11 +186,9 @@ export const SUBSCRIPTION_DEFAULTS = {
   maxCalls: 10_000,
   maxQueued: 512,
   maxQueuedPerThread: 256,
-  maxConcurrent: { claude: 16, codex: 16 },
+  maxConcurrent: 16,
   callTimeoutMs: DECISION_DEADLINE_MS,
   effort: 'low',
-  /** Just above a typical decision under a full fan-out (≈3–3.7 s live): only the slow tail is duplicated. */
-  hedgeAfterMs: 4_000,
 } as const;
 
 export interface SubscriptionResolution {
@@ -219,10 +207,10 @@ export interface SubscriptionResolution {
   config: FoundryConfig;
 }
 
-/** A login decisions run on: Claude's or Codex's (primed sessions); never Muse Code's. */
-export type DecisionProfileSource = NativeProfileSource & { runtime: 'claude' | 'codex' };
+/** The login decisions run on: Claude's (the project Warden hosts); never Codex's or Muse Code's. */
+export type DecisionProfileSource = NativeProfileSource & { runtime: 'claude' };
 const isDecisionSource = (source: NativeProfileSource): source is DecisionProfileSource =>
-  source.runtime === 'claude' || source.runtime === 'codex';
+  source.runtime === 'claude';
 
 /** The subscription worker each main thread runs on by default: the global default and every enabled project's. */
 export function defaultWorkers(
@@ -375,42 +363,10 @@ export function usableLogins(
 }
 
 /**
- * Whether Claude Wardens advise from their project's host: the default for Claude decisions (Aron,
- * 2026-11-03: "the Claude project is the only thing that actually makes sense"), and what
- * `claude-project` names. `claude` keeps primed Wardens; Codex decisions have no project host.
- */
-export function wardensInProjectHosts(
-  decisionRuntime: SubscriptionSettings['decisionRuntime'],
-  decisionSourceRuntime: NativeRuntime,
-): boolean {
-  return (
-    decisionSourceRuntime === 'claude' &&
-    (decisionRuntime === undefined || decisionRuntime === 'claude-project')
-  );
-}
-
-/**
- * The same answer from settings alone (where Wardens compose, `projectWardenRoot`): `claude-project`
- * named, or, with none named, subscription mode on Claude decisions.
- */
-export function configuredProjectWardens(
-  config: Pick<FoundryConfig, 'apiTokens' | 'subscriptionOnly' | 'nativeAuthentication'>,
-): boolean {
-  const settings = config.subscriptionOnly ?? {};
-  if (settings.decisionRuntime === 'claude-project') return true;
-  if (config.apiTokens) return false;
-  const named = settings.decisionSourceId
-    ? config.nativeAuthentication?.find((item) => item.id === settings.decisionSourceId)?.runtime
-    : undefined;
-  const runtime = named ?? (settings.decisionRuntime === 'codex' ? 'codex' : 'claude');
-  return wardensInProjectHosts(settings.decisionRuntime, runtime);
-}
-
-/**
  * Subscription-only is the default. `apiTokens: true` is the only way to construct API
  * providers. Without it every main thread runs on a subscription worker (Claude Code, Codex or Muse Code, its
- * project's default or the one chosen for the thread) and the decision profile (Claude by default,
- * `decisionRuntime` to change) on subscription logins, referenced in place, with no paid fallback.
+ * project's default or the one chosen for the thread) and the decision profile (a Claude login) on
+ * subscription logins, referenced in place, with no paid fallback.
  *
  * `startup` also checks the default login locations and prepares the default receipt
  * directory; configuration saves validate structure and explicit profiles only.
@@ -486,30 +442,15 @@ export function resolveSubscriptionPolicy(
       unavailable[worker] = (error as Error).message;
     }
   }
-  const decisionRuntime =
-    settings.decisionRuntime === 'claude-project' ? 'claude' : settings.decisionRuntime;
   const source = settings.decisionSourceId
     ? explicit(settings.decisionSourceId)
-    : defaultProfileSource(decisionRuntime ?? 'claude');
-  // Decisions run on primed Claude or Codex sessions; Muse Code runs main threads only.
+    : defaultProfileSource('claude');
+  // Decisions run in the project Warden hosts, on a Claude login; Codex and Muse Code run main threads only.
   if (!isDecisionSource(source))
     throw Error(
-      'subscriptionOnly.decisionSourceId must be a Claude or Codex login; Muse Code runs main threads only',
+      'subscriptionOnly.decisionSourceId must be a Claude login; Codex and Muse Code run main threads only',
     );
   const decision = source;
-  if (decisionRuntime && decisionRuntime !== decision.runtime)
-    throw Error('subscriptionOnly.decisionRuntime does not match the decision source runtime');
-  const project = wardensInProjectHosts(settings.decisionRuntime, decision.runtime);
-  if (settings.projectHost && !project)
-    throw Error(
-      'subscriptionOnly.projectHost applies only to project Warden hosts (Claude decisions without decisionRuntime "claude")',
-    );
-  if (
-    decision.runtime === 'codex' &&
-    settings.expectedObservedModel !== undefined &&
-    settings.expectedObservedModel !== settings.model
-  )
-    throw Error('Codex decisions cannot acknowledge a different observed model');
   const policy: SubscriptionPolicy = {
     // The setup wizard records the decision model as the subscription decision default.
     model:
@@ -517,7 +458,7 @@ export function resolveSubscriptionPolicy(
       (config.defaults.decisionProvider === SUBSCRIPTION_DECISIONS
         ? config.defaults.decisionModel
         : undefined) ??
-      SUBSCRIPTION_DECISION_MODELS[decision.runtime],
+      DECISION_MODEL,
     ...(settings.expectedObservedModel
       ? { expectedObservedModel: settings.expectedObservedModel }
       : {}),
@@ -529,26 +470,17 @@ export function resolveSubscriptionPolicy(
       settings.maxQueuedPerThread ?? SUBSCRIPTION_DEFAULTS.maxQueuedPerThread,
       settings.maxQueued ?? SUBSCRIPTION_DEFAULTS.maxQueued,
     ),
-    maxConcurrent: settings.maxConcurrent ?? SUBSCRIPTION_DEFAULTS.maxConcurrent[decision.runtime],
+    maxConcurrent: settings.maxConcurrent ?? SUBSCRIPTION_DEFAULTS.maxConcurrent,
     callTimeoutMs: settings.callTimeoutMs ?? SUBSCRIPTION_DEFAULTS.callTimeoutMs,
     effort: settings.effort ?? SUBSCRIPTION_DEFAULTS.effort,
-    ...(decision.runtime === 'codex'
-      ? { hedgeAfterMs: settings.hedgeAfterMs ?? SUBSCRIPTION_DEFAULTS.hedgeAfterMs }
-      : {}),
-    wardens: project ? 'project' : 'primed',
-    ...(project ? { projectHost: { ...PROJECT_HOST_DEFAULTS, ...settings.projectHost } } : {}),
+    projectHost: { ...PROJECT_HOST_DEFAULTS, ...settings.projectHost },
   };
-  // A model registered only on the other runtime cannot run here, e.g. a recorded Claude model after switching to Codex.
-  const runtimeProvider = { claude: 'claude-code', codex: 'codex' } as const;
-  const other = decision.runtime === 'claude' ? 'codex' : 'claude';
-  if (
-    registryModel(runtimeProvider[other], policy.model) &&
-    !registryModel(runtimeProvider[decision.runtime], policy.model)
-  )
+  // A model registered only on Codex cannot decide, e.g. a Codex model recorded as the decision model.
+  if (registryModel('codex', policy.model) && !registryModel('claude-code', policy.model))
     throw Error(
-      `Decision model ${policy.model} is a ${other} model; set subscriptionOnly.model or defaults.decisionModel for ${decision.runtime} decisions`,
+      `Decision model ${policy.model} is a codex model; decisions run on Claude: set subscriptionOnly.model or defaults.decisionModel to a Claude model`,
     );
-  const takes = policy.effort && modelEfforts(runtimeProvider[decision.runtime], policy.model);
+  const takes = policy.effort && modelEfforts('claude-code', policy.model);
   if (takes && policy.effort && !takes.includes(policy.effort))
     throw Error(
       `subscriptionOnly.effort ${policy.effort} is not one ${policy.model} takes (${takes.join(', ')})`,
@@ -558,7 +490,7 @@ export function resolveSubscriptionPolicy(
       assertProfile(decision.profileDirectory, decision.runtime);
     } catch (error) {
       throw Error(
-        `${decision.runtime} subscription profile unavailable at ${decision.profileDirectory}: ${(error as Error).message}`,
+        `claude subscription profile unavailable at ${decision.profileDirectory}: ${(error as Error).message}`,
       );
     }
     if (!settings.directory) mkdirSync(policy.directory, { recursive: true, mode: 0o700 });

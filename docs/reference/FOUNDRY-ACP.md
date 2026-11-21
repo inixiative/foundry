@@ -280,7 +280,7 @@ Warm decisions take 1.1–4.3 s, median ~1.7 s; a cold role 5–7 s; a 60 s safe
 
 **Conformance in the meantime** uses a small client built on the official SDK, scripted with the exact request sequences Paseo and T3 send (§8), plus a run of T3's own `effect-acp` client from a scratch copy.
 
-**Sessions and subscriptions (unchanged):** one native session per thread, the thread→native-id map in `.foundry/sessions.json`, API keys stripped, `apiTokens` the only paid path, Wardens in the per-project Warden host (primed Claude sessions only with `decisionRuntime: "claude"`).
+**Sessions and subscriptions (unchanged):** one native session per thread, the thread→native-id map in `.foundry/sessions.json`, API keys stripped, `apiTokens` the only paid path, Wardens in the per-project Warden host.
 
 ---
 
@@ -361,7 +361,7 @@ ACP over stdio has no remote mode of its own.
 
 ## 10. Pointing a host at Foundry
 
-**One command:** `bunx @inixiative/foundry-acp setup` (macOS). It installs `@inixiative/foundry-acp` globally with bun (so hosts and launchd get a stable path, plus the `foundry` and `foundry-acp` commands), installs the daemon as a launchd agent running the published Foundry from `~/.foundry/home`, prints the Paseo and T3 Code settings below with this install's paths (it writes Paseo's `config.json` only with `--write` or your yes, keeping a timestamped backup), and ends with `foundry repeats`. A daemon already installed from a checkout is left alone unless `--reinstall`. Linux and Windows are not supported yet: the daemon is a launchd agent.
+**One command:** `bunx @inixiative/foundry-acp setup` (macOS). It installs `@inixiative/foundry-acp` globally with bun (so hosts and launchd get a stable path, plus the `foundry-acp` command), installs the daemon as a launchd agent running the published Foundry from `~/.foundry/home`, and prints the Paseo and T3 Code settings below with this install's paths (it writes Paseo's `config.json` only with `--write` or your yes, keeping a timestamped backup). A daemon already installed from a checkout is left alone unless `--reinstall`. Linux and Windows are not supported yet: the daemon is a launchd agent.
 
 From a checkout instead: the daemon must be installed once (`bun run daemon:install` in the Foundry checkout); foundry-acp starts it when it is down, but only when it uses the default launch file: with `FOUNDRY_ACP_LAUNCH` set, it never starts a daemon (`packages/acp/src/agent.ts:135-137`). Use the checkout the daemon runs from.
 

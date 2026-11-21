@@ -5,7 +5,7 @@
  */
 /**
  * Status → Processes: a task manager for this Foundry. The daemon and everything it runs (each
- * project's Warden hosts, primed one-shots, each thread's native session and its MCP servers, the
+ * project's Warden hosts, one-shots, each thread's native session and its MCP servers, the
  * tunnel), each with its memory, CPU and age, re-read every few seconds while the Status view is
  * open (`/api/machine/processes`, `viewer/machine-processes.ts`). Siblings that are the same thing
  * (a pile of one-shots) fold into one row with a count, so a leak shows as a number.

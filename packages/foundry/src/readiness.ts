@@ -201,10 +201,8 @@ export async function inspectNativeClis(
         provider,
         used: config.defaults.provider === provider || !!options.requested?.has(provider),
       });
-  if (subscription) {
-    const cli = subscription.decision.runtime === 'codex' ? 'codex' : 'claude';
-    use.set(cli, { ...use.get(cli), used: true });
-  }
+  // Subscription decisions run in the project Warden hosts, on the Claude CLI.
+  if (subscription) use.set('claude', { ...use.get('claude'), used: true });
   const which = options.which;
   const located: Map<string, Install> = which
     ? new Map(
@@ -247,7 +245,7 @@ export async function inspectNativeClis(
         code: 'native-cli-missing',
         message: native.provider
           ? `${label} is enabled but no ${native.cli} CLI was found on PATH or in an app bundle; install ${label} or disable it.`
-          : `Decisions run on ${native.cli} but no ${native.cli} CLI was found on PATH or in an app bundle; install ${label} or change subscriptionOnly.decisionRuntime.`,
+          : `Decisions run on ${native.cli} but no ${native.cli} CLI was found on PATH or in an app bundle; install ${label}.`,
       };
     });
   const logins: ReadinessIssue[] = [];

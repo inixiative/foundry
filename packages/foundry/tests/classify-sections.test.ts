@@ -1,11 +1,9 @@
 // Prompt sections as run parameters (Aron, 2026-10-18: "Any run should be able to take a flag, and
-// each of those flags should also have a place for raw language injection") and debug mode (the why
-// inline, and the why after the real answer). Stub providers only: no model calls.
+// each of those flags should also have a place for raw language injection"). No model calls.
 import { describe, expect, test } from 'bun:test';
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { LLMMessage, LLMProvider, WardenProbe } from '@inixiative/foundry-core';
 import { REGION_WARDEN_INSTRUCTIONS, regionInstructions } from '../src/agents/region-roster';
 import {
   type AddedSection,
@@ -13,20 +11,17 @@ import {
   charterFor,
   charterVersion,
   defaultSection,
-  FOLLOWUP_QUESTION,
   modeSections,
   NO_COMMENT,
   PROMPT_SECTIONS,
   pointCharter,
   RECOGNISE_CHARTER,
-  responseProtocol,
   stageModes,
   stageSections,
   validateStages,
   WARDEN_CHARTER,
   withRegionInstructions,
 } from '../src/classify';
-import { type EvalWarden, runCharterEval, type WardenDebug } from '../src/feedback/charter-eval';
 import { readClassifyRun } from '../src/feedback/classify-run';
 
 const dir = () => mkdtempSync(join(tmpdir(), 'classify-sections-'));
@@ -183,226 +178,6 @@ describe('region-instructions', () => {
     expect(run.regionInstructionSources[0]).toMatchObject({ source: 'file' });
     expect(run.charters).toEqual([undefined]);
     expect(() => withRegionInstructions('Something else', 'x')).toThrow(/do not open with/);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Through the eval: system hashes per call, debug readings
-// ---------------------------------------------------------------------------
-
-const POINTER = 'Look over here: createLock (CONCURRENCY.md) — exclusion across instances.';
-const LOCKS: EvalWarden = {
-  domain: 'locks',
-  instructions: `${regionInstructions({ id: 'locks', title: 'Locks', routing: 'Exclusion?' })}`,
-  domainKnowledge: '# Locks\n- createLock (CONCURRENCY.md)',
-  session: 'run:locks',
-};
-const QUEUES: EvalWarden = { ...LOCKS, domain: 'queues', session: 'run:queues' };
-const PROBES: WardenProbe[] = [
-  { id: 'lock', kind: 'positive', ctx: 'x', moment: '', ask: 'Add a job that never overlaps.' },
-  { id: 'none', kind: 'negative', ctx: 'x', moment: '', ask: 'Fix a typo in the README.' },
-];
-const body = (messages: readonly LLMMessage[]) => messages.map((m) => m.content).join('\n');
-
-function stub() {
-  const calls: Array<{ messages: LLMMessage[]; threadId?: string }> = [];
-  const provider: LLMProvider = {
-    id: 'stub',
-    async complete(messages, opts) {
-      calls.push({ messages, ...(opts?.threadId ? { threadId: opts.threadId } : {}) });
-      const last = messages.at(-1)!.content;
-      const tokens = { input: 100, output: 10 };
-      if (last === FOLLOWUP_QUESTION)
-        return {
-          model: 'stub',
-          content: '1. A job that must not run twice.\n2. Exclusion, my domain.\nREVISED: KEEP',
-          tokens: { input: 120, output: 30 },
-        };
-      const yes = body(messages).includes('never overlaps');
-      if (last.includes('"why"'))
-        return {
-          model: 'stub',
-          content: yes
-            ? JSON.stringify({
-                outcome: 'yes',
-                snippets: [POINTER],
-                layers: [],
-                confidence: 0.8,
-                why: 'overlap',
-              })
-            : NO_COMMENT,
-          tokens: { input: 100, output: 20 },
-        };
-      return {
-        model: 'stub',
-        content: yes
-          ? JSON.stringify({ snippets: [POINTER], layers: [], confidence: 0.8 })
-          : NO_COMMENT,
-        tokens,
-      };
-    },
-  };
-  return { provider, calls };
-}
-
-const strip = (rows: readonly { elapsedMs?: number }[]) =>
-  rows.map(({ elapsedMs: _e, ...rest }) => rest);
-
-describe('debug mode', () => {
-  test('each cell takes two more readings on the same session, and the live answers do not change', async () => {
-    const plain = stub();
-    const live = await runCharterEval({
-      probes: PROBES,
-      wardensFor: () => [LOCKS],
-      warden: plain.provider,
-      triggers: ['user-message'],
-    });
-    const debugged = stub();
-    const rows: WardenDebug[] = [];
-    const order: string[] = [];
-    const run = await runCharterEval({
-      probes: PROBES,
-      wardensFor: () => [LOCKS],
-      warden: debugged.provider,
-      triggers: ['user-message'],
-      onTurn: (t) => order.push(`turn:${t.probeId}`),
-      onDebug: (row) => {
-        rows.push(row);
-        order.push(`debug:${row.probeId}`);
-      },
-    });
-    expect(strip(run.answers)).toEqual(strip(live.answers));
-    expect(run.turns.map((t) => t.calls)).toEqual(live.turns.map((t) => t.calls));
-    // Three calls per cell: the live one, the inline reading, the reading after.
-    expect(plain.calls).toHaveLength(2);
-    expect(debugged.calls).toHaveLength(6);
-    const [liveCall, inline, after] = debugged.calls;
-    // Same session, same system (the arm's own charter and instructions), same cache prefix.
-    expect(new Set(debugged.calls.map((c) => c.threadId))).toEqual(new Set(['run:locks']));
-    expect(inline!.messages[0]).toEqual(liveCall!.messages[0]!);
-    // Inline: the live prompt with only its protocol swapped for the same protocol plus a why.
-    const liveProtocol = responseProtocol({
-      envelope: 'advice',
-      trigger: 'user-message',
-      task: 'point',
-      outcomes: 'binary',
-      reason: 'none',
-    });
-    const inlineProtocol = responseProtocol({
-      envelope: 'advice',
-      trigger: 'user-message',
-      task: 'point',
-      outcomes: 'binary',
-      reason: 'inline',
-    });
-    expect(liveCall!.messages.at(-1)!.content).toEndWith(`\n${liveProtocol}`);
-    expect(inline!.messages.at(-1)!.content).toBe(
-      liveCall!.messages.at(-1)!.content.replace(`\n${liveProtocol}`, `\n${inlineProtocol}`),
-    );
-    // After: the real answer quoted back, then why.
-    expect(after!.messages.slice(0, 2)).toEqual(liveCall!.messages);
-    expect(after!.messages[2]).toEqual({
-      role: 'assistant',
-      content: JSON.stringify({ snippets: [POINTER], layers: [], confidence: 0.8 }),
-    });
-    expect(after!.messages[3]).toEqual({ role: 'user', content: FOLLOWUP_QUESTION });
-    expect(rows[0]).toMatchObject({
-      probeId: 'lock',
-      domain: 'locks',
-      trigger: 'user-message',
-      stage: 0,
-      live: { outcome: 'yes', tokens: { input: 100, output: 10 } },
-      inline: { outcome: 'yes', why: 'overlap', tokens: { input: 100, output: 20 } },
-      after: { revised: 'keep', tokens: { input: 120, output: 30 } },
-    });
-    expect(rows[0]!.after.why).toContain('A job that must not run twice.');
-    expect(rows[1]).toMatchObject({ probeId: 'none', live: { outcome: 'no' } });
-    // Rows reach onDebug once their turn is recorded.
-    expect(order).toEqual(['turn:lock', 'debug:lock', 'turn:none', 'debug:none']);
-  });
-
-  test('a cell filter takes debug readings only on the chosen cells', async () => {
-    const { provider, calls } = stub();
-    const rows: WardenDebug[] = [];
-    await runCharterEval({
-      probes: PROBES,
-      wardensFor: () => [LOCKS, QUEUES],
-      warden: provider,
-      triggers: ['user-message'],
-      onDebug: (row) => rows.push(row),
-      debugCell: (probeId, domain) => probeId === 'lock' && domain === 'queues',
-    });
-    expect(rows.map((r) => `${r.probeId}:${r.domain}`)).toEqual(['lock:queues']);
-    expect(calls).toHaveLength(4 + 2);
-  });
-
-  test('resume: a finished turn is not asked again and leaves no new debug rows', async () => {
-    const { provider, calls } = stub();
-    const rows: WardenDebug[] = [];
-    await runCharterEval({
-      probes: PROBES,
-      wardensFor: () => [LOCKS],
-      warden: provider,
-      triggers: ['user-message'],
-      done: (probeId) => probeId === 'lock',
-      onDebug: (row) => rows.push(row),
-    });
-    expect(rows.map((r) => r.probeId)).toEqual(['none']);
-    expect(calls).toHaveLength(3);
-  });
-
-  test('a stage that already gives its why reuses it instead of asking again', async () => {
-    const { provider, calls } = stub();
-    const rows: WardenDebug[] = [];
-    await runCharterEval({
-      probes: [PROBES[0]!],
-      wardensFor: () => [LOCKS],
-      warden: provider,
-      stages: validateStages('run', [{ reason: 'inline' }]),
-      triggers: ['user-message'],
-      onDebug: (row) => rows.push(row),
-    });
-    expect(calls).toHaveLength(2);
-    expect(rows[0]!.inline).toMatchObject({ outcome: 'yes', why: 'overlap', reused: true });
-    expect(rows[0]!.after).toMatchObject({ revised: 'keep' });
-  });
-
-  test('the run config: debug true, or a cells file', () => {
-    expect(runOf({ stages: [{}], debug: true }).debug).toBe(true);
-    const cells = runOf(
-      { stages: [{}], debug: { cells: 'cells.json' } },
-      {
-        'cells.json': JSON.stringify({ lock: ['locks'] }),
-      },
-    ).debug;
-    expect(cells).toMatchObject({ cells: { lock: ['locks'] } });
-    expect(() => runOf({ stages: [{}], debug: 'yes' })).toThrow(/debug must be true, false or/);
-  });
-});
-
-describe('the full system prompt is hashed per call', () => {
-  test('a run that changes the region line is told apart on every staged call', async () => {
-    const hashes: string[] = [];
-    for (const sections of [{ 'region-instructions': { text: 'Be brief.' } }, {}]) {
-      const run = runOf({ stages: [{ reason: 'inline', sections }] });
-      const { provider, calls } = stub();
-      const { answers } = await runCharterEval({
-        probes: [PROBES[0]!],
-        wardensFor: () => [LOCKS],
-        warden: provider,
-        stages: run.stages,
-        charters: run.charters,
-        regionInstructions: run.regionInstructions,
-        triggers: ['user-message'],
-      });
-      const system = calls[0]!.messages[0]!.content;
-      const trace = answers[0]!.stages![0]!;
-      expect(trace.systemHash).toBe(new Bun.CryptoHasher('sha256').update(system).digest('hex'));
-      hashes.push(trace.systemHash!);
-      if (Object.keys(sections).length)
-        expect(system).toContain('# Your instructions\n\nBe brief.\n\nYour region: Locks');
-    }
-    expect(hashes[0]).not.toBe(hashes[1]);
   });
 });
 

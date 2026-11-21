@@ -161,27 +161,6 @@ describe('a login quota pause', () => {
     windows: [{ id: 'five_hour', usedPercent: 100, windowMinutes: 300, resetsAt }],
   });
 
-  test("the host's own reading pauses it with no read of the login, and its reset ends it", async () => {
-    let fetched = 0;
-    const reset = Date.now() + 120;
-    const pause = makeLoginQuotaPause({
-      fetchResetAt: async () => {
-        fetched++;
-        return undefined;
-      },
-      hostLimits: () => used(reset),
-    });
-    const told: Array<number | undefined> = [];
-    pause.onChange((until) => told.push(until));
-    expect(await pause.read()).toBe(reset);
-    expect(fetched).toBe(0);
-    expect(pause.pausedUntil()).toBe(reset);
-    await Bun.sleep(reset - Date.now() + 40);
-    expect(pause.pausedUntil()).toBeUndefined();
-    expect(told).toEqual([reset, undefined]);
-    pause.close();
-  });
-
   test('a reading the host reports pauses at once; a long pause is read again and ends when freed', async () => {
     let resetAt: number | undefined = Date.now() + 60_000;
     const pause = makeLoginQuotaPause({ fetchResetAt: async () => resetAt, recheckMs: 60 });

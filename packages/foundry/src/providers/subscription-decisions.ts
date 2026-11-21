@@ -3,7 +3,6 @@
  * @kind provider
  * @partOf primitive:decisions
  */
-import type { PrimedEvent } from '@inixiative/agent-session';
 import {
   type CompletionOpts,
   type CompletionResult,
@@ -26,36 +25,26 @@ import {
 import { createDecisionLoginHost } from './decision-login-host';
 import { DECISION_PRIORITY } from './decision-priority';
 import type { NativeTextCall, NativeTextConfig } from './native-text-provider';
-import { projectHostTarget } from './primed-decisions';
 import type { ProjectWardenHosts } from './project-warden-hosts';
 import type { LoginQuotaPause } from './provider-limits';
+import { projectHostTarget } from './warden-routing';
 
 export interface SubscriptionDecisionConfig extends Omit<NativeTextConfig, 'runId' | 'maxCalls'> {
   maxCalls: number;
   maxQueued: number;
   callTimeoutMs: number;
-  /** Decisions running at once across all threads, each its own native process. Default 1. */
+  /** Decisions running at once across all threads. Default 1. */
   maxConcurrent?: number;
-  /** Claude primed keys kept warm (the primed pool, `createPrimedPool`; none is built with project hosts). */
-  primedSessions?: number;
-  /** Claude primed pool: a bounded pool of subagent side processes instead of a primed process per key (offline evals). */
-  subagents?: { processes: number; membersPerProcess: number };
   /** Waiting decisions per logical thread. Default: maxQueued. */
   maxQueuedPerThread?: number;
   /** Load and rate-limit events (shedding, backoff); observers only. */
   onPressure?: (event: DecisionPressure) => void;
   /** First rate-limit backoff; doubles to 60 s. Default 5 s. */
   rateLimitBackoffMs?: number;
-  /** Primed-host events (priming, eviction, recycles, limits); observers only. */
-  onPrimedEvent?: (event: PrimedEvent) => void;
   /** Decision reasoning effort (the model's default when omitted). */
   effort?: string;
-  /** Codex decisions: hedge a decision still running after this long (off when omitted). */
-  hedgeAfterMs?: number;
   /** Characters a decision's input may take. Default DECISION_INPUT_CAP; raised only by offline evals. */
   inputCap?: number;
-  /** Project Warden hosts: each project's Wardens held in one Claude Code process (advice only). */
-  projectHosts?: ProjectWardenHosts;
   /**
    * The decision login's used-up pause (`makeLoginQuotaPause`), read after a rate-limited decision:
    * while it holds every decision is refused at once, for capacity, until the login's usage resets.
@@ -97,13 +86,16 @@ type Pending = {
 };
 
 /**
- * Decisions run on the decision profile's own login (`createDecisionLoginHost`): with project hosts,
- * every Warden call in its project's host and no primed pool; without them, a primed session per
- * middleware role (agent-session ClaudePrimedSessions or CodexPrimedSessions). The scheduler below
- * keeps priority and fairness, and its concurrency bounds the decisions running at once.
+ * Decisions run on the decision profile's own login (`createDecisionLoginHost`), every Warden call
+ * in its project's host. The scheduler below keeps priority and fairness, and its concurrency bounds
+ * the decisions running at once.
  */
-export function createSubscriptionDecisions(config: SubscriptionDecisionConfig) {
-  const { onPrimedEvent, ...options } = config;
+export function createSubscriptionDecisions(
+  config: SubscriptionDecisionConfig & {
+    /** Project Warden hosts: each project's Wardens held in one Claude Code process. */
+    projectHosts: ProjectWardenHosts;
+  },
+) {
   const host = createDecisionLoginHost({
     source: config.source,
     directory: config.directory,
@@ -112,21 +104,17 @@ export function createSubscriptionDecisions(config: SubscriptionDecisionConfig) 
       ? { expectedObservedModel: config.expectedObservedModel }
       : {}),
     effort: config.effort,
-    hedgeAfterMs: config.hedgeAfterMs,
     maxConcurrent: config.maxConcurrent ?? 1,
-    ...(config.primedSessions !== undefined ? { primedSessions: config.primedSessions } : {}),
-    ...(config.subagents ? { subagents: config.subagents } : {}),
     callTimeoutMs: config.callTimeoutMs,
     ...(config.inputCap !== undefined ? { inputCap: config.inputCap } : {}),
-    onEvent: onPrimedEvent,
-    ...(config.projectHosts ? { projectHosts: config.projectHosts } : {}),
+    projectHosts: config.projectHosts,
     ...(config.quota ? { quota: config.quota } : {}),
   });
-  const { projectHosts, quota: sharedQuota, onPressure, ...bounds } = options;
+  const { projectHosts, quota: sharedQuota, onPressure, ...bounds } = config;
   const decisions = buildSubscriptionDecisions(
     {
       ...bounds,
-      ...(host.quota ? { quota: host.quota } : {}),
+      quota: host.quota,
       // A shared pause is announced by the host that owns it: the strip hears it once.
       ...(onPressure
         ? {
@@ -138,19 +126,15 @@ export function createSubscriptionDecisions(config: SubscriptionDecisionConfig) 
               : onPressure,
           }
         : {}),
-      ...(projectHosts
-        ? {
-            // Only a turn's advice skips the slots; guards and reviews keep their class caps on the
-            // host too, so a burst of background reviews never holds up the next turn's advice.
-            unbounded: (key: string, opts: CompletionOpts) =>
-              (opts.priority ?? DECISION_PRIORITY.turn) >= DECISION_PRIORITY.turn &&
-              typeof projectHostTarget(projectHosts, key) === 'object',
-            // A Warden whose host (or a later stage's lane) does not serve is refused before it is
-            // queued, at every priority: a skipped later stage never waits out its share in the queue
-            // and lets the earlier stage's answer stand (R-2026-11-18-38).
-            unserved: (key: string) => projectHostTarget(projectHosts, key) === 'not-serving',
-          }
-        : {}),
+      // Only a turn's advice skips the slots; guards and reviews keep their class caps on the
+      // host too, so a burst of background reviews never holds up the next turn's advice.
+      unbounded: (key: string, opts: CompletionOpts) =>
+        (opts.priority ?? DECISION_PRIORITY.turn) >= DECISION_PRIORITY.turn &&
+        typeof projectHostTarget(projectHosts, key) === 'object',
+      // A Warden whose host (or a later stage's lane) does not serve is refused before it is
+      // queued, at every priority: a skipped later stage never waits out its share in the queue
+      // and lets the earlier stage's answer stand (R-2026-11-18-38).
+      unserved: (key: string) => projectHostTarget(projectHosts, key) === 'not-serving',
     },
     host.createRun,
   );
@@ -162,22 +146,20 @@ export function createSubscriptionDecisions(config: SubscriptionDecisionConfig) 
       decisions.close();
       void host.close();
     },
-    /** Shutdown also stops the decision processes and deletes their primed sessions. */
+    /** Shutdown also releases the decision login and removes the host's folder. */
     shutdown: async (timeoutMs?: number) => {
       await decisions.shutdown(timeoutMs);
       await host.close();
     },
     snapshot: () => ({
       ...decisions.snapshot(),
-      // The primed pool's state, while there is one (no project hosts).
-      ...(host.pool ? { primed: host.pool.snapshot() } : {}),
-      ...(projectHosts ? { projectHosts: projectHosts.snapshot() } : {}),
+      projectHosts: projectHosts.snapshot(),
     }),
   };
 }
 
 export function buildSubscriptionDecisions(
-  options: Omit<SubscriptionDecisionConfig, 'projectHosts'> & {
+  options: SubscriptionDecisionConfig & {
     /** Calls (by provider session key and options) served in a project host: no shared slot. */
     unbounded?: (sessionKey: string, opts: CompletionOpts) => boolean;
     /** Calls (by provider session key) whose project host does not serve: refused unsent, never queued. */
@@ -454,7 +436,7 @@ export function buildSubscriptionDecisions(
       const result = await run.provider.complete(pending.messages, callOpts);
       check(pending);
       const call = run.snapshot().calls[0];
-      // Per-call processes prove release by their exit; a primed call by its settled turn on the warm host.
+      // Per-call processes prove release by their exit; a call on a warm host by its settled turn.
       const released =
         call?.transport === 'primed'
           ? call.settled === true
@@ -562,7 +544,7 @@ export function buildSubscriptionDecisions(
             cleanup: call?.release === 'released' ? 'released' : 'unknown',
           },
         });
-      // Refusal before any native write leaves nothing owned. A primed turn that settled (a native failure, or a
+      // Refusal before any native write leaves nothing owned. A warm host's turn that settled (a native failure, or a
       // deadline whose interrupt was acknowledged) leaves nothing owned either. Anything else closes admission.
       const settledFailures =
         call?.transport === 'primed'

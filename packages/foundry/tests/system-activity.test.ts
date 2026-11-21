@@ -2,9 +2,9 @@ import { describe, expect, test } from 'bun:test';
 import type { ProjectHostState } from '../src/providers/project-warden-hosts';
 import {
   decisionPressureActivity,
-  primedEventActivity,
   projectHostActivity,
   resetTime,
+  wardenHostEventActivity,
 } from '../src/viewer/system-activity';
 import {
   advised,
@@ -84,11 +84,13 @@ test('decision pressure touches every thread; a rate limit shows until it ends',
   expect(shed.summary).not.toContain('t,');
 });
 
-test('a decision process recycling is logged, never shown; other primed events are dropped', () => {
+test('a Warden host process recycling is logged, never shown; other host events are dropped', () => {
   expect(
-    primedEventActivity({ type: 'process-recycled', generation: 2, reason: 'tokens' })?.state,
+    wardenHostEventActivity({ type: 'process-recycled', generation: 2, reason: 'tokens' })?.state,
   ).toBe('idle');
-  expect(primedEventActivity({ type: 'process-started', generation: 1, ms: 10 })).toBeUndefined();
+  expect(
+    wardenHostEventActivity({ type: 'process-started', generation: 1, ms: 10 }),
+  ).toBeUndefined();
 });
 
 describe('the strip', () => {

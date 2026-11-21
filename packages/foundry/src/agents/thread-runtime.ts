@@ -381,9 +381,9 @@ function wardenStages(
 
 export interface ThreadRuntimeDeps {
   /**
-   * `decisionRuntime: claude-project`: the project root a thread's Wardens compose at
-   * (`projectWardenRoot`), so every thread holds what its project's host holds. Set by the manager
-   * from its own settings; absent, Wardens compose at the thread's cwd.
+   * The project root a thread's Wardens compose at (`projectWardenRoot`), so every thread holds
+   * what its project's host holds. Set by the manager from its own settings; absent (API-token
+   * decisions), Wardens compose at the thread's cwd.
    */
   wardenRoot?: (projectId: string | undefined) => string | undefined;
   /**
@@ -946,7 +946,7 @@ class ThreadRuntimeImpl implements ThreadRuntime {
   private _onDisposed: () => void;
   private _knowledgeLayers: ContextLayer[] = [];
   private _scope!: OwnershipScope;
-  /** Where Warden slots compose: the thread's scope, or (claude-project) its project's root. */
+  /** Where Warden slots compose: the thread's scope, or (project hosts) its project's root. */
   private _wardenScope!: OwnershipScope;
   private _resolveSource: ResolveSource | undefined;
   /** Each configured Warden's composed slots, by domain, and the doc layer of each later classify stage. */
@@ -1123,7 +1123,7 @@ class ThreadRuntimeImpl implements ThreadRuntime {
         return thread.meta.cwd;
       },
     };
-    // claude-project: Wardens compose at the project's root, so every thread of the project holds
+    // Project hosts: Wardens compose at the project's root, so every thread of the project holds
     // what the project host holds.
     const projectRoot = deps.wardenRoot;
     const wardenScope: OwnershipScope = projectRoot
@@ -1186,7 +1186,7 @@ class ThreadRuntimeImpl implements ThreadRuntime {
             ...(host ? { llm: scopedProvider(host, { threadId: domainId, cwd }), llmOpts } : {}),
             ...(role && config.doc !== KNOWLEDGE_DOC ? { cache: own() } : {}),
           };
-        // Each later stage keeps its own primed session (its own charter and doc), keyed by stage.
+        // Each later stage keeps its own session key (its own charter and doc), keyed by stage.
         const stageId = auxiliarySessionId(thread.id, `domain:${dc.domain}:stage:${index}`);
         this.auxiliarySessionIds.push(stageId);
         return {

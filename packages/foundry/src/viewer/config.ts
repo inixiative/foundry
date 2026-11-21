@@ -973,7 +973,7 @@ export function validateChorusSettings(where: string, chorus: unknown): void {
   for (const key of ['charter', 'charters', 'sections'])
     if (key in c)
       throw Error(
-        `${where}.${key} is not a chorus setting: charters are fixed per task and role, owned by Foundry; an eval run config may set their sections (scripts/evals/warden-charter.ts --classify)`,
+        `${where}.${key} is not a chorus setting: charters are fixed per task and role, owned by Foundry; an eval run config may set their sections (feedback/classify-run.ts)`,
       );
   for (const key of Object.keys(c))
     if (!CHORUS_KEYS.includes(key))

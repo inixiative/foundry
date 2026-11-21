@@ -25,10 +25,7 @@ export function modelSelection(config: FoundryConfig) {
   else
     try {
       const subscription = resolveSubscriptionPolicy(config)!;
-      decision = {
-        provider: subscription.decision.runtime === 'codex' ? 'codex' : 'claude-code',
-        model: subscription.policy.model,
-      };
+      decision = { provider: 'claude-code', model: subscription.policy.model };
     } catch (error) {
       issue = (error as Error).message;
     }
@@ -75,24 +72,13 @@ export function registerModelRoutes(app: Hono, configStore: ConfigStore) {
   });
 
   choose('/api/models/decision', (draft, { provider, model }) => {
-    if (provider === 'muse')
-      throw Error('Muse Code runs main threads only; decisions run on Claude or Codex');
+    if (provider === 'muse' || provider === 'codex')
+      throw Error(
+        `${provider === 'muse' ? 'Muse Code' : 'Codex'} runs main threads only; subscription decisions run on Claude`,
+      );
     if (subscriptionWorker(provider)) {
-      // A subscription login runs decisions: Claude (its Wardens in project hosts by default, or
-      // primed with `claude`) or Codex. A Claude choice keeps the Claude runtime already set.
-      const current = draft.subscriptionOnly?.decisionRuntime;
-      const decisionRuntime =
-        provider === 'codex' ? 'codex' : current === 'codex' ? undefined : current;
-      const { projectHost, ...kept } = draft.subscriptionOnly ?? {};
-      delete kept.decisionRuntime;
-      draft.subscriptionOnly = {
-        ...kept,
-        ...(decisionRuntime !== 'codex' && decisionRuntime !== 'claude' && projectHost
-          ? { projectHost }
-          : {}),
-        ...(decisionRuntime ? { decisionRuntime } : {}),
-        model,
-      };
+      // The Claude login runs decisions, its Wardens in the project hosts.
+      draft.subscriptionOnly = { ...draft.subscriptionOnly, model };
       draft.defaults.decisionProvider = SUBSCRIPTION_DECISIONS;
       draft.defaults.decisionModel = model;
       return;

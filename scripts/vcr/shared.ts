@@ -29,10 +29,10 @@ export const LIVE_FILES = [
   'subscription-policy.test.ts',
 ].map((file) => `./packages/foundry/tests/${file}`);
 
-/** The launchd smoke: status probes and one decision per runtime, in the daemon's environment. */
+/** The launchd smoke: status probes and one Claude text decision, in the daemon's environment. */
 export const SMOKE = {
   file: './packages/foundry/tests/vcr-scenarios.test.ts',
-  filter: 'auth status|login status|text decision|claude primed|codex decision',
+  filter: 'auth status|login status|text decision',
 };
 
 /** The PATH the daemon installer would write: the newest working install of each agent CLI. */

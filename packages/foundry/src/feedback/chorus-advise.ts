@@ -10,6 +10,7 @@
 // the central agent's model call is replaced: it captures what the executor would send and answers
 // nothing. Oracle's `chorus` replay arm reads the result (scripts/evals/chorus-advise.ts).
 
+import { RUN_ENV, stampRunDirectory } from '@inixiative/archive/exemption';
 import {
   type AdviceOutcome,
   Harness,
@@ -31,6 +32,12 @@ import { adviceOutcomeOf, threadKnowledgeLayerId } from '../agents/warden';
 import { formatMessagesForNativeSession } from '../providers/session-backed';
 import { baseContextOf, sessionTurn } from '../providers/session-delivery';
 import type { FoundryConfig } from '../viewer/config';
+
+/** Mark this process and its state directory as an eval run: Archive leaves its sessions out. */
+export function markEvalRun(state: string): void {
+  process.env[RUN_ENV] = 'oracle';
+  stampRunDirectory(state, 'oracle');
+}
 
 export interface ChorusAdviseOptions {
   /** The effective configuration a live thread composes under (subscription-resolved, overrides applied). */

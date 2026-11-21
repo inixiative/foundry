@@ -29,7 +29,7 @@ import {
   validateStages,
   WARDEN_CHARTER,
 } from '../src/classify';
-import { isStageSession, projectHostTarget } from '../src/providers/primed-decisions';
+import { isStageSession, projectHostTarget } from '../src/providers/warden-routing';
 import { type FoundryConfig, starterConfig } from '../src/viewer/config';
 
 const dirs: string[] = [];

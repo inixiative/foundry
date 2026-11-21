@@ -142,8 +142,8 @@ import { effectiveProject, resolveProjectView } from './viewer/config-resolve';
 import { startViewer } from './viewer/server';
 import {
   decisionPressureActivity,
-  primedEventActivity,
   projectHostActivity,
+  wardenHostEventActivity,
 } from './viewer/system-activity';
 
 // ---------------------------------------------------------------------------
@@ -252,53 +252,38 @@ const decisionEvents: DecisionEvents = {
     // Closed until restart: the person has to act, so it toasts too.
     if (event.kind === 'closed') eventStream.pushError('subscription-decisions', message, 'warn');
   },
-  onPrimedEvent: (event: Parameters<NonNullable<DecisionEvents['onPrimedEvent']>>[0]) => {
-    if (event.type === 'process-started')
-      console.log(`[subscription-decisions] warm Codex app-server ready in ${event.ms}ms`);
-    if (event.type !== 'process-recycled' && event.type !== 'violation') return;
-    const message =
-      event.type === 'violation'
-        ? `Decision violated the text-only policy (${event.detail}); process recycled`
-        : `Decision process recycled (${event.reason}); roles re-prime on the next decision`;
-    console.warn(`[subscription-decisions] ${message}`);
-    const activity = primedEventActivity(event);
-    if (activity) eventStream.pushActivity(activity);
+  onHostEvent: (event: Parameters<NonNullable<DecisionEvents['onHostEvent']>>[0]) => {
+    const activity = wardenHostEventActivity(event);
+    if (!activity) return;
+    console.warn(`[subscription-decisions] ${activity.detail}`);
+    eventStream.pushActivity(activity);
   },
 };
 // The decision host and one host per other model and effort a classify stage names
 // (chorus.wardens.stages), started on first use on the same login and bounds. API-token decisions
 // have no per-stage host: such a stage is refused.
 const live = subscription
-  ? liveDecisionHosts(config, subscription, {
-      // Project Warden hosts (Claude decisions by default): each project's Wardens held warm in one
-      // host per project, asked for advice by every thread of the project (the thread's project: the
-      // login pool's late-bound lookup).
-      ...(subscription.policy.wardens === 'project'
-        ? {
-            project: {
-              projectOf: (threadId: string) => threadMeta?.(threadId)?.projectId,
-              onProject: (projectId: string, state: ProjectHostState) => {
-                const line = `[project-wardens] ${projectId}${state.lane ? ` (${state.lane})` : ''} ${state.status}: ${state.held}/${state.expected} held${state.setupMs !== undefined ? `, set up in ${state.setupMs} ms` : ''}${state.rssMb !== undefined ? `, ${state.rssMb} MB` : ''}${state.reason ? ` (${state.reason})` : ''}`;
-                console.log(line);
-                // Shown above the composer of the project's threads; failed for good also toasts.
-                eventStream.pushActivity(
-                  projectHostActivity(
-                    projectId,
-                    config.projects?.[projectId]?.label ?? projectId,
-                    state,
-                  ),
-                );
-                if (state.status === 'failed')
-                  eventStream.pushError('subscription-decisions', line, 'warn');
-              },
-            },
-          }
-        : {}),
+  ? liveDecisionHosts(subscription, {
+      // Project Warden hosts: each project's Wardens held warm in one host per project, asked by
+      // every thread of the project (the thread's project: the login pool's late-bound lookup).
+      project: {
+        projectOf: (threadId: string) => threadMeta?.(threadId)?.projectId,
+        onProject: (projectId: string, state: ProjectHostState) => {
+          const line = `[project-wardens] ${projectId}${state.lane ? ` (${state.lane})` : ''} ${state.status}: ${state.held}/${state.expected} held${state.setupMs !== undefined ? `, set up in ${state.setupMs} ms` : ''}${state.rssMb !== undefined ? `, ${state.rssMb} MB` : ''}${state.reason ? ` (${state.reason})` : ''}`;
+          console.log(line);
+          // Shown above the composer of the project's threads; failed for good also toasts.
+          eventStream.pushActivity(
+            projectHostActivity(projectId, config.projects?.[projectId]?.label ?? projectId, state),
+          );
+          if (state.status === 'failed')
+            eventStream.pushError('subscription-decisions', line, 'warn');
+        },
+      },
       events: decisionEvents,
       log: (line) => console.log(line),
     })
   : undefined;
-if (live?.projectHosts)
+if (live)
   console.log(
     "Wardens: each project's held warm in one Foundry-owned process per model (advice, guards, reviews, later stages)",
   );
@@ -737,7 +722,7 @@ const eventStream = new EventStream();
 const runtimeManager = new ThreadRuntimeManager({
   config,
   // A turn marks its project active (opening its Warden host if none is open); it never waits for it.
-  ...(live?.projectHosts
+  ...(live
     ? { activateWardenHost: (projectId: string) => void projectActivity?.activate(projectId) }
     : {}),
   llm: flowLlm,
@@ -805,7 +790,7 @@ configStore.watch();
 // without any. Its roster is composed from a hidden thread at the project's root, as a thread of the
 // project composes its Wardens; settings changes and a minute's timer refresh open hosts only (a
 // region's files may change on disk; the same roster changes nothing). Until a host serves, its
-// Wardens are skipped (refused unsent), never sent to primed.
+// Wardens are skipped (refused unsent).
 const projectHosts = live?.projectHosts;
 const holdProjectRoster = async (projectId: string) => {
   if (!projectHosts || !decisions) return;
@@ -829,7 +814,7 @@ const holdProjectRoster = async (projectId: string) => {
     // Each stage in the project host of its model: the decision host's, or a later stage's lane.
     const lanes = new Map<ProjectWardenHosts, Array<Roster[number]>>([[projectHosts, []]]);
     for (const { spec, stage } of roster) {
-      const hosts = stage ? live?.stageProjectHosts?.(stage.model, stage.effort) : projectHosts;
+      const hosts = stage ? live?.stageProjectHosts(stage.model, stage.effort) : projectHosts;
       if (!hosts) continue;
       lanes.set(hosts, [...(lanes.get(hosts) ?? []), { spec, standby: '' }]);
     }
@@ -1064,7 +1049,7 @@ const viewer = await startViewer({
   configDir: FOUNDRY_DIR,
   // Opening a thread of a project opens its Warden host, so it is warm by the first turn.
   projectActive: (projectId) => void projectActivity?.activate(projectId),
-  ...(live?.projectHosts ? { decisionHosts: () => live.projectHosts?.snapshot() } : {}),
+  ...(live ? { decisionHosts: () => live.projectHosts.snapshot() } : {}),
   sessionBindings: () => sessionStore.all(),
   assistProvider: provider,
   assistModel: config.defaults.model,
@@ -1128,9 +1113,9 @@ console.log();
 // Startup self-test — verify the LLM provider actually works
 // ---------------------------------------------------------------------------
 
-// With project hosts, each host's start proves the decision login (auth status, then its setup turn);
-// a self-test decision would need the primed pool, so it is not run.
-if (selfTestRequested && live?.projectHosts)
+// With subscription decisions, each project host's start proves the decision login (auth status,
+// then its setup turn), and no host serves a self-test decision, so it is not run.
+if (selfTestRequested && live)
   console.log(
     "Provider self-test: not run; the decision login is checked when a project's Warden host starts (claude auth status, then its setup turn)",
   );

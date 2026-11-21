@@ -200,7 +200,10 @@ function DecisionModelStep({
   if (!prov) return null;
 
   const tierColors = { fast: 'var(--ok)', standard: 'var(--shared)', powerful: 'var(--accent)' };
-  const availableProviders = providers.filter((p) => enabledProviders.includes(p.id));
+  // Subscription decisions run on the Claude login: Codex runs main threads only.
+  const availableProviders = providers.filter(
+    (p) => enabledProviders.includes(p.id) && p.id !== 'codex',
+  );
 
   return html`
     <div class="wizard-step">
@@ -373,11 +376,10 @@ export function Wizard() {
   };
 
   const handleExecutorNext = () => {
-    // Subscription default: Claude Haiku 5.5 decisions on the Claude login.
+    // Subscription default: Claude Haiku 5.5 decisions on the Claude login, a Codex worker's too.
     // Otherwise default the decision model to the fastest model on the same provider.
     if (!decisionProvider) {
-      const subscription =
-        SUBSCRIPTION_WORKERS.includes(defaultProvider) && enabledProviders.includes('claude-code');
+      const subscription = SUBSCRIPTION_WORKERS.includes(defaultProvider);
       const id = subscription ? 'claude-code' : defaultProvider;
       setDecisionProvider(id);
       const prov = providers.find((p) => p.id === id);
@@ -425,18 +427,11 @@ export function Wizard() {
       }
       await patchSettings('vendors', vendors);
 
-      // A Claude Code or Codex worker with native decisions stays subscription-only; any other choice opts in to API tokens.
+      // A Claude Code or Codex worker with Claude decisions stays subscription-only; any other choice opts in to API tokens.
       const subscription =
-        SUBSCRIPTION_WORKERS.includes(defaultProvider) &&
-        SUBSCRIPTION_WORKERS.includes(decisionProvider);
+        SUBSCRIPTION_WORKERS.includes(defaultProvider) && decisionProvider === 'claude-code';
       await patchSettings('apiTokens', { enabled: !subscription });
-      if (subscription)
-        await patchSettings('subscriptionOnly', {
-          // Claude decisions hold Wardens in project hosts (the default runtime, named so a saved
-          // `codex` or `claude` is replaced).
-          decisionRuntime: decisionProvider === 'codex' ? 'codex' : 'claude-project',
-          model: decisionModel,
-        });
+      if (subscription) await patchSettings('subscriptionOnly', { model: decisionModel });
 
       // Update defaults — executor model is the global default
       await patchSettings('defaults', {

@@ -267,15 +267,10 @@ export const MODEL_REGISTRY_UPDATED_AT = '2026-11-20';
 /**
  * Decision default: Claude Haiku 5.5, the cheapest current Claude model tagged `judgment`. Held here
  * rather than in an adapter so one map answers "what runs decisions". DECISION_PROVIDER is the
- * API-token path; subscription decisions pick their model per runtime from SUBSCRIPTION_DECISION_MODELS.
+ * API-token path; subscription decisions run DECISION_MODEL on the Claude login.
  */
 export const DECISION_PROVIDER = 'anthropic';
 export const DECISION_MODEL = 'claude-haiku-5-5';
-/** Subscription decision default per native runtime; settings choose the runtime. */
-export const SUBSCRIPTION_DECISION_MODELS = {
-  claude: DECISION_MODEL,
-  codex: 'gpt-5.6-luna',
-} as const;
 /** A subscription worker's main-thread model when a thread runs on a worker other than its project's default. */
 export const SUBSCRIPTION_WORKER_MODELS = {
   'claude-code': 'fable',

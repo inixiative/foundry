@@ -275,7 +275,7 @@ test('policy: muse runs main threads on its login or a Kingdom pool; never decis
   decisions.nativeAuthentication = [login];
   decisions.subscriptionOnly = { decisionSourceId: login.id };
   expect(() => resolveSubscriptionPolicy(decisions, { cwd: root })).toThrow(
-    'Muse Code runs main threads only',
+    'must be a Claude login; Codex and Muse Code run main threads only',
   );
 });
 

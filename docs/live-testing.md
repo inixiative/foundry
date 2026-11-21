@@ -7,7 +7,7 @@ Foundry's hardest failures happen only against the real CLIs and the real launch
 | Command | What runs | When |
 |---|---|---|
 | `bun run test` | Replays only: no network and no CLI calls. Includes the freshness check. | Every change; CI |
-| `bun run test:live` | The same cassette-backed tests run live against this machine's subscriptions: Claude on `~/.claude`, Codex's ChatGPT login on `~/.codex` (recorded Codex decisions use `gpt-5.6-luna`, the fast model a ChatGPT login serves on every Codex CLI), and local Kingdom. Every cassette is re-recorded, then everything replays. | Nightly, and after any CLI or agent-session upgrade |
+| `bun run test:live` | The same cassette-backed tests run live against this machine's subscriptions: Claude on `~/.claude`, Codex's ChatGPT login on `~/.codex`, and local Kingdom. Every cassette is re-recorded, then everything replays. | Nightly, and after any CLI or agent-session upgrade |
 | `bun run test:live:daemon` | A small live smoke inside a throwaway LaunchAgent that uses the installed daemon's PATH and ProcessType and has no terminal environment. It runs the status probes and one decision per runtime. | Nightly, and after any daemon/plist change |
 | `bun run vcr:refresh` | `test:live`, then `test:live:daemon`. Exits non-zero on any failure or drift. | The scheduled job |
 | `bun run test:live:api` | The API-key provider smoke. It uses paid keys from `.env`, so it is off the subscription cadence. | On demand |
@@ -26,14 +26,14 @@ The VCR is `packages/foundry/src/vcr/`, ported from the template's `packages/sha
 
 Foundry's transports are its seams:
 
-- **Process stdio** (`ProcessCassettes`): Claude stream-json sessions through `@inixiative/agent-session`, Codex app-server JSON-RPC (sessions and the warm primed decision host), and the `claude auth status` probe. Each stdout and stderr line is tagged with the number of stdin events (writes, or `end`) that preceded it. Replay releases a line once the same number of stdin events has happened, so turns replay in their live order with no timers. Replay also:
+- **Process stdio** (`ProcessCassettes`): Claude stream-json sessions through `@inixiative/agent-session`, Codex app-server JSON-RPC sessions, and the `claude auth status` probe. Each stdout and stderr line is tagged with the number of stdin events (writes, or `end`) that preceded it. Replay releases a line once the same number of stdin events has happened, so turns replay in their live order with no timers. Replay also:
   - remaps JSON-RPC request ids;
   - fills `{{cwd}}` back in with the replay's working directory;
   - refuses any stdin line that differs from the recording after the same scrubbing (only JSON-RPC request ids may differ), and refuses to end stdin before every recorded line was sent.
 - **HTTP** (`httpCassettes`): a `fetch` for the Kingdom endpoints, in the template's captureResponse shape plus the request. Replay refuses a different method or path.
 - **WebSocket** (`webSocketCassettes`): received frames are tagged with how many frames the client had sent. Replay refuses a sent frame that differs from the recording.
 
-Test helpers are in `packages/foundry/tests/helpers/vcr.ts`. `recordedClaudeTransport` exposes the same `launches`, `writes` and `statusChecks` as the fake transports; `recordedAppServerTransport` records the primed decision host's one app-server. Primed recordings prime explicitly before deciding, so stdin order is fixed (no background priming racing a decision).
+Test helpers are in `packages/foundry/tests/helpers/vcr.ts`. `recordedClaudeTransport` exposes the same `launches`, `writes` and `statusChecks` as the fake transports.
 
 ## Cassettes
 

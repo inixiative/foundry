@@ -39,7 +39,7 @@ export default defineConfig({
         'scripts/{daemon,vcr}/*.ts',
         'scripts/evals/*.ts',
       ],
-      exclude: ['scripts/vcr/shared.ts', 'scripts/evals/cost-weights.ts'],
+      exclude: ['scripts/vcr/shared.ts'],
       kind: 'entrypoint',
     },
     {
@@ -47,7 +47,7 @@ export default defineConfig({
       kind: 'agent',
     },
     {
-      include: `${FOUNDRY}/providers/{anthropic,openai,openai-compatible,gemini,native-text-provider,primed-decisions,decision-login-host,subscription-decisions}.ts`,
+      include: `${FOUNDRY}/providers/{anthropic,openai,openai-compatible,gemini,native-text-provider,warden-routing,decision-login-host,subscription-decisions}.ts`,
       kind: 'provider',
     },
     { include: `${FOUNDRY}/classify/charters/*.ts`, kind: 'definition' },
@@ -149,11 +149,11 @@ export default defineConfig({
     // foundry: feedback and evals
     {
       include: `${FOUNDRY}/feedback/**`,
-      exclude: `${FOUNDRY}/feedback/{charter-eval,classify-run}.ts`,
+      exclude: `${FOUNDRY}/feedback/classify-run.ts`,
       partOf: 'feature:feedback',
     },
     {
-      include: [`${FOUNDRY}/feedback/{charter-eval,classify-run}.ts`, 'scripts/evals/**'],
+      include: [`${FOUNDRY}/feedback/classify-run.ts`, 'scripts/evals/**'],
       partOf: 'feature:evals',
     },
     { include: 'scripts/{measure-decisions,measure-warm-cache}.ts', partOf: 'feature:evals' },
@@ -164,7 +164,7 @@ export default defineConfig({
       partOf: 'primitive:providers',
     },
     {
-      include: `${FOUNDRY}/providers/{subscription-decisions,decision-host,decision-budget,decision-priority,decision-provider,primed-decisions,decision-login-host,subscription-policy}.ts`,
+      include: `${FOUNDRY}/providers/{subscription-decisions,decision-host,decision-budget,decision-priority,decision-provider,warden-routing,decision-login-host,subscription-policy}.ts`,
       partOf: 'primitive:decisions',
     },
     {

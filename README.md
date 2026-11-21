@@ -28,7 +28,7 @@ The voice of your project.
 1. **You work with your own agent.** Threads run Claude Code or Codex on the logins already on your machine, from Foundry's viewer or an ACP app. No API key needed.
 2. **Wardens remind your agent.** Your docs are split into regions, one Warden per region, so each Warden holds one part of what your project knows. Each turn, every Warden asks "does this touch my region?" and, if so, names the existing thing and where it's written. Your agent is reminded of it and decides what to do with it.
 3. **Corrections are captured.** `/feedback` records a correction with its context so it can go into your docs, where every later session sees it.
-4. **Every session is kept.** Sessions land in your local [Archive](https://github.com/inixiative/archive), and `foundry repeats` shows the corrections you keep giving, so you can see whether one stuck.
+4. **Every session is kept.** Sessions land in your local [Archive](https://github.com/inixiative/archive).
 
 ## Install
 
@@ -38,7 +38,7 @@ Requires macOS (the daemon is a launchd agent), [Bun](https://bun.sh) 1.4.4 or l
 bunx @inixiative/foundry-acp setup
 ```
 
-This installs Foundry and `foundry-acp` globally, runs the daemon from `~/.foundry/home`, prints the settings for Paseo and T3 Code, and ends with `foundry repeats`. Then open http://localhost:4500. Details: [pointing a host at Foundry](docs/reference/FOUNDRY-ACP.md#10-pointing-a-host-at-foundry).
+This installs Foundry and `foundry-acp` globally, runs the daemon from `~/.foundry/home` and prints the settings for Paseo and T3 Code. Then open http://localhost:4500. Details: [pointing a host at Foundry](docs/reference/FOUNDRY-ACP.md#10-pointing-a-host-at-foundry).
 
 From source:
 
@@ -89,7 +89,7 @@ Setup (`bun run setup`) is interactive: it picks your worker and model and creat
 
 Provider choices come from the shared registry. The default worker is Claude Code through the subscription; Codex and API-key providers are settings, and each thread can run on any worker you have a login for.
 
-Foundry is subscription-only by default: the Claude Code (or Codex) worker and Claude Haiku 5.5 decisions (through the same Claude login) use the logins already on the machine, so no API key is needed. Log in with `claude` first (and `codex login` for a Codex worker or Codex decisions). API-key providers require `"apiTokens": true` in `.foundry/settings.json`; see [subscription decisions](docs/subscription-decisions.md).
+Foundry is subscription-only by default: the Claude Code (or Codex) worker and Claude Haiku 5.5 decisions (through the same Claude login) use the logins already on the machine, so no API key is needed. Log in with `claude` first (and `codex login` for a Codex worker; its Wardens decide on the Claude login). API-key providers require `"apiTokens": true` in `.foundry/settings.json`; see [subscription decisions](docs/subscription-decisions.md).
 
 ### Environment variables
 
