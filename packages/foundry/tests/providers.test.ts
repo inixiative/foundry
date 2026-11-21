@@ -282,6 +282,29 @@ describe('GeminiProvider', () => {
   test('constructs with defaults', () => {
     const provider = new GeminiProvider({ apiKey: 'test-key' });
     expect(provider.id).toBe('gemini');
+    expect(provider.imageInput).toBe(true);
+  });
+
+  test('defaults to gemini-3.5-flash-lite', async () => {
+    let capturedUrl = '';
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = fakeFetch(async (url) => {
+      capturedUrl = String(url);
+      return new Response(
+        JSON.stringify({
+          candidates: [{ content: { parts: [{ text: 'ok' }] }, finishReason: 'STOP' }],
+        }),
+      );
+    });
+
+    const provider = new GeminiProvider({ apiKey: 'test-key' });
+    try {
+      const result = await provider.complete([{ role: 'user', content: 'hi' }]);
+      expect(capturedUrl).toContain('/v1beta/models/gemini-3.5-flash-lite:generateContent');
+      expect(result.model).toBe('gemini-3.5-flash-lite');
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 
   test('sends correct request format', async () => {
@@ -365,6 +388,132 @@ describe('GeminiProvider', () => {
       ]);
 
       expect(capturedBody.contents[1].role).toBe('model');
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test('maps thinking option to generationConfig.thinkingConfig', async () => {
+    const capturedBodies: Array<Record<string, unknown>> = [];
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = fakeFetch(async (_url, init) => {
+      capturedBodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+      return new Response(
+        JSON.stringify({
+          candidates: [{ content: { parts: [{ text: 'ok' }] }, finishReason: 'STOP' }],
+        }),
+      );
+    });
+
+    const provider = new GeminiProvider({ apiKey: 'key', defaultModel: 'gemini-4-argon' });
+    try {
+      await provider.complete([{ role: 'user', content: 'a' }], { thinking: 'high' });
+      await provider.complete([{ role: 'user', content: 'b' }], { thinking: 'none' });
+      await provider.complete([{ role: 'user', content: 'c' }], { thinking: 4096 });
+      await provider.complete([{ role: 'user', content: 'd' }], {
+        model: 'gemini-custom-unregistered',
+        thinking: 'high',
+      });
+
+      expect(
+        (capturedBodies[0]?.generationConfig as Record<string, unknown>)?.thinkingConfig,
+      ).toEqual({ thinkingLevel: 'HIGH' });
+      // Gemini models in the registry do not accept "none"; fall back to their registry fallback ("medium").
+      expect(
+        (capturedBodies[1]?.generationConfig as Record<string, unknown>)?.thinkingConfig,
+      ).toEqual({ thinkingLevel: 'MEDIUM' });
+      expect(
+        (capturedBodies[2]?.generationConfig as Record<string, unknown>)?.thinkingConfig,
+      ).toEqual({ thinkingBudget: 4096 });
+      expect(capturedBodies[3]?.generationConfig).toBeUndefined();
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test('maps LLMMessage.images to inlineData parts and rejects missing image bytes', async () => {
+    let capturedBody: Record<string, unknown> = {};
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = fakeFetch(async (_url, init) => {
+      capturedBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return new Response(
+        JSON.stringify({
+          candidates: [{ content: { parts: [{ text: 'a cat' }] }, finishReason: 'STOP' }],
+        }),
+      );
+    });
+
+    const provider = new GeminiProvider({ apiKey: 'key' });
+    try {
+      await provider.complete([
+        {
+          role: 'user',
+          content: 'What is this?',
+          images: [{ id: 'img-1', mediaType: 'image/png', bytes: 4, data: 'AQIDBA==' }],
+        },
+      ]);
+
+      expect(capturedBody.contents).toEqual([
+        {
+          role: 'user',
+          parts: [
+            { inlineData: { mimeType: 'image/png', data: 'AQIDBA==' } },
+            { text: 'What is this?' },
+          ],
+        },
+      ]);
+
+      await expect(
+        provider.complete([
+          {
+            role: 'user',
+            content: 'Missing bytes',
+            images: [{ id: 'img-2', mediaType: 'image/jpeg', bytes: 10 }],
+          },
+        ]),
+      ).rejects.toThrow('Image img-2 has no data');
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test('filters thought parts and parses thoughtsTokenCount and cachedContentTokenCount', async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = fakeFetch(
+      async () =>
+        new Response(
+          JSON.stringify({
+            candidates: [
+              {
+                content: {
+                  parts: [{ text: 'internal reasoning', thought: true }, { text: 'final answer' }],
+                },
+                finishReason: 'STOP',
+              },
+            ],
+            usageMetadata: {
+              promptTokenCount: 1000,
+              cachedContentTokenCount: 600,
+              candidatesTokenCount: 120,
+              thoughtsTokenCount: 280,
+            },
+          }),
+        ),
+    );
+
+    const provider = new GeminiProvider({ apiKey: 'key', defaultModel: 'gemini-4-argon' });
+    try {
+      const result = await provider.complete([{ role: 'user', content: 'solve' }], {
+        thinking: 'medium',
+      });
+
+      expect(result.content).toBe('final answer');
+      expect(result.tokens).toEqual({
+        input: 400,
+        output: 400,
+        cacheRead: 600,
+        thinking: 280,
+      });
     } finally {
       globalThis.fetch = originalFetch;
     }

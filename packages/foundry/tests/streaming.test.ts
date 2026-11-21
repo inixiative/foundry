@@ -63,6 +63,78 @@ describe('GeminiProvider', () => {
     const provider = new GeminiProvider({ apiKey: 'test-key' });
     expect(provider.stream.length).toBeLessThanOrEqual(provider.complete.length);
   });
+
+  test('stream sends thinkingConfig/images, filters thought parts, and emits cache/thinking usage', async () => {
+    let capturedBody: Record<string, unknown> = {};
+    const sse = [
+      `data: ${JSON.stringify({
+        candidates: [{ content: { parts: [{ text: 'hidden chain', thought: true }] } }],
+        usageMetadata: { promptTokenCount: 500, cachedContentTokenCount: 300 },
+      })}`,
+      `data: ${JSON.stringify({
+        candidates: [{ content: { parts: [{ text: 'Hello ' }] } }],
+      })}`,
+      `data: ${JSON.stringify({
+        candidates: [{ content: { parts: [{ text: 'world' }] }, finishReason: 'STOP' }],
+        usageMetadata: {
+          promptTokenCount: 500,
+          cachedContentTokenCount: 300,
+          candidatesTokenCount: 15,
+          thoughtsTokenCount: 45,
+        },
+      })}`,
+    ].join('\n\n');
+
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = Object.assign(
+      async (_input: string | URL | Request, init?: RequestInit) => {
+        capturedBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        return new Response(`${sse}\n`, {
+          status: 200,
+          headers: { 'content-type': 'text/event-stream' },
+        });
+      },
+      { preconnect: fetch.preconnect },
+    );
+
+    const provider = new GeminiProvider({ apiKey: 'test-key', defaultModel: 'gemini-3.6-flash' });
+    const events: LLMStreamEvent[] = [];
+    try {
+      for await (const event of provider.stream(
+        [
+          {
+            role: 'user',
+            content: 'describe',
+            images: [{ id: 'img-s1', mediaType: 'image/webp', bytes: 2, data: 'AQI=' }],
+          },
+        ],
+        { thinking: 'low' },
+      )) {
+        events.push(event);
+      }
+
+      expect((capturedBody.generationConfig as Record<string, unknown>)?.thinkingConfig).toEqual({
+        thinkingLevel: 'LOW',
+      });
+      expect(capturedBody.contents).toEqual([
+        {
+          role: 'user',
+          parts: [{ inlineData: { mimeType: 'image/webp', data: 'AQI=' } }, { text: 'describe' }],
+        },
+      ]);
+      expect(events).toEqual([
+        { type: 'text', text: 'Hello ' },
+        { type: 'text', text: 'world' },
+        {
+          type: 'usage',
+          tokens: { input: 200, output: 60, cacheRead: 300, thinking: 45 },
+        },
+        { type: 'done', finishReason: 'STOP' },
+      ]);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------

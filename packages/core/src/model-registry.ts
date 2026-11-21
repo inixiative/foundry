@@ -201,7 +201,11 @@ const EFFORT_ONLY: ModelReasoning = {
   efforts: ['low', 'medium', 'high'],
   fallback: 'medium',
 };
-/** Gemini takes thinking_level, and rejects "minimal". */
+/**
+ * Gemini takes thinking_level. Flagship models (4 Argon, 3.8 Flash, 3.1 Pro) accept low/medium/high
+ * and reject "minimal"; 3.6 Flash and 3.5 Flash Lite also accept "minimal", which this vocabulary
+ * does not name, so all Gemini entries expose low/medium/high.
+ */
 const GEMINI_REASONING: ModelReasoning = {
   param: 'thinking_level',
   efforts: ['low', 'medium', 'high'],
@@ -258,7 +262,7 @@ export interface ModelSweepOption {
   label: string;
 }
 
-export const MODEL_REGISTRY_UPDATED_AT = '2026-11-17';
+export const MODEL_REGISTRY_UPDATED_AT = '2026-11-20';
 
 /**
  * Decision default: Claude Haiku 5.5, the cheapest current Claude model tagged `judgment`. Held here
@@ -822,8 +826,19 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
     credential: 'api-key',
     enabledByDefault: true,
     models: [
-      // The Pro and Flash lines carry different version numbers; Pro has no GA
-      // successor to 3.1 yet. thinking_level takes low/medium/high, not minimal.
+      // Gemini 4 Argon is the GA flagship; 3.1 Pro remains preview.
+      // thinking_level exposes low/medium/high across all entries ("minimal" is outside this vocabulary).
+      {
+        id: 'gemini-4-argon',
+        label: 'Gemini 4 Argon',
+        tier: 'powerful',
+        costTier: 'high',
+        contextWindow: 1_048_576,
+        maxOutputTokens: 65_536,
+        runtimeKind: 'api',
+        capabilities: POWERFUL_REASONING,
+        reasoning: GEMINI_REASONING,
+      },
       {
         id: 'gemini-3.1-pro-preview',
         label: 'Gemini 3.1 Pro',
@@ -858,10 +873,23 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
         reasoning: GEMINI_REASONING,
       },
       {
+        id: 'gemini-3.6-flash',
+        label: 'Gemini 3.6 Flash',
+        tier: 'standard',
+        costTier: 'medium',
+        contextWindow: 1_048_576,
+        maxOutputTokens: 65_536,
+        runtimeKind: 'api',
+        capabilities: STANDARD_REASONING,
+        reasoning: GEMINI_REASONING,
+      },
+      {
         id: 'gemini-3.5-flash-lite',
         label: 'Gemini 3.5 Flash Lite',
         tier: 'fast',
         costTier: 'low',
+        contextWindow: 1_048_576,
+        maxOutputTokens: 65_536,
         runtimeKind: 'api',
         capabilities: FAST_REASONING,
         reasoning: GEMINI_REASONING,

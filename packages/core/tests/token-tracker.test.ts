@@ -134,4 +134,42 @@ describe('pricing', () => {
       }).costKnown,
     ).toBe(false);
   });
+
+  test('current Gemini models are priced with cache reads and thinking folded into output', () => {
+    const tracker = new TokenTracker();
+    const argon = tracker.record({
+      provider: 'gemini',
+      model: 'gemini-4-argon',
+      tokens: { input: 1_000_000, output: 1_000_000, cacheRead: 1_000_000, thinking: 400_000 },
+    });
+    expect(argon.costKnown).toBe(true);
+    // $2.00 in + $10.00 out (includes thinking) + $0.10 cache read
+    expect(argon.cost).toBeCloseTo(12.1, 6);
+
+    const flash38 = tracker.record({
+      provider: 'gemini',
+      model: 'gemini-3.8-flash',
+      tokens: { input: 1_000_000, output: 1_000_000, cacheRead: 1_000_000 },
+    });
+    expect(flash38.costKnown).toBe(true);
+    // $0.75 in + $3.75 out + $0.075 cache read
+    expect(flash38.cost).toBeCloseTo(4.575, 6);
+
+    const flash36 = tracker.record({
+      provider: 'gemini',
+      model: 'gemini-3.6-flash',
+      tokens: { input: 1_000_000, output: 1_000_000, cacheRead: 1_000_000 },
+    });
+    expect(flash36.costKnown).toBe(true);
+    expect(flash36.cost).toBeCloseTo(4.575, 6);
+
+    const lite35 = tracker.record({
+      provider: 'gemini',
+      model: 'gemini-3.5-flash-lite',
+      tokens: { input: 1_000_000, output: 1_000_000, cacheRead: 1_000_000 },
+    });
+    expect(lite35.costKnown).toBe(true);
+    // $0.30 in + $2.50 out + $0.03 cache read
+    expect(lite35.cost).toBeCloseTo(2.83, 6);
+  });
 });

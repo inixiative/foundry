@@ -5,6 +5,7 @@ import {
   type FoundryProviderInfo,
   MODEL_CAPABILITIES,
   MODEL_REGISTRY,
+  MODEL_REGISTRY_UPDATED_AT,
   type ModelCapability,
   modelCapabilities,
   modelHasCapability,
@@ -233,5 +234,51 @@ describe('aliases and retirement', () => {
       expect(retirement).toMatchObject({ retired: true, reason: expect.any(String) });
       expect(retirement).not.toHaveProperty('successor');
     }
+  });
+});
+
+describe('Google Gemini Developer API models', () => {
+  test('registers Gemini 4 Argon, 3.6 Flash and 3.5 Flash Lite limits and reasoning controls', () => {
+    expect(MODEL_REGISTRY_UPDATED_AT).toBe('2026-11-20');
+
+    const argon = registryModel('gemini', 'gemini-4-argon');
+    expect(argon).toMatchObject({
+      id: 'gemini-4-argon',
+      tier: 'powerful',
+      costTier: 'high',
+      contextWindow: 1_048_576,
+      maxOutputTokens: 65_536,
+      runtimeKind: 'api',
+      reasoning: {
+        param: 'thinking_level',
+        efforts: ['low', 'medium', 'high'],
+        fallback: 'medium',
+      },
+    });
+    expect(argon?.capabilities).toContain('execution');
+    expect(argon?.capabilities).toContain('reasoning');
+
+    const flash36 = registryModel('gemini', 'gemini-3.6-flash');
+    expect(flash36).toMatchObject({
+      id: 'gemini-3.6-flash',
+      tier: 'standard',
+      costTier: 'medium',
+      contextWindow: 1_048_576,
+      maxOutputTokens: 65_536,
+      runtimeKind: 'api',
+      reasoning: {
+        param: 'thinking_level',
+        efforts: ['low', 'medium', 'high'],
+        fallback: 'medium',
+      },
+    });
+    expect(flash36?.capabilities).toContain('warden-advice');
+    expect(flash36?.capabilities).toContain('reasoning');
+
+    const lite35 = registryModel('gemini', 'gemini-3.5-flash-lite');
+    expect(lite35).toMatchObject({
+      contextWindow: 1_048_576,
+      maxOutputTokens: 65_536,
+    });
   });
 });

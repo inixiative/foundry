@@ -9,40 +9,85 @@ import type {
   LLMMessage,
   LLMProvider,
   LLMStreamEvent,
+  ModelReasoning,
+  TokenCounts,
   ToolCall,
   ToolDefinition,
 } from '@inixiative/foundry-core';
-import { newId, splitSystemMessage } from '@inixiative/foundry-core';
+import { newId, registryModel, splitSystemMessage } from '@inixiative/foundry-core';
 import { HttpCompletionSettlement } from './http-settlement';
 
 export interface GeminiConfig {
   apiKey: string;
-  /** Defaults to "gemini-3.1-flash-lite". */
+  /** Defaults to "gemini-3.5-flash-lite". */
   defaultModel?: string;
   /** Override base URL. */
   baseUrl?: string;
 }
 
 const DEFAULT_BASE = 'https://generativelanguage.googleapis.com';
+const DEFAULT_MODEL = 'gemini-3.5-flash-lite';
 
 // ---------------------------------------------------------------------------
-// Gemini function calling helpers
+// Gemini generateContent helpers
 // ---------------------------------------------------------------------------
 
-/** Gemini response shape (with function call support). */
+interface GeminiPart {
+  text?: string;
+  thought?: boolean;
+  functionCall?: { name: string; args?: Record<string, unknown> };
+}
+
+interface GeminiUsageMetadata {
+  promptTokenCount?: number;
+  candidatesTokenCount?: number;
+  thoughtsTokenCount?: number;
+  cachedContentTokenCount?: number;
+}
+
+/** Gemini response shape (with function call and thinking support). */
 interface GeminiResponse {
-  candidates: Array<{
-    content: {
-      parts: Array<{
-        text?: string;
-        functionCall?: { name: string; args?: Record<string, unknown> };
-      }>;
+  candidates?: Array<{
+    content?: {
+      parts?: GeminiPart[];
     };
-    finishReason: string;
+    finishReason?: string;
   }>;
-  usageMetadata?: {
-    promptTokenCount: number;
-    candidatesTokenCount: number;
+  usageMetadata?: GeminiUsageMetadata;
+}
+
+/** A turn as Gemini generateContent takes it: inline image parts ahead of text. */
+function geminiContent(message: LLMMessage) {
+  const role = message.role === 'assistant' ? 'model' : 'user';
+  if (!message.images?.length) {
+    return { role, parts: [{ text: message.content }] };
+  }
+  return {
+    role,
+    parts: [
+      ...message.images.map((image) => {
+        if (!image.data) throw Error(`Image ${image.id} has no data; nothing was sent`);
+        return {
+          inlineData: { mimeType: image.mediaType, data: image.data },
+        };
+      }),
+      ...(message.content ? [{ text: message.content }] : []),
+    ],
+  };
+}
+
+/** Map Gemini usageMetadata into disjoint TokenCounts (cacheRead split out of input; thinking folded into output). */
+function parseGeminiUsage(usage?: GeminiUsageMetadata): TokenCounts | undefined {
+  if (!usage) return undefined;
+  const promptTokens = usage.promptTokenCount ?? 0;
+  const cached = usage.cachedContentTokenCount;
+  const candidates = usage.candidatesTokenCount ?? 0;
+  const thoughts = usage.thoughtsTokenCount;
+  return {
+    input: cached !== undefined ? Math.max(0, promptTokens - cached) : promptTokens,
+    output: candidates + (thoughts ?? 0),
+    ...(cached !== undefined ? { cacheRead: cached } : {}),
+    ...(thoughts !== undefined ? { thinking: thoughts } : {}),
   };
 }
 
@@ -69,6 +114,7 @@ export class GeminiProvider implements LLMProvider {
   private readonly _settlement = new HttpCompletionSettlement();
   readonly completionLifecycle = this._settlement.lifecycle;
   readonly id = 'gemini';
+  readonly imageInput = true;
 
   private _apiKey: string;
   private _defaultModel: string;
@@ -76,21 +122,19 @@ export class GeminiProvider implements LLMProvider {
 
   constructor(config: GeminiConfig) {
     this._apiKey = config.apiKey;
-    this._defaultModel = config.defaultModel ?? 'gemini-3.1-flash-lite';
+    this._defaultModel = config.defaultModel ?? DEFAULT_MODEL;
     this._baseUrl = (config.baseUrl ?? DEFAULT_BASE).replace(/\/$/, '');
   }
 
-  async complete(messages: LLMMessage[], opts?: CompletionOpts): Promise<CompletionResult> {
-    const model = opts?.model ?? this._defaultModel;
+  private _buildBody(
+    messages: LLMMessage[],
+    opts: CompletionOpts | undefined,
+    model: string,
+  ): Record<string, unknown> {
     const { system, turns } = splitSystemMessage(messages);
-
-    // Map LLMMessage roles to Gemini roles
-    const contents = turns.map((m) => ({
-      role: m.role === 'assistant' ? 'model' : 'user',
-      parts: [{ text: m.content }],
-    }));
-
-    const body: Record<string, unknown> = { contents };
+    const body: Record<string, unknown> = {
+      contents: turns.map(geminiContent),
+    };
 
     if (system) {
       body.system_instruction = { parts: [{ text: system }] };
@@ -102,15 +146,33 @@ export class GeminiProvider implements LLMProvider {
     if (opts?.topP !== undefined) generationConfig.topP = opts.topP;
     if (opts?.stop) generationConfig.stopSequences = opts.stop;
 
+    if (opts?.thinking !== undefined) {
+      if (typeof opts.thinking === 'number') {
+        generationConfig.thinkingConfig = { thinkingBudget: opts.thinking };
+      } else {
+        const reasoning = registryModel('gemini', model)?.reasoning;
+        if (reasoning?.param === 'thinking_level') {
+          const asked = opts.thinking as ModelReasoning['fallback'];
+          const level = reasoning.efforts.includes(asked) ? asked : reasoning.fallback;
+          generationConfig.thinkingConfig = { thinkingLevel: level.toUpperCase() };
+        }
+      }
+    }
+
     if (Object.keys(generationConfig).length > 0) {
       body.generationConfig = generationConfig;
     }
 
-    // Function calling — map ToolDefinition[] to Gemini's format
     if (opts?.tools !== false && opts?.toolDefinitions?.length) {
       body.tools = [{ functionDeclarations: opts.toolDefinitions.map(toGeminiFunctionDecl) }];
     }
 
+    return body;
+  }
+
+  async complete(messages: LLMMessage[], opts?: CompletionOpts): Promise<CompletionResult> {
+    const model = opts?.model ?? this._defaultModel;
+    const body = this._buildBody(messages, opts, model);
     const url = `${this._baseUrl}/v1beta/models/${model}:generateContent`;
 
     const res = await fetch(url, {
@@ -132,12 +194,12 @@ export class GeminiProvider implements LLMProvider {
     const candidate = data.candidates?.[0];
     const parts = candidate?.content?.parts ?? [];
 
-    // Extract text and function calls from parts
+    // Extract plain text (excluding internal thought parts) and function calls
     const textParts: string[] = [];
     const toolCalls: ToolCall[] = [];
 
     for (const part of parts) {
-      if (part.text) {
+      if (part.text && !part.thought) {
         textParts.push(part.text);
       }
       if (part.functionCall) {
@@ -152,12 +214,7 @@ export class GeminiProvider implements LLMProvider {
     return {
       content: textParts.join(''),
       model,
-      tokens: data.usageMetadata
-        ? {
-            input: data.usageMetadata.promptTokenCount,
-            output: data.usageMetadata.candidatesTokenCount,
-          }
-        : undefined,
+      tokens: parseGeminiUsage(data.usageMetadata),
       toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
       finishReason: candidate?.finishReason,
       raw: data,
@@ -172,34 +229,7 @@ export class GeminiProvider implements LLMProvider {
    */
   async *stream(messages: LLMMessage[], opts?: CompletionOpts): AsyncGenerator<LLMStreamEvent> {
     const model = opts?.model ?? this._defaultModel;
-    const { system, turns } = splitSystemMessage(messages);
-
-    const contents = turns.map((m) => ({
-      role: m.role === 'assistant' ? 'model' : 'user',
-      parts: [{ text: m.content }],
-    }));
-
-    const body: Record<string, unknown> = { contents };
-
-    if (system) {
-      body.system_instruction = { parts: [{ text: system }] };
-    }
-
-    const generationConfig: Record<string, unknown> = {};
-    if (opts?.maxTokens !== undefined) generationConfig.maxOutputTokens = opts.maxTokens;
-    if (opts?.temperature !== undefined) generationConfig.temperature = opts.temperature;
-    if (opts?.topP !== undefined) generationConfig.topP = opts.topP;
-    if (opts?.stop) generationConfig.stopSequences = opts.stop;
-
-    if (Object.keys(generationConfig).length > 0) {
-      body.generationConfig = generationConfig;
-    }
-
-    // Function calling in stream mode
-    if (opts?.tools !== false && opts?.toolDefinitions?.length) {
-      body.tools = [{ functionDeclarations: opts.toolDefinitions.map(toGeminiFunctionDecl) }];
-    }
-
+    const body = this._buildBody(messages, opts, model);
     const url = `${this._baseUrl}/v1beta/models/${model}:streamGenerateContent?alt=sse`;
 
     const res = await fetch(url, {
@@ -223,8 +253,7 @@ export class GeminiProvider implements LLMProvider {
     }
 
     let finishReason: string | undefined;
-    let inputTokens = 0;
-    let outputTokens = 0;
+    let lastUsage: GeminiUsageMetadata | undefined;
 
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
@@ -245,13 +274,13 @@ export class GeminiProvider implements LLMProvider {
 
           const data = trimmed.slice(6);
           try {
-            const parsed = JSON.parse(data);
+            const parsed = JSON.parse(data) as GeminiResponse;
 
-            // Extract text parts from candidates
+            // Extract plain text parts from candidates, skipping thought parts
             const candidate = parsed.candidates?.[0];
             if (candidate?.content?.parts) {
               for (const part of candidate.content.parts) {
-                if (part.text) {
+                if (part.text && !part.thought) {
                   yield { type: 'text', text: part.text };
                 }
               }
@@ -261,10 +290,8 @@ export class GeminiProvider implements LLMProvider {
               finishReason = candidate.finishReason;
             }
 
-            // Usage metadata
             if (parsed.usageMetadata) {
-              inputTokens = parsed.usageMetadata.promptTokenCount ?? inputTokens;
-              outputTokens = parsed.usageMetadata.candidatesTokenCount ?? outputTokens;
+              lastUsage = { ...lastUsage, ...parsed.usageMetadata };
             }
           } catch (err) {
             console.warn('[Gemini] malformed stream chunk:', (err as Error).message);
@@ -275,8 +302,9 @@ export class GeminiProvider implements LLMProvider {
       reader.releaseLock();
     }
 
-    if (inputTokens > 0 || outputTokens > 0) {
-      yield { type: 'usage', tokens: { input: inputTokens, output: outputTokens } };
+    const tokens = parseGeminiUsage(lastUsage);
+    if (tokens && (tokens.input > 0 || tokens.output > 0 || (tokens.cacheRead ?? 0) > 0)) {
+      yield { type: 'usage', tokens };
     }
 
     yield { type: 'done', finishReason };

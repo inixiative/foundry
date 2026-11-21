@@ -247,6 +247,13 @@ export const DEFAULT_COST_TABLE: CostTable = {
     'o4-mini': { inputPer1M: 1.1, outputPer1M: 4.4 }, // retired Feb 2026 — kept for historical cost tracking
   },
   gemini: {
+    // Standard Paid Tier list rates at https://ai.google.dev/gemini-api/docs/pricing (read 2026-11-20).
+    // Intro rates active through 2026-11-30 for 4 Argon ($4/$20/$0.20 after) and 2026-12-31 for
+    // 3.8/3.6 Flash ($1.50/$7.50/$0.15 after). Output rates include thinking tokens.
+    'gemini-4-argon': { inputPer1M: 2, outputPer1M: 10, cacheReadPer1M: 0.1 },
+    'gemini-3.8-flash': { inputPer1M: 0.75, outputPer1M: 3.75, cacheReadPer1M: 0.075 },
+    'gemini-3.6-flash': { inputPer1M: 0.75, outputPer1M: 3.75, cacheReadPer1M: 0.075 },
+    'gemini-3.5-flash-lite': { inputPer1M: 0.3, outputPer1M: 2.5, cacheReadPer1M: 0.03 },
     'gemini-3.1-pro-preview': { inputPer1M: 2, outputPer1M: 12 },
     'gemini-3-flash-preview': { inputPer1M: 0.5, outputPer1M: 3 },
     'gemini-3.1-flash-lite-preview': { inputPer1M: 0.25, outputPer1M: 1.5 },

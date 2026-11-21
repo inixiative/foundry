@@ -1,6 +1,7 @@
 ---
 name: experiment
-description: Use before designing, reviewing, running or reporting ANY Warden or Foundry experiment — an eval run, an A/B, a model or charter round, a size or language test, anything that spends model calls to answer "is X better than Y". Six gated steps (design with pre-registration → adversarial review → tiny test → serial run → report in the reporting standard → finding record) and one rule over all of them: an experiment records results; it never writes a decision.
+description: >-
+  Use before designing, reviewing, running or reporting ANY Warden or Foundry experiment — an eval run, an A/B, a model or charter round, a size or language test, anything that spends model calls to answer "is X better than Y". Six gated steps (design with pre-registration → adversarial review → tiny test → serial run → report in the reporting standard → finding record) and one rule over all of them: an experiment records results; it never writes a decision.
 ---
 
 # Experiment pipeline
