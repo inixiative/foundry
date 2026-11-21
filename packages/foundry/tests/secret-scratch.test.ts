@@ -175,9 +175,14 @@ test('ordinary words are never lifted, and a lifted key in an assignment is not 
   expect(b.secrets.note('turn_k')).not.toContain('plain text');
   b.secrets.lift(b.thread, 'turn_m', 'PASSWORD= $$hunter2hunter2');
   expect(b.secrets.note('turn_m')).toBeUndefined();
+  // `$$` after an assignment delimiter (`=`) is lifted too (via @inixiative/secret-scratch).
+  expect(b.secrets.lift(b.thread, 'turn_m2', 'PASSWORD=$$hunter2hunter2').text).toBe(
+    'PASSWORD=†turn_m2.1',
+  );
+  expect(b.secrets.note('turn_m2')).toBeUndefined();
   // `$$` mid-word is no marker, so that secret stays in plain text, and the reminder says so.
-  expect(b.secrets.lift(b.thread, 'turn_n', 'PASSWORD=$$hunter2hunter2').text).toBe(
-    'PASSWORD=$$hunter2hunter2',
+  expect(b.secrets.lift(b.thread, 'turn_n', 'PASSWORD=foo$$hunter2hunter2').text).toBe(
+    'PASSWORD=foo$$hunter2hunter2',
   );
   expect(b.secrets.note('turn_n')).toContain('plain text');
 });
