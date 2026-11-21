@@ -305,7 +305,9 @@ export const scopeOfRole = (role: string | undefined): ThreadScope | undefined =
 export const BUILT_IN_THREAD_ROLES: Readonly<
   Record<string, RoleComposition & { thread: Required<ThreadRoleSettings> }>
 > = Object.freeze({
-  [CODER_ROLE]: { thread: { label: 'Coder', defaultFor: ['claude-code', 'codex'] } },
+  [CODER_ROLE]: {
+    thread: { label: 'Coder', defaultFor: ['claude-code', 'codex', 'agy', 'gemini-cli'] },
+  },
   [ASSISTANT_ROLE]: {
     thread: { label: 'Assistant', defaultFor: ['muse'] },
     instructions: { general: ['managed', 'global'] },

@@ -33,6 +33,7 @@ import {
 import {
   assertPrivateProfile,
   assertProfile,
+  assertUserProfile,
   writeCredentialHome,
   writeProfileConfiguration,
 } from './private-profile';
@@ -283,10 +284,10 @@ export class NativeAuthentication {
       if (
         (source.runtime === 'agy' || source.runtime === 'gemini') &&
         source.mode !== 'native-profile'
-      )
-        throw Error(
-          `An ${source.runtime === 'agy' ? 'Antigravity' : 'Gemini CLI'} login is a native profile; ${source.runtime} has no gateway mode`,
-        );
+      ) {
+        const label = source.runtime === 'agy' ? 'An Antigravity' : 'A Gemini CLI';
+        throw Error(`${label} login is a native profile; ${source.runtime} has no gateway mode`);
+      }
       if (this.sources.has(source.id)) throw Error('Duplicate authentication source');
       if (source.mode === 'native-profile') {
         if (!isAbsolute(source.profileDirectory))
@@ -390,8 +391,10 @@ export class NativeAuthentication {
         runtime === 'agy' &&
         isDefaultProfile(source.profileDirectory, 'agy') &&
         !existsSync(source.profileDirectory)
-      )
+      ) {
         mkdirSync(source.profileDirectory, { recursive: true, mode: 0o700 });
+        assertUserProfile(source.profileDirectory);
+      }
     }
     const directory =
       source.mode === 'native-profile'

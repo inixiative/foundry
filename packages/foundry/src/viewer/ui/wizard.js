@@ -22,6 +22,11 @@ export function checkSetupNeeded(config) {
   }
 }
 
+/** Subscription providers that can run decision roles (Wardens, reviews). Main-thread subscription
+ * workers are read from the model registry (`credential === 'subscription'`). */
+const DECISION_SUBSCRIPTION_PROVIDERS = ['claude-code'];
+const isDecisionProvider = (p) =>
+  p.credential !== 'subscription' || DECISION_SUBSCRIPTION_PROVIDERS.includes(p.id);
 // ---------------------------------------------------------------------------
 // Step components
 // ---------------------------------------------------------------------------
@@ -195,15 +200,11 @@ function DecisionModelStep({
   claudeLoginMissing,
   onCheckClaudeLogin,
 }) {
-  const prov = providers.find((p) => p.id === provider);
-  if (!prov) return null;
-
   const tierColors = { fast: 'var(--ok)', standard: 'var(--shared)', powerful: 'var(--accent)' };
-  // Subscription decisions run on the Claude login; other subscription workers run main threads only.
   const availableProviders = providers.filter(
-    (p) =>
-      enabledProviders.includes(p.id) && (p.credential !== 'subscription' || p.id === 'claude-code'),
+    (p) => enabledProviders.includes(p.id) && isDecisionProvider(p),
   );
+  const prov = availableProviders.find((p) => p.id === provider);
 
   return html`
     <div class="wizard-step">
@@ -232,22 +233,32 @@ function DecisionModelStep({
           : null
       }
 
-      <div class="wizard-options">
-        ${prov.models.map(
-          (m) => html`
-          <button
-            key=${m.id}
-            class="wizard-option ${selected === m.id ? 'selected' : ''}"
-            onClick=${() => onSelect(m.id)}
-          >
-            <span class="wizard-option-label">${m.label}</span>
-            <span class="wizard-option-tier" style="color: ${tierColors[m.tier]}">${m.tier}</span>
-            ${m.trainsOnInput ? html`<span class="wizard-option-trains">trains on your data</span>` : null}
-            <span class="wizard-option-desc mono">${m.id}</span>
-          </button>
-        `,
-        )}
-      </div>
+      ${
+        prov
+          ? html`
+        <div class="wizard-options">
+          ${prov.models.map(
+            (m) => html`
+            <button
+              key=${m.id}
+              class="wizard-option ${selected === m.id ? 'selected' : ''}"
+              onClick=${() => onSelect(m.id)}
+            >
+              <span class="wizard-option-label">${m.label}</span>
+              <span class="wizard-option-tier" style="color: ${tierColors[m.tier]}">${m.tier}</span>
+              ${m.trainsOnInput ? html`<span class="wizard-option-trains">trains on your data</span>` : null}
+              <span class="wizard-option-desc mono">${m.id}</span>
+            </button>
+          `,
+          )}
+        </div>
+      `
+          : html`
+        <p class="wizard-error" role="alert">
+          None of your enabled providers can run decision roles. Go back and enable Claude Code, Codex, or an API provider.
+        </p>
+      `
+      }
 
       <p class="wizard-desc dim">
         Each agent can be individually configured with its own provider, model, and settings later.
@@ -270,7 +281,7 @@ function DecisionModelStep({
             ? html`<button class="wizard-btn" onClick=${onCheckClaudeLogin} disabled=${saving}>Check again</button>`
             : null
         }
-        <button class="wizard-btn primary" onClick=${onNext} disabled=${!selected || saving || !!claudeLoginMissing}>
+        <button class="wizard-btn primary" onClick=${onNext} disabled=${!prov || !selected || saving || !!claudeLoginMissing}>
           ${saving ? 'Saving...' : 'Finish Setup'}
         </button>
       </div>
@@ -406,18 +417,29 @@ export function Wizard() {
     list.some((p) => p.id === id && p.credential === 'subscription');
 
   const handleExecutorNext = () => {
-    // Subscription default: Claude Haiku 5.5 decisions on the Claude login, a Codex worker's too.
-    // Otherwise default the decision model to the fastest model on the same provider.
-    if (!decisionProvider) {
-      const subscription =
-        isSubscriptionWorker(defaultProvider) && enabledProviders.includes('claude-code');
-      const id = subscription ? 'claude-code' : defaultProvider;
-      setDecisionProvider(id);
-      const prov = providers.find((p) => p.id === id);
-      const fast = subscription
-        ? prov?.models.find((m) => m.id === 'claude-haiku-5-5')
-        : prov?.models.find((m) => m.tier === 'fast');
-      setDecisionModel(fast?.id || prov?.models[0]?.id || '');
+    // Subscription default: Claude Haiku 5.5 on Claude Code, else the first enabled
+    // decision-capable provider. Never default decisionProvider to a main-thread-only worker.
+    const decisionEligible = providers.filter(
+      (p) => enabledProviders.includes(p.id) && isDecisionProvider(p),
+    );
+    if (!decisionEligible.some((p) => p.id === decisionProvider)) {
+      const pick =
+        (isSubscriptionWorker(defaultProvider)
+          ? decisionEligible.find((p) => p.id === 'claude-code')
+          : undefined) ??
+        decisionEligible.find((p) => p.id === defaultProvider) ??
+        decisionEligible[0];
+      if (pick) {
+        setDecisionProvider(pick.id);
+        const fast =
+          pick.id === 'claude-code'
+            ? pick.models.find((m) => m.id === 'claude-haiku-5-5')
+            : pick.models.find((m) => m.tier === 'fast');
+        setDecisionModel(fast?.id || pick.models[0]?.id || '');
+      } else {
+        setDecisionProvider('');
+        setDecisionModel('');
+      }
     }
     setStep(4);
   };

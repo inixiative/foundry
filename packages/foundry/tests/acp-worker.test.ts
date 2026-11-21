@@ -25,6 +25,7 @@ import {
   workerHostsFoundryTools,
 } from '../src/models/registry';
 import { LocalSessionStore } from '../src/persistence/local-session-store';
+import { CODER_ROLE, defaultThreadRole } from '../src/prompts/instruction-settings';
 import {
   defaultProfileDirectory,
   defaultProfileSource,
@@ -34,6 +35,7 @@ import {
   NativeAuthentication,
   withoutCompetingCredentials,
 } from '../src/providers/native-authentication';
+import { acpMcpServers } from '../src/providers/native-launch';
 import { boundLaunchEnvironment } from '../src/providers/native-text-environment';
 import { assertProfile } from '../src/providers/private-profile';
 import { providerAccounts } from '../src/providers/provider-accounts';
@@ -50,7 +52,7 @@ import {
   threadWorkerRequirement,
 } from '../src/providers/subscription-policy';
 import { inspectNativeClis } from '../src/readiness';
-import { ConfigStore, defaultConfig } from '../src/viewer/config';
+import { ConfigStore, defaultConfig, validateConfig } from '../src/viewer/config';
 import { machineProcesses } from '../src/viewer/machine-processes';
 import { registerModelRoutes } from '../src/viewer/routes/models';
 
@@ -147,6 +149,8 @@ describe('ACP worker registry, profiles and environment hygiene', () => {
     expect(AGENT_CLIS).toContain('agy');
     expect(AGENT_CLIS).toContain('gemini');
     expect(REQUIRED_AGENT_CLIS).toEqual(['claude', 'codex']);
+    expect(defaultThreadRole(undefined, 'agy')).toBe(CODER_ROLE);
+    expect(defaultThreadRole(undefined, 'gemini-cli')).toBe(CODER_ROLE);
   });
 
   test('withoutCompetingCredentials strips every key in AGY_COMPETING_ENV and GEMINI_CLI_COMPETING_ENV', () => {
@@ -193,6 +197,14 @@ describe('ACP worker registry, profiles and environment hygiene', () => {
     mkdirSync(decoy, { mode: 0o700 });
     symlinkSync(decoy, join(root, '.gemini', 'antigravity-cli'));
     expect(() => assertProfile(defaultProfileDirectory('agy'), 'agy')).toThrow('not a symlink');
+
+    // A symlinked ~/.gemini parent is also refused even when antigravity-cli does not exist yet.
+    const rootWithSymlinkParent = tempHome(['.claude']);
+    const externalDir = join(rootWithSymlinkParent, 'external-gemini');
+    mkdirSync(externalDir, { mode: 0o700 });
+    symlinkSync(externalDir, join(rootWithSymlinkParent, '.gemini'));
+    expect(() => assertProfile(defaultProfileDirectory('agy'), 'agy')).toThrow('not a symlink');
+    process.env.HOME = root;
 
     // Non-default profiles and gateway mode are refused for both runtimes.
     const other = join(root, 'other-profile');
@@ -371,6 +383,57 @@ describe('ACP worker registry, profiles and environment hygiene', () => {
       },
     });
     expect(captureThread(journal, Bun.randomUUIDv7(), 't-agy').runtime).toBeUndefined();
+
+    // validateConfig refuses non-decision subscription workers as decisionProvider even with apiTokens: true.
+    for (const provider of ['agy', 'gemini-cli', 'muse'] as const) {
+      const apiCfg = defaultConfig();
+      apiCfg.apiTokens = true;
+      apiCfg.defaults.decisionProvider = provider;
+      expect(() => validateConfig(apiCfg)).toThrow('runs main threads only');
+    }
+
+    // validateConfig refuses Kingdom capacity on projects defaulting to agy or gemini-cli.
+    for (const worker of ['agy', 'gemini-cli'] as const) {
+      const kingdomCfg = defaultConfig();
+      const { vendor, mode } = vendorOfProvider(worker)!;
+      kingdomCfg.vendors[vendor.id] = {
+        ...kingdomCfg.vendors[vendor.id],
+        enabled: true,
+        [mode]: { enabled: true },
+      };
+      const integrationId = Bun.randomUUIDv7();
+      kingdomCfg.kingdomIntegrations = [
+        {
+          url: 'https://kingdom.example',
+          integrationId,
+          owner: `Organization::${Bun.randomUUIDv7()}:`,
+          signetId: Bun.randomUUIDv7(),
+        },
+      ];
+      kingdomCfg.projects.p = {
+        id: 'p',
+        path: root,
+        capacity: 'kingdom',
+        kingdomCapacity: { kingdom: 'https://kingdom.example', signetId: Bun.randomUUIDv7() },
+        defaults: { provider: worker, model: SUBSCRIPTION_WORKER_MODELS[worker] },
+      };
+      expect(() => validateConfig(kingdomCfg)).toThrow(
+        'Kingdom capacity requires a Claude Code, Codex or Muse Code default worker',
+      );
+    }
+
+    // acpMcpServers distinguishes bridge collisions from plain client MCP collisions.
+    expect(() =>
+      acpMcpServers(undefined, [
+        { name: 'dup', command: 'echo', args: [], env: [] },
+        { name: 'dup', command: 'echo', args: [], env: [] },
+      ]),
+    ).toThrow('MCP server name collision: dup');
+    expect(() =>
+      acpMcpServers(fakeBridge('t-1', 'foundry'), [
+        { name: 'foundry', command: 'echo', args: [], env: [] },
+      ]),
+    ).toThrow('Native bridge server name collision: foundry');
   });
 });
 
@@ -569,5 +632,37 @@ describe.each<AcpWorkerKind>(['agy', 'gemini'])('AcpSessionAdapter (%s)', (kind)
     await store.save('t-stale', expectedRuntime, 'gone-session');
     const stale = await adapter.createSession({ threadId: 't-stale', cwd: root });
     await expect(stale.start()).rejects.toBeInstanceOf(NativeBindingMissingError);
+
+    // End-to-end revival with SubscriptionAuthentication: stale binding releases the auth lock,
+    // clears the stale binding, starts a fresh session, and completes the turn cleanly.
+    const authStore = new InMemoryExternalSessionStore();
+    const auth = new SubscriptionAuthentication(
+      join(root, 'runtime-profiles-revive'),
+      defaultProfileSource(kind),
+    );
+    const reviveSpawn = fakeAcpSpawn({ FAKE_ACP_KNOWN_SESSIONS: 'only-this-one' });
+    const authAdapter = new AcpSessionAdapter({
+      kind,
+      store: authStore,
+      authentication: auth,
+      environment: boundLaunchEnvironment,
+      spawn: reviveSpawn.spawn,
+    });
+    cleanup.push(() => authAdapter.releaseAll());
+    await authStore.save(auth.bindingId('t-revive', kind), expectedRuntime, 'gone-session');
+    const provider = new SessionBackedProvider({
+      id: providerId,
+      adapter: authAdapter,
+      defaultModel: 'gemini-3.1-pro',
+      defaultCwd: root,
+    });
+    const revived = await provider.complete([{ role: 'user', content: 'after stale binding' }], {
+      threadId: 't-revive',
+      cwd: root,
+    });
+    expect(revived.content).toContain('after stale binding');
+    expect(reviveSpawn.launches).toHaveLength(2);
+    expect(await authAdapter.getExternalSessionId('t-revive')).toBe('acp-sess-1');
+    await authAdapter.releaseAll();
   });
 });

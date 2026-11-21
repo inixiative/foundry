@@ -201,7 +201,7 @@ async function configureLoop(config: FoundryConfig) {
       `Sources              (${c.sources} configured)`,
       `Projects             (${c.projects} configured)`,
       `Kingdom & archives   (${archiveSummary})`,
-      'Agent CLIs           (find claude / codex / muse)',
+      'Agent CLIs           (find claude / codex / muse / agy / gemini)',
       'Reset to starter config',
       'Done',
     ]);

@@ -95,10 +95,12 @@ export function mainThreadRequirement(provider: string, apiTokens: boolean): str
     return `${provider} cannot run a main thread; main threads run on ${MAIN_THREAD_LABS.join(', ')} models`;
   if (apiTokens || subscriptionWorker(provider)) return undefined;
   const info = MODEL_REGISTRY[provider]!;
-  const harness = Object.keys(SUBSCRIPTION_WORKERS).find((id) => MODEL_REGISTRY[id]?.lab === lab);
+  const harnesses = Object.keys(SUBSCRIPTION_WORKERS).filter(
+    (id) => MODEL_REGISTRY[id]?.lab === lab,
+  );
   return `${info.label} runs a main thread through its API: set apiTokens: true and ${info.envKey}${
-    harness
-      ? `, or use ${harness} for the subscription harness`
+    harnesses.length
+      ? `, or use ${harnesses.join(' or ')} for the subscription harness`
       : `; Foundry has no ${lab} subscription harness yet`
   }`;
 }

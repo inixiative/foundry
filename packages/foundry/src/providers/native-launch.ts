@@ -98,7 +98,12 @@ export function acpMcpServers(
     out.push({ name: bridge.name, command: server.command, args: server.args, env: [] });
   }
   for (const server of clientServers) {
-    if (names.has(server.name)) throw Error(`Native bridge server name collision: ${server.name}`);
+    if (names.has(server.name))
+      throw Error(
+        bridge && server.name === bridge.name
+          ? `Native bridge server name collision: ${server.name}`
+          : `MCP server name collision: ${server.name}`,
+      );
     names.add(server.name);
     out.push(
       server.type === 'http'

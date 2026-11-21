@@ -583,7 +583,7 @@ test('main threads run on the five labs: Anthropic, OpenAI, Google, Meta and xAI
   for (const [provider, needs] of [
     ['anthropic', 'ANTHROPIC_API_KEY, or use claude-code'],
     ['openai', 'OPENAI_API_KEY, or use codex'],
-    ['gemini', 'GEMINI_API_KEY, or use agy'],
+    ['gemini', 'GEMINI_API_KEY, or use agy or gemini-cli'],
     ['meta', 'MODEL_API_KEY, or use muse'],
     ['xai', 'XAI_API_KEY; Foundry has no xai subscription harness yet'],
   ] as const) {
