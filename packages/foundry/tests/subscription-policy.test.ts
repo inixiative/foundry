@@ -566,7 +566,18 @@ test('main threads run on the five labs: Anthropic, OpenAI, Google, Meta and xAI
   expect([...MAIN_THREAD_LABS]).toEqual(['anthropic', 'openai', 'google', 'meta', 'xai']);
   const mainThreadProviders = Object.keys(MODEL_REGISTRY).filter((id) => mainThreadLab(id));
   expect(mainThreadProviders.sort()).toEqual(
-    ['anthropic', 'claude-code', 'codex', 'gemini', 'meta', 'muse', 'openai', 'xai'].sort(),
+    [
+      'agy',
+      'anthropic',
+      'claude-code',
+      'codex',
+      'gemini',
+      'gemini-cli',
+      'meta',
+      'muse',
+      'openai',
+      'xai',
+    ].sort(),
   );
   const main = (provider: string, apiTokens: boolean) => {
     const c = defaultConfig();
@@ -580,13 +591,13 @@ test('main threads run on the five labs: Anthropic, OpenAI, Google, Meta and xAI
     return () => validateConfig(c);
   };
   // Subscription harnesses need no API tokens.
-  for (const provider of ['claude-code', 'codex', 'muse'])
+  for (const provider of ['claude-code', 'codex', 'muse', 'agy', 'gemini-cli'])
     expect(main(provider, false)).not.toThrow();
   // API providers name what they need: API tokens and their key, or the lab's harness.
   for (const [provider, needs] of [
     ['anthropic', 'ANTHROPIC_API_KEY, or use claude-code'],
     ['openai', 'OPENAI_API_KEY, or use codex'],
-    ['gemini', 'GEMINI_API_KEY; Foundry has no google subscription harness yet'],
+    ['gemini', 'GEMINI_API_KEY, or use agy'],
     ['meta', 'MODEL_API_KEY, or use muse'],
     ['xai', 'XAI_API_KEY; Foundry has no xai subscription harness yet'],
   ] as const) {

@@ -20,10 +20,11 @@ import {
   subscriptionStatus,
 } from './native-text-provider';
 
-/** Each runtime's read-only login check: no model turn, nothing about the account kept. */
+/** Each runtime's read-only login check: no model turn, nothing about the account kept.
+ * Null for CLIs with no standalone auth status probe (credentials are checked at session start). */
 const STATUS: Record<
   NativeRuntime,
-  { argv: string[]; read: (child: StatusProcess) => Promise<boolean>; refusal: string }
+  { argv: string[]; read: (child: StatusProcess) => Promise<boolean>; refusal: string } | null
 > = {
   claude: {
     argv: ['claude', 'auth', 'status', '--json'],
@@ -40,6 +41,8 @@ const STATUS: Record<
     read: museSubscriptionStatus,
     refusal: 'Muse Code subscription login required (run `muse login`)',
   },
+  agy: null,
+  gemini: null,
 };
 
 // `claude auth status` reaches the network; under launchd it takes several seconds.
@@ -102,8 +105,8 @@ export class SubscriptionAuthentication extends NativeAuthentication {
     const configDirectory = this.workerSource.profileDirectory;
     const userClaudeDirectory = this.userClaudeDirectory;
     // Codex launch overrides are already limited to sandbox, approval and effort by the native binding;
-    // Muse Code's are fixed by agent-session (`serve --trust-workspace`, the sandbox switch).
-    if (runtime === 'codex' || runtime === 'muse')
+    // Muse Code, Antigravity and Gemini CLI launch flags are owned by agent-session.
+    if (runtime === 'codex' || runtime === 'muse' || runtime === 'agy' || runtime === 'gemini')
       return {
         ...launch,
         launch: (argv, env, harness) => launch.launch(argv, nativeTextEnvironment(env), harness),
@@ -126,6 +129,11 @@ export class SubscriptionAuthentication extends NativeAuthentication {
     };
   }
   private async verifyStatus(): Promise<void> {
+    const status = STATUS[this.workerSource.runtime];
+    if (!status) {
+      this.statusVerifiedAt = Date.now();
+      return;
+    }
     let timer: ReturnType<typeof setTimeout> | undefined;
     let cleanupTimer: ReturnType<typeof setTimeout> | undefined;
     let exited = false;
@@ -142,7 +150,6 @@ export class SubscriptionAuthentication extends NativeAuthentication {
       // `muse usage` would otherwise update the CLI past the SDK's pinned version.
       ...(runtime === 'muse' ? { MUSE_NO_AUTO_UPDATE: '1' } : {}),
     };
-    const status = STATUS[runtime];
     const child = this.statusSpawn
       ? this.statusSpawn(environment)
       : Bun.spawn(status.argv, {

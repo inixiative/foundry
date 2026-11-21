@@ -69,12 +69,28 @@ export function assertUserProfile(directory: string): void {
 
 /** Default login locations are referenced in place; every other profile must be Foundry-private. */
 export function assertProfile(directory: string, runtime: NativeRuntime): void {
-  if (isDefaultProfile(directory, runtime)) assertUserProfile(directory);
-  else if (runtime === 'muse')
+  if (isDefaultProfile(directory, runtime)) {
+    if (runtime === 'agy') {
+      // Antigravity stores OAuth credentials in the OS keychain and may not create
+      // `~/.gemini/antigravity-cli` until its first CLI run; validate it when present.
+      try {
+        assertUserProfile(directory);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      }
+      return;
+    }
+    assertUserProfile(directory);
+  } else if (runtime === 'muse')
     throw Error(
       "A Muse Code login is the user's own default profile; other Muse profiles are not supported yet",
     );
-  else assertPrivateProfile(directory);
+  else if (runtime === 'agy' || runtime === 'gemini') {
+    const label = runtime === 'agy' ? 'Antigravity' : 'Gemini CLI';
+    throw Error(
+      `A ${label} login is the user's own default profile; other ${label} profiles are not supported yet`,
+    );
+  } else assertPrivateProfile(directory);
 }
 
 export function writeProfileConfiguration(directory: string, path: string, content: string): void {

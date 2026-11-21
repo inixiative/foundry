@@ -25,6 +25,7 @@ import {
   type KingdomLimitReading,
   type KingdomRunEnvelope,
   type KingdomSubscriptionRelease,
+  subscriptionRuntimeSchema,
 } from './kingdom-client';
 import { heldSignetFile, selectKingdomIntegration } from './kingdom-installation-connection';
 import {
@@ -109,6 +110,10 @@ export class KingdomSubscriptionAuthentication implements NativeAuthenticationPr
     if (!isAbsolute(options.directory)) throw Error('Kingdom profile directory must be absolute');
   }
   private async run(threadId: string, runtime: Runtime): Promise<Run> {
+    const parsedRuntime = subscriptionRuntimeSchema.safeParse(runtime);
+    if (!parsedRuntime.success)
+      throw Error(`Kingdom subscription pools do not support ${runtime} logins yet`);
+    const kingdomRuntime = parsedRuntime.data;
     const key = `${runtime}:${threadId}`;
     const capacity = await this.options.capacity(threadId),
       fingerprint = fingerprintOf(capacity);
@@ -130,7 +135,7 @@ export class KingdomSubscriptionAuthentication implements NativeAuthenticationPr
             model: capacity.model,
             effort: capacity.effort,
             authentication: 'subscription',
-            runtime,
+            runtime: kingdomRuntime,
             ...(capacity.projectId ? { projectId: capacity.projectId } : {}),
           })
           .catch((error: unknown) => {

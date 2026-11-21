@@ -57,11 +57,13 @@ export function ReferenceChips({ meta, cls = 'context-bar-chip' }) {
   );
 }
 
-/** "Claude Code" / "Codex" / "Muse" from a provider id; null for anything else (never a raw id). */
+/** "Claude Code" / "Codex" / "Muse" / "Antigravity" / "Gemini CLI" from a provider id; null for anything else (never a raw id). */
 export function harnessName(provider) {
   if (!provider) return null;
   if (/codex/i.test(provider)) return 'Codex';
   if (/^muse/i.test(provider)) return 'Muse';
+  if (/^agy$/i.test(provider)) return 'Antigravity';
+  if (/^gemini-cli$/i.test(provider)) return 'Gemini CLI';
   if (/claude|anthropic/i.test(provider)) return 'Claude Code';
   return null;
 }

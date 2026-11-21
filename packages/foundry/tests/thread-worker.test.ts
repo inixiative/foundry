@@ -715,10 +715,12 @@ test('the launch view always names an effort, says when the worker is fixed, and
   // An alias is never offered: a thread holds the id it points to.
   expect(view.options.workers[0]!.models.map((m) => m.id)).not.toContain('haiku');
   expect(haiku).toMatchObject({ efforts: ['low', 'medium', 'high'], defaultEffort: 'high' });
-  // Muse has no login in this fixture: it is not offered, and the view says why.
+  // Muse, Antigravity and Gemini CLI are off/without logins in this fixture: not offered, and the view says why.
   expect(view.options.workers.map((w) => w.id)).not.toContain('muse');
   expect(view.options.unavailableWorkers).toEqual([
     { id: 'muse', label: expect.any(String), reason: expect.any(String) },
+    { id: 'agy', label: expect.any(String), reason: expect.any(String) },
+    { id: 'gemini-cli', label: expect.any(String), reason: expect.any(String) },
   ]);
   // An effort the model doesn't take is refused; a model change drops a chosen effort it doesn't take.
   expect((await call('PATCH', `/api/threads/${id}/launch`, { effort: 'max' })).status).toBe(200);

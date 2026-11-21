@@ -29,6 +29,18 @@ const DEFAULT_SOURCES: Record<Runtime, { id: string; integrationId: string; dire
     integrationId: '5b0c1a0d-7d1e-4c1a-9e00-00000000a0e1',
     directory: '.config/muse',
   },
+  // Antigravity CLI keeps its app data under `~/.gemini/antigravity-cli` (credentials in OS keychain).
+  agy: {
+    id: '5b0c1a0d-7d1e-4c1a-9e00-00000000a9e0',
+    integrationId: '5b0c1a0d-7d1e-4c1a-9e00-00000000a9e1',
+    directory: '.gemini/antigravity-cli',
+  },
+  // Gemini CLI keeps its Google OAuth login and settings under `~/.gemini`.
+  gemini: {
+    id: '5b0c1a0d-7d1e-4c1a-9e00-000000009e00',
+    integrationId: '5b0c1a0d-7d1e-4c1a-9e00-000000009e01',
+    directory: '.gemini',
+  },
 };
 
 /** HOME (and, for Muse Code, an absolute XDG_CONFIG_HOME), as each CLI resolves its login. */
@@ -86,6 +98,12 @@ export function profileEnvironment(runtime: Runtime, directory: string): Record<
     throw Error(
       `A Muse Code login is the user's own (${defaultProfileDirectory('muse')}); other Muse profiles are not supported yet`,
     );
+  if (runtime === 'agy' || runtime === 'gemini') {
+    const label = runtime === 'agy' ? 'Antigravity' : 'Gemini CLI';
+    throw Error(
+      `A ${label} login is the user's own (${defaultProfileDirectory(runtime)}); other ${label} profiles are not supported yet`,
+    );
+  }
   return { [runtime === 'codex' ? 'CODEX_HOME' : 'CLAUDE_CONFIG_DIR']: directory };
 }
 

@@ -22,8 +22,9 @@ export function checkSetupNeeded(config) {
   }
 }
 
-/** Native harnesses that run a main thread on a subscription login (models/registry.ts SUBSCRIPTION_WORKERS). */
-const SUBSCRIPTION_WORKERS = ['claude-code', 'codex'];
+/** Subscription providers that can run decision roles (Wardens, reviews). Main-thread subscription
+ * workers are read from the model registry (`credential === 'subscription'`). */
+const DECISION_SUBSCRIPTION_PROVIDERS = ['claude-code', 'codex'];
 
 // ---------------------------------------------------------------------------
 // Step components
@@ -372,12 +373,15 @@ export function Wizard() {
     }
   };
 
+  const isSubscriptionWorker = (id, list = providers) =>
+    list.some((p) => p.id === id && p.credential === 'subscription');
+
   const handleExecutorNext = () => {
     // Subscription default: Claude Haiku 5.5 decisions on the Claude login.
     // Otherwise default the decision model to the fastest model on the same provider.
     if (!decisionProvider) {
       const subscription =
-        SUBSCRIPTION_WORKERS.includes(defaultProvider) && enabledProviders.includes('claude-code');
+        isSubscriptionWorker(defaultProvider) && enabledProviders.includes('claude-code');
       const id = subscription ? 'claude-code' : defaultProvider;
       setDecisionProvider(id);
       const prov = providers.find((p) => p.id === id);
@@ -425,10 +429,10 @@ export function Wizard() {
       }
       await patchSettings('vendors', vendors);
 
-      // A Claude Code or Codex worker with native decisions stays subscription-only; any other choice opts in to API tokens.
+      // A subscription worker with native decisions stays subscription-only; any other choice opts in to API tokens.
       const subscription =
-        SUBSCRIPTION_WORKERS.includes(defaultProvider) &&
-        SUBSCRIPTION_WORKERS.includes(decisionProvider);
+        isSubscriptionWorker(defaultProvider, registry.providers) &&
+        DECISION_SUBSCRIPTION_PROVIDERS.includes(decisionProvider);
       await patchSettings('apiTokens', { enabled: !subscription });
       if (subscription)
         await patchSettings('subscriptionOnly', {

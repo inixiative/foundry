@@ -65,7 +65,15 @@ describe('model registry', () => {
       subscription: { enabled: true },
       api: { enabled: true },
     });
-    expect(config.vendors.google).toEqual({ enabled: true, api: { enabled: true } });
+    expect(config.vendors.google).toEqual({
+      enabled: true,
+      subscription: { enabled: false },
+      api: { enabled: true },
+    });
+    expect(config.vendors['google-code-assist']).toEqual({
+      enabled: false,
+      subscription: { enabled: false },
+    });
     expect(config.vendors.typesafe).toEqual({ enabled: false, api: { enabled: false } });
   });
 

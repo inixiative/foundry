@@ -7,7 +7,7 @@
 import { registryModel, resolveDecisionModel } from '@inixiative/foundry-core';
 import type { Hono } from 'hono';
 import { z } from 'zod';
-import { subscriptionWorker } from '../../models/registry';
+import { subscriptionWorker, workerName } from '../../models/registry';
 import {
   resolveSubscriptionPolicy,
   SUBSCRIPTION_DECISIONS,
@@ -75,8 +75,10 @@ export function registerModelRoutes(app: Hono, configStore: ConfigStore) {
   });
 
   choose('/api/models/decision', (draft, { provider, model }) => {
-    if (provider === 'muse')
-      throw Error('Muse Code runs main threads only; decisions run on Claude or Codex');
+    if (subscriptionWorker(provider) && provider !== 'claude-code' && provider !== 'codex')
+      throw Error(
+        `${provider === 'muse' ? 'Muse Code' : workerName(provider)} runs main threads only; decisions run on Claude or Codex`,
+      );
     if (subscriptionWorker(provider)) {
       // A subscription login runs decisions: Claude (its Wardens in project hosts by default, or
       // primed with `claude`) or Codex. A Claude choice keeps the Claude runtime already set.

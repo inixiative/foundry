@@ -32,11 +32,16 @@ import type {
 // ---------------------------------------------------------------------------
 
 import {
+  AcpSession,
+  type AcpSessionConfig,
+  type AcpSpawn,
+  agyAcpLaunch,
   ClaudeCodeSession,
   type ClaudeCodeSessionConfig,
   CodexAppServerSession,
   type CodexSessionConfig,
   codexPermissions,
+  geminiCliAcpLaunch,
   type HarnessSession,
   type MuseConnect,
   type MuseReasoningEffort,
@@ -53,6 +58,7 @@ import { mkdir, readFile, rename, writeFile } from 'fs/promises';
 import { dirname, join } from 'path';
 import type { HarnessSettingSources } from './harness-settings';
 import {
+  acpMcpServers,
   appServerBridgeConfiguration,
   appServerClientMcpConfiguration,
   withClientMcpServers,
@@ -1497,6 +1503,335 @@ export class MuseSessionAdapter implements SessionAdapter {
     session.kill();
     await ended;
     return 'released';
+  }
+}
+
+// ---------------------------------------------------------------------------
+// AcpSessionAdapter (Antigravity CLI + Gemini CLI over ACP v1 stdio)
+// ---------------------------------------------------------------------------
+
+export type AcpWorkerKind = 'agy' | 'gemini';
+
+export interface AcpSessionAdapterConfig {
+  /** Which ACP CLI this adapter drives: Antigravity (`agy acp --stdio`) or Gemini CLI (`gemini --acp`). */
+  kind: AcpWorkerKind;
+  /** The thread's login: the user's own Antigravity or Gemini CLI login. */
+  authentication?: NativeAuthenticationProvider;
+  /** Where to persist the (thread, ACP session id) mapping. */
+  store: ExternalSessionStore;
+  /** Applied to every session. */
+  defaults?: {
+    model?: string;
+    effort?: EffortLevel;
+    bin?: string;
+    timeout?: number;
+    startupTimeout?: number;
+    sandbox?: boolean;
+    skipTrust?: boolean;
+    addDirs?: readonly string[];
+  };
+  /** Optional signal bus, as the other adapters take it. */
+  signals?: SignalBus;
+  /**
+   * The launch environment's final bound (subscription mode: the allowlist every native worker
+   * launches with). Child processes spawned by the ACP agent inherit it too.
+   */
+  environment?: (env: Record<string, string | undefined>) => Record<string, string | undefined>;
+  /** Test seam or container wrapper replacing `Bun.spawn`. */
+  spawn?: AcpSpawn;
+}
+
+/**
+ * Shared adapter for ACP v1 stdio workers (`agy acp --stdio` and `gemini --acp`) through
+ * agent-session's `AcpSession`.
+ *
+ * - Passes Foundry's owned MCP bridge (`nativeBridge`) and host MCP servers through ACP
+ *   `session/new` and `session/load` (`workerHostsFoundryTools` is true for both workers).
+ * - Access follows the host: a gated mode routes `session/request_permission` through the thread's
+ *   `ToolGate`; full access (and absent host mode) runs under `bypassPermissions`.
+ * - Like Codex and Muse, ACP has no guaranteed pre-use hook before every tool call, so a thread
+ *   with structural rules is refused at launch.
+ * - The ACP session id is the binding: a restart resumes via `session/load` / `session/resume`; a
+ *   missing session raises `NativeBindingMissingError` so the provider reseeds from the journal.
+ */
+export class AcpSessionAdapter implements SessionAdapter {
+  readonly runtime: string;
+  readonly structuralRulesAtLaunch = true;
+  private readonly _kind: AcpWorkerKind;
+  private _store: ExternalSessionStore;
+  private _authentication?: NativeAuthenticationProvider;
+  private _authLaunches = new WeakMap<HarnessSession, NativeAuthenticationLaunch>();
+  private _constructions = new WeakMap<HarnessSession, ConstructionBinding>();
+  private _ownedExits = new WeakMap<HarnessSession, () => Promise<number> | undefined>();
+  private _ownedBridges = new WeakMap<HarnessSession, NativeBridgeLease>();
+  private _live = new Set<HarnessSession>();
+  private _defaults: NonNullable<AcpSessionAdapterConfig['defaults']>;
+  private _signals: ThreadSignalBindings;
+  private _environment?: AcpSessionAdapterConfig['environment'];
+  private _spawn?: AcpSpawn;
+
+  constructor(config: AcpSessionAdapterConfig) {
+    this._kind = config.kind;
+    this.runtime = `acp:${config.kind}`;
+    this._store = config.store;
+    this._authentication = config.authentication;
+    this._defaults = Object.freeze({ ...config.defaults });
+    this._signals = new ThreadSignalBindings(config.signals);
+    this._environment = config.environment;
+    this._spawn = config.spawn;
+  }
+
+  attachSignals(signals: SignalBus): void {
+    this._signals.attachFallback(signals);
+  }
+
+  bindSignals(threadId: string, signals: SignalBus): () => void {
+    return this._signals.bind(threadId, signals);
+  }
+
+  async createSession(opts: CreateSessionOpts): Promise<HarnessSession> {
+    if (opts.nativeBridge?.toolPolicy) throw Error('ACP isolated fixture policy is unsupported');
+    if (opts.nativeBridge) {
+      if (
+        opts.tools === false ||
+        opts.threadId.includes(':aux:') ||
+        opts.nativeBridge.owner.threadId !== opts.threadId
+      )
+        throw Error('Native bridge cannot be granted to this session');
+      opts.nativeBridge.check();
+    }
+    if (opts.tools === false)
+      throw Error(
+        'ACP workers run main threads only; they cannot enforce a text-only session, so decisions never run on them',
+      );
+    if (opts.structuralRules)
+      throw Error(
+        `Structural tool rules are configured, and ${this._kind === 'agy' ? 'Antigravity' : 'Gemini CLI'} cannot apply them before every tool runs (it has no pre-use stage Foundry holds). Run this thread on Claude, or remove the deny/prompt rules.`,
+      );
+
+    const mcpServers = acpMcpServers(opts.nativeBridge, opts.mcpServers);
+    const auth = await this._authentication?.prepare(opts.threadId, this._kind);
+    const bindingId = auth?.bindingId ?? opts.threadId;
+    const existing = await this._store.load(bindingId, this.runtime);
+    const permissionMode = opts.permissionMode ?? 'bypassPermissions';
+    const model = auth?.model ?? opts.model ?? this._defaults.model;
+    const effort = auth?.effort ?? opts.effort ?? this._defaults.effort;
+
+    const defaultSpawn: AcpSpawn =
+      this._spawn ??
+      ((cmd, options) =>
+        Bun.spawn([...cmd], {
+          cwd: options.cwd,
+          env: options.env,
+          stdin: 'pipe',
+          stdout: 'pipe',
+          stderr: 'pipe',
+        }) as unknown as ReturnType<AcpSpawn>);
+
+    let spawned = false;
+    let released = false;
+    let ownedExit: Promise<number> | undefined;
+    const releaseAuth = () => {
+      if (released) return;
+      released = true;
+      auth?.release();
+    };
+
+    const commonLaunch = {
+      billing: 'subscription' as const,
+      ...(this._defaults.bin ? { bin: this._defaults.bin } : {}),
+      ...(this._defaults.timeout !== undefined ? { timeout: this._defaults.timeout } : {}),
+      ...(this._defaults.startupTimeout !== undefined
+        ? { startupTimeout: this._defaults.startupTimeout }
+        : {}),
+      ...(this._defaults.sandbox !== undefined ? { sandbox: this._defaults.sandbox } : {}),
+      ...(this._defaults.addDirs ? { addDirs: this._defaults.addDirs } : {}),
+      ...(model ? { model } : {}),
+      ...(effort ? { effort } : {}),
+      cwd: opts.cwd,
+      ...(opts.baseContext ? { baseContext: opts.baseContext } : {}),
+      ...(existing ? { externalSessionId: existing } : {}),
+      permissionMode,
+      ...(mcpServers.length ? { mcpServers } : {}),
+      onSessionReady: async (id: string) => {
+        await this._store.save(bindingId, this.runtime, id);
+      },
+      spawn: (
+        cmd: readonly string[],
+        options: { cwd: string; env: Record<string, string | undefined> },
+      ) => {
+        if (spawned)
+          throw Error('New native process requires new owned adapter construction and preflight');
+        opts.nativeBridge?.check();
+        const launched = auth ? auth.launch([...cmd], options.env) : undefined;
+        const boundEnv = this._environment
+          ? this._environment(launched?.env ?? options.env)
+          : (launched?.env ?? options.env);
+        let child: ReturnType<AcpSpawn>;
+        try {
+          child = defaultSpawn(launched?.argv ?? cmd, {
+            cwd: options.cwd,
+            env: boundEnv,
+          });
+        } catch (error) {
+          releaseAuth();
+          throw error;
+        }
+        adoptChild(auth, child);
+        spawned = true;
+        ownedExit = child.exited.then((code) => {
+          releaseAuth();
+          this._live.delete(session);
+          return code;
+        });
+        this._live.add(session);
+        void ownedExit.catch(() => {});
+        if (opts.nativeBridge)
+          void child.exited.then(() => opts.nativeBridge!.close()).catch(() => {});
+        return child;
+      },
+    };
+
+    const launchConfig: AcpSessionConfig =
+      this._kind === 'agy'
+        ? agyAcpLaunch(commonLaunch)
+        : geminiCliAcpLaunch({
+            ...commonLaunch,
+            ...(this._defaults.skipTrust !== undefined
+              ? { skipTrust: this._defaults.skipTrust }
+              : {}),
+          });
+
+    const session = new AcpSession(launchConfig);
+    if (opts.toolGate && permissionMode !== 'bypassPermissions')
+      session.onToolRequest(opts.toolGate);
+    if (auth) this._authLaunches.set(session, auth);
+    if (auth?.observeLimits)
+      session.onEvent((event) => {
+        if (event.kind === 'rate_limit' && event.limits) auth.observeLimits?.(event.limits);
+      });
+
+    const originalStart = session.start.bind(session);
+    session.start = async () => {
+      auth?.check();
+      try {
+        await originalStart();
+      } catch (error) {
+        if (!spawned) {
+          releaseAuth();
+          if (opts.nativeBridge) await opts.nativeBridge.close().catch(() => {});
+        }
+        throw error;
+      }
+    };
+
+    this._constructions.set(
+      session,
+      Object.freeze({
+        bindingId,
+        resumedBinding: existing ?? null,
+        ...(auth
+          ? {
+              authentication: {
+                sourceId: auth.sourceId,
+                integrationId: auth.integrationId,
+                mode: auth.mode,
+                model: auth.model,
+                effort: auth.effort,
+                capacityId: auth.capacityId,
+              },
+            }
+          : {}),
+        ...(effort ? { requestedEffort: effort } : {}),
+      }),
+    );
+    this._ownedExits.set(session, () => ownedExit);
+    if (opts.nativeBridge) this._ownedBridges.set(session, opts.nativeBridge);
+
+    const originalSend = session.send.bind(session);
+    session.send = (message, options) => {
+      auth?.check();
+      return originalSend(
+        message,
+        auth
+          ? {
+              ...options,
+              onAdmission: async (attempt) => {
+                auth.check();
+                await options?.onAdmission?.(attempt);
+                auth.check();
+                auth.admitted?.();
+              },
+            }
+          : options,
+      );
+    };
+
+    const runtime = this.runtime;
+    const threadId = opts.threadId;
+    session.onEvent((event) => {
+      const signals = this._signals.get(threadId);
+      if (signals && event.kind === 'session_compact')
+        void signals.emit({
+          id: newId('sig-compact'),
+          kind: 'session_compacted',
+          source: `session-adapter:${runtime}`,
+          content: {
+            source: event.compactionSource ?? runtime,
+            externalSessionId: event.externalSessionId,
+            threadId,
+          },
+          timestamp: event.timestamp,
+        });
+    });
+
+    return session;
+  }
+
+  async getExternalSessionId(threadId: string): Promise<string | null> {
+    return this._store.load(
+      (await this._authentication?.resolveBindingId?.(threadId, this._kind)) ??
+        this._authentication?.bindingId(threadId, this._kind) ??
+        threadId,
+      this.runtime,
+    );
+  }
+
+  checkAuthentication(session: HarnessSession): void {
+    this._authLaunches.get(session)?.check();
+  }
+
+  describeConstruction(session: HarnessSession): ConstructionBinding | undefined {
+    return this._constructions.get(session);
+  }
+
+  async clearSession(threadId: string): Promise<void> {
+    return this._store.clear(
+      this._authentication?.bindingId(threadId, this._kind) ?? threadId,
+      this.runtime,
+    );
+  }
+
+  async releaseAll(): Promise<void> {
+    await Promise.all([...this._live].map((session) => this.releaseIdleSession(session)));
+  }
+
+  async releaseIdleSession(session: HarnessSession): Promise<'released' | 'unknown'> {
+    const exited = this._ownedExits.get(session)?.();
+    if (!exited) return 'unknown';
+    session.kill();
+    try {
+      await exited;
+      const bridge = this._ownedBridges.get(session);
+      if (bridge) {
+        await bridge.close();
+        const state = bridge.status?.();
+        if (!state || state.pendingCleanups || state.cleanupFailures) return 'unknown';
+      }
+      return 'released';
+    } catch {
+      return 'unknown';
+    }
   }
 }
 

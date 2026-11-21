@@ -55,7 +55,8 @@ export interface MachineProcessSources {
 const flag = (command: string, name: string) =>
   new RegExp(`(?:^|\\s)${name}(?:\\s+|=)(\\S+)`).exec(command)?.[1];
 
-const isNativeCli = (command: string) => /(?:^|\/)(claude|codex|muse)(?:\s|$)/.test(command);
+const isNativeCli = (command: string) =>
+  /(?:^|\/)(claude|codex|muse|agy|gemini)(?:\s|$)/.test(command);
 
 /** What one process is, from its command line and what Foundry knows of its pid. */
 function identify(
@@ -90,6 +91,10 @@ function identify(
       };
     }
     if (/\bapp-server\b/.test(command)) return { role: 'session', label: 'Codex app server' };
+    if (/(?:^|\/)agy\b.*\bacp\b/.test(command))
+      return { role: 'session', label: 'Antigravity ACP session', ...withModel };
+    if (/(?:^|\/)gemini\b.*--acp\b/.test(command))
+      return { role: 'session', label: 'Gemini CLI ACP session', ...withModel };
     return { role: 'session', label: 'Native session', ...withModel };
   }
   // Only the program and its first arguments: a shell's script can mention anything.

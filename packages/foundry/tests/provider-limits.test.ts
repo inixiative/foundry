@@ -45,6 +45,8 @@ test('each subscription login is probed in its own home; a Kingdom pool and API 
       homes.push(['muse', env]);
       return snapshot('muse');
     },
+    agy: async () => undefined,
+    'gemini-cli': async () => undefined,
   };
   const limits = await providerLimits(
     [
@@ -95,7 +97,16 @@ describe('when a used-up login frees up', () => {
   const probing = (...readings: Array<LimitSnapshot | undefined>) => {
     let calls = 0;
     const next = async () => readings[Math.min(calls++, readings.length - 1)];
-    return { probes: { 'claude-code': next, codex: next, muse: next }, calls: () => calls };
+    return {
+      probes: {
+        'claude-code': next,
+        codex: next,
+        muse: next,
+        agy: next,
+        'gemini-cli': next,
+      },
+      calls: () => calls,
+    };
   };
 
   test('used up: the latest reset among the windows at their limit', async () => {

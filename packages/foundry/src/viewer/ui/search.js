@@ -48,6 +48,8 @@ const SESSION_SOURCES = {
   codex: 'A Codex session',
   chatgpt: 'A ChatGPT conversation',
   muse: 'A Muse session',
+  agy: 'An Antigravity session',
+  'gemini-cli': 'A Gemini CLI session',
 };
 
 /**

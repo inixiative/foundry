@@ -19,7 +19,12 @@ import { MUSE_COMPETING_ENV } from '@inixiative/agent-session/muse-env';
 import { sha256Hex } from '@inixiative/foundry-core';
 import { z } from 'zod';
 import { readPrivateJson } from '../client/private-file';
-import { defaultProfileDirectory, isFoundryLogin, profileEnvironment } from './default-profiles';
+import {
+  defaultProfileDirectory,
+  isDefaultProfile,
+  isFoundryLogin,
+  profileEnvironment,
+} from './default-profiles';
 import {
   codexUserConfig,
   type HarnessSettingsLaunch,
@@ -32,9 +37,20 @@ import {
   writeProfileConfiguration,
 } from './private-profile';
 
-/** The native CLIs a login belongs to: Claude Code, Codex and Muse Code. */
-export const NATIVE_RUNTIMES = ['claude', 'codex', 'muse'] as const;
+/** The native CLIs a login belongs to: Claude Code, Codex, Muse Code, Antigravity and Gemini CLI. */
+export const NATIVE_RUNTIMES = ['claude', 'codex', 'muse', 'agy', 'gemini'] as const;
 export type NativeRuntime = (typeof NATIVE_RUNTIMES)[number];
+
+/** Inherited env vars that override Antigravity / Gemini CLI subscription logins with metered keys or Vertex AI.
+ * Kept import-free here (mirrors `AGY_COMPETING_ENV` / `GEMINI_CLI_COMPETING_ENV` in `@inixiative/agent-session`)
+ * so Kingdom client seams never pull in the session runtime graph (`kingdom-seam.test.ts`). */
+const GOOGLE_COMPETING_ENV = new Set([
+  'GEMINI_API_KEY',
+  'GOOGLE_API_KEY',
+  'GOOGLE_APPLICATION_CREDENTIALS',
+  'GOOGLE_GENAI_USE_VERTEXAI',
+  'GEMINI_CLI_AUTH_OVERRIDE',
+]);
 
 export type NativeAuthenticationSource = {
   /** Local identities, never provider account names or secrets. */
@@ -185,7 +201,8 @@ export function withoutCompetingCredentials(
       /^(ANTHROPIC_|OPENAI_|CODEX_|CLAUDE_CODE_|CLAUDE_CONFIG_DIR$|FOUNDRY_GATEWAY_TOKEN$)/.test(
         key,
       ) ||
-      (runtime === 'muse' && MUSE_COMPETING_ENV.test(key))
+      (runtime === 'muse' && MUSE_COMPETING_ENV.test(key)) ||
+      ((runtime === 'agy' || runtime === 'gemini') && GOOGLE_COMPETING_ENV.has(key))
     )
       delete env[key];
   if (inherited.CLAUDE_CODE_DISABLE_CLAUDE_MDS === '1') env.CLAUDE_CODE_DISABLE_CLAUDE_MDS = '1';
@@ -260,9 +277,16 @@ export class NativeAuthentication {
         !NATIVE_RUNTIMES.includes(source.runtime)
       )
         throw Error('Invalid native authentication identity');
-      // Muse Code bills only its own saved login; there is no gateway (endpoint) mode for it.
+      // Muse Code, Antigravity and Gemini CLI bill only their own saved login; no gateway mode.
       if (source.runtime === 'muse' && source.mode !== 'native-profile')
         throw Error('A Muse Code login is a native profile; Muse has no gateway mode');
+      if (
+        (source.runtime === 'agy' || source.runtime === 'gemini') &&
+        source.mode !== 'native-profile'
+      )
+        throw Error(
+          `An ${source.runtime === 'agy' ? 'Antigravity' : 'Gemini CLI'} login is a native profile; ${source.runtime} has no gateway mode`,
+        );
       if (this.sources.has(source.id)) throw Error('Duplicate authentication source');
       if (source.mode === 'native-profile') {
         if (!isAbsolute(source.profileDirectory))
@@ -360,7 +384,15 @@ export class NativeAuthentication {
         'Auxiliary sessions require a gateway source or a separate decision provider; native profiles have one refresh owner',
       );
     const bindingId = this.bindingId(threadId, runtime);
-    if (source.mode === 'native-profile') assertProfile(source.profileDirectory, runtime);
+    if (source.mode === 'native-profile') {
+      assertProfile(source.profileDirectory, runtime);
+      if (
+        runtime === 'agy' &&
+        isDefaultProfile(source.profileDirectory, 'agy') &&
+        !existsSync(source.profileDirectory)
+      )
+        mkdirSync(source.profileDirectory, { recursive: true, mode: 0o700 });
+    }
     const directory =
       source.mode === 'native-profile'
         ? await realpath(source.profileDirectory)

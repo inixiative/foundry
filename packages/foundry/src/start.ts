@@ -100,6 +100,7 @@ import {
 } from './prompts/instruction-stack';
 import type { LLMProvider } from './providers';
 import {
+  AcpSessionAdapter,
   AnthropicProvider,
   ClaudeCodeSessionAdapter,
   CodexSessionAdapter,
@@ -546,6 +547,25 @@ function createProvider(
         sessionAdapter,
         provider: new SessionBackedProvider({
           id: 'muse',
+          adapter: sessionAdapter,
+          defaultModel: defaultModel,
+          ...hostSettings,
+        }),
+      };
+    }
+    case 'agy':
+    case 'gemini-cli': {
+      const sessionAdapter = new AcpSessionAdapter({
+        kind: providerId === 'agy' ? 'agy' : 'gemini',
+        store: sessionStore,
+        authentication: routed,
+        defaults: { model: defaultModel },
+        ...(subscription ? { environment: boundLaunchEnvironment } : {}),
+      });
+      return {
+        sessionAdapter,
+        provider: new SessionBackedProvider({
+          id: providerId,
           adapter: sessionAdapter,
           defaultModel: defaultModel,
           ...hostSettings,

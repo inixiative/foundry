@@ -3,6 +3,8 @@
 // HarnessSession + ClaudeCodeSession — re-exported from @inixiative/agent-session
 // (the single source of truth for agent-driving sessions across the ecosystem).
 export {
+  AcpSession,
+  type AcpSessionConfig,
   ClaudeCodeSession,
   type ClaudeCodeSessionConfig,
   type CodexSessionConfig,
@@ -58,6 +60,9 @@ export {
 } from './openai-compatible';
 // SessionAdapter — maps Foundry thread IDs ↔ runtime native session IDs
 export {
+  AcpSessionAdapter,
+  type AcpSessionAdapterConfig,
+  type AcpWorkerKind,
   ClaudeCodeSessionAdapter,
   type ClaudeCodeSessionAdapterConfig,
   CodexSessionAdapter,

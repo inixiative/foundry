@@ -121,10 +121,14 @@ test('the profile name, vendors and the automatic tunnel are settings edits', as
   await call('PATCH', '/api/settings/vendors', { openai: { api: { baseUrl: null } } });
   expect(configStore.config.vendors.openai!.api).toEqual({ enabled: true });
   const soon = await call('PATCH', '/api/settings/vendors', {
-    google: { subscription: { enabled: true } },
+    xai: { subscription: { enabled: true } },
   });
   expect(soon.status).toBe(400);
   expect(soon.body.error).toContain('coming soon');
+  expect(
+    (await call('PATCH', '/api/settings/vendors', { google: { subscription: { enabled: true } } }))
+      .status,
+  ).toBe(200);
 
   // The tunnel is automatic until someone chooses; saving its provider keeps it automatic.
   expect((await call('GET', '/api/tunnel')).body).toMatchObject({
