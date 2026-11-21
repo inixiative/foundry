@@ -3,7 +3,7 @@
  * @kind helper
  * @partOf primitive:vcr
  */
-import { existsSync, readFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -11,10 +11,10 @@ import { $ } from 'bun';
 import { resolveDaemonPath } from '../../packages/foundry/src/daemon/agent-clis';
 import {
   cassettes,
-  compareSignatures,
-  type Fixture,
-  signatureOf,
-  volatileDifferences,
+  diffCassetteDrift,
+  diffVolatileCassetteNotices,
+  FOUNDRY_SIGNATURE_OPTIONS,
+  fetchPendingCassettes,
 } from '../../packages/foundry/src/vcr';
 
 export const repoRoot = fileURLToPath(new URL('../..', import.meta.url)).replace(/\/$/, '');
@@ -73,32 +73,19 @@ export async function refuseDaemonCheckout() {
   }
 }
 
-export const pendingCassettes = (dir = fixturesDir) =>
-  cassettes(dir).filter((path) => path.endsWith('.pending.json'));
+export const pendingCassettes = (dir = fixturesDir) => fetchPendingCassettes(dir);
 
 /** Structural differences between a committed cassette and a newer recording of it. */
-export function driftOf(committedPath: string, recordingPath: string): string[] {
-  if (!existsSync(committedPath)) return ['new cassette'];
-  const read = (path: string) => JSON.parse(readFileSync(path, 'utf8')) as Fixture;
-  const before = read(committedPath),
-    after = read(recordingPath);
-  return compareSignatures(
-    signatureOf(before.status, before.body),
-    signatureOf(after.status, after.body),
-  );
-}
+export const driftOf = (committedPath: string, recordingPath: string): string[] =>
+  diffCassetteDrift(committedPath, recordingPath, FOUNDRY_SIGNATURE_OPTIONS);
 
 /** Every cassette's content, to compare this run's recordings against afterwards. */
 export const snapshot = (dir = fixturesDir) =>
   new Map(cassettes(dir).map((path) => [path, readFileSync(path, 'utf8')]));
 
 /** Volatile differences (thinking, rate-limit notices, reconnects) between two recordings of one cassette. */
-export function noticesOf(before: string, after: string): string[] {
-  const parse = (text: string) => JSON.parse(text) as Fixture;
-  const was = parse(before),
-    now = parse(after);
-  return volatileDifferences(signatureOf(was.status, was.body), signatureOf(now.status, now.body));
-}
+export const noticesOf = (before: string, after: string): string[] =>
+  diffVolatileCassetteNotices(before, after, FOUNDRY_SIGNATURE_OPTIONS);
 
 export const display = (path: string) => relative(repoRoot, path);
 

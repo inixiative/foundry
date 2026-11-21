@@ -55,6 +55,8 @@ export interface TunnelConfig {
   cloudflaredBin?: string;
   /** How long to wait for the tunnel process to print its URL. Default: 30 s. */
   urlTimeoutMs?: number;
+  /** First wait before a kept-up tunnel is started again; doubles per failed start. Default: 5 s. */
+  retryMs?: number;
 }
 
 /** The viewer's tunnel, started and stopped at runtime; `changed`, when set, runs after each start or stop. */
@@ -228,12 +230,19 @@ function resolveToken(config: TunnelConfig): string {
 // FoundryTunnel
 // ---------------------------------------------------------------------------
 
+const MAX_RETRY_MS = 300_000;
+/** A tunnel up this long before it exits starts its backoff over. */
+const STEADY_MS = 60_000;
+
 export class FoundryTunnel {
   private _config: TunnelConfig;
   private _token: string;
   private _url: string | null = null;
   private _proc: Subprocess | null = null;
   private _cleanup: (() => void) | null = null;
+  private _keptUp: (() => void) | null = null;
+  private _retry: ReturnType<typeof setTimeout> | undefined;
+  private _failures = 0;
 
   constructor(config: TunnelConfig) {
     this._config = config;
@@ -272,10 +281,79 @@ export class FoundryTunnel {
     }
   }
 
+  /** Takes the saved provider and subdomain; they apply from the next start. */
+  use(provider: TunnelProvider | undefined, subdomain: string | undefined): void {
+    this._config = { ...this._config, provider, subdomain };
+  }
+
+  /**
+   * Starts the tunnel unless it is up, then keeps it up until `stop`: a failed start is tried again
+   * with backoff, and so is a tunnel process that exits. `changed` runs each time the address appears
+   * or goes.
+   */
+  keepUp(changed: () => void): void {
+    this._keptUp = changed;
+    void this._raise(changed);
+  }
+
+  private async _raise(changed: () => void): Promise<void> {
+    if (this._keptUp !== changed) return;
+    try {
+      if (!this._url) await this.start();
+    } catch (error) {
+      if (this._keptUp !== changed) return;
+      this._failures += 1;
+      const backoff = Math.min(MAX_RETRY_MS, this._retryMs() * 2 ** (this._failures - 1));
+      console.warn(
+        `[Tunnel] failed to start: ${(error as Error).message}; again in ${backoff / 1000}s`,
+      );
+      this._retryIn(backoff, changed);
+      return;
+    }
+    if (this._keptUp !== changed) return;
+    const upAt = Date.now();
+    this._tell(changed);
+    const proc = this._proc;
+    void proc?.exited.then(() => {
+      if (this._proc !== proc || this._keptUp !== changed) return;
+      this._halt();
+      // why: a tunnel that comes up and drops at once backs off like one that never came up
+      this._failures = Date.now() - upAt < STEADY_MS ? this._failures + 1 : 1;
+      const backoff = Math.min(MAX_RETRY_MS, this._retryMs() * 2 ** (this._failures - 1));
+      console.warn(`[Tunnel] the tunnel process exited; starting it again in ${backoff / 1000}s`);
+      this._tell(changed);
+      this._retryIn(backoff, changed);
+    });
+  }
+
+  private _tell(changed: () => void): void {
+    try {
+      changed();
+    } catch (error) {
+      console.warn(`[Tunnel] ${(error as Error).message}`);
+    }
+  }
+
+  private _retryMs(): number {
+    return this._config.retryMs ?? 5_000;
+  }
+
+  private _retryIn(ms: number, changed: () => void): void {
+    this._retry = setTimeout(() => void this._raise(changed), ms);
+    this._retry.unref?.();
+  }
+
   /**
    * Stop the tunnel and clean up.
    */
   async stop(): Promise<void> {
+    this._keptUp = null;
+    clearTimeout(this._retry);
+    this._failures = 0;
+    this._halt();
+  }
+
+  private _halt(): void {
     if (this._proc) {
       this._proc.kill();
       this._proc = null;
@@ -301,7 +379,7 @@ export class FoundryTunnel {
 
     const proc = Bun.spawn(args, {
       stdout: 'pipe',
-      stderr: 'pipe',
+      stderr: 'ignore',
       env: { ...process.env },
     });
 
@@ -324,7 +402,7 @@ export class FoundryTunnel {
     const bin = this._config.cloudflaredBin ?? 'cloudflared';
 
     const proc = Bun.spawn([bin, 'tunnel', '--url', `http://localhost:${this._config.port}`], {
-      stdout: 'pipe',
+      stdout: 'ignore',
       stderr: 'pipe',
       env: { ...process.env },
     });
@@ -332,7 +410,10 @@ export class FoundryTunnel {
     this._proc = proc;
 
     // cloudflared prints the URL to stderr (not stdout)
-    const url = await this._readUrlFromStderr(proc, /https:\/\/[a-z0-9-]+\.trycloudflare\.com/);
+    const url = await this._readUrlFromStderr(
+      proc,
+      /https:\/\/(?!api\.)[a-z0-9-]+\.trycloudflare\.com/,
+    );
     this._url = url;
 
     console.info(`[Tunnel] cloudflared active: ${url}`);
@@ -345,14 +426,27 @@ export class FoundryTunnel {
   // -------------------------------------------------------------------------
 
   private async _readUrlFromStdout(proc: Subprocess, pattern: RegExp): Promise<string> {
-    return this._readUrlFromStream(new Response(proc.stdout as ReadableStream).body!, pattern);
+    return this._readUrlFromStream(
+      proc,
+      new Response(proc.stdout as ReadableStream).body!,
+      pattern,
+    );
   }
 
   private async _readUrlFromStderr(proc: Subprocess, pattern: RegExp): Promise<string> {
-    return this._readUrlFromStream(new Response(proc.stderr as ReadableStream).body!, pattern);
+    return this._readUrlFromStream(
+      proc,
+      new Response(proc.stderr as ReadableStream).body!,
+      pattern,
+    );
   }
 
-  private async _readUrlFromStream(stream: ReadableStream, pattern: RegExp): Promise<string> {
+  /** The address `proc` prints; a start that fails, or that a later start replaced, ends its own process only. */
+  private async _readUrlFromStream(
+    proc: Subprocess,
+    stream: ReadableStream,
+    pattern: RegExp,
+  ): Promise<string> {
     const reader = stream.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
@@ -363,26 +457,36 @@ export class FoundryTunnel {
       timer = setTimeout(() => resolve(undefined), timeout);
     });
 
+    let ended = false;
     try {
       for (;;) {
         const chunk = await Promise.race([reader.read(), timedOut]);
+        if (chunk?.done) ended = true;
         if (!chunk || chunk.done) break;
 
         buffer += decoder.decode(chunk.value, { stream: true });
         const match = buffer.match(pattern);
-        if (match) {
-          reader.releaseLock();
+        if (match && this._proc === proc) {
+          // why: an unread pipe fills, and the tunnel process then blocks on its own log lines
+          void (async () => {
+            while (!(await reader.read()).done);
+          })().catch(() => {});
           return match[0];
         }
       }
     } catch {
-      // Stream ended or errored
+      ended = true;
     } finally {
       clearTimeout(timer);
     }
 
     void reader.cancel().catch(() => {});
-    await this.stop();
-    throw new Error(`Tunnel did not produce a URL within ${timeout / 1000}s`);
+    if (this._proc === proc) this._halt();
+    else proc.kill();
+    throw new Error(
+      ended
+        ? `Tunnel process ended before giving a URL${buffer.trim() ? `: ${buffer.trim().split('\n').at(-1)?.slice(0, 200)}` : ''}`
+        : `Tunnel did not produce a URL within ${timeout / 1000}s`,
+    );
   }
 }

@@ -17,13 +17,13 @@
 import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import {
   agentSessionVersion,
+  blessFreshnessPolicy,
   cassettes,
   checkFreshness,
-  compareVersions,
+  discardPendingCassettes,
   type Fixture,
+  fetchCassettePaths,
   installedVersions,
-  policyPath,
-  readPolicy,
 } from '../../packages/foundry/src/vcr';
 import {
   bunTest,
@@ -53,7 +53,7 @@ for (const [cli, install] of resolved)
   console.log(`  ${cli}: ${install.binary} (${install.version.join('.')})`);
 
 // A full run supersedes earlier unreviewed drift; a filtered run leaves drift it will not re-record alone.
-if (!passthrough.length) for (const stale of pendingCassettes()) rmSync(stale);
+if (!passthrough.length) discardPendingCassettes(fixturesDir);
 
 const before = snapshot();
 const env = cleanEnvironment({
@@ -69,8 +69,7 @@ const recorded = await bunTest(['--timeout', '120000', ...LIVE_FILES, ...passthr
 // A failed live run proves nothing about its recordings: hold every one it changed back for review.
 if (recorded) {
   let held = 0;
-  for (const path of cassettes(fixturesDir)) {
-    if (path.endsWith('.pending.json')) continue;
+  for (const path of fetchCassettePaths(fixturesDir, { includePending: false })) {
     const previous = before.get(path),
       current = readFileSync(path, 'utf8');
     if (previous === current) continue;
@@ -114,21 +113,11 @@ if (drift.length) {
 
 // Bless what was just recorded: CI then refuses any cassette older than these versions.
 if (!recorded && !replayed && !drift.length && !passthrough.length) {
-  const policy = readPolicy(fixturesDir);
-  for (const path of cassettes(fixturesDir)) {
-    const fixture = JSON.parse(readFileSync(path, 'utf8')) as Fixture;
-    const cli = fixture.recorded?.cli;
-    if (
-      cli &&
-      fixture.version &&
-      (!policy.blessed[cli] || compareVersions(fixture.version, policy.blessed[cli]!) > 0)
-    )
-      policy.blessed[cli] = fixture.version;
-  }
-  const session = policy.blessed['@inixiative/agent-session'];
-  if (agentSessionVersion && (!session || compareVersions(agentSessionVersion, session) > 0))
-    policy.blessed['@inixiative/agent-session'] = agentSessionVersion;
-  writeFileSync(policyPath(fixturesDir), `${JSON.stringify(policy, null, 2)}\n`);
+  blessFreshnessPolicy(fixturesDir, {
+    metadataVersions: agentSessionVersion
+      ? { '@inixiative/agent-session': agentSessionVersion }
+      : undefined,
+  });
 }
 
 // Latency is a live-only fact: the daemon's decision deadlines are budgets these must fit in.
