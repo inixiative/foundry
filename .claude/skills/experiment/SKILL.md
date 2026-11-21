@@ -23,7 +23,7 @@ Templates beside this file: [design.md](design.md) (pre-registration), [review.m
 - **Quota.** The five-hour window counts every agent on the account; agents are the main spend (ten concurrent Opus/Fable agents cost more than the evals: 0.11% → 0.4–0.58% per eval moment while they ran). At most **3 agents** at a time, serialized. **Measure first:** record the window % at the start and end of every eval run and every long agent. The charter eval writes `<out>/quota.jsonl` itself; elsewhere, from the Foundry checkout:
   `bun -e "import {claudeUsageWindows} from './packages/foundry/src/providers/decision-host'; console.log(await claudeUsageWindows(process.cwd()))"`
 - **Cost is measured, never estimated into a decision.** An estimate sizes a ceiling; only the run's measured cost may justify a change.
-- **Checks take the lock.** One full check at a time on the machine: `lockf -k -t 14400 ~/.foundry/check.lock bun run check`. Never `--no-verify`.
+- **Checks take the lock.** One full check at a time on the machine, inside a time limit and a memory ceiling: `bunx @inixiative/config@latest bounded -- bun run check` (it takes `~/.foundry/check.lock`, the same lock as the older `lockf -k -t 14400 ~/.foundry/check.lock bun run check`; never wrap one in the other). Never `--no-verify`.
 - **Private data stays private.** Fixtures, answers and runs live under `~/.foundry/evals/` (never in a repo); finding records carry numbers, set names and run ids only.
 
 ## 1. DESIGN — pre-register (gate: every section filled)
