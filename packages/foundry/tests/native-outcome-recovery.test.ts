@@ -250,7 +250,13 @@ test('a transcript still being written stays unsettled; settleAll finds every th
   });
   expect(recovery.settleAll()).toMatchObject({
     settled: [],
-    undecided: [{ turnId: 'turn-lost', detail: 'the native session may still be working' }],
+    undecided: [
+      {
+        turnId: 'turn-lost',
+        detail: 'the native session may still be working',
+        recordMissing: false,
+      },
+    ],
   });
   // An orphaned native process finished the turn while Foundry was down.
   writeFileSync(
@@ -271,7 +277,11 @@ test('no record anywhere: the latest answer carries Continue / Retry, and the ow
     bootedAt: Date.now() + 1,
   });
   expect(recovery.settle(thread.id).undecided).toEqual([
-    { turnId: 'turn-lost', detail: "the native session's record was not found on this machine" },
+    {
+      turnId: 'turn-lost',
+      detail: "the native session's record was not found on this machine",
+      recordMissing: true,
+    },
   ]);
   const index = store.messageIndex(thread.id).messages;
   expect(index.at(-1)?.meta?.recovery).toBe('pending');

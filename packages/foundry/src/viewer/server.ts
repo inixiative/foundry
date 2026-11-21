@@ -393,27 +393,30 @@ export function createViewer(config: ViewerConfig) {
     for (const subagent of directory.archiveOrphanedSubagents()) localStore.saveThread(subagent);
     // Settle what the native records already show; records still being written (a native process
     // the restart orphaned) are read again once they go quiet, and again before any next turn.
-    const settleLost = () => {
+    const settleLost = (atBoot = false) => {
       try {
         const pass = nativeRecovery!.settleAll();
         for (const { turnId, outcome } of pass.settled)
           console.warn(`[Recovery] turn ${turnId}: ${outcome}, read from the native record`);
-        for (const { turnId, detail } of pass.undecided)
-          console.warn(`[Recovery] turn ${turnId} still unsettled: ${detail}`);
+        for (const { turnId, detail, recordMissing } of pass.undecided)
+          if (atBoot || !recordMissing)
+            console.warn(`[Recovery] turn ${turnId} still unsettled: ${detail}`);
         return pass;
       } catch (error) {
         console.warn(`[Recovery] native outcome recovery failed: ${String(error)}`);
         return undefined;
       }
     };
-    if (settleLost()?.undecided.length) {
+    const recordStillChanging = (pass: ReturnType<typeof settleLost>) =>
+      pass?.undecided.some((turn) => !turn.recordMissing) ?? false;
+    if (recordStillChanging(settleLost(true))) {
       // Look again each minute until every record has gone quiet (a pending tool call waits longest).
       const started = Date.now();
       const again = setInterval(() => {
         const pass = settleLost();
         for (const turnId of new Set(pass?.settled.map((entry) => entry.turnId)))
           streams.threadsChanged(localStore.turn(turnId)?.threadId ?? '');
-        if (!pass?.undecided.length || Date.now() - started > NATIVE_TOOL_QUIET_MS + 120_000)
+        if (!recordStillChanging(pass) || Date.now() - started > NATIVE_TOOL_QUIET_MS + 120_000)
           clearInterval(again);
       }, NATIVE_RECORD_QUIET_MS);
       again.unref?.();
