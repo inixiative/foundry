@@ -24,7 +24,7 @@ Templates beside this file: [design.md](design.md) (pre-registration), [review.m
   `bun -e "import {claudeLimits} from './packages/foundry/src/providers/decision-host'; const s = await claudeLimits(process.cwd()); console.log(s && Object.fromEntries(s.windows.map((w) => [w.id, w.usedPercent])))"`
   (The charter eval that wrote `<out>/quota.jsonl` itself is parked in Oracle `migration/foundry-pool-evals/` and does not run.)
 - **Cost is measured, never estimated into a decision.** An estimate sizes a ceiling; only the run's measured cost may justify a change.
-- **Checks take the lock.** One full check at a time on the machine, inside a time limit and a memory ceiling: `bunx @inixiative/config@latest bounded -- bun run check` (it takes `~/.foundry/check.lock`, the same lock as the older `lockf -k -t 14400 ~/.foundry/check.lock bun run check`; never wrap one in the other). Never `--no-verify`.
+- **Checks take the lock.** One full check at a time on the machine, inside a time limit and a memory ceiling: plain `bun run check` (the script runs the repo's chain, `check:all`, through `inixiative-config bounded`, which takes `~/.foundry/check.lock`; never wrap it in `lockf`, and never run `check:all` as the full check). Never `--no-verify`.
 - **Private data stays private.** Fixtures, answers and runs live under `~/.foundry/evals/` (never in a repo); finding records carry numbers, set names and run ids only.
 
 ## 1. DESIGN — pre-register (gate: every section filled)
