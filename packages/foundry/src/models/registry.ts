@@ -36,6 +36,8 @@ export const SUBSCRIPTION_WORKERS = {
   'claude-code': 'claude',
   codex: 'codex',
   muse: 'muse',
+  agy: 'agy',
+  'gemini-cli': 'gemini',
 } as const;
 export type SubscriptionWorker = keyof typeof SUBSCRIPTION_WORKERS;
 /** What a person calls each worker ("continued on Codex from here"), as the viewer names them. */
@@ -43,6 +45,8 @@ export const WORKER_NAMES: Readonly<Record<SubscriptionWorker, string>> = {
   'claude-code': 'Claude Code',
   codex: 'Codex',
   muse: 'Muse',
+  agy: 'Antigravity',
+  'gemini-cli': 'Gemini CLI',
 };
 export const workerName = (worker: string): string =>
   (WORKER_NAMES as Record<string, string>)[worker] ?? MODEL_REGISTRY[worker]?.label ?? worker;
@@ -51,14 +55,17 @@ export const WORKER_SESSION_RUNTIMES: Readonly<Record<SubscriptionWorker, string
   'claude-code': 'claude-code',
   codex: 'codex-app-server',
   muse: 'muse-serve',
+  agy: 'acp:agy',
+  'gemini-cli': 'acp:gemini',
 };
 export const subscriptionWorker = (provider: string): provider is SubscriptionWorker =>
   Object.hasOwn(SUBSCRIPTION_WORKERS, provider);
 
 /**
  * Whether a main thread on this provider can hold Foundry's MCP bridge (the `foundry` tools: set_plan,
- * fork_thread, the conversation tools). Muse Code cannot: agent-session's MuseSession offers it no session
- * MCP yet, so its threads run without the tools and without the standing note that teaches them.
+ * fork_thread, the conversation tools). Claude Code, Codex, and ACP workers (Antigravity, Gemini CLI)
+ * can; Muse Code cannot (agent-session's MuseSession offers no session MCP yet), so Muse threads run
+ * without the tools and without the standing note that teaches them.
  */
 export const workerHostsFoundryTools = (provider: string | undefined): boolean =>
   provider !== 'muse';

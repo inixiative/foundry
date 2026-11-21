@@ -327,11 +327,17 @@ export function runtimeLogins(
     const fallback = defaultProfileSource(runtime);
     return { primary: fallback, logins: [fallback] };
   }
-  // Muse Code runs only the user's own login; more than one is not a pool.
+  // Muse Code, Antigravity and Gemini CLI each run one login; more than one is not a pool.
   if (runtime === 'muse' && configured.length > 1)
     throw Error(
       `Several Muse Code logins are configured (${configured.map((item) => item.id).join(', ')}); Muse Code runs one login`,
     );
+  if ((runtime === 'agy' || runtime === 'gemini') && configured.length > 1) {
+    const label = runtime === 'agy' ? 'Antigravity' : 'Gemini CLI';
+    throw Error(
+      `Several ${label} logins are configured (${configured.map((item) => item.id).join(', ')}); ${label} runs one login`,
+    );
+  }
   const primary = named?.runtime === runtime ? (named as NativeProfileSource) : configured[0]!;
   return { primary, logins: configured };
 }
@@ -452,10 +458,12 @@ export function resolveSubscriptionPolicy(
   const source = settings.decisionSourceId
     ? explicit(settings.decisionSourceId)
     : defaultProfileSource('claude');
-  // Decisions run in the project Warden hosts, on a Claude login; Codex and Muse Code run main threads only.
+  // Decisions run in the project Warden hosts, on a Claude login; other native harnesses run main threads only.
   if (!isDecisionSource(source))
     throw Error(
-      'subscriptionOnly.decisionSourceId must be a Claude login; Codex and Muse Code run main threads only',
+      source.runtime === 'muse'
+        ? 'subscriptionOnly.decisionSourceId must be a Claude login; Muse Code runs main threads only'
+        : `subscriptionOnly.decisionSourceId must be a Claude login; ${source.runtime === 'codex' ? 'Codex' : source.runtime} runs main threads only`,
     );
   const decision = source;
   const policy: SubscriptionPolicy = {

@@ -24,6 +24,8 @@ export type ProviderType =
   | 'claude-code'
   | 'codex'
   | 'muse'
+  | 'agy'
+  | 'gemini-cli'
   | 'xai'
   | 'typesafe'
   | 'custom';
@@ -211,6 +213,12 @@ const GEMINI_REASONING: ModelReasoning = {
   efforts: ['low', 'medium', 'high'],
   fallback: 'medium',
 };
+/** Antigravity CLI exposes low/medium/high/xhigh reasoning effort for Gemini 4 models over ACP. */
+const AGY_REASONING: ModelReasoning = {
+  param: 'thinking_level',
+  efforts: ['low', 'medium', 'high', 'xhigh'],
+  fallback: 'high',
+};
 /** DeepSeek publishes its own ladder, including "none" and "max". */
 const DEEPSEEK_REASONING: ModelReasoning = {
   param: 'reasoning_effort',
@@ -262,7 +270,7 @@ export interface ModelSweepOption {
   label: string;
 }
 
-export const MODEL_REGISTRY_UPDATED_AT = '2026-11-20';
+export const MODEL_REGISTRY_UPDATED_AT = '2026-11-21';
 
 /**
  * Decision default: Claude Haiku 5.5, the cheapest current Claude model tagged `judgment`. Held here
@@ -276,6 +284,8 @@ export const SUBSCRIPTION_WORKER_MODELS = {
   'claude-code': 'fable',
   codex: 'gpt-6.2-astra',
   muse: 'muse-wonder-1.0',
+  agy: 'gemini-4-neon',
+  'gemini-cli': 'gemini-3.8-flash',
 } as const;
 
 /** Tag rule: every model judges. Cheap models review and route; capable models execute and advise. */
@@ -897,6 +907,118 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
         contextWindow: 1_048_576,
         maxOutputTokens: 65_536,
         runtimeKind: 'api',
+        capabilities: FAST_REASONING,
+        reasoning: GEMINI_REASONING,
+      },
+    ],
+  },
+  agy: {
+    id: 'agy',
+    lab: 'google',
+    type: 'agy',
+    label: 'Antigravity (Google AI)',
+    description:
+      "Native Antigravity CLI harness (`agy acp --stdio`) using the user's own Google AI subscription login. Separate from the pay-as-you-go Gemini Developer API.",
+    credential: 'subscription',
+    // Off until the user turns on Google's subscription mode: few machines have Antigravity signed in.
+    enabledByDefault: false,
+    models: [
+      {
+        id: 'gemini-4-neon',
+        family: 'neon',
+        label: 'Gemini 4 Neon',
+        tier: 'powerful',
+        costTier: 'high',
+        contextWindow: 1_048_576,
+        maxOutputTokens: 65_536,
+        runtimeKind: 'native-harness',
+        capabilities: POWERFUL_REASONING,
+        reasoning: AGY_REASONING,
+        notes: 'The Antigravity default.',
+      },
+      {
+        id: 'gemini-4-carbon',
+        family: 'carbon',
+        label: 'Gemini 4 Carbon',
+        tier: 'powerful',
+        costTier: 'high',
+        contextWindow: 1_048_576,
+        maxOutputTokens: 65_536,
+        runtimeKind: 'native-harness',
+        capabilities: POWERFUL_REASONING,
+        reasoning: AGY_REASONING,
+      },
+      {
+        id: 'gemini-4-hydrogen',
+        family: 'hydrogen',
+        label: 'Gemini 4 Hydrogen',
+        tier: 'standard',
+        costTier: 'medium',
+        contextWindow: 1_048_576,
+        maxOutputTokens: 65_536,
+        runtimeKind: 'native-harness',
+        capabilities: STANDARD_REASONING,
+        reasoning: AGY_REASONING,
+      },
+    ],
+  },
+  'gemini-cli': {
+    id: 'gemini-cli',
+    lab: 'google',
+    type: 'gemini-cli',
+    label: 'Gemini CLI',
+    description:
+      "Native Gemini CLI harness (`gemini --acp`) using the user's own Google login (Gemini Code Assist). Separate from the pay-as-you-go Gemini Developer API.",
+    credential: 'subscription',
+    // Off until the user turns on Google Gemini CLI: opt-in beside Antigravity.
+    enabledByDefault: false,
+    models: [
+      {
+        id: 'gemini-4-argon',
+        family: 'argon',
+        label: 'Gemini 4 Argon',
+        tier: 'powerful',
+        costTier: 'high',
+        contextWindow: 1_048_576,
+        maxOutputTokens: 65_536,
+        runtimeKind: 'native-harness',
+        capabilities: POWERFUL_REASONING,
+        reasoning: GEMINI_REASONING,
+      },
+      {
+        id: 'gemini-3.8-flash',
+        family: 'flash',
+        label: 'Gemini 3.8 Flash',
+        tier: 'standard',
+        costTier: 'medium',
+        contextWindow: 1_048_576,
+        maxOutputTokens: 65_536,
+        runtimeKind: 'native-harness',
+        capabilities: STANDARD_REASONING,
+        reasoning: GEMINI_REASONING,
+        notes: 'The Gemini CLI default.',
+      },
+      {
+        id: 'gemini-3.6-flash',
+        family: 'flash',
+        label: 'Gemini 3.6 Flash',
+        tier: 'standard',
+        costTier: 'medium',
+        contextWindow: 1_048_576,
+        maxOutputTokens: 65_536,
+        runtimeKind: 'native-harness',
+        capabilities: STANDARD_REASONING,
+        reasoning: GEMINI_REASONING,
+      },
+      {
+        id: 'gemini-3.5-flash-lite',
+        family: 'flash-lite',
+        label: 'Gemini 3.5 Flash Lite',
+        tier: 'fast',
+        costTier: 'low',
+        contextWindow: 1_048_576,
+        maxOutputTokens: 65_536,
+        runtimeKind: 'native-harness',
         capabilities: FAST_REASONING,
         reasoning: GEMINI_REASONING,
       },
@@ -1798,7 +1920,7 @@ export const MODEL_VENDORS: readonly ModelVendor[] = [
     id: 'google',
     label: 'Google (Gemini)',
     lab: 'google',
-    subscription: { comingSoon: true },
+    subscription: { provider: 'agy' },
     api: { provider: 'gemini' },
   },
   {
@@ -1818,6 +1940,12 @@ export const MODEL_VENDORS: readonly ModelVendor[] = [
   { id: 'alibaba', label: 'Alibaba (Qwen)', lab: 'alibaba', api: { provider: 'qwen' } },
   { id: 'deepseek', label: 'DeepSeek', lab: 'deepseek', api: { provider: 'deepseek' } },
   { id: 'fireworks', label: 'Fireworks AI', api: { provider: 'fireworks' } },
+  {
+    id: 'google-code-assist',
+    label: 'Google Gemini CLI',
+    lab: 'google',
+    subscription: { provider: 'gemini-cli' },
+  },
   { id: 'groq', label: 'Groq', api: { provider: 'groq' } },
   { id: 'mistral', label: 'Mistral AI', lab: 'mistral', api: { provider: 'mistral' } },
   { id: 'moonshot', label: 'Moonshot AI (Kimi)', lab: 'moonshot', api: { provider: 'kimi' } },

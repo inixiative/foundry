@@ -42,6 +42,8 @@ const PROBES: Record<SubscriptionWorker, Probe> = {
   codex: (env) =>
     probeCodexLimits({ ...(env ? { env } : {}), timeoutMs: 15_000 }).catch(() => undefined),
   muse: () => probeMuseLimits().catch(() => undefined),
+  agy: async () => undefined,
+  'gemini-cli': async () => undefined,
 };
 
 /** `muse usage --json`'s allowance windows as agent-session reads Muse's own usage reports. */
@@ -107,14 +109,15 @@ export function loginLimits(
 
 /** Forget a login's cached reading: a new sign-in, or a session that saw its limits change. */
 export function forgetLoginLimits(login: NativeProfileSource): void {
+  const worker = (Object.keys(SUBSCRIPTION_WORKERS) as SubscriptionWorker[]).find(
+    (w) => SUBSCRIPTION_WORKERS[w] === login.runtime,
+  );
+  if (!worker) return;
   const own = isDefaultProfile(login.profileDirectory, login.runtime);
   const suffix = `:${own ? 'login' : login.profileDirectory}`;
+  const prefix = `${worker}:`;
   for (const key of cache.keys())
-    if (
-      key.endsWith(suffix) &&
-      key.startsWith(login.runtime === 'codex' ? 'codex:' : 'claude-code:')
-    )
-      cache.delete(key);
+    if (key.endsWith(suffix) && key.startsWith(prefix)) cache.delete(key);
 }
 
 /** How often a long pause reads the login again: a new sign-in can free it early. */

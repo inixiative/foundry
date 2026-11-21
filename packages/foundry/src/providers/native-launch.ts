@@ -33,22 +33,10 @@ export function nativeLaunchEvidence(argv: readonly string[]) {
   );
 }
 
-/** Convert only our already-owned launch descriptor. Never read native settings,
- * arbitrary files, environment or a token. App-server accepts flat config keys
- * on both thread/start and thread/resume. Other explicit config stays intact. */
-export function appServerBridgeConfiguration(
-  bridge: NativeBridgeLease,
-  existing: Readonly<Record<string, unknown>> = {},
-) {
+/** Validate and extract the single process-owned stdio bridge entry from a `NativeBridgeLease`. */
+function parseOwnedBridgeServer(bridge: NativeBridgeLease): { command: string; args: string[] } {
   bridge.check();
   if (!/^[a-zA-Z0-9_-]+$/.test(bridge.name)) throw Error('Invalid owned bridge name');
-  const key = `mcp_servers.${bridge.name}`;
-  const nested = existing.mcp_servers;
-  if (
-    Object.keys(existing).some((k) => k === key || k.startsWith(`${key}.`)) ||
-    (nested && typeof nested === 'object' && Object.hasOwn(nested, bridge.name))
-  )
-    throw Error('Native bridge server name collision');
   const parsed = JSON.parse(bridge.launch.claudeJson);
   const servers = parsed?.mcpServers;
   const server = servers?.[bridge.name];
@@ -63,17 +51,72 @@ export function appServerBridgeConfiguration(
     !server.args.every((v: unknown) => typeof v === 'string' && v.length > 0)
   )
     throw Error('Owned bridge launch descriptor is invalid');
+  return { command: server.command, args: [...server.args] };
+}
+
+/** Convert only our already-owned launch descriptor. Never read native settings,
+ * arbitrary files, environment or a token. App-server accepts flat config keys
+ * on both thread/start and thread/resume. Other explicit config stays intact. */
+export function appServerBridgeConfiguration(
+  bridge: NativeBridgeLease,
+  existing: Readonly<Record<string, unknown>> = {},
+) {
+  const server = parseOwnedBridgeServer(bridge);
+  const key = `mcp_servers.${bridge.name}`;
+  const nested = existing.mcp_servers;
+  if (
+    Object.keys(existing).some((k) => k === key || k.startsWith(`${key}.`)) ||
+    (nested && typeof nested === 'object' && Object.hasOwn(nested, bridge.name))
+  )
+    throw Error('Native bridge server name collision');
   return {
     ...structuredClone(existing),
     // Foundry's own record tools and reads never ask (FOUNDRY_OWN_TOOLS); every other tool keeps Codex's mode.
     [key]: {
       command: server.command,
-      args: [...server.args],
+      args: server.args,
       tools: Object.fromEntries(
         [...FOUNDRY_OWN_TOOLS].map((tool) => [tool, { approval_mode: 'approve' }]),
       ),
     },
   };
+}
+
+/**
+ * Foundry's owned MCP bridge and any host-provided MCP servers, formatted for ACP `session/new` /
+ * `session/load`. Refuses name collisions; returns detached copies.
+ */
+export function acpMcpServers(
+  bridge?: NativeBridgeLease,
+  clientServers: readonly ClientMcpServer[] = [],
+): ClientMcpServer[] {
+  const out: ClientMcpServer[] = [];
+  const names = new Set<string>();
+  if (bridge) {
+    const server = parseOwnedBridgeServer(bridge);
+    names.add(bridge.name);
+    out.push({ name: bridge.name, command: server.command, args: server.args, env: [] });
+  }
+  for (const server of clientServers) {
+    if (names.has(server.name)) throw Error(`Native bridge server name collision: ${server.name}`);
+    names.add(server.name);
+    out.push(
+      server.type === 'http'
+        ? {
+            type: 'http',
+            name: server.name,
+            url: server.url,
+            headers: server.headers.map((h) => ({ name: h.name, value: h.value })),
+          }
+        : {
+            name: server.name,
+            command: server.command,
+            args: [...server.args],
+            env: server.env.map((v) => ({ name: v.name, value: v.value })),
+          },
+    );
+  }
+  return out;
 }
 
 /** Add only one process-owned unique server to a Claude argv. Keep other tools/configuration

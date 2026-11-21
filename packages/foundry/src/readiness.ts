@@ -150,15 +150,18 @@ export interface ReadinessReport {
   nativeClis?: ReadinessNativeCli[];
 }
 /** The native providers and the CLI each launches. */
-const NATIVE_CLIS = [
-  ['claude-code', 'claude'],
-  ['codex', 'codex'],
-  ['muse', 'muse'],
-] as const;
+const NATIVE_CLIS = Object.entries(SUBSCRIPTION_WORKERS) as ReadonlyArray<
+  readonly [
+    keyof typeof SUBSCRIPTION_WORKERS,
+    (typeof SUBSCRIPTION_WORKERS)[keyof typeof SUBSCRIPTION_WORKERS],
+  ]
+>;
 const NATIVE_LABELS: Record<string, string> = {
   claude: 'Claude Code',
   codex: 'Codex',
   muse: 'Muse Code',
+  agy: 'Antigravity',
+  gemini: 'Gemini CLI',
 };
 /**
  * CLIs whose protocol is pinned to one release: agent-session's MuseSession speaks the @muse-code/sdk

@@ -155,10 +155,10 @@ test('settings and analytics are addressable pages scoped to Foundry or a projec
       '▸ Meta (Muse)',
       '▸ xAI (Grok)',
     ]);
+    const xai = page.locator('.vendor-row[data-vendor="xai"]');
+    expect(await xai.locator('.mode-chip').first().textContent()).toBe('Subscription: coming soon');
     const google = page.locator('.vendor-row[data-vendor="google"]');
-    expect(await google.locator('.mode-chip').first().textContent()).toBe(
-      'Subscription: coming soon',
-    );
+    expect(await google.locator('.mode-chip').first().textContent()).toBe('Subscription: off');
     expect(await page.locator('.decision-hint').textContent()).toContain('Wardens');
 
     // Expanding a vendor shows each mode's models; a model becomes the default in one click.

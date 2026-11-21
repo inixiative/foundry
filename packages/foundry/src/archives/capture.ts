@@ -570,9 +570,9 @@ const RENEW_MS = 2 * 60_000;
  */
 function nativeSessions(journal: LocalSessionStore, threadId: string): NativeSession[] {
   const meta = journal.threadMeta(threadId);
-  // A Muse Code session is not a claimable source in Archive (claims name Claude Code and Codex
-  // sessions only); naming its id as either would be a wrong claim. Archive's Muse collector takes it.
-  if (meta?.worker === 'muse') return [];
+  // Archive session claims name Claude Code and Codex sessions only; naming another worker's
+  // session id (Muse, Antigravity, Gemini CLI) as either would create a wrong claim.
+  if (meta?.worker && meta.worker !== 'claude-code' && meta.worker !== 'codex') return [];
   // An observed subagent's own native session: a Codex child's thread (a Claude subagent's
   // transcript follows its session's claim, so it has none of its own).
   if (meta?.spawn?.observed)

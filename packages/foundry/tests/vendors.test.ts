@@ -34,7 +34,7 @@ test('every registry provider serves exactly one vendor mode, and the five main 
   ]);
   const rest = MODEL_VENDORS.slice(5).map((vendor) => vendor.label);
   expect(rest).toEqual(rest.toSorted((a, b) => a.localeCompare(b)));
-  // A subscription mode exists where a native CLI transport does (Muse Code for Meta); Google and xAI are coming.
+  // A subscription mode exists where a native CLI transport does (Claude Code, Codex, Antigravity, Gemini CLI, Muse Code); xAI is coming.
   expect(vendorOfProvider('claude-code')).toMatchObject({
     vendor: { id: 'anthropic' },
     mode: 'subscription',
@@ -44,11 +44,15 @@ test('every registry provider serves exactly one vendor mode, and the five main 
     vendor: { id: 'openai' },
     mode: 'subscription',
   });
+  expect(vendorOfProvider('agy')).toMatchObject({ vendor: { id: 'google' }, mode: 'subscription' });
+  expect(vendorOfProvider('gemini-cli')).toMatchObject({
+    vendor: { id: 'google-code-assist' },
+    mode: 'subscription',
+  });
   expect(vendorOfProvider('muse')).toMatchObject({ vendor: { id: 'meta' }, mode: 'subscription' });
-  for (const id of ['google', 'xai'])
-    expect(MODEL_VENDORS.find((vendor) => vendor.id === id)!.subscription).toEqual({
-      comingSoon: true,
-    });
+  expect(MODEL_VENDORS.find((vendor) => vendor.id === 'xai')!.subscription).toEqual({
+    comingSoon: true,
+  });
 });
 
 test('a provider runs only while its vendor and its mode are both on', () => {
@@ -78,11 +82,19 @@ test('vendor settings refuse unknown vendors, missing modes and a coming-soon su
     validateVendorSettings({ ...ok, deepseek: { enabled: true, subscription: { enabled: true } } }),
   ).toThrow('DeepSeek has no subscription mode');
   expect(() =>
-    validateVendorSettings({ ...ok, google: { enabled: true, subscription: { enabled: true } } }),
-  ).toThrow('Google (Gemini) subscription mode is coming soon');
+    validateVendorSettings({ ...ok, xai: { enabled: true, subscription: { enabled: true } } }),
+  ).toThrow('xAI (Grok) subscription mode is coming soon');
   // Recorded off, a coming-soon mode is fine: it is how the row remembers the person's choice.
   expect(() =>
-    validateVendorSettings({ ...ok, google: { enabled: true, subscription: { enabled: false } } }),
+    validateVendorSettings({ ...ok, xai: { enabled: true, subscription: { enabled: false } } }),
+  ).not.toThrow();
+  // Google subscription (Antigravity) and Google Gemini CLI are live transports, not coming soon.
+  expect(() =>
+    validateVendorSettings({
+      ...ok,
+      google: { enabled: true, subscription: { enabled: true } },
+      'google-code-assist': { enabled: true, subscription: { enabled: true } },
+    }),
   ).not.toThrow();
   expect(() =>
     validateVendorSettings({

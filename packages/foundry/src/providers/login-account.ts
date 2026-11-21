@@ -71,7 +71,9 @@ export function codexPlan(planType: unknown): string | undefined {
 /** A usage reading's plan (`subscription_type`, `planType`), when the account read had none. */
 function readingPlan(login: NativeProfileSource, limits?: LimitSnapshot): string | undefined {
   if (!limits?.plan) return undefined;
-  return login.runtime === 'codex' ? codexPlan(limits.plan) : `Claude ${words(limits.plan)}`;
+  if (login.runtime === 'codex') return codexPlan(limits.plan);
+  if (login.runtime === 'claude') return `Claude ${words(limits.plan)}`;
+  return words(limits.plan);
 }
 
 /** Claude keeps its profile in `<config dir>/.claude.json`; the default login's is `~/.claude.json`. */
@@ -162,7 +164,11 @@ export type AccountReader = (
   login: NativeProfileSource,
 ) => Promise<Omit<LoginAccount, 'plan'> & { plan?: string }>;
 const READ: AccountReader = async (login) =>
-  login.runtime === 'codex' ? readCodex(login) : readClaude(login);
+  login.runtime === 'codex'
+    ? readCodex(login)
+    : login.runtime === 'claude'
+      ? readClaude(login)
+      : {};
 
 /** A login's plan and account; its usage reading's plan when the account doesn't name one. */
 export async function loginAccount(

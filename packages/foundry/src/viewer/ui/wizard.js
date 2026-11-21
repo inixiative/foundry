@@ -22,9 +22,6 @@ export function checkSetupNeeded(config) {
   }
 }
 
-/** Native harnesses that run a main thread on a subscription login (models/registry.ts SUBSCRIPTION_WORKERS). */
-const SUBSCRIPTION_WORKERS = ['claude-code', 'codex'];
-
 // ---------------------------------------------------------------------------
 // Step components
 // ---------------------------------------------------------------------------
@@ -202,9 +199,10 @@ function DecisionModelStep({
   if (!prov) return null;
 
   const tierColors = { fast: 'var(--ok)', standard: 'var(--shared)', powerful: 'var(--accent)' };
-  // Subscription decisions run on the Claude login: Codex runs main threads only.
+  // Subscription decisions run on the Claude login; other subscription workers run main threads only.
   const availableProviders = providers.filter(
-    (p) => enabledProviders.includes(p.id) && p.id !== 'codex',
+    (p) =>
+      enabledProviders.includes(p.id) && (p.credential !== 'subscription' || p.id === 'claude-code'),
   );
 
   return html`
@@ -404,11 +402,15 @@ export function Wizard() {
     }
   };
 
+  const isSubscriptionWorker = (id, list = providers) =>
+    list.some((p) => p.id === id && p.credential === 'subscription');
+
   const handleExecutorNext = () => {
     // Subscription default: Claude Haiku 5.5 decisions on the Claude login, a Codex worker's too.
     // Otherwise default the decision model to the fastest model on the same provider.
     if (!decisionProvider) {
-      const subscription = SUBSCRIPTION_WORKERS.includes(defaultProvider);
+      const subscription =
+        isSubscriptionWorker(defaultProvider) && enabledProviders.includes('claude-code');
       const id = subscription ? 'claude-code' : defaultProvider;
       setDecisionProvider(id);
       const prov = providers.find((p) => p.id === id);
@@ -456,9 +458,9 @@ export function Wizard() {
       }
       await patchSettings('vendors', vendors);
 
-      // A Claude Code or Codex worker with Claude decisions stays subscription-only; any other choice opts in to API tokens.
+      // A subscription worker with Claude decisions stays subscription-only; any other choice opts in to API tokens.
       const subscription =
-        SUBSCRIPTION_WORKERS.includes(defaultProvider) && decisionProvider === 'claude-code';
+        isSubscriptionWorker(defaultProvider, registry.providers) && decisionProvider === 'claude-code';
       await patchSettings('apiTokens', { enabled: !subscription });
       if (subscription) await patchSettings('subscriptionOnly', { model: decisionModel });
 
@@ -560,7 +562,7 @@ export function Wizard() {
             saving=${saving}
             error=${error}
             claudeLoginMissing=${
-              SUBSCRIPTION_WORKERS.includes(defaultProvider) &&
+              isSubscriptionWorker(defaultProvider) &&
               decisionProvider === 'claude-code' &&
               claudeLogin &&
               !claudeLogin.ready

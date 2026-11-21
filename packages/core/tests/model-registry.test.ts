@@ -6,6 +6,7 @@ import {
   MODEL_CAPABILITIES,
   MODEL_REGISTRY,
   MODEL_REGISTRY_UPDATED_AT,
+  MODEL_VENDORS,
   type ModelCapability,
   modelCapabilities,
   modelHasCapability,
@@ -16,6 +17,7 @@ import {
   resolveDecisionModel,
   resolveModelAliasToModelId,
   SUBSCRIPTION_WORKER_MODELS,
+  vendorOfProvider,
 } from '../src/index';
 
 describe('the registry is reachable from core alone', () => {
@@ -239,7 +241,7 @@ describe('aliases and retirement', () => {
 
 describe('Google Gemini Developer API models', () => {
   test('registers Gemini 4 Argon, 3.6 Flash and 3.5 Flash Lite limits and reasoning controls', () => {
-    expect(MODEL_REGISTRY_UPDATED_AT).toBe('2026-11-20');
+    expect(MODEL_REGISTRY_UPDATED_AT).toBe('2026-11-21');
 
     const argon = registryModel('gemini', 'gemini-4-argon');
     expect(argon).toMatchObject({
@@ -280,5 +282,73 @@ describe('Google Gemini Developer API models', () => {
       contextWindow: 1_048_576,
       maxOutputTokens: 65_536,
     });
+  });
+});
+
+describe('Google ACP subscription harnesses (Antigravity and Gemini CLI)', () => {
+  test('registers Antigravity (agy) with Gemini 4 Neon/Carbon/Hydrogen and xhigh reasoning', () => {
+    const agy = MODEL_REGISTRY.agy!;
+    expect(agy).toMatchObject({
+      id: 'agy',
+      lab: 'google',
+      type: 'agy',
+      label: 'Antigravity (Google AI)',
+      credential: 'subscription',
+      enabledByDefault: false,
+    });
+    expect(agy.envKey).toBeUndefined();
+    expect(agy.models.map((m) => m.id)).toEqual([
+      'gemini-4-neon',
+      'gemini-4-carbon',
+      'gemini-4-hydrogen',
+    ]);
+    for (const model of agy.models) {
+      expect(model.runtimeKind).toBe('native-harness');
+      expect(model.contextWindow).toBe(1_048_576);
+      expect(model.maxOutputTokens).toBe(65_536);
+      expect(model.reasoning).toEqual({
+        param: 'thinking_level',
+        efforts: ['low', 'medium', 'high', 'xhigh'],
+        fallback: 'high',
+      });
+    }
+    expect(SUBSCRIPTION_WORKER_MODELS.agy).toBe('gemini-4-neon');
+    expect(vendorOfProvider('agy')).toMatchObject({
+      vendor: { id: 'google', lab: 'google' },
+      mode: 'subscription',
+    });
+  });
+
+  test('registers Gemini CLI (gemini-cli) under the google-code-assist vendor', () => {
+    const cli = MODEL_REGISTRY['gemini-cli']!;
+    expect(cli).toMatchObject({
+      id: 'gemini-cli',
+      lab: 'google',
+      type: 'gemini-cli',
+      label: 'Gemini CLI',
+      credential: 'subscription',
+      enabledByDefault: false,
+    });
+    expect(cli.envKey).toBeUndefined();
+    expect(cli.models.map((m) => m.id)).toEqual([
+      'gemini-4-argon',
+      'gemini-3.8-flash',
+      'gemini-3.6-flash',
+      'gemini-3.5-flash-lite',
+    ]);
+    for (const model of cli.models) {
+      expect(model.runtimeKind).toBe('native-harness');
+      expect(model.reasoning).toEqual({
+        param: 'thinking_level',
+        efforts: ['low', 'medium', 'high'],
+        fallback: 'medium',
+      });
+    }
+    expect(SUBSCRIPTION_WORKER_MODELS['gemini-cli']).toBe('gemini-3.8-flash');
+    expect(vendorOfProvider('gemini-cli')).toMatchObject({
+      vendor: { id: 'google-code-assist', label: 'Google Gemini CLI', lab: 'google' },
+      mode: 'subscription',
+    });
+    expect(MODEL_VENDORS.find((v) => v.id === 'google')?.subscription).toEqual({ provider: 'agy' });
   });
 });

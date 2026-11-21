@@ -7,7 +7,7 @@
 import { registryModel, resolveDecisionModel } from '@inixiative/foundry-core';
 import type { Hono } from 'hono';
 import { z } from 'zod';
-import { subscriptionWorker } from '../../models/registry';
+import { subscriptionWorker, workerName } from '../../models/registry';
 import {
   resolveSubscriptionPolicy,
   SUBSCRIPTION_DECISIONS,
@@ -72,9 +72,9 @@ export function registerModelRoutes(app: Hono, configStore: ConfigStore) {
   });
 
   choose('/api/models/decision', (draft, { provider, model }) => {
-    if (provider === 'muse' || provider === 'codex')
+    if (subscriptionWorker(provider) && provider !== 'claude-code')
       throw Error(
-        `${provider === 'muse' ? 'Muse Code' : 'Codex'} runs main threads only; subscription decisions run on Claude`,
+        `${provider === 'muse' ? 'Muse Code' : workerName(provider)} runs main threads only; subscription decisions run on Claude`,
       );
     if (subscriptionWorker(provider)) {
       // The Claude login runs decisions, its Wardens in the project hosts.

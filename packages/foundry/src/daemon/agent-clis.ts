@@ -13,11 +13,11 @@ export const SYSTEM_PATH = [
   '/usr/sbin',
   '/sbin',
 ];
-export const AGENT_CLIS = ['claude', 'codex', 'muse'] as const;
+export const AGENT_CLIS = ['claude', 'codex', 'muse', 'agy', 'gemini'] as const;
 /**
- * The CLIs the daemon cannot run without (Foundry's default workers and decisions). Muse Code is off
- * until the user turns on Meta's subscription mode, so a machine without it still installs the
- * daemon; where it is installed, the daemon's PATH reaches it.
+ * The CLIs the daemon cannot run without (Foundry's default workers and decisions). Muse Code,
+ * Antigravity and Gemini CLI are opt-in, so a machine without them still installs the daemon; where
+ * they are installed, the daemon's PATH reaches them.
  */
 export const REQUIRED_AGENT_CLIS: readonly string[] = ['claude', 'codex'];
 
