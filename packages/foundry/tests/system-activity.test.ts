@@ -49,6 +49,20 @@ describe('a project host in plain words', () => {
     expect(said(host({ status: 'serving', reason: 'roster refreshed' })).state).toBe('ready');
   });
 
+  test('serving with Wardens down is degraded and names them', () => {
+    const a = said(
+      host({ status: 'serving', held: 73, wardensDown: ['region:locks', 'region:billing'] }),
+    );
+    expect(a.state).toBe('degraded');
+    expect(a.summary).toBe(
+      "2 of Kingdom's 75 Wardens keep failing to start (region:locks, region:billing); the rest are answering, and Foundry keeps trying.",
+    );
+    expect(a.detail).toContain('73/75 held, down: region:locks, region:billing');
+    expect(said(host({ status: 'serving', wardensDown: ['region:locks'] })).summary).toContain(
+      "1 of Kingdom's 75 Wardens keeps failing",
+    );
+  });
+
   test('a replacement while serving says the current ones keep answering', () => {
     expect(said(host({ status: 'serving', reason: 'roster grew' })).summary).toContain(
       'the current ones keep answering',

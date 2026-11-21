@@ -12,6 +12,7 @@ import type { EventStream } from '@inixiative/foundry-core';
 import { processTreeRssMb } from './process-table';
 import type { LoginQuotaPause } from './provider-limits';
 import type { ProjectHostPolicy } from './subscription-policy';
+import { wardenOfDecisionKey } from './warden-routing';
 
 /**
  * Base instructions for a Warden held in its project's host (docs/subscription-decisions.md,
@@ -95,6 +96,8 @@ export interface ProjectHostState {
   readonly peakRssMb?: number;
   /** Starts that failed in a row. */
   readonly failures: number;
+  /** Wardens of the serving host whose members keep ending before they hold: skipped until one holds. */
+  readonly wardensDown?: readonly string[];
   /** The decision login's usage is used up until this time: its Wardens are paused, a start waits for it. */
   readonly quotaResetsAt?: number;
   /** Process replacements so far, by reason. */
@@ -343,6 +346,7 @@ export class ProjectWardenHosts {
     const live = entry.live;
     const holding = live?.host.holding() ?? { expected: entry.roster.length, held: 0 };
     const quotaResetsAt = this._quota?.pausedUntil();
+    const down = live?.host.snapshot().capacity?.rolesDown;
     return {
       status: this._closed
         ? 'closed'
@@ -359,6 +363,9 @@ export class ProjectWardenHosts {
       ...(live?.rssMb !== undefined ? { rssMb: live.rssMb } : {}),
       ...(live?.peakRssMb !== undefined ? { peakRssMb: live.peakRssMb } : {}),
       failures: entry.failures,
+      ...(down?.length
+        ? { wardensDown: down.map((role) => wardenOfDecisionKey(role.key) ?? role.key) }
+        : {}),
       ...(quotaResetsAt !== undefined ? { quotaResetsAt } : {}),
       resets: { ...entry.resets },
       generation: entry.generation,
@@ -449,6 +456,11 @@ export class ProjectWardenHosts {
         } catch {
           /* observers only */
         }
+        if (
+          (event.type === 'role-down' || event.type === 'role-recovered') &&
+          entry.live?.host === host
+        )
+          this._report(projectId);
         if (event.type === 'process-recycled' && entry.live?.host === host) {
           // Once: the recycle that orphans the host out; any later one counts as churn.
           if (!orphanedOut && host.snapshot().capacity?.orphanedOut) {

@@ -23,7 +23,8 @@ export function resetTime(at: number, now = Date.now()): string {
 
 /**
  * A project's Warden host, said plainly: starting, refreshing or restarting is work in progress;
- * serving with no reason is ready; a failed start is degraded until the retry; failed for good is red.
+ * serving with no reason is ready; a failed start is degraded until the retry; failed for good is red;
+ * serving with Wardens down is degraded and names them.
  * Idle, closed or no Wardens is for the log only.
  */
 export function projectHostActivity(
@@ -38,7 +39,7 @@ export function projectHostActivity(
     projectId,
   };
   if (state.lane) projectLabel = `${projectLabel} (${state.lane})`;
-  const detail = `${projectId}${state.lane ? ` (${state.lane})` : ''} ${state.status}: ${state.held}/${state.expected} held${state.setupMs !== undefined ? `, set up in ${state.setupMs} ms` : ''}${state.rssMb !== undefined ? `, ${state.rssMb} MB` : ''}${state.reason ? ` (${state.reason})` : ''}`;
+  const detail = `${projectId}${state.lane ? ` (${state.lane})` : ''} ${state.status}: ${state.held}/${state.expected} held${state.setupMs !== undefined ? `, set up in ${state.setupMs} ms` : ''}${state.rssMb !== undefined ? `, ${state.rssMb} MB` : ''}${state.wardensDown ? `, down: ${state.wardensDown.join(', ')}` : ''}${state.reason ? ` (${state.reason})` : ''}`;
   const count = state.expected;
   const reason = state.reason;
   if (state.status === 'closed' || reason === 'idle' || reason === 'no Wardens')
@@ -91,6 +92,13 @@ export function projectHostActivity(
       ...base,
       state: 'working',
       summary: `Restarting ${projectLabel}'s Wardens; the current ones keep answering.`,
+      detail,
+    };
+  if (state.wardensDown)
+    return {
+      ...base,
+      state: 'degraded',
+      summary: `${state.wardensDown.length} of ${projectLabel}'s ${count} Wardens ${state.wardensDown.length === 1 ? 'keeps' : 'keep'} failing to start (${state.wardensDown.join(', ')}); the rest are answering, and Foundry keeps trying.`,
       detail,
     };
   return {

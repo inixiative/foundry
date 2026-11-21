@@ -270,12 +270,15 @@ const live = subscription
       project: {
         projectOf: (threadId: string) => threadMeta?.(threadId)?.projectId,
         onProject: (projectId: string, state: ProjectHostState) => {
-          const line = `[project-wardens] ${projectId}${state.lane ? ` (${state.lane})` : ''} ${state.status}: ${state.held}/${state.expected} held${state.setupMs !== undefined ? `, set up in ${state.setupMs} ms` : ''}${state.rssMb !== undefined ? `, ${state.rssMb} MB` : ''}${state.reason ? ` (${state.reason})` : ''}`;
+          const activity = projectHostActivity(
+            projectId,
+            config.projects?.[projectId]?.label ?? projectId,
+            state,
+          );
+          const line = `[project-wardens] ${activity.detail}`;
           console.log(line);
           // Shown above the composer of the project's threads; failed for good also toasts.
-          eventStream.pushActivity(
-            projectHostActivity(projectId, config.projects?.[projectId]?.label ?? projectId, state),
-          );
+          eventStream.pushActivity(activity);
           if (state.status === 'failed')
             eventStream.pushError('subscription-decisions', line, 'warn');
         },
