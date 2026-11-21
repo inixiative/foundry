@@ -31,7 +31,7 @@ import {
   NAME_CHECK_NOTE,
   PLAN_ASK_NOTE,
 } from '../src/agents/chorus-reception';
-import { configuredWardens, largestRoster } from '../src/agents/configured-wardens';
+import { configuredWardens } from '../src/agents/configured-wardens';
 import {
   chorusLayers,
   composeChorus,
@@ -1359,20 +1359,6 @@ test('budgets admit a region at the 40k-token hard cap and refuse above it, with
     `exceed its budget of ${DEFAULT_ROLE_BUDGET} (composition.roles.${LOCKS}.budget)`,
   );
   expect(over).toContain('Nothing was sent or truncated');
-});
-
-test('the primed pool is sized for the largest chorus any project runs', () => {
-  const { project } = projectWithRegions();
-  const c = config(project);
-  validateConfig(c);
-  // Settings: no Wardens. Project P's chorus: two.
-  expect(configuredWardens(c).wardens.length).toBe(0);
-  expect(largestRoster(c)).toBe(2);
-  c.projects.P!.enabled = false;
-  expect(largestRoster(c)).toBe(0);
-  c.projects.P!.enabled = true;
-  c.projects.P!.chorus = { enabled: false };
-  expect(largestRoster(c)).toBe(0);
 });
 
 test("settings may not take a region's source id, and the brief's nodes are refused with the chorus off too", () => {

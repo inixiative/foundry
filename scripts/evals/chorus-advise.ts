@@ -22,8 +22,8 @@
  * --regions <dir> runs the project's chorus from that regions directory instead of its own (e.g.
  * regions rebuilt at a fixture's base commit); everything else about the chorus is the project's.
  * --cwd is where the thread works (default the project's path): the instruction ladder composes from
- * there. --session names the thread, so a later run with the same key reuses its Wardens' primed
- * sessions. --pause-at waits while the Claude login's five-hour window is at or above that percent.
+ * there. --session names the thread, so a later run with the same key reuses its Wardens' session
+ * keys. --pause-at waits while the Claude login's five-hour window is at or above that percent.
  * --experiment records a reviewed design (foundry-core's experiment gate); one message is never wide.
  * --prime warms every Warden first (its caches, then one decision on a priming message on its own
  * session keys), so the message is advised on primed keys as a later live turn is; a first live turn
@@ -35,14 +35,13 @@
  * Usage: every decision call's tokens (role `warden`) and a window reading before
  * and after, through foundry-core's TokenTracker, land in chorus.json's `usage`.
  *
- * --decision-runtime claude-project runs the Wardens as the daemon does under that runtime: the
- * project's roster composed and held in its own host first (setup recorded in `<out>/host.json`),
- * advice asked there, guards, reviews and later stages primed. --message-file may be given several
- * times: the messages go through one set of hosts in order, --gap-ms apart (0: back to back), each
- * into `<out>/<n>/`; host.json then records per message how many Warden calls a held spare served
- * (`warm`) or started their own member (`cold`), their latencies, how long after the message every
- * Warden was held again (`refillMs`, null when the next message came first), and the host's memory
- * over the run.
+ * The Wardens run as the daemon runs them: the project's roster composed and held in its own host
+ * first (setup recorded in `<out>/host.json`), and every Warden call (advice, guards, reviews and
+ * later stages) asked there. --message-file may be given several times: the messages go through one
+ * set of hosts in order, --gap-ms apart (0: back to back), each into `<out>/<n>/`; host.json then
+ * records per message how many Warden calls a held spare served (`warm`) or started their own member
+ * (`cold`), their latencies, how long after the message every Warden was held again (`refillMs`,
+ * null when the next message came first), and the host's memory over the run.
  */
 import { createHash } from 'node:crypto';
 import { appendFileSync, existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -70,8 +69,7 @@ import {
   WARDEN_CHARTER,
   WARDEN_CHARTER_VERSION,
 } from '../../packages/foundry/src/classify';
-import { markEvalRun } from '../../packages/foundry/src/feedback/charter-eval';
-import { adviseOnce } from '../../packages/foundry/src/feedback/chorus-advise';
+import { adviseOnce, markEvalRun } from '../../packages/foundry/src/feedback/chorus-advise';
 import {
   claudeLimits,
   type DecisionEvents,
@@ -79,7 +77,7 @@ import {
   privateDirectory,
 } from '../../packages/foundry/src/providers/decision-host';
 
-type PrimedEvent = Parameters<NonNullable<DecisionEvents['onPrimedEvent']>>[0];
+type HostEvent = Parameters<NonNullable<DecisionEvents['onHostEvent']>>[0];
 
 import { isDefaultProfile } from '../../packages/foundry/src/providers/default-profiles';
 import { processTreeRssMb } from '../../packages/foundry/src/providers/process-table';
@@ -94,7 +92,6 @@ const { values } = parseArgs({
     regions: { type: 'string' },
     cwd: { type: 'string' },
     'message-file': { type: 'string', multiple: true },
-    'decision-runtime': { type: 'string' },
     'gap-ms': { type: 'string' },
     out: { type: 'string' },
     session: { type: 'string' },
@@ -122,9 +119,6 @@ privateDirectory(out);
 const messages = values['message-file'].map((file) => readFileSync(file, 'utf8'));
 const gapMs = values['gap-ms'] === undefined ? 0 : Number(values['gap-ms']);
 if (!Number.isSafeInteger(gapMs) || gapMs < 0) throw Error('--gap-ms must be a whole number of ms');
-const runtime = values['decision-runtime'];
-if (runtime !== undefined && runtime !== 'claude' && runtime !== 'claude-project')
-  throw Error('--decision-runtime is claude or claude-project');
 // A few messages are never a wide run; a named design is checked and recorded.
 const experiment = requireExperiment(values.experiment, messages.length > 3);
 
@@ -164,20 +158,13 @@ const entry = Object.entries(saved.projects ?? {}).find(
 if (!entry) throw Error(`--project ${values.project} is not registered in ${foundryDir}`);
 const [projectId, project] = entry;
 if (!project.path) throw Error(`project ${projectId} has no path`);
-// In memory only: the decision runtime asked for, over the daemon's.
-if (runtime)
-  saved.subscriptionOnly = {
-    ...saved.subscriptionOnly,
-    decisionRuntime: runtime,
-    ...(runtime !== 'claude-project' ? { projectHost: undefined } : {}),
-  };
 // In memory only: the project's chorus reads its regions from --regions, everything else as set.
 if (values.regions) {
   const { layers: _layers, ...chorus } = project.chorus ?? {};
   project.chorus = { ...chorus, regions: resolve(values.regions) };
 }
 const state = privateDirectory(join(homedir(), '.foundry', 'evals'));
-// An eval run, not work: Archive and the repeat report leave its sessions out.
+// An eval run, not work: Archive leaves its sessions out.
 markEvalRun(state);
 const subscription = resolveSubscriptionPolicy(saved, { startup: true, cwd: state });
 if (!subscription) throw Error('chorus-advise runs on subscription decisions only');
@@ -224,7 +211,7 @@ const recordWindows = async (phase: 'before' | 'after') => {
     attribution: { role: 'warden' },
   });
 };
-const recordStandby = (event: PrimedEvent) => {
+const recordStandby = (event: HostEvent) => {
   if (event.type !== 'standby') return;
   tracker.record({
     provider: 'subscription-decisions',
@@ -239,30 +226,25 @@ const recordStandby = (event: PrimedEvent) => {
     },
   });
 };
-/** claude-project: each Warden call's host outcome (held spare or own member) and latency, per message. */
+/** Each Warden call's host outcome (held spare or own member) and latency, per message. */
 const hostCalls: Array<Array<{ key: string; prime: 'warm' | 'cold'; ms: number }>> = [];
 const hostLog: Array<Record<string, unknown>> = [];
-const live = liveDecisionHosts(config, subscription, {
-  ...(subscription.policy.wardens === 'project'
-    ? {
-        project: {
-          projectOf: () => projectId,
-          // The host's own events: which calls a held spare served, and its standby turns.
-          onEvent: (event: PrimedEvent) => {
-            if (event.type === 'decision')
-              hostCalls.at(-1)?.push({ key: event.key, prime: event.prime, ms: event.ms });
-            else recordStandby(event);
-          },
-          onProject: (id, state) => {
-            hostLog.push({ at: Date.now(), ...state });
-            console.error(
-              `[project-wardens] ${id} ${state.status} ${state.held}/${state.expected}${state.reason ? ` (${state.reason})` : ''}`,
-            );
-          },
-        },
-      }
-    : {}),
-  events: { onPrimedEvent: (event) => recordStandby(event) },
+const live = liveDecisionHosts(subscription, {
+  project: {
+    projectOf: () => projectId,
+    // The host's own events: which calls a held spare served, and its standby turns.
+    onEvent: (event: HostEvent) => {
+      if (event.type === 'decision')
+        hostCalls.at(-1)?.push({ key: event.key, prime: event.prime, ms: event.ms });
+      else recordStandby(event);
+    },
+    onProject: (id, state) => {
+      hostLog.push({ at: Date.now(), ...state });
+      console.error(
+        `[project-wardens] ${id} ${state.status} ${state.held}/${state.expected}${state.reason ? ` (${state.reason})` : ''}`,
+      );
+    },
+  },
   log: (line) => console.error(line),
 });
 /** A decision provider whose settled calls are recorded; every other property is the host's own. */
@@ -308,11 +290,10 @@ const quota = async () => {
 const memory = new FileMemory(join(foundryDir, 'memory'));
 await memory.load();
 const resolveSource = createSourceResolver({ memory });
-/** claude-project: the project's host, set up before the first message as the daemon sets it up. */
+/** The project's host, set up before the first message as the daemon sets it up. */
 const projectHosts = live.projectHosts;
 const hostReport: Record<string, unknown> = {
-  runtime: subscription.policy.wardens,
-  ...(subscription.policy.projectHost ? { bounds: subscription.policy.projectHost } : {}),
+  bounds: subscription.policy.projectHost,
   gapMs,
 };
 /** The host process tree's and this process's resident memory, every 2 s while messages run. */
@@ -370,7 +351,6 @@ const writeChorus = (
       model: subscription.policy.model,
       effort: subscription.policy.effort ?? 'default',
       callTimeoutMs: subscription.policy.callTimeoutMs,
-      wardens: subscription.policy.wardens,
     },
   };
 
@@ -571,7 +551,7 @@ let messagesSent = 0;
 const timeRefill = (record: Record<string, unknown>, from: number, index: number) =>
   (async () => {
     for (;;) {
-      const state = projectHosts?.projectState(projectId);
+      const state = projectHosts.projectState(projectId);
       if (state && state.held === state.expected) {
         record.refillMs = Date.now() - from;
         return;
@@ -585,40 +565,38 @@ const timeRefill = (record: Record<string, unknown>, from: number, index: number
     }
   })();
 try {
-  if (projectHosts) {
-    const t0 = Date.now();
-    const roster = await composeProjectRoster({
-      config,
-      projectId,
-      decisions,
-      stageHost,
-      resolveSource,
-      warn: (line) => console.error(line),
+  const t0 = Date.now();
+  const roster = await composeProjectRoster({
+    config,
+    projectId,
+    decisions,
+    stageHost,
+    resolveSource,
+    warn: (line) => console.error(line),
+  });
+  const composeMs = Date.now() - t0;
+  projectHosts.openProject(
+    projectId,
+    roster.map(({ spec }) => ({ spec, standby: '' })),
+  );
+  const ready = await projectHosts.projectReady(projectId, 600_000);
+  hostReport.setup = {
+    roster: roster.length,
+    composeMs,
+    ready,
+    wallMs: Date.now() - t0,
+    state: projectHosts.projectState(projectId),
+  };
+  console.error(`[project-wardens] setup ${JSON.stringify(hostReport.setup)}`);
+  sampler = setInterval(() => {
+    const state = projectHosts.projectState(projectId);
+    memorySamples.push({
+      at: Date.now(),
+      ...(state?.pid !== undefined ? { hostMb: processTreeRssMb(state.pid) } : {}),
+      evalMb: Math.round(process.memoryUsage().rss / 1_048_576),
+      ...(state ? { held: state.held } : {}),
     });
-    const composeMs = Date.now() - t0;
-    projectHosts.openProject(
-      projectId,
-      roster.map(({ spec }) => ({ spec, standby: '' })),
-    );
-    const ready = await projectHosts.projectReady(projectId, 600_000);
-    hostReport.setup = {
-      roster: roster.length,
-      composeMs,
-      ready,
-      wallMs: Date.now() - t0,
-      state: projectHosts.projectState(projectId),
-    };
-    console.error(`[project-wardens] setup ${JSON.stringify(hostReport.setup)}`);
-    sampler = setInterval(() => {
-      const state = projectHosts.projectState(projectId);
-      memorySamples.push({
-        at: Date.now(),
-        ...(state?.pid !== undefined ? { hostMb: processTreeRssMb(state.pid) } : {}),
-        evalMb: Math.round(process.memoryUsage().rss / 1_048_576),
-        ...(state ? { held: state.held } : {}),
-      });
-    }, 2_000);
-  }
+  }, 2_000);
   for (let n = 0; n < messages.length; n++) {
     if (n && gapMs) await Bun.sleep(gapMs);
     const dir = messages.length > 1 ? privateDirectory(join(out, String(n + 1))) : out;
@@ -627,7 +605,7 @@ try {
     tracker = new TokenTracker();
     // In a project host the host is the warm cache: only the first message primes (its spares are
     // used by the priming call, so it waits for them to hold again); later messages are later turns.
-    const prime = !!values.prime && (!projectHosts || n === 0);
+    const prime = !!values.prime && n === 0;
     phase = prime ? 'prime' : 'advice';
     const primeCalls: Array<{ key: string; prime: 'warm' | 'cold'; ms: number }> = [];
     hostCalls.push(primeCalls);
@@ -637,7 +615,7 @@ try {
     const probe = gapMs > 0 || messages.length === 1;
     const before = probe || n === 0 ? await recordWindows('before') : undefined;
     const startedAt = new Date().toISOString();
-    let heldAtStart = projectHosts?.projectState(projectId)?.held;
+    let heldAtStart = projectHosts.projectState(projectId)?.held;
     messagesSent = n + 1;
     const advice = await adviseOnce({
       config,
@@ -651,12 +629,12 @@ try {
       ...(prime ? { prime: true } : {}),
       onPrimed: async () => {
         phase = 'advice';
-        if (prime && projectHosts) {
+        if (prime) {
           const t = Date.now();
           await projectHosts.projectReady(projectId, 120_000);
           refillMs = Date.now() - t;
         }
-        heldAtStart = projectHosts?.projectState(projectId)?.held;
+        heldAtStart = projectHosts.projectState(projectId)?.held;
         hostCalls.push([]);
       },
       journal: (record) => appendFileSync(journalFile, `${JSON.stringify(record)}\n`),
@@ -673,28 +651,24 @@ try {
       index: n,
       elapsedMs: advice.elapsedMs,
       wardens: advice.decisions.length,
-      ...(projectHosts
-        ? {
-            heldAtStart,
-            ...(refillMs !== undefined ? { refillAfterPrimeMs: refillMs } : {}),
-            warm: calls.filter((c) => c.prime === 'warm').length,
-            cold: calls.filter((c) => c.prime === 'cold').length,
-            // Advice calls the host did not serve: skipped unsent (not held, or no host serving).
-            unserved: Math.max(0, advice.decisions.length - calls.length),
-            warmMs: pcts(calls.filter((c) => c.prime === 'warm').map((c) => c.ms)),
-            coldMs: pcts(calls.filter((c) => c.prime === 'cold').map((c) => c.ms)),
-          }
-        : {}),
+      heldAtStart,
+      ...(refillMs !== undefined ? { refillAfterPrimeMs: refillMs } : {}),
+      warm: calls.filter((c) => c.prime === 'warm').length,
+      cold: calls.filter((c) => c.prime === 'cold').length,
+      // Advice calls the host did not serve: skipped unsent (not held, or no host serving).
+      unserved: Math.max(0, advice.decisions.length - calls.length),
+      warmMs: pcts(calls.filter((c) => c.prime === 'warm').map((c) => c.ms)),
+      coldMs: pcts(calls.filter((c) => c.prime === 'cold').map((c) => c.ms)),
       layer1Ms: pcts(layer1),
       windows: { before: before ?? null, after: after ?? null },
     });
-    if (projectHosts) refills.push(timeRefill(perMessage.at(-1)!, adviceEnd, n));
+    refills.push(timeRefill(perMessage.at(-1)!, adviceEnd, n));
     writeChorus(dir, n, advice, startedAt, before, after);
   }
   await Promise.all(refills);
 } finally {
   clearInterval(sampler);
-  hostReport.final = projectHosts?.projectState(projectId) ?? null;
+  hostReport.final = projectHosts.projectState(projectId) ?? null;
   await live.shutdown();
 }
 hostReport.messages = perMessage;

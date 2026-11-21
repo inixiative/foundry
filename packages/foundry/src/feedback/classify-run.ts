@@ -3,8 +3,8 @@
  * @kind config
  * @partOf feature:evals
  */
-// A classify run config (`scripts/evals/warden-charter.ts --classify <run.json>`), read into what the
-// eval runs: the stages a project's `chorus.wardens.stages` takes, each stage's charter as its
+// A classify run config (`<run.json>`), read into what an eval runs (the charter eval that read it is
+// parked in Oracle `migration/foundry-pool-evals/` until it is rebuilt on the project host): the stages a project's `chorus.wardens.stages` takes, each stage's charter as its
 // `sections` set it (its charter's sections and the region Warden's instruction line), a grouped
 // chorus's members, and which calls also take their debug readings. Every key and section name
 // is checked here, so a typo stops the run before any call.

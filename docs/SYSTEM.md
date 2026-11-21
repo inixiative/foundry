@@ -235,7 +235,7 @@ Each adapter provides:
 
 ## 4. Eval (`src/eval/`)
 
-> **Moved to Oracle (April 2026).** Nothing in this section is in Foundry any more: `FixtureRunner`, `DiffScorer`, `LLMScorer`, `EvalStore` and `PRFixture` live in Oracle (`src/runner.ts`, `src/scorer.ts`, `src/store.ts`, `src/types.ts`). Foundry's own Warden evals are `scripts/evals/` and foundry-core `feedback/warden-probes.ts`. The text below is kept as it stood.
+> **Moved to Oracle (April 2026).** Nothing in this section is in Foundry any more: `FixtureRunner`, `DiffScorer`, `LLMScorer`, `EvalStore` and `PRFixture` live in Oracle (`src/runner.ts`, `src/scorer.ts`, `src/store.ts`, `src/types.ts`). Foundry's own Warden eval left with the primed pool (2026-11-21) and is parked in Oracle `migration/foundry-pool-evals/`; foundry-core `feedback/warden-probes.ts` keeps the probe contract and scoring. The text below is kept as it stood.
 
 PR-based evaluation system for self-improvement.
 

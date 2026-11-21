@@ -59,9 +59,8 @@ test('subscription mode reports the main-thread and decision profiles where they
     provider: 'claude-code',
     nativeAuthenticationId: config.nativeAuthentication[0]!.id,
   };
-  config.subscriptionOnly = { decisionRuntime: 'codex', model: 'gpt-5.6-luna' };
   enable(config, 'claude-code', 'codex', 'anthropic');
-  homeWithLogins('.codex');
+  homeWithLogins('.claude', '.codex');
 
   const accounts = Object.fromEntries(
     providerAccounts(config, { which: onPath, environment: {} }).map((a) => [a.provider, a]),
@@ -71,10 +70,10 @@ test('subscription mode reports the main-thread and decision profiles where they
     source: 'profile',
     detail: worker,
     ready: true,
-    uses: ['main thread'],
+    uses: ['main thread', 'decisions'],
   });
-  // Codex is on with a login: a thread may run on it, beside its decisions.
-  expect(accounts.codex).toMatchObject({ source: 'login', uses: ['main thread', 'decisions'] });
+  // Codex is on with a login: a thread may run on it; its Wardens decide on the Claude login.
+  expect(accounts.codex).toMatchObject({ source: 'login', uses: ['main thread'] });
   expect(accounts.anthropic).toMatchObject({
     source: 'none',
     detail: 'ANTHROPIC_API_KEY',

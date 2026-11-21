@@ -982,7 +982,7 @@ export function validateChorusSettings(where: string, chorus: unknown): void {
   for (const key of ['charter', 'charters', 'sections'])
     if (key in c)
       throw Error(
-        `${where}.${key} is not a chorus setting: charters are fixed per task and role, owned by Foundry; an eval run config may set their sections (scripts/evals/warden-charter.ts --classify)`,
+        `${where}.${key} is not a chorus setting: charters are fixed per task and role, owned by Foundry; an eval run config may set their sections (feedback/classify-run.ts)`,
       );
   for (const key of Object.keys(c))
     if (!CHORUS_KEYS.includes(key))
@@ -1114,7 +1114,15 @@ export function validateConfig(config: FoundryConfig): void {
     );
   assertMainThreadLabs(config);
   resolveSubscriptionPolicy(config);
-  if (config.kingdomIntegrations) kingdomIntegrationsSchema.parse(config.kingdomIntegrations);
+  if (config.kingdomIntegrations) {
+    const parsed = kingdomIntegrationsSchema.safeParse(config.kingdomIntegrations);
+    if (!parsed.success)
+      throw Error(
+        parsed.error.issues
+          .map((issue) => `${['kingdomIntegrations', ...issue.path].join('.')}: ${issue.message}`)
+          .join('; '),
+      );
+  }
   for (const project of Object.values(config.projects ?? {})) {
     if (project.status !== undefined && project.status !== 'archived')
       throw Error(`Project ${project.id} status must be archived or absent`);

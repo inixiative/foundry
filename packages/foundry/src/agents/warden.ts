@@ -1907,7 +1907,7 @@ export function threadSection(understanding: string | undefined) {
   return `${understanding ? `\n## Your understanding of this thread\n${understanding}` : ''}\n`;
 }
 
-/** The stable start of every phase's message: one primed session serves advice, guard and review. */
+/** The stable start of every phase's message: one held spare serves advice, guard and review. */
 export function domainCachePrefix(domain: string, domainKnowledge: string): string {
   return `## Domain cache (${domain})\n${domainKnowledge}\n`;
 }

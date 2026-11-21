@@ -1,7 +1,6 @@
-// The per-project Warden host (the default for Claude decisions, `claude-project`): one Foundry-owned
-// Claude Code process per project holds every Warden warm; every thread of the project asks it for
-// advice; it is supervised (restart with backoff, blue/green past its bounds); while it does not serve,
-// its Wardens are skipped, never sent to primed.
+// The per-project Warden host (subscription decisions): one Foundry-owned Claude Code process per
+// project holds every Warden warm; every thread of the project asks it for advice; it is supervised
+// (restart with backoff, blue/green past its bounds); while it does not serve, its Wardens are skipped.
 
 import { afterEach, expect, test } from 'bun:test';
 import {
@@ -31,12 +30,6 @@ import {
 } from '../src/providers/decision-login-host';
 import { defaultProfileSource } from '../src/providers/default-profiles';
 import {
-  isStageSession,
-  isWardenSession,
-  primedRequest,
-  projectHostTarget,
-} from '../src/providers/primed-decisions';
-import {
   dispatcherCount,
   followProjectActivity,
   MAX_DISPATCHERS,
@@ -49,6 +42,12 @@ import {
   PROJECT_HOST_DEFAULTS,
   resolveSubscriptionPolicy,
 } from '../src/providers/subscription-policy';
+import {
+  isStageSession,
+  isWardenSession,
+  primedRequest,
+  projectHostTarget,
+} from '../src/providers/warden-routing';
 import { type FoundryConfig, starterConfig } from '../src/viewer/config';
 import { fakeClaudeTree } from './helpers/fake-claude-tree';
 import { subscriptionStatusProcess } from './helpers/subscription-transport';
@@ -408,7 +407,7 @@ test('serving: a starting host skips its Wardens (they catch up later); a failed
   expect(wardens.serving('A1')).toBeDefined();
 });
 
-test('routing: a project host takes every Warden call (advice, guards, reviews, later stages); other roles stay primed', () => {
+test('routing: a project host takes every Warden call (advice, guards, reviews, later stages); no other call', () => {
   const host = { serving: () => true } as unknown;
   const project = { serving: () => host } as unknown as ProjectWardenHosts;
   expect(projectHostTarget(project, 'A1:aux:domain:locks')).toBe(host as never);
@@ -417,7 +416,7 @@ test('routing: a project host takes every Warden call (advice, guards, reviews, 
   expect(projectHostTarget(project, 'A1:aux:agent:worker')).toBeUndefined();
   expect(projectHostTarget(project, 'A1:aux:naming')).toBeUndefined();
   // A host starting, failed or closed serves no Warden call: advice, guard, review and a later stage
-  // are refused unsent, never sent to primed (Aron, 2026-11-18: "when the layers are down, they just skip").
+  // are refused unsent (Aron, 2026-11-18: "when the layers are down, they just skip").
   for (const serving of ['starting', undefined]) {
     const none = { serving: () => serving } as unknown as ProjectWardenHosts;
     expect(projectHostTarget(none, 'A1:aux:domain:locks')).toBe('not-serving');
@@ -449,7 +448,7 @@ test('lanes: a later stage on another model gets its own hosts, opened, touched 
   expect(sonnet.projectState('P')).toBeUndefined();
 });
 
-test('settings: Claude decisions resolve to project Wardens with the host defaults, by default or named; projectHost is refused on primed Wardens', () => {
+test('settings: subscription decisions resolve to project Wardens with the host defaults, the projectHost bounds over them', () => {
   const root = tempDir('policy');
   mkdirSync(join(root, '.claude'), { recursive: true });
   writeFileSync(join(root, '.claude', '.credentials.json'), '{}');
@@ -457,27 +456,21 @@ test('settings: Claude decisions resolve to project Wardens with the host defaul
   const config = starterConfig('claude-code', 'sonnet');
   mkdirSync(join(root, 'receipts'), { mode: 0o700 });
   config.subscriptionOnly = {
-    decisionRuntime: 'claude-project',
     directory: join(root, 'receipts'),
     projectHost: { sparesPerWarden: 2 },
   };
   const resolved = resolveSubscriptionPolicy(config, { cwd: root })!;
   expect(resolved.decision.runtime).toBe('claude');
-  expect(resolved.policy.wardens).toBe('project');
   expect(resolved.policy.projectHost).toEqual({ ...PROJECT_HOST_DEFAULTS, sparesPerWarden: 2 });
-  // No runtime named: Claude decisions, project Wardens.
-  config.subscriptionOnly = { directory: join(root, 'receipts'), projectHost: { maxRssMb: 2_048 } };
-  const unnamed = resolveSubscriptionPolicy(config, { cwd: root })!;
-  expect(unnamed.policy.wardens).toBe('project');
-  expect(unnamed.policy.projectHost?.maxRssMb).toBe(2_048);
-  config.subscriptionOnly = { decisionRuntime: 'claude', projectHost: { maxRssMb: 2_048 } };
-  expect(() => resolveSubscriptionPolicy(config, { cwd: root })).toThrow(
-    /projectHost applies only to project Warden hosts/,
+  // No bounds named: the defaults.
+  config.subscriptionOnly = { directory: join(root, 'receipts') };
+  expect(resolveSubscriptionPolicy(config, { cwd: root })!.policy.projectHost).toEqual(
+    PROJECT_HOST_DEFAULTS,
   );
 });
 
 test('a project host that fails to launch leaves no folder in the hosts directory', async () => {
-  const root = tempDir('primed-project-fail');
+  const root = tempDir('project-host-fail');
   mkdirSync(join(root, '.claude'), { mode: 0o755 });
   writeFileSync(join(root, '.claude', '.credentials.json'), '{}', { mode: 0o600 });
   process.env.HOME = root;
@@ -516,7 +509,7 @@ test('a project host that fails to launch leaves no folder in the hosts director
     await wardens.close();
     await primed.close();
   });
-  const workspace = join(decisionHostsDirectory(), `primed-${primed.hostId}`);
+  const workspace = join(decisionHostsDirectory(), `host-${primed.hostId}`);
   wardens.openProject('P', [
     {
       spec: { key: 'T0:aux:domain:locks', instructions: 'LOCKS WARDEN', context: 'x' },
@@ -529,7 +522,7 @@ test('a project host that fails to launch leaves no folder in the hosts director
 });
 
 test('the decision host launches the project host on the decision login: its own flags, no CLAUDE.md, no session on disk; advice splits at the stable prefix', async () => {
-  const root = tempDir('primed-project');
+  const root = tempDir('project-host-launch');
   mkdirSync(join(root, '.claude'), { mode: 0o755 });
   writeFileSync(join(root, '.claude', '.credentials.json'), '{}', { mode: 0o600 });
   process.env.HOME = root;
@@ -602,7 +595,7 @@ test('the decision host launches the project host on the decision login: its own
   expect(tree.processes.length).toBe(0);
   wardens.markOpening('P', false);
   // No host serving: a Warden call that is not held-only (a guard, a brief, a Retry) and a review are
-  // refused unsent as well, never run on primed (Aron, 2026-11-18: "it should not be handling warden
+  // refused unsent as well (Aron, 2026-11-18: "it should not be handling warden
   // calls at all").
   for (const threadId of ['T7:aux:domain:locks', 'T7:aux:review:g1:domain:locks']) {
     const unserved = newRun(1);
@@ -698,13 +691,7 @@ test('the decision host launches the project host on the decision login: its own
   expect(tree.memberPrompts.some((p) => p.includes('NAMING WARDEN'))).toBe(false);
 });
 
-// -- No primed pool with project hosts ------------------------------------------------------------
-
-/** Every folder below the hosts directory named `fixture`: where a primed pool's sessions run. */
-const poolFolders = (hosts: string): string[] =>
-  readdirSync(hosts, { recursive: true, encoding: 'utf8' }).filter(
-    (path) => basename(path) === 'fixture',
-  );
+// -- The decision hosts start no process but the project hosts' -----------------------------------
 
 /** A temporary HOME with a Claude login, and a private hosts directory of its own. */
 function decisionLoginHome(name: string) {
@@ -726,42 +713,28 @@ function decisionLoginHome(name: string) {
   return { root, hosts, directory };
 }
 
-test('the daemon\'s decision hosts build no primed pool with project hosts, for the decision host and a stage host; with decisionRuntime "claude" both build one', async () => {
+test("the daemon's decision hosts, the decision host and a stage host, start no process until a project's host opens", async () => {
   const { root, hosts, directory } = decisionLoginHome('no-pool-live');
   const config = starterConfig('claude-code', 'sonnet');
-  const start = (decisionRuntime: 'claude' | 'claude-project' | undefined) => {
-    config.subscriptionOnly = { ...(decisionRuntime ? { decisionRuntime } : {}), directory };
-    const resolved = resolveSubscriptionPolicy(config, { startup: true, cwd: root })!;
-    return liveDecisionHosts(config, resolved, {
-      ...(resolved.policy.wardens === 'project' ? { project: { projectOf: () => 'P' } } : {}),
-    });
-  };
-  // Project hosts, by default and named: no pool, no pool folder, no pool in the snapshot.
-  for (const runtime of [undefined, 'claude-project'] as const) {
-    const live = start(runtime);
-    try {
-      expect(live.projectHosts).toBeDefined();
-      live.stageProjectHosts!('claude-sonnet-5-5', 'low');
-      expect(poolFolders(hosts)).toEqual([]);
-      expect(live.decisions.snapshot()).not.toHaveProperty('primed');
-    } finally {
-      await live.shutdown();
-    }
-  }
-  // Primed Wardens (the evals' baseline): the decision host and the stage host each build their pool.
-  const live = start('claude');
+  config.subscriptionOnly = { directory };
+  const resolved = resolveSubscriptionPolicy(config, { startup: true, cwd: root })!;
+  const live = liveDecisionHosts(resolved, { project: { projectOf: () => 'P' } });
   try {
-    expect(live.projectHosts).toBeUndefined();
-    expect(live.stageHost('claude-sonnet-5-5', 'low')).not.toBeNull();
-    expect(poolFolders(hosts)).toHaveLength(2);
-    expect(live.decisions.snapshot()).toHaveProperty('primed');
+    live.stageProjectHosts('claude-sonnet-5-5', 'low');
+    // Each login host made only its own folder under the hosts directory, holding its Archive marker.
+    expect(
+      readdirSync(hosts, { recursive: true, encoding: 'utf8' }).filter(
+        (path) => path.includes('/') && basename(path) !== '.archive-run',
+      ),
+    ).toEqual([]);
+    expect(live.decisions.snapshot()).toHaveProperty('projectHosts');
   } finally {
     await live.shutdown();
   }
-  expect(poolFolders(hosts)).toEqual([]);
+  expect(readdirSync(hosts).filter((name) => name.startsWith('host-'))).toEqual([]);
 });
 
-test('with project hosts the decision host builds no primed pool: a Warden call is served by its project host, any other call is refused unsent and starts nothing', async () => {
+test('the decision host serves a Warden call on its project host; any other call is refused unsent and starts nothing', async () => {
   const { hosts, directory } = decisionLoginHome('no-pool-host');
   const tree = fakeClaudeTree();
   let statusChecks = 0;
@@ -791,9 +764,7 @@ test('with project hosts the decision host builds no primed pool: a Warden call 
     await wardens.close();
     await host.close();
   });
-  expect(host.pool).toBeUndefined();
   expect(host.quota).toBeDefined();
-  expect(poolFolders(hosts)).toEqual([]);
   const cache = '## Domain cache (locks)\nuse createLock\n';
   const messages: LLMMessage[] = [
     { role: 'system', content: 'LOCKS WARDEN' },
@@ -831,26 +802,11 @@ test('with project hosts the decision host builds no primed pool: a Warden call 
     ).content,
   ).toBe('ANS:\n## Message\nadd a lock');
   expect(warden.snapshot().calls[0]).toMatchObject({ valid: true, prime: 'warm' });
-  // Every process started is the project host's own launch, in its folder: none is a pool's.
+  // Every process started is the project host's own launch, in its folder.
   expect(tree.processes).toHaveLength(1);
   expect(tree.processes[0]!.argv).toContain('--disable-slash-commands');
   expect(basename(tree.processes[0]!.cwd!)).toMatch(/^project-/);
-  expect(poolFolders(hosts)).toEqual([]);
-  // Without project hosts the same host builds the pool, in its folder's fixture/.
-  const pooled = createDecisionLoginHost({
-    source: defaultProfileSource('claude'),
-    directory,
-    model: 'claude-haiku-5-5',
-    maxConcurrent: 1,
-    callTimeoutMs: 3_000,
-    spawn: tree.spawn,
-    statusSpawn: () => subscriptionStatusProcess(true),
-  });
-  cleanup.push(() => pooled.close());
-  expect(pooled.pool?.runtime).toBe('claude');
-  expect(existsSync(join(hosts, `primed-${pooled.hostId}`, 'fixture'))).toBe(true);
-  await pooled.close();
-  expect(existsSync(join(hosts, `primed-${pooled.hostId}`))).toBe(false);
+  expect(dirname(tree.processes[0]!.cwd!)).toBe(join(hosts, `host-${host.hostId}`));
 });
 
 // -- Composition: what a thread of the project sends is what the project host holds -------------
@@ -888,7 +844,7 @@ function project(): string {
   return dir;
 }
 
-function config(path: string, runtime: 'claude' | 'claude-project'): FoundryConfig {
+function config(path: string): FoundryConfig {
   const c = starterConfig('central', 'central-model');
   c.agents = {
     worker: {
@@ -904,7 +860,8 @@ function config(path: string, runtime: 'claude' | 'claude-project'): FoundryConf
   c.layers = {};
   c.sources = {};
   c.projects.P = { id: 'P', path };
-  c.subscriptionOnly = { decisionRuntime: runtime };
+  // Subscription decisions: Wardens compose at the project root, as its host holds them.
+  delete c.apiTokens;
   return c;
 }
 
@@ -942,10 +899,10 @@ const isolatedHome = () => {
 };
 const nothing: LLMProvider = { id: 'flow', complete: async () => ({ model: 'none', content: '' }) };
 
-test('claude-project: the roster is every region Warden composed at the project root, and a worktree thread holds exactly it', async () => {
+test('the roster is every region Warden composed at the project root, and a worktree thread holds exactly it', async () => {
   isolatedHome();
   const dir = project();
-  const c = config(dir, 'claude-project');
+  const c = config(dir);
   const roster = await composeProjectRoster({
     config: c,
     projectId: 'P',
@@ -969,17 +926,19 @@ test('claude-project: the roster is every region Warden composed at the project 
     expect(fromWorktree.get(domain)!.hash).toBe(held.hash);
 });
 
-test('other runtimes keep composing at the thread: a worktree thread reads its own role file', async () => {
+test('API-token decisions (no project hosts) keep composing at the thread: a worktree thread reads its own role file', async () => {
   isolatedHome();
   const dir = project();
-  const fromWorktree = await threadHeld(config(dir, 'claude'), join(dir, '.worktrees', 'feat'));
+  const c = config(dir);
+  c.apiTokens = true;
+  const fromWorktree = await threadHeld(c, join(dir, '.worktrees', 'feat'));
   expect(fromWorktree.get('lens-model')!.instructions).toContain('WORKTREE_ROLE_FILE');
 });
 
-test('claude-project: a handoff brief (flow.brief) asks every Warden through the advice path, routed to the project host', async () => {
+test('a handoff brief (flow.brief) asks every Warden through the advice path, routed to the project host', async () => {
   isolatedHome();
   const dir = project();
-  const c = config(dir, 'claude-project');
+  const c = config(dir);
   const roster = await composeProjectRoster({
     config: c,
     projectId: 'P',
@@ -1027,12 +986,12 @@ test('claude-project: a handoff brief (flow.brief) asks every Warden through the
   expect(calls.every((c) => c.held)).toBe(true);
 });
 
-test("claude-project: a later stage on another model is recorded with its model, so it is held by that model's lane", async () => {
+test("a later stage on another model is recorded with its model, so it is held by that model's lane", async () => {
   isolatedHome();
   const dir = project();
   const stages: Array<string | undefined> = [];
   const roster = await composeProjectRoster({
-    config: config(dir, 'claude-project'),
+    config: config(dir),
     projectId: 'P',
     decisions: nothing,
     stageHost: (model, effort) => {

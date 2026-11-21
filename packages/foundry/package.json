@@ -16,9 +16,7 @@
     "./headless-host": "./src/conversations/headless-host.ts",
     "./headless-host/protocol": "./src/conversations/headless-host-protocol.ts",
     "./client": "./src/client/index.ts",
-    "./daemon": "./src/daemon/index.ts",
-    "./repeats": "./src/feedback/repeats-cli.ts",
-    "./cli": "./src/cli.ts"
+    "./daemon": "./src/daemon/index.ts"
   },
   "scripts": {
     "test": "bun test tests/*.test.ts",
@@ -67,8 +65,5 @@
   },
   "engines": {
     "bun": ">=1.4.4"
-  },
-  "bin": {
-    "foundry": "src/cli.ts"
   }
 }

@@ -9,7 +9,7 @@
   "scripts": {
     "archive": "bun run packages/foundry/src/archives/cli.ts",
     "kingdom": "bun run packages/foundry/src/providers/kingdom-cli.ts",
-    "test": "bun test ./packages/core/tests/ && bun test ./packages/foundry/tests/*.test.ts && bun test ./packages/foundry/tests/gates/ && bun test ./packages/acp/tests/ && bun test ./scripts/daemon/ && bun test ./scripts/evals/",
+    "test": "bun test ./packages/core/tests/ && bun test ./packages/foundry/tests/*.test.ts && bun test ./packages/foundry/tests/gates/ && bun test ./packages/acp/tests/ && bun test ./scripts/daemon/",
     "test:acp": "bun test ./packages/acp/tests/",
     "test:core": "bun test ./packages/core/tests/",
     "test:foundry": "bun test ./packages/foundry/tests/*.test.ts",
@@ -34,7 +34,6 @@
     "dev": "bun --watch run packages/foundry/src/start.ts",
     "viewer": "bun run packages/foundry/src/viewer/server.ts",
     "acp": "bun run packages/acp/src/cli.ts",
-    "repeats": "bun run packages/foundry/src/cli.ts repeats",
     "daemon:install": "bun run scripts/daemon/control.ts install",
     "daemon:uninstall": "bun run scripts/daemon/control.ts uninstall",
     "daemon:start": "bun run scripts/daemon/control.ts start",

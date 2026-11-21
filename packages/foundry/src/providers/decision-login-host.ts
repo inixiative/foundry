@@ -15,11 +15,10 @@ import { homedir } from 'node:os';
 import { isAbsolute, join, resolve } from 'node:path';
 import {
   ClaudeCodeSession,
+  type ClaudeInSessionDecisions,
   DecisionError,
   type DecisionResult,
   IN_SESSION_HOST_CHARTER,
-  type PrimedEvent,
-  type PrimedSessions,
   type PrimeSpec,
 } from '@inixiative/agent-session';
 import { RUN_MARKER } from '@inixiative/archive/exemption';
@@ -44,14 +43,6 @@ import {
   type StatusProcess,
   subscriptionStatus,
 } from './native-text-provider';
-import {
-  createPrimedPool,
-  type DecisionProcess,
-  heldOnlyFor,
-  isWardenSession,
-  primedRequest,
-  projectHostTarget,
-} from './primed-decisions';
 import { assertPrivateDirectory, assertPrivateProfile, assertProfile } from './private-profile';
 import type { ProjectWardenHosts } from './project-warden-hosts';
 import {
@@ -59,6 +50,13 @@ import {
   type LoginQuotaPause,
   makeLoginQuotaPause,
 } from './provider-limits';
+import {
+  type DecisionProcess,
+  heldOnlyFor,
+  isWardenSession,
+  primedRequest,
+  projectHostTarget,
+} from './warden-routing';
 
 const STATUS_DEADLINE_MS = 20_000;
 /** Re-check the Claude login at most this often, like the subscription worker. */
@@ -82,18 +80,11 @@ export interface DecisionLoginHostConfig {
   /** Existing private receipt parent; this host writes below it. */
   directory: string;
   model: string;
-  /** Claude: the model id the CLI must report serving. Default: `model`. */
+  /** The model id the CLI must report serving. Default: `model`. */
   expectedObservedModel?: string;
   effort?: string;
-  /** Codex: hedge a decision still running after this long on a second branch; the first to finish wins. */
-  hedgeAfterMs?: number;
-  /** Concurrent decisions: turns on the warm Codex process, or Claude CLI processes. */
+  /** Concurrent decisions the scheduler bounds. */
   maxConcurrent: number;
-  /**
-   * Primed pool, Claude: keys kept warm (least recently used beyond it is evicted and re-primes cold,
-   * ~5-8 s). Size it for every decision role: a Warden roster needs one advice and one review key per Warden.
-   */
-  primedSessions?: number;
   callTimeoutMs: number;
   /** Characters a decision's serialized messages may take. Default DECISION_INPUT_CAP; raised only by offline evals. */
   inputCap?: number;
@@ -104,25 +95,17 @@ export interface DecisionLoginHostConfig {
   ) => DecisionProcess;
   /** Test seam: Claude subscription status check, in place of `claude auth status --json`. */
   statusSpawn?: (env: Record<string, string | undefined>) => StatusProcess;
-  onEvent?: (event: PrimedEvent) => void;
   /**
-   * Project Warden hosts (Claude decisions by default): every Warden of a project held in one Claude
-   * Code process this host launches on the decision login. Its Wardens' calls go there while it
-   * serves and are refused unsent otherwise (`projectHostTarget`). With them this host builds no
-   * primed pool: no call is sent anywhere else.
+   * Project Warden hosts: every Warden of a project held in one Claude Code process this host
+   * launches on the decision login. Its Wardens' calls go there while it serves and are refused
+   * unsent otherwise (`projectHostTarget`); no call is sent anywhere else.
    */
-  projectHosts?: ProjectWardenHosts;
+  projectHosts: ProjectWardenHosts;
   /**
    * Another host's pause on this same login (a classify stage host shares the decision host's), so the
    * login's used-up state is one; absent, this host makes and owns its own (Claude logins only).
    */
   quota?: LoginQuotaPause;
-  /**
-   * Primed pool, Claude: serve decisions as subagents of a bounded pool of side processes (agent-session
-   * ClaudeSubagentSessions) instead of one primed process per key: `processes` side sessions, each
-   * hosting up to `membersPerProcess` roles. Memory stays capped at the pool size. Offline evals only.
-   */
-  subagents?: { processes: number; membersPerProcess: number };
 }
 
 /**
@@ -155,22 +138,21 @@ export const PROJECT_HOST_ENV: Readonly<Record<string, string>> = Object.freeze(
 });
 
 /**
- * One decision host per decision profile and model: the decision login (checked as a subscription,
- * registered for the host's lifetime), its used-up pause, the decision receipts, the host's working
- * folder under the hosts directory, and the scheduler's per-call runs. With project hosts it launches
- * each project's Warden host and serves every call there; without them (`decisionRuntime: "claude"`
- * or `"codex"`) it builds the primed pool (`createPrimedPool`) and serves every call on it.
+ * One decision host per decision profile and model: the Claude decision login (checked as a
+ * subscription, registered for the host's lifetime), its used-up pause, the decision receipts, the
+ * host's working folder under the hosts directory, and the scheduler's per-call runs. It launches each
+ * project's Warden host and serves every call there.
  */
 export function createDecisionLoginHost(config: DecisionLoginHostConfig) {
   const { source } = config;
   const { runtime } = source;
   if (source.mode !== 'native-profile')
-    throw Error('Primed decisions require a native subscription profile; API fallback is refused');
+    throw Error('Decisions require a native subscription profile; API fallback is refused');
+  if (runtime !== 'claude') throw Error('Decisions run on a Claude login');
   const observedModel = config.expectedObservedModel ?? config.model;
   if (
     !/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,199}$/.test(config.model) ||
     !/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,199}$/.test(observedModel) ||
-    (runtime === 'codex' && observedModel !== config.model) ||
     !isAbsolute(config.directory) ||
     !Number.isSafeInteger(config.maxConcurrent) ||
     config.maxConcurrent < 1 ||
@@ -179,12 +161,12 @@ export function createDecisionLoginHost(config: DecisionLoginHostConfig) {
     config.callTimeoutMs < 100 ||
     config.callTimeoutMs > DECISION_CALL_TIMEOUT_MAX_MS
   )
-    throw Error('Invalid primed decision configuration');
+    throw Error('Invalid decision host configuration');
   assertPrivateProfile(config.directory);
   assertProfile(source.profileDirectory, runtime);
   const hostId = Bun.randomUUIDv7();
   // Receipts stay in the receipt directory; the sessions run in the host's own folder, outside any git work tree.
-  const root = join(config.directory, `primed-${hostId}`);
+  const root = join(config.directory, `host-${hostId}`);
   mkdirSync(root, { mode: 0o700 });
   const hosts = decisionHostsDirectory();
   mkdirSync(hosts, { recursive: true, mode: 0o700 });
@@ -195,7 +177,7 @@ export function createDecisionLoginHost(config: DecisionLoginHostConfig) {
       `Foundry's decision hosts folder ${hosts}, where Wardens run outside any git checkout, must be a directory you own with mode 0700 and not a symlink; fix it with \`chmod 700 ${hosts}\` (or remove it so Foundry makes it again)`,
     );
   }
-  const workspace = join(hosts, `primed-${hostId}`);
+  const workspace = join(hosts, `host-${hostId}`);
   mkdirSync(workspace, { mode: 0o700 });
   // Its sessions run below these: Archive drops them as Foundry's own, never a person's work; the
   // parent's marker still stamps them once this host's folder is removed on close.
@@ -222,7 +204,7 @@ export function createDecisionLoginHost(config: DecisionLoginHostConfig) {
         schema: 1,
         hostId,
         runtime,
-        transport: runtime === 'codex' ? 'codex-app-server' : 'claude-cli',
+        transport: 'claude-cli',
         mode: config.spawn ? 'controlled-transport' : 'native-subscription',
         sourceId: source.id,
         integrationId: source.integrationId,
@@ -236,13 +218,11 @@ export function createDecisionLoginHost(config: DecisionLoginHostConfig) {
     { mode: 0o600 },
   );
   // Decisions share the user's login like any other process on it: a shared registration for their lifetime.
-  // Codex runs on a private home kept across hosts in the receipt directory: the login only, no user instructions.
   const auth = new NativeAuthentication({
     directory: config.directory,
     sources: [source],
     defaultSourceId: source.id,
     shared: true,
-    ...(runtime === 'codex' ? { privateHome: true } : {}),
   });
   let releaseFailures = 0;
   const release = (launch: { release(): void }) => {
@@ -252,23 +232,11 @@ export function createDecisionLoginHost(config: DecisionLoginHostConfig) {
       releaseFailures++;
     }
   };
-  const claude = runtime === 'claude' ? claudeLogin() : undefined;
-  if (config.projectHosts && !claude)
-    throw Error('Project Warden hosts run on a Claude decision login');
-  /** This login used up: one pause for its scheduler and its project hosts, from the pool's own readings first. */
-  const ownsQuota = !config.quota && runtime === 'claude';
+  const claude = claudeLogin();
+  /** This login used up: one pause for its scheduler and its project hosts. */
+  const ownsQuota = !config.quota;
   const quota =
-    config.quota ??
-    (ownsQuota
-      ? makeLoginQuotaPause({
-          fetchResetAt: () => fetchLoginQuotaResetAt(source),
-          hostLimits: () => pool?.sessions.limits(),
-        })
-      : undefined);
-  const onEvent = (event: PrimedEvent) => {
-    if (event.type === 'limits') quota?.observe(event.limits);
-    config.onEvent?.(event);
-  };
+    config.quota ?? makeLoginQuotaPause({ fetchResetAt: () => fetchLoginQuotaResetAt(source) });
   const claudeSpawn = (
     argv: string[],
     options: { cwd: string; env: Record<string, string | undefined> },
@@ -286,51 +254,6 @@ export function createDecisionLoginHost(config: DecisionLoginHostConfig) {
           stderr: 'pipe',
         }) as unknown as DecisionProcess);
   };
-  const codexSpawn = async (
-    argv: string[],
-    options: { cwd: string; env: Record<string, string | undefined> },
-  ) => {
-    const launch = await auth.prepare(`primed-decisions:${hostId}`, 'codex');
-    let child: DecisionProcess;
-    try {
-      const command = launch.launch(argv, options.env);
-      const env = nativeTextEnvironment(command.env);
-      child = config.spawn
-        ? config.spawn(command.argv, { cwd: options.cwd, env })
-        : (Bun.spawn(command.argv, {
-            cwd: options.cwd,
-            env,
-            stdin: 'pipe',
-            stdout: 'pipe',
-            stderr: 'pipe',
-          }) as unknown as DecisionProcess);
-    } catch (error) {
-      release(launch);
-      throw error;
-    }
-    const done = () => release(launch);
-    void child.exited.then(done, done);
-    return child;
-  };
-  // With project hosts every call is a Warden's and goes to its project's host, so no pool is built.
-  const pool = config.projectHosts
-    ? undefined
-    : createPrimedPool({
-        model: config.model,
-        ...(config.effort ? { effort: config.effort } : {}),
-        ...(config.hedgeAfterMs !== undefined ? { hedgeAfterMs: config.hedgeAfterMs } : {}),
-        maxConcurrent: config.maxConcurrent,
-        ...(config.primedSessions !== undefined ? { primedSessions: config.primedSessions } : {}),
-        ...(config.subagents ? { subagents: config.subagents } : {}),
-        callTimeoutMs: config.callTimeoutMs,
-        profileDirectory: source.profileDirectory,
-        workspace,
-        onEvent,
-        login: claude
-          ? { runtime: 'claude', spawn: claudeSpawn, env: claude.env }
-          : { runtime: 'codex', spawn: codexSpawn },
-      });
-
   /** The Claude login, checked as a subscription (never an API key) at most every five minutes and registered
    * as a shared holder for the host's lifetime; every decision process launches with its environment. */
   function claudeLogin() {
@@ -379,7 +302,7 @@ export function createDecisionLoginHost(config: DecisionLoginHostConfig) {
       }
       verifiedAt = Date.now();
       if (registered) return;
-      const launch = await auth.prepare(`primed-decisions:${hostId}`, 'claude');
+      const launch = await auth.prepare(`decisions:${hostId}`, 'claude');
       try {
         const command = launch.launch(['claude'], nativeTextEnvironment(process.env));
         // This process is the holder: its registration is reclaimable once it is gone.
@@ -456,13 +379,13 @@ export function createDecisionLoginHost(config: DecisionLoginHostConfig) {
 
   /** A scheduler run: one decision on the shared host. */
   const createRun = (run: NativeTextConfig) => {
-    if (!uuid.test(run.runId)) throw Error('Invalid primed decision run');
+    if (!uuid.test(run.runId)) throw Error('Invalid decision run');
     const calls: NativeTextCall[] = [];
     let closed = false;
     // Closing the run (revocation, shutdown) cancels its decision: refused before dispatch, or interrupted and settled.
     const abort = new AbortController();
     const provider: LLMProvider = {
-      id: `primed-${runtime}-decisions`,
+      id: 'claude-decisions',
       async complete(messages: LLMMessage[], opts: CompletionOpts = {}): Promise<CompletionResult> {
         if (closed || calls.length >= (run.maxCalls ?? 1))
           throw Error('Decision admission closed or occupied; no retry or queue');
@@ -480,7 +403,7 @@ export function createDecisionLoginHost(config: DecisionLoginHostConfig) {
         if (JSON.stringify(messages).length > (config.inputCap ?? DECISION_INPUT_CAP))
           throw Error('Decision input cap exceeded');
         const id = Bun.randomUUIDv7(),
-          fallbackThread = `primed:${hostId}:${id}`;
+          fallbackThread = `decision:${hostId}:${id}`;
         const owner = freezeEvidence({
           ...(opts.nativeObservation?.owner ?? {
             threadId: fallbackThread,
@@ -493,8 +416,8 @@ export function createDecisionLoginHost(config: DecisionLoginHostConfig) {
             opts.nativeObservation?.owner?.providerSessionKey ?? opts.threadId ?? fallbackThread,
         });
         const sessionKey = owner.providerSessionKey!;
-        // Calls without a logical session (e.g. `decision:<id>`) do not keep a primed session afterwards.
-        const oneShot = sessionKey === fallbackThread || sessionKey.startsWith('decision:');
+        // Calls without a logical session (e.g. `decision:<id>`) keep no held member afterwards.
+        const oneShot = sessionKey.startsWith('decision:');
         const call: NativeTextCall = {
           id,
           owner,
@@ -510,40 +433,38 @@ export function createDecisionLoginHost(config: DecisionLoginHostConfig) {
         calls.push(call);
         let spec: PrimeSpec,
           input: string,
-          target: PrimedSessions | undefined = pool?.sessions,
+          target: ClaudeInSessionDecisions | undefined,
           admission: NativeEvidence | undefined,
           result: DecisionResult | undefined,
           failedHedge = false,
           heldOnly = false;
         try {
           ({ spec, input } = primedRequest(messages, opts, sessionKey));
-          // Project hosts serve only Warden calls; with them there is no pool to send any other call to.
-          if (!pool && !isWardenSession(sessionKey))
-            throw Error('No primed pool with project Warden hosts; not a Warden call');
+          // Project hosts serve only Warden calls; no call is sent anywhere else.
+          if (!isWardenSession(sessionKey)) throw Error('Not a Warden call; no host serves it');
           await opts.nativeObservation?.preflight?.(owner);
-          await claude?.ready();
+          await claude.ready();
           if (closed) throw Error('Decision admission closed');
           // A project host's spares hold no thread state (every thread of the project shares them):
           // they split at the stable prefix, and the thread section rides with the moment.
-          // A Warden whose project host does not serve is refused unsent, never run on primed.
-          // Held-only advice (a user message's, which catches up) is served warm or skipped: a Warden
-          // with no held spare is refused unsent too. The queue refuses one before queueing it; a host
-          // that went while the call waited is caught here.
+          // A Warden whose project host does not serve is refused unsent. Held-only advice (a user
+          // message's, which catches up) is served warm or skipped: a Warden with no held spare is
+          // refused unsent too. The queue refuses one before queueing it; a host that went while the
+          // call waited is caught here.
           const projectHost = projectHostTarget(config.projectHosts, sessionKey);
-          if (projectHost === 'not-serving')
+          if (projectHost === undefined || projectHost === 'not-serving')
             throw new DecisionError(
               'Project Warden host not serving',
               'not-held',
               'not-dispatched',
               true,
             );
-          heldOnly = heldOnlyFor(sessionKey, opts) && !!projectHost;
-          if (projectHost) target = projectHost;
-          if (!target) throw Error('No primed pool with project Warden hosts; not a Warden call');
+          heldOnly = heldOnlyFor(sessionKey, opts);
+          target = projectHost;
           const { capacity } = target.snapshot();
           if (capacity) call.hostCapacity = capacity;
           result = await target.decide(spec, {
-            ...(projectHost && spec.context && !opts.takesNoHeldCall ? { standby: '' } : {}),
+            ...(spec.context && !opts.takesNoHeldCall ? { standby: '' } : {}),
             ...(heldOnly ? { heldOnly: true } : {}),
             input,
             timeoutMs: Math.min(opts.timeout ?? timeout, timeout),
@@ -659,8 +580,7 @@ export function createDecisionLoginHost(config: DecisionLoginHostConfig) {
   };
 
   // Project Warden hosts: this host starts each project's host process on its own decision login.
-  if (config.projectHosts && claude) {
-    if (!quota) throw Error('Project Warden hosts need the decision login pause');
+  {
     const loginQuota = quota;
     config.projectHosts.bindLauncher(loginQuota, async (projectId, extension) => {
       await claude.ready();
@@ -736,22 +656,16 @@ export function createDecisionLoginHost(config: DecisionLoginHostConfig) {
   }
 
   return {
-    /** The primed pool: built only without project hosts (`decisionRuntime: "claude"` or `"codex"`). */
-    pool: pool?.sessions,
     hostId,
     receiptsPath,
     createRun,
     quota,
     releaseFailures: () => releaseFailures,
     close: async () => {
-      if (ownsQuota) quota?.close();
-      try {
-        await pool?.close();
-      } finally {
-        claude?.release();
-        workspaceClosed = true;
-        removeWorkspace();
-      }
+      if (ownsQuota) quota.close();
+      claude.release();
+      workspaceClosed = true;
+      removeWorkspace();
     },
   };
 }

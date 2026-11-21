@@ -32,7 +32,7 @@ One sheet naming every part of Foundry, so people and agents use the same words.
  │     each Warden: stage(s) under a charter ─► NO_COMMENT | pointer           │
  │     chime ─► main thread, read under the reception charter                  │
  │                                                                             │
- │   decision runtime: decision host ─► primed pool (Haiku, low) ─ scheduler   │
+ │   decision runtime: scheduler ─► decision host ─► project Warden hosts      │
  │   other roles: Librarian (thread state), feedback lifecycle,                │
  │                Forge Master and Feedback scopes                             │
  │   journal ─► Archive capture (one session per node, Warden calls reduced)   │
@@ -50,7 +50,7 @@ One sheet naming every part of Foundry, so people and agents use the same words.
 | foundry-core | Engine primitives with no runner and no I/O policy (Thread, Harness, ContextLayer/Stack, MiddlewareChain, SignalBus, capability gate), so the harness logic is reusable alone. MIT. | `packages/core` (`@inixiative/foundry-core`) | live |
 | Foundry | The harness and the app: daemon, turns, middleware, viewer, persistence, Kingdom pairing, Archive capture. BSL 1.1. | `packages/foundry` (`@inixiative/foundry`) | live |
 | foundry-acp | A thin stdio ACP agent that maps ACP sessions onto Foundry threads through the daemon's loopback API, so any ACP host drives the same turn path as the viewer. MIT. | `packages/acp`; [FOUNDRY-ACP.md](reference/FOUNDRY-ACP.md) | live |
-| agent-session | The separate package that runs native Claude Code, Codex and Muse Code sessions and primed decision sessions. Foundry never launches a CLI itself. | `@inixiative/agent-session` | live |
+| agent-session | The separate package that runs native Claude Code, Codex and Muse Code sessions and the in-session decisions a project Warden host serves. Foundry never launches a CLI itself. | `@inixiative/agent-session` | live |
 
 ## The thread and its tree
 
@@ -147,18 +147,14 @@ One sheet naming every part of Foundry, so people and agents use the same words.
 | Term | What and why | Where | Status |
 |---|---|---|---|
 | decision | One fast, tool-less model call by a middleware role (a Warden stage, naming, feedback). | `CompletionOpts` | live |
-| decision model | The model decisions run on: Claude Haiku 5.5 (`claude-haiku-5-5`) at `low` effort by default; GPT-5.6 Luna with Codex decisions. | `DECISION_MODEL` (`pc/model-registry.ts`), `subscriptionOnly.model`, `.effort` | live |
+| decision model | The model decisions run on: Claude Haiku 5.5 (`claude-haiku-5-5`) at `low` effort by default, on the Claude login. | `DECISION_MODEL` (`pc/model-registry.ts`), `subscriptionOnly.model`, `.effort` | live |
 | subscription decisions | Decisions run on the machine's own subscription login, with no API provider constructed and no paid fallback. `apiTokens: true` is the only way to use API keys. | `subscriptionOnly`, `pf/providers/subscription-decisions.ts`, `subscription-policy.ts`; [subscription-decisions.md](subscription-decisions.md) | live |
-| decision runtime | Claude with Wardens in project hosts (default, or `claude-project`), `claude` (Claude, every Warden primed: the evals' baseline), or `codex`. | `subscriptionOnly.decisionRuntime` | live (project hosts) |
-| decision host | The process-wide host that runs every decision on the decision model and effort. | `liveDecisionHosts`, `pf/providers/decision-host.ts` (`decisionHost` is the offline variant for evals and reports) | live |
+| decision host | The process-wide host that runs every decision on the decision model and effort. | `liveDecisionHosts`, `pf/providers/decision-host.ts`; the login, receipts and host launcher in `createDecisionLoginHost` (`pf/providers/decision-login-host.ts`) | live |
 | stage host | An extra decision host started for a stage that names another model or effort, on the same login and bounds. | `stageHost` in `liveDecisionHosts` | live (Sonnet 5.5 low, the default Layer 2, on the decision login; only subscription decisions start one) |
-| primed pool | The warm sessions decisions run on: one primed key per role (a key per stage on the host plus a review key per Warden, plus 8), at least 16; an evicted key re-primes cold. Not a setting. | `primedSessions`, `pf/providers/primed-decisions.ts`; agent-session `ClaudePrimedSessions` / `CodexPrimedSessions` | live |
-| prime | Starting a role's session once with its instructions and stable context (`stablePrefix`); each decision then forks it and sends only the per-call part, so no cycle sees another's. | | live |
-| hedge | A Codex decision still running after `hedgeAfterMs` (4,000) is started again on a second branch; the first to finish wins. Claude decisions are not hedged. | `subscriptionOnly.hedgeAfterMs` | live (Codex decisions only) |
 | decision deadline | The safety-net deadline for every decision, queue time included: 60 s. Advice defaults to it. | `DECISION_DEADLINE_MS`; `callTimeoutMs`; `adviseTimeoutMs` | live |
 | maxConcurrent | Decisions running at once across all threads (16). Guards may hold at most three quarters of the slots, reviews half and debug reasons a quarter; the caps nest (a call starts only while every background class at or above its own is under its cap), so with two slots or more a turn waiting to start always finds one, and with three or more guards keep at least a quarter (rounded down). | `subscriptionOnly.maxConcurrent`; `DECISION_PRIORITY` (`turn > guard > review > debug`) | live |
 | decision receipts | Private records of each decision's ownership, model and settlement, never its text. | `subscriptionOnly.directory` (`.foundry/decision-receipts`) | live |
-| project Warden host | Every Warden of a project held warm in one Foundry-owned Claude Code process on the decision login, while someone works in the project; every thread of it sends every Warden call there (advice, guards, reviews and Layer 2 on its lane); while it (or a later stage's lane) does not serve, the Warden call is skipped, never sent to primed. Replaced the per-thread in-session runtime (THREAD-TREE spec C) on 2026-11-03. | `subscriptionOnly.projectHost`, `pf/providers/project-warden-hosts.ts`; [subscription-decisions.md](subscription-decisions.md), "Project Warden host" | live (default for Claude decisions) |
+| project Warden host | Every Warden of a project held warm in one Foundry-owned Claude Code process on the decision login, while someone works in the project; every thread of it sends every Warden call there (advice, guards, reviews and Layer 2 on its lane); while it (or a later stage's lane) does not serve, the Warden call is skipped. Replaced the per-thread in-session runtime (THREAD-TREE spec C) on 2026-11-03. | `subscriptionOnly.projectHost`, `pf/providers/project-warden-hosts.ts`; [subscription-decisions.md](subscription-decisions.md), "Project Warden host" | live (default for Claude decisions) |
 | Warden host singleton | One process per machine holding every Warden warm; threads post context and get chimes back. | | proposed |
 
 ## Other roles in code
@@ -243,7 +239,7 @@ Oracle is the test harness: it replays real work against Foundry and measures wh
 | stage-one / detection | Slice 1: given only the task, do the right regions say "mine"? Per-region recall and false yes. |
 | the bar | The standing stage-one baseline. No change to docs, regions, charters or the region builder ships unless detection holds it. |
 | dev / holdout | Work tuned on versus work held back once per corpus freeze, so the gap measures overfitting. |
-| Prospector | Oracle's miner of real sessions and merged work into fixtures and probes; its collector and classifier run as `foundry repeats` (`pf/feedback/repeats.ts`). |
+| Prospector | Oracle's miner of real sessions and merged work into fixtures and probes. |
 
 ## Two names for one thing
 
@@ -260,6 +256,7 @@ Oracle is the test harness: it replays real work against Foundry and measures wh
 |---|---|---|
 | The hand-named Warden roster (Docs, Convention, Security, Architecture, Memory, …) and its advise-style charter | Region Wardens, one per region, under the point charter. Settings declare only executors. | 2026-10-17 |
 | `chorus.source: "regions"` | `chorus.enabled: true` | 2026-10-17 |
+| The primed pool (`createPrimedPool`, `primedSessions`, `subscriptionOnly.decisionRuntime` `claude` / `codex` / `claude-project`, Codex decisions, `hedgeAfterMs`), `foundry repeats` and `foundry-acp repeats` (with `foundry-acp setup`'s report step and the `foundry` command), and the charter eval that ran on the pool (`scripts/evals/warden-*`, `feedback/charter-eval.ts`) | Every Warden call on its project's Warden host, on the Claude decision login; the eval code parked in Oracle `migration/foundry-pool-evals/` until it is rebuilt on the project host (R-2026-11-21-15) | 2026-11-21 |
 | Domain Librarians (as the name for Wardens) | Wardens; the code's `DomainLibrarian`, kind `domain-librarian`, flowRole `domain-advising`, `ThreadDomainConfig`, `domain_learning` and `ConfiguredExpert` became `Warden`, kind `warden` (`flowRole` removed 2026-11-19: `kind` says it), `CodeWardenConfig`, `warden_learning` and `ConfiguredWarden` | prose before 2026-10-12; code 2026-11-19 |
 | The Warden pre-filter (`prefilter`, `providers/warden-prefilter.ts`, `prefilter-model.ts`, the Kev model under `~/.foundry/models`, the `prefiltered` outcome, its eval `scripts/evals/warden-prefilter.ts` and core `warden-labels`) and every local model provider (Ollama, vLLM, the `local` credential) | Every region Warden asked every time, on Claude Haiku; hosted API-key providers only (R-2026-11-19-04) | off 2026-10-15; removed 2026-11-19 |
 | Guard per tool call | One guard per turn (`guard: per-call` remains a setting) | 2026-10-15 |

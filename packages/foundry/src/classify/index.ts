@@ -3,7 +3,7 @@
 // what a stage is told about answering (charters, response protocols), how the answer is read (strict
 // envelopes, pointers, recogniser lines) and the stage loop (escalation, deadlines, fallback, trace).
 // Callers frame the moment and supply a provider per stage; this module never builds one. Wardens run
-// it live; Foundry's evals and Oracle's experiments run it through `scripts/evals/warden-charter.ts`.
+// it live, and Oracle's replay runs it through `scripts/evals/chorus-advise.ts`.
 
 export {
   type Charter,

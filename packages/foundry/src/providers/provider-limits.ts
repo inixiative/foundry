@@ -122,8 +122,8 @@ const QUOTA_RECHECK_MS = 15 * 60_000;
 
 /**
  * When a used-up reading frees up: the latest reset among the windows at their limit (agent-session's
- * own rule, `fullWindowsResetAt`, so Foundry pauses exactly while the primed host refuses); `now +
- * unknownResetWaitMs` when it is used up with no known reset, since the primed host refuses that too,
+ * own rule, `fullWindowsResetAt`, so Foundry pauses exactly while the host refuses); `now +
+ * unknownResetWaitMs` when it is used up with no known reset, since the host refuses that too,
  * and the login is read again then; undefined when it is not used up or its reset is already past.
  */
 export function usedUpResetAt(
@@ -190,10 +190,8 @@ export interface LoginQuotaPause {
 }
 
 export function makeLoginQuotaPause(options: {
-  /** Reads the login itself, when its host has no reading that shows it used up. */
+  /** Reads the login itself. */
   fetchResetAt: () => Promise<number | undefined | typeof LOGIN_UNREAD>;
-  /** The host's own merged reading (agent-session `PrimedSessions.limits()`). */
-  hostLimits?: () => LimitSnapshot | undefined;
   recheckMs?: number;
 }): LoginQuotaPause {
   const recheckMs = options.recheckMs ?? QUOTA_RECHECK_MS;
@@ -252,15 +250,12 @@ export function makeLoginQuotaPause(options: {
   };
   /**
    * A long pause read again: still used up keeps it (its reset may move), a reading that shows usage
-   * ends it; no reading keeps it, extended by the host's own reading when that is later.
+   * ends it; no reading keeps it.
    */
   const recheck = async () => {
     const at = await fetchLogin();
     if (closed) return;
-    if (at === LOGIN_UNREAD) {
-      const own = usedUpResetAt(options.hostLimits?.(), Date.now(), recheckMs);
-      if (own !== undefined) pauseUntil(own);
-    } else if (at !== undefined) pauseUntil(at, true);
+    if (at !== LOGIN_UNREAD && at !== undefined) pauseUntil(at, true);
     if (at === undefined || until <= Date.now()) end();
     else arm();
   };
@@ -269,10 +264,9 @@ export function makeLoginQuotaPause(options: {
     reading: () => inFlight !== undefined,
     read: async () => {
       if (closed) return undefined;
-      const own = usedUpResetAt(options.hostLimits?.(), Date.now(), recheckMs);
       const spaced = inFlight || Date.now() - fetchedAt >= QUOTA_READ_SPACING_MS;
-      const fetched = own === undefined && spaced ? await fetchLogin() : undefined;
-      const at = own ?? (fetched === LOGIN_UNREAD ? undefined : fetched);
+      const fetched = spaced ? await fetchLogin() : undefined;
+      const at = fetched === LOGIN_UNREAD ? undefined : fetched;
       if (at !== undefined) pauseUntil(at);
       return until > Date.now() ? until : undefined;
     },

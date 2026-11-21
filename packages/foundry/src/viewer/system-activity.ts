@@ -150,8 +150,8 @@ export function decisionPressureActivity(
   };
 }
 
-/** A decision process recycling is routine housekeeping: logged, never shown. */
-export function primedEventActivity(event: PrimedEvent): SystemActivity | undefined {
+/** A Warden host process recycling is routine housekeeping: logged, never shown. */
+export function wardenHostEventActivity(event: PrimedEvent): SystemActivity | undefined {
   if (event.type !== 'process-recycled' && event.type !== 'violation') return undefined;
   return {
     key: 'decisions:process',
@@ -161,6 +161,6 @@ export function primedEventActivity(event: PrimedEvent): SystemActivity | undefi
     detail:
       event.type === 'violation'
         ? `Decision violated the text-only policy (${event.detail}); process recycled`
-        : `Decision process recycled (${event.reason}); roles re-prime on the next decision`,
+        : `Warden host process recycled (${event.reason})`,
   };
 }

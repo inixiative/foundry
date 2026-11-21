@@ -5,12 +5,10 @@
  */
 import type { CompletionOpts, ContextLayer, LLMProvider } from '@inixiative/foundry-core';
 import { vendorOfProvider } from '@inixiative/foundry-core';
-import { DEFAULT_STAGES, type StageConfig } from '../classify';
 import { providerEnabled } from '../models/vendors';
 import { roleComposition } from '../prompts/instruction-settings';
 import { isIdName, isRoleId } from '../prompts/role-namespace';
 import type { AgentSettingsConfig, FoundryConfig } from '../viewer/config';
-import { resolveProjectView } from '../viewer/config-resolve';
 import { resolveLearningSettings, validateLearningSettings } from './learning-config';
 import type { CodeWardenConfig, LearningConfig } from './thread-runtime';
 import { threadKnowledgeLayerId } from './warden';
@@ -111,38 +109,6 @@ export function configuredWardens(config: FoundryConfig): {
     wardens.push({ agentId: id, domain: agent.domain, agent: structuredClone(agent) });
   }
   return { wardens, claimedDomains };
-}
-
-/**
- * The largest chorus any thread of this Foundry runs: an enabled project's region Wardens. Sizes the
- * primed decision pool, which every project's threads share.
- */
-export function largestRoster(config: FoundryConfig): number {
-  let largest = 0;
-  for (const [id, project] of Object.entries(config.projects ?? {})) {
-    if (project.enabled === false) continue;
-    const view = resolveProjectView(config, id);
-    if (view) largest = Math.max(largest, configuredWardens(view.config).wardens.length);
-  }
-  return largest;
-}
-
-/**
- * The most classify stages any running chorus asks per Warden, of those `counts` selects (the ones a
- * given decision host serves): each keeps its own primed session.
- */
-export function largestStageCount(
-  config: FoundryConfig,
-  counts: (stage: StageConfig) => boolean = () => true,
-): number {
-  let largest = DEFAULT_STAGES.filter(counts).length;
-  for (const [id, project] of Object.entries(config.projects ?? {})) {
-    if (project.enabled === false) continue;
-    const view = resolveProjectView(config, id);
-    if (view?.chorus.on)
-      largest = Math.max(largest, view.chorus.roles.warden.stages.filter(counts).length);
-  }
-  return largest;
 }
 
 export interface ResolvedThreadWarden extends Omit<CodeWardenConfig, 'layerId'> {

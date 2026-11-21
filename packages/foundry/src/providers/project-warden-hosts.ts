@@ -15,8 +15,7 @@ import type { ProjectHostPolicy } from './subscription-policy';
 
 /**
  * Base instructions for a Warden held in its project's host (docs/subscription-decisions.md,
- * "Project Warden host"). The same stance as the primed decision context, except that it has the two
- * tools it answers through.
+ * "Project Warden host"): a decision middleware that answers only through its two tools.
  */
 export const PROJECT_HOST_DECISION_CONTEXT =
   "You are Foundry's internal decision middleware, not its coding executor. " +
@@ -163,7 +162,7 @@ const rosterKey = (roster: Roster) =>
  * One Foundry-owned Warden host per project, opened with the project's roster when its chorus is
  * built and supervised here (restarted with backoff, replaced blue/green past its bounds). The
  * decision host routes a thread's Warden calls (advice, guards, reviews) to its project's host while
- * it serves, and refuses them unsent otherwise, never on primed (`projectHostTarget`); a later stage
+ * it serves, and refuses them unsent otherwise (`projectHostTarget`); a later stage
  * on another model has its own host per project (`lane`).
  */
 export class ProjectWardenHosts {

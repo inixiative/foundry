@@ -39,7 +39,7 @@ import {
   threadCompositionSource,
 } from '../src/prompts/instruction-stack';
 import { roleIdOfAgent } from '../src/prompts/role-namespace';
-import { primedRequest } from '../src/providers/primed-decisions';
+import { primedRequest } from '../src/providers/warden-routing';
 import { type FoundryConfig, starterConfig } from '../src/viewer/config';
 import { writeRegions } from './helpers/regions';
 

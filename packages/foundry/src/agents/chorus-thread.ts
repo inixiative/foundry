@@ -10,8 +10,8 @@
 
 import { ContextStack, type LLMMessage, type LLMProvider, newId } from '@inixiative/foundry-core';
 import type { StageEffort } from '../classify';
-import { isWardenSession, primedRequest } from '../providers/primed-decisions';
 import type { Roster } from '../providers/project-warden-hosts';
+import { isWardenSession, primedRequest } from '../providers/warden-routing';
 import type { FoundryConfig } from '../viewer/config';
 import { buildAgents, buildLayers, type SourceResolver, ThreadFactory } from './thread-factory';
 import {
@@ -141,7 +141,7 @@ export interface ProjectRosterEntry {
 }
 
 /**
- * A project's Warden roster for its hosts (`decisionRuntime: claude-project`): each Warden stage
+ * A project's Warden roster for its hosts: each Warden stage
  * composed as a thread of the project composes it (charter, region instructions, region knowledge;
  * at the project's root), split at the stable prefix, so the held part carries no thread state. Built
  * from a hidden thread: its Wardens warm and pre-start against providers that record what each would

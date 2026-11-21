@@ -5,8 +5,7 @@
   "main": "src/index.ts",
   "types": "src/index.ts",
   "bin": {
-    "foundry-acp": "src/cli.ts",
-    "foundry": "src/foundry.ts"
+    "foundry-acp": "src/cli.ts"
   },
   "exports": {
     ".": "./src/index.ts"

@@ -8,7 +8,7 @@ import {
   SignalBus,
 } from '@inixiative/foundry-core';
 import { oneCall, Warden } from '../src/agents/warden';
-import { primedRequest } from '../src/providers/primed-decisions';
+import { primedRequest } from '../src/providers/warden-routing';
 
 /** Records every call; answers with the given JSON. */
 function recording(content: string) {
@@ -23,7 +23,7 @@ function recording(content: string) {
   return { llm, calls };
 }
 
-test('the stable prefix becomes primed context and only the rest is the per-cycle input', () => {
+test('the stable prefix becomes the held context and only the rest is the per-cycle input', () => {
   const messages: LLMMessage[] = [
     { role: 'system', content: 'ROLE' },
     { role: 'user', content: '## Domain cache (x)\nCACHE\n\n## Message\nhi' },
@@ -51,7 +51,7 @@ test('the stable prefix becomes primed context and only the rest is the per-cycl
   ).not.toBe(spec.key);
 });
 
-test('a prefix that does not match is never primed; the whole message is the input', () => {
+test('a prefix that does not match is never held; the whole message is the input', () => {
   const { spec, input } = primedRequest(
     [{ role: 'user', content: 'hello' }],
     { stablePrefix: '## Domain cache' },

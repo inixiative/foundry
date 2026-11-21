@@ -20,6 +20,21 @@ const { chromium } = createRequire(import.meta.url)(
   process.env.FOUNDRY_QA_PLAYWRIGHT ?? 'playwright',
 );
 
+/** `/api/providers/accounts` with the Claude login ready or not, whatever this machine has. */
+const claudeLogin = (ready: boolean) => (route: any) =>
+  route.fulfill({
+    json: [
+      {
+        provider: 'claude-code',
+        source: 'login',
+        detail: '~/.claude',
+        ready,
+        uses: ['main thread', 'decisions'],
+        ...(ready ? {} : { issue: 'The claude CLI is not on PATH' }),
+      },
+    ],
+  });
+
 async function open(cleanup: ReleaseStep[]) {
   const dir = mkdtempSync(join(tmpdir(), 'foundry-project-modals-'));
   cleanup.push(['dir', () => rmSync(dir, { recursive: true, force: true })]);
@@ -62,6 +77,7 @@ test('the setup wizard closes with X or Escape, and a failed save stays on an ed
     await wizard.waitFor({ state: 'detached' });
 
     await page.reload();
+    await page.route('**/api/providers/accounts**', claudeLogin(true));
     await page.route('**/api/settings/defaults', (route: any) =>
       route.fulfill({ status: 400, json: { error: 'defaults refused' } }),
     );
@@ -74,6 +90,34 @@ test('the setup wizard closes with X or Escape, and a failed save stays on an ed
 
     await page.unroute('**/api/settings/defaults');
     await wizard.getByRole('button', { name: 'Finish Setup' }).click();
+    await wizard.getByText("You're all set").waitFor();
+    expect(errors).toEqual([]);
+  } finally {
+    expect(await releaseAll(cleanup)).toEqual([]);
+  }
+}, 60_000);
+
+test('subscription setup cannot finish without a Claude login, and says why at the decision step', async () => {
+  const cleanup: ReleaseStep[] = [];
+  try {
+    const { origin, page, errors } = await open(cleanup);
+    const wizard = page.getByRole('dialog', { name: 'Setup' });
+    await page.route('**/api/providers/accounts**', claudeLogin(false));
+    await page.goto(origin);
+    await wizard.getByRole('button', { name: 'Get Started' }).click();
+    await wizard.getByRole('button', { name: 'Next' }).click();
+    await wizard.getByRole('button', { name: 'Next' }).click();
+    await wizard
+      .locator('.wizard-error', { hasText: "Wardens' decisions run on your Claude login" })
+      .waitFor();
+    expect(await wizard.getByText('The claude CLI is not on PATH').count()).toBe(1);
+    expect(await wizard.getByRole('button', { name: 'Finish Setup' }).isDisabled()).toBe(true);
+
+    // Logged in since: Check again clears the reason and setup finishes.
+    await page.unroute('**/api/providers/accounts**');
+    await page.route('**/api/providers/accounts**', claudeLogin(true));
+    await wizard.getByRole('button', { name: 'Check again' }).click();
+    await wizard.getByRole('button', { name: 'Finish Setup', disabled: false }).click();
     await wizard.getByText("You're all set").waitFor();
     expect(errors).toEqual([]);
   } finally {

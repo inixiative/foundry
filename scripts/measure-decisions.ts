@@ -178,7 +178,7 @@ const pct = (values: number[], p: number) => {
   return s[Math.min(s.length - 1, Math.ceil(p * s.length) - 1)];
 };
 
-// Per-decision latency from the decision receipts (primed hosts write decisions.jsonl; exec runs write codex-text.json).
+// Per-decision latency from the decision receipts (decision hosts write decisions.jsonl; exec runs write codex-text.json).
 const receipts = join(project, '.foundry', 'decision-receipts');
 const decisions: number[] = [];
 let hedged = 0,

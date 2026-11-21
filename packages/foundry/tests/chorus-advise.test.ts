@@ -117,7 +117,7 @@ test('one message through a live-built thread: the chimes on the message, the re
     log() {},
     warn() {},
   });
-  // Every Warden was asked once, on its own primed session.
+  // Every Warden was asked once, on its own session key.
   expect(calls.filter((id) => id.includes(':aux:domain:')).sort()).toEqual([
     'advise-thread:aux:domain:concurrency-locks',
     'advise-thread:aux:domain:lens-model',
