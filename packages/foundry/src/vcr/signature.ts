@@ -3,126 +3,21 @@
  * @kind transformer
  * @partOf primitive:vcr
  */
-// Structure of a recording, independent of what the model happened to say. Drift in
-// structure is a finding for a human; drift in content is expected between live runs.
+// Foundry's volatile event/path classification over @inixiative/vcr/freshness signatures.
+import {
+  type CassetteSignature,
+  compareVolatileSignatures,
+  eventKindOf,
+  type SignatureOptions,
+  signatureOfCassette,
+  compareSignatures as vcrCompareSignatures,
+} from '@inixiative/vcr/freshness';
 
-export type Signature = { status: number; shape: Record<string, string[]> };
-
-const MAX_DEPTH = 3;
-const ID_KEY = /^[a-z]+_[A-Za-z0-9]{16,}$/;
-
-/** Dotted key paths (arrays collapse to `[]`) and leaf types, to `MAX_DEPTH`. */
-function paths(value: unknown, prefix = '', depth = 0, out = new Set<string>()): Set<string> {
-  if (Array.isArray(value)) {
-    if (depth >= MAX_DEPTH) {
-      out.add(`${prefix}[]`);
-      return out;
-    }
-    if (!value.length) out.add(`${prefix}[]`);
-    for (const item of value) paths(item, `${prefix}[]`, depth + 1, out);
-    return out;
-  }
-  if (value && typeof value === 'object') {
-    if (depth >= MAX_DEPTH) {
-      out.add(`${prefix}{}`);
-      return out;
-    }
-    for (const [raw, child] of Object.entries(value)) {
-      // A map keyed by ids (`wire_tool_inputs.toolu_…`) has one shape whatever ids a run drew.
-      const key = ID_KEY.test(raw) ? '<id>' : raw;
-      paths(child, prefix ? `${prefix}.${key}` : key, depth + 1, out);
-    }
-    return out;
-  }
-  out.add(`${prefix}:${value === null ? 'null' : typeof value}`);
-  return out;
-}
-
-/** An event's kind: its protocol discriminators (`type`, `subtype`, `method`, item type). */
-export function eventKind(event: unknown): string {
-  if (!event || typeof event !== 'object') return typeof event;
-  const record = event as Record<string, unknown>;
-  const item = record.item as Record<string, unknown> | undefined;
-  const params = record.params as Record<string, unknown> | undefined;
-  const nested = (item?.type ?? (params?.item as Record<string, unknown> | undefined)?.type) as
-    | string
-    | undefined;
-  // Claude assistant/user messages: what the turn did (text, thinking, tool_use, tool_result), not just that it spoke.
-  const message = record.message as { content?: unknown } | undefined;
-  const blocks = Array.isArray(message?.content)
-    ? [
-        ...new Set(
-          (message.content as { type?: unknown }[])
-            .map((block) => block?.type)
-            .filter((type): type is string => typeof type === 'string'),
-        ),
-      ]
-        .sort()
-        .join('+')
-    : undefined;
-  const parts = [record.type, record.subtype, record.method, nested, blocks || undefined].filter(
-    (part): part is string => typeof part === 'string',
-  );
-  if (parts.length) return parts.join(':');
-  if ('id' in record && ('result' in record || 'error' in record))
-    return 'result' in record ? 'rpc:result' : 'rpc:error';
-  return 'object';
-}
-
-const parse = (line: string): unknown => {
-  try {
-    return JSON.parse(line);
-  } catch {
-    return line;
-  }
-};
-
-type Transcript = {
-  kind: 'process' | 'websocket';
-  argv?: string[];
-  frames: { stream: string; data: string; kept?: true }[];
-  exit?: { code: number | null };
-};
-const isTranscript = (body: unknown): body is Transcript =>
-  !!body &&
-  typeof body === 'object' &&
-  ['process', 'websocket'].includes((body as { kind?: string }).kind ?? '');
-
-export function signatureOf(status: number, body: unknown): Signature {
-  const shape: Record<string, Set<string>> = {};
-  const kindSet = (kind: string) => {
-    shape[kind] ??= new Set();
-    return shape[kind];
-  };
-  const add = (kind: string, value: unknown) => {
-    const set = kindSet(kind);
-    for (const path of paths(value)) set.add(path);
-  };
-  if (isTranscript(body)) {
-    if (body.argv) shape['argv'] = new Set(body.argv.filter((arg) => arg.startsWith('-')));
-    for (const frame of body.frames) {
-      if (frame.stream === 'stderr') {
-        // A probe's kept answer (codex login status) is protocol; other stderr is CLI logging.
-        // A process id in a kept line (muse's "signal SIGTERM from pid 51443") differs every run.
-        if ((frame as { kept?: true }).kept)
-          kindSet('stderr:kept').add(`text:${frame.data.replace(/\bpid \d+/g, 'pid N')}`);
-        else kindSet('stderr').add('text');
-        continue;
-      }
-      const event = parse(frame.data);
-      add(`${frame.stream}:${eventKind(event)}`, event);
-    }
-    if (body.exit) shape['exit'] = new Set([String(body.exit.code)]);
-  } else add('body', body);
-  return {
-    status,
-    shape: Object.fromEntries(Object.entries(shape).map(([kind, set]) => [kind, [...set].sort()])),
-  };
-}
+export type Signature = CassetteSignature;
 
 /** Event kinds whose presence and shape follow model behavior or transient service state (thinking,
  * rate-limit notices, reconnect errors, CLI logging and UI chatter), not the protocol. Their changes are notices. */
-export const VOLATILE_KINDS = [
+export const VOLATILE_KINDS: readonly RegExp[] = [
   /^stdout:system:thinking_tokens$/,
   /^stdout:system:commands_changed$/,
   /^stdout:system:ui_invalidate$/,
@@ -135,57 +30,25 @@ export const VOLATILE_KINDS = [
   /^stdout:account\/rateLimits\/updated$/,
   /^stdout:mcpServer\/startupStatus\/updated$/,
 ];
-const volatile = (kind: string) => VOLATILE_KINDS.some((pattern) => pattern.test(kind));
 
 /** Fields inside protocol events that follow transient service state: Claude's prompt-cache
  * diagnostics (`cache_miss_reason` on a miss, `null` on a hit). Their changes are notices too. */
-export const VOLATILE_PATHS = [/^message\.diagnostics\b/];
-const volatilePath = (path: string) => VOLATILE_PATHS.some((pattern) => pattern.test(path));
+export const VOLATILE_PATHS: readonly RegExp[] = [/^message\.diagnostics\b/];
 
-function differences(
-  before: Signature,
-  after: Signature,
-  pick: (kind: string) => boolean,
-  pickPath: (path: string) => boolean = () => true,
-): string[] {
-  const out: string[] = [];
-  const kinds = new Set([...Object.keys(before.shape), ...Object.keys(after.shape)]);
-  for (const kind of [...kinds].sort().filter(pick)) {
-    const was = before.shape[kind],
-      now = after.shape[kind];
-    if (!was) {
-      out.push(`new ${kind}`);
-      continue;
-    }
-    if (!now) {
-      out.push(`missing ${kind}`);
-      continue;
-    }
-    const added = now.filter((path) => !was.includes(path) && pickPath(path)),
-      removed = was.filter((path) => !now.includes(path) && pickPath(path));
-    if (added.length) out.push(`${kind} added ${added.join(', ')}`);
-    if (removed.length) out.push(`${kind} removed ${removed.join(', ')}`);
-  }
-  return out;
-}
+export const FOUNDRY_SIGNATURE_OPTIONS: SignatureOptions = {
+  volatileKinds: VOLATILE_KINDS,
+  volatilePaths: VOLATILE_PATHS,
+};
+
+export const eventKind = eventKindOf;
+
+export const signatureOf = (status: number, body: unknown): Signature =>
+  signatureOfCassette(status, body, FOUNDRY_SIGNATURE_OPTIONS);
 
 /** Protocol drift: human-readable structural differences; empty when the recordings agree. */
-export function compareSignatures(before: Signature, after: Signature): string[] {
-  return [
-    ...(before.status !== after.status ? [`status ${before.status} -> ${after.status}`] : []),
-    ...differences(
-      before,
-      after,
-      (kind) => !volatile(kind),
-      (path) => !volatilePath(path),
-    ),
-  ];
-}
+export const compareSignatures = (before: Signature, after: Signature): string[] =>
+  vcrCompareSignatures(before, after, FOUNDRY_SIGNATURE_OPTIONS);
 
 /** Changes in volatile kinds: reported, never a reason to hold a recording back. */
-export function volatileDifferences(before: Signature, after: Signature): string[] {
-  return [
-    ...differences(before, after, volatile),
-    ...differences(before, after, (kind) => !volatile(kind), volatilePath),
-  ];
-}
+export const volatileDifferences = (before: Signature, after: Signature): string[] =>
+  compareVolatileSignatures(before, after, FOUNDRY_SIGNATURE_OPTIONS);

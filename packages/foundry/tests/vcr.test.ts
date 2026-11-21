@@ -426,7 +426,7 @@ describe('process cassettes', () => {
       'session',
     ).spawn(['x'], { cwd: dir, env: {} });
     expect(() => child.stdin.write('{"id":1,"method":"other"}\n')).toThrow(
-      'stdin line 1 differs from the recording (other vs ping)',
+      'stdin line 1 differs from the recording',
     );
   });
 
@@ -478,7 +478,7 @@ describe('process cassettes', () => {
     });
     const other = cassettes().spawn(['claude'], { cwd: dir, env: {} });
     expect(() => other.stdin.write(`${prompt('live-uuid', 'bye')}\n`)).toThrow(
-      'stdin line 1 differs from the recording (user vs user)',
+      'stdin line 1 differs from the recording',
     );
   });
 
@@ -508,11 +508,9 @@ describe('process cassettes', () => {
       .queue('session', 'prompt')
       .queue('session', 'two');
     const cassettes = new ProcessCassettes(vcr, 'session');
-    expect(() =>
-      cassettes
-        .spawn(['codex', 'exec'], { cwd: dir, env: {} })
-        .stdin.write('Delete the production database'),
-    ).toThrow('stdin line 1 differs');
+    const wrong = cassettes.spawn(['codex', 'exec'], { cwd: dir, env: {} });
+    wrong.stdin.write('Delete the production database');
+    expect(() => wrong.stdin.end()).toThrow('stdin line 1 differs');
     const same = cassettes.spawn(['codex', 'exec'], { cwd: dir, env: {} });
     same.stdin.write('Classify: add a toggle');
     same.stdin.end();

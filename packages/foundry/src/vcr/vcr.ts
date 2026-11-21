@@ -3,37 +3,39 @@
  * @kind service
  * @partOf primitive:vcr
  */
-// Ported from the template's packages/shared/src/vcr/vcr.ts. Differences, all driven by
-// Foundry's live-first policy: the mode is explicit (replay never calls live; record always
-// does), a recording is stamped with who/what/when, and a recording whose structure drifted
-// from the committed cassette is written beside it as pending instead of overwriting it.
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { basename, dirname, extname, join } from 'node:path';
-import { compareSignatures, type Signature, signatureOf } from './signature';
+// Foundry's VCR configuration over @inixiative/vcr: binds FOUNDRY_VCR_* environment variables,
+// Foundry's scrubber, volatile signature options, and @inixiative/agent-session version metadata.
+import { readFileSync } from 'node:fs';
+import { basename, join } from 'node:path';
+import {
+  createVcrRecorder,
+  createVcrSession,
+  type DriftFinding,
+  isVcrError,
+  type StoreCassetteInput,
+  type VcrCassette,
+  VcrError,
+  type VcrMethodSanitizer,
+  type VcrRecorder,
+  type VcrRecordingStamp,
+  type VcrResponse,
+  type VcrSession,
+} from '@inixiative/vcr';
+import { foundryScrubber } from './scrub';
+import { FOUNDRY_SIGNATURE_OPTIONS } from './signature';
 
 export type VcrMode = 'replay' | 'record';
+export type { DriftFinding };
+
 /** `bun run test` replays; `bun run test:live` and the launchd smoke record. */
 export const vcrMode = (): VcrMode => (process.env.FOUNDRY_VCR === 'record' ? 'record' : 'replay');
 
-export type Recorded = {
-  service: string;
-  cli?: string;
-  model?: string;
-  recordedAt: string;
-  /** @inixiative/agent-session version the recording ran through. */
+export type Recorded = VcrRecordingStamp & {
+  /** Legacy top-level @inixiative/agent-session stamp kept for existing committed cassettes. */
   agentSession?: string;
-  /** Terminal (test:live) or the LaunchAgent environment (test:live:daemon). */
-  environment: string;
-  durationMs?: number;
 };
 
-export type Fixture<T = unknown> = {
-  /** Upstream version: the CLI version, or a hash of the service's API description. */
-  version?: string;
-  status: number;
-  body?: T | null;
-  bodyFile?: string;
-  headers?: Record<string, string>;
+export type Fixture<T = unknown> = Omit<VcrCassette<unknown, T>, 'recorded'> & {
   recorded?: Recorded;
 };
 
@@ -56,8 +58,6 @@ type VCROptions = {
   sanitizers?: Record<string, Sanitizer>;
 };
 
-export type DriftFinding = { cassette: string; pending: string; differences: string[] };
-
 export const agentSessionVersion = (() => {
   try {
     const url = new URL(
@@ -70,50 +70,180 @@ export const agentSessionVersion = (() => {
   }
 })();
 
-export class VCR {
-  // Shared across all instances; the live runner pre-seeds it so each VCR never pays the CLI cost.
-  static versionCache = new Map<string, string>();
-  /** Structural drift found while recording; the live runner reports these. */
-  static drift: DriftFinding[] = [];
-  /** Where this process last wrote each cassette (pending on drift), so an in-run replay reads the new recording. */
-  static written = new Map<string, string>();
+const resolveMaxLiveCalls = (fallback: number): number => {
+  const raw = process.env.FOUNDRY_VCR_MAX_LIVE ?? process.env.VCR_MAX_LIVE;
+  if (!raw) return fallback;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+};
 
-  /** Live calls this process has made; recording refuses past FOUNDRY_VCR_MAX_LIVE (default 80). */
-  static liveCalls = 0;
+const baseSession = createVcrSession();
+
+/** Shared Foundry VCR session delegating budget, version cache, written paths, and drift tracking to @inixiative/vcr. */
+export const foundryVcrSession: VcrSession = {
+  versionCache: baseSession.versionCache,
+  drift: baseSession.drift,
+  written: baseSession.written,
+  inFlightRecordOnce: baseSession.inFlightRecordOnce,
+  get liveCalls() {
+    return baseSession.liveCalls;
+  },
+  set liveCalls(value: number) {
+    baseSession.liveCalls = value;
+  },
+  get maxLiveCalls() {
+    return resolveMaxLiveCalls(baseSession.maxLiveCalls);
+  },
+  set maxLiveCalls(value: number) {
+    baseSession.maxLiveCalls = value;
+  },
+  spendLiveCall(label: string) {
+    baseSession.maxLiveCalls = resolveMaxLiveCalls(baseSession.maxLiveCalls);
+    baseSession.spendLiveCall(label);
+  },
+  seedVersion(service: string, version: string) {
+    baseSession.seedVersion(service, version);
+  },
+  clearVersionCache() {
+    baseSession.clearVersionCache();
+  },
+  reset() {
+    baseSession.reset();
+  },
+};
+
+const redactKeyPath = (node: unknown, parts: readonly string[]): void => {
+  if (!node || typeof node !== 'object') return;
+  if (Array.isArray(node)) {
+    for (const item of node) redactKeyPath(item, parts);
+    return;
+  }
+  const record = node as Record<string, unknown>;
+  const [head, ...rest] = parts;
+  if (head === undefined) return;
+  if (rest.length === 0) {
+    if (head in record) {
+      const value = record[head];
+      record[head] =
+        value === null || value === undefined || typeof value === 'object' ? value : 'REDACTED';
+    }
+    return;
+  }
+  redactKeyPath(record[head], rest);
+};
+
+const adaptSanitizers = (
+  sanitizers?: Record<string, Sanitizer>,
+): Readonly<Record<string, VcrMethodSanitizer>> | undefined => {
+  if (!sanitizers) return undefined;
+  const out: Record<string, VcrMethodSanitizer> = {};
+  for (const [method, rule] of Object.entries(sanitizers)) {
+    const keys = rule.keys;
+    const fn = rule.fn;
+    out[method] = {
+      ...(fn || keys?.length
+        ? {
+            transform(data: unknown) {
+              const transformed = fn ? fn(data) : data;
+              if (!keys?.length) return transformed;
+              const clone = structuredClone(transformed);
+              for (const key of keys) redactKeyPath(clone, key.split('.'));
+              return clone;
+            },
+          }
+        : {}),
+      ...(rule.isArray !== undefined ? { isArray: rule.isArray } : {}),
+      ...(rule.binaryExtension ? { binaryExtension: rule.binaryExtension } : {}),
+    };
+  }
+  return out;
+};
+
+const relativeFixtureSubdir = (fixturesDir: string, fallback: string): string => {
+  const marker = `${join('fixtures', 'vcr')}/`;
+  const index = fixturesDir.lastIndexOf(marker);
+  if (index === -1) return fallback;
+  const suffix = fixturesDir.slice(index + marker.length).replace(/\/+$/, '');
+  return suffix && !suffix.includes('/') ? suffix : fallback;
+};
+
+const withFoundryMissingHint = (error: unknown): never => {
+  if (isVcrError(error, 'cassette_missing')) {
+    const file = error.cassette ? basename(error.cassette) : 'cassette';
+    throw new VcrError(
+      'cassette_missing',
+      `VCR: cassette "${file}" is missing; record it with \`bun run test:live\``,
+      { cassette: error.cassette, cause: error },
+    );
+  }
+  throw error;
+};
+
+export class VCR {
+  static readonly versionCache = foundryVcrSession.versionCache;
+  static readonly written = foundryVcrSession.written;
+
+  static get drift(): DriftFinding[] {
+    return foundryVcrSession.drift;
+  }
+
+  static set drift(value: DriftFinding[]) {
+    foundryVcrSession.drift.splice(0, foundryVcrSession.drift.length, ...value);
+  }
+
+  static get liveCalls(): number {
+    return foundryVcrSession.liveCalls;
+  }
+
+  static set liveCalls(value: number) {
+    foundryVcrSession.liveCalls = value;
+  }
+
   static spendLive(what: string): void {
-    const limit = Number(process.env.FOUNDRY_VCR_MAX_LIVE ?? 80);
-    if (++VCR.liveCalls > limit)
-      throw Error(`VCR: live call budget of ${limit} spent; refusing ${what}`);
+    foundryVcrSession.spendLiveCall(what);
   }
 
   static setVersion(service: string, value: string): void {
-    VCR.versionCache.set(service, value);
+    foundryVcrSession.seedVersion(service, value);
   }
 
   static clearVersionCache(): void {
-    VCR.versionCache.clear();
+    foundryVcrSession.clearVersionCache();
   }
 
+  readonly recorder: VcrRecorder;
   readonly service: string;
   readonly cli?: string;
   readonly model?: string;
-  private readonly fixturesDir: string;
-  private readonly sanitizers: Record<string, Sanitizer>;
-  private readonly queues = new Map<string, string[]>();
-  private readonly versionFn: VersionFn;
-  private readonly saving = new Set<Promise<unknown>>();
-  /** Once one recording drifted, this instance's later ones (its outcome) go to pending with it. */
-  private drifted = false;
-  /** This instance's writes before any drift, with what each target held before, to hold back on a drift. */
-  private readonly undrifted = new Map<string, { target: string; previous: string | undefined }>();
 
   constructor(fixturesDir: string, opts: VCROptions) {
-    this.fixturesDir = fixturesDir;
-    this.sanitizers = opts.sanitizers ?? {};
-    this.versionFn = opts.version;
     this.service = opts.service;
     this.cli = opts.cli;
     this.model = opts.model;
+    const outputDir = process.env.FOUNDRY_VCR_OUT || undefined;
+    this.recorder = createVcrRecorder(fixturesDir, {
+      service: opts.service,
+      version: opts.version,
+      modeEnvVar: 'FOUNDRY_VCR',
+      environment: process.env.FOUNDRY_VCR_ENVIRONMENT ?? 'terminal',
+      ...(outputDir
+        ? { outputDir, outputSubdir: relativeFixtureSubdir(fixturesDir, opts.service) }
+        : {}),
+      ...(opts.cli ? { cli: opts.cli } : {}),
+      ...(opts.model ? { model: opts.model } : {}),
+      ...(opts.cli && agentSessionVersion
+        ? { metadata: { '@inixiative/agent-session': agentSessionVersion } }
+        : {}),
+      scrubber: foundryScrubber,
+      sanitizers: adaptSanitizers(opts.sanitizers),
+      signature: FOUNDRY_SIGNATURE_OPTIONS,
+      session: foundryVcrSession,
+      onDrift(finding) {
+        console.warn(
+          `VCR: live drift in "${basename(finding.cassette)}"; kept the committed cassette and wrote ${basename(finding.pending)}\n  ${finding.differences.join('\n  ')}`,
+        );
+      },
+    });
   }
 
   get mode(): VcrMode {
@@ -121,276 +251,75 @@ export class VCR {
   }
 
   queue(method: string, fixture: string): this {
-    const q = this.queues.get(method) ?? [];
-    q.push(fixture);
-    this.queues.set(method, q);
+    this.recorder.queue(method, fixture);
     return this;
   }
 
   async capture<T>(method: string, realFn: () => Promise<T>): Promise<T> {
-    const fixturePath = this.popFixturePath(method);
-    if (this.mode === 'replay') {
-      const saved = this.load<T>(fixturePath);
-      if (saved.status >= 400)
-        throw new Error(typeof saved.body === 'string' ? saved.body : JSON.stringify(saved.body));
-      if (saved.bodyFile)
-        return readFileSync(join(dirname(fixturePath), saved.bodyFile)) as unknown as T;
-      return saved.body as T;
-    }
-    VCR.spendLive(`${this.service} ${method}`);
-    const started = Date.now();
     try {
-      const sanitized = this.sanitize(method, await realFn());
-      await this.saveFixture(fixturePath, method, sanitized, 200, undefined, {
-        durationMs: Date.now() - started,
-      });
-      return sanitized;
+      return await this.recorder.capture(method, realFn);
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      await this.store(
-        fixturePath,
-        { status: 500, body: message },
-        { durationMs: Date.now() - started },
-      );
-      throw error;
+      return withFoundryMissingHint(error);
     }
   }
 
-  async captureResponse<T>(method: string, realFn: () => Promise<Fixture<T>>): Promise<Fixture<T>> {
-    const fixturePath = this.popFixturePath(method);
-    if (this.mode === 'replay') {
-      const saved = this.load<T>(fixturePath);
-      const body = saved.bodyFile
-        ? (readFileSync(join(dirname(fixturePath), saved.bodyFile)) as unknown as T)
-        : (saved.body as T);
-      return { status: saved.status, body, ...(saved.headers && { headers: saved.headers }) };
-    }
-    VCR.spendLive(`${this.service} ${method}`);
-    const started = Date.now();
+  async captureResponse<T>(
+    method: string,
+    realFn: () => Promise<VcrResponse<T>>,
+  ): Promise<VcrResponse<T>> {
     try {
-      const raw = await realFn();
-      return await this.saveFixture<T>(
-        fixturePath,
-        method,
-        this.sanitize(method, raw.body) as T,
-        raw.status,
-        raw.headers,
-        { durationMs: Date.now() - started },
-      );
+      return await this.recorder.captureResponse(method, realFn);
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      await this.store(
-        fixturePath,
-        { status: 500, body: message },
-        { durationMs: Date.now() - started },
-      );
-      throw error;
+      return withFoundryMissingHint(error);
     }
   }
 
-  /** Records `value` live and returns what live concluded; on replay returns the recorded conclusion.
-   * Tests compare their replayed conclusion with it, so every replay proves it matches live. */
+  /** Records `value` live and returns what live concluded; on replay returns the recorded conclusion. */
   async outcome<T>(method: string, value: T): Promise<T> {
-    const fixturePath = this.popFixturePath(method);
-    if (this.mode === 'replay') return this.load<T>(fixturePath).body as T;
-    const body = JSON.parse(JSON.stringify(value)) as T;
-    await this.store(fixturePath, { status: 200, body });
-    return body;
+    try {
+      return await this.recorder.recordOutcome(method, value);
+    } catch (error) {
+      return withFoundryMissingHint(error);
+    }
   }
 
-  // Public: capture/captureResponse resolve through this; the live runner and freshness share it.
-  async getVersion(): Promise<string> {
-    const cached = VCR.versionCache.get(this.service);
-    if (cached !== undefined) return cached;
-    const resolved = await this.versionFn();
-    if (!resolved)
-      throw new Error(`VCR: version callback resolved to empty string (service=${this.service})`);
-    VCR.versionCache.set(this.service, resolved);
-    return resolved;
+  fetchVersion(): Promise<string> {
+    return this.recorder.fetchServiceVersion();
   }
 
-  /** Pops the next queued cassette for `method`. Transports hold the path across a live exchange. */
   popFixturePath(method: string): string {
-    const q = this.queues.get(method);
-    const fixtureName = q?.shift();
-    if (!fixtureName) throw new Error(`VCR: no cassette queued for "${method}"`);
-    return join(this.fixturesDir, `${method}.${fixtureName}.json`);
+    return this.recorder.popCassettePath(method);
   }
 
   load<T = unknown>(requested: string): Fixture<T> {
-    const fixturePath = VCR.written.get(requested) ?? requested;
-    if (!existsSync(fixturePath))
-      throw new Error(
-        `VCR: cassette "${basename(fixturePath)}" is missing; record it with \`bun run test:live\``,
-      );
-    return JSON.parse(readFileSync(fixturePath, 'utf-8')) as Fixture<T>;
+    try {
+      return this.recorder.fetchCassette<unknown, T>(requested) as Fixture<T>;
+    } catch (error) {
+      return withFoundryMissingHint(error);
+    }
   }
 
-  /** Stamps and writes a recording. Drift from the committed cassette goes to `<name>.pending.json`. */
-  store(
+  store<T = unknown>(
     fixturePath: string,
-    fixture: Omit<Fixture, 'version' | 'recorded'>,
-    extra: Partial<Recorded> = {},
+    fixture: StoreCassetteInput<unknown, T>,
+    extra: Partial<VcrRecordingStamp> = {},
   ): Promise<string> {
-    const saving = (async () => {
-      const version = await this.getVersion();
-      const recorded: Recorded = {
-        service: this.service,
-        ...(this.cli ? { cli: this.cli } : {}),
-        ...(this.model ? { model: this.model } : {}),
-        recordedAt: new Date().toISOString(),
-        ...(agentSessionVersion ? { agentSession: agentSessionVersion } : {}),
-        environment: process.env.FOUNDRY_VCR_ENVIRONMENT ?? 'terminal',
-        ...extra,
-      };
-      const next: Fixture = { version, ...fixture, recorded };
-      const target = this.targetPath(fixturePath, next);
-      if (!this.drifted && !this.undrifted.has(fixturePath))
-        this.undrifted.set(fixturePath, {
-          target,
-          previous: existsSync(target) ? readFileSync(target, 'utf-8') : undefined,
-        });
-      write(target, next);
-      VCR.written.set(fixturePath, target);
-      return target;
-    })();
-    this.track(saving);
-    return saving;
+    return this.recorder.storeCassette(fixturePath, fixture, extra);
   }
 
-  /** Holds `settled()` open until a recording that finishes asynchronously is written. */
   track<T>(work: Promise<T>): Promise<T> {
-    this.saving.add(work);
-    void work.finally(() => this.saving.delete(work)).catch(() => {});
-    return work;
+    return this.recorder.trackPendingWrite(work);
   }
 
-  /** Resolves once every recording started so far is on disk. */
-  async settled(): Promise<void> {
-    while (this.saving.size) await Promise.allSettled([...this.saving]);
-  }
-
-  private targetPath(fixturePath: string, next: Fixture): string {
-    const out = process.env.FOUNDRY_VCR_OUT
-      ? join(process.env.FOUNDRY_VCR_OUT, relativeFixture(fixturePath))
-      : fixturePath;
-    const pendingPath = out.replace(/\.json$/, '.pending.json');
-    if (this.drifted) return pendingPath;
-    if (!existsSync(fixturePath)) return out;
-    const committed = JSON.parse(readFileSync(fixturePath, 'utf-8')) as Fixture;
-    const differences = compareSignatures(signature(committed), signature(next));
-    if (!differences.length) return out;
-    const pending = pendingPath;
-    this.drifted = true;
-    this.holdBackUndrifted();
-    VCR.drift.push({ cassette: fixturePath, pending, differences });
-    console.warn(
-      `VCR: live drift in "${basename(fixturePath)}"; kept the committed cassette and wrote ${basename(pending)}\n  ${differences.join('\n  ')}`,
-    );
-    return pending;
-  }
-
-  // why: a test's cassettes must come from one run, so its earlier matching recordings go to pending too.
-  private holdBackUndrifted(): void {
-    for (const [fixturePath, { target, previous }] of this.undrifted) {
-      if (!existsSync(target)) continue;
-      const pending = target.replace(/\.json$/, '.pending.json');
-      writeFileSync(pending, readFileSync(target, 'utf-8'));
-      if (previous === undefined) rmSync(target);
-      else writeFileSync(target, previous);
-      VCR.written.set(fixturePath, pending);
-    }
-    this.undrifted.clear();
-  }
-
-  private async saveFixture<T>(
-    fixturePath: string,
-    method: string,
-    body: T,
-    status: number,
-    headers?: Record<string, string>,
-    extra?: Partial<Recorded>,
-  ): Promise<Fixture<T>> {
-    if (body instanceof Uint8Array || body instanceof Buffer) {
-      const ext = this.sanitizers[method]?.binaryExtension ?? '.bin';
-      const baseName = basename(fixturePath, extname(fixturePath));
-      const sidecarName = `${baseName}${ext}`;
-      const sidecarPath = join(dirname(fixturePath), sidecarName);
-      mkdirSync(dirname(sidecarPath), { recursive: true });
-      writeFileSync(sidecarPath, body as Uint8Array);
-      await this.store(
-        fixturePath,
-        { status, bodyFile: sidecarName, ...(headers && { headers }) },
-        extra,
-      );
-      return { status, body: body as T, ...(headers && { headers }) };
-    }
-    await this.store(fixturePath, { status, body, ...(headers && { headers }) }, extra);
-    return { status, body, ...(headers && { headers }) };
-  }
-
-  private sanitize<T>(method: string, data: T): T {
-    const rule = this.sanitizers[method];
-    if (!rule) return data;
-    if (data instanceof Uint8Array || data instanceof Buffer) return data;
-    if (rule.isArray && Array.isArray(data)) {
-      return data.map((item) => this.applyRule(rule, item)) as unknown as T;
-    }
-    return this.applyRule(rule, data);
-  }
-
-  private applyRule<T>(rule: Sanitizer, data: T): T {
-    const transformed = rule.fn ? (rule.fn(data) as T) : data;
-    if (rule.keys?.length) return redactKeys(transformed, rule.keys);
-    return transformed;
+  settled(): Promise<void> {
+    return this.recorder.waitUntilSettled();
   }
 
   isEmpty(): boolean {
-    for (const q of this.queues.values()) {
-      if (q.length > 0) return false;
-    }
-    return true;
+    return this.recorder.isQueueEmpty();
   }
 
   clear(): void {
-    this.queues.clear();
+    this.recorder.clearQueues();
   }
 }
-
-const signature = (fixture: Fixture): Signature => signatureOf(fixture.status, fixture.body);
-
-const relativeFixture = (fixturePath: string) => {
-  const marker = `${join('fixtures', 'vcr')}/`;
-  const index = fixturePath.lastIndexOf(marker);
-  return index === -1 ? basename(fixturePath) : fixturePath.slice(index + marker.length);
-};
-
-const write = (fixturePath: string, data: unknown): void => {
-  mkdirSync(dirname(fixturePath), { recursive: true });
-  writeFileSync(fixturePath, `${JSON.stringify(data, null, 2)}\n`);
-};
-
-const redactKeys = <T>(data: T, keys: string[]): T => {
-  if (!keys.length) return data;
-  const clone = JSON.parse(JSON.stringify(data)) as T;
-  for (const key of keys) redactPath(clone, key.split('.'));
-  return clone;
-};
-
-const redactPath = (obj: unknown, parts: string[]): void => {
-  if (!obj || typeof obj !== 'object') return;
-  if (Array.isArray(obj)) {
-    for (const item of obj) redactPath(item, parts);
-    return;
-  }
-  const record = obj as Record<string, unknown>;
-  const [head, ...rest] = parts;
-  if (rest.length === 0) {
-    if (head in record) {
-      const v = record[head];
-      record[head] = v === null || v === undefined || typeof v === 'object' ? v : 'REDACTED';
-    }
-  } else {
-    redactPath(record[head], rest);
-  }
-};

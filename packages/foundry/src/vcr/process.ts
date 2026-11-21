@@ -3,56 +3,35 @@
  * @kind adapter
  * @partOf primitive:vcr
  */
-// Stdio sessions as cassettes. A recording keeps every stdin write and every stdout/stderr
-// line, each output tagged with how many stdin events (writes or end) preceded it. Replay
-// releases each output once the same number of stdin events has happened, so request/response
-// protocols (Claude stream-json turns, `codex exec` stdin prompts, app-server JSON-RPC) replay
-// in the order they ran live, with no timers.
+// Foundry's stdio process cassette seam over @inixiative/vcr/process: adds Foundry's live
+// account environment resolution, Claude stream-json control protocol ID remapping, and
+// observed-model extraction for Claude and Codex app-server recordings.
 import { lstatSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import {
+  createVcrProcessSpawner,
+  type ProcessFrame,
+  type ProcessLaunch,
+  type ProcessLineProtocol,
+  type ProcessLineProtocolSession,
+  type ProcessSpawnOptions,
+  type ProcessTranscript,
+  type RecordedProcess,
+  type VcrProcessSpawner,
+} from '@inixiative/vcr/process';
 import { writeCredentialHome } from '../providers/private-profile';
-import { accountHome, rehydrate, type ScrubContext, scrubLine, scrubText } from './scrub';
-import { type Fixture, VCR } from './vcr';
+import { accountHome } from './scrub';
+import type { VCR } from './vcr';
 
-/** `kept`: a sanitizer chose to keep this line (a status probe's answer), so it is protocol, never noise. */
-export type Frame = {
-  after: number;
-  stream: 'stdout' | 'stderr';
-  data: string;
-  eol?: false;
-  kept?: true;
-};
-export type ProcessTranscript = {
-  kind: 'process';
-  argv: string[];
-  cwd: string;
-  /** Scrubbed stdin writes in order; `end` counts as one more stdin event. */
-  stdin: string[];
-  stdinEnded: boolean;
-  frames: Frame[];
-  exit: { after: number; code: number | null; killed: boolean };
-};
-
-export type SpawnOptions = { cwd: string; env: Record<string, string | undefined> };
-export type RecordedProcess = {
-  stdin: { write(data: string | Uint8Array): void; flush(): void; end(): void };
-  stdout: ReadableStream<Uint8Array>;
-  stderr: ReadableStream<Uint8Array>;
-  exited: Promise<number>;
-  kill(): void;
-};
-export type Launch = {
-  argv: string[];
-  env: Record<string, string | undefined>;
-  cwd: string;
-  stdin: string;
-  exited: boolean;
-};
+export type Frame = ProcessFrame;
+export type Launch = Omit<ProcessLaunch, 'argv'> & { argv: string[] };
+export type SpawnOptions = ProcessSpawnOptions;
+export type { ProcessTranscript, RecordedProcess };
 
 type Options = {
   /** Status probes that Foundry spawns without argv (`statusSpawn(selection)`) name the command here. */
-  argv?: string[];
+  argv?: readonly string[];
   /** Reduces raw output to what Foundry reads (auth status prints the account); generic scrubbing follows. */
   sanitize?: (frames: Frame[]) => Frame[];
   /** Environment for `statusSpawn` probes; the providers compose theirs from an allowlist. */
@@ -63,12 +42,17 @@ type Options = {
   model?: string | ((transcript: ProcessTranscript) => string | undefined);
 };
 
-const encoder = new TextEncoder();
-const text = (data: string | Uint8Array) =>
-  typeof data === 'string' ? data : new TextDecoder().decode(data);
+const credentialHome = (home: string): boolean => {
+  try {
+    return lstatSync(join(home, 'auth.json')).isSymbolicLink();
+  } catch {
+    return false;
+  }
+};
 
-/** The account's own login, whatever temporary profile, HOME or XDG_CONFIG_HOME (Muse Code) a test composed for Foundry. A composed
- * private Codex home stays private: it runs live on a copy of its config with the account's login linked in. */
+/** The account's own login, whatever temporary profile, HOME or XDG_CONFIG_HOME (Muse Code) a test
+ * composed for Foundry. A composed private Codex home stays private: it runs live on a copy of its
+ * config with the account's login linked in. */
 export function liveEnvironment(
   env: Record<string, string | undefined>,
 ): Record<string, string | undefined> {
@@ -96,190 +80,14 @@ export function liveEnvironment(
   return live;
 }
 
-const credentialHome = (home: string) => {
-  try {
-    return lstatSync(join(home, 'auth.json')).isSymbolicLink();
-  } catch {
-    return false;
-  }
-};
-
-/** A spawn seam backed by queued cassettes: `vcr.queue(method, name)` once per expected launch. */
-export class ProcessCassettes {
-  readonly launches: Launch[] = [];
-  writes = 0;
-  constructor(
-    private vcr: VCR,
-    private method: string,
-    private options: Options = {},
-  ) {}
-
-  spawn = (argv: string[], options: SpawnOptions): RecordedProcess => {
-    const path = this.vcr.popFixturePath(this.method);
-    const launch: Launch = { argv, env: options.env, cwd: options.cwd, stdin: '', exited: false };
-    this.launches.push(launch);
-    const onWrite = (data: string) => {
-      launch.stdin += data;
-      this.writes++;
-    };
-    const onExit = () => {
-      launch.exited = true;
-    };
-    const replaying =
-      this.vcr.mode === 'replay' || (this.options.recordOnce === true && VCR.written.has(path));
-    return replaying
-      ? replay(this.vcr.load<ProcessTranscript>(path), options, onWrite, onExit)
-      : record(this.vcr, path, this.options.argv ?? argv, options, this.options, onWrite, onExit);
-  };
-
-  /** `statusSpawn(selection)`: the command and environment are fixed by the cassette, so they come from options. */
-  statusSpawn = (_selection?: unknown): RecordedProcess => {
-    if (!this.options.argv) throw Error('VCR: statusSpawn needs the probe argv');
-    return this.spawn(this.options.argv, {
-      cwd: tmpdir(),
-      env: this.options.env?.() ?? { PATH: process.env.PATH },
-    });
-  };
-}
-
-function record(
-  vcr: VCR,
-  path: string,
-  argv: string[],
-  options: SpawnOptions,
-  config: Options,
-  onWrite: (data: string) => void,
-  onExit: () => void,
-): RecordedProcess {
-  VCR.spendLive(argv.slice(0, 2).join(' '));
-  const started = Date.now();
-  const child = Bun.spawn(argv, {
-    cwd: options.cwd,
-    env: liveEnvironment(options.env),
-    stdin: 'pipe',
-    stdout: 'pipe',
-    stderr: 'pipe',
-  });
-  const context: ScrubContext = { cwd: options.cwd };
-  const transcript: ProcessTranscript = {
-    kind: 'process',
-    argv: argv.map((arg) => scrubText(arg, context)),
-    cwd: '{{cwd}}',
-    stdin: [],
-    stdinEnded: false,
-    frames: [],
-    exit: { after: 0, code: null, killed: false },
-  };
-  let events = 0,
-    killed = false;
-  // Raw lines stay in memory only; they are sanitized and scrubbed before the cassette is written.
-  const raw: Frame[] = [];
-  // Tee each stream: Foundry reads the real bytes unchanged; the cassette keeps scrubbed lines.
-  const tee = (source: ReadableStream<Uint8Array>, stream: 'stdout' | 'stderr') => {
-    let controller!: ReadableStreamDefaultController<Uint8Array>;
-    const readable = new ReadableStream<Uint8Array>({
-      start(c) {
-        controller = c;
-      },
-    });
-    const done = (async () => {
-      const decoder = new TextDecoder();
-      let buffer = '';
-      const push = (data: string, eol: boolean) => {
-        raw.push({ after: events, stream, data, ...(eol ? {} : { eol: false as const }) });
-      };
-      try {
-        for await (const chunk of source) {
-          try {
-            controller.enqueue(chunk);
-          } catch {
-            /* Reader cancelled; keep recording. */
-          }
-          buffer += decoder.decode(chunk, { stream: true });
-          const lines = buffer.split('\n');
-          buffer = lines.pop() ?? '';
-          for (const line of lines) push(line, true);
-        }
-      } catch {
-        /* Killed mid-read. */
-      }
-      buffer += decoder.decode();
-      if (buffer) push(buffer, false);
-      try {
-        controller.close();
-      } catch {
-        /* Already closed. */
-      }
-    })();
-    return { readable, done };
-  };
-  const stdout = tee(child.stdout, 'stdout'),
-    stderr = tee(child.stderr, 'stderr');
-  // Foundry sees the real exit at once; the cassette is written after both streams drain.
-  // Tracked from spawn, so settled() waits for this cassette however the caller awaits the process.
-  const exited = child.exited.then((code) => {
-    onExit();
-    transcript.exit = { after: events, code: killed ? null : code, killed };
-    return code;
-  });
-  vcr.track(
-    Promise.all([exited, stdout.done, stderr.done]).then(([code]) => {
-      const durationMs = Date.now() - started;
-      const sanitized = config.sanitize
-        ? config.sanitize(raw).map((frame) => ({ ...frame, kept: true as const }))
-        : raw;
-      transcript.frames = sanitized.map((frame) => ({
-        ...frame,
-        data: scrubLine(frame.data, context),
-      }));
-      const model =
-        typeof config.model === 'function'
-          ? config.model(transcript)
-          : (config.model ?? observedModel(transcript));
-      return vcr.store(
-        path,
-        { status: killed ? 0 : code, body: transcript },
-        { durationMs, ...(model ? { model } : {}) },
-      );
-    }),
-  );
-  return {
-    stdout: stdout.readable,
-    stderr: stderr.readable,
-    exited,
-    stdin: {
-      write(data) {
-        const value = text(data);
-        onWrite(value);
-        transcript.stdin.push(scrubLine(value, context));
-        events++;
-        child.stdin.write(value);
-      },
-      flush() {
-        child.stdin.flush();
-      },
-      end() {
-        if (!transcript.stdinEnded) {
-          transcript.stdinEnded = true;
-          events++;
-        }
-        child.stdin.end();
-      },
-    },
-    kill() {
-      killed = true;
-      child.kill();
-    },
-  };
-}
-
 /** The model a CLI reported: Claude's init `model`, app-server's thread `model`. */
-function observedModel(transcript: ProcessTranscript): string | undefined {
+export function observedModel(transcript: ProcessTranscript): string | undefined {
   for (const frame of transcript.frames) {
     try {
       const event = JSON.parse(frame.data) as Record<string, unknown>;
-      if (event.type === 'system' && event.subtype === 'init' && typeof event.model === 'string')
+      if (event.type === 'system' && event.subtype === 'init' && typeof event.model === 'string') {
         return event.model;
+      }
       const result = event.result as Record<string, unknown> | undefined;
       if (result && typeof result.model === 'string' && result.thread) return result.model;
     } catch {
@@ -289,213 +97,165 @@ function observedModel(transcript: ProcessTranscript): string | undefined {
   return undefined;
 }
 
-type JsonRpc = {
+type JsonRpcRecord = {
   id?: string | number;
   method?: string;
   type?: string;
   request_id?: string;
   response?: { request_id?: string };
+  request?: { subtype?: string; hooks?: unknown; callback_id?: string };
+  uuid?: unknown;
+  command_uuid?: unknown;
 };
-/** The client's own request id: JSON-RPC `id`, or a Claude control request's `request_id`. */
-const clientRequestId = (value: JsonRpc | undefined) =>
-  value?.method !== undefined && value.id !== undefined
-    ? value.id
-    : value?.type === 'control_request' && typeof value.request_id === 'string'
-      ? value.request_id
-      : undefined;
-/** Hook callback ids a Claude control `initialize` registers: the client's choice, like request ids. */
-const hookCallbackIds = (value: JsonRpc | undefined): string[] => {
-  const hooks = (value as { request?: { subtype?: string; hooks?: unknown } } | undefined)?.request;
-  if (value?.type !== 'control_request' || hooks?.subtype !== 'initialize') return [];
-  return (
-    JSON.stringify(hooks.hooks ?? {})
-      .match(/"hookCallbackIds":\[([^\]]*)\]/g)
-      ?.flatMap((group) => [...group.matchAll(/"([^"]+)"/g)].map((m) => m[1]!).slice(1)) ?? []
-  );
-};
-/** The uuid a Claude user message carries: the client's choice, echoed back in `command_lifecycle` frames. */
-const promptUuid = (value: JsonRpc | undefined) => {
-  const uuid = (value as { uuid?: unknown } | undefined)?.uuid;
-  return value?.type === 'user' && typeof uuid === 'string' ? uuid : undefined;
-};
-/** A stdin line as compared on replay: request, hook callback and prompt ids are the client's choice, everything else must match. */
-const comparable = (line: string) => {
-  const value = json(line);
-  if (value && promptUuid(value) !== undefined) {
-    const { uuid: _uuid, ...rest } = value as Record<string, unknown>;
-    return JSON.stringify(rest);
-  }
-  if (!value || clientRequestId(value) === undefined) return line.trim();
-  const { id: _id, request_id: _requestId, ...rest } = value as Record<string, unknown>;
-  let text = JSON.stringify(rest);
-  for (const callback of hookCallbackIds(value))
-    text = text.replaceAll(`"${callback}"`, '"<hook>"');
-  return text;
-};
-const json = (line: string): JsonRpc | undefined => {
+
+const parseJsonLine = (line: string): JsonRpcRecord | undefined => {
   try {
-    const value = JSON.parse(line);
-    return value && typeof value === 'object' ? value : undefined;
+    const parsed: unknown = JSON.parse(line);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? (parsed as JsonRpcRecord)
+      : undefined;
   } catch {
     return undefined;
   }
 };
 
-function replay(
-  fixture: Fixture<ProcessTranscript>,
-  options: SpawnOptions,
-  onWrite: (data: string) => void,
-  onExit: () => void,
-): RecordedProcess {
-  const transcript = fixture.body!;
-  const context: ScrubContext = { cwd: options.cwd };
-  const controllers: Record<
-    'stdout' | 'stderr',
-    ReadableStreamDefaultController<Uint8Array>
-  > = {} as never;
-  const stream = (name: 'stdout' | 'stderr') =>
-    new ReadableStream<Uint8Array>({
-      start(c) {
-        controllers[name] = c;
-      },
-    });
-  const stdout = stream('stdout'),
-    stderr = stream('stderr');
-  let resolveExit!: (code: number) => void;
-  const exited = new Promise<number>((resolve) => {
-    resolveExit = resolve;
-  });
-  let events = 0,
-    next = 0,
-    closed = false,
-    stdinLines = 0,
-    ended = false;
-  // JSON-RPC request ids the client chose live vs now, so replayed responses answer this run's requests.
-  const ids = new Map<string, string | number>();
-  const hooks = new Map<string, string>();
-  const prompts = new Map<string, string>();
-  const close = (code: number) => {
-    if (closed) return;
-    closed = true;
-    onExit();
-    for (const controller of Object.values(controllers)) {
-      try {
-        controller.close();
-      } catch {
-        /* Closed. */
-      }
-    }
-    resolveExit(code);
-  };
-  const remap = (line: string) => {
-    const value = json(line);
-    if (!value) return line;
-    // A Claude command lifecycle frame names the prompt uuid this run wrote.
-    const command = (value as { command_uuid?: unknown }).command_uuid;
-    if (value.type === 'command_lifecycle' && typeof command === 'string' && prompts.has(command))
-      return JSON.stringify({ ...value, command_uuid: prompts.get(command) });
-    // A Claude hook callback names the callback id this run registered.
-    const callback = (value as { request?: { subtype?: string; callback_id?: string } }).request;
-    if (
-      value.type === 'control_request' &&
-      callback?.subtype === 'hook_callback' &&
-      typeof callback.callback_id === 'string' &&
-      hooks.has(callback.callback_id)
-    )
-      return JSON.stringify({
-        ...value,
-        request: { ...callback, callback_id: hooks.get(callback.callback_id) },
-      });
-    // A Claude control response answers the control request this run sent.
-    const control = value.type === 'control_response' ? value.response?.request_id : undefined;
-    if (control !== undefined && ids.has(control))
-      return JSON.stringify({
-        ...value,
-        response: { ...value.response, request_id: ids.get(control) },
-      });
-    if (value.method !== undefined || value.id === undefined || !ids.has(String(value.id)))
-      return line;
-    return JSON.stringify({ ...value, id: ids.get(String(value.id)) });
-  };
-  const release = () => {
-    queueMicrotask(() => {
-      while (
-        !closed &&
-        next < transcript.frames.length &&
-        transcript.frames[next]!.after <= events
-      ) {
-        const frame = transcript.frames[next++]!;
-        const data = remap(rehydrate(frame.data, context)) + (frame.eol === false ? '' : '\n');
-        try {
-          controllers[frame.stream].enqueue(encoder.encode(data));
-        } catch {
-          /* Reader gone. */
+/** The client's own request id: JSON-RPC `id`, or a Claude control request's `request_id`. */
+const clientRequestId = (value: JsonRpcRecord | undefined): string | number | undefined =>
+  value?.method !== undefined && value.id !== undefined
+    ? value.id
+    : value?.type === 'control_request' && typeof value.request_id === 'string'
+      ? value.request_id
+      : undefined;
+
+/** Hook callback ids a Claude control `initialize` registers: the client's choice, like request ids. */
+const hookCallbackIds = (value: JsonRpcRecord | undefined): string[] => {
+  const req = value?.request;
+  if (value?.type !== 'control_request' || req?.subtype !== 'initialize') return [];
+  return (
+    JSON.stringify(req.hooks ?? {})
+      .match(/"hookCallbackIds":\[([^\]]*)\]/g)
+      ?.flatMap((group) =>
+        [...group.matchAll(/"([^"]+)"/g)]
+          .map((match) => match[1])
+          .filter((item): item is string => typeof item === 'string')
+          .slice(1),
+      ) ?? []
+  );
+};
+
+/** The uuid a Claude user message carries: the client's choice, echoed back in `command_lifecycle` frames. */
+const promptUuid = (value: JsonRpcRecord | undefined): string | undefined =>
+  value?.type === 'user' && typeof value.uuid === 'string' ? value.uuid : undefined;
+
+/** Line protocol extending JSON-RPC with Claude stream-json control requests, hook callback IDs, and prompt UUIDs. */
+export const claudeLineProtocol: ProcessLineProtocol = {
+  createSession(): ProcessLineProtocolSession {
+    const ids = new Map<string, string | number>();
+    const hooks = new Map<string, string>();
+    const prompts = new Map<string, string>();
+
+    return {
+      comparableStdinLine(line: string): string {
+        const value = parseJsonLine(line);
+        if (value && promptUuid(value) !== undefined) {
+          const { uuid: _uuid, ...rest } = value;
+          return JSON.stringify(rest);
         }
-      }
-      if (
-        !closed &&
-        !transcript.exit.killed &&
-        next >= transcript.frames.length &&
-        events >= transcript.exit.after
-      )
-        close(transcript.exit.code ?? 1);
-    });
-  };
-  const recordedLines = transcript.stdin.flatMap((write) => write.split('\n').filter(Boolean));
-  const mismatch = (message: string) => {
-    throw Error(
-      `VCR replay (${transcript.argv.slice(0, 2).join(' ')}): ${message}; re-record with \`bun run test:live\``,
-    );
-  };
-  release();
-  return {
-    stdout,
-    stderr,
-    exited,
-    stdin: {
-      write(data) {
-        if (closed) throw Error('VCR replay: write after exit');
-        const value = text(data);
-        onWrite(value);
-        // Every request must be the recorded one, scrubbed the same way; only JSON-RPC request ids may differ.
-        for (const line of value.split('\n').filter(Boolean)) {
-          const recorded = recordedLines[stdinLines++];
-          if (recorded === undefined) mismatch(`stdin line ${stdinLines} was not recorded`);
-          const live = json(recorded!),
-            now = json(line);
-          if (comparable(scrubLine(line, context)) !== comparable(recorded!))
-            mismatch(
-              `stdin line ${stdinLines} differs from the recording (${now?.method ?? now?.type ?? 'text'} vs ${live?.method ?? live?.type ?? 'text'})`,
-            );
-          const recordedId = clientRequestId(live),
-            currentId = clientRequestId(now);
-          if (recordedId !== undefined && currentId !== undefined)
-            ids.set(String(recordedId), currentId);
-          const recordedPrompt = promptUuid(live),
-            currentPrompt = promptUuid(now);
-          if (recordedPrompt !== undefined && currentPrompt !== undefined)
-            prompts.set(recordedPrompt, currentPrompt);
-          const recordedHooks = hookCallbackIds(live),
-            currentHooks = hookCallbackIds(now);
-          recordedHooks.forEach((id, index) => {
-            if (currentHooks[index]) hooks.set(id, currentHooks[index]!);
+        if (!value || clientRequestId(value) === undefined) return line.trim();
+        const { id: _id, request_id: _requestId, ...rest } = value;
+        let comparable = JSON.stringify(rest);
+        for (const callback of hookCallbackIds(value)) {
+          comparable = comparable.replaceAll(`"${callback}"`, '"<hook>"');
+        }
+        return comparable;
+      },
+      observeStdinPair(recordedLine: string, liveLine: string): void {
+        const recorded = parseJsonLine(recordedLine);
+        const live = parseJsonLine(liveLine);
+        const recordedId = clientRequestId(recorded);
+        const liveId = clientRequestId(live);
+        if (recordedId !== undefined && liveId !== undefined) {
+          ids.set(String(recordedId), liveId);
+        }
+        const recordedPrompt = promptUuid(recorded);
+        const livePrompt = promptUuid(live);
+        if (recordedPrompt !== undefined && livePrompt !== undefined) {
+          prompts.set(recordedPrompt, livePrompt);
+        }
+        const recordedHooks = hookCallbackIds(recorded);
+        const liveHooks = hookCallbackIds(live);
+        for (let i = 0; i < recordedHooks.length; i++) {
+          const rec = recordedHooks[i];
+          const cur = liveHooks[i];
+          if (rec && cur) hooks.set(rec, cur);
+        }
+      },
+      remapOutputLine(line: string): string {
+        const value = parseJsonLine(line);
+        if (!value) return line;
+        if (
+          value.type === 'command_lifecycle' &&
+          typeof value.command_uuid === 'string' &&
+          prompts.has(value.command_uuid)
+        ) {
+          return JSON.stringify({ ...value, command_uuid: prompts.get(value.command_uuid) });
+        }
+        const callback = value.request;
+        if (
+          value.type === 'control_request' &&
+          callback?.subtype === 'hook_callback' &&
+          typeof callback.callback_id === 'string' &&
+          hooks.has(callback.callback_id)
+        ) {
+          return JSON.stringify({
+            ...value,
+            request: { ...callback, callback_id: hooks.get(callback.callback_id) },
           });
         }
-        events++;
-        release();
+        const controlId =
+          value.type === 'control_response' ? value.response?.request_id : undefined;
+        if (controlId !== undefined && ids.has(controlId)) {
+          return JSON.stringify({
+            ...value,
+            response: { ...value.response, request_id: ids.get(controlId) },
+          });
+        }
+        if (value.method !== undefined || value.id === undefined || !ids.has(String(value.id))) {
+          return line;
+        }
+        return JSON.stringify({ ...value, id: ids.get(String(value.id)) });
       },
-      flush() {},
-      end() {
-        if (ended) return;
-        if (stdinLines < recordedLines.length)
-          mismatch(`stdin ended after ${stdinLines} of ${recordedLines.length} recorded lines`);
-        ended = true;
-        events++;
-        release();
-      },
-    },
-    kill() {
-      close(transcript.exit.killed ? (transcript.exit.code ?? 143) : 143);
-    },
-  };
+    };
+  },
+};
+
+/** A spawn seam backed by queued cassettes: `vcr.queue(method, name)` once per expected launch. */
+export class ProcessCassettes {
+  private readonly spawner: VcrProcessSpawner;
+
+  constructor(vcr: VCR, method: string, options: Options = {}) {
+    this.spawner = createVcrProcessSpawner(vcr.recorder, method, {
+      argv: options.argv,
+      sanitizeFrames: options.sanitize,
+      probeEnv: options.env,
+      transformLiveEnv: liveEnvironment,
+      recordOnce: options.recordOnce,
+      model: typeof options.model === 'function' ? options.model : (options.model ?? observedModel),
+      lineProtocol: claudeLineProtocol,
+    });
+  }
+
+  get launches(): Launch[] {
+    return this.spawner.launches as Launch[];
+  }
+
+  get writes(): number {
+    return this.spawner.writes;
+  }
+
+  spawn = (argv: readonly string[], options: SpawnOptions): RecordedProcess =>
+    this.spawner.spawn(argv, options);
+
+  /** `statusSpawn(selection)`: the command and environment are fixed by the cassette, so they come from options. */
+  statusSpawn = (_selection?: unknown): RecordedProcess => this.spawner.spawnProbe();
 }
