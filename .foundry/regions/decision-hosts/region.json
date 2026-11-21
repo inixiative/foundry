@@ -1,20 +1,20 @@
 {
   "id": "decision-hosts",
   "title": "Decision hosts and scheduler",
-  "routing": "Is this about how Foundry's cheap decision calls (classifiers, routers, Cartographer, Librarian, Wardens, review, thread naming) actually run: createSubscriptionDecisions, createPrimedDecisionHost, decisionHost for offline jobs, createDecisionProvider on the apiTokens path, primed sessions (ClaudePrimedSessions, CodexPrimedSessions, CompletionOpts.stablePrefix), the decision scheduler (CompletionOpts.priority / DECISION_PRIORITY, fairness, shedding, rate limits), budgets and limits (subscriptionOnly.maxCalls / maxConcurrent / maxQueued / effort / hedgeAfterMs / callTimeoutMs, DECISION_DEADLINE_MS, DECISION_INPUT_CAP, SUBSCRIPTION_DEFAULTS, largestRoster), subscriptionOnly.decisionRuntime and subscriptionOnly.model, or decisions.jsonl receipts? Plain jobs: 'run this decision on the user's login', 'spawn a claude process for this check', 'keep a warm session per Warden', 'queue these model calls', 'add a timeout to the classifier', 'get decisions in an offline eval'.",
+  "routing": "Is this about how Foundry's cheap decision calls (Wardens' advice, guard, review and later stages, debug reasons) actually run: createSubscriptionDecisions, createDecisionLoginHost (the decision login, its used-up pause, receipts and the project host launcher) and createPrimedPool (only for decisionRuntime claude or codex), decisionHost for offline jobs, createDecisionProvider on the apiTokens path, primed sessions (ClaudePrimedSessions, CodexPrimedSessions, CompletionOpts.stablePrefix), the decision scheduler (CompletionOpts.priority / DECISION_PRIORITY, fairness, shedding, rate limits), budgets and limits (subscriptionOnly.maxCalls / maxConcurrent / maxQueued / effort / hedgeAfterMs / callTimeoutMs, DECISION_DEADLINE_MS, DECISION_INPUT_CAP, SUBSCRIPTION_DEFAULTS, largestRoster), subscriptionOnly.decisionRuntime and subscriptionOnly.model, or decisions.jsonl receipts? Plain jobs: 'run this decision on the user's login', 'spawn a claude process for this check', 'keep a warm session per Warden', 'queue these model calls', 'add a timeout to the Warden call', 'get decisions in an offline eval'.",
   "concepts": ["decision-hosts"],
-  "tokens": 16691,
+  "tokens": 18426,
   "tokenMethod": "chars/4",
   "files": {
     "recognise": {
       "path": "recognise.md",
-      "tokens": 1927,
+      "tokens": 1924,
       "experimental": true,
       "note": "recognise/pick split under test (model round); not the standard"
     },
     "knowledge": {
       "path": "knowledge.md",
-      "tokens": 16691
+      "tokens": 18426
     }
   },
   "runsAgreed": 0,

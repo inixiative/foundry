@@ -25,13 +25,11 @@ A moment that says any of these, or something close, is this region's. Both voic
 - force this context to reload
 - point at the doc instead of copying it in
 - fetch these references when needed
-- feed a list of references into a layer
 - build the messages we send the model
 - show what context the executor was given
 - where should these memories be stored
 - I need full-text search over memories
 - share memory across machines
-- use the hosted memory service
 - load this one file into context
 - read the CLAUDE.md with its imports
 - load the whole docs folder
@@ -49,7 +47,7 @@ A moment that says any of these, or something close, is this region's. Both voic
 - give the advisor a small index, not the full docs
 - the database table for stored memories
 - store memories as JSON files locally
-- classify, route and run a message with timing
+- run a message through the harness with timing
 - pull memory from a remote REST API
 - a fixed string as context for a test
 - open that context layer in the drawer
@@ -69,7 +67,6 @@ A moment that says any of these, or something close, is this region's. Both voic
 - load an instructions file the way Claude Code does
 - don't load a dotfile or key as instructions
 - pick which memories fit in the budget
-- copy the parent's context for a child thread
 - a compact always-warm summary of the thread
 - turn the assembled context plus user text into messages
 - a reading view of what got injected
@@ -94,7 +91,6 @@ A moment that says any of these, or something close, is this region's. Both voic
 - the pipeline example from the readme
 - use our vector database over HTTP as memory
 - hydrate references in one batch call
-- route each pointer to the right backend
 - put the system prompt in as a source
 - show me what's in this layer from the chat
 - tie the thread's learning to the local journal
@@ -113,15 +109,12 @@ A moment that says any of these, or something close, is this region's. Both voic
 - escalate to deeper layers only when triggered
 - advice goes after the message, not in context
 - follow the at-path imports in a CLAUDE.md
-- memory that expires after an hour
-- the layer's content comes from pointers on warm
 - refuse credential paths in imports
 - report which memories were left out
 - share the same layer with the sub-thread
 - save every correction into the store automatically
 - a local database for memories with search
-- a hosted memory with extracted facts and profiles
-- I'll scan the dispatch log to find the domain
+- I'll scan the dispatch log to find recent activity
 - I'll build the messages array from the stack by hand
 - keep injected context apart from the user's message
 - I'll add a timer that refreshes layers
@@ -152,13 +145,12 @@ A moment that says any of these, or something close, is this region's. Both voic
 - reuse last turn's middleware output when nothing shifted
 - I'll add the Warden text as a context layer
 - I'll recursively read the imported files myself
-- publish signals to other processes
 - warm this layer from refs, not copied text
 - I'll sort memories and cut at the token limit
 - I'll add a handler that writes each signal
 - count corrections in a local store
 - hybrid search on a memory service we don't run
-- read current domain without an LLM call
+- read what is in context without an LLM call
 - context that goes stale after a minute
 - two warms at once should share one load
 - assemble everything the agent should know

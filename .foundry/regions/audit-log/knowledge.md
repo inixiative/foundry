@@ -86,7 +86,7 @@ The one audit log for the slow-moving slices of a Warden call: every change to a
 
 Every Warden call composes three slices: instructions, domain knowledge and thread knowledge (THREAD-TREE spec B). The first two get an audit trail per source; thread knowledge changes every call and is stored raw, by hash, in the journal's content store. AuditLog is the single log (lines in `<configDir>/audit.jsonl`, reachable by the running Foundry and by CLIs); its row ids are the versions, so there is no separate counter, and it replaced settings-history.jsonl in a hard cut (ConfigStore.history() and GET /api/settings/history read it). A source_version row is one change to one subject (`file:<realpath>`, `prompt:agent:<role>`, `source-content:<id>`, `charter`, settings subjects) with before and after hashes, an actor and a structured cause: user or external for settings, feedback for a feedback line, external with detected on-read for outside file edits, release for the charter. A composition_version (in the journal) is one distinct composed slot: its ordered parts, retrieved placeholders and omissions, deduped by composedHash.
 
-CompositionAuditor turns a call's composition snapshot (taken at the call boundary by DomainLibrarian.composition, reported through slotSegments) into `versions {charter, instructions, domainKnowledge, composedHash, retrieved?}` on the phase row, and so on the reduced entry. Versions are written from what the composer actually produced, never by re-resolving the latest afterwards. recompose(cv, retrieved) rebuilds the exact text from the parts' content, their recorded headings, separators and ranges, and the call's retrieved text, and must hash to composedHash. Focus-dependent sources (archive retrieval, captured file memory) are stored raw per call; only their definitions are audited. The audit never blocks a Warden: a failure journals the call without versions and reports the error.
+CompositionAuditor turns a call's composition snapshot (taken at the call boundary by Warden.composition, reported through slotSegments) into `versions {charter, instructions, domainKnowledge, composedHash, retrieved?}` on the phase row, and so on the reduced entry. Versions are written from what the composer actually produced, never by re-resolving the latest afterwards. recompose(cv, retrieved) rebuilds the exact text from the parts' content, their recorded headings, separators and ranges, and the call's retrieved text, and must hash to composedHash. Focus-dependent sources (archive retrieval, captured file memory) are stored raw per call; only their definitions are audited. The audit never blocks a Warden: a failure journals the call without versions and reports the error.
 
 Not here: what a role composes and how the ladder, tiers and dedupe work is the `composition` region (it owns invalidateComposition, hierarchyFingerprint and slotSegments); the reduced middleware entries, compaction and the journal's content store are `threads-journal`; feedback apply / revert and exposure counting are `feedback`; the settings model and ConfigStore patches are `settings-runtime`; Archive carrying the rows is `archive`.
 
@@ -265,7 +265,7 @@ Indexes: `source_version(subject, id)`; `composition_version(composedHash)` uniq
 | A domain-knowledge source whose content is fetched (URL, Archive search) | **Not audited:** see B.7 question 3 | — | — |
 | A slot composed for a call | The composer (`buildRoleLayers` → `ContextLayer`) | When it composes. A row is written only if the `composedHash` is new | — |
 | A Warden call | The flow orchestrator (`pf/agents/flow-orchestrator.ts:636`) | At the call boundary, where `segments` are recorded today | — |
-| Thread knowledge | Already the review's job (`domain-librarian.ts` review) | Each revision's text goes into the content store when it is used. No audit row: it is per call | — |
+| Thread knowledge | Already the review's job (`warden.ts` review) | Each revision's text goes into the content store when it is used. No audit row: it is per call | — |
 
 The journal stays the source of truth. Archive gets the call's version ids in reduced entries (spec A). For the ids to resolve off this machine, the audit rows must reach Archive too (B.7, question 1).
 
@@ -302,7 +302,7 @@ And on provenance, 2026-10-12, 00:44: *"Okay your feedback, and then what warden
 - **Capture.**
   - A source can report what its last load was made of: `ContextSource.segments()` and `ContextLayer.segments()` in core.
   - The role-layer chunks, the settings prompt, configured sources and the composition view all report it (`slotSegments`, which `renderSlot` now uses).
-  - A Warden call snapshots its slots and their omissions at the call boundary (`DomainLibrarian.composition`). Advice freezes it with its cache.
+  - A Warden call snapshots its slots and their omissions at the call boundary (`Warden.composition`). Advice freezes it with its cache.
   - The phase and learning journals turn the snapshot into `versions` (`CompositionAuditor.versionRecord`): `{charter, instructions, domainKnowledge, composedHash, retrieved?}`.
   - The audit never blocks a Warden: on a failure, the call is journalled without versions and the error is reported.
 - **Actors and causes as written:**

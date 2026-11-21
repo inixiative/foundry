@@ -34,7 +34,7 @@ memory.search("validation");       // Substring search
 layer.addSource(memory.asSource("mem-src", "convention"));
 
 // Wire to hydration
-registry.register(memory.asAdapter());  // system: "file-memory"
+const adapter = memory.asAdapter();  // system: "file-memory"
 
 // Wire signals → auto-persist
 signals.onAny(memory.signalWriter());
@@ -67,7 +67,7 @@ db.count("correction");
 layer.addSource(db.asSource("db-src", "convention", 100));
 
 // Wire to hydration
-registry.register(db.asAdapter());  // system: "sqlite"
+const adapter = db.asAdapter();  // system: "sqlite"
 
 // Wire signals
 signals.onAny(db.signalWriter());
@@ -97,7 +97,7 @@ layer.addSource(docs.fileSource("arch", "architecture.md"));
 layer.addSource(claudemdSource("claude", "./CLAUDE.md"));
 
 // Wire to hydration (locator = relative path)
-registry.register(docs.asAdapter());  // system: "markdown"
+const adapter = docs.asAdapter();  // system: "markdown"
 // ref: { system: "markdown", locator: "docs/auth.md" }
 
 // List available files
@@ -134,7 +134,7 @@ const notion = new HttpMemory("https://api.notion.com/v1", {
 layer.addSource(notion.asSource("notion-pages", "/databases/abc/query"));
 
 // Wire to hydration (locator = path)
-registry.register(notion.asAdapter("notion"));
+const adapter = notion.asAdapter("notion");
 // ref: { system: "notion", locator: "/pages/abc123" }
 
 // Forward signals to an external system
@@ -164,41 +164,7 @@ layer.addSource(fileSource("config", "./config.yaml"));
 
 ## Optional Adapters (peer deps)
 
-### RedisMemory
-
-Requires: `bun add ioredis`
-
-```ts
-import Redis from "ioredis";
-import { RedisMemory } from "@foundry/agent-primitives";
-
-const redis = new Redis();
-const memory = new RedisMemory(redis, "foundry:");
-
-// Write with TTL
-await memory.write({
-  id: "session-1", kind: "session",
-  content: "User is working on auth",
-  timestamp: Date.now(),
-  ttl: 3600,  // Expires in 1 hour
-});
-
-// Read
-await memory.get("session-1");
-await memory.recent(50, "convention");
-
-// Wire to layers
-layer.addSource(memory.asSource("redis-src", "convention"));
-
-// Wire to hydration
-registry.register(memory.asAdapter());  // system: "redis"
-
-// Wire signals — persist to Redis
-signals.onAny(memory.signalWriter(3600));  // TTL on signal entries
-
-// Wire signals — publish to Redis pub/sub (cross-process)
-signals.onAny(memory.signalPublisher("foundry:signals"));
-```
+The hosted stores are `PostgresMemory` (`packages/foundry/src/adapters/postgres-memory.ts`, Prisma's `Entry` model) and `MuninnMemory` (`packages/foundry/src/adapters/muninn-memory.ts`). `RedisMemory` and `SupermemoryAdapter` were removed on 2026-11-18 (#424).
 
 ---
 
@@ -260,11 +226,9 @@ const sqlite = new SqliteMemory(".foundry/db.sqlite");
 const docs = new MarkdownDocs("./docs");
 const api = new HttpMemory("https://api.example.com");
 
-// 2. Create hydration registry
-const registry = new HydrationRegistry();
-registry.register(sqlite.asAdapter());
-registry.register(docs.asAdapter());
-registry.register(api.asAdapter("my-api"));
+// 2. Hydration adapters resolve refs to content (there is no registry: call the adapter for the ref's system)
+const adapters = [sqlite.asAdapter(), docs.asAdapter(), api.asAdapter("my-api")];
+const content = await adapters.find((a) => a.system === ref.system)?.hydrate(ref);
 
 // 3. Build layers with sources from different systems
 const stableLayer = new ContextLayer({

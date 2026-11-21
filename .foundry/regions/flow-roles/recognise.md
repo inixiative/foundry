@@ -4,7 +4,7 @@
 
 ## What this region is
 
-The five roles of Foundry's message flow (context routing, domain advising, execution, correctness checking, signal reconciliation) and the separate named agents that fill them: Cartographer, Wardens, Herald, Artificer, Librarian, wired together by the FlowOrchestrator.
+The four roles of Foundry's message flow (domain advising, execution, correctness checking, signal reconciliation) and the separate named agents that fill them: Wardens, Herald (not wired), Artificer, Librarian, wired together by the FlowOrchestrator.
 
 ## What it exists for
 
@@ -30,48 +30,40 @@ A moment that says any of these, or something close, is this region's. Both voic
 - turn the handoff brief into notes for the next turn
 - decide which context this message needs
 - put the Wardens' answers about this work item in the next turn
-- compile the raw signals into a deduplicated corpus
 - don't halt the session when an advisor fails
 - wrap Claude Code, don't rebuild its tools
 - learn something after every interaction
 - what happens to a message from arrival to learning
 - make the Warden also act as the Librarian
-- wire routing, Wardens and the Librarian together
+- wire the Wardens and the Librarian together
 - check the turn's edits once when tools finish
 - search the code before asking a model
 - watch all threads for conflicts or overlap
 - which part of the flow doc does this PR implement
 - hook learning up to the providers we already built
-- set up the classifier and router on the cheap model
 - only one thing may write thread state
 - check the learning config has the right shape
-- this thread is juggling too many things
 - spawn our own model loop to do the coding
 - tell the parent what the Wardens said about the subagent
 - pick the layers and domains for this prompt
 - note which work item the advice was about
-- turn collected signals into docs with attribution
 - a failed guard call shouldn't kill the turn
 - I'll implement our own file discovery for the agent
 - update maps and memory after each turn
-- the order: route, advise, execute, check, reconcile
+- the order: advise, execute, check, reconcile
 - add a mode flag so one class plays every role
-- I'll call the router, then each Warden, then reconcile
+- I'll call each Warden, then reconcile
 - guard what the agent did, don't hold the reply
 - don't spend an LLM call on a maybe-relevant check
 - detect two threads doing the same work
 - reconcile all the signals into one view
 - update the architecture doc before the change
 - don't silently fall back to a default provider
-- build the routing agents ahead of the worker
 - let the middleware update the thread summary itself
 - reject a malformed learning setting
-- suggest splitting an overloaded thread
 - the expensive model with full tool access
 - I'll format the subagent brief into the prompt myself
-- I'll write a keyword router to choose docs
 - I'll stitch the work item answers into the prompt
-- build a snapshot of the corpus from what we learned
 - where in the lifecycle does this step belong
 - keep the roles as distinct agents
 - the production entry for the pre-message flow
@@ -79,9 +71,6 @@ A moment that says any of these, or something close, is this region's. Both voic
 - I'll add a cross-thread monitor comparing snapshots
 - I'll have the guard write the thread summary directly
 - I'll create a provider for learning if one is missing
-- I'll configure the router with the worker's model
-- I'll count agents and signals per thread to flag overload
-- something should map the message to the right slices
 - run the post-action guards once the turn ends
 - run the correctness check at turn end
 - flag threads that contradict each other
@@ -94,5 +83,5 @@ These mention this region's words but belong elsewhere; the answer is no, and th
 - add a new region Warden or turn the chorus on for a project → chorus
 - decide when a Warden is asked during a turn or a subagent spawn → warden-triggers
 - what a native session receives each turn and the delivery ledger → flow-architecture
-- write a new Classifier or Router agent class in core → core-agents
+- write a new agent class in core → core-agents
 - capture a correction and route it to a Warden role → feedback

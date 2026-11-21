@@ -1,20 +1,20 @@
 {
   "id": "install-daemon",
   "title": "Install, daemon, devices and git",
-  "routing": "Is this about installing or running Foundry on this machine: the LaunchAgent daemon (installDaemon, startDaemon, buildPlist, replaceService, `bun run daemon:install|start|stop|status|logs|uninstall`, `bun run start` / `dev`), the PATH it gives agent CLIs (resolveDaemonPath, ensureAgentClisOnPath, whichOn), the daemon running an exported release with two-copy auto-update (`.foundry/releases/<sha>`, state.json, stageUpdate, selectRelease, recordBoot, rejectCandidate, `daemon.autoUpdate`), last-good settings (recordBooted, restoreAfterFailedBoot, `settings.rejected-<ts>.json`), backing services (ensureServices), setup and doctor (`bun run setup`, `bun run doctor`, inspectReadiness, inspectNativeClis, removeLegacyStarter, the viewer Wizard, scanRepoDocs, runStartupSelfTest, runFoundryCli), `.env.local`, the port registry, this machine's device identity and inventory (`~/.foundry/device.json`, enrollLocalDevice, localInventory, `/api/devices`, `foundry_device`, checkouts and project links), or reading git state (gitContext, getCurrentBranch, listWorktrees, findByPath, findByBranch, diffStat, a thread's worktree)? Plain jobs: 'run Foundry in the background', 'the daemon can't find claude', 'update the daemon to the latest main', 'the daemon won't boot after I changed settings', 'check my install', 'which machine am I on', 'what branch is this checkout on'.",
+  "routing": "Is this about installing or running Foundry on this machine: the LaunchAgent daemon (installDaemon, startDaemon, buildPlist, replaceService, `bun run daemon:install|start|stop|status|logs|uninstall`, `bun run start` / `dev`), the PATH it gives agent CLIs (resolveDaemonPath, ensureAgentClisOnPath, whichOn), the daemon running an exported release with two-copy auto-update (`.foundry/releases/<sha>`, state.json, stageUpdate, selectRelease, recordBoot, rejectCandidate, `daemon.autoUpdate`), last-good settings (recordBooted, restoreAfterFailedBoot, `settings.rejected-<ts>.json`), backing services (ensureServices), setup and doctor (`bun run setup`, `bun run doctor`, inspectReadiness, inspectNativeClis, the viewer Wizard, scanRepoDocs, runStartupSelfTest, runFoundryCli), `.env.local`, the port registry, this machine's device identity and inventory (`~/.foundry/device.json`, enrollLocalDevice, localInventory, `/api/devices`, `foundry_device`, checkouts and project links), or reading git state (gitContext, getCurrentBranch, listWorktrees, findByPath, findByBranch, a thread's worktree)? Plain jobs: 'run Foundry in the background', 'the daemon can't find claude', 'update the daemon to the latest main', 'the daemon won't boot after I changed settings', 'check my install', 'which machine am I on', 'what branch is this checkout on'.",
   "concepts": ["daemon", "setup", "devices", "git-worktrees"],
-  "tokens": 16986,
+  "tokens": 16841,
   "tokenMethod": "chars/4",
   "files": {
     "recognise": {
       "path": "recognise.md",
-      "tokens": 2748,
+      "tokens": 2559,
       "experimental": true,
       "note": "recognise/pick split under test (model round); not the standard"
     },
     "knowledge": {
       "path": "knowledge.md",
-      "tokens": 16986
+      "tokens": 16841
     }
   },
   "runsAgreed": 1,

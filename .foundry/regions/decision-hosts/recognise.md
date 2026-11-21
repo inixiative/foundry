@@ -4,11 +4,11 @@
 
 ## What this region is
 
-How every decision role runs on the machine's subscription login: one decision profile per runtime, a primed session per role forked for each decision, one process-wide scheduler that ranks, shares and sheds calls, and the budgets, deadlines, launch bounds and receipts around each decision.
+How every decision role runs on the machine's subscription login: one decision profile per runtime, its decision login host (Wardens in one host per project by default; a primed session per role only for the claude or codex runtimes), one process-wide scheduler that ranks, shares and sheds calls, and the budgets, deadlines, launch bounds and receipts around each decision.
 
 ## What it exists for
 
-- Get a model decision (classify, route, advise, judge) answered
+- Get a model decision (advise, guard, review, judge) answered
 - The runtime a decision role's session lives on
 - Bound how many decisions run, wait and how long they take
 
@@ -21,11 +21,11 @@ A moment that says any of these, or something close, is this region's. Both voic
 - I need decisions in an offline script
 - run decisions on Codex instead
 - keep a warm session per role
-- put the Wardens inside the thread's own process
+- put the Wardens inside one process per project
 - too many decision processes at once
 - cap the queue of model calls
 - decisions are too slow, add a timeout
-- let in-session calls skip the shared decision slots
+- let project-host calls skip the shared decision slots
 - the default way Claude decisions run
 - how much of the Claude subscription is used up
 - codex decisions must not run tools or MCP
@@ -38,18 +38,18 @@ A moment that says any of these, or something close, is this region's. Both voic
 - the deadline includes queue and priming time
 - decision processes get no tools and no user hooks
 - one busy thread shouldn't starve the others
-- ten second safety net on every pre-message decision
+- the safety net on every decision
 - refuse a decision whose input is too big
 - the waiting turn should go before the guards
 - get model decisions in an offline script
-- where do decisions run, Claude, Codex or in-session
+- where do decisions run, Claude, Codex or the project host
 - never wait on priming before answering
 - prove which model answered without storing the prompt
 - start a duplicate when a decision runs long
 - size the primed pool from the biggest chorus
 - how many classify stages per Warden at most
 - time the pre-message decisions
-- classify, route and advise all at once
+- ask every Warden at once
 - don't drop Wardens to save load
 - prime the role context once and reuse it
 - how many primed sessions to keep for the chorus
@@ -62,26 +62,26 @@ A moment that says any of these, or something close, is this region's. Both voic
 - subscription tests must never hit the network
 - default queue depths and concurrency for decisions
 - limit how many decision attempts this process makes
-- pick claude, codex or in-session for decisions
+- pick the project host, claude or codex for decisions
 - where the decision receipts are written
 - lower the reasoning effort for decisions
 - raise how many decisions run at once
 - run decisions on Opus instead of Haiku
-- some decisions run unbounded in the thread's own process
-- warm Claude session per role with a spare fork
+- refuse calls whose project host does not serve
+- warm Claude session per role with a spare
 - check the usage window before a big offline run
 - lock the decision app-server to read-only with no approvals
 - decision threads must not show in the user's Codex history
 - one warm codex app-server for every decision role
 - tell the scheduler how urgent this decision is
 - mark the role's stable context so it gets primed
-- build a provider for the classifier from a judgment model
-- the bare primed host without the priority queue
+- build a provider for decisions from a judgment model
+- the bare decision host without the priority queue
 - I'll spawn a claude process for this decision
 - cancel active decisions when the thread is revoked
 - strip paid credentials from the decision process
 - when the queue is full drop the least urgent wait
-- I'll add a timeout around the classify call
+- I'll add a timeout around the Warden call
 - cap how many characters a decision call can take
 - rank review below guards below the user's turn
 - the eval needs decisions without the daemon running
@@ -93,7 +93,7 @@ A moment that says any of these, or something close, is this region's. Both voic
 - size stage sessions from the deepest stage config
 - cap simultaneous decisions across all threads
 - how much latency do the decisions add
-- don't make the router wait for classification
+- don't make one Warden wait for another
 - I'll only ask the top five Wardens
 - don't resend the whole domain doc every decision
 - size the pool for the biggest project's Wardens
@@ -111,24 +111,24 @@ A moment that says any of these, or something close, is this region's. Both voic
 - set a per-decision deadline in settings
 - Wardens aren't admitted in time, grow the queue
 - the model id the CLI must say it serves
-- build the decision service with an unbounded in-session path
-- resume and fork the primed Claude transcript
+- build the decision service with an unbounded project-host path
+- keep every Warden primed for an eval baseline
 - don't burn the user's quota on this eval
 - I'll call codex exec for each decision
 - guards get at most three quarters of the slots
 - this role has no stable context, run it inline
 - when API tokens are on, use the paid model for decisions
 - one decision host per login profile
-- route classifier and Warden calls through the subscription
+- route Warden calls through the subscription
 - I'll keep a per-thread queue of model calls
 - which priority value do I pass for a guard call
 - run the repeats report on the machine's own login
-- turn on Wardens inside the thread's own process
+- keep Wardens in one process per project
 - record ownership and settlement for each decision
 - trim the slow tail on Codex decisions
 - how many claude processes can run for decisions
 - benchmark routing overhead
-- I'll await the classifier then the router then advice
+- I'll await each Warden in turn
 - each decision branches from the primed state
 - symlink the login so refreshes stay valid
 - spawn a claude process for this decision
@@ -149,6 +149,6 @@ These mention this region's words but belong elsewhere; the answer is no, and th
 
 - turn on API keys and use the paid provider instead of the login → subscription-policy
 - can the Codex worker run this model, or is this lab allowed for main threads → subscription-policy
-- the setup turn that starts the Wardens inside the thread's own Claude process → in-session-wardens
+- the project host that holds every Warden of a project in one Claude process → in-session-wardens
 - skip Wardens a small local model says are off-topic → warden-prefilter-evals
 - which Claude login profile a native session uses, or a Kingdom-held login → logins-secrets

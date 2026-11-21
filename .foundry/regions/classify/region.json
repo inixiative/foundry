@@ -3,18 +3,18 @@
   "title": "Warden classification primitive",
   "routing": "Is this about how a Warden's answer is framed, run and read: the Warden charter (WARDEN_CHARTER, pointCharter, chartered, RECOGNISE_CHARTER, charter sections and modes), classification stages (runStages, validateStages, stage model/doc/outcomes/reason/task/escalate), response protocols (advice, guard, responseProtocol), NO_COMMENT, or parsing pointers and answers (parseWardenPointer, readStageAnswer, validateAdviceResponse/validateGuardResponse)? Plain jobs: 'change what Wardens are told', 'add a second pass before the Warden answers', 'parse the Warden's reply', 'what does a Warden say when it has nothing'.",
   "concepts": ["classify"],
-  "tokens": 12491,
+  "tokens": 12947,
   "tokenMethod": "chars/4",
   "files": {
     "recognise": {
       "path": "recognise.md",
-      "tokens": 1569,
+      "tokens": 1547,
       "experimental": true,
       "note": "recognise/pick split under test (model round); not the standard"
     },
     "knowledge": {
       "path": "knowledge.md",
-      "tokens": 12491
+      "tokens": 12947
     }
   },
   "runsAgreed": 0,

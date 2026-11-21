@@ -548,9 +548,9 @@ run and nothing is truncated:
 
 The message names the role, the sizes, the setting and the three largest
 files, and marks those a role opted in. For example: "naming Warden (role
-naming): instructions 4010 + domain knowledge 86182 = 90192 chars exceed its
-budget of 120000 (composition.roles.naming.budget); largest:
-.../.foundry/roles/naming/domainKnowledge.md (domainKnowledge, 50000 chars)".
+region:naming): instructions 4010 + domain knowledge 86182 = 90192 chars exceed its
+budget of 120000 (composition.roles.region:naming.budget); largest:
+.../.foundry/roles/region/naming/domainKnowledge.md (domainKnowledge, 50000 chars)".
 
 ### Chorus (`projects[id].chorus`)
 
@@ -815,12 +815,15 @@ regions never run (Heralds are not built) and the view says so.
   journalled with every call; a staged Warden's contribution also journals its
   run (`classified`: outcome, whether it was delivered, any fallback, every
   stage's trace), which the turn's flow graph shows on the Warden's node.
-- **Pool.** The primed decision pool is sized for the largest chorus any
+- **Pool.** With project Warden hosts (the default) no primed pool is built:
+  each project's host holds its Wardens, and a later stage on another model or
+  effort goes to its own per-project lane. With `decisionRuntime: "claude"` or
+  `"codex"` the primed decision pool is sized for the largest chorus any
   project runs (`largestRoster`) and the stages each host serves
   (`largestStageCount`): the decision host keeps a key per stage on the decision
   model plus a review key per Warden, so a 53-region one-stage project primes
   2 × 53 + 8 keys, and a stage host a key per stage it serves. A later stage's session is
-  `<thread>:aux:domain:<region>:stage:<n>` and never runs in a project host.
+  `<thread>:aux:domain:<region>:stage:<n>`.
 - **Eval.** `scripts/evals/warden-charter.ts --regions <dir> --projects <p>`
   scores a one-layer chorus from that directory, composed exactly as live
   (project view, role layers, charter), without touching the daemon's settings;
@@ -881,15 +884,17 @@ configured layer. Its only written layer is its generated
 and written by its post-work review. The Librarian alone writes thread-state.
 
 **Priming.** Wardens are fresh each call, never a continuing conversation. A
-Warden's primed decision session is its composed instructions (system) plus its
-composed domain knowledge (the leading `## Domain cache` part of the message,
-`stablePrefix`). Advice and guard share that primed prefix. Review leads with
-the same composed parts under its own header, on its own session key, so it
-primes its own session. Each call forks the primed session, so every cycle
-starts from that state. The
-per-call input is the Warden's own thread knowledge, the thread state and the
-turn. A changed composition is a new prime hash, and the next call re-primes
-(agent-session `ClaudePrimedSessions`).
+Warden's stable part is its composed instructions (system) plus its composed
+domain knowledge (the leading `## Domain cache` part of the message,
+`stablePrefix`). Advice and guard share it. Review leads with the same composed
+parts under its own header, on its own session key. On the project Warden host
+(the default) a held spare holds that stable part and serves one call, and its
+replacement starts from the same bytes; a review runs as a cold member inside
+the host. With `decisionRuntime: "claude"` each call is a fresh primed session
+with the stable part in its system prompt (agent-session `ClaudePrimedSessions`).
+The per-call input is the Warden's own thread knowledge, the thread state and
+the turn. A changed composition is a new hash: the host holds the changed
+roster in place, and a primed role re-primes.
 
 **Chiming in.** A Warden's advice is appended to the end of the user's message:
 `The <domain> Warden chimed in:` followed by its points. It is placed after the

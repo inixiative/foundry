@@ -77,7 +77,7 @@ packages/
   acp/      @inixiative/foundry-acp    — ACP agent for host apps (Paseo, T3 Code, Zed)
 ```
 
-Core is usable standalone. It includes context layers, agents, middleware, signals, thread, harness, tracing, hooks, and lightweight adapters (file, sqlite, http, markdown).
+Core is usable standalone. It includes context layers, agents, middleware, signals, thread, harness, tracing, and lightweight adapters (file, sqlite, http, markdown).
 
 Foundry adds opinions: native Claude Code and Codex sessions via `@inixiative/agent-session`, API providers behind `apiTokens` (Anthropic, OpenAI, Gemini), the viewer, heavy-infra adapters (Postgres, MuninnDB), and the middleware roles (Wardens, thread state).
 

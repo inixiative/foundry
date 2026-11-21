@@ -235,6 +235,8 @@ Each adapter provides:
 
 ## 4. Eval (`src/eval/`)
 
+> **Moved to Oracle (April 2026).** Nothing in this section is in Foundry any more: `FixtureRunner`, `DiffScorer`, `LLMScorer`, `EvalStore` and `PRFixture` live in Oracle (`src/runner.ts`, `src/scorer.ts`, `src/store.ts`, `src/types.ts`). Foundry's own Warden evals are `scripts/evals/` and foundry-core `feedback/warden-probes.ts`. The text below is kept as it stood.
+
 PR-based evaluation system for self-improvement.
 
 ### Concept
@@ -435,13 +437,9 @@ PostgreSQL with pgvector extension.
 
 | Model | Purpose |
 |-------|---------|
-| `Entry` | Knowledge units (conventions, corrections, ADRs) with vector embeddings |
-| `Trace` | Full span tree as JSONB |
-| `Span` | Flattened spans for cross-trace queries |
-| `Signal` | Typed side-channel information |
-| `Intervention` | Manual operator overrides |
-| `ThreadState` | Persisted thread metadata |
-| `Message` | Conversation within threads |
+| `Entry` | Knowledge units (conventions, corrections, ADRs) with vector embeddings, the `postgres` memory tool's store |
+
+The schema holds `Entry` only: the Postgres mirror of turns (`Trace`, `Span`, `Signal`, `Intervention`, `ThreadState`, `Message`) was dropped (#209). The local journal (`.foundry/sessions.sqlite`) is the record of every turn.
 
 ---
 

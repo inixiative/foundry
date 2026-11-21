@@ -1,20 +1,20 @@
 {
   "id": "context-memory",
   "title": "Context layers and memory adapters",
-  "routing": "Is this about what context an agent is given and where it comes from: ContextLayer (sources, staleness, maxTokens, warm / set / invalidate / clear, cold \u2192 warming \u2192 warm \u2192 stale), ContextStack (addLayer, warmAll, refresh, merge, sliceByIds, snapshot, assemble), CacheLifecycle, HydrationRegistry, RefSource and ContextRef pointers, assembledToMessages, buildInjectionArtifact, createSourceResolver, markdownSource; or the memory adapters as context sources (FileMemory, MemoryView, SqliteMemory, MarkdownDocs, HttpMemory, RedisMemory, PostgresMemory, MuninnMemory, SupermemoryAdapter, fileSource, inlineSource, claudemdSource, readInstructionFile, selectMemory, signalWriter, Entry, KnowledgePersistence)? Plain jobs: add a block of context, refresh it when it goes stale, keep it under a token budget, load a docs folder or a CLAUDE.md, point at content instead of copying it, store and search memories, write corrections back to memory.",
+  "routing": "Is this about what context an agent is given and where it comes from: ContextLayer (sources, staleness, maxTokens, warm / set / invalidate / clear, cold \u2192 warming \u2192 warm \u2192 stale), ContextStack (addLayer, warmAll, refresh, merge, sliceByIds, snapshot, assemble), CacheLifecycle, HydrationAdapter and ContextRef pointers, assembledToMessages, buildInjectionArtifact, createSourceResolver, markdownSource; or the memory adapters as context sources (FileMemory, MemoryView, SqliteMemory, MarkdownDocs, HttpMemory, PostgresMemory, MuninnMemory, fileSource, inlineSource, claudemdSource, readInstructionFile, selectMemory, signalWriter, Entry, KnowledgePersistence)? Plain jobs: add a block of context, refresh it when it goes stale, keep it under a token budget, load a docs folder or a CLAUDE.md, point at content instead of copying it, store and search memories, write corrections back to memory.",
   "concepts": ["context-layers", "memory-adapters"],
-  "tokens": 14675,
+  "tokens": 13526,
   "tokenMethod": "chars/4",
   "files": {
     "recognise": {
       "path": "recognise.md",
-      "tokens": 2032,
+      "tokens": 1950,
       "experimental": true,
       "note": "recognise/pick split under test (model round); not the standard"
     },
     "knowledge": {
       "path": "knowledge.md",
-      "tokens": 14675
+      "tokens": 13526
     }
   },
   "runsAgreed": 1,

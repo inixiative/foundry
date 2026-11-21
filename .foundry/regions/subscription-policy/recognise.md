@@ -23,11 +23,10 @@ A moment that says any of these, or something close, is this region's. Both voic
 - are we in subscription or API mode
 - refuse a main thread from an unsupported lab
 - build the API decision provider too
-- checking and routing run on the cheap model
-- Wardens and routers should run on Haiku
-- I set a model on the Librarian and it's ignored
-- which model the classifiers use
-- the classifier's saved provider is ignored at startup
+- checking and advising run on the cheap model
+- Wardens should run on Haiku
+- I set a model on a Warden and it's ignored
+- which model the decisions use
 - decisions run on the Claude login, no API
 - decisions run on the user's login by default
 - just use the logins already on the machine
@@ -38,9 +37,8 @@ A moment that says any of these, or something close, is this region's. Both voic
 - only the worker gets the big model
 - don't put Opus on a decision role
 - decision roles always use the decision model
-- change the decision model for classifiers
+- change the decision model
 - check the login locations at startup
-- send every non-executor agent to the decision profile
 - I'll fall back to an API key when busy
 - use the API decision provider only with the opt-in
 - no paid fallback when the subscription fails

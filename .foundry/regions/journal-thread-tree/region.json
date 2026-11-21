@@ -3,18 +3,18 @@
   "title": "Journal and thread tree",
   "routing": "Is this about Foundry's local record of a thread: the journal (LocalSessionStore, phase rows in session_phase, appendPhase, encodeRecord / decodeRecord, contentHash, referencedHashes, the content store, ImageAttachmentStore, imageMediaType, openTurnDetail) or the thread tree (SessionBackedProvider.observeSubagents, SubagentRecorder observed child threads, handoff / handoff-return rows, middleware-reduced rows, reduceMiddleware, compactClosedTurns, pruneRawMiddleware, journal.rawMiddlewareDays, Archive lineage, tree(rootSessionId), the Archive claim lease)? Plain jobs: 'save this turn locally', 'store this big blob in the journal', 'keep the pasted image', 'track the subagents it spawned', 'shrink the Warden rows after the turn', 'clean up old raw rows', 'archive the whole tree as one thing'.",
   "concepts": ["journal", "thread-tree"],
-  "tokens": 13357,
+  "tokens": 13325,
   "tokenMethod": "chars/4",
   "files": {
     "recognise": {
       "path": "recognise.md",
-      "tokens": 1625,
+      "tokens": 1646,
       "experimental": true,
       "note": "recognise/pick split under test (model round); not the standard"
     },
     "knowledge": {
       "path": "knowledge.md",
-      "tokens": 13357
+      "tokens": 13325
     }
   },
   "runsAgreed": 0,

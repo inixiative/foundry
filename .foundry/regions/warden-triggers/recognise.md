@@ -103,5 +103,5 @@ These mention this region's words but belong elsewhere; the answer is no, and th
 - add a Warden for the payments code → chorus
 - the guard answered with a suggestion and the validator refused it → classify
 - block the agent from running rm -rf → tool-gate-mcp
-- turn on the local model that skips off-topic Wardens → warden-prefilter-evals
 - the subagent's run shows up as a child thread with handoff rows → threads-journal
+- skip Wardens before asking them → warden-prefilter-evals

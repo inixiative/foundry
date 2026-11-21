@@ -52,4 +52,4 @@ These mention this region's words but belong elsewhere; the answer is no, and th
 - add a new tool to the foundry MCP server → tool-gate-mcp
 - change how the Claude session adapter launches the CLI → native-sessions
 - decide when a Warden fires during the turn → warden-triggers
-- queue a turn for a busy thread in TurnService → threads-journal
+- queue a turn for a busy thread in TurnService → threads

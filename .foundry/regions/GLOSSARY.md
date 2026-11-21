@@ -21,7 +21,7 @@ Agent Client Protocol: JSON-RPC over stdio between an editor/runner host and an 
 An ACP client that spawns foundry-acp per connection: Paseo, T3 Code, Zed, JetBrains. *Region:* [Headless Foundry over ACP](acp/knowledge.md)
 
 **ACP launch file**  
-~/.foundry/acp-launch.json, written 0600 by the daemon: endpoint, capability, pid. *Region:* [Headless Foundry over ACP](acp/knowledge.md)
+~/.foundry/acp-launch.json, written 0600 by the daemon: endpoint, pid (its capability bearer went on 2026-11-02; a direct loopback request needs no auth). *Region:* [Headless Foundry over ACP](acp/knowledge.md)
 
 **ACP modes**  
 default, acceptEdits, plan, bypassPermissions: the host's permission modes passed to the native runtime. *Region:* [Headless Foundry over ACP](acp/knowledge.md)
@@ -43,9 +43,6 @@ Holds pending capability asks until a human answers in the viewer. *Region:* [Ag
 
 **actor**  
 Who made a change: user, feedback, agent, release or external. *Region:* [Composition audit log](audit-log/knowledge.md)
-
-**addLogBroadcast**  
-Also sends every log call in the current async scope to an extra target. *Region:* [Settings, jobs, logging and database](settings-runtime/knowledge.md)
 
 **admission**  
 The scheduler's acceptance of a decision; violations, substituted models and unproven results close it, rate limits do not. *Region:* [Decision hosts and scheduler](decision-hosts/knowledge.md)
@@ -90,10 +87,10 @@ The directory a node is about, which places it in the order; none means computer
 Where the middleware puts the validated response (or the configured `annotationKey`). *Region:* [TypeSafe / Jev typed decisions](typesafe/knowledge.md)
 
 **anticipated**  
-Primary measure: share of real corrections some Warden said first. *Region:* [Warden pre-filter and evals](warden-prefilter-evals/knowledge.md)
+Primary measure: share of real corrections some Warden said first. *Region:* [Warden evals, and no pre-filter](warden-prefilter-evals/knowledge.md)
 
 **api-providers**  
-Class: the LLMProvider interface and the API-key providers (Anthropic, OpenAI, Gemini, OpenAI-compatible family, embeddings). *Region:* [Models, providers and usage](models-providers/knowledge.md)
+Class: the LLMProvider interface and the API-key providers (Anthropic, OpenAI, Gemini, OpenAI-compatible family). *Region:* [Models, providers and usage](models-providers/knowledge.md)
 
 **apiTokens**  
 Opt-in for API providers (Anthropic, OpenAI, Gemini, OpenAI-compatible); subscription sessions are the default. *Region:* [Repo structure and conventions](conventions/knowledge.md)
@@ -226,9 +223,6 @@ Preset policy for browser agents: navigate, interact, screenshot allowed; execut
 **BudgetExceededError**  
 Thrown when a token or cost budget reaches its halt threshold. *Region:* [Models, providers and usage](models-providers/knowledge.md)
 
-**budgetGuardHook**  
-Built-in pre:dispatch hook that blocks dispatches once the token tracker shows the budget spent. *Region:* [Core agents, middleware, signals, traces](core-agents/knowledge.md)
-
 **buildDecisionCatalog / refreshDecisionCatalog**  
 Build a catalog snapshot from a loaded manifest / re-read it from the manifest path. *Region:* [TypeSafe / Jev typed decisions](typesafe/knowledge.md)
 
@@ -248,7 +242,7 @@ Archive console: the normal viewer with journal and capture, no model agents. *R
 The full gate: typecheck (5 targets), lint, atlas check, test. *Region:* [Testing and the VCR](testing-vcr/knowledge.md)
 
 **bun run doctor**  
-Inspects the install without starting agents or calling providers; flags `legacy-starter-defaults`. *Region:* [Install, daemon, devices and git](install-daemon/knowledge.md)
+Inspects the install without starting agents or calling providers. *Region:* [Install, daemon, devices and git](install-daemon/knowledge.md)
 
 **bun run vcr:accept**  
 Accepts pending recordings as the new baseline. *Region:* [Testing and the VCR](testing-vcr/knowledge.md)
@@ -277,9 +271,6 @@ Per-decision deadline including queue and preflight time (default 30000). *Regio
 A built update on trial vs the release that last booted; a candidate that boots becomes stable, one that fails is marked failed. *Region:* [Install, daemon, devices and git](install-daemon/knowledge.md)
 
 **capability**  
-The launch file's bearer secret; accepted only on direct loopback requests, never through the tunnel. *Region:* [Headless Foundry over ACP](acp/knowledge.md)
-
-**capability**  
 Registry tag on a model (e.g. 'judgment', 'execution') used to find models fit for a job. *Region:* [Models, providers and usage](models-providers/knowledge.md)
 
 **capability**  
@@ -306,9 +297,6 @@ Archive setting: keep run-tagged sessions (on by default) or drop explicitly sta
 **captureToolCallsAndResults**  
 Archive setting: keep tool calls and results (on by default); off strips them and marks coverage partial. *Region:* [Local Archive and session capture](archive/knowledge.md)
 
-**Cartographer**  
-The context-routing agent: owns the topology map, routes slices, modifies nothing; keyword fallback. *Region:* [The FLOW.md roles as agents](flow-roles/knowledge.md)
-
 **cassette**  
 A recording at `tests/fixtures/vcr/<service>/<method>.<name>.json` with version, body and `recorded` stamp. *Region:* [Testing and the VCR](testing-vcr/knowledge.md)
 
@@ -319,13 +307,13 @@ Trusted callback giving the shadow runner a revision, candidates (ID + descripti
 Structured why: feedbackItemId/changeId, settingsRevision, gitCommit/gitBlob, or detected: on-read; no free-text reason. *Region:* [Composition audit log](audit-log/knowledge.md)
 
 **charter eval**  
-scripts/evals/warden-charter.ts: runs a classify configuration over probes and judges the remarks; a dev diagnostic. *Region:* [Warden pre-filter and evals](warden-prefilter-evals/knowledge.md)
+scripts/evals/warden-charter.ts: runs a classify configuration over probes and judges the remarks; a dev diagnostic. *Region:* [Warden evals, and no pre-filter](warden-prefilter-evals/knowledge.md)
 
 **chartered**  
 Builds a Warden call's system message: the charter plus the Warden's instructions. *Region:* [Warden classification primitive](classify/knowledge.md)
 
 **Cheap models for decisions**  
-Classifiers, routers, Cartographer, Librarian and Wardens run Claude Haiku 5.5; only the Artificer uses a capable model by default. *Region:* [Subscription-only policy](subscription-policy/knowledge.md)
+Wardens (advise, guard and review) run Claude Haiku 5.5, the default Layer 2 Sonnet 5.5 low; only the Artificer uses a capable model by default. *Region:* [Subscription-only policy](subscription-policy/knowledge.md)
 
 **checkout**  
 One device-local repository/worktree; its path, branch, commit and dirty state belong to it, not the project. *Region:* [Install, daemon, devices and git](install-daemon/knowledge.md)
@@ -354,11 +342,8 @@ Ordered regions directories; a later layer's region id replaces the earlier one 
 **chorus.reception**  
 On with the chorus by default; `false` leaves the `chorus-reception` layer out. *Region:* [A project's region Wardens](chorus/knowledge.md)
 
-**chorus.source**  
-Retired key, refused by name: `"regions"` becomes `"enabled": true`, `"roster"` has no replacement. *Region:* [A project's region Wardens](chorus/knowledge.md)
-
 **chorus.wardens.stages**  
-Up to three classification stages per Warden role; default one stage; machine's list replaces the repository's whole. *Region:* [A project's region Wardens](chorus/knowledge.md)
+Up to three classification stages per Warden role; default the two-layer chain (Haiku 5.5 low, each yes to Sonnet 5.5 low), one stage with API-token decisions; machine's list replaces the repository's whole. *Region:* [A project's region Wardens](chorus/knowledge.md)
 
 **chorus.wardens.stages**  
 Where a project sets its Warden stages (in the `chorus` region's settings). *Region:* [Warden classification primitive](classify/knowledge.md)
@@ -369,23 +354,17 @@ The reception charter the main thread holds as the `chorus-reception` standing l
 **claims**  
 Lease a driver such as Foundry holds on sessions it records, so collectors skip them until fulfilled or lapsed. *Region:* [Local Archive and session capture](archive/knowledge.md)
 
-**Clarifier**  
-Checks whether a request is complete enough to execute, returning questions if not; sits between route and execute. *Region:* [Core agents, middleware, signals, traces](core-agents/knowledge.md)
-
 **class pointer**  
 A ranked pointer at the class level: 'Look over here: <the class> (<where>)'. *Region:* [Warden classification primitive](classify/knowledge.md)
 
 **Classification stages**  
 Up to three stages per Warden answer; each names model, effort, doc, outcomes, reason, task and escalate. *Region:* [Warden classification primitive](classify/knowledge.md)
 
-**Classifier**  
-Decider returning a Classification (category, subcategory, tags) from a pre-warmed taxonomy. *Region:* [Core agents, middleware, signals, traces](core-agents/knowledge.md)
-
 **classify**  
 Class: the one classification primitive: stages, charters, response protocols, NO_COMMENT, pointer shapes. *Region:* [Warden classification primitive](classify/knowledge.md)
 
 **classify run config**  
-run.json given to --classify: stages, eval-only sections, debug, members; read by readClassifyRun. *Region:* [Warden pre-filter and evals](warden-prefilter-evals/knowledge.md)
+run.json given to --classify: stages, eval-only sections, debug, members; read by readClassifyRun. *Region:* [Warden evals, and no pre-filter](warden-prefilter-evals/knowledge.md)
 
 **classifyCorrection**  
 Live single-message correction classify via the shared classify contract on a decision provider. *Region:* [Feedback and corrections](feedback/knowledge.md)
@@ -399,11 +378,11 @@ The default ladder mirroring Claude Code discovery: managed, global, org, projec
 **claude-context-budget.ts**  
 Claude Code's native auto-compaction policy; no separate summarizer or compression loop. *Region:* [Repo structure and conventions](conventions/knowledge.md)
 
-**claude-in-session**  
-The `subscriptionOnly.decisionRuntime` value that turns this runtime on; off by default. *Region:* [Wardens inside the thread's process](in-session-wardens/knowledge.md)
+**claude-project**  
+The `subscriptionOnly.decisionRuntime` value, and the default for Claude decisions, that holds a project's Wardens in one Foundry-owned Claude Code process; it replaced the per-thread `claude-in-session` runtime (removed, #323). *Region:* [Wardens inside one Claude Code process (the project host)](in-session-wardens/knowledge.md)
 
 **CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS**  
-Subagent cap the launch raises (by 76 today) so Wardens don't starve the user's own subagents. *Region:* [Wardens inside the thread's process](in-session-wardens/knowledge.md)
+Subagent cap the host's launch raises, on top of the user's own cap, by `roster × (spares + 2) × concurrentTurns + 2 + 2 × dispatchers`. *Region:* [Wardens inside one Claude Code process (the project host)](in-session-wardens/knowledge.md)
 
 **CLAUDE_CONFIG_DIR**  
 Selects Claude's profile and its keychain credential; set via profileEnvironment, never by hand. *Region:* [Logins, profiles and secrets](logins-secrets/knowledge.md)
@@ -418,16 +397,16 @@ Runs a Claude Code thread as a persistent native session; built with the authent
 Builds CLAUDE_CODE_AUTO_COMPACT_WINDOW / CLAUDE_AUTOCOMPACT_PCT_OVERRIDE for the child process. *Region:* [Models, providers and usage](models-providers/knowledge.md)
 
 **ClaudeInSessionDecisions**  
-agent-session 0.6.6 class that runs the root, dispatcher and Warden tree inside a Claude main session. *Region:* [Wardens inside the thread's process](in-session-wardens/knowledge.md)
+agent-session class that runs the root, dispatcher and Warden tree inside a Claude Code session; the project Warden host is built on it. *Region:* [Wardens inside one Claude Code process (the project host)](in-session-wardens/knowledge.md)
 
 **claudemdSource**  
 A context source for one CLAUDE.md-style file with its @path imports resolved. *Region:* [Context layers and memory adapters](context-memory/knowledge.md)
 
 **ClaudePrimedSessions**  
-agent-session's Claude primed sessions: persisted primed transcript, `--resume --fork-session` per decision, pre-spawned spare. *Region:* [Decision hosts and scheduler](decision-hosts/knowledge.md)
+agent-session's Claude primed sessions: stable text in the system prompt, a fresh session per decision, pre-spawned spare; only with `decisionRuntime: "claude"`. *Region:* [Decision hosts and scheduler](decision-hosts/knowledge.md)
 
 **ClaudeSubagentSessions**  
-agent-session side-session runtime: a side process per thread with a dispatcher agent and standby moments. *Region:* [Wardens inside the thread's process](in-session-wardens/knowledge.md)
+agent-session side-session runtime: a side process with a dispatcher agent and standby moments; Foundry uses it only for offline evals (`createPrimedPool`). *Region:* [Wardens inside one Claude Code process (the project host)](in-session-wardens/knowledge.md)
 
 **claudeUsageWindows**  
 Reads the Claude login's percent used per usage window before an offline job spends the subscription. *Region:* [Decision hosts and scheduler](decision-hosts/knowledge.md)
@@ -451,7 +430,7 @@ Codex profile home; Foundry runs Codex on a private home with auth.json symlinke
 agent-session's Codex primed sessions: one warm codex app-server per decision profile, a thread per role key. *Region:* [Decision hosts and scheduler](decision-hosts/knowledge.md)
 
 **CodexPrimedSessions**  
-One Codex app-server per account with a primed thread per decision role; Codex Wardens stay here. *Region:* [Wardens inside the thread's process](in-session-wardens/knowledge.md)
+One Codex app-server per account with a primed thread per decision role; with `decisionRuntime: "codex"` Codex Wardens run here. *Region:* [Wardens inside one Claude Code process (the project host)](in-session-wardens/knowledge.md)
 
 **CodexSessionAdapter**  
 Runs a Codex thread as a persistent `codex app-server --listen stdio://` session. *Region:* [Native sessions and agent-session](native-sessions/knowledge.md)
@@ -469,7 +448,7 @@ On start, reduces closed turns (interrupted included) whose middleware rows are 
 A decision call's rank; guards may hold at most 3/4 of slots, reviews at most half. *Region:* [Decision hosts and scheduler](decision-hosts/knowledge.md)
 
 **CompletionOpts.stablePrefix**  
-Declares a role's stable context so it is primed once; roles without it run inline on a fresh process. *Region:* [Decision hosts and scheduler](decision-hosts/knowledge.md)
+Declares a role's stable context: the system prompt of a primed role, the held part of a project host's spare. *Region:* [Decision hosts and scheduler](decision-hosts/knowledge.md)
 
 **composeChorus**  
 Merges `chorusLayers(project)` into one region set, later layers replacing earlier regions whole. *Region:* [A project's region Wardens](chorus/knowledge.md)
@@ -481,7 +460,7 @@ sha256 of the exact text a Warden received for a slot; unique, so the same text 
 Composes every slot of one role from the ladder, filtered by audience and deduped across slots. *Region:* [Standing instructions and composition](composition/knowledge.md)
 
 **composition-view**  
-Class: roles x slots x ladder nodes; what each role composes, role layers and files, budgets, the prompt composer. *Region:* [Standing instructions and composition](composition/knowledge.md)
+Class: roles x slots x ladder nodes; what each role composes, role layers and files, budgets. *Region:* [Standing instructions and composition](composition/knowledge.md)
 
 **composition.harnessLoading**  
 Whether the harness also loads instruction files (load) or is suppressed (suppress); the one injection path. *Region:* [Standing instructions and composition](composition/knowledge.md)
@@ -496,16 +475,16 @@ Journal row for one distinct composed slot: role, slot, ordered parts, retrieved
 Turns a call's composition snapshot into source and composition version ids (versionRecord). *Region:* [Composition audit log](audit-log/knowledge.md)
 
 **configFromSaved**  
-Saved settings.json to full config over defaults, migrating legacy `providers` to `vendors`. *Region:* [Settings, jobs, logging and database](settings-runtime/knowledge.md)
+Saved settings.json to full config: saved fields over the defaults, vendors merged mode by mode. *Region:* [Settings and database](settings-runtime/knowledge.md)
 
 **configOptions**  
 ACP config options offered: mode, model, thought_level (effort); no executor-agent select. *Region:* [Headless Foundry over ACP](acp/knowledge.md)
 
 **ConfigRevisionError**  
-Thrown when settings changed elsewhere since they were read: reload before saving. *Region:* [Settings, jobs, logging and database](settings-runtime/knowledge.md)
+Thrown when settings changed elsewhere since they were read: reload before saving. *Region:* [Settings and database](settings-runtime/knowledge.md)
 
 **ConfigStore**  
-Persists settings to disk with JSON patch semantics and revisions; the viewer reads and writes through it. *Region:* [Settings, jobs, logging and database](settings-runtime/knowledge.md)
+Persists settings to disk with JSON patch semantics and revisions; the viewer reads and writes through it. *Region:* [Settings and database](settings-runtime/knowledge.md)
 
 **configuredModel**  
 Reads only a native configuration's model; not proof of what served. *Region:* [Session context delivery](session-delivery/knowledge.md)
@@ -525,11 +504,8 @@ session_content / session_content_ref: sha256-addressed text referenced by journ
 **contentHash**  
 The sha256 hex hash that identifies stored journal content. *Region:* [Journal and thread tree](journal-thread-tree/knowledge.md)
 
-**Context routing**  
-The role that reads the topology map and decides which context slices a message needs; filled by the Cartographer. *Region:* [The FLOW.md roles as agents](flow-roles/knowledge.md)
-
 **context-layers**  
-Class tag: ContextLayer, ContextStack, cache lifecycle, hydration registry and refs; layers are independent token caches. *Region:* [Context layers and memory adapters](context-memory/knowledge.md)
+Class tag: ContextLayer, ContextStack, cache lifecycle, hydration adapters and refs; layers are independent token caches. *Region:* [Context layers and memory adapters](context-memory/knowledge.md)
 
 **contextBudget**  
 Claude Code native compaction policy `{ maxTokens: 200_000, compactAt: 0.8 }`, at vendors.anthropic.subscription.contextBudget. *Region:* [Models, providers and usage](models-providers/knowledge.md)
@@ -556,13 +532,10 @@ Claude adapter test seam: the real session protocol against a controlled process
 Anything that decides how to use the primitives, or needs HTTP, processes or services, goes in foundry. *Region:* [Repo structure and conventions](conventions/knowledge.md)
 
 **core-agents**  
-Class tag: foundry-core agent primitives (BaseAgent, Executor, Decider, Classifier, Router, Clarifier, Harness, Planner, the tool-use loop). *Region:* [Core agents, middleware, signals, traces](core-agents/knowledge.md)
+Class tag: foundry-core agent primitives (BaseAgent, Executor, Harness, the tool-use loop). *Region:* [Core agents, middleware, signals, traces](core-agents/knowledge.md)
 
 **core-thread**  
-Class: core Thread, SessionManager blueprints, ownership scope, ids, and the persisted thread and message models. *Region:* [Threads and the turn path](threads/knowledge.md)
-
-**CorpusCompiler**  
-Compiles raw signals into docs and a deduplicated corpus snapshot with attribution traces. *Region:* [The FLOW.md roles as agents](flow-roles/knowledge.md)
+Class: core Thread, ownership scope and ids. *Region:* [Threads and the turn path](threads/knowledge.md)
 
 **/correction**  
 ACP available command posting typed feedback as an intervention. *Region:* [Headless Foundry over ACP](acp/knowledge.md)
@@ -571,7 +544,7 @@ ACP available command posting typed feedback as an intervention. *Region:* [Head
 Classified and tuned with a decision provider; without one, recorded as feedback tagged correction. *Region:* [Feedback and corrections](feedback/knowledge.md)
 
 **correction target**  
-What a correction pushed toward (rule, primitive, system, pattern) labelled by --label-targets (Opus). *Region:* [Warden pre-filter and evals](warden-prefilter-evals/knowledge.md)
+What a correction pushed toward (rule, primitive, system, pattern) labelled by --label-targets (Opus). *Region:* [Warden evals, and no pre-filter](warden-prefilter-evals/knowledge.md)
 
 **corrections**  
 Class: detecting corrections in sessions and reviews: the Prospector, review findings, foundry repeats. *Region:* [Feedback and corrections](feedback/knowledge.md)
@@ -580,10 +553,13 @@ Class: detecting corrections in sessions and reviews: the Prospector, review fin
 Wardens in guard mode, asked once per turn over the turn's tool activity. *Region:* [The FLOW.md roles as agents](flow-roles/knowledge.md)
 
 **cost weights**  
-kindWeighted / modelWeighted: tokens weighted by kind and model into comparable cost. *Region:* [Warden pre-filter and evals](warden-prefilter-evals/knowledge.md)
+kindWeighted / modelWeighted: tokens weighted by kind and model into comparable cost. *Region:* [Warden evals, and no pre-filter](warden-prefilter-evals/knowledge.md)
 
 **createDataStreams**  
 The data-stream hub: stream families, subscription admission and delivery over a registry. *Region:* [Viewer inspector, streams and Gloss](viewer-inspector/knowledge.md)
+
+**createDecisionLoginHost**  
+The decision login's host: the login check, its used-up pause, the receipts, the hosts' working folder and the project host launcher; builds the primed pool only without project hosts; no scheduler. *Region:* [Decision hosts and scheduler](decision-hosts/knowledge.md)
 
 **createDecisionProvider**  
 API-key decision provider from a judgment-tagged model, never the worker model; only with apiTokens: true. *Region:* [Decision hosts and scheduler](decision-hosts/knowledge.md)
@@ -597,8 +573,8 @@ The bounded shared subscription text provider: no scheduler, no automatic model 
 **createNativeToolProjector**  
 Turns a native session's tool events into the owner's tool records. *Region:* [Agent tools and execution environments](tools/knowledge.md)
 
-**createPrimedDecisionHost**  
-One primed decision host per profile keeping a warm session per middleware role; no scheduler. *Region:* [Decision hosts and scheduler](decision-hosts/knowledge.md)
+**createPrimedPool**  
+The primed pool (a warm session per middleware role), built only for `decisionRuntime: "claude"` or `"codex"`, and for offline evals. *Region:* [Decision hosts and scheduler](decision-hosts/knowledge.md)
 
 **createRegisteredProvider**  
 Builds a client for any registry provider through the one OpenAI-compatible adapter. *Region:* [Models, providers and usage](models-providers/knowledge.md)
@@ -610,7 +586,7 @@ Run async tasks one after another, in order. *Region:* [Viewer inspector, stream
 Open a session by transport kind; TRANSPORTS[kind].capabilities declares what each transport really supports. *Region:* [Native sessions and agent-session](native-sessions/knowledge.md)
 
 **createSubscriptionDecisions**  
-The live decision entry: primed session per role plus the priority scheduler on the decision profile's runtime. *Region:* [Decision hosts and scheduler](decision-hosts/knowledge.md)
+The live decision entry: the decision login host (Wardens in project hosts, or a primed session per role without them) plus the priority scheduler. *Region:* [Decision hosts and scheduler](decision-hosts/knowledge.md)
 
 **createToolGate**  
 Builds a thread's gate: structural rules first, then ask the user through ActionQueue. *Region:* [Structural tool gate and MCP bridge](tool-gate-mcp/knowledge.md)
@@ -636,13 +612,10 @@ Setting: `apply` builds and restarts onto `origin/main` once idle; `check` only 
 Data streams over WebSocket: registry, subscriptions, delivery, serialized queue, stream buffers, browser socket clients. *Region:* [Viewer inspector, streams and Gloss](viewer-inspector/knowledge.md)
 
 **database**  
-Class: Postgres via Prisma (schema, db scripts, JSON helpers) and Redis. *Region:* [Settings, jobs, logging and database](settings-runtime/knowledge.md)
+Class: Postgres via Prisma (schema, db scripts, JSON helpers). *Region:* [Settings and database](settings-runtime/knowledge.md)
 
 **DataStreamClient**  
 Loopback client that keeps viewer streams alive across reconnects and gaps (packages/foundry/src/client). *Region:* [Viewer inspector, streams and Gloss](viewer-inspector/knowledge.md)
-
-**Decider**  
-Agent that returns only a slim Decision (value, confidence, reasoning); its context stays behind. *Region:* [Core agents, middleware, signals, traces](core-agents/knowledge.md)
 
 **decision catalog**  
 Content-hashed snapshot of profiles, candidates and hashed source evidence, built from a manifest and an Atlas graph. *Region:* [TypeSafe / Jev typed decisions](typesafe/knowledge.md)
@@ -651,10 +624,10 @@ Content-hashed snapshot of profiles, candidates and hashed source evidence, buil
 The one login + runtime + model every decision role runs on (`subscription-decisions`, Claude Haiku 5.5 by default). *Region:* [Decision hosts and scheduler](decision-hosts/knowledge.md)
 
 **decision-hosts**  
-Class: how decision roles run on subscription logins: provider, host, primed sessions, budgets, priority, thread naming. *Region:* [Decision hosts and scheduler](decision-hosts/knowledge.md)
+Class: how decision roles run on subscription logins: provider, decision login host, primed pool, budgets, priority. *Region:* [Decision hosts and scheduler](decision-hosts/knowledge.md)
 
 **DECISION_DEADLINE_MS**  
-10 s safety-net deadline on every pre-message decision; a late answer is a timeout, classifiers fall back to keywords. *Region:* [Decision hosts and scheduler](decision-hosts/knowledge.md)
+60 s safety-net deadline on every decision (a Warden's advice defaults to it); a late answer is recorded as a timeout and cancelled. *Region:* [Decision hosts and scheduler](decision-hosts/knowledge.md)
 
 **DECISION_INPUT_CAP**  
 Structural cap on serialized characters a native decision call may take, behind the role budget. *Region:* [Decision hosts and scheduler](decision-hosts/knowledge.md)
@@ -696,7 +669,7 @@ Glob patterns for tools that fetch a work item: Linear issues and documents, Not
 Today's single pointing stage on the region's knowledge.md. *Region:* [Warden classification primitive](classify/knowledge.md)
 
 **defaultConfig / starterConfig / defaultAgents**  
-Full defaults / minimal first-install bootstrap / the one bare executor. *Region:* [Settings, jobs, logging and database](settings-runtime/knowledge.md)
+Full defaults / minimal first-install bootstrap / the one bare executor. *Region:* [Settings and database](settings-runtime/knowledge.md)
 
 **defaults.nativeAuthenticationId**  
 Optional explicit native-profile source for the worker; its runtime matches the worker. *Region:* [Subscription-only policy](subscription-policy/knowledge.md)
@@ -725,9 +698,6 @@ Class: CLAUDE.md's Design Principles and Common Mistakes (for AI assistants). *R
 **destinations.json**  
 Archive routing config: organizations (owning projects) and destinations; one archive per organization. *Region:* [Local Archive and session capture](archive/knowledge.md)
 
-**Detail drawer**  
-Right panel: span detail, layer detail, corrections (DetailDrawer). *Region:* [Viewer dashboard shell](viewer/knowledge.md)
-
 **detectCorrection**  
 Pattern-signal score for one typed message; cheap pre-filter before the model classify. *Region:* [Feedback and corrections](feedback/knowledge.md)
 
@@ -742,12 +712,6 @@ What middleware sees: agentId, payload, timestamp and mutable annotations. *Regi
 
 **Domain advising**  
 The role where each Warden checks its warm cache against the message before execution. *Region:* [The FLOW.md roles as agents](flow-roles/knowledge.md)
-
-**DomainLibrarian**  
-The one shared Warden implementation: advise, guard and post-work review over a primed session; instantiated per region, never subclassed. *Region:* [A project's region Wardens](chorus/knowledge.md)
-
-**DomainLibrarian**  
-The shared class every region Warden is an instance of (chorus region), distinct from the Librarian. *Region:* [The FLOW.md roles as agents](flow-roles/knowledge.md)
 
 **domainUnderstanding**  
 One expert's current owned understanding of a thread, with revision provenance. *Region:* [Viewer inspector, streams and Gloss](viewer-inspector/knowledge.md)
@@ -766,11 +730,8 @@ Tell every connection to reconnect (graceful shutdown). *Region:* [Viewer inspec
 **encodeRecord / decodeRecord**  
 Write a journal record with its bulk stored by hash reference (never refusing for size), and read it back with references restored. *Region:* [Journal and thread tree](journal-thread-tree/knowledge.md)
 
-**enqueueJob**  
-The only way to put work on the queue: handler name plus typed payload. *Region:* [Settings, jobs, logging and database](settings-runtime/knowledge.md)
-
 **ensureServices**  
-Starts the docker-compose services that DATABASE_URL, REDIS_URL and MUNINN_URL point at before boot. *Region:* [Install, daemon, devices and git](install-daemon/knowledge.md)
+Starts the docker-compose services that DATABASE_URL and MUNINN_URL point at before boot. *Region:* [Install, daemon, devices and git](install-daemon/knowledge.md)
 
 **Entry**  
 Prisma model for memory entries (conventions, corrections, ADRs, taste, signals) with optional embedding. *Region:* [Context layers and memory adapters](context-memory/knowledge.md)
@@ -790,11 +751,8 @@ Unified ordered observable (5K history, push/pull) of layer, dispatch, signal, s
 **evidenceDigest**  
 Portable SHA-256 of text for public evidence in Bun and the browser; integrity join only, not a signature. *Region:* [Session context delivery](session-delivery/knowledge.md)
 
-**excluded / not-admitted**  
-A Warden the queue never admitted in time: `excluded` for advice, `not-admitted` for guard. *Region:* [When Wardens are asked](warden-triggers/knowledge.md)
-
-**executionEnv**  
-An agent setting: bash, just-bash, typescript, browser or hybrid. *Region:* [Agent tools and execution environments](tools/knowledge.md)
+**execution environment**  
+Where an agent tool's work runs: bash, just-bash, typescript or browser (the `executionEnv` agent setting was removed in #424; browser settings are `agents.<id>.browser`). *Region:* [Agent tools and execution environments](tools/knowledge.md)
 
 **executionId / requestId / runId**  
 UUIDs returned by a successful read for attribution; runId groups one project/thread per process lifetime. *Region:* [Kingdom pairing, access and Signets](kingdom/knowledge.md)
@@ -806,15 +764,9 @@ What every agent run returns: output, contextHash, optional tokens and meta. *Re
 Agent that takes context + payload, does work and returns the full result. *Region:* [Core agents, middleware, signals, traces](core-agents/knowledge.md)
 
 **experiment gate**  
-requireExperiment / experimentProblems: a wide eval run needs a passing experiment design. *Region:* [Warden pre-filter and evals](warden-prefilter-evals/knowledge.md)
+requireExperiment / experimentProblems: a wide eval run needs a passing experiment design. *Region:* [Warden evals, and no pre-filter](warden-prefilter-evals/knowledge.md)
 
 ## F
-
-**fails open**  
-An unsure score, failed call, timeout or missing model asks the Warden, as without the pre-filter. *Region:* [Warden pre-filter and evals](warden-prefilter-evals/knowledge.md)
-
-**fallback to primed**  
-A thread whose Warden tree is not running sends its Wardens to primed sessions, as if the setting were off. *Region:* [Wardens inside the thread's process](in-session-wardens/knowledge.md)
 
 **feedback**  
 Class: explicit feedback and its lifecycle: capture, sharpen, route, tune, apply/revert, the inbox views. *Region:* [Feedback and corrections](feedback/knowledge.md)
@@ -837,6 +789,9 @@ Folds feedback journal rows into an index of items with captures, routes and cha
 **FeedbackPhase**  
 feedback-capture | -route | -tune | -apply | -revert | -status, appended via LocalSessionStore.appendPhase. *Region:* [Feedback and corrections](feedback/knowledge.md)
 
+**feedbackRoleChoices**  
+Every role a feedback item may be applied to: the thread roles, the shared base main, and the project's region Wardens. *Region:* [Feedback and corrections](feedback/knowledge.md)
+
 **FeedbackService**  
 The single entry for giving or reading feedback; capture never changes behaviour. *Region:* [Feedback and corrections](feedback/knowledge.md)
 
@@ -845,12 +800,6 @@ File-backed thread-to-native-session id map that survives restarts. *Region:* [N
 
 **FileMemory**  
 JSON-file memory with owner and visibility; the zero-dependency default. *Region:* [Context layers and memory adapters](context-memory/knowledge.md)
-
-**Five-role message flow**  
-Every message goes through context routing, domain advising, execution, correctness checking, then signal reconciliation. *Region:* [The FLOW.md roles as agents](flow-roles/knowledge.md)
-
-**fixture**  
-A labelled moment (the Prospector's 740) used for pre-filter measures and label agreement. *Region:* [Warden pre-filter and evals](warden-prefilter-evals/knowledge.md)
 
 **fixture bridge**  
 Isolated-fixture MCP surface: only fixture_read, fixture_write, fixture_command, each with an invocation UUID. *Region:* [Structural tool gate and MCP bridge](tool-gate-mcp/knowledge.md)
@@ -865,7 +814,7 @@ This class: the FLOW.md roles and the named agents that fill them. *Region:* [Th
 Data stream of a thread's recorded turn flows, learning history, revisions and review status; held only while a flow view is on screen. *Region:* [Viewer inspector, streams and Gloss](viewer-inspector/knowledge.md)
 
 **FlowOrchestrator**  
-Production entry point wiring Cartographer, Wardens and Librarian into pre-message and post-action; runs in start.ts. *Region:* [The FLOW.md roles as agents](flow-roles/knowledge.md)
+Production entry point wiring Wardens and Librarian into pre-message and post-action; runs in start.ts. *Region:* [The FLOW.md roles as agents](flow-roles/knowledge.md)
 
 **FlowOrchestrator.brief**  
 Asks the chorus once over a subagent's task text (`handoffText`) at spawn. *Region:* [When Wardens are asked](warden-triggers/knowledge.md)
@@ -904,34 +853,34 @@ bunx @inixiative/foundry-acp setup: global install, launchd daemon, host setting
 Exclusive single-owner profile lock (non-subscription native profiles); shared holders and it refuse each other. *Region:* [Logins, profiles and secrets](logins-secrets/knowledge.md)
 
 **foundry-dispatch**  
-A dispatcher generation: a background subagent that starts Warden spares and absorbs their endings. *Region:* [Wardens inside the thread's process](in-session-wardens/knowledge.md)
-
-**foundry-jobs**  
-The BullMQ queue on Redis that background jobs run on. *Region:* [Settings, jobs, logging and database](settings-runtime/knowledge.md)
+A dispatcher generation: a background subagent that starts Warden spares and absorbs their endings. *Region:* [Wardens inside one Claude Code process (the project host)](in-session-wardens/knowledge.md)
 
 **foundry-root**  
-The never-ending background root agent that starts dispatcher generations. *Region:* [Wardens inside the thread's process](in-session-wardens/knowledge.md)
+The never-ending background root agent that starts dispatcher generations. *Region:* [Wardens inside one Claude Code process (the project host)](in-session-wardens/knowledge.md)
 
 **foundry-warden**  
-The one generic Warden agent definition; each spawn's prompt is pinned to its composed text. *Region:* [Wardens inside the thread's process](in-session-wardens/knowledge.md)
+The one generic Warden agent definition; each spawn's prompt is pinned to its composed text. *Region:* [Wardens inside one Claude Code process (the project host)](in-session-wardens/knowledge.md)
 
 **.foundry/audit.jsonl**  
-Audit log: a before/after row per committed settings change (`GET /api/settings/history`). *Region:* [Settings, jobs, logging and database](settings-runtime/knowledge.md)
+Audit log: a before/after row per committed settings change (`GET /api/settings/history`). *Region:* [Settings and database](settings-runtime/knowledge.md)
+
+**Four-role message flow**  
+Every message goes through domain advising, execution, correctness checking, then signal reconciliation. *Region:* [The FLOW.md roles as agents](flow-roles/knowledge.md)
 
 **~/.foundry/device.json**  
 This machine's random stable device UUID, mode 0600, shared by the user's installations. *Region:* [Install, daemon, devices and git](install-daemon/knowledge.md)
 
 **.foundry/project.json**  
-The repository's committed Foundry settings; only `chorus` (and `$comment`) is read, any other key makes the file ignored. *Region:* [A project's region Wardens](chorus/knowledge.md)
+The repository's committed Foundry settings: any project setting the team shares (REPOSITORY_SETTING_KEYS, `chorus` among them); a file that breaks a rule is reported and none of it applies. *Region:* [A project's region Wardens](chorus/knowledge.md)
 
 **.foundry/project.json**  
-A repository's committed project settings (e.g. `chorus`); machine settings win key by key. *Region:* [Settings, jobs, logging and database](settings-runtime/knowledge.md)
+A repository's committed project settings (e.g. `chorus`); machine settings win key by key. *Region:* [Settings and database](settings-runtime/knowledge.md)
 
 **.foundry/releases/state.json**  
 Release state: stable, previous, candidate and failed SHAs. *Region:* [Install, daemon, devices and git](install-daemon/knowledge.md)
 
 **.foundry/settings.json**  
-Runtime config: default provider/model, vendors, agents, composition, layers, sources, projects. *Region:* [Settings, jobs, logging and database](settings-runtime/knowledge.md)
+Runtime config: default provider/model, vendors, agents, composition, layers, sources, projects. *Region:* [Settings and database](settings-runtime/knowledge.md)
 
 **Foundry: context**  
 The think tool_call opened at send, completed with routing and Warden decisions. *Region:* [Headless Foundry over ACP](acp/knowledge.md)
@@ -967,10 +916,10 @@ MCP tool: search the thread's current context layers for a topic. *Region:* [Str
 MCP tool: report an observation; disabled on the read-only native grant. *Region:* [Structural tool gate and MCP bridge](tool-gate-mcp/knowledge.md)
 
 **FOUNDRY_STARTUP_SELF_TEST**  
-Env flag (=1) that lets startup make a model call; in subscription mode it consumes a decision allowance. *Region:* [Subscription-only policy](subscription-policy/knowledge.md)
+Env flag (=1) that lets startup make one decision call; not run while project Warden hosts run (each host's start proves the decision login). *Region:* [Subscription-only policy](subscription-policy/knowledge.md)
 
 **foundry_test**  
-The local test database: `bun run db:push:test` then `bun run test:db`. *Region:* [Settings, jobs, logging and database](settings-runtime/knowledge.md)
+The local test database: `bun run db:push:test` then `bun run test:db`. *Region:* [Settings and database](settings-runtime/knowledge.md)
 
 **foundry_threads**  
 MCP tool: summaries of other live threads in the same project. *Region:* [Structural tool gate and MCP bridge](tool-gate-mcp/knowledge.md)
@@ -1025,6 +974,9 @@ Runs Gloss operations per project in bounded child processes, maintenance exclus
 **GraphPanel**  
 The viewer's graph panel (center → Graph, or g) with threads, turn and loop tabs. *Region:* [Viewer inspector, streams and Gloss](viewer-inspector/knowledge.md)
 
+**Guard tiers**  
+One guard per turn, by every region Warden, when the turn wrote, edited or ran a command (REGION_GUARD_TRIGGERS); no per-domain tiers. *Region:* [Harness data flow and loops](flow-architecture/knowledge.md)
+
 **guard-request / guard-outcome**  
 Journal rows wrapping a turn's guard: one request per asked Warden, one outcome, `wraps: turn:<id>`. *Region:* [When Wardens are asked](warden-triggers/knowledge.md)
 
@@ -1033,9 +985,6 @@ Setting that restores a guard per tool call; the default is one guard per turn. 
 
 **GUARD_RESPONSE_PROTOCOL**  
 Advisory-only guard contract; its validator refuses critical severity or a suggestion. *Region:* [Warden classification primitive](classify/knowledge.md)
-
-**guardFn**  
-A programmatic guard the Memory Warden was designed to use; none is supplied, so it runs the LLM guard. *Region:* [When Wardens are asked](warden-triggers/knowledge.md)
 
 **guardTriggers**  
 A Warden's trigger list; it guards once per turn when one names a call of the turn. *Region:* [Harness data flow and loops](flow-architecture/knowledge.md)
@@ -1046,7 +995,7 @@ The tool names whose calls make a Warden's guard fire for the turn. *Region:* [W
 ## H
 
 **Haiku 5.5**  
-The default model for classifiers, routers and Wardens unless a Warden stage names its model. *Region:* [Repo structure and conventions](conventions/knowledge.md)
+The default model for Wardens and the other decision roles unless a Warden stage names its model; the default Layer 2 is Sonnet 5.5 low. *Region:* [Repo structure and conventions](conventions/knowledge.md)
 
 **handoff**  
 Tunnel token Kingdom presents to `POST /api/handoff`; mintHandoffCode / redeemHandoffCode hand a browser to the tunnel session. *Region:* [Kingdom pairing, access and Signets](kingdom/knowledge.md)
@@ -1058,7 +1007,7 @@ Parent journal rows for a subagent spawn (task hash and excerpt) and its result 
 Notes from the subagent-spawn trigger, delivered as "The <domain> Warden chimed in on the handoff to <description>:". *Region:* [When Wardens are asked](warden-triggers/knowledge.md)
 
 **Harness**  
-Entry point for external messages: classify → route → dispatch, with a full Trace per message. *Region:* [Core agents, middleware, signals, traces](core-agents/knowledge.md)
+Entry point for external messages: the flow pipeline to the executor, with a full Trace per message. *Region:* [Core agents, middleware, signals, traces](core-agents/knowledge.md)
 
 **HarnessSession**  
 agent-session's provider-agnostic contract: start / send / kill / fork / interrupt plus an event handler; optional transport, interruptNative, readLimits. *Region:* [Native sessions and agent-session](native-sessions/knowledge.md)
@@ -1070,10 +1019,7 @@ Gloss maintenance that migrates source comments into sidecars; ongoing via harve
 A decision still running past this starts the same input on a second branch; first to finish wins (Codex 4000). *Region:* [Decision hosts and scheduler](decision-hosts/knowledge.md)
 
 **Herald**  
-Cross-thread watcher with pluggable detectors; exists in agents/herald.ts but is not wired. *Region:* [The FLOW.md roles as agents](flow-roles/knowledge.md)
-
-**Herald detectors**  
-ContradictionDetector, ConvergenceDetector, CrossPollinationDetector, DuplicationDetector, ResourceImbalanceDetector. *Region:* [The FLOW.md roles as agents](flow-roles/knowledge.md)
+Live data about other threads and teammates; not wired: its class moved to the private chorus repo, and ask_herald, chorus.heralds and region role herald are placeholders. *Region:* [The FLOW.md roles as agents](flow-roles/knowledge.md)
 
 **hierarchyFingerprint**  
 One stat per consulted path to detect a change before recomposing. *Region:* [Standing instructions and composition](composition/knowledge.md)
@@ -1099,9 +1045,6 @@ Generic REST adapter over fetch for remote knowledge bases and vector DB APIs. *
 **HydrationAdapter**  
 Hydrates ContextRefs for one system, optionally in batches (hydrateBatch). *Region:* [Context layers and memory adapters](context-memory/knowledge.md)
 
-**HydrationRegistry**  
-Routes refs to per-system hydration adapters and hydrates them in parallel batches. *Region:* [Context layers and memory adapters](context-memory/knowledge.md)
-
 ## I
 
 **idAtTime / timeFromId**  
@@ -1117,10 +1060,7 @@ Detects an image's real type (png, jpeg, gif, webp) from its byte signature, ign
 Claude Code's @path include; four hops, inside the repository for project, org and local files. *Region:* [Standing instructions and composition](composition/knowledge.md)
 
 **in-session-wardens**  
-This region's class: Wardens held as subagents inside the thread's own Claude Code process. *Region:* [Wardens inside the thread's process](in-session-wardens/knowledge.md)
-
-**IN_SESSION_DECISION_CONTEXT**  
-Exported constant of providers/in-session-wardens.ts. *Region:* [Wardens inside the thread's process](in-session-wardens/knowledge.md)
+This region's class: a project's Wardens held as subagents inside one Foundry-owned Claude Code process (the project Warden host). *Region:* [Wardens inside one Claude Code process (the project host)](in-session-wardens/knowledge.md)
 
 **inbox**  
 An item's status: open until a feedback-status row archives it (POST /api/feedback/status). *Region:* [Feedback and corrections](feedback/knowledge.md)
@@ -1158,9 +1098,6 @@ The pinned Gloss library (0.0.4) the viewer runs as its own adapter. *Region:* [
 **InMemoryExternalSessionStore**  
 In-memory thread-to-native-session id map for tests or ephemeral runs. *Region:* [Native sessions and agent-session](native-sessions/knowledge.md)
 
-**InSessionWardens**  
-Holds each thread's in-session Warden host and routes that thread's Warden calls to it. *Region:* [Wardens inside the thread's process](in-session-wardens/knowledge.md)
-
 **inspectReadiness**  
 Readiness of local config without building providers or dispatching work. *Region:* [Install, daemon, devices and git](install-daemon/knowledge.md)
 
@@ -1168,7 +1105,7 @@ Readiness of local config without building providers or dispatching work. *Regio
 A local Foundry, Archive or Oracle known to Kingdom by its own key (`installation-key.json`, 0600). *Region:* [Kingdom pairing, access and Signets](kingdom/knowledge.md)
 
 **installationName**  
-This Foundry's name, used by Kingdom pairing. *Region:* [Settings, jobs, logging and database](settings-runtime/knowledge.md)
+This Foundry's name, used by Kingdom pairing. *Region:* [Settings and database](settings-runtime/knowledge.md)
 
 **instruction-ladder**  
 Class: standing instructions, the registered hierarchy (computer, org, project, personal), discovery like Claude Code, @imports, tiers and dedupe. *Region:* [Standing instructions and composition](composition/knowledge.md)
@@ -1202,9 +1139,6 @@ Tells whether a turn status is accepted but not yet settled. *Region:* [Threads 
 **Jev**  
 TypeSafe's typed-decision model (`jev-latest` by default); for bounded judgments like domain, urgency or topic change. *Region:* [TypeSafe / Jev typed decisions](typesafe/knowledge.md)
 
-**jobs**  
-Class: BullMQ queue on Redis, makeJob / makeSingletonJob, worker, handlers. *Region:* [Settings, jobs, logging and database](settings-runtime/knowledge.md)
-
 **journal**  
 Class: the local journal, LocalSessionStore, phase rows, content-addressed records and image attachments. *Region:* [Journal and thread tree](journal-thread-tree/knowledge.md)
 
@@ -1212,18 +1146,15 @@ Class: the local journal, LocalSessionStore, phase rows, content-addressed recor
 Setting (default 30) after which raw advice/guard/route rows of reduced turns are pruned. *Region:* [Journal and thread tree](journal-thread-tree/knowledge.md)
 
 **journal.rawMiddlewareDays**  
-Retention days for raw middleware journal rows (default 30). *Region:* [Settings, jobs, logging and database](settings-runtime/knowledge.md)
+Retention days for raw middleware journal rows (default 30). *Region:* [Settings and database](settings-runtime/knowledge.md)
 
 **judge**  
-Judges one Warden remark with the provider, retrying a failed call up to twice. *Region:* [Warden pre-filter and evals](warden-prefilter-evals/knowledge.md)
+Judges one Warden remark with the provider, retrying a failed call up to twice. *Region:* [Warden evals, and no pre-filter](warden-prefilter-evals/knowledge.md)
 
 **JustBashShell**  
 ShellTool over the just-bash interpreter: an in-memory filesystem seeded with files, nothing touches disk. *Region:* [Agent tools and execution environments](tools/knowledge.md)
 
 ## K
-
-**Kev-4B**  
-The local pre-filter model (Qwen3.5-4B + LoRA, MLX) served on the System One API. *Region:* [Warden pre-filter and evals](warden-prefilter-evals/knowledge.md)
 
 **Kingdom**  
 The permission hub: owners, Integrations, Inquiries and Signets; enforces every grant server-side. *Region:* [Kingdom pairing, access and Signets](kingdom/knowledge.md)
@@ -1279,10 +1210,10 @@ Connects a thread's learning lifecycle to the local journal, withholding learnin
 ## L
 
 **largestRoster**  
-The largest chorus any project runs; sizes the primed decision pool with `largestStageCount`. *Region:* [A project's region Wardens](chorus/knowledge.md)
+The largest chorus any project runs; sizes the primed pool with `largestStageCount` (the pool is built only for `decisionRuntime: "claude"` or `"codex"`). *Region:* [A project's region Wardens](chorus/knowledge.md)
 
 **largestStageCount**  
-The most classify stages any chorus asks per Warden; each stage has its own primed session. *Region:* [Decision hosts and scheduler](decision-hosts/knowledge.md)
+The most classify stages any chorus asks per Warden; sizes the decision hosts per stage. *Region:* [Decision hosts and scheduler](decision-hosts/knowledge.md)
 
 **last-good settings**  
 The settings saved after the last successful boot (recordBooted), restored when a boot fails. *Region:* [Install, daemon, devices and git](install-daemon/knowledge.md)
@@ -1294,7 +1225,7 @@ Gate resolver handed to a provider before the viewer exists; fails closed. *Regi
 The macOS launchd job (DAEMON_LABEL) the daemon runs as; installed by `bun run daemon:install`. *Region:* [Install, daemon, devices and git](install-daemon/knowledge.md)
 
 **Layer staleness timer**  
-lastWarmed + staleness marks a layer stale, triggering re-warm and map rebuild. *Region:* [Harness data flow and loops](flow-architecture/knowledge.md)
+lastWarmed + staleness marks a layer stale, triggering a background re-warm. *Region:* [Harness data flow and loops](flow-architecture/knowledge.md)
 
 **layer state**  
 cold | warming | warm | stale | compressing, observed with onStateChange. *Region:* [Context layers and memory adapters](context-memory/knowledge.md)
@@ -1305,17 +1236,11 @@ The per-domain learning loop across a flow's recent turns. *Region:* [Viewer ins
 **LearningSettings**  
 Learning configuration checked by validateLearningSettings and resolved by resolveLearningSettings. *Region:* [The FLOW.md roles as agents](flow-roles/knowledge.md)
 
-**legacy starter**  
-The old seeded stack (system/conventions/memory layers, classifier, router, prompt-only executors); removed when unedited. *Region:* [Install, daemon, devices and git](install-daemon/knowledge.md)
-
 **Librarian**  
 The singular signal reconciler and sole writer to thread-state; not a Warden. *Region:* [Repo structure and conventions](conventions/knowledge.md)
 
 **Librarian**  
 The singular agent that is sole writer to the thread-state layer and keeps the injection ledger. *Region:* [The FLOW.md roles as agents](flow-roles/knowledge.md)
-
-**Lifecycle hooks**  
-16 hook points (pre/post dispatch, execution, layer warm/stale, session events) registered in a HookRegistry. *Region:* [Core agents, middleware, signals, traces](core-agents/knowledge.md)
 
 **LINEAR_ISSUE_TOOLS**  
 Glob patterns matching a Linear issue fetch under any MCP server name. *Region:* [Agent tools and execution environments](tools/knowledge.md)
@@ -1341,12 +1266,6 @@ The local journal: phase rows per turn, committing a completed response with its
 **LocalSessionStore.appendPhase**  
 Appends an immutable phase row; edits outside any turn go on the item's origin thread with turnId null. *Region:* [Journal and thread tree](journal-thread-tree/knowledge.md)
 
-**logger**  
-Class: pluggable logger (consola, pino) with async scopes. *Region:* [Settings, jobs, logging and database](settings-runtime/knowledge.md)
-
-**logScope**  
-Runs a function so every log inside carries a named, nestable scope tag. *Region:* [Settings, jobs, logging and database](settings-runtime/knowledge.md)
-
 ## M
 
 **main**  
@@ -1364,47 +1283,38 @@ The five labs main threads may run on (Anthropic, OpenAI, Google, Meta, xAI); ot
 **mainThreadRequirement**  
 Says what a provider still needs to run a main thread, applying the subscription vs API-token rule. *Region:* [Models, providers and usage](models-providers/knowledge.md)
 
-**makeSingletonJob**  
-A job handler superseded when a newer run is queued (SupersededError). *Region:* [Settings, jobs, logging and database](settings-runtime/knowledge.md)
-
 **MarkdownDocs**  
 Reads a directory of .md files as context, cached by mtime; system "markdown" for refs. *Region:* [Context layers and memory adapters](context-memory/knowledge.md)
 
 **markEvalRun**  
-Marks a process and state dir as an eval run so Archive and repeat reports skip it. *Region:* [Warden pre-filter and evals](warden-prefilter-evals/knowledge.md)
+Marks a process and state dir as an eval run so Archive and repeat reports skip it. *Region:* [Warden evals, and no pre-filter](warden-prefilter-evals/knowledge.md)
 
 **mcp-bridge**  
 The foundry MCP server a native session calls mid-session, its tools, loopback proxy, live authority and fixture bridge. *Region:* [Structural tool gate and MCP bridge](tool-gate-mcp/knowledge.md)
 
 **memory-adapters**  
-Class tag: memory and knowledge adapters (file, sqlite, http, markdown, postgres, redis, Muninn, Supermemory) as context sources and the MemoryTool. *Region:* [Context layers and memory adapters](context-memory/knowledge.md)
+Class tag: memory and knowledge adapters (file, sqlite, http, markdown, postgres, Muninn) as context sources and the MemoryTool. *Region:* [Context layers and memory adapters](context-memory/knowledge.md)
 
 **memoryRoot**  
 The directory that keys a repository's auto memory, mapping worktrees to their main checkout. *Region:* [Standing instructions and composition](composition/knowledge.md)
 
 **MemoryToolAdapter**  
-Wraps any memory adapter (fromFileMemory, fromSqliteMemory, fromSupermemory, from) as an on-demand memory tool. *Region:* [Agent tools and execution environments](tools/knowledge.md)
+Wraps any memory adapter (fromFileMemory, fromSqliteMemory, fromPostgresMemory, fromMuninnMemory, from) as an on-demand memory tool. *Region:* [Agent tools and execution environments](tools/knowledge.md)
 
 **MemoryView**  
 A FileMemory limited to one scope, private by default; what a thread is handed. *Region:* [Context layers and memory adapters](context-memory/knowledge.md)
-
-**mergeStoredMessages**  
-Merges this tab's rows with browser storage from other tabs, never dropping stored rows. *Region:* [Viewer dashboard shell](viewer/knowledge.md)
-
-**Message**  
-Prisma model: Postgres conversation rows grouped by turnId; not the local session store. *Region:* [Threads and the turn path](threads/knowledge.md)
 
 **Mid-session MCP pull**  
 The running session pulls missing context through the foundry MCP server's tools. *Region:* [Harness data flow and loops](flow-architecture/knowledge.md)
 
 **Middleware tiers**  
-Always, on domain shift, on cross-cutting signals, on low confidence. *Region:* [Harness data flow and loops](flow-architecture/knowledge.md)
+MiddlewareChain's two tiers (`MiddlewareTier`, core `middleware.ts`): `use` registers always-on middleware, `useWhen` conditional middleware that runs only when its predicate matches the DispatchContext. *Region:* [Harness data flow and loops](flow-architecture/knowledge.md)
 
 **MIDDLEWARE-ADAPTER**  
 The rejected plan to bind middleware to Claude/Codex hooks; replaced by headless Foundry over ACP. *Region:* [Headless Foundry over ACP](acp/knowledge.md)
 
 **middleware-chain**  
-Class tag: MiddlewareChain, hooks, retry, built-in hooks and reactive middleware rules around a dispatch. *Region:* [Core agents, middleware, signals, traces](core-agents/knowledge.md)
+Class tag: MiddlewareChain and DispatchContext around a dispatch. *Region:* [Core agents, middleware, signals, traces](core-agents/knowledge.md)
 
 **middleware-reduced**  
 Phase row appended at turn end per middleware call: state versions and result only, about 0.5-1 KB. *Region:* [Journal and thread tree](journal-thread-tree/knowledge.md)
@@ -1428,12 +1338,18 @@ Vendors with their subscription and API modes, main-thread labs first. *Region:*
 Import order agents → providers → adapters → eval → viewer; each imports only from those above (docs/SYSTEM.md). *Region:* [Repo structure and conventions](conventions/knowledge.md)
 
 **moment / answer / next**  
-Foundry's SDK MCP tools: hold for a moment, answer it, fetch the next spares to start. *Region:* [Wardens inside the thread's process](in-session-wardens/knowledge.md)
+Foundry's SDK MCP tools: hold for a moment, answer it, fetch the next spares to start. *Region:* [Wardens inside one Claude Code process (the project host)](in-session-wardens/knowledge.md)
 
 **MuninnMemory**  
 Self-hosted MuninnDB memory with decay, Hebbian strengthening and associations. *Region:* [Context layers and memory adapters](context-memory/knowledge.md)
 
 ## N
+
+**NAME_ASK_NOTE / NAME_CHECK_NOTE**  
+The one line a turn carries asking the agent to name the thread with rename_thread: on its first turn, and once its own name is 30 minutes old (needsNameCheck). *Region:* [Threads and the turn path](threads/knowledge.md)
+
+**nameThreadFromMessage / firstMessageName**  
+An unnamed thread's first name: its first message's words (secrets scrubbed, code fences dropped), with no model call. *Region:* [Threads and the turn path](threads/knowledge.md)
 
 **native-auth**  
 Class: which login a native session runs on: credential sources, native profiles, gateway modes, profile locks, sharing the user's own logins. *Region:* [Logins, profiles and secrets](logins-secrets/knowledge.md)
@@ -1480,6 +1396,12 @@ The expected answer when nothing in the region applies: exactly NO_COMMENT, jour
 **normalizeScope**  
 Copies an ownership scope dropping undefined fields, for stable equality. *Region:* [Threads and the turn path](threads/knowledge.md)
 
+**not-held**  
+A Warden call refused unsent: any first-stage call while its project's host does not serve, and on a serving host a user message's advice to a Warden it holds no warm spare for (the only held-only call); never sent to primed sessions; that advice catches up on the next message. On a serving host a guard or review with no spare starts a cold member instead. *Region:* [Wardens inside one Claude Code process (the project host)](in-session-wardens/knowledge.md)
+
+**not-sent:not-admitted**  
+A Warden the queue never admitted in time, advice and guard alike (#418, one outcome list per call). *Region:* [When Wardens are asked](warden-triggers/knowledge.md)
+
 **Noul**  
 Jev question type that returns a yes probability. *Region:* [TypeSafe / Jev typed decisions](typesafe/knowledge.md)
 
@@ -1525,13 +1447,13 @@ Viewer action opening any owned turn's detail through the journal route, loaded 
 Eval/scoring app in its own repo (../oracle), depends only on the published foundry-core. *Region:* [Repo structure and conventions](conventions/knowledge.md)
 
 **Oracle**  
-The replay test of Wardens; scores with the same foundry-core code as the charter eval. *Region:* [Warden pre-filter and evals](warden-prefilter-evals/knowledge.md)
+The replay test of Wardens; scores with the same foundry-core code as the charter eval. *Region:* [Warden evals, and no pre-filter](warden-prefilter-evals/knowledge.md)
 
 **origin**  
 How an item arose: detected, intervention, seed, mined or explicit. *Region:* [Feedback and corrections](feedback/knowledge.md)
 
 **orphan**  
-A nested agent whose parent ended; its own end would wake the main model, so it is never stopped; past 40 the thread stops serving in-session. *Region:* [Wardens inside the thread's process](in-session-wardens/knowledge.md)
+A nested agent whose parent ended; its own end would wake the session's main model, so it is never stopped; past `maxOrphans` (one dispatcher's members, `roster × (spares + 1)`) the host stops serving and is replaced. *Region:* [Wardens inside one Claude Code process (the project host)](in-session-wardens/knowledge.md)
 
 **outcome cassette**  
 `outcome.<name>.json`: the conclusion Foundry reached live; every replay must reach the same one. *Region:* [Testing and the VCR](testing-vcr/knowledge.md)
@@ -1554,7 +1476,7 @@ A composition version's ordered source versions with heading, separator and kept
 A new recording awaiting review beside the kept committed cassette. *Region:* [Testing and the VCR](testing-vcr/knowledge.md)
 
 **per-turn text**  
-Cartographer routing, Warden notes (placement after-message) and thread-state, sent every turn and never in the base. *Region:* [Session context delivery](session-delivery/knowledge.md)
+The decisions block (on a turn that has omitted domains or unresolved conflicts), Warden notes (placement after-message) and thread-state, sent with the turn and never in the base. *Region:* [Session context delivery](session-delivery/knowledge.md)
 
 **--permission-mode**  
 foundry-acp flag giving a default mode for every session a host opens; a host-chosen mode wins. *Region:* [Headless Foundry over ACP](acp/knowledge.md)
@@ -1566,16 +1488,10 @@ Core lookup of the level a policy gives a capability, without prompting (package
 A role file kept out of git (guardPersonalFile); committed rungs change through a pull request. *Region:* [Feedback and corrections](feedback/knowledge.md)
 
 **perTaskStopAffordance**  
-`initialize` flag that makes the user's Stop interrupt the main turn without killing background Wardens. *Region:* [Wardens inside the thread's process](in-session-wardens/knowledge.md)
+`initialize` flag that makes a Stop interrupt the main turn without killing background Wardens. *Region:* [Wardens inside one Claude Code process (the project host)](in-session-wardens/knowledge.md)
 
 **phase row**  
 One immutable, checksummed session_phase row of a turn (route, advice, guard-*, handoff, middleware-reduced, ...). *Region:* [Journal and thread tree](journal-thread-tree/knowledge.md)
-
-**planModeHook**  
-Built-in pre:dispatch hook applying plan-mode behaviour from a PlanModeConfig. *Region:* [Core agents, middleware, signals, traces](core-agents/knowledge.md)
-
-**Planner**  
-Agent that generates a structured plan as a DAG of steps executed in dependency order. *Region:* [Core agents, middleware, signals, traces](core-agents/knowledge.md)
 
 **PlaywrightBrowser**  
 BrowserTool over Playwright: navigate, snapshot, evaluate, click, fill, screenshot; contextId shares session state. *Region:* [Agent tools and execution environments](tools/knowledge.md)
@@ -1608,7 +1524,7 @@ Tool calls observed on the native event stream; the structural tool gate answers
 After the work, every Warden reviews it under the same charter and writes its thread knowledge. *Region:* [When Wardens are asked](warden-triggers/knowledge.md)
 
 **PostgresMemory**  
-Durable Postgres memory for entries, traces, signals and messages with pgvector search. *Region:* [Context layers and memory adapters](context-memory/knowledge.md)
+Durable Postgres memory for entries (the `Entry` model only) with pgvector search. *Region:* [Context layers and memory adapters](context-memory/knowledge.md)
 
 **Pre-message channel**  
 System prompt at session start plus changed layers and Warden notes with each user message. *Region:* [Harness data flow and loops](flow-architecture/knowledge.md)
@@ -1619,35 +1535,23 @@ Claude's PreToolUse callback over the control protocol, run before every tool ca
 **Preact + htm + Signals**  
 The viewer UI stack: ~5KB runtime, vanilla JS, no build step. *Region:* [Viewer dashboard shell](viewer/knowledge.md)
 
-**prefilter.enabled**  
-Turns the pre-filter on; false (default) asks every Warden and starts no model server. *Region:* [Warden pre-filter and evals](warden-prefilter-evals/knowledge.md)
-
-**prefilter.skipBelow**  
-Score threshold (0.26): a Warden scoring below it is skipped. *Region:* [Warden pre-filter and evals](warden-prefilter-evals/knowledge.md)
-
-**prefiltered**  
-Journal field listing skipped Wardens with their scores on advice, guard and review records. *Region:* [Warden pre-filter and evals](warden-prefilter-evals/knowledge.md)
-
-**prestartWardens**  
-Pre-starts Wardens on thread start, turn landed and thread-knowledge change. *Region:* [Wardens inside the thread's process](in-session-wardens/knowledge.md)
-
 **primed keys / largestRoster**  
-Primed Claude roles kept warm: 2 x Wardens + 8 (at least 16), sized from the largest chorus at startup, not a setting. *Region:* [Decision hosts and scheduler](decision-hosts/knowledge.md)
+With `decisionRuntime: "claude"` only: primed Claude roles kept warm, 2 x Wardens + 8 (at least 16), sized from the largest chorus at startup, not a setting. *Region:* [Decision hosts and scheduler](decision-hosts/knowledge.md)
 
 **primed session**  
-A warm per-role session primed once with role instructions and stable context, forked for each decision. *Region:* [Decision hosts and scheduler](decision-hosts/knowledge.md)
+A warm per-role session holding the role instructions and stable context in its system prompt, a fresh session per decision; only in the primed pool (`decisionRuntime` claude or codex). *Region:* [Decision hosts and scheduler](decision-hosts/knowledge.md)
 
 **priming**  
-A Warden's decision session primed with its composed instructions plus domain knowledge; each call forks it, a changed composition re-primes. *Region:* [A project's region Wardens](chorus/knowledge.md)
+A Warden held warm with its composed instructions plus domain knowledge: a spare in the project's Warden host, or on the primed pool (`decisionRuntime: "claude"` / `"codex"`) a fresh session per call with it in the system prompt; a changed composition re-warms. *Region:* [A project's region Wardens](chorus/knowledge.md)
 
 **Prisma schema**  
-`prisma/schema.prisma`: Entry, Trace, Span, Signal, Intervention, ThreadState, Message; Postgres with pgvector. *Region:* [Settings, jobs, logging and database](settings-runtime/knowledge.md)
+`prisma/schema.prisma`: Entry only (the `postgres` memory tool's entries), on Postgres with pgvector. *Region:* [Settings and database](settings-runtime/knowledge.md)
 
 **privateHome**  
 Codex native-profile option: a Foundry-owned CODEX_HOME with Foundry's config.toml and a linked auth.json. *Region:* [Logins, profiles and secrets](logins-secrets/knowledge.md)
 
 **probe**  
-A moment from a real session: the user's ask, the agent's turn, the correction, and a train/test period; never committed. *Region:* [Warden pre-filter and evals](warden-prefilter-evals/knowledge.md)
+A moment from a real session: the user's ask, the agent's turn, the correction, and a train/test period; never committed. *Region:* [Warden evals, and no pre-filter](warden-prefilter-evals/knowledge.md)
 
 **ProcessCassettes**  
 Stands in for spawning: Claude stream-json, Codex app-server JSON-RPC and the auth status probe, ordered by stdin events. *Region:* [Testing and the VCR](testing-vcr/knowledge.md)
@@ -1659,7 +1563,7 @@ Builds the child env that selects a login profile, empty for the default locatio
 Basic layers every message; deeper layers only on domain shift, low confidence or cross-cutting signals. *Region:* [Repo structure and conventions](conventions/knowledge.md)
 
 **Progressive depth**  
-Escalate from cheap always-on layers to deeper middleware only when something triggers. *Region:* [Harness data flow and loops](flow-architecture/knowledge.md)
+Standing layers reach every message; an on-demand layer joins a turn only when that turn's Warden plan asks; delta hydration sends only changed layers. *Region:* [Harness data flow and loops](flow-architecture/knowledge.md)
 
 **Project / ProjectRegistry**  
 A repo directory owning its threads, runtime adapter and tags / the lookup of every project by path or tag. *Region:* [Threads and the turn path](threads/knowledge.md)
@@ -1674,10 +1578,13 @@ Routes each thread to its project's capacity: local login or Kingdom pool. *Regi
 The single translation boundary from raw native output to NativeEvidence. *Region:* [Session context delivery](session-delivery/knowledge.md)
 
 **projects[id].agents**  
-Project agents: standalone or `extends: <global id>` with optional `override`; never Wardens. *Region:* [Settings, jobs, logging and database](settings-runtime/knowledge.md)
+Project agents: standalone or `extends: <global id>` with optional `override`; never Wardens. *Region:* [Settings and database](settings-runtime/knowledge.md)
 
 **projects[id].chorus**  
 The machine's chorus setting `{ enabled?, regions? | layers?, consumed?, reception?, wardens? }`; wins key by key over the repository's. *Region:* [A project's region Wardens](chorus/knowledge.md)
+
+**ProjectWardenHosts**  
+Holds one Warden host per project (and a lane per later-stage model), opens it on the project's activity, routes the project's Warden calls to it while it serves, and replaces it blue/green (`providers/project-warden-hosts.ts`). *Region:* [Wardens inside one Claude Code process (the project host)](in-session-wardens/knowledge.md)
 
 **Prompt-layer pairing**  
 Each layer's prompt goes in as its own block so the model knows why that context exists. *Region:* [Context layers and memory adapters](context-memory/knowledge.md)
@@ -1709,7 +1616,7 @@ Inject predicted context; let the session pull the rest via MCP. *Region:* [Repo
 ## Q
 
 **queued**  
-Turn status for messages typed during setup; sent in order when ready, failed by restart recovery. *Region:* [Wardens inside the thread's process](in-session-wardens/knowledge.md)
+Turn status: accepted and not yet handed to the executor's runtime (a turn ahead of it on a busy thread, a held prompt); a queued turn found at restart was never sent and is failed (`TurnStatus`, `persistence/local-session-store.ts`). *Region:* [Threads and the turn path](threads/knowledge.md)
 
 **queueNotes**  
 Queues Warden notes to ride the parent's next user message. *Region:* [When Wardens are asked](warden-triggers/knowledge.md)
@@ -1725,9 +1632,6 @@ Account-level limit reading from a session (unattributedReason account-status), 
 **Re-alignment tax**  
 The recurring cost of steering agents back to the project's standards, which Foundry exists to remove. *Region:* [Harness data flow and loops](flow-architecture/knowledge.md)
 
-**ReactiveMiddleware**  
-Fires reaction rules after each dispatch to emit signals, re-warm layers or write memory. *Region:* [Core agents, middleware, signals, traces](core-agents/knowledge.md)
-
 **readInstructionFile**  
 Loads an instruction file and its imports the way Claude Code loads CLAUDE.md. *Region:* [Context layers and memory adapters](context-memory/knowledge.md)
 
@@ -1739,9 +1643,6 @@ Reads a stage's answer strictly under its protocol, counting malformed ones as e
 
 **reason**  
 `none` (live default), `inline`, or `followup` ('why?' asked after a yes or unsure). *Region:* [Warden classification primitive](classify/knowledge.md)
-
-**recall / skip rate**  
-Share of relevant (moment, Warden) pairs still asked / share of all pairs not asked. *Region:* [Warden pre-filter and evals](warden-prefilter-evals/knowledge.md)
 
 **RECOGNISE_CHARTER**  
 The charter for recognise stages, which only name the regions a moment is in. *Region:* [Warden classification primitive](classify/knowledge.md)
@@ -1762,10 +1663,7 @@ Store a reading of a login's usage windows; compute growth between two readings,
 A capture matched to an existing item by matchExisting; carries that item's id. *Region:* [Feedback and corrections](feedback/knowledge.md)
 
 **recycle**  
-Past 100k tokens of dispatcher context a new generation starts and the old one ends into the root, no main turn. *Region:* [Wardens inside the thread's process](in-session-wardens/knowledge.md)
-
-**RedisMemory**  
-Redis-backed shared, ephemeral memory with TTLs and a signal publisher; ioredis peer dep. *Region:* [Context layers and memory adapters](context-memory/knowledge.md)
+Past `projectHost.recycleTokens` (140k by default) of dispatcher context a new generation starts and the old one ends into the root, no main turn. *Region:* [Wardens inside one Claude Code process (the project host)](in-session-wardens/knowledge.md)
 
 **Reduced middleware entry (mw:<callId>)**  
 The Archive entry shape of one middleware call: role, trigger, wraps, decision, result, state, timing, usage. *Region:* [Journal and thread tree](journal-thread-tree/knowledge.md)
@@ -1779,17 +1677,8 @@ Lists the content hashes a stored JSON record references directly. *Region:* [Jo
 **references**  
 Links to integration items (GitHub repo/branch/PR, Linear issue) found in a session; a mention, not proof. *Region:* [Local Archive and session capture](archive/knowledge.md)
 
-**RefSource**  
-A ContextSource whose content is a set of refs hydrated through the registry on warm. *Region:* [Context layers and memory adapters](context-memory/knowledge.md)
-
 **refused setting**  
-A setting subscription mode cannot enforce (non-subscription worker, decision agent with tools or temperature) is refused, not routed. *Region:* [Subscription-only policy](subscription-policy/knowledge.md)
-
-**refuseHandNamedWardens**  
-Settings validation refusing any `domain-advising`, `domain-librarian` or `decider` agent in `agents` or `projects[id].agents`, by name. *Region:* [A project's region Wardens](chorus/knowledge.md)
-
-**refuseHandNamedWardens**  
-Refuses domain-advising, domain-librarian or decider agents in settings by name, with the fix. *Region:* [Settings, jobs, logging and database](settings-runtime/knowledge.md)
+A setting subscription mode cannot enforce (a non-subscription worker, an executor on another provider, a main-thread model the worker does not run, learning.review provider/model overrides) is refused. *Region:* [Subscription-only policy](subscription-policy/knowledge.md)
 
 **region Warden**  
 A Warden generated from one `<project>/.foundry/regions/<id>/` directory; the only kind of Warden since 2026-10-17. *Region:* [A project's region Wardens](chorus/knowledge.md)
@@ -1807,10 +1696,7 @@ The generic region Warden instructions; `regionInstructions` adds the region's t
 A region's warm-cache key: the content hash of its composed knowledge, independent of project, layer and directory. *Region:* [A project's region Wardens](chorus/knowledge.md)
 
 **regionWardens**  
-Generates one `domain-librarian` Warden per region with `invocation: always` and the write/exec guard triggers. *Region:* [A project's region Wardens](chorus/knowledge.md)
-
-**registerConfigValidator**  
-Adds a check that runs on every validateConfig. *Region:* [Settings, jobs, logging and database](settings-runtime/knowledge.md)
+Generates one `warden` agent per region with `invocation: always` and the write/exec guard triggers. *Region:* [A project's region Wardens](chorus/knowledge.md)
 
 **registered hierarchy (ladder)**  
 The ladder or tree of nodes, each a level, shared or personal, with its files and corpus tier. *Region:* [Standing instructions and composition](composition/knowledge.md)
@@ -1820,6 +1706,9 @@ Fills cassette placeholders back in with this replay's directories. *Region:* [T
 
 **release**  
 An exported commit with its own install under `.foundry/releases/<sha>`; the daemon runs this, not the working checkout. *Region:* [Install, daemon, devices and git](install-daemon/knowledge.md)
+
+**rename_thread**  
+The agent's tool for the thread's name (`by: 'agent'`); it restarts the 30-minute check, and a person's name still wins. *Region:* [Threads and the turn path](threads/knowledge.md)
 
 **renameThread**  
 Viewer action setting a person's name on a thread, or handing naming back to the agent with an empty name. *Region:* [Threads and the turn path](threads/knowledge.md)
@@ -1851,26 +1740,17 @@ Code printed by pairing that an owner claims in Kingdom (a `registerIntegration`
 **review findings**  
 Reading review comments as corrections (reviewFindingMessages, parseReviewFindings, authorshipOf). *Region:* [Feedback and corrections](feedback/knowledge.md)
 
+**Right panel**  
+The panel beside the conversation: its tabs and the inspector that takes it over (RightPanel, ui/right-panel.js); span, layer and agent detail views render from detail-drawer.js. *Region:* [Viewer dashboard shell](viewer/knowledge.md)
+
 **role**  
-A composing party: main, each Warden by its region id, the Cartographer; the Librarian composes nothing. *Region:* [Standing instructions and composition](composition/knowledge.md)
+A composing party, its id namespaced: a main thread's thread role (thread:coder, thread:assistant, scope:forge, scope:feedback, your own, over the base thread:main), each Warden (region:<region id>); the Librarian composes nothing. *Region:* [Standing instructions and composition](composition/knowledge.md)
 
 **role file**  
-.foundry/roles/<role>/<slot>.md at a rung (.local.md for personal), overlaying one role's slot. *Region:* [Standing instructions and composition](composition/knowledge.md)
+.foundry/roles/<role>/<slot>.md at a rung (.local.md for personal), overlaying one role's slot; <role> nests by namespace (roles/region/<id>/, roles/thread/<name>/). *Region:* [Standing instructions and composition](composition/knowledge.md)
 
 **role:<role>:instructions / role:<role>:domainKnowledge**  
 A middleware role's private layers, off the thread stack so the executor never receives them. *Region:* [Standing instructions and composition](composition/knowledge.md)
-
-**routed agent**  
-A non-executor agent saved with another provider or model, run on the decision profile at startup and listed in the startup log. *Region:* [Subscription-only policy](subscription-policy/knowledge.md)
-
-**routedAgents**  
-Builds the classifier and router agent settings on the decision profile ahead of the Artificer. *Region:* [The FLOW.md roles as agents](flow-roles/knowledge.md)
-
-**routeFeedback**  
-Assigns a sharpened rule to the Warden roles owning its domain, falling back to main. *Region:* [Feedback and corrections](feedback/knowledge.md)
-
-**Router**  
-Decider returning a Route (destination, priority, contextSlice) from a pre-warmed topology. *Region:* [Core agents, middleware, signals, traces](core-agents/knowledge.md)
 
 **rtk**  
 The default RTK-style filter stack, all built-in filters composed (~60-80% savings). *Region:* [Agent tools and execution environments](tools/knowledge.md)
@@ -1898,6 +1778,9 @@ Runs a Warden's classification stages and returns the combined result. *Region:*
 **sameAsLive**  
 Test helper proving a replay reaches the same outcome as the live run. *Region:* [Testing and the VCR](testing-vcr/knowledge.md)
 
+**scope threads (Forge Master, Feedback)**  
+Threads in the `scope:forge` or `scope:feedback` scope (SCOPE_ROLES), chosen by the New thread picker's Where; they replaced the old self-chat (#351). *Region:* [Viewer dashboard shell](viewer/knowledge.md)
+
 **scopedProvider**  
 Wraps a provider so every call carries a fixed threadId and cwd. *Region:* [Models, providers and usage](models-providers/knowledge.md)
 
@@ -1924,9 +1807,6 @@ Chooses which visible memory records to inject within a budget, reporting select
 
 **selectScope**  
 Switches the workspace to Global (null), a project, Forge Master ('forge') or the Feedback inbox. *Region:* [Viewer dashboard shell](viewer/knowledge.md)
-
-**self-chat**  
-The single long-lived foundry-self helper chat (FoundrySelfChatStore, SelfChatPane). *Region:* [Viewer dashboard shell](viewer/knowledge.md)
 
 **sendToStreamLocal**  
 Fan a frame out to every connection holding a stream, each with its own seq. *Region:* [Viewer inspector, streams and Gloss](viewer-inspector/knowledge.md)
@@ -1970,29 +1850,17 @@ LLMProvider served by persistent native sessions, routing each request to its th
 **SessionBackedProvider.observeSubagents**  
 Hands subagent events carrying parentToolUseId to subagent observers instead of dropping them. *Region:* [Journal and thread tree](journal-thread-tree/knowledge.md)
 
-**SessionBackedProvider.open**  
-Opens the thread's session on its first accepted turn, provisionally; relaunches with setup if the turn changes model or launch settings. *Region:* [Wardens inside the thread's process](in-session-wardens/knowledge.md)
-
 **SessionDelivery.held**  
 The ledger of held part hashes the executor passes to the provider each turn. *Region:* [Session context delivery](session-delivery/knowledge.md)
 
 **sessionId**  
 The ACP session id, equal to the Foundry thread id. *Region:* [Headless Foundry over ACP](acp/knowledge.md)
 
-**SessionManager**  
-Holds the tree of threads; resolve / dispatch spawn a missing thread lazily from a registered blueprint. *Region:* [Threads and the turn path](threads/knowledge.md)
-
-**SessionManager.addBlueprint**  
-Registers a match (string or RegExp) and create function that spawns threads for unknown destinations. *Region:* [Threads and the turn path](threads/knowledge.md)
-
-**SessionManager.inheritLayers**  
-Builds a child thread's stack from the parent's layers: share (same instance) or copy (snapshot). *Region:* [Threads and the turn path](threads/knowledge.md)
-
 **sessionTurn**  
 Builds one later turn: unheld parts as deltas plus the per-turn text. *Region:* [Session context delivery](session-delivery/knowledge.md)
 
 **settings**  
-Class: the settings model: .foundry/settings.json, ConfigStore with patch semantics and revisions, resolution, settings routes. *Region:* [Settings, jobs, logging and database](settings-runtime/knowledge.md)
+Class: the settings model: .foundry/settings.json, ConfigStore with patch semantics and revisions, resolution, settings routes. *Region:* [Settings and database](settings-runtime/knowledge.md)
 
 **Settings panel**  
 Agents, Layers, Providers, Sources, Defaults tabs; FOUNDRY_SETTINGS and PROJECT_SETTINGS list the sections. *Region:* [Viewer dashboard shell](viewer/knowledge.md)
@@ -2007,10 +1875,10 @@ Where settings that failed to boot are set aside. *Region:* [Install, daemon, de
 Signet action posting a task-completion request; never renews or auto-retries; receipts gate output. *Region:* [Kingdom pairing, access and Signets](kingdom/knowledge.md)
 
 **setup**  
-Class: setup, doctor, readiness, legacy starter removal, docs scan, startup self-test, the foundry CLI. *Region:* [Install, daemon, devices and git](install-daemon/knowledge.md)
+Class: setup, doctor, readiness, docs scan, startup self-test, the foundry CLI. *Region:* [Install, daemon, devices and git](install-daemon/knowledge.md)
 
-**setup turn**  
-A hidden Foundry-authored turn (`actor: 'foundry'`, `kind: 'setup'`) that starts the Warden tree. *Region:* [Wardens inside the thread's process](in-session-wardens/knowledge.md)
+**setup message**  
+What the host's process is sent to start its builders, dispatchers and Warden spares; its system prompt is agent-session's chorus host charter. *Region:* [Wardens inside one Claude Code process (the project host)](in-session-wardens/knowledge.md)
 
 **shareable**  
 Strips paths, URLs, emails, credentials and project names from repeat-report text that leaves the machine. *Region:* [Feedback and corrections](feedback/knowledge.md)
@@ -2052,7 +1920,7 @@ Renews its access token and signs each call: describe, execute, completeTask, ve
 Class: the Signet protocol and SignetClient: DPoP presentation, renewal, cancellation, task completion. *Region:* [Kingdom pairing, access and Signets](kingdom/knowledge.md)
 
 **silence precision**  
-NO_COMMENT when nothing of the Warden's applied. *Region:* [Warden pre-filter and evals](warden-prefilter-evals/knowledge.md)
+NO_COMMENT when nothing of the Warden's applied. *Region:* [Warden evals, and no pre-filter](warden-prefilter-evals/knowledge.md)
 
 **slot**  
 instructions (system prompt) or domainKnowledge (priming context); thread knowledge is not a slot. *Region:* [Standing instructions and composition](composition/knowledge.md)
@@ -2076,10 +1944,10 @@ One change to one source subject: action, before/after hash, node and tier, acto
 One stage of a trace: kind, status, timing, input/output, error, annotations, context hash, layer ids, children. *Region:* [Core agents, middleware, signals, traces](core-agents/knowledge.md)
 
 **spare**  
-A started Warden held on `moment`, ready to answer the next trigger. *Region:* [Wardens inside the thread's process](in-session-wardens/knowledge.md)
+A started Warden held on `moment`, ready to answer the next trigger. *Region:* [Wardens inside one Claude Code process (the project host)](in-session-wardens/knowledge.md)
 
 **speak precision**  
-A remark matched the user's later real correction, judged by Opus. *Region:* [Warden pre-filter and evals](warden-prefilter-evals/knowledge.md)
+A remark matched the user's later real correction, judged by Opus. *Region:* [Warden evals, and no pre-filter](warden-prefilter-evals/knowledge.md)
 
 **spec B**  
 THREAD-TREE.md part B: audit for composed instructions, the template's email-versioning pattern carried over. *Region:* [Composition audit log](audit-log/knowledge.md)
@@ -2115,7 +1983,7 @@ Core helpers that build the labelled standing parts from the stack and its layer
 Turn report status of a new native process; the ledger is reset to what that session then holds. *Region:* [Session context delivery](session-delivery/knowledge.md)
 
 **startup self-test**  
-A provider check at startup that runs only when explicitly enabled (startupSelfTestEnabled). *Region:* [Install, daemon, devices and git](install-daemon/knowledge.md)
+A provider check at startup that runs only when explicitly enabled (startupSelfTestEnabled), and never while project Warden hosts run: each host's start proves the decision login. *Region:* [Install, daemon, devices and git](install-daemon/knowledge.md)
 
 **startViewer**  
 Starts the viewer server with its config store (and tunnel). *Region:* [Viewer dashboard shell](viewer/knowledge.md)
@@ -2160,7 +2028,7 @@ Runs the main-thread worker on this machine's subscription login, Codex on a Fou
 maxCalls (10000), maxConcurrent (16), maxQueued (512), maxQueuedPerThread (256). *Region:* [Decision hosts and scheduler](decision-hosts/knowledge.md)
 
 **subscriptionOnly.decisionRuntime**  
-`claude` (default), `codex` or `claude-in-session`: where decisions run. *Region:* [Decision hosts and scheduler](decision-hosts/knowledge.md)
+absent or `claude-project` (the default: Wardens in one host per project), `claude` (every Warden primed) or `codex`: where decisions run. *Region:* [Decision hosts and scheduler](decision-hosts/knowledge.md)
 
 **subscriptionOnly.decisionSourceId**  
 Optional explicit native-profile source for decisions; must match decisionRuntime when both are set. *Region:* [Subscription-only policy](subscription-policy/knowledge.md)
@@ -2169,7 +2037,7 @@ Optional explicit native-profile source for decisions; must match decisionRuntim
 Decision queue size (default 16), sized for the chorus instead of asking fewer Wardens. *Region:* [When Wardens are asked](warden-triggers/knowledge.md)
 
 **subscriptionOnly.model / expectedObservedModel**  
-The decision model (overrides classifierModel) / the id the Claude CLI must report serving. *Region:* [Decision hosts and scheduler](decision-hosts/knowledge.md)
+The decision model (overrides defaults.decisionModel) / the id the Claude CLI must report serving. *Region:* [Decision hosts and scheduler](decision-hosts/knowledge.md)
 
 **SubscriptionPool**  
 agent-session pool of login instances with deterministic routing over observed limits, leases and health. *Region:* [Native sessions and agent-session](native-sessions/knowledge.md)
@@ -2177,14 +2045,8 @@ agent-session pool of login instances with deterministic routing over observed l
 **subscriptionSettingsSchema**  
 Validates the optional subscription-mode overrides, each with a default. *Region:* [Subscription-only policy](subscription-policy/knowledge.md)
 
-**SupermemoryAdapter**  
-Hosted supermemory.ai memory with extracted facts, profiles and hybrid search. *Region:* [Context layers and memory adapters](context-memory/knowledge.md)
-
 **System One API**  
 `POST https://api.typesafe.ai/v1/systemone` with bearer auth; the endpoint TypeSafeDecisionClient calls. *Region:* [TypeSafe / Jev typed decisions](typesafe/knowledge.md)
-
-**System One API**  
-TypeSafe's decision endpoint (POST /v1/systemone), served locally on a loopback baseUrl for the pre-filter. *Region:* [Warden pre-filter and evals](warden-prefilter-evals/knowledge.md)
 
 ## T
 
@@ -2254,20 +2116,11 @@ A Warden's thread-private understanding, the `thread-knowledge:<domain>` layer, 
 **ThreadLaunchSettings**  
 Per-thread native launch settings: effort, permission mode, client MCP servers. *Region:* [Native sessions and agent-session](native-sessions/knowledge.md)
 
-**ThreadMeta.setup**  
-`{ status: starting | ready | degraded, wardens: { expected, held, failed }, runtime }`, streamed on `threads`. *Region:* [Wardens inside the thread's process](in-session-wardens/knowledge.md)
-
-**ThreadNamer**  
-Keeps an agent-maintained short name on each thread after completed turns, off the turn path. *Region:* [Threads and the turn path](threads/knowledge.md)
-
 **ThreadRuntimeManager**  
 Attaches and disposes a live thread's runtime: Librarian, Wardens, flow, sinks, bindings. *Region:* [Threads and the turn path](threads/knowledge.md)
 
 **threads**  
 Class: the thread runtime and the one turn path (TurnService, queued turns, projects, ThreadFactory, ThreadRuntimeManager, FoundryClient). *Region:* [Threads and the turn path](threads/knowledge.md)
-
-**ThreadState**  
-Prisma model: thread metadata only (description, tags, status, parent, archive time). *Region:* [Threads and the turn path](threads/knowledge.md)
 
 **threadTitle**  
 Picks the title a thread shows: a person's name over the agent's. *Region:* [Threads and the turn path](threads/knowledge.md)
@@ -2315,10 +2168,10 @@ Class tag: agent tools and execution environments (ToolRegistry, CapabilityGate,
 Runs a completion repeatedly, dispatching tool calls through a registry until text comes back. *Region:* [Core agents, middleware, signals, traces](core-agents/knowledge.md)
 
 **toPrismaJson**  
-Converts a value for a Prisma JSON column (null becomes JsonNull); toOptionalPrismaJson leaves undefined unset. *Region:* [Settings, jobs, logging and database](settings-runtime/knowledge.md)
+Converts a value for a Prisma JSON column (null becomes JsonNull); toOptionalPrismaJson leaves undefined unset. *Region:* [Settings and database](settings-runtime/knowledge.md)
 
 **Trace**  
-A message's full span tree from ingress to egress (core class), and its persisted Prisma model. *Region:* [Core agents, middleware, signals, traces](core-agents/knowledge.md)
+A message's full span tree from ingress to egress (core class); the journal keeps its serialized record with the turn. *Region:* [Core agents, middleware, signals, traces](core-agents/knowledge.md)
 
 **traces**  
 Class tag: Trace spans, persisted trace records and checkpoint import. *Region:* [Core agents, middleware, signals, traces](core-agents/knowledge.md)
@@ -2368,9 +2221,6 @@ Env var holding TypeSafe's service key; settings and code name only the variable
 **TypeSafeDecisionClient**  
 Client whose `evaluate` takes typed questions and returns typed answers; not an LLMProvider. *Region:* [TypeSafe / Jev typed decisions](typesafe/knowledge.md)
 
-**TypeSafeDecisionClient**  
-The client the pre-filter calls the local server through (lives in the `typesafe` region). *Region:* [Warden pre-filter and evals](warden-prefilter-evals/knowledge.md)
-
 **TypeSafeError**  
 Error the client throws; messages omit provider response bodies and transport details. *Region:* [TypeSafe / Jev typed decisions](typesafe/knowledge.md)
 
@@ -2392,10 +2242,10 @@ The gate used before binding; denies everything. *Region:* [Structural tool gate
 Placeholder sent when a turn's journal rows cannot be read after retry. *Region:* [Viewer inspector, streams and Gloss](viewer-inspector/knowledge.md)
 
 **unsolicited main turn**  
-A main-model turn caused by a background task ending; the tree is shaped so there are none. *Region:* [Wardens inside the thread's process](in-session-wardens/knowledge.md)
+A main-model turn caused by a background task ending; the tree is shaped so there are none. *Region:* [Wardens inside one Claude Code process (the project host)](in-session-wardens/knowledge.md)
 
 **unwrapped**  
-A thread with no layers, classifier, router, Cartographer or thread-state: the fresh-install default (wrapsThread). *Region:* [Settings, jobs, logging and database](settings-runtime/knowledge.md)
+A thread with no layers, Warden advice or thread-state, only Foundry's standing session briefing: the fresh-install default (wrapsThread). *Region:* [Settings and database](settings-runtime/knowledge.md)
 
 **unwrapped thread**  
 A fresh install's thread: the message reaches the native session as typed, no layers or decision roles. *Region:* [Install, daemon, devices and git](install-daemon/knowledge.md)
@@ -2417,8 +2267,14 @@ Count of advice and guard-request rows after appliedAt containing (fb_<id>), via
 
 ## V
 
+**validateAgentKinds**  
+Refuses an agent in settings whose kind is not configurable: settings declare executors only, so a Warden is refused. *Region:* [Settings and database](settings-runtime/knowledge.md)
+
+**validateAgentKinds**  
+Settings validation: settings declare executors only, so a Warden in `agents` or `projects[id].agents` is refused as a kind that is not configurable. *Region:* [A project's region Wardens](chorus/knowledge.md)
+
 **validateConfig**  
-Validates a full config, rejecting retired keys and running registered validators. *Region:* [Settings, jobs, logging and database](settings-runtime/knowledge.md)
+Validates a full config: vendors, conversations, scheduler, agent kinds (executors only), main-thread labs, the subscription policy, projects and Kingdom settings. *Region:* [Settings and database](settings-runtime/knowledge.md)
 
 **vcr**  
 Class: the VCR: cassettes for process stdio, HTTP and WebSocket, freshness rules, drift, scrubbing, re-recording. *Region:* [Testing and the VCR](testing-vcr/knowledge.md)
@@ -2430,12 +2286,12 @@ Class: the VCR: cassettes for process stdio, HTTP and WebSocket, freshness rules
 The `vendors` setting: per vendor and mode, enabled flag and fields such as baseUrl and contextBudget. *Region:* [Models, providers and usage](models-providers/knowledge.md)
 
 **vendors**  
-Settings key: each vendor on/off with a subscription mode and an API mode. *Region:* [Settings, jobs, logging and database](settings-runtime/knowledge.md)
+Settings key: each vendor on/off with a subscription mode and an API mode. *Region:* [Settings and database](settings-runtime/knowledge.md)
 
 **verifyAuthority**  
 Signet action returning current permission facts; not approval, quota reservation or admission. *Region:* [Kingdom pairing, access and Signets](kingdom/knowledge.md)
 
-**verifyExpertDelivery**  
+**verifyWardenDelivery**  
 The single contract that checks a context delivery against its evidence for inspection, runner and audit. *Region:* [Session context delivery](session-delivery/knowledge.md)
 
 **versions**  
@@ -2464,14 +2320,20 @@ Model- or service-driven changes (thinking, rate limits, chatter) printed as not
 
 ## W
 
+**Warden**  
+The one shared Warden implementation (`agents/warden.ts`, renamed from DomainLibrarian in #432): advise, guard and post-work review; instantiated per region, never subclassed. With Claude decisions its calls go to the project's Warden host. *Region:* [A project's region Wardens](chorus/knowledge.md)
+
+**Warden**  
+The shared class every region Warden is an instance of (`agents/warden.ts`, chorus region), distinct from the Librarian. *Region:* [The FLOW.md roles as agents](flow-roles/knowledge.md)
+
 **Warden notes**  
 'The <domain> Warden chimed in:' points appended after the user's message; NO_COMMENT adds nothing. *Region:* [Harness data flow and loops](flow-architecture/knowledge.md)
 
 **warden-evals**  
-Class: Warden eval machinery: probes, labels, charter runs, classify run configs, judging, cost weights, reports, the experiment gate. *Region:* [Warden pre-filter and evals](warden-prefilter-evals/knowledge.md)
+Class: Warden eval machinery: probes, labels, charter runs, classify run configs, judging, cost weights, reports, the experiment gate. *Region:* [Warden evals, and no pre-filter](warden-prefilter-evals/knowledge.md)
 
 **warden-prefilter**  
-Class: the local-model pre-filter that may skip a Warden on a confident no; off by default, fails open. *Region:* [Warden pre-filter and evals](warden-prefilter-evals/knowledge.md)
+Class: the rule that there is no Warden pre-filter; every Warden is asked at every trigger (removed with every local model, #438). *Region:* [Warden evals, and no pre-filter](warden-prefilter-evals/knowledge.md)
 
 **warden-triggers**  
 This region's class: when a Warden is asked and what it does there. *Region:* [When Wardens are asked](warden-triggers/knowledge.md)
@@ -2485,9 +2347,6 @@ charter-<sha12> of the charter text; a new hash writes a source version with act
 **WARDEN_CHARTER_VERSION**  
 Short hash (charter-<sha12>) of the charter text journalled with each Warden decision and eval run. *Region:* [Warden classification primitive](classify/knowledge.md)
 
-**WardenPrefilter**  
-Asks the local pre-filter model which Warden domains can be skipped for a trigger. *Region:* [Warden pre-filter and evals](warden-prefilter-evals/knowledge.md)
-
 **Wardens**  
 Domain advise + guard roles generated from a project's regions; never hand-named or subclassed. *Region:* [Repo structure and conventions](conventions/knowledge.md)
 
@@ -2498,10 +2357,7 @@ Region Wardens, one per concept region, generated from .foundry/regions (formerl
 A compact structured index (e.g. the ~500-token doc map) a middleware LLM compares the message against. *Region:* [Harness data flow and loops](flow-architecture/knowledge.md)
 
 **warm set**  
-Design note, not built: hold only recently routed regions' spares (`warmWardens`) instead of the whole chorus. *Region:* [Wardens inside the thread's process](in-session-wardens/knowledge.md)
-
-**warmLayers**  
-Singleton job that warms all context layers in a thread's stack. *Region:* [Settings, jobs, logging and database](settings-runtime/knowledge.md)
+Design note, not built: hold only recently routed regions' spares (`warmWardens`) instead of the whole chorus. *Region:* [Wardens inside one Claude Code process (the project host)](in-session-wardens/knowledge.md)
 
 **webSocketCassettes**  
 A cassette-backed socket factory; replay refuses a sent frame that differs. *Region:* [Testing and the VCR](testing-vcr/knowledge.md)
@@ -2513,7 +2369,7 @@ Resolves a command against an explicit PATH instead of Bun.which on the startup 
 Each capture is the full thread, so re-capturing is safe. *Region:* [Local Archive and session capture](archive/knowledge.md)
 
 **wilsonInterval**  
-95% Wilson interval for n successes in d trials. *Region:* [Warden pre-filter and evals](warden-prefilter-evals/knowledge.md)
+95% Wilson interval for n successes in d trials. *Region:* [Warden evals, and no pre-filter](warden-prefilter-evals/knowledge.md)
 
 **withClientMcpServers**  
 Adds a host's MCP servers to Claude argv via a private 0600 --mcp-config file; call release on exit. *Region:* [Native sessions and agent-session](native-sessions/knowledge.md)
@@ -2536,9 +2392,6 @@ Returns the work item a tool call took in, or undefined; matches `chorus.consume
 **workLog**  
 A finished turn's work rows and tool counts, minus text the answer already shows. *Region:* [Viewer inspector, streams and Gloss](viewer-inspector/knowledge.md)
 
-**WorkstreamOverloadDetector**  
-Herald detector recommending a thread split when it juggles too many agents, signals or context hashes. *Region:* [The FLOW.md roles as agents](flow-roles/knowledge.md)
-
 **worktree**  
 A git worktree; a thread works in one path and branch (updateThreadWorktree). *Region:* [Install, daemon, devices and git](install-daemon/knowledge.md)
 
@@ -2549,7 +2402,7 @@ Decides whether a thread is wrapped; an unwrapped thread gets the user's message
 Whether a thread gets any Foundry context; fresh installs are unwrapped and send the message as typed. *Region:* [Session context delivery](session-delivery/knowledge.md)
 
 **Writeback**  
-Loop 4: post-execution map rebuilds, memory entries and convention proposals feeding the corpus pipeline. *Region:* [The FLOW.md roles as agents](flow-roles/knowledge.md)
+Loop 4: post-execution map rebuilds, memory entries and convention proposals feeding the corpus pipeline (designed, not built: FLOW.md § What Exists, Not built). *Region:* [The FLOW.md roles as agents](flow-roles/knowledge.md)
 
 **Writeback pipeline**  
 Loop 4: map rebuilds, memory entries, convention proposals, persistence; not built as a whole. *Region:* [Harness data flow and loops](flow-architecture/knowledge.md)

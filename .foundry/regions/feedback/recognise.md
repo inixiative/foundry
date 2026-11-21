@@ -4,7 +4,7 @@
 
 ## What this region is
 
-How the user's feedback is given, stored and acted on: explicit /feedback recorded as said into one journal-folded store and shown at three scopes, the opt-in detect → classify → route → tune → apply loop that turns a correction into a rule line in a Warden role's file (with undo), and the Prospector's correction detection over live turns, past sessions (foundry repeats) and review comments.
+How the user's feedback is given, stored and acted on: explicit /feedback recorded as said into one journal-folded store and shown at three scopes, the opt-in detect → classify → route → tune → apply loop that turns a correction into a rule line in a role's file (the thread's role by default; with undo), and the Prospector's correction detection over live turns, past sessions (foundry repeats) and review comments.
 
 ## What it exists for
 
