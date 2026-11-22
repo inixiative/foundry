@@ -23,7 +23,17 @@ export type WSMessage =
   | { action: 'close'; stream: string }
   | { action: 'ping' };
 
-export type WSSocket = ServerWebSocket<WSData>;
+/**
+ * What the socket server uses of a connection. Bun's `ServerWebSocket<WSData>` is one; so is a
+ * browser connection that reaches the viewer another way (`WebSocketServer.acceptPeer`).
+ */
+export type WSSocket = {
+  data: WSData;
+  readyState: number;
+  /** 0 when the frame was dropped. */
+  send(message: string): number;
+  close(code?: number, reason?: string): void;
+};
 
 // Outbound frames are opaque to the transport; the data-stream layer shapes them.
 export type WSOutbound = Record<string, unknown>;

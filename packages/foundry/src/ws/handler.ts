@@ -28,6 +28,11 @@ export type WebSocketServer = {
   streams: DataStreams;
   /** Promote an already-authorized HTTP request. */
   accept: (req: Request, server: Server<WSData>) => Response | undefined;
+  /**
+   * Take an already-authorized connection that did not arrive as an upgrade on this server: `peer`
+   * is its far end. Returns what to call with its messages and when it closes.
+   */
+  acceptPeer: (req: Request, peer: WSPeer) => WSPeerHandlers;
   websocket: {
     open: (ws: WSSocket) => void;
     message: (ws: WSSocket, raw: string | Buffer) => Promise<void> | undefined;
@@ -37,6 +42,9 @@ export type WebSocketServer = {
   /** Tell clients to reconnect, close every socket and stop every producer. */
   shutdown: () => void;
 };
+
+export type WSPeer = { send(message: string): void; close(code?: number, reason?: string): void };
+export type WSPeerHandlers = { message(raw: string): void; close(): void };
 
 // Parse an untrusted client frame. Malformed JSON or shape → null (dropped).
 const parseFrame = (raw: string | Buffer): WSMessage | null => {
@@ -103,21 +111,47 @@ export const createWebSocketServer = ({
     },
   });
 
-  return {
+  const connectionData = (req: Request): WSData => {
+    const clientId = new URL(req.url).searchParams.get('client');
+    return {
+      connectionId: Bun.randomUUIDv7(),
+      clientId: clientId && CLIENT_ID.test(clientId) ? clientId : null,
+      streams: new Map(),
+      lastPing: Date.now(),
+      queue: createSerializedQueue(),
+    };
+  };
+
+  const socketServer: WebSocketServer = {
     registry,
     streams: dataStreams,
-    accept: (req, server) => {
-      const clientId = new URL(req.url).searchParams.get('client');
-      const data: WSData = {
-        connectionId: Bun.randomUUIDv7(),
-        clientId: clientId && CLIENT_ID.test(clientId) ? clientId : null,
-        streams: new Map(),
-        lastPing: Date.now(),
-        queue: createSerializedQueue(),
-      };
-      return server.upgrade(req, { data })
+    accept: (req, server) =>
+      server.upgrade(req, { data: connectionData(req) })
         ? undefined
-        : new Response('Upgrade failed', { status: 426 });
+        : new Response('Upgrade failed', { status: 426 }),
+    acceptPeer: (req, peer) => {
+      const ws: WSSocket = {
+        data: connectionData(req),
+        readyState: WebSocket.OPEN,
+        send: (message) => {
+          peer.send(message);
+          return message.length;
+        },
+        close: (code, reason) => {
+          if (ws.readyState !== WebSocket.OPEN) return;
+          ws.readyState = WebSocket.CLOSED;
+          removeConnection(registry, ws);
+          peer.close(code, reason);
+        },
+      };
+      socketServer.websocket.open(ws);
+      return {
+        message: (raw) => void socketServer.websocket.message(ws, raw),
+        close: () => {
+          ws.readyState = WebSocket.CLOSED;
+          socketServer.websocket.close(ws);
+        },
+      };
     },
     websocket: {
       open(ws) {
@@ -166,4 +200,5 @@ export const createWebSocketServer = ({
       dataStreams.stopAll();
     },
   };
+  return socketServer;
 };

@@ -280,10 +280,23 @@ export function createViewer(config: ViewerConfig) {
     return [...new Set(urls.filter((url): url is string => !!url))];
   };
 
+  // Requests a paired Kingdom forwarded over its Installation socket. Kingdom admitted the person
+  // (whoever may manage this Foundry there), so these skip the loopback and tunnel checks; what only
+  // this machine may change stays closed to them.
+  const viaKingdom = new WeakSet<Request>();
+  const machineOnly = (method: string, path: string) =>
+    (method === 'POST' && path === '/api/kingdom/pair') ||
+    (method === 'POST' && path === '/api/kingdom/viewer');
   // Auth middleware — checks tunnelHolder dynamically so it works
   // even when tunnel is started/stopped at runtime. The tunnel's login guards its public address;
   // a direct loopback request is this machine, tunnelled or not.
   app.use('*', async (c, next) => {
+    if (viaKingdom.has(c.req.raw)) {
+      if (!sameOrigin(c.req.raw)) return c.json({ error: 'Origin not allowed' }, 403);
+      if (machineOnly(c.req.method, c.req.path))
+        return c.json({ error: 'Change this on the machine that runs this Foundry.' }, 403);
+      return next();
+    }
     const t = tunnelHolder.tunnel;
     if (!sameOrigin(c.req.raw, t?.url ?? undefined))
       return c.json({ error: 'Origin not allowed' }, 403);
@@ -1258,6 +1271,24 @@ export function createViewer(config: ViewerConfig) {
     }
     return socket.accept(req, server);
   };
+  kingdom.serveViewer(
+    {
+      request: (request) => {
+        viaKingdom.add(request);
+        return app.fetch(request);
+      },
+      socket: async (request, peer) => {
+        if (new URL(request.url).pathname !== '/ws' || !sameOrigin(request)) return null;
+        try {
+          await kingdom.check();
+        } catch {
+          return null;
+        }
+        return socket.acceptPeer(request, peer);
+      },
+    },
+    () => configStore.config.kingdomViewerRefused ?? [],
+  );
 
   // One gate per thread: an approval at pre-use must answer the native ask for the same call.
   const gates = new Map<string, ThreadToolGate>();

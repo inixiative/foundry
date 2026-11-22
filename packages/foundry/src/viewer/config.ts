@@ -302,6 +302,11 @@ export interface FoundryConfig {
   tunnel?: TunnelSettingsConfig;
   /** Every Kingdom integration this Foundry is paired as, once per Kingdom + owner; Signets stay in private files. */
   kingdomIntegrations?: KingdomIntegration[];
+  /**
+   * Paired Kingdoms (by URL) that may not open this Foundry's viewer. A paired Kingdom may unless it
+   * is listed. Changed only on this machine (`POST /api/kingdom/viewer`), never through a Kingdom.
+   */
+  kingdomViewerRefused?: string[];
 
   /** Whether the initial setup wizard has been completed. */
   setupComplete?: boolean;

@@ -40,7 +40,7 @@ const kingdomHome = (state) => {
  * What Kingdom doesn't give a paired Foundry yet (each grant's resource, actions and anchor, and the
  * request flow) says Coming soon.
  */
-function SignetCards({ integrations, busy, pending, onReconnect, onDisconnect }) {
+function SignetCards({ integrations, busy, pending, onReconnect, onDisconnect, onOpensViewer }) {
   return html`<div class="signet-cards">${integrations.map((k) => {
     const holder = k.holder;
     const you = operatorOf(holder);
@@ -67,6 +67,11 @@ function SignetCards({ integrations, busy, pending, onReconnect, onDisconnect })
             <button class="action-btn subtle" disabled=${busy || !!pending} onClick=${() => onReconnect(k)}>Reconnect</button>
             <button class="action-btn subtle danger" disabled=${busy} onClick=${() => onDisconnect(k)}>Disconnect</button>
           </span>
+          <label class="settings-desc signet-opens-viewer">
+            <input type="checkbox" checked=${k.opensViewer} disabled=${busy}
+              onChange=${(event) => onOpensViewer(k, event.currentTarget.checked)} />
+            Whoever manages this Foundry in ${new URL(k.url).host} may open it from there.
+          </label>
         </section>
         <section aria-label="Get more">
           <h4>Get more</h4>
@@ -153,7 +158,8 @@ export function KingdomSettings({ standalone = false }) {
           integrations.length
             ? html`<${SignetCards} integrations=${integrations} busy=${busy} pending=${pending}
                 onReconnect=${(k) => setReplacing(k)}
-                onDisconnect=${(k) => act('disconnect', { id: k.id })} />
+                onDisconnect=${(k) => act('disconnect', { id: k.id })}
+                onOpensViewer=${(k, opensViewer) => act('viewer', { id: k.id, opensViewer })} />
               <p class="settings-desc">Disconnecting deletes this machine's Signet for that Kingdom only; revoke the Foundry integration in Kingdom too. Grants, expiry and revocation are managed there.</p>`
             : html`<p class="settings-desc">Not paired with a Kingdom yet.</p>`
         }

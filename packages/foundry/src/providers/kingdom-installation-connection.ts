@@ -22,6 +22,7 @@ import {
   signetCredentialFile,
   type ThreadEntry,
   type ThreadSubscription,
+  type ViewerHandlers,
 } from '@inixiative/signet';
 import { z } from 'zod';
 import { ownerKeySchema } from './kingdom-client';
@@ -189,6 +190,10 @@ export interface KingdomInstallationOptions {
    * relayed frames reach, bound before the sockets start (`serveThreads`).
    */
   host?: Pick<InstallationSocketOptions, 'operations' | 'onThreadSubscriptionEnded'>;
+  /** This Foundry's viewer, served to whoever a paired Kingdom lets open it (`serveViewer`). */
+  viewer?: ViewerHandlers;
+  /** Kingdom URLs that may not open the viewer, read when a socket starts. */
+  viewerRefused?: () => readonly string[];
   /**
    * A snapshot from one Kingdom arrived: the Signets issued on this Foundry's integrations may have
    * changed. Read them across every paired Kingdom (`KingdomInstallationConnections.hostedSignets`),
@@ -301,6 +306,8 @@ export class KingdomInstallationConnection {
         sessionCount: this.options.sessionCount,
         ...this.options.socket,
         ...this.options.host,
+        viewer: this.options.viewer,
+        viewerServing: !this.options.viewerRefused?.().includes(this.url),
         onSnapshot: (snapshot) => this.receive(snapshot),
         onRevoked: () => {
           this.revoked = true;
@@ -320,6 +327,10 @@ export class KingdomInstallationConnection {
     this.socket?.close();
     this.socket = null;
     this.snapshot = null;
+  }
+  /** Start or stop answering this Kingdom's requests for the viewer. */
+  serveViewer(serving: boolean) {
+    this.socket?.serveViewer(serving);
   }
   /** Where Kingdom can reach this Foundry's viewer; null when the tunnel stops. Re-sent on every reconnect. */
   advertise(viewerUrl: string | null) {
@@ -487,6 +498,18 @@ export class KingdomInstallationConnections {
         this.hostedSignets(),
         new Set(this.all().flatMap((connection) => [...connection.hostedDropped])),
       );
+  }
+  /**
+   * Serve this Foundry's viewer on every Installation socket whose Kingdom is not in `refused`
+   * (bound before `start`, as `serveThreads` is).
+   */
+  serveViewer(viewer: ViewerHandlers, refused: () => readonly string[]) {
+    this.options.viewer = viewer;
+    this.options.viewerRefused = refused;
+  }
+  /** The owner changed whether the Kingdom at `url` may open the viewer. */
+  setViewerServing(url: string, serving: boolean) {
+    this.connections.get(kingdomUrl(url))?.serveViewer(serving);
   }
   /** Every Signet issued on this Foundry's integrations, across paired Kingdoms. */
   hostedSignets(): HostedSignet[] {
