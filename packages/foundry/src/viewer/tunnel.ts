@@ -235,10 +235,10 @@ function resolveToken(config: TunnelConfig): string {
 const MAX_RETRY_MS = 300_000;
 /** A tunnel up this long before it exits starts its backoff over. */
 const STEADY_MS = 60_000;
+const CHECK_MS = 60_000;
+const CHECK_TIMEOUT_MS = 10_000;
 /** Checks in a row an address that has answered may miss before its tunnel is started again. */
 const MISSED_CHECKS = 3;
-/** The same for an address that has never answered: a new address can take minutes to resolve on this machine. */
-const MISSED_FIRST_CHECKS = 10;
 
 export class FoundryTunnel {
   private _config: TunnelConfig;
@@ -337,18 +337,20 @@ export class FoundryTunnel {
 
   /**
    * Asks the tunnel's public address for Foundry's health on a timer while `current` holds, and
-   * calls `lost` once it has missed too many checks in a row: a tunnel process can outlive its address.
+   * calls `lost` once an address that answered has missed too many checks in a row: a tunnel process
+   * can outlive its address. One that has never answered is left alone, since a new hostname's failed
+   * lookup is cached by the resolver and starting again would only make another new hostname.
    */
   private _checkAddress(current: () => boolean, lost: (how: string) => void): void {
     let answered = false;
     let missed = 0;
     const again = () => {
-      this._check = setTimeout(() => void check(), this._config.checkMs ?? 60_000);
+      this._check = setTimeout(() => void check(), this._config.checkMs ?? CHECK_MS);
       this._check.unref?.();
     };
     const check = async () => {
       const answers = await fetch(`${this._url}/api/health`, {
-        signal: AbortSignal.timeout(10_000),
+        signal: AbortSignal.timeout(CHECK_TIMEOUT_MS),
       }).then(
         (response) => response.ok,
         () => false,
@@ -357,8 +359,8 @@ export class FoundryTunnel {
       if (answers) {
         answered = true;
         missed = 0;
-      } else if (++missed >= (answered ? MISSED_CHECKS : MISSED_FIRST_CHECKS))
-        return lost(`${this._url} is not answering`);
+      } else if (answered && ++missed >= MISSED_CHECKS)
+        return lost(`${this._url} stopped answering`);
       again();
     };
     again();

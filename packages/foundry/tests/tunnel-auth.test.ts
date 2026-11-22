@@ -390,8 +390,41 @@ test('a kept-up tunnel whose address stops answering is started again, its proce
     await Bun.sleep(100);
     expect(seen).toHaveLength(3);
   } finally {
-    globalThis.fetch = original;
     await tunnel.stop();
+    globalThis.fetch = original;
+  }
+});
+
+test('a kept-up tunnel whose address has never answered is left running', async () => {
+  const dir = directory();
+  const tunnel = new FoundryTunnel({
+    port: 1,
+    provider: 'cloudflared',
+    cloudflaredBin: scriptedTunnel(dir, [
+      'echo https://unresolved.trycloudflare.com >&2; exec sleep 600',
+    ]),
+    retryMs: 20,
+    checkMs: 5,
+    configDir: dir,
+  });
+  let asked = 0;
+  const original = globalThis.fetch;
+  globalThis.fetch = (async () => {
+    asked += 1;
+    throw Error('getaddrinfo ENOTFOUND');
+  }) as unknown as typeof fetch;
+  try {
+    const seen: (string | null)[] = [];
+    tunnel.keepUp(() => seen.push(tunnel.url));
+    await until(() => asked >= 8);
+    expect(seen).toEqual(['https://unresolved.trycloudflare.com']);
+    await tunnel.stop();
+    const stopped = asked;
+    await Bun.sleep(60);
+    expect(asked).toBe(stopped);
+  } finally {
+    await tunnel.stop();
+    globalThis.fetch = original;
   }
 });
 
