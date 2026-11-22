@@ -10,11 +10,11 @@
   "recorded": {
     "service": "claude",
     "transport": "outcome",
-    "recordedAt": "2026-11-22T14:56:36.314Z",
+    "recordedAt": "2026-11-22T17:37:39.679Z",
     "environment": "terminal",
     "cli": "claude",
     "metadata": {
-      "@inixiative/agent-session": "0.22.2"
+      "@inixiative/agent-session": "0.22.3"
     }
   }
 }

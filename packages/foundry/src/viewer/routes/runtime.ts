@@ -44,6 +44,7 @@ import { type FeedbackService, localOperator } from '../../feedback/service';
 import type { FeedbackAbout } from '../../feedback/types';
 import { byAttention, feedbackView, newestFirst } from '../../feedback/view';
 import { branchCommits, listWorktrees } from '../../git';
+import { normalizePath } from '../../git/worktree';
 import { retiredModelRefusal } from '../../models/model-succession';
 import {
   choosableThreadModels,
@@ -874,10 +875,34 @@ export function registerRuntimeRoutes(
     });
   });
 
-  app.get('/api/threads', (c) => {
+  app.get('/api/threads', async (c) => {
     const projectId = c.req.query('project');
     const projectThreads = projectId ? directory.scope(projectId) : undefined;
     if (projectThreads) return c.json({ threads: projectThreads.map(threadJSON), projectId });
+
+    const cwd = c.req.query('cwd');
+    if (cwd !== undefined) {
+      if (!isAbsolute(cwd)) return c.json({ error: 'cwd must be an absolute path' }, 400);
+      const normalizedCwd = normalizePath(cwd);
+      const project = await projectRegistry?.forDirectory(normalizedCwd);
+      const matched = new Map<string, Thread>();
+      if (project) {
+        for (const thread of directory.scope(project.id) ?? []) matched.set(thread.id, thread);
+      }
+      for (const thread of directory.all()) {
+        if (thread.meta.cwd && normalizePath(thread.meta.cwd) === normalizedCwd)
+          matched.set(thread.id, thread);
+      }
+      return c.json({
+        threads: [...matched.values()].map(threadJSON),
+        ...(project ? { projectId: project.id } : {}),
+        cwd: normalizedCwd,
+      });
+    }
+
+    if (c.req.query('all') === '1') {
+      return c.json({ threads: directory.all().map(threadJSON) });
+    }
 
     // Global is the threads no project owns outside Foundry's own scopes; `?scope=forge|feedback`
     // is that scope's threads (their role is the scope's). Project threads show under their project.

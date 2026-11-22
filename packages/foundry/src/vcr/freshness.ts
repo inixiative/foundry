@@ -51,7 +51,7 @@ export const cassettes = (fixturesDir: string): string[] =>
 export const installedVersions = (clis: readonly string[]): Promise<Record<string, string>> =>
   fetchInstalledVersions(clis, {
     pathEnv: process.env.FOUNDRY_VCR_PATH,
-    env: { MUSE_NO_AUTO_UPDATE: '1' },
+    env: { MUSE_NO_AUTO_UPDATE: '1', AGY_CLI_DISABLE_AUTO_UPDATE: '1' },
   });
 
 const AGENT_SESSION_PKG = '@inixiative/agent-session';

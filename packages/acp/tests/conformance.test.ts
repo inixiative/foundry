@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from 'bun:test';
-import { mkdir, mkdtemp } from 'node:fs/promises';
+import { mkdir, mkdtemp, symlink } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import type { InitializeRequest, SessionUpdate } from '@agentclientprotocol/sdk';
 import { liveWatchFixture } from '../../foundry/tests/helpers/live-watch-fixture';
@@ -417,4 +417,131 @@ test('T3 Code multi-block prompt with trailing runtime_info/pull_request_linking
   expect(userMessages.at(-1)?.meta).toEqual({
     hostInstructions: [{ tag: 'runtime_info', text: 'Running in T3 Code as Opus.' }],
   });
+});
+
+test('session/list advertises list capability, filters by cwd, omits archived threads, and pairs with session/resume', async () => {
+  const { f, dir, host } = await nativeHost();
+  const t3 = host();
+
+  const init = await t3.agent.request('initialize', T3_INITIALIZE);
+  expect(init.agentCapabilities?.sessionCapabilities?.list).toEqual({});
+
+  const projectCwd = join(dir, 'P');
+  const otherCwd = join(dir, 'other-dir');
+  await mkdir(otherCwd, { recursive: true });
+
+  const first = await t3.agent.request('session/new', { cwd: projectCwd, mcpServers: [] });
+  const second = await t3.agent.request('session/new', { cwd: projectCwd, mcpServers: [] });
+  const outside = await t3.agent.request('session/new', { cwd: otherCwd, mcpServers: [] });
+
+  // Archive the first thread; session/list must omit it.
+  await t3.agent.request('session/close', { sessionId: first.sessionId });
+
+  // Filter by project cwd: returns live project sessions newest-first (including pre-existing Foundry viewer threads), omitting archived.
+  const projectList = await t3.agent.request('session/list', { cwd: projectCwd });
+  const projectIds = projectList.sessions.map((s) => s.sessionId);
+  expect(projectIds[0]).toBe(second.sessionId);
+  expect(projectIds).toContain('watch-A');
+  expect(projectIds).toContain('watch-B');
+  expect(projectIds).not.toContain(first.sessionId);
+  expect(projectIds).not.toContain(outside.sessionId);
+  expect(projectList.sessions[0]).toMatchObject({
+    sessionId: second.sessionId,
+    cwd: projectCwd,
+  });
+  expect(typeof projectList.sessions[0]?.updatedAt).toBe('string');
+  expect(projectList.nextCursor).toBeUndefined();
+
+  // Filter by unscoped cwd (including via symlink and trailing slash): returns only the unscoped session.
+  const linkCwd = join(dir, 'other-dir-link');
+  await symlink(otherCwd, linkCwd);
+  const otherList = await t3.agent.request('session/list', { cwd: `${linkCwd}/` });
+  expect(otherList.sessions.map((s) => s.sessionId)).toEqual([outside.sessionId]);
+
+  // Subagent spawns and Foundry internal scope threads (e.g. forge) are omitted from session/list.
+  const spawnThread = f.viewer.directory.adoptObserved({
+    id: 'spawn-child',
+    meta: {
+      description: 'subagent',
+      tags: [],
+      status: 'idle',
+      cwd: projectCwd,
+      projectId: 'P',
+      parentThreadId: second.sessionId,
+      spawn: { via: 'native-claude', observed: true },
+      createdAt: Date.now(),
+      lastActiveAt: Date.now(),
+    },
+  });
+  const forgeThread = f.viewer.directory.adoptObserved({
+    id: 'forge-scope-thread',
+    meta: {
+      description: 'forge',
+      tags: [],
+      status: 'idle',
+      cwd: projectCwd,
+      role: 'scope:forge',
+      createdAt: Date.now(),
+      lastActiveAt: Date.now(),
+    },
+  });
+  expect(spawnThread.id).toBe('spawn-child');
+  expect(forgeThread.id).toBe('forge-scope-thread');
+
+  // Omit cwd: returns all live attachable sessions across scopes, omitting archived, spawns, and scope threads.
+  const allList = await t3.agent.request('session/list', {});
+  const allIds = allList.sessions.map((s) => s.sessionId);
+  expect(allIds).toContain(second.sessionId);
+  expect(allIds).toContain(outside.sessionId);
+  expect(allIds).not.toContain(first.sessionId);
+  expect(allIds).not.toContain('spawn-child');
+  expect(allIds).not.toContain('forge-scope-thread');
+
+  // Pagination: > 50 sessions paginates via nextCursor and returns empty past end.
+  const pageCwd = join(dir, 'paginated');
+  await mkdir(pageCwd, { recursive: true });
+  const baseTs = Date.now() + 10_000;
+  for (let i = 0; i < 53; i++) {
+    f.viewer.directory.adoptObserved({
+      id: `page-thread-${String(i).padStart(2, '0')}`,
+      meta: {
+        description: `thread ${i}`,
+        tags: [],
+        status: 'idle',
+        cwd: pageCwd,
+        createdAt: baseTs + i,
+        lastActiveAt: baseTs + i,
+      },
+    });
+  }
+  const page1 = await t3.agent.request('session/list', { cwd: pageCwd });
+  expect(page1.sessions).toHaveLength(50);
+  expect(page1.sessions[0]?.sessionId).toBe('page-thread-52');
+  expect(page1.nextCursor).toBe('v1:50');
+  const page2 = await t3.agent.request('session/list', { cwd: pageCwd, cursor: page1.nextCursor });
+  expect(page2.sessions.map((s) => s.sessionId)).toEqual([
+    'page-thread-02',
+    'page-thread-01',
+    'page-thread-00',
+  ]);
+  expect(page2.nextCursor).toBeUndefined();
+  const pastEnd = await t3.agent.request('session/list', { cwd: pageCwd, cursor: 'v1:500' });
+  expect(pastEnd.sessions).toEqual([]);
+  expect(pastEnd.nextCursor).toBeUndefined();
+
+  // Reject relative cwd and invalid cursor.
+  await expect(t3.agent.request('session/list', { cwd: 'relative/path' })).rejects.toThrow();
+  await expect(t3.agent.request('session/list', { cursor: 'not-a-cursor' })).rejects.toThrow();
+
+  // A fresh host process can attach to a session discovered via session/list.
+  const fresh = host();
+  await fresh.agent.request('initialize', T3_INITIALIZE);
+  const discovered = await fresh.agent.request('session/list', { cwd: projectCwd });
+  const target = discovered.sessions[0]!;
+  const resumed = await fresh.agent.request('session/resume', {
+    sessionId: target.sessionId,
+    cwd: target.cwd,
+    mcpServers: [],
+  });
+  expect(resumed.modes?.currentModeId).toBeDefined();
 });

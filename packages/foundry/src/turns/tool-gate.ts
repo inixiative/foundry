@@ -4,13 +4,7 @@
  * @partOf feature:toolGate
  */
 import { resolve, sep } from 'node:path';
-import {
-  type PrivatePathOptions,
-  privatePathDenial,
-  type ToolDecision,
-  type ToolGate,
-  type ToolRequest,
-} from '@inixiative/agent-session';
+import type { ToolDecision, ToolGate, ToolRequest } from '@inixiative/agent-session';
 import {
   type ActionQueue,
   type Capability,
@@ -20,6 +14,7 @@ import {
   toolCapability,
   toolInputPaths,
 } from '@inixiative/foundry-core';
+import { type PrivatePathOptions, privatePathDenial } from '@inixiative/secret-scratch';
 import type { PermissionMode } from '../providers/thread-launch';
 import { FOUNDRY_OWN_TOOLS } from '../tools/thread-record';
 

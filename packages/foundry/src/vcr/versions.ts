@@ -26,8 +26,8 @@ export const cliVersion = (cmd: string, opts: CliVersionOptions = {}): Promise<s
     args,
     regex: opts.regex,
     pathEnv: process.env.FOUNDRY_VCR_PATH,
-    // Muse Code's launcher updates itself on a run unless told not to; a probe never moves a CLI.
-    env: { MUSE_NO_AUTO_UPDATE: '1' },
+    // Muse and Antigravity launchers update themselves on a run unless told not to; a probe never moves a CLI.
+    env: { MUSE_NO_AUTO_UPDATE: '1', AGY_CLI_DISABLE_AUTO_UPDATE: '1' },
   });
 };
 

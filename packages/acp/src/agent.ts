@@ -8,10 +8,12 @@ import {
   type AgentContext,
   agent,
   type InitializeResponse,
+  type ListSessionsResponse,
   type PermissionOption,
   PROTOCOL_VERSION,
   RequestError,
   type RequestPermissionResponse,
+  type SessionInfo,
   type SessionUpdate,
   type StopReason,
 } from '@agentclientprotocol/sdk';
@@ -125,6 +127,49 @@ interface Daemon {
 }
 
 const DAEMON_LOST_MS = 30_000;
+const LIST_PAGE_SIZE = 50;
+
+function decodeListCursor(cursor: string | null | undefined): number {
+  if (cursor === undefined || cursor === null) return 0;
+  const match = /^v1:(\d+)$/.exec(cursor);
+  if (!match) throw RequestError.invalidParams({ cursor }, 'Invalid session/list cursor');
+  const offset = Number(match[1]);
+  if (!Number.isSafeInteger(offset) || offset < 0)
+    throw RequestError.invalidParams({ cursor }, 'Invalid session/list cursor');
+  return offset;
+}
+
+function encodeListCursor(offset: number): string {
+  return `v1:${offset}`;
+}
+
+function threadTimestamp(thread: ThreadJSON): number {
+  const ts = thread.meta.lastActiveAt || thread.meta.createdAt;
+  return Number.isFinite(ts) && ts > 0 ? ts : 0;
+}
+
+function sessionInfoOf(thread: ThreadJSON): SessionInfo | null {
+  if (thread.meta.status === 'archived' || thread.meta.archivedAt !== undefined) return null;
+  if (thread.meta.spawn !== undefined) return null;
+  if (thread.scope !== undefined) return null;
+  const cwd = thread.meta.cwd;
+  if (typeof cwd !== 'string' || !isAbsolute(cwd)) return null;
+  const updatedAt = threadTimestamp(thread);
+  return {
+    sessionId: thread.threadId,
+    cwd,
+    title: thread.title?.text ?? null,
+    updatedAt: updatedAt > 0 ? new Date(updatedAt).toISOString() : null,
+    _meta: {
+      foundry: {
+        threadId: thread.threadId,
+        projectId: thread.meta.projectId ?? null,
+        ...(thread.meta.worker ? { worker: thread.meta.worker } : {}),
+        ...(thread.meta.branch ? { branch: thread.meta.branch } : {}),
+      },
+    },
+  };
+}
 
 type ThreadPayload = TurnAppend | { kind: 'event' } | TurnTerminal;
 
@@ -752,7 +797,7 @@ export function createFoundryAgent(options: FoundryAgentOptions = {}) {
         agentInfo: { name: 'foundry', title: 'Foundry', version: options.version ?? '0.1.0' },
         agentCapabilities: {
           loadSession: true,
-          sessionCapabilities: { resume: {}, close: {} },
+          sessionCapabilities: { resume: {}, close: {}, list: {} },
           promptCapabilities: { image: true, audio: false, embeddedContext: true },
           mcpCapabilities: { http: true, sse: false },
         },
@@ -787,6 +832,29 @@ export function createFoundryAgent(options: FoundryAgentOptions = {}) {
         sessionId: thread.threadId,
         ...setup,
         _meta: { foundry: { threadId: thread.threadId, projectId: thread.meta.projectId ?? null } },
+      };
+    })
+    .onRequest('session/list', async (ctx): Promise<ListSessionsResponse> => {
+      const cwd = ctx.params.cwd;
+      if (cwd !== undefined && cwd !== null && (typeof cwd !== 'string' || !isAbsolute(cwd)))
+        throw RequestError.invalidParams({ cwd }, 'cwd must be an absolute path');
+      const offset = decodeListCursor(ctx.params.cursor);
+      const foundry = await ensureDaemon().catch(httpError);
+      const { threads } = await foundry.http
+        .threads(cwd ? { cwd } : { all: true })
+        .catch(httpError);
+      const listed = threads
+        .map((thread) => ({ thread, info: sessionInfoOf(thread) }))
+        .filter((entry): entry is { thread: ThreadJSON; info: SessionInfo } => entry.info !== null)
+        .sort((a, b) => {
+          const timeDiff = threadTimestamp(b.thread) - threadTimestamp(a.thread);
+          return timeDiff !== 0 ? timeDiff : b.thread.threadId.localeCompare(a.thread.threadId);
+        });
+      const page = listed.slice(offset, offset + LIST_PAGE_SIZE).map((entry) => entry.info);
+      const nextOffset = offset + LIST_PAGE_SIZE;
+      return {
+        sessions: page,
+        ...(nextOffset < listed.length ? { nextCursor: encodeListCursor(nextOffset) } : {}),
       };
     })
     .onRequest('session/load', async (ctx) => {

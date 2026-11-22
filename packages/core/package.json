@@ -15,6 +15,7 @@
     "typecheck": "bun run --bun tsc --noEmit"
   },
   "dependencies": {
+    "@inixiative/secret-scratch": "^0.1.0",
     "uuidv7": "^1.0.2"
   },
   "description": "Foundry core engine: context layers, agents, middleware, signals, threads, harness and tracing primitives",

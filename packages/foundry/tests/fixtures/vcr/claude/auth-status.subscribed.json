@@ -30,12 +30,12 @@
   "recorded": {
     "service": "claude",
     "transport": "process",
-    "recordedAt": "2026-11-22T14:56:13.079Z",
+    "recordedAt": "2026-11-22T17:37:24.433Z",
     "environment": "terminal",
     "cli": "claude",
-    "durationMs": 155,
+    "durationMs": 170,
     "metadata": {
-      "@inixiative/agent-session": "0.22.2"
+      "@inixiative/agent-session": "0.22.3"
     }
   }
 }

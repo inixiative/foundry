@@ -31,8 +31,9 @@ export function nativeTextEnvironment(input: Record<string, string | undefined>)
     // not credentials. Kept so a launch finds the same login and sessions the user's own `muse` does.
     'XDG_CONFIG_HOME',
     'XDG_DATA_HOME',
-    // Set by a Muse launch (withoutCompetingCredentials): the CLI stays on the SDK's pinned version.
+    // Set by Muse and Antigravity launches: the CLI stays on its installed version during runs.
     'MUSE_NO_AUTO_UPDATE',
+    'AGY_CLI_DISABLE_AUTO_UPDATE',
     // Native compaction policy set by claude-context-budget; not credentials.
     'CLAUDE_CODE_AUTO_COMPACT_WINDOW',
     'CLAUDE_AUTOCOMPACT_PCT_OVERRIDE',
