@@ -57,6 +57,8 @@ export interface TunnelConfig {
   urlTimeoutMs?: number;
   /** First wait before a kept-up tunnel is started again; doubles per failed start. Default: 5 s. */
   retryMs?: number;
+  /** How often a kept-up tunnel asks its public address whether it still answers. Default: 60 s. */
+  checkMs?: number;
 }
 
 /** The viewer's tunnel, started and stopped at runtime; `changed`, when set, runs after each start or stop. */
@@ -233,6 +235,10 @@ function resolveToken(config: TunnelConfig): string {
 const MAX_RETRY_MS = 300_000;
 /** A tunnel up this long before it exits starts its backoff over. */
 const STEADY_MS = 60_000;
+/** Checks in a row an address that has answered may miss before its tunnel is started again. */
+const MISSED_CHECKS = 3;
+/** The same for an address that has never answered: a new address can take minutes to resolve on this machine. */
+const MISSED_FIRST_CHECKS = 10;
 
 export class FoundryTunnel {
   private _config: TunnelConfig;
@@ -242,6 +248,7 @@ export class FoundryTunnel {
   private _cleanup: (() => void) | null = null;
   private _keptUp: (() => void) | null = null;
   private _retry: ReturnType<typeof setTimeout> | undefined;
+  private _check: ReturnType<typeof setTimeout> | undefined;
   private _failures = 0;
 
   constructor(config: TunnelConfig) {
@@ -288,8 +295,8 @@ export class FoundryTunnel {
 
   /**
    * Starts the tunnel unless it is up, then keeps it up until `stop`: a failed start is tried again
-   * with backoff, and so is a tunnel process that exits. `changed` runs each time the address appears
-   * or goes.
+   * with backoff, and so is a tunnel whose process exits or whose public address stops answering.
+   * `changed` runs each time the address appears or goes.
    */
   keepUp(changed: () => void): void {
     this._keptUp = changed;
@@ -314,16 +321,47 @@ export class FoundryTunnel {
     const upAt = Date.now();
     this._tell(changed);
     const proc = this._proc;
-    void proc?.exited.then(() => {
+    const lost = (how: string) => {
       if (this._proc !== proc || this._keptUp !== changed) return;
       this._halt();
       // why: a tunnel that comes up and drops at once backs off like one that never came up
       this._failures = Date.now() - upAt < STEADY_MS ? this._failures + 1 : 1;
       const backoff = Math.min(MAX_RETRY_MS, this._retryMs() * 2 ** (this._failures - 1));
-      console.warn(`[Tunnel] the tunnel process exited; starting it again in ${backoff / 1000}s`);
+      console.warn(`[Tunnel] ${how}; starting it again in ${backoff / 1000}s`);
       this._tell(changed);
       this._retryIn(backoff, changed);
-    });
+    };
+    void proc?.exited.then(() => lost('the tunnel process exited'));
+    this._checkAddress(() => this._proc === proc && this._keptUp === changed, lost);
+  }
+
+  /**
+   * Asks the tunnel's public address for Foundry's health on a timer while `current` holds, and
+   * calls `lost` once it has missed too many checks in a row: a tunnel process can outlive its address.
+   */
+  private _checkAddress(current: () => boolean, lost: (how: string) => void): void {
+    let answered = false;
+    let missed = 0;
+    const again = () => {
+      this._check = setTimeout(() => void check(), this._config.checkMs ?? 60_000);
+      this._check.unref?.();
+    };
+    const check = async () => {
+      const answers = await fetch(`${this._url}/api/health`, {
+        signal: AbortSignal.timeout(10_000),
+      }).then(
+        (response) => response.ok,
+        () => false,
+      );
+      if (!current()) return;
+      if (answers) {
+        answered = true;
+        missed = 0;
+      } else if (++missed >= (answered ? MISSED_CHECKS : MISSED_FIRST_CHECKS))
+        return lost(`${this._url} is not answering`);
+      again();
+    };
+    again();
   }
 
   private _tell(changed: () => void): void {
@@ -354,6 +392,7 @@ export class FoundryTunnel {
   }
 
   private _halt(): void {
+    clearTimeout(this._check);
     if (this._proc) {
       this._proc.kill();
       this._proc = null;
