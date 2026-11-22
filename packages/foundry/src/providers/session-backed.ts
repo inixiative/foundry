@@ -1211,6 +1211,7 @@ export class SessionBackedProvider implements LLMProvider {
               : {}),
           ...(host?.permissionMode ? { permissionMode: host.permissionMode } : {}),
           ...(host?.effort ? { effort: host.effort } : {}),
+          ...(host?.speed ? { speed: host.speed } : {}),
           ...(host?.mcpServers?.length ? { mcpServers: host.mcpServers } : {}),
           ...(gate ? { toolGate: gate.gate, structuralRules: gate.hasRules() } : {}),
         });

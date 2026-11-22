@@ -1200,3 +1200,69 @@ test("a worker switch moves a thread on its old worker's default role to the new
     'codex',
   );
 });
+
+test('speed settings validate per model, clear across model/worker switches, and read Claude user default', async () => {
+  const { call } = await viewer();
+  const claudeHome = temporary('claude-speed-home-');
+  const priorHome = process.env.CLAUDE_CONFIG_DIR;
+  process.env.CLAUDE_CONFIG_DIR = claudeHome;
+  cleanup.push(() => {
+    if (priorHome === undefined) delete process.env.CLAUDE_CONFIG_DIR;
+    else process.env.CLAUDE_CONFIG_DIR = priorHome;
+  });
+
+  // User's ~/.claude/settings.json fastMode: true surfaces as speedDefault on fast-capable models.
+  writeFileSync(join(claudeHome, 'settings.json'), JSON.stringify({ fastMode: true }));
+  const fastThread = await call('POST', '/api/threads', {
+    projectId: 'claude',
+    model: 'claude-opus-5-5',
+    speed: 'fast',
+  });
+  expect(fastThread.status).toBe(201);
+  const id = fastThread.body.threadId as string;
+  const view = await call('GET', `/api/threads/${id}/launch`);
+  expect(view.body).toMatchObject({
+    model: 'claude-opus-5-5',
+    speed: 'fast',
+    speedDefault: 'fast',
+  });
+  expect((view.body.options as { speeds: string[] }).speeds).toEqual(['standard', 'fast']);
+
+  // Creating a thread with speed on a model without speed controls is refused.
+  const badCreate = await call('POST', '/api/threads', {
+    projectId: 'claude',
+    model: 'claude-sonnet-5-5',
+    speed: 'fast',
+  });
+  expect(badCreate.status).toBe(400);
+  expect(badCreate.body.error).toContain('does not support speed settings');
+
+  // Switching to a model without speed controls clears speed automatically.
+  const onSonnet = await call('PATCH', `/api/threads/${id}/launch`, { model: 'claude-sonnet-5-5' });
+  expect(onSonnet.status).toBe(200);
+  expect(onSonnet.body).toMatchObject({
+    model: 'claude-sonnet-5-5',
+    speed: null,
+    speedDefault: null,
+  });
+  expect((onSonnet.body.options as { speeds: string[] }).speeds).toEqual([]);
+
+  // Patching speed on Sonnet is refused.
+  const badPatch = await call('PATCH', `/api/threads/${id}/launch`, { speed: 'fast' });
+  expect(badPatch.status).toBe(400);
+
+  // Switch to Codex: gpt-6.2-astra defaults to fast from the registry (never reads ~/.codex/config.toml).
+  const toCodex = await call('PATCH', `/api/threads/${id}`, { worker: 'codex' });
+  expect(toCodex.status).toBe(200);
+  const codexView = await call('GET', `/api/threads/${id}/launch`);
+  expect(codexView.body).toMatchObject({
+    worker: 'codex',
+    model: 'gpt-6.2-astra',
+    speed: null,
+    speedDefault: 'fast',
+  });
+  // Explicit standard override works on Codex, and switching worker to Claude (default fable) keeps valid speed.
+  const stdCodex = await call('PATCH', `/api/threads/${id}/launch`, { speed: 'standard' });
+  expect(stdCodex.status).toBe(200);
+  expect(stdCodex.body).toMatchObject({ speed: 'standard' });
+});

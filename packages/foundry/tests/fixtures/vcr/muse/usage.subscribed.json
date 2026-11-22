@@ -1,5 +1,6 @@
 {
-  "version": "1.4.20",
+  "version": "1.4.25",
+  "transport": "process",
   "status": 0,
   "body": {
     "kind": "process",
@@ -27,10 +28,13 @@
   },
   "recorded": {
     "service": "muse",
-    "cli": "muse",
-    "recordedAt": "2026-11-21T20:44:23.779Z",
-    "agentSession": "0.22.0",
+    "transport": "process",
+    "recordedAt": "2026-11-22T14:57:18.548Z",
     "environment": "terminal",
-    "durationMs": 1134
+    "cli": "muse",
+    "durationMs": 1313,
+    "metadata": {
+      "@inixiative/agent-session": "0.22.2"
+    }
   }
 }

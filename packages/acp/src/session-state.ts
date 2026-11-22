@@ -51,10 +51,16 @@ export function modeState(view: ThreadLaunchView): SessionModeState {
  */
 export type SteerChoice = 'steer' | 'queue';
 
+const SPEED_LABELS: Readonly<Record<string, string>> = {
+  standard: 'Standard',
+  fast: 'Fast',
+};
+
 export function configOptions(view: ThreadLaunchView, steer?: SteerChoice): SessionConfigOption[] {
   const models = view.options.models.map((model) => ({ value: model.id, name: model.label }));
   if (!models.some((model) => model.value === view.model))
     models.unshift({ value: view.model, name: view.model });
+  const speeds = view.options.speeds ?? [];
   return [
     {
       id: 'mode',
@@ -96,6 +102,30 @@ export function configOptions(view: ThreadLaunchView, steer?: SteerChoice): Sess
         ...view.options.efforts.map((effort) => ({ value: effort, name: effort })),
       ],
     },
+    ...(speeds.length
+      ? [
+          {
+            // `serviceTier` with `"Fast"` label matches T3 Code's native speed badge (`modelTraits.ts`).
+            id: 'serviceTier',
+            name: 'Speed',
+            category: '_speed',
+            type: 'select' as const,
+            currentValue: view.speed ?? 'default',
+            options: [
+              {
+                value: 'default',
+                name: view.speedDefault
+                  ? `Default (${SPEED_LABELS[view.speedDefault] ?? view.speedDefault})`
+                  : 'Default',
+              },
+              ...speeds.map((speed) => ({
+                value: speed,
+                name: SPEED_LABELS[speed] ?? speed,
+              })),
+            ],
+          },
+        ]
+      : []),
     {
       id: 'steer',
       name: 'Prompt during a turn',

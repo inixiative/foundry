@@ -11,7 +11,7 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Graph } from '@inixiative/atlas';
-import { READ_TOOLS, WRITE_TOOLS } from '@inixiative/foundry-core';
+import { READ_TOOLS, toolInputPaths, WRITE_TOOLS } from '@inixiative/foundry-core';
 import { fetchAtlasGraph } from '../atlas-graph';
 import type { LocalSessionStore } from '../persistence/local-session-store';
 import { turnFiles } from './turn-flow';
@@ -69,9 +69,8 @@ function readThreadPaths(store: TurnReads, threadId: string, root: string): Path
     for (const file of turnFiles(uses)) written.add(relative(file.path));
     for (const use of uses) {
       if (use.kind !== 'tool_use' || !use.toolName || !READ_TOOLS.has(use.toolName)) continue;
-      const input = (use.toolInput ?? {}) as Record<string, unknown>;
-      const path = input.file_path ?? input.notebook_path ?? input.path;
-      if (typeof path === 'string' && path) read.add(relative(path));
+      for (const path of toolInputPaths(use.toolInput as Record<string, unknown> | undefined))
+        read.add(relative(path));
     }
   }
   return { read, written };

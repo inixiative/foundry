@@ -1866,6 +1866,7 @@ export async function createThread({
   worker,
   model,
   effort,
+  speed,
   role,
   select = true,
 } = {}) {
@@ -1886,6 +1887,7 @@ export async function createThread({
         worker,
         model,
         effort,
+        speed,
         role,
         scope,
       }),

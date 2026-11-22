@@ -103,6 +103,19 @@ export const REASONING_EFFORTS = [
 /** The one effort vocabulary: every effort setting and picker is a subset of it. */
 export type ReasoningEffort = (typeof REASONING_EFFORTS)[number];
 
+/** Speed tiers models publish (standard = normal speed; fast = fast mode / priority tier). */
+export const MODEL_SPEEDS = ['standard', 'fast'] as const;
+/** The one speed vocabulary: every speed setting and picker is a subset of it. */
+export type ModelSpeed = (typeof MODEL_SPEEDS)[number];
+
+/** How one model exposes speed controls (Claude fast mode, Codex/OpenAI priority/fast tier). */
+export interface ModelSpeedConfig {
+  /** Accepted speed levels, in picker order. */
+  speeds: readonly ModelSpeed[];
+  /** Speed the model runs at when no override is chosen. */
+  fallback: ModelSpeed;
+}
+
 /**
  * How one model takes its reasoning controls. This is the map that replaced a
  * model-name regex: naming is not behaviour, and the next generation's names
@@ -154,6 +167,8 @@ export interface FoundryModelInfo {
   capabilities: ModelCapability[];
   /** Request shape for reasoning. Absent = plain chat completions with max_tokens. */
   reasoning?: ModelReasoning;
+  /** Speed / fast-mode controls. Absent = model has no speed setting. */
+  speed?: ModelSpeedConfig;
   /**
    * The vendor trains on prompts and completions sent to this model, by its own
    * documentation. Set only where the vendor says so. This is a term of use, not
@@ -166,6 +181,17 @@ export interface FoundryModelInfo {
   trainsOnInput?: boolean;
   notes?: string;
 }
+
+/** Speed config for models with opt-in fast mode / priority tier (default standard). */
+const FAST_MODE_SPEED: ModelSpeedConfig = {
+  speeds: ['standard', 'fast'],
+  fallback: 'standard',
+};
+/** Speed config for models whose catalog default service tier is already priority/fast (Codex 6.2 Astra, 6.1 Terra). */
+const FAST_DEFAULT_SPEED: ModelSpeedConfig = {
+  speeds: ['standard', 'fast'],
+  fallback: 'fast',
+};
 
 /** OpenAI's API reasoning models: effort can be switched off, output caps differ. */
 const OPENAI_REASONING: ModelReasoning = {
@@ -213,7 +239,7 @@ const GEMINI_REASONING: ModelReasoning = {
   efforts: ['low', 'medium', 'high'],
   fallback: 'medium',
 };
-/** Antigravity CLI exposes low/medium/high/xhigh reasoning effort for Gemini 4 models over ACP. */
+/** Antigravity CLI exposes low/medium/high/xhigh reasoning effort on Gemini 4 Neon and Hydrogen over ACP (Carbon/Argon/3.8 Flash expose low/medium/high via `GEMINI_REASONING`). */
 const AGY_REASONING: ModelReasoning = {
   param: 'thinking_level',
   efforts: ['low', 'medium', 'high', 'xhigh'],
@@ -309,6 +335,7 @@ const CURRENT_GPT_MODELS = [
     family: 'astra',
     codexWindow: 272_000,
     codexEffort: 'low',
+    codexSpeed: FAST_DEFAULT_SPEED,
   },
   {
     id: 'gpt-6.2-sol',
@@ -316,6 +343,7 @@ const CURRENT_GPT_MODELS = [
     family: 'sol',
     codexWindow: 500_000,
     codexEffort: 'medium',
+    codexSpeed: FAST_MODE_SPEED,
   },
   {
     id: 'gpt-6.1-sol',
@@ -323,6 +351,7 @@ const CURRENT_GPT_MODELS = [
     family: 'sol',
     codexWindow: 500_000,
     codexEffort: 'medium',
+    codexSpeed: FAST_MODE_SPEED,
   },
   {
     id: 'gpt-6.1-terra',
@@ -330,6 +359,7 @@ const CURRENT_GPT_MODELS = [
     family: 'terra',
     codexWindow: 500_000,
     codexEffort: 'low',
+    codexSpeed: FAST_DEFAULT_SPEED,
   },
 ] as const;
 
@@ -355,6 +385,7 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
         family: 'fable',
         capabilities: POWERFUL_REASONING,
         reasoning: CLAUDE_REASONING,
+        speed: FAST_MODE_SPEED,
       },
       {
         id: 'opus',
@@ -367,6 +398,7 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
         family: 'opus',
         capabilities: POWERFUL_REASONING,
         reasoning: CLAUDE_REASONING,
+        speed: FAST_MODE_SPEED,
       },
       {
         id: 'sonnet',
@@ -402,6 +434,7 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
         runtimeKind: 'native-harness',
         capabilities: POWERFUL_REASONING,
         reasoning: CLAUDE_REASONING,
+        speed: FAST_MODE_SPEED,
       },
       {
         id: 'claude-sonnet-5-5',
@@ -425,6 +458,7 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
         runtimeKind: 'native-harness',
         capabilities: POWERFUL_REASONING,
         reasoning: CLAUDE_REASONING,
+        speed: FAST_MODE_SPEED,
       },
       {
         id: 'claude-fable-5-1',
@@ -472,6 +506,7 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
         runtimeKind: 'api',
         capabilities: POWERFUL_REASONING,
         reasoning: CLAUDE_REASONING,
+        speed: FAST_MODE_SPEED,
         notes: 'Thinking is always on; steer with effort.',
       },
       {
@@ -496,6 +531,7 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
         runtimeKind: 'api',
         capabilities: POWERFUL_REASONING,
         reasoning: CLAUDE_REASONING,
+        speed: FAST_MODE_SPEED,
       },
       {
         id: 'claude-opus-5',
@@ -507,6 +543,7 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
         runtimeKind: 'api',
         capabilities: POWERFUL_REASONING,
         reasoning: CLAUDE_REASONING,
+        speed: FAST_MODE_SPEED,
       },
       {
         id: 'claude-sonnet-5-5',
@@ -574,6 +611,7 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
         runtimeKind: 'api',
         capabilities: POWERFUL_REASONING,
         reasoning: CLAUDE_REASONING,
+        speed: FAST_MODE_SPEED,
       },
       {
         id: 'claude-opus-4-7',
@@ -585,6 +623,7 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
         runtimeKind: 'api',
         capabilities: POWERFUL_REASONING,
         reasoning: CLAUDE_REASONING,
+        speed: FAST_MODE_SPEED,
       },
       {
         id: 'claude-opus-4-6',
@@ -596,6 +635,7 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
         runtimeKind: 'api',
         capabilities: POWERFUL_REASONING,
         reasoning: { ...CLAUDE_REASONING, efforts: ['low', 'medium', 'high', 'max'] },
+        speed: FAST_MODE_SPEED,
       },
       {
         id: 'claude-sonnet-4-6',
@@ -620,7 +660,7 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
     enabledByDefault: true,
     models: [
       ...CURRENT_GPT_MODELS.map(
-        ({ id, label, family, codexWindow, codexEffort }): FoundryModelInfo => ({
+        ({ id, label, family, codexWindow, codexEffort, codexSpeed }): FoundryModelInfo => ({
           id,
           label,
           family,
@@ -630,6 +670,7 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
           runtimeKind: 'native-harness',
           capabilities: family === 'terra' ? STANDARD_REASONING : POWERFUL_REASONING,
           reasoning: { ...CODEX_REASONING, fallback: codexEffort },
+          speed: codexSpeed,
         }),
       ),
       {
@@ -642,6 +683,7 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
         runtimeKind: 'native-harness',
         capabilities: POWERFUL_REASONING,
         reasoning: CODEX_REASONING,
+        speed: FAST_MODE_SPEED,
       },
       {
         id: 'gpt-6-sol',
@@ -653,6 +695,7 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
         runtimeKind: 'native-harness',
         capabilities: POWERFUL_REASONING,
         reasoning: CODEX_REASONING,
+        speed: FAST_MODE_SPEED,
         notes: 'Workhorse for coding and everyday work.',
       },
       {
@@ -665,6 +708,7 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
         runtimeKind: 'native-harness',
         capabilities: FAST_REASONING,
         reasoning: CODEX_REASONING,
+        speed: FAST_MODE_SPEED,
         notes: 'Needs a current Codex CLI on a ChatGPT login (0.153.4 is refused it).',
       },
       {
@@ -677,6 +721,7 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
         runtimeKind: 'native-harness',
         capabilities: POWERFUL_REASONING,
         reasoning: CODEX_REASONING,
+        speed: FAST_MODE_SPEED,
       },
       {
         id: 'gpt-5.6-terra',
@@ -688,6 +733,7 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
         runtimeKind: 'native-harness',
         capabilities: STANDARD_REASONING,
         reasoning: CODEX_REASONING,
+        speed: FAST_MODE_SPEED,
       },
       {
         id: 'gpt-5.6-luna',
@@ -699,6 +745,7 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
         runtimeKind: 'native-harness',
         capabilities: FAST_REASONING,
         reasoning: CODEX_REASONING,
+        speed: FAST_MODE_SPEED,
         notes:
           "Foundry's Codex decision model: fast, and served to a ChatGPT login on every Codex CLI.",
       },
@@ -734,6 +781,7 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
                   efforts: ['low', 'medium', 'high', 'xhigh', 'max'],
                   fallback: family === 'astra' ? 'low' : 'medium',
                 },
+          speed: FAST_MODE_SPEED,
         }),
       ),
       {
@@ -750,6 +798,7 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
           efforts: ['low', 'medium', 'high', 'xhigh', 'max'],
           fallback: 'low',
         },
+        speed: FAST_MODE_SPEED,
         notes: 'Rejects effort "none" with a 400; tool calling needs the Responses API.',
       },
       {
@@ -762,6 +811,7 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
         runtimeKind: 'api',
         capabilities: POWERFUL_REASONING,
         reasoning: OPENAI_REASONING,
+        speed: FAST_MODE_SPEED,
       },
       {
         id: 'gpt-6-luna',
@@ -773,6 +823,7 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
         runtimeKind: 'api',
         capabilities: FAST_REASONING,
         reasoning: OPENAI_REASONING,
+        speed: FAST_MODE_SPEED,
         notes: "Foundry's decision model.",
       },
       {
@@ -785,6 +836,7 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
         runtimeKind: 'api',
         capabilities: POWERFUL_REASONING,
         reasoning: OPENAI_REASONING,
+        speed: FAST_MODE_SPEED,
       },
       {
         id: 'gpt-5.6-terra',
@@ -796,6 +848,7 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
         runtimeKind: 'api',
         capabilities: STANDARD_REASONING,
         reasoning: OPENAI_REASONING,
+        speed: FAST_MODE_SPEED,
       },
       {
         id: 'gpt-5.6-luna',
@@ -807,6 +860,7 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
         runtimeKind: 'api',
         capabilities: FAST_REASONING,
         reasoning: OPENAI_REASONING,
+        speed: FAST_MODE_SPEED,
       },
       {
         id: 'gpt-5.5',
@@ -818,6 +872,7 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
         runtimeKind: 'api',
         capabilities: STANDARD_REASONING,
         reasoning: { ...OPENAI_REASONING, efforts: ['none', 'low', 'medium', 'high', 'xhigh'] },
+        speed: FAST_MODE_SPEED,
       },
     ],
   },
@@ -946,7 +1001,19 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
         maxOutputTokens: 65_536,
         runtimeKind: 'native-harness',
         capabilities: POWERFUL_REASONING,
-        reasoning: AGY_REASONING,
+        reasoning: GEMINI_REASONING,
+      },
+      {
+        id: 'gemini-4-argon',
+        family: 'argon',
+        label: 'Gemini 4 Argon',
+        tier: 'powerful',
+        costTier: 'high',
+        contextWindow: 1_048_576,
+        maxOutputTokens: 65_536,
+        runtimeKind: 'native-harness',
+        capabilities: POWERFUL_REASONING,
+        reasoning: GEMINI_REASONING,
       },
       {
         id: 'gemini-4-hydrogen',
@@ -959,6 +1026,18 @@ export const MODEL_REGISTRY: Record<string, FoundryProviderInfo> = {
         runtimeKind: 'native-harness',
         capabilities: STANDARD_REASONING,
         reasoning: AGY_REASONING,
+      },
+      {
+        id: 'gemini-3.8-flash',
+        family: 'flash',
+        label: 'Gemini 3.8 Flash',
+        tier: 'standard',
+        costTier: 'medium',
+        contextWindow: 1_048_576,
+        maxOutputTokens: 65_536,
+        runtimeKind: 'native-harness',
+        capabilities: STANDARD_REASONING,
+        reasoning: GEMINI_REASONING,
       },
     ],
   },
@@ -1992,6 +2071,18 @@ export function modelEfforts(
 ): readonly ReasoningEffort[] | undefined {
   const model = registryModel(providerId, modelId);
   return model ? (model.reasoning?.efforts ?? []) : undefined;
+}
+
+/**
+ * The speed tiers a registered model accepts, in order; empty for models without speed controls,
+ * undefined for a model the registry does not list.
+ */
+export function modelSpeeds(
+  providerId: string,
+  modelId: string,
+): readonly ModelSpeed[] | undefined {
+  const model = registryModel(providerId, modelId);
+  return model ? (model.speed?.speeds ?? []) : undefined;
 }
 
 export function registryModel(providerId: string, modelId: string): FoundryModelInfo | undefined {

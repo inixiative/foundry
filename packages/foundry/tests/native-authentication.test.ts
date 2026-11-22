@@ -15,10 +15,15 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
+  extractClaudeFastMode,
+  subscriptionSettingsGuard,
+} from '../src/providers/harness-settings';
+import {
   NativeAuthentication,
   type NativeAuthenticationLaunch,
   type NativeAuthenticationSource,
 } from '../src/providers/native-authentication';
+import { SubscriptionAuthentication } from '../src/providers/subscription-authentication';
 
 const cleanups: (() => void)[] = [];
 afterEach(() => {
@@ -462,4 +467,100 @@ test('a private home is refused for Claude and gateway sources', () => {
     expect(
       () => new NativeAuthentication({ directory: root(), sources: [source], privateHome: true }),
     ).toThrow('private home requires Codex native profiles');
+});
+
+test('Claude fastMode --settings passes through subscription and gateway auth and merges into the harness guard', async () => {
+  // Helper validates single { fastMode: boolean } and refuses adversarial shapes.
+  expect(
+    extractClaudeFastMode(['claude', '--settings', '{"fastMode":true}', '--model', 'opus'], 'bad'),
+  ).toEqual({ argv: ['claude', '--model', 'opus'], fastMode: true });
+  for (const bad of [
+    ['claude', '--settings={"fastMode":true}'],
+    ['claude', '--settings', '{"fastMode":true,"apiKeyHelper":"/evil"}'],
+    ['claude', '--settings', '[{"fastMode":true}]'],
+    ['claude', '--settings', '{"fastMode":"yes"}'],
+    ['claude', '--settings', '{"fastMode":true}', '--settings', '{"fastMode":false}'],
+  ])
+    expect(() => extractClaudeFastMode(bad, 'refused')).toThrow('refused');
+
+  // Guard merges fastMode into a single --settings JSON payload.
+  const mergedGuard = JSON.parse(subscriptionSettingsGuard([], { fastMode: true }));
+  expect(mergedGuard.fastMode).toBe(true);
+  expect(mergedGuard.apiKeyHelper).toBe('');
+
+  // 1. Local SubscriptionAuthentication (with and without harness settings).
+  const dir = root();
+  const profile = join(dir, 'claude-profile');
+  mkdirSync(profile, { mode: 0o700 });
+  const subAuth = new SubscriptionAuthentication(
+    join(dir, 'state'),
+    {
+      id: Bun.randomUUIDv7(),
+      integrationId: Bun.randomUUIDv7(),
+      runtime: 'claude',
+      mode: 'native-profile',
+      profileDirectory: profile,
+    },
+    () => ({
+      stdout: new ReadableStream({
+        start(c) {
+          c.enqueue(
+            new TextEncoder().encode(
+              JSON.stringify({ loggedIn: true, authMethod: 'claude.ai', subscriptionType: 'max' }),
+            ),
+          );
+          c.close();
+        },
+      }),
+      stderr: new ReadableStream({
+        start(c) {
+          c.close();
+        },
+      }),
+      exited: Promise.resolve(0),
+      kill() {},
+    }),
+  );
+  const subLaunch = track(await subAuth.prepare('t-sub-1', 'claude'));
+  const withHarness = subLaunch.launch(
+    ['claude', '--settings', '{"fastMode":true}'],
+    {},
+    { sources: 'user,project,local', cwd: dir },
+  );
+  // Exactly one --settings flag carrying both the credential guard and fastMode: true.
+  const settingsIndexes = withHarness.argv.flatMap((a, i) => (a === '--settings' ? [i] : []));
+  expect(settingsIndexes).toHaveLength(1);
+  expect(JSON.parse(withHarness.argv[settingsIndexes[0]! + 1]!)).toMatchObject({
+    apiKeyHelper: '',
+    fastMode: true,
+  });
+  subLaunch.release();
+
+  const subPlain = track(await subAuth.prepare('t-sub-2', 'claude'));
+  const withoutHarness = subPlain.launch(['claude', '--settings', '{"fastMode":false}'], {});
+  const plainIdx = withoutHarness.argv.indexOf('--settings');
+  expect(plainIdx).toBeGreaterThan(-1);
+  expect(JSON.parse(withoutHarness.argv[plainIdx + 1]!)).toEqual({ fastMode: false });
+  subPlain.release();
+
+  const subBad = track(await subAuth.prepare('t-sub-3', 'claude'));
+  expect(() =>
+    subBad.launch(['claude', '--settings', '{"fastMode":true,"apiKeyHelper":"/evil"}'], {}),
+  ).toThrow('Subscription launch override refused');
+  subBad.release();
+
+  // 2. Gateway NativeAuthentication.
+  token('FOUNDRY_TEST_AUTH_FAST', 'gw-token');
+  const gwSource = gateway('claude', 'FOUNDRY_TEST_AUTH_FAST');
+  const gw = new NativeAuthentication({
+    directory: join(dir, 'gw-state'),
+    sources: [gwSource],
+    defaultSourceId: gwSource.id,
+  });
+  const gwLaunch = track(await gw.prepare('t-gw-1', 'claude'));
+  const gwLaunched = gwLaunch.launch(['claude', '--settings', '{"fastMode":true}'], {});
+  const gwIdx = gwLaunched.argv.indexOf('--settings');
+  expect(gwIdx).toBeGreaterThan(-1);
+  expect(JSON.parse(gwLaunched.argv[gwIdx + 1]!)).toEqual({ fastMode: true });
+  gwLaunch.release();
 });

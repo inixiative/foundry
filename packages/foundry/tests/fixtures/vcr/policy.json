@@ -3,7 +3,7 @@
   "blessed": {
     "claude": "2.1.325",
     "codex": "0.169.0",
-    "muse": "1.4.20",
+    "muse": "1.4.25",
     "@inixiative/agent-session": "0.13.0"
   }
 }

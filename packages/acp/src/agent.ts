@@ -876,6 +876,8 @@ export function createFoundryAgent(options: FoundryAgentOptions = {}) {
         const foundry = await ensureDaemon().catch(httpError);
         await foundry.http.updateThread(session.threadId, { worker: value }).catch(httpError);
         const view = await foundry.http.launch(session.threadId).catch(httpError);
+        if (!view.effort && 'effort' in session.launch) delete session.launch.effort;
+        if (!view.speed && 'speed' in session.launch) delete session.launch.speed;
         return { configOptions: configOptions(view, session.steer) };
       }
       // The model is the thread's record's, not a launch setting: a change is marked in the thread,
@@ -885,6 +887,8 @@ export function createFoundryAgent(options: FoundryAgentOptions = {}) {
         const view = await foundry.http
           .updateLaunch(session.threadId, { model: value })
           .catch(httpError);
+        if (!view.effort && 'effort' in session.launch) delete session.launch.effort;
+        if (!view.speed && 'speed' in session.launch) delete session.launch.speed;
         return { configOptions: configOptions(view, session.steer) };
       }
       const patch: ThreadLaunchPatch =
@@ -892,9 +896,11 @@ export function createFoundryAgent(options: FoundryAgentOptions = {}) {
           ? { permissionMode: value as ModeId }
           : configId === 'effort'
             ? { effort: value === 'default' ? null : (value as ThreadLaunchPatch['effort']) }
-            : (() => {
-                throw RequestError.invalidParams({ configId }, 'Unknown config option');
-              })();
+            : configId === 'serviceTier'
+              ? { speed: value === 'default' ? null : (value as ThreadLaunchPatch['speed']) }
+              : (() => {
+                  throw RequestError.invalidParams({ configId }, 'Unknown config option');
+                })();
       const foundry = await ensureDaemon().catch(httpError);
       const view = await applyLaunch(session, foundry, patch).catch(httpError);
       if (configId === 'mode')

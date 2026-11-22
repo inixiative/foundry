@@ -18,6 +18,7 @@ import {
   type PermissionLevel,
   permissionLevel,
   toolCapability,
+  toolInputPaths,
 } from '@inixiative/foundry-core';
 import type { PermissionMode } from '../providers/thread-launch';
 import { FOUNDRY_OWN_TOOLS } from '../tools/thread-record';
@@ -79,23 +80,28 @@ function readsOutside(request: ToolRequest, root: string): boolean {
   });
 }
 
-const PATH_KEYS = ['file_path', 'path', 'notebook_path'] as const;
-
 /** Every path a call names: its own path keys, Claude's blocked path, Codex file changes. */
 function toolPaths(request: Pick<ToolRequest, 'toolInput' | 'blockedPath'>): string[] {
   const { toolInput } = request;
   const changes = Array.isArray(toolInput.changes) ? toolInput.changes : [];
-  return [
+  const raw = [
     request.blockedPath,
-    ...PATH_KEYS.map((key) => toolInput[key]),
+    ...toolInputPaths(toolInput),
     ...changes.flatMap((change) => {
       const c = change as { path?: unknown; movePath?: unknown } | null;
       return [c?.path, c?.movePath];
     }),
-  ].filter(
-    (value, index, all): value is string =>
-      typeof value === 'string' && !!value && all.indexOf(value) === index,
-  );
+  ];
+  const seen = new Set<string>();
+  const paths: string[] = [];
+  for (const value of raw) {
+    if (typeof value !== 'string') continue;
+    const trimmed = value.trim();
+    if (!trimmed || seen.has(trimmed)) continue;
+    seen.add(trimmed);
+    paths.push(trimmed);
+  }
+  return paths;
 }
 
 /** The capability a native tool call exercises, and the paths it touches. */

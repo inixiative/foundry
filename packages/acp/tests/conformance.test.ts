@@ -352,3 +352,69 @@ test('two sessions on one connection run side by side; an unknown session is ref
     .catch((e: Error) => e);
   expect(String((unknown as Error).message)).toContain('Unknown session');
 });
+
+test('T3 Code multi-block prompt with trailing runtime_info/pull_request_linking/workspace_folders strips cleanly for journal and metadata, and keeps executor prompt verbatim', async () => {
+  const { f, dir, host } = await nativeHost();
+  const t3 = host();
+  await t3.agent.request('initialize', T3_INITIALIZE);
+  const { sessionId } = await t3.agent.request('session/new', {
+    cwd: join(dir, 'P'),
+    mcpServers: [],
+  });
+
+  const before = f.attempts.length;
+  const wrappedBlock =
+    '<t3_code_instructions>\nDefault mode.\n</t3_code_instructions>\n\n<user_request>\nFix the parser bug\n</user_request>';
+  const runtimeBlock =
+    "<runtime_info>In case you're asked: you are running in T3 Code through the foundry harness.</runtime_info>\n\n<pull_request_linking>\nLink each PR.\n</pull_request_linking>\n\n<workspace_folders>\n- repoA (Git repository): /tmp/a\n</workspace_folders>";
+  const first = t3.agent.request('session/prompt', {
+    sessionId,
+    prompt: [
+      { type: 'text', text: wrappedBlock },
+      { type: 'text', text: runtimeBlock },
+    ],
+  });
+  await until(() => f.attempts.length === before + 1, 'T3 multi-block prompt admitted');
+  // The native executor receives T3's full prompt verbatim (after Foundry's system context header).
+  expect(f.attempts[before].prompt).toEndWith(
+    `# User Message\n\n${wrappedBlock}\n\n${runtimeBlock}`,
+  );
+  f.attempts[before].finish(false, 'Fixed');
+  expect(await first).toEqual({ stopReason: 'end_turn' });
+
+  // Journalled user message sees only the unwrapped user words, with all four T3 blocks in metadata.
+  const firstUser = f.viewer.localStore!.messages(sessionId).find((m) => m.actor === 'user');
+  expect(firstUser?.content).toBe('Fix the parser bug');
+  expect(firstUser?.meta).toEqual({
+    hostInstructions: [
+      { tag: 't3_code_instructions', text: 'Default mode.' },
+      {
+        tag: 'runtime_info',
+        text: "In case you're asked: you are running in T3 Code through the foundry harness.",
+      },
+      { tag: 'pull_request_linking', text: 'Link each PR.' },
+      { tag: 'workspace_folders', text: '- repoA (Git repository): /tmp/a' },
+    ],
+  });
+
+  // Follow-up turn where T3 resends trailing runtime_info without <t3_code_instructions>/<user_request>.
+  const follow = t3.agent.request('session/prompt', {
+    sessionId,
+    prompt: [
+      { type: 'text', text: 'Add a regression test' },
+      { type: 'text', text: '<runtime_info>Running in T3 Code as Opus.</runtime_info>' },
+    ],
+  });
+  await until(() => f.attempts.length === before + 2, 'T3 follow-up admitted');
+  expect(f.attempts[before + 1].prompt).toEndWith(
+    'Add a regression test\n\n<runtime_info>Running in T3 Code as Opus.</runtime_info>',
+  );
+  f.attempts[before + 1].finish(false, 'Added');
+  expect(await follow).toEqual({ stopReason: 'end_turn' });
+
+  const userMessages = f.viewer.localStore!.messages(sessionId).filter((m) => m.actor === 'user');
+  expect(userMessages.at(-1)?.content).toBe('Add a regression test');
+  expect(userMessages.at(-1)?.meta).toEqual({
+    hostInstructions: [{ tag: 'runtime_info', text: 'Running in T3 Code as Opus.' }],
+  });
+});

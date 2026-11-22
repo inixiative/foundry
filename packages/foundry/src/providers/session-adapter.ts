@@ -67,7 +67,7 @@ import {
   withNativeBridge,
 } from './native-launch';
 import { nativeTextEnvironment } from './native-text-environment';
-import type { ClientMcpServer, EffortLevel, PermissionMode } from './thread-launch';
+import type { ClientMcpServer, EffortLevel, PermissionMode, SpeedLevel } from './thread-launch';
 
 // ---------------------------------------------------------------------------
 // ExternalSessionStore — persists (threadId, runtime) → externalSessionId
@@ -272,6 +272,8 @@ export interface CreateSessionOpts {
   permissionMode?: PermissionMode;
   /** The host's effort; an authentication-assigned effort wins. */
   effort?: EffortLevel;
+  /** The host's speed tier (`standard` or `fast`); absent leaves the runtime's default. */
+  speed?: SpeedLevel;
   /** The host's MCP servers, beside Foundry's own bridge. Secrets stay in the process env. */
   mcpServers?: readonly ClientMcpServer[];
   /** Per-call tool decisions (structural denies, asks); registered before the session starts. */
@@ -855,6 +857,7 @@ export class ClaudeCodeSessionAdapter implements SessionAdapter {
           ? { model: opts.model }
           : {}),
       ...((auth?.effort ?? opts.effort) ? { effort: auth?.effort ?? opts.effort } : {}),
+      ...(opts.speed ? { fastMode: opts.speed === 'fast' } : {}),
       // The candidate accepts null as the native optional/unbounded setting.
       // Registry legacy types do not yet describe this additive representation.
       ...(opts.maxTurns !== undefined ? { maxTurns: opts.maxTurns as number } : {}),
@@ -1102,6 +1105,7 @@ export class CodexSessionAdapter implements SessionAdapter {
           ? { model: opts.model }
           : {}),
       ...((auth?.effort ?? opts.effort) ? { effort: auth?.effort ?? opts.effort } : {}),
+      ...(opts.speed ? { serviceTier: opts.speed === 'fast' ? 'fast' : 'default' } : {}),
       cwd: opts.cwd,
       baseContext: opts.baseContext,
       externalSessionId: existing ?? undefined,

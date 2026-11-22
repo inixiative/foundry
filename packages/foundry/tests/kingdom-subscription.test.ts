@@ -849,3 +849,26 @@ test('Muse device sign-in fails plainly on denial, expiry, an unstarted flow or 
     museDeviceLogin({ ...quiet, fetch: deviceFlow([], { status: 302 }).fetcher }),
   ).rejects.toThrow('redirected');
 });
+
+test('Kingdom-capacity Claude launch merges fastMode into the harness settings guard and refuses other --settings', async () => {
+  const { directory, auth } = await kingdomWithLogin('claude');
+  const launch = await auth.prepare('thread-fast-1', 'claude');
+  const withHarness = launch.launch(
+    ['claude', '-p', '--settings', '{"fastMode":true}'],
+    { PATH: '/usr/bin' },
+    { sources: 'user,project,local', cwd: directory },
+  );
+  const indexes = withHarness.argv.flatMap((a, i) => (a === '--settings' ? [i] : []));
+  expect(indexes).toHaveLength(1);
+  expect(JSON.parse(withHarness.argv[indexes[0]! + 1]!)).toMatchObject({
+    apiKeyHelper: '',
+    fastMode: true,
+  });
+  launch.release();
+
+  const bad = await auth.prepare('thread-fast-2', 'claude');
+  expect(() =>
+    bad.launch(['claude', '--settings', '{"fastMode":true,"apiKeyHelper":"/evil"}'], {}),
+  ).toThrow('Subscription launch override refused');
+  bad.release();
+});

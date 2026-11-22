@@ -27,6 +27,7 @@ import {
 } from './default-profiles';
 import {
   codexUserConfig,
+  extractClaudeFastMode,
   type HarnessSettingsLaunch,
   shareCodexUserSetup,
 } from './harness-settings';
@@ -51,6 +52,14 @@ const GOOGLE_COMPETING_ENV = new Set([
   'GOOGLE_APPLICATION_CREDENTIALS',
   'GOOGLE_GENAI_USE_VERTEXAI',
   'GEMINI_CLI_AUTH_OVERRIDE',
+  'GOOGLE_CLOUD_PROJECT',
+  'GOOGLE_CLOUD_LOCATION',
+  'GOOGLE_CLOUD_QUOTA_PROJECT',
+  'GCLOUD_PROJECT',
+  'CLOUDSDK_CORE_PROJECT',
+  'AGY_ACP_CCPA_PROJECT',
+  'AGY_ACP_ENABLE_OAUTH',
+  'AGY_ACP_FORCE_FILE_STORAGE',
 ]);
 
 export type NativeAuthenticationSource = {
@@ -490,18 +499,27 @@ export class NativeAuthentication {
               );
           }
         }
-        const launchArgs = [...argv];
+        let launchArgs = [...argv];
         if (source.mode === 'gateway' && runtime === 'claude') {
+          const { argv: stripped, fastMode } = extractClaudeFastMode(
+            argv,
+            'Conflicting gateway authentication settings',
+          );
           if (
-            argv.some(
+            stripped.some(
               (arg) =>
-                ['--settings', '--setting-sources', '--bare'].includes(arg) ||
-                arg.startsWith('--settings=') ||
+                arg === '--setting-sources' ||
+                arg === '--bare' ||
                 arg.startsWith('--setting-sources='),
             )
           )
             throw Error('Conflicting gateway authentication settings');
-          launchArgs.push('--setting-sources', 'user');
+          launchArgs = [
+            ...stripped,
+            '--setting-sources',
+            'user',
+            ...(fastMode !== undefined ? ['--settings', JSON.stringify({ fastMode })] : []),
+          ];
         }
         if (runtime === 'codex') assertCodexLaunchArguments(argv);
         mkdirSync(directory, { recursive: true, mode: 0o700 });

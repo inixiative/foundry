@@ -144,12 +144,55 @@ function envKeys(file: string): string[] {
 }
 
 /**
+ * Validate and strip a single `--settings '{"fastMode":true|false}'` flag from Claude argv.
+ * Refuses any other `--settings` (including `--settings=...`, arrays, extra keys, or duplicates)
+ * so callers can safely merge `fastMode` into `subscriptionSettingsGuard` or re-emit it cleanly.
+ */
+export function extractClaudeFastMode(
+  argv: readonly string[],
+  errorMessage: string,
+): { argv: string[]; fastMode?: boolean } {
+  const cleaned: string[] = [];
+  let fastMode: boolean | undefined;
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i]!;
+    if (arg.startsWith('--settings=')) throw Error(errorMessage);
+    if (arg !== '--settings') {
+      cleaned.push(arg);
+      continue;
+    }
+    if (fastMode !== undefined) throw Error(errorMessage);
+    const next = argv[++i];
+    if (!next) throw Error(errorMessage);
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(next);
+    } catch {
+      throw Error(errorMessage);
+    }
+    if (
+      !parsed ||
+      typeof parsed !== 'object' ||
+      Array.isArray(parsed) ||
+      Object.keys(parsed).length !== 1 ||
+      typeof (parsed as Record<string, unknown>).fastMode !== 'boolean'
+    )
+      throw Error(errorMessage);
+    fastMode = (parsed as { fastMode: boolean }).fastMode;
+  }
+  return { argv: cleaned, ...(fastMode !== undefined ? { fastMode } : {}) };
+}
+
+/**
  * The `--settings` a subscription launch adds over the loaded files. Flag settings outrank user,
  * project and local, so a blank here wins: no loaded `apiKeyHelper` or `env` can move the thread
  * to an API key or send the login's token to another endpoint (each did, measured on 2.1.316).
  * A file that sets the subscription token itself is refused: blanking it would end the login.
  */
-export function subscriptionSettingsGuard(files: readonly string[]): string {
+export function subscriptionSettingsGuard(
+  files: readonly string[],
+  overrides?: { fastMode?: boolean },
+): string {
   const blank = new Set<string>(ALWAYS_BLANK_ENV);
   for (const file of files)
     for (const key of envKeys(file)) {
@@ -162,6 +205,7 @@ export function subscriptionSettingsGuard(files: readonly string[]): string {
   return JSON.stringify({
     ...Object.fromEntries(CREDENTIAL_SETTINGS.map((key) => [key, ''])),
     env: Object.fromEntries([...blank].sort().map((key) => [key, ''])),
+    ...(overrides?.fastMode !== undefined ? { fastMode: overrides.fastMode } : {}),
   });
 }
 

@@ -1,5 +1,6 @@
 {
   "version": "2.1.330",
+  "transport": "process",
   "status": 0,
   "body": {
     "kind": "process",
@@ -28,10 +29,13 @@
   },
   "recorded": {
     "service": "claude",
-    "cli": "claude",
-    "recordedAt": "2026-11-21T20:43:20.257Z",
-    "agentSession": "0.22.0",
+    "transport": "process",
+    "recordedAt": "2026-11-22T14:56:13.079Z",
     "environment": "terminal",
-    "durationMs": 175
+    "cli": "claude",
+    "durationMs": 155,
+    "metadata": {
+      "@inixiative/agent-session": "0.22.2"
+    }
   }
 }

@@ -1,5 +1,6 @@
 {
   "version": "2.1.330",
+  "transport": "outcome",
   "status": 200,
   "body": {
     "answers": [
@@ -21,9 +22,12 @@
   },
   "recorded": {
     "service": "claude",
+    "transport": "outcome",
+    "recordedAt": "2026-11-22T14:57:38.268Z",
+    "environment": "terminal",
     "cli": "claude",
-    "recordedAt": "2026-11-21T20:44:50.585Z",
-    "agentSession": "0.22.0",
-    "environment": "terminal"
+    "metadata": {
+      "@inixiative/agent-session": "0.22.2"
+    }
   }
 }

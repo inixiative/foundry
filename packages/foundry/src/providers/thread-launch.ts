@@ -3,7 +3,12 @@
  * @kind service
  * @partOf primitive:nativeSessions
  */
-import { REASONING_EFFORTS, type ReasoningEffort } from '@inixiative/foundry-core';
+import {
+  MODEL_SPEEDS,
+  type ModelSpeed,
+  REASONING_EFFORTS,
+  type ReasoningEffort,
+} from '@inixiative/foundry-core';
 /**
  * What a host (an ACP client, or the viewer) chose for one thread's executor session: the
  * permission mode and effort it runs with and the MCP servers it carries. The model is not a host
@@ -23,6 +28,9 @@ export type PermissionMode = (typeof PERMISSION_MODES)[number];
 
 /** A thread's effort: the registry's vocabulary; which levels a model takes is the registry's (modelEfforts). */
 export type EffortLevel = ReasoningEffort;
+
+/** A thread's speed: the registry's vocabulary; which tiers a model takes is the registry's (modelSpeeds). */
+export type SpeedLevel = ModelSpeed;
 
 /** A client MCP server, in ACP's shape (`stdio` without a type, or `http`). */
 export type ClientMcpServer =
@@ -45,6 +53,7 @@ export interface ThreadLaunch {
   /** The thread's model (`ThreadMeta.model.id`), filled by `forLaunch`; never set by a patch. */
   readonly model?: string;
   readonly effort?: EffortLevel;
+  readonly speed?: SpeedLevel;
   readonly mcpServers?: readonly ClientMcpServer[];
   /** Bumped on every change; a warm session launched at an older revision is relaunched. */
   readonly revision: number;
@@ -53,6 +62,7 @@ export interface ThreadLaunch {
 export type ThreadLaunchPatch = {
   permissionMode?: PermissionMode | null;
   effort?: EffortLevel | null;
+  speed?: SpeedLevel | null;
   mcpServers?: readonly ClientMcpServer[] | null;
 };
 
@@ -159,10 +169,12 @@ export class ThreadLaunchSettings {
       throw Error(`Unknown permission mode: ${patch.permissionMode}`);
     if (patch.effort != null && !REASONING_EFFORTS.includes(patch.effort))
       throw Error(`Unknown effort: ${patch.effort}`);
+    if (patch.speed != null && !MODEL_SPEEDS.includes(patch.speed))
+      throw Error(`Unknown speed: ${patch.speed}`);
     if ('model' in patch)
       throw Error("A thread's model is its record's, changed through its model route");
     const next: Record<string, unknown> = { ...current };
-    for (const key of ['permissionMode', 'effort'] as const)
+    for (const key of ['permissionMode', 'effort', 'speed'] as const)
       if (key in patch) {
         if (patch[key] === null) delete next[key];
         else next[key] = patch[key];
@@ -171,7 +183,7 @@ export class ThreadLaunchSettings {
       if (patch.mcpServers === null || patch.mcpServers?.length === 0) delete next.mcpServers;
       else next.mcpServers = clientMcpServers(patch.mcpServers);
     }
-    const changed = (['permissionMode', 'effort', 'mcpServers'] as const).some(
+    const changed = (['permissionMode', 'effort', 'speed', 'mcpServers'] as const).some(
       (key) => JSON.stringify(next[key] ?? null) !== JSON.stringify(current[key] ?? null),
     );
     if (!changed) return current;

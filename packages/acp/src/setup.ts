@@ -268,10 +268,11 @@ export async function runSetup(args: string[]): Promise<number> {
   console.log(
     [
       '',
-      'T3 Code: Settings → Providers → Add provider → Local ACP command',
-      `  Executable: ${acpCommand[0]}`,
-      `  Argument:   ${acpCommand[1]}`,
-      '  Name:       Foundry',
+      'T3 Code: Settings → Providers → Add provider → Show more → Local ACP command',
+      `  Executable:  ${acpCommand[0]}`,
+      `  Argument:    ${acpCommand[1]}`,
+      '  Label:       Foundry',
+      '  Instance ID: foundry',
       '',
       'Either host: add `--permission-mode <default|acceptEdits|plan|bypassPermissions>` after the path for a default mode.',
     ].join('\n'),

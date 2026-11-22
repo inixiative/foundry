@@ -1,5 +1,6 @@
 {
-  "version": "1.4.20",
+  "version": "1.4.25",
+  "transport": "process",
   "status": 0,
   "body": {
     "kind": "process",
@@ -14,46 +15,46 @@
       "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"clientInfo\":{\"name\":\"agent_session\",\"title\":\"agent-session\",\"version\":\"1\"},\"capabilities\":{\"experimentalApi\":true,\"userInputDialogs\":true}}}",
       "{\"jsonrpc\":\"2.0\",\"method\":\"initialized\"}",
       "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"session/start\",\"params\":{\"approvalMode\":\"allowAll\",\"providerId\":\"meta\",\"workspaceRoot\":\"{{cwd}}\",\"modelId\":\"muse-wonder-1.0\",\"permissionProfile\":\":unrestricted\",\"commandId\":\"01a19a00-0000-7000-8000-000000000001\"}}",
-      "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"session/read\",\"params\":{\"sessionId\":\"01a1ffda-6913-7711-8631-086d2975a9b9\",\"commandId\":\"01a19a00-0000-7000-8000-000000000002\"}}",
-      "{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"turn/start\",\"params\":{\"commandId\":\"01a19a00-0000-7000-8000-000000000003\",\"input\":[{\"type\":\"text\",\"text\":\"# User Message\\n\\nfirst turn. Reply with exactly accepted-private-answer and nothing else.\"}],\"sessionId\":\"01a1ffda-6913-7711-8631-086d2975a9b9\",\"reasoningEffort\":\"low\"}}",
-      "{\"jsonrpc\":\"2.0\",\"id\":5,\"method\":\"turn/start\",\"params\":{\"commandId\":\"01a19a00-0000-7000-8000-000000000004\",\"input\":[{\"type\":\"text\",\"text\":\"# User Message\\n\\nsecond turn. Reply with exactly accepted-private-answer and nothing else.\"}],\"sessionId\":\"01a1ffda-6913-7711-8631-086d2975a9b9\",\"reasoningEffort\":\"low\"}}"
+      "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"session/read\",\"params\":{\"sessionId\":\"01a203c2-fec7-7462-86c1-312fdfa8f22c\",\"commandId\":\"01a19a00-0000-7000-8000-000000000002\"}}",
+      "{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"turn/start\",\"params\":{\"commandId\":\"01a19a00-0000-7000-8000-000000000003\",\"input\":[{\"type\":\"text\",\"text\":\"# User Message\\n\\nfirst turn. Reply with exactly accepted-private-answer and nothing else.\"}],\"sessionId\":\"01a203c2-fec7-7462-86c1-312fdfa8f22c\",\"reasoningEffort\":\"low\"}}",
+      "{\"jsonrpc\":\"2.0\",\"id\":5,\"method\":\"turn/start\",\"params\":{\"commandId\":\"01a19a00-0000-7000-8000-000000000004\",\"input\":[{\"type\":\"text\",\"text\":\"# User Message\\n\\nsecond turn. Reply with exactly accepted-private-answer and nothing else.\"}],\"sessionId\":\"01a203c2-fec7-7462-86c1-312fdfa8f22c\",\"reasoningEffort\":\"low\"}}"
     ],
     "stdinEnded": true,
     "frames": [
       {
         "after": 1,
         "stream": "stdout",
-        "data": "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"serverInfo\":{\"name\":\"muse\",\"version\":\"1.4.20\"},\"userAgent\":\"muse-build/1.4.20 (serve; macos-aarch64; build 44c2c7550706810d408d301d040ba5eeb5b9b850)\",\"museHome\":\"{{tmp}}/vcr-scenario-WuwMhF/muse-data/muse\",\"platformFamily\":\"unix\",\"platformOs\":\"macos\",\"schema\":{\"version\":1,\"fingerprint\":\"sha256:283b1b125dcc9172928fb5d6711a92a353796d030a7c186988ed527a13cf07f0\",\"experimentalFingerprint\":\"sha256:c2f9255c3e027d8c167a64f638429655f2121d5b28d7b5f6b5da437a99dbe57a\"},\"grantedCapabilities\":[],\"experimentalApi\":true,\"sessionDurability\":\"durable\",\"sandboxAvailability\":\"available\"}}",
+        "data": "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"serverInfo\":{\"name\":\"muse\",\"version\":\"1.4.25\"},\"userAgent\":\"muse-build/1.4.25 (serve; macos-aarch64; build 277a7fe7b7a0138f86e86ee242b96cdde25dfe2b)\",\"museHome\":\"{{tmp}}/vcr-scenario-jh5iKI/muse-data/muse\",\"platformFamily\":\"unix\",\"platformOs\":\"macos\",\"schema\":{\"version\":1,\"fingerprint\":\"sha256:6bf518067b065a503ea7d4f081a44fc056b532cf4b362a1894024863b25fb2aa\",\"experimentalFingerprint\":\"sha256:47a1c9ffd261dc7b0ca216aff5864e1b5bd33a52a7d9c4bc1897e4e3f3d98753\",\"compatibilityEpoch\":0},\"grantedCapabilities\":[],\"experimentalApi\":true,\"sessionDurability\":\"durable\",\"sandboxAvailability\":\"available\"}}",
         "kept": true
       },
       {
         "after": 3,
         "stream": "stdout",
-        "data": "{\"jsonrpc\":\"2.0\",\"method\":\"session/approvalModeChanged\",\"params\":{\"sessionId\":\"01a1ffda-6913-7711-8631-086d2975a9b9\",\"viewCursor\":\"v10:01a1ffda-6913-7711-8631-086d2975a9b9:1\",\"sourceRange\":{\"stream\":{\"kind\":\"session\",\"id\":\"01a1ffda-6913-7711-8631-086d2975a9b9\"},\"first\":{\"id\":\"01a1ffda-69bb-7480-b5f3-5a8bcec1c8fb\",\"sequence\":7},\"last\":{\"id\":\"01a1ffda-69bb-7480-b5f3-5a8bcec1c8fb\",\"sequence\":7}},\"mode\":\"allowAll\",\"source\":\"approvalReconfigure\",\"commandId\":\"01a19a00-0000-7000-8000-000000000001\",\"clientName\":\"agent_session\"},\"emittedAtMs\":1795293866516}",
+        "data": "{\"jsonrpc\":\"2.0\",\"method\":\"session/approvalModeChanged\",\"params\":{\"sessionId\":\"01a203c2-fec7-7462-86c1-312fdfa8f22c\",\"viewCursor\":\"v10:01a203c2-fec7-7462-86c1-312fdfa8f22c:1\",\"sourceRange\":{\"stream\":{\"kind\":\"session\",\"id\":\"01a203c2-fec7-7462-86c1-312fdfa8f22c\"},\"first\":{\"id\":\"01a203c2-ff68-7690-9e32-6445516c9d8b\",\"sequence\":7},\"last\":{\"id\":\"01a203c2-ff68-7690-9e32-6445516c9d8b\",\"sequence\":7}},\"mode\":\"allowAll\",\"source\":\"approvalReconfigure\",\"commandId\":\"01a19a00-0000-7000-8000-000000000001\",\"clientName\":\"agent_session\"},\"emittedAtMs\":1795359440838}",
         "kept": true
       },
       {
         "after": 3,
         "stream": "stdout",
-        "data": "{\"jsonrpc\":\"2.0\",\"method\":\"session/started\",\"params\":{\"session\":{\"sessionId\":\"01a1ffda-6913-7711-8631-086d2975a9b9\",\"path\":\"{{tmp}}/vcr-scenario-WuwMhF/muse-data/muse/sessions/2026/11/21/01a1ffda-6913-7711-8631-086d2975a9b9/session.jsonl\",\"status\":\"idle\",\"activeTurnId\":null,\"createdAt\":\"2026-11-21T20:44:26.400844Z\",\"updatedAt\":\"2026-11-21T20:44:26.427924Z\",\"workspaceRoot\":\"{{cwd}}\",\"providerId\":\"meta\",\"modelId\":\"muse-wonder-1.0\",\"turnCount\":0,\"forkedFrom\":null,\"sideFrom\":null,\"approvalMode\":{\"mode\":\"allowAll\",\"source\":\"startup\",\"lastCommandId\":null},\"createdByClient\":{\"name\":\"agent_session\",\"version\":\"1\"},\"kind\":\"root\",\"permissionState\":{\"profileId\":\":unrestricted\",\"reviewerAuthority\":\"none\",\"axes\":{\"filesystem\":\"unrestricted\",\"network\":\"enabled\",\"approval\":\"allowAll\",\"reviewer\":\"none\"},\"reviewerAttached\":true}}},\"emittedAtMs\":1795293867036}",
+        "data": "{\"jsonrpc\":\"2.0\",\"method\":\"session/started\",\"params\":{\"session\":{\"sessionId\":\"01a203c2-fec7-7462-86c1-312fdfa8f22c\",\"path\":\"{{tmp}}/vcr-scenario-jh5iKI/muse-data/muse/sessions/2026/11/22/01a203c2-fec7-7462-86c1-312fdfa8f22c/session.jsonl\",\"status\":\"idle\",\"activeTurnId\":null,\"createdAt\":\"2026-11-22T14:57:20.712742Z\",\"updatedAt\":\"2026-11-22T14:57:20.744486Z\",\"workspaceRoot\":\"{{cwd}}\",\"providerId\":\"meta\",\"modelId\":\"muse-wonder-1.0\",\"turnCount\":0,\"forkedFrom\":null,\"sideFrom\":null,\"approvalMode\":{\"mode\":\"allowAll\",\"source\":\"startup\",\"lastCommandId\":null},\"createdByClient\":{\"name\":\"agent_session\",\"version\":\"1\"},\"kind\":\"root\",\"permissionState\":{\"profileId\":\":unrestricted\",\"reviewerAuthority\":\"none\",\"axes\":{\"filesystem\":\"unrestricted\",\"network\":\"enabled\",\"approval\":\"allowAll\",\"reviewer\":\"none\"},\"reviewerAttached\":true}}},\"emittedAtMs\":1795359441331}",
         "kept": true
       },
       {
         "after": 3,
         "stream": "stdout",
-        "data": "{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{\"session\":{\"sessionId\":\"01a1ffda-6913-7711-8631-086d2975a9b9\",\"path\":\"{{tmp}}/vcr-scenario-WuwMhF/muse-data/muse/sessions/2026/11/21/01a1ffda-6913-7711-8631-086d2975a9b9/session.jsonl\",\"status\":\"idle\",\"activeTurnId\":null,\"createdAt\":\"2026-11-21T20:44:26.400844Z\",\"updatedAt\":\"2026-11-21T20:44:26.427924Z\",\"workspaceRoot\":\"{{cwd}}\",\"providerId\":\"meta\",\"modelId\":\"muse-wonder-1.0\",\"turnCount\":0,\"forkedFrom\":null,\"sideFrom\":null,\"approvalMode\":{\"mode\":\"allowAll\",\"source\":\"startup\",\"lastCommandId\":null},\"createdByClient\":{\"name\":\"agent_session\",\"version\":\"1\"},\"kind\":\"root\",\"permissionState\":{\"profileId\":\":unrestricted\",\"reviewerAuthority\":\"none\",\"axes\":{\"filesystem\":\"unrestricted\",\"network\":\"enabled\",\"approval\":\"allowAll\",\"reviewer\":\"none\"},\"reviewerAttached\":true}},\"viewCursor\":\"v10:01a1ffda-6913-7711-8631-086d2975a9b9:1\"}}",
+        "data": "{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{\"session\":{\"sessionId\":\"01a203c2-fec7-7462-86c1-312fdfa8f22c\",\"path\":\"{{tmp}}/vcr-scenario-jh5iKI/muse-data/muse/sessions/2026/11/22/01a203c2-fec7-7462-86c1-312fdfa8f22c/session.jsonl\",\"status\":\"idle\",\"activeTurnId\":null,\"createdAt\":\"2026-11-22T14:57:20.712742Z\",\"updatedAt\":\"2026-11-22T14:57:20.744486Z\",\"workspaceRoot\":\"{{cwd}}\",\"providerId\":\"meta\",\"modelId\":\"muse-wonder-1.0\",\"turnCount\":0,\"forkedFrom\":null,\"sideFrom\":null,\"approvalMode\":{\"mode\":\"allowAll\",\"source\":\"startup\",\"lastCommandId\":null},\"createdByClient\":{\"name\":\"agent_session\",\"version\":\"1\"},\"kind\":\"root\",\"permissionState\":{\"profileId\":\":unrestricted\",\"reviewerAuthority\":\"none\",\"axes\":{\"filesystem\":\"unrestricted\",\"network\":\"enabled\",\"approval\":\"allowAll\",\"reviewer\":\"none\"},\"reviewerAttached\":true}},\"viewCursor\":\"v10:01a203c2-fec7-7462-86c1-312fdfa8f22c:1\"}}",
         "kept": true
       },
       {
         "after": 4,
         "stream": "stdout",
-        "data": "{\"jsonrpc\":\"2.0\",\"id\":3,\"result\":{\"session\":{\"sessionId\":\"01a1ffda-6913-7711-8631-086d2975a9b9\",\"path\":\"{{tmp}}/vcr-scenario-WuwMhF/muse-data/muse/sessions/2026/11/21/01a1ffda-6913-7711-8631-086d2975a9b9/session.jsonl\",\"status\":\"idle\",\"activeTurnId\":null,\"createdAt\":\"2026-11-21T20:44:26.260076Z\",\"updatedAt\":\"2026-11-21T20:44:27.049065Z\",\"workspaceRoot\":\"{{cwd}}\",\"providerId\":\"meta\",\"modelId\":\"muse-wonder-1.0\",\"turnCount\":0,\"forkedFrom\":null,\"sideFrom\":null,\"kind\":\"root\",\"createdByClient\":{\"name\":\"agent_session\",\"version\":\"1\"},\"approvalMode\":{\"mode\":\"allowAll\",\"source\":\"startup\",\"lastCommandId\":null},\"logBytes\":8306,\"permissionState\":{\"profileId\":\":unrestricted\",\"reviewerAuthority\":\"none\",\"axes\":{\"filesystem\":\"unrestricted\",\"network\":\"enabled\",\"approval\":\"allowAll\",\"reviewer\":\"none\"},\"reviewerAttached\":true},\"driveHolder\":{\"name\":\"agent_session\",\"version\":\"1\"},\"quiescent\":false},\"viewCursor\":\"v10:01a1ffda-6913-7711-8631-086d2975a9b9:1\",\"history\":{\"mode\":\"none\",\"items\":null,\"snapshot\":null,\"noneReason\":\"excluded\"},\"pendingRequests\":[],\"recoveryObservation\":{\"sessionId\":\"01a1ffda-6913-7711-8631-086d2975a9b9\",\"constructionId\":\"01a1ffda-6c13-7732-8285-bb6b74dc0c72\",\"requestedMode\":\"off\",\"effectiveMode\":\"off\",\"effectiveSource\":\"legacyOmission\",\"qualification\":\"notRequired\"}}}",
+        "data": "{\"jsonrpc\":\"2.0\",\"id\":3,\"result\":{\"session\":{\"sessionId\":\"01a203c2-fec7-7462-86c1-312fdfa8f22c\",\"path\":\"{{tmp}}/vcr-scenario-jh5iKI/muse-data/muse/sessions/2026/11/22/01a203c2-fec7-7462-86c1-312fdfa8f22c/session.jsonl\",\"status\":\"idle\",\"activeTurnId\":null,\"createdAt\":\"2026-11-22T14:57:20.584975Z\",\"updatedAt\":\"2026-11-22T14:57:21.334583Z\",\"workspaceRoot\":\"{{cwd}}\",\"providerId\":\"meta\",\"modelId\":\"muse-wonder-1.0\",\"turnCount\":0,\"forkedFrom\":null,\"sideFrom\":null,\"kind\":\"root\",\"createdByClient\":{\"name\":\"agent_session\",\"version\":\"1\"},\"approvalMode\":{\"mode\":\"allowAll\",\"source\":\"startup\",\"lastCommandId\":null},\"logBytes\":8967,\"permissionState\":{\"profileId\":\":unrestricted\",\"reviewerAuthority\":\"none\",\"axes\":{\"filesystem\":\"unrestricted\",\"network\":\"enabled\",\"approval\":\"allowAll\",\"reviewer\":\"none\"},\"reviewerAttached\":true},\"driveHolder\":{\"name\":\"agent_session\",\"version\":\"1\"},\"quiescent\":false},\"viewCursor\":\"v10:01a203c2-fec7-7462-86c1-312fdfa8f22c:1\",\"history\":{\"mode\":\"none\",\"items\":null,\"snapshot\":null,\"noneReason\":\"excluded\"},\"pendingRequests\":[],\"recoveryObservation\":{\"sessionId\":\"01a203c2-fec7-7462-86c1-312fdfa8f22c\",\"constructionId\":\"01a203c3-01a9-72c0-8a67-50b7bf0d68d4\",\"requestedMode\":\"off\",\"effectiveMode\":\"off\",\"effectiveSource\":\"legacyOmission\",\"qualification\":\"notRequired\"}}}",
         "kept": true
       },
       {
         "after": 5,
         "stream": "stdout",
-        "data": "{\"jsonrpc\":\"2.0\",\"method\":\"session/nameChanged\",\"params\":{\"sessionId\":\"01a1ffda-6913-7711-8631-086d2975a9b9\",\"viewCursor\":\"v10:01a1ffda-6913-7711-8631-086d2975a9b9:2\",\"sourceRange\":{\"stream\":{\"kind\":\"session\",\"id\":\"01a1ffda-6913-7711-8631-086d2975a9b9\"},\"first\":{\"id\":\"01a1ffda-6c6f-7ec1-9ab9-b544e2fe835a\",\"sequence\":24},\"last\":{\"id\":\"01a1ffda-6c6f-7ec1-9ab9-b544e2fe835a\",\"sequence\":24}},\"name\":\"brown-stellar\",\"nameOrigin\":\"automatic\"},\"emittedAtMs\":1795293867129}",
+        "data": "{\"jsonrpc\":\"2.0\",\"method\":\"session/nameChanged\",\"params\":{\"sessionId\":\"01a203c2-fec7-7462-86c1-312fdfa8f22c\",\"viewCursor\":\"v10:01a203c2-fec7-7462-86c1-312fdfa8f22c:2\",\"sourceRange\":{\"stream\":{\"kind\":\"session\",\"id\":\"01a203c2-fec7-7462-86c1-312fdfa8f22c\"},\"first\":{\"id\":\"01a203c3-0206-74a0-9b00-e7cff4a24773\",\"sequence\":24},\"last\":{\"id\":\"01a203c3-0206-74a0-9b00-e7cff4a24773\",\"sequence\":24}},\"name\":\"ebony-tucana\",\"nameOrigin\":\"automatic\"},\"emittedAtMs\":1795359441420}",
         "kept": true
       },
       {
@@ -65,115 +66,91 @@
       {
         "after": 5,
         "stream": "stdout",
-        "data": "{\"jsonrpc\":\"2.0\",\"method\":\"session/statusChanged\",\"params\":{\"sessionId\":\"01a1ffda-6913-7711-8631-086d2975a9b9\",\"status\":\"running\",\"permissionState\":{\"profileId\":\":unrestricted\",\"reviewerAuthority\":\"none\",\"reviewerAttached\":true,\"axes\":{\"filesystem\":\"unrestricted\",\"network\":\"enabled\",\"approval\":\"allowAll\",\"reviewer\":\"none\"}},\"viewCursor\":\"v10:01a1ffda-6913-7711-8631-086d2975a9b9:3\"},\"emittedAtMs\":1795293867154}",
+        "data": "{\"jsonrpc\":\"2.0\",\"method\":\"session/statusChanged\",\"params\":{\"sessionId\":\"01a203c2-fec7-7462-86c1-312fdfa8f22c\",\"status\":\"running\",\"permissionState\":{\"profileId\":\":unrestricted\",\"reviewerAuthority\":\"none\",\"reviewerAttached\":true,\"axes\":{\"filesystem\":\"unrestricted\",\"network\":\"enabled\",\"approval\":\"allowAll\",\"reviewer\":\"none\"}},\"viewCursor\":\"v10:01a203c2-fec7-7462-86c1-312fdfa8f22c:3\"},\"emittedAtMs\":1795359441441}",
         "kept": true
       },
       {
         "after": 5,
         "stream": "stdout",
-        "data": "{\"jsonrpc\":\"2.0\",\"method\":\"turn/started\",\"params\":{\"sessionId\":\"01a1ffda-6913-7711-8631-086d2975a9b9\",\"viewCursor\":\"v10:01a1ffda-6913-7711-8631-086d2975a9b9:3\",\"sourceRange\":{\"stream\":{\"kind\":\"session\",\"id\":\"01a1ffda-6913-7711-8631-086d2975a9b9\"},\"first\":{\"id\":\"01a1ffda-6c80-7723-b4bc-67ae5d2e9e70\",\"sequence\":25},\"last\":{\"id\":\"01a1ffda-6c80-7723-b4bc-67ae5d2e9e70\",\"sequence\":25}},\"turnId\":\"01a19a00-0000-7000-8000-000000000003\",\"commandId\":\"01a19a00-0000-7000-8000-000000000003\"},\"emittedAtMs\":1795293867156}",
+        "data": "{\"jsonrpc\":\"2.0\",\"method\":\"turn/started\",\"params\":{\"sessionId\":\"01a203c2-fec7-7462-86c1-312fdfa8f22c\",\"viewCursor\":\"v10:01a203c2-fec7-7462-86c1-312fdfa8f22c:3\",\"sourceRange\":{\"stream\":{\"kind\":\"session\",\"id\":\"01a203c2-fec7-7462-86c1-312fdfa8f22c\"},\"first\":{\"id\":\"01a203c3-0217-7030-a13b-03ab4267c3a5\",\"sequence\":25},\"last\":{\"id\":\"01a203c3-0217-7030-a13b-03ab4267c3a5\",\"sequence\":25}},\"turnId\":\"01a19a00-0000-7000-8000-000000000003\",\"commandId\":\"01a19a00-0000-7000-8000-000000000003\"},\"emittedAtMs\":1795359441444}",
         "kept": true
       },
       {
         "after": 5,
         "stream": "stdout",
-        "data": "{\"jsonrpc\":\"2.0\",\"method\":\"item/completed\",\"params\":{\"sessionId\":\"01a1ffda-6913-7711-8631-086d2975a9b9\",\"viewCursor\":\"v10:01a1ffda-6913-7711-8631-086d2975a9b9:4\",\"sourceRange\":{\"stream\":{\"kind\":\"session\",\"id\":\"01a1ffda-6913-7711-8631-086d2975a9b9\"},\"first\":{\"id\":\"01a1ffda-6c80-7723-b4bc-67ae5d2e9e70\",\"sequence\":25},\"last\":{\"id\":\"01a1ffda-6c80-7723-b4bc-67ae5d2e9e70\",\"sequence\":25}},\"item\":{\"itemId\":\"14a538c6-5097-4a28-a102-204c3fba66c1\",\"kind\":\"userMessage\",\"turnId\":\"01a19a00-0000-7000-8000-000000000003\",\"revision\":1,\"status\":\"completed\",\"recordedAt\":\"2026-11-21T20:44:27.136724Z\",\"text\":\"# User Message\\n\\nfirst turn. Reply with exactly accepted-private-answer and nothing else.\",\"commandId\":\"01a19a00-0000-7000-8000-000000000003\"}},\"emittedAtMs\":1795293867156}",
+        "data": "{\"jsonrpc\":\"2.0\",\"method\":\"item/completed\",\"params\":{\"sessionId\":\"01a203c2-fec7-7462-86c1-312fdfa8f22c\",\"viewCursor\":\"v10:01a203c2-fec7-7462-86c1-312fdfa8f22c:4\",\"sourceRange\":{\"stream\":{\"kind\":\"session\",\"id\":\"01a203c2-fec7-7462-86c1-312fdfa8f22c\"},\"first\":{\"id\":\"01a203c3-0217-7030-a13b-03ab4267c3a5\",\"sequence\":25},\"last\":{\"id\":\"01a203c3-0217-7030-a13b-03ab4267c3a5\",\"sequence\":25}},\"item\":{\"itemId\":\"af0ebef7-30b0-4911-8c27-2bad1300cbc3\",\"kind\":\"userMessage\",\"turnId\":\"01a19a00-0000-7000-8000-000000000003\",\"revision\":1,\"status\":\"completed\",\"recordedAt\":\"2026-11-22T14:57:21.431992Z\",\"text\":\"# User Message\\n\\nfirst turn. Reply with exactly accepted-private-answer and nothing else.\",\"commandId\":\"01a19a00-0000-7000-8000-000000000003\"}},\"emittedAtMs\":1795359441444}",
         "kept": true
       },
       {
         "after": 5,
         "stream": "stdout",
-        "data": "{\"jsonrpc\":\"2.0\",\"method\":\"item/started\",\"params\":{\"sessionId\":\"01a1ffda-6913-7711-8631-086d2975a9b9\",\"viewCursor\":\"v10:01a1ffda-6913-7711-8631-086d2975a9b9:5\",\"sourceRange\":{\"stream\":{\"kind\":\"session\",\"id\":\"01a1ffda-6913-7711-8631-086d2975a9b9\"},\"first\":{\"id\":\"01a1ffda-6d29-7a00-ab0b-87e496560da4\",\"sequence\":45},\"last\":{\"id\":\"01a1ffda-6d29-7a00-ab0b-87e496560da4\",\"sequence\":45}},\"item\":{\"itemId\":\"01a1ffda-6d29-7a00-ab0b-87e496560da4\",\"kind\":\"reminderChild\",\"turnId\":\"01a19a00-0000-7000-8000-000000000003\",\"revision\":1,\"status\":\"inProgress\",\"recordedAt\":\"2026-11-21T20:44:27.305504Z\",\"fallbackText\":\"Reminder child session\",\"childSessionId\":\"01a1ffda-6d00-75b0-9d67-0fff0e0c93d0\",\"reminderAgentId\":\"skill-reminder\",\"generationId\":1,\"taskId\":\"01a1ffda-6d00-75b0-9d67-0fe22cf05f7f\"}},\"emittedAtMs\":1795293867314}",
+        "data": "{\"jsonrpc\":\"2.0\",\"method\":\"turn/modelAttemptStarted\",\"params\":{\"sessionId\":\"01a203c2-fec7-7462-86c1-312fdfa8f22c\",\"viewCursor\":\"v10:01a203c2-fec7-7462-86c1-312fdfa8f22c:5\",\"sourceRange\":{\"stream\":{\"kind\":\"session\",\"id\":\"01a203c2-fec7-7462-86c1-312fdfa8f22c\"},\"first\":{\"id\":\"01a203c3-02a4-7462-81f5-2347494bd1b8\",\"sequence\":36},\"last\":{\"id\":\"01a203c3-02a4-7462-81f5-2347494bd1b8\",\"sequence\":36}},\"turnId\":\"01a19a00-0000-7000-8000-000000000003\"},\"emittedAtMs\":1795359441580}",
         "kept": true
       },
       {
         "after": 5,
         "stream": "stdout",
-        "data": "{\"jsonrpc\":\"2.0\",\"method\":\"turn/modelAttemptStarted\",\"params\":{\"sessionId\":\"01a1ffda-6913-7711-8631-086d2975a9b9\",\"viewCursor\":\"v10:01a1ffda-6913-7711-8631-086d2975a9b9:6\",\"sourceRange\":{\"stream\":{\"kind\":\"session\",\"id\":\"01a1ffda-6913-7711-8631-086d2975a9b9\"},\"first\":{\"id\":\"01a1ffda-6d8f-7151-8c51-43708fb78618\",\"sequence\":55},\"last\":{\"id\":\"01a1ffda-6d8f-7151-8c51-43708fb78618\",\"sequence\":55}},\"turnId\":\"01a19a00-0000-7000-8000-000000000003\"},\"emittedAtMs\":1795293867415}",
+        "data": "{\"jsonrpc\":\"2.0\",\"method\":\"item/started\",\"params\":{\"sessionId\":\"01a203c2-fec7-7462-86c1-312fdfa8f22c\",\"viewCursor\":\"v10:01a203c2-fec7-7462-86c1-312fdfa8f22c:5.1\",\"item\":{\"itemId\":\"70573f52-aea8-40e2-92c1-d0f13bfeaf32\",\"kind\":\"agentMessage\",\"turnId\":\"01a19a00-0000-7000-8000-000000000003\",\"revision\":1,\"status\":\"inProgress\",\"text\":\"\",\"messagePhase\":\"finalAnswer\"}},\"emittedAtMs\":1795359445511}",
         "kept": true
       },
       {
         "after": 5,
         "stream": "stdout",
-        "data": "{\"jsonrpc\":\"2.0\",\"method\":\"item/started\",\"params\":{\"sessionId\":\"01a1ffda-6913-7711-8631-086d2975a9b9\",\"viewCursor\":\"v10:01a1ffda-6913-7711-8631-086d2975a9b9:6.1\",\"item\":{\"itemId\":\"b96cdd8f-479f-4268-b8a1-e4d2c825d1ec\",\"kind\":\"agentMessage\",\"turnId\":\"01a19a00-0000-7000-8000-000000000003\",\"revision\":1,\"status\":\"inProgress\",\"text\":\"\",\"messagePhase\":\"finalAnswer\"}},\"emittedAtMs\":1795293872622}",
+        "data": "{\"jsonrpc\":\"2.0\",\"method\":\"item/delta\",\"params\":{\"sessionId\":\"01a203c2-fec7-7462-86c1-312fdfa8f22c\",\"viewCursor\":\"v10:01a203c2-fec7-7462-86c1-312fdfa8f22c:5.2\",\"itemId\":\"70573f52-aea8-40e2-92c1-d0f13bfeaf32\",\"field\":\"text\",\"delta\":\"accepted-private-answer\"},\"emittedAtMs\":1795359445511}",
         "kept": true
       },
       {
         "after": 5,
         "stream": "stdout",
-        "data": "{\"jsonrpc\":\"2.0\",\"method\":\"item/delta\",\"params\":{\"sessionId\":\"01a1ffda-6913-7711-8631-086d2975a9b9\",\"viewCursor\":\"v10:01a1ffda-6913-7711-8631-086d2975a9b9:6.2\",\"itemId\":\"b96cdd8f-479f-4268-b8a1-e4d2c825d1ec\",\"field\":\"text\",\"delta\":\"accepted-private-answer\"},\"emittedAtMs\":1795293872622}",
+        "data": "{\"jsonrpc\":\"2.0\",\"method\":\"item/completed\",\"params\":{\"sessionId\":\"01a203c2-fec7-7462-86c1-312fdfa8f22c\",\"viewCursor\":\"v10:01a203c2-fec7-7462-86c1-312fdfa8f22c:6\",\"sourceRange\":{\"stream\":{\"kind\":\"session\",\"id\":\"01a203c2-fec7-7462-86c1-312fdfa8f22c\"},\"first\":{\"id\":\"01a203c3-1204-76e1-b783-3da0a0ce7489\",\"sequence\":39},\"last\":{\"id\":\"01a203c3-1204-76e1-b783-3da0a0ce7489\",\"sequence\":39}},\"item\":{\"itemId\":\"70573f52-aea8-40e2-92c1-d0f13bfeaf32\",\"kind\":\"agentMessage\",\"turnId\":\"01a19a00-0000-7000-8000-000000000003\",\"revision\":2,\"status\":\"completed\",\"recordedAt\":\"2026-11-22T14:57:25.508746Z\",\"text\":\"accepted-private-answer\",\"messagePhase\":\"finalAnswer\"}},\"emittedAtMs\":1795359445514}",
         "kept": true
       },
       {
         "after": 5,
         "stream": "stdout",
-        "data": "{\"jsonrpc\":\"2.0\",\"method\":\"item/completed\",\"params\":{\"sessionId\":\"01a1ffda-6913-7711-8631-086d2975a9b9\",\"viewCursor\":\"v10:01a1ffda-6913-7711-8631-086d2975a9b9:7\",\"sourceRange\":{\"stream\":{\"kind\":\"session\",\"id\":\"01a1ffda-6913-7711-8631-086d2975a9b9\"},\"first\":{\"id\":\"01a1ffda-81ef-7d12-851c-e7a6c21b4f02\",\"sequence\":58},\"last\":{\"id\":\"01a1ffda-81ef-7d12-851c-e7a6c21b4f02\",\"sequence\":58}},\"item\":{\"itemId\":\"b96cdd8f-479f-4268-b8a1-e4d2c825d1ec\",\"kind\":\"agentMessage\",\"turnId\":\"01a19a00-0000-7000-8000-000000000003\",\"revision\":2,\"status\":\"completed\",\"recordedAt\":\"2026-11-21T20:44:32.623127Z\",\"text\":\"accepted-private-answer\",\"messagePhase\":\"finalAnswer\"}},\"emittedAtMs\":1795293872628}",
+        "data": "{\"jsonrpc\":\"2.0\",\"method\":\"session/tokenUsage\",\"params\":{\"sessionId\":\"01a203c2-fec7-7462-86c1-312fdfa8f22c\",\"viewCursor\":\"v10:01a203c2-fec7-7462-86c1-312fdfa8f22c:7\",\"sourceRange\":{\"stream\":{\"kind\":\"session\",\"id\":\"01a203c2-fec7-7462-86c1-312fdfa8f22c\"},\"first\":{\"id\":\"01a203c3-123b-7b00-8049-63e7db4bcca5\",\"sequence\":42},\"last\":{\"id\":\"01a203c3-123b-7b00-8049-63e7db4bcca5\",\"sequence\":42}},\"turnId\":\"01a19a00-0000-7000-8000-000000000003\",\"modelId\":\"muse-wonder-1.0\",\"usage\":{\"inputTokens\":35714,\"outputTokens\":22,\"cachedTokens\":0,\"cacheWriteTokens\":0,\"cacheReadTokens\":0,\"reasoningTokens\":10},\"promptTokens\":35714,\"totalTokens\":35736,\"durationMs\":3981,\"cumulative\":{\"promptTokens\":35714,\"outputTokens\":22,\"totalTokens\":35736}},\"emittedAtMs\":1795359445573}",
         "kept": true
       },
       {
         "after": 5,
         "stream": "stdout",
-        "data": "{\"jsonrpc\":\"2.0\",\"method\":\"session/tokenUsage\",\"params\":{\"sessionId\":\"01a1ffda-6913-7711-8631-086d2975a9b9\",\"viewCursor\":\"v10:01a1ffda-6913-7711-8631-086d2975a9b9:8\",\"sourceRange\":{\"stream\":{\"kind\":\"session\",\"id\":\"01a1ffda-6913-7711-8631-086d2975a9b9\"},\"first\":{\"id\":\"01a1ffda-8241-7b32-bc24-da6fd76df783\",\"sequence\":61},\"last\":{\"id\":\"01a1ffda-8241-7b32-bc24-da6fd76df783\",\"sequence\":61}},\"turnId\":\"01a19a00-0000-7000-8000-000000000003\",\"modelId\":\"muse-wonder-1.0\",\"usage\":{\"inputTokens\":35379,\"outputTokens\":17,\"cachedTokens\":0,\"cacheWriteTokens\":0,\"cacheReadTokens\":0,\"reasoningTokens\":5},\"promptTokens\":35379,\"totalTokens\":35396,\"durationMs\":5289,\"cumulative\":{\"promptTokens\":35379,\"outputTokens\":17,\"totalTokens\":35396}},\"emittedAtMs\":1795293872715}",
+        "data": "{\"jsonrpc\":\"2.0\",\"method\":\"session/contextUsage\",\"params\":{\"sessionId\":\"01a203c2-fec7-7462-86c1-312fdfa8f22c\",\"viewCursor\":\"v10:01a203c2-fec7-7462-86c1-312fdfa8f22c:8\",\"sourceRange\":{\"stream\":{\"kind\":\"session\",\"id\":\"01a203c2-fec7-7462-86c1-312fdfa8f22c\"},\"first\":{\"id\":\"01a203c3-123b-7b00-8049-63e7db4bcca5\",\"sequence\":42},\"last\":{\"id\":\"01a203c3-123b-7b00-8049-63e7db4bcca5\",\"sequence\":42}},\"windowTokens\":1007997,\"usedTokens\":35987,\"pressure\":\"normal\"},\"emittedAtMs\":1795359445573}",
         "kept": true
       },
       {
         "after": 5,
         "stream": "stdout",
-        "data": "{\"jsonrpc\":\"2.0\",\"method\":\"session/contextUsage\",\"params\":{\"sessionId\":\"01a1ffda-6913-7711-8631-086d2975a9b9\",\"viewCursor\":\"v10:01a1ffda-6913-7711-8631-086d2975a9b9:9\",\"sourceRange\":{\"stream\":{\"kind\":\"session\",\"id\":\"01a1ffda-6913-7711-8631-086d2975a9b9\"},\"first\":{\"id\":\"01a1ffda-8241-7b32-bc24-da6fd76df783\",\"sequence\":61},\"last\":{\"id\":\"01a1ffda-8241-7b32-bc24-da6fd76df783\",\"sequence\":61}},\"windowTokens\":1007997,\"usedTokens\":35652,\"pressure\":\"normal\"},\"emittedAtMs\":1795293872715}",
+        "data": "{\"jsonrpc\":\"2.0\",\"method\":\"turn/foregroundCompleted\",\"params\":{\"sessionId\":\"01a203c2-fec7-7462-86c1-312fdfa8f22c\",\"viewCursor\":\"v10:01a203c2-fec7-7462-86c1-312fdfa8f22c:9\",\"sourceRange\":{\"stream\":{\"kind\":\"session\",\"id\":\"01a203c2-fec7-7462-86c1-312fdfa8f22c\"},\"first\":{\"id\":\"01a203c3-127e-77c0-b81f-e6632ceed25a\",\"sequence\":48},\"last\":{\"id\":\"01a203c3-127e-77c0-b81f-e6632ceed25a\",\"sequence\":48}},\"turnId\":\"01a19a00-0000-7000-8000-000000000003\",\"blockingAgents\":[\"goal-reminder\"]},\"emittedAtMs\":1795359445640}",
         "kept": true
       },
       {
         "after": 5,
         "stream": "stdout",
-        "data": "{\"jsonrpc\":\"2.0\",\"method\":\"item/completed\",\"params\":{\"sessionId\":\"01a1ffda-6913-7711-8631-086d2975a9b9\",\"viewCursor\":\"v10:01a1ffda-6913-7711-8631-086d2975a9b9:10\",\"sourceRange\":{\"stream\":{\"kind\":\"session\",\"id\":\"01a1ffda-6913-7711-8631-086d2975a9b9\"},\"first\":{\"id\":\"01a1ffda-6d29-7a00-ab0b-87e496560da4\",\"sequence\":45},\"last\":{\"id\":\"01a1ffda-8270-76e1-a9d4-9778218c5cf2\",\"sequence\":64}},\"item\":{\"itemId\":\"01a1ffda-6d29-7a00-ab0b-87e496560da4\",\"kind\":\"reminderChild\",\"turnId\":\"01a19a00-0000-7000-8000-000000000003\",\"revision\":2,\"status\":\"completed\",\"recordedAt\":\"2026-11-21T20:44:32.75275Z\",\"fallbackText\":\"Reminder child session\",\"childSessionId\":\"01a1ffda-6d00-75b0-9d67-0fff0e0c93d0\",\"reminderAgentId\":\"skill-reminder\",\"generationId\":1,\"taskId\":\"01a1ffda-6d00-75b0-9d67-0fe22cf05f7f\"}},\"emittedAtMs\":1795293872764}",
+        "data": "{\"jsonrpc\":\"2.0\",\"method\":\"item/started\",\"params\":{\"sessionId\":\"01a203c2-fec7-7462-86c1-312fdfa8f22c\",\"viewCursor\":\"v10:01a203c2-fec7-7462-86c1-312fdfa8f22c:10\",\"sourceRange\":{\"stream\":{\"kind\":\"session\",\"id\":\"01a203c2-fec7-7462-86c1-312fdfa8f22c\"},\"first\":{\"id\":\"01a203c3-127e-77c0-b81f-e6632ceed25a\",\"sequence\":48},\"last\":{\"id\":\"01a203c3-127e-77c0-b81f-e6632ceed25a\",\"sequence\":48}},\"item\":{\"itemId\":\"01a203c3-127e-77c0-b81f-e6632ceed25a\",\"kind\":\"reminderChild\",\"turnId\":\"01a19a00-0000-7000-8000-000000000003\",\"revision\":1,\"status\":\"inProgress\",\"recordedAt\":\"2026-11-22T14:57:25.630202Z\",\"fallbackText\":\"Reminder child session\",\"childSessionId\":\"01a203c3-1250-7152-bcc5-886dd0d6a862\",\"reminderAgentId\":\"goal-reminder\",\"generationId\":1,\"taskId\":\"01a203c3-1250-7152-bcc5-885b7aa1322d\",\"blocking\":true}},\"emittedAtMs\":1795359445640}",
         "kept": true
       },
       {
         "after": 5,
         "stream": "stdout",
-        "data": "{\"jsonrpc\":\"2.0\",\"method\":\"turn/foregroundCompleted\",\"params\":{\"sessionId\":\"01a1ffda-6913-7711-8631-086d2975a9b9\",\"viewCursor\":\"v10:01a1ffda-6913-7711-8631-086d2975a9b9:11\",\"sourceRange\":{\"stream\":{\"kind\":\"session\",\"id\":\"01a1ffda-6913-7711-8631-086d2975a9b9\"},\"first\":{\"id\":\"01a1ffda-82d4-7221-ae16-fd2cf6e47639\",\"sequence\":73},\"last\":{\"id\":\"01a1ffda-82d4-7221-ae16-fd2cf6e47639\",\"sequence\":73}},\"turnId\":\"01a19a00-0000-7000-8000-000000000003\",\"blockingAgents\":[\"goal-reminder\",\"verify-reminder\"]},\"emittedAtMs\":1795293872863}",
+        "data": "{\"jsonrpc\":\"2.0\",\"method\":\"item/completed\",\"params\":{\"sessionId\":\"01a203c2-fec7-7462-86c1-312fdfa8f22c\",\"viewCursor\":\"v10:01a203c2-fec7-7462-86c1-312fdfa8f22c:11\",\"sourceRange\":{\"stream\":{\"kind\":\"session\",\"id\":\"01a203c2-fec7-7462-86c1-312fdfa8f22c\"},\"first\":{\"id\":\"01a203c3-127e-77c0-b81f-e6632ceed25a\",\"sequence\":48},\"last\":{\"id\":\"01a203c3-1da1-7cd2-960f-6e724e3161d2\",\"sequence\":51}},\"item\":{\"itemId\":\"01a203c3-127e-77c0-b81f-e6632ceed25a\",\"kind\":\"reminderChild\",\"turnId\":\"01a19a00-0000-7000-8000-000000000003\",\"revision\":2,\"status\":\"completed\",\"recordedAt\":\"2026-11-22T14:57:28.481252Z\",\"fallbackText\":\"Reminder child session\",\"childSessionId\":\"01a203c3-1250-7152-bcc5-886dd0d6a862\",\"reminderAgentId\":\"goal-reminder\",\"generationId\":1,\"taskId\":\"01a203c3-1250-7152-bcc5-885b7aa1322d\",\"blocking\":true}},\"emittedAtMs\":1795359448487}",
         "kept": true
       },
       {
         "after": 5,
         "stream": "stdout",
-        "data": "{\"jsonrpc\":\"2.0\",\"method\":\"item/started\",\"params\":{\"sessionId\":\"01a1ffda-6913-7711-8631-086d2975a9b9\",\"viewCursor\":\"v10:01a1ffda-6913-7711-8631-086d2975a9b9:12\",\"sourceRange\":{\"stream\":{\"kind\":\"session\",\"id\":\"01a1ffda-6913-7711-8631-086d2975a9b9\"},\"first\":{\"id\":\"01a1ffda-82d4-7221-ae16-fd2cf6e47639\",\"sequence\":73},\"last\":{\"id\":\"01a1ffda-82d4-7221-ae16-fd2cf6e47639\",\"sequence\":73}},\"item\":{\"itemId\":\"01a1ffda-82d4-7221-ae16-fd2cf6e47639\",\"kind\":\"reminderChild\",\"turnId\":\"01a19a00-0000-7000-8000-000000000003\",\"revision\":1,\"status\":\"inProgress\",\"recordedAt\":\"2026-11-21T20:44:32.852474Z\",\"fallbackText\":\"Reminder child session\",\"childSessionId\":\"01a1ffda-829b-7732-bd8f-7f4f2bb11387\",\"reminderAgentId\":\"goal-reminder\",\"generationId\":1,\"taskId\":\"01a1ffda-829b-7732-bd8f-7f38c824be15\",\"blocking\":true}},\"emittedAtMs\":1795293872863}",
+        "data": "{\"jsonrpc\":\"2.0\",\"method\":\"session/statusChanged\",\"params\":{\"sessionId\":\"01a203c2-fec7-7462-86c1-312fdfa8f22c\",\"status\":\"idle\",\"permissionState\":{\"profileId\":\":unrestricted\",\"reviewerAuthority\":\"none\",\"reviewerAttached\":true,\"axes\":{\"filesystem\":\"unrestricted\",\"network\":\"enabled\",\"approval\":\"allowAll\",\"reviewer\":\"none\"}},\"viewCursor\":\"v10:01a203c2-fec7-7462-86c1-312fdfa8f22c:12\"},\"emittedAtMs\":1795359448540}",
         "kept": true
       },
       {
         "after": 5,
         "stream": "stdout",
-        "data": "{\"jsonrpc\":\"2.0\",\"method\":\"item/started\",\"params\":{\"sessionId\":\"01a1ffda-6913-7711-8631-086d2975a9b9\",\"viewCursor\":\"v10:01a1ffda-6913-7711-8631-086d2975a9b9:13\",\"sourceRange\":{\"stream\":{\"kind\":\"session\",\"id\":\"01a1ffda-6913-7711-8631-086d2975a9b9\"},\"first\":{\"id\":\"01a1ffda-8317-7e23-a066-2a4fc455c821\",\"sequence\":80},\"last\":{\"id\":\"01a1ffda-8317-7e23-a066-2a4fc455c821\",\"sequence\":80}},\"item\":{\"itemId\":\"01a1ffda-8317-7e23-a066-2a4fc455c821\",\"kind\":\"reminderChild\",\"turnId\":\"01a19a00-0000-7000-8000-000000000003\",\"revision\":1,\"status\":\"inProgress\",\"recordedAt\":\"2026-11-21T20:44:32.91928Z\",\"fallbackText\":\"Reminder child session\",\"childSessionId\":\"01a1ffda-82e8-7890-a5a7-c1432d84ccad\",\"reminderAgentId\":\"verify-reminder\",\"generationId\":1,\"taskId\":\"01a1ffda-82e8-7890-a5a7-c13143ec3df0\",\"blocking\":true}},\"emittedAtMs\":1795293872929}",
+        "data": "{\"jsonrpc\":\"2.0\",\"method\":\"usage/changed\",\"params\":{\"window\":{\"usedPercent\":14,\"windowDurationMins\":300,\"resetsAtMs\":1795374761000},\"weekly\":{\"usedPercent\":35,\"resetsAtMs\":1795392000000},\"tier\":\"{{tier}}\",\"observedAtMs\":1795359448447},\"emittedAtMs\":1795359448543}",
         "kept": true
       },
       {
         "after": 5,
         "stream": "stdout",
-        "data": "{\"jsonrpc\":\"2.0\",\"method\":\"item/completed\",\"params\":{\"sessionId\":\"01a1ffda-6913-7711-8631-086d2975a9b9\",\"viewCursor\":\"v10:01a1ffda-6913-7711-8631-086d2975a9b9:14\",\"sourceRange\":{\"stream\":{\"kind\":\"session\",\"id\":\"01a1ffda-6913-7711-8631-086d2975a9b9\"},\"first\":{\"id\":\"01a1ffda-82d4-7221-ae16-fd2cf6e47639\",\"sequence\":73},\"last\":{\"id\":\"01a1ffda-911c-7d51-8755-de3281d8ec1b\",\"sequence\":84}},\"item\":{\"itemId\":\"01a1ffda-82d4-7221-ae16-fd2cf6e47639\",\"kind\":\"reminderChild\",\"turnId\":\"01a19a00-0000-7000-8000-000000000003\",\"revision\":2,\"status\":\"completed\",\"recordedAt\":\"2026-11-21T20:44:36.508284Z\",\"fallbackText\":\"Reminder child session\",\"childSessionId\":\"01a1ffda-829b-7732-bd8f-7f4f2bb11387\",\"reminderAgentId\":\"goal-reminder\",\"generationId\":1,\"taskId\":\"01a1ffda-829b-7732-bd8f-7f38c824be15\",\"blocking\":true}},\"emittedAtMs\":1795293876521}",
-        "kept": true
-      },
-      {
-        "after": 5,
-        "stream": "stdout",
-        "data": "{\"jsonrpc\":\"2.0\",\"method\":\"item/completed\",\"params\":{\"sessionId\":\"01a1ffda-6913-7711-8631-086d2975a9b9\",\"viewCursor\":\"v10:01a1ffda-6913-7711-8631-086d2975a9b9:15\",\"sourceRange\":{\"stream\":{\"kind\":\"session\",\"id\":\"01a1ffda-6913-7711-8631-086d2975a9b9\"},\"first\":{\"id\":\"01a1ffda-8317-7e23-a066-2a4fc455c821\",\"sequence\":80},\"last\":{\"id\":\"01a1ffda-9127-7190-9f92-9dba30f512c4\",\"sequence\":85}},\"item\":{\"itemId\":\"01a1ffda-8317-7e23-a066-2a4fc455c821\",\"kind\":\"reminderChild\",\"turnId\":\"01a19a00-0000-7000-8000-000000000003\",\"revision\":2,\"status\":\"completed\",\"recordedAt\":\"2026-11-21T20:44:36.51953Z\",\"fallbackText\":\"Reminder child session\",\"childSessionId\":\"01a1ffda-82e8-7890-a5a7-c1432d84ccad\",\"reminderAgentId\":\"verify-reminder\",\"generationId\":1,\"taskId\":\"01a1ffda-82e8-7890-a5a7-c13143ec3df0\",\"blocking\":true}},\"emittedAtMs\":1795293876612}",
-        "kept": true
-      },
-      {
-        "after": 5,
-        "stream": "stdout",
-        "data": "{\"jsonrpc\":\"2.0\",\"method\":\"turn/completed\",\"params\":{\"sessionId\":\"01a1ffda-6913-7711-8631-086d2975a9b9\",\"viewCursor\":\"v10:01a1ffda-6913-7711-8631-086d2975a9b9:16\",\"sourceRange\":{\"stream\":{\"kind\":\"session\",\"id\":\"01a1ffda-6913-7711-8631-086d2975a9b9\"},\"first\":{\"id\":\"01a1ffda-9171-7100-8027-ebeb130380dc\",\"sequence\":91},\"last\":{\"id\":\"01a1ffda-9171-7100-8027-ebeb130380dc\",\"sequence\":91}},\"turnId\":\"01a19a00-0000-7000-8000-000000000003\",\"terminal\":\"completed\",\"durationMs\":9458,\"timeToFirstTokenMs\":5487},\"emittedAtMs\":1795293876612}",
-        "kept": true
-      },
-      {
-        "after": 5,
-        "stream": "stdout",
-        "data": "{\"jsonrpc\":\"2.0\",\"method\":\"session/statusChanged\",\"params\":{\"sessionId\":\"01a1ffda-6913-7711-8631-086d2975a9b9\",\"status\":\"idle\",\"permissionState\":{\"profileId\":\":unrestricted\",\"reviewerAuthority\":\"none\",\"reviewerAttached\":true,\"axes\":{\"filesystem\":\"unrestricted\",\"network\":\"enabled\",\"approval\":\"allowAll\",\"reviewer\":\"none\"}},\"viewCursor\":\"v10:01a1ffda-6913-7711-8631-086d2975a9b9:16\"},\"emittedAtMs\":1795293876612}",
-        "kept": true
-      },
-      {
-        "after": 6,
-        "stream": "stdout",
-        "data": "{\"jsonrpc\":\"2.0\",\"method\":\"usage/changed\",\"params\":{\"window\":{\"usedPercent\":6,\"windowDurationMins\":300,\"resetsAtMs\":1795297938000},\"weekly\":{\"usedPercent\":30,\"resetsAtMs\":1795392000000},\"tier\":\"{{tier}}\",\"observedAtMs\":1795293875514},\"emittedAtMs\":1795293876618}",
+        "data": "{\"jsonrpc\":\"2.0\",\"method\":\"turn/completed\",\"params\":{\"sessionId\":\"01a203c2-fec7-7462-86c1-312fdfa8f22c\",\"viewCursor\":\"v10:01a203c2-fec7-7462-86c1-312fdfa8f22c:12\",\"sourceRange\":{\"stream\":{\"kind\":\"session\",\"id\":\"01a203c2-fec7-7462-86c1-312fdfa8f22c\"},\"first\":{\"id\":\"01a203c3-1dd0-7102-9273-0fab491094fd\",\"sequence\":55},\"last\":{\"id\":\"01a203c3-1dd0-7102-9273-0fab491094fd\",\"sequence\":55}},\"turnId\":\"01a19a00-0000-7000-8000-000000000003\",\"terminal\":\"completed\",\"durationMs\":7099,\"timeToFirstTokenMs\":4079},\"emittedAtMs\":1795359448544}",
         "kept": true
       },
       {
@@ -185,127 +162,109 @@
       {
         "after": 6,
         "stream": "stdout",
-        "data": "{\"jsonrpc\":\"2.0\",\"method\":\"session/statusChanged\",\"params\":{\"sessionId\":\"01a1ffda-6913-7711-8631-086d2975a9b9\",\"status\":\"running\",\"permissionState\":{\"profileId\":\":unrestricted\",\"reviewerAuthority\":\"none\",\"reviewerAttached\":true,\"axes\":{\"filesystem\":\"unrestricted\",\"network\":\"enabled\",\"approval\":\"allowAll\",\"reviewer\":\"none\"}},\"viewCursor\":\"v10:01a1ffda-6913-7711-8631-086d2975a9b9:17\"},\"emittedAtMs\":1795293876751}",
+        "data": "{\"jsonrpc\":\"2.0\",\"method\":\"session/statusChanged\",\"params\":{\"sessionId\":\"01a203c2-fec7-7462-86c1-312fdfa8f22c\",\"status\":\"running\",\"permissionState\":{\"profileId\":\":unrestricted\",\"reviewerAuthority\":\"none\",\"reviewerAttached\":true,\"axes\":{\"filesystem\":\"unrestricted\",\"network\":\"enabled\",\"approval\":\"allowAll\",\"reviewer\":\"none\"}},\"viewCursor\":\"v10:01a203c2-fec7-7462-86c1-312fdfa8f22c:13\"},\"emittedAtMs\":1795359448661}",
         "kept": true
       },
       {
         "after": 6,
         "stream": "stdout",
-        "data": "{\"jsonrpc\":\"2.0\",\"method\":\"turn/started\",\"params\":{\"sessionId\":\"01a1ffda-6913-7711-8631-086d2975a9b9\",\"viewCursor\":\"v10:01a1ffda-6913-7711-8631-086d2975a9b9:17\",\"sourceRange\":{\"stream\":{\"kind\":\"session\",\"id\":\"01a1ffda-6913-7711-8631-086d2975a9b9\"},\"first\":{\"id\":\"01a1ffda-9204-7fc1-b50b-ab2158a53b09\",\"sequence\":99},\"last\":{\"id\":\"01a1ffda-9204-7fc1-b50b-ab2158a53b09\",\"sequence\":99}},\"turnId\":\"01a19a00-0000-7000-8000-000000000004\",\"commandId\":\"01a19a00-0000-7000-8000-000000000004\"},\"emittedAtMs\":1795293876752}",
+        "data": "{\"jsonrpc\":\"2.0\",\"method\":\"turn/started\",\"params\":{\"sessionId\":\"01a203c2-fec7-7462-86c1-312fdfa8f22c\",\"viewCursor\":\"v10:01a203c2-fec7-7462-86c1-312fdfa8f22c:13\",\"sourceRange\":{\"stream\":{\"kind\":\"session\",\"id\":\"01a203c2-fec7-7462-86c1-312fdfa8f22c\"},\"first\":{\"id\":\"01a203c3-1e4d-7e63-814a-29a6002238f0\",\"sequence\":63},\"last\":{\"id\":\"01a203c3-1e4d-7e63-814a-29a6002238f0\",\"sequence\":63}},\"turnId\":\"01a19a00-0000-7000-8000-000000000004\",\"commandId\":\"01a19a00-0000-7000-8000-000000000004\"},\"emittedAtMs\":1795359448666}",
         "kept": true
       },
       {
         "after": 6,
         "stream": "stdout",
-        "data": "{\"jsonrpc\":\"2.0\",\"method\":\"item/completed\",\"params\":{\"sessionId\":\"01a1ffda-6913-7711-8631-086d2975a9b9\",\"viewCursor\":\"v10:01a1ffda-6913-7711-8631-086d2975a9b9:18\",\"sourceRange\":{\"stream\":{\"kind\":\"session\",\"id\":\"01a1ffda-6913-7711-8631-086d2975a9b9\"},\"first\":{\"id\":\"01a1ffda-9204-7fc1-b50b-ab2158a53b09\",\"sequence\":99},\"last\":{\"id\":\"01a1ffda-9204-7fc1-b50b-ab2158a53b09\",\"sequence\":99}},\"item\":{\"itemId\":\"465b83de-62c6-56c8-b489-524ec406bc29\",\"kind\":\"userMessage\",\"turnId\":\"01a19a00-0000-7000-8000-000000000004\",\"revision\":1,\"status\":\"completed\",\"recordedAt\":\"2026-11-21T20:44:36.740527Z\",\"text\":\"# User Message\\n\\nsecond turn. Reply with exactly accepted-private-answer and nothing else.\",\"commandId\":\"01a19a00-0000-7000-8000-000000000004\"}},\"emittedAtMs\":1795293876752}",
+        "data": "{\"jsonrpc\":\"2.0\",\"method\":\"item/completed\",\"params\":{\"sessionId\":\"01a203c2-fec7-7462-86c1-312fdfa8f22c\",\"viewCursor\":\"v10:01a203c2-fec7-7462-86c1-312fdfa8f22c:14\",\"sourceRange\":{\"stream\":{\"kind\":\"session\",\"id\":\"01a203c2-fec7-7462-86c1-312fdfa8f22c\"},\"first\":{\"id\":\"01a203c3-1e4d-7e63-814a-29a6002238f0\",\"sequence\":63},\"last\":{\"id\":\"01a203c3-1e4d-7e63-814a-29a6002238f0\",\"sequence\":63}},\"item\":{\"itemId\":\"465b83de-62c6-56c8-b489-524ec406bc29\",\"kind\":\"userMessage\",\"turnId\":\"01a19a00-0000-7000-8000-000000000004\",\"revision\":1,\"status\":\"completed\",\"recordedAt\":\"2026-11-22T14:57:28.653097Z\",\"text\":\"# User Message\\n\\nsecond turn. Reply with exactly accepted-private-answer and nothing else.\",\"commandId\":\"01a19a00-0000-7000-8000-000000000004\"}},\"emittedAtMs\":1795359448666}",
         "kept": true
       },
       {
         "after": 6,
         "stream": "stdout",
-        "data": "{\"jsonrpc\":\"2.0\",\"method\":\"item/started\",\"params\":{\"sessionId\":\"01a1ffda-6913-7711-8631-086d2975a9b9\",\"viewCursor\":\"v10:01a1ffda-6913-7711-8631-086d2975a9b9:19\",\"sourceRange\":{\"stream\":{\"kind\":\"session\",\"id\":\"01a1ffda-6913-7711-8631-086d2975a9b9\"},\"first\":{\"id\":\"01a1ffda-929d-7bd0-9a2d-d650977bb325\",\"sequence\":119},\"last\":{\"id\":\"01a1ffda-929d-7bd0-9a2d-d650977bb325\",\"sequence\":119}},\"item\":{\"itemId\":\"01a1ffda-929d-7bd0-9a2d-d650977bb325\",\"kind\":\"reminderChild\",\"turnId\":\"01a19a00-0000-7000-8000-000000000004\",\"revision\":1,\"status\":\"inProgress\",\"recordedAt\":\"2026-11-21T20:44:36.893668Z\",\"fallbackText\":\"Reminder child session\",\"childSessionId\":\"01a1ffda-9275-7c71-bbc1-fdf626dc374d\",\"reminderAgentId\":\"skill-reminder\",\"generationId\":1,\"taskId\":\"01a1ffda-9275-7c71-bbc1-fdea9bbe9ad4\"}},\"emittedAtMs\":1795293876904}",
+        "data": "{\"jsonrpc\":\"2.0\",\"method\":\"turn/modelAttemptStarted\",\"params\":{\"sessionId\":\"01a203c2-fec7-7462-86c1-312fdfa8f22c\",\"viewCursor\":\"v10:01a203c2-fec7-7462-86c1-312fdfa8f22c:15\",\"sourceRange\":{\"stream\":{\"kind\":\"session\",\"id\":\"01a203c2-fec7-7462-86c1-312fdfa8f22c\"},\"first\":{\"id\":\"01a203c3-1ebc-70e2-98bc-505a0f843785\",\"sequence\":74},\"last\":{\"id\":\"01a203c3-1ebc-70e2-98bc-505a0f843785\",\"sequence\":74}},\"turnId\":\"01a19a00-0000-7000-8000-000000000004\"},\"emittedAtMs\":1795359448779}",
         "kept": true
       },
       {
         "after": 6,
         "stream": "stdout",
-        "data": "{\"jsonrpc\":\"2.0\",\"method\":\"turn/modelAttemptStarted\",\"params\":{\"sessionId\":\"01a1ffda-6913-7711-8631-086d2975a9b9\",\"viewCursor\":\"v10:01a1ffda-6913-7711-8631-086d2975a9b9:20\",\"sourceRange\":{\"stream\":{\"kind\":\"session\",\"id\":\"01a1ffda-6913-7711-8631-086d2975a9b9\"},\"first\":{\"id\":\"01a1ffda-9303-74e2-9526-58dfcc7e75d2\",\"sequence\":129},\"last\":{\"id\":\"01a1ffda-9303-74e2-9526-58dfcc7e75d2\",\"sequence\":129}},\"turnId\":\"01a19a00-0000-7000-8000-000000000004\"},\"emittedAtMs\":1795293877004}",
+        "data": "{\"jsonrpc\":\"2.0\",\"method\":\"item/started\",\"params\":{\"sessionId\":\"01a203c2-fec7-7462-86c1-312fdfa8f22c\",\"viewCursor\":\"v10:01a203c2-fec7-7462-86c1-312fdfa8f22c:15.1\",\"item\":{\"itemId\":\"947c4534-1e8f-422e-8212-b073ec6d5869\",\"kind\":\"agentMessage\",\"turnId\":\"01a19a00-0000-7000-8000-000000000004\",\"revision\":1,\"status\":\"inProgress\",\"text\":\"\",\"messagePhase\":\"finalAnswer\"}},\"emittedAtMs\":1795359451461}",
         "kept": true
       },
       {
         "after": 6,
         "stream": "stdout",
-        "data": "{\"jsonrpc\":\"2.0\",\"method\":\"item/started\",\"params\":{\"sessionId\":\"01a1ffda-6913-7711-8631-086d2975a9b9\",\"viewCursor\":\"v10:01a1ffda-6913-7711-8631-086d2975a9b9:20.1\",\"item\":{\"itemId\":\"38f41557-9d25-48b3-b019-d1912c35ad8b\",\"kind\":\"agentMessage\",\"turnId\":\"01a19a00-0000-7000-8000-000000000004\",\"revision\":1,\"status\":\"inProgress\",\"text\":\"\",\"messagePhase\":\"finalAnswer\"}},\"emittedAtMs\":1795293880335}",
+        "data": "{\"jsonrpc\":\"2.0\",\"method\":\"item/delta\",\"params\":{\"sessionId\":\"01a203c2-fec7-7462-86c1-312fdfa8f22c\",\"viewCursor\":\"v10:01a203c2-fec7-7462-86c1-312fdfa8f22c:15.2\",\"itemId\":\"947c4534-1e8f-422e-8212-b073ec6d5869\",\"field\":\"text\",\"delta\":\"accepted-private-answer\"},\"emittedAtMs\":1795359451461}",
         "kept": true
       },
       {
         "after": 6,
         "stream": "stdout",
-        "data": "{\"jsonrpc\":\"2.0\",\"method\":\"item/delta\",\"params\":{\"sessionId\":\"01a1ffda-6913-7711-8631-086d2975a9b9\",\"viewCursor\":\"v10:01a1ffda-6913-7711-8631-086d2975a9b9:20.2\",\"itemId\":\"38f41557-9d25-48b3-b019-d1912c35ad8b\",\"field\":\"text\",\"delta\":\"accepted-private-answer\"},\"emittedAtMs\":1795293880335}",
+        "data": "{\"jsonrpc\":\"2.0\",\"method\":\"item/completed\",\"params\":{\"sessionId\":\"01a203c2-fec7-7462-86c1-312fdfa8f22c\",\"viewCursor\":\"v10:01a203c2-fec7-7462-86c1-312fdfa8f22c:16\",\"sourceRange\":{\"stream\":{\"kind\":\"session\",\"id\":\"01a203c2-fec7-7462-86c1-312fdfa8f22c\"},\"first\":{\"id\":\"01a203c3-2944-7663-92cb-cfd7676c3ece\",\"sequence\":77},\"last\":{\"id\":\"01a203c3-2944-7663-92cb-cfd7676c3ece\",\"sequence\":77}},\"item\":{\"itemId\":\"947c4534-1e8f-422e-8212-b073ec6d5869\",\"kind\":\"agentMessage\",\"turnId\":\"01a19a00-0000-7000-8000-000000000004\",\"revision\":2,\"status\":\"completed\",\"recordedAt\":\"2026-11-22T14:57:31.460356Z\",\"text\":\"accepted-private-answer\",\"messagePhase\":\"finalAnswer\"}},\"emittedAtMs\":1795359451468}",
         "kept": true
       },
       {
         "after": 6,
         "stream": "stdout",
-        "data": "{\"jsonrpc\":\"2.0\",\"method\":\"item/completed\",\"params\":{\"sessionId\":\"01a1ffda-6913-7711-8631-086d2975a9b9\",\"viewCursor\":\"v10:01a1ffda-6913-7711-8631-086d2975a9b9:21\",\"sourceRange\":{\"stream\":{\"kind\":\"session\",\"id\":\"01a1ffda-6913-7711-8631-086d2975a9b9\"},\"first\":{\"id\":\"01a1ffda-a00f-7853-a31d-75cf9ee4a71c\",\"sequence\":132},\"last\":{\"id\":\"01a1ffda-a00f-7853-a31d-75cf9ee4a71c\",\"sequence\":132}},\"item\":{\"itemId\":\"38f41557-9d25-48b3-b019-d1912c35ad8b\",\"kind\":\"agentMessage\",\"turnId\":\"01a19a00-0000-7000-8000-000000000004\",\"revision\":2,\"status\":\"completed\",\"recordedAt\":\"2026-11-21T20:44:40.335292Z\",\"text\":\"accepted-private-answer\",\"messagePhase\":\"finalAnswer\"}},\"emittedAtMs\":1795293880340}",
+        "data": "{\"jsonrpc\":\"2.0\",\"method\":\"session/tokenUsage\",\"params\":{\"sessionId\":\"01a203c2-fec7-7462-86c1-312fdfa8f22c\",\"viewCursor\":\"v10:01a203c2-fec7-7462-86c1-312fdfa8f22c:17\",\"sourceRange\":{\"stream\":{\"kind\":\"session\",\"id\":\"01a203c2-fec7-7462-86c1-312fdfa8f22c\"},\"first\":{\"id\":\"01a203c3-2976-7811-a67a-a6f85abe8f08\",\"sequence\":80},\"last\":{\"id\":\"01a203c3-2976-7811-a67a-a6f85abe8f08\",\"sequence\":80}},\"turnId\":\"01a19a00-0000-7000-8000-000000000004\",\"modelId\":\"muse-wonder-1.0\",\"usage\":{\"inputTokens\":35770,\"outputTokens\":16,\"cachedTokens\":0,\"cacheWriteTokens\":0,\"cacheReadTokens\":0,\"reasoningTokens\":4},\"promptTokens\":35770,\"totalTokens\":35786,\"durationMs\":2737,\"cumulative\":{\"promptTokens\":71484,\"outputTokens\":38,\"totalTokens\":71522}},\"emittedAtMs\":1795359451519}",
         "kept": true
       },
       {
         "after": 6,
         "stream": "stdout",
-        "data": "{\"jsonrpc\":\"2.0\",\"method\":\"session/tokenUsage\",\"params\":{\"sessionId\":\"01a1ffda-6913-7711-8631-086d2975a9b9\",\"viewCursor\":\"v10:01a1ffda-6913-7711-8631-086d2975a9b9:22\",\"sourceRange\":{\"stream\":{\"kind\":\"session\",\"id\":\"01a1ffda-6913-7711-8631-086d2975a9b9\"},\"first\":{\"id\":\"01a1ffda-a04d-79e3-af97-3e63c77c0630\",\"sequence\":135},\"last\":{\"id\":\"01a1ffda-a04d-79e3-af97-3e63c77c0630\",\"sequence\":135}},\"turnId\":\"01a19a00-0000-7000-8000-000000000004\",\"modelId\":\"muse-wonder-1.0\",\"usage\":{\"inputTokens\":35428,\"outputTokens\":14,\"cachedTokens\":34676,\"cacheWriteTokens\":0,\"cacheReadTokens\":34676,\"reasoningTokens\":2},\"promptTokens\":35428,\"totalTokens\":35442,\"durationMs\":3393,\"cumulative\":{\"promptTokens\":70807,\"outputTokens\":31,\"totalTokens\":70838,\"cacheReadTokens\":34676}},\"emittedAtMs\":1795293880409}",
+        "data": "{\"jsonrpc\":\"2.0\",\"method\":\"session/contextUsage\",\"params\":{\"sessionId\":\"01a203c2-fec7-7462-86c1-312fdfa8f22c\",\"viewCursor\":\"v10:01a203c2-fec7-7462-86c1-312fdfa8f22c:18\",\"sourceRange\":{\"stream\":{\"kind\":\"session\",\"id\":\"01a203c2-fec7-7462-86c1-312fdfa8f22c\"},\"first\":{\"id\":\"01a203c3-2976-7811-a67a-a6f85abe8f08\",\"sequence\":80},\"last\":{\"id\":\"01a203c3-2976-7811-a67a-a6f85abe8f08\",\"sequence\":80}},\"windowTokens\":1007997,\"usedTokens\":36043,\"pressure\":\"normal\"},\"emittedAtMs\":1795359451519}",
         "kept": true
       },
       {
         "after": 6,
         "stream": "stdout",
-        "data": "{\"jsonrpc\":\"2.0\",\"method\":\"session/contextUsage\",\"params\":{\"sessionId\":\"01a1ffda-6913-7711-8631-086d2975a9b9\",\"viewCursor\":\"v10:01a1ffda-6913-7711-8631-086d2975a9b9:23\",\"sourceRange\":{\"stream\":{\"kind\":\"session\",\"id\":\"01a1ffda-6913-7711-8631-086d2975a9b9\"},\"first\":{\"id\":\"01a1ffda-a04d-79e3-af97-3e63c77c0630\",\"sequence\":135},\"last\":{\"id\":\"01a1ffda-a04d-79e3-af97-3e63c77c0630\",\"sequence\":135}},\"windowTokens\":1007997,\"usedTokens\":35701,\"pressure\":\"normal\"},\"emittedAtMs\":1795293880409}",
+        "data": "{\"jsonrpc\":\"2.0\",\"method\":\"turn/foregroundCompleted\",\"params\":{\"sessionId\":\"01a203c2-fec7-7462-86c1-312fdfa8f22c\",\"viewCursor\":\"v10:01a203c2-fec7-7462-86c1-312fdfa8f22c:19\",\"sourceRange\":{\"stream\":{\"kind\":\"session\",\"id\":\"01a203c2-fec7-7462-86c1-312fdfa8f22c\"},\"first\":{\"id\":\"01a203c3-29a9-7c31-a746-e843a1ab8ead\",\"sequence\":86},\"last\":{\"id\":\"01a203c3-29a9-7c31-a746-e843a1ab8ead\",\"sequence\":86}},\"turnId\":\"01a19a00-0000-7000-8000-000000000004\",\"blockingAgents\":[\"goal-reminder\"]},\"emittedAtMs\":1795359451567}",
         "kept": true
       },
       {
         "after": 6,
         "stream": "stdout",
-        "data": "{\"jsonrpc\":\"2.0\",\"method\":\"turn/foregroundCompleted\",\"params\":{\"sessionId\":\"01a1ffda-6913-7711-8631-086d2975a9b9\",\"viewCursor\":\"v10:01a1ffda-6913-7711-8631-086d2975a9b9:24\",\"sourceRange\":{\"stream\":{\"kind\":\"session\",\"id\":\"01a1ffda-6913-7711-8631-086d2975a9b9\"},\"first\":{\"id\":\"01a1ffda-a095-7452-8bed-e52641be9642\",\"sequence\":142},\"last\":{\"id\":\"01a1ffda-a095-7452-8bed-e52641be9642\",\"sequence\":142}},\"turnId\":\"01a19a00-0000-7000-8000-000000000004\",\"blockingAgents\":[\"goal-reminder\",\"verify-reminder\"]},\"emittedAtMs\":1795293880479}",
+        "data": "{\"jsonrpc\":\"2.0\",\"method\":\"item/started\",\"params\":{\"sessionId\":\"01a203c2-fec7-7462-86c1-312fdfa8f22c\",\"viewCursor\":\"v10:01a203c2-fec7-7462-86c1-312fdfa8f22c:20\",\"sourceRange\":{\"stream\":{\"kind\":\"session\",\"id\":\"01a203c2-fec7-7462-86c1-312fdfa8f22c\"},\"first\":{\"id\":\"01a203c3-29a9-7c31-a746-e843a1ab8ead\",\"sequence\":86},\"last\":{\"id\":\"01a203c3-29a9-7c31-a746-e843a1ab8ead\",\"sequence\":86}},\"item\":{\"itemId\":\"01a203c3-29a9-7c31-a746-e843a1ab8ead\",\"kind\":\"reminderChild\",\"turnId\":\"01a19a00-0000-7000-8000-000000000004\",\"revision\":1,\"status\":\"inProgress\",\"recordedAt\":\"2026-11-22T14:57:31.561719Z\",\"fallbackText\":\"Reminder child session\",\"childSessionId\":\"01a203c3-2987-7331-9728-cc8e72db2035\",\"reminderAgentId\":\"goal-reminder\",\"generationId\":1,\"taskId\":\"01a203c3-2987-7331-9728-cc720f14c454\",\"blocking\":true}},\"emittedAtMs\":1795359451567}",
         "kept": true
       },
       {
         "after": 6,
         "stream": "stdout",
-        "data": "{\"jsonrpc\":\"2.0\",\"method\":\"item/started\",\"params\":{\"sessionId\":\"01a1ffda-6913-7711-8631-086d2975a9b9\",\"viewCursor\":\"v10:01a1ffda-6913-7711-8631-086d2975a9b9:25\",\"sourceRange\":{\"stream\":{\"kind\":\"session\",\"id\":\"01a1ffda-6913-7711-8631-086d2975a9b9\"},\"first\":{\"id\":\"01a1ffda-a095-7452-8bed-e52641be9642\",\"sequence\":142},\"last\":{\"id\":\"01a1ffda-a095-7452-8bed-e52641be9642\",\"sequence\":142}},\"item\":{\"itemId\":\"01a1ffda-a095-7452-8bed-e52641be9642\",\"kind\":\"reminderChild\",\"turnId\":\"01a19a00-0000-7000-8000-000000000004\",\"revision\":1,\"status\":\"inProgress\",\"recordedAt\":\"2026-11-21T20:44:40.46968Z\",\"fallbackText\":\"Reminder child session\",\"childSessionId\":\"01a1ffda-a063-7792-9bb0-69f796498ea2\",\"reminderAgentId\":\"goal-reminder\",\"generationId\":1,\"taskId\":\"01a1ffda-a063-7792-9bb0-69e1ff93dcd1\",\"blocking\":true}},\"emittedAtMs\":1795293880479}",
+        "data": "{\"jsonrpc\":\"2.0\",\"method\":\"item/completed\",\"params\":{\"sessionId\":\"01a203c2-fec7-7462-86c1-312fdfa8f22c\",\"viewCursor\":\"v10:01a203c2-fec7-7462-86c1-312fdfa8f22c:21\",\"sourceRange\":{\"stream\":{\"kind\":\"session\",\"id\":\"01a203c2-fec7-7462-86c1-312fdfa8f22c\"},\"first\":{\"id\":\"01a203c3-29a9-7c31-a746-e843a1ab8ead\",\"sequence\":86},\"last\":{\"id\":\"01a203c3-3035-7e00-b566-02774d232d50\",\"sequence\":89}},\"item\":{\"itemId\":\"01a203c3-29a9-7c31-a746-e843a1ab8ead\",\"kind\":\"reminderChild\",\"turnId\":\"01a19a00-0000-7000-8000-000000000004\",\"revision\":2,\"status\":\"completed\",\"recordedAt\":\"2026-11-22T14:57:33.237456Z\",\"fallbackText\":\"Reminder child session\",\"childSessionId\":\"01a203c3-2987-7331-9728-cc8e72db2035\",\"reminderAgentId\":\"goal-reminder\",\"generationId\":1,\"taskId\":\"01a203c3-2987-7331-9728-cc720f14c454\",\"blocking\":true}},\"emittedAtMs\":1795359453244}",
         "kept": true
       },
       {
         "after": 6,
         "stream": "stdout",
-        "data": "{\"jsonrpc\":\"2.0\",\"method\":\"item/started\",\"params\":{\"sessionId\":\"01a1ffda-6913-7711-8631-086d2975a9b9\",\"viewCursor\":\"v10:01a1ffda-6913-7711-8631-086d2975a9b9:26\",\"sourceRange\":{\"stream\":{\"kind\":\"session\",\"id\":\"01a1ffda-6913-7711-8631-086d2975a9b9\"},\"first\":{\"id\":\"01a1ffda-a0df-7e52-9fee-5c336d3a0585\",\"sequence\":149},\"last\":{\"id\":\"01a1ffda-a0df-7e52-9fee-5c336d3a0585\",\"sequence\":149}},\"item\":{\"itemId\":\"01a1ffda-a0df-7e52-9fee-5c336d3a0585\",\"kind\":\"reminderChild\",\"turnId\":\"01a19a00-0000-7000-8000-000000000004\",\"revision\":1,\"status\":\"inProgress\",\"recordedAt\":\"2026-11-21T20:44:40.543658Z\",\"fallbackText\":\"Reminder child session\",\"childSessionId\":\"01a1ffda-a0a4-7170-af0b-94c849d59ea9\",\"reminderAgentId\":\"verify-reminder\",\"generationId\":1,\"taskId\":\"01a1ffda-a0a4-7170-af0b-94b2bf9200e1\",\"blocking\":true}},\"emittedAtMs\":1795293880553}",
+        "data": "{\"jsonrpc\":\"2.0\",\"method\":\"session/statusChanged\",\"params\":{\"sessionId\":\"01a203c2-fec7-7462-86c1-312fdfa8f22c\",\"status\":\"idle\",\"permissionState\":{\"profileId\":\":unrestricted\",\"reviewerAuthority\":\"none\",\"reviewerAttached\":true,\"axes\":{\"filesystem\":\"unrestricted\",\"network\":\"enabled\",\"approval\":\"allowAll\",\"reviewer\":\"none\"}},\"viewCursor\":\"v10:01a203c2-fec7-7462-86c1-312fdfa8f22c:22\"},\"emittedAtMs\":1795359453288}",
         "kept": true
       },
       {
         "after": 6,
         "stream": "stdout",
-        "data": "{\"jsonrpc\":\"2.0\",\"method\":\"item/completed\",\"params\":{\"sessionId\":\"01a1ffda-6913-7711-8631-086d2975a9b9\",\"viewCursor\":\"v10:01a1ffda-6913-7711-8631-086d2975a9b9:27\",\"sourceRange\":{\"stream\":{\"kind\":\"session\",\"id\":\"01a1ffda-6913-7711-8631-086d2975a9b9\"},\"first\":{\"id\":\"01a1ffda-929d-7bd0-9a2d-d650977bb325\",\"sequence\":119},\"last\":{\"id\":\"01a1ffda-af52-72b0-b117-af857fa80870\",\"sequence\":154}},\"item\":{\"itemId\":\"01a1ffda-929d-7bd0-9a2d-d650977bb325\",\"kind\":\"reminderChild\",\"turnId\":\"01a19a00-0000-7000-8000-000000000004\",\"revision\":2,\"status\":\"completed\",\"recordedAt\":\"2026-11-21T20:44:44.242668Z\",\"fallbackText\":\"Reminder child session\",\"childSessionId\":\"01a1ffda-9275-7c71-bbc1-fdf626dc374d\",\"reminderAgentId\":\"skill-reminder\",\"generationId\":1,\"taskId\":\"01a1ffda-9275-7c71-bbc1-fdea9bbe9ad4\"}},\"emittedAtMs\":1795293884257}",
+        "data": "{\"jsonrpc\":\"2.0\",\"method\":\"usage/changed\",\"params\":{\"window\":{\"usedPercent\":17,\"windowDurationMins\":300,\"resetsAtMs\":1795374761000},\"weekly\":{\"usedPercent\":36,\"resetsAtMs\":1795392000000},\"tier\":\"{{tier}}\",\"observedAtMs\":1795359453207},\"emittedAtMs\":1795359453289}",
         "kept": true
       },
       {
         "after": 6,
         "stream": "stdout",
-        "data": "{\"jsonrpc\":\"2.0\",\"method\":\"item/completed\",\"params\":{\"sessionId\":\"01a1ffda-6913-7711-8631-086d2975a9b9\",\"viewCursor\":\"v10:01a1ffda-6913-7711-8631-086d2975a9b9:28\",\"sourceRange\":{\"stream\":{\"kind\":\"session\",\"id\":\"01a1ffda-6913-7711-8631-086d2975a9b9\"},\"first\":{\"id\":\"01a1ffda-a095-7452-8bed-e52641be9642\",\"sequence\":142},\"last\":{\"id\":\"01a1ffda-af61-7c52-8fa7-5b8ea1aa0484\",\"sequence\":155}},\"item\":{\"itemId\":\"01a1ffda-a095-7452-8bed-e52641be9642\",\"kind\":\"reminderChild\",\"turnId\":\"01a19a00-0000-7000-8000-000000000004\",\"revision\":2,\"status\":\"completed\",\"recordedAt\":\"2026-11-21T20:44:44.257992Z\",\"fallbackText\":\"Reminder child session\",\"childSessionId\":\"01a1ffda-a063-7792-9bb0-69f796498ea2\",\"reminderAgentId\":\"goal-reminder\",\"generationId\":1,\"taskId\":\"01a1ffda-a063-7792-9bb0-69e1ff93dcd1\",\"blocking\":true}},\"emittedAtMs\":1795293884272}",
-        "kept": true
-      },
-      {
-        "after": 6,
-        "stream": "stdout",
-        "data": "{\"jsonrpc\":\"2.0\",\"method\":\"item/completed\",\"params\":{\"sessionId\":\"01a1ffda-6913-7711-8631-086d2975a9b9\",\"viewCursor\":\"v10:01a1ffda-6913-7711-8631-086d2975a9b9:29\",\"sourceRange\":{\"stream\":{\"kind\":\"session\",\"id\":\"01a1ffda-6913-7711-8631-086d2975a9b9\"},\"first\":{\"id\":\"01a1ffda-a0df-7e52-9fee-5c336d3a0585\",\"sequence\":149},\"last\":{\"id\":\"01a1ffda-af70-7e23-91a9-2ad31de6aa13\",\"sequence\":156}},\"item\":{\"itemId\":\"01a1ffda-a0df-7e52-9fee-5c336d3a0585\",\"kind\":\"reminderChild\",\"turnId\":\"01a19a00-0000-7000-8000-000000000004\",\"revision\":2,\"status\":\"completed\",\"recordedAt\":\"2026-11-21T20:44:44.272591Z\",\"fallbackText\":\"Reminder child session\",\"childSessionId\":\"01a1ffda-a0a4-7170-af0b-94c849d59ea9\",\"reminderAgentId\":\"verify-reminder\",\"generationId\":1,\"taskId\":\"01a1ffda-a0a4-7170-af0b-94b2bf9200e1\",\"blocking\":true}},\"emittedAtMs\":1795293884289}",
-        "kept": true
-      },
-      {
-        "after": 6,
-        "stream": "stdout",
-        "data": "{\"jsonrpc\":\"2.0\",\"method\":\"session/statusChanged\",\"params\":{\"sessionId\":\"01a1ffda-6913-7711-8631-086d2975a9b9\",\"status\":\"idle\",\"permissionState\":{\"profileId\":\":unrestricted\",\"reviewerAuthority\":\"none\",\"reviewerAttached\":true,\"axes\":{\"filesystem\":\"unrestricted\",\"network\":\"enabled\",\"approval\":\"allowAll\",\"reviewer\":\"none\"}},\"viewCursor\":\"v10:01a1ffda-6913-7711-8631-086d2975a9b9:30\"},\"emittedAtMs\":1795293884386}",
-        "kept": true
-      },
-      {
-        "after": 6,
-        "stream": "stdout",
-        "data": "{\"jsonrpc\":\"2.0\",\"method\":\"turn/completed\",\"params\":{\"sessionId\":\"01a1ffda-6913-7711-8631-086d2975a9b9\",\"viewCursor\":\"v10:01a1ffda-6913-7711-8631-086d2975a9b9:30\",\"sourceRange\":{\"stream\":{\"kind\":\"session\",\"id\":\"01a1ffda-6913-7711-8631-086d2975a9b9\"},\"first\":{\"id\":\"01a1ffda-afd7-7862-b578-579f3fbc5eb4\",\"sequence\":165},\"last\":{\"id\":\"01a1ffda-afd7-7862-b578-579f3fbc5eb4\",\"sequence\":165}},\"turnId\":\"01a19a00-0000-7000-8000-000000000004\",\"terminal\":\"completed\",\"durationMs\":7634,\"timeToFirstTokenMs\":3594},\"emittedAtMs\":1795293884386}",
+        "data": "{\"jsonrpc\":\"2.0\",\"method\":\"turn/completed\",\"params\":{\"sessionId\":\"01a203c2-fec7-7462-86c1-312fdfa8f22c\",\"viewCursor\":\"v10:01a203c2-fec7-7462-86c1-312fdfa8f22c:22\",\"sourceRange\":{\"stream\":{\"kind\":\"session\",\"id\":\"01a203c2-fec7-7462-86c1-312fdfa8f22c\"},\"first\":{\"id\":\"01a203c3-305e-7892-bc6d-3becd8ca8e11\",\"sequence\":93},\"last\":{\"id\":\"01a203c3-305e-7892-bc6d-3becd8ca8e11\",\"sequence\":93}},\"turnId\":\"01a19a00-0000-7000-8000-000000000004\",\"terminal\":\"completed\",\"durationMs\":4625,\"timeToFirstTokenMs\":2806},\"emittedAtMs\":1795359453292}",
         "kept": true
       },
       {
         "after": 7,
         "stream": "stdout",
-        "data": "{\"jsonrpc\":\"2.0\",\"method\":\"session/closed\",\"params\":{\"sessionId\":\"01a1ffda-6913-7711-8631-086d2975a9b9\",\"reason\":\"hostShutdown\",\"viewCursor\":\"v10:01a1ffda-6913-7711-8631-086d2975a9b9:30\"},\"emittedAtMs\":1795293884503}",
+        "data": "{\"jsonrpc\":\"2.0\",\"method\":\"session/closed\",\"params\":{\"sessionId\":\"01a203c2-fec7-7462-86c1-312fdfa8f22c\",\"reason\":\"hostShutdown\",\"viewCursor\":\"v10:01a203c2-fec7-7462-86c1-312fdfa8f22c:22\"},\"emittedAtMs\":1795359453447}",
         "kept": true
       },
       {
         "after": 7,
         "stream": "stdout",
-        "data": "{\"jsonrpc\":\"2.0\",\"method\":\"session/statusChanged\",\"params\":{\"sessionId\":\"01a1ffda-6913-7711-8631-086d2975a9b9\",\"status\":\"notLoaded\",\"viewCursor\":\"v10:01a1ffda-6913-7711-8631-086d2975a9b9:30\"},\"emittedAtMs\":1795293884503}",
+        "data": "{\"jsonrpc\":\"2.0\",\"method\":\"session/statusChanged\",\"params\":{\"sessionId\":\"01a203c2-fec7-7462-86c1-312fdfa8f22c\",\"status\":\"notLoaded\",\"viewCursor\":\"v10:01a203c2-fec7-7462-86c1-312fdfa8f22c:22\"},\"emittedAtMs\":1795359453447}",
         "kept": true
       },
       {
         "after": 7,
         "stream": "stderr",
-        "data": "muse serve: exit reason recorded: signal SIGTERM from pid 48670",
+        "data": "muse serve: exit reason recorded: signal SIGTERM from pid 87120",
         "kept": true
       },
       {
@@ -323,11 +282,14 @@
   },
   "recorded": {
     "service": "muse",
-    "cli": "muse",
-    "recordedAt": "2026-11-21T20:44:44.525Z",
-    "agentSession": "0.22.0",
+    "transport": "process",
+    "recordedAt": "2026-11-22T14:57:33.472Z",
     "environment": "terminal",
-    "durationMs": 20786,
-    "model": "muse-wonder-1.0"
+    "cli": "muse",
+    "durationMs": 14952,
+    "model": "muse-wonder-1.0",
+    "metadata": {
+      "@inixiative/agent-session": "0.22.2"
+    }
   }
 }

@@ -353,3 +353,36 @@ test("an actor never denies: the host's deny holds, and Foundry's own tools stil
     }),
   ).toEqual({ behavior: 'allow' });
 });
+
+test('Antigravity/Gemini CLI tools classify and honor PascalCase path keys in tool gate', async () => {
+  const { decide, queue } = actorGate([{ label: 'Dana', act: 'read', readRoot: '/repo' }], {
+    protectedPaths: ['.env'],
+  });
+  // Read inside workspace with PascalCase AbsolutePath passes.
+  expect(
+    await decide({
+      stage: 'pre-use',
+      toolName: 'view_file',
+      toolInput: { AbsolutePath: '/repo/src/index.ts' },
+    }),
+  ).toEqual({ behavior: 'allow' });
+  // Read outside workspace with DirectoryPath asks.
+  void decide({
+    stage: 'pre-use',
+    toolName: 'list_dir',
+    toolInput: { DirectoryPath: '/etc' },
+  });
+  await Bun.sleep(0);
+  expect(queue.pending()).toHaveLength(1);
+  queue.resolve(queue.pending()[0]!.id, 'rejected');
+  // Write to protected path with TargetFile asks.
+  const writeAsk = decide({
+    stage: 'pre-use',
+    toolName: 'write_to_file',
+    toolInput: { TargetFile: '/repo/.env' },
+  });
+  await Bun.sleep(0);
+  expect(queue.pending()).toHaveLength(1);
+  queue.resolve(queue.pending()[0]!.id, 'rejected');
+  expect(await writeAsk).toMatchObject({ behavior: 'deny' });
+});

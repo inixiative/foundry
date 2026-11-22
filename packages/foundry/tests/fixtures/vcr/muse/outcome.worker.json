@@ -1,5 +1,6 @@
 {
-  "version": "1.4.20",
+  "version": "1.4.25",
+  "transport": "outcome",
   "status": 200,
   "body": {
     "turns": [
@@ -19,9 +20,12 @@
   },
   "recorded": {
     "service": "muse",
+    "transport": "outcome",
+    "recordedAt": "2026-11-22T14:57:33.484Z",
+    "environment": "terminal",
     "cli": "muse",
-    "recordedAt": "2026-11-21T20:44:44.527Z",
-    "agentSession": "0.22.0",
-    "environment": "terminal"
+    "metadata": {
+      "@inixiative/agent-session": "0.22.2"
+    }
   }
 }

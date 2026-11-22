@@ -332,8 +332,8 @@ function ContextBar({ showContextFill = true } = {}) {
   const fill = contextWindow
     ? Math.min(100, (threadContextTokens.value / contextWindow) * 100)
     : null;
-  const { worker, model, effort, role } = runParts(launch);
-  const runs = [model, effort, role].filter(Boolean);
+  const { worker, model, effort, speed, role } = runParts(launch);
+  const runs = [model, effort, speed, role].filter(Boolean);
 
   return html`
     <div class="context-bar thread-band thread-band--pills">

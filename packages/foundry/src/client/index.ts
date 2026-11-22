@@ -4,7 +4,16 @@
  * through the daemon's API (the viewer's own routes and data streams).
  */
 
-export type { ActionPrompt } from '@inixiative/foundry-core';
+export {
+  type ActionPrompt,
+  FETCH_TOOLS,
+  READ_TOOLS,
+  SEARCH_TOOLS,
+  SHELL_TOOLS,
+  TOOL_PATH_KEYS,
+  toolInputPaths,
+  WRITE_TOOLS,
+} from '@inixiative/foundry-core';
 export type { MessageSummary } from '../persistence/local-session-store';
 export type { ClientMcpServer, ThreadLaunchPatch } from '../providers/thread-launch';
 export type { TurnTerminal } from '../viewer/data-streams';

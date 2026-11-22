@@ -18,7 +18,9 @@ import type {
 } from '@inixiative/foundry-core';
 import {
   MODEL_REGISTRY,
+  MODEL_SPEEDS,
   modelEfforts,
+  modelSpeeds,
   newId,
   REASONING_EFFORTS,
   readModelRetirement,
@@ -70,6 +72,7 @@ import {
   type EffortLevel,
   PERMISSION_MODES,
   type PermissionMode,
+  type SpeedLevel,
   type ThreadLaunchPatch,
   ThreadLaunchSettings,
 } from '../../providers/thread-launch';
@@ -168,8 +171,8 @@ export interface NewThreadInput {
   parentThreadId?: string;
   worker?: string;
   role?: string;
-  /** Its model (pinned on its record) and effort (held in its launch settings). */
-  start: { model?: string; effort?: EffortLevel };
+  /** Its model (pinned on its record) and effort/speed (held in its launch settings). */
+  start: { model?: string; effort?: EffortLevel; speed?: SpeedLevel };
   /** The schedule run it is for. */
   scheduledBy?: ThreadScheduled;
 }
@@ -916,12 +919,14 @@ export function registerRuntimeRoutes(
         defaultModel:
           resolveModelAliasToModelId(worker, scopeModel(projectId, worker) ?? '') || undefined,
         defaultRole: defaultThreadRole(scopeComposition(projectId), worker),
-        // Each model with the efforts it takes and the one it runs at when none is chosen (N-series vocabulary).
+        // Each model with the efforts and speeds it takes and its defaults when none is chosen.
         models: choosableThreadModels(worker).map((model) => ({
           id: model.id,
           label: model.label,
           efforts: modelEfforts(worker, model.id) ?? [],
           defaultEffort: defaultEffort(worker, model.id),
+          speeds: modelSpeeds(worker, model.id) ?? [],
+          defaultSpeed: defaultSpeed(worker, model.id),
         })),
       }));
 
@@ -990,6 +995,25 @@ export function registerRuntimeRoutes(
     return (
       (configured && (!accepted || accepted.includes(configured)) ? configured : undefined) ??
       registryModel(worker, model)?.reasoning?.fallback ??
+      null
+    );
+  }
+
+  /**
+   * The speed a thread runs at when it chose none: the user's harness default when configured and
+   * accepted by this model, else the model's catalog default (`speed.fallback`). Null for models
+   * without speed settings.
+   */
+  function defaultSpeed(worker: string, model: string): SpeedLevel | null {
+    const accepted = modelSpeeds(worker, model);
+    if (!accepted?.length) return null;
+    const configured =
+      worker === 'claude-code' && deps.configStore.config.composition?.harnessSettings !== 'off'
+        ? claudeUserSpeed()
+        : undefined;
+    return (
+      (configured && accepted.includes(configured) ? configured : undefined) ??
+      registryModel(worker, model)?.speed?.fallback ??
       null
     );
   }
@@ -1088,6 +1112,9 @@ export function registerRuntimeRoutes(
       effort: launch.effort ?? null,
       /** The effort it runs at while it chose none, so the header always names one. */
       effortDefault: defaultEffort(provider, model),
+      speed: launch.speed ?? null,
+      /** The speed it runs at while it chose none, or null when the model has no speed setting. */
+      speedDefault: defaultSpeed(provider, model),
       /** Why the worker can't change right now (null while it can). */
       workerLock: workerLock(thread),
       /** The thread has run: a worker switch starts a fresh session seeded with its conversation. */
@@ -1110,6 +1137,7 @@ export function registerRuntimeRoutes(
           label: model.label,
         })),
         efforts: modelEfforts(provider, model) ?? REASONING_EFFORTS,
+        speeds: modelSpeeds(provider, model) ?? [],
         workers,
         unavailableWorkers: unavailableWorkers(projectId, fallback),
         // A scope's thread keeps its scope: its role is the one choice.
@@ -1136,11 +1164,12 @@ export function registerRuntimeRoutes(
     if ('permissionMode' in body)
       patch.permissionMode = body.permissionMode as PermissionMode | null;
     if ('effort' in body) patch.effort = body.effort as EffortLevel | null;
+    if ('speed' in body) patch.speed = body.speed as SpeedLevel | null;
     if ('mcpServers' in body) patch.mcpServers = body.mcpServers as ThreadLaunchPatch['mcpServers'];
     // A thread's model is the same choice as an executor's: any current model its worker runs,
     // stored on its record (the one source), an alias pinned to the id it names. Null re-pins the
     // configured default as it is now.
-    const { provider, model: current, effort } = launchView(thread);
+    const { provider, model: current, effort, speed } = launchView(thread);
     let nextModel: ThreadModel | undefined;
     if ('model' in body) {
       if (body.model === null) {
@@ -1172,6 +1201,19 @@ export function registerRuntimeRoutes(
       );
     if (!('effort' in patch) && effort && accepted && !accepted.includes(effort))
       patch.effort = null;
+    // Speed is likewise scoped to models that advertise it; switching models drops an unsupported pick.
+    const acceptedSpeeds = modelSpeeds(provider, model);
+    if (typeof patch.speed === 'string' && acceptedSpeeds && !acceptedSpeeds.includes(patch.speed))
+      return c.json(
+        {
+          error: acceptedSpeeds.length
+            ? `${model} takes speed ${acceptedSpeeds.join(', ')}, not ${patch.speed}`
+            : `${model} does not support speed settings`,
+        },
+        400,
+      );
+    if (!('speed' in patch) && speed && acceptedSpeeds && !acceptedSpeeds.includes(speed))
+      patch.speed = null;
     try {
       threadLaunch.update(thread.id, patch);
     } catch (error) {
@@ -1410,7 +1452,7 @@ export function registerRuntimeRoutes(
 
     // A chosen model is pinned on the record at construction; without one the factory pins the default.
     let chosenModel: ThreadModel | undefined;
-    if (start.model !== undefined || start.effort !== undefined) {
+    if (start.model !== undefined || start.effort !== undefined || start.speed !== undefined) {
       const runsOn =
         worker ??
         threadFactory?.defaultWorker(project?.id) ??
@@ -1435,6 +1477,14 @@ export function registerRuntimeRoutes(
         return refuse(
           400,
           `${model} takes effort ${takes.join(', ') || 'none'}, not ${start.effort}`,
+        );
+      const takesSpeed = modelSpeeds(runsOn, model);
+      if (start.speed && takesSpeed && !takesSpeed.includes(start.speed))
+        return refuse(
+          400,
+          takesSpeed.length
+            ? `${model} takes speed ${takesSpeed.join(', ')}, not ${start.speed}`
+            : `${model} does not support speed settings`,
         );
     }
 
@@ -1472,7 +1522,11 @@ export function registerRuntimeRoutes(
     }
 
     if (input.name !== undefined) thread.rename(input.name.slice(0, 200));
-    if (start.effort !== undefined) threadLaunch.update(id, { effort: start.effort });
+    if (start.effort !== undefined || start.speed !== undefined)
+      threadLaunch.update(id, {
+        ...(start.effort !== undefined ? { effort: start.effort } : {}),
+        ...(start.speed !== undefined ? { speed: start.speed } : {}),
+      });
     registerThread(thread, project);
     return { ok: true, thread };
   };
@@ -1518,6 +1572,11 @@ export function registerRuntimeRoutes(
       if (!(REASONING_EFFORTS as readonly unknown[]).includes(body.effort))
         return c.json({ error: `effort must be one of ${REASONING_EFFORTS.join(', ')}` }, 400);
       start.effort = body.effort as EffortLevel;
+    }
+    if (body.speed !== undefined) {
+      if (!(MODEL_SPEEDS as readonly unknown[]).includes(body.speed))
+        return c.json({ error: `speed must be one of ${MODEL_SPEEDS.join(', ')}` }, 400);
+      start.speed = body.speed as SpeedLevel;
     }
     const made = await createThread({
       id: body.id as string | undefined,
@@ -1660,10 +1719,15 @@ export function registerRuntimeRoutes(
         console.warn(
           `[Threads] ${id}: its ${from} session could not be ended after the switch; it is not resumed`,
         );
-      // An effort the new worker's model doesn't take is not carried over.
-      const { model: next, effort } = launchView(thread);
+      // An effort or speed the new worker's model doesn't take is not carried over.
+      const { model: next, effort, speed } = launchView(thread);
       const takes = modelEfforts(body.worker, next);
-      if (effort && takes && !takes.includes(effort)) threadLaunch.update(id, { effort: null });
+      const takesSpeed = modelSpeeds(body.worker, next);
+      const clearPatch: ThreadLaunchPatch = {
+        ...(effort && takes && !takes.includes(effort) ? { effort: null } : {}),
+        ...(speed && takesSpeed && !takesSpeed.includes(speed) ? { speed: null } : {}),
+      };
+      if (Object.keys(clearPatch).length) threadLaunch.update(id, clearPatch);
     }
 
     // A thread's role may change at any time; its instructions re-compose from the next turn (the
@@ -1948,6 +2012,17 @@ function claudeUserEffort(): EffortLevel | undefined {
     return (REASONING_EFFORTS as readonly unknown[]).includes(level)
       ? (level as EffortLevel)
       : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** The user's configured Claude Code fast-mode setting (`~/.claude/settings.json` `fastMode`). */
+function claudeUserSpeed(): SpeedLevel | undefined {
+  try {
+    const directory = process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude');
+    const fast = JSON.parse(readFileSync(join(directory, 'settings.json'), 'utf8')).fastMode;
+    return typeof fast === 'boolean' ? (fast ? 'fast' : 'standard') : undefined;
   } catch {
     return undefined;
   }

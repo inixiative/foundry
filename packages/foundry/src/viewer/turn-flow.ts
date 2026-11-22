@@ -3,7 +3,7 @@
  * @kind service
  * @partOf feature:threads, feature:viewer
  */
-import { type NativeEvidence, WRITE_TOOLS } from '@inixiative/foundry-core';
+import { type NativeEvidence, toolInputPaths, WRITE_TOOLS } from '@inixiative/foundry-core';
 import type { LearningState, ThreadKnowledgeBundle } from '../agents/thread-runtime';
 import { REDUCED_PHASE } from '../archives/reduced-middleware';
 import type {
@@ -135,16 +135,14 @@ export interface TurnFile {
 
 const PATCH_FILE = /^\*\*\* (?:Add|Update|Delete) File: (.+)$/gm;
 
-/** Paths one write tool's input names: Claude's `file_path` / `notebook_path`, Codex `apply_patch` headers. */
+/** Paths one write tool's input names: native path keys (`TOOL_PATH_KEYS`) and Codex `apply_patch` headers. */
 function writtenPaths(input: Record<string, unknown>): string[] {
-  const direct = [input.file_path, input.notebook_path].filter(
-    (value): value is string => typeof value === 'string' && value.length > 0,
-  );
+  const direct = toolInputPaths(input);
   const patch = [input.input, input.patch].find((value) => typeof value === 'string') as
     | string
     | undefined;
   const patched = patch ? [...patch.matchAll(PATCH_FILE)].map((m) => m[1]!.trim()) : [];
-  return [...direct, ...patched];
+  return [...new Set([...direct, ...patched])];
 }
 
 /** Each file a turn's write tools touched, once, in first-touch order. */

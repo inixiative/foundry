@@ -25,12 +25,16 @@ export interface ThreadLaunchView {
   /** The alias it was chosen by (`opus`), when it was. */
   modelAlias: string | null;
   effort: string | null;
+  effortDefault?: string | null;
+  speed: string | null;
+  speedDefault?: string | null;
   mcpServers: Array<{ name: string; type: 'stdio' | 'http' }>;
   revision: number;
   options: {
     permissionModes: readonly string[];
     models: Array<{ id: string; label: string }>;
     efforts: readonly string[];
+    speeds: readonly string[];
     /** The workers a thread here may run on: its project's default and each other one with a login. */
     workers: Array<{ id: string; label: string; default: boolean; defaultRole: string }>;
     /** The thread roles a thread here may run as. */

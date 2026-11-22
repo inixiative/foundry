@@ -1,5 +1,6 @@
 {
   "version": "0.169.0",
+  "transport": "outcome",
   "status": 200,
   "body": {
     "native": "tangerine-lighthouse-42",
@@ -8,9 +9,12 @@
   },
   "recorded": {
     "service": "codex",
+    "transport": "outcome",
+    "recordedAt": "2026-11-22T14:57:05.939Z",
+    "environment": "terminal",
     "cli": "codex",
-    "recordedAt": "2026-11-21T20:44:11.880Z",
-    "agentSession": "0.22.0",
-    "environment": "terminal"
+    "metadata": {
+      "@inixiative/agent-session": "0.22.2"
+    }
   }
 }

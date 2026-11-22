@@ -11,6 +11,7 @@ import {
   modelCapabilities,
   modelHasCapability,
   modelOptionsByCapability,
+  modelSpeeds,
   providersWithCapability,
   readModelRetirement,
   registryModel,
@@ -286,7 +287,7 @@ describe('Google Gemini Developer API models', () => {
 });
 
 describe('Google ACP subscription harnesses (Antigravity and Gemini CLI)', () => {
-  test('registers Antigravity (agy) with Gemini 4 Neon/Carbon/Hydrogen and xhigh reasoning', () => {
+  test('registers Antigravity (agy) with Gemini 4 Neon/Carbon/Argon/Hydrogen and 3.8 Flash', () => {
     const agy = MODEL_REGISTRY.agy!;
     expect(agy).toMatchObject({
       id: 'agy',
@@ -300,16 +301,19 @@ describe('Google ACP subscription harnesses (Antigravity and Gemini CLI)', () =>
     expect(agy.models.map((m) => m.id)).toEqual([
       'gemini-4-neon',
       'gemini-4-carbon',
+      'gemini-4-argon',
       'gemini-4-hydrogen',
+      'gemini-3.8-flash',
     ]);
     for (const model of agy.models) {
       expect(model.runtimeKind).toBe('native-harness');
       expect(model.contextWindow).toBe(1_048_576);
       expect(model.maxOutputTokens).toBe(65_536);
+      const hasXhigh = model.id === 'gemini-4-neon' || model.id === 'gemini-4-hydrogen';
       expect(model.reasoning).toEqual({
         param: 'thinking_level',
-        efforts: ['low', 'medium', 'high', 'xhigh'],
-        fallback: 'high',
+        efforts: hasXhigh ? ['low', 'medium', 'high', 'xhigh'] : ['low', 'medium', 'high'],
+        fallback: hasXhigh ? 'high' : 'medium',
       });
     }
     expect(SUBSCRIPTION_WORKER_MODELS.agy).toBe('gemini-4-neon');
@@ -350,5 +354,31 @@ describe('Google ACP subscription harnesses (Antigravity and Gemini CLI)', () =>
       mode: 'subscription',
     });
     expect(MODEL_VENDORS.find((v) => v.id === 'google')?.subscription).toEqual({ provider: 'agy' });
+  });
+});
+
+describe('Model speed / fast mode registry metadata', () => {
+  test('exposes speed tiers only for models that support fast mode or service tiers', () => {
+    // Claude Code: Opus & Fable 5.2 support fast mode; Sonnet, Haiku, and Fable 5.1 do not.
+    expect(modelSpeeds('claude-code', 'claude-opus-5-5')).toEqual(['standard', 'fast']);
+    expect(modelSpeeds('claude-code', 'opus')).toEqual(['standard', 'fast']);
+    expect(modelSpeeds('claude-code', 'claude-fable-5-2')).toEqual(['standard', 'fast']);
+    expect(modelSpeeds('claude-code', 'fable')).toEqual(['standard', 'fast']);
+    expect(modelSpeeds('claude-code', 'claude-sonnet-5-5')).toEqual([]);
+    expect(modelSpeeds('claude-code', 'claude-haiku-5-5')).toEqual([]);
+    expect(modelSpeeds('claude-code', 'claude-fable-5-1')).toEqual([]);
+
+    // Codex: all GPT-5.6/6.x models support standard/fast; 6.2 Astra & 6.1 Terra default to fast.
+    expect(modelSpeeds('codex', 'gpt-6.2-astra')).toEqual(['standard', 'fast']);
+    expect(registryModel('codex', 'gpt-6.2-astra')?.speed?.fallback).toBe('fast');
+    expect(registryModel('codex', 'gpt-6.1-terra')?.speed?.fallback).toBe('fast');
+    expect(modelSpeeds('codex', 'gpt-6.2-sol')).toEqual(['standard', 'fast']);
+    expect(registryModel('codex', 'gpt-6.2-sol')?.speed?.fallback).toBe('standard');
+
+    // Antigravity, Gemini CLI, and Muse do not expose speed tiers.
+    expect(modelSpeeds('agy', 'gemini-4-neon')).toEqual([]);
+    expect(modelSpeeds('gemini-cli', 'gemini-3.8-flash')).toEqual([]);
+    expect(modelSpeeds('muse', 'muse-wonder-1.0')).toEqual([]);
+    expect(modelSpeeds('claude-code', 'nonexistent-model')).toBeUndefined();
   });
 });

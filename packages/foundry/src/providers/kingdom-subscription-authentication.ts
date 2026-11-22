@@ -14,6 +14,7 @@ import { defaultProfileDirectory } from './default-profiles';
 import {
   claudeSettingsFiles,
   codexUserConfig,
+  extractClaudeFastMode,
   type HarnessSettingsLaunch,
   shareCodexUserSetup,
   shareMuseUserConfig,
@@ -213,8 +214,13 @@ export class KingdomSubscriptionAuthentication implements NativeAuthenticationPr
           this.writeMuseLogin(home, released.accessToken);
           env.XDG_CONFIG_HOME = home;
         } else if (runtime === 'claude') {
-          if (argv.some((arg) => /^(--settings|--setting-sources|--fallback-model)(=|$)/.test(arg)))
+          const { argv: stripped, fastMode } = extractClaudeFastMode(
+            argv,
+            'Subscription launch override refused',
+          );
+          if (stripped.some((arg) => /^(--setting-sources|--fallback-model)(=|$)/.test(arg)))
             throw Error('Subscription launch override refused');
+          launchArgs = stripped;
           env.CLAUDE_CONFIG_DIR = home;
           env.CLAUDE_CODE_OAUTH_TOKEN = released.accessToken;
           if (harness) {
@@ -223,9 +229,19 @@ export class KingdomSubscriptionAuthentication implements NativeAuthenticationPr
               home,
               this.options.userClaudeDirectory ?? defaultProfileDirectory('claude'),
             );
-            const guard = subscriptionSettingsGuard(claudeSettingsFiles(home, harness));
+            const guard = subscriptionSettingsGuard(
+              claudeSettingsFiles(home, harness),
+              fastMode !== undefined ? { fastMode } : undefined,
+            );
             launchArgs = [...launchArgs, '--setting-sources', harness.sources, '--settings', guard];
-          } else launchArgs = [...launchArgs, '--setting-sources', ''];
+          } else {
+            launchArgs = [
+              ...launchArgs,
+              '--setting-sources',
+              '',
+              ...(fastMode !== undefined ? ['--settings', JSON.stringify({ fastMode })] : []),
+            ];
+          }
         } else {
           assertCodexLaunchArguments(argv);
           const userCodex = this.options.userCodexDirectory ?? defaultProfileDirectory('codex');

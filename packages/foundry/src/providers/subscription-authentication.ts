@@ -4,7 +4,12 @@
  * @partOf feature:nativeAuth
  */
 import { defaultProfileDirectory, isFoundryLogin, withProfile } from './default-profiles';
-import { claudeSettingsFiles, shareUserSetup, subscriptionSettingsGuard } from './harness-settings';
+import {
+  claudeSettingsFiles,
+  extractClaudeFastMode,
+  shareUserSetup,
+  subscriptionSettingsGuard,
+} from './harness-settings';
 import {
   NativeAuthentication,
   type NativeAuthenticationLaunch,
@@ -114,13 +119,29 @@ export class SubscriptionAuthentication extends NativeAuthentication {
     return {
       ...launch,
       launch(argv, env, harness) {
-        if (argv.some((arg) => /^(--settings|--setting-sources|--fallback-model)(=|$)/.test(arg)))
+        const { argv: stripped, fastMode } = extractClaudeFastMode(
+          argv,
+          'Subscription launch override refused',
+        );
+        if (stripped.some((arg) => /^(--setting-sources|--fallback-model)(=|$)/.test(arg)))
           throw Error('Subscription launch override refused');
-        const owned = launch.launch(argv, nativeTextEnvironment(env));
-        if (!harness) return { argv: [...owned.argv, '--setting-sources', ''], env: owned.env };
+        const owned = launch.launch(stripped, nativeTextEnvironment(env));
+        if (!harness)
+          return {
+            argv: [
+              ...owned.argv,
+              '--setting-sources',
+              '',
+              ...(fastMode !== undefined ? ['--settings', JSON.stringify({ fastMode })] : []),
+            ],
+            env: owned.env,
+          };
         // A login with its own home (one of several) gets the user's own setup, as a Kingdom pool login does.
         if (isFoundryLogin(configDirectory)) shareUserSetup(configDirectory, userClaudeDirectory);
-        const guard = subscriptionSettingsGuard(claudeSettingsFiles(configDirectory, harness));
+        const guard = subscriptionSettingsGuard(
+          claudeSettingsFiles(configDirectory, harness),
+          fastMode !== undefined ? { fastMode } : undefined,
+        );
         return {
           argv: [...owned.argv, '--setting-sources', harness.sources, '--settings', guard],
           env: owned.env,

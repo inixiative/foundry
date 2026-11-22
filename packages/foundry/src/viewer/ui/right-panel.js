@@ -28,6 +28,7 @@ import { html, useEffect, useState } from './lib.js';
 import { LoopView, loopSummary, PointerLedger, pointerRows } from './loop-view.js';
 import { SizeControls } from './panel-sizes.js';
 import { Plan } from './plan.js';
+import { SPEED_LABELS } from './run-picker.js';
 import { Running } from './running.js';
 import { SectionList } from './slot.js';
 import {
@@ -269,6 +270,17 @@ function ContextTab({ flags }) {
                 ${(launch.options?.efforts ?? []).map((e) => html`<option key=${e} value=${e}>${e}</option>`)}
               </select>
             </dd>
+            ${
+              (launch.options?.speeds ?? []).length
+                ? html`<dt>Speed</dt><dd>
+                    <select class="rp-select" value=${launch.speed ?? ''}
+                      onChange=${(e) => setLaunch(threadId, { speed: e.target.value || null })}>
+                      <option value="">${launch.speedDefault ? `${SPEED_LABELS[launch.speedDefault] ?? launch.speedDefault} (default)` : 'Default'}</option>
+                      ${(launch.options?.speeds ?? []).map((s) => html`<option key=${s} value=${s}>${SPEED_LABELS[s] ?? s}</option>`)}
+                    </select>
+                  </dd>`
+                : null
+            }
             <dt>Provider</dt><dd title=${harnessName(launch.provider) ? `Runs through ${harnessName(launch.provider)}` : ''}>${vendorName(launch.provider) ?? '—'}</dd>
             <${AgentsFact} />
           </dl>

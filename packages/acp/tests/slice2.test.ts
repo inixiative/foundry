@@ -188,6 +188,55 @@ test("modes and config options are the host's: they reach the executor launch an
   expect(JSON.stringify(await view.json())).not.toContain('secret-token');
 });
 
+test('speed (serviceTier) option appears only on models that support it, reaches launch, and clears on model switch', async () => {
+  const { f, dir, host } = await nativeHost();
+  const h = host();
+  await h.agent.request('initialize', INITIALIZE);
+  const created = await h.agent.request('session/new', {
+    cwd: join(dir, 'P'),
+    mcpServers: [],
+    _meta: { foundry: { worker: 'claude-code' } },
+  });
+  const { sessionId } = created;
+  // Default model for claude-code (`fable` -> `claude-fable-5-2`) supports fast mode.
+  expect(created.configOptions?.find((o) => o.id === 'serviceTier')).toMatchObject({
+    id: 'serviceTier',
+    category: '_speed',
+    currentValue: 'default',
+  });
+  // Switch to Opus 5.5 (also supports fast mode) and enable fast speed.
+  const onOpus = await h.agent.request('session/set_config_option', {
+    sessionId,
+    configId: 'model',
+    value: 'claude-opus-5-5',
+  });
+  expect(onOpus.configOptions.find((o) => o.id === 'serviceTier')).toMatchObject({
+    id: 'serviceTier',
+    category: '_speed',
+    currentValue: 'default',
+  });
+  const fast = await h.agent.request('session/set_config_option', {
+    sessionId,
+    configId: 'serviceTier',
+    value: 'fast',
+  });
+  expect(fast.configOptions.find((o) => o.id === 'serviceTier')).toMatchObject({
+    currentValue: 'fast',
+  });
+  await turn(h, f, sessionId, 'fast turn');
+  expect(f.created.at(-1)).toMatchObject({ model: 'claude-opus-5-5', speed: 'fast' });
+
+  // Switch to Sonnet 5.5 (no fast mode): serviceTier disappears and speed clears.
+  const onSonnet = await h.agent.request('session/set_config_option', {
+    sessionId,
+    configId: 'model',
+    value: 'claude-sonnet-5-5',
+  });
+  expect(onSonnet.configOptions.find((o) => o.id === 'serviceTier')).toBeUndefined();
+  await turn(h, f, sessionId, 'sonnet turn');
+  expect(f.created.at(-1)?.speed).toBeUndefined();
+});
+
 test("a session starts in the mode the host's configuration passes; a mode the host sets wins", async () => {
   const { f, dir, host } = await nativeHost();
   const h = host(['--permission-mode', 'bypassPermissions']);

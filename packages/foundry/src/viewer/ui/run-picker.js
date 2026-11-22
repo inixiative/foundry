@@ -44,10 +44,12 @@ export const roleLabel = (roles, id) =>
  */
 export function runParts(launch) {
   const named = launchLabels(launch?.provider, launch?.model);
+  const effectiveSpeed = launch?.speed ?? launch?.speedDefault ?? null;
   return {
     worker: workerName(launch?.worker ?? launch?.provider) ?? named.provider,
     model: named.model,
     effort: launch?.effort ?? launch?.effortDefault ?? null,
+    speed: effectiveSpeed === 'fast' ? 'fast' : null,
     role: roleLabel(launch?.options?.roles, launch?.effectiveRole),
   };
 }
@@ -55,17 +57,20 @@ export function runParts(launch) {
 /** "Claude Code · Opus 5.5 · high · Coder", or null when nothing about the run is known yet. */
 export function runLabel(launch) {
   if (!launch) return null;
-  const { worker, model, effort, role } = runParts(launch);
-  return [worker, model, effort, role].filter(Boolean).join(' · ') || null;
+  const { worker, model, effort, speed, role } = runParts(launch);
+  return [worker, model, effort, speed, role].filter(Boolean).join(' · ') || null;
 }
 
 /** The model entry of a worker choice. */
 const modelOf = (worker, modelId) => worker?.models?.find((m) => m.id === modelId) ?? null;
 
+export const SPEED_LABELS = { standard: 'Standard', fast: 'Fast' };
+
 /**
- * The four choices, controlled. `value` is `{ worker, model, effort, role }`; an empty effort is the
- * model's own default, an empty role the worker's default role (each named, so never blank). `lock` is why the worker can't change
- * now; `musePersonal` replaces the Muse note with what a mid-thread switch means for the Archive.
+ * The choices, controlled. `value` is `{ worker, model, effort, speed, role }`; an empty effort or
+ * speed is the model's own default, an empty role the worker's default role (each named, so never blank).
+ * `lock` is why the worker can't change now; `musePersonal` replaces the Muse note with what a
+ * mid-thread switch means for the Archive.
  */
 export function RunPicker({
   value,
@@ -80,6 +85,7 @@ export function RunPicker({
   const worker = workers.find((w) => w.id === value.worker) ?? workers[0];
   const model = modelOf(worker, value.model) ?? modelOf(worker, worker?.defaultModel);
   const efforts = model?.efforts ?? [];
+  const speeds = model?.speeds ?? [];
   const pickWorker = (id) => {
     const next = workers.find((w) => w.id === id);
     // A worker and its model are chosen together: the new worker starts on its own default model.
@@ -88,7 +94,7 @@ export function RunPicker({
       value.role && value.role === worker?.defaultRole
         ? (next?.defaultRole ?? '')
         : (value.role ?? '');
-    onChange({ worker: id, model: next?.defaultModel ?? '', effort: '', role });
+    onChange({ worker: id, model: next?.defaultModel ?? '', effort: '', speed: '', role });
   };
   const pickModel = (id) => {
     const next = modelOf(worker, id);
@@ -96,6 +102,7 @@ export function RunPicker({
       ...value,
       model: id,
       effort: next?.efforts?.includes(value.effort) ? value.effort : '',
+      speed: next?.speeds?.includes(value.speed) ? value.speed : '',
     });
   };
   return html`<div class="run-picker">
@@ -118,6 +125,17 @@ export function RunPicker({
         ${efforts.map((e) => html`<option key=${e} value=${e}>${e}</option>`)}
       </select>
     </label>
+    ${
+      speeds.length
+        ? html`<label class="run-picker-row">Speed
+            <select class="rp-select" data-run="speed" value=${value.speed ?? ''}
+              onChange=${(e) => onChange({ ...value, speed: e.target.value })}>
+              <option value="">${model?.defaultSpeed ? `${SPEED_LABELS[model.defaultSpeed] ?? model.defaultSpeed} (default)` : 'Default'}</option>
+              ${speeds.map((s) => html`<option key=${s} value=${s}>${SPEED_LABELS[s] ?? s}</option>`)}
+            </select>
+          </label>`
+        : null
+    }
     ${
       roles.length
         ? html`<label class="run-picker-row">Role
@@ -180,6 +198,7 @@ async function applyRun(threadId, launch, next) {
       // The thread holds its own model: only a different pick is sent (a worker switch already set one).
       ...(next.model && next.model !== launch.model ? { model: next.model } : {}),
       effort: next.effort || null,
+      ...((next.speed || null) !== (launch.speed ?? null) ? { speed: next.speed || null } : {}),
     }),
   });
   const body = await res.json().catch(() => ({}));
@@ -211,6 +230,7 @@ export function ThreadRunModal({
     worker: launch.worker,
     model: modelOf(current, launch.model) ? launch.model : (current?.defaultModel ?? launch.model),
     effort: launch.effort ?? '',
+    speed: launch.speed ?? '',
     role: launch.role ?? '',
   });
   const [busy, setBusy] = useState(false);
@@ -354,6 +374,7 @@ export function NewThreadModal() {
           worker: worker?.id ?? '',
           model: worker?.defaultModel ?? '',
           effort: '',
+          speed: '',
           role: preset.role ?? '',
         });
       })
@@ -381,6 +402,7 @@ export function NewThreadModal() {
       ...(worker && !worker.default ? { worker: worker.id } : {}),
       ...(value.model && value.model !== worker?.defaultModel ? { model: value.model } : {}),
       ...(value.effort ? { effort: value.effort } : {}),
+      ...(value.speed ? { speed: value.speed } : {}),
       ...(value.role && !pinned ? { role: value.role } : {}),
     });
     // A draft from the opener (a settings page asking the Forge Master) waits in the new thread's box.

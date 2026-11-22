@@ -1,5 +1,6 @@
 {
   "version": "0.169.0",
+  "transport": "process",
   "status": 0,
   "body": {
     "kind": "process",
@@ -27,10 +28,13 @@
   },
   "recorded": {
     "service": "codex",
-    "cli": "codex",
-    "recordedAt": "2026-11-21T20:44:15.339Z",
-    "agentSession": "0.22.0",
+    "transport": "process",
+    "recordedAt": "2026-11-22T14:57:09.026Z",
     "environment": "terminal",
-    "durationMs": 101
+    "cli": "codex",
+    "durationMs": 79,
+    "metadata": {
+      "@inixiative/agent-session": "0.22.2"
+    }
   }
 }
