@@ -500,6 +500,11 @@
     "description": "Every Kingdom integration this Foundry is paired as, once per Kingdom + owner; Signets stay in private files."
   },
   {
+    "path": "kingdomViewerRefused",
+    "scope": "foundry",
+    "description": "Paired Kingdoms (by URL) that may not open this Foundry's viewer. A paired Kingdom may unless it is listed. Changed only on this machine (`POST /api/kingdom/viewer`), never through a Kingdom."
+  },
+  {
     "path": "setupComplete",
     "scope": "foundry",
     "description": "Whether the initial setup wizard has been completed."
