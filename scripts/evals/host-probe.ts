@@ -1,4 +1,9 @@
 /**
+ * @atlas
+ * @kind entrypoint
+ * @partOf feature:evals
+ */
+/**
  * Eval-only instrument for one project Warden host (agent-session `ClaudeInSessionDecisions`): which
  * path every Warden call took (a held warm spare, or its own cold member), whether it was delivered,
  * how it ended, and the host's capacity state (spawns the CLI cap refused, orphans, serving) sampled

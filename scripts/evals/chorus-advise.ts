@@ -610,7 +610,6 @@ try {
     });
   }, 2_000);
   if (concurrent) {
-    const UNHEARD = new Set<string>(['timeout', 'error', 'excluded']);
     const host = projectHosts?.serving(`${values.session ?? 'chorus-advise'}:1`);
     if (!host || host === 'starting') throw Error('--concurrent: the project host is not serving');
     const size = Number((hostReport.setup as { roster: number }).roster);
@@ -650,7 +649,6 @@ try {
           decisions,
           stageHost,
           resolveSource,
-          atlasRoot,
           threadId: `${values.session ?? 'chorus-advise'}:${n + 1}`,
           journal: (record) => appendFileSync(journalFile, `${JSON.stringify(record)}\n`),
           warn: (line) => console.error(line),
@@ -683,7 +681,7 @@ try {
         endedAfterMs: endedAt - sendAt,
         wardens: advice.decisions.length,
         // A Warden with no answer by the deadline, an error, or left out: what a degraded notice counts.
-        unheard: advice.decisions.filter((d) => UNHEARD.has(d.decision)).length,
+        unheard: advice.decisions.filter((d) => degradedAnswer(d) !== undefined).length,
         // Each degraded Warden by kind and layer (`timeout:L1`, `error:L2`, `not-started:L?`), and
         // how many of the errors are the subscription provider's own failure.
         unheardBy: advice.decisions.reduce<Record<string, number>>((by, d) => {
