@@ -7,6 +7,7 @@ import { existsSync, realpathSync } from 'node:fs';
 import { realpath, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { isPrivatePath } from '@inixiative/secret-scratch';
 import type { ContextSource } from '../context-layer';
 import type { ContextRef, HydrationAdapter } from '../hydrator';
 
@@ -294,12 +295,7 @@ export function secretInstructionPath(path: string, trusted: readonly string[] =
     /^id_[a-z0-9]+/i.test(name) ||
     /\.(pem|key|p12|pfx|keystore|jks)$/i.test(name) ||
     rest.split(sep).some((part) => CREDENTIAL_DIRECTORIES.has(part)) ||
-    // A `.private` path is never read (FEAT-005): a segment named or ending `.private`, or holding `.private.`.
-    path
-      .split(sep)
-      .some(
-        (part) => part === '.private' || part.endsWith('.private') || part.includes('.private.'),
-      )
+    isPrivatePath(path)
   );
 }
 

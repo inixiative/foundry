@@ -37,7 +37,7 @@ describe('the registry is reachable from core alone', () => {
     const source = await Bun.file(new URL('../src/model-registry.ts', import.meta.url)).text();
     expect(source).not.toMatch(/^\s*import\s/m);
     const { dependencies } = await Bun.file(new URL('../package.json', import.meta.url)).json();
-    expect(Object.keys(dependencies)).toEqual(['uuidv7']);
+    expect(Object.keys(dependencies).sort()).toEqual(['@inixiative/secret-scratch', 'uuidv7']);
   });
 
   test('resolveDecisionModel falls back to the registry defaults', () => {

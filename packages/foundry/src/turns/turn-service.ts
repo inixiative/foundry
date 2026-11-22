@@ -3,7 +3,6 @@
  * @kind service
  * @partOf feature:threads
  */
-import { SecretScratchError } from '@inixiative/agent-session';
 import type {
   EventStream,
   HarnessResult,
@@ -24,6 +23,7 @@ import {
   newId,
   type SerializedQueue,
 } from '@inixiative/foundry-core';
+import { SecretScratchError } from '@inixiative/secret-scratch';
 import type { ConversationMember } from '@inixiative/signet';
 import { memberPostReception } from '../agents/chorus-reception';
 import { configureHarness, type ThreadFactory } from '../agents/thread-factory';

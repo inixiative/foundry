@@ -34,7 +34,11 @@ import {
   secretNote,
   validateSecretsSettings,
 } from '../src/secrets/scratch';
-import { SECRET_SCRATCH_DESCRIPTION, SecretScratchTool } from '../src/tools/secret-scratch';
+import {
+  SECRET_SCRATCH_DESCRIPTION,
+  SecretScratchTool,
+  scratchTarget,
+} from '../src/tools/secret-scratch';
 import { createToolGate } from '../src/turns/tool-gate';
 import { createViewer } from '../src/viewer/server';
 import { connectStreams } from './helpers/data-stream';
@@ -541,4 +545,47 @@ test("a schedule's run uses a kept entry by name but never keeps one; an agent n
   expect(takeover.text).toContain('only the person changes that');
   expect(await backend.get('ANTHROPIC_API_KEY')).toBe('provider-key');
   expect(b.secrets.pad.list(b.thread.id)).not.toEqual([]);
+});
+
+test('Kingdom tokens and Anthropic keys are lifted automatically without $$ while Kingdom prose is untouched', async () => {
+  const b = await bridge();
+  const run = `kingdom_run_${'a'.repeat(43)}`;
+  const refresh = `kingdom_refresh_${'b'.repeat(43)}`;
+  const signet = `kingdom_${'c-_'.repeat(14)}d`;
+  const api = `prod_orgUser_${'0f'.repeat(24)}`;
+  const anthropic = `sk-ant-api03-${'Ab1'.repeat(10)}`;
+  const lifted = b.secrets.lift(
+    b.thread,
+    'turn_kingdom',
+    `use ${run} ${refresh} ${signet} ${api} and ${anthropic} with kingdom_integration_presence`,
+  );
+  expect(lifted.text).toBe(
+    'use †turn_kingdom.1 †turn_kingdom.2 †turn_kingdom.3 †turn_kingdom.4 and †turn_kingdom.5 with kingdom_integration_presence',
+  );
+  expect(lifted.refs).toEqual([
+    '†turn_kingdom.1',
+    '†turn_kingdom.2',
+    '†turn_kingdom.3',
+    '†turn_kingdom.4',
+    '†turn_kingdom.5',
+  ]);
+  expect(b.secrets.note('turn_kingdom')).toContain('5 secrets');
+});
+
+test('scratchTarget guards .agents, case variants, home expansion, dangling symlinks, and missing cwd while allowing ..foo inside cwd', () => {
+  const root = tempDir();
+  expect(() => scratchTarget(undefined, '.env.local')).toThrow(/working directory/i);
+  for (const blocked of [
+    '.agents/rules.md',
+    '.GIT/config',
+    '.CLAUDE/settings.json',
+    '~/.ssh/id_ed25519',
+    '$HOME/outside.env',
+  ]) {
+    expect(() => scratchTarget(root, blocked)).toThrow();
+  }
+  symlinkSync(join(tmpdir(), 'nonexistent-outside-target-12345'), join(root, 'dangling-out'));
+  expect(() => scratchTarget(root, 'dangling-out')).toThrow(/outside/i);
+  const dotDotFile = scratchTarget(root, '..env.local');
+  expect(dotDotFile.endsWith('/..env.local')).toBe(true);
 });

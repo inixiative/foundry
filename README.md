@@ -65,6 +65,7 @@ Underneath, Foundry is a framework for agent systems in which you set the contex
 - **Context layers:** stackable context slices with staleness and caching. Agents see what you decide they should see.
 - **Wardens (the chorus):** one small, fresh model call per region of your docs. Layer 1 (Haiku) asks every region "is this mine?"; Layer 2 (Sonnet) confirms each yes and picks the primitive. A Warden answers with the existing thing and where it's written, or `NO_COMMENT`; a timeout leaves the turn to proceed without it.
 - **Tool gate:** structural tool rules decide each native tool request (allow, ask or deny). Asks surface in the viewer, or go to the ACP host, for approval. Core's capability gate is the underlying primitive.
+- **Secret scratch pad:** `$$value` secrets (and recognised tokens) are lifted before the model or transcript sees them and used by reference through `secret_scratch` and `secret_pipe`, powered by [`@inixiative/secret-scratch`](https://github.com/inixiative/secret-scratch).
 - **Thread tree:** subagents are their own threads tied to their parent, stitched into Archive as one artifact.
 - **Viewer:** where you run threads, answer approvals and change settings, in Kingdom's look.
 

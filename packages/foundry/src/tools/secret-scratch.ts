@@ -3,9 +3,6 @@
  * @kind adapter
  * @partOf feature:secrets, primitive:tools
  */
-import { existsSync, realpathSync } from 'node:fs';
-import { dirname, isAbsolute, relative, resolve, sep } from 'node:path';
-import { parseScratchRef, type ScratchSource, SecretScratchError } from '@inixiative/agent-session';
 import type {
   ApiRequest,
   ApiResponse,
@@ -13,6 +10,12 @@ import type {
   OwnershipScope,
   ToolResult,
 } from '@inixiative/foundry-core';
+import {
+  parseScratchRef,
+  type ScratchSource,
+  SecretScratchError,
+  scratchTarget,
+} from '@inixiative/secret-scratch';
 import { z } from 'zod';
 import {
   FOUNDRY_HOLDER,
@@ -132,46 +135,7 @@ export const SECRET_SCRATCH_DESCRIPTION =
 export const SECRET_PIPE_DESCRIPTION =
   'Run a shell command with a secret on its stdin: from an env file key (envFile + key, the normal path after secret_scratch env), a reference (ref), or a keychain entry (name). Its output is thrown away; only the exit code comes back. A failed command keeps the secret in the pad. Example: command "gh secret set API_TOKEN", envFile ".env.local", key "API_TOKEN".';
 
-/** Folders a secret is never written into without the host's say: version control, agent and tool configuration, keys. */
-const GUARDED_SEGMENTS = new Set([
-  '.git',
-  '.claude',
-  '.codex',
-  '.foundry',
-  '.ssh',
-  '.gnupg',
-  '.aws',
-]);
-const GUARDED_NAMES = new Set(['.mcp.json', 'settings.json', 'settings.local.json']);
-
-/**
- * Where `secret_scratch` may write without asking (it never waits on an approval): a file inside the
- * thread's working directory, through no symlink out of it, and not in version-control or agent
- * configuration. Anywhere else is the host's to approve, through a shell command or `secret_pipe`.
- */
-export function scratchTarget(cwd: string | undefined, path: string): string {
-  if (!cwd) throw new SecretScratchError('This thread has no working directory to write into.');
-  const root = realpathSync(cwd);
-  const target = resolve(root, path);
-  // The nearest existing parent decides where the file really lands.
-  let parent = dirname(target);
-  while (!existsSync(parent)) parent = dirname(parent);
-  const real = resolve(realpathSync(parent), relative(parent, target));
-  const inside = relative(root, existsSync(target) ? realpathSync(target) : real);
-  if (!inside || inside.startsWith('..') || isAbsolute(inside))
-    throw new SecretScratchError(
-      `${path} is outside the thread's working directory; use secret_pipe for that.`,
-    );
-  const parts = inside.split(sep);
-  if (
-    parts.some((part) => GUARDED_SEGMENTS.has(part)) ||
-    GUARDED_NAMES.has(parts[parts.length - 1] ?? '')
-  )
-    throw new SecretScratchError(
-      `${path} is version-control or agent configuration; use secret_pipe for that.`,
-    );
-  return target;
-}
+export { scratchTarget };
 
 export class SecretScratchTool implements ApiTool {
   readonly id = 'secrets';

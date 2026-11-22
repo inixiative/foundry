@@ -1,10 +1,12 @@
 import { describe, expect, test } from 'bun:test';
 import {
   CORRECTION_CLASSIFY_PREFIX,
+  contextSecretHits,
   correctionClassifyMessages,
   detectCorrection,
   extractCorrections,
   parseCorrectionClassifications,
+  SHAPED_SECRET_PATTERNS,
   scrubSecrets,
   type TranscriptTurn,
 } from '../src';
@@ -229,5 +231,38 @@ describe('scrubSecrets', () => {
       text: 'just ordinary prose about skiing',
       hits: 0,
     });
+  });
+
+  test('supports caller extraShapes alongside Kingdom and provider shapes without double-scrubbing', () => {
+    const anthropic = `sk-ant-api03-${'Ab1'.repeat(10)}`;
+    const kingdom = `kingdom_run_${'z'.repeat(43)}`;
+    const custom = 'acme_secret_1234567890abcdef';
+    const extra: ReadonlyArray<readonly [RegExp, string]> = [
+      [/\bacme_secret_[a-z0-9]{16,}\b/g, '[REDACTED:acme]'],
+    ];
+    const first = scrubSecrets(`a=${anthropic} k=${kingdom} c=${custom}`, extra);
+    expect(first.hits).toBe(3);
+    expect(first.text).toBe(
+      'a=[REDACTED:anthropic-key] k=[REDACTED:kingdom-token] c=[REDACTED:acme]',
+    );
+    expect(scrubSecrets(first.text, extra)).toEqual({ text: first.text, hits: 0 });
+  });
+
+  test('SHAPED_SECRET_PATTERNS matches Kingdom, API, and provider tokens while skipping prose identifiers', () => {
+    const matchesAny = (value: string) =>
+      SHAPED_SECRET_PATTERNS.some((pattern) => [...value.matchAll(pattern)].length > 0);
+    expect(matchesAny(`kingdom_run_${'a'.repeat(43)}`)).toBe(true);
+    expect(matchesAny(`kingdom_refresh_${'b'.repeat(43)}`)).toBe(true);
+    expect(matchesAny(`kingdom_${'c-_'.repeat(14)}d`)).toBe(true);
+    expect(matchesAny(`prod_orgUser_${'0f'.repeat(24)}`)).toBe(true);
+    expect(matchesAny(`sk-ant-api03-${'Ab1'.repeat(10)}`)).toBe(true);
+    expect(matchesAny('kingdom_integration_presence')).toBe(false);
+    expect(matchesAny('task-runner-configuration-file')).toBe(false);
+    expect(matchesAny('should_test_handlesEveryCaseGracefully')).toBe(false);
+  });
+
+  test('contextSecretHits ignores lifted scratch-pad references', () => {
+    expect(contextSecretHits('export ANTHROPIC_API_KEY=†turn_1.1')).toBe(0);
+    expect(contextSecretHits('PASSWORD=hunter2hunter2')).toBe(1);
   });
 });

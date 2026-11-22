@@ -3,18 +3,15 @@
  * @kind service
  * @partOf feature:secrets
  */
+import { contextSecretHits, SHAPED_SECRET_PATTERNS, type Thread } from '@inixiative/foundry-core';
 import {
   type PrivatePathOptions,
   parseScratchRef,
   type ScratchPadSummary,
+  SECRET_PIPE_TOOL_NAME,
+  SECRET_SCRATCH_TOOL_NAME,
   SecretScratchPad,
-} from '@inixiative/agent-session';
-import {
-  contextSecretHits,
-  SECRET_REFERENCE_PATTERN,
-  SHAPED_SECRET_PATTERNS,
-  type Thread,
-} from '@inixiative/foundry-core';
+} from '@inixiative/secret-scratch';
 import { foundryOperation } from '../turns/tool-gate';
 import type { Keychain } from './keychain';
 
@@ -68,8 +65,8 @@ export function validateSecretsSettings(where: string, value: unknown): void {
 }
 
 /** The scratch pad's two tools: `secret_scratch` never asks; `secret_pipe` runs a command, so it keeps the host's mode. */
-export const SECRET_SCRATCH_TOOL = 'secret_scratch';
-export const SECRET_PIPE_TOOL = 'secret_pipe';
+export const SECRET_SCRATCH_TOOL = SECRET_SCRATCH_TOOL_NAME;
+export const SECRET_PIPE_TOOL = SECRET_PIPE_TOOL_NAME;
 
 /** A call of Foundry's own `secret_scratch`: it names the files it writes, never reads them. */
 export const isOwnSecretTool = (request: { toolName: string }): boolean =>
@@ -208,8 +205,8 @@ export class SecretScratch {
     if (lifted.refs.length) this.watch(thread);
     const note = secretNote({
       lifted: lifted.recognised,
-      // Judged with the lifted references taken out: `API_KEY=†m.1` is a lifted key, not one in plain text.
-      plain: contextSecretHits(lifted.text.replace(SECRET_REFERENCE_PATTERN, '')) > 0,
+      // `contextSecretHits` strips lifted references first, so `API_KEY=†m.1` is not called plain text.
+      plain: contextSecretHits(lifted.text) > 0,
     });
     if (note) {
       this._notes.set(messageId, note);
