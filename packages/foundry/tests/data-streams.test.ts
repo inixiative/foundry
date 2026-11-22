@@ -589,6 +589,21 @@ test('event streams are scoped to a thread, with runtime errors still delivered'
   ).toEqual(['journal']);
 });
 
+test('a cyclic signal never breaks the events snapshot', async () => {
+  const f = fixture();
+  const node: Record<string, unknown> = { name: 'loop' };
+  node.self = node;
+  f.events.push({
+    kind: 'signal',
+    threadId: 'main',
+    signal: { id: 's', kind: 'tool_observation', source: 'test', content: node, timestamp: 1 },
+  } as never);
+  const client = connectStreams(f.viewer);
+  await client.open('events:main');
+  const [event] = client.data('events:main')[0].payload.events;
+  expect(event.signal.content).toEqual({ name: 'loop', self: '[cycle]' });
+});
+
 test("system activity reaches a thread's events when it is global or its project's, never as an error", async () => {
   const f = fixture();
   const activity = (key: string, projectId?: string) => ({

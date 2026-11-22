@@ -424,24 +424,31 @@ import { EventStream } from "@foundry/agent-primitives";
 const stream = new EventStream(maxHistory?);
 
 // Push events (wire into lifecycle, signals, etc.)
-stream.push({ kind: "dispatch", threadId: "main", dispatch: { ... } });
+stream.push({ kind: "signal", threadId: "main", signal });
 
 // Subscribe (for WebSocket/SSE to UI)
 const unsub = stream.subscribe((event) => {
   ws.send(JSON.stringify(event));
 });
 
-// Query
-stream.recent({ kind: "signal", threadId: "main", limit: 50 });
+// Query: newest matches, oldest first
+stream.recent({ kind: "signal", threadId: "main", where: (e) => ..., limit: 50 });
 ```
+
+What the stream keeps, and hands to listeners, is `boundedPlainCopy(event)`: a JSON-safe copy cut
+to `EVENT_BOUNDS` (per string, per list, depth, and a total node and character budget). A cycle,
+a value that throws when read, or a cut becomes a placeholder, and `push` warns once per site with
+its path, so the emitter can be found. `push` never throws.
 
 ### StreamEvent kinds
 
 ```ts
 type StreamEvent =
+  | { kind: "journal"; threadId: string; turnId: string | null; timestamp: number; ... }
   | { kind: "layer"; threadId: string; event: LifecycleEvent }
-  | { kind: "dispatch"; threadId: string; dispatch: Dispatch }
   | { kind: "signal"; threadId: string; signal: Signal }
+  | { kind: "prompt"; threadId: string; prompt: ActionPrompt } // as it was when raised
   | { kind: "session"; event: SessionEvent }
-  | { kind: "middleware"; threadId: string; phase: "before"|"after"; context: DispatchContext }
+  | { kind: "error"; source: string; message: string; severity: "error" | "warn"; ... }
+  | { kind: "activity"; key: string; state: ...; summary: string; ... }
 ```

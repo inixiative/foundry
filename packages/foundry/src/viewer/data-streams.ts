@@ -288,10 +288,10 @@ export function createViewerStreams(deps: {
       });
       return {
         snapshot: () => ({
-          events: eventStream
-            .recent({ limit: Number.MAX_SAFE_INTEGER })
-            .filter((event) => event.kind !== 'activity' && owned(event))
-            .slice(-EVENT_HISTORY),
+          events: eventStream.recent({
+            where: (event) => event.kind !== 'activity' && owned(event),
+            limit: EVENT_HISTORY,
+          }),
           // The latest of each, so a viewer opened mid-warmup sees it.
           activities: eventStream.activities().filter(concerns),
         }),
