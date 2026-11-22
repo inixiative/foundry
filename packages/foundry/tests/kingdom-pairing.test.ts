@@ -32,6 +32,7 @@ type KingdomState = {
     owner: string;
     integrationId: string;
     signetId: string;
+    opensViewer: boolean;
     status: string;
     holder: unknown;
   }[];
