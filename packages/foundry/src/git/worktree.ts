@@ -49,7 +49,7 @@ async function git(args: string[], cwd?: string): Promise<string> {
   return stdout.trim();
 }
 
-function normalizePath(path: string): string {
+export function normalizePath(path: string): string {
   const resolved = resolve(path);
   if (!existsSync(resolved)) return resolved;
 

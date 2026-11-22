@@ -2,7 +2,12 @@ import { afterAll, expect, test } from 'bun:test';
 import { chmod, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { ensureAgentClisOnPath, newestInstall } from '../../packages/foundry/src/daemon/agent-clis';
+import {
+  AGENT_CLIS,
+  ensureAgentClisOnPath,
+  newestInstall,
+  REQUIRED_AGENT_CLIS,
+} from '../../packages/foundry/src/daemon/agent-clis';
 
 const home = await mkdtemp(join(tmpdir(), 'foundry-agent-clis-'));
 afterAll(() => rm(home, { recursive: true, force: true }));
@@ -88,4 +93,22 @@ test('a CLI found off PATH joins the PATH after the existing entries; one on PAT
   const again = await ensureAgentClisOnPath(['offpathcli'], env, home);
   expect(again.get('offpathcli')?.binary).toBe(offPath);
   expect(env.PATH).toBe(`/usr/bin:/bin:${join(home, '.bun/bin')}`);
+});
+
+test('AGENT_CLIS includes optional agy and gemini CLIs and disables auto-update while probing', async () => {
+  expect(AGENT_CLIS).toContain('agy');
+  expect(AGENT_CLIS).toContain('gemini');
+  expect(REQUIRED_AGENT_CLIS).not.toContain('agy');
+  expect(REQUIRED_AGENT_CLIS).not.toContain('gemini');
+
+  const agy = await install(
+    '.local/bin/agyprobe',
+    'test "$AGY_CLI_DISABLE_AUTO_UPDATE" = "1" || exit 1\necho "1.5.14"',
+  );
+  const chosen = await newestInstall('agyprobe', home, (directory) => [
+    directory,
+    '/usr/bin',
+    '/bin',
+  ]);
+  expect(chosen).toEqual({ binary: agy, version: [1, 5, 14] });
 });

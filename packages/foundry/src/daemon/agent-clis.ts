@@ -105,9 +105,14 @@ export const installLocations = async (
 };
 
 const versionUnder = async (binary: string, pathEntries: string[], home: string) => {
-  // Muse Code's launcher updates itself on a run unless told not to; a probe never moves a CLI.
+  // Muse and Antigravity launchers update themselves on a run unless told not to; a probe never moves a CLI.
   const run = await $`/usr/bin/env ${binary} --version`
-    .env({ HOME: home, PATH: pathEntries.join(':'), MUSE_NO_AUTO_UPDATE: '1' })
+    .env({
+      HOME: home,
+      PATH: pathEntries.join(':'),
+      MUSE_NO_AUTO_UPDATE: '1',
+      AGY_CLI_DISABLE_AUTO_UPDATE: '1',
+    })
     .quiet()
     .nothrow();
   const match = run.exitCode === 0 ? /(\d+)\.(\d+)\.(\d+)/.exec(run.stdout.toString()) : null;

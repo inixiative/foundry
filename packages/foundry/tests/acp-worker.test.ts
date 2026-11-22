@@ -662,6 +662,7 @@ describe.each<AcpWorkerKind>(['agy', 'gemini'])('AcpSessionAdapter (%s)', (kind)
     });
     expect(revived.content).toContain('after stale binding');
     expect(reviveSpawn.launches).toHaveLength(2);
+    if (kind === 'agy') expect(reviveSpawn.launches[0]?.env.AGY_CLI_DISABLE_AUTO_UPDATE).toBe('1');
     expect(await authAdapter.getExternalSessionId('t-revive')).toBe('acp-sess-1');
     await authAdapter.releaseAll();
   });

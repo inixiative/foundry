@@ -29,12 +29,12 @@
   "recorded": {
     "service": "codex",
     "transport": "process",
-    "recordedAt": "2026-11-22T14:57:09.026Z",
+    "recordedAt": "2026-11-22T17:38:03.166Z",
     "environment": "terminal",
     "cli": "codex",
-    "durationMs": 79,
+    "durationMs": 88,
     "metadata": {
-      "@inixiative/agent-session": "0.22.2"
+      "@inixiative/agent-session": "0.22.3"
     }
   }
 }

@@ -148,6 +148,22 @@ export class FoundryClient {
     return this.request('GET', `/api/threads/${encodeURIComponent(threadId)}`);
   }
 
+  /** List threads: for a project, a working directory (`cwd`), a Foundry scope, or `all: true`. */
+  threads(filter?: {
+    project?: string;
+    scope?: string;
+    cwd?: string;
+    all?: boolean;
+  }): Promise<{ threads: ThreadJSON[] }> {
+    const query = new URLSearchParams();
+    if (filter?.project) query.set('project', filter.project);
+    if (filter?.scope) query.set('scope', filter.scope);
+    if (filter?.cwd) query.set('cwd', filter.cwd);
+    if (filter?.all) query.set('all', '1');
+    const suffix = query.size > 0 ? `?${query}` : '';
+    return this.request('GET', `/api/threads${suffix}`);
+  }
+
   updateThread(
     threadId: string,
     body: {
