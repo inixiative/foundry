@@ -113,13 +113,18 @@ test('a request a paired Kingdom forwards reaches the viewer, which answers it a
   expect(outside.status).toBe(403);
 });
 
-test('a forwarded request from another origin is refused, and so is what only this machine may change', async () => {
+test('a forwarded request from another origin, or a write with none, is refused, and so is what only this machine may change', async () => {
   const { forward, integrationId, store } = await paired();
   const foreign = await forward('POST', '/api/kingdom/cancel', {
     body: {},
     headers: { origin: 'https://www.inixiative.com' },
   });
   expect(foreign.status).toBe(403);
+
+  const noOrigin = await forward('POST', '/api/threads', { body: {} });
+  expect(noOrigin.status).toBe(403);
+  for (const path of ['/api/kingdom/disconnect', '/api/kingdom/cancel', '/api/tunnel/start'])
+    expect((await forward('POST', path, { body: {}, headers: { origin } })).status).toBe(403);
 
   const id = await integrationId();
   const pair = await forward('POST', '/api/kingdom/pair', {
@@ -163,7 +168,7 @@ test('switching a Kingdom off on the machine tells it, refuses its requests, and
   expect((await store.load()).kingdomViewerRefused).toBeUndefined();
 });
 
-test("the viewer's socket through Kingdom connects, answers a ping, and is refused from another origin", async () => {
+test("the viewer's socket through Kingdom connects, answers a ping, and is refused from another origin or none", async () => {
   const { kingdom, sent } = await paired();
   const socketId = Bun.randomUUIDv7();
   kingdom.threadFrame({
@@ -188,14 +193,16 @@ test("the viewer's socket through Kingdom connects, answers a ping, and is refus
     type: 'pong',
   });
 
-  const foreign = Bun.randomUUIDv7();
-  kingdom.threadFrame({
-    type: 'viewer.socket.open',
-    socketId: foreign,
-    origin,
-    path: '/ws',
-    headers: { origin: 'https://www.inixiative.com' },
-  });
-  await until(() => sent('viewer.socket.close', foreign).length === 1, 'not refused');
-  expect(sent('viewer.socket.opened', foreign)).toHaveLength(0);
+  for (const headers of [{ origin: 'https://www.inixiative.com' }, {}]) {
+    const refused = Bun.randomUUIDv7();
+    kingdom.threadFrame({
+      type: 'viewer.socket.open',
+      socketId: refused,
+      origin,
+      path: '/ws',
+      headers,
+    });
+    await until(() => sent('viewer.socket.close', refused).length === 1, 'not refused');
+    expect(sent('viewer.socket.opened', refused)).toHaveLength(0);
+  }
 });

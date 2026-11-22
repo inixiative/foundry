@@ -291,8 +291,6 @@ export function registerKingdomRoutes(
     if (pairing) await cancelPairing(pairing);
     return c.json(await status());
   });
-  // Whether whoever manages this Foundry in a paired Kingdom may open its viewer from there. The
-  // viewer server refuses this route to a request that came through a Kingdom.
   app.post('/api/kingdom/viewer', async (c) => {
     const parsed = viewerSchema.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) return c.json({ error: 'Choose the paired Kingdom.' }, 400);

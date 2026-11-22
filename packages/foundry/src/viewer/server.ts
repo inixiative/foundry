@@ -17,7 +17,7 @@ import type {
   ToolRegistry,
 } from '@inixiative/foundry-core';
 import { newId, threadTitle } from '@inixiative/foundry-core';
-import { conversationActLevel } from '@inixiative/signet';
+import { conversationActLevel, kingdomUrl } from '@inixiative/signet';
 import type { Server } from 'bun';
 import { Hono } from 'hono';
 import { serveStatic } from 'hono/bun';
@@ -229,7 +229,9 @@ export function createViewer(config: ViewerConfig) {
         .then((saved) =>
           shareViewerCredential(
             configDir,
-            saved.kingdomIntegrations ?? [],
+            (saved.kingdomIntegrations ?? []).filter(
+              (integration) => !saved.kingdomViewerRefused?.includes(kingdomUrl(integration.url)),
+            ),
             tunnel.token,
             (message) => console.warn(message),
           ),
@@ -280,19 +282,19 @@ export function createViewer(config: ViewerConfig) {
     return [...new Set(urls.filter((url): url is string => !!url))];
   };
 
-  // Requests a paired Kingdom forwarded over its Installation socket. Kingdom admitted the person
-  // (whoever may manage this Foundry there), so these skip the loopback and tunnel checks; what only
-  // this machine may change stays closed to them.
+  // Requests a paired Kingdom forwarded over its Installation socket; Kingdom admitted the person.
   const viaKingdom = new WeakSet<Request>();
+  const reads = (method: string) => method === 'GET' || method === 'HEAD';
+  // why: which Kingdoms this machine answers to, and the tunnel beside them, change only on the machine
   const machineOnly = (method: string, path: string) =>
-    (method === 'POST' && path === '/api/kingdom/pair') ||
-    (method === 'POST' && path === '/api/kingdom/viewer');
+    !reads(method) && (path.startsWith('/api/kingdom/') || path.startsWith('/api/tunnel'));
   // Auth middleware — checks tunnelHolder dynamically so it works
   // even when tunnel is started/stopped at runtime. The tunnel's login guards its public address;
   // a direct loopback request is this machine, tunnelled or not.
   app.use('*', async (c, next) => {
     if (viaKingdom.has(c.req.raw)) {
-      if (!sameOrigin(c.req.raw)) return c.json({ error: 'Origin not allowed' }, 403);
+      if (!sameOrigin(c.req.raw) || (!reads(c.req.method) && !c.req.header('origin')))
+        return c.json({ error: 'Origin not allowed' }, 403);
       if (machineOnly(c.req.method, c.req.path))
         return c.json({ error: 'Change this on the machine that runs this Foundry.' }, 403);
       return next();
@@ -1278,7 +1280,8 @@ export function createViewer(config: ViewerConfig) {
         return app.fetch(request);
       },
       socket: async (request, peer) => {
-        if (new URL(request.url).pathname !== '/ws' || !sameOrigin(request)) return null;
+        if (new URL(request.url).pathname !== '/ws') return null;
+        if (!request.headers.get('origin') || !sameOrigin(request)) return null;
         try {
           await kingdom.check();
         } catch {

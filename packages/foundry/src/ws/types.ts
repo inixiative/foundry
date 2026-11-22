@@ -7,7 +7,6 @@
 // (the viewer authorizes the whole connection at upgrade), channels become data streams.
 
 import type { SerializedQueue } from '@inixiative/foundry-core';
-import type { ServerWebSocket } from 'bun';
 
 export type WSData = {
   connectionId: string; // unique per connection (multiple tabs = multiple ids)
@@ -23,10 +22,7 @@ export type WSMessage =
   | { action: 'close'; stream: string }
   | { action: 'ping' };
 
-/**
- * What the socket server uses of a connection. Bun's `ServerWebSocket<WSData>` is one; so is a
- * browser connection that reaches the viewer another way (`WebSocketServer.acceptPeer`).
- */
+/** What the socket server uses of a connection: Bun's upgraded socket, or a peer taken by `acceptPeer`. */
 export type WSSocket = {
   data: WSData;
   readyState: number;
