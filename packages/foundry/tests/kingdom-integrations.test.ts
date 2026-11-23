@@ -147,7 +147,11 @@ test('each paired Kingdom connects on its own; Signet files follow what Kingdom 
 
       // One Kingdom revoking its Signet leaves the other authorizing this Foundry.
       a.list(first.settings.signetId, false);
-      for (let tries = 0; connections.connected(first.id) && tries < 200; tries++)
+      for (
+        let tries = 0;
+        (connections.connected(first.id) || holds(first.settings.signetId)) && tries < 200;
+        tries++
+      )
         await Bun.sleep(10);
       expect(connections.connected(first.id)).toBe(false);
       expect(connections.authorized).toBe(true);

@@ -1,6 +1,6 @@
 {
   "name": "@inixiative/foundry-core",
-  "version": "0.5.24",
+  "version": "0.5.25",
   "type": "module",
   "main": "src/index.ts",
   "types": "src/index.ts",
@@ -35,7 +35,7 @@
     "bun": ">=1.4.4"
   },
   "peerDependencies": {
-    "@inixiative/archive": "^0.34.0"
+    "@inixiative/archive": "^0.35.2"
   },
   "peerDependenciesMeta": {
     "@inixiative/archive": {
@@ -43,6 +43,6 @@
     }
   },
   "devDependencies": {
-    "@inixiative/archive": "^0.34.0"
+    "@inixiative/archive": "^0.35.2"
   }
 }
