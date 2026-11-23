@@ -23,7 +23,7 @@ that drives the local Foundry daemon) is licensed under the MIT License. See
 
 The opinionated framework (compaction strategies, built-in hooks, session
 management, planner, herald, reactive middleware, LLM providers, viewer
-dashboard, logger, tunnel, and heavy-infra adapters) is licensed under the
+dashboard, logger, and heavy-infra adapters) is licensed under the
 Business Source License 1.1. Its Additional Use Grant lets you use the Licensed
 Work, except for a Commercial Purpose: use in a product or service that is sold,
 offered for sale, or made available as a commercial offering to third parties.

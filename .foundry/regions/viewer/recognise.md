@@ -41,12 +41,9 @@ A moment that says any of these, or something close, is this region's. Both voic
 - the list of every thread in the viewer
 - link to the analytics page for this project
 - the dashboard endpoint for archive search
-- does this request carry valid viewer credentials
-- the API call fails over the tunnel
 - add a keyboard shortcut to the viewer
 - run the viewer UI tests
 - start the dashboard locally
-- the capability must not work through the tunnel
 - open the searchable command list
 - render the chat messages for the thread
 - add or patch an agent in settings
@@ -127,12 +124,10 @@ A moment that says any of these, or something close, is this region's. Both voic
 - I'll keep my own array of threads
 - build the URL of the cost page
 - connect a hosted library as this project's destination
-- check the bearer or cookie on a viewer request
 - send the session cookie with the request
 - register a hotkey with a description
 - test the browser side
 - open the Foundry viewer
-- reject the bearer when proxy headers are present
 - control k should find this action
 - the center panel's message list
 - save a new layer definition from the UI
@@ -212,7 +207,6 @@ A moment that says any of these, or something close, is this region's. Both voic
 - switch the selected thread
 - the server side of the AI analyze button
 - recapture all threads now from the dashboard
-- I'll compare the token header myself
 - I'll just call fetch on the api route
 - I'll add a keydown listener for this key
 - run the viewer from the shell
@@ -249,7 +243,6 @@ A moment that says any of these, or something close, is this region's. Both voic
 - I'll use alert to tell them it failed
 - I'll keep it in a module variable
 - stream what I say into the box
-- boot the viewer with the tunnel
 - ignore an old append
 - render the thread tree
 - a late result lands on the wrong message
@@ -274,7 +267,7 @@ A moment that says any of these, or something close, is this region's. Both voic
 These mention this region's words but belong elsewhere; the answer is no, and the region named answers instead.
 
 - draw one turn's loop in the graph panel → viewer-inspector
-- reach the dashboard from my phone through the tunnel → kingdom
+- reach the dashboard from my phone through Kingdom → kingdom
 - where do the cost and token numbers on the analytics page come from → models-providers
 - save settings to.foundry/settings.json with patch semantics → settings-runtime
 - an editor like Zed driving a Foundry thread → acp

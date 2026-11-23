@@ -91,7 +91,6 @@ A moment that says any of these, or something close, is this region's. Both voic
 - I'll load the project config inside the ACP agent
 - start the daemon when a host connects
 - the editor looks frozen before the answer starts
-- use the tunnel token from foundry-acp
 - do it in a PreToolUse hook
 - demo files count as dead code
 - one session maps to one thread

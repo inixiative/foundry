@@ -19,7 +19,7 @@ test('the catalog takes each key and its JSDoc, nested interfaces and maps inclu
     }
     export interface FoundryConfig {
       /** Your name. */ installationName?: string;
-      tunnel?: Inner;
+      nested?: Inner;
       agents: Record<string, Inner>;
       projects: Record<string, ProjectSettingsConfig>;
     }
@@ -30,8 +30,8 @@ test('the catalog takes each key and its JSDoc, nested interfaces and maps inclu
   `);
   expect(catalog).toEqual([
     { path: 'installationName', scope: 'foundry', description: 'Your name.' },
-    { path: 'tunnel', scope: 'foundry', description: '' },
-    { path: 'tunnel.depth', scope: 'foundry', description: 'How deep.' },
+    { path: 'nested', scope: 'foundry', description: '' },
+    { path: 'nested.depth', scope: 'foundry', description: 'How deep.' },
     { path: 'agents', scope: 'foundry', description: '' },
     { path: 'agents.*.depth', scope: 'foundry', description: 'How deep.' },
     { path: 'enabled', scope: 'project', description: 'Run it.' },

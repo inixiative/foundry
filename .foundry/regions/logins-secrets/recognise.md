@@ -73,7 +73,6 @@ A moment that says any of these, or something close, is this region's. Both voic
 - only one Foundry process may own this profile
 - make a directory only we can read
 - run the Codex child on a Foundry-owned home
-- load or create the tunnel token file
 - keep the profile history so the session can resume
 - set the profile dir for the child process
 - some projects use the pool, others the local login
@@ -132,7 +131,6 @@ A moment that says any of these, or something close, is this region's. Both voic
 - exclusive lock outside subscription mode
 - create the folder with 0700
 - turn on a private home for this Codex profile
-- where the remote tunnel token lives
 - a source change starts fresh history
 - route each thread by its project's capacity
 - which accounts are available from config and env
@@ -210,6 +208,5 @@ These mention this region's words but belong elsewhere; the answer is no, and th
 
 - queueing or prioritising Warden calls on the subscription → decision-hosts
 - pairing this Foundry with a Kingdom, holding a Signet, or presenting it to Kingdom → kingdom
-- the tunnel and handoff codes for reaching the viewer remotely → kingdom
 - adding the foundry bridge MCP server to the Claude launch argv → native-sessions
 - scrubbing secrets out of recorded cassettes → testing-vcr
