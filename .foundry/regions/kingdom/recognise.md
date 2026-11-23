@@ -31,7 +31,6 @@ A moment that says any of these, or something close, is this region's. Both voic
 - call Kingdom with our Signet
 - read a granted resource
 - refresh the run token
-- open my viewer from Kingdom
 - who is this Foundry paired to
 - show the owner's name
 - let the agent read our Linear issues through Kingdom
