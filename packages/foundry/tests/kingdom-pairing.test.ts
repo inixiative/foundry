@@ -32,6 +32,7 @@ type KingdomState = {
     owner: string;
     integrationId: string;
     signetId: string;
+    opensViewer: boolean;
     status: string;
     holder: unknown;
   }[];
@@ -108,6 +109,7 @@ test('the viewer pairs as an Installation, shows the review code, connects on ap
         owner,
         integrationId,
         signetId,
+        opensViewer: true,
         status: 'connected',
         // This mock Kingdom does not describe its holders.
         holder: null,

@@ -17,7 +17,7 @@ import type {
   ToolRegistry,
 } from '@inixiative/foundry-core';
 import { newId, threadTitle } from '@inixiative/foundry-core';
-import { conversationActLevel } from '@inixiative/signet';
+import { conversationActLevel, kingdomUrl } from '@inixiative/signet';
 import type { Server } from 'bun';
 import { Hono } from 'hono';
 import { serveStatic } from 'hono/bun';
@@ -229,7 +229,9 @@ export function createViewer(config: ViewerConfig) {
         .then((saved) =>
           shareViewerCredential(
             configDir,
-            saved.kingdomIntegrations ?? [],
+            (saved.kingdomIntegrations ?? []).filter(
+              (integration) => !saved.kingdomViewerRefused?.includes(kingdomUrl(integration.url)),
+            ),
             tunnel.token,
             (message) => console.warn(message),
           ),
@@ -280,10 +282,23 @@ export function createViewer(config: ViewerConfig) {
     return [...new Set(urls.filter((url): url is string => !!url))];
   };
 
+  // Requests a paired Kingdom forwarded over its Installation socket; Kingdom admitted the person.
+  const viaKingdom = new WeakSet<Request>();
+  const reads = (method: string) => method === 'GET' || method === 'HEAD';
+  // why: which Kingdoms this machine answers to, and the tunnel beside them, change only on the machine
+  const machineOnly = (method: string, path: string) =>
+    !reads(method) && (path.startsWith('/api/kingdom/') || path.startsWith('/api/tunnel'));
   // Auth middleware — checks tunnelHolder dynamically so it works
   // even when tunnel is started/stopped at runtime. The tunnel's login guards its public address;
   // a direct loopback request is this machine, tunnelled or not.
   app.use('*', async (c, next) => {
+    if (viaKingdom.has(c.req.raw)) {
+      if (!sameOrigin(c.req.raw) || (!reads(c.req.method) && !c.req.header('origin')))
+        return c.json({ error: 'Origin not allowed' }, 403);
+      if (machineOnly(c.req.method, c.req.path))
+        return c.json({ error: 'Change this on the machine that runs this Foundry.' }, 403);
+      return next();
+    }
     const t = tunnelHolder.tunnel;
     if (!sameOrigin(c.req.raw, t?.url ?? undefined))
       return c.json({ error: 'Origin not allowed' }, 403);
@@ -1258,6 +1273,25 @@ export function createViewer(config: ViewerConfig) {
     }
     return socket.accept(req, server);
   };
+  kingdom.serveViewer(
+    {
+      request: (request) => {
+        viaKingdom.add(request);
+        return app.fetch(request);
+      },
+      socket: async (request, peer) => {
+        if (new URL(request.url).pathname !== '/ws') return null;
+        if (!request.headers.get('origin') || !sameOrigin(request)) return null;
+        try {
+          await kingdom.check();
+        } catch {
+          return null;
+        }
+        return socket.acceptPeer(request, peer);
+      },
+    },
+    () => configStore.config.kingdomViewerRefused ?? [],
+  );
 
   // One gate per thread: an approval at pre-use must answer the native ask for the same call.
   const gates = new Map<string, ThreadToolGate>();

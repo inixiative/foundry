@@ -239,7 +239,11 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps): void 
       configStore,
       (expected) =>
         configStore.update(
-          (current) => ({ ...body, kingdomIntegrations: current.kingdomIntegrations }),
+          (current) => ({
+            ...body,
+            kingdomIntegrations: current.kingdomIntegrations,
+            kingdomViewerRefused: current.kingdomViewerRefused,
+          }),
           expected,
         ),
       () => ({ ok: true }),

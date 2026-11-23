@@ -3,7 +3,7 @@
  * @kind route
  * @partOf feature:viewer, integration:kingdom
  */
-import type { HostedSignetRequest } from '@inixiative/signet';
+import { type HostedSignetRequest, kingdomUrl } from '@inixiative/signet';
 import type { Hono } from 'hono';
 import { z } from 'zod';
 import { type FoundryConversationSettings, joiningDefault } from '../../conversations/types';
@@ -108,6 +108,7 @@ export function incomingRequests(
 
 const pairSchema = kingdomPairInputSchema.extend({ replace: z.string().optional() }).strict();
 const disconnectSchema = z.object({ id: z.string().min(1) }).strict();
+const viewerSchema = z.object({ id: z.string().min(1), opensViewer: z.boolean() }).strict();
 
 /** A message safe to show: our own errors as written, anything else generic. */
 const shown = (error: unknown, fallback: string) =>
@@ -149,6 +150,7 @@ export function registerKingdomRoutes(
           owner: integration.owner,
           integrationId: integration.integrationId,
           signetId: integration.signetId,
+          opensViewer: !config.kingdomViewerRefused?.includes(kingdomUrl(integration.url)),
           status:
             described.status === 'revoked'
               ? ('revoked' as const)
@@ -289,6 +291,24 @@ export function registerKingdomRoutes(
     if (pairing) await cancelPairing(pairing);
     return c.json(await status());
   });
+  app.post('/api/kingdom/viewer', async (c) => {
+    const parsed = viewerSchema.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) return c.json({ error: 'Choose the paired Kingdom.' }, 400);
+    const integration = ((await store.load()).kingdomIntegrations ?? []).find(
+      (candidate) => kingdomIntegrationId(candidate) === parsed.data.id,
+    );
+    if (!integration) return c.json({ error: 'That Kingdom is not paired.' }, 404);
+    await store.update((next) => {
+      const refused = new Set(next.kingdomViewerRefused);
+      if (parsed.data.opensViewer) refused.delete(kingdomUrl(integration.url));
+      else refused.add(kingdomUrl(integration.url));
+      if (refused.size) next.kingdomViewerRefused = [...refused];
+      else delete next.kingdomViewerRefused;
+    });
+    connections.setViewerServing(integration.url, parsed.data.opensViewer);
+    return c.json(await status());
+  });
+
   app.post('/api/kingdom/disconnect', async (c) => {
     const parsed = disconnectSchema.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) return c.json({ error: 'Choose the paired Kingdom to disconnect.' }, 400);
