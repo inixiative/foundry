@@ -69,7 +69,7 @@ configuration cannot affect another, and synchronous AST/Git work does not block
 the viewer event loop. Maintenance is exclusive per canonical project root; reads
 are bounded to four concurrent workers per root. Workers have output limits and
 timeouts; on Unix their process groups are terminated on timeout. Browser writes
-require same-origin JSON plus explicit confirmation. Existing viewer/tunnel access
+require same-origin JSON plus explicit confirmation. Existing viewer access
 controls still apply; only trusted operators should register or mutate projects.
 
 ## Verification

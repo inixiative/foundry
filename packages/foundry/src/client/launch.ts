@@ -10,7 +10,7 @@ import { readPrivateJson, writePrivateJson } from './private-file';
 
 /**
  * How a local ACP proxy finds the daemon. The daemon writes it at startup. A direct loopback
- * request needs no credential, tunnelled or not.
+ * request needs no credential.
  */
 export interface AcpLaunch {
   readonly version: 1;

@@ -69,10 +69,11 @@ async function viewerFixture() {
     throw Error('Kingdom status never settled');
   };
   const settings = async () => JSON.parse(await readFile(join(root, 'settings.json'), 'utf8'));
-  const tunnel = async () => (await fetch(`${base}/api/tunnel`)).status;
+  /** A route that answers only while a paired Kingdom authorizes this Foundry. */
+  const gated = async () => (await fetch(`${base}/api/settings`)).status;
   const signetFile = (kingdom: MockKingdom, signetId: string) =>
     signetCredentialFile(kingdomInstallationPaths(root, kingdom.url).directory, signetId);
-  return { root, viewer, base, post, status, until, settings, tunnel, signetFile };
+  return { root, viewer, base, post, status, until, settings, gated, signetFile };
 }
 
 test('the viewer pairs as an Installation, shows the review code, connects on approval and follows revocation', async () => {
@@ -92,7 +93,7 @@ test('the viewer pairs as an Installation, shows the review code, connects on ap
     });
     expect(kingdom.requested()?.owner).toBeUndefined();
     expect((await f.post('pair', { url: kingdom.url, name: 'Duplicate' })).status).toBe(409);
-    expect(await f.tunnel()).toBe(200);
+    expect(await f.gated()).toBe(200);
 
     const { integrationId, signetId } = kingdom.approve(owner);
     const observed: KingdomState[] = [];
@@ -120,7 +121,7 @@ test('the viewer pairs as an Installation, shows the review code, connects on ap
     ]);
     const { id } = connected.integrations[0]!;
     expect(f.viewer.kingdom.connected(id)).toBe(true);
-    expect(await f.tunnel()).toBe(200);
+    expect(await f.gated()).toBe(200);
 
     const file = f.signetFile(kingdom, signetId);
     expect((await lstat(file)).mode & 0o777).toBe(0o600);
@@ -128,7 +129,6 @@ test('the viewer pairs as an Installation, shows the review code, connects on ap
     const { accessToken } = JSON.parse(await readFile(file, 'utf8'));
     expect(await readFile(join(f.root, 'settings.json'), 'utf8')).not.toContain(accessToken);
     expect(JSON.stringify(connected)).not.toContain(accessToken);
-    expect(kingdom.credentials.map((item) => item.integrationId)).toEqual([integrationId]);
 
     // A settings save from a page loaded before pairing keeps the pairing.
     expect(
@@ -155,7 +155,7 @@ test('the viewer pairs as an Installation, shows the review code, connects on ap
       { url: kingdom.url, integrationId, owner, signetId },
     ]);
     expect(existsSync(file)).toBe(true);
-    expect(await f.tunnel()).toBe(200);
+    expect(await f.gated()).toBe(200);
 
     // A pairing can be canceled while it waits.
     expect((await f.post('pair', { url: kingdom.url, name: 'Canceled' })).status).toBe(200);
@@ -166,7 +166,7 @@ test('the viewer pairs as an Installation, shows the review code, connects on ap
     // Kingdom revoking the Signet locks the viewer at once; the pairing page stays reachable.
     kingdom.list(signetId, false);
     await f.until((state) => state.status === 'unavailable');
-    expect(await f.tunnel()).toBe(503);
+    expect(await f.gated()).toBe(503);
     expect((await fetch(`${f.base}/kingdom`)).status).toBe(200);
     expect(
       (await fetch(`${f.base}/api/kingdom/status`, { headers: { origin: 'https://evil.test' } }))
@@ -174,13 +174,13 @@ test('the viewer pairs as an Installation, shows the review code, connects on ap
     ).toBe(403);
     kingdom.list(signetId, true);
     await f.until((state) => state.status === 'connected');
-    expect(await f.tunnel()).toBe(200);
+    expect(await f.gated()).toBe(200);
 
     expect((await f.post('disconnect')).status).toBe(400);
     expect((await f.post('disconnect', { id: '000000000000' })).status).toBe(404);
     expect((await kingdomState(await f.post('disconnect', { id }))).status).toBe('disconnected');
     expect(f.viewer.kingdom.size).toBe(0);
-    expect(await f.tunnel()).toBe(200);
+    expect(await f.gated()).toBe(200);
     expect(await f.settings()).not.toHaveProperty('kingdomIntegrations');
     expect(existsSync(file)).toBe(false);
   } finally {
@@ -258,13 +258,13 @@ test('the viewer pairs a second Kingdom beside the first, keeps working while ei
       'unavailable',
       'connected',
     ]);
-    expect(await f.tunnel()).toBe(200);
+    expect(await f.gated()).toBe(200);
     b.list(second!.signetId, false);
     await f.until((current) => current.integrations.every((item) => item.status !== 'connected'));
-    expect(await f.tunnel()).toBe(503);
+    expect(await f.gated()).toBe(503);
     b.list(second!.signetId, true);
     await f.until((current) => current.integrations[1]?.status === 'connected');
-    expect(await f.tunnel()).toBe(200);
+    expect(await f.gated()).toBe(200);
 
     expect((await f.post('disconnect', { id: first!.id })).status).toBe(200);
     const remaining = await f.status();

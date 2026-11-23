@@ -5,13 +5,13 @@
  */
 /**
  * A machine's page, laid out like a project's home (Aron, 2026-11-02): its open threads, its
- * checkouts, its tunnel, and a note that subscriptions are shared across machines (quota belongs to
+ * checkouts, whether it opens from Kingdom, and a note that subscriptions are shared across machines (quota belongs to
  * the login, never to a machine). It leads to the machine's threads on the Board or in the
  * Watchtower, each opened with a removable Machine filter. This machine reads its own inventory
- * (`/api/devices`, `/api/tunnel`). Everything about your other machines comes through one function,
+ * (`/api/devices`, the Kingdom status). Everything about your other machines comes through one function,
  * `otherMachines()`: today it knows a machine only from threads that carry its `meta.machine`; it
  * switches to the Signet Foundry holds from Kingdom (an entitlement anchored at your user: read
- * online, read tunnel, ...) once Kingdom serves that call (VIEWER-007).
+ * online, read whether it opens, ...) once Kingdom serves that call (VIEWER-007).
  */
 
 import { ComingSoon } from './coming-soon.js';
@@ -29,6 +29,8 @@ import { STATES, StatusIcon } from './status-icons.js';
 import {
   allThreads,
   authFetch,
+  kingdomStatus,
+  loadKingdomStatus,
   openMachineBoard,
   openMachineWatchtower,
   projects,
@@ -59,8 +61,8 @@ export function threadsOnMachine(deviceId) {
 }
 
 /**
- * Your other machines: { id, name, open, online, checkouts, tunnel }. The one place their data comes
- * from. `online`, `checkouts` and `tunnel` are null until Kingdom serves them through Foundry's
+ * Your other machines: { id, name, open, online, checkouts, opens }. The one place their data comes
+ * from. `online`, `checkouts` and `opens` are null until Kingdom serves them through Foundry's
  * Signet (VIEWER-007); every surface shows "Coming soon" for a null.
  */
 export function otherMachines() {
@@ -74,7 +76,7 @@ export function otherMachines() {
     open: threadsOnMachine(m.id).length,
     online: null,
     checkouts: null,
-    tunnel: null,
+    opens: null,
   }));
 }
 
@@ -93,17 +95,21 @@ function ThreadRow({ thread }) {
 
 function useHere(here) {
   const [inventory, setInventory] = useState(undefined);
-  const [tunnel, setTunnel] = useState(undefined);
   useEffect(() => {
     if (!here) return;
+    if (!kingdomStatus.value) loadKingdomStatus();
     let live = true;
     getJson('/api/devices').then((body) => live && setInventory(body));
-    getJson('/api/tunnel').then((body) => live && setTunnel(body));
     return () => {
       live = false;
     };
   }, [here]);
-  return { inventory, tunnel };
+  // Whether a paired Kingdom that is connected may open this Foundry's viewer (Settings → Kingdom).
+  const integrations = kingdomStatus.value?.integrations;
+  const opens = integrations
+    ? integrations.some((paired) => paired.status === 'connected' && paired.opensViewer)
+    : undefined;
+  return { inventory, opens };
 }
 
 /** A status pill in the band: a dot, then what it says. */
@@ -122,7 +128,7 @@ export function DevicePage({ deviceId }) {
     loadMachineProfile();
   }, []);
   const here = deviceId === 'here';
-  const { inventory, tunnel } = useHere(here);
+  const { inventory, opens } = useHere(here);
   const other = here ? null : otherMachines().find((m) => m.id === deviceId);
   const name = here ? thisMachineName() : (other?.name ?? 'Another machine');
   const open = threadsOnMachine(deviceId);
@@ -135,7 +141,7 @@ export function DevicePage({ deviceId }) {
     navigate(settingsPath(null, section));
   };
   const online = here ? true : (other?.online ?? null);
-  const tunnelOn = here ? (tunnel ? !!tunnel.active : null) : (other?.tunnel?.active ?? null);
+  const opensFromKingdom = here ? (opens ?? null) : (other?.opens ?? null);
 
   return html`<section class="project-home device-page" aria-label=${`${name}: machine page`}>
     <header class="dp-band">
@@ -145,7 +151,7 @@ export function DevicePage({ deviceId }) {
         <h2>${name}</h2>
         <span class="dp-pills">
           <${Pill} on=${online} title=${online == null ? "Whether it's online: coming soon" : null}>${online == null ? 'Status unknown' : online ? (here ? 'Online · this Foundry' : 'Online') : 'Offline'}</${Pill}>
-          <${Pill} on=${tunnelOn} title=${tunnelOn == null ? 'Whether its tunnel is on: coming soon' : null}>${tunnelOn == null ? 'Tunnel unknown' : tunnelOn ? 'Tunnel on' : 'Tunnel off'}</${Pill}>
+          <${Pill} on=${opensFromKingdom} title=${opensFromKingdom == null && !here ? 'Whether it opens from Kingdom: coming soon' : null}>${opensFromKingdom == null ? 'Opening unknown' : opensFromKingdom ? 'Opens from Kingdom' : 'Opens here only'}</${Pill}>
           <${Pill}>${open.length} open${here ? ` · ${inWorktrees} in worktrees` : ''}</${Pill}>
         </span>
       </span>
@@ -173,7 +179,7 @@ export function DevicePage({ deviceId }) {
           ? null
           : html`<section class="ph-box">
               <h4>Through your Signet</h4>
-              <${ComingSoon} what="What your Signet lets this Foundry do on it (read online, read tunnel, …), and a request to the owner for more." ticket="VIEWER-007" />
+              <${ComingSoon} what="What your Signet lets this Foundry do on it (read online, read whether it opens, …), and a request to the owner for more." ticket="VIEWER-007" />
             </section>`
       }
       <section class="ph-box">
@@ -194,10 +200,10 @@ export function DevicePage({ deviceId }) {
       ${
         here
           ? html`<section class="ph-box">
-              <h4>Tunnel</h4>
-              <div class="ph-line">${tunnel === undefined ? 'Checking…' : tunnel?.active ? `on · ${tunnel.url ?? ''}` : 'off'}</div>
-              <div class="ph-meta">Reach this Foundry from your other machines through Kingdom.</div>
-              <a class="proj-btn ph-link" href=${settingsPath(null, 'devices')} onClick=${go('devices')}>Settings › Devices →</a>
+              <h4>Opening from Kingdom</h4>
+              <div class="ph-line">${opens === undefined ? 'Checking…' : opens ? 'on' : 'off'}</div>
+              <div class="ph-meta">Reach this Foundry from your other machines through Kingdom: it opens there, in a frame, for whoever may manage it.</div>
+              <a class="proj-btn ph-link" href=${settingsPath(null, 'kingdom')} onClick=${go('kingdom')}>Settings › Kingdom →</a>
             </section>`
           : null
       }

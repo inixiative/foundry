@@ -5,8 +5,7 @@
  */
 /**
  * The Status view's process list: the daemon and every process below it, each named for what it is
- * (a project's Warden host, a one-shot, a thread's native session, an MCP server, the
- * tunnel), with its memory, CPU and age. Read from the machine's process table
+ * (a project's Warden host, a one-shot, a thread's native session, an MCP server), with its memory, CPU and age. Read from the machine's process table
  * (`providers/process-table.ts`); the project Warden hosts name their own pids, and a native session
  * resumed with `--resume <id>` is matched to its thread through the journal.
  */
@@ -20,7 +19,6 @@ export type MachineProcessRole =
   | 'thread'
   | 'session'
   | 'mcp'
-  | 'tunnel'
   | 'other';
 
 export interface MachineProcess {
@@ -104,8 +102,6 @@ function identify(
     return { role: 'mcp', label: 'Playwright MCP' };
   if (/(?:^|[/@\s-])mcp(?:$|[\s@/-]|-server)/i.test(head))
     return { role: 'mcp', label: 'MCP server' };
-  if (/\blocaltunnel\b|(?:^|\/)lt\s+--port\b|(?:^|\/)cloudflared\b/.test(head))
-    return { role: 'tunnel', label: 'Tunnel' };
   const [program = command, first] = command.split(/\s+/);
   const name = program.split('/').pop() ?? program;
   return {

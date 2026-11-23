@@ -23,7 +23,7 @@ export function registerGlossRoutes(
   );
   app.use(`${base}/*`, async (c, next) => {
     // These routes can change source files. Reject browser cross-origin writes
-    // even when the local viewer has no tunnel authentication enabled.
+    // to the local viewer.
     if (!['GET', 'HEAD'].includes(c.req.method)) {
       const origin = c.req.header('Origin');
       if (

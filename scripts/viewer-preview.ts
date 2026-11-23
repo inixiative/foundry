@@ -6,8 +6,7 @@
 /**
  * A disposable, seeded viewer for looking at the UI without the daemon: a temp config dir, a few
  * projects, threads in several states (nested child, archived, starting, waiting on a prompt), one
- * conversation with a member, and an executor that answers. No Kingdom pairing, so no tunnel and
- * no token. Fictional data only.
+ * conversation with a member, and an executor that answers. No Kingdom pairing. Fictional data only.
  *
  *   VIEWER_PORT=3500 bun run scripts/viewer-preview.ts
  */

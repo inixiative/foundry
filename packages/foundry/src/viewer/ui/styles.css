@@ -4612,59 +4612,11 @@ body {
   font-family: var(--mono);
 }
 
-/* ---- Tunnel ---- */
-
 .settings-desc {
   font-size: 11px;
   color: var(--text-dim);
   margin-bottom: 12px;
   line-height: 1.5;
-}
-
-.tunnel-status {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 8px 10px;
-  background: var(--bg);
-  border: 1px solid var(--line);
-  border-radius: 4px;
-  margin-bottom: 12px;
-}
-
-.tunnel-status-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 12px;
-  min-width: 0;
-}
-
-.tunnel-indicator {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-.tunnel-indicator.active {
-  background: var(--ok);
-  box-shadow: 0 0 6px var(--ok);
-}
-.tunnel-indicator.inactive {
-  background: var(--text-dimmer);
-}
-
-.tunnel-url {
-  color: var(--accent);
-  text-decoration: none;
-  font-size: 11px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.tunnel-url:hover {
-  text-decoration: underline;
 }
 
 /* =========================================================================

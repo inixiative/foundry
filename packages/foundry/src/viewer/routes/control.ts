@@ -37,9 +37,7 @@ import {
 import { ViewerFileAccess } from '../file-access';
 import { validateId } from '../http-helpers';
 import { projectAbout } from '../project-about';
-import { SESSION_COOKIE, sessionValue } from '../request-auth';
 import { settingsIndex } from '../settings-search';
-import { FoundryTunnel, type TunnelHolder } from '../tunnel';
 import { registerAccessRoutes } from './access';
 
 /** Optional optimistic-concurrency token for settings writes; GET and writes echo the committed revision. */
@@ -125,16 +123,8 @@ export interface ControlRoutesDeps {
   tokenTracker?: TokenTracker;
   projectRegistry?: ProjectRegistry;
   actionQueue: ActionQueue | null;
-  /** Mutable tunnel holder — routes can start/stop the tunnel at runtime. */
-  tunnelHolder: TunnelHolder;
-  /** Port the server is listening on (needed to start tunnel). */
-  port: number;
-  /** Foundry's own directory (`.foundry`): the tunnel keeps its state there. */
-  configDir?: string;
   /** Thread-list streams re-check membership (a removed project's threads become unowned). */
   threadsChanged: () => void;
-  /** Whether a paired Kingdom currently authorizes this Foundry (the automatic tunnel waits for it). */
-  kingdomConnected?: () => boolean;
 }
 
 export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps): void {
@@ -159,8 +149,6 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps): void 
     tokenTracker,
     projectRegistry,
     actionQueue,
-    tunnelHolder,
-    port,
   } = deps;
 
   app.get('/api/definitions', async (c) => {
@@ -916,105 +904,5 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps): void 
     }
 
     return c.json({ ok: true, promptId: id, action: body.action, ...(note ? { note } : {}) });
-  });
-
-  // -- Tunnel management --
-
-  app.get('/api/tunnel', async (c) => {
-    const cfg = await configStore.load();
-    const tunnel = tunnelHolder.tunnel;
-    const info = tunnel?.info ?? null;
-    return c.json({
-      active: !!info,
-      url: info?.url ?? null,
-      provider: info?.provider ?? cfg.tunnel?.provider ?? 'localtunnel',
-      enabled: cfg.tunnel?.enabled ?? false,
-      // automatic: off until a paired Kingdom authorizes this Foundry, then on at startup.
-      mode: cfg.tunnel?.enabled === undefined ? 'auto' : cfg.tunnel.enabled ? 'on' : 'off',
-      kingdomConnected: deps.kingdomConnected?.() ?? false,
-      subdomain: cfg.tunnel?.subdomain ?? null,
-    });
-  });
-
-  let changingTunnel = false;
-  app.post('/api/tunnel/start', async (c) => {
-    if (changingTunnel) return c.json({ error: 'Tunnel operation in progress' }, 409);
-    changingTunnel = true;
-    try {
-      if (tunnelHolder.tunnel?.info) return c.json({ error: 'Tunnel already running' }, 409);
-      const cfg = await configStore.load();
-      const tunnelCfg = cfg.tunnel ?? { enabled: true };
-      const tunnel =
-        tunnelHolder.tunnel ??
-        new FoundryTunnel({
-          configDir: deps.configDir,
-          port,
-          provider: tunnelCfg.provider ?? 'localtunnel',
-          subdomain: tunnelCfg.subdomain,
-        });
-      tunnelHolder.tunnel = tunnel;
-      await tunnel.stop();
-      tunnel.use(tunnelCfg.provider, tunnelCfg.subdomain);
-      c.header('Cache-Control', 'no-store');
-      const secure = new URL(c.req.url).protocol === 'https:' ? '; Secure' : '';
-      c.header(
-        'Set-Cookie',
-        `${SESSION_COOKIE}=${sessionValue(tunnel.token)}; Path=/; HttpOnly; SameSite=Strict; Max-Age=86400${secure}`,
-      );
-      try {
-        await tunnel.start();
-        tunnel.keepUp(() => tunnelHolder.changed?.());
-        await configStore.update((draft) => {
-          draft.tunnel = { ...(draft.tunnel ?? tunnelCfg), enabled: true };
-        });
-        return c.json({ active: true, url: tunnel.info!.url });
-      } catch {
-        await tunnel.stop();
-        return c.json({ error: 'Tunnel could not start' }, 500);
-      }
-    } finally {
-      changingTunnel = false;
-    }
-  });
-
-  app.post('/api/tunnel/stop', async (c) => {
-    if (changingTunnel) return c.json({ error: 'Tunnel operation in progress' }, 409);
-    changingTunnel = true;
-    try {
-      const tunnel = tunnelHolder.tunnel;
-      if (!tunnel) return c.json({ error: 'No tunnel running' }, 400);
-      await tunnel.stop();
-      tunnelHolder.changed?.();
-      // Stopping is a choice: the tunnel stays off, automatic no more.
-      await configStore.update((draft) => {
-        draft.tunnel = { ...draft.tunnel, enabled: false };
-      });
-      return c.json({ active: false });
-    } finally {
-      changingTunnel = false;
-    }
-  });
-
-  app.patch('/api/tunnel', async (c) => {
-    const body = await c.req.json<Record<string, unknown>>();
-    await configStore.load();
-
-    if ('password' in body)
-      return c.json({ error: 'Use the private tunnel-token file for credentials' }, 400);
-    if (
-      body.provider !== undefined &&
-      !['localtunnel', 'cloudflared'].includes(String(body.provider))
-    )
-      return c.json({ error: 'Unknown tunnel provider' }, 400);
-
-    const next = await configStore.update((draft) => {
-      // Changing the provider or subdomain leaves an automatic tunnel automatic.
-      const current = draft.tunnel ?? {};
-      if (body.provider === 'localtunnel' || body.provider === 'cloudflared')
-        current.provider = body.provider;
-      if (typeof body.subdomain === 'string') current.subdomain = body.subdomain || undefined;
-      draft.tunnel = current;
-    });
-    return c.json({ ok: true, tunnel: next.tunnel });
   });
 }

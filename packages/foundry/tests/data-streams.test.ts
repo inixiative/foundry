@@ -34,7 +34,6 @@ afterEach(async () => {
 function fixture(
   options: {
     actionQueue?: ActionQueue;
-    tunnelToken?: string;
     taskSources?: Parameters<typeof createViewer>[0]['taskSources'];
   } = {},
 ) {
@@ -74,9 +73,6 @@ function fixture(
     projectRegistry: projects,
     actionQueue: options.actionQueue,
     ...(options.taskSources ? { taskSources: options.taskSources } : {}),
-    ...(options.tunnelToken
-      ? { tunnel: { port: 4500, token: options.tunnelToken, configDir: dir } }
-      : {}),
   });
   viewer.directory.add(other);
   cleanup.push(async () => {
@@ -633,7 +629,7 @@ test("system activity reaches a thread's events when it is global or its project
   expect(keys(elsewhere.data('events:main'))).toEqual(['rate-limit']);
 });
 
-test('the upgrade is authorized like HTTP: loopback, or the tunnel credential, and same origin', async () => {
+test('the upgrade is authorized like HTTP: a loopback host and the same origin', async () => {
   const local = fixture();
   const server = Bun.serve({
     hostname: '127.0.0.1',
@@ -672,30 +668,12 @@ test('the upgrade is authorized like HTTP: loopback, or the tunnel credential, a
       fakeServer,
     ))!.status,
   ).toBe(403);
-
-  const token = 't'.repeat(48);
-  const tunneled = fixture({ tunnelToken: token });
-  // This machine opens the socket directly; tunnel traffic carries a public Host.
   expect(
-    await tunneled.viewer.fetch(new Request('http://127.0.0.1/ws'), fakeServer),
-  ).toBeUndefined();
-  expect(
-    (await tunneled.viewer.fetch(new Request('https://foundry-x.loca.lt/ws'), fakeServer))!.status,
-  ).toBe(401);
-  expect(
-    (await tunneled.viewer.fetch(
-      new Request('https://foundry-x.loca.lt/ws', { headers: { authorization: 'Bearer wrong' } }),
+    (await local.viewer.fetch(
+      new Request('http://127.0.0.1/ws', { headers: { 'x-forwarded-for': '203.0.113.9' } }),
       fakeServer,
     ))!.status,
   ).toBe(401);
-  expect(
-    await tunneled.viewer.fetch(
-      new Request('https://foundry-x.loca.lt/ws', {
-        headers: { authorization: `Bearer ${token}` },
-      }),
-      fakeServer,
-    ),
-  ).toBeUndefined();
 });
 
 test('losing Kingdom authorization closes sockets on the next append or open and refuses upgrades', async () => {
@@ -704,7 +682,6 @@ test('losing Kingdom authorization closes sockets on the next append or open and
   const { settings } = await pairKingdomIntegration(new ConfigStore(root), root, {
     url: kingdom.url,
     name: 'Streams',
-    viewerToken: 't'.repeat(48),
     onReview: () => {},
   });
   const thread = new Thread('kingdom-main', new ContextStack()),

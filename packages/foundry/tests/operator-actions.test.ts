@@ -133,8 +133,6 @@ test('production action route preserves thread scope for layer commands', async 
     aiAssist: null,
     analyticsStore: null,
     actionQueue: null,
-    tunnelHolder: { tunnel: null },
-    port: 0,
     threadsChanged: () => {},
   });
   const response = await app.request('/api/actions', {

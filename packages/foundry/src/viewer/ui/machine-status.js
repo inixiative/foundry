@@ -6,7 +6,7 @@
 /**
  * The rail's Status view: this machine and its resources (Aron, 2026-11-01; a rail view of its own
  * since 2026-11-14, so Attention, Open and Projects keep the rail's full height for threads). The machine's name (this
- * Foundry's name, editable in place; the name opens this machine's page) and its tunnel; Kingdoms
+ * Foundry's name, editable in place; the name opens this machine's page) and whether it opens from Kingdom; Kingdoms
  * and Archives as two equal pills, each linking to its settings; your other machines, each with its
  * open threads and no meters (subscriptions are per login and shared across machines, Aron
  * 2026-11-02); Subscriptions: this machine's Claude and Codex logins per runtime with the balancing
@@ -52,14 +52,13 @@ function useMachine() {
     let live = true;
     Promise.all([
       getJson('/api/profile'),
-      getJson('/api/tunnel'),
       getJson('/api/archives/status'),
       getJson('/api/archives/destinations'),
       getJson('/api/providers/accounts'),
       modelRegistryOnce(),
-    ]).then(([profile, tunnel, archive, destinations, accounts, registry]) => {
+    ]).then(([profile, archive, destinations, accounts, registry]) => {
       if (profile) machineProfile.value = profile;
-      if (live) setMachine({ profile, tunnel, archive, destinations, accounts, registry });
+      if (live) setMachine({ profile, archive, destinations, accounts, registry });
     });
     return () => {
       live = false;
@@ -229,8 +228,10 @@ function OtherMachines() {
 }
 
 export function MachineStatus() {
-  const { profile, tunnel, archive, destinations, accounts, registry, rename } = useMachine();
-  const kingdoms = kingdomStatus.value?.integrations?.length ?? 0;
+  const { profile, archive, destinations, accounts, registry, rename } = useMachine();
+  const paired = kingdomStatus.value?.integrations;
+  const kingdoms = paired?.length ?? 0;
+  const opens = paired?.some((kingdom) => kingdom.status === 'connected' && kingdom.opensViewer);
   const archives = (archive?.reachable ? 1 : 0) + (destinations?.libraries?.length ?? 0);
   const go = (section) => (e) => {
     e.preventDefault();
@@ -241,10 +242,10 @@ export function MachineStatus() {
     <div class="machine-status-line machine-status-machine">
       <${MachineName} profile=${profile} onSaved=${rename} />
       ${
-        tunnel
-          ? html`<a class="machine-status-link" href=${settingsPath(null, 'devices')} onClick=${go('devices')}
-              title=${tunnel.active ? `Tunnel on: ${tunnel.url ?? ''}` : `Tunnel off (${tunnel.mode})`}>
-              <span class="machine-status-dot ${tunnel.active ? 'is-ok' : 'is-off'}"></span>tunnel ${tunnel.active ? 'on' : 'off'}
+        paired?.length
+          ? html`<a class="machine-status-link" href=${settingsPath(null, 'kingdom')} onClick=${go('kingdom')}
+              title=${opens ? 'A paired Kingdom may open this Foundry' : 'No connected Kingdom may open this Foundry'}>
+              <span class="machine-status-dot ${opens ? 'is-ok' : 'is-off'}"></span>${opens ? 'opens from Kingdom' : 'opens here only'}
             </a>`
           : null
       }

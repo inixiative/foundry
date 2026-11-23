@@ -77,7 +77,6 @@ test('shared pairing collects the Signet privately once the owner is confirmed, 
     const { id, settings } = await pairKingdomIntegration(store, dir, {
       url: kingdom.url,
       name: 'Test',
-      viewerToken: 't'.repeat(48),
       onReview: (review) => {
         reviews.push(review.reviewCode, review.review);
         kingdom.approve(owner);
@@ -105,9 +104,6 @@ test('shared pairing collects the Signet privately once the owner is confirmed, 
     expect(JSON.stringify(saved)).not.toContain(
       JSON.parse(await readFile(file, 'utf8')).accessToken,
     );
-    expect(kingdom.credentials).toEqual([
-      { integrationId: settings.integrationId, token: 't'.repeat(48) },
-    ]);
     await expect(
       saveKingdomIntegration(store, dir, { ...settings, signetId: Bun.randomUUIDv7() }),
     ).rejects.toThrow('--replace');

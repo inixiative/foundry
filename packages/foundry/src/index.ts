@@ -206,9 +206,3 @@ export {
   startViewer,
   type ViewerConfig,
 } from './viewer/server';
-export {
-  FoundryTunnel,
-  type TunnelConfig,
-  type TunnelInfo,
-  tunnelAuth,
-} from './viewer/tunnel';

@@ -81,7 +81,6 @@ async function host(
     await pairKingdomIntegration(store, dir, {
       url: kingdom.url,
       name: 'Host Foundry',
-      viewerToken: 't'.repeat(48),
       onReview: () => kingdom.approve(userOwner()),
     });
   const saved = await store.load();
@@ -717,7 +716,6 @@ test('two paired Kingdoms: one Kingdom snapshot never revokes the members anothe
   await pair(h.viewer.configStore, h.dir, {
     url: other.url,
     name: 'Host Foundry',
-    viewerToken: 't'.repeat(48),
     onReview: () => other.approve(userOwner()),
   });
   const saved = await h.viewer.configStore.load();

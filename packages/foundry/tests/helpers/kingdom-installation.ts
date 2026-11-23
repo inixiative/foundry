@@ -168,7 +168,7 @@ type Presented = { signetId: string; enrollmentId: string; integrationId: string
 /**
  * An in-memory Kingdom with the Installation surface Foundry uses: registration and review, the
  * Installation socket (or polling, when `websocket` is false), Signet collection and enrollment,
- * the viewer credential, and Signet-presented calls routed to `onSignet`.
+ * and Signet-presented calls routed to `onSignet`.
  */
 export function mockKingdom(
   options: {
@@ -190,7 +190,6 @@ export function mockKingdom(
   const calls: string[] = [];
   const canceled: string[] = [];
   const frames: Record<string, unknown>[] = [];
-  const credentials: { integrationId: string; token: string }[] = [];
   const logins: Record<string, unknown>[] = [];
   let url = '';
 
@@ -400,11 +399,6 @@ export function mockKingdom(
             owner: paired.owner,
           });
         }
-        case 'setInstallationCredential': {
-          if (integrations.get(body.integrationId)?.thumbprint !== thumbprint) return refuse(403);
-          credentials.push({ integrationId: body.integrationId, token: body.token });
-          return data({ credentialId: Bun.randomUUIDv7() });
-        }
         default:
           return refuse(404);
       }
@@ -480,7 +474,6 @@ export function mockKingdom(
     url,
     calls,
     frames,
-    credentials,
     approve,
     /** Inquiries the installation canceled (Kingdom soft-deletes them). */
     canceled,

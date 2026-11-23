@@ -61,7 +61,7 @@ export const FOUNDRY_SETTINGS = [
   ['github', 'GitHub', 'Integrations'],
   ['linear', 'Linear', 'Integrations'],
   ['threads', 'Threads', null, false, ['threadOnMerge', 'steer', 'afterProjectStart']],
-  ['devices', 'Devices', null, false, ['tunnel']],
+  ['devices', 'Devices'],
   ['keychain', 'Keychain'],
   ['loops', 'Loops'],
   ['skills', 'Skills'],

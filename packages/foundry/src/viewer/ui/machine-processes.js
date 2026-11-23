@@ -5,8 +5,7 @@
  */
 /**
  * Status → Processes: a task manager for this Foundry. The daemon and everything it runs (each
- * project's Warden hosts, one-shots, each thread's native session and its MCP servers, the
- * tunnel), each with its memory, CPU and age, re-read every few seconds while the Status view is
+ * project's Warden hosts, one-shots, each thread's native session and its MCP servers), each with its memory, CPU and age, re-read every few seconds while the Status view is
  * open (`/api/machine/processes`, `viewer/machine-processes.ts`). Siblings that are the same thing
  * (a pile of one-shots) fold into one row with a count, so a leak shows as a number.
  */
@@ -30,7 +29,7 @@ function useProcesses() {
           (error) => live && setState((s) => ({ ...s, error: String(error.message ?? error) })),
         );
     read();
-    // A hidden tab (or a phone on the tunnel left open) doesn't keep the daemon reading `ps`.
+    // A hidden tab (or a phone left open on this Foundry through Kingdom) doesn't keep the daemon reading `ps`.
     const timer = setInterval(() => document.hidden || read(), PROCESSES_EVERY_MS);
     const onVisible = () => document.hidden || read();
     document.addEventListener('visibilitychange', onVisible);

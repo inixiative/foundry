@@ -17,7 +17,7 @@ import type {
   ToolRegistry,
 } from '@inixiative/foundry-core';
 import { newId, threadTitle } from '@inixiative/foundry-core';
-import { conversationActLevel, kingdomUrl } from '@inixiative/signet';
+import { conversationActLevel } from '@inixiative/signet';
 import type { Server } from 'bun';
 import { Hono } from 'hono';
 import { serveStatic } from 'hono/bun';
@@ -44,7 +44,6 @@ import { KingdomHolders } from '../providers/kingdom-holder';
 import {
   KingdomInstallationConnections,
   type KingdomIntegration,
-  shareViewerCredential,
 } from '../providers/kingdom-installation-connection';
 import type { ProjectHostState } from '../providers/project-warden-hosts';
 import { FileExternalSessionStore } from '../providers/session-adapter';
@@ -89,7 +88,7 @@ import { AnalyticsStore } from './analytics';
 import { ConfigStore, DEFAULT_RAW_MIDDLEWARE_DAYS, threadOnMerge } from './config';
 import { threadRoleOf } from './config-resolve';
 import { createViewerStreams } from './data-streams';
-import { authenticatedRequest, directLoopback, LOOPBACK_HOSTS, sameOrigin } from './request-auth';
+import { directLoopback, sameOrigin } from './request-auth';
 import { registerControlRoutes } from './routes/control';
 import { registerConversationRoutes } from './routes/conversations';
 import { registerDaemonUpdateRoutes } from './routes/daemon-update';
@@ -114,7 +113,6 @@ import {
 } from './theme-files';
 import { ViewerThreadDirectory } from './thread-directory';
 import { expireSnoozes } from './thread-snooze';
-import { FoundryTunnel, type TunnelConfig, type TunnelHolder, tunnelAuth } from './tunnel';
 
 export interface ViewerConfig {
   harness: Harness;
@@ -153,13 +151,6 @@ export interface ViewerConfig {
   configStore?: import('./config').ConfigStore;
   /** Action queue for agent→human prompts (optional — enables prompt UI). */
   actionQueue?: ActionQueue;
-  /** Tunnel config — expose the viewer over a public URL with auth. */
-  tunnel?: TunnelConfig;
-  /**
-   * Start the tunnel at startup when settings leave it automatic (`tunnel.enabled` absent) and a
-   * paired Kingdom authorizes this Foundry. The daemon's entry point opts in.
-   */
-  autoTunnel?: boolean;
   /** Every paired Kingdom integration; defaults to the saved `kingdomIntegrations`. */
   kingdomIntegrations?: KingdomIntegration[];
   /** The tool registry the agents share; Kingdom posts are delivered through it. */
@@ -215,82 +206,20 @@ export function createViewer(config: ViewerConfig) {
 
   const holders = new KingdomHolders(configDir);
 
-  // Mutable tunnel holder — routes can start/stop at runtime. `changed` runs after every start or stop.
-  let sharedToken: string | undefined;
-  const tunnelHolder: TunnelHolder = {
-    tunnel: null,
-    changed: () => {
-      const tunnel = tunnelHolder.tunnel;
-      kingdom.advertise(tunnel?.url ?? null);
-      if (!tunnel?.url || tunnel.token === sharedToken) return;
-      sharedToken = tunnel.token;
-      void configStore
-        .load()
-        .then((saved) =>
-          shareViewerCredential(
-            configDir,
-            (saved.kingdomIntegrations ?? []).filter(
-              (integration) => !saved.kingdomViewerRefused?.includes(kingdomUrl(integration.url)),
-            ),
-            tunnel.token,
-            (message) => console.warn(message),
-          ),
-        )
-        .catch(() => {});
-    },
-  };
-  if (config.tunnel) {
-    tunnelHolder.tunnel = new FoundryTunnel({
-      configDir: config.configDir,
-      ...config.tunnel,
-      port,
-    });
-  }
-
-  // A paired Kingdom may embed this viewer; nothing else may. Browsers refuse the
-  // frame outright without this, and `frame-ancestors` is the only directive that
-  // X-Frame-Options cannot express for a list of origins.
-  const embedders = (config.kingdomIntegrations ?? [])
-    .map((integration) => {
-      try {
-        return new URL(integration.url).origin;
-      } catch {
-        return null;
-      }
-    })
-    .filter((origin): origin is string => !!origin);
+  // why: a Foundry opens elsewhere only through Kingdom, which frames it on its own address
   app.use('*', async (c, next) => {
     await next();
-    c.res.headers.set(
-      'Content-Security-Policy',
-      `frame-ancestors 'self'${embedders.length ? ` ${[...new Set(embedders)].join(' ')}` : ''}`,
-    );
+    c.res.headers.set('Content-Security-Policy', "frame-ancestors 'self'");
   });
-
-  // Where each paired Kingdom opens this Foundry: its devices page, else its API's /dashboard redirect.
-  const kingdomEntrances = async () => {
-    const urls = await Promise.all(
-      ((await configStore.load()).kingdomIntegrations ?? []).map(async (integration) => {
-        const described = await holders.get(integration, 1_500);
-        if (described.status === 'revoked') return null;
-        const url = described.holder
-          ? new URL('/devices', described.holder.webUrl)
-          : new URL('/dashboard', integration.url);
-        return ['https:', 'http:'].includes(url.protocol) ? url.toString() : null;
-      }),
-    );
-    return [...new Set(urls.filter((url): url is string => !!url))];
-  };
 
   // Requests a paired Kingdom forwarded over its Installation socket; Kingdom admitted the person.
   const viaKingdom = new WeakSet<Request>();
   const reads = (method: string) => method === 'GET' || method === 'HEAD';
-  // why: which Kingdoms this machine answers to, and the tunnel beside them, change only on the machine
+  // why: which Kingdoms this machine answers to changes only on the machine
   const machineOnly = (method: string, path: string) =>
-    !reads(method) && (path.startsWith('/api/kingdom/') || path.startsWith('/api/tunnel'));
-  // Auth middleware — checks tunnelHolder dynamically so it works
-  // even when tunnel is started/stopped at runtime. The tunnel's login guards its public address;
-  // a direct loopback request is this machine, tunnelled or not.
+    !reads(method) && path.startsWith('/api/kingdom/');
+  // The viewer answers this machine (a loopback host, through no proxy) and what a paired Kingdom
+  // forwards; nothing else.
   app.use('*', async (c, next) => {
     if (viaKingdom.has(c.req.raw)) {
       if (!sameOrigin(c.req.raw) || (!reads(c.req.method) && !c.req.header('origin')))
@@ -299,16 +228,10 @@ export function createViewer(config: ViewerConfig) {
         return c.json({ error: 'Change this on the machine that runs this Foundry.' }, 403);
       return next();
     }
-    const t = tunnelHolder.tunnel;
-    if (!sameOrigin(c.req.raw, t?.url ?? undefined))
-      return c.json({ error: 'Origin not allowed' }, 403);
-    if (!t) {
-      if (!LOOPBACK_HOSTS.includes(new URL(c.req.url).hostname))
-        return c.json({ error: 'Local viewer requires a loopback host' }, 403);
-      return next();
-    }
-    if (directLoopback(c.req.raw)) return next();
-    return tunnelAuth(t.token, t.url ?? undefined, kingdomEntrances)(c, next);
+    if (!sameOrigin(c.req.raw)) return c.json({ error: 'Origin not allowed' }, 403);
+    if (!directLoopback(c.req.raw))
+      return c.json({ error: 'Local viewer requires a loopback host' }, 403);
+    return next();
   });
 
   app.use('*', async (c, next) => {
@@ -821,18 +744,10 @@ export function createViewer(config: ViewerConfig) {
   } catch (error) {
     console.warn(`[Secrets] scratch pads not swept: ${(error as Error).message}`);
   }
-  registerKingdomRoutes(
-    app,
-    configStore,
-    configDir,
-    kingdom,
-    () => tunnelHolder.tunnel?.token,
-    holders,
-    (threadId) => {
-      const thread = directory.get(threadId);
-      return thread ? (threadTitle(thread.meta)?.text ?? thread.id) : undefined;
-    },
-  );
+  registerKingdomRoutes(app, configStore, configDir, kingdom, holders, (threadId) => {
+    const thread = directory.get(threadId);
+    return thread ? (threadTitle(thread.meta)?.text ?? thread.id) : undefined;
+  });
   registerDeviceRoutes(app, configStore, config.deviceIdentityPath);
   registerKeychainRoutes(app, keychain);
   registerModelRoutes(app, configStore);
@@ -1101,10 +1016,6 @@ export function createViewer(config: ViewerConfig) {
     tokenTracker: config.tokenTracker,
     projectRegistry: config.projectRegistry,
     actionQueue: config.actionQueue ?? null,
-    tunnelHolder,
-    port,
-    kingdomConnected: () => kingdom.all().some((connection) => connection.connected),
-    configDir: config.configDir ?? '.foundry',
     threadsChanged: () => streams.threadsChanged(),
   });
   if (config.logins)
@@ -1207,7 +1118,7 @@ export function createViewer(config: ViewerConfig) {
     app.get(path, appPage);
 
   // Data-stream socket. The connection is authorized at upgrade exactly like HTTP
-  // (loopback, or tunnel bearer/cookie); each open re-checks Kingdom authorization,
+  // (a loopback host); each open re-checks Kingdom authorization,
   // and losing Kingdom authorization closes every socket.
   const socket = createWebSocketServer({
     families: streams.families.map((family) => ({
@@ -1256,16 +1167,8 @@ export function createViewer(config: ViewerConfig) {
   ): Promise<Response | undefined> => {
     const url = new URL(req.url);
     if (url.pathname !== '/ws') return app.fetch(req, server);
-    const activeTunnel = tunnelHolder.tunnel;
-    if (!sameOrigin(req, activeTunnel?.url ?? undefined))
-      return new Response('Origin not allowed', { status: 403 });
-    if (
-      activeTunnel
-        ? !authenticatedRequest(req, activeTunnel.token, activeTunnel.url ?? undefined) &&
-          !directLoopback(req)
-        : !LOOPBACK_HOSTS.includes(url.hostname)
-    )
-      return new Response('Unauthorized', { status: 401 });
+    if (!sameOrigin(req)) return new Response('Origin not allowed', { status: 403 });
+    if (!directLoopback(req)) return new Response('Unauthorized', { status: 401 });
     try {
       await kingdom.check();
     } catch {
@@ -1416,7 +1319,6 @@ export function createViewer(config: ViewerConfig) {
     configStore,
     analyticsStore,
     analyticsReady,
-    tunnelHolder,
     localStore,
     directory,
     conversations,
@@ -1495,18 +1397,8 @@ export async function startViewer(config: ViewerConfig) {
     ...config,
     kingdomIntegrations: config.kingdomIntegrations ?? saved.kingdomIntegrations,
   };
-  if (!config.tunnel && saved.tunnel?.enabled)
-    config = {
-      ...config,
-      tunnel: {
-        port: config.port ?? 4500,
-        provider: saved.tunnel.provider,
-        subdomain: saved.tunnel.subdomain,
-        configDir: config.configDir,
-      },
-    };
   const viewer = createViewer({ ...config, configStore: initialStore });
-  const { port, actions, analyticsStore, tunnelHolder, localStore } = viewer;
+  const { port, actions, analyticsStore, localStore } = viewer;
 
   if (config.actionQueue) {
     config.actionQueue.onPrompt((prompt) => {
@@ -1540,29 +1432,11 @@ export async function startViewer(config: ViewerConfig) {
   const stopServer = server.stop.bind(server);
   server.stop = (closeActiveConnections?: boolean) => {
     viewer.kingdom.stop();
-    void tunnelHolder.tunnel?.stop();
     viewer.stopSocket();
     return stopServer(closeActiveConnections);
   };
 
   console.info(`Foundry Viewer running at http://localhost:${server.port}`);
-
-  // Automatic tunnel: off until it can work, then on.
-  if (
-    !tunnelHolder.tunnel &&
-    config.autoTunnel &&
-    saved.tunnel?.enabled === undefined &&
-    viewer.kingdom.all().some((connection) => connection.connected)
-  )
-    tunnelHolder.tunnel = new FoundryTunnel({
-      port: server.port ?? port,
-      provider: saved.tunnel?.provider,
-      subdomain: saved.tunnel?.subdomain,
-      configDir: config.configDir,
-    });
-
-  // why: boot never waits on the tunnel's provider
-  tunnelHolder.tunnel?.keepUp(() => tunnelHolder.changed?.());
 
   return {
     toolGate: viewer.toolGate,
@@ -1572,7 +1446,6 @@ export async function startViewer(config: ViewerConfig) {
     server,
     actions,
     analyticsStore,
-    tunnelHolder,
     localStore,
     kingdom: viewer.kingdom,
     conversations: viewer.conversations,

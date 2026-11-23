@@ -15,9 +15,7 @@ const PS = `
   106   105  112176  0.0    02:59 node /y/node_modules/.bin/playwright-mcp
   107   100  238640  0.0    03:03 claude --print --model claude-haiku-5-5 --effort low --max-turns 1 --safe-mode
   108   100  234544  0.1    03:03 claude --print --model claude-haiku-5-5 --effort low --max-turns 1 --safe-mode
-  109   100  143760  0.0    03:16 npm exec localtunnel --port 4500
   110   100    2048  0.0    00:05 /bin/zsh -c grep -rn mcp packages --token=sk-secret
-  111   100   20480  0.0    00:40 /opt/homebrew/bin/cloudflared tunnel --url http://localhost:4500
   200     1    1024  0.0    00:01 /bin/zsh
 `;
 
@@ -33,7 +31,7 @@ describe('the process table', () => {
 
   test('parses each row and keeps the command whole', () => {
     const table = parseProcessTable(PS);
-    expect(table).toHaveLength(13);
+    expect(table).toHaveLength(11);
     expect(table[3]).toMatchObject({ pid: 103, ppid: 100, cpu: 1.1, ageSeconds: 93_784 });
     expect(table[3]?.command).toEndWith('--resume sess-abc');
   });
@@ -68,7 +66,6 @@ describe('the Status view process list', () => {
       threadId: 't1',
     });
     expect(byPid(107)).toMatchObject({ role: 'one-shot', model: 'claude-haiku-5-5' });
-    expect(byPid(109)).toMatchObject({ role: 'tunnel' });
     const thread = byPid(103);
     expect(thread?.children.map((child) => child.label).sort()).toEqual([
       'Foundry tools bridge',
@@ -79,12 +76,11 @@ describe('the Status view process list', () => {
   test('a tree total is its own memory plus everything below it', () => {
     const thread = byPid(103);
     expect(thread?.treeRssMb).toBe(409 + 51 + 141 + 110);
-    expect(root?.children).toHaveLength(8);
+    expect(root?.children).toHaveLength(6);
   });
 
   test("a shell that mentions mcp is not an MCP server, and its command line isn't sent", () => {
     expect(byPid(110)).toMatchObject({ role: 'other', label: 'zsh', command: 'zsh' });
-    expect(byPid(111)).toMatchObject({ role: 'tunnel', label: 'Tunnel' });
     expect(byPid(103)?.command).toEndWith('--resume sess-abc');
   });
 
