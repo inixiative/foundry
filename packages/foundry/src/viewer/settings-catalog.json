@@ -475,26 +475,6 @@
     "description": "Memory-backed sources only. Bounded automatic selection is on by default: pinned kinds always, records relevant to the current message, a few recent captures, and an explicit account of what was left out. Override fields of the policy here, or set `false` to inject the full formatted log."
   },
   {
-    "path": "tunnel",
-    "scope": "foundry",
-    "description": "Tunnel configuration: expose the viewer over a public URL."
-  },
-  {
-    "path": "tunnel.enabled",
-    "scope": "foundry",
-    "description": "Whether the tunnel runs. Absent means automatic: off until it can work (a paired Kingdom authorizes this Foundry), then on at startup. Starting or stopping it in Settings records the choice here."
-  },
-  {
-    "path": "tunnel.provider",
-    "scope": "foundry",
-    "description": "Tunnel provider. Default: \"localtunnel\"."
-  },
-  {
-    "path": "tunnel.subdomain",
-    "scope": "foundry",
-    "description": "Subdomain hint (localtunnel only, not guaranteed)."
-  },
-  {
     "path": "kingdomIntegrations",
     "scope": "foundry",
     "description": "Every Kingdom integration this Foundry is paired as, once per Kingdom + owner; Signets stay in private files."

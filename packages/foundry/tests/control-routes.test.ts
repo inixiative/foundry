@@ -56,9 +56,6 @@ describe('control routes', () => {
       aiAssist: null,
       analyticsStore: null,
       actionQueue: null,
-      tunnelHolder: { tunnel: null },
-      port: 4500,
-      configDir,
       threadsChanged: () => {},
     });
   });

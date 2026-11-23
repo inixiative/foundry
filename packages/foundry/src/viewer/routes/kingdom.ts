@@ -131,7 +131,6 @@ export function registerKingdomRoutes(
   store: ConfigStore,
   configDir: string,
   connections: KingdomInstallationConnections,
-  viewerToken: () => string | undefined,
   holders: KingdomHolders,
   threadNames: ThreadNames = () => undefined,
 ) {
@@ -233,7 +232,6 @@ export function registerKingdomRoutes(
       ...input,
       ...(replace ? { replace } : {}),
       signal: current.controller.signal,
-      viewerToken: viewerToken(),
       around: (url, pair) => connections.whilePairing(url, pair),
       onReview: (review) => {
         current.review = review;

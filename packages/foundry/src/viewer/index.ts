@@ -33,11 +33,3 @@ export {
   startViewer,
   type ViewerConfig,
 } from './server';
-
-export {
-  FoundryTunnel,
-  type TunnelConfig,
-  type TunnelInfo,
-  type TunnelProvider,
-  tunnelAuth,
-} from './tunnel';

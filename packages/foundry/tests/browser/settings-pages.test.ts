@@ -123,12 +123,9 @@ test('settings and analytics are addressable pages scoped to Foundry or a projec
       .waitFor();
     expect(await page.locator('.integration-card .coming-soon').count()).toBe(0);
 
-    // Devices without Kingdom says what peers and the tunnel are for; the tunnel waits for Kingdom.
+    // Devices without Kingdom says what peers are for.
     await nav('Devices').click();
-    await page
-      .locator('.devices-kingdom', { hasText: 'Peers and the tunnel need Kingdom' })
-      .waitFor();
-    await page.locator('.tunnel-mode[data-mode="auto"]', { hasText: 'stays off' }).waitFor();
+    await page.locator('.devices-kingdom', { hasText: 'Peers need Kingdom' }).waitFor();
 
     // Advanced sections explain themselves; an unwrapped Foundry has no layers.
     await nav('Layers').click();

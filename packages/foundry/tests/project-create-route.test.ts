@@ -39,8 +39,6 @@ test('an added project inherits global agents and layers and brings no sources o
       aiAssist: null,
       analyticsStore: null,
       actionQueue: null,
-      tunnelHolder: { tunnel: null },
-      port: 0,
       threadsChanged: () => {},
     });
 

@@ -32,7 +32,6 @@ async function paired() {
   await pairKingdomIntegration(store, dir, {
     url: kingdom.url,
     name: 'Studio Foundry',
-    viewerToken: 't'.repeat(48),
     onReview: () => kingdom.approve(userOwner()),
   });
   const saved = await store.load();
@@ -123,7 +122,7 @@ test('a forwarded request from another origin, or a write with none, is refused,
 
   const noOrigin = await forward('POST', '/api/threads', { body: {} });
   expect(noOrigin.status).toBe(403);
-  for (const path of ['/api/kingdom/disconnect', '/api/kingdom/cancel', '/api/tunnel/start'])
+  for (const path of ['/api/kingdom/disconnect', '/api/kingdom/cancel'])
     expect((await forward('POST', path, { body: {}, headers: { origin } })).status).toBe(403);
 
   const id = await integrationId();

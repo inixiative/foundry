@@ -1058,7 +1058,6 @@ const acpLaunch =
     : undefined;
 
 const viewer = await startViewer({
-  autoTunnel: true,
   keychain,
   logins: {
     pools: loginPools,

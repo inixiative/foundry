@@ -100,7 +100,6 @@ test('each paired Kingdom connects on its own; Signet files follow what Kingdom 
       pairKingdomIntegration(store, dir, {
         url: kingdom.url,
         name: 'Two Kingdoms',
-        viewerToken: 't'.repeat(48),
         onReview: () => kingdom.approve(owner),
       });
     const first = await pair(a, organizationOwner());
@@ -124,27 +123,11 @@ test('each paired Kingdom connects on its own; Signet files follow what Kingdom 
       expect(connections.connected(second.id)).toBe(true);
       expect(changes).toBeGreaterThan(0);
 
-      // Kingdom hears how busy this Foundry is and where its viewer is, and nothing once it stops.
-      const tunnel = 'https://studio.trycloudflare.com';
-      connections.advertise(tunnel);
+      // Kingdom hears how busy this Foundry is.
       const heard = () =>
-        a.frames.some((frame) => frame.action === 'advertise' && frame.viewerUrl === tunnel) &&
         a.frames.some((frame) => frame.action === 'ping' && frame.sessionCount === 3);
       for (let tries = 0; !heard() && tries < 200; tries++) await Bun.sleep(10);
       expect(heard()).toBe(true);
-      connections.advertise(null);
-      const lastAdvertised = () =>
-        a.frames.filter((frame) => frame.action === 'advertise').at(-1)?.viewerUrl;
-      for (let tries = 0; lastAdvertised() !== null && tries < 200; tries++) await Bun.sleep(10);
-      expect(lastAdvertised()).toBeNull();
-      // Every pairing hands each paired integration the viewer credential.
-      expect(a.credentials).toEqual([
-        { integrationId: first.settings.integrationId, token: 't'.repeat(48) },
-        { integrationId: first.settings.integrationId, token: 't'.repeat(48) },
-      ]);
-      expect(b.credentials.map((item) => item.integrationId)).toEqual([
-        second.settings.integrationId,
-      ]);
 
       // A later grant on the integration is enrolled; a revoked one stops being held (its file stays).
       const directory = kingdomInstallationPaths(dir, a.url).directory;
@@ -198,7 +181,6 @@ test('Kingdom polled while its socket is refused still authorizes until the snap
     const paired = await pairKingdomIntegration(store, dir, {
       url: kingdom.url,
       name: 'Polled',
-      viewerToken: 't'.repeat(48),
       socketOptions: { pollMs: 20, retryBaseMs: 10_000 },
       onReview: () => kingdom.approve(owner),
     });

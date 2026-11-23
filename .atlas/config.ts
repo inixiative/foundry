@@ -204,7 +204,6 @@ export default defineConfig({
       ],
       partOf: 'integration:kingdom',
     },
-    { include: `${FOUNDRY}/viewer/{handoff,tunnel}.ts`, partOf: 'integration:kingdom' },
     {
       include: `${FOUNDRY}/viewer/routes/{kingdom,access,profile}.ts`,
       partOf: 'integration:kingdom',

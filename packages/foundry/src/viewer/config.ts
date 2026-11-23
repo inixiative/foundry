@@ -298,8 +298,6 @@ export interface FoundryConfig {
   /** Registered projects (keyed by project ID). */
   projects: Record<string, ProjectSettingsConfig>;
 
-  /** Tunnel configuration: expose the viewer over a public URL. */
-  tunnel?: TunnelSettingsConfig;
   /** Every Kingdom integration this Foundry is paired as, once per Kingdom + owner; Signets stay in private files. */
   kingdomIntegrations?: KingdomIntegration[];
   /**
@@ -734,19 +732,6 @@ export interface DataSourceConfig {
    * the policy here, or set `false` to inject the full formatted log.
    */
   selection?: false | Partial<MemorySelectionPolicy>;
-}
-
-export interface TunnelSettingsConfig {
-  /**
-   * Whether the tunnel runs. Absent means automatic: off until it can work (a paired Kingdom
-   * authorizes this Foundry), then on at startup. Starting or stopping it in Settings records the
-   * choice here.
-   */
-  enabled?: boolean;
-  /** Tunnel provider. Default: "localtunnel". */
-  provider?: 'localtunnel' | 'cloudflared';
-  /** Subdomain hint (localtunnel only, not guaranteed). */
-  subdomain?: string;
 }
 
 /** Per-slot layout overrides for a viewer surface: pinned items, custom order, and hidden item ids. */

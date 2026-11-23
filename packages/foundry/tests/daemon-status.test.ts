@@ -211,7 +211,7 @@ test('Start is taken only from this machine, only by POST, and only while held',
     (await fetch(`${url}/api/daemon/start`, { method: 'POST', headers: { host: 'example.com' } }))
       .status,
   ).toBe(403);
-  // A proxy (a tunnel someone runs) rewriting the host to localhost is not this machine.
+  // A proxy rewriting the host to localhost is not this machine.
   expect(
     (
       await fetch(`${url}/api/daemon/start`, {

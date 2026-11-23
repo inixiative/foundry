@@ -40,7 +40,6 @@ import { uuidv7 } from './uuidv7.js';
 
 /** Wrapper around fetch that includes credentials (cookies) automatically. */
 export function authFetch(url, opts = {}) {
-  // Always send cookies (needed for tunnel session cookie)
   opts.credentials = 'same-origin';
   return fetch(url, opts);
 }
@@ -248,7 +247,7 @@ export const boardFilter = signal({});
 /** The Watchtower's chip filter, same shape; a machine's page opens it filtered to that machine. */
 export const watchtowerFilter = signal({});
 
-/** Open a machine's page ('here' = this machine): its threads, checkouts and tunnel. */
+/** Open a machine's page ('here' = this machine): its threads and checkouts. */
 export function openDevicePage(deviceId) {
   batch(() => {
     boardOpen.value = false;
@@ -995,7 +994,6 @@ export function resyncStreams() {
 }
 
 function connectStreams() {
-  // Browser sends cookies on the upgrade (same-origin); in tunnel mode the /auth session cookie authorizes it.
   const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:';
   socket = createDataStreamSocket(`${wsProto}//${location.host}/ws?client=${clientId}`, {
     reconnectDelayMs: 2000,

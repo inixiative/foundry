@@ -94,7 +94,7 @@ test('the default and decision models are single validated choices', async () =>
   expect(opus.body.default).toEqual({ provider: 'claude-code', model: 'opus' });
 });
 
-test('the profile name, vendors and the automatic tunnel are settings edits', async () => {
+test('the profile name and vendors are settings edits', async () => {
   const { call, configStore } = await viewer();
   const profile = await call('GET', '/api/profile');
   expect(profile.body).toMatchObject({ custom: false });
@@ -133,17 +133,6 @@ test('the profile name, vendors and the automatic tunnel are settings edits', as
       .status,
   ).toBe(200);
 
-  // The tunnel is automatic until someone chooses; saving its provider keeps it automatic.
-  expect((await call('GET', '/api/tunnel')).body).toMatchObject({
-    mode: 'auto',
-    active: false,
-    kingdomConnected: false,
-  });
-  await call('PATCH', '/api/tunnel', { provider: 'cloudflared' });
-  expect((await call('GET', '/api/tunnel')).body).toMatchObject({
-    mode: 'auto',
-    provider: 'cloudflared',
-  });
   const accounts = await call('GET', '/api/providers/accounts?all=1');
   expect(accounts.body.map((a: { provider: string }) => a.provider)).toContain('gemini');
 });

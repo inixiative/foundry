@@ -41,8 +41,6 @@ test('reading settings and writing them back never persists runtime-generated la
       aiAssist: null,
       analyticsStore: null,
       actionQueue: null,
-      tunnelHolder: { tunnel: null },
-      port: 0,
       threadsChanged: () => {},
     });
 
@@ -92,8 +90,6 @@ test('settings writes accept an optional expected revision and reject stale ones
       aiAssist: null,
       analyticsStore: null,
       actionQueue: null,
-      tunnelHolder: { tunnel: null },
-      port: 0,
       threadsChanged: () => {},
     });
     const patch = (model: string, revision?: string) =>

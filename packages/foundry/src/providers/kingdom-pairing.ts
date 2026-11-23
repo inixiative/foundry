@@ -16,7 +16,6 @@ import {
 import type { RegisteredResource } from '@inixiative/signet/contracts';
 import { z } from 'zod';
 import type { ConfigStore } from '../viewer/config';
-import { privateTunnelToken } from '../viewer/private-token';
 import { ownerKey } from './kingdom-client';
 import {
   type KingdomIntegration,
@@ -24,7 +23,6 @@ import {
   kingdomInstallationRoot,
   kingdomIntegrationId,
   selectKingdomIntegration,
-  shareViewerCredential,
 } from './kingdom-installation-connection';
 
 /** Hosted production Kingdom API origin; the default offered by guided setup. */
@@ -67,8 +65,6 @@ export interface PairKingdomIntegration {
   /** Kingdom refused a poll or dropped the socket while waiting; waiting continues. */
   onWaiting?: (message: string) => void;
   signal?: AbortSignal;
-  /** The token Kingdom uses to reach the viewer; defaults to the private tunnel-token file. */
-  viewerToken?: string;
   /** Runs the pairing; the viewer passes one that keeps its live connection from dropping the new Signet. */
   around?: <T>(url: string, pair: () => Promise<T>) => Promise<T>;
   socketOptions?: { pollMs?: number; retryBaseMs?: number; authTimeoutMs?: number };
@@ -162,16 +158,6 @@ export async function pairKingdomIntegration(
   } catch (error) {
     await unlink(paired.credentialFile).catch(() => {});
     throw error;
-  }
-  try {
-    await shareViewerCredential(
-      configDir,
-      (await store.load()).kingdomIntegrations ?? [],
-      input.viewerToken ?? privateTunnelToken(configDir),
-      (message) => console.warn(message),
-    );
-  } catch (error) {
-    console.warn(`[Kingdom] viewer credential not shared: ${(error as Error).message}`);
   }
   return { id, settings, ownerName: paired.ownerName };
 }

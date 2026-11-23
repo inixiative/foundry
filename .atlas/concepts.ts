@@ -57,7 +57,7 @@ export const CONCEPTS: ConceptRegistry = {
   // ── integrations: the external-service boundary ────────────────────────────
   'integration:kingdom': {
     docs: ['kingdom-access.md', 'runtime-seam.md', 'signet-cancellation.md'],
-  }, // pairing, Signets, access grants, tunnel handoff
+  }, // pairing, Signets, access grants, the forwarded viewer
   'integration:archive': { docs: ['session-archives.md'] }, // the machine's local Archive: capture, search, context source
   'integration:typesafe': { docs: ['typesafe-jev.md'] }, // TypeSafe / Jev decisions, shadow runs, decision catalog
   'integration:gloss': { docs: ['GLOSS.md'] }, // Gloss margin notes in the viewer

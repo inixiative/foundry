@@ -18,7 +18,6 @@ import {
   installationPaths,
   installationSignets,
   kingdomUrl,
-  setInstallationCredential,
   signetCredentialFile,
   type ThreadEntry,
   type ThreadSubscription,
@@ -146,30 +145,6 @@ export async function heldSignetFile(configDir: string, url: string, signetId: s
   return file;
 }
 
-/**
- * Gives every paired integration the credential Kingdom uses to reach this Foundry's viewer (its tunnel
- * token, presented to `POST /api/handoff`). Failures are logged; Kingdom keeps the last one it was given.
- */
-export async function shareViewerCredential(
-  configDir: string,
-  integrations: readonly KingdomIntegration[],
-  token: string,
-  warn: (message: string) => void = console.warn,
-) {
-  await Promise.all(
-    integrations.map(async (integration) => {
-      try {
-        const { keyFile } = await kingdomInstallation(configDir, integration.url);
-        await setInstallationCredential(integration.url, keyFile, integration.integrationId, token);
-      } catch (error) {
-        warn(
-          `[Kingdom] ${integration.url} did not take the viewer credential for integration ${integration.integrationId}: ${(error as Error).message}`,
-        );
-      }
-    }),
-  );
-}
-
 type SocketOptions = Pick<
   InstallationSocketOptions,
   'pingMs' | 'pollMs' | 'retryBaseMs' | 'retryMaxMs' | 'authTimeoutMs'
@@ -227,7 +202,6 @@ export class KingdomInstallationConnection {
   private holding: Promise<void> = Promise.resolve();
   private pairing = 0;
   private revoked = false;
-  private viewerUrl: string | null = null;
   private firstContact: PromiseWithResolvers<void> = Promise.withResolvers<void>();
   /** Snapshot entries already reported unreadable, so a Kingdom ahead of this package warns once. */
   private reported = new Set<string>();
@@ -302,7 +276,6 @@ export class KingdomInstallationConnection {
       this.socket = new InstallationSocket({
         url: this.url,
         keyFile,
-        viewerUrl: this.viewerUrl,
         sessionCount: this.options.sessionCount,
         ...this.options.socket,
         ...this.options.host,
@@ -331,11 +304,6 @@ export class KingdomInstallationConnection {
   /** Start or stop answering this Kingdom's requests for the viewer. */
   serveViewer(serving: boolean) {
     this.socket?.serveViewer(serving);
-  }
-  /** Where Kingdom can reach this Foundry's viewer; null when the tunnel stops. Re-sent on every reconnect. */
-  advertise(viewerUrl: string | null) {
-    this.viewerUrl = viewerUrl;
-    this.socket?.advertise(viewerUrl);
   }
   /** Holds off dropping Signet files while a pairing collects one this connection does not know yet. */
   async whilePairing<T>(pair: () => Promise<T>): Promise<T> {
@@ -419,7 +387,6 @@ export class KingdomInstallationConnection {
  */
 export class KingdomInstallationConnections {
   private connections = new Map<string, KingdomInstallationConnection>();
-  private viewerUrl: string | null = null;
   constructor(
     integrations: readonly KingdomIntegration[],
     private options: KingdomInstallationOptions,
@@ -524,10 +491,6 @@ export class KingdomInstallationConnections {
     const connection = this.connections.get(kingdomUrl(url));
     return connection ? connection.whilePairing(pair) : pair();
   }
-  advertise(viewerUrl: string | null) {
-    this.viewerUrl = viewerUrl;
-    for (const connection of this.all()) connection.advertise(viewerUrl);
-  }
   stop(): void {
     for (const connection of this.all()) connection.stop();
   }
@@ -536,7 +499,6 @@ export class KingdomInstallationConnections {
     let connection = this.connections.get(origin);
     if (!connection) {
       connection = new KingdomInstallationConnection(origin, [], this.options);
-      connection.advertise(this.viewerUrl);
       this.connections.set(origin, connection);
     }
     return connection;

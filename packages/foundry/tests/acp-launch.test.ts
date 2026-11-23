@@ -54,15 +54,14 @@ test('the launch file is written private and read back; anything else is refused
   expect(() => readAcpLaunch(remote)).toThrow('loopback');
 });
 
-/** A viewer served on an ephemeral loopback port with a tunnel token, as the daemon runs while tunnelled. */
-function tunnelled() {
+/** A viewer served on an ephemeral loopback port, as the daemon runs it. */
+function served() {
   const dir = tempDir();
   const viewer = createViewer({
     harness: new Harness(new Thread('main', new ContextStack())),
     eventStream: new EventStream(),
     interventions: new InterventionLog(),
     configDir: dir,
-    tunnel: { port: 0, token: 'T'.repeat(40), configDir: dir },
   });
   const server = Bun.serve({
     hostname: '127.0.0.1',
@@ -79,8 +78,8 @@ function tunnelled() {
   return { endpoint: `http://127.0.0.1:${server.port}`, viewer };
 }
 
-test('while tunnelled, a direct loopback client reaches the API and the data-stream socket', async () => {
-  const t = tunnelled();
+test('a direct loopback client reaches the API and the data-stream socket', async () => {
+  const t = served();
   expect((await new FoundryClient({ endpoint: t.endpoint }).thread('main')).threadId).toBe('main');
   const streams = new DataStreamClient({ endpoint: t.endpoint });
   cleanup.push(() => streams.dispose());
@@ -89,32 +88,32 @@ test('while tunnelled, a direct loopback client reaches the API and the data-str
   expect(snapshot).toMatchObject({ projectId: null });
 });
 
-test('tunnel traffic still needs the token: a public Host or proxy headers', async () => {
-  const t = tunnelled();
+test('only this machine is answered: a public Host or a proxied request is refused whatever it carries', async () => {
+  const t = served();
   const request = (url: string, headers: Record<string, string> = {}) =>
     t.viewer.app.request(url, { headers });
   expect((await request('http://127.0.0.1:4500/api/threads/main')).status).toBe(200);
-  expect((await request('https://foundry-x.trycloudflare.com/api/threads/main')).status).toBe(401);
-  expect((await request('https://foundry-x.loca.lt/api/settings')).status).toBe(401);
+  expect((await request('https://foundry-x.trycloudflare.com/api/threads/main')).status).toBe(403);
+  // A local proxy that rewrites the host to loopback is still not this machine asking.
   expect(
     (await request('http://127.0.0.1:4500/api/threads/main', { 'x-forwarded-for': '203.0.113.9' }))
       .status,
-  ).toBe(401);
+  ).toBe(403);
   expect(
     (await request('http://localhost:4500/api/threads/main', { 'cf-connecting-ip': '203.0.113.9' }))
       .status,
-  ).toBe(401);
+  ).toBe(403);
   expect(
     (
       await request('https://foundry-x.loca.lt/api/threads/main', {
         authorization: `Bearer ${'T'.repeat(40)}`,
       })
     ).status,
-  ).toBe(200);
+  ).toBe(403);
 });
 
 test('an absolute-form request line naming loopback cannot pose as this machine', async () => {
-  const t = tunnelled();
+  const t = served();
   const port = Number(new URL(t.endpoint).port);
   const status = (request: string) =>
     new Promise<string>((resolve) => {
@@ -125,12 +124,12 @@ test('an absolute-form request line naming loopback cannot pose as this machine'
       });
       socket.on('close', () => resolve(reply.split(' ')[1] ?? ''));
     });
-  // Bun builds the URL from Host, so a tunnelled request keeps its public host.
+  // Bun builds the URL from Host, so a request for a public host keeps it.
   expect(
     await status(
       'GET http://127.0.0.1/api/threads/main HTTP/1.1\r\nHost: foundry-x.loca.lt\r\nConnection: close\r\n\r\n',
     ),
-  ).toBe('401');
+  ).toBe('403');
   expect(
     await status('GET /api/threads/main HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n'),
   ).toBe('200');

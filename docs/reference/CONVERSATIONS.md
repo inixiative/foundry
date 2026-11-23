@@ -85,7 +85,7 @@ This is the **first time Foundry hosts a resource**. In every earlier case the h
 | Outside agents | Elsewhere | Their own Signet with their own permissions | **Yes** |
 | Remote Heralds | Elsewhere | A Signet, pre-filled from the Herald defaults | **Yes** |
 
-The rule: anything from outside the machine or the owner goes through Kingdom and a Signet. That is the hub rule (2026-10-07), and it is why the daemon is never opened to the tunnel.
+The rule: anything from outside the machine or the owner goes through Kingdom and a Signet. That is the hub rule (2026-10-07), and it is why the daemon answers only this machine and what Kingdom forwards.
 
 ```mermaid
 flowchart LR

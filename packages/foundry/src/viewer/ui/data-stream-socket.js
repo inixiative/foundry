@@ -4,8 +4,8 @@
  * @partOf feature:viewer, primitive:websockets
  */
 // Port of the template's packages/ui/src/lib/ws/createApiWebsocket.ts for the
-// viewer's data streams. The connection is authorized at upgrade (loopback, or
-// the tunnel session cookie), so there are no identity frames.
+// viewer's data streams. The connection is authorized at upgrade (this machine, or a
+// paired Kingdom that forwards it), so there are no identity frames.
 //
 // The set of open streams, refcounted across callers, is the single source of
 // truth: it is replayed on every (re)open because the server forgets a
