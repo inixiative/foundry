@@ -24,10 +24,8 @@
       "dependencies": {
         "@agentclientprotocol/sdk": "^1.8.0",
         "@inixiative/foundry": "workspace:*",
-        "zod": "^4.3.6",
-      },
-      "devDependencies": {
         "@inixiative/foundry-core": "workspace:*",
+        "zod": "^4.3.6",
       },
     },
     "packages/core": {

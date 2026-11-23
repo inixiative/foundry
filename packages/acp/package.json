@@ -17,10 +17,8 @@
   "dependencies": {
     "@agentclientprotocol/sdk": "^1.8.0",
     "@inixiative/foundry": "workspace:*",
+    "@inixiative/foundry-core": "workspace:*",
     "zod": "^4.3.6"
-  },
-  "devDependencies": {
-    "@inixiative/foundry-core": "workspace:*"
   },
   "description": "Foundry over the Agent Client Protocol: a stdio ACP agent that runs every turn through the local Foundry daemon",
   "license": "MIT",
