@@ -189,7 +189,7 @@ Class: the one audit log, source versions, composition versions, recompose (THRE
 The single append-and-read log of versioned changes in <configDir>/audit.jsonl; row ids are the versions. *Region:* [Composition audit log](audit-log/knowledge.md)
 
 **authFetch**  
-Same-origin fetch that sends the tunnel session cookie; use for viewer API calls. *Region:* [Viewer dashboard shell](viewer/knowledge.md)
+Same-origin fetch that sends the viewer's cookies; use for viewer API calls. *Region:* [Viewer dashboard shell](viewer/knowledge.md)
 
 ## B
 
@@ -996,9 +996,6 @@ The tool names whose calls make a Warden's guard fire for the turn. *Region:* [W
 
 **Haiku 5.5**  
 The default model for Wardens and the other decision roles unless a Warden stage names its model; the default Layer 2 is Sonnet 5.5 low. *Region:* [Repo structure and conventions](conventions/knowledge.md)
-
-**handoff**  
-Tunnel token Kingdom presents to `POST /api/handoff`; mintHandoffCode / redeemHandoffCode hand a browser to the tunnel session. *Region:* [Kingdom pairing, access and Signets](kingdom/knowledge.md)
 
 **handoff / handoff-return**  
 Parent journal rows for a subagent spawn (task hash and excerpt) and its result (outcome, excerpt, usage). *Region:* [Journal and thread tree](journal-thread-tree/knowledge.md)
@@ -1986,7 +1983,7 @@ Turn report status of a new native process; the ledger is reset to what that ses
 A provider check at startup that runs only when explicitly enabled (startupSelfTestEnabled), and never while project Warden hosts run: each host's start proves the decision login. *Region:* [Install, daemon, devices and git](install-daemon/knowledge.md)
 
 **startViewer**  
-Starts the viewer server with its config store (and tunnel). *Region:* [Viewer dashboard shell](viewer/knowledge.md)
+Starts the viewer server with its config store. *Region:* [Viewer dashboard shell](viewer/knowledge.md)
 
 **StreamBufferRegistry**  
 Tracks live turns by id and pushes changes to the owning thread's open stream. *Region:* [Viewer inspector, streams and Gloss](viewer-inspector/knowledge.md)
