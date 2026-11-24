@@ -813,8 +813,8 @@ export function setAtPath(root: Record<string, unknown>, path: string[], value: 
  * else the repository's. The worker and its model are one unit (FEAT-007): the worker is the layer
  * that names it; your model wins whenever that worker runs it, else the worker's layer's, else the
  * worker's own default. `chorus`,
- * `conversations` and `steer` keep their own readers, which report each value's layer
- * (`projectChorus`, `conversationSettings`, `steerOnSend`). Machine and person settings are the
+ * `conversations`, `steer` and `blueprintDiagrams` keep their own readers, which report each value's layer
+ * (`projectChorus`, `conversationSettings`, `steerOnSend`, `blueprintDiagramsInPlansAndLoops`). Machine and person settings are the
  * machine's alone.
  */
 export function effectiveProject(
@@ -1024,8 +1024,8 @@ const unapplied = new Map<string, string>();
 
 /**
  * Why the repository's settings at `projectPath` don't apply here. `unreadable`: none of the file
- * applies. `unbuildable`: its merged settings don't, but `chorus`, `conversations` and `steer`,
- * checked and layered on their own, still do.
+ * applies. `unbuildable`: its merged settings don't, but `chorus`, `conversations`, `steer` and
+ * `blueprintDiagrams`, checked and layered on their own, still do.
  */
 export function repositorySettingsProblem(
   projectPath: string,
@@ -1041,6 +1041,7 @@ export const SELF_LAYERED_SETTINGS: ReadonlySet<string> = new Set([
   'chorus',
   'conversations',
   'steer',
+  'blueprintDiagrams',
 ]);
 
 function buildProjectView(
@@ -1049,6 +1050,9 @@ function buildProjectView(
   project: ProjectSettingsConfig,
 ): ResolvedProjectView {
   const resolved: FoundryConfig = {
+    ...(config.blueprintDiagrams !== undefined
+      ? { blueprintDiagrams: config.blueprintDiagrams }
+      : {}),
     ...(config.learning !== undefined ? { learning: structuredClone(config.learning) } : {}),
     ...(config.composition !== undefined
       ? { composition: structuredClone(config.composition) }

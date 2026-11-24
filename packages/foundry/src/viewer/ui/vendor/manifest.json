@@ -6,7 +6,8 @@
     "preact": "10.25.4",
     "@preact/signals": "1.3.1",
     "@preact/signals-core": "1.14.4",
-    "htm": "3.1.1"
+    "htm": "3.1.1",
+    "intincrab/blueprint": "0.2.0 (f6cba71bdcbf8c553bdefdd80ff94d156646c37f)"
   },
   "resolutionNote": "Top-level versions match prior lib.js. Signals1.3.1 declares signals-core ^1.7.0; esm.sh resolved it to1.14.4 on retrieval. This freezes that observed dependency; it does not assert prior captures used it.",
   "licenseFile": "licenses.json",
@@ -74,6 +75,15 @@
       "removedSourceMapComment": false,
       "finalNewline": true,
       "sha256": "ab33dd3f38059b9be4d5f5350128eefb2356639c4e0bbe9d9e8b3ba75847e9e4"
+    },
+    {
+      "file": "blueprint.js",
+      "url": "https://raw.githubusercontent.com/intincrab/blueprint/f6cba71bdcbf8c553bdefdd80ff94d156646c37f/runtime/blueprint.js",
+      "sourceSha256": "3643b39965abdeca454cfd707d57fbd0fe120596480ea1c2444770ba46bf1562",
+      "rewrites": [],
+      "removedSourceMapComment": false,
+      "finalNewline": true,
+      "sha256": "3643b39965abdeca454cfd707d57fbd0fe120596480ea1c2444770ba46bf1562"
     }
   ]
 }

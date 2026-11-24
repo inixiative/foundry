@@ -60,7 +60,13 @@ export const FOUNDRY_SETTINGS = [
   ['archive', 'Archive', 'Integrations'],
   ['github', 'GitHub', 'Integrations'],
   ['linear', 'Linear', 'Integrations'],
-  ['threads', 'Threads', null, false, ['threadOnMerge', 'steer', 'afterProjectStart']],
+  [
+    'threads',
+    'Threads',
+    null,
+    false,
+    ['threadOnMerge', 'steer', 'blueprintDiagrams', 'afterProjectStart'],
+  ],
   ['devices', 'Devices'],
   ['keychain', 'Keychain'],
   ['loops', 'Loops'],
@@ -75,7 +81,7 @@ export const FOUNDRY_SETTINGS = [
 export const PROJECT_SETTINGS = [
   ['integrations', 'Integrations', null, false, ['kingdomAccess']],
   ['work', 'Work', null, false, ['threadOnMerge']],
-  ['agent', 'Agent', null, false, ['steer']],
+  ['agent', 'Agent', null, false, ['steer', 'blueprintDiagrams']],
   ['chorus', 'Wardens', null, false, ['chorus']],
   ['conversations', 'Conversations', null, false, ['conversations']],
   ['archive', 'Archive'],

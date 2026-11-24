@@ -133,7 +133,7 @@ export const artifactSchema = z.strictObject({
     .min(1)
     .max(120)
     .refine((text) => !/\p{Cc}/u.test(text), 'No control characters'),
-  kind: z.enum(['markdown', 'mermaid', 'html', 'code']),
+  kind: z.enum(['markdown', 'mermaid', 'blueprint', 'html', 'code']),
   language: z.string().trim().min(1).max(40).optional(),
   content: z.string().min(1).max(ARTIFACT_CONTENT_LIMIT),
 });

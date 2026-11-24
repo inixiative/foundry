@@ -1,6 +1,6 @@
 ---
 name: artifacts
-description: Use in a Foundry thread when you make something the person should look at or keep beside the conversation (a design doc, a diagram, a mock page, a report, a script), rather than paste it into a reply. Covers set_artifact (markdown, mermaid, html, code), its versions, and what an HTML page may do in its sandbox.
+description: Use in a Foundry thread when you make something the person should look at or keep beside the conversation (a design doc, a diagram, a Blueprint mechanism scene, a mock page, a report, a script), rather than paste it into a reply. Covers set_artifact (markdown, mermaid, blueprint, html, code), its versions, and what an HTML page may do in its sandbox.
 ---
 
 # Artifacts (`set_artifact`)
@@ -18,7 +18,7 @@ An artifact is something you made to show the person: it sits in the Artifacts t
 |---|---|
 | `id` | a short slug (`checkout-flow`); the same id again saves its next version |
 | `title` | what it is, in a few plain words |
-| `kind` | `markdown`, `mermaid` (the diagram source only, no fence), `html` (a whole page), `code` |
+| `kind` | `markdown`, `mermaid` (the diagram source only, no fence), `blueprint` (raw Blueprint scene JSON object, no fence; see `foundry:blueprint`), `html` (a whole page), `code` |
 | `language` | for `code`: `ts`, `python`, `sql`… |
 | `content` | the whole artifact every time, never a diff |
 

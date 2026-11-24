@@ -24,6 +24,37 @@ const reply = [
   'graph TD',
   '  A[Ask] --> B[Answer]',
   '```',
+  '',
+  '```blueprint',
+  JSON.stringify({
+    title: 'Cache Check',
+    size: [520, 220],
+    parts: [
+      { id: 'c', kind: 'screen', at: [100, 110], label: 'CLIENT' },
+      {
+        id: 'd',
+        kind: 'drawer',
+        at: [380, 110],
+        n: 1,
+        name: 'Cache',
+        note: 'fast drawer',
+        label: 'CACHE',
+      },
+    ],
+    lines: [{ id: 'l', from: 'c.e', to: 'd.w', arrow: true }],
+    steps: [
+      {
+        say: 'Client checks the cache (1).',
+        draw: ['c', 'd', 'l'],
+        run: { on: 'l', item: 'chip', text: '#42' },
+      },
+    ],
+  }),
+  '```',
+  '',
+  '```blueprint',
+  '{not-valid-json',
+  '```',
 ].join('\n');
 
 test('agent replies render as Markdown, raw HTML stays text, and a mermaid block becomes a diagram', async () => {
@@ -46,13 +77,18 @@ test('agent replies render as Markdown, raw HTML stays text, and a mermaid block
     const body = page.locator('.chat-agent .md').first();
     await body.locator('h2', { hasText: 'Result' }).waitFor();
     expect(await body.locator('strong', { hasText: 'Done' }).count()).toBe(1);
-    expect(await body.locator('li').count()).toBe(2);
+    expect(await body.locator('ul li').count()).toBe(2);
     expect(await body.locator('td').count()).toBe(2);
     expect(await body.locator('img').count()).toBe(0);
     expect(await body.textContent()).toContain('<img src=x');
     expect(await body.locator('a').count()).toBe(1);
     expect(await body.locator('a').getAttribute('href')).toBe('https://example.com');
     await body.locator('.md-mermaid-diagram svg').waitFor({ timeout: 20_000 });
+    await body.locator('.md-blueprint-diagram svg.bp-svg').waitFor({ timeout: 20_000 });
+    expect(await body.locator('.md-blueprint-diagram .bp-bar').count()).toBe(1);
+    expect(await body.locator('.md-blueprint-diagram .bp-key li').count()).toBe(1);
+    await body.locator('pre.md-blueprint.md-blueprint-invalid').waitFor({ timeout: 20_000 });
+    expect(await page.locator('link[href*="fonts.googleapis.com"]').count()).toBe(0);
     expect(await page.evaluate(() => (window as any).__xss)).toBeUndefined();
     expect(errors).toEqual([]);
   } finally {

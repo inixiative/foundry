@@ -57,7 +57,7 @@ import {
   subagentAddress,
 } from '../turns/handoff-brief';
 import { milestoneOf } from '../turns/milestones';
-import type { FoundryConfig } from '../viewer/config';
+import { blueprintDiagramsInPlansAndLoops, type FoundryConfig } from '../viewer/config';
 import { projectChorus, resolveThreadView } from '../viewer/config-resolve';
 import {
   allDegraded,
@@ -72,11 +72,11 @@ import {
   CHORUS_RECEPTION_LAYER,
   CHORUS_RECEPTION_VERSION,
   FOUNDRY_TOOLS_LAYER,
-  FOUNDRY_TOOLS_NOTE,
   FOUNDRY_TOOLS_NOTE_VERSION,
+  foundryToolsNote,
   NAME_ASK_NOTE,
   NAME_CHECK_NOTE,
-  PLAN_ASK_NOTE,
+  planAskNote,
   STANDING_LAYERS,
 } from './chorus-reception';
 import { resolveThreadWardens } from './configured-wardens';
@@ -1271,15 +1271,36 @@ class ThreadRuntimeImpl implements ThreadRuntime {
     // when to call its tools (Aron, 2026-11-02: "Foundry should be on new sessions"). An unwrapped
     // thread (a fresh install) holds it too; it stays unwrapped otherwise: no decision calls, no other context.
     // A thread on a worker that cannot hold the tools (Muse Code) is never told about them.
-    if (workerHostsFoundryTools(thread.meta.worker) && !stack.getLayer(FOUNDRY_TOOLS_LAYER)) {
-      const note = new ContextLayer({
+    const readFoundryTools = () =>
+      foundryToolsNote(
+        blueprintDiagramsInPlansAndLoops(
+          this._scopeConfig,
+          thread.meta.projectId as string | undefined,
+        ),
+      );
+    let toolsLayer: ContextLayer | undefined;
+    if (workerHostsFoundryTools(thread.meta.worker)) {
+      stack.removeLayer(FOUNDRY_TOOLS_LAYER);
+      const initialToolsText = readFoundryTools();
+      toolsLayer = new ContextLayer({
         id: FOUNDRY_TOOLS_LAYER,
         owner: { threadId: thread.id, projectId: thread.meta.projectId as string | undefined },
-        sources: [inlineSource(FOUNDRY_TOOLS_NOTE_VERSION, FOUNDRY_TOOLS_NOTE)],
+        sources: [
+          {
+            id: FOUNDRY_TOOLS_NOTE_VERSION,
+            load: async () => readFoundryTools(),
+            changed: () => toolsLayer?.content !== readFoundryTools(),
+          },
+        ],
       });
-      note.set(FOUNDRY_TOOLS_NOTE, 'foundry');
-      stack.addLayer(note);
+      toolsLayer.set(initialToolsText, 'foundry');
+      stack.addLayer(toolsLayer);
     }
+    const refreshFoundryTools = async () => {
+      if (!toolsLayer) return;
+      toolsLayer.checkStaleness();
+      if (!toolsLayer.isWarm) await toolsLayer.warm();
+    };
 
     // A thread in one of Foundry's own scopes (Forge Master, Feedback: its role) holds that scope's
     // brief the same way. The forge brief carries the configuration and the native CLIs, so it is
@@ -1416,7 +1437,12 @@ class ThreadRuntimeImpl implements ThreadRuntime {
             id: `plan-ask:${identity?.messageId ?? Date.now()}`,
             source: 'foundry',
             placement: 'after-message',
-            text: PLAN_ASK_NOTE,
+            text: planAskNote(
+              blueprintDiagramsInPlansAndLoops(
+                this._scopeConfig,
+                thread.meta.projectId as string | undefined,
+              ),
+            ),
           },
         ]);
       // A name the agent did not give, or the agent's own 30 minutes on: ask it to name the thread on
@@ -1479,6 +1505,7 @@ class ThreadRuntimeImpl implements ThreadRuntime {
           overflow: 0,
         });
       try {
+        await refreshFoundryTools();
         await refreshScope();
         // Nothing wraps an unwrapped thread (no layers or Wardens): the message reaches
         // the session as typed, with no plan and no thread-state; it holds only

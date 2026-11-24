@@ -80,6 +80,24 @@ This thread runs in Foundry. A person follows it among many others, so keep it l
 export const PLAN_ASK_NOTE =
   'Foundry: this thread has no plan yet. If this message asks for more than a quick answer, record your plan with set_plan before you start, and set_status before you hand back.';
 
+/** Added to the session briefing and plan nudge when `blueprintDiagrams` is enabled for the thread. */
+export const BLUEPRINT_PLANS_AND_LOOPS_NOTE =
+  '8. **Blueprint diagrams in plans and loops.** This thread has Blueprint diagrams enabled: when recording a non-trivial plan (`set_plan`) or running a multi-round loop (`set_loop`) on a mechanism or flow, try to explain it with an interactive Blueprint scene built as a "but… so…" chain via `set_artifact` (`kind: "blueprint"`, raw JSON spec) or a fenced ```` ```blueprint ```` block (see the `foundry:blueprint` skill, and lint with its `check.mjs` before showing).';
+
+/** The session briefing for one thread: appends Blueprint guidance only when enabled in settings. */
+export function foundryToolsNote(blueprintDiagrams = false): string {
+  return blueprintDiagrams
+    ? `${FOUNDRY_TOOLS_NOTE}\n${BLUEPRINT_PLANS_AND_LOOPS_NOTE}`
+    : FOUNDRY_TOOLS_NOTE;
+}
+
+/** The plan nudge for one turn: mentions Blueprint diagrams only when enabled in settings. */
+export function planAskNote(blueprintDiagrams = false): string {
+  return blueprintDiagrams
+    ? `${PLAN_ASK_NOTE} Blueprint diagrams are enabled here: for a non-trivial mechanism, also attach a Blueprint scene via set_artifact (kind: "blueprint", see foundry:blueprint).`
+    : PLAN_ASK_NOTE;
+}
+
 /** The line Foundry adds to a turn of a thread whose name was set over 30 minutes ago (`needsNameCheck`). */
 export const NAME_CHECK_NOTE =
   "Foundry: this thread's name was set over 30 minutes ago. Make sure it still says what the thread is working on (3 to 7 plain words): call rename_thread with the right name, the same one if it still fits.";

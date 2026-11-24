@@ -513,7 +513,7 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps): void 
     // The cascade decides whether the team's settings build here; its verdict is the problem.
     effectiveProject(config, id);
     const problem = repositorySettingsProblem(project.path);
-    // Unreadable: none of the file applies. Unbuildable here: only chorus, conversations and steer do.
+    // Unreadable: none of the file applies. Unbuildable here: only chorus, conversations, steer and blueprintDiagrams do.
     const applies =
       !problem ||
       (problem.kind === 'unbuildable' && SELF_LAYERED_SETTINGS.has(path.split('.')[0]!));

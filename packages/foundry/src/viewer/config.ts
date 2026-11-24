@@ -93,18 +93,38 @@ const THREAD_ON_MERGE: readonly ThreadOnMerge[] = ['done', 'auto-archive'];
 export type AfterProjectStart = 'attention' | 'stay';
 const AFTER_PROJECT_START: readonly AfterProjectStart[] = ['attention', 'stay'];
 
+function booleanProjectSetting(
+  config: FoundryConfig,
+  projectId: string | undefined,
+  key: 'steer' | 'blueprintDiagrams',
+  fallback: boolean,
+): boolean {
+  const project = projectId ? config.projects?.[projectId] : undefined;
+  return (
+    project?.[key] ??
+    (project ? readRepositorySettings(project.path)?.[key] : undefined) ??
+    config[key] ??
+    fallback
+  );
+}
+
 /**
  * Whether a message sent during a running turn steers into it (CORE-001): your project setting, then
  * the repository's `.foundry/project.json`, then Foundry-wide, then on.
  */
 export function steerOnSend(config: FoundryConfig, projectId?: string): boolean {
-  const project = projectId ? config.projects?.[projectId] : undefined;
-  return (
-    project?.steer ??
-    (project ? readRepositorySettings(project.path)?.steer : undefined) ??
-    config.steer ??
-    true
-  );
+  return booleanProjectSetting(config, projectId, 'steer', true);
+}
+
+/**
+ * Whether plans and loops should try to explain mechanisms with a Blueprint diagram (R-2026-11-23-07):
+ * your project setting, then the repository's `.foundry/project.json`, then Foundry-wide, then off.
+ */
+export function blueprintDiagramsInPlansAndLoops(
+  config: FoundryConfig,
+  projectId?: string,
+): boolean {
+  return booleanProjectSetting(config, projectId, 'blueprintDiagrams', false);
 }
 
 /** What a thread in `projectId` becomes when its branch merges: project, then Foundry-wide, then `done`. */
@@ -225,6 +245,13 @@ export interface FoundryConfig {
    */
   steer?: boolean;
   /**
+   * Whether agents should explain non-trivial plans and loops with an interactive Blueprint diagram
+   * (`foundry:blueprint`, `set_artifact` `kind: 'blueprint'` or fenced ```` ```blueprint ```` block,
+   * R-2026-11-23-07). Default `false`. A project's `blueprintDiagrams` (yours, then the repository's)
+   * overrides it.
+   */
+  blueprintDiagrams?: boolean;
+  /**
    * Where the viewer's left rail goes once you start a thread from the Projects rail (Aron,
    * 2026-11-14): `attention` (default) returns to the Attention list, `stay` keeps Projects.
    */
@@ -326,6 +353,8 @@ export interface ProjectSettingsConfig {
   threadOnMerge?: ThreadOnMerge;
   /** Your `steer` for this project, over the repository's `.foundry/project.json` and the Foundry-wide one. */
   steer?: boolean;
+  /** Your `blueprintDiagrams` for this project, over the repository's `.foundry/project.json` and the Foundry-wide one. */
+  blueprintDiagrams?: boolean;
   /** Opt-in maintenance; existing margins remain readable when disabled. */
   gloss?: {
     /** Keep this project's gloss (margin commentary beside the code) maintained. */
@@ -1195,14 +1224,16 @@ export function validateConfig(config: FoundryConfig): void {
   ] as const)
     if (value !== undefined && !THREAD_ON_MERGE.includes(value))
       throw Error(`${where} must be one of "done", "auto-archive"`);
-  for (const [where, value] of [
-    ['steer', config.steer],
-    ...Object.entries(config.projects ?? {}).map(
-      ([pid, project]) => [`projects.${pid}.steer`, project?.steer] as const,
-    ),
-  ] as const)
-    if (value !== undefined && typeof value !== 'boolean')
-      throw Error(`${where} must be true or false`);
+  for (const key of ['steer', 'blueprintDiagrams'] as const) {
+    for (const [where, value] of [
+      [key, config[key]],
+      ...Object.entries(config.projects ?? {}).map(
+        ([pid, project]) => [`projects.${pid}.${key}`, project?.[key]] as const,
+      ),
+    ] as const)
+      if (value !== undefined && typeof value !== 'boolean')
+        throw Error(`${where} must be true or false`);
+  }
   if (
     config.afterProjectStart !== undefined &&
     !AFTER_PROJECT_START.includes(config.afterProjectStart)
@@ -1300,6 +1331,7 @@ function validateSourceDefinitions(
 export const REPOSITORY_SETTING_KEYS = [
   'threadOnMerge',
   'steer',
+  'blueprintDiagrams',
   'gloss',
   'defaults',
   'feedback',
@@ -1420,6 +1452,8 @@ export function validateRepositoryProject(settings: Record<string, unknown>): vo
     throw Error('threadOnMerge must be one of "done", "auto-archive"');
   if (settings.steer !== undefined && typeof settings.steer !== 'boolean')
     throw Error('steer must be true or false');
+  if (settings.blueprintDiagrams !== undefined && typeof settings.blueprintDiagrams !== 'boolean')
+    throw Error('blueprintDiagrams must be true or false');
   const gloss = settings.gloss as { enabled?: unknown; display?: unknown } | undefined;
   if (
     gloss !== undefined &&
@@ -1685,6 +1719,10 @@ export class ConfigStore {
         // Whether a send during a running turn steers into it; null returns to the default (on).
         if (patch.steer === null) delete next.steer;
         else if (patch.steer !== undefined) next.steer = patch.steer as boolean;
+        // Whether plans and loops should try to explain mechanisms with a Blueprint diagram; null returns to the default (off).
+        if (patch.blueprintDiagrams === null) delete next.blueprintDiagrams;
+        else if (patch.blueprintDiagrams !== undefined)
+          next.blueprintDiagrams = patch.blueprintDiagrams as boolean;
         // Where the rail goes once a thread starts from Projects; null returns to the default (Attention).
         if (patch.afterProjectStart === null) delete next.afterProjectStart;
         else if (patch.afterProjectStart !== undefined)

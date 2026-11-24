@@ -35,7 +35,13 @@ export const ARTIFACT_CSP = [
 export const artifactDocument = (content) =>
   `<!doctype html><meta http-equiv="Content-Security-Policy" content="${ARTIFACT_CSP}">${content}`;
 
-const KIND_LABELS = { markdown: 'Document', mermaid: 'Diagram', html: 'Page', code: 'Code' };
+const KIND_LABELS = {
+  markdown: 'Document',
+  mermaid: 'Diagram',
+  blueprint: 'Blueprint',
+  html: 'Page',
+  code: 'Code',
+};
 
 /** Newest first; the list keeps the last one saved at its end, which breaks a tie. */
 const newestFirst = (artifacts) =>
@@ -67,18 +73,23 @@ function useVersions(threadId, artifact) {
   return state.key === key ? state : { key, versions: null, error: state.error };
 }
 
+const fencedBlock = (language, content) => {
+  const fenceLen = (content.match(/`+/g) ?? []).reduce((max, m) => Math.max(max, m.length + 1), 3);
+  const fence = '`'.repeat(fenceLen);
+  return `${fence}${language}\n${content}\n${fence}`;
+};
+
 function ArtifactBody({ record }) {
   if (record.kind === 'html')
     return html`<iframe class="artifact-frame" title=${record.title} sandbox="allow-scripts"
       referrerpolicy="no-referrer" srcdoc=${artifactDocument(record.content)}></iframe>`;
   if (record.kind === 'mermaid')
-    return html`<${Markdown} className="artifact-md" text=${`\`\`\`mermaid\n${record.content}\n\`\`\``} />`;
+    return html`<${Markdown} className="artifact-md" text=${fencedBlock('mermaid', record.content)} />`;
+  if (record.kind === 'blueprint')
+    return html`<${Markdown} className="artifact-md" text=${fencedBlock('blueprint', record.content)} />`;
   if (record.kind === 'code') {
-    const fence = '`'.repeat(
-      Math.max(3, ...(record.content.match(/`+/g) ?? []).map((m) => m.length + 1)),
-    );
     return html`<${Markdown} className="artifact-md artifact-code"
-      text=${`${fence}${record.language ?? ''}\n${record.content}\n${fence}`} />`;
+      text=${fencedBlock(record.language ?? '', record.content)} />`;
   }
   return html`<${Markdown} className="artifact-md" text=${record.content} />`;
 }
