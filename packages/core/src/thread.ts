@@ -91,8 +91,8 @@ export interface ThreadPlan {
   readonly updatedAt: number;
 }
 
-/** How an artifact renders: Markdown, a Mermaid diagram, an HTML page (scripts run sandboxed) or code. */
-export type ThreadArtifactKind = 'markdown' | 'mermaid' | 'html' | 'code';
+/** How an artifact renders: Markdown, a Mermaid diagram, an interactive Blueprint scene, an HTML page (scripts run sandboxed) or code. */
+export type ThreadArtifactKind = 'markdown' | 'mermaid' | 'blueprint' | 'html' | 'code';
 
 /**
  * One artifact the thread's agent made with `set_artifact`, as the thread lists it: what it is and

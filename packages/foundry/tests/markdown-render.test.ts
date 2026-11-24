@@ -43,6 +43,17 @@ test('a mermaid block is held as escaped source for the diagram renderer', () =>
   expect(out).toBe('<pre class="md-mermaid" data-mermaid>graph TD; A--&gt;B</pre>');
 });
 
+test('a blueprint block is held as escaped source for the blueprint renderer', () => {
+  const out = renderMarkdown('```blueprint\n{"title":"<script>"}\n```');
+  expect(out).toBe(
+    '<pre class="md-blueprint" data-blueprint>{&quot;title&quot;:&quot;&lt;script&gt;&quot;}</pre>',
+  );
+  const alias = renderMarkdown('```blueprint-scene\n{"title":"ok"}\n```');
+  expect(alias).toBe(
+    '<pre class="md-blueprint" data-blueprint>{&quot;title&quot;:&quot;ok&quot;}</pre>',
+  );
+});
+
 test('typed text keeps every newline as a line break', () => {
   const out = renderMarkdown('first line\nsecond line', { breaks: true });
   expect(out).toContain('first line<br>second line');

@@ -35,6 +35,12 @@ See [LICENSE-BSL](./LICENSE-BSL) for the full text.
 
 **Scope:** `packages/foundry/`
 
+Vendored third-party viewer components (`packages/foundry/src/viewer/ui/vendor/`) and the
+bundled Blueprint skill (`packages/foundry/src/plugin/skills/blueprint/`, derived from
+`intincrab/blueprint`, MIT License) retain their respective permissive open-source licenses;
+see `packages/foundry/src/viewer/ui/vendor/licenses.json` and
+`packages/foundry/src/plugin/skills/blueprint/LICENSE`.
+
 ## Foundry Oracle — Proprietary
 
 The Oracle scoring service is proprietary and distributed separately under

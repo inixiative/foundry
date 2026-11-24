@@ -643,7 +643,7 @@ export async function inspectReadiness(
         'repository-settings-unreadable',
         problem.kind === 'unreadable'
           ? `${join(project.path, REPOSITORY_SETTINGS_FILE)} was not read (${problem.message}); none of its settings apply.`
-          : `${join(project.path, REPOSITORY_SETTINGS_FILE)} can't be built on this machine (${problem.message}); its threadOnMerge, gloss, defaults, feedback, agents and layers don't apply here (its chorus, conversations and steer still do).`,
+          : `${join(project.path, REPOSITORY_SETTINGS_FILE)} can't be built on this machine (${problem.message}); its threadOnMerge, gloss, defaults, feedback, agents and layers don't apply here (its chorus, conversations, steer and blueprintDiagrams still do).`,
       );
   }
   // A project whose Wardens are asked for but can't be built is an error: its threads run without them.

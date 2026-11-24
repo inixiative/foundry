@@ -9809,8 +9809,23 @@ a.thread-ref:hover {
   max-width: 100%;
   height: auto;
 }
-.md .md-mermaid-invalid {
+.md .md-mermaid-invalid,
+.md .md-blueprint-invalid {
   border-left: 3px solid var(--warn);
+}
+.md .md-blueprint-diagram {
+  margin: 10px 0;
+  max-width: 100%;
+  overflow-x: auto;
+}
+.md .md-blueprint-diagram .bp-wrap {
+  max-width: 100%;
+}
+.md .md-blueprint-diagram .bp-svg {
+  border-radius: 6px;
+}
+.md .md-blueprint-diagram .bp-key {
+  color: var(--text-dim);
 }
 .chat-msg-time {
   font-size: 11px;

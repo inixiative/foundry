@@ -95,6 +95,11 @@
     "description": "When you send while a thread's turn runs (CORE-001, Aron 2026-11-01): `true` (default) steers the message into that turn; `false` queues it after. A queued message can always be steered in with \"Steer now\". A project's `steer` (yours, then the repository's) overrides it."
   },
   {
+    "path": "blueprintDiagrams",
+    "scope": "foundry",
+    "description": "Whether agents should explain non-trivial plans and loops with an interactive Blueprint diagram (`foundry:blueprint`, `set_artifact` `kind: 'blueprint'` or fenced ```` ```blueprint ```` block, R-2026-11-23-07). Default `false`. A project's `blueprintDiagrams` (yours, then the repository's) overrides it."
+  },
+  {
     "path": "afterProjectStart",
     "scope": "foundry",
     "description": "Where the viewer's left rail goes once you start a thread from the Projects rail (Aron, 2026-11-14): `attention` (default) returns to the Attention list, `stay` keeps Projects."
@@ -498,6 +503,11 @@
     "path": "steer",
     "scope": "project",
     "description": "Your `steer` for this project, over the repository's `.foundry/project.json` and the Foundry-wide one."
+  },
+  {
+    "path": "blueprintDiagrams",
+    "scope": "project",
+    "description": "Your `blueprintDiagrams` for this project, over the repository's `.foundry/project.json` and the Foundry-wide one."
   },
   {
     "path": "gloss",

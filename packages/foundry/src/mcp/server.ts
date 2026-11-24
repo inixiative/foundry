@@ -666,7 +666,7 @@ export function createFoundryMcp(config: FoundryMcpConfig): FoundryMcp {
     );
     server.tool(
       'set_artifact',
-      "Show the person something you made, beside the thread: a document, a diagram, a page, a block of code. id: a short slug; the same id again saves its next version (earlier versions stay readable). title: what it is. kind: 'markdown', 'mermaid' (a diagram), 'html' (a whole page; its scripts run in a sandboxed frame that cannot fetch, reach Foundry or touch the viewer; scripts, styles and images may load over https) or 'code' (with language). content: the whole artifact each time, never a diff. The person sees it in the Artifacts view and as a card on this turn. Use it for something worth looking at or keeping, not for an answer that fits in the reply.",
+      "Show the person something you made, beside the thread: a document, a diagram, a Blueprint scene, a page, a block of code. id: a short slug; the same id again saves its next version (earlier versions stay readable). title: what it is. kind: 'markdown', 'mermaid' (a diagram), 'blueprint' (an interactive patent-style Blueprint scene JSON object; see the foundry:blueprint skill), 'html' (a whole page; its scripts run in a sandboxed frame that cannot fetch, reach Foundry or touch the viewer; scripts, styles and images may load over https) or 'code' (with language). content: the whole artifact each time, never a diff. The person sees it in the Artifacts view and as a card on this turn. Use it for something worth looking at or keeping, not for an answer that fits in the reply.",
       artifactSchema.shape,
       record('set_artifact'),
     );

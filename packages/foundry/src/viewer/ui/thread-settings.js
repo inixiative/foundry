@@ -34,6 +34,14 @@ const STEER_CHOICES = [
     'It waits for the running turn to finish. "Steer now" sends one in.',
   ],
 ];
+const BLUEPRINT_CHOICES = [
+  [
+    true,
+    'Use Blueprint diagrams',
+    'Plans and loops try to include an interactive Blueprint scene (set_artifact kind: blueprint or ```blueprint).',
+  ],
+  [false, 'Off', 'Agents use Blueprint diagrams only when you ask for one.'],
+];
 const NO_SHARED_LAYER = 'Foundry-wide settings belong to this machine; there is no shared layer.';
 const has = (v) => v !== null && v !== undefined;
 /** A Foundry-wide setting shown on a project page: its value and menu live in Foundry settings. */
@@ -179,6 +187,12 @@ const STEER = {
   fallback: true,
   help: (v) => STEER_CHOICES.find(([c]) => c === v)?.[2] ?? '',
 };
+const BLUEPRINT = {
+  label: 'Blueprint diagrams in plans & loops',
+  choices: BLUEPRINT_CHOICES,
+  fallback: false,
+  help: (v) => BLUEPRINT_CHOICES.find(([c]) => c === v)?.[2] ?? '',
+};
 
 const AFTER_START_CHOICES = [
   [
@@ -207,11 +221,18 @@ export function SteerRow({ config, projectId, onSaved }) {
     : html`<${FoundryChoiceRow} config=${config} settingKey="steer" ...${STEER} onSaved=${onSaved} />`;
 }
 
+export function BlueprintRow({ config, projectId, onSaved }) {
+  return projectId
+    ? html`<${ProjectChoiceRow} projectId=${projectId} path="blueprintDiagrams" ...${BLUEPRINT} onSaved=${onSaved} />`
+    : html`<${FoundryChoiceRow} config=${config} settingKey="blueprintDiagrams" ...${BLUEPRINT} onSaved=${onSaved} />`;
+}
+
 /** Settings › Threads (Foundry-wide). */
 export function ThreadSettings({ config, onSaved }) {
   return html`<section class="settings-card setting-rows">
     <${MergeRow} config=${config} onSaved=${onSaved} />
     <${SteerRow} config=${config} onSaved=${onSaved} />
+    <${BlueprintRow} config=${config} onSaved=${onSaved} />
     <${FoundryChoiceRow} config=${config} settingKey="afterProjectStart" ...${AFTER_START} onSaved=${onSaved} />
   </section>`;
 }
@@ -304,6 +325,7 @@ export function ProjectAgent({ config, projectId, onSaved }) {
   return html`<section class="settings-card setting-rows">
     <${WorkerRow} projectId=${projectId} onSaved=${onSaved} />
     <${SteerRow} config=${config} projectId=${projectId} onSaved=${onSaved} />
+    <${BlueprintRow} config=${config} projectId=${projectId} onSaved=${onSaved} />
     <${SettingRow} path="composition.harnessSettings" label="Harness settings"
       source=${composition.harnessSettings ? 'foundry' : 'default'} actions=${FOUNDRY_WIDE}
       help="Foundry-wide. Project hooks load only inside a registered project; credentials in them never replace the subscription login.">

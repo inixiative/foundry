@@ -33,5 +33,6 @@ Skip it for a single build-and-check pass: that's the plan's strategy.
 - `until` is a check anyone can run, not a feeling ("the suite passes", "p95 under 200 ms").
 - `maxRounds`: when to stop and ask instead of grinding. When `loop_round` says the limit is reached, stop.
 - A round's note says what changed and what the check showed, in a line: "Fixed the drawer race; 2 specs still fail on focus".
+- When Blueprint diagrams are enabled in Foundry settings and the loop is debugging or iterating on a multi-step mechanism, attach or update a `blueprint` artifact (`set_artifact` `kind: "blueprint"`, see `foundry:blueprint`) showing the failing flow and the fix.
 
 Curated loops you can reuse across threads are coming soon (Foundry settings).

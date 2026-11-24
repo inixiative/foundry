@@ -48,6 +48,8 @@ Each section you give replaces that section; sections you leave out keep their l
 
 Work that needs several rounds of build, check and fix also gets a loop (the `loop` skill): the plan is what you want, the loop is how you get there.
 
+When Blueprint diagrams are enabled in Foundry settings (or when the plan introduces a multi-step mechanism), attach a patent-style Blueprint scene with `set_artifact` (`kind: "blueprint"`, see `foundry:blueprint`) built as a "but… so…" chain so the person can inspect the mechanism before you build.
+
 ## Example
 
 ```json
