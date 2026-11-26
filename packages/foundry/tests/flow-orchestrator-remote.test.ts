@@ -1,6 +1,6 @@
 // Dev mode (R-2026-11-25-05): with a remote Chorus, the orchestrator sends one `chorus.*` call per
 // moment for every Warden it would have asked, never its local Wardens' models, and reads the answer
-// back into the same plan, chime and guard report.
+// back into the same plan, chime, journal and guard report as a local Warden's.
 
 import { describe, expect, it } from 'bun:test';
 import {
@@ -144,21 +144,112 @@ describe('dev mode: one Chorus call per moment', () => {
     ]);
   });
 
-  it('a warming host is not-held: nothing chimes, and the next message carries the missed one', async () => {
-    const { orchestrator, sent, state } = setup(() => ({ ok: false, refusal: 'chorus_warming' }));
+  it('each Warden journals the call exactly as sent', async () => {
+    const { orchestrator, sent } = setup();
+    const plan = await orchestrator.preMessage('add a route');
+    for (const c of plan.contributions) {
+      expect(c.request).toMatchObject({
+        status: 'supplied',
+        phase: 'advice',
+        providerId: 'chorus-remote',
+      });
+      const journalled = c.request.status === 'supplied' ? c.request.messages[0]!.content : '';
+      expect(JSON.parse(String(journalled))).toEqual({
+        operation: 'chorus.advise',
+        projectId: 'proj',
+        input: sent[0]!.input,
+      });
+    }
+  });
+
+  it('a refusal (a warming host) is not admitted: degraded, nothing chimes', async () => {
+    const { orchestrator } = setup(() => ({ ok: false, refusal: 'chorus_warming' }));
     const plan = await orchestrator.preMessage('first message');
-    expect(plan.contributions.map((c) => c.outcome)).toEqual([
-      { status: 'not-sent', cause: 'not-held' },
-      { status: 'not-sent', cause: 'not-held' },
+    expect(plan.contributions.map((c) => [c.outcome, c.reason, c.catchesUp])).toEqual([
+      [{ status: 'not-sent', cause: 'not-admitted' }, 'Chorus refused: chorus_warming', undefined],
+      [{ status: 'not-sent', cause: 'not-admitted' }, 'Chorus refused: chorus_warming', undefined],
     ]);
-    expect(plan.contributions.every((c) => c.catchesUp)).toBe(true);
     const { decoration } = await orchestrator.hydrateDelta(plan);
     expect(decoration.blocks.filter((b) => b.placement === 'after-message')).toEqual([]);
+  });
+
+  it('a Warden Chorus holds no session for catches up: its own missed message rides its own call', async () => {
+    const { orchestrator, sent, state } = setup((operation, input) => {
+      const answer = speakAll(operation, input) as {
+        result: { contributions: Array<Record<string, unknown>> };
+      };
+      answer.result.contributions[1] = {
+        callId: CALL_ID,
+        domain: 'security',
+        outcome: 'not-sent',
+        reason: 'no session held',
+        catchesUp: true,
+        snippets: [],
+        layers: [],
+        confidence: 0,
+      };
+      return answer;
+    });
+    const plan = await orchestrator.preMessage('first message');
+    expect(plan.contributions.map((c) => [c.domain, c.outcome, c.catchesUp])).toEqual([
+      ['convention', { status: 'answered', result: 'spoke' }, undefined],
+      ['security', { status: 'not-sent', cause: 'not-held' }, true],
+    ]);
     state.reply = speakAll;
     await orchestrator.preMessage('second message');
-    expect(sent[1]!.input.earlier).toEqual({ messages: ['first message'], dropped: 0 });
-    await orchestrator.preMessage('third message');
-    expect('earlier' in sent[2]!.input).toBe(false);
+    // One call per distinct catch-up: the convention Warden missed nothing, the security one a message.
+    expect(sent.slice(1).map((s) => [s.input.domains, s.input.earlier])).toEqual([
+      [['convention'], undefined],
+      [['security'], { messages: ['first message'], dropped: 0 }],
+    ]);
+  });
+
+  it('a host past its time is a timeout; a Warden that failed on a stage timeout is too', async () => {
+    const { orchestrator, state } = setup(() => ({
+      ok: false,
+      failure: 'timeout',
+      message: 'Chorus did not answer within 6000ms',
+    }));
+    let plan = await orchestrator.preMessage('one');
+    expect(plan.contributions.map((c) => c.outcome)).toEqual([
+      { status: 'failed', cause: 'timeout' },
+      { status: 'failed', cause: 'timeout' },
+    ]);
+    state.reply = (operation, input) => {
+      const answer = speakAll(operation, input) as {
+        result: { contributions: Array<Record<string, unknown>> };
+      };
+      answer.result.contributions = answer.result.contributions.map((c) => ({
+        ...c,
+        outcome: 'failed',
+        snippets: [],
+        stages: [
+          {
+            stage: c.domain === 'security' ? 'recognise' : 'point',
+            outcome: c.domain === 'security' ? 'timeout' : 'error',
+          },
+        ],
+      }));
+      return answer;
+    };
+    plan = await orchestrator.preMessage('two');
+    expect(plan.contributions.map((c) => [c.domain, c.outcome])).toEqual([
+      ['convention', { status: 'failed', cause: 'provider-error' }],
+      ['security', { status: 'failed', cause: 'timeout' }],
+    ]);
+  });
+
+  it('no token or no host is not sent, never a failure', async () => {
+    const { orchestrator } = setup(() => ({
+      ok: false,
+      failure: 'no-token',
+      message: 'no Chorus dev token in the keychain or environment',
+    }));
+    const plan = await orchestrator.preMessage('one');
+    expect(plan.contributions.map((c) => c.outcome)).toEqual([
+      { status: 'not-sent', cause: 'not-admitted' },
+      { status: 'not-sent', cause: 'not-admitted' },
+    ]);
   });
 
   it('Retry sends only the chosen Wardens', async () => {
@@ -181,6 +272,56 @@ describe('dev mode: one Chorus call per moment', () => {
     ]);
     expect(report.outcomes.map((o) => [o.domain, o.outcome])).toEqual([
       ['security', { status: 'answered', result: 'findings' }],
+    ]);
+  });
+
+  it('a guard is built once: every Warden journals it, a skipped one is not held', async () => {
+    const { orchestrator, sent } = setup((operation, input) => ({
+      ok: true,
+      result: {
+        rosterRevision: 'r1',
+        findings: [],
+        checkedDomains: ['convention'],
+        skippedDomains: ['security'],
+        elapsedMs: 1,
+      },
+    }));
+    const requests: string[] = [];
+    const report = await orchestrator.postAction(
+      { turnId: 't1', observations: [{ tool: 'file_write', input: { path: 'a.ts' } }] },
+      {
+        onRequest: (_domain, evidence) => {
+          requests.push(String(evidence.messages[0]!.content));
+        },
+      },
+    );
+    expect(sent).toHaveLength(1);
+    const call = JSON.stringify({
+      operation: 'chorus.guard',
+      projectId: 'proj',
+      input: sent[0]!.input,
+    });
+    expect(requests).toEqual([call, call]);
+    expect(report.outcomes.map((o) => [o.domain, o.outcome, o.noComment])).toEqual([
+      ['convention', { status: 'answered', result: 'all-clear' }, true],
+      ['security', { status: 'not-sent', cause: 'not-held' }, undefined],
+    ]);
+  });
+
+  it('a guard every Warden’s journal refuses is never sent', async () => {
+    const { orchestrator, sent } = setup();
+    const report = await orchestrator.postAction(
+      { turnId: 't1', observations: [{ tool: 'file_write', input: { path: 'a.ts' } }] },
+      {
+        onRequest: () => {
+          throw Object.assign(Error('journal refused'), { admission: 'not-admitted' });
+        },
+      },
+    );
+    expect(sent).toHaveLength(0);
+    expect(report.outcomes.map((o) => [o.outcome, o.request?.status])).toEqual([
+      [{ status: 'not-sent', cause: 'not-admitted' }, 'supplied'],
+      [{ status: 'not-sent', cause: 'not-admitted' }, 'supplied'],
     ]);
   });
 });

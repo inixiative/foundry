@@ -187,21 +187,28 @@ const validMachineIcon = (icon: unknown): icon is { glyph: MachineGlyph; color: 
 
 /** A dev-mode host: its base URL and the keychain entry name holding its bearer token. */
 export interface DevRemoteSettings {
+  /** The host's base URL (http or https), e.g. `http://localhost:4900`. */
   url: string;
+  /** The keychain entry (or environment variable) holding its bearer token, default `CHORUS_DEV_TOKEN`; Chorus's starts `CHORUS_`. Never the token. */
   tokenKey?: string;
 }
 
 /** The keychain entry a dev-mode host's token is read from when `tokenKey` is not set. */
 export const DEV_TOKEN_KEY_DEFAULT = 'CHORUS_DEV_TOKEN';
 
-/** Dev mode's Chorus host while dev mode is on, its token key resolved; otherwise none. */
-export function devChorus(
+/** The prefix dev mode's Chorus token key must carry: the token it names is sent, so never another credential. */
+const DEV_TOKEN_KEY_PREFIX = 'CHORUS_';
+
+/** A dev-mode host while dev mode is on: its URL without a trailing slash, its token key resolved. */
+export function devHost(
   config: FoundryConfig,
-): { readonly url: string; readonly tokenKey: string } | undefined {
-  if (config.__devMode !== true || !config.__chorus) return undefined;
+  key: '__chorus' | '__oracle' = '__chorus',
+): Required<DevRemoteSettings> | undefined {
+  const remote = config[key];
+  if (config.__devMode !== true || !remote) return undefined;
   return {
-    url: config.__chorus.url.replace(/\/+$/, ''),
-    tokenKey: config.__chorus.tokenKey ?? DEV_TOKEN_KEY_DEFAULT,
+    url: remote.url.replace(/\/+$/, ''),
+    tokenKey: remote.tokenKey ?? DEV_TOKEN_KEY_DEFAULT,
   };
 }
 
@@ -220,9 +227,14 @@ function validateDevRemote(key: '__chorus' | '__oracle', remote: unknown): void 
   }
   if (!parsed || (parsed.protocol !== 'http:' && parsed.protocol !== 'https:'))
     throw Error(`${key}.url must be an http or https URL`);
-  if (tokenKey !== undefined && (typeof tokenKey !== 'string' || !isKeychainName(tokenKey)))
+  if (tokenKey === undefined) return;
+  if (
+    typeof tokenKey !== 'string' ||
+    !isKeychainName(tokenKey) ||
+    (key === '__chorus' && !tokenKey.startsWith(DEV_TOKEN_KEY_PREFIX))
+  )
     throw Error(
-      `${key}.tokenKey must name a keychain entry (letters, digits, dot, dash or underscore, at most 100), never the token`,
+      `${key}.tokenKey must name a keychain entry${key === '__chorus' ? ` starting ${DEV_TOKEN_KEY_PREFIX}` : ''} (letters, digits, dot, dash or underscore, at most 100), never the token`,
     );
 }
 
@@ -1428,11 +1440,6 @@ const PERSONAL_PROJECT_SETTINGS: Readonly<Record<string, string>> = {
   'defaults.decisionModel':
     'Decision roles run on this machine’s subscription; a cloned repository can’t move them to a paid API',
   ui: 'Viewer themes, extensions, slot layout, and display flags are personal to this machine; a repository cannot set them',
-  __devMode: 'Dev mode is this machine’s; a cloned repository can’t turn it on',
-  __chorus:
-    'Dev mode’s Chorus host is on this machine; a cloned repository can’t point Warden calls elsewhere',
-  __oracle:
-    'Dev mode’s Oracle host is on this machine; a cloned repository can’t point it elsewhere',
 };
 
 /** What a repository's agent may not set: where it runs and how it samples stay this machine's. */
@@ -1819,8 +1826,11 @@ export class ConfigStore {
         else delete next.apiTokens;
       } else if (section === 'dev') {
         // Dev mode and its hosts; null removes a setting.
-        if (patch.__devMode === true) next.__devMode = true;
-        else if (patch.__devMode === false || patch.__devMode === null) delete next.__devMode;
+        const devMode = patch.__devMode;
+        if (devMode !== undefined && devMode !== null && typeof devMode !== 'boolean')
+          throw Error('__devMode must be true, false or null');
+        if (devMode === true) next.__devMode = true;
+        else if (devMode === false || devMode === null) delete next.__devMode;
         for (const key of ['__chorus', '__oracle'] as const) {
           if (patch[key] === null) delete next[key];
           else if (patch[key] !== undefined) next[key] = patch[key] as DevRemoteSettings;

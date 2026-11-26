@@ -12,8 +12,6 @@
 import { html, useEffect, useState } from './lib.js';
 import { authFetch, showToast } from './store.js';
 
-const DEFAULT_TOKEN_KEY = 'CHORUS_DEV_TOKEN';
-
 const HOSTS = [
   ['__chorus', 'Chorus', 'Serves the Wardens of every project whose chorus is on.', '/readyz'],
   ['__oracle', 'Oracle', 'Only its health is checked for now.', '/healthz'],
@@ -43,6 +41,8 @@ export function DevSection({ config, onSaved }) {
   const [probe, setProbe] = useState(null);
   const [busy, setBusy] = useState(false);
   useEffect(() => setDraft(draftOf(config)), [config]);
+  // The first check also brings the token key a host without one reads (the server's default).
+  useEffect(() => void check(), []);
   const set = (key, field, value) =>
     setDraft((d) => ({ ...d, [key]: { ...d[key], [field]: value } }));
   const check = async () => {
@@ -96,7 +96,7 @@ export function DevSection({ config, onSaved }) {
       </label>
       <label class="settings-field">
         <span class="settings-label">Token keychain entry</span>
-        <input class="settings-input" placeholder=${DEFAULT_TOKEN_KEY} value=${draft[key].tokenKey}
+        <input class="settings-input" placeholder=${probe?.defaultTokenKey ?? ''} value=${draft[key].tokenKey}
           onInput=${(e) => set(key, 'tokenKey', e.target.value)} />
       </label>
       <${ProbeLine} result=${probe?.[key.slice(2)]} />`,

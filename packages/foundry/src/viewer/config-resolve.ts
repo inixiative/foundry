@@ -36,7 +36,7 @@ import {
   type BrowserConfigOverride,
   type ChorusSettings,
   checkProjectView,
-  devChorus,
+  devHost,
   type FoundryConfig,
   isAgentExtension,
   type LayerSettingsConfig,
@@ -1195,7 +1195,7 @@ function buildProjectView(
   const consumed = setting.chorus.consumed ? { consumed: setting.chorus.consumed } : {};
   // The reception charter goes with a running chorus, unless turned off.
   const receptionOn = chorus.on && setting.chorus.reception !== false;
-  const remote = chorus.on ? devChorus(config)?.url : undefined;
+  const remote = chorus.on ? devHost(config)?.url : undefined;
   chorus = {
     ...chorus,
     reception: { on: receptionOn, from: setting.receptionFrom },

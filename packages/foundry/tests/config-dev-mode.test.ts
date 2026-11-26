@@ -2,17 +2,17 @@
 // points Warden calls and health checks at. Each is this machine's; the token is a keychain entry's name.
 
 import { afterEach, expect, test } from 'bun:test';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   ConfigStore,
   defaultConfig,
-  devChorus,
+  devHost,
   type FoundryConfig,
   validateConfig,
-  validateRepositoryProject,
 } from '../src/viewer/config';
+import { readRepositorySettings } from '../src/viewer/config-resolve';
 
 const dirs: string[] = [];
 afterEach(() => {
@@ -24,7 +24,7 @@ const withDev = (patch: Partial<FoundryConfig>): FoundryConfig => ({
   ...patch,
 });
 
-test('the dev settings are checked: a boolean switch, an http(s) URL, a keychain entry name, no extra keys', () => {
+test('the dev settings are checked: a boolean switch, an http(s) URL, a CHORUS_ keychain entry name, no extra keys', () => {
   validateConfig(withDev({ __devMode: true, __chorus: { url: 'http://localhost:4901' } }));
   validateConfig(
     withDev({ __oracle: { url: 'https://oracle.test', tokenKey: 'ORACLE_DEV.token' } }),
@@ -40,33 +40,44 @@ test('the dev settings are checked: a boolean switch, an http(s) URL, a keychain
   );
   expect(() =>
     validateConfig(withDev({ __chorus: { url: 'http://x', tokenKey: 'sk-ant secret value!' } })),
-  ).toThrow('__chorus.tokenKey must name a keychain entry');
+  ).toThrow('__chorus.tokenKey must name a keychain entry starting CHORUS_');
+  // The token it names is sent to the host, so it can never name another credential.
+  expect(() =>
+    validateConfig(withDev({ __chorus: { url: 'http://x', tokenKey: 'ANTHROPIC_API_KEY' } })),
+  ).toThrow('__chorus.tokenKey must name a keychain entry starting CHORUS_');
   expect(() =>
     validateConfig(withDev({ __oracle: { url: 'http://x', token: 'abc' } as never })),
   ).toThrow('__oracle.token is not a setting (url, tokenKey)');
 });
 
-test('devChorus is the host only while dev mode is on, its trailing slash dropped and its token key defaulted', () => {
-  expect(devChorus(withDev({ __chorus: { url: 'http://localhost:4901/' } }))).toBeUndefined();
-  expect(devChorus(withDev({ __devMode: true }))).toBeUndefined();
+test('devHost is a host only while dev mode is on, its trailing slash dropped and its token key defaulted', () => {
+  expect(devHost(withDev({ __chorus: { url: 'http://localhost:4901/' } }))).toBeUndefined();
+  expect(devHost(withDev({ __devMode: true }))).toBeUndefined();
   expect(
-    devChorus(withDev({ __devMode: true, __chorus: { url: 'http://localhost:4901/' } })),
+    devHost(withDev({ __devMode: true, __chorus: { url: 'http://localhost:4901/' } })),
   ).toEqual({ url: 'http://localhost:4901', tokenKey: 'CHORUS_DEV_TOKEN' });
   expect(
-    devChorus(withDev({ __devMode: true, __chorus: { url: 'http://h', tokenKey: 'MY_TOKEN' } })),
-  ).toEqual({ url: 'http://h', tokenKey: 'MY_TOKEN' });
+    devHost(withDev({ __devMode: true, __chorus: { url: 'http://h', tokenKey: 'CHORUS_MINE' } })),
+  ).toEqual({ url: 'http://h', tokenKey: 'CHORUS_MINE' });
+  expect(
+    devHost(withDev({ __devMode: true, __oracle: { url: 'http://o//' } }), '__oracle'),
+  ).toEqual({ url: 'http://o', tokenKey: 'CHORUS_DEV_TOKEN' });
 });
 
-test('a repository cannot turn dev mode on or point its hosts elsewhere, and says why', () => {
-  expect(() => validateRepositoryProject({ __devMode: true })).toThrow(
-    '__devMode is not a repository setting: Dev mode is this machine’s',
-  );
-  expect(() => validateRepositoryProject({ __chorus: { url: 'http://evil' } })).toThrow(
-    '__chorus is not a repository setting: Dev mode’s Chorus host is on this machine',
-  );
-  expect(() => validateRepositoryProject({ __oracle: { url: 'http://evil' } })).toThrow(
-    '__oracle is not a repository setting',
-  );
+test('a repository’s project.json cannot turn dev mode on or point its hosts elsewhere', () => {
+  for (const [key, value] of [
+    ['__devMode', true],
+    ['__chorus', { url: 'http://evil' }],
+    ['__oracle', { url: 'http://evil' }],
+  ] as const) {
+    const project = mkdtempSync(join(tmpdir(), 'foundry-dev-repo-'));
+    dirs.push(project);
+    mkdirSync(join(project, '.foundry'));
+    writeFileSync(join(project, '.foundry', 'project.json'), JSON.stringify({ [key]: value }));
+    const read = readRepositorySettings(project);
+    expect(read?.error).toBe(`${key} is not a repository setting: ${key} is not a project setting`);
+    expect(read && key in read).toBe(false);
+  }
 });
 
 test("the 'dev' section: true turns dev mode on, false or null off; a host is set, and null removes it", async () => {
@@ -90,4 +101,8 @@ test("the 'dev' section: true turns dev mode on, false or null off; a host is se
   await expect(store.patch('dev', { __chorus: { url: 'nope' } })).rejects.toThrow(
     '__chorus.url must be an http or https URL',
   );
+  await expect(store.patch('dev', { __devMode: 'yes' })).rejects.toThrow(
+    '__devMode must be true, false or null',
+  );
+  expect((await store.load()).__devMode).toBeUndefined();
 });

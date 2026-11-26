@@ -18,16 +18,15 @@ const errorOf = (body: unknown): string | undefined =>
  * network error, a timeout or a body off the contract is a failure with its reason.
  */
 export function directChorusTransport(
-  url: string,
+  base: string,
   token: () => Promise<string | undefined>,
 ): ChorusTransport {
-  const base = url.replace(/\/+$/, '');
   return async (operation, call, timeoutMs) => {
     const bearer = await token();
     if (!bearer)
       return {
         ok: false,
-        failure: 'rejected',
+        failure: 'no-token',
         message: 'no Chorus dev token in the keychain or environment',
       };
     let response: Response;

@@ -47,8 +47,7 @@ import type { ConversationPhase, ConversationWrapper } from '../conversations/ty
 import type { FeedbackPhase } from '../feedback/types';
 import { workerHostsFoundryTools } from '../models/registry';
 import { roleComposition, scopeOfRole } from '../prompts/instruction-settings';
-import type { ChorusCallOutcome, ChorusRemote } from '../providers/chorus-client';
-import { DECISION_DEADLINE_MS } from '../providers/decision-budget';
+import type { ChorusRemote } from '../providers/chorus-client';
 import type { SessionAdapter } from '../providers/session-adapter';
 import { hasWorkContent, needsNameCheck, needsPlan } from '../tools/thread-record';
 import {
@@ -81,7 +80,6 @@ import {
   planAskNote,
   STANDING_LAYERS,
 } from './chorus-reception';
-import { chorusRemoteMap } from './chorus-remote-map';
 import { resolveThreadWardens } from './configured-wardens';
 import {
   type BriefReport,
@@ -397,7 +395,8 @@ export interface ThreadRuntimeDeps {
   activateWardenHost?: (projectId: string) => void;
   /**
    * Dev mode's remote Chorus for a project (R-2026-11-25-05), asked on every Warden call: while it
-   * answers one, the project's advice, guard and review calls are `chorus.*` operations on it.
+   * answers one, the project's advice and guard calls are `chorus.*` operations on it, and its
+   * reviews are not sent (Chorus serves none yet).
    */
   chorusRemote?: (projectId: string) => ChorusRemote | undefined;
   /** Runtime config; agent kinds decide which dispatches get pre-message routing. */
@@ -633,7 +632,6 @@ export interface ToolEvidenceState {
 const FLOW_MIDDLEWARE_ID = 'flow-pre-message';
 const MAX_REVIEWED_IDS = 500;
 const MAX_QUEUED_REVIEWS = 8;
-const REMOTE_REVIEWS_KEPT = 16;
 interface ReviewState {
   status: string;
   job: ReviewJob;
@@ -951,8 +949,6 @@ class ThreadRuntimeImpl implements ThreadRuntime {
   private _disposed = false;
   /** Dev mode's remote Chorus for this thread's project, when dev mode can serve one. */
   private _chorusRemote: (() => ChorusRemote | undefined) | undefined;
-  /** One `chorus.review` per completed dispatch, shared by every Warden's review of it. */
-  private _remoteReviews = new Map<string, Promise<ChorusCallOutcome<'chorus.review'>>>();
   /** Whether stage hosts are wired (`ThreadRuntimeDeps.stageHost`): the default chain needs them. */
   private readonly _stageHosts: boolean;
   private _eventStream: EventStream | undefined;
@@ -3325,6 +3321,10 @@ class ThreadRuntimeImpl implements ThreadRuntime {
         );
         continue;
       }
+      if (this._chorusRemote?.()) {
+        this._deferReview(domain, input, 'not sent: dev mode’s remote Chorus serves no review yet');
+        continue;
+      }
       const queued = this._queuedEvidence.get(domain) ?? [];
       if (queued.length >= MAX_QUEUED_REVIEWS) {
         this._deferReview(
@@ -3355,40 +3355,6 @@ class ThreadRuntimeImpl implements ThreadRuntime {
         });
       this._learningQueues.set(domain, next);
     }
-  }
-
-  /**
-   * Dev mode's review: one `chorus.review` per completed dispatch for every Warden at once, its
-   * request observed for each before the answer, and each Warden's update read off the shared answer.
-   * The commit path stays the local one, so the Librarian is still the only writer.
-   */
-  private async _remoteReview(
-    remote: ChorusRemote,
-    domain: string,
-    input: ReviewInput,
-    maxChars: number,
-    observeRequest: (evidence: PhaseRequestEvidence) => void,
-  ): Promise<ReviewResult> {
-    const call = chorusRemoteMap.reviewCall({
-      work: input,
-      threadState: this.librarian.layer.content,
-      asked: [...this.wardens].map(([id, w]) => ({
-        domain: id,
-        threadKnowledge: w.threadKnowledge.content,
-      })),
-      deadlineMs: DECISION_DEADLINE_MS,
-    });
-    observeRequest(chorusRemoteMap.reviewEvidence(call, Date.now()));
-    const key = input.evidence.id;
-    let pending = this._remoteReviews.get(key);
-    if (!pending) {
-      pending = remote.call('chorus.review', call);
-      this._remoteReviews.set(key, pending);
-      const oldest = this._remoteReviews.keys().next().value;
-      if (this._remoteReviews.size > REMOTE_REVIEWS_KEPT && oldest !== undefined)
-        this._remoteReviews.delete(oldest);
-    }
-    return chorusRemoteMap.review(await pending, domain, maxChars);
   }
 
   private async _reviewWith(domain: string, warden: Warden, input: ReviewInput): Promise<void> {
@@ -3668,121 +3634,116 @@ class ThreadRuntimeImpl implements ThreadRuntime {
       if (registered) void inspect();
       return result;
     };
-    const observeRequest = (evidence: PhaseRequestEvidence) => {
-      reviewRequest = evidence;
-      // Durable before the answer or any deadline: the exact request under the job's own identity. This
-      // record carries no capacity or native claim, so restoration never reads it as closure evidence.
-      // Journal-only: it is not a learning outcome, so it never enters the Warden's in-memory history, and a
-      // failing journal makes the request status explicit instead of breaking the review.
-      const requested: LearningRecord = {
-        decision: 'requested',
-        reason: 'review request supplied to the provider; answer pending',
-        evidence: job.evidence,
-        author,
-        job,
-        eligibility: lease.closed ? 'closed' : 'open',
-        request: request(),
-        at: Date.now(),
-        owner: { threadId: job.threadId, projectId: job.projectId },
-        generation: job.generation,
-      };
-      // Absent optional persistence is recorded and the review proceeds; a configured journal that refuses the
-      // supplied input keeps its original failure and refuses admission: no provider is called for this job.
-      try {
-        state.requestJournal = this._journalLearning(
-          freezeOwned(this._learningSignal(domain, requested)),
-        )
-          ? 'durable'
-          : 'absent';
-      } catch (error) {
-        state.requestJournal = 'failed';
-        throw Object.assign(
-          new Error(
-            `review request journal failed; not admitted: ${(error as Error)?.message ?? error}`,
-          ),
-          { admission: 'not-admitted', cause: error },
-        );
-      }
-    };
     let outcome: ReviewResult;
     try {
-      const remote = this._chorusRemote?.();
-      const local = (
-        remote
-          ? this._remoteReview(remote, domain, input, knowledge.maxChars, observeRequest)
-          : warden.review(
-              freezeOwned(structuredClone(input)),
-              job,
-              {
-                owner: freezeOwned({
-                  threadId: this.thread.id,
-                  projectId: this.thread.meta.projectId,
-                  generation: job.generation,
-                  messageId: job.evidence.messageId,
-                  dispatchId: job.evidence.id,
-                  reviewJobId: job.id,
-                }),
-                register: (native) => {
-                  if (
-                    lease.closed ||
-                    !this.reviewEligible(job) ||
-                    this._clock() >= state.deadlineAt
-                  )
-                    throw Error('Review eligibility closed before native write; not admitted');
-                  const expected = {
-                    threadId: job.threadId,
-                    projectId: job.projectId,
-                    generation: job.generation,
-                    messageId: job.evidence.messageId,
-                    dispatchId: job.evidence.id,
-                    reviewJobId: job.id,
-                    providerSessionKey: auxiliarySessionId(
-                      job.threadId,
-                      `review:${job.generation}:domain:${domain}`,
-                    ),
-                  };
-                  if (!native.admissionId || registered || !sameNativeOwner(native.owner, expected))
-                    throw Error('Foreign or duplicate native review registration; not admitted');
-                  if (
-                    !this._journalLearning(
-                      freezeOwned(
-                        this._learningSignal(domain, {
-                          ...record('native-admission'),
-                          owner: { threadId: job.threadId, projectId: job.projectId },
-                          generation: job.generation,
-                          native,
-                        }),
-                      ),
-                    )
-                  )
-                    throw Error('Native review requires a durable ownership journal; not admitted');
-                  registered = freezeOwned(native);
-                  state.native = registered;
-                },
-                observe: (native) => {
-                  if (
-                    !registered ||
-                    native.admissionId !== registered.admissionId ||
-                    !sameNativeOwner(native.owner, registered.owner)
-                  )
-                    return;
-                  auditNative(native);
-                  // Inspection happens after the producer callback; it cannot veto native completion.
-                  void Promise.resolve().then(inspect);
-                },
-              },
-              { composition, observeRequest },
-            )
-      ).then(localFinished, (error) =>
-        localFinished({
-          decision: 'error',
-          facts: [],
-          reason: String(error).slice(0, 1000),
-          ...((error as { admission?: unknown })?.admission === 'not-admitted'
-            ? { admission: 'not-admitted' as const, capacity: 'settled' as const }
-            : {}),
-        }),
-      );
+      const local = warden
+        .review(
+          freezeOwned(structuredClone(input)),
+          job,
+          {
+            owner: freezeOwned({
+              threadId: this.thread.id,
+              projectId: this.thread.meta.projectId,
+              generation: job.generation,
+              messageId: job.evidence.messageId,
+              dispatchId: job.evidence.id,
+              reviewJobId: job.id,
+            }),
+            register: (native) => {
+              if (lease.closed || !this.reviewEligible(job) || this._clock() >= state.deadlineAt)
+                throw Error('Review eligibility closed before native write; not admitted');
+              const expected = {
+                threadId: job.threadId,
+                projectId: job.projectId,
+                generation: job.generation,
+                messageId: job.evidence.messageId,
+                dispatchId: job.evidence.id,
+                reviewJobId: job.id,
+                providerSessionKey: auxiliarySessionId(
+                  job.threadId,
+                  `review:${job.generation}:domain:${domain}`,
+                ),
+              };
+              if (!native.admissionId || registered || !sameNativeOwner(native.owner, expected))
+                throw Error('Foreign or duplicate native review registration; not admitted');
+              if (
+                !this._journalLearning(
+                  freezeOwned(
+                    this._learningSignal(domain, {
+                      ...record('native-admission'),
+                      owner: { threadId: job.threadId, projectId: job.projectId },
+                      generation: job.generation,
+                      native,
+                    }),
+                  ),
+                )
+              )
+                throw Error('Native review requires a durable ownership journal; not admitted');
+              registered = freezeOwned(native);
+              state.native = registered;
+            },
+            observe: (native) => {
+              if (
+                !registered ||
+                native.admissionId !== registered.admissionId ||
+                !sameNativeOwner(native.owner, registered.owner)
+              )
+                return;
+              auditNative(native);
+              // Inspection happens after the producer callback; it cannot veto native completion.
+              void Promise.resolve().then(inspect);
+            },
+          },
+          {
+            composition,
+            observeRequest: (evidence) => {
+              reviewRequest = evidence;
+              // Durable before the answer or any deadline: the exact request under the job's own identity. This
+              // record carries no capacity or native claim, so restoration never reads it as closure evidence.
+              // Journal-only: it is not a learning outcome, so it never enters the Warden's in-memory history, and a
+              // failing journal makes the request status explicit instead of breaking the review.
+              const requested: LearningRecord = {
+                decision: 'requested',
+                reason: 'review request supplied to the provider; answer pending',
+                evidence: job.evidence,
+                author,
+                job,
+                eligibility: lease.closed ? 'closed' : 'open',
+                request: request(),
+                at: Date.now(),
+                owner: { threadId: job.threadId, projectId: job.projectId },
+                generation: job.generation,
+              };
+              // Absent optional persistence is recorded and the review proceeds; a configured journal that refuses the
+              // supplied input keeps its original failure and refuses admission: no provider is called for this job.
+              try {
+                state.requestJournal = this._journalLearning(
+                  freezeOwned(this._learningSignal(domain, requested)),
+                )
+                  ? 'durable'
+                  : 'absent';
+              } catch (error) {
+                state.requestJournal = 'failed';
+                throw Object.assign(
+                  new Error(
+                    `review request journal failed; not admitted: ${(error as Error)?.message ?? error}`,
+                  ),
+                  { admission: 'not-admitted', cause: error },
+                );
+              }
+            },
+          },
+        )
+        .then(localFinished, (error) =>
+          localFinished({
+            decision: 'error',
+            facts: [],
+            reason: String(error).slice(0, 1000),
+            ...((error as { admission?: unknown })?.admission === 'not-admitted'
+              ? { admission: 'not-admitted' as const, capacity: 'settled' as const }
+              : {}),
+          }),
+        );
       // Native completion and the local/RPC waiter are independent observations.
       // Both are retained, but only this one continuation can promote a candidate.
       outcome = await Promise.race([local, nativeResult]);

@@ -52,12 +52,12 @@
   {
     "path": "__chorus.url",
     "scope": "foundry",
-    "description": ""
+    "description": "The host's base URL (http or https), e.g. `http://localhost:4900`."
   },
   {
     "path": "__chorus.tokenKey",
     "scope": "foundry",
-    "description": ""
+    "description": "The keychain entry (or environment variable) holding its bearer token, default `CHORUS_DEV_TOKEN`; Chorus's starts `CHORUS_`. Never the token."
   },
   {
     "path": "__oracle",
@@ -67,12 +67,12 @@
   {
     "path": "__oracle.url",
     "scope": "foundry",
-    "description": ""
+    "description": "The host's base URL (http or https), e.g. `http://localhost:4900`."
   },
   {
     "path": "__oracle.tokenKey",
     "scope": "foundry",
-    "description": ""
+    "description": "The keychain entry (or environment variable) holding its bearer token, default `CHORUS_DEV_TOKEN`; Chorus's starts `CHORUS_`. Never the token."
   },
   {
     "path": "kingdomAccess",

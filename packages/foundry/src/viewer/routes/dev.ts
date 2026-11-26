@@ -5,17 +5,27 @@
  */
 import type { Hono } from 'hono';
 import type { Keychain } from '../../secrets/keychain';
-import { type ConfigStore, DEV_TOKEN_KEY_DEFAULT, type DevRemoteSettings } from '../config';
+import {
+  type ConfigStore,
+  DEV_TOKEN_KEY_DEFAULT,
+  type DevRemoteSettings,
+  devHost,
+} from '../config';
 
 const PROBE_TIMEOUT_MS = 3_000;
 
 /** One dev-mode host's probe: whether its health route answered, and whether its token entry is held. */
-async function probe(remote: DevRemoteSettings | undefined, path: string, keychain: Keychain) {
+async function probe(
+  remote: Required<DevRemoteSettings> | undefined,
+  path: string,
+  keychain: Keychain,
+) {
   if (!remote) return null;
-  const url = `${remote.url.replace(/\/+$/, '')}${path}`;
-  const tokenKey = remote.tokenKey ?? DEV_TOKEN_KEY_DEFAULT;
+  const url = `${remote.url}${path}`;
+  const { tokenKey } = remote;
+  // Foundry reads the token as itself, so only an entry it may read (or the variable) is held.
   const tokenHeld =
-    keychain.list().some((entry) => entry.name === tokenKey) || Boolean(process.env[tokenKey]);
+    keychain.entry(tokenKey)?.holder === 'foundry' || Boolean(process.env[tokenKey]);
   try {
     const res = await fetch(url, { signal: AbortSignal.timeout(PROBE_TIMEOUT_MS) });
     const detail = (await res.text()).slice(0, 500);
@@ -25,14 +35,17 @@ async function probe(remote: DevRemoteSettings | undefined, path: string, keycha
   }
 }
 
-/** Settings → Dev: probe dev mode's Chorus (`/readyz`) and Oracle (`/healthz`) hosts. */
+/** Settings → Dev: probe dev mode's Chorus (`/readyz`) and Oracle (`/healthz`) hosts, while dev mode is on. */
 export function registerDevRoutes(app: Hono, configStore: ConfigStore, keychain: Keychain) {
   app.get('/api/dev/probe', async (c) => {
     const config = await configStore.load();
+    const defaultTokenKey = DEV_TOKEN_KEY_DEFAULT;
+    if (config.__devMode !== true)
+      return c.json({ devMode: false, defaultTokenKey, chorus: null, oracle: null });
     const [chorus, oracle] = await Promise.all([
-      probe(config.__chorus, '/readyz', keychain),
-      probe(config.__oracle, '/healthz', keychain),
+      probe(devHost(config, '__chorus'), '/readyz', keychain),
+      probe(devHost(config, '__oracle'), '/healthz', keychain),
     ]);
-    return c.json({ devMode: config.__devMode === true, chorus, oracle });
+    return c.json({ devMode: true, defaultTokenKey, chorus, oracle });
   });
 }

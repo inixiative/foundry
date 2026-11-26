@@ -65,10 +65,12 @@ import {
 } from '../classify';
 import type { ChorusRemote } from '../providers/chorus-client';
 import { DECISION_DEADLINE_MS, QUOTA_PAUSED_REFUSAL } from '../providers/decision-budget';
-import { chorusRemoteMap, type RemoteAdvice } from './chorus-remote-map';
+import { chorusMoment } from './chorus-moment';
 import type { Librarian } from './librarian';
 import {
   type AdviceRequestEvidence,
+  type AdviseOpts,
+  type AdviseResult,
   activityTools,
   adviceOutcomeOf,
   type CacheComposition,
@@ -436,11 +438,14 @@ export interface FlowOrchestratorConfig extends FlowTimingConfig {
   /** Signal bus for emitting orchestration events. */
   signals: SignalBus;
   /**
-   * Dev mode's remote Chorus for this thread's project, asked on every call so turning it on or off
-   * takes effect on the next one: when it answers one, every Warden call is a `chorus.*` operation on it.
+   * Dev mode's remote Chorus (R-2026-11-25-05), asked at every moment: while it answers one, each
+   * moment's advice and each turn's guard is one `chorus.*` call shared by the Wardens asked.
    */
   chorus?: () => ChorusRemote | undefined;
 }
+
+/** How one Warden is asked at a moment: its own `advise`, or its share of the moment's remote call. */
+type AskAdvice = (domain: string, opts: AdviseOpts) => Promise<AdviseResult>;
 
 // ---------------------------------------------------------------------------
 // Flow Orchestrator
@@ -516,7 +521,6 @@ export class FlowOrchestrator {
     this._librarian = config.librarian;
     this._stack = config.stack;
     this._signals = config.signals;
-    this._chorus = config.chorus;
     this._maxAdviseParallel = positiveInteger(
       'maxAdviseParallel',
       config.maxAdviseParallel,
@@ -529,6 +533,7 @@ export class FlowOrchestrator {
     )!;
     this._planTimeoutMs = positiveFiniteMs('planTimeoutMs', config.planTimeoutMs, undefined);
     this._contributionBudget = positiveBudget('contributionBudget', config.contributionBudget);
+    this._chorus = config.chorus;
 
     // Subscribe to signals that invalidate the current plan
     this._unsubscribes.push(this._signals.onAny((signal) => this._handleInvalidation(signal)));
@@ -654,22 +659,12 @@ export class FlowOrchestrator {
         ? this.catchUp.message(message, currentMessage?.messageId)
         : this.catchUp.current;
 
-    const remote = this._chorus?.();
-    if (remote) {
-      const contributions = await this._assessRemote(
-        remote,
-        participants,
-        input,
-        clock,
-        'user-message',
-        (domain) => this.catchUp.missedBy(domain, seq),
-      );
-      this.catchUp.answered(seq, contributions);
-      return this._compose(input, contributions, outstanding, start, fresh);
-    }
-
     // 2. Assess: the user-message trigger point asks every Warden; each decides under the charter
     //    (bounded pool).
+    const missed = new Map(
+      participants.map((p) => [p.warden.domain, this.catchUp.missedBy(p.warden.domain, seq)]),
+    );
+    const ask = this._remoteAdvice('user-message', input, participants, missed);
     const assessments = runBounded(participants, this._maxAdviseParallel, (p) =>
       this._assess(
         p,
@@ -677,8 +672,9 @@ export class FlowOrchestrator {
         clock,
         outstanding,
         'user-message',
-        this.catchUp.missedBy(p.warden.domain, seq),
+        missed.get(p.warden.domain),
         true,
+        ask,
       ),
     );
     const { contributions, asks } = contributionsWithoutAsks(await assessments);
@@ -813,17 +809,12 @@ export class FlowOrchestrator {
     const participants = this._participants().filter((p) => !only || only.has(p.warden.domain));
     const clock = this._clock(start);
     const outstanding: OutstandingCall[] = [];
-    const remote = this._chorus?.();
-    const { contributions, asks } = remote
-      ? {
-          contributions: await this._assessRemote(remote, participants, input, clock, trigger),
-          asks: new Map<string, DebugReasonAsk>(),
-        }
-      : contributionsWithoutAsks(
-          await runBounded(participants, this._maxAdviseParallel, (p) =>
-            this._assess(p, input, clock, outstanding, trigger),
-          ),
-        );
+    const ask = this._remoteAdvice(trigger, input, participants);
+    const { contributions, asks } = contributionsWithoutAsks(
+      await runBounded(participants, this._maxAdviseParallel, (p) =>
+        this._assess(p, input, clock, outstanding, trigger, undefined, false, ask),
+      ),
+    );
     return this._sealedWithAsks(
       deepFreeze({
         input,
@@ -849,6 +840,30 @@ export class FlowOrchestrator {
     return this._pendingNotes;
   }
 
+  /** The moment's shared remote call, when dev mode's Chorus serves it; otherwise each Warden advises. */
+  private _remoteAdvice(
+    trigger: AdviceTrigger,
+    input: PlanInput,
+    participants: readonly Participant[],
+    missed?: ReadonlyMap<string, EarlierMessages | undefined>,
+  ): AskAdvice | undefined {
+    const remote = this._chorus?.();
+    if (!remote) return undefined;
+    return chorusMoment.advice(remote, {
+      trigger,
+      message: input.message,
+      threadState: input.threadState,
+      members: participants.map((p) => {
+        const earlier = missed?.get(p.warden.domain);
+        return {
+          domain: p.warden.domain,
+          threadKnowledge: p.threadKnowledge,
+          ...(earlier ? { earlier } : {}),
+        };
+      }),
+    });
+  }
+
   private async _assess(
     p: Participant,
     input: PlanInput,
@@ -858,6 +873,8 @@ export class FlowOrchestrator {
     earlier?: EarlierMessages,
     /** A user message's own advice: served warm or skipped, and what it skips it catches up on. */
     catchingUp = false,
+    /** Dev mode's remote Chorus asked instead: it holds the Warden's instructions and knowledge. */
+    remote?: AskAdvice,
   ): Promise<AssessedContribution> {
     const startedAt = Date.now();
     // Three separately owned segments: configured instructions, configured
@@ -865,8 +882,8 @@ export class FlowOrchestrator {
     // thread. The global Librarian thread-state is passed to advise as a
     // fourth input but is never presented as the domain's thread knowledge.
     const segments: ContributionSegments = {
-      instructions: p.warden.advisePrompt,
-      domainKnowledge: p.cache,
+      instructions: remote ? '' : p.warden.advisePrompt,
+      domainKnowledge: remote ? '' : p.cache,
       threadKnowledge: p.threadKnowledge,
     };
     const provenance = (): ContributionProvenance => ({
@@ -934,33 +951,36 @@ export class FlowOrchestrator {
     const failed = (cause: Extract<AdviceOutcome, { status: 'failed' }>['cause']) =>
       ({ status: 'failed', cause }) as const;
 
-    if (!p.cache) return decided(notSent('cold'), { reason: 'cold-cache' });
+    if (!remote && !p.cache) return decided(notSent('cold'), { reason: 'cold-cache' });
     // Queued behind the pool until the plan deadline passed: never sent.
     if (clock.passed()) return decided(notSent('not-admitted'), { reason: 'deadline-queued' });
 
-    const task = p.warden
-      .advise(input.message, input.threadState, {
-        cache: p.cache,
-        cacheComposition: p.cacheComposition,
-        threadKnowledge: p.threadKnowledge,
-        observeRequest: (evidence) => {
-          observed = evidence;
-        },
-        observeServed: (value) => {
-          served = value;
-        },
-        timeoutMs: Math.min(this._adviseTimeoutMs, clock.remaining() ?? Number.POSITIVE_INFINITY),
-        trigger,
-        ...(earlier ? { earlier } : {}),
-        ...(catchingUp ? { heldOnly: true } : {}),
-      })
-      .then(
-        (result) => ({ kind: 'result' as const, result }),
-        (err: unknown) => ({
-          kind: 'error' as const,
-          error: (err as Error)?.message ?? String(err),
-        }),
-      );
+    const opts: AdviseOpts = {
+      cache: p.cache,
+      cacheComposition: p.cacheComposition,
+      threadKnowledge: p.threadKnowledge,
+      observeRequest: (evidence) => {
+        observed = evidence;
+      },
+      observeServed: (value) => {
+        served = value;
+      },
+      timeoutMs: Math.min(this._adviseTimeoutMs, clock.remaining() ?? Number.POSITIVE_INFINITY),
+      trigger,
+      ...(earlier ? { earlier } : {}),
+      ...(catchingUp ? { heldOnly: true } : {}),
+    };
+    const task = (
+      remote
+        ? remote(p.warden.domain, opts)
+        : p.warden.advise(input.message, input.threadState, opts)
+    ).then(
+      (result) => ({ kind: 'result' as const, result }),
+      (err: unknown) => ({
+        kind: 'error' as const,
+        error: (err as Error)?.message ?? String(err),
+      }),
+    );
     const raced = await this._raceDeadline(task, this._adviseTimeoutMs, 'advise', clock);
 
     if (raced.timedOut) {
@@ -1006,162 +1026,6 @@ export class FlowOrchestrator {
       ...(result.pointer ? { pointer: result.pointer } : {}),
       ...repaired,
       ...staged,
-    });
-  }
-
-  /**
-   * Dev mode: one `chorus.*` call for every participant, instead of one call each. Chorus holds the
-   * Wardens, so there is no local cold gate and nothing outstanding; the plan deadline still holds,
-   * and the Wardens are asked with the longest run of earlier messages any of them missed.
-   */
-  private async _assessRemote(
-    remote: ChorusRemote,
-    participants: readonly Participant[],
-    input: PlanInput,
-    clock: PlanClock,
-    trigger: AdviceTrigger,
-    missedBy?: (domain: string) => EarlierMessages | undefined,
-  ): Promise<WardenContribution[]> {
-    const startedAt = Date.now();
-    let earlier: EarlierMessages | undefined;
-    for (const p of participants) {
-      const missed = missedBy?.(p.warden.domain);
-      if (!missed) continue;
-      if (
-        earlier &&
-        missed.messages.length + missed.dropped <= earlier.messages.length + earlier.dropped
-      )
-        continue;
-      earlier = missed;
-    }
-    const contribution = (p: Participant, a: RemoteAdvice): WardenContribution => ({
-      domain: p.warden.domain,
-      outcome: a.outcome,
-      trigger,
-      ...(a.reason ? { reason: a.reason } : {}),
-      layers: a.layers,
-      snippets: a.snippets,
-      confidence: a.confidence,
-      ...(a.pointer ? { pointer: a.pointer } : {}),
-      ...(a.classified ? { classified: a.classified } : {}),
-      ...(a.catchesUp ? { catchesUp: true as const } : {}),
-      ...(earlier && a.request.status === 'supplied'
-        ? { earlier: { count: earlier.messages.length, dropped: earlier.dropped } }
-        : {}),
-      // Chorus holds the instructions and domain knowledge; only the thread knowledge goes from here.
-      segments: { instructions: '', domainKnowledge: '', threadKnowledge: p.threadKnowledge },
-      provenance: {
-        inputHash: input.hash,
-        cacheHash: p.cacheHash,
-        cacheState: p.cacheState,
-        cacheLastWarmed: p.cacheLastWarmed,
-        threadStateHash: input.threadStateHash,
-        threadKnowledgeRevision: p.threadKnowledgeRevision,
-        threadKnowledgeHash: p.threadKnowledgeHash,
-        startedAt,
-        finishedAt: Date.now(),
-        elapsedMs: Date.now() - startedAt,
-      },
-      request: a.request,
-    });
-    if (clock.passed())
-      return participants.map((p) =>
-        contribution(p, {
-          outcome: { status: 'not-sent', cause: 'not-admitted' },
-          reason: 'deadline-queued',
-          layers: [],
-          snippets: [],
-          confidence: 0,
-          request: { status: 'not-sent', phase: 'advice', reason: 'deadline-queued' },
-        }),
-      );
-    const asked = participants.map((p) => ({
-      domain: p.warden.domain,
-      threadKnowledge: p.threadKnowledge,
-    }));
-    const prepared = chorusRemoteMap.adviceCall({
-      trigger,
-      moment: input.message,
-      threadState: input.threadState,
-      asked,
-      deadlineMs: Math.min(this._adviseTimeoutMs, clock.remaining() ?? Number.POSITIVE_INFINITY),
-      ...(earlier ? { earlier } : {}),
-      capturedAt: startedAt,
-    });
-    const outcome = prepared.evidence.size
-      ? await remote.call(prepared.operation, prepared.input)
-      : ({ ok: false, failure: 'rejected', message: 'no Warden Chorus can be asked' } as const);
-    const answers = chorusRemoteMap.advice(
-      prepared,
-      outcome,
-      asked.map((a) => a.domain),
-      trigger === 'user-message' && missedBy !== undefined,
-    );
-    return participants.map((p) => contribution(p, answers.get(p.warden.domain)!));
-  }
-
-  /**
-   * Dev mode's guard: one `chorus.guard` call for the gated Wardens. Each Warden's own slice of the call
-   * is handed to `onRequest` first; one it refuses is not asked.
-   */
-  private async _guardRemote(
-    remote: ChorusRemote,
-    activity: TurnActivity,
-    threadState: string,
-    wardens: readonly Warden[],
-    frozen: ReadonlyArray<{ threadKnowledge: string; threadKnowledgeRevision: number }>,
-    hooks: GuardPhaseHooks | undefined,
-  ): Promise<GuardResult[]> {
-    if (!wardens.length) return [];
-    const asked = wardens.map((w, i) => ({
-      domain: w.domain,
-      threadKnowledge: frozen[i]!.threadKnowledge,
-    }));
-    const call = (domains: typeof asked) =>
-      chorusRemoteMap.guardCall({
-        calls: activity.observations,
-        threadState,
-        asked: domains,
-        deadlineMs: this._adviseTimeoutMs,
-        capturedAt: Date.now(),
-      });
-    const refused = new Map<string, string>();
-    const first = call(asked);
-    wardens.forEach((w, i) => {
-      const evidence = first.evidence.get(w.domain);
-      if (!evidence) return;
-      try {
-        hooks?.onRequest?.(w.domain, evidence, frozen[i]!.threadKnowledgeRevision);
-      } catch (err) {
-        refused.set(w.domain, String((err as Error)?.message ?? err).slice(0, 200));
-      }
-    });
-    const sent = asked.filter((a) => !refused.has(a.domain));
-    const prepared = refused.size ? call(sent) : first;
-    const outcome = prepared.evidence.size
-      ? await remote.call('chorus.guard', prepared.input)
-      : ({ ok: false, failure: 'rejected', message: 'no Warden Chorus can be asked' } as const);
-    const answers = chorusRemoteMap.guard(
-      prepared,
-      outcome,
-      sent.map((a) => a.domain),
-    );
-    return wardens.map((w, i): GuardResult => {
-      const reason = refused.get(w.domain);
-      const evidence = first.evidence.get(w.domain);
-      if (reason !== undefined && evidence)
-        return {
-          findings: [],
-          outcome: { status: 'not-sent', cause: 'not-admitted' },
-          admission: 'not-admitted',
-          error: reason,
-          threadKnowledgeRevision: frozen[i]!.threadKnowledgeRevision,
-          request: suppliedRequest(evidence),
-        };
-      return {
-        ...answers.get(w.domain)!,
-        threadKnowledgeRevision: frozen[i]!.threadKnowledgeRevision,
-      };
     });
   }
 
@@ -1459,48 +1323,59 @@ export class FlowOrchestrator {
     // the caller's hook before any answer). A guard that throws is a failed check, never an all-clear; if it
     // threw before its request was observed, the request is unobserved, not "not sent".
     const observed: Array<PhaseRequestEvidence | null> = domainsToCheck.map(() => null);
+    // Dev mode's remote Chorus checks every gated Warden in one call, built once and sent as journalled.
     const remote = this._chorus?.();
-    const results: GuardResult[] = remote
-      ? await this._guardRemote(remote, activity, threadState, domainsToCheck, frozen, hooks)
-      : await Promise.all(
-          domainsToCheck.map((d, i) =>
-            d
-              .guard(activity, threadState, {
-                ...frozen[i],
-                observeRequest: (evidence) => {
-                  observed[i] = evidence;
-                  hooks?.onRequest?.(d.domain, evidence, frozen[i].threadKnowledgeRevision);
+    const remoteGuard = remote
+      ? chorusMoment.guard(remote, {
+          activity,
+          threadState,
+          members: domainsToCheck.map((d, i) => ({
+            domain: d.domain,
+            threadKnowledge: frozen[i].threadKnowledge,
+          })),
+          deadlineMs: this._adviseTimeoutMs,
+        })
+      : undefined;
+    const results: GuardResult[] = await Promise.all(
+      domainsToCheck.map((d, i) => {
+        const opts = {
+          ...frozen[i],
+          observeRequest: (evidence: PhaseRequestEvidence) => {
+            observed[i] = evidence;
+            hooks?.onRequest?.(d.domain, evidence, frozen[i].threadKnowledgeRevision);
+          },
+        };
+        return (
+          remoteGuard ? remoteGuard(d.domain, opts) : d.guard(activity, threadState, opts)
+        ).catch((err: unknown): GuardResult => {
+          // A refusal raised at the boundary (e.g. the caller's journal refused the request) is not a provider error:
+          // no provider call was admitted. The prepared input is retained either way.
+          const refused = (err as { admission?: unknown })?.admission === 'not-admitted';
+          return {
+            findings: [],
+            outcome: refused
+              ? { status: 'not-sent', cause: 'not-admitted' }
+              : { status: 'failed', cause: 'provider-error' },
+            admission: refused ? 'not-admitted' : 'unknown',
+            error: String((err as Error)?.message ?? err).slice(0, 200),
+            threadKnowledgeRevision: frozen[i].threadKnowledgeRevision,
+            request: observed[i]
+              ? {
+                  status: 'supplied',
+                  phase: observed[i]!.phase,
+                  providerId: observed[i]!.providerId,
+                  messages: observed[i]!.messages,
+                  capturedAt: observed[i]!.capturedAt,
+                }
+              : {
+                  status: 'unobserved',
+                  phase: 'guard',
+                  reason: 'guard threw before its request was observed',
                 },
-              })
-              .catch((err: unknown): GuardResult => {
-                // A refusal raised at the boundary (e.g. the caller's journal refused the request) is not a provider error:
-                // no provider call was admitted. The prepared input is retained either way.
-                const refused = (err as { admission?: unknown })?.admission === 'not-admitted';
-                return {
-                  findings: [],
-                  outcome: refused
-                    ? { status: 'not-sent', cause: 'not-admitted' }
-                    : { status: 'failed', cause: 'provider-error' },
-                  admission: refused ? 'not-admitted' : 'unknown',
-                  error: String((err as Error)?.message ?? err).slice(0, 200),
-                  threadKnowledgeRevision: frozen[i].threadKnowledgeRevision,
-                  request: observed[i]
-                    ? {
-                        status: 'supplied',
-                        phase: observed[i]!.phase,
-                        providerId: observed[i]!.providerId,
-                        messages: observed[i]!.messages,
-                        capturedAt: observed[i]!.capturedAt,
-                      }
-                    : {
-                        status: 'unobserved',
-                        phase: 'guard',
-                        reason: 'guard threw before its request was observed',
-                      },
-                };
-              }),
-          ),
-        );
+          };
+        });
+      }),
+    );
 
     // Collect findings and per-domain outcomes
     const findings: GuardFinding[] = [];

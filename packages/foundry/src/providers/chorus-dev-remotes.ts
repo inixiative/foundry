@@ -4,15 +4,10 @@
  * @partOf feature:wardens
  */
 import type { ChorusProjectActivityResult } from '@inixiative/signet';
+import type { DevRemoteSettings } from '../viewer/config';
 import { type ChorusRemote, createChorusRemote } from './chorus-client';
 import { directChorusTransport } from './chorus-direct-transport';
 import type { ProjectHostState } from './project-warden-hosts';
-
-/** Dev mode's Chorus (`__chorus`, only while `__devMode` is on): its URL and the keychain entry naming its token. */
-export interface ChorusDevSetting {
-  readonly url: string;
-  readonly tokenKey: string;
-}
 
 /** The host state a remote Chorus reports for one project, as the viewer shows a local host's. */
 const hostState = (
@@ -35,26 +30,18 @@ const hostState = (
 /**
  * Dev mode's remote Choruses, one per project, read from the live settings on every ask: dev mode
  * turned on, off or pointed elsewhere takes effect on the next Warden call. The token is read by its
- * keychain name (falling back to the environment variable of that name) and kept once found. Each
+ * name on every call, so a rotated or removed one takes effect at once. Each
  * project's host state comes from `chorus.projectActivity`, sent when a thread of it starts.
  */
 export function chorusDevRemotes(options: {
-  readonly setting: () => ChorusDevSetting | undefined;
+  readonly setting: () => Required<DevRemoteSettings> | undefined;
   readonly readToken: (name: string) => Promise<string | undefined>;
   readonly log?: (message: string) => void;
   readonly onHost?: (projectId: string, state: ProjectHostState) => void;
 }) {
   const remotes = new Map<string, ChorusRemote>();
-  const tokens = new Map<string, string>();
   const hosts = new Map<string, ProjectHostState>();
   let generation = 0;
-  const token = (name: string) => async () => {
-    const held = tokens.get(name);
-    if (held) return held;
-    const read = await options.readToken(name);
-    if (read) tokens.set(name, read);
-    return read;
-  };
   const remote = (projectId: string): ChorusRemote | undefined => {
     const setting = options.setting();
     if (!setting) return undefined;
@@ -64,8 +51,7 @@ export function chorusDevRemotes(options: {
     const made = createChorusRemote({
       projectId,
       endpoint: setting.url,
-      transport: directChorusTransport(setting.url, token(setting.tokenKey)),
-      ...(options.log ? { log: options.log } : {}),
+      transport: directChorusTransport(setting.url, () => options.readToken(setting.tokenKey)),
     });
     remotes.set(key, made);
     return made;

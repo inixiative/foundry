@@ -13,12 +13,13 @@ import {
 } from '@inixiative/signet';
 
 /**
- * A call that never brought back a Chorus outcome: no answer in time, the host could not be reached,
- * it turned the request away (`401`, `404`), or what it answered was not the contract's outcome.
+ * A call that never brought back a Chorus outcome: no token to send it with, no answer in time, the
+ * host could not be reached, it turned the request away (`401`, `404`), or what it answered was not
+ * the contract's outcome.
  */
 export interface ChorusFailure {
   readonly ok: false;
-  readonly failure: 'timeout' | 'unreachable' | 'rejected' | 'invalid-response';
+  readonly failure: 'no-token' | 'timeout' | 'unreachable' | 'rejected' | 'invalid-response';
   readonly message: string;
 }
 
@@ -56,25 +57,13 @@ const ANSWER_SLACK_MS = 5_000;
 /**
  * A project's remote Chorus over `transport`. Every input is checked against its signet schema before
  * it leaves (a bad one is `invalid_request`, never sent); a call waits its `deadlineMs` and a few seconds
- * more, or the operation's own timeout when it has none; and a changed roster revision is logged.
+ * more, or the operation's own timeout when it has none.
  */
 export function createChorusRemote(options: {
   readonly projectId: string;
   readonly endpoint: string;
   readonly transport: ChorusTransport;
-  readonly log?: (message: string) => void;
 }): ChorusRemote {
-  let rosterRevision: string | undefined;
-  const noteRoster = (outcome: ChorusCallOutcome<ChorusOperation>) => {
-    if (!outcome.ok || !('result' in outcome)) return;
-    const revision = (outcome.result as { rosterRevision?: string }).rosterRevision;
-    if (!revision || revision === rosterRevision) return;
-    if (rosterRevision)
-      options.log?.(
-        `[Chorus] ${options.projectId}: roster revision changed ${rosterRevision} → ${revision}`,
-      );
-    rosterRevision = revision;
-  };
   return {
     projectId: options.projectId,
     endpoint: options.endpoint,
@@ -95,13 +84,7 @@ export function createChorusRemote(options: {
         deadlineMs === undefined
           ? chorusOperationTimeoutMs[operation]
           : deadlineMs + ANSWER_SLACK_MS;
-      const outcome = await options.transport(
-        operation,
-        { projectId: options.projectId, input },
-        timeoutMs,
-      );
-      noteRoster(outcome);
-      return outcome;
+      return options.transport(operation, { projectId: options.projectId, input }, timeoutMs);
     },
   };
 }

@@ -106,14 +106,14 @@ describe('directChorusTransport', () => {
     expect((outcome as { message: string }).message).toContain('401');
   });
 
-  test('no token is rejected without a request', async () => {
+  test('no token is a no-token failure without a request', async () => {
     seen.length = 0;
     const outcome = await directChorusTransport(url, token(undefined))(
       'chorus.advise',
       { projectId: 'p1', input: advise('hi') },
       5_000,
     );
-    expect(outcome).toMatchObject({ ok: false, failure: 'rejected' });
+    expect(outcome).toMatchObject({ ok: false, failure: 'no-token' });
     expect(seen).toHaveLength(0);
   });
 
@@ -181,14 +181,12 @@ describe('createChorusRemote', () => {
     expect(seen).toHaveLength(0);
   });
 
-  test('waits deadlineMs plus slack, sends its project id, and logs a changed roster revision', async () => {
+  test('waits deadlineMs plus slack and sends its project id', async () => {
     const timeouts: number[] = [];
-    const logs: string[] = [];
     const inner = directChorusTransport(url, token('devtoken'));
     const remote = createChorusRemote({
       projectId: 'p1',
       endpoint: url,
-      log: (m) => logs.push(m),
       transport: (operation, call, timeoutMs) => {
         timeouts.push(timeoutMs);
         expect(call.projectId).toBe('p1');
@@ -196,16 +194,13 @@ describe('createChorusRemote', () => {
       },
     });
     await remote.call('chorus.advise', advise('hi'));
-    await remote.call('chorus.advise', advise('hi'));
-    expect(logs).toHaveLength(0);
     await remote.call('chorus.advise', advise('r2'));
-    expect(timeouts).toEqual([6_000, 6_000, 6_000]);
-    expect(logs).toEqual(['[Chorus] p1: roster revision changed r1 → r2']);
+    expect(timeouts).toEqual([6_000, 6_000]);
   });
 });
 
 describe('chorusDevRemotes', () => {
-  test('off without the setting; on, one remote per project, the token read once, the host state recorded', async () => {
+  test('off without the setting; on, one remote per project, the token read on every call, the host state recorded', async () => {
     const setting = { current: undefined as { url: string; tokenKey: string } | undefined };
     const reads: string[] = [];
     const hosts: Array<[string, ProjectHostState]> = [];
@@ -222,7 +217,7 @@ describe('chorusDevRemotes', () => {
     expect(remotes.remote('p1')).toBe(remotes.remote('p1')!);
     await remotes.activate('p1');
     await remotes.activate('p1');
-    expect(reads).toEqual(['CHORUS_DEV_TOKEN']);
+    expect(reads).toEqual(['CHORUS_DEV_TOKEN', 'CHORUS_DEV_TOKEN']);
     expect(hosts[0]).toEqual([
       'p1',
       {

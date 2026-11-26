@@ -107,10 +107,14 @@ export function memoryKeychainBackend(): KeychainBackend {
  * The environment the API providers read their keys from: the process's own, then, for a key it
  * lacks, the provider's keychain entry named after the registry's `envKey` (`ANTHROPIC_API_KEY`),
  * read as `provider:<id>`. A copy: nothing is written to `process.env`, so no child inherits it.
+ * `keys` names other entries to read the same way, each with its reader (dev mode's Chorus token).
  */
 export async function providerKeyEnvironment(
   keychain: Keychain,
   environment: Record<string, string | undefined> = process.env,
+  keys: ReadonlyArray<readonly [key: string, reader: string]> = Object.entries(MODEL_REGISTRY)
+    .filter(([, provider]) => provider.envKey)
+    .map(([id, provider]) => [provider.envKey!, `provider:${id}`] as const),
 ): Promise<Record<string, string | undefined>> {
   const merged = { ...environment };
   let entries: Map<string, KeychainEntry>;
@@ -121,11 +125,9 @@ export async function providerKeyEnvironment(
     console.warn(`[Keychain] ${(error as Error).message}`);
     return merged;
   }
-  for (const [id, provider] of Object.entries(MODEL_REGISTRY)) {
-    const key = provider.envKey;
-    const reader = `provider:${id}`;
-    const entry = key ? entries.get(key) : undefined;
-    if (!key || merged[key]?.trim() || !entry || !holderMayRead(entry, reader)) continue;
+  for (const [key, reader] of keys) {
+    const entry = entries.get(key);
+    if (merged[key]?.trim() || !entry || !holderMayRead(entry, reader)) continue;
     try {
       merged[key] = await keychain.read(key, reader);
     } catch (error) {
