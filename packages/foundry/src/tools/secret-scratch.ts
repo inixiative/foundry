@@ -89,7 +89,6 @@ export const secretScratchSchema = z.discriminatedUnion('action', [
     replace: z.boolean().optional(),
   }),
 ]);
-export type SecretScratchArgs = z.infer<typeof secretScratchSchema>;
 
 /** The same arguments as one flat shape, as an MCP tool declares them; `secretScratchSchema` checks each action. */
 export const secretScratchShape = {
@@ -127,7 +126,6 @@ export const secretPipeSchema = z.strictObject({
   key: z.string().trim().min(1).max(200).optional(),
   consume,
 });
-export type SecretPipeArgs = z.infer<typeof secretPipeSchema>;
 
 export const SECRET_SCRATCH_DESCRIPTION =
   "Use a secret the person handed you as $$word, which reached you as a reference like †<message>.<n>. You never see the value and never return it: use it. env sets KEY to the value in an env file (the normal path); write puts it in a file (replace, or append on its own line); consume removes it from the pad; list shows what is pending (references and the message each came from, never values), in this thread, another thread of this project, or all of this project's, and the keychain's entry names. keep saves a secret into Foundry's keychain (the machine's own) under a name, so it outlives the thread: held by foundry it is usable by name (env or write with name instead of ref) in any later turn of the owner's or a schedule of his; held by a connector (provider:anthropic) only that connector reads it. Pass consume: true on the last use. env and write only reach files inside the thread's working directory, outside version-control and agent configuration. A file this tool writes to is then off limits: do not read, search or print it; use it through secret_pipe. Works only in a turn the owner's own message opened.";

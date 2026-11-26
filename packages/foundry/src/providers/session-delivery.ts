@@ -18,7 +18,6 @@ import type {
  * delivery ledger, and where the ledger has no record (after compaction), the system prompt.
  * A runtime without a system prompt (Codex) gets every part in its first turn's message instead.
  */
-export type BaseContextPlacement = 'system-prompt' | 'first-turn';
 
 export interface SessionTurn {
   /** The messages for this turn, with the system message replaced by the delta and per-turn text. */

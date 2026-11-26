@@ -79,7 +79,6 @@ export type ScheduleWhere = z.infer<typeof scheduleWhereSchema>;
 
 /** What happened at one due time. `started` has a thread; the rest say why not. */
 export type ScheduleRunOutcome = 'started' | 'skipped' | 'failed';
-export type ScheduleSkipReason = 'missed' | 'overlap';
 
 export interface ScheduleRun {
   /** `schedule:<scheduleId>:<dueAt>`, or `…:now:<at>` for a run asked for by hand. */

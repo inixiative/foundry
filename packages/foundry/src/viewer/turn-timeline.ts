@@ -494,4 +494,3 @@ export function turnTimeline(detail: TurnDetail, sources: TurnTimelineSources = 
     steps,
   };
 }
-export type TurnTimeline = ReturnType<typeof turnTimeline>;

@@ -525,9 +525,6 @@ Ordered composition of layers with warming, merging, slicing, snapshots and toke
 **continueOn**  
 Moves a thread to another pool instance only when both share native history (continuation key); refusals say why. *Region:* [Native sessions and agent-session](native-sessions/knowledge.md)
 
-**controlledFixtureSpawn**  
-Claude adapter test seam: the real session protocol against a controlled process with exact restricted argv. *Region:* [Native sessions and agent-session](native-sessions/knowledge.md)
-
 **Core vs Foundry boundary**  
 Anything that decides how to use the primitives, or needs HTTP, processes or services, goes in foundry. *Region:* [Repo structure and conventions](conventions/knowledge.md)
 
@@ -800,9 +797,6 @@ File-backed thread-to-native-session id map that survives restarts. *Region:* [N
 
 **FileMemory**  
 JSON-file memory with owner and visibility; the zero-dependency default. *Region:* [Context layers and memory adapters](context-memory/knowledge.md)
-
-**fixture bridge**  
-Isolated-fixture MCP surface: only fixture_read, fixture_write, fixture_command, each with an invocation UUID. *Region:* [Structural tool gate and MCP bridge](tool-gate-mcp/knowledge.md)
 
 **flow-loops**  
 This class: the harness data flow, channels, loops, progressive depth, thread-state and failure modes. *Region:* [Harness data flow and loops](flow-architecture/knowledge.md)
@@ -1287,7 +1281,7 @@ Reads a directory of .md files as context, cached by mtime; system "markdown" fo
 Marks a process and state dir as an eval run so Archive and repeat reports skip it. *Region:* [Warden evals, and no pre-filter](warden-prefilter-evals/knowledge.md)
 
 **mcp-bridge**  
-The foundry MCP server a native session calls mid-session, its tools, loopback proxy, live authority and fixture bridge. *Region:* [Structural tool gate and MCP bridge](tool-gate-mcp/knowledge.md)
+The foundry MCP server a native session calls mid-session, its tools, loopback proxy and live authority. *Region:* [Structural tool gate and MCP bridge](tool-gate-mcp/knowledge.md)
 
 **memory-adapters**  
 Class tag: memory and knowledge adapters (file, sqlite, http, markdown, postgres, Muninn) as context sources and the MemoryTool. *Region:* [Context layers and memory adapters](context-memory/knowledge.md)
@@ -1789,9 +1783,6 @@ Paths to {{cwd}}/{{tmp}}/~, tokens, emails, identity keys and account connectors
 
 **scrubSecrets**  
 Replaces credential-shaped substrings in feedback transcripts and counts the hits. *Region:* [Logins, profiles and secrets](logins-secrets/knowledge.md)
-
-**secretInText / unredactedSecretInText**  
-Patterns for Kingdom secrets in text; the unredacted one asserts nothing leaked. *Region:* [Logins, profiles and secrets](logins-secrets/knowledge.md)
 
 **secrets**  
 Class: credential references, private 0600 files and tokens, bound launch environments, secret detection and scrubbing. *Region:* [Logins, profiles and secrets](logins-secrets/knowledge.md)

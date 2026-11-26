@@ -264,7 +264,7 @@ Find the problem in plain words, then point at the exact thing. Each class opens
 | keep the old provider around in case; delete providers nothing constructs | **No dead providers kept** · rule docs/reference/FOUNDRY-ACP.md §2.2 — Hard-cut unregistered, never-constructed providers and adapters rather than leaving them. | part 4 | keeping an unregistered or never-constructed provider or adapter (RuntimeAdapter, ClaudeCodeProvider) around for later (docs/reference/FOUNDRY-ACP.md § 2.2) |
 | I'll import the openai SDK for this; add the Anthropic SDK as a dependency; providers call the API with plain fetch | **Zero-SDK providers** · rule docs/SYSTEM.md § 2-providers — Applies when adding or changing an API-key provider. | part 4 | adding `@anthropic-ai/sdk`, `openai` or a Google SDK dependency to call a provider (docs/SYSTEM.md § 2. Providers ("Zero SDK dependencies. Raw fetch to provider APIs.")) |
 
-- *Also here, by name:* HttpCompletionSettlement (`packages/foundry/src/providers/http-settlement.ts`); assembledToMessages (`packages/foundry/src/providers/types.ts`); providerReasoning (`packages/foundry/src/providers/openai-compatible.ts`); splitSystemMessage (`packages/foundry/src/providers/types.ts`)
+- *Also here, by name:* HttpCompletionSettlement (`packages/foundry/src/providers/http-settlement.ts`); assembledToMessages (`packages/core/src/messages.ts`); providerReasoning (`packages/foundry/src/providers/openai-compatible.ts`); splitSystemMessage (`packages/core/src/messages.ts`)
 
 ### Class `usage-telemetry`: Token counts, cache telemetry, TokenTracker attribution and usage windows, analytics, native context budgets and compaction
 

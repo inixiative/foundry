@@ -275,7 +275,7 @@ restart.
 user's settings, commands, skills, agents, plugins, hooks and permissions, as
 their own Claude does. Inside a registered project it loads `user,project,local`;
 elsewhere `user` only, because a project's committed hooks run in headless Claude
-whether or not anyone trusted the folder. Warden, decision and fixture sessions
+whether or not anyone trusted the folder. Warden and decision sessions
 load none. It is
 read when each session starts, and applies to subscription launches; a thread
 with no subscription policy is the user's own Claude, which loads everything.

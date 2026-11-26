@@ -31,8 +31,6 @@ A moment that says any of these, or something close, is this region's. Both voic
 - give the session a way to ask Foundry for context
 - expose Foundry's tools over MCP
 - the agent needs to pull conventions mid-session
-- which bridge does this session get
-- the lab session should only touch fixtures
 - run the MCP server as a subprocess
 - serve MCP from inside the HTTP server
 - forward the host's MCP calls to Foundry
@@ -45,8 +43,6 @@ A moment that says any of these, or something close, is this region's. Both voic
 - check the user's rules first, then ask them
 - the redirect gate shouldn't block Foundry's dispatcher
 - do these rules ever block or ask anything
-- the lab session may only read, write, run fixtures
-- the isolated lab session needs its own bridge
 - let the session fetch more context when it needs it
 - the main agent tried to spawn a Warden itself
 - read a Kingdom integration from inside the session
@@ -63,7 +59,6 @@ A moment that says any of these, or something close, is this region's. Both voic
 - hold a Warden until there's something to answer
 - take the project id from the tool args
 - one bridge source per live runtime
-- fixture calls are authorised by rules, never a model
 - only the user's rules block tool calls
 - only the user's rules can block a tool call
 - what level does the policy give this capability
@@ -92,8 +87,6 @@ A moment that says any of these, or something close, is this region's. Both voic
 - build the gate that approves or denies tool calls
 - don't disallow the Task tool while Wardens run
 - skip the gate when every rule is allow
-- give each fixture call its own invocation id
-- serve only the fixture tools to the test session
 - the agent pulls docs mid-turn through tools
 - deny Warden agent spawns outside the dispatcher
 - use the project's authorized integrations via Signets
@@ -110,7 +103,6 @@ A moment that says any of these, or something close, is this region's. Both voic
 - the Warden answers through Foundry's own tool
 - which thread made this read
 - the bridge real Claude Code sessions use
-- don't put an LLM check in the lab broker
 - let the Warden block this command
 - let the Warden deny this edit
 - look up allow or deny without prompting
@@ -135,8 +127,6 @@ A moment that says any of these, or something close, is this region's. Both voic
 - I'll open a local port the session can call
 - embed the MCP endpoint in the viewer server
 - ask me before the agent runs that
-- I'll add another tool to the fixture bridge
-- authorise fixture calls in the lab broker
 - call a connected service through Kingdom
 - what knowledge does this Warden hold
 - I'll guess the project from the absolute path
@@ -165,7 +155,6 @@ A moment that says any of these, or something close, is this region's. Both voic
 - I'll add an MCP server so the agent can pull context
 - connect the native session back to the live thread
 - I'll write an approval callback for native tool requests
-- a bridge for the controlled fixture run
 - report the active device to the native session
 - I'll use SendMessage to give the Warden input
 - keep the same bridge across warm reuse

@@ -262,7 +262,7 @@
     {
       "tag": "mcp-bridge",
       "atlas": "feature:mcpBridge",
-      "description": "The foundry MCP server: the mid-session pull bridge, its tools, the loopback proxy, live authority, fixture bridge",
+      "description": "The foundry MCP server: the mid-session pull bridge, its tools, the loopback proxy, live authority",
       "region": "tool-gate-mcp"
     },
     {

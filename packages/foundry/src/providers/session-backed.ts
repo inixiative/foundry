@@ -93,8 +93,6 @@ export interface SessionBackedProviderConfig {
  * pass to the engine, not proof of the model that answered.
  */
 export interface NativeSessionProfile {
-  readonly toolPolicyIdentity?: string;
-  readonly transportMode?: 'controlled-fixture';
   readonly authentication?: Readonly<{
     sourceId: string;
     integrationId: string;
@@ -405,19 +403,8 @@ export class SessionBackedProvider implements LLMProvider {
     const attempt = (
       session as HarnessSession & { inspectAttempt?: (id: string) => unknown }
     ).inspectAttempt?.(id);
-    const evidence = attempt ? this._ownedProjection(session, attempt, owner) : undefined;
+    const evidence = attempt ? projectNative(attempt, owner) : undefined;
     return evidence?.admissionId === id ? evidence : undefined;
-  }
-
-  private _ownedProjection(
-    session: HarnessSession,
-    value: unknown,
-    owner?: NativeOwner,
-  ): NativeEvidence {
-    const evidence = projectNative(value, owner);
-    return this._adapter.describeConstruction?.(session)?.transportMode === 'controlled-fixture'
-      ? freezeEvidence({ ...evidence, executionMode: 'controlled-fixture' as const })
-      : evidence;
   }
 
   private _callSettled(evidence: NativeEvidence): boolean {
@@ -574,14 +561,7 @@ export class SessionBackedProvider implements LLMProvider {
         ...(this._adapter.structuralRulesAtLaunch && !textOnly
           ? { structuralRules: this._toolGate?.(threadId)?.hasRules() ?? false }
           : {}),
-        ...(source
-          ? {
-              bridgeKey: source.key,
-              ...(source.toolPolicy
-                ? { toolPolicyIdentity: JSON.stringify(source.toolPolicy) }
-                : {}),
-            }
-          : {}),
+        ...(source ? { bridgeKey: source.key } : {}),
       },
       source,
       // Only a system prompt holds a base across turns and compaction; elsewhere the first turn carries it.
@@ -666,7 +646,7 @@ export class SessionBackedProvider implements LLMProvider {
         ...(observation
           ? {
               onAdmission: async (attempt: unknown) => {
-                const evidence = this._ownedProjection(session, attempt, observation.owner);
+                const evidence = projectNative(attempt, observation.owner);
                 if (!evidence.admissionId) throw Error('Engine did not supply admission identity');
                 await observation.register(evidence);
                 bridge?.register(evidence);
@@ -690,7 +670,7 @@ export class SessionBackedProvider implements LLMProvider {
     } catch (error) {
       const attempt =
         error && typeof error === 'object' ? (error as { attempt?: unknown }).attempt : undefined;
-      const evidence = this._ownedProjection(session, attempt, observation?.owner);
+      const evidence = projectNative(attempt, observation?.owner);
       // Nothing was sent: the next turn on this session still needs the history.
       if (seed && evidence.dispatch === 'not-dispatched') this._seeded.delete(session);
       bridge?.observe(evidence);
@@ -737,7 +717,7 @@ export class SessionBackedProvider implements LLMProvider {
         ...evidence,
       } as typeof result;
     }
-    const observedNative = this._ownedProjection(session, result, observation?.owner);
+    const observedNative = projectNative(result, observation?.owner);
     bridge?.observe(observedNative);
     this._observe(observation, observedNative);
     const native = freezeEvidence({
@@ -750,7 +730,6 @@ export class SessionBackedProvider implements LLMProvider {
             bridge: {
               id: bridge.id,
               configurationHash: bridge.configurationHash,
-              ...(bridge.toolPolicy ? { toolPolicy: bridge.toolPolicy } : {}),
               tools: bridge.evidence(observedNative.admissionId),
             },
           }
@@ -837,7 +816,6 @@ export class SessionBackedProvider implements LLMProvider {
         requestedModel,
         observedModel: nativeModel,
         requestedMaxTurns: maxTurns,
-        ...(profile?.transportMode ? { transportMode: profile.transportMode } : {}),
         ...(profile?.requestedEffort ? { requestedEffort: profile.requestedEffort } : {}),
         ...(observedEffort !== undefined ? { observedEffort } : {}),
         ...(history ? { history } : {}),
@@ -1067,7 +1045,6 @@ export class SessionBackedProvider implements LLMProvider {
       /** For an adapter that checks them at launch: the thread has structural rules. */
       structuralRules?: boolean;
       bridgeKey?: string;
-      toolPolicyIdentity?: string;
     },
     source?: NativeBridgeSource,
     /** The executor's base context, used only when this call starts the session. */
@@ -1086,14 +1063,13 @@ export class SessionBackedProvider implements LLMProvider {
         'launchRevision',
         'structuralRules',
         'bridgeKey',
-        'toolPolicyIdentity',
       ] as const;
       const changed = fields.filter((field) => (current[field] ?? 0) !== (requested[field] ?? 0));
       // A host changed this thread's launch settings, or its structural rules appeared or went:
       // relaunch the idle session, resuming its binding, so an adapter that cannot gate before use
       // (Codex) refuses on the next turn instead of running warm past the new rules.
       // A thread rebuilt with a new native bridge (an archived thread reopened: its Thread object,
-      // and so its bridge, is new) relaunches the same way; a tool-policy change never does.
+      // and so its bridge, is new) relaunches the same way.
       // Both ends carry a bridge: a call without one never relaunches a bridged session (or back).
       const bridgeMoved =
         this._bridgeSources.get(key) !== source &&
@@ -1102,11 +1078,10 @@ export class SessionBackedProvider implements LLMProvider {
       if (
         (changed.includes('launchRevision') ||
           changed.includes('structuralRules') ||
-          (bridgeMoved && !requested.textOnly && !requested.toolPolicyIdentity)) &&
+          (bridgeMoved && !requested.textOnly)) &&
         changed.every((field) =>
           ['launchRevision', 'structuralRules', 'requestedModel', 'bridgeKey'].includes(field),
-        ) &&
-        (!bridgeMoved || !current.toolPolicyIdentity)
+        )
       )
         return this._relaunch(key, existing, () =>
           this._getSession(threadId, cwd, requested, source, base),
@@ -1194,8 +1169,6 @@ export class SessionBackedProvider implements LLMProvider {
       .then(async (profile) => {
         this._profiles.set(key, profile);
         if (source) bridge = await source.acquire();
-        if (bridge && JSON.stringify(bridge.toolPolicy) !== requested.toolPolicyIdentity)
-          throw Error('Owned fixture policy changed during acquisition');
         const host = requested.textOnly ? undefined : this._launch?.forLaunch(threadId);
         const gate = requested.textOnly ? undefined : this._toolGate?.(threadId);
         const session = await this._adapter.createSession({
@@ -1234,7 +1207,7 @@ export class SessionBackedProvider implements LLMProvider {
             ((event.unattributedReason === 'task' && event.correlation === 'native-turn') ||
               event.kind === 'session_end')
           ) {
-            const observed = this._ownedProjection(session, event);
+            const observed = projectNative(event);
             const control: NativeTurnControl = session.interruptNative
               ? { interrupt: (options) => session.interruptNative!(options) }
               : {};
@@ -1268,7 +1241,7 @@ export class SessionBackedProvider implements LLMProvider {
             !requested.textOnly &&
             (event.kind === 'subagent' || event.unattributedReason === 'subagent')
           ) {
-            const observed = this._ownedProjection(session, event);
+            const observed = projectNative(event);
             for (const sink of this._subagentSinks) {
               try {
                 sink(threadId, observed);
@@ -1278,7 +1251,7 @@ export class SessionBackedProvider implements LLMProvider {
             }
             return;
           }
-          const evidence = this._ownedProjection(session, event);
+          const evidence = projectNative(event);
           if (!evidence.admissionId || !evidence.kind) return;
           const observer = observations.get(evidence.admissionId);
           if (!observer) return;
@@ -1321,7 +1294,6 @@ export class SessionBackedProvider implements LLMProvider {
             ...(constructed
               ? {
                   bindingId: constructed.bindingId,
-                  transportMode: constructed.transportMode,
                   authentication: constructed.authentication,
                   requestedEffort: constructed.requestedEffort,
                 }
