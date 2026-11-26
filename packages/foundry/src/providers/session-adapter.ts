@@ -63,10 +63,8 @@ import {
   appServerClientMcpConfiguration,
   withClientMcpServers,
   withFoundrySkills,
-  withIsolatedFixture,
   withNativeBridge,
 } from './native-launch';
-import { nativeTextEnvironment } from './native-text-environment';
 import type { ClientMcpServer, EffortLevel, PermissionMode, SpeedLevel } from './thread-launch';
 
 // ---------------------------------------------------------------------------
@@ -290,7 +288,6 @@ export interface CreateSessionOpts {
  * from the thread id and the store can change between two reads.
  */
 export interface ConstructionBinding {
-  readonly transportMode?: 'controlled-fixture';
   readonly authentication?: Readonly<{
     sourceId: string;
     integrationId: string;
@@ -420,11 +417,10 @@ function freezeConstructionBinding(
     bindingId: string;
     existing: string | null;
     auth?: NativeAuthenticationLaunch;
-    transportMode?: 'controlled-fixture';
     requestedEffort?: string;
   },
 ): ConstructionBinding {
-  const { bindingId, existing, auth, transportMode, requestedEffort } = params;
+  const { bindingId, existing, auth, requestedEffort } = params;
   if (auth?.observeLimits)
     session.onEvent((event) => {
       if (event.kind === 'rate_limit' && event.limits) auth.observeLimits?.(event.limits);
@@ -432,7 +428,6 @@ function freezeConstructionBinding(
   return Object.freeze({
     bindingId,
     resumedBinding: existing,
-    ...(transportMode ? { transportMode } : {}),
     ...(auth
       ? {
           authentication: {
@@ -677,9 +672,6 @@ function attachSessionIdPersistence(opts: {
 // ---------------------------------------------------------------------------
 
 export interface ClaudeCodeSessionAdapterConfig {
-  /** Test seam only: never supply a real CLI spawn. Same-host fixture launch
-   * remains unavailable until inherited managed execution can be contained. */
-  controlledFixtureSpawn?: NonNullable<ClaudeCodeSessionConfig['spawn']>;
   authentication?: NativeAuthenticationProvider;
   /** Native 200k window with early compaction by default; false uses CLI settings. */
   contextBudget?: ClaudeContextBudget | false;
@@ -696,7 +688,7 @@ export interface ClaudeCodeSessionAdapterConfig {
   signals?: SignalBus;
   /**
    * Which of the user's own Claude settings a main thread loads (CORE-003), by its working
-   * directory; absent, none. Decision and fixture sessions never load them.
+   * directory; absent, none. Decision sessions never load them.
    */
   harnessSettings?: (cwd: string) => HarnessSettingSources | undefined;
 }
@@ -713,7 +705,6 @@ export class ClaudeCodeSessionAdapter implements SessionAdapter {
   private _live = new Set<HarnessSession>();
   private _ownedBridges = new WeakMap<HarnessSession, NativeBridgeLease>();
   private _defaults: ClaudeCodeSessionAdapterConfig['defaults'];
-  private _controlledFixtureSpawn?: ClaudeCodeSessionAdapterConfig['controlledFixtureSpawn'];
   private _signals: ThreadSignalBindings;
   private _harnessSettings?: ClaudeCodeSessionAdapterConfig['harnessSettings'];
 
@@ -738,7 +729,6 @@ export class ClaudeCodeSessionAdapter implements SessionAdapter {
             });
       },
     };
-    this._controlledFixtureSpawn = config.controlledFixtureSpawn;
     this._signals = new ThreadSignalBindings(config.signals);
   }
 
@@ -752,24 +742,15 @@ export class ClaudeCodeSessionAdapter implements SessionAdapter {
 
   async createSession(opts: CreateSessionOpts): Promise<HarnessSession> {
     assertNativeBridgeGrant(opts);
-    const fixture = opts.nativeBridge?.toolPolicy;
-    if (fixture && (!this._controlledFixtureSpawn || !opts.nativeBridge?.fixtureCwd))
-      throw Error(
-        'Isolated native fixture launch unavailable: managed execution requires an external containment boundary',
-      );
-    if (fixture && (!Number.isSafeInteger(opts.maxTurns) || !opts.maxTurns || opts.maxTurns > 100))
-      throw Error('Fixture requires bounded turns');
     // Preserve old auxiliary coding histories as evidence, but do not resume
     // them as decision middleware after changing the execution policy.
     const auth = await this._authentication?.prepare(opts.threadId, 'claude');
     const sourceBinding = auth?.bindingId ?? opts.threadId;
-    const bindingId = fixture
-      ? `${sourceBinding}:profile:${fixture.version}:${fixture.digest}:${opts.nativeBridge!.id}`
-      : opts.tools === false && opts.threadId.includes(':aux:')
+    const bindingId =
+      opts.tools === false && opts.threadId.includes(':aux:')
         ? `${sourceBinding}:profile:text-only-v1`
         : sourceBinding;
     const existing = await this._store.load(bindingId, this.runtime);
-    if (fixture && existing) throw Error('Fixture sessions cannot resume retained bindings');
 
     // Use the substrate's supported spawn hook rather than modifying dependency
     // files. Safe mode retains subscription auth; bare mode does not.
@@ -794,7 +775,7 @@ export class ClaudeCodeSessionAdapter implements SessionAdapter {
       );
     let ownedExit: Promise<number> | undefined;
     // A main thread is the user's own Claude: their settings, commands, skills and hooks load.
-    const mainThread = opts.tools !== false && !fixture && !opts.threadId.includes(':aux:');
+    const mainThread = opts.tools !== false && !opts.threadId.includes(':aux:');
     const sources = mainThread ? this._harnessSettings?.(opts.cwd) : undefined;
     const trackedSpawn: NonNullable<ClaudeCodeSessionConfig['spawn']> = (cmd, options) => {
       const launch = auth?.launch(
@@ -804,34 +785,21 @@ export class ClaudeCodeSessionAdapter implements SessionAdapter {
       );
       let child: ReturnType<typeof defaultSpawn>;
       try {
-        child = fixture
-          ? this._controlledFixtureSpawn!(
-              withIsolatedFixture(launch?.argv ?? cmd, opts.nativeBridge!),
-              {
-                cwd: opts.nativeBridge!.fixtureCwd!,
-                env: nativeTextEnvironment(launch?.env ?? options.env),
-              },
-            )
-          : (() => {
-              const base = launch?.argv ?? cmd;
-              const client = withClientMcpServers(
-                mainThread ? withFoundrySkills(base) : base,
-                opts.tools === false ? [] : (opts.mcpServers ?? []),
-              );
-              try {
-                const spawned = (opts.tools === false ? restrictedSpawn : defaultSpawn)(
-                  opts.nativeBridge
-                    ? withNativeBridge(client.argv, opts.nativeBridge)
-                    : client.argv,
-                  { ...options, env: launch?.env ?? options.env },
-                );
-                void spawned.exited.finally(client.release).catch(() => {});
-                return spawned;
-              } catch (error) {
-                client.release();
-                throw error;
-              }
-            })();
+        const base = launch?.argv ?? cmd;
+        const client = withClientMcpServers(
+          mainThread ? withFoundrySkills(base) : base,
+          opts.tools === false ? [] : (opts.mcpServers ?? []),
+        );
+        try {
+          child = (opts.tools === false ? restrictedSpawn : defaultSpawn)(
+            opts.nativeBridge ? withNativeBridge(client.argv, opts.nativeBridge) : client.argv,
+            { ...options, env: launch?.env ?? options.env },
+          );
+          void child.exited.finally(client.release).catch(() => {});
+        } catch (error) {
+          client.release();
+          throw error;
+        }
       } catch (error) {
         auth?.release();
         throw error;
@@ -861,14 +829,14 @@ export class ClaudeCodeSessionAdapter implements SessionAdapter {
       // The candidate accepts null as the native optional/unbounded setting.
       // Registry legacy types do not yet describe this additive representation.
       ...(opts.maxTurns !== undefined ? { maxTurns: opts.maxTurns as number } : {}),
-      ...(opts.tools === false || fixture
+      ...(opts.tools === false
         ? { permissionMode: 'dontAsk' }
         : {
             ...(opts.permissionMode ? { permissionMode: opts.permissionMode } : {}),
             ...(opts.toolGate ? { toolGate: true } : {}),
           }),
       spawn: trackedSpawn,
-      cwd: fixture ? opts.nativeBridge!.fixtureCwd! : opts.cwd,
+      cwd: opts.cwd,
       baseContext: opts.baseContext,
       externalSessionId: existing ?? undefined,
     });
@@ -876,7 +844,7 @@ export class ClaudeCodeSessionAdapter implements SessionAdapter {
     // while the thread key still preserves legacy coding history that is NOT resumed.
     assertPrewriteAdmission(session, auth);
     if (auth) this._authLaunches.set(session, auth);
-    if (opts.toolGate && opts.tools !== false && !fixture) {
+    if (opts.toolGate && opts.tools !== false) {
       if (!session.onToolRequest)
         throw Error('Installed agent-session lacks onToolRequest; no process started');
       session.onToolRequest(opts.toolGate);
@@ -887,7 +855,6 @@ export class ClaudeCodeSessionAdapter implements SessionAdapter {
         bindingId,
         existing: existing ?? null,
         auth,
-        ...(fixture ? { transportMode: 'controlled-fixture' as const } : {}),
       }),
     );
     this._ownedExits.set(session, () => ownedExit);
@@ -1022,7 +989,6 @@ export class CodexSessionAdapter implements SessionAdapter {
   }
 
   async createSession(opts: CreateSessionOpts): Promise<HarnessSession> {
-    if (opts.nativeBridge?.toolPolicy) throw Error('Codex isolated fixture policy is unsupported');
     assertNativeBridgeGrant(opts);
     if (opts.tools === false) {
       throw new Error(
@@ -1522,7 +1488,6 @@ export class AcpSessionAdapter implements SessionAdapter {
   }
 
   async createSession(opts: CreateSessionOpts): Promise<HarnessSession> {
-    if (opts.nativeBridge?.toolPolicy) throw Error('ACP isolated fixture policy is unsupported');
     assertNativeBridgeGrant(opts);
     if (opts.tools === false)
       throw Error(

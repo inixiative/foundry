@@ -22,11 +22,9 @@
     "docs": [
       "@inixiative/agent-session/README.md",
       "@inixiative/agent-session/docs/transports-pools-routing.md",
-      "docs/isolated-fixture-transport.md",
       "docs/native-authentication.md"
     ],
     "docUnits": [
-      "doc:docs/isolated-fixture-transport.md#installed-cli-investigation",
       "doc:docs/native-authentication.md#package-and-validation",
       "doc:@inixiative/agent-session/README.md#preface",
       "doc:@inixiative/agent-session/README.md#why-it-s-different",

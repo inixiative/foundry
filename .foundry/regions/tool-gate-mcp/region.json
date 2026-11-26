@@ -1,7 +1,7 @@
 {
   "id": "tool-gate-mcp",
   "title": "Structural tool gate and MCP bridge",
-  "routing": "Is this about allowing, asking or denying a native Claude Code / Codex tool call by the user's structural rules (the toolRules setting, protectedPaths, classifyTool, structuralLevel, permissionLevel, rulesFor, createToolGate, lateBoundToolGate, UNBOUND_GATE, the SessionBackedProvider gate, gate-request / gate-outcome phases, deny is final in bypassPermissions), or about the foundry MCP server a native session pulls context from mid-session (createFoundryMcp, foundry_query / foundry_conventions / foundry_memory / foundry_threads / foundry_signal / foundry_device, createLiveBridge, nativeBridgeSource, runProxy, the stdio proxy and the loopback bridge transport, the fixture bridge's fixture_read / fixture_write / fixture_command)?",
+  "routing": "Is this about allowing, asking or denying a native Claude Code / Codex tool call by the user's structural rules (the toolRules setting, protectedPaths, classifyTool, structuralLevel, permissionLevel, rulesFor, createToolGate, lateBoundToolGate, UNBOUND_GATE, the SessionBackedProvider gate, gate-request / gate-outcome phases, deny is final in bypassPermissions), or about the foundry MCP server a native session pulls context from mid-session (createFoundryMcp, foundry_query / foundry_conventions / foundry_memory / foundry_threads / foundry_signal / foundry_device, createLiveBridge, nativeBridgeSource, runProxy, the stdio proxy and the loopback bridge transport)?",
   "concepts": ["tool-gate", "mcp-bridge"],
   "tokens": 11355,
   "tokenMethod": "chars/4",
@@ -19,11 +19,10 @@
   },
   "runsAgreed": 0,
   "sources": {
-    "docs": ["docs/FLOW.md", "docs/isolated-fixture-transport.md", "docs/reference/FOUNDRY-ACP.md"],
+    "docs": ["docs/FLOW.md", "docs/reference/FOUNDRY-ACP.md"],
     "docUnits": [
       "doc:docs/reference/FOUNDRY-ACP.md#5-middleware-on-the-acp-path",
-      "doc:docs/FLOW.md#loop-2-mid-session-bridge-mcp",
-      "doc:docs/isolated-fixture-transport.md#preface"
+      "doc:docs/FLOW.md#loop-2-mid-session-bridge-mcp"
     ],
     "catalogClusters": ["feature-mcpBridge", "feature-toolGate"],
     "codeEntries": 20,
