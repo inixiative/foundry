@@ -398,11 +398,46 @@ function SourceEditor({ source, onSave, onDelete, onFocusChange }) {
 // Project chorus (read-only)
 // ---------------------------------------------------------------------------
 
+/**
+ * This project's dev mode, on this machine only: follow the machine's switch, or turn it on or off
+ * for this project alone. The host is always the machine's (Settings → Dev).
+ */
+function ProjectDevMode({ projectId, dev, onSaved }) {
+  const value = dev.own === null ? 'machine' : dev.own ? 'on' : 'off';
+  const change = async (next) => {
+    const __devMode = next === 'machine' ? null : next === 'on';
+    try {
+      const res = await authFetch(`/api/projects/${encodeURIComponent(projectId)}/setting`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scope: 'me', values: { __devMode } }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw Error(body.error ?? res.statusText);
+      await loadSettings();
+      onSaved();
+    } catch (error) {
+      showToast(`Dev mode was not changed: ${error.message}`, 'error');
+    }
+  };
+  return html`<label class="settings-desc" data-setting="__devMode">
+    Dev mode for this project:
+    <select class="settings-input small" value=${value} onChange=${(e) => change(e.target.value)}>
+      <option value="machine">This machine's (${dev.machine ? 'on' : 'off'})</option>
+      <option value="on">On</option>
+      <option value="off">Off</option>
+    </select>
+    ${dev.on ? ` Wardens go to the Chorus host at ${dev.host}.` : " Wardens run on this machine's own host."}
+  </label>`;
+}
+
 const kb = (bytes) => `${Math.max(1, Math.round(bytes / 1024))} KB`;
 
 /** The project's chorus: what runs, its layers in order, and each region with its size and key. */
 function ProjectChorus({ projectId }) {
+  const [devRead, setDevRead] = useState(0);
   const [chorus, setChorus] = useState(undefined);
+  const [dev, setDev] = useState(null);
   const [decision, setDecision] = useState(null);
   useEffect(() => {
     // Stages without a model run on the decision model: name it rather than print "decision".
@@ -416,12 +451,16 @@ function ProjectChorus({ projectId }) {
     setChorus(undefined);
     fetch(`/api/projects/${encodeURIComponent(projectId)}/chorus`)
       .then((r) => (r.ok ? r.json() : null))
-      .then((body) => live && setChorus(body?.chorus ?? null))
+      .then((body) => {
+        if (!live) return;
+        setChorus(body?.chorus ?? null);
+        setDev(body?.dev ?? null);
+      })
       .catch(() => live && setChorus(null));
     return () => {
       live = false;
     };
-  }, [projectId]);
+  }, [projectId, devRead, devMode.value]);
   if (chorus === undefined) return html`<div class="settings-empty">Reading the Wardens…</div>`;
   if (chorus === null)
     return html`<div class="settings-empty">The Wardens could not be read; check the project's settings.</div>`;
@@ -448,6 +487,7 @@ function ProjectChorus({ projectId }) {
           ? html`<p class="settings-desc" data-setting="__chorus">Dev mode: served by the Chorus host at <code>${chorus.remote}</code>, not this machine.</p>`
           : null
       }
+      ${dev?.host ? html`<${ProjectDevMode} projectId=${projectId} dev=${dev} onSaved=${() => setDevRead((n) => n + 1)} />` : null}
       ${
         chorus.consumed && chorus.reception
           ? html`<p class="settings-desc">Work items (<code>chorus.consumed</code>): ${chorus.consumed.enabled ? 'on' : 'off'}${chorus.consumed.from === 'default' ? ', the default' : `, set in ${chorus.consumed.from === 'settings' ? 'your settings' : 'the repository'}`}. Reception charter (<code>chorus.reception</code>): ${chorus.reception.on ? 'on' : 'off'}${chorus.reception.from === 'default' ? (chorus.on ? ', with the Wardens' : ', only while Wardens run') : `, set in ${chorus.reception.from === 'settings' ? 'your settings' : 'the repository'}`}.</p>`
@@ -558,10 +598,14 @@ function ChorusStages({ roles, decision }) {
 // ---------------------------------------------------------------------------
 
 function SettingsNav({ projectId, section, projectList }) {
-  // The Dev section shows only in dev mode.
+  // The Dev section shows while dev mode is on here or for any project, or a Chorus host is set.
+  const devAnywhere =
+    devMode.value ||
+    Boolean(settingsConfig.value?.__chorus) ||
+    Object.values(settingsConfig.value?.projects ?? {}).some((p) => p.__devMode === true);
   const sections = projectId
     ? PROJECT_SETTINGS
-    : FOUNDRY_SETTINGS.filter(([id]) => id !== 'dev' || devMode.value);
+    : FOUNDRY_SETTINGS.filter(([id]) => id !== 'dev' || devAnywhere);
   const projectHref = settingsPath(projectId ?? projectList[0]?.id);
   const known = !projectId || projectList.some((p) => p.id === projectId);
   return html`
@@ -602,7 +646,7 @@ function SettingsNav({ projectId, section, projectList }) {
       <label class="dev-mode-switch settings-dev-mode">
         <${Switch} checked=${devMode.value} label="Dev mode"
           onChange=${(on) => setDevMode(on).then((next) => next && saved(next))} />
-        <span>Dev mode<span class="settings-desc">Shows dev-only fields, such as a custom Kingdom URL, and the Dev section: Wardens served by a local Chorus host.</span></span>
+        <span>Dev mode<span class="settings-desc">On this machine: shows dev-only fields, such as a custom Kingdom URL, and the Dev section, where a local Chorus host serves the Wardens. A project can override it under its Wardens.</span></span>
       </label>
     </nav>
   `;

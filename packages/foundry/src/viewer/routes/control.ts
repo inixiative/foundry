@@ -20,6 +20,8 @@ import {
   ConfigRevisionError,
   type ConfigStore,
   createProject,
+  devHostSetting,
+  devModeOn,
   type FoundryConfig,
   personalOnlySetting,
   REPOSITORY_SETTING_KEYS,
@@ -78,7 +80,11 @@ const SETTABLE_PROJECT_ROOTS: ReadonlySet<string> = new Set<string>([
   ...REPOSITORY_SETTING_KEYS,
   'sources',
   'toolRules',
+  '__devMode',
 ]);
+
+/** A dotted setting path, or `__devMode`: the one dev-mode key a project carries (R-2026-11-25-05). */
+const SETTING_PATH = /^(?:__devMode|[A-Za-z][\w-]*(\.[\w-]+)*)$/;
 
 /** An object setting's keys that are this machine's or this person's alone. */
 const personalKeysOf = (path: string, value: unknown): string[] =>
@@ -503,7 +509,10 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps): void 
   app.get('/api/projects/:id/setting', async (c) => {
     const id = c.req.param('id');
     const path = c.req.query('path') ?? '';
-    if (!/^[A-Za-z][\w-]*(\.[\w-]+)*$/.test(path))
+    if (
+      !SETTING_PATH.test(path) ||
+      path.split('.').some((part) => UNSAFE_SETTING_SEGMENTS.has(part))
+    )
       return c.json({ error: 'path must be a dotted setting path' }, 400);
     await configStore.load();
     const config = configStore.config;
@@ -569,10 +578,7 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps): void 
     const entries = Object.entries(values as Record<string, unknown>);
     for (const [path] of entries) {
       const parts = path.split('.');
-      if (
-        !/^[A-Za-z][\w-]*(\.[\w-]+)*$/.test(path) ||
-        parts.some((part) => UNSAFE_SETTING_SEGMENTS.has(part))
-      )
+      if (!SETTING_PATH.test(path) || parts.some((part) => UNSAFE_SETTING_SEGMENTS.has(part)))
         return c.json({ error: `${path} is not a dotted setting path` }, 400);
       const personal = scope === 'everyone' ? personalOnlySetting(path) : undefined;
       if (personal) return c.json({ error: `${path} can't be set for everyone: ${personal}` }, 400);
@@ -690,10 +696,18 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps): void 
     await configStore.load();
     const view = configStore.resolveProjectView(id);
     if (!view) return c.json({ error: 'project not found' }, 404);
-    const path = configStore.config.projects[id]?.path;
+    const config = configStore.config;
+    const path = config.projects[id]?.path;
     return c.json({
       projectId: id,
       chorus: await describeReadinessChorus(id, view.chorus),
+      // Dev mode for this project: its own setting (null: this machine's), this machine's, the result.
+      dev: {
+        own: config.projects[id]?.__devMode ?? null,
+        machine: config.__devMode === true,
+        on: devModeOn(config, id),
+        host: devHostSetting(config, '__chorus')?.url ?? null,
+      },
       // What every Warden of the project composes from, in order (Aron, 2026-11-02): no CLAUDE.md ladder.
       wardens: {
         charter: { tokens: Math.round(WARDEN_CHARTER.length / 4) },

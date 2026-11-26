@@ -125,13 +125,15 @@ function earlierInput(earlier: EarlierMessages | undefined) {
 /**
  * Why a call brought back no result, as the Warden outcome every asked one shares: nothing ran
  * (refused, unreachable, no token) is not sent; no answer in time or one off the contract failed.
+ * A host still warming is a local host still starting: not held, so the advice catches up.
  */
 function unanswered(
   outcome: Exclude<ChorusCallOutcome<ChorusOperation>, { readonly ok: true }>,
 ): Pick<AdviseResult, 'notSent' | 'error' | 'failure'> {
   if ('refusal' in outcome) {
     const reason = `Chorus refused: ${outcome.refusal}${outcome.message ? ` (${outcome.message})` : ''}`;
-    return { notSent: { cause: 'not-admitted', reason: reason.slice(0, 500) } };
+    const cause = outcome.refusal === 'chorus_warming' ? 'not-held' : 'not-admitted';
+    return { notSent: { cause, reason: reason.slice(0, 500) } };
   }
   if (outcome.failure === 'timeout' || outcome.failure === 'invalid-response')
     return { error: outcome.message, failure: outcome.failure };
@@ -326,7 +328,7 @@ function guard(
         return {
           findings: [],
           outcome: { status: 'not-sent', cause: notSent.cause },
-          admission: 'not-admitted',
+          ...(notSent.cause === 'not-admitted' ? { admission: 'not-admitted' as const } : {}),
           error: notSent.reason.slice(0, 200),
           ...revision,
           request,

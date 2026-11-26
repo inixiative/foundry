@@ -9,7 +9,8 @@ import {
   type ConfigStore,
   DEV_TOKEN_KEY_DEFAULT,
   type DevRemoteSettings,
-  devHost,
+  devHostSetting,
+  devModeAnywhere,
 } from '../config';
 
 const PROBE_TIMEOUT_MS = 3_000;
@@ -35,17 +36,21 @@ async function probe(
   }
 }
 
-/** Settings → Dev: probe dev mode's Chorus (`/readyz`) and Oracle (`/healthz`) hosts, while dev mode is on. */
+/**
+ * Settings → Dev: probe dev mode's Chorus (`/readyz`) and Oracle (`/healthz`) hosts while dev mode
+ * is on anywhere: on this machine, or for one project (`projects[id].__devMode`).
+ */
 export function registerDevRoutes(app: Hono, configStore: ConfigStore, keychain: Keychain) {
   app.get('/api/dev/probe', async (c) => {
     const config = await configStore.load();
     const defaultTokenKey = DEV_TOKEN_KEY_DEFAULT;
-    if (config.__devMode !== true)
-      return c.json({ devMode: false, defaultTokenKey, chorus: null, oracle: null });
+    const devMode = config.__devMode === true;
+    if (!devModeAnywhere(config))
+      return c.json({ devMode, defaultTokenKey, chorus: null, oracle: null });
     const [chorus, oracle] = await Promise.all([
-      probe(devHost(config, '__chorus'), '/readyz', keychain),
-      probe(devHost(config, '__oracle'), '/healthz', keychain),
+      probe(devHostSetting(config, '__chorus'), '/readyz', keychain),
+      probe(devHostSetting(config, '__oracle'), '/healthz', keychain),
     ]);
-    return c.json({ devMode: true, defaultTokenKey, chorus, oracle });
+    return c.json({ devMode, defaultTokenKey, chorus, oracle });
   });
 }

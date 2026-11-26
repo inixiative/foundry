@@ -84,7 +84,7 @@ export function DevSection({ config, onSaved }) {
   };
   return html`<section class="settings-card" data-setting="__chorus">
     <div class="settings-card-header"><span class="settings-card-title">Dev hosts</span></div>
-    <p class="settings-desc">While dev mode is on, a project whose chorus is on sends its Warden calls straight to this Chorus host, not through Kingdom and not to this machine's Warden host. Turn dev mode off to go back.</p>
+    <p class="settings-desc">While dev mode is on, a project whose chorus is on sends its Warden calls straight to this Chorus host, not through Kingdom and not to this machine's Warden host. A project can turn it on or off for itself under its Wardens (Settings › Project › Wardens); this host serves every project that is on.</p>
     ${HOSTS.map(
       ([key, label, desc, path]) => html`
       <div key=${key} class="settings-section-label">${label}</div>

@@ -745,7 +745,7 @@ const eventStream = new EventStream();
 // calls go straight to that Chorus host, no Kingdom and no local project host. Read live: turning it
 // on or off takes effect on the next call.
 const devRemotes = chorusDevRemotes({
-  setting: () => devHost(liveConfig),
+  setting: (projectId) => devHost(liveConfig, projectId),
   // The environment's, then the keychain entry Foundry itself may read; read on every call.
   readToken: async (name) =>
     (await providerKeyEnvironment(keychain, process.env, [[name, 'foundry']]))[name],
@@ -762,7 +762,7 @@ const devRemotes = chorusDevRemotes({
 });
 /** Whether dev mode's remote Chorus serves this project: dev mode on, a host set, the project's chorus on. */
 const chorusRemoteServes = (projectId: string) =>
-  devHost(liveConfig) !== undefined &&
+  devHost(liveConfig, projectId) !== undefined &&
   resolveProjectView(liveConfig, projectId)?.chorus.on === true;
 
 // Every factory-created thread (main included) gets its own Librarian,
@@ -850,7 +850,7 @@ const holdProjectRoster = async (projectId: string) => {
   const view =
     !project || project.enabled === false ? undefined : resolveProjectView(current, projectId);
   // Dev mode's remote Chorus holds a chorus-on project's Wardens: none are held here.
-  if (!view?.chorus.on || !project?.path || devHost(current)) {
+  if (!view?.chorus.on || !project?.path || devHost(current, projectId)) {
     await projectHosts.closeProject(projectId);
     return;
   }

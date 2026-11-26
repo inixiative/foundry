@@ -162,15 +162,27 @@ describe('dev mode: one Chorus call per moment', () => {
     }
   });
 
-  it('a refusal (a warming host) is not admitted: degraded, nothing chimes', async () => {
-    const { orchestrator } = setup(() => ({ ok: false, refusal: 'chorus_warming' }));
+  it('a warming host is not held: nothing chimes, and the missed message catches up', async () => {
+    const { orchestrator, sent, state } = setup(() => ({ ok: false, refusal: 'chorus_warming' }));
     const plan = await orchestrator.preMessage('first message');
     expect(plan.contributions.map((c) => [c.outcome, c.reason, c.catchesUp])).toEqual([
-      [{ status: 'not-sent', cause: 'not-admitted' }, 'Chorus refused: chorus_warming', undefined],
-      [{ status: 'not-sent', cause: 'not-admitted' }, 'Chorus refused: chorus_warming', undefined],
+      [{ status: 'not-sent', cause: 'not-held' }, 'Chorus refused: chorus_warming', true],
+      [{ status: 'not-sent', cause: 'not-held' }, 'Chorus refused: chorus_warming', true],
     ]);
     const { decoration } = await orchestrator.hydrateDelta(plan);
     expect(decoration.blocks.filter((b) => b.placement === 'after-message')).toEqual([]);
+    state.reply = speakAll;
+    await orchestrator.preMessage('second message');
+    expect(sent.at(-1)?.input.earlier).toEqual({ messages: ['first message'], dropped: 0 });
+  });
+
+  it('any other refusal is not admitted and never catches up', async () => {
+    const { orchestrator } = setup(() => ({ ok: false, refusal: 'unknown_project' }));
+    const plan = await orchestrator.preMessage('first message');
+    expect(plan.contributions.map((c) => [c.outcome, c.catchesUp])).toEqual([
+      [{ status: 'not-sent', cause: 'not-admitted' }, undefined],
+      [{ status: 'not-sent', cause: 'not-admitted' }, undefined],
+    ]);
   });
 
   it('a Warden Chorus holds no session for catches up: its own missed message rides its own call', async () => {
