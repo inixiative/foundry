@@ -88,7 +88,14 @@ export interface DeliveredChime {
 }
 
 export type TimelineStep =
-  | { kind: 'input'; at: number | null; text: string; chars: number }
+  | {
+      kind: 'input';
+      at: number | null;
+      text: string;
+      chars: number;
+      /** Who wrote it when the owner didn't: Foundry, or the member who posted it. */
+      from?: string;
+    }
   | {
       kind: 'chorus';
       at: number | null;
@@ -244,6 +251,11 @@ function chorusRegion(
   };
 }
 
+function inputAuthor(meta: Record<string, unknown> | undefined): string | undefined {
+  if (typeof meta?.foundryLine === 'string') return 'Foundry';
+  return typeof meta?.postedBy === 'string' ? meta.postedBy : undefined;
+}
+
 function toolSteps(detail: TurnDetail): TimelineStep[] {
   const results = new Map<string, NativeEvidence>();
   for (const e of detail.nativeHistory)
@@ -326,6 +338,7 @@ export function turnTimeline(detail: TurnDetail, sources: TurnTimelineSources = 
       at: turn.startedAt,
       text: clip(user.content),
       chars: user.content.length,
+      ...(inputAuthor(user.meta) ? { from: inputAuthor(user.meta) } : {}),
     });
 
   // Each Warden call's debug reason, by the call it explains (`<row id>:<domain>`).
