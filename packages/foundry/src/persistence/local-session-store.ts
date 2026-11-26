@@ -179,8 +179,11 @@ export const SUMMARY_META_KEYS = [
   'postedBy',
   /** A schedule's run: the schedule's name (its prompt is the owner's, set ahead). */
   'scheduledRun',
-  /** Foundry's continuation of a turn it paused for a restart (`TurnService.pauseForRestart`). */
-  'restartResume',
+  /**
+   * A turn's opening that Foundry wrote, not the owner or the agent (a wake, a fork's task, a
+   * restart's continuation, a subagent's task): why Foundry wrote it.
+   */
+  'foundryLine',
 ] as const;
 const SUMMARY_SCALAR_MAX = 512;
 const SUMMARY_LAYERS_MAX = 8192;
@@ -910,7 +913,12 @@ export class LocalSessionStore {
    * An observed subagent run (spec A): a turn of a child thread recorded from the native stream,
    * opened with the task it was given. Idempotent for the same turn.
    */
-  startObservedTurn(thread: Pick<Thread, 'id' | 'meta'>, turnId: string, task: string): void {
+  startObservedTurn(
+    thread: Pick<Thread, 'id' | 'meta'>,
+    turnId: string,
+    task: string,
+    foundryLine: string,
+  ): void {
     this.db.transaction(() => {
       if (this.turn(turnId)) return;
       this.saveThread(thread);
@@ -926,7 +934,7 @@ export class LocalSessionStore {
         kind: 'text',
         content: task,
         timestamp,
-        meta: { observed: true },
+        meta: { observed: true, foundryLine },
       });
     })();
   }

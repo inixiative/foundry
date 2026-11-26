@@ -452,7 +452,7 @@ test("a decision session's lost admission is settled without touching the turn's
 // "No native admission to settle". Foundry never admitted those turns, so they never block.
 test('an observed turn the session started itself is never a lost admission', () => {
   const { store, thread } = setup();
-  store.startObservedTurn(thread, 'turn_cron', 'check flights');
+  store.startObservedTurn(thread, 'turn_cron', 'check flights', 'woken by a scheduled run');
   for (const kind of ['native_status', 'text'] as const)
     store.appendObservedNative(thread, 'turn_cron', {
       schema: 1,
@@ -473,7 +473,7 @@ test('an observed turn the session started itself is never a lost admission', ()
 
 test('a real lost turn still blocks beside observed rows, and the owner can settle it', () => {
   const { store, thread } = setup();
-  store.startObservedTurn(thread, 'turn_cron', 'check flights');
+  store.startObservedTurn(thread, 'turn_cron', 'check flights', 'woken by a scheduled run');
   store.appendObservedNative(thread, 'turn_cron', {
     schema: 1,
     nativeOutcome: 'unknown',

@@ -1004,7 +1004,12 @@ test('a turn that only talked is not asked at its hand-back', async () => {
 test('a turn the session started itself is guarded once when it ends, its milestone asked on it, and its answer handed back', async () => {
   const f = fixture({ milestone: CHIME, handBack: CHIME });
   await f.turn('turn-1', 'Watch the build and merge when green');
-  f.store.startObservedTurn(f.thread, 'wake-1', 'The agent started this turn itself.');
+  f.store.startObservedTurn(
+    f.thread,
+    'wake-1',
+    'The agent started this turn itself.',
+    'started by the agent session',
+  );
   const wakeCall = (n: number, tool: string, input: Record<string, unknown>) =>
     f.thread.signals.emit({
       id: `sig-wake-${n}`,
@@ -1081,7 +1086,12 @@ test('a turn the session started itself that only talked is neither guarded nor 
 test('a turn the session started itself that failed is guarded but not handed back', async () => {
   const f = fixture({ handBack: CHIME });
   await f.turn('turn-1', 'Watch the build');
-  f.store.startObservedTurn(f.thread, 'wake-f', 'The agent started this turn itself.');
+  f.store.startObservedTurn(
+    f.thread,
+    'wake-f',
+    'The agent started this turn itself.',
+    'started by the agent session',
+  );
   await f.thread.signals.emit({
     id: 'sig-wakef-1',
     kind: 'tool_observation',

@@ -563,8 +563,12 @@ export class TurnService {
                   ...(origin.schedule
                     ? { scheduledRun: origin.displayName }
                     : origin.restart
-                      ? { restartResume: true }
-                      : { postedBy: origin.displayName }),
+                      ? { foundryLine: 'resumed after a restart' }
+                      : origin.wake
+                        ? { foundryLine: `new in ${origin.displayName}` }
+                        : origin.fork
+                          ? { foundryLine: `forked from ${origin.displayName}` }
+                          : { postedBy: origin.displayName }),
                 }
               : {}),
           }

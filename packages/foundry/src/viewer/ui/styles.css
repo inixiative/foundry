@@ -9690,6 +9690,10 @@ a.thread-ref:hover {
 .chat-agent > .chat-msg-who {
   color: var(--accent);
 }
+.chat-foundry-line > .chat-msg-who,
+.chat-foundry-line .chat-msg-content {
+  color: var(--text-dim);
+}
 .chat-msg-content code {
   padding: 0 4px;
   border-radius: 4px;

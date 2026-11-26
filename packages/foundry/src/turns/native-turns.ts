@@ -93,7 +93,7 @@ const idOf = (...parts: string[]) => sha256Hex(parts.join('\0')).slice(0, 24);
  */
 export class NativeTurnRecorder {
   private readonly open = new Map<string, Open>();
-  /** What woke each turn, before its first event opens it. */
+  /** What woke each turn (its trigger), before its first event opens it. */
   private readonly woke = new Map<string, string>();
   /** Turns whose trigger described itself: a later bare kind never replaces those words. */
   private readonly described = new Set<string>();
@@ -130,9 +130,12 @@ export class NativeTurnRecorder {
     if (task) {
       if (task.taskType) this.kinds.set(key, task.taskType);
       // What woke it: the trigger's own words, else the trigger's kind once it is known.
-      if (task.description) this.woke.set(key, opening(task.description));
-      else if (!this.described.has(key) && task.taskType !== 'muse-turn')
-        this.woke.set(key, describe(task.taskType));
+      if (task.description) this.woke.set(key, task.description);
+      else if (!this.described.has(key) && task.taskType !== 'muse-turn') {
+        const trigger = triggerOfKind(task.taskType);
+        if (trigger) this.woke.set(key, trigger);
+        else this.woke.delete(key);
+      }
       if (task.description) this.described.add(key);
       if (task.phase === 'ended') this.end(thread, key, task);
       return;
@@ -186,7 +189,8 @@ export class NativeTurnRecorder {
     }
     const run: Open = { turnId: `turn_${idOf(key)}`, calls: new Map() };
     this.open.set(key, run);
-    this.deps.store.startObservedTurn(thread, run.turnId, this.woke.get(key) ?? describe());
+    const { content, foundryLine } = opening(this.woke.get(key));
+    this.deps.store.startObservedTurn(thread, run.turnId, content, foundryLine);
     this.goLive(thread, key, run, control);
     this.changed(thread, run.turnId);
     return run;
@@ -258,14 +262,22 @@ export class NativeTurnRecorder {
 
 /**
  * The turn's opening message. It is stored where a person's message would be, so it says plainly that
- * no one typed it: the agent started the turn, woken by its trigger.
+ * no one typed it: the agent started the turn, woken by its trigger. Foundry's line names the trigger.
  */
-function opening(trigger: string): string {
-  return `The agent started this turn itself, woken by ${trigger}.`;
+function opening(trigger: string | undefined): { content: string; foundryLine: string } {
+  return trigger
+    ? {
+        content: `The agent started this turn itself, woken by ${trigger}.`,
+        foundryLine: `woken by ${trigger}`,
+      }
+    : {
+        content: 'The agent started this turn itself.',
+        foundryLine: 'started by the agent session',
+      };
 }
 
-/** The opening line from the trigger's kind alone (`muse-cron` → "a scheduled run"). */
-function describe(taskType?: string): string {
+/** The trigger from its kind alone (`muse-cron` → "a scheduled run"). */
+function triggerOfKind(taskType?: string): string | undefined {
   const what: Record<string, string> = {
     'muse-cron': 'a scheduled run',
     'muse-monitor': 'a monitor',
@@ -275,6 +287,5 @@ function describe(taskType?: string): string {
     'muse-goal': 'its goal',
     'claude-wake': 'a background task finishing',
   };
-  const trigger = taskType ? what[taskType] : undefined;
-  return trigger ? opening(trigger) : 'The agent started this turn itself.';
+  return taskType ? what[taskType] : undefined;
 }

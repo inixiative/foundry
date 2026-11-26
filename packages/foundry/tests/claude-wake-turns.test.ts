@@ -149,6 +149,7 @@ test('a wake is a live turn: Working while it runs, then its text is the latest 
     ['user', 'The agent started this turn itself, woken by a background task finishing.'],
     ['agent', 'The tests passed.'],
   ]);
+  expect(messages[0]?.meta).toMatchObject({ foundryLine: 'woken by a background task finishing' });
 });
 
 test('a message sent during a wake queues behind it and runs once the wake ends, never interleaved', async () => {
