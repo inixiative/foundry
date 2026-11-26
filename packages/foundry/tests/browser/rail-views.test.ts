@@ -24,9 +24,9 @@ const { chromium } = createRequire(import.meta.url)(
 
 // The left rail opens on Attention: only the threads that need you (a pending approval), not the one
 // working or the idle one, and not one whose subagents are blocked or asking (a subagent's state goes
-// back to the agent that spawned it; Aron, 11-14); Open lists them all. ⌥⇧← ⌥⇧→ step Attention · Open · Projects · Scheduled · Status, wrapping,
+// back to the agent that spawned it; Aron, 11-14); Open lists them all. ⌥, ⌥. step Attention · Open · Projects · Scheduled · Status, wrapping,
 // from inside the message box, and the hash keeps the view.
-test('the rail opens on Attention, lists only threads that need you, and ⌥⇧← ⌥⇧→ step the five views', async () => {
+test('the rail opens on Attention, lists only threads that need you, and ⌥, ⌥. step the five views', async () => {
   const cleanup: ReleaseStep[] = [];
   const dir = mkdtempSync(join(tmpdir(), 'foundry-rail-views-'));
   cleanup.push(['dir', () => rmSync(dir, { recursive: true, force: true })]);
@@ -125,12 +125,12 @@ test('the rail opens on Attention, lists only threads that need you, and ⌥⇧�
 
     // The shortcut works while typing: focus stays in the message box.
     await page.locator('.chat-input').focus();
-    await page.keyboard.press('Alt+Shift+ArrowRight');
+    await page.keyboard.press('Alt+Period');
     await active.filter({ hasText: 'Open' }).waitFor();
     await rows.filter({ hasText: 'Rewrite the setup guide' }).waitFor();
     await rows.filter({ hasText: 'Tidy the changelog' }).waitFor();
     await page.waitForFunction(() => location.hash.includes('rail=open'));
-    await page.keyboard.press('Alt+Shift+ArrowRight');
+    await page.keyboard.press('Alt+Period');
     await active.filter({ hasText: 'Projects' }).waitFor();
     // Projects and the selected scope's threads sit side by side, not stacked (Aron, 11-14).
     const box = (sel: string) =>
@@ -156,7 +156,7 @@ test('the rail opens on Attention, lists only threads that need you, and ⌥⇧�
       ['Scheduled', 'Status'],
     ]);
     // Scheduled: schedules and triggers (none yet), then threads running a loop.
-    await page.keyboard.press('Alt+Shift+ArrowRight');
+    await page.keyboard.press('Alt+Period');
     await active.filter({ hasText: 'Scheduled' }).waitFor();
     await page.locator('.rail-pane[aria-label="Schedules"] .rail-empty').waitFor();
     const loops = page.locator('.rail-pane[aria-label="Loops"] .tree-node');
@@ -164,17 +164,17 @@ test('the rail opens on Attention, lists only threads that need you, and ⌥⇧�
     expect(await loops.count()).toBe(1);
     await page.waitForFunction(() => location.hash.includes('rail=scheduled'));
     // Status is this machine's resources, a view of its own: no thread rows, nothing else under it.
-    await page.keyboard.press('Alt+Shift+ArrowRight');
+    await page.keyboard.press('Alt+Period');
     await active.filter({ hasText: 'Status' }).waitFor();
     await page.locator('.nav-rail .machine-status').waitFor();
     expect(await page.locator('.nav-rail .tree-node').count()).toBe(0);
     await page.waitForFunction(() => location.hash.includes('rail=status'));
-    await page.keyboard.press('Alt+Shift+ArrowRight');
+    await page.keyboard.press('Alt+Period');
     await active.filter({ hasText: 'Attention' }).waitFor();
     expect(await page.locator('.machine-status').count()).toBe(0);
-    await page.keyboard.press('Alt+Shift+ArrowLeft');
+    await page.keyboard.press('Alt+Comma');
     await active.filter({ hasText: 'Status' }).waitFor();
-    await page.keyboard.press('Alt+Shift+ArrowLeft');
+    await page.keyboard.press('Alt+Comma');
     await active.filter({ hasText: 'Scheduled' }).waitFor();
     expect(
       await page.evaluate(() => document.activeElement?.classList.contains('chat-input')),
