@@ -690,6 +690,11 @@
     "description": "Memory-backed sources only. Bounded automatic selection is on by default: pinned kinds always, records relevant to the current message, a few recent captures, and an explicit account of what was left out. Override fields of the policy here, or set `false` to inject the full formatted log."
   },
   {
+    "path": "__devMode",
+    "scope": "project",
+    "description": "Dev mode for this project alone, over this machine's `__devMode` (R-2026-11-25-05): `true` sends this project's Warden calls to this machine's `__chorus` host while the rest stay local, `false` keeps them local while dev mode is on elsewhere. Machine only: never in a repository."
+  },
+  {
     "path": "enabled",
     "scope": "project",
     "description": "Whether this project is enabled. Default: true."

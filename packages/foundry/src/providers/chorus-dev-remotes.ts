@@ -34,7 +34,7 @@ const hostState = (
  * project's host state comes from `chorus.projectActivity`, sent when a thread of it starts.
  */
 export function chorusDevRemotes(options: {
-  readonly setting: () => Required<DevRemoteSettings> | undefined;
+  readonly setting: (projectId: string) => Required<DevRemoteSettings> | undefined;
   readonly readToken: (name: string) => Promise<string | undefined>;
   readonly log?: (message: string) => void;
   readonly onHost?: (projectId: string, state: ProjectHostState) => void;
@@ -43,7 +43,7 @@ export function chorusDevRemotes(options: {
   const hosts = new Map<string, ProjectHostState>();
   let generation = 0;
   const remote = (projectId: string): ChorusRemote | undefined => {
-    const setting = options.setting();
+    const setting = options.setting(projectId);
     if (!setting) return undefined;
     const key = `${setting.url}\u0000${setting.tokenKey}\u0000${projectId}`;
     const known = remotes.get(key);
@@ -86,9 +86,9 @@ export function chorusDevRemotes(options: {
       hosts.set(projectId, state);
       options.onHost?.(projectId, state);
     },
-    /** Every remote project's last reported host state, while dev mode is on. */
+    /** Each remote project's last reported host state, for the projects in dev mode now. */
     snapshot(): Record<string, ProjectHostState> {
-      return options.setting() ? Object.fromEntries(hosts) : {};
+      return Object.fromEntries([...hosts].filter(([projectId]) => options.setting(projectId)));
     },
   };
 }

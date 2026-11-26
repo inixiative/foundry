@@ -1,6 +1,6 @@
 import './helpers/isolate-archive';
 import { afterEach, expect, test } from 'bun:test';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -112,6 +112,53 @@ test('a project setting: yours over the repository’s over Foundry’s (steer, 
   expect((await put('team', { steer: true })).status).toBe(400);
   expect((await put('me', { steer: 'yes' })).status).toBe(400);
   expect((await put('everyone', { steer: 'yes' })).status).toBe(400);
+});
+
+test('a project’s dev mode is yours alone: on, off or the machine’s, shown on its Wardens', async () => {
+  const f = fixture();
+  const repo = mkdtempSync(join(tmpdir(), 'foundry-dev-repo-'));
+  dirs.push(repo);
+  const id = (await f.request('/api/projects', { path: repo, label: 'Dev' })).body.id as string;
+  const put = (scope: string, values: Record<string, unknown>) =>
+    f.request(`/api/projects/${id}/setting`, { scope, values }, 'PUT');
+  const dev = async () => (await f.request(`/api/projects/${id}/chorus`)).body.dev;
+  expect(
+    (await f.request('/api/settings/dev', { __chorus: { url: 'http://localhost:4901' } }, 'PATCH'))
+      .status,
+  ).toBe(200);
+  expect(await dev()).toEqual({
+    own: null,
+    machine: false,
+    on: false,
+    host: 'http://localhost:4901',
+  });
+
+  expect((await put('me', { __devMode: true })).status).toBe(200);
+  expect(f.saved(id).__devMode).toBe(true);
+  expect(await dev()).toMatchObject({ own: true, machine: false, on: true });
+  expect((await f.request(`/api/projects/${id}/setting?path=__devMode`)).body).toMatchObject({
+    value: true,
+    mine: true,
+  });
+  expect((await f.request('/api/dev/probe')).body).toMatchObject({
+    devMode: false,
+    projects: [id],
+  });
+
+  expect((await f.request('/api/settings/dev', { __devMode: true }, 'PATCH')).status).toBe(200);
+  await put('me', { __devMode: false });
+  expect(await dev()).toMatchObject({ own: false, machine: true, on: false });
+  await put('me', { __devMode: null });
+  expect(f.saved(id)).not.toHaveProperty('__devMode');
+  expect(await dev()).toMatchObject({ own: null, machine: true, on: true });
+
+  // Never for everyone, never anything but a boolean, and no other `__` path.
+  const refused = await put('everyone', { __devMode: true });
+  expect(refused.status).toBe(400);
+  expect(refused.body.error).toContain("can't be set for everyone");
+  expect((await put('me', { __devMode: 'yes' })).status).toBe(400);
+  expect((await put('me', { __chorus: { url: 'http://x' } })).status).toBe(400);
+  expect(existsSync(join(repo, '.foundry/project.json'))).toBe(false);
 });
 
 test('every shared project setting has a repository layer; machine and person settings do not', async () => {

@@ -199,17 +199,40 @@ export const DEV_TOKEN_KEY_DEFAULT = 'CHORUS_DEV_TOKEN';
 /** The prefix dev mode's Chorus token key must carry: the token it names is sent, so never another credential. */
 const DEV_TOKEN_KEY_PREFIX = 'CHORUS_';
 
-/** A dev-mode host while dev mode is on: its URL without a trailing slash, its token key resolved. */
-export function devHost(
+/** Whether dev mode is on for a project (its own `__devMode`, else this machine's), or for this machine without one. */
+export function devModeOn(config: FoundryConfig, projectId?: string): boolean {
+  const own = projectId === undefined ? undefined : config.projects?.[projectId]?.__devMode;
+  return (own ?? config.__devMode) === true;
+}
+
+/** Whether dev mode is on anywhere: this machine's, or any project's own. */
+export function devModeAnywhere(config: FoundryConfig): boolean {
+  return (
+    config.__devMode === true ||
+    Object.values(config.projects ?? {}).some((project) => project.__devMode === true)
+  );
+}
+
+/** A dev-mode host as set, on or off: its URL without a trailing slash, its token key resolved. */
+export function devHostSetting(
   config: FoundryConfig,
-  key: '__chorus' | '__oracle' = '__chorus',
+  key: '__chorus' | '__oracle',
 ): Required<DevRemoteSettings> | undefined {
   const remote = config[key];
-  if (config.__devMode !== true || !remote) return undefined;
+  if (!remote) return undefined;
   return {
     url: remote.url.replace(/\/+$/, ''),
     tokenKey: remote.tokenKey ?? DEV_TOKEN_KEY_DEFAULT,
   };
+}
+
+/** A dev-mode host while dev mode is on (for the project, when one is named). */
+export function devHost(
+  config: FoundryConfig,
+  key: '__chorus' | '__oracle' = '__chorus',
+  projectId?: string,
+): Required<DevRemoteSettings> | undefined {
+  return devModeOn(config, projectId) ? devHostSetting(config, key) : undefined;
 }
 
 function validateDevRemote(key: '__chorus' | '__oracle', remote: unknown): void {
@@ -460,6 +483,12 @@ export interface ProjectSettingsConfig {
   layers?: Record<string, LayerSettingsOverride>;
   /** Project-specific sources (merged over global sources). */
   sources?: Record<string, DataSourceConfig>;
+  /**
+   * Dev mode for this project alone, over this machine's `__devMode` (R-2026-11-25-05): `true` sends
+   * this project's Warden calls to this machine's `__chorus` host while the rest stay local, `false`
+   * keeps them local while dev mode is on elsewhere. Machine only: never in a repository.
+   */
+  __devMode?: boolean;
   /** Whether this project is enabled. Default: true. */
   enabled?: boolean;
   /**
@@ -1237,6 +1266,8 @@ export function validateConfig(config: FoundryConfig): void {
       throw Error(`Project ${project.id} status must be archived or absent`);
     if (project.label !== undefined && (typeof project.label !== 'string' || !project.label.trim()))
       throw Error(`Project ${project.id} label must be a non-empty string`);
+    if (project.__devMode !== undefined && typeof project.__devMode !== 'boolean')
+      throw Error(`Project ${project.id} __devMode must be true or false`);
     validateProjectCapacity(config, project);
   }
   for (const source of validateKingdomAccess(config.kingdomAccess ?? [])) {
@@ -1421,6 +1452,8 @@ const PERSONAL_PROJECT_SETTINGS: Readonly<Record<string, string>> = {
   tags: 'How this project is registered on this machine',
   description: 'How this project is registered on this machine',
   enabled: 'Whether this machine runs this project',
+  __devMode:
+    'Dev mode sends this machine’s Warden calls to a local Chorus; a repository can’t turn it on',
   status: 'Whether this machine has archived this project',
   capacity: 'Which subscriptions you run this project on',
   kingdomCapacity: 'Your Kingdom subscription pool',
