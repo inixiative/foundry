@@ -1018,6 +1018,7 @@ export function createViewer(config: ViewerConfig) {
     tokenTracker: config.tokenTracker,
     projectRegistry: config.projectRegistry,
     actionQueue: config.actionQueue ?? null,
+    kingdom,
     threadsChanged: () => streams.threadsChanged(),
   });
   if (config.logins)

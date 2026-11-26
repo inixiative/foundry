@@ -75,6 +75,8 @@ export interface ReadinessChorus {
   /** Regions present but off (the chorus is not enabled). */
   available?: number;
   reason?: string;
+  /** Remote endpoint serving this project's Wardens (dev URL or `kingdom:<host>`). */
+  remote?: string;
   layers: Array<{ label: string; regionsDir: string; regions: number }>;
   regions: Array<{
     id: string;
@@ -686,6 +688,7 @@ export async function describeReadinessChorus(
     ...(chorus.repository ? { repository: chorus.repository } : {}),
     ...(chorus.available ? { available: chorus.available } : {}),
     ...(chorus.reason ? { reason: chorus.reason } : {}),
+    ...(chorus.remote ? { remote: chorus.remote } : {}),
     roles: {
       warden: readinessRole(chorus.roles.warden, 'warden'),
       herald: { ...readinessRole(chorus.roles.herald, 'herald'), built: false },

@@ -10,6 +10,11 @@ import type { Context, Hono } from 'hono';
 import { fromSettingsConfig, type ProjectRegistry } from '../../agents/project';
 import { readWardenBrief } from '../../agents/warden-brief';
 import { WARDEN_CHARTER } from '../../classify';
+import {
+  type KingdomInstallationConnections,
+  kingdomIntegrationId,
+  selectKingdomIntegration,
+} from '../../providers/kingdom-installation-connection';
 import { providerAccounts } from '../../providers/provider-accounts';
 import { providerLimits } from '../../providers/provider-limits';
 import { describeReadinessChorus } from '../../readiness';
@@ -129,6 +134,7 @@ export interface ControlRoutesDeps {
   tokenTracker?: TokenTracker;
   projectRegistry?: ProjectRegistry;
   actionQueue: ActionQueue | null;
+  kingdom?: KingdomInstallationConnections;
   /** Thread-list streams re-check membership (a removed project's threads become unowned). */
   threadsChanged: () => void;
 }
@@ -697,13 +703,27 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps): void 
     const view = configStore.resolveProjectView(id);
     if (!view) return c.json({ error: 'project not found' }, 404);
     const config = configStore.config;
-    const path = config.projects[id]?.path;
+    const project = config.projects[id];
+    const path = project?.path;
+    let remote = view.chorus.remote;
+    if (!remote && view.chorus.on && project?.kingdomProject && deps.kingdom) {
+      try {
+        const integration = selectKingdomIntegration(
+          config.kingdomIntegrations,
+          project.kingdomProject.kingdom,
+        );
+        const conn = deps.kingdom.get(kingdomIntegrationId(integration));
+        if (conn?.hasChorusGrant(project.kingdomProject.projectId)) {
+          remote = `kingdom:${new URL(integration.url).host}`;
+        }
+      } catch {}
+    }
     return c.json({
       projectId: id,
-      chorus: await describeReadinessChorus(id, view.chorus),
+      chorus: await describeReadinessChorus(id, { ...view.chorus, ...(remote ? { remote } : {}) }),
       // Dev mode for this project: its own setting (null: this machine's), this machine's, the result.
       dev: {
-        own: config.projects[id]?.__devMode ?? null,
+        own: project?.__devMode ?? null,
         machine: config.__devMode === true,
         on: devModeOn(config, id),
         host: devHostSetting(config, '__chorus')?.url ?? null,

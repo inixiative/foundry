@@ -12,7 +12,7 @@ import { publishDaemonRuntime } from './daemon/runtime-hook';
 import type { FeedbackService } from './feedback/service';
 import { subscriptionWorker, WORKER_SESSION_RUNTIMES } from './models/registry';
 import { providerBaseUrl, providerContextBudget, providerEnabled } from './models/vendors';
-import { chorusDevRemotes } from './providers/chorus-dev-remotes';
+import { chorusRemotes } from './providers/chorus-remotes';
 import {
   type DecisionEvents,
   liveDecisionHosts,
@@ -21,6 +21,12 @@ import {
 import { createDecisionProvider } from './providers/decision-provider';
 import { harnessSettingSources } from './providers/harness-settings';
 import { KingdomAuthentication } from './providers/kingdom-authentication';
+import { makeKingdomSignetHandleResolver } from './providers/kingdom-chorus-transport';
+import {
+  type KingdomInstallationConnections,
+  kingdomIntegrationId,
+  selectKingdomIntegration,
+} from './providers/kingdom-installation-connection';
 import { projectCapacity } from './providers/kingdom-subscription-authentication';
 import { LoginPoolAuthentication, LoginRunLog } from './providers/login-pool';
 import { LoginSetup } from './providers/login-setup';
@@ -741,14 +747,39 @@ const providers = new Map<string, LLMProvider>([
 
 const eventStream = new EventStream();
 
-// Dev mode (R-2026-11-25-05): while `__devMode` and `__chorus` are set, a chorus-on project's Warden
-// calls go straight to that Chorus host, no Kingdom and no local project host. Read live: turning it
-// on or off takes effect on the next call.
-const devRemotes = chorusDevRemotes({
-  setting: (projectId) => devHost(liveConfig, projectId),
+// Remote Choruses: dev mode (per-project `__devMode` + `__chorus`, R-2026-11-25-05) routes
+// straight to the local Chorus host, no Kingdom; otherwise a project linked to a paired Kingdom
+// with a Chorus grant routes through Kingdom's InstallationSocket relay. Read live so toggling dev
+// mode or granting/revoking Chorus takes effect on the next Warden call.
+let kingdomConnections: KingdomInstallationConnections | undefined;
+const resolveKingdomSignets = makeKingdomSignetHandleResolver({
+  configDir: FOUNDRY_DIR,
+  connections: () => kingdomConnections,
+});
+const remotes = chorusRemotes({
+  devSetting: (projectId) => devHost(liveConfig, projectId),
   // The environment's, then the keychain entry Foundry itself may read; read on every call.
   readToken: async (name) =>
     (await providerKeyEnvironment(keychain, process.env, [[name, 'foundry']]))[name],
+  hostedProject: (projectId) => {
+    const link = liveConfig.projects?.[projectId]?.kingdomProject;
+    if (!link) return undefined;
+    try {
+      const integration = selectKingdomIntegration(liveConfig.kingdomIntegrations, link.kingdom);
+      const id = kingdomIntegrationId(integration);
+      // Only route to hosted Chorus when Kingdom has actually granted this Foundry a Chorus
+      // resource for this project (never suppress local Wardens for capacity-only `kingdomProject` links).
+      if (!kingdomConnections?.get(id)?.hasChorusGrant(link.projectId)) return undefined;
+      return {
+        key: `${id}\u0000${integration.url}\u0000${integration.signetId}`,
+        endpoint: `kingdom:${new URL(integration.url).host}`,
+        kingdomProjectId: link.projectId,
+        signets: () => resolveKingdomSignets(integration),
+      };
+    } catch {
+      return undefined;
+    }
+  },
   log: (line) => console.log(line),
   onHost: (projectId, state) => {
     const activity = projectHostActivity(
@@ -756,26 +787,27 @@ const devRemotes = chorusDevRemotes({
       liveConfig.projects?.[projectId]?.label ?? projectId,
       state,
     );
-    console.log(`[chorus-dev] ${activity.detail}`);
+    console.log(`[chorus-remote] ${activity.detail}`);
     eventStream.pushActivity(activity);
   },
 });
-/** Whether dev mode's remote Chorus serves this project: dev mode on, a host set, the project's chorus on. */
+/** Whether a remote Chorus (dev mode or hosted Kingdom) serves this project. */
 const chorusRemoteServes = (projectId: string) =>
-  devHost(liveConfig, projectId) !== undefined &&
-  resolveProjectView(liveConfig, projectId)?.chorus.on === true;
+  resolveProjectView(liveConfig, projectId)?.chorus.on === true &&
+  remotes.remote(projectId) !== undefined;
 
 // Every factory-created thread (main included) gets its own Librarian,
 // Wardens, FlowOrchestrator, event bridges and persistence sinks; archiving
 // the thread disposes them.
 const runtimeManager = new ThreadRuntimeManager({
   config,
-  // A turn marks its project active (opening its Warden host if none is open); it never waits for it.
-  ...(live
-    ? { activateWardenHost: (projectId: string) => void projectActivity?.activate(projectId) }
-    : {}),
+  // A turn marks its project active (opening its remote or local Warden host); it never waits for it.
+  activateWardenHost: (projectId: string) => {
+    if (chorusRemoteServes(projectId)) void remotes.activate(projectId);
+    else if (live) void projectActivity?.activate(projectId);
+  },
   chorusRemote: (projectId: string) =>
-    chorusRemoteServes(projectId) ? devRemotes.remote(projectId) : undefined,
+    chorusRemoteServes(projectId) ? remotes.remote(projectId) : undefined,
   llm: flowLlm,
   providers,
   // Review uses its explicit phase profile, otherwise the configured flow policy.
@@ -849,8 +881,8 @@ const holdProjectRoster = async (projectId: string) => {
   const project = current.projects?.[projectId];
   const view =
     !project || project.enabled === false ? undefined : resolveProjectView(current, projectId);
-  // Dev mode's remote Chorus holds a chorus-on project's Wardens: none are held here.
-  if (!view?.chorus.on || !project?.path || devHost(current, projectId)) {
+  // Remote Chorus (dev mode or hosted Kingdom) holds a chorus-on project's Wardens: none are held here.
+  if (!view?.chorus.on || !project?.path || chorusRemoteServes(projectId)) {
     await projectHosts.closeProject(projectId);
     return;
   }
@@ -1100,11 +1132,11 @@ const viewer = await startViewer({
   configDir: FOUNDRY_DIR,
   // Opening a thread of a project opens its Warden host, so it is warm by the first turn.
   projectActive: (projectId) => {
-    if (chorusRemoteServes(projectId)) void devRemotes.activate(projectId);
+    if (chorusRemoteServes(projectId)) void remotes.activate(projectId);
     else void projectActivity?.activate(projectId);
   },
   decisionHosts: () => {
-    const remote = devRemotes.snapshot();
+    const remote = remotes.snapshot();
     const local = live?.projectHosts.snapshot();
     if (!local && !Object.keys(remote).length) return undefined;
     return { ...local, projects: { ...local?.projects, ...remote } };
@@ -1150,6 +1182,11 @@ conversationService = viewer.conversations;
 threadRecords = viewer.records;
 secretScratch = viewer.secrets;
 feedbackService = viewer.feedback;
+kingdomConnections = viewer.kingdom;
+viewer.kingdom.onChange(() => {
+  remotes.invalidate();
+  refreshProjectRosters();
+});
 
 console.log(`Viewer: http://localhost:${viewer.server.port ?? port}`);
 if (acpLaunch) {

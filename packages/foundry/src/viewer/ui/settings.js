@@ -484,7 +484,11 @@ function ProjectChorus({ projectId }) {
       }
       ${
         chorus.remote
-          ? html`<p class="settings-desc" data-setting="__chorus">Dev mode: served by the Chorus host at <code>${chorus.remote}</code>, not this machine.</p>`
+          ? html`<p class="settings-desc" data-setting="__chorus">${
+              chorus.remote.startsWith('kingdom:')
+                ? html`Hosted via Kingdom: served by <code>${chorus.remote.slice('kingdom:'.length)}</code>, not this machine.`
+                : html`Dev mode: served by the Chorus host at <code>${chorus.remote}</code>, not this machine.`
+            }</p>`
           : null
       }
       ${dev?.host ? html`<${ProjectDevMode} projectId=${projectId} dev=${dev} onSaved=${() => setDevRead((n) => n + 1)} />` : null}

@@ -3322,7 +3322,7 @@ class ThreadRuntimeImpl implements ThreadRuntime {
         continue;
       }
       if (this._chorusRemote?.()) {
-        this._deferReview(domain, input, 'not sent: dev mode’s remote Chorus serves no review yet');
+        this._deferReview(domain, input, 'not sent: remote Chorus serves no review yet');
         continue;
       }
       const queued = this._queuedEvidence.get(domain) ?? [];
