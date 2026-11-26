@@ -199,7 +199,10 @@ export const DEV_TOKEN_KEY_DEFAULT = 'CHORUS_DEV_TOKEN';
 /** The prefix dev mode's Chorus token key must carry: the token it names is sent, so never another credential. */
 const DEV_TOKEN_KEY_PREFIX = 'CHORUS_';
 
-/** Whether dev mode is on for a project (its own `__devMode`, else this machine's), or for this machine without one. */
+/**
+ * Whether dev mode is on for a project (its own `__devMode`, else this machine's), or for this
+ * machine without one. Not `booleanProjectSetting`: a repository's file never sets dev mode.
+ */
 export function devModeOn(config: FoundryConfig, projectId?: string): boolean {
   const own = projectId === undefined ? undefined : config.projects?.[projectId]?.__devMode;
   return (own ?? config.__devMode) === true;
@@ -226,13 +229,12 @@ export function devHostSetting(
   };
 }
 
-/** A dev-mode host while dev mode is on (for the project, when one is named). */
+/** Dev mode's Chorus host while dev mode is on (for the project, when one is named). */
 export function devHost(
   config: FoundryConfig,
-  key: '__chorus' | '__oracle' = '__chorus',
   projectId?: string,
 ): Required<DevRemoteSettings> | undefined {
-  return devModeOn(config, projectId) ? devHostSetting(config, key) : undefined;
+  return devModeOn(config, projectId) ? devHostSetting(config, '__chorus') : undefined;
 }
 
 function validateDevRemote(key: '__chorus' | '__oracle', remote: unknown): void {

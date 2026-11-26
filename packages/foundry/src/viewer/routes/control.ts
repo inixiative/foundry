@@ -83,8 +83,8 @@ const SETTABLE_PROJECT_ROOTS: ReadonlySet<string> = new Set<string>([
   '__devMode',
 ]);
 
-/** A dotted setting path; a root may carry dev mode's `__` prefix (R-2026-11-25-05). */
-const SETTING_PATH = /^(?:__)?[A-Za-z][\w-]*(\.[\w-]+)*$/;
+/** A dotted setting path, or `__devMode`: the one dev-mode key a project carries (R-2026-11-25-05). */
+const SETTING_PATH = /^(?:__devMode|[A-Za-z][\w-]*(\.[\w-]+)*)$/;
 
 /** An object setting's keys that are this machine's or this person's alone. */
 const personalKeysOf = (path: string, value: unknown): string[] =>

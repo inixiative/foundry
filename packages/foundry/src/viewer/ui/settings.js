@@ -460,7 +460,7 @@ function ProjectChorus({ projectId }) {
     return () => {
       live = false;
     };
-  }, [projectId, devRead]);
+  }, [projectId, devRead, devMode.value]);
   if (chorus === undefined) return html`<div class="settings-empty">Reading the Wardens…</div>`;
   if (chorus === null)
     return html`<div class="settings-empty">The Wardens could not be read; check the project's settings.</div>`;
@@ -598,9 +598,10 @@ function ChorusStages({ roles, decision }) {
 // ---------------------------------------------------------------------------
 
 function SettingsNav({ projectId, section, projectList }) {
-  // The Dev section shows while dev mode is on here or for any project.
+  // The Dev section shows while dev mode is on here or for any project, or a Chorus host is set.
   const devAnywhere =
     devMode.value ||
+    Boolean(settingsConfig.value?.__chorus) ||
     Object.values(settingsConfig.value?.projects ?? {}).some((p) => p.__devMode === true);
   const sections = projectId
     ? PROJECT_SETTINGS

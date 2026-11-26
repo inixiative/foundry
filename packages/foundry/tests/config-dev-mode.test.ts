@@ -62,9 +62,10 @@ test('devHost is a host only while dev mode is on, its trailing slash dropped an
   expect(
     devHost(withDev({ __devMode: true, __chorus: { url: 'http://h', tokenKey: 'CHORUS_MINE' } })),
   ).toEqual({ url: 'http://h', tokenKey: 'CHORUS_MINE' });
-  expect(
-    devHost(withDev({ __devMode: true, __oracle: { url: 'http://o//' } }), '__oracle'),
-  ).toEqual({ url: 'http://o', tokenKey: 'CHORUS_DEV_TOKEN' });
+  expect(devHostSetting(withDev({ __oracle: { url: 'http://o//' } }), '__oracle')).toEqual({
+    url: 'http://o',
+    tokenKey: 'CHORUS_DEV_TOKEN',
+  });
 });
 
 test('a project’s own __devMode wins over the machine’s; the host is always the machine’s __chorus', () => {
@@ -83,20 +84,20 @@ test('a project’s own __devMode wins over the machine’s; the host is always 
   });
   expect(devModeOn(machineOn, 'a')).toBe(true);
   expect(devModeOn(machineOn, 'b')).toBe(false);
-  expect(devHost(machineOn, '__chorus', 'a')).toEqual(host);
-  expect(devHost(machineOn, '__chorus', 'b')).toBeUndefined();
+  expect(devHost(machineOn, 'a')).toEqual(host);
+  expect(devHost(machineOn, 'b')).toBeUndefined();
   // Machine off: only a project that turned itself on goes to the host.
   const machineOff = withDev({ __chorus: chorus, projects: { a: project(), b: project(true) } });
   expect(devModeOn(machineOff)).toBe(false);
-  expect(devHost(machineOff, '__chorus', 'a')).toBeUndefined();
-  expect(devHost(machineOff, '__chorus', 'b')).toEqual(host);
+  expect(devHost(machineOff, 'a')).toBeUndefined();
+  expect(devHost(machineOff, 'b')).toEqual(host);
   expect(devModeAnywhere(machineOff)).toBe(true);
   expect(devModeAnywhere(withDev({ __chorus: chorus, projects: { a: project(false) } }))).toBe(
     false,
   );
   // The setting is read whatever the switch says; with no host set, dev mode sends nothing anywhere.
   expect(devHostSetting(machineOff, '__chorus')).toEqual(host);
-  expect(devHost(withDev({ projects: { b: project(true) } }), '__chorus', 'b')).toBeUndefined();
+  expect(devHost(withDev({ projects: { b: project(true) } }), 'b')).toBeUndefined();
   validateConfig(machineOff);
   expect(() =>
     validateConfig(

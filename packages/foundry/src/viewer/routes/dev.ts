@@ -11,7 +11,6 @@ import {
   type DevRemoteSettings,
   devHostSetting,
   devModeAnywhere,
-  devModeOn,
 } from '../config';
 
 const PROBE_TIMEOUT_MS = 3_000;
@@ -46,15 +45,12 @@ export function registerDevRoutes(app: Hono, configStore: ConfigStore, keychain:
     const config = await configStore.load();
     const defaultTokenKey = DEV_TOKEN_KEY_DEFAULT;
     const devMode = config.__devMode === true;
-    const projects = Object.entries(config.projects ?? {})
-      .filter(([id]) => devModeOn(config, id))
-      .map(([id]) => id);
     if (!devModeAnywhere(config))
-      return c.json({ devMode, projects, defaultTokenKey, chorus: null, oracle: null });
+      return c.json({ devMode, defaultTokenKey, chorus: null, oracle: null });
     const [chorus, oracle] = await Promise.all([
       probe(devHostSetting(config, '__chorus'), '/readyz', keychain),
       probe(devHostSetting(config, '__oracle'), '/healthz', keychain),
     ]);
-    return c.json({ devMode, projects, defaultTokenKey, chorus, oracle });
+    return c.json({ devMode, defaultTokenKey, chorus, oracle });
   });
 }

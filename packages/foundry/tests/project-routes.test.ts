@@ -140,9 +140,9 @@ test('a project’s dev mode is yours alone: on, off or the machine’s, shown o
     value: true,
     mine: true,
   });
-  expect((await f.request('/api/dev/probe')).body).toMatchObject({
-    devMode: false,
-    projects: [id],
+  expect((await f.request('/api/dev/probe')).body).toMatchObject({ devMode: false });
+  expect((await f.request('/api/dev/probe')).body.chorus).toMatchObject({
+    url: 'http://localhost:4901/readyz',
   });
 
   expect((await f.request('/api/settings/dev', { __devMode: true }, 'PATCH')).status).toBe(200);
