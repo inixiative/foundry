@@ -403,16 +403,8 @@ export class SessionBackedProvider implements LLMProvider {
     const attempt = (
       session as HarnessSession & { inspectAttempt?: (id: string) => unknown }
     ).inspectAttempt?.(id);
-    const evidence = attempt ? this._ownedProjection(session, attempt, owner) : undefined;
+    const evidence = attempt ? projectNative(attempt, owner) : undefined;
     return evidence?.admissionId === id ? evidence : undefined;
-  }
-
-  private _ownedProjection(
-    session: HarnessSession,
-    value: unknown,
-    owner?: NativeOwner,
-  ): NativeEvidence {
-    return projectNative(value, owner);
   }
 
   private _callSettled(evidence: NativeEvidence): boolean {
@@ -654,7 +646,7 @@ export class SessionBackedProvider implements LLMProvider {
         ...(observation
           ? {
               onAdmission: async (attempt: unknown) => {
-                const evidence = this._ownedProjection(session, attempt, observation.owner);
+                const evidence = projectNative(attempt, observation.owner);
                 if (!evidence.admissionId) throw Error('Engine did not supply admission identity');
                 await observation.register(evidence);
                 bridge?.register(evidence);
@@ -678,7 +670,7 @@ export class SessionBackedProvider implements LLMProvider {
     } catch (error) {
       const attempt =
         error && typeof error === 'object' ? (error as { attempt?: unknown }).attempt : undefined;
-      const evidence = this._ownedProjection(session, attempt, observation?.owner);
+      const evidence = projectNative(attempt, observation?.owner);
       // Nothing was sent: the next turn on this session still needs the history.
       if (seed && evidence.dispatch === 'not-dispatched') this._seeded.delete(session);
       bridge?.observe(evidence);
@@ -725,7 +717,7 @@ export class SessionBackedProvider implements LLMProvider {
         ...evidence,
       } as typeof result;
     }
-    const observedNative = this._ownedProjection(session, result, observation?.owner);
+    const observedNative = projectNative(result, observation?.owner);
     bridge?.observe(observedNative);
     this._observe(observation, observedNative);
     const native = freezeEvidence({
@@ -1215,7 +1207,7 @@ export class SessionBackedProvider implements LLMProvider {
             ((event.unattributedReason === 'task' && event.correlation === 'native-turn') ||
               event.kind === 'session_end')
           ) {
-            const observed = this._ownedProjection(session, event);
+            const observed = projectNative(event);
             const control: NativeTurnControl = session.interruptNative
               ? { interrupt: (options) => session.interruptNative!(options) }
               : {};
@@ -1249,7 +1241,7 @@ export class SessionBackedProvider implements LLMProvider {
             !requested.textOnly &&
             (event.kind === 'subagent' || event.unattributedReason === 'subagent')
           ) {
-            const observed = this._ownedProjection(session, event);
+            const observed = projectNative(event);
             for (const sink of this._subagentSinks) {
               try {
                 sink(threadId, observed);
@@ -1259,7 +1251,7 @@ export class SessionBackedProvider implements LLMProvider {
             }
             return;
           }
-          const evidence = this._ownedProjection(session, event);
+          const evidence = projectNative(event);
           if (!evidence.admissionId || !evidence.kind) return;
           const observer = observations.get(evidence.admissionId);
           if (!observer) return;

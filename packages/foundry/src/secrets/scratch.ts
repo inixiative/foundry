@@ -63,12 +63,9 @@ export function validateSecretsSettings(where: string, value: unknown): void {
     throw Error(`${where}.privatePaths must be a list of globs`);
 }
 
-/** The scratch pad's `secret_scratch` never asks (`secret_pipe` runs a command, so it keeps the host's mode). */
-export const SECRET_SCRATCH_TOOL = SECRET_SCRATCH_TOOL_NAME;
-
-/** A call of Foundry's own `secret_scratch`: it names the files it writes, never reads them. */
+/** A call of Foundry's own `secret_scratch`: it names the files it writes, never reads them, and never asks (`secret_pipe` runs a command, so it keeps the host's mode). */
 export const isOwnSecretTool = (request: { toolName: string }): boolean =>
-  foundryOperation(request.toolName) === SECRET_SCRATCH_TOOL;
+  foundryOperation(request.toolName) === SECRET_SCRATCH_TOOL_NAME;
 
 export interface SecretScratchDeps {
   /** The settings in force for a project, read live. */
