@@ -41,6 +41,15 @@ describe('a project host in plain words', () => {
     expect(a.detail).toContain('proj_1 starting: 0/75 held (start)');
   });
 
+  test('dev mode: a remote host says where it is served from', () => {
+    const a = said(
+      host({ status: 'serving', held: 2, expected: 2, remote: 'http://localhost:4901' }),
+    );
+    expect(a.state).toBe('ready');
+    expect(a.detail).toBe('proj_1 serving: 2/2 held, served by http://localhost:4901');
+    expect(said(host({ status: 'serving' })).detail).not.toContain('served by');
+  });
+
   test('serving with no reason is ready; a refreshed roster is ready too', () => {
     expect(said(host({ status: 'serving', held: 75, setupMs: 37435 }))).toMatchObject({
       state: 'ready',

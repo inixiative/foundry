@@ -92,6 +92,7 @@ import { directLoopback, sameOrigin } from './request-auth';
 import { registerControlRoutes } from './routes/control';
 import { registerConversationRoutes } from './routes/conversations';
 import { registerDaemonUpdateRoutes } from './routes/daemon-update';
+import { registerDevRoutes } from './routes/dev';
 import { registerDeviceRoutes } from './routes/devices';
 import { registerGlossRoutes } from './routes/gloss';
 import { registerKeychainRoutes } from './routes/keychain';
@@ -750,6 +751,7 @@ export function createViewer(config: ViewerConfig) {
   });
   registerDeviceRoutes(app, configStore, config.deviceIdentityPath);
   registerKeychainRoutes(app, keychain);
+  registerDevRoutes(app, configStore, keychain);
   registerModelRoutes(app, configStore);
   registerProfileRoutes(app, configStore);
   registerGlossRoutes(app, configStore);

@@ -106,6 +106,8 @@ export interface ProjectHostState {
   readonly generation: number;
   /** A later classify stage's host (`lane`): its model and effort, e.g. `claude-sonnet-5-5 at low`. */
   readonly lane?: string;
+  /** Dev mode: the Chorus host's URL that serves this project's Wardens, reported by `chorus.projectActivity`. */
+  readonly remote?: string;
 }
 
 /** Health reads a host may miss in a row (not serving) before it is replaced: a recycle can blink. */

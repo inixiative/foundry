@@ -12,6 +12,7 @@ import { publishDaemonRuntime } from './daemon/runtime-hook';
 import type { FeedbackService } from './feedback/service';
 import { subscriptionWorker, WORKER_SESSION_RUNTIMES } from './models/registry';
 import { providerBaseUrl, providerContextBudget, providerEnabled } from './models/vendors';
+import { chorusDevRemotes } from './providers/chorus-dev-remotes';
 import {
   type DecisionEvents,
   liveDecisionHosts,
@@ -135,6 +136,7 @@ import {
   ConfigStore,
   createProject,
   defaultAgents,
+  devChorus,
   type FoundryConfig,
   foundryConfigDir,
   starterConfig,
@@ -739,15 +741,37 @@ const providers = new Map<string, LLMProvider>([
 
 const eventStream = new EventStream();
 
+// Dev mode (R-2026-11-25-05): while `__devMode` and `__chorus` are set, a chorus-on project's Warden
+// calls go straight to that Chorus host, no Kingdom and no local project host. Read live: turning it
+// on or off takes effect on the next call.
+const devRemotes = chorusDevRemotes({
+  setting: () => devChorus(liveConfig),
+  readToken: (name) => keychain.read(name, 'foundry').catch(() => process.env[name]),
+  log: (line) => console.log(line),
+  onHost: (projectId, state) => {
+    const activity = projectHostActivity(
+      projectId,
+      liveConfig.projects?.[projectId]?.label ?? projectId,
+      state,
+    );
+    console.log(`[chorus-dev] ${activity.detail}`);
+    eventStream.pushActivity(activity);
+  },
+});
+/** A project's Warden host, activated: dev mode's remote Chorus is touched, otherwise the local host opens. */
+const activateWardens = (projectId: string) => {
+  if (devChorus(liveConfig)) void devRemotes.activate(projectId);
+  else void projectActivity?.activate(projectId);
+};
+
 // Every factory-created thread (main included) gets its own Librarian,
 // Wardens, FlowOrchestrator, event bridges and persistence sinks; archiving
 // the thread disposes them.
 const runtimeManager = new ThreadRuntimeManager({
   config,
   // A turn marks its project active (opening its Warden host if none is open); it never waits for it.
-  ...(live
-    ? { activateWardenHost: (projectId: string) => void projectActivity?.activate(projectId) }
-    : {}),
+  activateWardenHost: activateWardens,
+  chorusRemote: (projectId: string) => devRemotes.remote(projectId),
   llm: flowLlm,
   providers,
   // Review uses its explicit phase profile, otherwise the configured flow policy.
@@ -818,6 +842,11 @@ const projectHosts = live?.projectHosts;
 const holdProjectRoster = async (projectId: string) => {
   if (!projectHosts || !decisions) return;
   const current = liveConfig;
+  // Dev mode's remote Chorus holds the project's Wardens: none are held here.
+  if (devChorus(current)) {
+    await projectHosts.closeProject(projectId);
+    return;
+  }
   const project = current.projects?.[projectId];
   const view =
     !project || project.enabled === false ? undefined : resolveProjectView(current, projectId);
@@ -1070,8 +1099,16 @@ const viewer = await startViewer({
   port,
   configDir: FOUNDRY_DIR,
   // Opening a thread of a project opens its Warden host, so it is warm by the first turn.
-  projectActive: (projectId) => void projectActivity?.activate(projectId),
-  ...(live ? { decisionHosts: () => live.projectHosts.snapshot() } : {}),
+  projectActive: (projectId) => {
+    if (!devChorus(liveConfig)) return void projectActivity?.activate(projectId);
+    if (resolveProjectView(liveConfig, projectId)?.chorus.on) void devRemotes.activate(projectId);
+  },
+  decisionHosts: () => {
+    const remote = devRemotes.snapshot();
+    const local = live?.projectHosts.snapshot();
+    if (!local && !Object.keys(remote).length) return undefined;
+    return { ...local, projects: { ...local?.projects, ...remote } };
+  },
   sessionBindings: () => sessionStore.all(),
   assistProvider: provider,
   assistModel: config.defaults.model,

@@ -18,6 +18,7 @@ import { ArchiveSettings, ProjectArchive } from './archive-settings.js';
 import { ComingSoon } from './coming-soon.js';
 import { ProjectConversations } from './conversation-members.js';
 import { devMode, setDevMode } from './dev-mode.js';
+import { DevSection } from './dev-settings.js';
 import { DevicesSection } from './devices.js';
 import { FeedbackSettings } from './feedback.js';
 import { FilePicker } from './file-picker.js';
@@ -443,6 +444,11 @@ function ProjectChorus({ projectId }) {
           : null
       }
       ${
+        chorus.remote
+          ? html`<p class="settings-desc" data-setting="__chorus">Dev mode: served by the Chorus host at <code>${chorus.remote}</code>, not this machine.</p>`
+          : null
+      }
+      ${
         chorus.consumed && chorus.reception
           ? html`<p class="settings-desc">Work items (<code>chorus.consumed</code>): ${chorus.consumed.enabled ? 'on' : 'off'}${chorus.consumed.from === 'default' ? ', the default' : `, set in ${chorus.consumed.from === 'settings' ? 'your settings' : 'the repository'}`}. Reception charter (<code>chorus.reception</code>): ${chorus.reception.on ? 'on' : 'off'}${chorus.reception.from === 'default' ? (chorus.on ? ', with the Wardens' : ', only while Wardens run') : `, set in ${chorus.reception.from === 'settings' ? 'your settings' : 'the repository'}`}.</p>`
           : null
@@ -552,7 +558,10 @@ function ChorusStages({ roles, decision }) {
 // ---------------------------------------------------------------------------
 
 function SettingsNav({ projectId, section, projectList }) {
-  const sections = projectId ? PROJECT_SETTINGS : FOUNDRY_SETTINGS;
+  // The Dev section shows only in dev mode.
+  const sections = projectId
+    ? PROJECT_SETTINGS
+    : FOUNDRY_SETTINGS.filter(([id]) => id !== 'dev' || devMode.value);
   const projectHref = settingsPath(projectId ?? projectList[0]?.id);
   const known = !projectId || projectList.some((p) => p.id === projectId);
   return html`
@@ -591,8 +600,9 @@ function SettingsNav({ projectId, section, projectList }) {
         })}
       </ul>
       <label class="dev-mode-switch settings-dev-mode">
-        <${Switch} checked=${devMode.value} label="Dev mode" onChange=${setDevMode} />
-        <span>Dev mode<span class="settings-desc">Shows dev-only fields, such as a custom Kingdom URL.</span></span>
+        <${Switch} checked=${devMode.value} label="Dev mode"
+          onChange=${(on) => setDevMode(on).then((next) => next && saved(next))} />
+        <span>Dev mode<span class="settings-desc">Shows dev-only fields, such as a custom Kingdom URL, and the Dev section: Wardens served by a local Chorus host.</span></span>
       </label>
     </nav>
   `;
@@ -627,6 +637,7 @@ function FoundrySection({ section, config }) {
       showToast('Saved for you', 'ok');
     }} />`;
   if (section === 'about') return html`<${AboutSection} />`;
+  if (section === 'dev') return html`<${DevSection} config=${config} onSaved=${saved} />`;
   if (section === 'loops')
     return html`<div class="settings-soon"><span class="badge">Coming soon</span><p>Saved loops you reuse: a <b>Repeat until</b> (do, check, stop) or a <b>Learn from this</b> made from a message's ⋯ menu, kept here to run again in any thread.</p></div>`;
   if (section === 'skills')

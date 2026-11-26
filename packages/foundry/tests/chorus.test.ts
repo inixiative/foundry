@@ -1427,3 +1427,17 @@ test('a regions directory that cannot be read is no failed boot, with the chorus
     chmodSync(regions, 0o755);
   }
 });
+
+test("dev mode: a chorus-on project's view names the Chorus host serving it; dev mode off or chorus off, none", () => {
+  const { project } = projectWithRegions();
+  const c = config(project);
+  c.__chorus = { url: 'http://localhost:4901/' };
+  validateConfig(c);
+  expect(resolveProjectView(c, 'P')!.chorus.remote).toBeUndefined();
+  c.__devMode = true;
+  const view = resolveProjectView(c, 'P')!;
+  expect(view.chorus.on).toBe(true);
+  expect(view.chorus.remote).toBe('http://localhost:4901');
+  c.projects.P!.chorus = { enabled: false };
+  expect(resolveProjectView(c, 'P')!.chorus.remote).toBeUndefined();
+});

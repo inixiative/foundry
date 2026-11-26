@@ -84,6 +84,7 @@ import {
   validateLoginPools,
 } from '../providers/subscription-policy';
 import { type SchedulerSettings, validateSchedulerSettings } from '../scheduler/types';
+import { isKeychainName } from '../secrets/keychain';
 import { type SecretsSettings, validateSecretsSettings } from '../secrets/scratch';
 
 const GUARD_MODES: readonly GuardMode[] = ['per-turn', 'per-call'];
@@ -184,6 +185,47 @@ const validMachineIcon = (icon: unknown): icon is { glyph: MachineGlyph; color: 
   (icon as { color: number }).color >= 0 &&
   (icon as { color: number }).color <= 11;
 
+/** A dev-mode host: its base URL and the keychain entry name holding its bearer token. */
+export interface DevRemoteSettings {
+  url: string;
+  tokenKey?: string;
+}
+
+/** The keychain entry a dev-mode host's token is read from when `tokenKey` is not set. */
+export const DEV_TOKEN_KEY_DEFAULT = 'CHORUS_DEV_TOKEN';
+
+/** Dev mode's Chorus host while dev mode is on, its token key resolved; otherwise none. */
+export function devChorus(
+  config: FoundryConfig,
+): { readonly url: string; readonly tokenKey: string } | undefined {
+  if (config.__devMode !== true || !config.__chorus) return undefined;
+  return {
+    url: config.__chorus.url.replace(/\/+$/, ''),
+    tokenKey: config.__chorus.tokenKey ?? DEV_TOKEN_KEY_DEFAULT,
+  };
+}
+
+function validateDevRemote(key: '__chorus' | '__oracle', remote: unknown): void {
+  if (remote === undefined) return;
+  if (typeof remote !== 'object' || remote === null || Array.isArray(remote))
+    throw Error(`${key} must be { url, tokenKey? }`);
+  const { url, tokenKey, ...rest } = remote as Record<string, unknown>;
+  const extra = Object.keys(rest)[0];
+  if (extra !== undefined) throw Error(`${key}.${extra} is not a setting (url, tokenKey)`);
+  let parsed: URL | undefined;
+  try {
+    parsed = typeof url === 'string' ? new URL(url) : undefined;
+  } catch {
+    parsed = undefined;
+  }
+  if (!parsed || (parsed.protocol !== 'http:' && parsed.protocol !== 'https:'))
+    throw Error(`${key}.url must be an http or https URL`);
+  if (tokenKey !== undefined && (typeof tokenKey !== 'string' || !isKeychainName(tokenKey)))
+    throw Error(
+      `${key}.tokenKey must name a keychain entry (letters, digits, dot, dash or underscore, at most 100), never the token`,
+    );
+}
+
 export interface FoundryConfig {
   /** Opt in to API-key providers (paid tokens). Absent or false: subscription-only, and no API provider is constructed. */
   apiTokens?: boolean;
@@ -213,6 +255,19 @@ export interface FoundryConfig {
   subscriptionPools?: LoginPoolsSettings;
   /** Kingdom subscription pools this Foundry draws main-thread logins from: one per owner's Signet (URL, credential file, pool selection). */
   kingdomInference?: KingdomInferenceSource[];
+  /**
+   * Dev mode (R-2026-11-25-05): the `__` settings below take effect only while it is on. Anyone may
+   * turn it on. Machine only: never in a repository.
+   */
+  __devMode?: boolean;
+  /**
+   * Dev mode's local Chorus host: while dev mode is on, every chorus-on project's Warden calls go to
+   * it directly, no Kingdom. `tokenKey` names the keychain entry holding its bearer token (default
+   * `CHORUS_DEV_TOKEN`); the token itself never goes in settings.
+   */
+  __chorus?: DevRemoteSettings;
+  /** Dev mode's local Oracle host: only its health is checked, from the Dev settings section. */
+  __oracle?: DevRemoteSettings;
   /** Project-scoped integration grants. Independent of inference resource selection. Restart to apply. */
   kingdomAccess?: KingdomAccessSource[];
   /** Which Kingdom owner's pool (and spread or selection) a given thread draws its login from, by thread id. */
@@ -1106,6 +1161,10 @@ function validateLoginPoolReferences(config: FoundryConfig): void {
 }
 
 export function validateConfig(config: FoundryConfig): void {
+  if (config.__devMode !== undefined && typeof config.__devMode !== 'boolean')
+    throw Error('__devMode must be true or false');
+  validateDevRemote('__chorus', config.__chorus);
+  validateDevRemote('__oracle', config.__oracle);
   validateVendorSettings(config.vendors);
   validateFoundryConversationSettings(config.conversations);
   validateSchedulerSettings('scheduler', config.scheduler, true);
@@ -1369,6 +1428,11 @@ const PERSONAL_PROJECT_SETTINGS: Readonly<Record<string, string>> = {
   'defaults.decisionModel':
     'Decision roles run on this machine’s subscription; a cloned repository can’t move them to a paid API',
   ui: 'Viewer themes, extensions, slot layout, and display flags are personal to this machine; a repository cannot set them',
+  __devMode: 'Dev mode is this machine’s; a cloned repository can’t turn it on',
+  __chorus:
+    'Dev mode’s Chorus host is on this machine; a cloned repository can’t point Warden calls elsewhere',
+  __oracle:
+    'Dev mode’s Oracle host is on this machine; a cloned repository can’t point it elsewhere',
 };
 
 /** What a repository's agent may not set: where it runs and how it samples stay this machine's. */
@@ -1753,6 +1817,14 @@ export class ConfigStore {
         // Explicit opt-in to API-key providers; absent or false is subscription-only.
         if (patch.enabled === true) next.apiTokens = true;
         else delete next.apiTokens;
+      } else if (section === 'dev') {
+        // Dev mode and its hosts; null removes a setting.
+        if (patch.__devMode === true) next.__devMode = true;
+        else if (patch.__devMode === false || patch.__devMode === null) delete next.__devMode;
+        for (const key of ['__chorus', '__oracle'] as const) {
+          if (patch[key] === null) delete next[key];
+          else if (patch[key] !== undefined) next[key] = patch[key] as DevRemoteSettings;
+        }
       } else if (section === 'ui') {
         const merged = patchUiSettings(next.ui, patch);
         if (merged && Object.keys(merged).length > 0) next.ui = merged;
