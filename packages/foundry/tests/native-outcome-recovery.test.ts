@@ -63,8 +63,13 @@ function setup() {
 }
 
 /** A turn admitted to the native session, then cut off by a restart (`recoverInterrupted`). */
-function lostTurn(store: LocalSessionStore, thread: Thread, turnId = 'turn-lost') {
-  store.beginTurn(thread, turnId, 'please load more projects');
+function lostTurn(
+  store: LocalSessionStore,
+  thread: Thread,
+  turnId = 'turn-lost',
+  meta?: Record<string, unknown>,
+) {
+  store.beginTurn(thread, turnId, 'please load more projects', meta);
   const owner = {
     threadId: thread.id,
     projectId: thread.meta.projectId,
@@ -395,6 +400,48 @@ test('routes: GET says whether a message can be admitted; Continue opens it, Ret
   expect(ran).toEqual(['please load more projects']);
   // Nothing left to resolve.
   expect(await (await post('continue')).json()).toEqual({ resolved: 0 });
+});
+
+test("Retry sends a lost Foundry-written opening as Foundry's again, never as the owner's message", async () => {
+  const { dir, store, home } = setup();
+  const main = new Thread('main', new ContextStack(), { projectId: 'P' });
+  main.register(new Executor({ id: 'worker', stack: main.stack, handler: async () => 'ok' }));
+  const harness = new Harness(main);
+  harness.setDefaultExecutor('worker');
+  store.saveThread(main);
+  const origin = {
+    member: { kind: 'local', id: 'restart:turn-before' },
+    displayName: 'Foundry',
+    postId: 'restart:turn-before',
+    restart: true,
+  };
+  lostTurn(store, main, 'turn-lost', { origin, foundryLine: 'resumed after a restart' });
+  const app = new Hono();
+  registerRuntimeRoutes(
+    app,
+    withStreams({
+      harness,
+      eventStream: new EventStream(),
+      interventions: new InterventionLog(),
+      configStore: new ConfigStore(dir),
+      localStore: store,
+      nativeRecovery: new NativeOutcomeRecovery({
+        store,
+        homes: () => [home],
+        bootedAt: Date.now() + 1,
+      }),
+    }),
+  );
+  const retried = await app.request('/api/threads/main/recovery', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ action: 'retry' }),
+  });
+  const body = (await retried.json()) as { retried: { id: string } };
+  const opening = store
+    .messages('main')
+    .find((message) => message.turnId === body.retried.id && message.actor === 'user');
+  expect(opening?.meta).toMatchObject({ origin, foundryLine: 'resumed after a restart' });
 });
 
 test("an admission of this Foundry run is live, not lost; a subagent's writes keep the session awake", () => {

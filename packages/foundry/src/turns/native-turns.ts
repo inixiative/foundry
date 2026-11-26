@@ -268,12 +268,21 @@ function opening(trigger: string | undefined): { content: string; foundryLine: s
   return trigger
     ? {
         content: `The agent started this turn itself, woken by ${trigger}.`,
-        foundryLine: `woken by ${trigger}`,
+        foundryLine: `woken by ${clipped(trigger)}`,
       }
     : {
         content: 'The agent started this turn itself.',
         foundryLine: 'started by the agent session',
       };
+}
+
+const FOUNDRY_LINE_TRIGGER_MAX = 160;
+
+/** A trigger short enough for the message list's summary, which drops long strings. */
+function clipped(trigger: string): string {
+  return trigger.length > FOUNDRY_LINE_TRIGGER_MAX
+    ? `${trigger.slice(0, FOUNDRY_LINE_TRIGGER_MAX - 1)}…`
+    : trigger;
 }
 
 /** The trigger from its kind alone (`muse-cron` → "a scheduled run"). */
