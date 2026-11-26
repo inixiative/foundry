@@ -7,6 +7,7 @@ import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import {
+  chorusResourceKind,
   type HeldSignet,
   type HostedSignet,
   type HostedSignetRequest,
@@ -230,6 +231,20 @@ export class KingdomInstallationConnection {
   get signets(): readonly HeldSignet[] {
     return this.held;
   }
+  /** Whether Kingdom's latest snapshot grants this Foundry a Chorus resource for `projectId`. */
+  hasChorusGrant(projectId: string): boolean {
+    return (this.latest?.signets ?? []).some((signet) =>
+      signet.resources.some(
+        (grant) =>
+          (grant.resourceModel === 'IntegrationResource' &&
+            grant.kind === chorusResourceKind &&
+            grant.externalId === projectId) ||
+          (grant.resourceModel === 'Integration' &&
+            grant.kind === chorusResourceKind &&
+            (!grant.projectId || grant.projectId === projectId)),
+      ),
+    );
+  }
   /** The Signets issued on this Foundry's integrations at this Kingdom, as of the last snapshot. */
   get hostedSignets(): readonly HostedSignet[] {
     return this.latest?.hostedSignets ?? [];
@@ -387,12 +402,29 @@ export class KingdomInstallationConnection {
  */
 export class KingdomInstallationConnections {
   private connections = new Map<string, KingdomInstallationConnection>();
+  private changeListeners = new Set<() => void>();
   constructor(
     integrations: readonly KingdomIntegration[],
     private options: KingdomInstallationOptions,
   ) {
+    const baseOnChange = options.onChange;
+    // Keep one shared options object so `serveThreads()` and `serveViewer()` mutations reach every connection.
+    this.options = {
+      ...options,
+      onChange: () => {
+        baseOnChange?.();
+        for (const listener of this.changeListeners) listener();
+      },
+    };
     for (const integration of kingdomIntegrationsSchema.parse(integrations))
       this.connectionFor(integration.url).setIntegration(integration);
+  }
+  /** Subscribe to Kingdom authorization/grant snapshot changes across all paired Kingdoms. */
+  onChange(listener: () => void): () => void {
+    this.changeListeners.add(listener);
+    return () => {
+      this.changeListeners.delete(listener);
+    };
   }
   /** Number of paired Kingdom integrations. */
   get size() {
