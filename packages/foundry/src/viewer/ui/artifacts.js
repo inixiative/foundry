@@ -13,6 +13,7 @@
  * storage, and the viewer's API refuses a request from it (`Origin: null`, `sameOrigin`). A CSP
  * placed first in the page also refuses fetch, XHR, WebSockets, forms and plugins.
  */
+import { ARTIFACT_FOCUS_REPORTER } from './composer-focus.js';
 import { html, useEffect, useState } from './lib.js';
 import { Markdown } from './markdown.js';
 import { activeThreadId, artifactSelection, authFetch, openArtifact, threadData } from './store.js';
@@ -31,9 +32,9 @@ export const ARTIFACT_CSP = [
   "object-src 'none'",
 ].join('; ');
 
-/** The page an HTML artifact's frame loads: the policy first, so it holds before any of the page's own markup. */
+/** The page an HTML artifact's frame loads: the policy first, so it holds before any of the page's own markup, then the focus reporter. */
 export const artifactDocument = (content) =>
-  `<!doctype html><meta http-equiv="Content-Security-Policy" content="${ARTIFACT_CSP}">${content}`;
+  `<!doctype html><meta http-equiv="Content-Security-Policy" content="${ARTIFACT_CSP}">${ARTIFACT_FOCUS_REPORTER}${content}`;
 
 const KIND_LABELS = {
   markdown: 'Document',

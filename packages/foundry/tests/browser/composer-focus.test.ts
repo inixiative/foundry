@@ -280,3 +280,103 @@ test('a paste anywhere but a text field lands in the message box', async () => {
     await releaseAll(cleanup);
   }
 }, 120_000);
+
+// Aron 11-26: "pasting is still hit or miss." Wispr Flow only inserts into a focused text field; with
+// none it offers Copy and never sends ⌘V, so rerouting the paste can't save it. Focus has to rest in
+// the box after anything that took it without being a place to type.
+test('focus comes back to the message box after a press, a blur, a copy or an artifact click', async () => {
+  const cleanup: ReleaseStep[] = [];
+  const dir = mkdtempSync(join(tmpdir(), 'foundry-composer-rest-'));
+  cleanup.push(['dir', () => rmSync(dir, { recursive: true, force: true })]);
+  try {
+    const viewer = await startViewer({
+      port: 0,
+      configDir: dir,
+      localStore: null,
+      harness: new Harness(new Thread('main', new ContextStack())),
+      eventStream: new EventStream(),
+      interventions: new InterventionLog(),
+      tokenTracker: new TokenTracker(),
+      projectRegistry: new ProjectRegistry(),
+    });
+    cleanup.unshift(['viewer', () => viewer.server.stop(true)]);
+    const origin = `http://127.0.0.1:${viewer.server.port}`;
+    await fetch(`${origin}/api/setup/complete`, { method: 'POST' });
+    const browser = await chromium.launch({ headless: true });
+    cleanup.unshift(['browser', () => browser.close()]);
+    const context = await browser.newContext({ viewport: { width: 1600, height: 900 } });
+    await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+    const page = await context.newPage();
+    page.setDefaultTimeout(15_000);
+    const errors: string[] = [];
+    page.on('pageerror', (e: Error) => errors.push(e.message));
+
+    await page.goto(`${origin}/#thread=main&detail=1`);
+    await page.locator('.panel-center textarea.chat-input').waitFor();
+    const inBox = () =>
+      page.waitForFunction(() =>
+        document.activeElement?.matches('.panel-center textarea.chat-input'),
+      );
+    await inBox();
+
+    // The box losing focus to nothing takes it back.
+    await page.evaluate(() => (document.activeElement as HTMLElement)?.blur());
+    await inBox();
+
+    // A press that ends without a click (a drag across the transcript) hands focus back.
+    const title = await page.locator('.context-bar-title').boundingBox();
+    if (!title) throw new Error('no context bar title');
+    await page.mouse.move(title.x + title.width + 40, title.y + 4);
+    await page.mouse.down();
+    await page.evaluate(() => (document.activeElement as HTMLElement)?.blur());
+    await page.mouse.move(title.x + title.width + 80, title.y + 40);
+    await page.waitForTimeout(150);
+    // Focus waits while the button is down: a selection may be starting.
+    expect(await page.evaluate(() => document.activeElement === document.body)).toBe(true);
+    await page.mouse.up();
+    await inBox();
+
+    // Transcript text selected and copied: once on the clipboard, focus goes back to the box.
+    await page.evaluate(() => {
+      (document.activeElement as HTMLElement)?.blur();
+      getSelection()?.selectAllChildren(
+        document.querySelector('.context-bar-title') ?? document.body,
+      );
+    });
+    await page.waitForTimeout(150);
+    expect(await page.evaluate(() => document.activeElement === document.body)).toBe(true);
+    await page.keyboard.press('ControlOrMeta+c');
+    await inBox();
+
+    // An artifact's page: one of its fields keeps focus; a click elsewhere in it hands focus back.
+    await page.evaluate(async () => {
+      getSelection()?.removeAllRanges();
+      // The viewer's own module, so the page is built exactly as an artifact's is.
+      const viewerModule = '/ui/artifacts.js';
+      const { artifactDocument }: { artifactDocument: (content: string) => string } = await import(
+        viewerModule
+      );
+      const frame = document.createElement('iframe');
+      frame.id = 'probe-artifact';
+      frame.className = 'artifact-frame';
+      frame.setAttribute('sandbox', 'allow-scripts');
+      frame.style.cssText = 'width:400px;height:200px';
+      frame.srcdoc = artifactDocument(
+        '<input id="inner"><p id="text" style="height:120px">A page to click.</p>',
+      );
+      document.querySelector('.panel-center')?.append(frame);
+    });
+    const inner = page.frameLocator('#probe-artifact');
+    await inner.locator('#inner').click();
+    await page.keyboard.type('kept');
+    expect(await inner.locator('#inner').inputValue()).toBe('kept');
+    await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+    await page.waitForTimeout(200);
+    expect(await page.evaluate(() => document.activeElement?.id)).toBe('probe-artifact');
+    await inner.locator('#text').click();
+    await inBox();
+    expect(errors).toEqual([]);
+  } finally {
+    await releaseAll(cleanup);
+  }
+}, 120_000);
