@@ -1790,9 +1790,6 @@ Paths to {{cwd}}/{{tmp}}/~, tokens, emails, identity keys and account connectors
 **scrubSecrets**  
 Replaces credential-shaped substrings in feedback transcripts and counts the hits. *Region:* [Logins, profiles and secrets](logins-secrets/knowledge.md)
 
-**secretInText / unredactedSecretInText**  
-Patterns for Kingdom secrets in text; the unredacted one asserts nothing leaked. *Region:* [Logins, profiles and secrets](logins-secrets/knowledge.md)
-
 **secrets**  
 Class: credential references, private 0600 files and tokens, bound launch environments, secret detection and scrubbing. *Region:* [Logins, profiles and secrets](logins-secrets/knowledge.md)
 

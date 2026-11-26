@@ -8,7 +8,6 @@ import {
   type PrivatePathOptions,
   parseScratchRef,
   type ScratchPadSummary,
-  SECRET_PIPE_TOOL_NAME,
   SECRET_SCRATCH_TOOL_NAME,
   SecretScratchPad,
 } from '@inixiative/secret-scratch';
@@ -64,9 +63,8 @@ export function validateSecretsSettings(where: string, value: unknown): void {
     throw Error(`${where}.privatePaths must be a list of globs`);
 }
 
-/** The scratch pad's two tools: `secret_scratch` never asks; `secret_pipe` runs a command, so it keeps the host's mode. */
+/** The scratch pad's `secret_scratch` never asks (`secret_pipe` runs a command, so it keeps the host's mode). */
 export const SECRET_SCRATCH_TOOL = SECRET_SCRATCH_TOOL_NAME;
-export const SECRET_PIPE_TOOL = SECRET_PIPE_TOOL_NAME;
 
 /** A call of Foundry's own `secret_scratch`: it names the files it writes, never reads them. */
 export const isOwnSecretTool = (request: { toolName: string }): boolean =>

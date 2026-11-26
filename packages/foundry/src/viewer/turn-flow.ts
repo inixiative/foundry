@@ -255,7 +255,6 @@ export function slimTurn(record: TurnFlowRecord) {
     files: turnFiles(record.toolUses),
   };
 }
-export type TurnFlow = ReturnType<typeof slimTurn>;
 
 /** A turn whose journal rows could not be read: shown as such, never dropped or made up. */
 export function unreadableTurn(threadId: string, turnId: string, error: unknown) {

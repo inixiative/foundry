@@ -2,7 +2,7 @@ import { expect, test } from 'bun:test';
 import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { previewImports } from '../src/archives/preview';
+import { previewImports } from '@inixiative/archive/preview';
 
 test('preview inventories supported histories and failures without importing or following symlinks', () => {
   const root = mkdtempSync(join(tmpdir(), 'archive-preview-'));
@@ -44,7 +44,7 @@ test('preview inventories supported histories and failures without importing or 
 });
 
 test('file import streams a source beyond the old 64 MB cap and preserves UTF-8 and line references', async () => {
-  const { importTranscriptFile } = await import('../src/archives/import-file');
+  const { importTranscriptFile } = await import('@inixiative/archive/import-file');
   const { openSync, closeSync, writeSync } = await import('node:fs');
   const root = mkdtempSync(join(tmpdir(), 'archive-stream-'));
   const file = join(root, 'large.jsonl'),
