@@ -75,6 +75,7 @@ export const FOUNDRY_SETTINGS = [
   ['agents', 'Agents', 'Advanced', false, ['agents']],
   ['activity', 'Activity', 'Advanced'],
   ['feedback', 'Feedback', 'Advanced', false, ['feedback']],
+  ['dev', 'Dev', 'Advanced', false, ['__devMode', '__chorus', '__oracle']],
   ['about', 'About'],
 ];
 

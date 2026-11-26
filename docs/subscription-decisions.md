@@ -27,6 +27,9 @@ No API provider is constructed in this mode. There is no paid fallback, no autom
 | `subscriptionOnly.maxQueuedPerThread` | `256` | Waiting decisions per logical thread: deep enough that a burst of guards never refuses admission. |
 | `subscriptionOnly.effort` | `low` | Decision reasoning effort (`low`, `medium`, `high`, `xhigh`, `max`; Haiku 5.5 accepts `low` to `high`). The model default, `medium`, adds latency per decision. |
 | `subscriptionOnly.callTimeoutMs` | `60000` | Per-decision deadline including queue and preflight time (100 to 120000). |
+| `__devMode` | absent (off) | Dev mode (R-2026-11-25-05): `true` makes the `__` settings below take effect. Anyone may turn it on, in Settings → Dev or the file. This machine's only: none of these is a project setting, so a repository's `.foundry/project.json` carrying one is refused. |
+| `__chorus` | absent | `{ "url", "tokenKey" }`: dev mode's local Chorus host (an http(s) URL; a trailing slash is dropped). While dev mode is on, every chorus-on project's Warden calls go to it directly, no Kingdom and no local project host ("Dev mode: a local Chorus host"). `tokenKey` is the name of the keychain entry holding its bearer token (default `CHORUS_DEV_TOKEN`; it must start `CHORUS_`, since the token it names is sent), never the token. |
+| `__oracle` | absent | `{ "url", "tokenKey" }`: dev mode's local Oracle host. Only its health (`/healthz`) is checked, from Settings → Dev. |
 
 Explicit profile sources are credential references in `nativeAuthentication`, never tokens:
 
@@ -172,6 +175,28 @@ Queue position drove primed latency (2.5 s → 15 s); each Haiku CLI process tak
 **Refill.** A fan-out uses every spare; each dispatcher starts its slice's replacements at once, one Agent call each, and the dispatchers work in parallel. Measured 2026-11-19 with synthetic Wardens at machine load 240 to 365, two reloads each: every Warden held again 4.6 to 5.0 s after a message for 8 Wardens, 6.3 to 6.8 s for 32, 6.6 to 7.3 s for 48 and 11.7 to 12.4 s for 64 (slices of 8); 13 to 28 replacements started in the same second. The floor is two model turns in a row: a Warden's answer, then its replacement starting and reaching its hold. One dispatcher per Warden was no faster and set up slower (190 s against 43 s at 64), so the layout is `dispatcherCount`. A second message inside the reload finds some Wardens unheld: a user message's advice to those is skipped and catches up on the next (`not-sent:not-held`); a guard starts its own member on the host. Aron, 2026-11-19: "I'm really okay with 5 seconds. I wasn't okay with 20 seconds."
 
 **Evals.** `scripts/evals/chorus-advise.ts` sets the host up as the daemon does and records it in `<out>/host.json`: setup, per message held (`warm`), own-member (`cold`) and unserved (skipped) counts with latencies, and memory every 2 s. `--message-file` may repeat (`--gap-ms` between, 0 back to back). `liveDecisionHosts(subscription, { project })` builds it. The charter eval over probes (`warden-charter.ts` and its report), which ran Wardens and their judges on the primed pool, is parked in Oracle `migration/foundry-pool-evals/`: until it is rebuilt on the project host, with the regions, the stage-one bar has no runner.
+
+## Dev mode: a local Chorus host
+
+R-2026-11-25-05 (Aron): in dev mode Foundry talks to a local Chorus host directly, no Kingdom. With `__devMode` and `__chorus` set, a chorus-on project's Wardens are Chorus's: no project Warden host is opened or held here (`holdProjectRoster` closes one that is open), and no Warden call goes through the decision login host or `createSubscriptionDecisions`. Turning it on or off takes effect on the next call.
+
+- **Client.** One Chorus client on Signet's `chorus.*` contract (`createChorusRemote`, `providers/chorus-client.ts`): each call's input is parsed against Signet's schema before it is sent and its result after. The transport is swappable; the direct one (`directChorusTransport`, `providers/chorus-direct-transport.ts`) posts `{ projectId, input }` to `<url>/operations/<operation>` with `Authorization: Bearer <token>`, the token read on every call the way the API keys are (`providerKeyEnvironment`): the environment variable `tokenKey` names, else the keychain entry of that name held by `foundry`. A 400 is `invalid_request`, a 500 is Chorus's own `failed`, any other status (a 401, a 404) is rejected with it; a refusal Chorus answers with 200 (`chorus_warming`, `unknown_project` …) passes through; no token, a timeout (the call's deadline plus 5 s), a closed port or an unreadable answer is a transport failure. The project id sent is Foundry's own, so Chorus's `CHORUS_PROJECTS_JSON` must name the project by it.
+- **One call per moment.** The orchestrator asks each Warden as it always does, through `chorusMoment` (`agents/chorus-moment.ts`) instead of the Warden's own `advise` and `guard`: the first Warden asked sends one call for every Warden of the moment and the rest share its answer, each handed back its own result, so deadlines, catch-up, the journal (each Warden's request is the call exactly as sent), chimes, the guard report and the degraded strip are the local path's. A user message is `chorus.advise` (one call per distinct set of missed messages, since a call carries one), a subagent brief `chorus.brief`, a consumed item `chorus.consumed`, a milestone `chorus.milestone`, a hand-back `chorus.handBack`, and a guard `chorus.guard` for the Wardens its triggers gate, built once and sent only if some Warden's journal took it. A Retry sends only the chosen Wardens. Input limits are Signet's own schemas and constants.
+- **Outcomes.** One table, the same for advice and guard:
+
+  | Chorus answered | Warden outcome |
+  | --- | --- |
+  | a refusal (`chorus_warming`, `chorus_unavailable`, `unknown_project`, `invalid_request` …) | `not-sent:not-admitted` |
+  | no token, or the host unreachable or rejecting the call (401, 404) | `not-sent:not-admitted` |
+  | no answer in time | `failed:timeout` |
+  | an answer off the contract | `failed:invalid-response` |
+  | a Warden `failed`, a stage of it timed out | `failed:timeout`, else `failed:provider-error` |
+  | a Warden `not-sent` with `catchesUp` (no session held), or a guard's `skippedDomains` | `not-sent:not-held` (a user message catches up on the next one) |
+  | a Warden `not-sent` otherwise | `not-sent:not-admitted` |
+  | a Warden the answer does not name | `failed:provider-error` |
+- **Review.** Not sent: Chorus's `chorus.review` handler is a stub (`threadKnowledgeUpdates: {}`), so a completed dispatch's review is recorded deferred, not sent, for every Warden, never as a no-comment. Remote review waits until Chorus's is real.
+- **Status.** Opening a thread of a chorus-on project touches the host (`chorus.projectActivity`, `chorus-dev-remotes.ts`); its answer is the project's line in the status strip, e.g. `foundry serving: 32/32 held, served by http://localhost:4901`. In dev mode only, Settings → Dev probes the Chorus host's `/readyz` and the Oracle host's `/healthz`, and says whether each token is held where Foundry may read it (the variable, or a `foundry` keychain entry).
+- **Not built.** A Kingdom transport for the same client (TRACKING.md): Signet has no resource setting to name a project's Chorus, and Kingdom's refusals come back as `SignetHttpError`, not as a Chorus refusal.
 
 ## Scheduling
 

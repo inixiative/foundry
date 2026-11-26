@@ -39,7 +39,7 @@ export function projectHostActivity(
     projectId,
   };
   if (state.lane) projectLabel = `${projectLabel} (${state.lane})`;
-  const detail = `${projectId}${state.lane ? ` (${state.lane})` : ''} ${state.status}: ${state.held}/${state.expected} held${state.setupMs !== undefined ? `, set up in ${state.setupMs} ms` : ''}${state.rssMb !== undefined ? `, ${state.rssMb} MB` : ''}${state.wardensDown ? `, down: ${state.wardensDown.join(', ')}` : ''}${state.reason ? ` (${state.reason})` : ''}`;
+  const detail = `${projectId}${state.lane ? ` (${state.lane})` : ''} ${state.status}: ${state.held}/${state.expected} held${state.setupMs !== undefined ? `, set up in ${state.setupMs} ms` : ''}${state.rssMb !== undefined ? `, ${state.rssMb} MB` : ''}${state.wardensDown ? `, down: ${state.wardensDown.join(', ')}` : ''}${state.reason ? ` (${state.reason})` : ''}${state.remote ? `, served by ${state.remote}` : ''}`;
   const count = state.expected;
   const reason = state.reason;
   if (state.status === 'closed' || reason === 'idle' || reason === 'no Wardens')

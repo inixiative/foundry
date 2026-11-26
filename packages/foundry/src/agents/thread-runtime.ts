@@ -47,6 +47,7 @@ import type { ConversationPhase, ConversationWrapper } from '../conversations/ty
 import type { FeedbackPhase } from '../feedback/types';
 import { workerHostsFoundryTools } from '../models/registry';
 import { roleComposition, scopeOfRole } from '../prompts/instruction-settings';
+import type { ChorusRemote } from '../providers/chorus-client';
 import type { SessionAdapter } from '../providers/session-adapter';
 import { hasWorkContent, needsNameCheck, needsPlan } from '../tools/thread-record';
 import {
@@ -392,6 +393,12 @@ export interface ThreadRuntimeDeps {
    * on a later message.
    */
   activateWardenHost?: (projectId: string) => void;
+  /**
+   * Dev mode's remote Chorus for a project (R-2026-11-25-05), asked on every Warden call: while it
+   * answers one, the project's advice and guard calls are `chorus.*` operations on it, and its
+   * reviews are not sent (Chorus serves none yet).
+   */
+  chorusRemote?: (projectId: string) => ChorusRemote | undefined;
   /** Runtime config; agent kinds decide which dispatches get pre-message routing. */
   config: FoundryConfig;
   /** How long a call waits for the chorus (a handoff's brief, a milestone's advice) before it runs without it (`CHORUS_AT_CALL_DEADLINE_MS`). */
@@ -940,6 +947,8 @@ class ThreadRuntimeImpl implements ThreadRuntime {
 
   private _unsubs: Array<() => void> = [];
   private _disposed = false;
+  /** Dev mode's remote Chorus for this thread's project, when dev mode can serve one. */
+  private _chorusRemote: (() => ChorusRemote | undefined) | undefined;
   /** Whether stage hosts are wired (`ThreadRuntimeDeps.stageHost`): the default chain needs them. */
   private readonly _stageHosts: boolean;
   private _eventStream: EventStream | undefined;
@@ -1383,12 +1392,16 @@ class ThreadRuntimeImpl implements ThreadRuntime {
       if (floorLayer && floorLayer.content !== floor) floorLayer.set(floor, 'foundry');
     };
 
+    const remoteProject = thread.meta.projectId as string | undefined;
+    if (deps.chorusRemote && remoteProject)
+      this._chorusRemote = () => deps.chorusRemote?.(remoteProject);
     this.flowOrchestrator = new FlowOrchestrator({
       wardens: this.wardens,
       librarian: this.librarian,
       stack,
       signals,
       ...deps.flow,
+      ...(this._chorusRemote ? { chorus: this._chorusRemote } : {}),
     });
 
     // Pre-message decoration: every domain assesses the frozen input in
@@ -3306,6 +3319,10 @@ class ThreadRuntimeImpl implements ThreadRuntime {
           input,
           lease.reason ?? 'review admission closed; explicit capacity reconciliation required',
         );
+        continue;
+      }
+      if (this._chorusRemote?.()) {
+        this._deferReview(domain, input, 'not sent: dev mode’s remote Chorus serves no review yet');
         continue;
       }
       const queued = this._queuedEvidence.get(domain) ?? [];

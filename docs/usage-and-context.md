@@ -940,3 +940,5 @@ domain knowledge, which a Warden no longer can.)
 - `reception`: whether a thread of a running chorus holds the reception charter (`chorus-reception` standing layer). On with the chorus; `false` leaves it out. A thread with no Wardens never has it.
 
 The chorus card in the viewer shows both, with the layer that set them (yours or the repository's). Editing them there, "set this for me / for everyone", is not built yet; the files are the way in.
+
+**Dev mode** (R-2026-11-25-05). With `__devMode` and `__chorus` set in this machine's settings, a project whose chorus is on runs its Wardens on that local Chorus host, not a local project host: the same roster, triggers and chimes, one `chorus.*` call per moment for every Warden asked ([subscription-decisions.md § Dev mode](subscription-decisions.md#dev-mode-a-local-chorus-host)). Reviews are not sent until Chorus's review is real: thread knowledge does not grow in dev mode. `chorus.enabled: false` still means no Wardens. A repository cannot turn dev mode on or point it at another host.

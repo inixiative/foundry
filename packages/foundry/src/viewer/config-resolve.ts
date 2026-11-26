@@ -36,6 +36,7 @@ import {
   type BrowserConfigOverride,
   type ChorusSettings,
   checkProjectView,
+  devHost,
   type FoundryConfig,
   isAgentExtension,
   type LayerSettingsConfig,
@@ -137,6 +138,8 @@ export interface ResolvedChorus {
   reason?: string;
   /** Settings picks for a region Warden that were not applied (a `general` naming nodes), and why. */
   ignoredComposition?: string[];
+  /** Dev mode's Chorus host, when it serves this running chorus's Warden calls instead of this machine. */
+  remote?: string;
 }
 
 export interface ResolvedLayerDefinition {
@@ -1192,7 +1195,12 @@ function buildProjectView(
   const consumed = setting.chorus.consumed ? { consumed: setting.chorus.consumed } : {};
   // The reception charter goes with a running chorus, unless turned off.
   const receptionOn = chorus.on && setting.chorus.reception !== false;
-  chorus = { ...chorus, reception: { on: receptionOn, from: setting.receptionFrom } };
+  const remote = chorus.on ? devHost(config)?.url : undefined;
+  chorus = {
+    ...chorus,
+    reception: { on: receptionOn, from: setting.receptionFrom },
+    ...(remote ? { remote } : {}),
+  };
   const effectiveChorus: ChorusSettings = chorus.on
     ? {
         enabled: true,
