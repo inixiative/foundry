@@ -138,6 +138,36 @@ test('tool calls pair each use with its result, in observed order', () => {
   ).toMatchObject({ state: 'failed', error: 'Archive unreachable' });
 });
 
+test('an input step names who wrote it when the owner did not: Foundry, or the member who posted it', () => {
+  const opening = (meta?: Record<string, unknown>): TurnDetail => ({
+    threadId: 'a',
+    turnId: 't',
+    turn: { id: 't', threadId: 'a', status: 'completed', startedAt: 1, endedAt: 9 },
+    messages: [
+      {
+        id: 'm',
+        threadId: 'a',
+        turnId: 't',
+        actor: 'user',
+        content: 'The agent started this turn itself.',
+        kind: 'text',
+        timestamp: 1,
+        ...(meta ? { meta } : {}),
+      },
+    ],
+    trace: null,
+    injection: null,
+    nativeHistory: [],
+    nativeTools: [],
+    phases: [],
+  });
+  const from = (meta?: Record<string, unknown>) =>
+    of(turnTimeline(opening(meta)), 'input')[0]?.from;
+  expect(from({ foundryLine: 'woken by a background task finishing' })).toBe('Foundry');
+  expect(from({ postedBy: 'Dana' })).toBe('Dana');
+  expect(from()).toBeUndefined();
+});
+
 test('a retry of the message chorus (FEAT-008) is its own step in the work, not the pre-plan chorus', () => {
   const row = (id: string, record: Record<string, unknown>, storedAt: number) => ({
     id,

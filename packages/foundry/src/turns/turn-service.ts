@@ -476,7 +476,11 @@ export class TurnService {
     return {
       ok: true,
       resolved: resolved.length,
-      retried: this.accept({ threadId, payload: message.content }),
+      retried: this.accept({
+        threadId,
+        payload: message.content,
+        ...(message.meta?.origin ? { origin: message.meta.origin as TurnOrigin } : {}),
+      }),
     };
   }
 
@@ -563,8 +567,12 @@ export class TurnService {
                   ...(origin.schedule
                     ? { scheduledRun: origin.displayName }
                     : origin.restart
-                      ? { restartResume: true }
-                      : { postedBy: origin.displayName }),
+                      ? { foundryLine: 'resumed after a restart' }
+                      : origin.wake
+                        ? { foundryLine: `new in the conversation "${origin.displayName}"` }
+                        : origin.fork
+                          ? { foundryLine: `forked from ${origin.displayName}` }
+                          : { postedBy: origin.displayName }),
                 }
               : {}),
           }

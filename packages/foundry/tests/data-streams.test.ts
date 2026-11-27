@@ -791,7 +791,12 @@ test('a turn the journal recorded as ended reaches the list after the live buffe
     rmSync(dir, { force: true, recursive: true });
   });
   // A turn the agent started on its own (a Muse cron), recorded straight to the journal: no buffer.
-  viewer.localStore!.startObservedTurn(main, 'turn_cron', 'check flights');
+  viewer.localStore!.startObservedTurn(
+    main,
+    'turn_cron',
+    'check flights',
+    'woken by a scheduled run',
+  );
   viewer.localStore!.endObservedTurn(main, 'turn_cron', 'Found a cheaper flight', 'completed');
   const list = connectStreams(viewer);
   await list.open('threads');

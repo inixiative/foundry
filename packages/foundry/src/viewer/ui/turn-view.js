@@ -223,7 +223,12 @@ export function turnSteps(timeline) {
   return (timeline?.steps ?? []).map((step, i) => ({
     key: `${step.kind}:${i}`,
     group: BEFORE.has(step.kind) ? 'before' : WORK.has(step.kind) ? 'work' : 'after',
-    label: step.kind === 'tool' ? step.tool : (LABELS[step.kind] ?? step.kind),
+    label:
+      step.kind === 'tool'
+        ? step.tool
+        : step.kind === 'input' && step.from
+          ? `From ${step.from}`
+          : (LABELS[step.kind] ?? step.kind),
     step,
   }));
 }

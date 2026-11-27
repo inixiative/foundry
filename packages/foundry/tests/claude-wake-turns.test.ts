@@ -104,12 +104,12 @@ function wakeViewer() {
     started,
     interrupts,
     /** The session starts a turn itself and says something in it. */
-    wake: (taskId: string, text: string, kind = 'claude-wake') => {
+    wake: (taskId: string, text: string, kind = 'claude-wake', description?: string) => {
       kinds.set(taskId, kind);
       sink!(
         'main',
         evidence(taskId, { kind: 'task' }),
-        { ...lifecycle(taskId), phase: 'started' },
+        { ...lifecycle(taskId), phase: 'started', ...(description ? { description } : {}) },
         control(taskId),
       );
       sink!('main', evidence(taskId, { kind: 'text', text }), undefined, control(taskId));
@@ -149,6 +149,19 @@ test('a wake is a live turn: Working while it runs, then its text is the latest 
     ['user', 'The agent started this turn itself, woken by a background task finishing.'],
     ['agent', 'The tests passed.'],
   ]);
+  expect(messages[0]?.meta).toMatchObject({ foundryLine: 'woken by a background task finishing' });
+});
+
+test("a wake with a long trigger keeps Foundry's line in the message list", async () => {
+  const v = wakeViewer();
+  v.wake('wake-long', 'Done.', 'claude-wake', 'x'.repeat(600));
+  v.finish('wake-long', 'completed', 'Done.');
+  await until(() => v.viewer.liveTurns() === 0, 'wake settled');
+  const [opening] = v.viewer.localStore!.messageIndex('main').messages;
+  const line = opening?.meta?.foundryLine;
+  expect(typeof line).toBe('string');
+  expect(String(line)).toStartWith('woken by xxx');
+  expect(String(line).length).toBeLessThan(200);
 });
 
 test('a message sent during a wake queues behind it and runs once the wake ends, never interleaved', async () => {

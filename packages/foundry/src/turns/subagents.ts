@@ -269,7 +269,12 @@ export class SubagentRecorder {
   private openTurn(run: Run, task: string): void {
     run.turns++;
     run.turnId = `turn_${idOf(run.child.id, String(run.turns))}`;
-    this.deps.store.startObservedTurn(run.child, run.turnId, task);
+    this.deps.store.startObservedTurn(
+      run.child,
+      run.turnId,
+      task,
+      'the task its parent thread gave it',
+    );
   }
 
   /**
