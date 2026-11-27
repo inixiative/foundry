@@ -13,11 +13,11 @@
   "recorded": {
     "service": "codex",
     "transport": "outcome",
-    "recordedAt": "2026-11-22T17:38:03.068Z",
+    "recordedAt": "2026-11-27T04:37:08.392Z",
     "environment": "terminal",
     "cli": "codex",
     "metadata": {
-      "@inixiative/agent-session": "0.22.3"
+      "@inixiative/agent-session": "0.23.0"
     }
   }
 }

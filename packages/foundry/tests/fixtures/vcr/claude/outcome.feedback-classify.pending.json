@@ -1,0 +1,22 @@
+{
+  "version": "2.1.332",
+  "transport": "outcome",
+  "status": 200,
+  "body": {
+    "isCorrection": true,
+    "sharp": true,
+    "rules": 1,
+    "lintClean": true,
+    "aboutMerging": true
+  },
+  "recorded": {
+    "service": "claude",
+    "transport": "outcome",
+    "recordedAt": "2026-11-27T04:36:29.879Z",
+    "environment": "terminal",
+    "cli": "claude",
+    "metadata": {
+      "@inixiative/agent-session": "0.23.0"
+    }
+  }
+}

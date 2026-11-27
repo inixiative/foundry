@@ -15,144 +15,144 @@
       "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"capabilities\":{},\"clientInfo\":{\"name\":\"inixiative-bench\",\"version\":\"0.1.0\"}}}",
       "{\"jsonrpc\":\"2.0\",\"method\":\"initialized\"}",
       "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"thread/start\",\"params\":{\"model\":\"gpt-5.6-luna\",\"cwd\":\"{{cwd}}\",\"approvalPolicy\":\"never\",\"sandbox\":\"danger-full-access\",\"config\":{}}}",
-      "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"turn/start\",\"params\":{\"threadId\":\"01a20456-1524-7c11-be93-4c6188643f73\",\"input\":[{\"type\":\"text\",\"text\":\"# User Message\\n\\nprivate-input. Reply with exactly accepted-private-answer and nothing else.\"}]}}"
+      "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"turn/start\",\"params\":{\"threadId\":\"01a21b4a-ef94-7152-889f-a4ec38117a2e\",\"input\":[{\"type\":\"text\",\"text\":\"# User Message\\n\\nprivate-input. Reply with exactly accepted-private-answer and nothing else.\"}]}}"
     ],
     "stdinEnded": true,
     "frames": [
       {
         "after": 1,
         "stream": "stdout",
-        "data": "{\"id\":1,\"result\":{\"userAgent\":\"inixiative-bench/0.169.0 (Mac OS 15.7.3; arm64) dumb (inixiative-bench; 0.1.0)\",\"codexHome\":\"~/.codex\",\"platformFamily\":\"unix\",\"platformOs\":\"macos\"}}"
-      },
-      {
-        "after": 1,
-        "stream": "stdout",
-        "data": "{\"method\":\"remoteControl/status/changed\",\"params\":{\"status\":\"disabled\",\"serverName\":\"host\",\"installationId\":\"00000000-0000-4000-8000-000000000000\",\"environmentId\":null},\"emittedAtMs\":1795369080095}"
+        "data": "{\"id\":1,\"result\":{\"userAgent\":\"inixiative-bench/0.169.0 (Mac OS 15.7.3; arm64) unknown (inixiative-bench; 0.1.0)\",\"codexHome\":\"~/.codex\",\"platformFamily\":\"unix\",\"platformOs\":\"macos\"}}"
       },
       {
         "after": 3,
         "stream": "stdout",
-        "data": "{\"id\":2,\"result\":{\"thread\":{\"id\":\"01a20456-1524-7c11-be93-4c6188643f73\",\"environments\":[{\"environmentId\":\"local\",\"cwd\":\"{{cwd}}\",\"runtimeWorkspaceRoots\":[\"{{cwd}}\"]}],\"extra\":null,\"sessionId\":\"01a20456-1524-7c11-be93-4c6188643f73\",\"forkedFromId\":null,\"attachedToThreadId\":null,\"parentThreadId\":null,\"preview\":\"\",\"ephemeral\":false,\"section\":null,\"sectionEnteredAt\":null,\"projectId\":null,\"historyMode\":\"paginated\",\"modelProvider\":\"openai\",\"model\":\"gpt-5.6-luna\",\"reasoningEffort\":\"high\",\"createdAt\":1795369080,\"updatedAt\":1795369080,\"recencyAt\":1795369080,\"status\":{\"type\":\"idle\"},\"path\":\"~/.codex/sessions/2026/11/22/rollout-2026-11-22T14-38-00-01a20456-1524-7c11-be93-4c6188643f73.jsonl\",\"cwd\":\"{{cwd}}\",\"cliVersion\":\"0.169.0\",\"originator\":\"inixiative-bench\",\"source\":\"vscode\",\"canAcceptDirectInput\":true,\"threadSource\":null,\"agentNickname\":null,\"agentRole\":null,\"gitInfo\":null,\"name\":null,\"daybreakEnabled\":null,\"turns\":[]},\"model\":\"gpt-5.6-luna\",\"modelProvider\":\"openai\",\"serviceTier\":null,\"disabledPluginIds\":[],\"cwd\":\"{{cwd}}\",\"runtimeWorkspaceRoots\":[\"{{cwd}}\"],\"instructionSources\":[\"~/.codex/AGENTS.md\"],\"approvalPolicy\":\"never\",\"approvalsReviewer\":\"user\",\"sandbox\":{\"type\":\"dangerFullAccess\"},\"activePermissionProfile\":null,\"reasoningEffort\":\"high\",\"multiAgentMode\":\"explicitRequestOnly\"}}"
+        "data": "{\"method\":\"remoteControl/status/changed\",\"params\":{\"status\":\"disabled\",\"serverName\":\"host\",\"installationId\":\"00000000-0000-4000-8000-000000000000\",\"environmentId\":null},\"emittedAtMs\":1795754225554}"
+      },
+      {
+        "after": 3,
+        "stream": "stdout",
+        "data": "{\"id\":2,\"result\":{\"thread\":{\"id\":\"01a21b4a-ef94-7152-889f-a4ec38117a2e\",\"environments\":[{\"environmentId\":\"local\",\"cwd\":\"{{cwd}}\",\"runtimeWorkspaceRoots\":[\"{{cwd}}\"]}],\"extra\":null,\"sessionId\":\"01a21b4a-ef94-7152-889f-a4ec38117a2e\",\"forkedFromId\":null,\"attachedToThreadId\":null,\"parentThreadId\":null,\"preview\":\"\",\"ephemeral\":false,\"section\":null,\"sectionEnteredAt\":null,\"projectId\":null,\"historyMode\":\"paginated\",\"modelProvider\":\"openai\",\"model\":\"gpt-5.6-luna\",\"reasoningEffort\":\"high\",\"createdAt\":1795754225,\"updatedAt\":1795754225,\"recencyAt\":1795754225,\"status\":{\"type\":\"idle\"},\"path\":\"~/.codex/sessions/2026/11/27/rollout-2026-11-27T01-37-05-01a21b4a-ef94-7152-889f-a4ec38117a2e.jsonl\",\"cwd\":\"{{cwd}}\",\"cliVersion\":\"0.169.0\",\"originator\":\"inixiative-bench\",\"source\":\"vscode\",\"canAcceptDirectInput\":true,\"threadSource\":null,\"agentNickname\":null,\"agentRole\":null,\"gitInfo\":null,\"name\":null,\"daybreakEnabled\":null,\"turns\":[]},\"model\":\"gpt-5.6-luna\",\"modelProvider\":\"openai\",\"serviceTier\":null,\"disabledPluginIds\":[],\"cwd\":\"{{cwd}}\",\"runtimeWorkspaceRoots\":[\"{{cwd}}\"],\"instructionSources\":[\"~/.codex/AGENTS.md\"],\"approvalPolicy\":\"never\",\"approvalsReviewer\":\"user\",\"sandbox\":{\"type\":\"dangerFullAccess\"},\"activePermissionProfile\":null,\"reasoningEffort\":\"high\",\"multiAgentMode\":\"explicitRequestOnly\"}}"
+      },
+      {
+        "after": 3,
+        "stream": "stdout",
+        "data": "{\"method\":\"thread/started\",\"params\":{\"thread\":{\"id\":\"01a21b4a-ef94-7152-889f-a4ec38117a2e\",\"environments\":[{\"environmentId\":\"local\",\"cwd\":\"{{cwd}}\",\"runtimeWorkspaceRoots\":[\"{{cwd}}\"]}],\"extra\":null,\"sessionId\":\"01a21b4a-ef94-7152-889f-a4ec38117a2e\",\"forkedFromId\":null,\"attachedToThreadId\":null,\"parentThreadId\":null,\"preview\":\"\",\"ephemeral\":false,\"section\":null,\"sectionEnteredAt\":null,\"projectId\":null,\"historyMode\":\"paginated\",\"modelProvider\":\"openai\",\"model\":\"gpt-5.6-luna\",\"reasoningEffort\":\"high\",\"createdAt\":1795754225,\"updatedAt\":1795754225,\"recencyAt\":1795754225,\"status\":{\"type\":\"idle\"},\"path\":\"~/.codex/sessions/2026/11/27/rollout-2026-11-27T01-37-05-01a21b4a-ef94-7152-889f-a4ec38117a2e.jsonl\",\"cwd\":\"{{cwd}}\",\"cliVersion\":\"0.169.0\",\"originator\":\"inixiative-bench\",\"source\":\"vscode\",\"canAcceptDirectInput\":true,\"threadSource\":null,\"agentNickname\":null,\"agentRole\":null,\"gitInfo\":null,\"name\":null,\"daybreakEnabled\":null,\"turns\":[]}},\"emittedAtMs\":1795754225576}"
       },
       {
         "after": 4,
         "stream": "stdout",
-        "data": "{\"method\":\"thread/started\",\"params\":{\"thread\":{\"id\":\"01a20456-1524-7c11-be93-4c6188643f73\",\"environments\":[{\"environmentId\":\"local\",\"cwd\":\"{{cwd}}\",\"runtimeWorkspaceRoots\":[\"{{cwd}}\"]}],\"extra\":null,\"sessionId\":\"01a20456-1524-7c11-be93-4c6188643f73\",\"forkedFromId\":null,\"attachedToThreadId\":null,\"parentThreadId\":null,\"preview\":\"\",\"ephemeral\":false,\"section\":null,\"sectionEnteredAt\":null,\"projectId\":null,\"historyMode\":\"paginated\",\"modelProvider\":\"openai\",\"model\":\"gpt-5.6-luna\",\"reasoningEffort\":\"high\",\"createdAt\":1795369080,\"updatedAt\":1795369080,\"recencyAt\":1795369080,\"status\":{\"type\":\"idle\"},\"path\":\"~/.codex/sessions/2026/11/22/rollout-2026-11-22T14-38-00-01a20456-1524-7c11-be93-4c6188643f73.jsonl\",\"cwd\":\"{{cwd}}\",\"cliVersion\":\"0.169.0\",\"originator\":\"inixiative-bench\",\"source\":\"vscode\",\"canAcceptDirectInput\":true,\"threadSource\":null,\"agentNickname\":null,\"agentRole\":null,\"gitInfo\":null,\"name\":null,\"daybreakEnabled\":null,\"turns\":[]}},\"emittedAtMs\":1795369080148}"
+        "data": "{\"method\":\"mcpServer/startupStatus/updated\",\"params\":{\"threadId\":\"01a21b4a-ef94-7152-889f-a4ec38117a2e\",\"name\":\"node_repl\",\"status\":\"starting\",\"error\":null,\"failureReason\":null},\"emittedAtMs\":1795754225576}"
       },
       {
         "after": 4,
         "stream": "stdout",
-        "data": "{\"method\":\"mcpServer/startupStatus/updated\",\"params\":{\"threadId\":\"01a20456-1524-7c11-be93-4c6188643f73\",\"name\":\"node_repl\",\"status\":\"starting\",\"error\":null,\"failureReason\":null},\"emittedAtMs\":1795369080148}"
+        "data": "{\"method\":\"mcpServer/startupStatus/updated\",\"params\":{\"threadId\":\"01a21b4a-ef94-7152-889f-a4ec38117a2e\",\"name\":\"codex_apps\",\"status\":\"starting\",\"error\":null,\"failureReason\":null},\"emittedAtMs\":1795754225576}"
       },
       {
         "after": 4,
         "stream": "stdout",
-        "data": "{\"method\":\"mcpServer/startupStatus/updated\",\"params\":{\"threadId\":\"01a20456-1524-7c11-be93-4c6188643f73\",\"name\":\"codex_apps\",\"status\":\"starting\",\"error\":null,\"failureReason\":null},\"emittedAtMs\":1795369080148}"
+        "data": "{\"method\":\"mcpServer/startupStatus/updated\",\"params\":{\"threadId\":\"01a21b4a-ef94-7152-889f-a4ec38117a2e\",\"name\":\"cua_repl\",\"status\":\"starting\",\"error\":null,\"failureReason\":null},\"emittedAtMs\":1795754225576}"
       },
       {
         "after": 4,
         "stream": "stdout",
-        "data": "{\"method\":\"mcpServer/startupStatus/updated\",\"params\":{\"threadId\":\"01a20456-1524-7c11-be93-4c6188643f73\",\"name\":\"cua_repl\",\"status\":\"starting\",\"error\":null,\"failureReason\":null},\"emittedAtMs\":1795369080148}"
+        "data": "{\"id\":3,\"result\":{\"turn\":{\"id\":\"01a21b4a-efa9-7e10-b405-20044a9b9614\",\"rootTurnId\":\"01a21b4a-efa9-7e10-b405-20044a9b9614\",\"items\":[],\"itemsView\":\"notLoaded\",\"status\":\"inProgress\",\"error\":null,\"startedAt\":null,\"completedAt\":null,\"durationMs\":null}}}"
       },
       {
         "after": 4,
         "stream": "stdout",
-        "data": "{\"id\":3,\"result\":{\"turn\":{\"id\":\"01a20456-1556-70a3-bfa8-5e4b6949bf94\",\"rootTurnId\":\"01a20456-1556-70a3-bfa8-5e4b6949bf94\",\"items\":[],\"itemsView\":\"notLoaded\",\"status\":\"inProgress\",\"error\":null,\"startedAt\":null,\"completedAt\":null,\"durationMs\":null}}}"
+        "data": "{\"method\":\"thread/status/changed\",\"params\":{\"threadId\":\"01a21b4a-ef94-7152-889f-a4ec38117a2e\",\"status\":{\"type\":\"active\",\"activeFlags\":[]}},\"emittedAtMs\":1795754225769}"
       },
       {
         "after": 4,
         "stream": "stdout",
-        "data": "{\"method\":\"thread/status/changed\",\"params\":{\"threadId\":\"01a20456-1524-7c11-be93-4c6188643f73\",\"status\":{\"type\":\"active\",\"activeFlags\":[]}},\"emittedAtMs\":1795369080392}"
+        "data": "{\"method\":\"turn/started\",\"params\":{\"threadId\":\"01a21b4a-ef94-7152-889f-a4ec38117a2e\",\"turn\":{\"id\":\"01a21b4a-efa9-7e10-b405-20044a9b9614\",\"rootTurnId\":\"01a21b4a-efa9-7e10-b405-20044a9b9614\",\"items\":[],\"itemsView\":\"notLoaded\",\"status\":\"inProgress\",\"error\":null,\"startedAt\":1795754225,\"completedAt\":null,\"durationMs\":null}},\"emittedAtMs\":1795754225769}"
       },
       {
         "after": 4,
         "stream": "stdout",
-        "data": "{\"method\":\"turn/started\",\"params\":{\"threadId\":\"01a20456-1524-7c11-be93-4c6188643f73\",\"turn\":{\"id\":\"01a20456-1556-70a3-bfa8-5e4b6949bf94\",\"rootTurnId\":\"01a20456-1556-70a3-bfa8-5e4b6949bf94\",\"items\":[],\"itemsView\":\"notLoaded\",\"status\":\"inProgress\",\"error\":null,\"startedAt\":1795369080,\"completedAt\":null,\"durationMs\":null}},\"emittedAtMs\":1795369080392}"
+        "data": "{\"method\":\"mcpServer/startupStatus/updated\",\"params\":{\"threadId\":\"01a21b4a-ef94-7152-889f-a4ec38117a2e\",\"name\":\"node_repl\",\"status\":\"ready\",\"error\":null,\"failureReason\":null},\"emittedAtMs\":1795754225922}"
       },
       {
         "after": 4,
         "stream": "stdout",
-        "data": "{\"method\":\"account/updated\",\"params\":{\"authMode\":\"chatgpt\",\"planType\":\"REDACTED\"},\"emittedAtMs\":1795369080551}"
+        "data": "{\"method\":\"mcpServer/startupStatus/updated\",\"params\":{\"threadId\":\"01a21b4a-ef94-7152-889f-a4ec38117a2e\",\"name\":\"cua_repl\",\"status\":\"ready\",\"error\":null,\"failureReason\":null},\"emittedAtMs\":1795754225924}"
       },
       {
         "after": 4,
         "stream": "stdout",
-        "data": "{\"method\":\"mcpServer/startupStatus/updated\",\"params\":{\"threadId\":\"01a20456-1524-7c11-be93-4c6188643f73\",\"name\":\"cua_repl\",\"status\":\"ready\",\"error\":null,\"failureReason\":null},\"emittedAtMs\":1795369080610}"
+        "data": "{\"method\":\"mcpServer/startupStatus/updated\",\"params\":{\"threadId\":\"01a21b4a-ef94-7152-889f-a4ec38117a2e\",\"name\":\"node_repl\",\"status\":\"ready\",\"error\":null,\"failureReason\":null},\"emittedAtMs\":1795754226341}"
       },
       {
         "after": 4,
         "stream": "stdout",
-        "data": "{\"method\":\"mcpServer/startupStatus/updated\",\"params\":{\"threadId\":\"01a20456-1524-7c11-be93-4c6188643f73\",\"name\":\"node_repl\",\"status\":\"ready\",\"error\":null,\"failureReason\":null},\"emittedAtMs\":1795369080611}"
+        "data": "{\"method\":\"mcpServer/startupStatus/updated\",\"params\":{\"threadId\":\"01a21b4a-ef94-7152-889f-a4ec38117a2e\",\"name\":\"cua_repl\",\"status\":\"ready\",\"error\":null,\"failureReason\":null},\"emittedAtMs\":1795754226341}"
       },
       {
         "after": 4,
         "stream": "stdout",
-        "data": "{\"method\":\"mcpServer/startupStatus/updated\",\"params\":{\"threadId\":\"01a20456-1524-7c11-be93-4c6188643f73\",\"name\":\"codex_apps\",\"status\":\"ready\",\"error\":null,\"failureReason\":null},\"emittedAtMs\":1795369081160}"
+        "data": "{\"method\":\"mcpServer/startupStatus/updated\",\"params\":{\"threadId\":\"01a21b4a-ef94-7152-889f-a4ec38117a2e\",\"name\":\"codex_apps\",\"status\":\"ready\",\"error\":null,\"failureReason\":null},\"emittedAtMs\":1795754226341}"
       },
       {
         "after": 4,
         "stream": "stdout",
-        "data": "{\"method\":\"item/started\",\"params\":{\"item\":{\"type\":\"userMessage\",\"id\":\"01a20456-1b7b-7191-9264-324b6840261c\",\"clientId\":null,\"content\":[{\"type\":\"text\",\"text\":\"# User Message\\n\\nprivate-input. Reply with exactly accepted-private-answer and nothing else.\",\"text_elements\":[]}],\"startedAtMs\":1795369081724,\"completedAtMs\":null},\"threadId\":\"01a20456-1524-7c11-be93-4c6188643f73\",\"turnId\":\"01a20456-1556-70a3-bfa8-5e4b6949bf94\",\"startedAtMs\":1795369081724},\"emittedAtMs\":1795369081725}"
+        "data": "{\"method\":\"account/updated\",\"params\":{\"authMode\":\"chatgpt\",\"planType\":\"REDACTED\"},\"emittedAtMs\":1795754226500}"
       },
       {
         "after": 4,
         "stream": "stdout",
-        "data": "{\"method\":\"item/completed\",\"params\":{\"item\":{\"type\":\"userMessage\",\"id\":\"01a20456-1b7b-7191-9264-324b6840261c\",\"clientId\":null,\"content\":[{\"type\":\"text\",\"text\":\"# User Message\\n\\nprivate-input. Reply with exactly accepted-private-answer and nothing else.\",\"text_elements\":[]}],\"startedAtMs\":1795369081724,\"completedAtMs\":1795369081725},\"threadId\":\"01a20456-1524-7c11-be93-4c6188643f73\",\"turnId\":\"01a20456-1556-70a3-bfa8-5e4b6949bf94\",\"contentTokenCount\":null,\"completedAtMs\":1795369081725},\"emittedAtMs\":1795369081727}"
+        "data": "{\"method\":\"item/started\",\"params\":{\"item\":{\"type\":\"userMessage\",\"id\":\"01a21b4a-f74a-71a0-9397-845924df31ec\",\"clientId\":null,\"content\":[{\"type\":\"text\",\"text\":\"# User Message\\n\\nprivate-input. Reply with exactly accepted-private-answer and nothing else.\",\"text_elements\":[]}],\"startedAtMs\":1795754227531,\"completedAtMs\":null},\"threadId\":\"01a21b4a-ef94-7152-889f-a4ec38117a2e\",\"turnId\":\"01a21b4a-efa9-7e10-b405-20044a9b9614\",\"startedAtMs\":1795754227531},\"emittedAtMs\":1795754227531}"
       },
       {
         "after": 4,
         "stream": "stdout",
-        "data": "{\"method\":\"item/started\",\"params\":{\"item\":{\"type\":\"reasoning\",\"id\":\"rs_017836d78adc3fa2016b03287b360c87d2a42405458470568f\",\"summary\":[],\"content\":[],\"startedAtMs\":1795369082626,\"completedAtMs\":null},\"threadId\":\"01a20456-1524-7c11-be93-4c6188643f73\",\"turnId\":\"01a20456-1556-70a3-bfa8-5e4b6949bf94\",\"startedAtMs\":1795369082626},\"emittedAtMs\":1795369082627}"
+        "data": "{\"method\":\"item/completed\",\"params\":{\"item\":{\"type\":\"userMessage\",\"id\":\"01a21b4a-f74a-71a0-9397-845924df31ec\",\"clientId\":null,\"content\":[{\"type\":\"text\",\"text\":\"# User Message\\n\\nprivate-input. Reply with exactly accepted-private-answer and nothing else.\",\"text_elements\":[]}],\"startedAtMs\":1795754227531,\"completedAtMs\":1795754227531},\"threadId\":\"01a21b4a-ef94-7152-889f-a4ec38117a2e\",\"turnId\":\"01a21b4a-efa9-7e10-b405-20044a9b9614\",\"contentTokenCount\":null,\"completedAtMs\":1795754227531},\"emittedAtMs\":1795754227538}"
       },
       {
         "after": 4,
         "stream": "stdout",
-        "data": "{\"method\":\"item/completed\",\"params\":{\"item\":{\"type\":\"reasoning\",\"id\":\"rs_017836d78adc3fa2016b03287b360c87d2a42405458470568f\",\"summary\":[],\"content\":[],\"startedAtMs\":1795369082626,\"completedAtMs\":1795369082627},\"threadId\":\"01a20456-1524-7c11-be93-4c6188643f73\",\"turnId\":\"01a20456-1556-70a3-bfa8-5e4b6949bf94\",\"contentTokenCount\":null,\"completedAtMs\":1795369082627},\"emittedAtMs\":1795369082630}"
+        "data": "{\"method\":\"item/started\",\"params\":{\"item\":{\"type\":\"agentMessage\",\"moderation\":null,\"id\":\"msg_0098eef1a820918b016b0908f43eec87d2ae5867adb5b84c67\",\"text\":\"\",\"phase\":\"final_answer\",\"memoryCitation\":null,\"delivery\":null,\"questions\":null,\"startedAtMs\":1795754228269,\"completedAtMs\":null},\"threadId\":\"01a21b4a-ef94-7152-889f-a4ec38117a2e\",\"turnId\":\"01a21b4a-efa9-7e10-b405-20044a9b9614\",\"startedAtMs\":1795754228269},\"emittedAtMs\":1795754228269}"
       },
       {
         "after": 4,
         "stream": "stdout",
-        "data": "{\"method\":\"item/started\",\"params\":{\"item\":{\"type\":\"agentMessage\",\"moderation\":null,\"id\":\"msg_017836d78adc3fa2016b03287b4cf487d2b6ff9d7fb88eea66\",\"text\":\"\",\"phase\":\"final_answer\",\"memoryCitation\":null,\"delivery\":null,\"questions\":null,\"startedAtMs\":1795369082705,\"completedAtMs\":null},\"threadId\":\"01a20456-1524-7c11-be93-4c6188643f73\",\"turnId\":\"01a20456-1556-70a3-bfa8-5e4b6949bf94\",\"startedAtMs\":1795369082705},\"emittedAtMs\":1795369082706}"
+        "data": "{\"method\":\"item/agentMessage/delta\",\"params\":{\"threadId\":\"01a21b4a-ef94-7152-889f-a4ec38117a2e\",\"turnId\":\"01a21b4a-efa9-7e10-b405-20044a9b9614\",\"itemId\":\"msg_0098eef1a820918b016b0908f43eec87d2ae5867adb5b84c67\",\"delta\":\"accepted\"},\"emittedAtMs\":1795754228269}"
       },
       {
         "after": 4,
         "stream": "stdout",
-        "data": "{\"method\":\"item/agentMessage/delta\",\"params\":{\"threadId\":\"01a20456-1524-7c11-be93-4c6188643f73\",\"turnId\":\"01a20456-1556-70a3-bfa8-5e4b6949bf94\",\"itemId\":\"msg_017836d78adc3fa2016b03287b4cf487d2b6ff9d7fb88eea66\",\"delta\":\"accepted\"},\"emittedAtMs\":1795369082706}"
+        "data": "{\"method\":\"item/agentMessage/delta\",\"params\":{\"threadId\":\"01a21b4a-ef94-7152-889f-a4ec38117a2e\",\"turnId\":\"01a21b4a-efa9-7e10-b405-20044a9b9614\",\"itemId\":\"msg_0098eef1a820918b016b0908f43eec87d2ae5867adb5b84c67\",\"delta\":\"-private\"},\"emittedAtMs\":1795754228269}"
       },
       {
         "after": 4,
         "stream": "stdout",
-        "data": "{\"method\":\"item/agentMessage/delta\",\"params\":{\"threadId\":\"01a20456-1524-7c11-be93-4c6188643f73\",\"turnId\":\"01a20456-1556-70a3-bfa8-5e4b6949bf94\",\"itemId\":\"msg_017836d78adc3fa2016b03287b4cf487d2b6ff9d7fb88eea66\",\"delta\":\"-private\"},\"emittedAtMs\":1795369082755}"
+        "data": "{\"method\":\"item/agentMessage/delta\",\"params\":{\"threadId\":\"01a21b4a-ef94-7152-889f-a4ec38117a2e\",\"turnId\":\"01a21b4a-efa9-7e10-b405-20044a9b9614\",\"itemId\":\"msg_0098eef1a820918b016b0908f43eec87d2ae5867adb5b84c67\",\"delta\":\"-answer\"},\"emittedAtMs\":1795754228314}"
       },
       {
         "after": 4,
         "stream": "stdout",
-        "data": "{\"method\":\"item/agentMessage/delta\",\"params\":{\"threadId\":\"01a20456-1524-7c11-be93-4c6188643f73\",\"turnId\":\"01a20456-1556-70a3-bfa8-5e4b6949bf94\",\"itemId\":\"msg_017836d78adc3fa2016b03287b4cf487d2b6ff9d7fb88eea66\",\"delta\":\"-answer\"},\"emittedAtMs\":1795369082755}"
+        "data": "{\"method\":\"item/completed\",\"params\":{\"item\":{\"type\":\"agentMessage\",\"moderation\":null,\"id\":\"msg_0098eef1a820918b016b0908f43eec87d2ae5867adb5b84c67\",\"text\":\"accepted-private-answer\",\"phase\":\"final_answer\",\"memoryCitation\":null,\"delivery\":null,\"questions\":null,\"startedAtMs\":1795754228269,\"completedAtMs\":1795754228347},\"threadId\":\"01a21b4a-ef94-7152-889f-a4ec38117a2e\",\"turnId\":\"01a21b4a-efa9-7e10-b405-20044a9b9614\",\"contentTokenCount\":4,\"completedAtMs\":1795754228347},\"emittedAtMs\":1795754228348}"
       },
       {
         "after": 4,
         "stream": "stdout",
-        "data": "{\"method\":\"item/completed\",\"params\":{\"item\":{\"type\":\"agentMessage\",\"moderation\":null,\"id\":\"msg_017836d78adc3fa2016b03287b4cf487d2b6ff9d7fb88eea66\",\"text\":\"accepted-private-answer\",\"phase\":\"final_answer\",\"memoryCitation\":null,\"delivery\":null,\"questions\":null,\"startedAtMs\":1795369082705,\"completedAtMs\":1795369083013},\"threadId\":\"01a20456-1524-7c11-be93-4c6188643f73\",\"turnId\":\"01a20456-1556-70a3-bfa8-5e4b6949bf94\",\"contentTokenCount\":4,\"completedAtMs\":1795369083013},\"emittedAtMs\":1795369083015}"
+        "data": "{\"method\":\"thread/tokenUsage/updated\",\"params\":{\"threadId\":\"01a21b4a-ef94-7152-889f-a4ec38117a2e\",\"turnId\":\"01a21b4a-efa9-7e10-b405-20044a9b9614\",\"tokenUsage\":{\"total\":{\"totalTokens\":16265,\"inputTokens\":16258,\"cachedInputTokens\":6656,\"cacheWriteInputTokens\":0,\"outputTokens\":7,\"reasoningOutputTokens\":0},\"last\":{\"totalTokens\":16265,\"inputTokens\":16258,\"cachedInputTokens\":6656,\"cacheWriteInputTokens\":0,\"outputTokens\":7,\"reasoningOutputTokens\":0},\"modelContextWindow\":258400}},\"emittedAtMs\":1795754228364}"
       },
       {
         "after": 4,
         "stream": "stdout",
-        "data": "{\"method\":\"thread/tokenUsage/updated\",\"params\":{\"threadId\":\"01a20456-1524-7c11-be93-4c6188643f73\",\"turnId\":\"01a20456-1556-70a3-bfa8-5e4b6949bf94\",\"tokenUsage\":{\"total\":{\"totalTokens\":16286,\"inputTokens\":16266,\"cachedInputTokens\":11520,\"cacheWriteInputTokens\":0,\"outputTokens\":20,\"reasoningOutputTokens\":11},\"last\":{\"totalTokens\":16286,\"inputTokens\":16266,\"cachedInputTokens\":11520,\"cacheWriteInputTokens\":0,\"outputTokens\":20,\"reasoningOutputTokens\":11},\"modelContextWindow\":258400}},\"emittedAtMs\":1795369083030}"
+        "data": "{\"method\":\"account/rateLimits/updated\",\"params\":{\"rateLimits\":{\"limitId\":\"codex\",\"limitName\":null,\"normalModelSlug\":null,\"primary\":{\"usedPercent\":0,\"windowDurationMins\":10080,\"resetsAt\":1796322240},\"secondary\":null,\"credits\":{\"hasCredits\":false,\"unlimited\":false,\"balance\":\"0\"},\"individualLimit\":null,\"spendControlReached\":null,\"planType\":\"REDACTED\",\"rateLimitReachedType\":null}},\"emittedAtMs\":1795754228364}"
       },
       {
         "after": 4,
         "stream": "stdout",
-        "data": "{\"method\":\"account/rateLimits/updated\",\"params\":{\"rateLimits\":{\"limitId\":\"codex\",\"limitName\":null,\"normalModelSlug\":null,\"primary\":{\"usedPercent\":1,\"windowDurationMins\":10080,\"resetsAt\":1795559899},\"secondary\":null,\"credits\":{\"hasCredits\":false,\"unlimited\":false,\"balance\":\"0\"},\"individualLimit\":null,\"spendControlReached\":null,\"planType\":\"REDACTED\",\"rateLimitReachedType\":null}},\"emittedAtMs\":1795369083030}"
+        "data": "{\"method\":\"thread/status/changed\",\"params\":{\"threadId\":\"01a21b4a-ef94-7152-889f-a4ec38117a2e\",\"status\":{\"type\":\"idle\"}},\"emittedAtMs\":1795754228369}"
       },
       {
         "after": 4,
         "stream": "stdout",
-        "data": "{\"method\":\"thread/status/changed\",\"params\":{\"threadId\":\"01a20456-1524-7c11-be93-4c6188643f73\",\"status\":{\"type\":\"idle\"}},\"emittedAtMs\":1795369083037}"
-      },
-      {
-        "after": 4,
-        "stream": "stdout",
-        "data": "{\"method\":\"turn/completed\",\"params\":{\"threadId\":\"01a20456-1524-7c11-be93-4c6188643f73\",\"turn\":{\"id\":\"01a20456-1556-70a3-bfa8-5e4b6949bf94\",\"rootTurnId\":\"01a20456-1556-70a3-bfa8-5e4b6949bf94\",\"items\":[{\"type\":\"agentMessage\",\"moderation\":null,\"id\":\"msg_017836d78adc3fa2016b03287b4cf487d2b6ff9d7fb88eea66\",\"text\":\"accepted-private-answer\",\"phase\":\"final_answer\",\"memoryCitation\":null,\"delivery\":null,\"questions\":null,\"startedAtMs\":1795369082705,\"completedAtMs\":1795369083013}],\"itemsView\":\"summary\",\"status\":\"completed\",\"error\":null,\"startedAt\":1795369080,\"completedAt\":1795369083,\"durationMs\":2874}},\"emittedAtMs\":1795369083037}"
+        "data": "{\"method\":\"turn/completed\",\"params\":{\"threadId\":\"01a21b4a-ef94-7152-889f-a4ec38117a2e\",\"turn\":{\"id\":\"01a21b4a-efa9-7e10-b405-20044a9b9614\",\"rootTurnId\":\"01a21b4a-efa9-7e10-b405-20044a9b9614\",\"items\":[{\"type\":\"agentMessage\",\"moderation\":null,\"id\":\"msg_0098eef1a820918b016b0908f43eec87d2ae5867adb5b84c67\",\"text\":\"accepted-private-answer\",\"phase\":\"final_answer\",\"memoryCitation\":null,\"delivery\":null,\"questions\":null,\"startedAtMs\":1795754228269,\"completedAtMs\":1795754228347}],\"itemsView\":\"summary\",\"status\":\"completed\",\"error\":null,\"startedAt\":1795754225,\"completedAt\":1795754228,\"durationMs\":2786}},\"emittedAtMs\":1795754228369}"
       }
     ],
     "exit": {
@@ -164,13 +164,13 @@
   "recorded": {
     "service": "codex",
     "transport": "process",
-    "recordedAt": "2026-11-22T17:38:03.062Z",
+    "recordedAt": "2026-11-27T04:37:08.386Z",
     "environment": "terminal",
     "cli": "codex",
-    "durationMs": 3072,
+    "durationMs": 3000,
     "model": "gpt-5.6-luna",
     "metadata": {
-      "@inixiative/agent-session": "0.22.3"
+      "@inixiative/agent-session": "0.23.0"
     }
   }
 }

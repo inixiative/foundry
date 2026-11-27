@@ -1,0 +1,21 @@
+{
+  "version": "2.1.332",
+  "transport": "outcome",
+  "status": 200,
+  "body": {
+    "denied": true,
+    "bashRequested": true,
+    "fileWritten": false,
+    "answered": true
+  },
+  "recorded": {
+    "service": "claude",
+    "transport": "outcome",
+    "recordedAt": "2026-11-27T04:36:36.887Z",
+    "environment": "terminal",
+    "cli": "claude",
+    "metadata": {
+      "@inixiative/agent-session": "0.23.0"
+    }
+  }
+}

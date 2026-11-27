@@ -1,0 +1,25 @@
+{
+  "version": "2.1.332",
+  "transport": "outcome",
+  "status": 200,
+  "body": {
+    "turns": [
+      "accepted-private-answer",
+      "accepted-private-answer"
+    ],
+    "launches": 1,
+    "writes": 2,
+    "statusChecks": 1,
+    "sameSession": true
+  },
+  "recorded": {
+    "service": "claude",
+    "transport": "outcome",
+    "recordedAt": "2026-11-27T04:36:32.973Z",
+    "environment": "terminal",
+    "cli": "claude",
+    "metadata": {
+      "@inixiative/agent-session": "0.23.0"
+    }
+  }
+}

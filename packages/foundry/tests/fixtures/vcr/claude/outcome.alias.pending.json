@@ -1,0 +1,19 @@
+{
+  "version": "2.1.332",
+  "transport": "outcome",
+  "status": 200,
+  "body": {
+    "content": "{\"category\":\"feature\"}",
+    "observedModel": "claude-haiku-5-5"
+  },
+  "recorded": {
+    "service": "claude",
+    "transport": "outcome",
+    "recordedAt": "2026-11-27T04:37:45.906Z",
+    "environment": "terminal",
+    "cli": "claude",
+    "metadata": {
+      "@inixiative/agent-session": "0.23.0"
+    }
+  }
+}

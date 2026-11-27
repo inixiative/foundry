@@ -1,0 +1,33 @@
+{
+  "version": "2.1.332",
+  "transport": "outcome",
+  "status": 200,
+  "body": {
+    "answers": [
+      "{\"category\":\"feature\"}",
+      "{\"category\":\"feature\"}"
+    ],
+    "calls": [
+      {
+        "valid": true,
+        "release": "released",
+        "processExit": "exited"
+      },
+      {
+        "valid": true,
+        "release": "released",
+        "processExit": "exited"
+      }
+    ]
+  },
+  "recorded": {
+    "service": "claude",
+    "transport": "outcome",
+    "recordedAt": "2026-11-27T04:37:41.406Z",
+    "environment": "terminal",
+    "cli": "claude",
+    "metadata": {
+      "@inixiative/agent-session": "0.23.0"
+    }
+  }
+}

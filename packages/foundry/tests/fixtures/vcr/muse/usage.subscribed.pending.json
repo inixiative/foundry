@@ -1,0 +1,40 @@
+{
+  "version": "1.4.25",
+  "transport": "process",
+  "status": 0,
+  "body": {
+    "kind": "process",
+    "argv": [
+      "muse",
+      "usage",
+      "--json"
+    ],
+    "cwd": "{{cwd}}",
+    "stdin": [],
+    "stdinEnded": false,
+    "frames": [
+      {
+        "after": 0,
+        "stream": "stdout",
+        "data": "{\"allowance\":null,\"reason\":\"server_sent_no_usage\"}",
+        "kept": true
+      }
+    ],
+    "exit": {
+      "after": 0,
+      "code": 0,
+      "killed": false
+    }
+  },
+  "recorded": {
+    "service": "muse",
+    "transport": "process",
+    "recordedAt": "2026-11-27T04:37:18.584Z",
+    "environment": "terminal",
+    "cli": "muse",
+    "durationMs": 1842,
+    "metadata": {
+      "@inixiative/agent-session": "0.23.0"
+    }
+  }
+}
