@@ -50,6 +50,7 @@ import {
 } from '../src/providers/warden-routing';
 import { type FoundryConfig, starterConfig } from '../src/viewer/config';
 import { fakeClaudeTree } from './helpers/fake-claude-tree';
+import { prepareChorusWorkingCopy } from './helpers/regions';
 import { subscriptionStatusProcess } from './helpers/subscription-transport';
 
 const cleanup: Array<() => unknown> = [];
@@ -854,14 +855,14 @@ test('the decision host serves a Warden call on its project host; any other call
  */
 function project(): string {
   const dir = tempDir('project-host');
-  mkdirSync(join(dir, '.git'));
-  write(join(dir, '.foundry', 'project.json'), JSON.stringify({ chorus: { enabled: true } }));
+  const copy = prepareChorusWorkingCopy(dir);
+  write(join(copy, '.foundry', 'project.json'), JSON.stringify({ chorus: { enabled: true } }));
   write(join(dir, 'CLAUDE.md'), 'ROOT_CLAUDE_MD\n');
   write(
     join(dir, '.foundry', 'roles', 'region', 'lens-model', 'instructions.md'),
     'ROOT_ROLE_FILE\n',
   );
-  write(join(dir, '.foundry', 'warden-brief.md'), 'ROOT_WARDEN_BRIEF\n');
+  write(join(copy, '.foundry', 'warden-brief.md'), 'ROOT_WARDEN_BRIEF\n');
   const worktree = join(dir, '.worktrees', 'feat');
   write(join(worktree, '.git'), 'gitdir: ../../.git/worktrees/feat\n');
   write(join(worktree, 'CLAUDE.md'), 'WORKTREE_CLAUDE_MD\n');
@@ -869,13 +870,12 @@ function project(): string {
     join(worktree, '.foundry', 'roles', 'region', 'lens-model', 'instructions.md'),
     'WORKTREE_ROLE_FILE\n',
   );
-  write(join(worktree, '.foundry', 'warden-brief.md'), 'WORKTREE_WARDEN_BRIEF\n');
   for (const id of ['concurrency-locks', 'lens-model']) {
     write(
-      join(dir, '.foundry', 'regions', id, 'region.json'),
+      join(copy, '.foundry', 'regions', id, 'region.json'),
       JSON.stringify({ id, title: id, routing: `Is this about ${id}?`, concepts: [id] }),
     );
-    write(join(dir, '.foundry', 'regions', id, 'knowledge.md'), `# ${id}\n\nKNOWLEDGE_${id}\n`);
+    write(join(copy, '.foundry', 'regions', id, 'knowledge.md'), `# ${id}\n\nKNOWLEDGE_${id}\n`);
   }
   return dir;
 }
@@ -948,10 +948,9 @@ test('the roster is every region Warden composed at the project root, and a work
   expect(roster.map((e) => e.domain).sort()).toEqual(['concurrency-locks', 'lens-model']);
   for (const { spec: held } of roster) {
     // Wardens never get CLAUDE.md: the charter, the warden brief and the region. The brief is the
-    // registered checkout's, whatever branch a worktree thread is on.
+    // Chorus working copy's, whatever branch a worktree thread is on.
     expect(held.instructions).not.toContain('CLAUDE_MD');
     expect(held.instructions).toContain('ROOT_WARDEN_BRIEF');
-    expect(held.instructions).not.toContain('WORKTREE_WARDEN_BRIEF');
     expect(held.context).toContain('KNOWLEDGE_');
   }
   const lens = roster.find((e) => e.domain === 'lens-model')!.spec;

@@ -41,7 +41,7 @@ import {
 import { roleIdOfAgent } from '../src/prompts/role-namespace';
 import { primedRequest } from '../src/providers/warden-routing';
 import { type FoundryConfig, starterConfig } from '../src/viewer/config';
-import { writeRegions } from './helpers/regions';
+import { prepareChorusWorkingCopy, writeRegions } from './helpers/regions';
 
 /**
  * The composition view (docs/usage-and-context.md, "Composition view"): one ladder composes the
@@ -227,8 +227,11 @@ interface Call {
  * instructions are the charter, the project's Warden brief and its role files; its knowledge, the
  * region and its role files. The main thread keeps the whole ladder.
  */
+// The shared brief lives in the Chorus working copy beside the regions; the personal one in the checkout.
 const BRIEF = (dir: string, local = false) =>
-  join(dir, '.foundry', `warden-brief${local ? '.local' : ''}.md`);
+  local
+    ? join(dir, '.foundry', 'warden-brief.local.md')
+    : join(prepareChorusWorkingCopy(dir), '.foundry', 'warden-brief.md');
 function config(picks: RoleComposition = {}): FoundryConfig {
   const c = starterConfig('central', 'central-model');
   c.agents = {
@@ -437,11 +440,12 @@ test("a Warden that chimes in is appended to the end of the user's message, not 
   }
 });
 
-test('the Warden brief composes like any ladder file: its imports load, the personal copy follows the shared one', async () => {
+// The shared brief is the store's text alone, so it imports nothing; the personal one, in the checkout, may.
+test('the Warden brief composes like any ladder file: the personal copy follows the shared one and its imports load', async () => {
   ladderFiles();
-  write(BRIEF(repo), '# Repo\n\nWhat this repo is. @../docs/shape.md');
+  write(BRIEF(repo), '# Repo\n\nWhat this repo is.');
   write(join(repo, 'docs', 'shape.md'), 'SHAPE_OF_THE_REPO');
-  write(BRIEF(repo, true), 'MY_OWN_BRIEF_NOTES');
+  write(BRIEF(repo, true), 'MY_OWN_BRIEF_NOTES @../docs/shape.md');
   const f = setup(config());
   try {
     await f.thread.dispatch('worker', 'Add a script', undefined, { messageId: 'm1' });

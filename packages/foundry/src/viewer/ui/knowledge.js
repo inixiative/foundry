@@ -82,7 +82,7 @@ function WardenLayers({ wardens }) {
   return html`<h4 class="ksub">What each Warden is given</h4>
     <table class="ktable" aria-label="Warden layers">
       <tr><td>1. Charter</td><td>What a Warden is. Part of Foundry, the same for every project.</td><td class="kok">≈${k(wardens.charter.tokens)} tokens</td></tr>
-      <tr><td>2. Warden brief</td><td class="mono">${brief?.path ?? '.foundry/warden-brief.md'}</td>${
+      <tr><td>2. Warden brief</td><td class="mono">${brief?.path ?? 'none: the checkout has no origin, so no Chorus working copy'}</td>${
         brief?.exists
           ? html`<td class="kok">≈${brief.tokens < 1000 ? brief.tokens : k(brief.tokens)} tokens</td>`
           : html`<td class="kwarn">missing: Wardens get no project brief</td>`

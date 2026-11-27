@@ -21,7 +21,10 @@ const SOURCE = {
     'Yours · overrides team',
     'Set by you; the repository sets another value for everyone',
   ],
-  everyone: ['Team · .foundry/', 'Set for everyone in the repository’s .foundry/project.json'],
+  everyone: [
+    'Team · .foundry/',
+    'Set for everyone in the repository’s .foundry/project.json (the chorus: its Chorus working copy’s)',
+  ],
   foundry: ['Foundry’s', 'Follows the Foundry-wide setting'],
   default: ['Default', 'Nobody has set it'],
   detected: ['From the repo', 'Read from the repository; not a setting'],

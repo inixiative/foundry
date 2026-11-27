@@ -580,8 +580,9 @@ There is no alias, migration or fallback.
 ```
 <project>/.foundry/project.json   the repository's own Foundry settings, committed: any project
                                   setting the team shares (REPOSITORY_SETTING_KEYS): threadOnMerge,
-                                  steer, gloss, defaults, feedback, agents, layers, chorus,
-                                  conversations, and an ignored $comment
+                                  steer, gloss, defaults, feedback, agents, layers,
+                                  conversations, and an ignored $comment (no chorus: a
+                                  checkout's chorus is in its Chorus working copy, below)
 ```
 
 Every project setting is set for me or for everyone (Aron 2026-10-16): this
@@ -620,8 +621,9 @@ runs, why shows in the settings rows (`repositoryError`) and the doctor
 repository's layer (`resolveProjectView(…, { repository: false })`), so a worker a
 teammate commits that this machine has no login for is refused when a thread
 starts, with why, not when settings load. The machine's
-`projects[id].chorus` wins key by key: its `enabled` over the repository's, and
-its directories (`regions` or `layers`, one unit) over the repository's. It is
+`projects[id].chorus` wins key by key over the working copy's `chorus`: its
+`enabled` over the copy's, and its directories (`regions` or `layers`, one unit)
+over the copy's. It is
 not named `.foundry/settings.json` because that is a Foundry install's own
 settings, and Foundry's checkout is itself a registered project. The view
 names which layer won per key (`chorus.enabledBy` for `enabled`,
@@ -634,10 +636,25 @@ settings view offers "set this for me" and "set this for everyone" and shows
 an override. Today the repository file carries `chorus` only; widening it to
 the other project keys (and the settings-view controls) is the next step.
 
+**Where a chorus lives: the Chorus working copy.** Regions, the shared Warden
+brief and the `chorus` settings left the public repositories (2026-11-27), so the
+repositories can be published and the chorus productized. Each checkout's chorus
+is the Chorus working copy of its repository,
+`<CHORUS_HOME or ~/.chorus>/projects/<owner>/<repo>/` (`chorusWorkingCopyDir`,
+`agents/chorus-working-copy.ts`; the repository is the checkout's `origin`, so a
+checkout with none has no Wardens and the view says so). The copy is laid out as
+`.foundry/` was: `.foundry/regions/`, `.foundry/warden-brief.md`, and
+`.foundry/project.json` holding `chorus`. Foundry only reads it. The Chorus host
+(or `chorus store pull`) keeps it at the version the checkout resolves to in the
+region store: a bucket of write-once bundles per repository and commit, resolved
+commit, then branch, then merge-base, then main's head (chorus
+`docs/REGION-STORE.md`). Only inixiative edits regions: `chorus store publish`
+writes the copy back. The personal `warden-brief.local.md` stays in the checkout.
+
 The regions:
 
 ```
-<project>/.foundry/regions/
+<working copy>/.foundry/regions/
   registry.json, GLOSSARY.md, ERRORS.md, ECOSYSTEM.md   corpus-level; composed into no Warden
   <region id>/region.json      id, title, routing line, concepts, sources, tokens,
                                role ("warden", the default, or "herald")
@@ -655,15 +672,16 @@ regions never run (Heralds are not built) and the view says so.
 - **Setting.** `projects[id].chorus` is `{ enabled?, regions? | layers? }`.
   `enabled: true` turns it on; absent or `false`, the project has no Wardens
   (`regions` or `layers` may stay written, unread). `regions` points the one
-  layer at another directory (absolute, or relative to the project; default
-  `.foundry/regions`). With neither the settings nor the repository enabling
+  layer at another directory (absolute, or relative to the working copy;
+  default `.foundry/regions`). With neither the settings nor the repository enabling
   it, regions present are counted (`view.chorus.available`) and the view, the
   startup log and the doctor say the chorus is off and how to turn it on.
   Enabled but no regions found: no Warden runs, and they say why
   (`view.chorus.reason`). `view.chorus.enabledBy` is `settings`, `repository`
   or `default`. To turn a repository's chorus on for yourself without
-  committing, set `projects[id].chorus = { "enabled": true }` in settings, or
-  edit its `.foundry/project.json` locally. A thread without a project has no
+  publishing, set `projects[id].chorus = { "enabled": true }` in settings, or
+  edit the working copy's `.foundry/project.json` (the next pull replaces it
+  unless you publish). A thread without a project has no
   Wardens. There is no global setting: a chorus is per project because its
   docs are.
 - **Stages** (`chorus.wardens.stages`, `@inixiative/foundry/classify`). How the
@@ -717,12 +735,16 @@ regions never run (Heralds are not built) and the view says so.
 
   ```json
   "chorus": { "layers": [
-    { "regions": "../template/.foundry/regions", "label": "template" },
-    { "regions": ".foundry/regions", "label": "kingdom" }
+    { "regions": ".foundry/layers/template/regions", "label": "template" },
+    { "regions": ".foundry/layers/kingdom/regions", "label": "kingdom" }
   ] }
   ```
 
-  Each layer is a regions directory. A region id present in a later layer
+  Each layer is a regions directory, relative ones under the working copy
+  (Kingdom's chorus is template's regions plus its own delta, both in its
+  copy). A layered copy pulled from the region store always has this shape,
+  one `.foundry/layers/<label>/regions/` per layer with `chorus.layers`
+  written in layer order; an unlayered one is `.foundry/regions/`. A region id present in a later layer
   replaces the earlier one **whole** (its knowledge is not merged); ids present
   once union. Labels default to `layer-<n>` and must be unique. A layer whose
   directory is missing or empty contributes nothing and is still listed, so
@@ -754,14 +776,16 @@ regions never run (Heralds are not built) and the view says so.
   Warden's instructions carry no Claude Code preamble ("these instructions
   OVERRIDE…"), which only frames CLAUDE.md-style files (`RoleView.framed`).
 - **The Warden brief.** A short, high-level explanation of the project for its
-  Wardens: what it is, its shape, its words. Committed at
-  `.foundry/warden-brief.md`, with a personal `.foundry/warden-brief.local.md`
-  beside it. It composes through the ladder like any md file (imports, tiers,
-  dedupe, `file:<path>` versions): the view adds two nodes,
+  Wardens: what it is, its shape, its words. The shared brief is the working
+  copy's `.foundry/warden-brief.md`; the personal one is the checkout's
+  `.foundry/warden-brief.local.md`. Both compose through the ladder like any md
+  file (tiers, dedupe, `file:<path>` versions), except that the shared brief is
+  the store's text alone and imports nothing (an `@` line in it is not
+  loaded); the personal one may import. The view adds two nodes,
   `warden-brief` and `warden-brief-local` (reserved ids), for exactly the
   project's region roles, instructions slot only, anchored at `{project}` (the
-  repository root of the thread's working directory, so a worktree reads its
-  branch's brief). They order with the project's level: after the region's
+  repository root of the thread's working directory; the shared node reads
+  that checkout's working copy). They order with the project's level: after the region's
   role file there, the shared brief before the personal one. The Knowledge
   page shows the brief as the registered checkout has it. The Knowledge page shows it and the layer list;
   `scripts/evals/warden-composition.ts` prints a project's composed Warden
@@ -897,8 +921,8 @@ Most turns a Warden has nothing to add: it answers `NO_COMMENT`, which adds
 nothing to the message. Every Warden runs under the fixed Warden charter
 ([FLOW.md](FLOW.md#when-a-warden-weighs-in-the-charter-trigger-points-and-no_comment)).
 
-**An example setup.** A coder main thread plus one region Warden, `naming` (the repository's
-`.foundry/regions/naming/`, its chorus enabled in `.foundry/project.json`; no
+**An example setup.** A coder main thread plus one region Warden, `naming` (the working copy's
+`.foundry/regions/naming/`, its chorus enabled in the copy's `.foundry/project.json`; no
 Warden is written in settings), across computer, org, org personal, project and
 project personal. (Until 2026-10-17 this example was a hand-named Convention
 Warden in settings; until 2026-11-02 it read the org and project CLAUDE.md as
@@ -910,7 +934,7 @@ domain knowledge, which a Warden no longer can.)
 | computer | `~/.claude/CLAUDE.md` (+ rules, `RTK.md`), `~/.foundry/roles/thread/main/instructions.md` | `~/.foundry/roles/region/naming/instructions.md` | `~/.foundry/roles/region/naming/domainKnowledge.md` |
 | org | `~/code/inixiative/CLAUDE.md`, `.foundry/roles/thread/main/instructions.md` there | its own role file there | `.foundry/roles/region/naming/domainKnowledge.md` there |
 | org personal | `~/code/inixiative/CLAUDE.local.md` | `.foundry/roles/region/naming/instructions.local.md` there | `.foundry/roles/region/naming/domainKnowledge.local.md` there |
-| project | `<repo>/CLAUDE.md`, `AGENTS.md`, `.claude/rules` | its role file, then `<repo>/.foundry/warden-brief.md` | its role file |
+| project | `<repo>/CLAUDE.md`, `AGENTS.md`, `.claude/rules` | its role file, then `<working copy>/.foundry/warden-brief.md` | its role file |
 | project personal | `<repo>/CLAUDE.local.md`, auto memory | `.foundry/roles/region/naming/instructions.local.md`, then `<repo>/.foundry/warden-brief.local.md` | `.foundry/roles/region/naming/domainKnowledge.local.md` |
 
 **Test cases** (`tests/composition-view.test.ts`, core

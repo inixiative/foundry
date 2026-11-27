@@ -61,7 +61,8 @@ export const settingsHighlight = signal(null);
 
 const SOURCE_TEXT = {
   yours: 'Set by you',
-  everyone: 'Set for everyone (the repository’s .foundry/project.json)',
+  everyone:
+    'Set for everyone (the repository’s .foundry/project.json; the chorus: its Chorus working copy’s)',
   default: 'Default',
 };
 
@@ -497,7 +498,7 @@ function ProjectChorus({ projectId }) {
           ? html`<p class="settings-desc">Work items (<code>chorus.consumed</code>): ${chorus.consumed.enabled ? 'on' : 'off'}${chorus.consumed.from === 'default' ? ', the default' : `, set in ${chorus.consumed.from === 'settings' ? 'your settings' : 'the repository'}`}. Reception charter (<code>chorus.reception</code>): ${chorus.reception.on ? 'on' : 'off'}${chorus.reception.from === 'default' ? (chorus.on ? ', with the Wardens' : ', only while Wardens run') : `, set in ${chorus.reception.from === 'settings' ? 'your settings' : 'the repository'}`}.</p>`
           : null
       }
-      <p class="settings-desc">Read-only. Each Warden knows one topic of the project. Topics come from layers read in order: a later layer's topic replaces an earlier one with the same id, whole. Wardens run only when turned on: <code>"chorus": { "enabled": true }</code> in the repository's <code>.foundry/project.json</code>, or <code>projects[id].chorus</code> in settings.json, which wins.</p>
+      <p class="settings-desc">Read-only. Each Warden knows one topic of the project. Topics come from layers read in order: a later layer's topic replaces an earlier one with the same id, whole. Wardens run only when turned on: <code>"chorus": { "enabled": true }</code> in the <code>.foundry/project.json</code> of the repository's Chorus working copy (<code>~/.chorus/projects/&lt;owner&gt;/&lt;repo&gt;/</code>, kept by the Chorus host from the region store), or <code>projects[id].chorus</code> in settings.json, which wins.</p>
       ${
         chorus.missingDocs?.length
           ? html`<p class="settings-desc">Missing docs: ${chorus.missingDocs

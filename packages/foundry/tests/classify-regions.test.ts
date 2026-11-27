@@ -30,7 +30,7 @@ import {
   validateConfig,
 } from '../src/viewer/config';
 import { resolveProjectView } from '../src/viewer/config-resolve';
-import { writeRegions } from './helpers/regions';
+import { prepareChorusWorkingCopy, writeRegions } from './helpers/regions';
 
 const dirs: string[] = [];
 const cleanups: Array<() => void> = [];
@@ -57,7 +57,10 @@ function project(chorus: Record<string, unknown> = { enabled: true }) {
     { id: 'locks', knowledge: '# Locks\n\n- createLock (CONCURRENCY.md)\n' },
     { id: 'queues', knowledge: '# Queues\n\n- makeSerializedQueue (QUEUES.md)\n' },
   ]);
-  writeFileSync(join(path, '.foundry', 'project.json'), JSON.stringify({ chorus }));
+  writeFileSync(
+    join(prepareChorusWorkingCopy(path), '.foundry', 'project.json'),
+    JSON.stringify({ chorus }),
+  );
   const c = starterConfig('central', 'central-model');
   c.agents = {};
   c.layers = {};
@@ -287,7 +290,7 @@ test('a stage list in settings is validated where it is written: refused in sett
   );
   delete config.projects.P!.chorus;
   writeFileSync(
-    join(path, '.foundry', 'project.json'),
+    join(prepareChorusWorkingCopy(path), '.foundry', 'project.json'),
     JSON.stringify({ chorus: { enabled: true, wardens: { stages: [{ charter: 'mine' }] } } }),
   );
   const view = resolveProjectView(config, 'P')!;

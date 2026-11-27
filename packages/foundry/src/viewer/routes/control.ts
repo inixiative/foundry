@@ -7,6 +7,7 @@ import { constants } from 'node:fs';
 import { resolve as resolveFilePath } from 'node:path';
 import type { ActionQueue, Harness, TokenTracker } from '@inixiative/foundry-core';
 import type { Context, Hono } from 'hono';
+import { chorusWorkingCopyDir } from '../../agents/chorus-working-copy';
 import { fromSettingsConfig, type ProjectRegistry } from '../../agents/project';
 import { readWardenBrief } from '../../agents/warden-brief';
 import { WARDEN_CHARTER } from '../../classify';
@@ -524,11 +525,15 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps): void 
     const config = configStore.config;
     const project = config.projects[id];
     if (!project) return c.json({ error: 'project not found' }, 404);
-    const read = readRepositorySettings(project.path);
+    // The chorus is the Chorus working copy's, every other setting the checkout's.
+    const isChorusSetting = path.split('.')[0] === 'chorus';
+    const workingCopy = isChorusSetting ? chorusWorkingCopyDir(project.path) : null;
+    const source = isChorusSetting ? workingCopy : project.path;
+    const read = source ? readRepositorySettings(source) : undefined;
     // The cascade decides whether the team's settings build here; its verdict is the problem.
     effectiveProject(config, id);
-    const problem = repositorySettingsProblem(project.path);
-    // Unreadable: none of the file applies. Unbuildable here: only chorus, conversations, steer and blueprintDiagrams do.
+    const problem = source ? repositorySettingsProblem(source) : undefined;
+    // Unreadable: none of the file applies. Unbuildable here: only conversations, steer and blueprintDiagrams do.
     const applies =
       !problem ||
       (problem.kind === 'unbuildable' && SELF_LAYERED_SETTINGS.has(path.split('.')[0]!));
@@ -604,7 +609,19 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps): void 
           for (const [path, value] of entries)
             setAtPath(mine as unknown as Record<string, unknown>, path.split('.'), value);
         });
-      else writeRepositorySettings(project.path, entries);
+      else {
+        // The chorus is shared from the Chorus working copy (published with `chorus store publish`),
+        // never the checkout: regions and their switch left the repositories.
+        const chorus = entries.filter(([path]) => path.split('.')[0] === 'chorus');
+        const rest = entries.filter(([path]) => path.split('.')[0] !== 'chorus');
+        const workingCopy = chorusWorkingCopyDir(project.path);
+        if (chorus.length && !workingCopy)
+          throw Error(
+            'chorus is shared from the Chorus working copy, and this checkout has no origin',
+          );
+        if (chorus.length && workingCopy) writeRepositorySettings(workingCopy, chorus);
+        if (rest.length) writeRepositorySettings(project.path, rest);
+      }
     } catch (error) {
       return c.json({ error: (error as Error).message }, 400);
     }
@@ -704,7 +721,7 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps): void 
     if (!view) return c.json({ error: 'project not found' }, 404);
     const config = configStore.config;
     const project = config.projects[id];
-    const path = project?.path;
+    const workingCopy = project ? chorusWorkingCopyDir(project.path) : null;
     let remote = view.chorus.remote;
     if (!remote && view.chorus.on && project?.kingdomProject && deps.kingdom) {
       try {
@@ -731,7 +748,7 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps): void 
       // What every Warden of the project composes from, in order (Aron, 2026-11-02): no CLAUDE.md ladder.
       wardens: {
         charter: { tokens: Math.round(WARDEN_CHARTER.length / 4) },
-        brief: path ? readWardenBrief(path) : null,
+        brief: workingCopy ? readWardenBrief(workingCopy) : null,
         ignored: view.chorus.ignoredComposition ?? [],
       },
     });

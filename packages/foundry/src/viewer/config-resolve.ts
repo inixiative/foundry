@@ -10,6 +10,7 @@ import {
   registryModel,
   SUBSCRIPTION_WORKER_MODELS,
 } from '@inixiative/foundry-core';
+import { chorusWorkingCopyDir } from '../agents/chorus-working-copy';
 import {
   type ChorusLayerRegions,
   type ChorusRegion,
@@ -932,8 +933,10 @@ function mergeDefaults(
 }
 
 /**
- * A project's chorus setting: the machine's project settings over the repository's `chorus`, key by
- * key. `enabled` from whichever says it; the directories (`regions` or `layers`, one unit) likewise.
+ * A project's chorus setting: the machine's project settings over the `chorus` of the repository's
+ * Chorus working copy (`chorusWorkingCopyDir`), key by key. `enabled` from whichever says it; the
+ * directories (`regions` or `layers`, one unit) likewise, relative ones under the copy. The
+ * checkout's own `.foundry/project.json` holds no chorus: regions left the repositories.
  */
 export function projectChorus(project: Pick<ProjectSettingsConfig, 'path' | 'chorus'>): {
   chorus: ChorusSettings;
@@ -944,8 +947,11 @@ export function projectChorus(project: Pick<ProjectSettingsConfig, 'path' | 'cho
   /** Per role: the stage list as written (the machine's replaces the repository's whole), and its layer. */
   stagesFrom: Record<RegionRole, SettingLayer>;
   repository?: ResolvedChorus['repository'];
+  /** The Chorus working copy the regions are read from; null when the checkout has no `origin`. */
+  workingCopyDir: string | null;
 } {
-  const repository = readRepositorySettings(project.path);
+  const workingCopy = chorusWorkingCopyDir(project.path);
+  const repository = workingCopy ? readRepositorySettings(workingCopy) : undefined;
   const mine = project.chorus ?? {};
   const theirs = repository?.chorus ?? {};
   const where = (c: ChorusSettings): ChorusSettings =>
@@ -995,6 +1001,7 @@ export function projectChorus(project: Pick<ProjectSettingsConfig, 'path' | 'cho
           ? 'repository'
           : 'default',
     ...(repository ? { repository } : {}),
+    workingCopyDir: workingCopy,
   };
 }
 
@@ -1027,8 +1034,9 @@ const unapplied = new Map<string, string>();
 
 /**
  * Why the repository's settings at `projectPath` don't apply here. `unreadable`: none of the file
- * applies. `unbuildable`: its merged settings don't, but `chorus`, `conversations`, `steer` and
- * `blueprintDiagrams`, checked and layered on their own, still do.
+ * applies. `unbuildable`: its merged settings don't, but `conversations`, `steer` and
+ * `blueprintDiagrams`, checked and layered on their own, still do. (The chorus is the Chorus working
+ * copy's, never the checkout's.)
  */
 export function repositorySettingsProblem(
   projectPath: string,
@@ -1041,7 +1049,6 @@ export function repositorySettingsProblem(
 
 /** The settings a repository applies on their own, whether or not its merged settings build here. */
 export const SELF_LAYERED_SETTINGS: ReadonlySet<string> = new Set([
-  'chorus',
   'conversations',
   'steer',
   'blueprintDiagrams',
@@ -1074,7 +1081,9 @@ function buildProjectView(
   // present are reported as off, and a project without them has no chorus.
   const setting = projectChorus(project);
   const enabled = setting.chorus.enabled === true;
-  const configuredLayers = chorusLayers({ path: project.path, chorus: setting.chorus });
+  const configuredLayers = setting.workingCopyDir
+    ? chorusLayers({ path: setting.workingCopyDir, chorus: setting.chorus })
+    : [];
   const asked = {
     enabled,
     enabledBy: setting.enabledBy,
@@ -1180,13 +1189,13 @@ function buildProjectView(
       if (!(error instanceof RegionsUnreadable)) throw error;
       chorus = { ...chorus, unreadable: error.message };
     }
-    if (available || unread || chorus.unreadable)
+    if (available || unread || chorus.unreadable || !setting.workingCopyDir)
       chorus = {
         ...chorus,
         ...(available ? { available } : {}),
         reason: available
-          ? `Wardens are off: ${available} topics at ${dirs} are not turned on (set "chorus": { "enabled": true } in ${join(project.path, REPOSITORY_SETTINGS_FILE)} or in this project's settings)${unread}`
-          : `this project has no Wardens${chorus.unreadable ? `; ${chorus.unreadable}` : ''}${unread}`,
+          ? `Wardens are off: ${available} topics at ${dirs} are not turned on (set "chorus": { "enabled": true } in ${join(setting.workingCopyDir ?? project.path, REPOSITORY_SETTINGS_FILE)} or in this project's settings)${unread}`
+          : `this project has no Wardens${setting.workingCopyDir ? '' : ' (its checkout has no origin, so no Chorus working copy)'}${chorus.unreadable ? `; ${chorus.unreadable}` : ''}${unread}`,
       };
   }
   // The view's project entry carries the effective chorus, normalized. The setting is valid and, on a
@@ -1247,7 +1256,13 @@ function buildProjectView(
     resolved.composition = {
       ...resolved.composition,
       roles,
-      nodes: { ...nodes, ...wardenBriefNodes(generated.map(({ agent }) => agent.id)) },
+      nodes: {
+        ...nodes,
+        ...wardenBriefNodes(
+          generated.map(({ agent }) => agent.id),
+          setting.workingCopyDir,
+        ),
+      },
     };
   }
   // The view's project carries the effective chorus and the generated agents, so a region's settings

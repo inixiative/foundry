@@ -11,6 +11,7 @@
  * credential-like keys are never shown.
  */
 
+import { chorusWorkingCopyDir } from '../agents/chorus-working-copy';
 import { defaultConfig, type FoundryConfig, personalOnlySetting } from './config';
 import { readRepositorySettings } from './config-resolve';
 import catalog from './settings-catalog.json';
@@ -97,8 +98,13 @@ export function settingsIndex(
     }
     if (!project) continue;
     const personal = config.projects?.[project.id];
+    // Everyone's chorus is the Chorus working copy's; every other shared setting is the checkout's.
     const read = readRepositorySettings(project.path);
-    const repository = read?.error ? undefined : read;
+    const workingCopy = chorusWorkingCopyDir(project.path);
+    const workingCopySettings = workingCopy ? readRepositorySettings(workingCopy) : undefined;
+    const { chorus: _checkoutChorus, ...checkout } = read?.error ? {} : (read ?? {});
+    const chorus = workingCopySettings?.error ? undefined : workingCopySettings?.chorus;
+    const repository = { ...checkout, ...(chorus ? { chorus } : {}) };
     for (const path of expand(entry.path, [personal, repository])) {
       const mine = at(personal, path);
       const everyone = at(repository, path);

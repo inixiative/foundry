@@ -21,6 +21,7 @@ import { LocalSessionStore } from '../src/persistence/local-session-store';
 import { serializeTrace } from '../src/persistence/trace-record';
 import { type ConsumedSettings, starterConfig, validateConfig } from '../src/viewer/config';
 import { projectChorus, resolveProjectView } from '../src/viewer/config-resolve';
+import { prepareChorusWorkingCopy } from './helpers/regions';
 
 // The consumed trigger (Aron, 2026-10-17): a work item the thread takes in (a ticket or spec file it
 // reads, a Linear issue or Notion page it fetches) is a moment every Warden is asked about, so an
@@ -420,9 +421,10 @@ test('chorus.consumed is validated, and the machine settings win over the reposi
   const config = starterConfig('controlled', 'controlled');
   const root = mkdtempSync(join(tmpdir(), 'consumed-settings-'));
   closes.push(() => rmSync(root, { recursive: true, force: true }));
-  mkdirSync(join(root, '.foundry'), { recursive: true });
+  const copy = prepareChorusWorkingCopy(root);
+  mkdirSync(join(copy, '.foundry'), { recursive: true });
   writeFileSync(
-    join(root, '.foundry', 'project.json'),
+    join(copy, '.foundry', 'project.json'),
     JSON.stringify({
       chorus: { consumed: { enabled: true, paths: ['tickets/**'], maxChars: 5000 } },
     }),
