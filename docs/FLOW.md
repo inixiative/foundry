@@ -91,7 +91,7 @@ These are the agents we've named so far. Each implements one or more roles. The 
 
 | Role | Agent(s) | Notes |
 |------|----------|-------|
-| **Domain advising** | Wardens (formerly called Domain Librarians): a project's region Wardens, one per concept region (`.foundry/regions`, its chorus enabled). The hand-named Docs/Convention/Security/Architecture/Memory roster was retired 2026-10-17 | Each holds its region's knowledge. Advise mode: "does this moment touch something in my region, and where is it written?" |
+| **Domain advising** | Wardens (formerly called Domain Librarians): a project's region Wardens, one per concept region (the repository's Chorus working copy's `.foundry/regions`, its chorus enabled). The hand-named Docs/Convention/Security/Architecture/Memory roster was retired 2026-10-17 | Each holds its region's knowledge. Advise mode: "does this moment touch something in my region, and where is it written?" |
 | **Domain advising** (cross-thread) | Herald | Design: watch all threads, detect convergence, divergence, resource conflicts. **Not wired**: the Herald class moved to the private chorus repo, packages/heralds/reference/ (2026-11-18, R-2026-11-18-27); the `chorus.heralds` settings, `ask_herald` and the heralds skill stay as placeholders. |
 | **Execution** | Artificer (the native Claude Code or Codex session running under the harness) | The real work. Full tool access, capable model. |
 | **Correctness checking** | Wardens (guard mode) | Same agents as advising, different mode. Guard mode, once per turn: "did what the agent did this turn violate anything in my domain?" |

@@ -37,7 +37,8 @@ import { STAGES, stageOf } from './watchtower.js';
 const SHOWN = 5;
 const SOURCE_LABEL = {
   yours: 'Set by you',
-  everyone: 'Set for everyone (the repository’s .foundry/project.json)',
+  everyone:
+    'Set for everyone (the repository’s .foundry/project.json; the chorus: its Chorus working copy’s)',
   default: 'Default',
 };
 

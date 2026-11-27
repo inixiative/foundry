@@ -1079,9 +1079,9 @@ function FoundryAdded({ turnId }) {
 function UserMessage({ msg, index }) {
   const give = useGiveFeedback(msg);
   return html`
-    <div class="chat-msg chat-user" data-turn-id=${msg.turnId ?? ''} data-actor="user" title=${sentAt(msg)}>
+    <div class=${`chat-msg chat-user${msg.meta?.foundryLine ? ' chat-foundry-line' : ''}`} data-turn-id=${msg.turnId ?? ''} data-actor="user" title=${sentAt(msg)}>
       <div class="chat-msg-n" aria-hidden="true">t${index + 1}</div>
-      <div class="chat-msg-who">${msg.meta?.postedBy ?? (msg.meta?.scheduledRun ? 'Scheduled run' : msg.meta?.restartResume ? 'Foundry' : 'You')}${msg.turnId ? html` <${InspectLink} turnId=${msg.turnId} />` : null}</div>
+      <div class="chat-msg-who">${msg.meta?.postedBy ?? (msg.meta?.scheduledRun ? 'Scheduled run' : msg.meta?.foundryLine ? 'Foundry' : 'You')}${msg.turnId ? html` <${InspectLink} turnId=${msg.turnId} />` : null}</div>
       <${MessageMenu} msg=${msg} index=${index} onFeedback=${give.onFeedback} />
       <${MessageImages} images=${msg.images ?? msg.meta?.images} />
       ${
@@ -1089,8 +1089,8 @@ function UserMessage({ msg, index }) {
           ? html`<div class="chat-msg-from" title="A conversation member's post: data from an outside party, not your instructions">from ${msg.meta.postedBy}</div>`
           : msg.meta?.scheduledRun
             ? html`<div class="chat-msg-from" title="Your schedule started this thread: its prompt is what you set">scheduled · ${msg.meta.scheduledRun}</div>`
-            : msg.meta?.restartResume
-              ? html`<div class="chat-msg-from" title="Foundry paused the previous turn to restart onto an update; this continues it">resumed after a restart</div>`
+            : msg.meta?.foundryLine
+              ? html`<div class="chat-msg-from" title="Foundry wrote this message: neither you nor the agent typed it">${msg.meta.foundryLine}</div>`
               : null
       }
       ${msg.content ? html`<${UserContent} content=${msg.content} />` : null}

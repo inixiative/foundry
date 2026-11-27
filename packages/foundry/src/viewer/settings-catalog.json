@@ -707,7 +707,7 @@
   {
     "path": "chorus",
     "scope": "project",
-    "description": "This project's Wardens: each knows one topic of the project and reminds its threads what already exists and where it's written down. Merged over the repository's own `<project>/.foundry/project.json` `chorus`, these settings winning. Wardens run only when `enabled` is true; absent, the project has no Wardens and topics present are reported as off. In a resolved project view this is normalized (`enabled` effective, `layers` absolute); see docs/usage-and-context.md, \"Chorus\"."
+    "description": "This project's Wardens: each knows one topic of the project and reminds its threads what already exists and where it's written down. Merged over the `chorus` of the repository's Chorus working copy (`~/.chorus/projects/<owner>/<repo>/.foundry/project.json`, kept by the Chorus host from the region store), these settings winning. Wardens run only when `enabled` is true; absent, the project has no Wardens and topics present are reported as off. In a resolved project view this is normalized (`enabled` effective, `layers` absolute); see docs/usage-and-context.md, \"Chorus\"."
   },
   {
     "path": "chorus.enabled",
@@ -717,7 +717,7 @@
   {
     "path": "chorus.regions",
     "scope": "project",
-    "description": "The one topics folder the Wardens read (absolute or relative to the project; default `.foundry/regions`)."
+    "description": "The one topics folder the Wardens read (absolute or relative to the Chorus working copy; default `.foundry/regions`)."
   },
   {
     "path": "chorus.layers",

@@ -53,7 +53,7 @@ import {
   resolveInstructionLadder,
   validateCompositionSettings,
 } from '../prompts/instruction-settings';
-import { roleIdIn, roleNameIn, roleNamespace } from '../prompts/role-namespace';
+import { isIdName, roleIdIn, roleNameIn, roleNamespace } from '../prompts/role-namespace';
 import {
   type KingdomAccessSource,
   validateKingdomAccess,
@@ -500,8 +500,9 @@ export interface ProjectSettingsConfig {
   status?: 'archived';
   /**
    * This project's Wardens: each knows one topic of the project and reminds its threads what
-   * already exists and where it's written down. Merged over the repository's own
-   * `<project>/.foundry/project.json` `chorus`, these settings winning. Wardens run only when `enabled`
+   * already exists and where it's written down. Merged over the `chorus` of the repository's Chorus
+   * working copy (`~/.chorus/projects/<owner>/<repo>/.foundry/project.json`, kept by the Chorus host
+   * from the region store), these settings winning. Wardens run only when `enabled`
    * is true; absent, the project has no Wardens and topics present are reported as off. In
    * a resolved project view this is normalized (`enabled` effective, `layers` absolute); see
    * docs/usage-and-context.md, "Chorus".
@@ -526,7 +527,7 @@ export interface ProjectSettingsConfig {
 
 /** One layer of a project's chorus: a regions directory (`<dir>/<region id>/{region.json,knowledge.md}`). */
 export interface ChorusLayerSettings {
-  /** Absolute, or relative to the project. */
+  /** Absolute, or relative to the Chorus working copy. */
   regions: string;
   /** Names the layer in the view, the startup log and the journal; default `layer-<n>`. */
   label?: string;
@@ -544,7 +545,7 @@ export interface ChorusLayerSettings {
 export interface ChorusSettings {
   /** Run this project's Wardens. Off by default. */
   enabled?: boolean;
-  /** The one topics folder the Wardens read (absolute or relative to the project; default `.foundry/regions`). */
+  /** The one topics folder the Wardens read (absolute or relative to the Chorus working copy; default `.foundry/regions`). */
   regions?: string;
   /** Several topics folders in order, a later layer's topic replacing an earlier one (e.g. template base, then this project). */
   layers?: ChorusLayerSettings[];
@@ -1125,7 +1126,9 @@ export function validateChorusSettings(where: string, chorus: unknown): void {
     throw Error(`${where}.reception must be true or false`);
   validateConsumedSettings(`${where}.consumed`, c.consumed);
   if (c.regions !== undefined && (typeof c.regions !== 'string' || !c.regions))
-    throw Error(`${where}.regions must be a path (absolute, or relative to the project)`);
+    throw Error(
+      `${where}.regions must be a path (absolute, or relative to the Chorus working copy)`,
+    );
   if (c.layers !== undefined) {
     if (c.regions !== undefined)
       throw Error(`${where} names both regions and layers; regions is the one-layer form`);
@@ -1141,9 +1144,12 @@ export function validateChorusSettings(where: string, chorus: unknown): void {
         if (key !== 'regions' && key !== 'label')
           throw Error(`${at}.${key} is not a layer setting`);
       if (typeof l.regions !== 'string' || !l.regions)
-        throw Error(`${at}.regions must be a path (absolute, or relative to the project)`);
-      if (l.label !== undefined && (typeof l.label !== 'string' || !l.label.trim()))
-        throw Error(`${at}.label must be a non-empty name`);
+        throw Error(
+          `${at}.regions must be a path (absolute, or relative to the Chorus working copy)`,
+        );
+      // A label names a directory in the Chorus working copy (`.foundry/layers/<label>/regions`).
+      if (l.label !== undefined && !isIdName(l.label))
+        throw Error(`${at}.label must be an id name (letters, digits, - and _)`);
       const label = typeof l.label === 'string' ? l.label : `layer-${index + 1}`;
       if (labels.has(label))
         throw Error(`${where}.layers: two layers are labelled ${JSON.stringify(label)}`);

@@ -88,7 +88,7 @@ test('a project setting: yours over the repository’s over Foundry’s (steer, 
     from: 'default',
     mine: null,
     repository: null,
-    personalOnly: null,
+    notForEveryone: null,
   });
 
   // Foundry-wide off: the project follows it.
@@ -202,11 +202,18 @@ test('every shared project setting has a repository layer; machine and person se
     'defaults.nativeAuthenticationId',
     'defaults.decisionProvider',
   ]) {
-    expect((await get(path)).personalOnly).toBeString();
+    expect((await get(path)).notForEveryone).toBeString();
     const refused = await put('everyone', { [path]: path === 'toolRules' ? {} : 'x' });
     expect(refused.status).toBe(400);
     expect(refused.body.error).toContain("can't be set for everyone");
   }
+  // The chorus is shared from its Chorus working copy: yours here, never written for everyone.
+  expect((await get('chorus.enabled')).notForEveryone).toContain('chorus store publish');
+  const chorusRefused = await put('everyone', { 'chorus.enabled': true });
+  expect(chorusRefused.status).toBe(400);
+  expect(chorusRefused.body.error).toContain('Chorus working copy');
+  expect(JSON.parse(readFileSync(file, 'utf8'))).not.toHaveProperty('chorus');
+  expect((await put('me', { 'chorus.enabled': true })).status).toBe(200);
   expect((await put('me', { path: '/elsewhere' })).status).toBe(400);
   // Only what the settings pages set, and never a path into an object's prototype.
   expect((await put('me', { 'foo.bar': 1 })).status).toBe(400);

@@ -36,7 +36,7 @@ import { KnowledgePersistence } from '../src/persistence/knowledge-persistence';
 import { LocalSessionStore } from '../src/persistence/local-session-store';
 import { instructionStackSource } from '../src/prompts/instruction-stack';
 import { ConfigStore, type FoundryConfig, starterConfig } from '../src/viewer/config';
-import { writeRegions } from './helpers/regions';
+import { prepareChorusWorkingCopy, writeRegions } from './helpers/regions';
 
 const REGION = {
   id: 'conventions',
@@ -230,7 +230,7 @@ test("an edit to a region's knowledge is a new version: later calls name it, ear
   const thread = f.factory.create('p-thread', { projectId: 'P' });
   await thread.dispatch('worker', 'before');
   writeFileSync(
-    join(f.project, '.foundry', 'regions', REGION.id, 'knowledge.md'),
+    join(prepareChorusWorkingCopy(f.project), '.foundry', 'regions', REGION.id, 'knowledge.md'),
     'EDITED_KNOWLEDGE: the debounce wrapper exists.',
   );
   // A new thread composes the region as it now reads.

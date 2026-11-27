@@ -77,6 +77,7 @@ import { DECISION_INPUT_CAP } from '../src/providers/decision-budget';
 import { describeReadinessChorus, inspectReadiness } from '../src/readiness';
 import { type FoundryConfig, starterConfig, validateConfig } from '../src/viewer/config';
 import { resolveProjectView } from '../src/viewer/config-resolve';
+import { prepareChorusWorkingCopy } from './helpers/regions';
 
 const dirs: string[] = [];
 const managers: ThreadRuntimeManager[] = [];
@@ -150,9 +151,12 @@ const knowledge = (title: string, routing: string, deep: string) =>
  */
 function projectWithRegions({ enabled = true } = {}): { project: string; regions: string } {
   const project = tempDir('regions-project');
-  const regions = join(project, '.foundry', 'regions');
+  const regions = join(prepareChorusWorkingCopy(project), '.foundry', 'regions');
   if (enabled)
-    write(join(project, '.foundry', 'project.json'), JSON.stringify({ chorus: { enabled: true } }));
+    write(
+      join(prepareChorusWorkingCopy(project), '.foundry', 'project.json'),
+      JSON.stringify({ chorus: { enabled: true } }),
+    );
   write(
     join(regions, 'concurrency-locks', 'region.json'),
     JSON.stringify({
@@ -236,7 +240,10 @@ test("a project's chorus is one generated Warden per region of .foundry/regions,
     on: true,
     enabled: true,
     enabledBy: 'repository',
-    repository: { file: join(project, '.foundry', 'project.json'), chorus: { enabled: true } },
+    repository: {
+      file: join(prepareChorusWorkingCopy(project), '.foundry', 'project.json'),
+      chorus: { enabled: true },
+    },
   });
   expect(view.chorus.layers).toMatchObject([
     {
@@ -353,14 +360,17 @@ test("a project's chorus is one generated Warden per region of .foundry/regions,
 
 test("a region Warden composes the charter's instructions, the project's Warden brief and its region, never CLAUDE.md", async () => {
   const { project } = projectWithRegions();
+  const copy = prepareChorusWorkingCopy(project);
   write(join(project, 'CLAUDE.md'), 'CLAUDE_MD_RULE');
   write(join(project, 'AGENTS.md'), 'AGENTS_MD_RULE');
-  // An import of CLAUDE.md from the brief is not a way in: a Warden takes no general file by any route.
+  write(join(copy, 'CLAUDE.md'), 'CLAUDE_MD_RULE');
+  // The shared brief is the Chorus working copy's, its imports relative to it. An import of CLAUDE.md
+  // from the brief is not a way in: a Warden takes no general file by any route.
   write(
-    join(project, '.foundry', 'warden-brief.md'),
-    '# BRIEF_PROJECT\nWhat this repo is. @../CLAUDE.md @../docs/shape.md',
+    join(copy, '.foundry', 'warden-brief.md'),
+    '# BRIEF_PROJECT\nWhat this repo is. @../CLAUDE.md @shape.md',
   );
-  write(join(project, 'docs', 'shape.md'), 'SHAPE_DOC');
+  write(join(copy, '.foundry', 'shape.md'), 'SHAPE_DOC');
   write(join(project, '.foundry', 'warden-brief.local.md'), 'BRIEF_PERSONAL');
   write(
     join(project, '.foundry', 'roles', 'region', 'lens-model', 'instructions.md'),
@@ -414,7 +424,7 @@ test("a region Warden composes the charter's instructions, the project's Warden 
       .some(
         (s) =>
           typeof s !== 'string' &&
-          s.subject === `file:${join(project, '.foundry', 'warden-brief.md')}`,
+          s.subject === `file:${join(copy, '.foundry', 'warden-brief.md')}`,
       ),
   ).toBe(true);
   // A Warden without a role file still gets the brief.
@@ -436,14 +446,21 @@ test('enabled without regions, the project has no chorus and the view says why; 
   validateConfig(c);
   // Enabled, no regions there: no Wardens run (there is no fallback), and the view says why.
   const empty = tempDir('no-regions');
+  prepareChorusWorkingCopy(empty);
   c.projects.Q = { id: 'Q', path: empty, chorus: { enabled: true } };
   validateConfig(c);
   const q = resolveProjectView(c, 'Q')!;
   expect(q.chorus).toMatchObject({ on: false, enabled: true, regions: [] });
   expect(q.chorus.layers).toEqual([
-    { label: 'project', regionsDir: join(empty, '.foundry', 'regions'), regions: [] },
+    {
+      label: 'project',
+      regionsDir: join(prepareChorusWorkingCopy(empty), '.foundry', 'regions'),
+      regions: [],
+    },
   ]);
-  expect(q.chorus.reason).toContain(`no topics at ${join(empty, '.foundry', 'regions')}`);
+  expect(q.chorus.reason).toContain(
+    `no topics at ${join(prepareChorusWorkingCopy(empty), '.foundry', 'regions')}`,
+  );
   expect(q.chorus.reason).toContain('this project has no Wardens');
   expect(q.config.projects.Q!.chorus).toEqual({ enabled: false });
   // The view's project entry is a valid setting that resolves to the same chorus.
@@ -461,7 +478,10 @@ test('enabled without regions, the project has no chorus and the view says why; 
     enabled: false,
     enabledBy: 'settings',
     directoriesFrom: 'settings',
-    repository: { file: join(project, '.foundry', 'project.json'), chorus: { enabled: true } },
+    repository: {
+      file: join(prepareChorusWorkingCopy(project), '.foundry', 'project.json'),
+      chorus: { enabled: true },
+    },
     available: 2,
     layers: [],
     regions: [],
@@ -485,7 +505,7 @@ test('enabled without regions, the project has no chorus and the view says why; 
   c.projects.Q = { id: 'Q', path: project, chorus: { regions: 'docs/../.foundry/regions' } };
   expect(resolveProjectView(c, 'Q')!.chorus.regions.length).toBe(2);
   expect(describeChorus('Q', resolveProjectView(c, 'Q')!.chorus)).toBe(
-    `Chorus: project Q runs 2 region Wardens (${Math.round(resolveProjectView(c, 'Q')!.chorus.regions.reduce((n, r) => n + r.bytes, 0) / 1024)} KB of knowledge) from 1 layer (project: 2 at ${join(project, '.foundry', 'regions')})`,
+    `Chorus: project Q runs 2 region Wardens (${Math.round(resolveProjectView(c, 'Q')!.chorus.regions.reduce((n, r) => n + r.bytes, 0) / 1024)} KB of knowledge) from 1 layer (project: 2 at ${join(prepareChorusWorkingCopy(project), '.foundry', 'regions')})`,
   );
 
   // The setting is checked: an unknown key is refused.
@@ -505,6 +525,7 @@ test('enabled without regions, the project has no chorus and the view says why; 
       'two layers are labelled "same"',
     ],
     [{ layers: [{ regions: 'a', extra: 1 }] }, 'layers[0].extra is not a layer setting'],
+    [{ layers: [{ regions: 'a', label: '../up' }] }, 'layers[0].label must be an id name'],
     [{ mode: 'regions' }, 'chorus.mode is not a chorus setting'],
     ['regions', 'chorus must be an object'],
   ] as const) {
@@ -518,7 +539,7 @@ test("the chorus is opt-in: regions present but not enabled are off; the reposit
   const { project, regions } = projectWithRegions({ enabled: false });
   const c = config(project);
   validateConfig(c);
-  const repositoryFile = join(project, '.foundry', 'project.json');
+  const repositoryFile = join(prepareChorusWorkingCopy(project), '.foundry', 'project.json');
 
   // Regions present, nobody asked: off. No Warden runs, and the view says how to turn it on.
   const off = resolveProjectView(c, 'P')!;
@@ -544,7 +565,9 @@ test("the chorus is opt-in: regions present but not enabled are off; the reposit
     regions: [],
   });
   // No regions and nobody asked: nothing to report.
-  c.projects.E = { id: 'E', path: tempDir('plain-project') };
+  const plain = tempDir('plain-project');
+  prepareChorusWorkingCopy(plain);
+  c.projects.E = { id: 'E', path: plain };
   expect(resolveProjectView(c, 'E')!.chorus).toEqual({
     on: false,
     enabled: false,
@@ -638,7 +661,7 @@ test('a chorus composes from layers in order: a later region replaces an earlier
   const { project, regions: base } = projectWithRegions();
   const c = config(project);
   // The project's delta: its own lens-model (replacing the base one whole) and a new region.
-  const delta = join(project, '.foundry', 'regions-delta');
+  const delta = join(prepareChorusWorkingCopy(project), '.foundry', 'regions-delta');
   write(
     join(delta, 'lens-model', 'region.json'),
     JSON.stringify({
@@ -668,7 +691,7 @@ test('a chorus composes from layers in order: a later region replaces an earlier
     ],
   };
   validateConfig(c);
-  expect(chorusLayers(c.projects.P!)).toEqual([
+  expect(chorusLayers({ ...c.projects.P!, path: prepareChorusWorkingCopy(project) })).toEqual([
     { label: 'template', regionsDir: base },
     { label: 'layer-2', regionsDir: missing },
     { label: 'kingdom', regionsDir: delta },
@@ -722,7 +745,9 @@ test('a chorus composes from layers in order: a later region replaces an earlier
   c.projects.P!.chorus = { layers: [{ regions: 'none-a' }, { regions: 'none-b' }] };
   const none = resolveProjectView(c, 'P')!;
   expect(none.chorus.on).toBe(false);
-  expect(none.chorus.reason).toContain(`${join(project, 'none-a')}, ${join(project, 'none-b')}`);
+  expect(none.chorus.reason).toContain(
+    `${join(prepareChorusWorkingCopy(project), 'none-a')}, ${join(prepareChorusWorkingCopy(project), 'none-b')}`,
+  );
   expect(none.chorus.layers.map((l) => l.label)).toEqual(['layer-1', 'layer-2']);
   // composeChorus alone, the same way.
   const composed = composeChorus([
@@ -741,6 +766,7 @@ test("a region's warm-cache key is the content hash of its composed knowledge: e
   const c = config(project);
   // Another project with a byte-identical copy of the locks region, in a differently named layer.
   const other = tempDir('other-project');
+  prepareChorusWorkingCopy(other);
   const copy = join(other, 'shared-regions');
   for (const file of ['region.json', 'knowledge.md'])
     write(
@@ -1380,7 +1406,10 @@ test("settings may not take a region's source id, and the brief's nodes are refu
     [WARDEN_BRIEF_NODE]: { scope: 'project', personal: false, sources: [] },
   };
   // A repository turning its chorus on later must not be what fails a boot.
-  write(join(project, '.foundry', 'project.json'), JSON.stringify({ chorus: { enabled: false } }));
+  write(
+    join(prepareChorusWorkingCopy(project), '.foundry', 'project.json'),
+    JSON.stringify({ chorus: { enabled: false } }),
+  );
   expect(() => validateConfig(c)).toThrow("is the project Warden brief's own node");
 });
 
@@ -1390,10 +1419,13 @@ test("one project's unreadable regions leave only it without Wardens: the others
   const c = config(project);
   c.projects.Q = { id: 'Q', path: healthy };
   write(
-    join(project, '.foundry', 'regions', 'orphan', 'region.json'),
+    join(prepareChorusWorkingCopy(project), '.foundry', 'regions', 'orphan', 'region.json'),
     JSON.stringify({ id: 'other', title: 'O', routing: 'r' }),
   );
-  write(join(project, '.foundry', 'regions', 'orphan', 'knowledge.md'), 'x');
+  write(
+    join(prepareChorusWorkingCopy(project), '.foundry', 'regions', 'orphan', 'knowledge.md'),
+    'x',
+  );
   expect(() => validateConfig(c)).not.toThrow();
   expect(resolveProjectView(c, 'P')!.chorus).toMatchObject({
     on: false,
@@ -1418,7 +1450,7 @@ test('a regions directory that cannot be read is no failed boot, with the chorus
       unreadable: expect.stringContaining('could not be read'),
     });
     write(
-      join(project, '.foundry', 'project.json'),
+      join(prepareChorusWorkingCopy(project), '.foundry', 'project.json'),
       JSON.stringify({ chorus: { enabled: false } }),
     );
     expect(() => validateConfig(c)).not.toThrow();

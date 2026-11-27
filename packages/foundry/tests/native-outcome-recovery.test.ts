@@ -63,8 +63,13 @@ function setup() {
 }
 
 /** A turn admitted to the native session, then cut off by a restart (`recoverInterrupted`). */
-function lostTurn(store: LocalSessionStore, thread: Thread, turnId = 'turn-lost') {
-  store.beginTurn(thread, turnId, 'please load more projects');
+function lostTurn(
+  store: LocalSessionStore,
+  thread: Thread,
+  turnId = 'turn-lost',
+  meta?: Record<string, unknown>,
+) {
+  store.beginTurn(thread, turnId, 'please load more projects', meta);
   const owner = {
     threadId: thread.id,
     projectId: thread.meta.projectId,
@@ -397,6 +402,48 @@ test('routes: GET says whether a message can be admitted; Continue opens it, Ret
   expect(await (await post('continue')).json()).toEqual({ resolved: 0 });
 });
 
+test("Retry sends a lost Foundry-written opening as Foundry's again, never as the owner's message", async () => {
+  const { dir, store, home } = setup();
+  const main = new Thread('main', new ContextStack(), { projectId: 'P' });
+  main.register(new Executor({ id: 'worker', stack: main.stack, handler: async () => 'ok' }));
+  const harness = new Harness(main);
+  harness.setDefaultExecutor('worker');
+  store.saveThread(main);
+  const origin = {
+    member: { kind: 'local', id: 'restart:turn-before' },
+    displayName: 'Foundry',
+    postId: 'restart:turn-before',
+    restart: true,
+  };
+  lostTurn(store, main, 'turn-lost', { origin, foundryLine: 'resumed after a restart' });
+  const app = new Hono();
+  registerRuntimeRoutes(
+    app,
+    withStreams({
+      harness,
+      eventStream: new EventStream(),
+      interventions: new InterventionLog(),
+      configStore: new ConfigStore(dir),
+      localStore: store,
+      nativeRecovery: new NativeOutcomeRecovery({
+        store,
+        homes: () => [home],
+        bootedAt: Date.now() + 1,
+      }),
+    }),
+  );
+  const retried = await app.request('/api/threads/main/recovery', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ action: 'retry' }),
+  });
+  const body = (await retried.json()) as { retried: { id: string } };
+  const opening = store
+    .messages('main')
+    .find((message) => message.turnId === body.retried.id && message.actor === 'user');
+  expect(opening?.meta).toMatchObject({ origin, foundryLine: 'resumed after a restart' });
+});
+
 test("an admission of this Foundry run is live, not lost; a subagent's writes keep the session awake", () => {
   const { store, thread, home } = setup();
   lostTurn(store, thread);
@@ -452,7 +499,7 @@ test("a decision session's lost admission is settled without touching the turn's
 // "No native admission to settle". Foundry never admitted those turns, so they never block.
 test('an observed turn the session started itself is never a lost admission', () => {
   const { store, thread } = setup();
-  store.startObservedTurn(thread, 'turn_cron', 'check flights');
+  store.startObservedTurn(thread, 'turn_cron', 'check flights', 'woken by a scheduled run');
   for (const kind of ['native_status', 'text'] as const)
     store.appendObservedNative(thread, 'turn_cron', {
       schema: 1,
@@ -473,7 +520,7 @@ test('an observed turn the session started itself is never a lost admission', ()
 
 test('a real lost turn still blocks beside observed rows, and the owner can settle it', () => {
   const { store, thread } = setup();
-  store.startObservedTurn(thread, 'turn_cron', 'check flights');
+  store.startObservedTurn(thread, 'turn_cron', 'check flights', 'woken by a scheduled run');
   store.appendObservedNative(thread, 'turn_cron', {
     schema: 1,
     nativeOutcome: 'unknown',

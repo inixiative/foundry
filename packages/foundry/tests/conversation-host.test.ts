@@ -1526,6 +1526,8 @@ test("the agent's fork_thread applies in the owner's own turn and asks him to co
   // Foundry's line, not the owner's: the seeded history carries other parties' words, so the
   // fork's first turn never counts as his instruction.
   expect(task.meta?.origin).toMatchObject({ fork: true, member: { kind: 'local', id: 'main' } });
+  expect(task.meta?.foundryLine).toMatch(/^forked from /);
+  expect(task.meta?.postedBy).toBeUndefined();
   expect(store.lastOwnerSeq(fork.id)).toBe(0);
   expect(journalHistory(store, fork.id)).toContain('we should split the tests out');
 

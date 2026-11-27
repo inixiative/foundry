@@ -48,9 +48,10 @@ export function splitSections(
 }
 
 export function docSections(project: Pick<ProjectSettingsConfig, 'path' | 'chorus'>): DocSection[] {
-  const { chorus } = projectChorus(project);
+  const { chorus, workingCopyDir } = projectChorus(project);
   const sections: DocSection[] = [];
-  for (const layer of chorusLayers({ path: project.path, chorus }))
+  if (!workingCopyDir) return sections;
+  for (const layer of chorusLayers({ path: workingCopyDir, chorus }))
     for (const region of readRegions(layer.regionsDir))
       for (const [doc, { path }] of Object.entries(region.docs)) {
         let text: string;
@@ -59,7 +60,7 @@ export function docSections(project: Pick<ProjectSettingsConfig, 'path' | 'choru
         } catch {
           continue;
         }
-        const where = relative(project.path, path);
+        const where = relative(workingCopyDir, path);
         for (const section of splitSections(text)) {
           const heading = section.heading ?? doc;
           sections.push({

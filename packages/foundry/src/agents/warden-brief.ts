@@ -13,9 +13,10 @@ import type { InstructionNodeConfig, RoleComposition } from '../prompts/instruct
  * AGENTS.md ladder: that is written for the agent doing the work and would confuse a Warden whose only
  * job is to recognise its domain and point.
  *
- * The brief is a short, high-level explanation of the project for Wardens, committed in the
- * repository's `.foundry/` and composed through the ladder like Foundry's other md files (imports,
- * tiers, dedupe, the audit log's `file:<path>` versions), with a personal `.local.md` beside it.
+ * The brief is a short, high-level explanation of the project for Wardens, kept beside the regions
+ * in the repository's Chorus working copy and composed through the ladder like Foundry's other md
+ * files (imports, tiers, dedupe, the audit log's `file:<path>` versions), with a personal
+ * `.local.md` in the checkout's `.foundry/`.
  */
 export const WARDEN_BRIEF_FILE = '.foundry/warden-brief.md';
 export const WARDEN_BRIEF_LOCAL_FILE = '.foundry/warden-brief.local.md';
@@ -27,21 +28,29 @@ export const WARDEN_BRIEF_NODES: readonly string[] = [WARDEN_BRIEF_NODE, WARDEN_
 
 /**
  * The Warden brief as two ladder nodes for exactly these roles (the project's region Wardens), in the
- * instructions slot. `{project}` is the repository root of the thread's working directory, so a
- * worktree's Wardens read the brief on its branch.
+ * instructions slot. The shared brief is the Chorus working copy's (`chorusWorkingCopyDir`, none
+ * without one), where the regions are; the personal `.local.md` stays in the checkout, `{project}`
+ * being the repository root of the thread's working directory.
  */
-export function wardenBriefNodes(roles: readonly string[]): Record<string, InstructionNodeConfig> {
+export function wardenBriefNodes(
+  roles: readonly string[],
+  workingCopy: string | null,
+): Record<string, InstructionNodeConfig> {
   const when = { roles: [...roles], slots: ['instructions'] };
   return {
-    [WARDEN_BRIEF_NODE]: {
-      scope: 'project',
-      personal: false,
-      label: 'project Warden brief, checked into the codebase',
-      when,
-      // At the project's own directory, so it orders with the project's files, not before the org's.
-      anchor: '{project}',
-      sources: [{ path: WARDEN_BRIEF_FILE }],
-    },
+    ...(workingCopy
+      ? {
+          [WARDEN_BRIEF_NODE]: {
+            scope: 'project',
+            personal: false,
+            label: 'project Warden brief, from the Chorus working copy',
+            when,
+            // At the project's own directory, so it orders with the project's files, not before the org's.
+            anchor: '{project}',
+            sources: [{ path: join(workingCopy, WARDEN_BRIEF_FILE) }],
+          } satisfies InstructionNodeConfig,
+        }
+      : {}),
     [WARDEN_BRIEF_LOCAL_NODE]: {
       scope: 'project',
       personal: true,
@@ -89,18 +98,18 @@ export function wardenComposition(
   };
 }
 
-/** The project's Warden brief as the repository has it (the committed file only), for the viewer. */
-export function readWardenBrief(projectPath: string): {
+/** The project's shared Warden brief, in its Chorus working copy (not the `.local.md`), for the viewer. */
+export function readWardenBrief(workingCopy: string): {
   path: string;
   exists: boolean;
   chars: number;
   tokens: number;
   text: string;
 } {
-  const path = join(projectPath, WARDEN_BRIEF_FILE);
+  const path = join(workingCopy, WARDEN_BRIEF_FILE);
   const text = existsSync(path) ? readFileSync(path, 'utf8') : '';
   return {
-    path: WARDEN_BRIEF_FILE,
+    path,
     exists: existsSync(path),
     chars: text.length,
     tokens: Math.round(text.length / 4),
