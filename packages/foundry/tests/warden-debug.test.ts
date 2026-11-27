@@ -9,6 +9,7 @@ import { validateChorusSettings } from '../src/viewer/config';
 import { projectChorus } from '../src/viewer/config-resolve';
 import { type TimelineStep, turnTimeline } from '../src/viewer/turn-timeline';
 import { outcomeLabel } from '../src/viewer/ui/call-outcome.js';
+import { prepareChorusWorkingCopy } from './helpers/regions';
 
 const cleanup: Array<() => void> = [];
 afterEach(() => {
@@ -141,9 +142,10 @@ test('chorus.wardens.debugReason is a boolean role setting; the machine’s wins
   );
   const root = mkdtempSync(join(tmpdir(), 'warden-debug-'));
   cleanup.push(() => rmSync(root, { recursive: true, force: true }));
-  mkdirSync(join(root, '.foundry'), { recursive: true });
+  const copy = prepareChorusWorkingCopy(root);
+  mkdirSync(join(copy, '.foundry'), { recursive: true });
   writeFileSync(
-    join(root, '.foundry', 'project.json'),
+    join(copy, '.foundry', 'project.json'),
     JSON.stringify({ chorus: { wardens: { debugReason: false } } }),
   );
   const project = { id: 'P', name: 'P', path: root } as Parameters<typeof projectChorus>[0];

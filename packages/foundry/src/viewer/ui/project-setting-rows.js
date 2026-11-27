@@ -86,7 +86,7 @@ export function ProjectOverrides({ projectId, onSaved }) {
  */
 export function ProjectSources({ projectId, sources, editor }) {
   // Why sources are yours alone, as the daemon says it.
-  const why = useProjectSetting(projectId, 'sources').state?.personalOnly ?? 'Yours alone';
+  const why = useProjectSetting(projectId, 'sources').state?.notForEveryone ?? 'Yours alone';
   const list = Object.values(sources ?? {});
   if (!list.length)
     return html`<div class="settings-empty">No sources configured for this project.</div>`;

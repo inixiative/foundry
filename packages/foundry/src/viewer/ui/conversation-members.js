@@ -447,7 +447,7 @@ export function ProjectConversations({ projectId }) {
       mine: at(state.mine, sub) ?? null,
       repository: at(state.repository, sub) ?? null,
       from: state.from[field],
-      personalOnly: null,
+      notForEveryone: null,
     };
     const control =
       field === 'floor'

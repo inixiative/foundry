@@ -3,15 +3,16 @@
  * @kind helper
  * @partOf feature:wardens
  */
-import { constants } from 'node:fs';
+import { constants, existsSync } from 'node:fs';
 import { access, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { MUSE_SDK_VERSION } from '@inixiative/agent-session';
 import type { ArchiveClient } from '@inixiative/archive/remote';
 import { computeHash, MODEL_REGISTRY, resolveDecisionModel } from '@inixiative/foundry-core';
 import { readPrivateJson, signetCredentialFile, signetCredentialSchema } from '@inixiative/signet';
+import { chorusWorkingCopyDir } from './agents/chorus-working-copy';
 import { configuredWardens } from './agents/configured-wardens';
-import { REPOSITORY_SETTINGS_FILE, regionKey } from './agents/region-roster';
+import { DEFAULT_REGIONS_DIR, REPOSITORY_SETTINGS_FILE, regionKey } from './agents/region-roster';
 import { archiveStatus, localArchiveUrl } from './archives/local';
 import { charterFor, deadlineShares, responseProtocol, type StageConfig } from './classify';
 import { ensureAgentClisOnPath, type Install } from './daemon/agent-clis';
@@ -37,6 +38,7 @@ import {
 import { type FoundryConfig, validateConfig } from './viewer/config';
 import {
   type ResolvedChorus,
+  readRepositorySettings,
   repositorySettingsProblem,
   resolveProjectView,
 } from './viewer/config-resolve';
@@ -645,7 +647,19 @@ export async function inspectReadiness(
         'repository-settings-unreadable',
         problem.kind === 'unreadable'
           ? `${join(project.path, REPOSITORY_SETTINGS_FILE)} was not read (${problem.message}); none of its settings apply.`
-          : `${join(project.path, REPOSITORY_SETTINGS_FILE)} can't be built on this machine (${problem.message}); its threadOnMerge, gloss, defaults, feedback, agents and layers don't apply here (its chorus, conversations, steer and blueprintDiagrams still do).`,
+          : `${join(project.path, REPOSITORY_SETTINGS_FILE)} can't be built on this machine (${problem.message}); its threadOnMerge, gloss, defaults, feedback, agents and layers don't apply here (its conversations, steer and blueprintDiagrams still do).`,
+      );
+    // Migration only: regions left the repositories for the region store; a checkout still carrying them is read no more.
+    if (
+      project &&
+      (readRepositorySettings(project.path)?.chorus !== undefined ||
+        existsSync(join(project.path, DEFAULT_REGIONS_DIR)))
+    )
+      issue(
+        'warning',
+        scope,
+        'checkout-still-carries-chorus',
+        `${project.path} still carries a chorus (${DEFAULT_REGIONS_DIR} or "chorus" in ${REPOSITORY_SETTINGS_FILE}); it is read from the Chorus working copy (${chorusWorkingCopyDir(project.path) ?? 'none: the checkout has no origin'}) now. Import it with \`chorus store import\`, publish it, and remove it from the repository.`,
       );
   }
   // A project whose Wardens are asked for but can't be built is an error: its threads run without them.

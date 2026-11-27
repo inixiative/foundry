@@ -6,6 +6,7 @@ import { buildSettingsCatalog, CATALOG_FILE } from '../../../scripts/settings-ca
 import { defaultConfig } from '../src/viewer/config';
 import { splitSections } from '../src/viewer/doc-sections';
 import { settingsIndex } from '../src/viewer/settings-search';
+import { prepareChorusWorkingCopy } from './helpers/regions';
 
 test('the committed settings catalog matches the config interfaces (run bun scripts/settings-catalog.ts)', () => {
   expect(JSON.parse(readFileSync(CATALOG_FILE, 'utf8'))).toEqual(buildSettingsCatalog());
@@ -41,9 +42,10 @@ test('the catalog takes each key and its JSDoc, nested interfaces and maps inclu
 test('a setting says whether it is yours, everyone’s or the default, and never shows a credential', () => {
   const dir = mkdtempSync(join(tmpdir(), 'settings-index-'));
   try {
-    mkdirSync(join(dir, '.foundry'));
+    const copy = prepareChorusWorkingCopy(dir);
+    mkdirSync(join(copy, '.foundry'), { recursive: true });
     writeFileSync(
-      join(dir, '.foundry', 'project.json'),
+      join(copy, '.foundry', 'project.json'),
       JSON.stringify({ chorus: { enabled: true } }),
     );
     const config = { ...defaultConfig(), installationName: 'Studio' };

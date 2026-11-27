@@ -85,6 +85,7 @@ test('the headless host pairs, admits a member note the Warden weighs in on, and
         HOME: join(dir, 'home'),
         ARCHIVE_URL: process.env.ARCHIVE_URL,
         ARCHIVE_TOKEN: process.env.ARCHIVE_TOKEN,
+        CHORUS_HOME: process.env.CHORUS_HOME,
         [headlessHostEnv]: JSON.stringify({
           url: kingdom.url,
           configDir: join(dir, 'foundry'),

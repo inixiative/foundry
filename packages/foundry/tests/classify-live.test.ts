@@ -31,6 +31,7 @@ import {
 } from '../src/classify';
 import { isStageSession, projectHostTarget } from '../src/providers/warden-routing';
 import { type FoundryConfig, starterConfig } from '../src/viewer/config';
+import { prepareChorusWorkingCopy } from './helpers/regions';
 
 const dirs: string[] = [];
 const managers: ThreadRuntimeManager[] = [];
@@ -56,12 +57,13 @@ const POINTER = 'Look over here: createLock (CONCURRENCY.md § Distributed Lock)
 /** A project with two regions; `stages` undefined writes none, so the chorus runs the default chain. */
 function project(stages: unknown[] | undefined) {
   const path = temp('classify-live');
+  const copy = prepareChorusWorkingCopy(path);
   write(
-    join(path, '.foundry', 'project.json'),
+    join(copy, '.foundry', 'project.json'),
     JSON.stringify({ chorus: { enabled: true, ...(stages ? { wardens: { stages } } : {}) } }),
   );
   for (const id of ['locks', 'queues']) {
-    const at = join(path, '.foundry', 'regions', id);
+    const at = join(copy, '.foundry', 'regions', id);
     write(join(at, 'region.json'), JSON.stringify({ id, title: id, routing: `Is this ${id}?` }));
     write(join(at, 'knowledge.md'), `# ${id}\n\nCATALOGUE_${id.toUpperCase()}: createLock.`);
     write(join(at, 'recognise.md'), `# ${id}\n\nSHORT_${id.toUpperCase()}: what ${id} covers.`);

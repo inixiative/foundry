@@ -4,9 +4,9 @@
  * @partOf feature:composition, feature:wardens
  */
 import { afterEach, expect, test } from 'bun:test';
-import { mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { join } from 'node:path';
 import { roleDirectory } from '@inixiative/foundry-core';
 import { configuredWardens } from '../src/agents/configured-wardens';
 import { regionOfSubject, regionRoleId, regionSourceId } from '../src/agents/region-roster';
@@ -31,7 +31,7 @@ import {
   roleNamespace,
 } from '../src/prompts/role-namespace';
 import { type FoundryConfig, starterConfig, validateConfig } from '../src/viewer/config';
-import { resolveProjectView } from '../src/viewer/config-resolve';
+import { repositorySettingsProblem, resolveProjectView } from '../src/viewer/config-resolve';
 import { writeRegions } from './helpers/regions';
 
 const dirs: string[] = [];
@@ -187,32 +187,12 @@ test("a user's thread role is offered beside the built-ins, and feedback routed 
   );
 });
 
-test("Foundry's own regions build a chorus: every committed region resolves to a Warden", () => {
-  const repository = resolve(import.meta.dir, '..', '..', '..');
-  const regionsDir = join(repository, '.foundry', 'regions');
-  const committed = readdirSync(regionsDir, { withFileTypes: true })
-    .filter((entry) => entry.isDirectory())
-    .map((entry) => entry.name)
-    .sort();
-  expect(committed.length).toBeGreaterThan(0);
-  const c = config(repository);
-  validateConfig(c);
-  const view = resolveProjectView(c, 'P')!;
-  expect(view.chorus.reason).toBeUndefined();
-  expect(view.chorus).toMatchObject({ on: true, enabledBy: 'repository' });
-  expect(
-    configuredWardens(view.config)
-      .wardens.map((e) => e.domain)
-      .sort(),
-  ).toEqual(committed);
-});
-
 test("a repository's project.json cannot write an agent over a region Warden", () => {
   const project = projectWithRegions(['conventions']);
+  mkdirSync(join(project, '.foundry'), { recursive: true });
   writeFileSync(
     join(project, '.foundry', 'project.json'),
     JSON.stringify({
-      chorus: { enabled: true },
       agents: { [regionRoleId('conventions')]: { extends: 'executor' } },
     }),
   );
@@ -220,7 +200,7 @@ test("a repository's project.json cannot write an agent over a region Warden", (
   validateConfig(c);
   const view = resolveProjectView(c, 'P')!;
   // The file is refused whole and said so; nothing of it is applied.
-  expect(view.chorus.repository?.error).toContain(
+  expect(repositorySettingsProblem(project)?.message).toContain(
     `agents.${regionRoleId('conventions')}: an agent's id is a bare name`,
   );
   expect(view.config.agents[regionRoleId('conventions')]?.kind).not.toBe('executor');

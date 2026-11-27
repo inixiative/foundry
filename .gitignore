@@ -3,8 +3,6 @@ dist
 *.tsbuildinfo
 **/.foundry/*
 !/.foundry/roles/
-!/.foundry/regions/
-!/.foundry/warden-brief.md
 !/.foundry/project.json
 
 # Environment files (keep .example files)

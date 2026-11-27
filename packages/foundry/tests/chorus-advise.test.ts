@@ -23,6 +23,7 @@ import { createSourceResolver } from '../src/agents/thread-factory';
 import type { PhaseRecordInput } from '../src/agents/thread-runtime';
 import { adviseOnce, chorusMessage, chorusPart } from '../src/feedback/chorus-advise';
 import { type FoundryConfig, starterConfig } from '../src/viewer/config';
+import { prepareChorusWorkingCopy } from './helpers/regions';
 
 const dirs: string[] = [];
 afterEach(() => {
@@ -43,17 +44,18 @@ const POINTER = 'Look over here: createLock (docs/claude/CONCURRENCY.md, Distrib
 /** A project whose repository enables a two-region chorus. */
 function project(): string {
   const dir = tempDir('advise-project');
-  write(join(dir, '.foundry', 'project.json'), JSON.stringify({ chorus: { enabled: true } }));
+  const copy = prepareChorusWorkingCopy(dir);
+  write(join(copy, '.foundry', 'project.json'), JSON.stringify({ chorus: { enabled: true } }));
   for (const [id, title] of [
     ['concurrency-locks', 'Concurrency and locks'],
     ['lens-model', 'The lens model'],
   ] as const) {
     write(
-      join(dir, '.foundry', 'regions', id, 'region.json'),
+      join(copy, '.foundry', 'regions', id, 'region.json'),
       JSON.stringify({ id, title, routing: `Is this about ${title}?`, concepts: [id] }),
     );
     write(
-      join(dir, '.foundry', 'regions', id, 'knowledge.md'),
+      join(copy, '.foundry', 'regions', id, 'knowledge.md'),
       `# ${title}\n\nKNOWLEDGE_${id}: what this region covers.\n`,
     );
   }

@@ -15,6 +15,7 @@ import {
 import { ProjectRegistry } from '../../src/agents/project';
 import { ConfigStore, defaultAgents, starterConfig } from '../../src/viewer/config';
 import { createViewer } from '../../src/viewer/server';
+import { prepareChorusWorkingCopy } from '../helpers/regions';
 import { type ReleaseStep, releaseAll } from '../helpers/release-all';
 
 const { chromium } = createRequire(import.meta.url)(
@@ -86,10 +87,12 @@ test('done threads, the merge setting, the Kingdom project link and the region p
     merged.meta.done = { kind: 'merged', text: 'Merged into main', at: Date.now() };
     shop.addThread(merged);
 
-    // The project's Warden brief, which the Knowledge page shows with each Warden's layers.
-    mkdirSync(join(dir, '.foundry'), { recursive: true });
+    // The project's Warden brief, in its Chorus working copy, which the Knowledge page shows with
+    // each Warden's layers.
+    const copy = prepareChorusWorkingCopy(dir);
+    mkdirSync(join(copy, '.foundry'), { recursive: true });
     writeFileSync(
-      join(dir, '.foundry', 'warden-brief.md'),
+      join(copy, '.foundry', 'warden-brief.md'),
       '# acme-shop, for its Wardens\n\nA shop.',
     );
     const configStore = new ConfigStore(dir);
