@@ -64,6 +64,8 @@ beforeAll(() => {
       if (reply === 'warming') return Response.json({ ok: false, refusal: 'chorus_warming' });
       if (reply === 'garbage') return Response.json({ hello: 'world' });
       if (reply === 'slow') await Bun.sleep(1_500);
+      if (path === '/operations/chorus.projectActivity' && body.projectId === 'gone')
+        return Response.json({ ok: false, refusal: 'unknown_project' });
       if (path === '/operations/chorus.projectActivity')
         return Response.json({
           ok: true,
@@ -244,6 +246,76 @@ describe('chorusRemotes', () => {
     expect(Object.keys(remotes.snapshot())).toEqual(['p1']);
     setting.current = undefined;
     expect(remotes.snapshot()).toEqual({});
+  });
+
+  test('check reads status without touching, tells onHost only of news, and leaves never-activated or moved projects alone', async () => {
+    const setting = {
+      current: { url, tokenKey: 'CHORUS_DEV_TOKEN' } as { url: string; tokenKey: string },
+    };
+    const hosts: Array<[string, ProjectHostState]> = [];
+    const remotes = chorusRemotes({
+      devSetting: () => setting.current,
+      readToken: async () => 'devtoken',
+      onHost: (id, state) => hosts.push([id, state]),
+    });
+    const before = seen.length;
+    await remotes.check('p1');
+    expect(seen.length).toBe(before);
+    await remotes.activate('p1');
+    await remotes.check('p1');
+    await remotes.check('p1');
+    const asked = seen
+      .slice(before)
+      .map((s) => (s.body as { input: { activity: string } }).input.activity);
+    expect(asked).toEqual(['touch', 'status', 'status']);
+    // Same report three times: one onHost.
+    expect(hosts.length).toBe(1);
+    expect(remotes.snapshot().p1?.generation).toBe(1);
+    // The project now points at another Chorus: its last state is not this one's, so no ask.
+    setting.current = { url: 'http://127.0.0.1:1', tokenKey: 'CHORUS_DEV_TOKEN' };
+    await remotes.check('p1');
+    expect(seen.length).toBe(before + 3);
+  });
+
+  test('a project the remote Chorus does not know is failed; asking one never activated never adds it to the poll', async () => {
+    const hosts: ProjectHostState[] = [];
+    const remotes = chorusRemotes({
+      devSetting: () => ({ url, tokenKey: 'CHORUS_DEV_TOKEN' }),
+      readToken: async () => 'devtoken',
+      onHost: (_id, state) => hosts.push(state),
+    });
+    await remotes.check('gone');
+    expect(hosts).toEqual([]);
+    await remotes.check('gone', true);
+    expect(hosts).toEqual([
+      expect.objectContaining({
+        status: 'failed',
+        reason: 'unknown_project',
+        failures: 1,
+        remote: url,
+      }),
+    ]);
+    const before = seen.length;
+    const stop = remotes.poll(20);
+    await Bun.sleep(70);
+    stop();
+    expect(seen.length).toBe(before);
+  });
+
+  test('poll checks every activated project on its interval until stopped', async () => {
+    const remotes = chorusRemotes({
+      devSetting: () => ({ url, tokenKey: 'CHORUS_DEV_TOKEN' }),
+      readToken: async () => 'devtoken',
+    });
+    await remotes.activate('p1');
+    const before = seen.length;
+    const stop = remotes.poll(20);
+    await Bun.sleep(90);
+    stop();
+    const polled = seen.length - before;
+    expect(polled).toBeGreaterThanOrEqual(2);
+    await Bun.sleep(60);
+    expect(seen.length - before).toBe(polled);
   });
 
   test('a host that cannot be reached is a failed host state, served by its URL', async () => {

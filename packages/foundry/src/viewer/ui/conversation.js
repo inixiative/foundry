@@ -99,7 +99,7 @@ import {
   updateState,
   waitingFor,
 } from './store.js';
-import { NEEDS_RESTART, stripView } from './system-strip.js';
+import { NEEDS_RESTART, STRIP_DOT, stripView } from './system-strip.js';
 import { agentCountOf, openThreadAgents, threadAgents } from './thread-agents.js';
 import {
   harnessName,
@@ -460,8 +460,6 @@ function RestartAction({ activity }) {
   if (!state?.canRestart) return null;
   return html`<button class="system-strip-action" title="Restart Foundry once running turns finish or pause; they resume after it" onClick=${() => updateAction('restart')}>Restart</button>`;
 }
-
-const STRIP_DOT = { working: 'working', ready: 'done', degraded: 'attention', failed: 'problem' };
 
 /**
  * What the system is doing around this thread, above the composer (Aron, 2026-11-11): its project's
