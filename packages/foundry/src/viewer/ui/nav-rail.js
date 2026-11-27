@@ -4,7 +4,7 @@
  * @partOf feature:viewer
  */
 /**
- * The left rail, two rows of tabs: Attention | Open | Projects, then Scheduled | Status (⌥⇧← ⌥⇧→
+ * The left rail, two rows of tabs: Attention | Open | Projects, then Scheduled | Status (⌥, ⌥.
  * step through all five; Aron, 2026-11-14: "You can have those tabs be two rows").
  *
  * Attention is the open top-level threads that need you, across projects: red (can't proceed) first,
@@ -90,7 +90,7 @@ function RailToggle({ activeId, ctx }) {
         html`<div key=${i} class="rail-toggle-row">${row.map(
           (tab) => html`<button key=${tab.id} role="tab" aria-selected=${activeId === tab.id}
           class="rail-toggle-btn ${activeId === tab.id ? 'is-active' : ''}" data-rail-id=${tab.id}
-          title=${tab.key ? `${tab.label} (⌥${tab.key} · ⌥⇧← ⌥⇧→)` : `${tab.label} (⌥⇧← ⌥⇧→)`}
+          title=${tab.key ? `${tab.label} (⌥${tab.key} · ⌥, ⌥.)` : `${tab.label} (⌥, ⌥.)`}
           onClick=${() => {
             railView.value = tab.id;
           }}>${tab.label}${renderTabBadge(tab, ctx)}</button>`,
