@@ -137,10 +137,10 @@ test('cross-pane tab placement moves tabs between Left Rail and Right Panel with
     await page.locator('.rail-toggle-btn.is-active[data-rail-id="plan"]').waitFor();
     await page.locator('.nav-rail .plan', { hasText: 'Plan renders in Left Rail' }).waitFor();
 
-    // Step Left Rail with Alt+Shift+ArrowLeft / ArrowRight cycles into moved Plan tab.
-    await page.keyboard.press('Alt+Shift+ArrowRight');
+    // Step Left Rail with Alt+Comma / Alt+Period cycles into moved Plan tab.
+    await page.keyboard.press('Alt+Period');
     await page.locator('.rail-toggle-btn.is-active[data-rail-id="attention"]').waitFor();
-    await page.keyboard.press('Alt+Shift+ArrowLeft');
+    await page.keyboard.press('Alt+Comma');
     await page.locator('.rail-toggle-btn.is-active[data-rail-id="plan"]').waitFor();
 
     // 3. Status moved to Right Panel renders in expanded view + collapsed 44px strip with icon.

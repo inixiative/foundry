@@ -183,7 +183,7 @@ export const rightTab = signal('context');
  * The left rail's views, as its toggle shows them in two rows: 'attention' (open threads that need
  * you: orange or red, attention.js), 'open' (every open thread, Yours over Shared), 'projects' (the
  * projects beside a scope's threads); then 'scheduled' (schedules, triggers and running loops) and
- * 'status' (this machine and its connections). ⌥⇧← ⌥⇧→ step through them in this order.
+ * 'status' (this machine and its connections). ⌥, ⌥. step through them in this order.
  */
 export const RAIL_ROWS = [
   ['attention', 'open', 'projects'],
