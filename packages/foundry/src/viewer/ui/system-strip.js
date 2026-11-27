@@ -12,7 +12,15 @@
 /** How long "ready" stays before it fades. */
 export const READY_SHOWN_MS = 4000;
 
-const RANK = { failed: 0, degraded: 1, working: 2, ready: 3 };
+export const RANK = { failed: 0, degraded: 1, working: 2, ready: 3 };
+/** A state's tone on `.system-strip-dot`; resting is dim. */
+export const STRIP_DOT = {
+  working: 'working',
+  ready: 'done',
+  degraded: 'attention',
+  failed: 'problem',
+  idle: 'idle',
+};
 
 /** Activities whose fix is a restart of Foundry: their strip row carries Restart, so it stays. */
 export const NEEDS_RESTART = new Set(['decisions:admission']);

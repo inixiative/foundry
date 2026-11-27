@@ -791,6 +791,9 @@ const remotes = chorusRemotes({
     eventStream.pushActivity(activity);
   },
 });
+// A remote host's state is read every 30 s (`status`, never warming it), so a dead dev host or a dropped
+// Kingdom relay shows within a poll; a local host's supervisor reports on its own.
+remotes.poll(30_000);
 /** Whether a remote Chorus (dev mode or hosted Kingdom) serves this project. */
 const chorusRemoteServes = (projectId: string) =>
   resolveProjectView(liveConfig, projectId)?.chorus.on === true &&
@@ -1135,6 +1138,7 @@ const viewer = await startViewer({
     if (chorusRemoteServes(projectId)) void remotes.activate(projectId);
     else void projectActivity?.activate(projectId);
   },
+  chorusCheck: (projectId) => remotes.check(projectId, true),
   decisionHosts: () => {
     const remote = remotes.snapshot();
     const local = live?.projectHosts.snapshot();

@@ -519,6 +519,32 @@ body {
   max-width: 100px;
 }
 
+/* The project's chorus beside the scope chip (`chorus-badges.js`): a smaller system strip dot. */
+.system-strip-dot.sidebar-chorus-dot {
+  width: 7px;
+  height: 7px;
+  margin-left: 6px;
+}
+.system-strip-dot[data-tone="idle"] {
+  background: var(--text-dimmer);
+}
+
+.chorus-dev-badge {
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  padding: 1px 5px;
+  margin-left: 4px;
+  border-radius: 3px;
+  color: var(--accent);
+  background: var(--accent-dim);
+}
+.chorus-dev-badge--failing {
+  color: var(--warn);
+  background: var(--warn-dim);
+}
+
 .thread-add-form {
   display: flex;
   flex-direction: column;

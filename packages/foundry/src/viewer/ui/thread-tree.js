@@ -8,6 +8,7 @@
  * (a project, Global, or Forge Master's one thread), each with its status, branch and references.
  */
 
+import { ChorusBadges } from './chorus-badges.js';
 import { FeedbackStrip, feedbackIn } from './feedback.js';
 import { html, useLayoutEffect, useRef, useState } from './lib.js';
 import { DeviceBadge } from './machine-icons.js';
@@ -390,6 +391,7 @@ export function ThreadList() {
       <div class="sidebar-header">
         <span class="sidebar-section-title">THREADS</span>
         <span class="sidebar-scope-chip ${activeProject ? 'scope-project' : 'scope-global'}" title=${scopeLabel}>${scopeLabel}</span>
+        ${activeProject ? html`<${ChorusBadges} projectId=${activeProject} />` : null}
       </div>
 
       <button type="button" class="rail-new-thread rail-new-thread--block" onClick=${() => openNewThread()}>+ New thread</button>

@@ -111,6 +111,7 @@ Local ports come from the `@inixiative/config` port registry (Foundry is block 5
 
 ```bash
 bun run doctor       # Inspect existing setup without starting agents or making provider calls
+bun run doctor --chorus  # Ask the running daemon for each chorus's Layer 1 and Layer 2 health; exit 1 if one is failing
 bun run start        # Production — loads config, starts viewer + harness
 bun run setup        # Reconfigure (additive — edit agents, layers, sources, projects)
 bun run acp          # ACP agent on stdio (what hosts launch)

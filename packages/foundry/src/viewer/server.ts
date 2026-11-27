@@ -103,6 +103,7 @@ import { registerModelRoutes } from './routes/models';
 import { registerProfileRoutes } from './routes/profile';
 import { registerRuntimeRoutes, type WorkerSessions } from './routes/runtime';
 import { registerScheduleRoutes } from './routes/schedules';
+import { registerWardenHostHealthRoutes } from './routes/warden-host-health';
 import {
   CUSTOM_UI_PATH_PREFIX,
   customThemeCss,
@@ -132,6 +133,8 @@ export interface ViewerConfig {
   assistModel?: string;
   /** The project Warden hosts' snapshot, for the Status view's process list (`/api/machine/processes`). */
   decisionHosts?: () => { projects: Record<string, ProjectHostState> } | undefined;
+  /** Ask a project's remote Chorus how it stands now (`chorusRemotes.check`), for `/api/warden-hosts/health?fresh=1`. */
+  chorusCheck?: (projectId: string) => Promise<void>;
   /** Every native session binding (`FileExternalSessionStore.all`), for Status → Processes. */
   sessionBindings?: () => Promise<ReadonlyArray<{ threadId: string; externalSessionId: string }>>;
   /** Each worker's native sessions, for a thread switching worker mid-conversation. */
@@ -1003,6 +1006,11 @@ export function createViewer(config: ViewerConfig) {
       service.dispose();
     });
   }
+  registerWardenHostHealthRoutes(app, {
+    configStore,
+    ...(config.decisionHosts ? { hosts: config.decisionHosts } : {}),
+    ...(config.chorusCheck ? { check: config.chorusCheck } : {}),
+  });
   registerMachineProcessRoutes(app, {
     ...(config.decisionHosts ? { hosts: config.decisionHosts } : {}),
     projectLabel: (projectId) => configStore.config.projects?.[projectId]?.label,
