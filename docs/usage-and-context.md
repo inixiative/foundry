@@ -673,7 +673,7 @@ regions never run (Heralds are not built) and the view says so.
   `enabled: true` turns it on; absent or `false`, the project has no Wardens
   (`regions` or `layers` may stay written, unread). `regions` points the one
   layer at another directory (absolute, or relative to the working copy;
-  default `.foundry/regions`). With neither the settings nor the repository enabling
+  default `.foundry/regions`). With neither the settings nor the working copy enabling
   it, regions present are counted (`view.chorus.available`) and the view, the
   startup log and the doctor say the chorus is off and how to turn it on.
   Enabled but no regions found: no Warden runs, and they say why
