@@ -90,7 +90,7 @@ function WardenLayers({ wardens }) {
       <tr><td>3. Its topic</td><td>The topic's knowledge, sized above.</td><td></td></tr>
       <tr><td>4. Thread context</td><td>The moment and what the thread holds, per call.</td><td></td></tr>
     </table>
-    <div class="rp-dim">No CLAUDE.md or AGENTS.md: those are written for the agent doing the work. The brief is shown as the registered checkout has it; a worktree's threads read their branch's copy.</div>
+    <div class="rp-dim">No CLAUDE.md or AGENTS.md: those are written for the agent doing the work. The brief is the repository's Chorus working copy, which every checkout of it reads.</div>
     ${
       ignored?.length
         ? html`<div class="kwarn">${ignored.map((line) => html`<div key=${line}>${line}</div>`)}</div>`
