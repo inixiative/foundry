@@ -53,7 +53,7 @@ import {
   resolveInstructionLadder,
   validateCompositionSettings,
 } from '../prompts/instruction-settings';
-import { roleIdIn, roleNameIn, roleNamespace } from '../prompts/role-namespace';
+import { isIdName, roleIdIn, roleNameIn, roleNamespace } from '../prompts/role-namespace';
 import {
   type KingdomAccessSource,
   validateKingdomAccess,
@@ -1147,8 +1147,9 @@ export function validateChorusSettings(where: string, chorus: unknown): void {
         throw Error(
           `${at}.regions must be a path (absolute, or relative to the Chorus working copy)`,
         );
-      if (l.label !== undefined && (typeof l.label !== 'string' || !l.label.trim()))
-        throw Error(`${at}.label must be a non-empty name`);
+      // A label names a directory in the Chorus working copy (`.foundry/layers/<label>/regions`).
+      if (l.label !== undefined && !isIdName(l.label))
+        throw Error(`${at}.label must be an id name (letters, digits, - and _)`);
       const label = typeof l.label === 'string' ? l.label : `layer-${index + 1}`;
       if (labels.has(label))
         throw Error(`${where}.layers: two layers are labelled ${JSON.stringify(label)}`);

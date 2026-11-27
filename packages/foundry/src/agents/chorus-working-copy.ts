@@ -17,7 +17,7 @@ import { provenanceReferences } from '@inixiative/archive/tags';
  * checkout has no copy and no Wardens.
  */
 export function chorusWorkingCopyDir(projectPath: string): string | null {
-  const slug = repositorySlug(projectPath);
+  const slug = repositorySlugOfCheckout(projectPath);
   return slug
     ? join(process.env.CHORUS_HOME ?? join(homedir(), '.chorus'), 'projects', ...slug.split('/'))
     : null;
@@ -25,7 +25,7 @@ export function chorusWorkingCopyDir(projectPath: string): string | null {
 
 // `owner/repo` of the checkout's `origin`, read once per checkout and again only when its own `.git`
 // comes or goes (a resolve runs on every request; a git spawn on each was minutes in the suite).
-const repositorySlug = (projectPath: string): string | null => {
+const repositorySlugOfCheckout = (projectPath: string): string | null => {
   const ownGit = existsSync(join(projectPath, '.git'));
   const known = slugByPath.get(projectPath);
   if (known && known.ownGit === ownGit) return known.slug;

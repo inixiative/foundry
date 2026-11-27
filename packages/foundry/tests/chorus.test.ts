@@ -525,6 +525,7 @@ test('enabled without regions, the project has no chorus and the view says why; 
       'two layers are labelled "same"',
     ],
     [{ layers: [{ regions: 'a', extra: 1 }] }, 'layers[0].extra is not a layer setting'],
+    [{ layers: [{ regions: 'a', label: '../up' }] }, 'layers[0].label must be an id name'],
     [{ mode: 'regions' }, 'chorus.mode is not a chorus setting'],
     ['regions', 'chorus must be an object'],
   ] as const) {

@@ -89,6 +89,15 @@ const SETTABLE_PROJECT_ROOTS: ReadonlySet<string> = new Set<string>([
   '__devMode',
 ]);
 
+/** Why `chorus` can't be set for everyone here: it is shared from the Chorus working copy. */
+const CHORUS_SHARED_FROM_WORKING_COPY =
+  'the chorus is shared from its Chorus working copy, not the repository: edit it there and run `chorus store publish`';
+
+/** Why `path` can't be set for everyone (a machine's or person's own, or the chorus), else undefined. */
+const notForEveryone = (path: string): string | undefined =>
+  personalOnlySetting(path) ??
+  (path.split('.')[0] === 'chorus' ? CHORUS_SHARED_FROM_WORKING_COPY : undefined);
+
 /** A dotted setting path, or `__devMode`: the one dev-mode key a project carries (R-2026-11-25-05). */
 const SETTING_PATH = /^(?:__devMode|[A-Za-z][\w-]*(\.[\w-]+)*)$/;
 
@@ -559,7 +568,7 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps): void 
       mine: mine ?? null,
       repository: theirs ?? null,
       foundry: foundry ?? null,
-      personalOnly: personalOnlySetting(path) ?? null,
+      notForEveryone: notForEveryone(path) ?? null,
       ...(read ? { repositoryFile: read.file } : {}),
       ...(problem && !applies ? { repositoryError: problem.message } : {}),
       // An object's keys that are this machine's or this person's alone (never set for everyone).
@@ -591,8 +600,8 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps): void 
       const parts = path.split('.');
       if (!SETTING_PATH.test(path) || parts.some((part) => UNSAFE_SETTING_SEGMENTS.has(part)))
         return c.json({ error: `${path} is not a dotted setting path` }, 400);
-      const personal = scope === 'everyone' ? personalOnlySetting(path) : undefined;
-      if (personal) return c.json({ error: `${path} can't be set for everyone: ${personal}` }, 400);
+      const refused = scope === 'everyone' ? notForEveryone(path) : undefined;
+      if (refused) return c.json({ error: `${path} can't be set for everyone: ${refused}` }, 400);
       // Set here: what the settings pages show. Registration, capacity and Kingdom links have their own flows.
       if (!SETTABLE_PROJECT_ROOTS.has(parts[0]!))
         return c.json({ error: `${parts[0]} is not set here` }, 400);
@@ -610,17 +619,7 @@ export function registerControlRoutes(app: Hono, deps: ControlRoutesDeps): void 
             setAtPath(mine as unknown as Record<string, unknown>, path.split('.'), value);
         });
       else {
-        // The chorus is shared from the Chorus working copy (published with `chorus store publish`),
-        // never the checkout: regions and their switch left the repositories.
-        const chorus = entries.filter(([path]) => path.split('.')[0] === 'chorus');
-        const rest = entries.filter(([path]) => path.split('.')[0] !== 'chorus');
-        const workingCopy = chorusWorkingCopyDir(project.path);
-        if (chorus.length && !workingCopy)
-          throw Error(
-            'chorus is shared from the Chorus working copy, and this checkout has no origin',
-          );
-        if (chorus.length && workingCopy) writeRepositorySettings(workingCopy, chorus);
-        if (rest.length) writeRepositorySettings(project.path, rest);
+        writeRepositorySettings(project.path, entries);
       }
     } catch (error) {
       return c.json({ error: (error as Error).message }, 400);

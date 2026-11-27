@@ -60,7 +60,7 @@ const send = (url, method, body) =>
 
 /**
  * A project setting at `path`: its layers as the daemon reports them (`mine`, `repository`,
- * `foundry`, `from`, `personalOnly`), and `save(scope, values)` for me or for everyone, `values`
+ * `foundry`, `from`, `notForEveryone`), and `save(scope, values)` for me or for everyone, `values`
  * mapping paths to values (`null` drops one). `reload` reads it again.
  */
 export function useProjectSetting(projectId, path, onSaved) {
@@ -116,11 +116,11 @@ export const layeredActions = (state, save, values) => {
   const nulls = Object.fromEntries(Object.keys(values).map((k) => [k, null]));
   return {
     me: () => save('me', values),
-    everyone: state.personalOnly ?? (() => save('everyone', values)),
+    everyone: state.notForEveryone ?? (() => save('everyone', values)),
     reset: has(state.mine)
       ? () => save('me', nulls)
       : has(state.repository)
-        ? () => save('everyone', nulls)
+        ? (state.notForEveryone ?? (() => save('everyone', nulls)))
         : 'Nothing is set here',
   };
 };
